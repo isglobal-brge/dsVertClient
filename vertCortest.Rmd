@@ -1,0 +1,136 @@
+---
+title: "vertCortest"
+output: html_document
+date: "2024-03-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## test for ds.vertCor function and vertCorDS
+
+# !! This is still a work in progress, I am getting the right correlations, but having trouble calling the function
+
+```{r}
+install.packages("DSI")
+install.packages("DSOpal")
+install.packages("dsBaseClient")
+install.packages("DSLite")
+```
+
+```{r}
+library(DSI)
+library(dsBaseClient)
+library(DSOpal)
+library(DSLite)
+library(devtools)
+```
+
+```{r}
+# Combine and partition test data to be put in a light DS server
+# Here I combine the CNSIM 1,2 & 3 datasets by rows and then partition by columns
+# The idea is to try and have different types of variables mixed up on the two servers
+data("CNSIM1")
+data("CNSIM2")
+data("CNSIM3")
+
+AllCNSIM <- rbind(CNSIM1,CNSIM2,CNSIM3)
+
+Partition1 <- AllCNSIM[,c("LAB_TSC","LAB_TRIG","PM_BMI_CONTINUOUS","DIS_CVA")]
+Partition2 <- AllCNSIM[,c("LAB_HDL","LAB_GLUC_ADJUSTED","MEDI_LPD","DIS_DIAB")]
+Partition3 <- AllCNSIM[,c("DIS_AMI","GENDER","PM_BMI_CATEGORICAL")]
+
+dslite.server <- newDSLiteServer(tables=list(CNSIM1=Partition1, CNSIM2=Partition2, CNSIM3=Partition3))
+# load corresponding DataSHIELD login data
+data("logindata.dslite.cnsim")
+
+```
+
+verify configuration:
+
+```{r}
+DSLite::defaultDSConfiguration()
+dslite.server$config()
+dslite.server$profile()
+```
+
+Establish conns and get the session ID
+
+```{r}
+# datashield logins and assignments
+conns <- datashield.login(logindata.dslite.cnsim, assign=TRUE)
+
+# get the session ID of "sim1" node connection object
+conns$sim1@sid
+# the same ID is in the DSLiteServer
+dslite.server$hasSession(conns$sim1@sid)
+```
+
+```{r}
+# get data represented by symbol D for each DataSHIELD connection
+data <- getDSLiteData(conns, "D")
+# get data represented by symbol D from a specific DataSHIELD connection
+data1 <- getDSLiteData(conns$sim1, "D")
+data2 <- getDSLiteData(conns$sim2, "D")
+data3 <- getDSLiteData(conns$sim3, "D")
+```
+
+Development version of vertCorDS: (there is a more clean version in the server side package dsVert)
+
+```{r}
+vertCorDS <- function(variable_names) {
+
+  U_combined <- NULL
+  #print(eval(parse(text="data2$LAB_HDL"), envir = parent.frame()))
+  for (var_name in variable_names) {
+    if (exists(var_name, envir = parent.frame())) {
+      #go ahead with eval
+      result <- eval(parse(text=var_name), envir = parent.frame())
+      #print(result)
+      svd_result <- svd(result)
+      U_combined <- cbind(U_combined, svd_result$u %*% svd_result$d)
+    } else {
+      #print("didnt work")
+      result <- eval(parse(text=var_name), envir = parent.frame())
+      result[is.na(result)] <- 0 
+      result <- scale(result)
+      #print(result)
+      svd_result <- svd(result)
+      U_combined <- cbind(U_combined, svd_result$u %*% svd_result$d)
+    }
+  }
+
+  return(U_combined)
+}
+```
+
+```{r}
+# add my mthods to the configuration
+dslite.server$aggregateMethod("ds.vertCor", function(variable_names, datasources){ ds.vertCor(variable_names, datasources) })
+dslite.server$aggregateMethod("vertCorDS", function(variable_names){ vertCorDS(variable_names) })
+
+#datashield.assign(conns, "A", "CNSIM1", variables=c("LAB_TSC"))
+#datashield.assign(conns, "B", "CNSIM1", variables=c("DIS_CVA"))
+
+ds.vertCor(variable_names=c("CNSIM1$LAB_TSC","CNSIM1$PM_BMI_CONTINUOUS"),datasources = conns$sim1)
+#datashield.aggregate(conns$sim1, #quote(ds.vertCor(variable_names=c("LAB_TSC","PM_BMI_CONTINUOUS","LAB_HDL","GENDER"),datasources = conns)))
+
+
+#datashield.aggregate(conns$sim1, quote(ds.vertCor()))
+
+```
+
+Another test.
+
+```{r}
+#datashield.assign(conns, "A", "CNSIM1", variables=c("LAB_TSC"))
+#datashield.assign(conns, "B", "CNSIM3", variables=c("PM_BMI_CATEGORICAL"))
+#datashield.aggregate(conns$sim1, quote(anotherhist(A,B)))
+```
+
+```{r}
+print(head(rownames(data3)))
+```
+
+
