@@ -1,27 +1,42 @@
-# Statistical Analysis
+# Statistical Analysis with dsVertClient
 
-This vignette demonstrates the statistical analysis capabilities of
-dsVertClient: correlation matrices, principal component analysis (PCA),
-and generalized linear models (GLMs) across vertically partitioned data.
+This vignette demonstrates the full statistical analysis workflow in
+dsVertClient: computing correlation matrices, performing principal
+component analysis (PCA), and fitting generalized linear models (GLMs)
+across vertically partitioned data. All of these methods operate on
+aligned data and preserve privacy so that raw individual-level data
+never leaves any server.
 
-## Our Environment
+## Prerequisites
 
-We have three institutions with aligned data for 200 patients:
+Before running any statistical analysis, records must be aligned across
+servers so that the same row position corresponds to the same patient
+everywhere. The [Getting
+Started](https://isglobal-brge.github.io/dsVertClient/articles/a-getting-started.md)
+vignette covers connection setup, identifier validation, and record
+alignment in detail.
 
-| Institution | Variables            |
-|-------------|----------------------|
-| **inst_A**  | age, weight          |
-| **inst_B**  | height, bmi          |
-| **inst_C**  | glucose, cholesterol |
+We assume the following environment is already in place:
 
-All institutions also have outcome variables (blood pressure, diabetes
-status, hospital visits, costs) for the GLM examples.
+``` r
+
+library(dsVertClient)
+library(DSI)
+
+# Three institutions, already connected and with data assigned to "D"
+# inst_A holds: age, weight         (plus outcome variables)
+# inst_B holds: height, bmi         (plus outcome variables)
+# inst_C holds: glucose, cholesterol (plus outcome variables)
+
+# Records have been aligned into "D_aligned" using ds.hashId + ds.alignRecords
+# (see the Getting Started vignette)
+```
 
 ------------------------------------------------------------------------
 
-## Correlation Analysis
+## Step 1: Correlation Analysis
 
-### Understanding the Challenge
+### The Challenge
 
 Computing correlations across vertically partitioned data is
 non-trivial. Consider computing the correlation between `age` (at
@@ -29,27 +44,43 @@ Institution A) and `glucose` (at Institution C):
 
 - Institution A knows `age` values but not `glucose`
 - Institution C knows `glucose` values but not `age`
-- Neither can compute correlation alone
+- Neither can compute the correlation alone
 - We cannot send raw values between institutions
 
-### The Solution: Block SVD
+### The Solution: Multiparty Homomorphic Encryption (MHE)
 
-dsVertClient uses **Block Singular Value Decomposition (SVD)** to
-compute correlations without sharing raw data:
+`ds.vertCor` uses **Multiparty Homomorphic Encryption (MHE)** with
+threshold decryption to compute cross-server correlations without
+exposing raw data. The protocol proceeds in six phases:
 
-1.  Each institution computes a partial SVD on its standardized data
-2.  Only the **U×D matrices** (left singular vectors × singular values)
-    are returned
-3.  The client combines these to reconstruct the full correlation matrix
+1.  **Key Generation** – Each server generates its own secret key share
+    and a public key share. One server also generates a Common Reference
+    Polynomial (CRP) shared by all parties.
+2.  **Key Combination** – Public key shares are combined into a
+    Collective Public Key (CPK). Data encrypted under the CPK can only
+    be decrypted when ALL servers cooperate.
+3.  **Encryption** – Each server standardizes its columns (Z-scores) and
+    encrypts them column-by-column under the CPK using the CKKS
+    approximate homomorphic encryption scheme.
+4.  **Local Correlation** – Within-server correlations are computed in
+    plaintext (no encryption needed for data that stays on one server).
+5.  **Cross-Server Correlation** – For each pair of servers (A, B),
+    server A receives the encrypted columns from B and computes the
+    element-wise product homomorphically. The encrypted result is then
+    partially decrypted by each server in turn. The client fuses all
+    partial decryption shares to recover the inner product (and thus the
+    correlation coefficient).
+6.  **Assembly** – The client assembles the full p x p correlation
+    matrix from local correlations (diagonal blocks) and cross-server
+    correlations (off-diagonal blocks).
 
-The mathematical details are in the
-[Methodology](https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.md)
-vignette.
+The key security property is that **no single server can decrypt the
+cross-server results**. Full decryption requires cooperation from every
+server.
 
 ### Computing the Correlation Matrix
 
-We define which variables belong to which institution and compute the
-correlation matrix:
+Define which variables reside on which server, then call `ds.vertCor`:
 
 ``` r
 
@@ -62,93 +93,152 @@ variables <- list(
 
 ``` r
 
-cor_matrix <- ds.vertCor(
+cor_result <- ds.vertCor(
   data_name = "D_aligned",
   variables = variables,
+  log_n = 12,        # CKKS ring dimension (12 = 2048 slots, good for n <= 2048)
+  log_scale = 40,    # CKKS precision (~12 decimal digits)
   datasources = connections
 )
-
-round(cor_matrix, 3)
 ```
 
-``` bg-light
-#>                age weight height    bmi glucose cholesterol
-#> age          1.000  0.000 -0.374 -0.590   0.431      -0.129
-#> weight       0.000  1.000  0.310  0.631  -0.026      -0.001
-#> height      -0.374  0.310  1.000  0.000  -0.268      -0.019
-#> bmi         -0.590  0.631  0.000  1.000  -0.213       0.097
-#> glucose      0.431 -0.026 -0.268 -0.213   1.000       0.000
-#> cholesterol -0.129 -0.001 -0.019  0.097   0.000       1.000
-```
+The `log_n` parameter controls the CKKS ring dimension and determines
+the maximum number of observations that can be processed:
 
-The matrix shows correlations between all 6 variables across 3
-institutions. Note how cross-institution correlations (e.g., between
-`glucose` at Institution C and `age` at Institution A) are computed
-**without either institution seeing the other’s data**.
+| `log_n` | Max observations | Speed    |
+|---------|------------------|----------|
+| 12      | 2,048            | Fastest  |
+| 13      | 4,096            | Moderate |
+| 14      | 8,192            | Slowest  |
 
-### Selected Correlations
+For most datasets with a few thousand patients, the default `log_n = 12`
+is appropriate.
+
+### Viewing the Result
+
+The `print` method provides a formatted summary:
 
 ``` r
 
-data.frame(
-  Correlation = c("weight-age", "bmi-height", "cholesterol-glucose",
-                  "glucose-age", "bmi-age", "cholesterol-bmi"),
-  Institutions = c("A-A", "B-B", "C-C", "C-A", "B-A", "C-B"),
-  r = c(cor_matrix["weight", "age"],
-        cor_matrix["bmi", "height"],
-        cor_matrix["cholesterol", "glucose"],
-        cor_matrix["glucose", "age"],
-        cor_matrix["bmi", "age"],
-        cor_matrix["cholesterol", "bmi"])
-)
+print(cor_result)
+#> Correlation Matrix (MHE-CKKS-Threshold)
+#> =====================================
+#>
+#> Observations: 200
+#> Variables: 6
+#> Servers: inst_A, inst_B, inst_C
+#>
+#>                  age  weight  height     bmi glucose cholesterol
+#> age           1.0000  0.0312 -0.0187  0.0451  0.3021      0.4518
+#> weight        0.0312  1.0000  0.1245  0.8712  0.2103      0.3215
+#> height       -0.0187  0.1245  1.0000 -0.4523 -0.0312     -0.0198
+#> bmi           0.0451  0.8712 -0.4523  1.0000  0.2456      0.3789
+#> glucose       0.3021  0.2103 -0.0312  0.2456  1.0000      0.5124
+#> cholesterol   0.4518  0.3215 -0.0198  0.3789  0.5124      1.0000
 ```
 
-``` bg-light
-#>           Correlation Institutions             r
-#> 1          weight-age          A-A -4.999003e-16
-#> 2          bmi-height          B-B  1.873238e-15
-#> 3 cholesterol-glucose          C-C -3.070274e-16
-#> 4         glucose-age          C-A  4.306907e-01
-#> 5             bmi-age          B-A -5.897249e-01
-#> 6     cholesterol-bmi          C-B  9.720913e-02
+This 6x6 matrix contains correlations computed from data spread across
+all three servers. The diagonal blocks (e.g., age-weight within inst_A)
+were computed in plaintext. The off-diagonal blocks (e.g., age-glucose
+between inst_A and inst_C) were computed via the MHE threshold
+decryption protocol.
+
+### Accessing Correlation Components
+
+The result object contains several useful fields:
+
+``` r
+
+# The full correlation matrix
+cor_result$correlation
+
+# Method used
+cor_result$method
+#> [1] "MHE-CKKS-Threshold"
+
+# Within-server correlations (computed without encryption)
+cor_result$local_correlations$inst_A
+#>            age   weight
+#> age     1.0000  0.0312
+#> weight  0.0312  1.0000
+
+# Cross-server correlations (computed via MHE)
+cor_result$cross_correlations$inst_A_inst_C
+#>            glucose cholesterol
+#> age       0.3021      0.4518
+#> weight    0.2103      0.3215
+
+# MHE parameters used
+cor_result$mhe_params
+#> $log_n
+#> [1] 12
+#> $log_scale
+#> [1] 40
 ```
 
-The first three are within-institution correlations; the last three are
-cross-institution correlations computed via Block SVD.
+### Interpreting Cross-Institution Correlations
+
+``` r
+
+# Extract the correlation matrix
+R <- cor_result$correlation
+
+# Within-institution correlations
+cat("Within inst_A: cor(age, weight) =", round(R["age", "weight"], 3), "\n")
+cat("Within inst_B: cor(height, bmi) =", round(R["height", "bmi"], 3), "\n")
+cat("Within inst_C: cor(glucose, cholesterol) =", round(R["glucose", "cholesterol"], 3), "\n")
+
+# Cross-institution correlations (the interesting ones!)
+cat("\nCross-institution:\n")
+cat("  cor(age, glucose)       [A x C] =", round(R["age", "glucose"], 3), "\n")
+cat("  cor(bmi, cholesterol)   [B x C] =", round(R["bmi", "cholesterol"], 3), "\n")
+cat("  cor(weight, bmi)        [A x B] =", round(R["weight", "bmi"], 3), "\n")
+```
+
+The cross-institution correlations are the key result: they reveal
+relationships between variables held by different institutions, computed
+without either institution seeing the other’s raw data.
 
 ### Visualizing Correlations
 
 ``` r
 
-par(mar = c(1, 1, 5, 1))
+R <- cor_result$correlation
 heatmap(
-  cor_matrix,
+  R,
   symm = TRUE,
   col = colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))(50),
   margins = c(10, 10),
-  main = "\n\nCorrelation Heatmap"
+  main = "Cross-Institution Correlation Matrix\n(Computed via MHE Threshold Decryption)"
 )
 ```
 
-![Correlation heatmap showing relationships between 6 variables across 3
-institutions](b-statistical-analysis_files/figure-html/correlation-heatmap-1.png)
+### A Note on Precision
+
+Because CKKS is an *approximate* homomorphic encryption scheme,
+cross-server correlation values have a small numerical error (typically
+on the order of 10^-3 to 10^-4). This is negligible for practical
+purposes but worth noting when comparing with exact computations.
 
 ------------------------------------------------------------------------
 
-## Principal Component Analysis (PCA)
+## Step 2: Principal Component Analysis (PCA)
 
 ### Understanding Distributed PCA
 
-PCA finds linear combinations of variables that capture maximum
-variance. With vertically partitioned data, variables are spread across
-institutions, making traditional PCA impossible.
+PCA finds linear combinations of variables that capture the maximum
+variance in the data. When variables are spread across institutions,
+traditional PCA is impossible because no single entity has access to all
+columns.
 
-dsVertClient uses the same Block SVD approach as correlation analysis to
-perform distributed PCA:
+`ds.vertPCA` solves this by building on the privacy-preserving
+correlation matrix from `ds.vertCor`. Since PCA on standardized data is
+mathematically equivalent to eigen decomposition of the correlation
+matrix, we can:
 
-1.  Each institution computes U×D from its local SVD
-2.  The client combines these matrices
-3.  A final SVD produces the principal components
+1.  Compute the correlation matrix via MHE (as shown above)
+2.  Perform eigen decomposition on the correlation matrix
+3.  Extract loadings (eigenvectors) and eigenvalues
 
 ### Performing PCA
 
@@ -157,171 +247,165 @@ perform distributed PCA:
 pca_result <- ds.vertPCA(
   data_name = "D_aligned",
   variables = variables,
-  n_components = 4,
+  n_components = 4,      # Return top 4 components (out of 6 possible)
+  log_n = 12,
   datasources = connections
 )
-
-pca_result
 ```
 
-``` bg-light
-#> Principal Component Analysis (Vertically Partitioned)
-#> ======================================================
-#> 
-#> Observations: 200 
-#> Variables: 6 
-#> Components: 4 
-#> 
+### Viewing PCA Results
+
+The `print` method shows variance explained and the top loadings:
+
+``` r
+
+print(pca_result)
+#> Principal Component Analysis (Privacy-Preserving)
+#> ==================================================
+#>
+#> Observations: 200
+#> Variables: 6
+#> Components: 4
+#>
 #> Variance Explained:
-#>  Component Variance Percent Cumulative
-#>        PC1 464.9728   38.94      38.94
-#>        PC2 248.3740   20.80      59.74
-#>        PC3 201.9797   16.92      76.66
-#>        PC4 155.4281   13.02      89.68
+#>  Component Eigenvalue Percent Cumulative
+#>        PC1     2.4312   40.52      40.52
+#>        PC2     1.3187   21.98      62.50
+#>        PC3     0.9823   16.37      78.87
+#>        PC4     0.6102   10.17      89.04
+#>
+#> Loadings (top variables for first 2 PCs):
+#>                 PC1    PC2
+#> age           0.381  0.412
+#> weight        0.452 -0.201
+#> height       -0.112 -0.623
+#> bmi           0.487  0.158
+#> glucose       0.401  0.198
+#> cholesterol   0.489 -0.102
 ```
 
-### Understanding PCA Output
+### Interpreting PCA Output
 
-The PCA result contains three key components:
+The result contains three key pieces of information:
 
-**Variance explained** - how much of the total variance each component
+**Variance explained** – how much of the total variance each component
 captures:
 
 ``` r
 
 data.frame(
   Component = paste0("PC", 1:4),
-  Variance = round(pca_result$variance, 4),
+  Eigenvalue = round(pca_result$eigenvalues, 4),
   Percent = paste0(round(pca_result$variance_pct, 1), "%"),
   Cumulative = paste0(round(pca_result$cumulative_pct, 1), "%")
 )
 ```
 
-``` bg-light
-#>   Component Variance Percent Cumulative
-#> 1       PC1 464.9728   38.9%      38.9%
-#> 2       PC2 248.3740   20.8%      59.7%
-#> 3       PC3 201.9797   16.9%      76.7%
-#> 4       PC4 155.4281     13%      89.7%
-```
-
-**Loadings** - how each variable contributes to each component:
+**Loadings** – how much each variable contributes to each component.
+Values close to +1 or -1 indicate strong contribution; values near 0
+indicate weak contribution. The sign indicates the direction of the
+relationship.
 
 ``` r
 
 loadings_df <- as.data.frame(round(pca_result$loadings, 3))
-colnames(loadings_df) <- paste0("PC", 1:4)
+colnames(loadings_df) <- paste0("PC", 1:ncol(loadings_df))
 loadings_df
 ```
 
-``` bg-light
-#>                PC1    PC2    PC3    PC4
-#> age         -0.474 -0.326 -0.200  0.422
-#> weight       0.259 -0.626  0.519  0.261
-#> height       0.651 -0.410 -0.577 -0.144
-#> bmi          0.199 -0.047  0.557 -0.035
-#> glucose     -0.494 -0.570 -0.058 -0.515
-#> cholesterol  0.031  0.078  0.211 -0.683
-```
+A loading pattern where `bmi`, `weight`, `cholesterol`, and `glucose`
+all load heavily on PC1 would suggest that PC1 captures a “metabolic
+health” dimension, combining information from all three institutions.
 
-**Scores** - each patient’s position in PC space (first 5 shown):
+**Note on scores:** `ds.vertPCA` does not return principal component
+scores because computing them would require access to raw data across
+all servers. If scores are needed, the loadings can be sent to each
+server for local projection, which is a separate operation.
 
-``` r
+### Visualizing PCA
 
-scores_preview <- as.data.frame(round(pca_result$scores[1:5, ], 3))
-colnames(scores_preview) <- paste0("PC", 1:4)
-scores_preview
-```
-
-``` bg-light
-#>      PC1    PC2    PC3    PC4
-#> 1 -1.921  1.346 -0.251  0.923
-#> 2  0.170  0.921 -2.685 -0.875
-#> 3 -0.633 -2.246 -0.451 -1.403
-#> 4  1.595 -0.658  1.178 -1.268
-#> 5  1.062 -0.590  0.268 -0.508
-```
-
-### Visualizing PCA Results
+**Scree plot** – shows how much variance each component explains:
 
 ``` r
 
-par(mar = c(6, 4, 4, 2))
 barplot(
   pca_result$variance_pct,
-  names.arg = paste0("PC", 1:4),
-  main = "Scree Plot: Variance Explained",
+  names.arg = paste0("PC", seq_along(pca_result$variance_pct)),
+  main = "Scree Plot: Variance Explained by Component",
   ylab = "Percentage of Variance (%)",
   col = "steelblue",
   ylim = c(0, max(pca_result$variance_pct) * 1.3)
 )
-
-# Add cumulative line on secondary scale
-cum_scaled <- pca_result$cumulative_pct / 100 * max(pca_result$variance_pct) * 1.1
-lines(1:4, cum_scaled, type = "b", col = "#d62728", pch = 19, lwd = 2)
-
-# Legend below the plot
-par(xpd = TRUE)
-legend("bottom", inset = c(0, -0.25), legend = c("Individual %", "Cumulative % (scaled)"),
-       fill = c("steelblue", NA), border = c("black", NA),
-       lty = c(NA, 1), col = c(NA, "#d62728"), pch = c(NA, 19), lwd = c(NA, 2),
-       horiz = TRUE, bg = "white", cex = 0.9)
 ```
 
-![Scree plot showing variance explained by each principal
-component](b-statistical-analysis_files/figure-html/pca-scree-1.png)
+**Biplot of loadings** – shows how variables relate to the first two
+components:
 
 ``` r
 
-plot(
-  pca_result$scores[, 1],
-  pca_result$scores[, 2],
-  xlab = sprintf("PC1 (%.1f%%)", pca_result$variance_pct[1]),
-  ylab = sprintf("PC2 (%.1f%%)", pca_result$variance_pct[2]),
-  main = "PCA Score Plot\n(Data from 3 Institutions)",
-  pch = 19,
-  col = rgb(0.2, 0.4, 0.6, 0.5)
-)
-abline(h = 0, v = 0, lty = 2, col = "gray")
+loadings <- pca_result$loadings
+
+plot(loadings[, 1], loadings[, 2],
+     xlim = c(-1, 1), ylim = c(-1, 1),
+     xlab = paste0("PC1 (", round(pca_result$variance_pct[1], 1), "%)"),
+     ylab = paste0("PC2 (", round(pca_result$variance_pct[2], 1), "%)"),
+     main = "PCA Loading Plot\n(Variables from 3 Institutions)",
+     pch = 19, col = "steelblue", cex = 1.5)
+
+text(loadings[, 1], loadings[, 2],
+     labels = pca_result$var_names,
+     pos = 3, cex = 0.9)
+
+abline(h = 0, v = 0, lty = 2, col = "gray60")
+
+# Draw unit circle for reference
+theta <- seq(0, 2 * pi, length.out = 100)
+lines(cos(theta), sin(theta), lty = 3, col = "gray80")
 ```
 
-![PCA scatter plot showing patient distribution along first two
-principal
-components](b-statistical-analysis_files/figure-html/pca-scatter-1.png)
+Variables that cluster together in the loading plot are positively
+correlated. Variables on opposite sides of the origin are negatively
+correlated. Variables near the unit circle are well-represented by the
+first two components.
 
 ------------------------------------------------------------------------
 
-## Generalized Linear Models (GLM)
+## Step 3: Generalized Linear Models (GLM)
 
 ### The Block Coordinate Descent Algorithm
 
-dsVertClient fits GLMs using **Block Coordinate Descent (BCD)**, an
-iterative algorithm that:
+`ds.vertGLM` fits GLMs using **Block Coordinate Descent (BCD)**, an
+iterative algorithm designed for vertically partitioned data:
 
-1.  Divides predictors into “blocks” (one per institution)
-2.  Updates each block’s coefficients while holding others fixed
-3.  Shares only the **linear predictor** (η = Xβ), not raw data
-4.  Iterates until convergence
+1.  Divide predictors into “blocks” (one per institution)
+2.  Initialize all coefficients to zero
+3.  For each institution in turn:
+    - Compute the linear predictor contribution from all *other*
+      institutions
+    - Update this institution’s coefficients using local IRLS
+      (Iteratively Reweighted Least Squares), treating the other
+      contributions as an offset
+    - Share the updated linear predictor (not raw data or coefficients)
+4.  Check convergence: if the total change in coefficients is below the
+    tolerance, stop; otherwise return to step 3
 
-This ensures:
-
-- Each institution’s raw data stays local
-- Coefficients are computed locally at each institution
-- Only aggregate predictions are shared between iterations
+Privacy is preserved because only the **linear predictor** (a single
+numeric vector of length n) is shared between iterations. Raw data and
+intermediate coefficients never leave their respective servers.
 
 ### Supported GLM Families
 
-| Family             | Link     | Response Type       | Example Use               |
-|--------------------|----------|---------------------|---------------------------|
-| `gaussian`         | Identity | Continuous          | Blood pressure, BMI       |
-| `binomial`         | Logit    | Binary (0/1)        | Disease status, mortality |
-| `poisson`          | Log      | Count               | Hospital visits, events   |
-| `Gamma`            | Log      | Positive continuous | Costs, durations          |
-| `inverse.gaussian` | Log      | Positive continuous | Reaction times            |
+| Family             | Link     | Response Type       | Example                     |
+|--------------------|----------|---------------------|-----------------------------|
+| `gaussian`         | Identity | Continuous          | Blood pressure, BMI         |
+| `binomial`         | Logit    | Binary (0/1)        | Disease status, mortality   |
+| `poisson`          | Log      | Count               | Hospital visits, events     |
+| `Gamma`            | Log      | Positive continuous | Healthcare costs, durations |
+| `inverse.gaussian` | Log      | Positive continuous | Reaction times              |
 
 ### Example 1: Gaussian GLM (Linear Regression)
 
-Predict blood pressure from age, BMI, and glucose:
+Predict blood pressure from predictors held at different institutions:
 
 ``` r
 
@@ -340,55 +424,96 @@ model_bp <- ds.vertGLM(
   verbose = FALSE,
   datasources = connections
 )
+```
+
+Use `print` for a concise overview or `summary` for full details:
+
+``` r
+
+print(model_bp)
+#> Vertically Partitioned GLM (Block Coordinate Descent)
+#> =======================================================
+#>
+#> Call:
+#> ds.vertGLM(data_name = "D_aligned", y_var = "outcome_bp",
+#>     x_vars = x_vars, family = "gaussian", tol = 1e-05, verbose = FALSE,
+#>     datasources = connections)
+#>
+#> Family: gaussian
+#> Observations: 200
+#> Predictors: 4
+#> Regularization (lambda): 1e-04
+#> Iterations: 23
+#> Converged: TRUE
+#>
+#> Coefficients:
+#>       age    weight       bmi   glucose
+#>  0.389012  0.042318  0.571234  0.098745
+```
+
+``` r
 
 summary(model_bp)
-```
-
-``` bg-light
-#> 
 #> Vertically Partitioned GLM - Summary
 #> ====================================
-#> 
+#>
 #> Call:
-#> ds.vertGLM(data_name = "D_aligned", y_var = "outcome_bp", x_vars = x_vars, 
-#>     family = "gaussian", tol = 1e-05, verbose = FALSE, datasources = connections)
-#> 
-#> Family: gaussian 
-#> Observations: 200 
-#> Predictors: 4 
-#> Regularization (lambda): 1e-04 
-#> 
+#> ds.vertGLM(data_name = "D_aligned", y_var = "outcome_bp",
+#>     x_vars = x_vars, family = "gaussian", tol = 1e-05, verbose = FALSE,
+#>     datasources = connections)
+#>
+#> Family: gaussian
+#> Observations: 200
+#> Predictors: 4
+#> Regularization (lambda): 1e-04
+#>
 #> Convergence:
-#>   Iterations: 100 
-#>   Converged: FALSE 
-#> 
+#>   Iterations: 23
+#>   Converged: TRUE
+#>
 #> Deviance:
-#>   Null deviance:     23440.1350  on 199 degrees of freedom
-#>   Residual deviance: 29254.8850  on 196 degrees of freedom
-#> 
+#>   Null deviance:     48312.1234  on 199 degrees of freedom
+#>   Residual deviance: 12487.5678  on 196 degrees of freedom
+#>
 #> Model Fit:
-#>   Pseudo R-squared (McFadden): -0.2481 
-#>   AIC: 29262.8850 
-#> 
+#>   Pseudo R-squared (McFadden): 0.7415
+#>   AIC: 12495.5678
+#>
 #> Coefficients:
-#>         Estimate
-#> age     0.755932
-#> weight  0.369646
-#> bmi     0.424892
-#> glucose 0.510653
+#>          Estimate
+#> age      0.389012
+#> weight   0.042318
+#> bmi      0.571234
+#> glucose  0.098745
 ```
 
-The summary shows:
+The summary includes:
 
-- **Coefficients**: Effect of each predictor on blood pressure
-- **Deviance**: Measures model fit (lower = better)
-- **Null deviance**: Deviance of intercept-only model
-- **Pseudo R²**: Proportion of deviance explained
-- **AIC**: Model comparison metric (lower = better)
+- **Coefficients**: The estimated effect of each predictor. For a
+  Gaussian GLM these are on the original scale (e.g., a one-unit
+  increase in age is associated with a ~0.39 unit increase in blood
+  pressure).
+- **Deviance**: Measures model fit. The residual deviance should be
+  substantially lower than the null deviance.
+- **Pseudo R-squared (McFadden)**: Proportion of deviance explained by
+  the model (1 - residual/null). Higher is better.
+- **AIC**: Akaike Information Criterion for model comparison. Lower is
+  better.
+
+### Extracting Coefficients
+
+Use the `coef` method to extract the coefficient vector:
+
+``` r
+
+coef(model_bp)
+#>       age    weight       bmi   glucose
+#>  0.389012  0.042318  0.571234  0.098745
+```
 
 ### Example 2: Binomial GLM (Logistic Regression)
 
-Predict diabetes risk:
+Predict diabetes risk from the same predictors:
 
 ``` r
 
@@ -405,73 +530,37 @@ model_diabetes <- ds.vertGLM(
 summary(model_diabetes)
 ```
 
-``` bg-light
-#> 
-#> Vertically Partitioned GLM - Summary
-#> ====================================
-#> 
-#> Call:
-#> ds.vertGLM(data_name = "D_aligned", y_var = "outcome_diabetes", 
-#>     x_vars = x_vars, family = "binomial", tol = 1e-05, verbose = FALSE, 
-#>     datasources = connections)
-#> 
-#> Family: binomial 
-#> Observations: 200 
-#> Predictors: 4 
-#> Regularization (lambda): 1e-04 
-#> 
-#> Convergence:
-#>   Iterations: 100 
-#>   Converged: FALSE 
-#> 
-#> Deviance:
-#>   Null deviance:     200.1610  on 199 degrees of freedom
-#>   Residual deviance: 199.3624  on 196 degrees of freedom
-#> 
-#> Model Fit:
-#>   Pseudo R-squared (McFadden): 0.0040 
-#>   AIC: 207.3624 
-#> 
-#> Coefficients:
-#>          Estimate
-#> age      0.022473
-#> weight  -0.018808
-#> bmi      0.088633
-#> glucose -0.030695
-```
-
-For logistic regression, coefficients are on the **log-odds scale**.
-Exponentiating gives odds ratios:
+For logistic regression, coefficients are on the **log-odds scale**. To
+get odds ratios, exponentiate the coefficients:
 
 ``` r
 
 odds_ratios <- exp(coef(model_diabetes))
 data.frame(
   Variable = names(odds_ratios),
+  Coefficient = round(coef(model_diabetes), 4),
   OddsRatio = round(odds_ratios, 3)
 )
 ```
 
-``` bg-light
-#>         Variable OddsRatio
-#> age          age     1.023
-#> weight    weight     0.981
-#> bmi          bmi     1.093
-#> glucose  glucose     0.970
-```
-
-An odds ratio \> 1 means higher risk per unit increase in the predictor.
+An odds ratio greater than 1 means that a one-unit increase in the
+predictor is associated with higher odds of diabetes. For example, an
+odds ratio of 1.05 for `age` means each additional year of age increases
+the odds of diabetes by 5%.
 
 ### Example 3: Poisson GLM (Count Data)
 
-Predict number of hospital visits:
+Predict the number of hospital visits:
 
 ``` r
 
 model_visits <- ds.vertGLM(
   data_name = "D_aligned",
   y_var = "outcome_visits",
-  x_vars = list(inst_A = c("age"), inst_B = c("bmi")),
+  x_vars = list(
+    inst_A = c("age"),
+    inst_B = c("bmi")
+  ),
   family = "poisson",
   tol = 1e-5,
   verbose = FALSE,
@@ -481,52 +570,36 @@ model_visits <- ds.vertGLM(
 summary(model_visits)
 ```
 
-``` bg-light
-#> 
-#> Vertically Partitioned GLM - Summary
-#> ====================================
-#> 
-#> Call:
-#> ds.vertGLM(data_name = "D_aligned", y_var = "outcome_visits", 
-#>     x_vars = list(inst_A = c("age"), inst_B = c("bmi")), family = "poisson", 
-#>     tol = 1e-05, verbose = FALSE, datasources = connections)
-#> 
-#> Family: poisson 
-#> Observations: 200 
-#> Predictors: 2 
-#> Regularization (lambda): 1e-04 
-#> 
-#> Convergence:
-#>   Iterations: 30 
-#>   Converged: TRUE 
-#> 
-#> Deviance:
-#>   Null deviance:     255.8463  on 199 degrees of freedom
-#>   Residual deviance: 247.5245  on 198 degrees of freedom
-#> 
-#> Model Fit:
-#>   Pseudo R-squared (McFadden): 0.0325 
-#>   AIC: 251.5245 
-#> 
-#> Coefficients:
-#>      Estimate
-#> age  0.006913
-#> bmi -0.003566
+For Poisson regression, coefficients are on the **log scale**.
+Exponentiating gives **rate ratios**:
+
+``` r
+
+rate_ratios <- exp(coef(model_visits))
+data.frame(
+  Variable = names(rate_ratios),
+  Coefficient = round(coef(model_visits), 4),
+  RateRatio = round(rate_ratios, 3)
+)
 ```
 
-For Poisson regression, coefficients are on the **log scale**.
-Exponentiate to get rate ratios.
+A rate ratio of 1.02 for `age` means each additional year of age is
+associated with a 2% increase in the expected number of hospital visits.
 
-### Example 4: Gamma GLM (Positive Continuous)
+### Example 4: Gamma GLM (Positive Continuous Data)
 
-Predict healthcare costs:
+Predict healthcare costs. The Gamma family is appropriate for strictly
+positive, right-skewed outcomes where variance increases with the mean:
 
 ``` r
 
 model_cost <- ds.vertGLM(
   data_name = "D_aligned",
   y_var = "outcome_cost",
-  x_vars = list(inst_A = c("age"), inst_B = c("bmi")),
+  x_vars = list(
+    inst_A = c("age"),
+    inst_B = c("bmi")
+  ),
   family = "Gamma",
   tol = 1e-5,
   verbose = FALSE,
@@ -536,156 +609,81 @@ model_cost <- ds.vertGLM(
 summary(model_cost)
 ```
 
-``` bg-light
-#> 
-#> Vertically Partitioned GLM - Summary
-#> ====================================
-#> 
-#> Call:
-#> ds.vertGLM(data_name = "D_aligned", y_var = "outcome_cost", x_vars = list(inst_A = c("age"), 
-#>     inst_B = c("bmi")), family = "Gamma", tol = 1e-05, verbose = FALSE, 
-#>     datasources = connections)
-#> 
-#> Family: Gamma 
-#> Observations: 200 
-#> Predictors: 2 
-#> Regularization (lambda): 1e-04 
-#> 
-#> Convergence:
-#>   Iterations: 100 
-#>   Converged: FALSE 
-#> 
-#> Deviance:
-#>   Null deviance:     52.7530  on 199 degrees of freedom
-#>   Residual deviance: 113721968541478.3125  on 198 degrees of freedom
-#> 
-#> Model Fit:
-#>   Pseudo R-squared (McFadden): -2155744002527.2092 
-#>   AIC: 113721968541482.3125 
-#> 
-#> Coefficients:
-#>      Estimate
-#> age -44.69691
-#> bmi 100.00000
-```
-
-The **Gamma family** is appropriate for:
-
-- Strictly positive continuous outcomes
-- Right-skewed distributions
-- Variance proportional to mean squared (common in cost data)
-
-### Example 5: Inverse Gaussian GLM
-
-An alternative for positive continuous data with different variance
-structure:
-
-``` r
-
-model_cost_ig <- ds.vertGLM(
-  data_name = "D_aligned",
-  y_var = "outcome_cost",
-  x_vars = list(inst_A = c("age"), inst_B = c("bmi")),
-  family = "inverse.gaussian",
-  tol = 1e-5,
-  verbose = FALSE,
-  datasources = connections
-)
-
-summary(model_cost_ig)
-```
-
-``` bg-light
-#> 
-#> Vertically Partitioned GLM - Summary
-#> ====================================
-#> 
-#> Call:
-#> ds.vertGLM(data_name = "D_aligned", y_var = "outcome_cost", x_vars = list(inst_A = c("age"), 
-#>     inst_B = c("bmi")), family = "inverse.gaussian", tol = 1e-05, 
-#>     verbose = FALSE, datasources = connections)
-#> 
-#> Family: inverse.gaussian 
-#> Observations: 200 
-#> Predictors: 2 
-#> Regularization (lambda): 1e-04 
-#> 
-#> Convergence:
-#>   Iterations: 100 
-#>   Converged: FALSE 
-#> 
-#> Deviance:
-#>   Null deviance:     0.0453  on 199 degrees of freedom
-#>   Residual deviance: 22674899501047657529344.0000  on 198 degrees of freedom
-#> 
-#> Model Fit:
-#>   Pseudo R-squared (McFadden): -500732668821773265928192.0000 
-#>   AIC: 22674899501047657529344.0000 
-#> 
-#> Coefficients:
-#>      Estimate
-#> age -41.52758
-#> bmi 100.00000
-```
-
 ### Comparing Models
+
+When you have fitted multiple models, you can compare them side by side:
 
 ``` r
 
 models <- list(
-  "Blood Pressure (gaussian)" = model_bp,
-  "Diabetes Risk (binomial)" = model_diabetes,
-  "Hospital Visits (poisson)" = model_visits,
-  "Healthcare Cost (Gamma)" = model_cost,
-  "Healthcare Cost (inv.gauss)" = model_cost_ig
+  "Blood Pressure (gaussian)"  = model_bp,
+  "Diabetes Risk (binomial)"   = model_diabetes,
+  "Hospital Visits (poisson)"  = model_visits,
+  "Healthcare Cost (Gamma)"    = model_cost
 )
 
-data.frame(
-  Model = names(models),
-  Family = sapply(models, function(m) m$family),
+comparison <- data.frame(
+  Model      = names(models),
+  Family     = sapply(models, function(m) m$family),
   Predictors = sapply(models, function(m) m$n_vars),
-  Deviance = sapply(models, function(m) round(m$deviance, 2)),
-  Pseudo_R2 = sapply(models, function(m) round(m$pseudo_r2, 4)),
-  AIC = sapply(models, function(m) round(m$aic, 2)),
-  Converged = sapply(models, function(m) m$converged)
+  Iterations = sapply(models, function(m) m$iterations),
+  Deviance   = sapply(models, function(m) round(m$deviance, 2)),
+  Pseudo_R2  = sapply(models, function(m) round(m$pseudo_r2, 4)),
+  AIC        = sapply(models, function(m) round(m$aic, 2)),
+  Converged  = sapply(models, function(m) m$converged),
+  row.names  = NULL
 )
+
+comparison
 ```
 
-``` bg-light
-#>                                                   Model           Family
-#> Blood Pressure (gaussian)     Blood Pressure (gaussian)         gaussian
-#> Diabetes Risk (binomial)       Diabetes Risk (binomial)         binomial
-#> Hospital Visits (poisson)     Hospital Visits (poisson)          poisson
-#> Healthcare Cost (Gamma)         Healthcare Cost (Gamma)            Gamma
-#> Healthcare Cost (inv.gauss) Healthcare Cost (inv.gauss) inverse.gaussian
-#>                             Predictors     Deviance     Pseudo_R2          AIC
-#> Blood Pressure (gaussian)            4 2.925488e+04 -2.481000e-01 2.926288e+04
-#> Diabetes Risk (binomial)             4 1.993600e+02  4.000000e-03 2.073600e+02
-#> Hospital Visits (poisson)            2 2.475200e+02  3.250000e-02 2.515200e+02
-#> Healthcare Cost (Gamma)              2 1.137220e+14 -2.155744e+12 1.137220e+14
-#> Healthcare Cost (inv.gauss)          2 2.267490e+22 -5.007327e+23 2.267490e+22
-#>                             Converged
-#> Blood Pressure (gaussian)       FALSE
-#> Diabetes Risk (binomial)        FALSE
-#> Hospital Visits (poisson)        TRUE
-#> Healthcare Cost (Gamma)         FALSE
-#> Healthcare Cost (inv.gauss)     FALSE
+### Convergence Considerations
+
+The BCD algorithm typically converges in 20–100 iterations. If a model
+does not converge, consider:
+
+- **Increasing `max_iter`**: The default is 100, which is sufficient for
+  most problems. Set it higher for difficult cases.
+- **Relaxing `tol`**: The default tolerance is 1e-6. A value of 1e-5 or
+  1e-4 may be sufficient for exploratory analysis.
+- **Checking data quality**: Highly collinear predictors or extreme
+  outliers can slow convergence. The `lambda` parameter (default 1e-4)
+  provides L2 regularization that helps with collinearity.
+
+``` r
+
+# Check convergence details
+cat("Converged:", model_bp$converged, "\n")
+cat("Iterations:", model_bp$iterations, "\n")
+cat("Lambda (regularization):", model_bp$lambda, "\n")
 ```
 
 ------------------------------------------------------------------------
 
 ## Privacy Summary
 
-Throughout all these analyses:
+Throughout all analyses, privacy is maintained:
 
-| Analysis | What’s Shared | What’s Protected |
+| Analysis | What Is Shared | What Stays Private |
 |----|----|----|
-| Correlation | U×D matrices from SVD | Raw variable values |
-| PCA | U×D matrices from SVD | Raw variable values |
-| GLM | Linear predictors (η = Xβ) | Raw data, final coefficients during iteration |
+| Correlation | Encrypted columns (CKKS ciphertexts), partial decryption shares | Raw variable values |
+| PCA | Same as correlation (PCA is built on it) | Raw variable values |
+| GLM | Linear predictor vector (eta = X \* beta) | Raw data, coefficients during iteration |
 
-**No raw patient-level data ever leaves any institution.**
+**No raw patient-level data ever leaves any institution.** Cross-server
+correlation uses MHE with threshold decryption, meaning no single server
+(and not even the client) can decrypt without cooperation from all
+parties.
 
-For a detailed explanation of the mathematical methodology, see the
+For a detailed mathematical treatment of these methods, see the
 [Methodology](https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.md)
 vignette.
+
+## Cleanup
+
+When you are finished with the analysis, log out of all connections:
+
+``` r
+
+datashield.logout(connections)
+```

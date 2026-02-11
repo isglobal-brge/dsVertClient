@@ -16,7 +16,7 @@ Functions for aligning records across servers
 Distributed correlation and principal component analysis
 
 - [`ds.vertCor()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md)
-  : Correlation Matrix for Vertically Partitioned Data
+  : Privacy-Preserving Correlation for Vertically Partitioned Data
 - [`ds.vertPCA()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertPCA.md)
   : Principal Component Analysis for Vertically Partitioned Data
 
@@ -37,6 +37,8 @@ Privacy-preserving GLM fitting
 
 Helper methods
 
+- [`print(`*`<ds.cor>`*`)`](https://isglobal-brge.github.io/dsVertClient/reference/print.ds.cor.md)
+  : Print Method for ds.cor Objects
 - [`print(`*`<ds.pca>`*`)`](https://isglobal-brge.github.io/dsVertClient/reference/print.ds.pca.md)
   : Print Method for ds.pca Objects
 - [`print(`*`<ds.id.validation>`*`)`](https://isglobal-brge.github.io/dsVertClient/reference/print.ds.id.validation.md)

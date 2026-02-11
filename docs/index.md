@@ -1,6 +1,4 @@
-# dsVertClient
-
-DataSHIELD Functions for Vertically Partitioned Data
+# dsVertClient: DataSHIELD Client Functions for Vertically Partitioned Data
 
 [![License:
 MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -16,13 +14,25 @@ This package provides user-friendly functions for:
 
 - **ID Validation**: Check identifier format consistency before
   alignment
-- **Record Matching**: Align records across servers using secure hashing
+- **Record Alignment**: Align records across servers using secure
+  hashing
 - **Correlation Analysis**: Compute correlation matrices using
-  distributed Block SVD
-- **Principal Component Analysis**: Perform PCA across distributed data
+  **Multiparty Homomorphic Encryption (MHE)** with threshold decryption
+- **Principal Component Analysis**: Perform PCA from the MHE-based
+  correlation matrix
 - **Generalized Linear Models**: Fit GLMs using Block Coordinate Descent
   (5 families)
-- **Model Diagnostics**: Deviance, pseudo R-squared, and AIC metrics
+
+## Security Guarantees
+
+The MHE-based correlation uses the CKKS homomorphic encryption scheme
+with **threshold decryption**:
+
+| Property | What it prevents |
+|----|----|
+| **Client privacy** | The researcher CANNOT decrypt any individual data. Only aggregate statistics (correlation coefficients) are revealed after all servers cooperate. |
+| **Server privacy** | Each server’s raw data never leaves the server. Other servers only see encrypted ciphertexts (opaque). |
+| **Collusion resistance** | Even K-1 colluding servers cannot decrypt without the K-th server’s key share. Full decryption requires ALL K servers. |
 
 ## Installation
 
@@ -39,10 +49,10 @@ devtools::install_github("isglobal-brge/dsVertClient")
 library(dsVertClient)
 library(DSI)
 
-# Connect to DataSHIELD servers
+# Connect to Opal/DataSHIELD servers
 conns <- datashield.login(logindata)
 
-# 1. Validate ID format consistency (recommended)
+# 1. Validate ID format consistency
 validation <- ds.validateIdFormat("D", "patient_id", datasources = conns)
 print(validation)
 
@@ -52,16 +62,18 @@ ds.alignRecords("D", "patient_id", ref_hashes$hashes, "D_aligned", datasources =
 
 # 3. Define which variables are on which server
 variables <- list(
-  server1 = c("age", "weight"),
-  server2 = c("height", "bmi"),
-  server3 = c("glucose", "cholesterol")
+  hospital_A = c("age", "bmi"),
+  hospital_B = c("glucose", "systolic_bp"),
+  hospital_C = c("cholesterol", "hdl")
 )
 
-# 4. Compute correlation matrix
-cor_matrix <- ds.vertCor("D_aligned", variables, datasources = conns)
+# 4. Compute correlation matrix (MHE with threshold decryption)
+cor_result <- ds.vertCor("D_aligned", variables, datasources = conns)
+print(cor_result)
 
 # 5. Perform PCA
 pca <- ds.vertPCA("D_aligned", variables, n_components = 3, datasources = conns)
+print(pca)
 
 # 6. Fit a GLM
 model <- ds.vertGLM("D_aligned", "outcome", variables,
@@ -79,9 +91,39 @@ datashield.logout(conns)
 | `ds.validateIdFormat` | Validate identifier format consistency across servers |
 | `ds.hashId` | Get hashed identifiers from a server |
 | `ds.alignRecords` | Align records across servers to match hashes |
-| `ds.vertCor` | Compute correlation matrix across servers |
-| `ds.vertPCA` | Perform Principal Component Analysis |
-| `ds.vertGLM` | Fit Generalized Linear Models |
+| `ds.vertCor` | Compute cross-server correlation matrix via MHE threshold decryption |
+| `ds.vertPCA` | Perform PCA from the MHE-based correlation matrix |
+| `ds.vertGLM` | Fit Generalized Linear Models via Block Coordinate Descent |
+
+## Workflow: Validate → Align → Analyze
+
+     ┌───────────┐   ┌──────────────┐   ┌───────────────────────────┐
+     │ Validate  │──▶│    Align     │──▶│        Analyze            │
+     │ ID format │   │   records    │   │  ds.vertCor (MHE)         │
+     │           │   │ (hash-based) │   │  ds.vertPCA               │
+     │           │   │              │   │  ds.vertGLM (BCD)         │
+     └───────────┘   └──────────────┘   └───────────────────────────┘
+
+## MHE Correlation: How It Works
+
+The 6-phase threshold MHE protocol:
+
+1.  **Key Generation**: Each server generates its own secret key share
+    and public key share. Party 0 creates the Common Reference
+    Polynomial (CRP).
+2.  **Key Combination**: Public key shares are combined into a
+    Collective Public Key (CPK). Encryption under the CPK requires ALL
+    servers for decryption.
+3.  **Encryption**: Each server standardizes its data (Z-scores) and
+    encrypts columns under the CPK.
+4.  **Local Correlation**: Within-server correlations are computed in
+    plaintext.
+5.  **Cross-Server Correlation**: For each server pair (A, B): server A
+    computes Z_A \* Enc(Z_B) homomorphically. Each server provides a
+    partial decryption share. The client fuses all shares to recover the
+    inner product.
+6.  **Assembly**: The full p x p correlation matrix is assembled from
+    local and cross-server blocks.
 
 ## Supported GLM Families
 
@@ -93,78 +135,12 @@ datashield.logout(conns)
 | `Gamma`            | Log      | Positive continuous data (costs, times) |
 | `inverse.gaussian` | Log      | Positive continuous with high variance  |
 
-## Record Matching Workflow
-
-``` r
-
-# Step 0 (Optional): Validate ID formats
-validation <- ds.validateIdFormat("D", "patient_id", datasources = conns)
-if (!validation$valid) {
-  print(validation$warnings)
-}
-
-# Step 1: Get reference hashes from one server
-ref_hashes <- ds.hashId("D", "patient_id", datasource = conns["server1"])
-
-# Step 2: Align all servers to match these hashes
-ds.alignRecords("D", "patient_id", ref_hashes$hashes,
-                newobj = "D_aligned", datasources = conns)
-
-# Now all servers have aligned data in "D_aligned"
-```
-
-## Correlation and PCA
-
-The package uses **Block Singular Value Decomposition** for distributed
-correlation and PCA:
-
-``` r
-
-# Correlation
-cor_matrix <- ds.vertCor("D_aligned", variables, datasources = conns)
-
-# PCA with variance explained
-pca <- ds.vertPCA("D_aligned", variables, n_components = 4, datasources = conns)
-print(pca)  # Shows variance explained by each component
-
-# Plot first two components
-plot(pca$scores[,1], pca$scores[,2],
-     xlab = paste0("PC1 (", round(pca$variance_pct[1], 1), "%)"),
-     ylab = paste0("PC2 (", round(pca$variance_pct[2], 1), "%)"))
-```
-
-## Generalized Linear Models
-
-Fit GLMs using **Block Coordinate Descent**:
-
-``` r
-
-# Linear regression (Gaussian)
-model_linear <- ds.vertGLM("D_aligned", "continuous_outcome", x_vars,
-                           family = "gaussian", datasources = conns)
-
-# Logistic regression (Binomial)
-model_logistic <- ds.vertGLM("D_aligned", "binary_outcome", x_vars,
-                             family = "binomial", datasources = conns)
-
-# Poisson regression
-model_poisson <- ds.vertGLM("D_aligned", "count_outcome", x_vars,
-                            family = "poisson", datasources = conns)
-
-# Gamma regression (for positive continuous data)
-model_gamma <- ds.vertGLM("D_aligned", "cost", x_vars,
-                          family = "Gamma", datasources = conns)
-
-# View results with model diagnostics
-summary(model_linear)
-# Shows: coefficients, deviance, null deviance, pseudo R-squared, AIC
-```
-
 ## Requirements
 
 - R \>= 4.0.0
 - DSI package
-- dsVert package installed on DataSHIELD servers
+- jsonlite package
+- dsVert package installed on DataSHIELD servers (Opal/Rock)
 
 ## Documentation
 
@@ -176,19 +152,24 @@ summary(model_linear)
   Correlation, PCA, and GLMs
 - [Methodology](https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.html):
   Mathematical details
+- [Security
+  Validation](https://isglobal-brge.github.io/dsVertClient/articles/d-security-validation.html):
+  MHE security analysis and local vs Opal comparison
 
 ## Authors
 
-- David Sarrat González
+- David Sarrat Gonzalez
 - Miron Banjac
-- Juan R González
+- Juan R Gonzalez
 
 ## References
 
-- van Kesteren, E.J. et al. (2019). [Privacy-preserving generalized
-  linear models using distributed block coordinate
-  descent](https://arxiv.org/abs/1911.03183). arXiv:1911.03183.
-- Iwen, M. & Ong, B.W. (2016). [A distributed and incremental SVD
-  algorithm for agglomerative data analysis on large
-  networks](https://doi.org/10.1137/16M1058467). SIAM Journal on Matrix
-  Analysis and Applications.
+- Mouchet, C. et al. (2021). “Multiparty Homomorphic Encryption from
+  Ring-Learning-With-Errors”. *Proceedings on Privacy Enhancing
+  Technologies (PETS)*.
+- Cheon, J.H. et al. (2017). “Homomorphic Encryption for Arithmetic of
+  Approximate Numbers”. *ASIACRYPT 2017*.
+- van Kesteren, E.J. et al. (2019). “Privacy-preserving generalized
+  linear models using distributed block coordinate descent”.
+  arXiv:1911.03183.
+- Lattigo v6: <https://github.com/tuneinsight/lattigo>

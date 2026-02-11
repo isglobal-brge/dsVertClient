@@ -2,319 +2,465 @@
 
 ## What is Vertical Data Partitioning?
 
-In traditional **horizontal partitioning**, different institutions hold
-data for *different patients* with the *same variables*. For example,
-Hospital A has 1000 patients and Hospital B has 2000 different patients,
-but both measure the same things (age, blood pressure, etc.).
+In traditional **horizontal partitioning** (the standard DataSHIELD
+scenario), different institutions hold data for *different patients*
+with the *same variables*. For example, Hospital A has 1,000 patients
+and Hospital B has 2,000 different patients, but both measure the same
+things (age, blood pressure, lab results, etc.).
 
-**Vertical partitioning** is different: multiple institutions hold data
-for the *same patients* but with *different variables*. This commonly
-occurs when:
+**Vertical partitioning** is fundamentally different: multiple
+institutions hold data for the *same patients* but with *different
+variables*. This commonly occurs when:
 
-- A hospital has clinical data (diagnoses, treatments)
-- A laboratory has biomarker measurements
-- A research center has genomic data
-- A government agency has demographic data
+- A hospital has clinical data (diagnoses, treatments, vital signs)
+- A laboratory has biomarker measurements (glucose, cholesterol, HbA1c)
+- A research center has genomic or imaging data
+- A government registry has demographic and socioeconomic data
 
-All these institutions have records for the same individuals, identified
-by a common ID (e.g., national health number), but each holds different
-pieces of information.
+All of these institutions have records for the same individuals, linked
+by a common identifier (e.g., national health number), but each holds
+different pieces of information.
 
-### Example: Three Institutions with Shared Patients
+### Illustrative Example
 
-**Hospital A**
+Consider three institutions that each hold data for the same set of
+patients:
 
-| ID  | Age | Weight |
-|:---:|:---:|:------:|
-| P1  | 45  |   70   |
-| P2  | 52  |   85   |
-| P3  | 38  |   62   |
+| Institution           | Role          | Variables                   |
+|-----------------------|---------------|-----------------------------|
+| **Hospital A**        | Clinical care | age, weight, blood pressure |
+| **Laboratory B**      | Lab testing   | glucose, cholesterol, HbA1c |
+| **Research Center C** | Genomics      | gene_score_1, gene_score_2  |
 
-**Laboratory B**
-
-| ID  | Glucose | HDL |
-|:---:|:-------:|:---:|
-| P1  |   95    | 55  |
-| P2  |   110   | 42  |
-| P3  |   88    | 61  |
-
-**Research Center C**
-
-| ID  | Gene1 | Gene2 |
-|:---:|:-----:|:-----:|
-| P1  |  0.2  |  0.8  |
-| P2  |  0.5  |  0.3  |
-| P3  |  0.1  |  0.9  |
-
-*Same patients (P1, P2, P3) but different variables at each
-institution.*
+A researcher wants to study whether genetic markers (at Center C) are
+associated with metabolic outcomes (at Lab B), controlling for
+demographics (at Hospital A). Answering this question requires combining
+variables from all three institutions – but the data cannot be pooled
+due to privacy regulations.
 
 ## The Privacy Challenge
 
 To analyze relationships between variables held by different
 institutions (e.g., “Does glucose level correlate with genetic
-markers?”), traditionally you would need to:
+markers?”), the traditional approach would be to:
 
 1.  Send all data to a central location
-2.  Merge the datasets
-3.  Perform the analysis
+2.  Merge the datasets by patient identifier
+3.  Perform the analysis on the combined table
 
-This approach has serious privacy and legal concerns:
+This centralization approach raises serious concerns:
 
-- **Patient privacy**: Sensitive data leaves protected environments
-- **Legal barriers**: GDPR and other regulations restrict data transfer
-- **Trust issues**: Institutions may not trust each other with their
-  data
+- **Patient privacy**: Sensitive health data leaves its protected
+  environment
+- **Legal barriers**: GDPR, HIPAA, and other regulations restrict data
+  transfers
+- **Trust issues**: Institutions may not trust each other (or a central
+  party) with their data
+- **Data governance**: Each institution may have different consent
+  frameworks
 
 ## The DataSHIELD Solution
 
-**DataSHIELD** is a framework that enables privacy-preserving federated
-analysis. The key principle is:
+[DataSHIELD](https://www.datashield.org/) is a framework for
+privacy-preserving federated analysis. Its key principle is:
 
-> *“Bring the analysis to the data, not the data to the analysis”*
+> *“Bring the analysis to the data, not the data to the analysis.”*
 
 Instead of moving data, DataSHIELD:
 
 1.  Sends analysis commands to each server
-2.  Each server executes computations locally on its data
-3.  Only **aggregate results** (never individual-level data) are
-    returned
-4.  The client combines these aggregates to produce final results
+2.  Each server executes computations locally on its own data
+3.  Only **non-disclosive aggregate results** are returned to the
+    analyst
+4.  The analyst’s client combines these aggregates to produce the final
+    result
 
 **dsVertClient** extends DataSHIELD specifically for **vertically
-partitioned data**, implementing:
+partitioned data**, adding three capabilities that standard DataSHIELD
+does not provide:
 
-- Privacy-preserving record alignment via cryptographic hashing
-- Distributed correlation and PCA using Block SVD
-- Distributed GLM fitting using Block Coordinate Descent
+- **Privacy-preserving record alignment** via cryptographic hashing
+- **Cross-server correlation and PCA** using Multiparty Homomorphic
+  Encryption (MHE)
+- **Distributed GLM fitting** using Block Coordinate Descent (BCD)
 
-------------------------------------------------------------------------
+## Prerequisites
 
-## Our Test Environment
+Before using dsVertClient, you need:
 
-For this tutorial, we have a simulated environment with **3
-institutions** and **200 patients**. Each institution holds different
-variables for the same patients:
+1.  **R (\>= 4.0.0)** installed on your local machine
+2.  **dsVertClient** installed (the client-side package you run locally)
+3.  **dsVert** installed on each Opal server (the server-side companion
+    package)
+4.  **Opal servers** set up and accessible, each hosting one data
+    partition
+5.  Login credentials (username, password, URL) for each Opal server
 
-| Institution | Role       | Variables            |
-|-------------|------------|----------------------|
-| **inst_A**  | Hospital   | age, weight          |
-| **inst_B**  | Clinic     | height, bmi          |
-| **inst_C**  | Laboratory | glucose, cholesterol |
-
-All institutions also store outcome variables (blood pressure, diabetes
-status, hospital visits, costs) which will be used for GLM examples.
-
-### Connecting to Servers
-
-We connect to the DataSHIELD servers and assign the data to a symbol
-`D`:
+Install the client package from GitHub:
 
 ``` r
 
-# Build login credentials for each server
-builder <- newDSLoginBuilder()
-builder$append(server = "inst_A", url = "dslite_server",
-               table = "inst_A", driver = "DSLiteDriver")
-builder$append(server = "inst_B", url = "dslite_server",
-               table = "inst_B", driver = "DSLiteDriver")
-builder$append(server = "inst_C", url = "dslite_server",
-               table = "inst_C", driver = "DSLiteDriver")
-
-# Connect and assign data to symbol "D" on each server
-connections <- datashield.login(builder$build(), assign = TRUE, symbol = "D")
+# install.packages("remotes")
+remotes::install_github("isglobal-brge/dsVertClient")
 ```
 
-### What Each Institution Sees
-
-**Institution A (Hospital)**
-
-| patient_id    | age | weight |
-|:--------------|----:|-------:|
-| PATIENT_00093 |  49 |   94.3 |
-| PATIENT_00091 |  31 |   92.8 |
-| PATIENT_00013 |  52 |   65.8 |
-| PATIENT_00178 |  59 |   54.6 |
-| PATIENT_00066 |  52 |   60.5 |
-
-**Institution B (Clinic)**
-
-| patient_id    | height |  bmi |
-|:--------------|-------:|-----:|
-| PATIENT_00003 |  159.4 | 28.2 |
-| PATIENT_00167 |  167.0 | 22.4 |
-| PATIENT_00105 |  169.5 | 21.7 |
-| PATIENT_00045 |  174.3 | 24.7 |
-| PATIENT_00132 |  151.4 | 32.8 |
-
-**Institution C (Laboratory)**
-
-| patient_id    | glucose | cholesterol |
-|:--------------|--------:|------------:|
-| PATIENT_00134 |   136.6 |       180.9 |
-| PATIENT_00099 |   131.5 |       216.2 |
-| PATIENT_00184 |   101.7 |       237.5 |
-| PATIENT_00145 |   125.6 |       223.6 |
-| PATIENT_00041 |   119.1 |       223.1 |
-
-Notice how:
-
-- Each institution has **different variables**
-- The **patient order is different** at each institution
-- The same patient (e.g., PATIENT_00093) appears at different row
-  positions
-
-This is realistic: institutions store data independently and don’t
-coordinate their internal ordering.
-
 ------------------------------------------------------------------------
 
-## Step 1: Validating Identifier Formats
+## Connecting to Opal Servers
 
-Before aligning records, we verify that patient identifiers have
-consistent formats across all institutions. Common problems include:
+In a real deployment, each institution runs an
+[Opal](https://www.obiba.org/pages/products/opal/) server that hosts its
+data behind a firewall. The analyst connects to all servers from a local
+R session using the DSI (DataSHIELD Interface) package.
 
-- Different ID formats (e.g., “001” vs “1” vs “P001”)
-- Leading/trailing whitespace
-- Missing values or duplicates
+### Building Login Credentials
+
+Use
+[`DSI::newDSLoginBuilder()`](https://datashield.github.io/DSI/reference/newDSLoginBuilder.html)
+to assemble the connection details for each server. Each entry specifies
+the server name, its URL, the table containing the data, and
+authentication credentials:
 
 ``` r
 
-validation_result <- ds.validateIdFormat(
+library(dsVertClient)
+library(DSI)
+
+builder <- DSI::newDSLoginBuilder()
+
+builder$append(
+  server = "hospital_A",
+  url = "https://opal-hospital-a.example.org",
+  user = "analyst",
+  password = "secret_A",
+  table = "project.clinical_data"
+)
+
+builder$append(
+  server = "lab_B",
+  url = "https://opal-lab-b.example.org",
+  user = "analyst",
+  password = "secret_B",
+  table = "project.lab_results"
+)
+
+builder$append(
+  server = "research_C",
+  url = "https://opal-research-c.example.org",
+  user = "analyst",
+  password = "secret_C",
+  table = "project.genomic_data"
+)
+```
+
+### Logging In
+
+The
+[`datashield.login()`](https://datashield.github.io/DSI/reference/datashield.login.html)
+call establishes connections to all servers simultaneously and assigns
+the data to a server-side symbol (here `"D"`):
+
+``` r
+
+connections <- DSI::datashield.login(
+  logins = builder$build(),
+  assign = TRUE,
+  symbol = "D"
+)
+```
+
+After this call, each server has a data frame called `D` in its R
+session. The analyst never sees the raw data – only the server-side
+symbol name.
+
+------------------------------------------------------------------------
+
+## Step 1: Validate Identifier Formats
+
+Before aligning records across servers, it is important to verify that
+patient identifiers have a consistent format at every institution.
+Common pitfalls include:
+
+- Different ID formats across institutions (e.g., `"001"` vs `"1"` vs
+  `"P-001"`)
+- Leading or trailing whitespace
+- Missing values or duplicate identifiers
+- Type mismatches (numeric vs character)
+
+The
+[`ds.validateIdFormat()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.validateIdFormat.md)
+function checks all of these without revealing the actual identifier
+values:
+
+``` r
+
+validation <- ds.validateIdFormat(
   data_name = "D",
   id_col = "patient_id",
   datasources = connections
 )
 
-validation_result
+print(validation)
 ```
 
-``` bg-light
-#> 
-#> Identifier Format Validation
-#> ============================
-#> 
-#> Overall Status: VALID 
-#> Format Consistency: Yes 
-#> 
-#> Server Details:
-#>  server n_obs n_unique n_missing  id_class
-#>  inst_A   200      200         0 character
-#>  inst_B   200      200         0 character
-#>  inst_C   200      200         0 character
-#>                                                  format_signature
-#>  8d404dbb1d0a33a5bf77b9f34bfabf2e0930831a8dfd5dfa57302c6bbb345ac1
-#>  8d404dbb1d0a33a5bf77b9f34bfabf2e0930831a8dfd5dfa57302c6bbb345ac1
-#>  8d404dbb1d0a33a5bf77b9f34bfabf2e0930831a8dfd5dfa57302c6bbb345ac1
+The output reports, for each server:
+
+- **n_obs**: Total number of records
+- **n_unique**: Number of unique identifiers (should equal n_obs)
+- **n_missing**: Number of missing identifiers (should be 0)
+- **format_signature**: A hashed summary of the ID format (should match
+  across servers)
+
+If the `valid` field is `TRUE`, formats are consistent and you can
+proceed to alignment. If issues are detected, the `warnings` field will
+describe what needs to be fixed.
+
+You can also validate against a specific pattern:
+
+``` r
+
+validation <- ds.validateIdFormat(
+  data_name = "D",
+  id_col = "patient_id",
+  pattern = "^PATIENT_[0-9]{5}$",
+  datasources = connections
+)
 ```
-
-**What we’re looking for:**
-
-- **n_obs**: Same number of observations across all institutions
-- **n_unique**: Should equal n_obs (no duplicates)
-- **n_missing**: Should be 0
-- **format_signature**: Should be identical across institutions
 
 ------------------------------------------------------------------------
 
 ## Step 2: Privacy-Preserving Record Alignment
 
-### The Problem
+### Why Alignment is Needed
 
 Even though all institutions have data for the same patients, the
-records are in different order. To analyze relationships across
-variables (e.g., correlation between age and glucose), we need
-corresponding records to be in the same position.
+records are stored in different orders. Institution A might have patient
+“P042” at row 1, while Institution B has the same patient at row 157. To
+compute cross-server statistics (e.g., correlation between age at
+Hospital A and glucose at Lab B), corresponding records must be in the
+same row position at every server.
 
-**But we cannot simply share patient IDs!** That would violate privacy.
+**But we cannot simply share patient IDs between servers.** That would
+expose potentially sensitive identifiers across institutional
+boundaries.
 
 ### The Solution: Cryptographic Hashing
 
-Instead of sharing actual IDs, we:
+dsVertClient aligns records using SHA-256 cryptographic hashing:
 
-1.  **Hash all IDs** using SHA-256 (a one-way cryptographic function)
-2.  **Share only the hashes** - these cannot be reversed to reveal
-    original IDs
-3.  **Reorder records** at each institution to match a reference order
+1.  One server is designated as the **reference** server
+2.  The reference server hashes all of its patient identifiers using
+    SHA-256
+3.  The hashed values are sent to the other servers (hashes are one-way
+    – the original IDs cannot be recovered)
+4.  Each server hashes its own identifiers, matches them against the
+    reference hashes, and reorders its data accordingly
+5.  After alignment, all servers have records in the same order, with
+    only the shared patients retained
 
-| Original ID     | →   | SHA-256 Hash                         |
-|-----------------|-----|--------------------------------------|
-| `PATIENT_00042` | →   | `a7f3b9c2d8e1f4a5...` (64 hex chars) |
+| Original ID     | SHA-256 Hash                              |
+|-----------------|-------------------------------------------|
+| `PATIENT_00042` | `a7f3b9c2d8e1f4a5...` (64 hex characters) |
 
-The hash is shared safely - the original ID cannot be recovered from it.
+Given only the hash, recovering the original identifier is
+computationally infeasible.
 
-### Step 2a: Get Reference Hashes
+### Step 2a: Obtain Reference Hashes
 
-First, we obtain hashed identifiers from one institution (which becomes
-our reference):
+Choose one server as the reference and retrieve its hashed identifiers:
 
 ``` r
 
-reference_hashes <- ds.hashId(
+ref_hashes <- ds.hashId(
   data_name = "D",
   id_col = "patient_id",
   algo = "sha256",
-  datasource = connections["inst_A"]
+  datasource = connections["hospital_A"]
 )
+
+# ref_hashes$n      -- number of hashed identifiers
+# ref_hashes$hashes -- character vector of SHA-256 hashes
 ```
 
-We retrieved 200 hashed identifiers.
+### Step 2b: Align All Servers
 
-### Step 2b: Align All Institutions
+Send the reference hashes to all servers (including the reference server
+itself). Each server will:
 
-Now we send the reference hashes to all institutions. Each institution:
-
-1.  Computes hashes of its own IDs
-2.  Reorders its records to match the reference hash order
-3.  Removes any records not in the reference set
+1.  Hash its own identifiers using the same algorithm
+2.  Match them against the reference hashes
+3.  Reorder its data to match the reference order
+4.  Drop any records not present in the reference set
+5.  Store the result in a new server-side data frame
 
 ``` r
 
 ds.alignRecords(
   data_name = "D",
   id_col = "patient_id",
-  reference_hashes = reference_hashes$hashes,
+  reference_hashes = ref_hashes$hashes,
   newobj = "D_aligned",
   datasources = connections
 )
 ```
 
-### Verifying Alignment
+The function prints alignment statistics for each server, for example:
 
-``` r
+    Server 'hospital_A': 200 of 200 records matched (100.0%)
+    Server 'lab_B': 195 of 200 records matched (97.5%)
+    Server 'research_C': 198 of 200 records matched (99.0%)
 
-alignment_counts <- sapply(names(connections), function(inst) {
-  count_result <- DSI::datashield.aggregate(
-    connections[inst],
-    call("getObsCountDS", "D_aligned")
-  )
-  count_result[[1]]$n_obs
-})
+If a server matches fewer than 100% of records, it means some reference
+patients are not present at that institution. Only the intersection
+(patients present at all institutions) is retained.
 
-data.frame(Institution = names(alignment_counts), Records = alignment_counts, row.names = NULL)
-```
+After alignment, every server has a data frame called `D_aligned` with:
 
-``` bg-light
-#>   Institution Records
-#> 1      inst_A     200
-#> 2      inst_B     200
-#> 3      inst_C     200
-```
-
-All institutions now have:
-
-- The **same number of records**
-- Records in the **same order** (corresponding to the same patients)
-- Ready for **cross-institutional analysis**
+- The **same number of rows**
+- Rows in the **same order** (each row position corresponds to the same
+  patient)
+- Ready for **cross-server statistical analysis**
 
 ------------------------------------------------------------------------
 
-## Next Steps
+## Why Multiparty Homomorphic Encryption (MHE) is Needed
 
-Now that records are aligned, we can perform statistical analyses:
+With records aligned, you might wonder: can we simply compute statistics
+by exchanging summary values between servers? For some analyses, such as
+fitting a GLM via Block Coordinate Descent, sharing aggregate linear
+predictor contributions is sufficient and does not reveal
+individual-level data.
 
-- [**Statistical
-  Analysis**](https://isglobal-brge.github.io/dsVertClient/articles/b-statistical-analysis.md):
-  Correlation, PCA, and GLMs
-- [**Methodology**](https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.md):
-  Mathematical details behind the algorithms
+However, for **cross-server correlation and PCA**, the situation is more
+delicate. Computing the correlation between a variable on Server A and a
+variable on Server B fundamentally requires combining information about
+individual observations across servers. Standard summary statistics
+(means, variances) computed on each server separately are not enough –
+the cross-server covariance requires knowledge of paired values.
+
+dsVertClient solves this using **Multiparty Homomorphic Encryption
+(MHE)** with threshold decryption. The protocol works as follows:
+
+1.  **Key generation**: Each server generates a secret key share and a
+    public key share. No single server (or the analyst) holds the
+    complete decryption key.
+
+2.  **Collective public key**: The public key shares are combined into a
+    Collective Public Key (CPK). Data encrypted under the CPK can only
+    be decrypted when *all* servers cooperate.
+
+3.  **Encrypted computation**: Each server standardizes its data,
+    encrypts the columns under the CPK, and shares the ciphertexts.
+    Another server can then compute the encrypted cross-product
+    (correlation numerator) homomorphically – that is, by operating
+    directly on ciphertexts without ever decrypting the data.
+
+4.  **Threshold decryption**: The encrypted result is partially
+    decrypted by each server using its secret key share. The analyst
+    collects all partial shares and fuses them to recover only the final
+    aggregate statistic (the correlation coefficient). No individual
+    data values are ever revealed.
+
+This approach provides strong security guarantees:
+
+- **No single point of trust**: Even the analyst cannot decrypt
+  individual data
+- **Collusion resistance**: Any K-1 colluding servers cannot decrypt
+  without the K-th server
+- **Minimal disclosure**: Only the final correlation coefficients are
+  revealed
+
+The
+[`ds.vertCor()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md)
+and
+[`ds.vertPCA()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertPCA.md)
+functions handle this entire MHE protocol automatically. From the
+analyst’s perspective, the interface is straightforward:
+
+``` r
+
+# Define which variables are on which server
+variables <- list(
+  hospital_A  = c("age", "weight"),
+  lab_B       = c("glucose", "cholesterol"),
+  research_C  = c("gene_score_1", "gene_score_2")
+)
+
+# Compute the full 6x6 correlation matrix across all servers
+cor_result <- ds.vertCor(
+  data_name = "D_aligned",
+  variables = variables,
+  datasources = connections
+)
+
+print(cor_result)
+```
+
+The GLM function,
+[`ds.vertGLM()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGLM.md),
+uses a different approach (Block Coordinate Descent) that does not
+require MHE, because it only shares linear predictor contributions
+rather than encrypted individual values:
+
+``` r
+
+model <- ds.vertGLM(
+  data_name = "D_aligned",
+  y_var = "outcome_bp",
+  x_vars = list(
+    hospital_A = c("age", "weight"),
+    lab_B      = c("glucose"),
+    research_C = c("gene_score_1")
+  ),
+  family = "gaussian",
+  datasources = connections
+)
+
+summary(model)
+```
+
+------------------------------------------------------------------------
+
+## Logging Out
+
+When your analysis is complete, close all server connections:
+
+``` r
+
+DSI::datashield.logout(connections)
+```
+
+------------------------------------------------------------------------
+
+## Summary of the Workflow
+
+A typical dsVertClient analysis follows these steps:
+
+1.  **Connect** to Opal servers using
+    [`DSI::datashield.login()`](https://datashield.github.io/DSI/reference/datashield.login.html)
+2.  **Validate** identifier formats with
+    [`ds.validateIdFormat()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.validateIdFormat.md)
+3.  **Hash** identifiers on a reference server with
+    [`ds.hashId()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.hashId.md)
+4.  **Align** records across all servers with
+    [`ds.alignRecords()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.alignRecords.md)
+5.  **Analyze** using
+    [`ds.vertCor()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md),
+    [`ds.vertPCA()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertPCA.md),
+    or
+    [`ds.vertGLM()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGLM.md)
+6.  **Disconnect** with
+    [`DSI::datashield.logout()`](https://datashield.github.io/DSI/reference/datashield.logout.html)
+
+## Further Reading
+
+- **[Statistical
+  Analysis](https://isglobal-brge.github.io/dsVertClient/articles/b-statistical-analysis.md)**:
+  Detailed examples of correlation, PCA, and GLM (Gaussian, binomial,
+  Poisson, Gamma, inverse Gaussian) with interpretation guidance and
+  visualizations.
+
+- **[Methodology](https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.md)**:
+  Mathematical foundations of Block Coordinate Descent for GLMs, the MHE
+  threshold decryption protocol for correlation/PCA, and the security
+  model.
