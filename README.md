@@ -7,10 +7,12 @@
 **dsVertClient** is a client-side DataSHIELD package that enables privacy-preserving statistical analysis on **vertically partitioned federated data**. In vertical partitioning, different data sources hold different variables (columns) for the same set of observations (rows).
 
 This package provides user-friendly functions for:
+- **ID Validation**: Check identifier format consistency before alignment
 - **Record Matching**: Align records across servers using secure hashing
 - **Correlation Analysis**: Compute correlation matrices using distributed Block SVD
 - **Principal Component Analysis**: Perform PCA across distributed data
-- **Generalized Linear Models**: Fit GLMs using Block Coordinate Descent
+- **Generalized Linear Models**: Fit GLMs using Block Coordinate Descent (5 families)
+- **Model Diagnostics**: Deviance, pseudo R-squared, and AIC metrics
 
 ## Installation
 
@@ -28,26 +30,31 @@ library(DSI)
 # Connect to DataSHIELD servers
 conns <- datashield.login(logindata)
 
-# 1. Align records across servers
+# 1. Validate ID format consistency (recommended)
+validation <- ds.validateIdFormat("D", "patient_id", datasources = conns)
+print(validation)
+
+# 2. Align records across servers
 ref_hashes <- ds.hashId("D", "patient_id", datasource = conns["server1"])
 ds.alignRecords("D", "patient_id", ref_hashes$hashes, "D_aligned", datasources = conns)
 
-# 2. Define which variables are on which server
+# 3. Define which variables are on which server
 variables <- list(
   server1 = c("age", "weight"),
   server2 = c("height", "bmi"),
   server3 = c("glucose", "cholesterol")
 )
 
-# 3. Compute correlation matrix
+# 4. Compute correlation matrix
 cor_matrix <- ds.vertCor("D_aligned", variables, datasources = conns)
 
-# 4. Perform PCA
+# 5. Perform PCA
 pca <- ds.vertPCA("D_aligned", variables, n_components = 3, datasources = conns)
 
-# 5. Fit a GLM
+# 6. Fit a GLM
 model <- ds.vertGLM("D_aligned", "outcome", variables,
                     family = "gaussian", datasources = conns)
+summary(model)
 
 # Disconnect
 datashield.logout(conns)
@@ -57,15 +64,32 @@ datashield.logout(conns)
 
 | Function | Description |
 |----------|-------------|
+| `ds.validateIdFormat` | Validate identifier format consistency across servers |
 | `ds.hashId` | Get hashed identifiers from a server |
 | `ds.alignRecords` | Align records across servers to match hashes |
 | `ds.vertCor` | Compute correlation matrix across servers |
 | `ds.vertPCA` | Perform Principal Component Analysis |
-| `ds.vertGLM` | Fit Generalized Linear Models (gaussian, binomial, poisson) |
+| `ds.vertGLM` | Fit Generalized Linear Models |
+
+## Supported GLM Families
+
+| Family | Link | Use Case |
+|--------|------|----------|
+| `gaussian` | Identity | Continuous outcomes (linear regression) |
+| `binomial` | Logit | Binary outcomes (logistic regression) |
+| `poisson` | Log | Count data |
+| `Gamma` | Log | Positive continuous data (costs, times) |
+| `inverse.gaussian` | Log | Positive continuous with high variance |
 
 ## Record Matching Workflow
 
 ```r
+# Step 0 (Optional): Validate ID formats
+validation <- ds.validateIdFormat("D", "patient_id", datasources = conns)
+if (!validation$valid) {
+  print(validation$warnings)
+}
+
 # Step 1: Get reference hashes from one server
 ref_hashes <- ds.hashId("D", "patient_id", datasource = conns["server1"])
 
@@ -111,9 +135,13 @@ model_logistic <- ds.vertGLM("D_aligned", "binary_outcome", x_vars,
 model_poisson <- ds.vertGLM("D_aligned", "count_outcome", x_vars,
                             family = "poisson", datasources = conns)
 
-# View results
-print(model_linear)
-coef(model_linear)
+# Gamma regression (for positive continuous data)
+model_gamma <- ds.vertGLM("D_aligned", "cost", x_vars,
+                          family = "Gamma", datasources = conns)
+
+# View results with model diagnostics
+summary(model_linear)
+# Shows: coefficients, deviance, null deviance, pseudo R-squared, AIC
 ```
 
 ## Requirements

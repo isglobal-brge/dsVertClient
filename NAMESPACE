@@ -2,9 +2,12 @@
 
 S3method(coef,ds.glm)
 S3method(print,ds.glm)
+S3method(print,ds.id.validation)
 S3method(print,ds.pca)
+S3method(summary,ds.glm)
 export(ds.alignRecords)
 export(ds.hashId)
+export(ds.validateIdFormat)
 export(ds.vertCor)
 export(ds.vertGLM)
 export(ds.vertPCA)
