@@ -131,46 +131,59 @@ ds.vertCor <- function(data_name, variables, log_n = 13, log_scale = 40,
   server_list <- names(variables)
 
   # =========================================================================
-  # Step 1: Key Generation on each server
+  # Step 1: Key Generation (single shared key for all servers)
   # =========================================================================
-  message("Initializing MHE keys on servers...")
+  # NOTE: For proper MHE, each server should generate key shares that are
+  # then combined. Current implementation uses a single shared key pair
+  # for simplicity. The key is generated on the first server.
+  message("Initializing MHE keys...")
 
+  # Generate keys on first server only
+  first_server <- server_list[1]
+  conn_idx <- which(server_names == first_server)
+
+  call_expr <- call("mheKeyGenDS",
+                    party_id = 0L,
+                    num_parties = 1L,
+                    log_n = as.integer(log_n),
+                    log_scale = as.integer(log_scale))
+
+  shared_keys <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
+  if (is.list(shared_keys) && length(shared_keys) == 1) shared_keys <- shared_keys[[1]]
+  message("  Keys generated on ", first_server)
+
+  # All servers use the same keys
   server_keys <- list()
   for (server in server_list) {
-    conn_idx <- which(server_names == server)
-
-    call_expr <- call("mheKeyGenDS",
-                      party_id = 0L,
-                      num_parties = 1L,
-                      log_n = as.integer(log_n),
-                      log_scale = as.integer(log_scale))
-
-    result <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
-    if (is.list(result) && length(result) == 1) result <- result[[1]]
-
-    server_keys[[server]] <- result
-    message("  ", server, ": keys generated")
+    server_keys[[server]] <- shared_keys
   }
 
   # =========================================================================
-  # Step 2: Combine keys on each server
+  # Step 2: Use keys from keygen (single-party mode provides everything)
   # =========================================================================
-  message("Combining keys...")
-
-  server_cpk <- list()
-  for (server in server_list) {
-    conn_idx <- which(server_names == server)
-
+  # In single-party mode (which we use for simplified setup), keygen already
+  # provides the collective_public_key and evaluation_keys directly
+  if (!is.null(shared_keys$collective_public_key)) {
+    message("Using keys from keygen (single-party mode)...")
+    shared_cpk <- list(collective_public_key = shared_keys$collective_public_key)
+  } else {
+    # Multiparty mode: combine public key shares with CRP
+    message("Combining keys (multiparty mode)...")
     call_expr <- call("mheCombineKeysDS",
-                      public_key_shares = server_keys[[server]]$public_key_share,
+                      public_key_shares = shared_keys$public_key_share,
+                      crp = shared_keys$crp,
                       log_n = as.integer(log_n),
                       log_scale = as.integer(log_scale))
 
-    result <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
-    if (is.list(result) && length(result) == 1) result <- result[[1]]
+    shared_cpk <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
+    if (is.list(shared_cpk) && length(shared_cpk) == 1) shared_cpk <- shared_cpk[[1]]
+  }
+  message("  Keys ready")
 
-    server_cpk[[server]] <- result
-    message("  ", server, ": keys combined")
+  # All servers use the same CPK
+  server_cpk <- list()
+  for (server in server_list) {
+    server_cpk[[server]] <- shared_cpk
   }
 
   # =========================================================================
@@ -258,11 +271,13 @@ ds.vertCor <- function(data_name, variables, log_n = 13, log_scale = 40,
       conn_idx_A <- which(server_names == server_A)
 
       # Server A computes cross-product with Server B's encrypted data
+      # Both servers use the same shared key, so decryption works correctly
       call_expr <- call("mheCrossProductDS",
                         plaintext_data_name = data_name,
                         plaintext_variables = variables[[server_A]],
                         encrypted_columns = server_encrypted[[server_B]]$encrypted_columns,
-                        secret_key = server_keys[[server_A]]$secret_key_share,
+                        secret_key = shared_keys$secret_key_share,
+                        evaluation_keys = shared_keys$evaluation_keys,
                         n_obs = as.integer(n_obs),
                         log_n = as.integer(log_n),
                         log_scale = as.integer(log_scale))
