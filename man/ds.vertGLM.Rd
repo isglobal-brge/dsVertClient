@@ -105,7 +105,7 @@ model_logit <- ds.vertGLM("D_aligned", "binary_outcome", x_vars,
 }
 \references{
 van Kesteren, E.J. et al. (2019). Privacy-preserving generalized linear
-models using distributed block coordinate descent. arXiv:1911.05935.
+models using distributed block coordinate descent. arXiv:1911.03183.
 }
 \seealso{
 \code{\link[stats]{glm}} for standard GLM fitting

@@ -1,0 +1,70 @@
+url: https://isglobal-brge.github.io/dsVertClient/
+
+template:
+  bootstrap: 5
+  bootswatch: flatly
+
+footer:
+  structure:
+    left: built_with
+    right: ~
+
+navbar:
+  structure:
+    left: [intro, reference, articles]
+    right: [search, github]
+  components:
+    github:
+      icon: fa-github
+      href: https://github.com/isglobal-brge/dsVertClient
+      aria-label: GitHub
+
+home:
+  title: dsVertClient
+  description: Privacy-Preserving Analysis of Vertically Partitioned Data
+  sidebar:
+    structure: [links, authors, license]
+
+reference:
+  - title: Record Alignment
+    desc: Functions for aligning records across servers
+    contents:
+      - ds.validateIdFormat
+      - ds.hashId
+      - ds.alignRecords
+
+  - title: Correlation and PCA
+    desc: Distributed correlation and principal component analysis
+    contents:
+      - ds.vertCor
+      - ds.vertPCA
+
+  - title: Generalized Linear Models
+    desc: Privacy-preserving GLM fitting
+    contents:
+      - ds.vertGLM
+      - coef.ds.glm
+      - print.ds.glm
+      - summary.ds.glm
+
+  - title: Utility Functions
+    desc: Helper methods
+    contents:
+      - print.ds.pca
+      - print.ds.id.validation
+
+articles:
+  - title: User Guides
+    navbar: ~
+    contents:
+      - a-getting-started
+      - b-statistical-analysis
+      - c-methodology
+
+authors:
+  David Sarrat González:
+    href: https://github.com/davidsarratgonzalez
+  Miron Banjac:
+    href: https://github.com/mironbanjac
+  Juan R González:
+    href: https://github.com/isglobal-brge
