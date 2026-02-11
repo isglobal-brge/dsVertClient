@@ -10,7 +10,7 @@
 #'   and each element is a character vector of predictor variable names
 #'   from that server.
 #' @param family Character string. GLM family: "gaussian", "binomial",
-#'   or "poisson". Default is "gaussian".
+#'   "poisson", "Gamma", or "inverse.gaussian". Default is "gaussian".
 #' @param max_iter Integer. Maximum number of iterations. Default is 100.
 #' @param tol Numeric. Convergence tolerance. Default is 1e-6.
 #' @param lambda Numeric. L2 regularization parameter. Default is 1e-4.
@@ -26,6 +26,10 @@
 #'     \item \code{family}: Family used
 #'     \item \code{n_obs}: Number of observations
 #'     \item \code{n_vars}: Number of predictor variables
+#'     \item \code{deviance}: Residual deviance of the fitted model
+#'     \item \code{null_deviance}: Null deviance (intercept-only model)
+#'     \item \code{pseudo_r2}: McFadden's pseudo R-squared
+#'     \item \code{aic}: Akaike Information Criterion
 #'     \item \code{call}: The matched call
 #'   }
 #'
@@ -95,8 +99,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, family = "gaussian",
     stop("x_vars must be a named list mapping server names to variable vectors",
          call. = FALSE)
   }
-  if (!family %in% c("gaussian", "binomial", "poisson")) {
-    stop("family must be 'gaussian', 'binomial', or 'poisson'", call. = FALSE)
+  if (!family %in% c("gaussian", "binomial", "poisson", "Gamma", "inverse.gaussian")) {
+    stop("family must be 'gaussian', 'binomial', 'poisson', 'Gamma', or 'inverse.gaussian'",
+         call. = FALSE)
   }
 
   # Get datasources
@@ -217,6 +222,33 @@ ds.vertGLM <- function(data_name, y_var, x_vars, family = "gaussian",
                     max_iter, max_diff))
   }
 
+  # Compute total eta for deviance calculation
+  eta_total <- Reduce(`+`, etas)
+
+  # Calculate deviance from first server (response is same on all)
+  deviance_call <- call("glmDevianceDS", data_name, y_var, eta_total, family)
+  deviance_result <- DSI::datashield.aggregate(
+    conns = datasources[conn_idx],
+    expr = deviance_call
+  )
+  if (is.list(deviance_result) && length(deviance_result) == 1) {
+    deviance_result <- deviance_result[[1]]
+  }
+
+  deviance <- deviance_result$deviance
+  null_deviance <- deviance_result$null_deviance
+
+  # Calculate pseudo R-squared (McFadden's)
+  pseudo_r2 <- 1 - (deviance / null_deviance)
+
+  # Calculate AIC: deviance + 2*k (k = number of parameters)
+  aic <- deviance + 2 * n_vars_total
+
+  if (verbose) {
+    message(sprintf("Deviance: %.4f, Null deviance: %.4f, Pseudo R2: %.4f",
+                    deviance, null_deviance, pseudo_r2))
+  }
+
   # Combine coefficients with names
   all_coefs <- numeric()
   all_names <- character()
@@ -235,6 +267,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, family = "gaussian",
     n_obs = n_obs,
     n_vars = n_vars_total,
     lambda = lambda,
+    deviance = deviance,
+    null_deviance = null_deviance,
+    pseudo_r2 = pseudo_r2,
+    aic = aic,
     call = call_matched
   )
 
@@ -266,6 +302,47 @@ print.ds.glm <- function(x, ...) {
   print(round(x$coefficients, 6))
 
   invisible(x)
+}
+
+#' @title Summary Method for ds.glm Objects
+#' @description Prints detailed summary including deviance and fit statistics.
+#' @param object A ds.glm object
+#' @param ... Additional arguments (ignored)
+#' @export
+summary.ds.glm <- function(object, ...) {
+  cat("\nVertically Partitioned GLM - Summary\n")
+  cat("====================================\n\n")
+
+  cat("Call:\n")
+  print(object$call)
+  cat("\n")
+
+  cat("Family:", object$family, "\n")
+  cat("Observations:", object$n_obs, "\n")
+  cat("Predictors:", object$n_vars, "\n")
+  cat("Regularization (lambda):", object$lambda, "\n\n")
+
+  cat("Convergence:\n")
+  cat("  Iterations:", object$iterations, "\n")
+  cat("  Converged:", object$converged, "\n\n")
+
+  cat("Deviance:\n")
+  cat("  Null deviance:    ", sprintf("%.4f", object$null_deviance),
+      " on", object$n_obs - 1, "degrees of freedom\n")
+  cat("  Residual deviance:", sprintf("%.4f", object$deviance),
+      " on", object$n_obs - object$n_vars, "degrees of freedom\n\n")
+
+  cat("Model Fit:\n")
+  cat("  Pseudo R-squared (McFadden):", sprintf("%.4f", object$pseudo_r2), "\n")
+  cat("  AIC:", sprintf("%.4f", object$aic), "\n\n")
+
+  cat("Coefficients:\n")
+  coef_df <- data.frame(
+    Estimate = object$coefficients
+  )
+  print(round(coef_df, 6))
+
+  invisible(object)
 }
 
 #' @title Coefficients Method for ds.glm Objects

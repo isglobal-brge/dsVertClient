@@ -28,7 +28,7 @@ and each element is a character vector of predictor variable names
 from that server.}
 
 \item{family}{Character string. GLM family: "gaussian", "binomial",
-or "poisson". Default is "gaussian".}
+"poisson", "Gamma", or "inverse.gaussian". Default is "gaussian".}
 
 \item{max_iter}{Integer. Maximum number of iterations. Default is 100.}
 
@@ -50,6 +50,10 @@ A list with class "ds.glm" containing:
 \item \code{family}: Family used
 \item \code{n_obs}: Number of observations
 \item \code{n_vars}: Number of predictor variables
+\item \code{deviance}: Residual deviance of the fitted model
+\item \code{null_deviance}: Null deviance (intercept-only model)
+\item \code{pseudo_r2}: McFadden's pseudo R-squared
+\item \code{aic}: Akaike Information Criterion
 \item \code{call}: The matched call
 }
 }
