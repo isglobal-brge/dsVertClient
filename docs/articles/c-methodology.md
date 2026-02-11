@@ -9,80 +9,280 @@ privacy guarantees.
 
 dsVertClient implements three main distributed algorithms:
 
-1.  **Block SVD** - For correlation and PCA
+1.  **Multiparty Homomorphic Encryption (MHE)** - For correlation and
+    PCA via threshold CKKS
 2.  **Block Coordinate Descent (BCD)** - For GLM coefficient estimation
 3.  **Iteratively Reweighted Least Squares (IRLS)** - For non-Gaussian
     GLMs
 
 All methods share a key principle: **decompose computations so each
 institution only sees its own data, while sharing only aggregate
-statistics**.
+statistics or encrypted intermediates**.
 
 ------------------------------------------------------------------------
 
-## Block Singular Value Decomposition (Block SVD)
+## Multiparty Homomorphic Encryption for Correlation
 
 ### The Problem
 
-Given data matrix $`X`$ split column-wise across $`K`$ institutions:
+Given data matrix $`Z`$ split column-wise across $`K`$ institutions:
 
 ``` math
-X = [X_1 | X_2 | ... | X_K]
+Z = [Z_1 | Z_2 | \ldots | Z_K]
 ```
 
-where institution $`k`$ holds $`X_k`$ (its subset of columns), we want
-to compute:
+where institution $`k`$ holds $`Z_k`$ (its subset of standardized
+columns), we want to compute:
 
-- Correlation matrix: $`R = X^T X / (n-1)`$ (for standardized data)
-- Principal components: From SVD of $`X`$
+- Correlation matrix: $`R = Z^T Z / (n-1)`$ (for standardized data with
+  mean 0 and variance 1)
 
-But no institution can see the full $`X`$.
+But no institution can see the full $`Z`$, and we want strong
+cryptographic privacy guarantees for cross-institution correlations.
 
-### The Solution
+### The CKKS Homomorphic Encryption Scheme
 
-The key insight is that we can compute the combined SVD by:
-
-1.  Each institution $`k`$ computes SVD of its own data:
-    $`X_k = U_k D_k V_k^T`$
-2.  Each institution returns $`U_k D_k`$ (the “scores” component)
-3.  The client stacks these: $`[U_1 D_1 | U_2 D_2 | ... | U_K D_K]`$
-4.  A final SVD on this combined matrix yields the global result
-
-**Why this preserves privacy:**
-
-- $`U_k D_k`$ is an aggregate transformation of the data
-- It has the same number of rows as observations but typically far fewer
-  columns
-- Individual data values cannot be recovered from $`U_k D_k`$
-
-### Mathematical Details
-
-For correlation analysis on standardized data (mean=0, sd=1):
+dsVertClient uses the **CKKS scheme** (Cheon-Kim-Kim-Song), a
+homomorphic encryption scheme designed for approximate arithmetic on
+real numbers. CKKS operates over the polynomial ring:
 
 ``` math
-\text{Cor}(X) = \frac{X^T X}{n-1} = \frac{V D^2 V^T}{n-1}
+R = \mathbb{Z}[X] / (X^N + 1)
 ```
 
-The Block SVD approach computes this as:
+where $`N`$ is a power of 2 (controlled by the `log_n` parameter). The
+ring supports **SIMD (Single Instruction, Multiple Data)** encoding: a
+single ciphertext can pack up to $`N/2`$ real-valued slots. For example,
+with `log_n = 12` ($`N = 4096`$), each ciphertext holds up to 2048 real
+numbers.
 
-1.  Stack the partial results:
-    $`M = [U_1 D_1 | U_2 D_2 | ... | U_K D_K]`$
-2.  Compute SVD of $`M`$: $`M = \tilde{U} \tilde{D} \tilde{V}^T`$
-3.  The correlation matrix is:
-    $`R = \tilde{V} \tilde{D}^2 \tilde{V}^T / (n-1)`$
+Key properties of CKKS for our application:
 
-For PCA, the components are:
+- **Approximate arithmetic**: Additions and multiplications on encrypted
+  data introduce small rounding errors (typically $`10^{-3}`$ to
+  $`10^{-4}`$), which is acceptable for statistical correlation
+- **SIMD batching**: An entire column of observations (up to $`N/2`$
+  values) is packed into a single ciphertext, enabling element-wise
+  operations on full vectors in one operation
+- **Security**: Based on the Ring Learning With Errors (RLWE) problem,
+  which is believed to be hard even for quantum computers
 
-- **PC scores**: $`\tilde{U} \tilde{D}`$
-- **PC loadings**: $`\tilde{V}`$
-- **Variance explained**: $`\tilde{D}^2 / (n-1)`$
+### Threshold Decryption
 
-### Reference
+Rather than having a single secret key holder, the MHE protocol uses
+**threshold decryption** via additive secret sharing. The collective
+secret key is split across all $`K`$ parties:
 
-Iwen, M. & Ong, B.W. (2016). [A distributed and incremental SVD
-algorithm for agglomerative data analysis on large
-networks](https://doi.org/10.1137/16M1058467). *SIAM Journal on Matrix
-Analysis and Applications*.
+``` math
+sk = sk_1 + sk_2 + \ldots + sk_K
+```
+
+No single party holds the full secret key. Decryption requires **all**
+$`K`$ parties to cooperate by providing their partial decryption shares.
+This ensures that even $`K-1`$ colluding parties cannot decrypt any
+ciphertext without the remaining party’s cooperation.
+
+### The 6-Phase MHE Protocol
+
+The correlation computation proceeds through six phases:
+
+#### Phase 1: Key Generation
+
+Each party $`k`$ independently generates its own secret key share
+$`sk_k`$. Party 0 additionally generates a **Common Reference Polynomial
+(CRP)** $`a`$, which is a uniformly random element of the polynomial
+ring shared by all parties. Each party computes its public key share:
+
+``` math
+pk_k = (-a \cdot sk_k + e_k, \; a)
+```
+
+where $`e_k`$ is a small error polynomial sampled from a discrete
+Gaussian distribution. The CRP $`a`$ is distributed to all other parties
+so they can generate compatible key shares.
+
+``` r
+
+# Phase 1 happens automatically inside ds.vertCor()
+# Party 0 generates CRP and its key share
+# Other parties receive CRP and generate their key shares
+result <- ds.vertCor(
+  data_name = "D_aligned",
+  variables = list(inst_A = c("age", "weight"), inst_B = c("glucose")),
+  log_n = 12,       # Ring dimension: N = 2^12 = 4096
+  log_scale = 40,   # Precision: ~12 decimal digits
+  datasources = connections
+)
+```
+
+#### Phase 2: Key Combination
+
+The individual public key shares are combined into a **Collective Public
+Key (CPK)**:
+
+``` math
+CPK = \sum_{k=1}^{K} pk_k
+```
+
+Data encrypted under the CPK can only be decrypted when all $`K`$
+parties cooperate. The CPK is distributed to all servers so that any
+server can encrypt data that requires collective decryption.
+
+#### Phase 3: Encryption
+
+Each institution $`k`$ standardizes its columns to Z-scores (mean 0,
+standard deviation 1) and encrypts each column vector $`z_j`$ under the
+collective public key:
+
+``` math
+ct_j = \text{Enc}_{CPK}(z_j)
+```
+
+The CKKS SIMD encoding packs the entire column vector into a single
+ciphertext. For example, 200 patient observations for one variable
+become a single encrypted object.
+
+#### Phase 4: Local Correlation
+
+Within-institution correlations are computed in **plaintext** since no
+data needs to leave the server:
+
+``` math
+R_{kk} = \text{cor}(Z_k)
+```
+
+This is a standard Pearson correlation on the local data. No encryption
+overhead is incurred for these diagonal blocks of the correlation
+matrix.
+
+#### Phase 5: Cross-Product and Threshold Decryption
+
+This is the core cryptographic step. For each pair of institutions
+$`(A, B)`$, institution $`A`$ receives the encrypted columns from
+institution $`B`$ and computes the element-wise product of its plaintext
+column $`z_{A,i}`$ with the encrypted column $`\text{Enc}(z_{B,j})`$:
+
+``` math
+z_{A,i} \cdot \text{Enc}(z_{B,j}) = \text{Enc}(z_{A,i} \odot z_{B,j})
+```
+
+where $`\odot`$ denotes element-wise multiplication across the SIMD
+slots. This is a **plaintext-by-ciphertext multiplication**, which is a
+critical design choice:
+
+> **Plaintext $`\times`$ ciphertext multiplication produces a degree-1
+> ciphertext.** This means no relinearization keys are needed, no
+> ciphertext-ciphertext multiplication occurs, and the noise growth is
+> minimal. This keeps the protocol simple and efficient.
+
+The encrypted product vector $`\text{Enc}(z_{A,i} \odot z_{B,j})`$ must
+then be decrypted to obtain the inner product. This uses **threshold
+decryption**:
+
+1.  The encrypted result is sent to each party $`k`$
+2.  Each party computes a **partial decryption share** using its secret
+    key: $`\text{share}_k = \text{KeySwitch}(sk_k, ct)`$
+3.  The client collects all $`K`$ shares and **fuses** them to recover
+    the plaintext
+
+Concretely, for a RLWE ciphertext $`ct = (ct[0], ct[1])`$, each party
+produces:
+
+``` math
+\text{share}_k = -sk_k \cdot ct[1] + e_k'
+```
+
+where $`e_k'`$ is a fresh smudging noise term. The client fuses all
+shares:
+
+``` math
+m \approx ct[0] + \sum_{k=1}^{K} \text{share}_k
+```
+
+This recovers the plaintext vector $`z_{A,i} \odot z_{B,j}`$ (with small
+CKKS approximation error).
+
+#### Phase 6: Post-Decryption Assembly
+
+After decryption, the client sums the first $`n`$ slots of the recovered
+plaintext to obtain the inner product:
+
+``` math
+\langle z_{A,i}, z_{B,j} \rangle = \sum_{l=1}^{n} (z_{A,i} \odot z_{B,j})_l
+```
+
+The cross-correlation is then:
+
+``` math
+r_{ij} = \frac{\langle z_{A,i}, z_{B,j} \rangle}{n - 1}
+```
+
+The full $`p \times p`$ correlation matrix is assembled from:
+
+- **Diagonal blocks**: Local correlations $`R_{kk}`$ from Phase 4
+  (exact)
+- **Off-diagonal blocks**: Cross-correlations from Phase 5 (approximate,
+  with CKKS error on the order of $`10^{-3}`$ to $`10^{-4}`$)
+
+### Why Plaintext-Ciphertext Multiplication Matters
+
+A crucial design decision in this protocol is that the homomorphic
+computation is limited to **plaintext $`\times`$ ciphertext**
+multiplication. In the CKKS scheme:
+
+- **Ciphertext $`\times`$ ciphertext** multiplication doubles the
+  ciphertext degree (from degree 1 to degree 2), requiring
+  **relinearization keys** to reduce back to degree 1. Generating
+  relinearization keys in the multiparty setting requires additional
+  rounds of interaction.
+- **Plaintext $`\times`$ ciphertext** multiplication keeps the
+  ciphertext at degree 1. No relinearization is needed, no evaluation
+  keys need to be generated collectively, and the protocol remains
+  simple.
+
+This works because institution $`A`$ holds its own data in plaintext and
+only the other institution’s data is encrypted. The element-wise product
+$`z_{A,i} \cdot \text{Enc}(z_{B,j})`$ is exactly the
+plaintext-ciphertext case.
+
+### Security Analysis
+
+The MHE protocol provides the following security guarantees under the
+**semi-honest** (honest-but-curious) adversary model:
+
+**What each party learns:**
+
+| Entity | Sees | Does NOT See |
+|----|----|----|
+| Institution $`A`$ | Its own data $`Z_A`$, encrypted columns $`\text{Enc}(Z_B)`$ from other institutions (opaque ciphertexts) | Raw data $`Z_B`$ from any other institution |
+| Institution $`B`$ | Its own data $`Z_B`$, encrypted cross-products sent for partial decryption (opaque ciphertexts) | Raw data $`Z_A`$, the plaintext cross-products |
+| Client (researcher) | Partial decryption shares (individually meaningless), final aggregate correlations $`r_{ij}`$ | Any individual-level data, any single institution’s raw values |
+
+**Collusion resistance:** Even if $`K-1`$ institutions collude, they
+cannot decrypt any ciphertext without the remaining institution’s secret
+key share. Full decryption requires cooperation from **all** $`K`$
+parties.
+
+**What is revealed:** Only the final correlation coefficients $`r_{ij}`$
+are revealed to the client. These are aggregate statistics over $`n`$
+observations and do not directly reveal individual data points. However,
+as with any statistical release, sufficiently many correlations could
+theoretically allow inference about individuals, so the number of
+variables and observations should be considered.
+
+### References
+
+- Cheon, J.H., Kim, A., Kim, M. & Song, Y. (2017). “Homomorphic
+  Encryption for Arithmetic of Approximate Numbers”. *ASIACRYPT 2017*.
+  [doi:10.1007/978-3-319-70694-8_15](https://doi.org/10.1007/978-3-319-70694-8_15)
+- Mouchet, C., Troncoso-Pastoriza, J., Bossuat, J.P. & Hubaux, J.P.
+  (2021). “Multiparty Homomorphic Encryption from
+  Ring-Learning-With-Errors”. *Proceedings on Privacy Enhancing
+  Technologies (PETS) 2021*.
+  [doi:10.2478/popets-2021-0071](https://doi.org/10.2478/popets-2021-0071)
+- Lattigo v6: A Go library for lattice-based multiparty homomorphic
+  encryption.
+  [github.com/tuneinsight/lattigo](https://github.com/tuneinsight/lattigo)
 
 ------------------------------------------------------------------------
 
@@ -109,16 +309,16 @@ where:
 With vertically partitioned data:
 
 ``` math
-X = [X_1 | X_2 | ... | X_K]
+X = [X_1 | X_2 | \ldots | X_K]
 ```
 ``` math
-\beta = [\beta_1^T, \beta_2^T, ..., \beta_K^T]^T
+\beta = [\beta_1^T, \beta_2^T, \ldots, \beta_K^T]^T
 ```
 
 The linear predictor decomposes as:
 
 ``` math
-\eta = X_1\beta_1 + X_2\beta_2 + ... + X_K\beta_K
+\eta = X_1\beta_1 + X_2\beta_2 + \ldots + X_K\beta_K
 ```
 
 ### The BCD Algorithm
@@ -126,21 +326,21 @@ The linear predictor decomposes as:
 Block Coordinate Descent iteratively updates each block while holding
 others fixed:
 
-    Initialize: β₁ = β₂ = ... = βₖ = 0
+    Initialize: beta_1 = beta_2 = ... = beta_K = 0
 
     Repeat until convergence:
         For each institution k = 1, ..., K:
 
             1. Compute contribution from OTHER institutions:
-               η₋ₖ = Σⱼ≠ₖ Xⱼβⱼ  (shared as aggregate)
+               eta_{-k} = sum_{j != k} X_j * beta_j  (shared as aggregate)
 
             2. Institution k solves locally:
-               βₖ = argmin L(y; η₋ₖ + Xₖβₖ) + λ||βₖ||²
+               beta_k = argmin L(y; eta_{-k} + X_k * beta_k) + lambda * ||beta_k||^2
 
             3. Compute and share new contribution:
-               ηₖ = Xₖβₖ  (shared as aggregate)
+               eta_k = X_k * beta_k  (shared as aggregate)
 
-        Check convergence: Σₖ||βₖⁿᵉʷ - βₖᵒˡᵈ|| < tolerance
+        Check convergence: sum_k ||beta_k_new - beta_k_old|| < tolerance
 
 **Privacy guarantee:** Only the linear predictor contributions
 $`\eta_k`$ are shared, never the raw data $`X_k`$ or intermediate
@@ -216,9 +416,9 @@ To align records across institutions without revealing identifiers:
 
 ### Example
 
-| Original ID     | →   | SHA-256 Hash                          |
+| Original ID     |     | SHA-256 Hash                          |
 |-----------------|-----|---------------------------------------|
-| `PATIENT_00042` | →   | `a3f8c9d2e1b7...` (64 hex characters) |
+| `PATIENT_00042` | -\> | `a3f8c9d2e1b7...` (64 hex characters) |
 
 Given only the hash, recovering “PATIENT_00042” would require:
 
@@ -289,25 +489,37 @@ parties:
 - But may try to infer information from received messages
 - More sophisticated attacks (malicious adversaries) are not addressed
 
+For the MHE-based correlation, semi-honest security means each party
+correctly computes its key shares, encryptions, and partial decryption
+shares, but may attempt to learn about other parties’ data from the
+encrypted values and decryption shares it observes.
+
 ### Numerical Considerations
 
+- **CKKS approximation**: The homomorphic encryption scheme introduces
+  small errors (typically $`10^{-3}`$ to $`10^{-4}`$) in
+  cross-institution correlations. Within-institution correlations are
+  computed in plaintext and are exact.
 - **Convergence**: BCD may require many iterations for ill-conditioned
   data
 - **Regularization**: Small $`\lambda`$ (default 1e-4) prevents singular
   matrices
 - **Scaling**: Very large or very small values may cause numerical
   issues
+- **Ring dimension**: The `log_n` parameter must be large enough to
+  accommodate the number of observations
+  ($`n \leq N/2 = 2^{log\_n - 1}`$)
 
 ### When to Use Each Method
 
-| Scenario                    | Recommended Approach |
-|-----------------------------|----------------------|
-| Exploratory analysis        | Correlation → PCA    |
-| Continuous outcome          | Gaussian GLM         |
-| Binary outcome              | Binomial GLM         |
-| Count data                  | Poisson GLM          |
-| Positive continuous (costs) | Gamma GLM            |
-| High-variance positive data | Inverse Gaussian GLM |
+| Scenario                    | Recommended Approach   |
+|-----------------------------|------------------------|
+| Exploratory analysis        | Correlation (MHE-CKKS) |
+| Continuous outcome          | Gaussian GLM           |
+| Binary outcome              | Binomial GLM           |
+| Count data                  | Poisson GLM            |
+| Positive continuous (costs) | Gamma GLM              |
+| High-variance positive data | Inverse Gaussian GLM   |
 
 ------------------------------------------------------------------------
 
@@ -315,8 +527,9 @@ parties:
 
 dsVertClient enables privacy-preserving analysis through:
 
-1.  **Block SVD**: Combines partial SVD results to compute global
-    correlation/PCA
+1.  **Multiparty Homomorphic Encryption**: Computes cross-institution
+    correlations using threshold CKKS encryption, where no single party
+    can decrypt intermediate results
 2.  **Block Coordinate Descent**: Iteratively updates coefficients,
     sharing only linear predictors
 3.  **Cryptographic Hashing**: Aligns records without revealing
@@ -324,3 +537,17 @@ dsVertClient enables privacy-preserving analysis through:
 
 These methods provide strong privacy guarantees while enabling
 meaningful statistical analysis across vertically partitioned data.
+
+### References
+
+- Cheon, J.H., Kim, A., Kim, M. & Song, Y. (2017). “Homomorphic
+  Encryption for Arithmetic of Approximate Numbers”. *ASIACRYPT 2017*.
+- Mouchet, C., Troncoso-Pastoriza, J., Bossuat, J.P. & Hubaux, J.P.
+  (2021). “Multiparty Homomorphic Encryption from
+  Ring-Learning-With-Errors”. *Proceedings on Privacy Enhancing
+  Technologies (PETS) 2021*.
+- Lattigo v6. Tune Insight SA.
+  [github.com/tuneinsight/lattigo](https://github.com/tuneinsight/lattigo).
+- van Kesteren, E.J. et al. (2019). “Privacy-preserving generalized
+  linear models using distributed block coordinate descent”.
+  *arXiv:1911.03183*.

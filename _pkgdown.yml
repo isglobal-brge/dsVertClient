@@ -50,6 +50,7 @@ reference:
   - title: Utility Functions
     desc: Helper methods
     contents:
+      - print.ds.cor
       - print.ds.pca
       - print.ds.id.validation
 
@@ -60,6 +61,7 @@ articles:
       - a-getting-started
       - b-statistical-analysis
       - c-methodology
+      - d-security-validation
 
 authors:
   David Sarrat González:

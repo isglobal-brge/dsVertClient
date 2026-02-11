@@ -21,7 +21,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">dsVertClient</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -35,8 +35,9 @@
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="../articles/a-getting-started.html">Getting Started with dsVertClient</a></li>
-    <li><a class="dropdown-item" href="../articles/b-statistical-analysis.html">Statistical Analysis</a></li>
+    <li><a class="dropdown-item" href="../articles/b-statistical-analysis.html">Statistical Analysis with dsVertClient</a></li>
     <li><a class="dropdown-item" href="../articles/c-methodology.html">Methodology</a></li>
+    <li><a class="dropdown-item" href="../articles/d-security-validation.html">Security Validation</a></li>
   </ul>
 </li>
       </ul>
@@ -77,7 +78,8 @@ privacy guarantees.</p>
 <p>dsVertClient implements three main distributed algorithms:</p>
 <ol style="list-style-type: decimal">
 <li>
-<strong>Block SVD</strong> - For correlation and PCA</li>
+<strong>Multiparty Homomorphic Encryption (MHE)</strong> - For
+correlation and PCA via threshold CKKS</li>
 <li>
 <strong>Block Coordinate Descent (BCD)</strong> - For GLM
 coefficient estimation</li>
@@ -87,107 +89,361 @@ non-Gaussian GLMs</li>
 </ol>
 <p>All methods share a key principle: <strong>decompose computations so
 each institution only sees its own data, while sharing only aggregate
-statistics</strong>.</p>
+statistics or encrypted intermediates</strong>.</p>
 <hr>
 </div>
 <div class="section level2">
-<h2 id="block-singular-value-decomposition-block-svd">Block Singular Value Decomposition (Block SVD)<a class="anchor" aria-label="anchor" href="#block-singular-value-decomposition-block-svd"></a>
+<h2 id="multiparty-homomorphic-encryption-for-correlation">Multiparty Homomorphic Encryption for Correlation<a class="anchor" aria-label="anchor" href="#multiparty-homomorphic-encryption-for-correlation"></a>
 </h2>
 <div class="section level3">
 <h3 id="the-problem">The Problem<a class="anchor" aria-label="anchor" href="#the-problem"></a>
 </h3>
 <p>Given data matrix
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>X</mi><annotation encoding="application/x-tex">X</annotation></semantics></math>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>Z</mi><annotation encoding="application/x-tex">Z</annotation></semantics></math>
 split column-wise across
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>K</mi><annotation encoding="application/x-tex">K</annotation></semantics></math>
 institutions:</p>
-<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>=</mo><mo stretchy="false" form="prefix">[</mo><msub><mi>X</mi><mn>1</mn></msub><mo stretchy="false" form="prefix">|</mo><msub><mi>X</mi><mn>2</mn></msub><mo stretchy="false" form="prefix">|</mo><mi>.</mi><mi>.</mi><mi>.</mi><mo stretchy="false" form="prefix">|</mo><msub><mi>X</mi><mi>K</mi></msub><mo stretchy="false" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">X = [X_1 | X_2 | ... | X_K]</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>Z</mi><mo>=</mo><mo stretchy="false" form="prefix">[</mo><msub><mi>Z</mi><mn>1</mn></msub><mo stretchy="false" form="prefix">|</mo><msub><mi>Z</mi><mn>2</mn></msub><mo stretchy="false" form="prefix">|</mo><mi>…</mi><mo stretchy="false" form="prefix">|</mo><msub><mi>Z</mi><mi>K</mi></msub><mo stretchy="false" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">Z = [Z_1 | Z_2 | \ldots | Z_K]</annotation></semantics></math></p>
 <p>where institution
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>k</mi><annotation encoding="application/x-tex">k</annotation></semantics></math>
 holds
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>X</mi><mi>k</mi></msub><annotation encoding="application/x-tex">X_k</annotation></semantics></math>
-(its subset of columns), we want to compute:</p>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>Z</mi><mi>k</mi></msub><annotation encoding="application/x-tex">Z_k</annotation></semantics></math>
+(its subset of standardized columns), we want to compute:</p>
 <ul>
 <li>Correlation matrix:
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mo>=</mo><msup><mi>X</mi><mi>T</mi></msup><mi>X</mi><mi>/</mi><mo stretchy="false" form="prefix">(</mo><mi>n</mi><mo>−</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">R = X^T X / (n-1)</annotation></semantics></math>
-(for standardized data)</li>
-<li>Principal components: From SVD of
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>X</mi><annotation encoding="application/x-tex">X</annotation></semantics></math>
-</li>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mo>=</mo><msup><mi>Z</mi><mi>T</mi></msup><mi>Z</mi><mi>/</mi><mo stretchy="false" form="prefix">(</mo><mi>n</mi><mo>−</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">R = Z^T Z / (n-1)</annotation></semantics></math>
+(for standardized data with mean 0 and variance 1)</li>
 </ul>
 <p>But no institution can see the full
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>X</mi><annotation encoding="application/x-tex">X</annotation></semantics></math>.</p>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>Z</mi><annotation encoding="application/x-tex">Z</annotation></semantics></math>,
+and we want strong cryptographic privacy guarantees for
+cross-institution correlations.</p>
 </div>
 <div class="section level3">
-<h3 id="the-solution">The Solution<a class="anchor" aria-label="anchor" href="#the-solution"></a>
+<h3 id="the-ckks-homomorphic-encryption-scheme">The CKKS Homomorphic Encryption Scheme<a class="anchor" aria-label="anchor" href="#the-ckks-homomorphic-encryption-scheme"></a>
 </h3>
-<p>The key insight is that we can compute the combined SVD by:</p>
-<ol style="list-style-type: decimal">
-<li>Each institution
+<p>dsVertClient uses the <strong>CKKS scheme</strong>
+(Cheon-Kim-Kim-Song), a homomorphic encryption scheme designed for
+approximate arithmetic on real numbers. CKKS operates over the
+polynomial ring:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mo>=</mo><mi>ℤ</mi><mo stretchy="false" form="prefix">[</mo><mi>X</mi><mo stretchy="false" form="postfix">]</mo><mi>/</mi><mo stretchy="false" form="prefix">(</mo><msup><mi>X</mi><mi>N</mi></msup><mo>+</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">R = \mathbb{Z}[X] / (X^N + 1)</annotation></semantics></math></p>
+<p>where
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>N</mi><annotation encoding="application/x-tex">N</annotation></semantics></math>
+is a power of 2 (controlled by the <code>log_n</code> parameter). The
+ring supports <strong>SIMD (Single Instruction, Multiple Data)</strong>
+encoding: a single ciphertext can pack up to
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi>/</mi><mn>2</mn></mrow><annotation encoding="application/x-tex">N/2</annotation></semantics></math>
+real-valued slots. For example, with <code>log_n = 12</code>
+(<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>=</mo><mn>4096</mn></mrow><annotation encoding="application/x-tex">N = 4096</annotation></semantics></math>),
+each ciphertext holds up to 2048 real numbers.</p>
+<p>Key properties of CKKS for our application:</p>
+<ul>
+<li>
+<strong>Approximate arithmetic</strong>: Additions and
+multiplications on encrypted data introduce small rounding errors
+(typically
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>3</mn></mrow></msup><annotation encoding="application/x-tex">10^{-3}</annotation></semantics></math>
+to
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>4</mn></mrow></msup><annotation encoding="application/x-tex">10^{-4}</annotation></semantics></math>),
+which is acceptable for statistical correlation</li>
+<li>
+<strong>SIMD batching</strong>: An entire column of observations (up
+to
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mi>/</mi><mn>2</mn></mrow><annotation encoding="application/x-tex">N/2</annotation></semantics></math>
+values) is packed into a single ciphertext, enabling element-wise
+operations on full vectors in one operation</li>
+<li>
+<strong>Security</strong>: Based on the Ring Learning With Errors
+(RLWE) problem, which is believed to be hard even for quantum
+computers</li>
+</ul>
+</div>
+<div class="section level3">
+<h3 id="threshold-decryption">Threshold Decryption<a class="anchor" aria-label="anchor" href="#threshold-decryption"></a>
+</h3>
+<p>Rather than having a single secret key holder, the MHE protocol uses
+<strong>threshold decryption</strong> via additive secret sharing. The
+collective secret key is split across all
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>K</mi><annotation encoding="application/x-tex">K</annotation></semantics></math>
+parties:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>k</mi><mo>=</mo><mi>s</mi><msub><mi>k</mi><mn>1</mn></msub><mo>+</mo><mi>s</mi><msub><mi>k</mi><mn>2</mn></msub><mo>+</mo><mi>…</mi><mo>+</mo><mi>s</mi><msub><mi>k</mi><mi>K</mi></msub></mrow><annotation encoding="application/x-tex">sk = sk_1 + sk_2 + \ldots + sk_K</annotation></semantics></math></p>
+<p>No single party holds the full secret key. Decryption requires
+<strong>all</strong>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>K</mi><annotation encoding="application/x-tex">K</annotation></semantics></math>
+parties to cooperate by providing their partial decryption shares. This
+ensures that even
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>−</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">K-1</annotation></semantics></math>
+colluding parties cannot decrypt any ciphertext without the remaining
+party’s cooperation.</p>
+</div>
+<div class="section level3">
+<h3 id="the-6-phase-mhe-protocol">The 6-Phase MHE Protocol<a class="anchor" aria-label="anchor" href="#the-6-phase-mhe-protocol"></a>
+</h3>
+<p>The correlation computation proceeds through six phases:</p>
+<div class="section level4">
+<h4 id="phase-1-key-generation">Phase 1: Key Generation<a class="anchor" aria-label="anchor" href="#phase-1-key-generation"></a>
+</h4>
+<p>Each party
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>k</mi><annotation encoding="application/x-tex">k</annotation></semantics></math>
-computes SVD of its own data:
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>X</mi><mi>k</mi></msub><mo>=</mo><msub><mi>U</mi><mi>k</mi></msub><msub><mi>D</mi><mi>k</mi></msub><msubsup><mi>V</mi><mi>k</mi><mi>T</mi></msubsup></mrow><annotation encoding="application/x-tex">X_k = U_k D_k V_k^T</annotation></semantics></math>
-</li>
-<li>Each institution returns
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>U</mi><mi>k</mi></msub><msub><mi>D</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">U_k D_k</annotation></semantics></math>
-(the “scores” component)</li>
-<li>The client stacks these:
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">[</mo><msub><mi>U</mi><mn>1</mn></msub><msub><mi>D</mi><mn>1</mn></msub><mo stretchy="false" form="prefix">|</mo><msub><mi>U</mi><mn>2</mn></msub><msub><mi>D</mi><mn>2</mn></msub><mo stretchy="false" form="prefix">|</mo><mi>.</mi><mi>.</mi><mi>.</mi><mo stretchy="false" form="prefix">|</mo><msub><mi>U</mi><mi>K</mi></msub><msub><mi>D</mi><mi>K</mi></msub><mo stretchy="false" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">[U_1 D_1 | U_2 D_2 | ... | U_K D_K]</annotation></semantics></math>
-</li>
-<li>A final SVD on this combined matrix yields the global result</li>
-</ol>
-<p><strong>Why this preserves privacy:</strong></p>
-<ul>
-<li>
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>U</mi><mi>k</mi></msub><msub><mi>D</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">U_k D_k</annotation></semantics></math>
-is an aggregate transformation of the data</li>
-<li>It has the same number of rows as observations but typically far
-fewer columns</li>
-<li>Individual data values cannot be recovered from
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>U</mi><mi>k</mi></msub><msub><mi>D</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">U_k D_k</annotation></semantics></math>
-</li>
-</ul>
+independently generates its own secret key share
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><msub><mi>k</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">sk_k</annotation></semantics></math>.
+Party 0 additionally generates a <strong>Common Reference Polynomial
+(CRP)</strong>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>a</mi><annotation encoding="application/x-tex">a</annotation></semantics></math>,
+which is a uniformly random element of the polynomial ring shared by all
+parties. Each party computes its public key share:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><msub><mi>k</mi><mi>k</mi></msub><mo>=</mo><mo stretchy="false" form="prefix">(</mo><mi>−</mi><mi>a</mi><mo>⋅</mo><mi>s</mi><msub><mi>k</mi><mi>k</mi></msub><mo>+</mo><msub><mi>e</mi><mi>k</mi></msub><mo>,</mo><mspace width="0.278em"></mspace><mi>a</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">pk_k = (-a \cdot sk_k + e_k, \; a)</annotation></semantics></math></p>
+<p>where
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>e</mi><mi>k</mi></msub><annotation encoding="application/x-tex">e_k</annotation></semantics></math>
+is a small error polynomial sampled from a discrete Gaussian
+distribution. The CRP
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>a</mi><annotation encoding="application/x-tex">a</annotation></semantics></math>
+is distributed to all other parties so they can generate compatible key
+shares.</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Phase 1 happens automatically inside ds.vertCor()</span></span>
+<span><span class="co"># Party 0 generates CRP and its key share</span></span>
+<span><span class="co"># Other parties receive CRP and generate their key shares</span></span>
+<span><span class="va">result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertCor.html">ds.vertCor</a></span><span class="op">(</span></span>
+<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>,</span>
+<span>  variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>inst_A <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"weight"</span><span class="op">)</span>, inst_B <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glucose"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  log_n <span class="op">=</span> <span class="fl">12</span>,       <span class="co"># Ring dimension: N = 2^12 = 4096</span></span>
+<span>  log_scale <span class="op">=</span> <span class="fl">40</span>,   <span class="co"># Precision: ~12 decimal digits</span></span>
+<span>  datasources <span class="op">=</span> <span class="va">connections</span></span>
+<span><span class="op">)</span></span></code></pre></div>
 </div>
-<div class="section level3">
-<h3 id="mathematical-details">Mathematical Details<a class="anchor" aria-label="anchor" href="#mathematical-details"></a>
-</h3>
-<p>For correlation analysis on standardized data (mean=0, sd=1):</p>
-<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext mathvariant="normal">Cor</mtext><mo stretchy="false" form="prefix">(</mo><mi>X</mi><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mfrac><mrow><msup><mi>X</mi><mi>T</mi></msup><mi>X</mi></mrow><mrow><mi>n</mi><mo>−</mo><mn>1</mn></mrow></mfrac><mo>=</mo><mfrac><mrow><mi>V</mi><msup><mi>D</mi><mn>2</mn></msup><msup><mi>V</mi><mi>T</mi></msup></mrow><mrow><mi>n</mi><mo>−</mo><mn>1</mn></mrow></mfrac></mrow><annotation encoding="application/x-tex">\text{Cor}(X) = \frac{X^T X}{n-1} = \frac{V D^2 V^T}{n-1}</annotation></semantics></math></p>
-<p>The Block SVD approach computes this as:</p>
+<div class="section level4">
+<h4 id="phase-2-key-combination">Phase 2: Key Combination<a class="anchor" aria-label="anchor" href="#phase-2-key-combination"></a>
+</h4>
+<p>The individual public key shares are combined into a
+<strong>Collective Public Key (CPK)</strong>:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>P</mi><mi>K</mi><mo>=</mo><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>K</mi></munderover><mi>p</mi><msub><mi>k</mi><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">CPK = \sum_{k=1}^{K} pk_k</annotation></semantics></math></p>
+<p>Data encrypted under the CPK can only be decrypted when all
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>K</mi><annotation encoding="application/x-tex">K</annotation></semantics></math>
+parties cooperate. The CPK is distributed to all servers so that any
+server can encrypt data that requires collective decryption.</p>
+</div>
+<div class="section level4">
+<h4 id="phase-3-encryption">Phase 3: Encryption<a class="anchor" aria-label="anchor" href="#phase-3-encryption"></a>
+</h4>
+<p>Each institution
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>k</mi><annotation encoding="application/x-tex">k</annotation></semantics></math>
+standardizes its columns to Z-scores (mean 0, standard deviation 1) and
+encrypts each column vector
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>z</mi><mi>j</mi></msub><annotation encoding="application/x-tex">z_j</annotation></semantics></math>
+under the collective public key:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>c</mi><msub><mi>t</mi><mi>j</mi></msub><mo>=</mo><msub><mtext mathvariant="normal">Enc</mtext><mrow><mi>C</mi><mi>P</mi><mi>K</mi></mrow></msub><mo stretchy="false" form="prefix">(</mo><msub><mi>z</mi><mi>j</mi></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">ct_j = \text{Enc}_{CPK}(z_j)</annotation></semantics></math></p>
+<p>The CKKS SIMD encoding packs the entire column vector into a single
+ciphertext. For example, 200 patient observations for one variable
+become a single encrypted object.</p>
+</div>
+<div class="section level4">
+<h4 id="phase-4-local-correlation">Phase 4: Local Correlation<a class="anchor" aria-label="anchor" href="#phase-4-local-correlation"></a>
+</h4>
+<p>Within-institution correlations are computed in
+<strong>plaintext</strong> since no data needs to leave the server:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>R</mi><mrow><mi>k</mi><mi>k</mi></mrow></msub><mo>=</mo><mtext mathvariant="normal">cor</mtext><mo stretchy="false" form="prefix">(</mo><msub><mi>Z</mi><mi>k</mi></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">R_{kk} = \text{cor}(Z_k)</annotation></semantics></math></p>
+<p>This is a standard Pearson correlation on the local data. No
+encryption overhead is incurred for these diagonal blocks of the
+correlation matrix.</p>
+</div>
+<div class="section level4">
+<h4 id="phase-5-cross-product-and-threshold-decryption">Phase 5: Cross-Product and Threshold Decryption<a class="anchor" aria-label="anchor" href="#phase-5-cross-product-and-threshold-decryption"></a>
+</h4>
+<p>This is the core cryptographic step. For each pair of institutions
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">(</mo><mi>A</mi><mo>,</mo><mi>B</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">(A, B)</annotation></semantics></math>,
+institution
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>A</mi><annotation encoding="application/x-tex">A</annotation></semantics></math>
+receives the encrypted columns from institution
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>B</mi><annotation encoding="application/x-tex">B</annotation></semantics></math>
+and computes the element-wise product of its plaintext column
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>z</mi><mrow><mi>A</mi><mo>,</mo><mi>i</mi></mrow></msub><annotation encoding="application/x-tex">z_{A,i}</annotation></semantics></math>
+with the encrypted column
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext mathvariant="normal">Enc</mtext><mo stretchy="false" form="prefix">(</mo><msub><mi>z</mi><mrow><mi>B</mi><mo>,</mo><mi>j</mi></mrow></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">\text{Enc}(z_{B,j})</annotation></semantics></math>:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mrow><mi>A</mi><mo>,</mo><mi>i</mi></mrow></msub><mo>⋅</mo><mtext mathvariant="normal">Enc</mtext><mo stretchy="false" form="prefix">(</mo><msub><mi>z</mi><mrow><mi>B</mi><mo>,</mo><mi>j</mi></mrow></msub><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mtext mathvariant="normal">Enc</mtext><mo stretchy="false" form="prefix">(</mo><msub><mi>z</mi><mrow><mi>A</mi><mo>,</mo><mi>i</mi></mrow></msub><mo>⊙</mo><msub><mi>z</mi><mrow><mi>B</mi><mo>,</mo><mi>j</mi></mrow></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">z_{A,i} \cdot \text{Enc}(z_{B,j}) = \text{Enc}(z_{A,i} \odot z_{B,j})</annotation></semantics></math></p>
+<p>where
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>⊙</mi><annotation encoding="application/x-tex">\odot</annotation></semantics></math>
+denotes element-wise multiplication across the SIMD slots. This is a
+<strong>plaintext-by-ciphertext multiplication</strong>, which is a
+critical design choice:</p>
+<blockquote>
+<p><strong>Plaintext
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>×</mi><annotation encoding="application/x-tex">\times</annotation></semantics></math>
+ciphertext multiplication produces a degree-1 ciphertext.</strong> This
+means no relinearization keys are needed, no ciphertext-ciphertext
+multiplication occurs, and the noise growth is minimal. This keeps the
+protocol simple and efficient.</p>
+</blockquote>
+<p>The encrypted product vector
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext mathvariant="normal">Enc</mtext><mo stretchy="false" form="prefix">(</mo><msub><mi>z</mi><mrow><mi>A</mi><mo>,</mo><mi>i</mi></mrow></msub><mo>⊙</mo><msub><mi>z</mi><mrow><mi>B</mi><mo>,</mo><mi>j</mi></mrow></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">\text{Enc}(z_{A,i} \odot z_{B,j})</annotation></semantics></math>
+must then be decrypted to obtain the inner product. This uses
+<strong>threshold decryption</strong>:</p>
 <ol style="list-style-type: decimal">
-<li>Stack the partial results:
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mo stretchy="false" form="prefix">[</mo><msub><mi>U</mi><mn>1</mn></msub><msub><mi>D</mi><mn>1</mn></msub><mo stretchy="false" form="prefix">|</mo><msub><mi>U</mi><mn>2</mn></msub><msub><mi>D</mi><mn>2</mn></msub><mo stretchy="false" form="prefix">|</mo><mi>.</mi><mi>.</mi><mi>.</mi><mo stretchy="false" form="prefix">|</mo><msub><mi>U</mi><mi>K</mi></msub><msub><mi>D</mi><mi>K</mi></msub><mo stretchy="false" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">M = [U_1 D_1 | U_2 D_2 | ... | U_K D_K]</annotation></semantics></math>
+<li>The encrypted result is sent to each party
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>k</mi><annotation encoding="application/x-tex">k</annotation></semantics></math>
 </li>
-<li>Compute SVD of
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>M</mi><annotation encoding="application/x-tex">M</annotation></semantics></math>:
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>M</mi><mo>=</mo><mover><mi>U</mi><mo accent="true">̃</mo></mover><mover><mi>D</mi><mo accent="true">̃</mo></mover><msup><mover><mi>V</mi><mo accent="true">̃</mo></mover><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">M = \tilde{U} \tilde{D} \tilde{V}^T</annotation></semantics></math>
+<li>Each party computes a <strong>partial decryption share</strong>
+using its secret key:
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mtext mathvariant="normal">share</mtext><mi>k</mi></msub><mo>=</mo><mtext mathvariant="normal">KeySwitch</mtext><mo stretchy="false" form="prefix">(</mo><mi>s</mi><msub><mi>k</mi><mi>k</mi></msub><mo>,</mo><mi>c</mi><mi>t</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">\text{share}_k = \text{KeySwitch}(sk_k, ct)</annotation></semantics></math>
 </li>
-<li>The correlation matrix is:
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mo>=</mo><mover><mi>V</mi><mo accent="true">̃</mo></mover><msup><mover><mi>D</mi><mo accent="true">̃</mo></mover><mn>2</mn></msup><msup><mover><mi>V</mi><mo accent="true">̃</mo></mover><mi>T</mi></msup><mi>/</mi><mo stretchy="false" form="prefix">(</mo><mi>n</mi><mo>−</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">R = \tilde{V} \tilde{D}^2 \tilde{V}^T / (n-1)</annotation></semantics></math>
-</li>
+<li>The client collects all
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>K</mi><annotation encoding="application/x-tex">K</annotation></semantics></math>
+shares and <strong>fuses</strong> them to recover the plaintext</li>
 </ol>
-<p>For PCA, the components are:</p>
+<p>Concretely, for a RLWE ciphertext
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>c</mi><mi>t</mi><mo>=</mo><mo stretchy="false" form="prefix">(</mo><mi>c</mi><mi>t</mi><mo stretchy="false" form="prefix">[</mo><mn>0</mn><mo stretchy="false" form="postfix">]</mo><mo>,</mo><mi>c</mi><mi>t</mi><mo stretchy="false" form="prefix">[</mo><mn>1</mn><mo stretchy="false" form="postfix">]</mo><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">ct = (ct[0], ct[1])</annotation></semantics></math>,
+each party produces:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mtext mathvariant="normal">share</mtext><mi>k</mi></msub><mo>=</mo><mi>−</mi><mi>s</mi><msub><mi>k</mi><mi>k</mi></msub><mo>⋅</mo><mi>c</mi><mi>t</mi><mo stretchy="false" form="prefix">[</mo><mn>1</mn><mo stretchy="false" form="postfix">]</mo><mo>+</mo><msubsup><mi>e</mi><mi>k</mi><mo>′</mo></msubsup></mrow><annotation encoding="application/x-tex">\text{share}_k = -sk_k \cdot ct[1] + e_k'</annotation></semantics></math></p>
+<p>where
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msubsup><mi>e</mi><mi>k</mi><mo>′</mo></msubsup><annotation encoding="application/x-tex">e_k'</annotation></semantics></math>
+is a fresh smudging noise term. The client fuses all shares:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi><mo>≈</mo><mi>c</mi><mi>t</mi><mo stretchy="false" form="prefix">[</mo><mn>0</mn><mo stretchy="false" form="postfix">]</mo><mo>+</mo><munderover><mo>∑</mo><mrow><mi>k</mi><mo>=</mo><mn>1</mn></mrow><mi>K</mi></munderover><msub><mtext mathvariant="normal">share</mtext><mi>k</mi></msub></mrow><annotation encoding="application/x-tex">m \approx ct[0] + \sum_{k=1}^{K} \text{share}_k</annotation></semantics></math></p>
+<p>This recovers the plaintext vector
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mrow><mi>A</mi><mo>,</mo><mi>i</mi></mrow></msub><mo>⊙</mo><msub><mi>z</mi><mrow><mi>B</mi><mo>,</mo><mi>j</mi></mrow></msub></mrow><annotation encoding="application/x-tex">z_{A,i} \odot z_{B,j}</annotation></semantics></math>
+(with small CKKS approximation error).</p>
+</div>
+<div class="section level4">
+<h4 id="phase-6-post-decryption-assembly">Phase 6: Post-Decryption Assembly<a class="anchor" aria-label="anchor" href="#phase-6-post-decryption-assembly"></a>
+</h4>
+<p>After decryption, the client sums the first
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">n</annotation></semantics></math>
+slots of the recovered plaintext to obtain the inner product:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">⟨</mo><msub><mi>z</mi><mrow><mi>A</mi><mo>,</mo><mi>i</mi></mrow></msub><mo>,</mo><msub><mi>z</mi><mrow><mi>B</mi><mo>,</mo><mi>j</mi></mrow></msub><mo stretchy="false" form="postfix">⟩</mo><mo>=</mo><munderover><mo>∑</mo><mrow><mi>l</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><mo stretchy="false" form="prefix">(</mo><msub><mi>z</mi><mrow><mi>A</mi><mo>,</mo><mi>i</mi></mrow></msub><mo>⊙</mo><msub><mi>z</mi><mrow><mi>B</mi><mo>,</mo><mi>j</mi></mrow></msub><msub><mo stretchy="false" form="postfix">)</mo><mi>l</mi></msub></mrow><annotation encoding="application/x-tex">\langle z_{A,i}, z_{B,j} \rangle = \sum_{l=1}^{n} (z_{A,i} \odot z_{B,j})_l</annotation></semantics></math></p>
+<p>The cross-correlation is then:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><mo>=</mo><mfrac><mrow><mo stretchy="false" form="prefix">⟨</mo><msub><mi>z</mi><mrow><mi>A</mi><mo>,</mo><mi>i</mi></mrow></msub><mo>,</mo><msub><mi>z</mi><mrow><mi>B</mi><mo>,</mo><mi>j</mi></mrow></msub><mo stretchy="false" form="postfix">⟩</mo></mrow><mrow><mi>n</mi><mo>−</mo><mn>1</mn></mrow></mfrac></mrow><annotation encoding="application/x-tex">r_{ij} = \frac{\langle z_{A,i}, z_{B,j} \rangle}{n - 1}</annotation></semantics></math></p>
+<p>The full
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>×</mo><mi>p</mi></mrow><annotation encoding="application/x-tex">p \times p</annotation></semantics></math>
+correlation matrix is assembled from:</p>
 <ul>
 <li>
-<strong>PC scores</strong>:
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>U</mi><mo accent="true">̃</mo></mover><mover><mi>D</mi><mo accent="true">̃</mo></mover></mrow><annotation encoding="application/x-tex">\tilde{U} \tilde{D}</annotation></semantics></math>
-</li>
+<strong>Diagonal blocks</strong>: Local correlations
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>R</mi><mrow><mi>k</mi><mi>k</mi></mrow></msub><annotation encoding="application/x-tex">R_{kk}</annotation></semantics></math>
+from Phase 4 (exact)</li>
 <li>
-<strong>PC loadings</strong>:
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>V</mi><mo accent="true">̃</mo></mover><annotation encoding="application/x-tex">\tilde{V}</annotation></semantics></math>
-</li>
-<li>
-<strong>Variance explained</strong>:
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mover><mi>D</mi><mo accent="true">̃</mo></mover><mn>2</mn></msup><mi>/</mi><mo stretchy="false" form="prefix">(</mo><mi>n</mi><mo>−</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">\tilde{D}^2 / (n-1)</annotation></semantics></math>
-</li>
+<strong>Off-diagonal blocks</strong>: Cross-correlations from Phase
+5 (approximate, with CKKS error on the order of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>3</mn></mrow></msup><annotation encoding="application/x-tex">10^{-3}</annotation></semantics></math>
+to
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>4</mn></mrow></msup><annotation encoding="application/x-tex">10^{-4}</annotation></semantics></math>)</li>
 </ul>
 </div>
+</div>
 <div class="section level3">
-<h3 id="reference">Reference<a class="anchor" aria-label="anchor" href="#reference"></a>
+<h3 id="why-plaintext-ciphertext-multiplication-matters">Why Plaintext-Ciphertext Multiplication Matters<a class="anchor" aria-label="anchor" href="#why-plaintext-ciphertext-multiplication-matters"></a>
 </h3>
-<p>Iwen, M. &amp; Ong, B.W. (2016). <a href="https://doi.org/10.1137/16M1058467" class="external-link">A distributed and incremental
-SVD algorithm for agglomerative data analysis on large networks</a>.
-<em>SIAM Journal on Matrix Analysis and Applications</em>.</p>
+<p>A crucial design decision in this protocol is that the homomorphic
+computation is limited to <strong>plaintext
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>×</mi><annotation encoding="application/x-tex">\times</annotation></semantics></math>
+ciphertext</strong> multiplication. In the CKKS scheme:</p>
+<ul>
+<li>
+<strong>Ciphertext
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>×</mi><annotation encoding="application/x-tex">\times</annotation></semantics></math>
+ciphertext</strong> multiplication doubles the ciphertext degree (from
+degree 1 to degree 2), requiring <strong>relinearization keys</strong>
+to reduce back to degree 1. Generating relinearization keys in the
+multiparty setting requires additional rounds of interaction.</li>
+<li>
+<strong>Plaintext
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>×</mi><annotation encoding="application/x-tex">\times</annotation></semantics></math>
+ciphertext</strong> multiplication keeps the ciphertext at degree 1. No
+relinearization is needed, no evaluation keys need to be generated
+collectively, and the protocol remains simple.</li>
+</ul>
+<p>This works because institution
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>A</mi><annotation encoding="application/x-tex">A</annotation></semantics></math>
+holds its own data in plaintext and only the other institution’s data is
+encrypted. The element-wise product
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>z</mi><mrow><mi>A</mi><mo>,</mo><mi>i</mi></mrow></msub><mo>⋅</mo><mtext mathvariant="normal">Enc</mtext><mo stretchy="false" form="prefix">(</mo><msub><mi>z</mi><mrow><mi>B</mi><mo>,</mo><mi>j</mi></mrow></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">z_{A,i} \cdot \text{Enc}(z_{B,j})</annotation></semantics></math>
+is exactly the plaintext-ciphertext case.</p>
+</div>
+<div class="section level3">
+<h3 id="security-analysis">Security Analysis<a class="anchor" aria-label="anchor" href="#security-analysis"></a>
+</h3>
+<p>The MHE protocol provides the following security guarantees under the
+<strong>semi-honest</strong> (honest-but-curious) adversary model:</p>
+<p><strong>What each party learns:</strong></p>
+<table class="table">
+<colgroup>
+<col width="29%">
+<col width="22%">
+<col width="48%">
+</colgroup>
+<thead><tr class="header">
+<th>Entity</th>
+<th>Sees</th>
+<th>Does NOT See</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>Institution
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>A</mi><annotation encoding="application/x-tex">A</annotation></semantics></math>
+</td>
+<td>Its own data
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>Z</mi><mi>A</mi></msub><annotation encoding="application/x-tex">Z_A</annotation></semantics></math>,
+encrypted columns
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mtext mathvariant="normal">Enc</mtext><mo stretchy="false" form="prefix">(</mo><msub><mi>Z</mi><mi>B</mi></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">\text{Enc}(Z_B)</annotation></semantics></math>
+from other institutions (opaque ciphertexts)</td>
+<td>Raw data
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>Z</mi><mi>B</mi></msub><annotation encoding="application/x-tex">Z_B</annotation></semantics></math>
+from any other institution</td>
+</tr>
+<tr class="even">
+<td>Institution
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>B</mi><annotation encoding="application/x-tex">B</annotation></semantics></math>
+</td>
+<td>Its own data
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>Z</mi><mi>B</mi></msub><annotation encoding="application/x-tex">Z_B</annotation></semantics></math>,
+encrypted cross-products sent for partial decryption (opaque
+ciphertexts)</td>
+<td>Raw data
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>Z</mi><mi>A</mi></msub><annotation encoding="application/x-tex">Z_A</annotation></semantics></math>,
+the plaintext cross-products</td>
+</tr>
+<tr class="odd">
+<td>Client (researcher)</td>
+<td>Partial decryption shares (individually meaningless), final
+aggregate correlations
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>r</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><annotation encoding="application/x-tex">r_{ij}</annotation></semantics></math>
+</td>
+<td>Any individual-level data, any single institution’s raw values</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Collusion resistance:</strong> Even if
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi><mo>−</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">K-1</annotation></semantics></math>
+institutions collude, they cannot decrypt any ciphertext without the
+remaining institution’s secret key share. Full decryption requires
+cooperation from <strong>all</strong>
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>K</mi><annotation encoding="application/x-tex">K</annotation></semantics></math>
+parties.</p>
+<p><strong>What is revealed:</strong> Only the final correlation
+coefficients
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>r</mi><mrow><mi>i</mi><mi>j</mi></mrow></msub><annotation encoding="application/x-tex">r_{ij}</annotation></semantics></math>
+are revealed to the client. These are aggregate statistics over
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">n</annotation></semantics></math>
+observations and do not directly reveal individual data points. However,
+as with any statistical release, sufficiently many correlations could
+theoretically allow inference about individuals, so the number of
+variables and observations should be considered.</p>
+</div>
+<div class="section level3">
+<h3 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
+</h3>
+<ul>
+<li>Cheon, J.H., Kim, A., Kim, M. &amp; Song, Y. (2017). “Homomorphic
+Encryption for Arithmetic of Approximate Numbers”. <em>ASIACRYPT
+2017</em>. <a href="https://doi.org/10.1007/978-3-319-70694-8_15" class="external-link">doi:10.1007/978-3-319-70694-8_15</a>
+</li>
+<li>Mouchet, C., Troncoso-Pastoriza, J., Bossuat, J.P. &amp; Hubaux,
+J.P. (2021). “Multiparty Homomorphic Encryption from
+Ring-Learning-With-Errors”. <em>Proceedings on Privacy Enhancing
+Technologies (PETS) 2021</em>. <a href="https://doi.org/10.2478/popets-2021-0071" class="external-link">doi:10.2478/popets-2021-0071</a>
+</li>
+<li>Lattigo v6: A Go library for lattice-based multiparty homomorphic
+encryption. <a href="https://github.com/tuneinsight/lattigo" class="external-link">github.com/tuneinsight/lattigo</a>
+</li>
+</ul>
 <hr>
 </div>
 </div>
@@ -223,30 +479,30 @@ are the coefficients to estimate</li>
 <h3 id="the-distributed-setting">The Distributed Setting<a class="anchor" aria-label="anchor" href="#the-distributed-setting"></a>
 </h3>
 <p>With vertically partitioned data:</p>
-<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>=</mo><mo stretchy="false" form="prefix">[</mo><msub><mi>X</mi><mn>1</mn></msub><mo stretchy="false" form="prefix">|</mo><msub><mi>X</mi><mn>2</mn></msub><mo stretchy="false" form="prefix">|</mo><mi>.</mi><mi>.</mi><mi>.</mi><mo stretchy="false" form="prefix">|</mo><msub><mi>X</mi><mi>K</mi></msub><mo stretchy="false" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">X = [X_1 | X_2 | ... | X_K]</annotation></semantics></math><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>=</mo><mo stretchy="false" form="prefix">[</mo><msubsup><mi>β</mi><mn>1</mn><mi>T</mi></msubsup><mo>,</mo><msubsup><mi>β</mi><mn>2</mn><mi>T</mi></msubsup><mo>,</mo><mi>.</mi><mi>.</mi><mi>.</mi><mo>,</mo><msubsup><mi>β</mi><mi>K</mi><mi>T</mi></msubsup><msup><mo stretchy="false" form="postfix">]</mo><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">\beta = [\beta_1^T, \beta_2^T, ..., \beta_K^T]^T</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>X</mi><mo>=</mo><mo stretchy="false" form="prefix">[</mo><msub><mi>X</mi><mn>1</mn></msub><mo stretchy="false" form="prefix">|</mo><msub><mi>X</mi><mn>2</mn></msub><mo stretchy="false" form="prefix">|</mo><mi>…</mi><mo stretchy="false" form="prefix">|</mo><msub><mi>X</mi><mi>K</mi></msub><mo stretchy="false" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">X = [X_1 | X_2 | \ldots | X_K]</annotation></semantics></math><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>=</mo><mo stretchy="false" form="prefix">[</mo><msubsup><mi>β</mi><mn>1</mn><mi>T</mi></msubsup><mo>,</mo><msubsup><mi>β</mi><mn>2</mn><mi>T</mi></msubsup><mo>,</mo><mi>…</mi><mo>,</mo><msubsup><mi>β</mi><mi>K</mi><mi>T</mi></msubsup><msup><mo stretchy="false" form="postfix">]</mo><mi>T</mi></msup></mrow><annotation encoding="application/x-tex">\beta = [\beta_1^T, \beta_2^T, \ldots, \beta_K^T]^T</annotation></semantics></math></p>
 <p>The linear predictor decomposes as:</p>
-<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>η</mi><mo>=</mo><msub><mi>X</mi><mn>1</mn></msub><msub><mi>β</mi><mn>1</mn></msub><mo>+</mo><msub><mi>X</mi><mn>2</mn></msub><msub><mi>β</mi><mn>2</mn></msub><mo>+</mo><mi>.</mi><mi>.</mi><mi>.</mi><mo>+</mo><msub><mi>X</mi><mi>K</mi></msub><msub><mi>β</mi><mi>K</mi></msub></mrow><annotation encoding="application/x-tex">\eta = X_1\beta_1 + X_2\beta_2 + ... + X_K\beta_K</annotation></semantics></math></p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>η</mi><mo>=</mo><msub><mi>X</mi><mn>1</mn></msub><msub><mi>β</mi><mn>1</mn></msub><mo>+</mo><msub><mi>X</mi><mn>2</mn></msub><msub><mi>β</mi><mn>2</mn></msub><mo>+</mo><mi>…</mi><mo>+</mo><msub><mi>X</mi><mi>K</mi></msub><msub><mi>β</mi><mi>K</mi></msub></mrow><annotation encoding="application/x-tex">\eta = X_1\beta_1 + X_2\beta_2 + \ldots + X_K\beta_K</annotation></semantics></math></p>
 </div>
 <div class="section level3">
 <h3 id="the-bcd-algorithm">The BCD Algorithm<a class="anchor" aria-label="anchor" href="#the-bcd-algorithm"></a>
 </h3>
 <p>Block Coordinate Descent iteratively updates each block while holding
 others fixed:</p>
-<pre><code>Initialize: β₁ = β₂ = ... = βₖ = 0
+<pre><code>Initialize: beta_1 = beta_2 = ... = beta_K = 0
 
 Repeat until convergence:
     For each institution k = 1, ..., K:
 
         1. Compute contribution from OTHER institutions:
-           η₋ₖ = Σⱼ≠ₖ Xⱼβⱼ  (shared as aggregate)
+           eta_{-k} = sum_{j != k} X_j * beta_j  (shared as aggregate)
 
         2. Institution k solves locally:
-           βₖ = argmin L(y; η₋ₖ + Xₖβₖ) + λ||βₖ||²
+           beta_k = argmin L(y; eta_{-k} + X_k * beta_k) + lambda * ||beta_k||^2
 
         3. Compute and share new contribution:
-           ηₖ = Xₖβₖ  (shared as aggregate)
+           eta_k = X_k * beta_k  (shared as aggregate)
 
-    Check convergence: Σₖ||βₖⁿᵉʷ - βₖᵒˡᵈ|| &lt; tolerance</code></pre>
+    Check convergence: sum_k ||beta_k_new - beta_k_old|| &lt; tolerance</code></pre>
 <p><strong>Privacy guarantee:</strong> Only the linear predictor
 contributions
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>η</mi><mi>k</mi></msub><annotation encoding="application/x-tex">\eta_k</annotation></semantics></math>
@@ -367,7 +623,7 @@ parameter ensures numerical stability</li>
 characteristics.</p>
 </div>
 <div class="section level3">
-<h3 id="reference-1">Reference<a class="anchor" aria-label="anchor" href="#reference-1"></a>
+<h3 id="reference">Reference<a class="anchor" aria-label="anchor" href="#reference"></a>
 </h3>
 <p>van Kesteren, E.J. et al. (2019). <a href="https://arxiv.org/abs/1911.03183" class="external-link">Privacy-preserving generalized
 linear models using distributed block coordinate descent</a>.
@@ -402,12 +658,12 @@ same hash</li>
 <table class="table">
 <thead><tr class="header">
 <th>Original ID</th>
-<th>→</th>
+<th></th>
 <th>SHA-256 Hash</th>
 </tr></thead>
 <tbody><tr class="odd">
 <td><code>PATIENT_00042</code></td>
-<td>→</td>
+<td>-&gt;</td>
 <td>
 <code>a3f8c9d2e1b7...</code> (64 hex characters)</td>
 </tr></tbody>
@@ -505,11 +761,23 @@ fit and complexity).</p>
 <li>More sophisticated attacks (malicious adversaries) are not
 addressed</li>
 </ul>
+<p>For the MHE-based correlation, semi-honest security means each party
+correctly computes its key shares, encryptions, and partial decryption
+shares, but may attempt to learn about other parties’ data from the
+encrypted values and decryption shares it observes.</p>
 </div>
 <div class="section level3">
 <h3 id="numerical-considerations">Numerical Considerations<a class="anchor" aria-label="anchor" href="#numerical-considerations"></a>
 </h3>
 <ul>
+<li>
+<strong>CKKS approximation</strong>: The homomorphic encryption
+scheme introduces small errors (typically
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>3</mn></mrow></msup><annotation encoding="application/x-tex">10^{-3}</annotation></semantics></math>
+to
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>4</mn></mrow></msup><annotation encoding="application/x-tex">10^{-4}</annotation></semantics></math>)
+in cross-institution correlations. Within-institution correlations are
+computed in plaintext and are exact.</li>
 <li>
 <strong>Convergence</strong>: BCD may require many iterations for
 ill-conditioned data</li>
@@ -520,6 +788,10 @@ ill-conditioned data</li>
 <li>
 <strong>Scaling</strong>: Very large or very small values may cause
 numerical issues</li>
+<li>
+<strong>Ring dimension</strong>: The <code>log_n</code> parameter
+must be large enough to accommodate the number of observations
+(<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>≤</mo><mi>N</mi><mi>/</mi><mn>2</mn><mo>=</mo><msup><mn>2</mn><mrow><mi>l</mi><mi>o</mi><mi>g</mi><mi>_</mi><mi>n</mi><mo>−</mo><mn>1</mn></mrow></msup></mrow><annotation encoding="application/x-tex">n \leq N/2 = 2^{log\_n - 1}</annotation></semantics></math>)</li>
 </ul>
 </div>
 <div class="section level3">
@@ -533,7 +805,7 @@ numerical issues</li>
 <tbody>
 <tr class="odd">
 <td>Exploratory analysis</td>
-<td>Correlation → PCA</td>
+<td>Correlation (MHE-CKKS)</td>
 </tr>
 <tr class="even">
 <td>Continuous outcome</td>
@@ -566,8 +838,9 @@ numerical issues</li>
 <p>dsVertClient enables privacy-preserving analysis through:</p>
 <ol style="list-style-type: decimal">
 <li>
-<strong>Block SVD</strong>: Combines partial SVD results to compute
-global correlation/PCA</li>
+<strong>Multiparty Homomorphic Encryption</strong>: Computes
+cross-institution correlations using threshold CKKS encryption, where no
+single party can decrypt intermediate results</li>
 <li>
 <strong>Block Coordinate Descent</strong>: Iteratively updates
 coefficients, sharing only linear predictors</li>
@@ -577,6 +850,23 @@ revealing identifiers</li>
 </ol>
 <p>These methods provide strong privacy guarantees while enabling
 meaningful statistical analysis across vertically partitioned data.</p>
+<div class="section level3">
+<h3 id="references-1">References<a class="anchor" aria-label="anchor" href="#references-1"></a>
+</h3>
+<ul>
+<li>Cheon, J.H., Kim, A., Kim, M. &amp; Song, Y. (2017). “Homomorphic
+Encryption for Arithmetic of Approximate Numbers”. <em>ASIACRYPT
+2017</em>.</li>
+<li>Mouchet, C., Troncoso-Pastoriza, J., Bossuat, J.P. &amp; Hubaux,
+J.P. (2021). “Multiparty Homomorphic Encryption from
+Ring-Learning-With-Errors”. <em>Proceedings on Privacy Enhancing
+Technologies (PETS) 2021</em>.</li>
+<li>Lattigo v6. Tune Insight SA. <a href="https://github.com/tuneinsight/lattigo" class="external-link">github.com/tuneinsight/lattigo</a>.</li>
+<li>van Kesteren, E.J. et al. (2019). “Privacy-preserving generalized
+linear models using distributed block coordinate descent”.
+<em>arXiv:1911.03183</em>.</li>
+</ul>
+</div>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

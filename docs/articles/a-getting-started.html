@@ -21,7 +21,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">dsVertClient</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.1.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -35,8 +35,9 @@
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="../articles/a-getting-started.html">Getting Started with dsVertClient</a></li>
-    <li><a class="dropdown-item" href="../articles/b-statistical-analysis.html">Statistical Analysis</a></li>
+    <li><a class="dropdown-item" href="../articles/b-statistical-analysis.html">Statistical Analysis with dsVertClient</a></li>
     <li><a class="dropdown-item" href="../articles/c-methodology.html">Methodology</a></li>
+    <li><a class="dropdown-item" href="../articles/d-security-validation.html">Security Validation</a></li>
   </ul>
 </li>
       </ul>
@@ -70,169 +71,30 @@
 <div class="section level2">
 <h2 id="what-is-vertical-data-partitioning">What is Vertical Data Partitioning?<a class="anchor" aria-label="anchor" href="#what-is-vertical-data-partitioning"></a>
 </h2>
-<p>In traditional <strong>horizontal partitioning</strong>, different
-institutions hold data for <em>different patients</em> with the <em>same
-variables</em>. For example, Hospital A has 1000 patients and Hospital B
-has 2000 different patients, but both measure the same things (age,
-blood pressure, etc.).</p>
-<p><strong>Vertical partitioning</strong> is different: multiple
-institutions hold data for the <em>same patients</em> but with
+<p>In traditional <strong>horizontal partitioning</strong> (the standard
+DataSHIELD scenario), different institutions hold data for <em>different
+patients</em> with the <em>same variables</em>. For example, Hospital A
+has 1,000 patients and Hospital B has 2,000 different patients, but both
+measure the same things (age, blood pressure, lab results, etc.).</p>
+<p><strong>Vertical partitioning</strong> is fundamentally different:
+multiple institutions hold data for the <em>same patients</em> but with
 <em>different variables</em>. This commonly occurs when:</p>
 <ul>
-<li>A hospital has clinical data (diagnoses, treatments)</li>
-<li>A laboratory has biomarker measurements</li>
-<li>A research center has genomic data</li>
-<li>A government agency has demographic data</li>
+<li>A hospital has clinical data (diagnoses, treatments, vital
+signs)</li>
+<li>A laboratory has biomarker measurements (glucose, cholesterol,
+HbA1c)</li>
+<li>A research center has genomic or imaging data</li>
+<li>A government registry has demographic and socioeconomic data</li>
 </ul>
-<p>All these institutions have records for the same individuals,
-identified by a common ID (e.g., national health number), but each holds
-different pieces of information.</p>
+<p>All of these institutions have records for the same individuals,
+linked by a common identifier (e.g., national health number), but each
+holds different pieces of information.</p>
 <div class="section level3">
-<h3 id="example-three-institutions-with-shared-patients">Example: Three Institutions with Shared Patients<a class="anchor" aria-label="anchor" href="#example-three-institutions-with-shared-patients"></a>
+<h3 id="illustrative-example">Illustrative Example<a class="anchor" aria-label="anchor" href="#illustrative-example"></a>
 </h3>
-<div style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: space-around;">
-<div style="flex: 1; min-width: 150px;">
-<p><strong>Hospital A</strong></p>
-<table class="table">
-<thead><tr class="header">
-<th align="center">ID</th>
-<th align="center">Age</th>
-<th align="center">Weight</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="center">P1</td>
-<td align="center">45</td>
-<td align="center">70</td>
-</tr>
-<tr class="even">
-<td align="center">P2</td>
-<td align="center">52</td>
-<td align="center">85</td>
-</tr>
-<tr class="odd">
-<td align="center">P3</td>
-<td align="center">38</td>
-<td align="center">62</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div style="flex: 1; min-width: 150px;">
-<p><strong>Laboratory B</strong></p>
-<table class="table">
-<thead><tr class="header">
-<th align="center">ID</th>
-<th align="center">Glucose</th>
-<th align="center">HDL</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="center">P1</td>
-<td align="center">95</td>
-<td align="center">55</td>
-</tr>
-<tr class="even">
-<td align="center">P2</td>
-<td align="center">110</td>
-<td align="center">42</td>
-</tr>
-<tr class="odd">
-<td align="center">P3</td>
-<td align="center">88</td>
-<td align="center">61</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div style="flex: 1; min-width: 150px;">
-<p><strong>Research Center C</strong></p>
-<table class="table">
-<thead><tr class="header">
-<th align="center">ID</th>
-<th align="center">Gene1</th>
-<th align="center">Gene2</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="center">P1</td>
-<td align="center">0.2</td>
-<td align="center">0.8</td>
-</tr>
-<tr class="even">
-<td align="center">P2</td>
-<td align="center">0.5</td>
-<td align="center">0.3</td>
-</tr>
-<tr class="odd">
-<td align="center">P3</td>
-<td align="center">0.1</td>
-<td align="center">0.9</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<p><em>Same patients (P1, P2, P3) but different variables at each
-institution.</em></p>
-</div>
-</div>
-<div class="section level2">
-<h2 id="the-privacy-challenge">The Privacy Challenge<a class="anchor" aria-label="anchor" href="#the-privacy-challenge"></a>
-</h2>
-<p>To analyze relationships between variables held by different
-institutions (e.g., “Does glucose level correlate with genetic
-markers?”), traditionally you would need to:</p>
-<ol style="list-style-type: decimal">
-<li>Send all data to a central location</li>
-<li>Merge the datasets</li>
-<li>Perform the analysis</li>
-</ol>
-<p>This approach has serious privacy and legal concerns:</p>
-<ul>
-<li>
-<strong>Patient privacy</strong>: Sensitive data leaves protected
-environments</li>
-<li>
-<strong>Legal barriers</strong>: GDPR and other regulations restrict
-data transfer</li>
-<li>
-<strong>Trust issues</strong>: Institutions may not trust each other
-with their data</li>
-</ul>
-</div>
-<div class="section level2">
-<h2 id="the-datashield-solution">The DataSHIELD Solution<a class="anchor" aria-label="anchor" href="#the-datashield-solution"></a>
-</h2>
-<p><strong>DataSHIELD</strong> is a framework that enables
-privacy-preserving federated analysis. The key principle is:</p>
-<blockquote>
-<p><em>“Bring the analysis to the data, not the data to the
-analysis”</em></p>
-</blockquote>
-<p>Instead of moving data, DataSHIELD:</p>
-<ol style="list-style-type: decimal">
-<li>Sends analysis commands to each server</li>
-<li>Each server executes computations locally on its data</li>
-<li>Only <strong>aggregate results</strong> (never individual-level
-data) are returned</li>
-<li>The client combines these aggregates to produce final results</li>
-</ol>
-<p><strong>dsVertClient</strong> extends DataSHIELD specifically for
-<strong>vertically partitioned data</strong>, implementing:</p>
-<ul>
-<li>Privacy-preserving record alignment via cryptographic hashing</li>
-<li>Distributed correlation and PCA using Block SVD</li>
-<li>Distributed GLM fitting using Block Coordinate Descent</li>
-</ul>
-<hr>
-</div>
-<div class="section level2">
-<h2 id="our-test-environment">Our Test Environment<a class="anchor" aria-label="anchor" href="#our-test-environment"></a>
-</h2>
-<p>For this tutorial, we have a simulated environment with <strong>3
-institutions</strong> and <strong>200 patients</strong>. Each
-institution holds different variables for the same patients:</p>
+<p>Consider three institutions that each hold data for the same set of
+patients:</p>
 <table class="table">
 <thead><tr class="header">
 <th>Institution</th>
@@ -241,340 +103,466 @@ institution holds different variables for the same patients:</p>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td><strong>inst_A</strong></td>
-<td>Hospital</td>
-<td>age, weight</td>
+<td><strong>Hospital A</strong></td>
+<td>Clinical care</td>
+<td>age, weight, blood pressure</td>
 </tr>
 <tr class="even">
-<td><strong>inst_B</strong></td>
-<td>Clinic</td>
-<td>height, bmi</td>
+<td><strong>Laboratory B</strong></td>
+<td>Lab testing</td>
+<td>glucose, cholesterol, HbA1c</td>
 </tr>
 <tr class="odd">
-<td><strong>inst_C</strong></td>
-<td>Laboratory</td>
-<td>glucose, cholesterol</td>
+<td><strong>Research Center C</strong></td>
+<td>Genomics</td>
+<td>gene_score_1, gene_score_2</td>
 </tr>
 </tbody>
 </table>
-<p>All institutions also store outcome variables (blood pressure,
-diabetes status, hospital visits, costs) which will be used for GLM
-examples.</p>
-<div class="section level3">
-<h3 id="connecting-to-servers">Connecting to Servers<a class="anchor" aria-label="anchor" href="#connecting-to-servers"></a>
-</h3>
-<p>We connect to the DataSHIELD servers and assign the data to a symbol
-<code>D</code>:</p>
-<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Build login credentials for each server</span></span>
-<span><span class="va">builder</span> <span class="op">&lt;-</span> <span class="fu">newDSLoginBuilder</span><span class="op">(</span><span class="op">)</span></span>
-<span><span class="va">builder</span><span class="op">$</span><span class="fu">append</span><span class="op">(</span>server <span class="op">=</span> <span class="st">"inst_A"</span>, url <span class="op">=</span> <span class="st">"dslite_server"</span>,</span>
-<span>               table <span class="op">=</span> <span class="st">"inst_A"</span>, driver <span class="op">=</span> <span class="st">"DSLiteDriver"</span><span class="op">)</span></span>
-<span><span class="va">builder</span><span class="op">$</span><span class="fu">append</span><span class="op">(</span>server <span class="op">=</span> <span class="st">"inst_B"</span>, url <span class="op">=</span> <span class="st">"dslite_server"</span>,</span>
-<span>               table <span class="op">=</span> <span class="st">"inst_B"</span>, driver <span class="op">=</span> <span class="st">"DSLiteDriver"</span><span class="op">)</span></span>
-<span><span class="va">builder</span><span class="op">$</span><span class="fu">append</span><span class="op">(</span>server <span class="op">=</span> <span class="st">"inst_C"</span>, url <span class="op">=</span> <span class="st">"dslite_server"</span>,</span>
-<span>               table <span class="op">=</span> <span class="st">"inst_C"</span>, driver <span class="op">=</span> <span class="st">"DSLiteDriver"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Connect and assign data to symbol "D" on each server</span></span>
-<span><span class="va">connections</span> <span class="op">&lt;-</span> <span class="fu">datashield.login</span><span class="op">(</span><span class="va">builder</span><span class="op">$</span><span class="fu">build</span><span class="op">(</span><span class="op">)</span>, assign <span class="op">=</span> <span class="cn">TRUE</span>, symbol <span class="op">=</span> <span class="st">"D"</span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="what-each-institution-sees">What Each Institution Sees<a class="anchor" aria-label="anchor" href="#what-each-institution-sees"></a>
-</h3>
-<div style="display: flex; gap: 20px; flex-wrap: wrap; justify-content: space-around;">
-<div style="flex: 1; min-width: 200px;">
-<p><strong>Institution A (Hospital)</strong></p>
-<table class="table">
-<thead><tr class="header">
-<th align="left">patient_id</th>
-<th align="right">age</th>
-<th align="right">weight</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="left">PATIENT_00093</td>
-<td align="right">49</td>
-<td align="right">94.3</td>
-</tr>
-<tr class="even">
-<td align="left">PATIENT_00091</td>
-<td align="right">31</td>
-<td align="right">92.8</td>
-</tr>
-<tr class="odd">
-<td align="left">PATIENT_00013</td>
-<td align="right">52</td>
-<td align="right">65.8</td>
-</tr>
-<tr class="even">
-<td align="left">PATIENT_00178</td>
-<td align="right">59</td>
-<td align="right">54.6</td>
-</tr>
-<tr class="odd">
-<td align="left">PATIENT_00066</td>
-<td align="right">52</td>
-<td align="right">60.5</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div style="flex: 1; min-width: 200px;">
-<p><strong>Institution B (Clinic)</strong></p>
-<table class="table">
-<thead><tr class="header">
-<th align="left">patient_id</th>
-<th align="right">height</th>
-<th align="right">bmi</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="left">PATIENT_00003</td>
-<td align="right">159.4</td>
-<td align="right">28.2</td>
-</tr>
-<tr class="even">
-<td align="left">PATIENT_00167</td>
-<td align="right">167.0</td>
-<td align="right">22.4</td>
-</tr>
-<tr class="odd">
-<td align="left">PATIENT_00105</td>
-<td align="right">169.5</td>
-<td align="right">21.7</td>
-</tr>
-<tr class="even">
-<td align="left">PATIENT_00045</td>
-<td align="right">174.3</td>
-<td align="right">24.7</td>
-</tr>
-<tr class="odd">
-<td align="left">PATIENT_00132</td>
-<td align="right">151.4</td>
-<td align="right">32.8</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div style="flex: 1; min-width: 200px;">
-<p><strong>Institution C (Laboratory)</strong></p>
-<table class="table">
-<thead><tr class="header">
-<th align="left">patient_id</th>
-<th align="right">glucose</th>
-<th align="right">cholesterol</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td align="left">PATIENT_00134</td>
-<td align="right">136.6</td>
-<td align="right">180.9</td>
-</tr>
-<tr class="even">
-<td align="left">PATIENT_00099</td>
-<td align="right">131.5</td>
-<td align="right">216.2</td>
-</tr>
-<tr class="odd">
-<td align="left">PATIENT_00184</td>
-<td align="right">101.7</td>
-<td align="right">237.5</td>
-</tr>
-<tr class="even">
-<td align="left">PATIENT_00145</td>
-<td align="right">125.6</td>
-<td align="right">223.6</td>
-</tr>
-<tr class="odd">
-<td align="left">PATIENT_00041</td>
-<td align="right">119.1</td>
-<td align="right">223.1</td>
-</tr>
-</tbody>
-</table>
+<p>A researcher wants to study whether genetic markers (at Center C) are
+associated with metabolic outcomes (at Lab B), controlling for
+demographics (at Hospital A). Answering this question requires combining
+variables from all three institutions – but the data cannot be pooled
+due to privacy regulations.</p>
 </div>
 </div>
-<p>Notice how:</p>
+<div class="section level2">
+<h2 id="the-privacy-challenge">The Privacy Challenge<a class="anchor" aria-label="anchor" href="#the-privacy-challenge"></a>
+</h2>
+<p>To analyze relationships between variables held by different
+institutions (e.g., “Does glucose level correlate with genetic
+markers?”), the traditional approach would be to:</p>
+<ol style="list-style-type: decimal">
+<li>Send all data to a central location</li>
+<li>Merge the datasets by patient identifier</li>
+<li>Perform the analysis on the combined table</li>
+</ol>
+<p>This centralization approach raises serious concerns:</p>
 <ul>
-<li>Each institution has <strong>different variables</strong>
-</li>
-<li>The <strong>patient order is different</strong> at each
-institution</li>
-<li>The same patient (e.g., PATIENT_00093) appears at different row
-positions</li>
+<li>
+<strong>Patient privacy</strong>: Sensitive health data leaves its
+protected environment</li>
+<li>
+<strong>Legal barriers</strong>: GDPR, HIPAA, and other regulations
+restrict data transfers</li>
+<li>
+<strong>Trust issues</strong>: Institutions may not trust each other
+(or a central party) with their data</li>
+<li>
+<strong>Data governance</strong>: Each institution may have
+different consent frameworks</li>
 </ul>
-<p>This is realistic: institutions store data independently and don’t
-coordinate their internal ordering.</p>
+</div>
+<div class="section level2">
+<h2 id="the-datashield-solution">The DataSHIELD Solution<a class="anchor" aria-label="anchor" href="#the-datashield-solution"></a>
+</h2>
+<p><a href="https://www.datashield.org/" class="external-link">DataSHIELD</a> is a framework
+for privacy-preserving federated analysis. Its key principle is:</p>
+<blockquote>
+<p><em>“Bring the analysis to the data, not the data to the
+analysis.”</em></p>
+</blockquote>
+<p>Instead of moving data, DataSHIELD:</p>
+<ol style="list-style-type: decimal">
+<li>Sends analysis commands to each server</li>
+<li>Each server executes computations locally on its own data</li>
+<li>Only <strong>non-disclosive aggregate results</strong> are returned
+to the analyst</li>
+<li>The analyst’s client combines these aggregates to produce the final
+result</li>
+</ol>
+<p><strong>dsVertClient</strong> extends DataSHIELD specifically for
+<strong>vertically partitioned data</strong>, adding three capabilities
+that standard DataSHIELD does not provide:</p>
+<ul>
+<li>
+<strong>Privacy-preserving record alignment</strong> via
+cryptographic hashing</li>
+<li>
+<strong>Cross-server correlation and PCA</strong> using Multiparty
+Homomorphic Encryption (MHE)</li>
+<li>
+<strong>Distributed GLM fitting</strong> using Block Coordinate
+Descent (BCD)</li>
+</ul>
+</div>
+<div class="section level2">
+<h2 id="prerequisites">Prerequisites<a class="anchor" aria-label="anchor" href="#prerequisites"></a>
+</h2>
+<p>Before using dsVertClient, you need:</p>
+<ol style="list-style-type: decimal">
+<li>
+<strong>R (&gt;= 4.0.0)</strong> installed on your local
+machine</li>
+<li>
+<strong>dsVertClient</strong> installed (the client-side package you
+run locally)</li>
+<li>
+<strong>dsVert</strong> installed on each Opal server (the
+server-side companion package)</li>
+<li>
+<strong>Opal servers</strong> set up and accessible, each hosting
+one data partition</li>
+<li>Login credentials (username, password, URL) for each Opal
+server</li>
+</ol>
+<p>Install the client package from GitHub:</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># install.packages("remotes")</span></span>
+<span><span class="fu">remotes</span><span class="fu">::</span><span class="fu"><a href="https://remotes.r-lib.org/reference/install_github.html" class="external-link">install_github</a></span><span class="op">(</span><span class="st">"isglobal-brge/dsVertClient"</span><span class="op">)</span></span></code></pre></div>
+<hr>
+</div>
+<div class="section level2">
+<h2 id="connecting-to-opal-servers">Connecting to Opal Servers<a class="anchor" aria-label="anchor" href="#connecting-to-opal-servers"></a>
+</h2>
+<p>In a real deployment, each institution runs an <a href="https://www.obiba.org/pages/products/opal/" class="external-link">Opal</a> server that
+hosts its data behind a firewall. The analyst connects to all servers
+from a local R session using the DSI (DataSHIELD Interface) package.</p>
+<div class="section level3">
+<h3 id="building-login-credentials">Building Login Credentials<a class="anchor" aria-label="anchor" href="#building-login-credentials"></a>
+</h3>
+<p>Use <code><a href="https://datashield.github.io/DSI/reference/newDSLoginBuilder.html" class="external-link">DSI::newDSLoginBuilder()</a></code> to assemble the connection
+details for each server. Each entry specifies the server name, its URL,
+the table containing the data, and authentication credentials:</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/isglobal-brge/dsVertClient" class="external-link">dsVertClient</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/datashield/DSI/" class="external-link">DSI</a></span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">builder</span> <span class="op">&lt;-</span> <span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/newDSLoginBuilder.html" class="external-link">newDSLoginBuilder</a></span><span class="op">(</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">builder</span><span class="op">$</span><span class="fu">append</span><span class="op">(</span></span>
+<span>  server <span class="op">=</span> <span class="st">"hospital_A"</span>,</span>
+<span>  url <span class="op">=</span> <span class="st">"https://opal-hospital-a.example.org"</span>,</span>
+<span>  user <span class="op">=</span> <span class="st">"analyst"</span>,</span>
+<span>  password <span class="op">=</span> <span class="st">"secret_A"</span>,</span>
+<span>  table <span class="op">=</span> <span class="st">"project.clinical_data"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">builder</span><span class="op">$</span><span class="fu">append</span><span class="op">(</span></span>
+<span>  server <span class="op">=</span> <span class="st">"lab_B"</span>,</span>
+<span>  url <span class="op">=</span> <span class="st">"https://opal-lab-b.example.org"</span>,</span>
+<span>  user <span class="op">=</span> <span class="st">"analyst"</span>,</span>
+<span>  password <span class="op">=</span> <span class="st">"secret_B"</span>,</span>
+<span>  table <span class="op">=</span> <span class="st">"project.lab_results"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">builder</span><span class="op">$</span><span class="fu">append</span><span class="op">(</span></span>
+<span>  server <span class="op">=</span> <span class="st">"research_C"</span>,</span>
+<span>  url <span class="op">=</span> <span class="st">"https://opal-research-c.example.org"</span>,</span>
+<span>  user <span class="op">=</span> <span class="st">"analyst"</span>,</span>
+<span>  password <span class="op">=</span> <span class="st">"secret_C"</span>,</span>
+<span>  table <span class="op">=</span> <span class="st">"project.genomic_data"</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="logging-in">Logging In<a class="anchor" aria-label="anchor" href="#logging-in"></a>
+</h3>
+<p>The <code><a href="https://datashield.github.io/DSI/reference/datashield.login.html" class="external-link">datashield.login()</a></code> call establishes connections to
+all servers simultaneously and assigns the data to a server-side symbol
+(here <code>"D"</code>):</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">connections</span> <span class="op">&lt;-</span> <span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.login.html" class="external-link">datashield.login</a></span><span class="op">(</span></span>
+<span>  logins <span class="op">=</span> <span class="va">builder</span><span class="op">$</span><span class="fu">build</span><span class="op">(</span><span class="op">)</span>,</span>
+<span>  assign <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  symbol <span class="op">=</span> <span class="st">"D"</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>After this call, each server has a data frame called <code>D</code>
+in its R session. The analyst never sees the raw data – only the
+server-side symbol name.</p>
 <hr>
 </div>
 </div>
 <div class="section level2">
-<h2 id="step-1-validating-identifier-formats">Step 1: Validating Identifier Formats<a class="anchor" aria-label="anchor" href="#step-1-validating-identifier-formats"></a>
+<h2 id="step-1-validate-identifier-formats">Step 1: Validate Identifier Formats<a class="anchor" aria-label="anchor" href="#step-1-validate-identifier-formats"></a>
 </h2>
-<p>Before aligning records, we verify that patient identifiers have
-consistent formats across all institutions. Common problems include:</p>
+<p>Before aligning records across servers, it is important to verify
+that patient identifiers have a consistent format at every institution.
+Common pitfalls include:</p>
 <ul>
-<li>Different ID formats (e.g., “001” vs “1” vs “P001”)</li>
-<li>Leading/trailing whitespace</li>
-<li>Missing values or duplicates</li>
+<li>Different ID formats across institutions (e.g., <code>"001"</code>
+vs <code>"1"</code> vs <code>"P-001"</code>)</li>
+<li>Leading or trailing whitespace</li>
+<li>Missing values or duplicate identifiers</li>
+<li>Type mismatches (numeric vs character)</li>
 </ul>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">validation_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.validateIdFormat.html">ds.validateIdFormat</a></span><span class="op">(</span></span>
+<p>The <code><a href="../reference/ds.validateIdFormat.html">ds.validateIdFormat()</a></code> function checks all of these
+without revealing the actual identifier values:</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">validation</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.validateIdFormat.html">ds.validateIdFormat</a></span><span class="op">(</span></span>
 <span>  data_name <span class="op">=</span> <span class="st">"D"</span>,</span>
 <span>  id_col <span class="op">=</span> <span class="st">"patient_id"</span>,</span>
 <span>  datasources <span class="op">=</span> <span class="va">connections</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">validation_result</span></span></code></pre></div>
-<pre class="bg-light"><code><span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Identifier Format Validation</span></span>
-<span><span class="co">#&gt; ============================</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Overall Status: VALID </span></span>
-<span><span class="co">#&gt; Format Consistency: Yes </span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Server Details:</span></span>
-<span><span class="co">#&gt;  server n_obs n_unique n_missing  id_class</span></span>
-<span><span class="co">#&gt;  inst_A   200      200         0 character</span></span>
-<span><span class="co">#&gt;  inst_B   200      200         0 character</span></span>
-<span><span class="co">#&gt;  inst_C   200      200         0 character</span></span>
-<span><span class="co">#&gt;                                                  format_signature</span></span>
-<span><span class="co">#&gt;  8d404dbb1d0a33a5bf77b9f34bfabf2e0930831a8dfd5dfa57302c6bbb345ac1</span></span>
-<span><span class="co">#&gt;  8d404dbb1d0a33a5bf77b9f34bfabf2e0930831a8dfd5dfa57302c6bbb345ac1</span></span>
-<span><span class="co">#&gt;  8d404dbb1d0a33a5bf77b9f34bfabf2e0930831a8dfd5dfa57302c6bbb345ac1</span></span></code></pre>
-<p><strong>What we’re looking for:</strong></p>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">validation</span><span class="op">)</span></span></code></pre></div>
+<p>The output reports, for each server:</p>
 <ul>
 <li>
-<strong>n_obs</strong>: Same number of observations across all
-institutions</li>
+<strong>n_obs</strong>: Total number of records</li>
 <li>
-<strong>n_unique</strong>: Should equal n_obs (no duplicates)</li>
+<strong>n_unique</strong>: Number of unique identifiers (should
+equal n_obs)</li>
 <li>
-<strong>n_missing</strong>: Should be 0</li>
+<strong>n_missing</strong>: Number of missing identifiers (should be
+0)</li>
 <li>
-<strong>format_signature</strong>: Should be identical across
-institutions</li>
+<strong>format_signature</strong>: A hashed summary of the ID format
+(should match across servers)</li>
 </ul>
+<p>If the <code>valid</code> field is <code>TRUE</code>, formats are
+consistent and you can proceed to alignment. If issues are detected, the
+<code>warnings</code> field will describe what needs to be fixed.</p>
+<p>You can also validate against a specific pattern:</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">validation</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.validateIdFormat.html">ds.validateIdFormat</a></span><span class="op">(</span></span>
+<span>  data_name <span class="op">=</span> <span class="st">"D"</span>,</span>
+<span>  id_col <span class="op">=</span> <span class="st">"patient_id"</span>,</span>
+<span>  pattern <span class="op">=</span> <span class="st">"^PATIENT_[0-9]{5}$"</span>,</span>
+<span>  datasources <span class="op">=</span> <span class="va">connections</span></span>
+<span><span class="op">)</span></span></code></pre></div>
 <hr>
 </div>
 <div class="section level2">
 <h2 id="step-2-privacy-preserving-record-alignment">Step 2: Privacy-Preserving Record Alignment<a class="anchor" aria-label="anchor" href="#step-2-privacy-preserving-record-alignment"></a>
 </h2>
 <div class="section level3">
-<h3 id="the-problem">The Problem<a class="anchor" aria-label="anchor" href="#the-problem"></a>
+<h3 id="why-alignment-is-needed">Why Alignment is Needed<a class="anchor" aria-label="anchor" href="#why-alignment-is-needed"></a>
 </h3>
 <p>Even though all institutions have data for the same patients, the
-records are in different order. To analyze relationships across
-variables (e.g., correlation between age and glucose), we need
-corresponding records to be in the same position.</p>
-<p><strong>But we cannot simply share patient IDs!</strong> That would
-violate privacy.</p>
+records are stored in different orders. Institution A might have patient
+“P042” at row 1, while Institution B has the same patient at row 157. To
+compute cross-server statistics (e.g., correlation between age at
+Hospital A and glucose at Lab B), corresponding records must be in the
+same row position at every server.</p>
+<p><strong>But we cannot simply share patient IDs between
+servers.</strong> That would expose potentially sensitive identifiers
+across institutional boundaries.</p>
 </div>
 <div class="section level3">
 <h3 id="the-solution-cryptographic-hashing">The Solution: Cryptographic Hashing<a class="anchor" aria-label="anchor" href="#the-solution-cryptographic-hashing"></a>
 </h3>
-<p>Instead of sharing actual IDs, we:</p>
+<p>dsVertClient aligns records using SHA-256 cryptographic hashing:</p>
 <ol style="list-style-type: decimal">
-<li>
-<strong>Hash all IDs</strong> using SHA-256 (a one-way cryptographic
-function)</li>
-<li>
-<strong>Share only the hashes</strong> - these cannot be reversed to
-reveal original IDs</li>
-<li>
-<strong>Reorder records</strong> at each institution to match a
-reference order</li>
+<li>One server is designated as the <strong>reference</strong>
+server</li>
+<li>The reference server hashes all of its patient identifiers using
+SHA-256</li>
+<li>The hashed values are sent to the other servers (hashes are one-way
+– the original IDs cannot be recovered)</li>
+<li>Each server hashes its own identifiers, matches them against the
+reference hashes, and reorders its data accordingly</li>
+<li>After alignment, all servers have records in the same order, with
+only the shared patients retained</li>
 </ol>
 <table class="table">
 <thead><tr class="header">
 <th>Original ID</th>
-<th>→</th>
 <th>SHA-256 Hash</th>
 </tr></thead>
 <tbody><tr class="odd">
 <td><code>PATIENT_00042</code></td>
-<td>→</td>
 <td>
-<code>a7f3b9c2d8e1f4a5...</code> (64 hex chars)</td>
+<code>a7f3b9c2d8e1f4a5...</code> (64 hex characters)</td>
 </tr></tbody>
 </table>
-<p>The hash is shared safely - the original ID cannot be recovered from
-it.</p>
+<p>Given only the hash, recovering the original identifier is
+computationally infeasible.</p>
 </div>
 <div class="section level3">
-<h3 id="step-2a-get-reference-hashes">Step 2a: Get Reference Hashes<a class="anchor" aria-label="anchor" href="#step-2a-get-reference-hashes"></a>
+<h3 id="step-2a-obtain-reference-hashes">Step 2a: Obtain Reference Hashes<a class="anchor" aria-label="anchor" href="#step-2a-obtain-reference-hashes"></a>
 </h3>
-<p>First, we obtain hashed identifiers from one institution (which
-becomes our reference):</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">reference_hashes</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.hashId.html">ds.hashId</a></span><span class="op">(</span></span>
+<p>Choose one server as the reference and retrieve its hashed
+identifiers:</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">ref_hashes</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.hashId.html">ds.hashId</a></span><span class="op">(</span></span>
 <span>  data_name <span class="op">=</span> <span class="st">"D"</span>,</span>
 <span>  id_col <span class="op">=</span> <span class="st">"patient_id"</span>,</span>
 <span>  algo <span class="op">=</span> <span class="st">"sha256"</span>,</span>
-<span>  datasource <span class="op">=</span> <span class="va">connections</span><span class="op">[</span><span class="st">"inst_A"</span><span class="op">]</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>We retrieved 200 hashed identifiers.</p>
+<span>  datasource <span class="op">=</span> <span class="va">connections</span><span class="op">[</span><span class="st">"hospital_A"</span><span class="op">]</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># ref_hashes$n      -- number of hashed identifiers</span></span>
+<span><span class="co"># ref_hashes$hashes -- character vector of SHA-256 hashes</span></span></code></pre></div>
 </div>
 <div class="section level3">
-<h3 id="step-2b-align-all-institutions">Step 2b: Align All Institutions<a class="anchor" aria-label="anchor" href="#step-2b-align-all-institutions"></a>
+<h3 id="step-2b-align-all-servers">Step 2b: Align All Servers<a class="anchor" aria-label="anchor" href="#step-2b-align-all-servers"></a>
 </h3>
-<p>Now we send the reference hashes to all institutions. Each
-institution:</p>
+<p>Send the reference hashes to all servers (including the reference
+server itself). Each server will:</p>
 <ol style="list-style-type: decimal">
-<li>Computes hashes of its own IDs</li>
-<li>Reorders its records to match the reference hash order</li>
-<li>Removes any records not in the reference set</li>
+<li>Hash its own identifiers using the same algorithm</li>
+<li>Match them against the reference hashes</li>
+<li>Reorder its data to match the reference order</li>
+<li>Drop any records not present in the reference set</li>
+<li>Store the result in a new server-side data frame</li>
 </ol>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/ds.alignRecords.html">ds.alignRecords</a></span><span class="op">(</span></span>
 <span>  data_name <span class="op">=</span> <span class="st">"D"</span>,</span>
 <span>  id_col <span class="op">=</span> <span class="st">"patient_id"</span>,</span>
-<span>  reference_hashes <span class="op">=</span> <span class="va">reference_hashes</span><span class="op">$</span><span class="va">hashes</span>,</span>
+<span>  reference_hashes <span class="op">=</span> <span class="va">ref_hashes</span><span class="op">$</span><span class="va">hashes</span>,</span>
 <span>  newobj <span class="op">=</span> <span class="st">"D_aligned"</span>,</span>
 <span>  datasources <span class="op">=</span> <span class="va">connections</span></span>
 <span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="verifying-alignment">Verifying Alignment<a class="anchor" aria-label="anchor" href="#verifying-alignment"></a>
-</h3>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">alignment_counts</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">connections</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">inst</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">count_result</span> <span class="op">&lt;-</span> <span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.aggregate.html" class="external-link">datashield.aggregate</a></span><span class="op">(</span></span>
-<span>    <span class="va">connections</span><span class="op">[</span><span class="va">inst</span><span class="op">]</span>,</span>
-<span>    <span class="fu"><a href="https://rdrr.io/r/base/call.html" class="external-link">call</a></span><span class="op">(</span><span class="st">"getObsCountDS"</span>, <span class="st">"D_aligned"</span><span class="op">)</span></span>
-<span>  <span class="op">)</span></span>
-<span>  <span class="va">count_result</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span><span class="op">$</span><span class="va">n_obs</span></span>
-<span><span class="op">}</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>Institution <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">alignment_counts</span><span class="op">)</span>, Records <span class="op">=</span> <span class="va">alignment_counts</span>, row.names <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
-<pre class="bg-light"><code><span><span class="co">#&gt;   Institution Records</span></span>
-<span><span class="co">#&gt; 1      inst_A     200</span></span>
-<span><span class="co">#&gt; 2      inst_B     200</span></span>
-<span><span class="co">#&gt; 3      inst_C     200</span></span></code></pre>
-<p>All institutions now have:</p>
+<p>The function prints alignment statistics for each server, for
+example:</p>
+<pre><code>Server 'hospital_A': 200 of 200 records matched (100.0%)
+Server 'lab_B': 195 of 200 records matched (97.5%)
+Server 'research_C': 198 of 200 records matched (99.0%)</code></pre>
+<p>If a server matches fewer than 100% of records, it means some
+reference patients are not present at that institution. Only the
+intersection (patients present at all institutions) is retained.</p>
+<p>After alignment, every server has a data frame called
+<code>D_aligned</code> with:</p>
 <ul>
-<li>The <strong>same number of records</strong>
+<li>The <strong>same number of rows</strong>
 </li>
-<li>Records in the <strong>same order</strong> (corresponding to the
-same patients)</li>
-<li>Ready for <strong>cross-institutional analysis</strong>
+<li>Rows in the <strong>same order</strong> (each row position
+corresponds to the same patient)</li>
+<li>Ready for <strong>cross-server statistical analysis</strong>
 </li>
 </ul>
 <hr>
 </div>
 </div>
 <div class="section level2">
-<h2 id="next-steps">Next Steps<a class="anchor" aria-label="anchor" href="#next-steps"></a>
+<h2 id="why-multiparty-homomorphic-encryption-mhe-is-needed">Why Multiparty Homomorphic Encryption (MHE) is Needed<a class="anchor" aria-label="anchor" href="#why-multiparty-homomorphic-encryption-mhe-is-needed"></a>
 </h2>
-<p>Now that records are aligned, we can perform statistical
-analyses:</p>
+<p>With records aligned, you might wonder: can we simply compute
+statistics by exchanging summary values between servers? For some
+analyses, such as fitting a GLM via Block Coordinate Descent, sharing
+aggregate linear predictor contributions is sufficient and does not
+reveal individual-level data.</p>
+<p>However, for <strong>cross-server correlation and PCA</strong>, the
+situation is more delicate. Computing the correlation between a variable
+on Server A and a variable on Server B fundamentally requires combining
+information about individual observations across servers. Standard
+summary statistics (means, variances) computed on each server separately
+are not enough – the cross-server covariance requires knowledge of
+paired values.</p>
+<p>dsVertClient solves this using <strong>Multiparty Homomorphic
+Encryption (MHE)</strong> with threshold decryption. The protocol works
+as follows:</p>
+<ol style="list-style-type: decimal">
+<li><p><strong>Key generation</strong>: Each server generates a secret
+key share and a public key share. No single server (or the analyst)
+holds the complete decryption key.</p></li>
+<li><p><strong>Collective public key</strong>: The public key shares are
+combined into a Collective Public Key (CPK). Data encrypted under the
+CPK can only be decrypted when <em>all</em> servers cooperate.</p></li>
+<li><p><strong>Encrypted computation</strong>: Each server standardizes
+its data, encrypts the columns under the CPK, and shares the
+ciphertexts. Another server can then compute the encrypted cross-product
+(correlation numerator) homomorphically – that is, by operating directly
+on ciphertexts without ever decrypting the data.</p></li>
+<li><p><strong>Threshold decryption</strong>: The encrypted result is
+partially decrypted by each server using its secret key share. The
+analyst collects all partial shares and fuses them to recover only the
+final aggregate statistic (the correlation coefficient). No individual
+data values are ever revealed.</p></li>
+</ol>
+<p>This approach provides strong security guarantees:</p>
 <ul>
 <li>
-<a href="b-statistical-analysis.html"><strong>Statistical
-Analysis</strong></a>: Correlation, PCA, and GLMs</li>
+<strong>No single point of trust</strong>: Even the analyst cannot
+decrypt individual data</li>
 <li>
-<a href="c-methodology.html"><strong>Methodology</strong></a>:
-Mathematical details behind the algorithms</li>
+<strong>Collusion resistance</strong>: Any K-1 colluding servers
+cannot decrypt without the K-th server</li>
+<li>
+<strong>Minimal disclosure</strong>: Only the final correlation
+coefficients are revealed</li>
+</ul>
+<p>The <code><a href="../reference/ds.vertCor.html">ds.vertCor()</a></code> and <code><a href="../reference/ds.vertPCA.html">ds.vertPCA()</a></code> functions
+handle this entire MHE protocol automatically. From the analyst’s
+perspective, the interface is straightforward:</p>
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Define which variables are on which server</span></span>
+<span><span class="va">variables</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>  hospital_A  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"weight"</span><span class="op">)</span>,</span>
+<span>  lab_B       <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glucose"</span>, <span class="st">"cholesterol"</span><span class="op">)</span>,</span>
+<span>  research_C  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"gene_score_1"</span>, <span class="st">"gene_score_2"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Compute the full 6x6 correlation matrix across all servers</span></span>
+<span><span class="va">cor_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertCor.html">ds.vertCor</a></span><span class="op">(</span></span>
+<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>,</span>
+<span>  variables <span class="op">=</span> <span class="va">variables</span>,</span>
+<span>  datasources <span class="op">=</span> <span class="va">connections</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">cor_result</span><span class="op">)</span></span></code></pre></div>
+<p>The GLM function, <code><a href="../reference/ds.vertGLM.html">ds.vertGLM()</a></code>, uses a different
+approach (Block Coordinate Descent) that does not require MHE, because
+it only shares linear predictor contributions rather than encrypted
+individual values:</p>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">model</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
+<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>,</span>
+<span>  y_var <span class="op">=</span> <span class="st">"outcome_bp"</span>,</span>
+<span>  x_vars <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>    hospital_A <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"weight"</span><span class="op">)</span>,</span>
+<span>    lab_B      <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glucose"</span><span class="op">)</span>,</span>
+<span>    research_C <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"gene_score_1"</span><span class="op">)</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
+<span>  datasources <span class="op">=</span> <span class="va">connections</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">model</span><span class="op">)</span></span></code></pre></div>
+<hr>
+</div>
+<div class="section level2">
+<h2 id="logging-out">Logging Out<a class="anchor" aria-label="anchor" href="#logging-out"></a>
+</h2>
+<p>When your analysis is complete, close all server connections:</p>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.logout.html" class="external-link">datashield.logout</a></span><span class="op">(</span><span class="va">connections</span><span class="op">)</span></span></code></pre></div>
+<hr>
+</div>
+<div class="section level2">
+<h2 id="summary-of-the-workflow">Summary of the Workflow<a class="anchor" aria-label="anchor" href="#summary-of-the-workflow"></a>
+</h2>
+<p>A typical dsVertClient analysis follows these steps:</p>
+<ol style="list-style-type: decimal">
+<li>
+<strong>Connect</strong> to Opal servers using
+<code><a href="https://datashield.github.io/DSI/reference/datashield.login.html" class="external-link">DSI::datashield.login()</a></code>
+</li>
+<li>
+<strong>Validate</strong> identifier formats with
+<code><a href="../reference/ds.validateIdFormat.html">ds.validateIdFormat()</a></code>
+</li>
+<li>
+<strong>Hash</strong> identifiers on a reference server with
+<code><a href="../reference/ds.hashId.html">ds.hashId()</a></code>
+</li>
+<li>
+<strong>Align</strong> records across all servers with
+<code><a href="../reference/ds.alignRecords.html">ds.alignRecords()</a></code>
+</li>
+<li>
+<strong>Analyze</strong> using <code><a href="../reference/ds.vertCor.html">ds.vertCor()</a></code>,
+<code><a href="../reference/ds.vertPCA.html">ds.vertPCA()</a></code>, or <code><a href="../reference/ds.vertGLM.html">ds.vertGLM()</a></code>
+</li>
+<li>
+<strong>Disconnect</strong> with
+<code><a href="https://datashield.github.io/DSI/reference/datashield.logout.html" class="external-link">DSI::datashield.logout()</a></code>
+</li>
+</ol>
+</div>
+<div class="section level2">
+<h2 id="further-reading">Further Reading<a class="anchor" aria-label="anchor" href="#further-reading"></a>
+</h2>
+<ul>
+<li><p><strong><a href="b-statistical-analysis.html">Statistical
+Analysis</a></strong>: Detailed examples of correlation, PCA, and GLM
+(Gaussian, binomial, Poisson, Gamma, inverse Gaussian) with
+interpretation guidance and visualizations.</p></li>
+<li><p><strong><a href="c-methodology.html">Methodology</a></strong>:
+Mathematical foundations of Block Coordinate Descent for GLMs, the MHE
+threshold decryption protocol for correlation/PCA, and the security
+model.</p></li>
 </ul>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

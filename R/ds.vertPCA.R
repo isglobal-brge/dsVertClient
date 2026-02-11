@@ -3,15 +3,23 @@
 #'   privacy-preserving correlation matrix computed via Homomorphic Encryption.
 #'
 #' @param data_name Character string. Name of the (aligned) data frame on
-#'   each server.
+#'   each server. Ignored if \code{cor_result} is provided.
 #' @param variables A named list where each name corresponds to a server name
 #'   and each element is a character vector of variable names from that server.
+#'   Ignored if \code{cor_result} is provided.
 #' @param n_components Integer. Number of principal components to return.
 #'   Default is NULL (returns all).
+#' @param cor_result An existing \code{ds.cor} object from \code{\link{ds.vertCor}}.
+#'   If provided, the MHE protocol is NOT re-run; the PCA is computed directly
+#'   from this correlation matrix. This avoids running the expensive MHE protocol
+#'   twice when you already have the correlation.
 #' @param log_n Integer. CKKS ring dimension parameter for MHE. Default is 12.
+#'   Ignored if \code{cor_result} is provided.
 #' @param log_scale Integer. CKKS precision parameter for MHE. Default is 40.
+#'   Ignored if \code{cor_result} is provided.
 #' @param datasources DataSHIELD connection object or list of connections.
-#'   If NULL, uses all available connections.
+#'   If NULL, uses all available connections. Ignored if \code{cor_result} is
+#'   provided.
 #'
 #' @return A list with class "ds.pca" containing:
 #'   \itemize{
@@ -30,6 +38,7 @@
 #'
 #' \enumerate{
 #'   \item Compute the privacy-preserving correlation matrix using \code{\link{ds.vertCor}}
+#'     (or reuse an existing one via the \code{cor_result} parameter)
 #'   \item Perform eigen decomposition on the correlation matrix
 #'   \item Extract loadings (eigenvectors) and eigenvalues
 #' }
@@ -71,6 +80,10 @@
 #'
 #' pca_result <- ds.vertPCA("D_aligned", vars, n_components = 3)
 #'
+#' # Or reuse an existing correlation result (avoids running MHE again):
+#' cor_result <- ds.vertCor("D_aligned", vars)
+#' pca_result <- ds.vertPCA(cor_result = cor_result, n_components = 3)
+#'
 #' # View variance explained
 #' print(pca_result)
 #'
@@ -86,27 +99,39 @@
 #'
 #' @importFrom DSI datashield.aggregate datashield.connections_find
 #' @export
-ds.vertPCA <- function(data_name, variables, n_components = NULL,
+ds.vertPCA <- function(data_name = NULL, variables = NULL, n_components = NULL,
+                       cor_result = NULL,
                        log_n = 12, log_scale = 40, datasources = NULL) {
 
-  # Validate inputs
-  if (!is.character(data_name) || length(data_name) != 1) {
-    stop("data_name must be a single character string", call. = FALSE)
-  }
-  if (!is.list(variables)) {
-    stop("variables must be a named list mapping server names to variable vectors",
-         call. = FALSE)
-  }
+  # If an existing correlation result is provided, use it directly
+  if (!is.null(cor_result)) {
+    if (!inherits(cor_result, "ds.cor")) {
+      stop("cor_result must be a ds.cor object from ds.vertCor()", call. = FALSE)
+    }
+    message("Using provided correlation matrix (skipping MHE protocol)...")
+    R <- cor_result$correlation
+    n_obs <- cor_result$n_obs
+    var_names <- cor_result$var_names
+  } else {
+    # Validate inputs
+    if (is.null(data_name) || !is.character(data_name) || length(data_name) != 1) {
+      stop("data_name must be a single character string", call. = FALSE)
+    }
+    if (is.null(variables) || !is.list(variables)) {
+      stop("variables must be a named list mapping server names to variable vectors",
+           call. = FALSE)
+    }
 
-  # Step 1: Compute privacy-preserving correlation matrix
-  message("Computing privacy-preserving correlation matrix...")
-  cor_result <- ds.vertCor(data_name, variables,
-                           log_n = log_n, log_scale = log_scale,
-                           datasources = datasources)
+    # Step 1: Compute privacy-preserving correlation matrix
+    message("Computing privacy-preserving correlation matrix...")
+    cor_result <- ds.vertCor(data_name, variables,
+                             log_n = log_n, log_scale = log_scale,
+                             datasources = datasources)
 
-  R <- cor_result$correlation
-  n_obs <- cor_result$n_obs
-  var_names <- cor_result$var_names
+    R <- cor_result$correlation
+    n_obs <- cor_result$n_obs
+    var_names <- cor_result$var_names
+  }
 
   # Step 2: Eigen decomposition
   message("Performing PCA via eigen decomposition...")
