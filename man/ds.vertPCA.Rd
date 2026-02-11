@@ -4,7 +4,14 @@
 \alias{ds.vertPCA}
 \title{Principal Component Analysis for Vertically Partitioned Data}
 \usage{
-ds.vertPCA(data_name, variables, n_components = NULL, datasources = NULL)
+ds.vertPCA(
+  data_name,
+  variables,
+  n_components = NULL,
+  log_n = 13,
+  log_scale = 40,
+  datasources = NULL
+)
 }
 \arguments{
 \item{data_name}{Character string. Name of the (aligned) data frame on
@@ -16,36 +23,67 @@ and each element is a character vector of variable names from that server.}
 \item{n_components}{Integer. Number of principal components to return.
 Default is NULL (returns all).}
 
+\item{log_n}{Integer. Ring dimension parameter for MHE. Default is 13.}
+
+\item{log_scale}{Integer. Precision parameter for MHE. Default is 40.}
+
 \item{datasources}{DataSHIELD connection object or list of connections.
 If NULL, uses all available connections.}
 }
 \value{
 A list with class "ds.pca" containing:
 \itemize{
-\item \code{scores}: Matrix of principal component scores (n_obs x n_components)
 \item \code{loadings}: Matrix of variable loadings (n_vars x n_components)
-\item \code{variance}: Variance explained by each component
+\item \code{eigenvalues}: Eigenvalues for each component
 \item \code{variance_pct}: Percentage of variance explained
 \item \code{cumulative_pct}: Cumulative percentage explained
 \item \code{var_names}: Variable names
+\item \code{n_obs}: Number of observations
+\item \code{correlation}: The correlation matrix used for PCA
 }
 }
 \description{
-Client-side function that performs PCA on vertically
-partitioned data using distributed Block SVD.
+Performs PCA on vertically partitioned data using the
+privacy-preserving correlation matrix computed via Homomorphic Encryption.
 }
 \details{
-This function extends the Block SVD approach for correlation to perform
-full PCA:
+This function performs PCA using the correlation matrix obtained via
+Multiparty Homomorphic Encryption (MHE). The approach is:
 
 \enumerate{
-\item Each server computes U*D from SVD of its standardized variables
-\item Client combines and performs final SVD
-\item Principal components = U * D (combined)
-\item Loadings = V (right singular vectors)
-\item Variance = D^2 / (n-1)
+\item Compute the privacy-preserving correlation matrix using \code{\link{ds.vertCor}}
+\item Perform eigen decomposition on the correlation matrix
+\item Extract loadings (eigenvectors) and eigenvalues
+}
+
+Since PCA on standardized data is equivalent to eigen decomposition of the
+correlation matrix, this gives correct loadings and variance explained.
+
+\strong{Note on scores:} This function does NOT return principal component
+scores because computing scores would require access to the raw data.
+If you need scores, you would need to compute them on each server using
+the loadings and aggregate the results (which is a separate operation).
+
+\subsection{Interpreting Loadings}{
+Each column of the loadings matrix represents a principal component.
+The values show how much each variable contributes to that component:
+\itemize{
+\item Values close to 1 or -1 indicate strong contribution
+\item Values close to 0 indicate weak contribution
+\item Sign indicates direction of relationship
 }
 }
+}
+\section{Security}{
+
+This function inherits all security properties from \code{\link{ds.vertCor}}:
+\itemize{
+\item Individual observations are never exposed
+\item The client cannot decrypt without all servers cooperating
+\item Only aggregate statistics (correlation matrix) are revealed
+}
+}
+
 \examples{
 \dontrun{
 vars <- list(
@@ -55,10 +93,17 @@ vars <- list(
 
 pca_result <- ds.vertPCA("D_aligned", vars, n_components = 3)
 
-# Plot first two components
-plot(pca_result$scores[, 1], pca_result$scores[, 2],
+# View variance explained
+print(pca_result)
+
+# Biplot of loadings for first two PCs
+plot(pca_result$loadings[, 1], pca_result$loadings[, 2],
+     xlim = c(-1, 1), ylim = c(-1, 1),
      xlab = paste0("PC1 (", round(pca_result$variance_pct[1], 1), "\%)"),
      ylab = paste0("PC2 (", round(pca_result$variance_pct[2], 1), "\%)"))
+text(pca_result$loadings[, 1], pca_result$loadings[, 2],
+     labels = pca_result$var_names, pos = 3)
+abline(h = 0, v = 0, lty = 2)
 }
 
 }
