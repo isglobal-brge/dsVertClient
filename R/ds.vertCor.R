@@ -24,11 +24,22 @@
 #'   \item Correlation matrix = V * D^2 * V' (normalized)
 #' }
 #'
-#' This method is privacy-preserving because:
-#' \itemize{
-#'   \item Individual U*D matrices cannot reconstruct original data
-#'   \item Only the combined correlation structure is revealed
-#' }
+#' @section WARNING - Known Limitation:
+#' \strong{THIS FUNCTION REQUIRES A CORRECT IMPLEMENTATION.}
+#'
+#' The current Block SVD algorithm does not correctly compute cross-server
+#' correlations. The algorithm stacks U*D matrices and performs a final SVD,
+#' but this produces results in a transformed space, NOT in the original
+#' variable space. To correctly map correlations back to original variables,
+#' the V matrix from each server would be needed, but sharing V along with
+#' U*D would allow reconstruction of the original data, breaking privacy.
+#'
+#' \strong{Issue:} Cross-server correlations (e.g., cor(var_A, var_B) where
+#' var_A is on server 1 and var_B is on server 2) are NOT correctly computed.
+#'
+#' \strong{Status:} Awaiting a privacy-preserving method for cross-covariance
+#' computation. Consider using differential privacy or secure multi-party
+#' computation approaches.
 #'
 #' @references
 #' Iwen, M. & Ong, B.W. (2016). A distributed and incremental SVD algorithm
@@ -55,6 +66,17 @@
 #' @importFrom stats cov2cor
 #' @export
 ds.vertCor <- function(data_name, variables, datasources = NULL) {
+  # WARNING: Known limitation
+
+  warning(
+    "ds.vertCor: THIS FUNCTION REQUIRES A CORRECT IMPLEMENTATION.\n",
+    "The current algorithm does not correctly compute cross-server correlations.\n",
+    "Correlations WITHIN each server are correct, but correlations BETWEEN\n",
+    "servers (variables on different servers) may be incorrect.\n",
+    "See ?ds.vertCor for details.",
+    call. = FALSE
+  )
+
   # Validate inputs
   if (!is.character(data_name) || length(data_name) != 1) {
     stop("data_name must be a single character string", call. = FALSE)
