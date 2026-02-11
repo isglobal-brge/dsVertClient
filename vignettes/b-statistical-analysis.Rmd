@@ -1,0 +1,467 @@
+---
+title: "Statistical Analysis"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Statistical Analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = FALSE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5,
+  message = FALSE,
+  warning = FALSE,
+  class.output = "bg-light",
+  results = "hold"
+)
+```
+
+This vignette demonstrates the statistical analysis capabilities of dsVertClient: correlation matrices, principal component analysis (PCA), and generalized linear models (GLMs) across vertically partitioned data.
+
+```{r setup-env, include=FALSE}
+# Create and align the environment silently
+library(DSLite)
+library(dsVert)
+library(dsVertClient)
+library(DSI)
+
+set.seed(2026)
+n_patients <- 200
+patient_ids <- paste0("PATIENT_", sprintf("%05d", 1:n_patients))
+
+true_age <- pmax(18, pmin(round(rnorm(n_patients, 55, 12)), 90))
+true_weight <- pmax(45, round(rnorm(n_patients, 75, 15), 1))
+true_height <- round(rnorm(n_patients, 170, 10), 1)
+true_bmi <- round(true_weight / (true_height/100)^2, 1)
+true_glucose <- round(85 + 0.3 * true_age + 0.5 * true_bmi + rnorm(n_patients, 0, 15), 1)
+true_cholesterol <- round(150 + 0.8 * true_age + 1.2 * true_bmi + rnorm(n_patients, 0, 30), 1)
+
+true_outcome_bp <- round(90 + 0.4 * true_age + 0.6 * true_bmi + 0.1 * true_glucose + rnorm(n_patients, 0, 8), 1)
+diabetes_logit <- -10 + 0.05 * true_age + 0.08 * true_bmi + 0.03 * true_glucose
+true_outcome_diabetes <- rbinom(n_patients, 1, plogis(diabetes_logit))
+visit_rate <- exp(-1 + 0.02 * true_age + 0.01 * true_bmi)
+true_outcome_visits <- rpois(n_patients, pmin(visit_rate, 10))
+true_outcome_cost <- round(exp(6 + 0.01 * true_age + 0.02 * true_bmi + rnorm(n_patients, 0, 0.5)), 2)
+
+order_A <- sample(n_patients)
+order_B <- sample(n_patients)
+order_C <- sample(n_patients)
+
+institution_A <- data.frame(
+  patient_id = patient_ids[order_A], age = true_age[order_A], weight = true_weight[order_A],
+  outcome_bp = true_outcome_bp[order_A], outcome_diabetes = true_outcome_diabetes[order_A],
+  outcome_visits = true_outcome_visits[order_A], outcome_cost = true_outcome_cost[order_A],
+  stringsAsFactors = FALSE
+)
+institution_B <- data.frame(
+  patient_id = patient_ids[order_B], height = true_height[order_B], bmi = true_bmi[order_B],
+  outcome_bp = true_outcome_bp[order_B], outcome_diabetes = true_outcome_diabetes[order_B],
+  outcome_visits = true_outcome_visits[order_B], outcome_cost = true_outcome_cost[order_B],
+  stringsAsFactors = FALSE
+)
+institution_C <- data.frame(
+  patient_id = patient_ids[order_C], glucose = true_glucose[order_C], cholesterol = true_cholesterol[order_C],
+  outcome_bp = true_outcome_bp[order_C], outcome_diabetes = true_outcome_diabetes[order_C],
+  outcome_visits = true_outcome_visits[order_C], outcome_cost = true_outcome_cost[order_C],
+  stringsAsFactors = FALSE
+)
+
+dslite_server <- newDSLiteServer(tables = list(inst_A = institution_A, inst_B = institution_B, inst_C = institution_C))
+dslite_server$config(defaultDSConfiguration(include = c("dsVert")))
+assign("dslite_server", dslite_server, envir = globalenv())
+
+builder <- newDSLoginBuilder()
+builder$append(server = "inst_A", url = "dslite_server", table = "inst_A", driver = "DSLiteDriver")
+builder$append(server = "inst_B", url = "dslite_server", table = "inst_B", driver = "DSLiteDriver")
+builder$append(server = "inst_C", url = "dslite_server", table = "inst_C", driver = "DSLiteDriver")
+
+connections <- datashield.login(builder$build(), assign = TRUE, symbol = "D")
+
+ref_hashes <- ds.hashId("D", "patient_id", datasource = connections["inst_A"])
+ds.alignRecords("D", "patient_id", ref_hashes$hashes, "D_aligned", datasources = connections)
+```
+
+## Our Environment
+
+We have three institutions with aligned data for 200 patients:
+
+| Institution | Variables |
+|-------------|-----------|
+| **inst_A** | age, weight |
+| **inst_B** | height, bmi |
+| **inst_C** | glucose, cholesterol |
+
+All institutions also have outcome variables (blood pressure, diabetes status, hospital visits, costs) for the GLM examples.
+
+---
+
+## Correlation Analysis
+
+### Understanding the Challenge
+
+Computing correlations across vertically partitioned data is non-trivial. Consider computing the correlation between `age` (at Institution A) and `glucose` (at Institution C):
+
+- Institution A knows `age` values but not `glucose`
+- Institution C knows `glucose` values but not `age`
+- Neither can compute correlation alone
+- We cannot send raw values between institutions
+
+### The Solution: Block SVD
+
+dsVertClient uses **Block Singular Value Decomposition (SVD)** to compute correlations without sharing raw data:
+
+1. Each institution computes a partial SVD on its standardized data
+2. Only the **U×D matrices** (left singular vectors × singular values) are returned
+3. The client combines these to reconstruct the full correlation matrix
+
+The mathematical details are in the [Methodology](c-methodology.html) vignette.
+
+### Computing the Correlation Matrix
+
+We define which variables belong to which institution and compute the correlation matrix:
+
+```{r define-variables}
+variables <- list(
+  inst_A = c("age", "weight"),
+  inst_B = c("height", "bmi"),
+  inst_C = c("glucose", "cholesterol")
+)
+```
+
+```{r compute-correlation}
+cor_matrix <- ds.vertCor(
+  data_name = "D_aligned",
+  variables = variables,
+  datasources = connections
+)
+
+round(cor_matrix, 3)
+```
+
+The matrix shows correlations between all 6 variables across 3 institutions. Note how cross-institution correlations (e.g., between `glucose` at Institution C and `age` at Institution A) are computed **without either institution seeing the other's data**.
+
+### Selected Correlations
+
+```{r interpret-correlations}
+data.frame(
+  Correlation = c("weight-age", "bmi-height", "cholesterol-glucose",
+                  "glucose-age", "bmi-age", "cholesterol-bmi"),
+  Institutions = c("A-A", "B-B", "C-C", "C-A", "B-A", "C-B"),
+  r = c(cor_matrix["weight", "age"],
+        cor_matrix["bmi", "height"],
+        cor_matrix["cholesterol", "glucose"],
+        cor_matrix["glucose", "age"],
+        cor_matrix["bmi", "age"],
+        cor_matrix["cholesterol", "bmi"])
+)
+```
+
+The first three are within-institution correlations; the last three are cross-institution correlations computed via Block SVD.
+
+### Visualizing Correlations
+
+```{r correlation-heatmap, fig.height=6, fig.width=7, fig.alt="Correlation heatmap showing relationships between 6 variables across 3 institutions"}
+heatmap(
+  cor_matrix,
+  symm = TRUE,
+  col = colorRampPalette(c("#2166AC", "#F7F7F7", "#B2182B"))(50),
+  margins = c(10, 10),
+  main = "Correlation Heatmap"
+)
+```
+
+---
+
+## Principal Component Analysis (PCA)
+
+### Understanding Distributed PCA
+
+PCA finds linear combinations of variables that capture maximum variance. With vertically partitioned data, variables are spread across institutions, making traditional PCA impossible.
+
+dsVertClient uses the same Block SVD approach as correlation analysis to perform distributed PCA:
+
+1. Each institution computes U×D from its local SVD
+2. The client combines these matrices
+3. A final SVD produces the principal components
+
+### Performing PCA
+
+```{r compute-pca}
+pca_result <- ds.vertPCA(
+  data_name = "D_aligned",
+  variables = variables,
+  n_components = 4,
+  datasources = connections
+)
+
+pca_result
+```
+
+### Understanding PCA Output
+
+The PCA result contains three key components:
+
+**Variance explained** - how much of the total variance each component captures:
+
+```{r pca-variance}
+data.frame(
+  Component = paste0("PC", 1:4),
+  Variance = round(pca_result$variance, 4),
+  Percent = paste0(round(pca_result$variance_pct, 1), "%"),
+  Cumulative = paste0(round(pca_result$cumulative_pct, 1), "%")
+)
+```
+
+**Loadings** - how each variable contributes to each component:
+
+```{r pca-loadings}
+loadings_df <- as.data.frame(round(pca_result$loadings, 3))
+colnames(loadings_df) <- paste0("PC", 1:4)
+loadings_df
+```
+
+**Scores** - each patient's position in PC space (first 5 shown):
+
+```{r pca-scores}
+scores_preview <- as.data.frame(round(pca_result$scores[1:5, ], 3))
+colnames(scores_preview) <- paste0("PC", 1:4)
+scores_preview
+```
+
+### Visualizing PCA Results
+
+```{r pca-scree, fig.height=5, fig.width=6, fig.alt="Scree plot showing variance explained by each principal component"}
+par(mar = c(6, 4, 4, 2))
+barplot(
+  pca_result$variance_pct,
+  names.arg = paste0("PC", 1:4),
+  main = "Scree Plot: Variance Explained",
+  ylab = "Percentage of Variance (%)",
+  col = "steelblue",
+  ylim = c(0, max(pca_result$variance_pct) * 1.3)
+)
+
+# Add cumulative line on secondary scale
+cum_scaled <- pca_result$cumulative_pct / 100 * max(pca_result$variance_pct) * 1.1
+lines(1:4, cum_scaled, type = "b", col = "#d62728", pch = 19, lwd = 2)
+
+# Legend below the plot
+par(xpd = TRUE)
+legend("bottom", inset = c(0, -0.35), legend = c("Individual %", "Cumulative % (scaled)"),
+       fill = c("steelblue", NA), border = c("black", NA),
+       lty = c(NA, 1), col = c(NA, "#d62728"), pch = c(NA, 19), lwd = c(NA, 2),
+       horiz = TRUE, bg = "white", cex = 0.9)
+```
+
+```{r pca-scatter, fig.height=5, fig.width=6, fig.alt="PCA scatter plot showing patient distribution along first two principal components"}
+plot(
+  pca_result$scores[, 1],
+  pca_result$scores[, 2],
+  xlab = sprintf("PC1 (%.1f%%)", pca_result$variance_pct[1]),
+  ylab = sprintf("PC2 (%.1f%%)", pca_result$variance_pct[2]),
+  main = "PCA Score Plot\n(Data from 3 Institutions)",
+  pch = 19,
+  col = rgb(0.2, 0.4, 0.6, 0.5)
+)
+abline(h = 0, v = 0, lty = 2, col = "gray")
+```
+
+---
+
+## Generalized Linear Models (GLM)
+
+### The Block Coordinate Descent Algorithm
+
+dsVertClient fits GLMs using **Block Coordinate Descent (BCD)**, an iterative algorithm that:
+
+1. Divides predictors into "blocks" (one per institution)
+2. Updates each block's coefficients while holding others fixed
+3. Shares only the **linear predictor** (η = Xβ), not raw data
+4. Iterates until convergence
+
+This ensures:
+
+- Each institution's raw data stays local
+- Coefficients are computed locally at each institution
+- Only aggregate predictions are shared between iterations
+
+### Supported GLM Families
+
+| Family | Link | Response Type | Example Use |
+|--------|------|---------------|-------------|
+| `gaussian` | Identity | Continuous | Blood pressure, BMI |
+| `binomial` | Logit | Binary (0/1) | Disease status, mortality |
+| `poisson` | Log | Count | Hospital visits, events |
+| `Gamma` | Log | Positive continuous | Costs, durations |
+| `inverse.gaussian` | Log | Positive continuous | Reaction times |
+
+### Example 1: Gaussian GLM (Linear Regression)
+
+Predict blood pressure from age, BMI, and glucose:
+
+```{r glm-gaussian}
+x_vars <- list(
+  inst_A = c("age", "weight"),
+  inst_B = c("bmi"),
+  inst_C = c("glucose")
+)
+
+model_bp <- ds.vertGLM(
+  data_name = "D_aligned",
+  y_var = "outcome_bp",
+  x_vars = x_vars,
+  family = "gaussian",
+  tol = 1e-5,
+  verbose = FALSE,
+  datasources = connections
+)
+
+summary(model_bp)
+```
+
+The summary shows:
+
+- **Coefficients**: Effect of each predictor on blood pressure
+- **Deviance**: Measures model fit (lower = better)
+- **Null deviance**: Deviance of intercept-only model
+- **Pseudo R²**: Proportion of deviance explained
+- **AIC**: Model comparison metric (lower = better)
+
+### Example 2: Binomial GLM (Logistic Regression)
+
+Predict diabetes risk:
+
+```{r glm-binomial}
+model_diabetes <- ds.vertGLM(
+  data_name = "D_aligned",
+  y_var = "outcome_diabetes",
+  x_vars = x_vars,
+  family = "binomial",
+  tol = 1e-5,
+  verbose = FALSE,
+  datasources = connections
+)
+
+summary(model_diabetes)
+```
+
+For logistic regression, coefficients are on the **log-odds scale**. Exponentiating gives odds ratios:
+
+```{r odds-ratios}
+odds_ratios <- exp(coef(model_diabetes))
+data.frame(
+  Variable = names(odds_ratios),
+  OddsRatio = round(odds_ratios, 3)
+)
+```
+
+An odds ratio > 1 means higher risk per unit increase in the predictor.
+
+### Example 3: Poisson GLM (Count Data)
+
+Predict number of hospital visits:
+
+```{r glm-poisson}
+model_visits <- ds.vertGLM(
+  data_name = "D_aligned",
+  y_var = "outcome_visits",
+  x_vars = list(inst_A = c("age"), inst_B = c("bmi")),
+  family = "poisson",
+  tol = 1e-5,
+  verbose = FALSE,
+  datasources = connections
+)
+
+summary(model_visits)
+```
+
+For Poisson regression, coefficients are on the **log scale**. Exponentiate to get rate ratios.
+
+### Example 4: Gamma GLM (Positive Continuous)
+
+Predict healthcare costs:
+
+```{r glm-gamma}
+model_cost <- ds.vertGLM(
+  data_name = "D_aligned",
+  y_var = "outcome_cost",
+  x_vars = list(inst_A = c("age"), inst_B = c("bmi")),
+  family = "Gamma",
+  tol = 1e-5,
+  verbose = FALSE,
+  datasources = connections
+)
+
+summary(model_cost)
+```
+
+The **Gamma family** is appropriate for:
+
+- Strictly positive continuous outcomes
+- Right-skewed distributions
+- Variance proportional to mean squared (common in cost data)
+
+### Example 5: Inverse Gaussian GLM
+
+An alternative for positive continuous data with different variance structure:
+
+```{r glm-invgaussian}
+model_cost_ig <- ds.vertGLM(
+  data_name = "D_aligned",
+  y_var = "outcome_cost",
+  x_vars = list(inst_A = c("age"), inst_B = c("bmi")),
+  family = "inverse.gaussian",
+  tol = 1e-5,
+  verbose = FALSE,
+  datasources = connections
+)
+
+summary(model_cost_ig)
+```
+
+### Comparing Models
+
+```{r compare-glm}
+models <- list(
+  "Blood Pressure (gaussian)" = model_bp,
+  "Diabetes Risk (binomial)" = model_diabetes,
+  "Hospital Visits (poisson)" = model_visits,
+  "Healthcare Cost (Gamma)" = model_cost,
+  "Healthcare Cost (inv.gauss)" = model_cost_ig
+)
+
+data.frame(
+  Model = names(models),
+  Family = sapply(models, function(m) m$family),
+  Predictors = sapply(models, function(m) m$n_vars),
+  Deviance = sapply(models, function(m) round(m$deviance, 2)),
+  Pseudo_R2 = sapply(models, function(m) round(m$pseudo_r2, 4)),
+  AIC = sapply(models, function(m) round(m$aic, 2)),
+  Converged = sapply(models, function(m) m$converged)
+)
+```
+
+---
+
+## Privacy Summary
+
+Throughout all these analyses:
+
+| Analysis | What's Shared | What's Protected |
+|----------|--------------|------------------|
+| Correlation | U×D matrices from SVD | Raw variable values |
+| PCA | U×D matrices from SVD | Raw variable values |
+| GLM | Linear predictors (η = Xβ) | Raw data, final coefficients during iteration |
+
+**No raw patient-level data ever leaves any institution.**
+
+For a detailed explanation of the mathematical methodology, see the [Methodology](c-methodology.html) vignette.
+
+```{r cleanup, include=FALSE}
+datashield.logout(connections)
+rm("dslite_server", envir = globalenv())
+```

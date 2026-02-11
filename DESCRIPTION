@@ -6,9 +6,9 @@ Authors@R: c(
     person("David", "Sarrat González", email = "david.sarrat@isglobal.org",
            role = c("aut", "cre")),
     person("Miron", "Banjac", email = "miron.banjac@isglobal.org",
-           role = "ctb"),
+           role = "aut"),
     person("Juan R", "González", email = "juanr.gonzalez@isglobal.org",
-           role = "ctb")
+           role = "aut")
   )
 Description: Client-side DataSHIELD functions for privacy-preserving analysis
     of vertically partitioned federated data. Provides user-facing functions
@@ -16,7 +16,8 @@ Description: Client-side DataSHIELD functions for privacy-preserving analysis
     Models across multiple data sources. Works with the companion dsVert
     server package.
 License: MIT + file LICENSE
-URL: https://github.com/isglobal-brge/dsVertClient
+URL: https://github.com/isglobal-brge/dsVertClient,
+    https://isglobal-brge.github.io/dsVertClient/
 BugReports: https://github.com/isglobal-brge/dsVertClient/issues
 Encoding: UTF-8
 LazyData: true
@@ -29,7 +30,8 @@ Suggests:
     DSLite,
     dsVert,
     knitr,
-    rmarkdown
+    rmarkdown,
+    pkgdown
 RoxygenNote: 7.3.3
 Roxygen: list(markdown = TRUE)
 VignetteBuilder: knitr

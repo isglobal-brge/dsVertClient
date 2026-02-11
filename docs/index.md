@@ -1,30 +1,41 @@
-# dsVertClient: DataSHIELD Functions for Vertically Partitioned Data
+# dsVertClient
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+DataSHIELD Functions for Vertically Partitioned Data
+
+[![License:
+MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Overview
 
-**dsVertClient** is a client-side DataSHIELD package that enables privacy-preserving statistical analysis on **vertically partitioned federated data**. In vertical partitioning, different data sources hold different variables (columns) for the same set of observations (rows).
+**dsVertClient** is a client-side DataSHIELD package that enables
+privacy-preserving statistical analysis on **vertically partitioned
+federated data**. In vertical partitioning, different data sources hold
+different variables (columns) for the same set of observations (rows).
 
 This package provides user-friendly functions for:
 
-- **ID Validation**: Check identifier format consistency before alignment
+- **ID Validation**: Check identifier format consistency before
+  alignment
 - **Record Matching**: Align records across servers using secure hashing
-- **Correlation Analysis**: Compute correlation matrices using distributed Block SVD
+- **Correlation Analysis**: Compute correlation matrices using
+  distributed Block SVD
 - **Principal Component Analysis**: Perform PCA across distributed data
-- **Generalized Linear Models**: Fit GLMs using Block Coordinate Descent (5 families)
+- **Generalized Linear Models**: Fit GLMs using Block Coordinate Descent
+  (5 families)
 - **Model Diagnostics**: Deviance, pseudo R-squared, and AIC metrics
 
 ## Installation
 
-```r
+``` r
+
 # Install from GitHub (install dsVert first on servers)
 devtools::install_github("isglobal-brge/dsVertClient")
 ```
 
 ## Quick Start
 
-```r
+``` r
+
 library(dsVertClient)
 library(DSI)
 
@@ -64,7 +75,7 @@ datashield.logout(conns)
 ## Client-Side Functions
 
 | Function | Description |
-|----------|-------------|
+|----|----|
 | `ds.validateIdFormat` | Validate identifier format consistency across servers |
 | `ds.hashId` | Get hashed identifiers from a server |
 | `ds.alignRecords` | Align records across servers to match hashes |
@@ -74,17 +85,18 @@ datashield.logout(conns)
 
 ## Supported GLM Families
 
-| Family | Link | Use Case |
-|--------|------|----------|
-| `gaussian` | Identity | Continuous outcomes (linear regression) |
-| `binomial` | Logit | Binary outcomes (logistic regression) |
-| `poisson` | Log | Count data |
-| `Gamma` | Log | Positive continuous data (costs, times) |
-| `inverse.gaussian` | Log | Positive continuous with high variance |
+| Family             | Link     | Use Case                                |
+|--------------------|----------|-----------------------------------------|
+| `gaussian`         | Identity | Continuous outcomes (linear regression) |
+| `binomial`         | Logit    | Binary outcomes (logistic regression)   |
+| `poisson`          | Log      | Count data                              |
+| `Gamma`            | Log      | Positive continuous data (costs, times) |
+| `inverse.gaussian` | Log      | Positive continuous with high variance  |
 
 ## Record Matching Workflow
 
-```r
+``` r
+
 # Step 0 (Optional): Validate ID formats
 validation <- ds.validateIdFormat("D", "patient_id", datasources = conns)
 if (!validation$valid) {
@@ -103,9 +115,11 @@ ds.alignRecords("D", "patient_id", ref_hashes$hashes,
 
 ## Correlation and PCA
 
-The package uses **Block Singular Value Decomposition** for distributed correlation and PCA:
+The package uses **Block Singular Value Decomposition** for distributed
+correlation and PCA:
 
-```r
+``` r
+
 # Correlation
 cor_matrix <- ds.vertCor("D_aligned", variables, datasources = conns)
 
@@ -123,7 +137,8 @@ plot(pca$scores[,1], pca$scores[,2],
 
 Fit GLMs using **Block Coordinate Descent**:
 
-```r
+``` r
+
 # Linear regression (Gaussian)
 model_linear <- ds.vertGLM("D_aligned", "continuous_outcome", x_vars,
                            family = "gaussian", datasources = conns)
@@ -147,15 +162,20 @@ summary(model_linear)
 
 ## Requirements
 
-- R >= 4.0.0
+- R \>= 4.0.0
 - DSI package
 - dsVert package installed on DataSHIELD servers
 
 ## Documentation
 
-- [Getting Started](https://isglobal-brge.github.io/dsVertClient/articles/a-getting-started.html): Introduction and record alignment
-- [Statistical Analysis](https://isglobal-brge.github.io/dsVertClient/articles/b-statistical-analysis.html): Correlation, PCA, and GLMs
-- [Methodology](https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.html): Mathematical details
+- [Getting
+  Started](https://isglobal-brge.github.io/dsVertClient/articles/a-getting-started.html):
+  Introduction and record alignment
+- [Statistical
+  Analysis](https://isglobal-brge.github.io/dsVertClient/articles/b-statistical-analysis.html):
+  Correlation, PCA, and GLMs
+- [Methodology](https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.html):
+  Mathematical details
 
 ## Authors
 
@@ -165,5 +185,10 @@ summary(model_linear)
 
 ## References
 
-- van Kesteren, E.J. et al. (2019). [Privacy-preserving generalized linear models using distributed block coordinate descent](https://arxiv.org/abs/1911.03183). arXiv:1911.03183.
-- Iwen, M. & Ong, B.W. (2016). [A distributed and incremental SVD algorithm for agglomerative data analysis on large networks](https://doi.org/10.1137/16M1058467). SIAM Journal on Matrix Analysis and Applications.
+- van Kesteren, E.J. et al. (2019). [Privacy-preserving generalized
+  linear models using distributed block coordinate
+  descent](https://arxiv.org/abs/1911.03183). arXiv:1911.03183.
+- Iwen, M. & Ong, B.W. (2016). [A distributed and incremental SVD
+  algorithm for agglomerative data analysis on large
+  networks](https://doi.org/10.1137/16M1058467). SIAM Journal on Matrix
+  Analysis and Applications.

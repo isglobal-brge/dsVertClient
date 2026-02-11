@@ -1,0 +1,91 @@
+/* ============================================
+   Code input blocks styling
+   ============================================ */
+pre.sourceCode {
+  background-color: #f6f8fa;
+  border: 1px solid #e1e4e8;
+  border-radius: 6px;
+  padding: 16px;
+  margin: 16px 0;
+  overflow-x: auto;
+}
+
+/* Ensure consistent styling inside code blocks */
+pre.sourceCode code {
+  background-color: transparent !important;
+  padding: 0;
+  border: none;
+}
+
+/* Comments inside code - same background, just different color */
+pre.sourceCode code .co {
+  color: #6a737d;
+  background-color: transparent !important;
+}
+
+/* Function names */
+pre.sourceCode code .fu {
+  color: #6f42c1;
+}
+
+/* Strings */
+pre.sourceCode code .st {
+  color: #032f62;
+}
+
+/* Numbers */
+pre.sourceCode code .dv, pre.sourceCode code .fl {
+  color: #005cc5;
+}
+
+/* ============================================
+   Output blocks styling
+   ============================================ */
+pre.bg-light {
+  background-color: #f8f9fa !important;
+  border: 1px solid #dee2e6;
+  border-left: 4px solid #28a745;
+  border-radius: 6px;
+  padding: 16px;
+  margin: 16px 0;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.875em;
+}
+
+pre.bg-light code {
+  color: #495057;
+  background-color: transparent !important;
+}
+
+/* ============================================
+   General pre blocks (pseudocode, etc)
+   ============================================ */
+pre:not(.sourceCode):not(.bg-light) {
+  background-color: #f6f8fa;
+  border: 1px solid #e1e4e8;
+  border-radius: 6px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+/* ============================================
+   Spacing and layout
+   ============================================ */
+div.sourceCode {
+  margin: 20px 0;
+}
+
+.cell {
+  margin-bottom: 24px;
+}
+
+/* Tables */
+.table {
+  margin-top: 16px;
+  margin-bottom: 16px;
+}
+
+/* Remove syntax highlighting background artifacts */
+code span {
+  background-color: transparent !important;
+}
