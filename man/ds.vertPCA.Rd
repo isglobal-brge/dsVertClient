@@ -8,7 +8,7 @@ ds.vertPCA(
   data_name,
   variables,
   n_components = NULL,
-  log_n = 13,
+  log_n = 12,
   log_scale = 40,
   datasources = NULL
 )
@@ -23,9 +23,9 @@ and each element is a character vector of variable names from that server.}
 \item{n_components}{Integer. Number of principal components to return.
 Default is NULL (returns all).}
 
-\item{log_n}{Integer. Ring dimension parameter for MHE. Default is 13.}
+\item{log_n}{Integer. CKKS ring dimension parameter for MHE. Default is 12.}
 
-\item{log_scale}{Integer. Precision parameter for MHE. Default is 40.}
+\item{log_scale}{Integer. CKKS precision parameter for MHE. Default is 40.}
 
 \item{datasources}{DataSHIELD connection object or list of connections.
 If NULL, uses all available connections.}

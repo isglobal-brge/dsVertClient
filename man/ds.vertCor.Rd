@@ -7,7 +7,7 @@
 ds.vertCor(
   data_name,
   variables,
-  log_n = 13,
+  log_n = 12,
   log_scale = 40,
   datasources = NULL
 )
@@ -19,98 +19,115 @@ each server.}
 \item{variables}{A named list where each name corresponds to a server name
 and each element is a character vector of variable names from that server.}
 
-\item{log_n}{Integer. Ring dimension parameter (12, 13, or 14 recommended).
-Higher values support more observations but are slower. Default is 13.}
+\item{log_n}{Integer. CKKS ring dimension parameter (12, 13, or 14).
+Controls the number of slots: N/2 = 2^(logN-1).
+Default is 12 (2048 slots, fast). Use 13 or 14 for larger datasets.}
 
-\item{log_scale}{Integer. Precision parameter (40 recommended).
-Higher values give more precision but consume more levels. Default is 40.}
+\item{log_scale}{Integer. CKKS scale parameter controlling precision.
+Default is 40 (approximately 12 decimal digits of precision).}
 
 \item{datasources}{DataSHIELD connection object or list of connections.
 If NULL, uses all available connections.}
 }
 \value{
-A list with class "ds.cor" containing:
+A list with class \code{"ds.cor"} containing:
 \itemize{
-\item \code{correlation}: The correlation matrix (p x p)
+\item \code{correlation}: The full correlation matrix (p x p)
 \item \code{var_names}: Variable names in order
 \item \code{n_obs}: Number of observations
-\item \code{method}: "MHE-CKKS" indicating the method used
+\item \code{method}: \code{"MHE-CKKS-Threshold"} indicating the method used
 \item \code{servers}: Names of servers involved
+\item \code{local_correlations}: List of within-server correlation matrices
+\item \code{cross_correlations}: List of cross-server correlation matrices
+\item \code{mhe_params}: List with \code{log_n} and \code{log_scale} used
 }
 }
 \description{
 Computes the Pearson correlation matrix for vertically partitioned
-data using Multiparty Homomorphic Encryption (MHE). This method correctly
-computes cross-server correlations while guaranteeing that:
-\itemize{
-\item Individual observations are never exposed
-\item The client cannot decrypt data without server cooperation
-\item Only aggregate statistics (correlations) are revealed
-}
+data using Multiparty Homomorphic Encryption (MHE) with threshold decryption.
 }
 \details{
-\subsection{Algorithm Overview}{
-The algorithm computes correlation using homomorphic encryption:
+\subsection{Threshold MHE Protocol (6 phases)}{
+This function implements a full multiparty homomorphic encryption protocol
+with threshold decryption:
 
 \enumerate{
-\item \strong{Key Generation}: Each server generates key shares.
-\item \strong{Key Combination}: Public keys are combined into a collective key.
-\item \strong{Standardization}: Each server standardizes its data locally
-(Z = (X - mean) / sd).
-\item \strong{Encryption}: Each server encrypts its standardized columns.
-\item \strong{Homomorphic Computation}: Cross-products are computed on
-encrypted data.
-\item \strong{Assembly}: Client assembles the full correlation matrix from
-local correlations (diagonal blocks) and cross-correlations (off-diagonal).
+\item \strong{Key Generation}: Each server generates its own secret key share
+and a public key share. Party 0 also generates the Common Reference
+Polynomial (CRP) shared by all parties.
+\item \strong{Key Combination}: Public key shares are combined into a
+Collective Public Key (CPK). Data encrypted under the CPK can only be
+decrypted with ALL servers cooperating.
+\item \strong{Encryption}: Each server standardizes its columns (Z-scores)
+and encrypts them column-by-column under the CPK.
+\item \strong{Local Correlation}: Within-server correlations are computed in
+plaintext (no encryption needed for data that stays on-server).
+\item \strong{Cross-Server Correlation}: For each pair of servers (A, B),
+server A receives Enc(Z_B) and computes the element-wise product
+Z_A * Enc(Z_B) homomorphically. The result is still encrypted and
+requires threshold decryption. Each server produces a partial decryption
+share, and the client fuses all shares to recover the inner product.
+\item \strong{Assembly}: The client assembles the full p x p correlation
+matrix from local correlations (diagonal blocks) and cross-server
+correlations (off-diagonal blocks).
 }
 }
 
 \subsection{Security Guarantees}{
 \describe{
-\item{Confidentiality}{Individual observations are protected by encryption.
-Server A sees only Enc(Z_B), not Z_B.}
-\item{Non-reconstruction}{The client cannot reconstruct individual data
-from the correlation matrix alone.}
-\item{Collusion resistance}{Even client + one server cannot decrypt.
-Decryption requires ALL servers.}
+\item{Client privacy}{The client (researcher) CANNOT decrypt any individual
+data. It only receives partial decryption shares that are useless alone.
+Only the final aggregate statistics (correlation coefficients) are revealed
+after fusing ALL shares.}
+\item{Server privacy}{Each server's raw data never leaves the server. Other
+servers only see encrypted columns (opaque ciphertexts).}
+\item{Collusion resistance}{Even K-1 colluding servers cannot decrypt
+without the K-th server's key share. Full decryption requires cooperation
+from ALL K servers.}
 }
 }
 }
 \section{Performance Notes}{
 
 \itemize{
-\item Computation scales as O(p_A * p_B * n * log(n))
-\item Recommended: n < 2000 for log_n=12, n < 4000 for log_n=13
+\item \code{log_n = 12}: Up to 2048 observations, fastest
+\item \code{log_n = 13}: Up to 4096 observations
+\item \code{log_n = 14}: Up to 8192 observations, slowest
 \item Precision: approximately 10^-3 to 10^-4 error due to CKKS approximation
+\item The dominant cost is the threshold decryption loop (Phase 5), which
+requires one round-trip per server per cross-correlation element.
 }
 }
 
 \examples{
 \dontrun{
-# Connect to DataSHIELD servers
+# Connect to Opal/DataSHIELD servers
 connections <- DSI::datashield.login(builder$build())
 
-# Align records first
-ref_hashes <- ds.hashId("data", "patient_id", datasource = connections["server1"])
-ds.alignRecords("data", "patient_id", ref_hashes$hashes,
-                newobj = "data_aligned", datasources = connections)
+# Align records across servers
+ref_hashes <- ds.hashId("D", "patient_id", datasource = connections["server1"])
+ds.alignRecords("D", "patient_id", ref_hashes$hashes,
+                newobj = "D_aligned", datasources = connections)
 
-# Define variables per server
+# Define which variables are on which server
 vars <- list(
   hospital_A = c("age", "bmi"),
   hospital_B = c("glucose", "systolic_bp")
 )
 
 # Compute privacy-preserving correlation
-result <- ds.vertCor("data_aligned", vars)
-print(result$correlation)
+result <- ds.vertCor("D_aligned", vars)
+print(result)
 }
 
 }
 \references{
+Mouchet, C. et al. (2021). "Multiparty Homomorphic Encryption from
+Ring-Learning-With-Errors". \emph{Proceedings on Privacy Enhancing Technologies (PETS)}.
+
 Cheon, J.H. et al. (2017). "Homomorphic Encryption for Arithmetic of
-Approximate Numbers". ASIACRYPT 2017.
+Approximate Numbers". \emph{ASIACRYPT 2017}.
 }
 \seealso{
-\code{\link{ds.vertPCA}} for PCA analysis
+\code{\link{ds.vertPCA}} for PCA analysis built on this function
 }
