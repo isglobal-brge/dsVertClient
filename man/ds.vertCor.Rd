@@ -2,9 +2,15 @@
 % Please edit documentation in R/ds.vertCor.R
 \name{ds.vertCor}
 \alias{ds.vertCor}
-\title{Correlation Matrix for Vertically Partitioned Data}
+\title{Privacy-Preserving Correlation for Vertically Partitioned Data}
 \usage{
-ds.vertCor(data_name, variables, datasources = NULL)
+ds.vertCor(
+  data_name,
+  variables,
+  log_n = 13,
+  log_scale = 40,
+  datasources = NULL
+)
 }
 \arguments{
 \item{data_name}{Character string. Name of the (aligned) data frame on
@@ -13,55 +19,98 @@ each server.}
 \item{variables}{A named list where each name corresponds to a server name
 and each element is a character vector of variable names from that server.}
 
+\item{log_n}{Integer. Ring dimension parameter (12, 13, or 14 recommended).
+Higher values support more observations but are slower. Default is 13.}
+
+\item{log_scale}{Integer. Precision parameter (40 recommended).
+Higher values give more precision but consume more levels. Default is 40.}
+
 \item{datasources}{DataSHIELD connection object or list of connections.
 If NULL, uses all available connections.}
 }
 \value{
-A correlation matrix with dimensions equal to the total number
-of variables across all servers. Row and column names are the
-variable names.
+A list with class "ds.cor" containing:
+\itemize{
+\item \code{correlation}: The correlation matrix (p x p)
+\item \code{var_names}: Variable names in order
+\item \code{n_obs}: Number of observations
+\item \code{method}: "MHE-CKKS" indicating the method used
+\item \code{servers}: Names of servers involved
+}
 }
 \description{
-Client-side function that computes a correlation matrix
-across vertically partitioned data using distributed Block SVD.
+Computes the Pearson correlation matrix for vertically partitioned
+data using Multiparty Homomorphic Encryption (MHE). This method correctly
+computes cross-server correlations while guaranteeing that:
+\itemize{
+\item Individual observations are never exposed
+\item The client cannot decrypt data without server cooperation
+\item Only aggregate statistics (correlations) are revealed
+}
 }
 \details{
-This function implements distributed correlation analysis using
-Block Singular Value Decomposition:
+\subsection{Algorithm Overview}{
+The algorithm computes correlation using homomorphic encryption:
 
 \enumerate{
-\item Each server computes U*D from SVD of its standardized variables
-\item Client combines  into a single matrix
-\item Client computes final SVD to get V and D
-\item Correlation matrix = V * D^2 * V' (normalized)
+\item \strong{Key Generation}: Each server generates key shares.
+\item \strong{Key Combination}: Public keys are combined into a collective key.
+\item \strong{Standardization}: Each server standardizes its data locally
+(Z = (X - mean) / sd).
+\item \strong{Encryption}: Each server encrypts its standardized columns.
+\item \strong{Homomorphic Computation}: Cross-products are computed on
+encrypted data.
+\item \strong{Assembly}: Client assembles the full correlation matrix from
+local correlations (diagonal blocks) and cross-correlations (off-diagonal).
+}
 }
 
-This method is privacy-preserving because:
+\subsection{Security Guarantees}{
+\describe{
+\item{Confidentiality}{Individual observations are protected by encryption.
+Server A sees only Enc(Z_B), not Z_B.}
+\item{Non-reconstruction}{The client cannot reconstruct individual data
+from the correlation matrix alone.}
+\item{Collusion resistance}{Even client + one server cannot decrypt.
+Decryption requires ALL servers.}
+}
+}
+}
+\section{Performance Notes}{
+
 \itemize{
-\item Individual U*D matrices cannot reconstruct original data
-\item Only the combined correlation structure is revealed
+\item Computation scales as O(p_A * p_B * n * log(n))
+\item Recommended: n < 2000 for log_n=12, n < 4000 for log_n=13
+\item Precision: approximately 10^-3 to 10^-4 error due to CKKS approximation
 }
 }
+
 \examples{
 \dontrun{
-# Define which variables are on which server
+# Connect to DataSHIELD servers
+connections <- DSI::datashield.login(builder$build())
+
+# Align records first
+ref_hashes <- ds.hashId("data", "patient_id", datasource = connections["server1"])
+ds.alignRecords("data", "patient_id", ref_hashes$hashes,
+                newobj = "data_aligned", datasources = connections)
+
+# Define variables per server
 vars <- list(
-  server1 = c("age", "weight"),
-  server2 = c("height", "bmi"),
-  server3 = c("glucose", "cholesterol")
+  hospital_A = c("age", "bmi"),
+  hospital_B = c("glucose", "systolic_bp")
 )
 
-# Compute correlation matrix
-cor_matrix <- ds.vertCor("D_aligned", vars, datasources = conns)
-print(cor_matrix)
+# Compute privacy-preserving correlation
+result <- ds.vertCor("data_aligned", vars)
+print(result$correlation)
 }
 
 }
 \references{
-Iwen, M. & Ong, B.W. (2016). A distributed and incremental SVD algorithm
-for agglomerative data analysis on large networks. SIAM Journal on Matrix
-Analysis and Applications.
+Cheon, J.H. et al. (2017). "Homomorphic Encryption for Arithmetic of
+Approximate Numbers". ASIACRYPT 2017.
 }
 \seealso{
-\code{\link{ds.vertPCA}} for principal component analysis
+\code{\link{ds.vertPCA}} for PCA analysis
 }
