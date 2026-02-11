@@ -1,0 +1,442 @@
+---
+title: "dsVertClient: Privacy-Preserving Analysis of Vertically Partitioned Data"
+author: "David Sarrat González"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{dsVertClient: Privacy-Preserving Analysis of Vertically Partitioned Data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5
+)
+```
+
+## Introduction
+
+**dsVertClient** enables privacy-preserving statistical analysis on **vertically partitioned federated data** using the DataSHIELD framework. In vertical partitioning, different data sources hold different variables (columns) for the same set of observations (rows).
+
+This vignette demonstrates the complete workflow using DSLite (a local DataSHIELD simulation) with three servers.
+
+### What is Vertical Partitioning?
+
+Consider a scenario where patient data is split across institutions:
+
+- **Hospital A**: Demographics (age, weight)
+- **Hospital B**: Clinical measurements (height, BMI)
+- **Hospital C**: Lab results (glucose, cholesterol) + Outcomes
+
+Each institution has data for the **same patients** but different variables. Traditional analysis would require pooling all data in one location, raising privacy concerns. dsVertClient enables analysis without centralizing data.
+
+## Setup: Creating a DSLite Environment
+
+First, we load the required packages and create simulated data across three servers.
+
+```{r load-packages, message=FALSE, warning=FALSE}
+library(DSLite)
+library(dsVert)
+library(dsVertClient)
+library(DSI)
+```
+
+### Generate Realistic Correlated Data
+
+We create data where:
+- Predictors are correlated with outcomes (so models have signal)
+- Each server has the same patients but in different order (shuffled)
+- Outcomes exist on all servers (required for GLM fitting)
+
+```{r generate-data}
+set.seed(42)
+n <- 200  # 200 patients
+
+# Common patient IDs
+patient_ids <- paste0("PAT", sprintf("%05d", 1:n))
+
+# Generate predictor variables (same patients, will be shuffled per server)
+age <- round(rnorm(n, 50, 12))
+weight <- round(rnorm(n, 75, 15), 1)
+height <- round(rnorm(n, 170, 10), 1)
+bmi <- round(weight / (height/100)^2, 1)
+glucose <- round(rnorm(n, 100, 25), 1)
+cholesterol <- round(rnorm(n, 200, 45), 1)
+
+# Generate outcomes as functions of predictors (true relationships exist)
+# Continuous outcome: linear relationship
+outcome_continuous <- round(
+  10 + 0.1 * age + 0.05 * weight + 0.2 * bmi - 0.01 * glucose + rnorm(n, 0, 2),
+  2
+)
+
+# Binary outcome: logistic relationship
+logit_p <- -8 + 0.05 * age + 0.04 * bmi + 0.02 * glucose
+outcome_binary <- rbinom(n, 1, plogis(logit_p))
+
+# Count outcome: Poisson relationship
+log_lambda <- 0.5 + 0.02 * age + 0.01 * bmi
+outcome_count <- rpois(n, exp(pmin(log_lambda, 4)))
+
+# Positive continuous outcome: for Gamma/Inverse Gaussian
+outcome_positive <- round(pmax(0.5, exp(2 + 0.01 * age + 0.02 * bmi + rnorm(n, 0, 0.3))), 2)
+```
+
+### Create Three Servers with Shuffled Data
+
+Each server has the same patients but in a different random order. This simulates real-world scenarios where data isn't pre-aligned.
+
+```{r create-servers}
+# Server 1: Demographics (Hospital A)
+order1 <- sample(n)
+server1_data <- data.frame(
+  patient_id = patient_ids[order1],
+  age = age[order1],
+  weight = weight[order1],
+  outcome_continuous = outcome_continuous[order1],
+  outcome_binary = outcome_binary[order1],
+  outcome_count = outcome_count[order1],
+  outcome_positive = outcome_positive[order1],
+  stringsAsFactors = FALSE
+)
+
+# Server 2: Clinical Measurements (Hospital B)
+order2 <- sample(n)
+server2_data <- data.frame(
+  patient_id = patient_ids[order2],
+  height = height[order2],
+  bmi = bmi[order2],
+  outcome_continuous = outcome_continuous[order2],
+  outcome_binary = outcome_binary[order2],
+  outcome_count = outcome_count[order2],
+  outcome_positive = outcome_positive[order2],
+  stringsAsFactors = FALSE
+)
+
+# Server 3: Lab Results (Hospital C)
+order3 <- sample(n)
+server3_data <- data.frame(
+  patient_id = patient_ids[order3],
+  glucose = glucose[order3],
+  cholesterol = cholesterol[order3],
+  outcome_continuous = outcome_continuous[order3],
+  outcome_binary = outcome_binary[order3],
+  outcome_count = outcome_count[order3],
+  outcome_positive = outcome_positive[order3],
+  stringsAsFactors = FALSE
+)
+
+cat("Server 1 - First 5 rows:\n")
+head(server1_data, 5)
+cat("\nServer 2 - First 5 rows:\n")
+head(server2_data, 5)
+cat("\nServer 3 - First 5 rows:\n")
+head(server3_data, 5)
+```
+
+Notice how the patient order differs across servers - `PAT00042` might be row 1 on Server 1 but row 50 on Server 2.
+
+### Initialize DSLite Server
+
+```{r setup-dslite}
+# Create DSLite server with all three data tables
+dslite_server <- newDSLiteServer(
+  tables = list(
+    hospital_a = server1_data,
+    hospital_b = server2_data,
+    hospital_c = server3_data
+  )
+)
+
+# Configure with dsVert package (server-side functions)
+dslite_server$config(defaultDSConfiguration(include = c("dsVert")))
+
+# Store in global environment for DSLite to find
+assign("dslite_server", dslite_server, envir = globalenv())
+
+# Build login credentials
+builder <- newDSLoginBuilder()
+builder$append(server = "hospital_a", url = "dslite_server",
+               table = "hospital_a", driver = "DSLiteDriver")
+builder$append(server = "hospital_b", url = "dslite_server",
+               table = "hospital_b", driver = "DSLiteDriver")
+builder$append(server = "hospital_c", url = "dslite_server",
+               table = "hospital_c", driver = "DSLiteDriver")
+
+# Connect to all servers
+conns <- datashield.login(builder$build(), assign = TRUE, symbol = "D")
+cat("Connected to", length(conns), "servers:", names(conns), "\n")
+```
+
+## Step 1: Validate Identifier Format
+
+Before aligning records, it's important to verify that identifier formats are consistent across servers. The `ds.validateIdFormat()` function checks:
+
+- Number of observations per server
+- Number of unique and missing IDs
+- Format consistency (via hash signature)
+- Optional pattern matching
+
+```{r validate-ids}
+# Validate ID format across all servers
+validation <- ds.validateIdFormat("D", "patient_id", datasources = conns)
+print(validation)
+```
+
+All servers have the same format signature, indicating consistent ID formatting. This is crucial for successful record alignment.
+
+## Step 2: Align Records Across Servers
+
+Since each server has patients in different order, we need to align them before analysis. This is done using **privacy-preserving hashing**:
+
+1. Get hashed IDs from a reference server
+2. Each server reorders its data to match the reference hashes
+
+```{r align-records}
+# Step 2a: Get reference hashes from Hospital A
+ref_hashes <- ds.hashId("D", "patient_id", datasource = conns["hospital_a"])
+cat("Retrieved", ref_hashes$n, "hashed identifiers from reference server\n")
+cat("Example hash:", substr(ref_hashes$hashes[1], 1, 32), "...\n")
+
+# Step 2b: Align all servers to match reference hashes
+ds.alignRecords("D", "patient_id", ref_hashes$hashes,
+                newobj = "D_aligned", datasources = conns)
+```
+
+Now `D_aligned` on each server has records in the same order, matched by patient ID.
+
+**Privacy Note**: Only hashed identifiers are shared - never the actual patient IDs.
+
+## Step 3: Correlation Analysis
+
+With aligned data, we can compute correlation matrices across variables from different servers using **Block SVD**.
+
+```{r correlation}
+# Define which variables are on which server
+variables <- list(
+  hospital_a = c("age", "weight"),
+  hospital_b = c("height", "bmi"),
+  hospital_c = c("glucose", "cholesterol")
+)
+
+# Compute correlation matrix
+cor_matrix <- ds.vertCor("D_aligned", variables, datasources = conns)
+
+# Display correlation matrix
+cat("Correlation Matrix (6 variables across 3 servers):\n")
+round(cor_matrix, 3)
+```
+
+### Visualize Correlations
+
+```{r correlation-heatmap, fig.width=6, fig.height=5}
+# Simple heatmap
+heatmap(cor_matrix,
+        symm = TRUE,
+        col = colorRampPalette(c("blue", "white", "red"))(50),
+        main = "Correlation Heatmap - Vertically Partitioned Data")
+```
+
+**How it works**: Each server computes a partial SVD (U×D matrices) which are combined on the client to compute the full correlation matrix. Raw data never leaves the servers.
+
+## Step 4: Principal Component Analysis (PCA)
+
+Perform PCA across all variables from all servers:
+
+```{r pca}
+# Perform PCA with 4 components
+pca_result <- ds.vertPCA("D_aligned", variables, n_components = 4, datasources = conns)
+print(pca_result)
+```
+
+### Visualize PCA Results
+
+```{r pca-plot, fig.width=7, fig.height=5}
+# Scree plot
+barplot(pca_result$variance_pct,
+        names.arg = paste0("PC", 1:4),
+        main = "Variance Explained by Principal Components",
+        ylab = "Percentage of Variance",
+        col = "steelblue")
+
+# PC1 vs PC2 scatter plot
+plot(pca_result$scores[,1], pca_result$scores[,2],
+     xlab = paste0("PC1 (", round(pca_result$variance_pct[1], 1), "%)"),
+     ylab = paste0("PC2 (", round(pca_result$variance_pct[2], 1), "%)"),
+     main = "PCA Score Plot - Vertically Partitioned Data",
+     pch = 19, col = rgb(0, 0, 0, 0.5))
+```
+
+## Step 5: Generalized Linear Models (GLM)
+
+dsVertClient supports **5 GLM families** using Block Coordinate Descent:
+
+| Family | Link | Use Case |
+|--------|------|----------|
+| `gaussian` | Identity | Continuous outcomes (linear regression) |
+| `binomial` | Logit | Binary outcomes (logistic regression) |
+| `poisson` | Log | Count data |
+| `Gamma` | Log | Positive continuous (costs, times) |
+| `inverse.gaussian` | Log | Positive continuous, high variance |
+
+### 5.1 Gaussian GLM (Linear Regression)
+
+Predict continuous outcome using variables from multiple servers:
+
+```{r glm-gaussian}
+# Define predictors per server
+x_vars <- list(
+  hospital_a = c("age", "weight"),
+  hospital_b = c("bmi"),
+  hospital_c = c("glucose")
+)
+
+# Fit Gaussian GLM
+model_gaussian <- ds.vertGLM(
+  data_name = "D_aligned",
+  y_var = "outcome_continuous",
+  x_vars = x_vars,
+  family = "gaussian",
+  tol = 1e-5,
+  verbose = FALSE,
+  datasources = conns
+)
+
+# View summary with deviance statistics
+summary(model_gaussian)
+```
+
+### 5.2 Binomial GLM (Logistic Regression)
+
+Predict binary outcome:
+
+```{r glm-binomial}
+model_binomial <- ds.vertGLM(
+  data_name = "D_aligned",
+  y_var = "outcome_binary",
+  x_vars = x_vars,
+  family = "binomial",
+  tol = 1e-5,
+  verbose = FALSE,
+  datasources = conns
+)
+
+summary(model_binomial)
+```
+
+### 5.3 Poisson GLM
+
+Predict count outcome:
+
+```{r glm-poisson}
+model_poisson <- ds.vertGLM(
+  data_name = "D_aligned",
+  y_var = "outcome_count",
+  x_vars = x_vars,
+  family = "poisson",
+  tol = 1e-5,
+  verbose = FALSE,
+  datasources = conns
+)
+
+summary(model_poisson)
+```
+
+### 5.4 Gamma GLM
+
+For positive continuous outcomes (e.g., costs, durations):
+
+```{r glm-gamma}
+model_gamma <- ds.vertGLM(
+  data_name = "D_aligned",
+  y_var = "outcome_positive",
+  x_vars = list(hospital_a = c("age"), hospital_b = c("bmi")),
+  family = "Gamma",
+  tol = 1e-5,
+  verbose = FALSE,
+  datasources = conns
+)
+
+summary(model_gamma)
+```
+
+### 5.5 Inverse Gaussian GLM
+
+For positive continuous outcomes with higher variance:
+
+```{r glm-invgaussian}
+model_invgauss <- ds.vertGLM(
+  data_name = "D_aligned",
+  y_var = "outcome_positive",
+  x_vars = list(hospital_a = c("age"), hospital_b = c("bmi")),
+  family = "inverse.gaussian",
+  tol = 1e-5,
+  verbose = FALSE,
+  datasources = conns
+)
+
+summary(model_invgauss)
+```
+
+### Compare Model Coefficients
+
+```{r compare-models}
+# Compare coefficients across models
+cat("Model Comparison - Coefficients:\n")
+cat("\nGaussian (continuous):\n")
+print(round(coef(model_gaussian), 4))
+
+cat("\nBinomial (binary):\n")
+print(round(coef(model_binomial), 4))
+
+cat("\nPoisson (count):\n")
+print(round(coef(model_poisson), 4))
+```
+
+## How Privacy is Preserved
+
+Throughout this analysis, **raw data never left the servers**:
+
+1. **ID Validation**: Only aggregate statistics (counts, format signature hash) are shared
+2. **Record Alignment**: Only SHA-256 hashes of IDs are shared - never actual IDs
+3. **Correlation/PCA**: Only U×D matrices from partial SVD are shared
+4. **GLM Fitting**: Only linear predictor contributions (η = Xβ) are shared between iterations
+
+The Block Coordinate Descent algorithm iteratively:
+- Updates coefficients locally on each server
+- Shares only the linear predictor contribution
+- Never reveals raw data or individual coefficients during fitting
+
+## Cleanup
+
+```{r cleanup}
+# Disconnect from servers
+datashield.logout(conns)
+
+# Remove DSLite server from environment
+rm("dslite_server", envir = globalenv())
+
+cat("Session complete. All connections closed.\n")
+```
+
+## Summary
+
+This vignette demonstrated the complete dsVertClient workflow:
+
+1. **Setup**: Created DSLite environment with 3 servers holding different variables
+2. **Validation**: Verified ID format consistency across servers
+3. **Alignment**: Aligned records using privacy-preserving hashing
+4. **Correlation**: Computed correlation matrix across all variables
+5. **PCA**: Performed principal component analysis
+6. **GLM**: Fitted 5 different GLM families (gaussian, binomial, poisson, Gamma, inverse.gaussian)
+
+All analyses were performed without centralizing data, maintaining privacy through the DataSHIELD framework.
+
+## References
+
+- van Kesteren, E.J. et al. (2019). Privacy-preserving generalized linear models using distributed block coordinate descent. arXiv:1911.05935.
+- Iwen, M. & Ong, B.W. (2016). A distributed and incremental SVD algorithm for agglomerative data analysis on large networks. SIAM Journal on Matrix Analysis and Applications.
