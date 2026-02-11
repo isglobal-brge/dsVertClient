@@ -33,6 +33,29 @@
 #'   \item Variance = D^2 / (n-1)
 #' }
 #'
+#' @section WARNING - Known Limitation:
+#' \strong{THIS FUNCTION REQUIRES A CORRECT IMPLEMENTATION.}
+#'
+#' The current Block SVD algorithm has a fundamental limitation: the loadings
+#' (V matrix from the final SVD) do NOT correctly map to the original variables
+#' across servers. This is because the algorithm loses the per-server V matrices
+#' that would be needed to transform back to variable space.
+#'
+#' \strong{What works:}
+#' \itemize{
+#'   \item Variance explained (eigenvalues) - approximately correct
+#'   \item PC scores - correct for the transformed space
+#' }
+#'
+#' \strong{What does NOT work:}
+#' \itemize{
+#'   \item Loadings - do NOT correctly map to original variable names
+#'   \item Interpretation of which variables contribute to each PC
+#' }
+#'
+#' \strong{Status:} Awaiting a privacy-preserving method that correctly computes
+#' loadings without requiring disclosure of the V matrices from each server.
+#'
 #' @seealso \code{\link{ds.vertCor}} for correlation analysis
 #'
 #' @examples
@@ -54,6 +77,16 @@
 #' @export
 ds.vertPCA <- function(data_name, variables, n_components = NULL,
                        datasources = NULL) {
+  # WARNING: Known limitation
+  warning(
+    "ds.vertPCA: THIS FUNCTION REQUIRES A CORRECT IMPLEMENTATION.\n",
+    "The current algorithm does not correctly map loadings to original variables.\n",
+    "Variance explained is approximately correct, but loadings do NOT correspond\n",
+    "to the original variable names when data spans multiple servers.\n",
+    "See ?ds.vertPCA for details.",
+    call. = FALSE
+  )
+
   # Validate inputs
   if (!is.character(data_name) || length(data_name) != 1) {
     stop("data_name must be a single character string", call. = FALSE)
