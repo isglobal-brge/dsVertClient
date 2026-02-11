@@ -1,12 +1,35 @@
 Package: dsVertClient
-Title: What the Package Does (One Line, Title Case)
-Version: 0.0.0.9000
-Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+Type: Package
+Title: DataSHIELD Client Functions for Vertically Partitioned Data
+Version: 1.0.0
+Authors@R: c(
+    person("David", "Sarrat González", email = "david.sarrat@isglobal.org",
+           role = c("aut", "cre")),
+    person("Miron", "Banjac", email = "miron.banjac@isglobal.org",
+           role = "ctb"),
+    person("Juan R", "González", email = "juanr.gonzalez@isglobal.org",
+           role = "ctb")
+  )
+Description: Client-side DataSHIELD functions for privacy-preserving analysis
+    of vertically partitioned federated data. Provides user-facing functions
+    for record matching, correlation analysis, PCA, and Generalized Linear
+    Models across multiple data sources. Works with the companion dsVert
+    server package.
+License: MIT + file LICENSE
+URL: https://github.com/isglobal-brge/dsVertClient
+BugReports: https://github.com/isglobal-brge/dsVertClient/issues
 Encoding: UTF-8
+LazyData: true
+Depends: R (>= 4.0.0)
+Imports:
+    DSI,
+    stats
+Suggests:
+    testthat (>= 3.0.0),
+    DSLite,
+    dsVert,
+    knitr,
+    rmarkdown
+RoxygenNote: 7.3.3
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.2.3
+VignetteBuilder: knitr

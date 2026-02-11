@@ -1,24 +1,137 @@
-ds.vertCor <- function(data_names, variable_names, datasources = NULL) {
-  # standard, if NULL look for connections
-  if(is.null(datasources)){
-    datasources <- datashield.connections_find()
+#' @title Correlation Matrix for Vertically Partitioned Data
+#' @description Client-side function that computes a correlation matrix
+#'   across vertically partitioned data using distributed Block SVD.
+#'
+#' @param data_name Character string. Name of the (aligned) data frame on
+#'   each server.
+#' @param variables A named list where each name corresponds to a server name
+#'   and each element is a character vector of variable names from that server.
+#' @param datasources DataSHIELD connection object or list of connections.
+#'   If NULL, uses all available connections.
+#'
+#' @return A correlation matrix with dimensions equal to the total number
+#'   of variables across all servers. Row and column names are the
+#'   variable names.
+#'
+#' @details
+#' This function implements distributed correlation analysis using
+#' Block Singular Value Decomposition:
+#'
+#' \enumerate{
+#'   \item Each server computes U*D from SVD of its standardized variables
+#'   \item Client combines [U1*D1 | U2*D2 | ...] into a single matrix
+#'   \item Client computes final SVD to get V and D
+#'   \item Correlation matrix = V * D^2 * V' (normalized)
+#' }
+#'
+#' This method is privacy-preserving because:
+#' \itemize{
+#'   \item Individual U*D matrices cannot reconstruct original data
+#'   \item Only the combined correlation structure is revealed
+#' }
+#'
+#' @references
+#' Iwen, M. & Ong, B.W. (2016). A distributed and incremental SVD algorithm
+#' for agglomerative data analysis on large networks. SIAM Journal on Matrix
+#' Analysis and Applications.
+#'
+#' @seealso \code{\link{ds.vertPCA}} for principal component analysis
+#'
+#' @examples
+#' \dontrun{
+#' # Define which variables are on which server
+#' vars <- list(
+#'   server1 = c("age", "weight"),
+#'   server2 = c("height", "bmi"),
+#'   server3 = c("glucose", "cholesterol")
+#' )
+#'
+#' # Compute correlation matrix
+#' cor_matrix <- ds.vertCor("D_aligned", vars, datasources = conns)
+#' print(cor_matrix)
+#' }
+#'
+#' @importFrom DSI datashield.aggregate datashield.connections_find
+#' @importFrom stats cov2cor
+#' @export
+ds.vertCor <- function(data_name, variables, datasources = NULL) {
+  # Validate inputs
+  if (!is.character(data_name) || length(data_name) != 1) {
+    stop("data_name must be a single character string", call. = FALSE)
+  }
+  if (!is.list(variables)) {
+    stop("variables must be a named list mapping server names to variable vectors",
+         call. = FALSE)
   }
 
-  U_combined <- NULL
-
-  study_names  <- names(datasources)
-  for(i in 1:length(study_names)) {
-    temp <-variable_names[[i]]
-    assign("temp", temp, envir = .GlobalEnv)
-    output <- datashield.aggregate(datasources[i], quote(vertCorDS(D, temp)))[[1]]
-    U_combined <- cbind(U_combined, output)
+  # Get datasources
+  if (is.null(datasources)) {
+    datasources <- DSI::datashield.connections_find()
   }
 
+  if (length(datasources) == 0) {
+    stop("No DataSHIELD connections found", call. = FALSE)
+  }
 
-  # Perform SVD on the combined U matrix
-  svd_final <- svd(U_combined)
-  # Calculate and scale the correlation matrix
-  correlation <- svd_final$v %*% diag(svd_final$d^2) %*% t(svd_final$v)
-  correlation <- correlation / correlation[1, 1]
-  return(correlation)
+  server_names <- names(datasources)
+
+  # Validate that we have variables for each server
+  if (!all(names(variables) %in% server_names)) {
+    missing <- setdiff(names(variables), server_names)
+    stop("Unknown server(s) in variables: ", paste(missing, collapse = ", "),
+         call. = FALSE)
+  }
+
+  # Collect U*D from each server
+  UD_list <- list()
+  all_var_names <- character()
+
+  for (server in names(variables)) {
+    conn_idx <- which(server_names == server)
+    if (length(conn_idx) == 0) {
+      stop("Server '", server, "' not found in connections", call. = FALSE)
+    }
+
+    vars <- variables[[server]]
+
+    # Build call expression using call()
+    call_expr <- call("blockSvdDS", data_name, vars, TRUE)
+
+    # Execute on server
+    result <- DSI::datashield.aggregate(
+      conns = datasources[conn_idx],
+      expr = call_expr
+    )
+
+    if (is.list(result) && length(result) == 1) {
+      result <- result[[1]]
+    }
+
+    UD_list[[server]] <- result$UD
+    all_var_names <- c(all_var_names, result$var_names)
+  }
+
+  # Combine U*D matrices column-wise
+  UD_combined <- do.call(cbind, UD_list)
+
+  # Compute final SVD
+  svd_final <- svd(UD_combined)
+
+  # Correlation matrix = V * D^2 * V'
+  # Since data is standardized, this gives the correlation matrix
+  n_vars <- length(svd_final$d)
+  if (n_vars == 1) {
+    D_squared <- matrix(svd_final$d^2, 1, 1)
+  } else {
+    D_squared <- diag(svd_final$d^2)
+  }
+  cor_matrix <- svd_final$v %*% D_squared %*% t(svd_final$v)
+
+  # Normalize to get proper correlation matrix (diagonal = 1)
+  cor_matrix <- stats::cov2cor(cor_matrix)
+
+  # Set names
+  dimnames(cor_matrix) <- list(all_var_names, all_var_names)
+
+  return(cor_matrix)
 }

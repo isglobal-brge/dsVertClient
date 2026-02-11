@@ -1,53 +1,279 @@
-ds.vertGLM <- function(Xa, Xb, y, family = gaussian(), max_iter = 100, tol = 1e-6, scale_data = TRUE, partition_size = NULL) {
-  n <- length(y)
-  p_a <- ncol(Xa)
-  p_b <- ncol(Xb)
+#' @title Generalized Linear Model for Vertically Partitioned Data
+#' @description Client-side function that fits a Generalized Linear Model
+#'   across vertically partitioned data using Block Coordinate Descent.
+#'
+#' @param data_name Character string. Name of the (aligned) data frame on
+#'   each server.
+#' @param y_var Character string. Name of the response variable (must exist
+#'   on ALL servers).
+#' @param x_vars A named list where each name corresponds to a server name
+#'   and each element is a character vector of predictor variable names
+#'   from that server.
+#' @param family Character string. GLM family: "gaussian", "binomial",
+#'   or "poisson". Default is "gaussian".
+#' @param max_iter Integer. Maximum number of iterations. Default is 100.
+#' @param tol Numeric. Convergence tolerance. Default is 1e-6.
+#' @param lambda Numeric. L2 regularization parameter. Default is 1e-4.
+#' @param verbose Logical. Print iteration progress. Default is TRUE.
+#' @param datasources DataSHIELD connection object or list of connections.
+#'   If NULL, uses all available connections.
+#'
+#' @return A list with class "ds.glm" containing:
+#'   \itemize{
+#'     \item \code{coefficients}: Named vector of coefficient estimates
+#'     \item \code{iterations}: Number of iterations until convergence
+#'     \item \code{converged}: Logical indicating convergence
+#'     \item \code{family}: Family used
+#'     \item \code{n_obs}: Number of observations
+#'     \item \code{n_vars}: Number of predictor variables
+#'     \item \code{call}: The matched call
+#'   }
+#'
+#' @details
+#' This function implements the Block Coordinate Descent (BCD) algorithm
+#' for privacy-preserving GLM fitting on vertically partitioned data.
+#'
+#' The algorithm iteratively:
+#' \enumerate{
+#'   \item For each partition i:
+#'     \itemize{
+#'       \item Compute eta_other = sum of X_j * beta_j for all j != i
+#'       \item Update beta_i using IRLS with eta_other
+#'       \item Share new eta_i = X_i * beta_i (NOT raw data or coefficients)
+#'     }
+#'   \item Check convergence (sum of |beta_new - beta_old| < tol)
+#'   \item Repeat until converged or max_iter reached
+#' }
+#'
+#' Privacy is preserved because:
+#' \itemize{
+#'   \item Only linear predictor contributions (eta) are shared
+#'   \item Raw data never leaves servers
+#'   \item Final coefficients are computed locally on each server
+#' }
+#'
+#' @references
+#' van Kesteren, E.J. et al. (2019). Privacy-preserving generalized linear
+#' models using distributed block coordinate descent. arXiv:1911.05935.
+#'
+#' @seealso \code{\link[stats]{glm}} for standard GLM fitting
+#'
+#' @examples
+#' \dontrun{
+#' # Define predictor variables per server
+#' x_vars <- list(
+#'   server1 = c("age", "weight"),
+#'   server2 = c("height", "bmi"),
+#'   server3 = c("glucose", "cholesterol")
+#' )
+#'
+#' # Fit Gaussian GLM (linear regression)
+#' model <- ds.vertGLM("D_aligned", "outcome", x_vars, family = "gaussian")
+#' print(model)
+#'
+#' # Fit logistic regression
+#' model_logit <- ds.vertGLM("D_aligned", "binary_outcome", x_vars,
+#'                           family = "binomial")
+#' }
+#'
+#' @importFrom DSI datashield.aggregate datashield.connections_find
+#' @export
+ds.vertGLM <- function(data_name, y_var, x_vars, family = "gaussian",
+                       max_iter = 100, tol = 1e-6, lambda = 1e-4,
+                       verbose = TRUE, datasources = NULL) {
+  # Capture call
+  call_matched <- match.call()
 
-  if (scale_data) {
-    Xa <- scale(Xa)
-    Xb <- scale(Xb)
-    if (family$family == "gaussian") {
-      y <- scale(y)
-    }
+  # Validate inputs
+  if (!is.character(data_name) || length(data_name) != 1) {
+    stop("data_name must be a single character string", call. = FALSE)
+  }
+  if (!is.character(y_var) || length(y_var) != 1) {
+    stop("y_var must be a single character string", call. = FALSE)
+  }
+  if (!is.list(x_vars)) {
+    stop("x_vars must be a named list mapping server names to variable vectors",
+         call. = FALSE)
+  }
+  if (!family %in% c("gaussian", "binomial", "poisson")) {
+    stop("family must be 'gaussian', 'binomial', or 'poisson'", call. = FALSE)
   }
 
-  beta_a <- rep(0, p_a)
-  beta_b <- rep(0, p_b)
+  # Get datasources
+  if (is.null(datasources)) {
+    datasources <- DSI::datashield.connections_find()
+  }
 
-  #eta <- rep(0, n)
-  eta_a <- rep(0, p_a)
-  eta_b <- rep(0, p_b)
+  if (length(datasources) == 0) {
+    stop("No DataSHIELD connections found", call. = FALSE)
+  }
 
-  for (iter in 1:max_iter) {
-    beta_a_old <- beta_a
-    beta_b_old <- beta_b
+  server_names <- names(datasources)
 
-    #update beta_a
-    results_a <- vertGLMDS(Xa, y, eta_b, family, beta_a, regularization = 1e-4)
-    beta_a <- results_a$beta
+  # Validate that we have variables for each server
+  if (!all(names(x_vars) %in% server_names)) {
+    missing <- setdiff(names(x_vars), server_names)
+    stop("Unknown server(s) in x_vars: ", paste(missing, collapse = ", "),
+         call. = FALSE)
+  }
 
-    eta_a <- results_a$eta
+  n_partitions <- length(x_vars)
 
-    #update beta_b
-    results_b <- vertGLMDS(Xb, y, eta_a, family, beta_b, regularization = 1e-4)
-    beta_b <- results_b$beta
+  # Get observation count from first server
+  first_server <- names(x_vars)[1]
+  conn_idx <- which(server_names == first_server)
+  count_call <- call("getObsCountDS", data_name)
+  count_result <- DSI::datashield.aggregate(
+    conns = datasources[conn_idx],
+    expr = count_call
+  )
+  if (is.list(count_result) && length(count_result) == 1) {
+    count_result <- count_result[[1]]
+  }
+  n_obs <- count_result$n_obs
 
-    eta_b <- results_b$eta
+  # Initialize coefficients and eta for each partition
+  betas <- list()
+  etas <- list()
+  n_vars_per_partition <- list()
 
-    #check convergence criteria
-    diff_a <- sum(abs(beta_a - beta_a_old))
-    diff_b <- sum(abs(beta_b - beta_b_old))
-    if (diff_a < tol && diff_b < tol) {
-      message(paste("Converged after", iter, "iterations"))
+  for (server in names(x_vars)) {
+    p <- length(x_vars[[server]])
+    betas[[server]] <- rep(0, p)
+    etas[[server]] <- rep(0, n_obs)
+    n_vars_per_partition[[server]] <- p
+  }
+
+  # Total number of variables
+  n_vars_total <- sum(unlist(n_vars_per_partition))
+
+  # BCD iterations
+  converged <- FALSE
+  iter <- 0
+
+  if (verbose) {
+    message(sprintf("Starting BCD for %s GLM with %d observations, %d variables, %d partitions",
+                    family, n_obs, n_vars_total, n_partitions))
+  }
+
+  for (iter in seq_len(max_iter)) {
+    betas_old <- betas
+    max_diff <- 0
+
+    # Update each partition
+    for (server in names(x_vars)) {
+      conn_idx <- which(server_names == server)
+      vars <- x_vars[[server]]
+
+      # Compute eta from other partitions
+      other_servers <- setdiff(names(x_vars), server)
+      if (length(other_servers) > 0) {
+        eta_other <- Reduce(`+`, etas[other_servers])
+      } else {
+        eta_other <- rep(0, n_obs)
+      }
+
+      # Build call using call()
+      call_expr <- call("glmPartialFitDS",
+                        data_name, y_var, vars,
+                        eta_other, betas[[server]],
+                        family, lambda)
+
+      # Execute on server
+      result <- DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call_expr
+      )
+
+      if (is.list(result) && length(result) == 1) {
+        result <- result[[1]]
+      }
+
+      # Update betas and etas
+      betas[[server]] <- result$beta
+      etas[[server]] <- result$eta
+
+      # Track convergence
+      diff <- sum(abs(betas[[server]] - betas_old[[server]]))
+      max_diff <- max(max_diff, diff)
+    }
+
+    # Check convergence
+    if (max_diff < tol) {
+      converged <- TRUE
+      if (verbose) {
+        message(sprintf("Converged after %d iterations (diff = %.2e)", iter, max_diff))
+      }
       break
     }
 
-    #sometimes I would get increasingly divergent results with ballooning estimates
-    if (any(abs(beta_a) > 1e8) || any(abs(beta_b) > 1e8)) {
-      message("Estimates became too large. Stopping early.")
-      break
+    if (verbose && iter %% 10 == 0) {
+      message(sprintf("Iteration %d: max diff = %.2e", iter, max_diff))
     }
   }
 
-  return(list(beta_a = beta_a, beta_b = beta_b, iterations = iter))
+  if (!converged && verbose) {
+    warning(sprintf("Did not converge after %d iterations (diff = %.2e)",
+                    max_iter, max_diff))
+  }
+
+  # Combine coefficients with names
+  all_coefs <- numeric()
+  all_names <- character()
+  for (server in names(x_vars)) {
+    all_coefs <- c(all_coefs, betas[[server]])
+    all_names <- c(all_names, x_vars[[server]])
+  }
+  names(all_coefs) <- all_names
+
+  # Build result
+  result <- list(
+    coefficients = all_coefs,
+    iterations = iter,
+    converged = converged,
+    family = family,
+    n_obs = n_obs,
+    n_vars = n_vars_total,
+    lambda = lambda,
+    call = call_matched
+  )
+
+  class(result) <- c("ds.glm", "list")
+  return(result)
+}
+
+#' @title Print Method for ds.glm Objects
+#' @description Prints a summary of GLM results.
+#' @param x A ds.glm object
+#' @param ... Additional arguments (ignored)
+#' @export
+print.ds.glm <- function(x, ...) {
+  cat("\nVertically Partitioned GLM (Block Coordinate Descent)\n")
+  cat("=======================================================\n\n")
+
+  cat("Call:\n")
+  print(x$call)
+  cat("\n")
+
+  cat("Family:", x$family, "\n")
+  cat("Observations:", x$n_obs, "\n")
+  cat("Predictors:", x$n_vars, "\n")
+  cat("Regularization (lambda):", x$lambda, "\n")
+  cat("Iterations:", x$iterations, "\n")
+  cat("Converged:", x$converged, "\n\n")
+
+  cat("Coefficients:\n")
+  print(round(x$coefficients, 6))
+
+  invisible(x)
+}
+
+#' @title Coefficients Method for ds.glm Objects
+#' @description Extract coefficients from a ds.glm object.
+#' @param object A ds.glm object
+#' @param ... Additional arguments (ignored)
+#' @return Named numeric vector of coefficients
+#' @export
+coef.ds.glm <- function(object, ...) {
+  object$coefficients
 }
