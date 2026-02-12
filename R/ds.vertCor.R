@@ -249,13 +249,14 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   }
   message("  Observations: ", n_obs)
 
-  # Party 0 generates CRP
+  # Party 0 generates CRP and GKG seed
   first_server <- server_list[1]
   conn_idx <- which(server_names == first_server)
 
   call_expr <- call("mheInitDS",
                     party_id = 0L,
                     crp = NULL,
+                    gkg_seed = NULL,
                     num_obs = as.integer(n_obs),
                     log_n = as.integer(log_n),
                     log_scale = as.integer(log_scale))
@@ -263,11 +264,14 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   result0 <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
   if (is.list(result0)) result0 <- result0[[1]]
   crp <- result0$crp
+  gkg_seed <- result0$gkg_seed
   message("  ", first_server, ": Party 0 initialized (CRP generated)")
 
-  # Other parties initialize with CRP
+  # Other parties initialize with CRP and shared GKG seed
   pk_shares <- list()
+  gkg_shares <- list()
   pk_shares[[first_server]] <- result0$public_key_share
+  gkg_shares[[first_server]] <- result0$galois_key_shares
 
   for (i in 2:length(server_list)) {
     server <- server_list[i]
@@ -276,6 +280,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     call_expr <- call("mheInitDS",
                       party_id = as.integer(i - 1),
                       crp = crp,
+                      gkg_seed = gkg_seed,
                       num_obs = as.integer(n_obs),
                       log_n = as.integer(log_n),
                       log_scale = as.integer(log_scale))
@@ -283,6 +288,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     result <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
     if (is.list(result)) result <- result[[1]]
     pk_shares[[server]] <- result$public_key_share
+    gkg_shares[[server]] <- result$galois_key_shares
     message("  ", server, ": Party ", i - 1, " initialized")
   }
 
@@ -292,9 +298,15 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   message("\n[Phase 2] Combining public key shares...")
 
   conn_idx <- which(server_names == first_server)
+
+  # Organize GKG shares as [party][galEl] for the combine step
+  gkg_shares_ordered <- lapply(server_list, function(s) gkg_shares[[s]])
+
   call_expr <- call("mheCombineDS",
                     public_key_shares = unlist(pk_shares, use.names = FALSE),
                     crp = crp,
+                    galois_key_shares = gkg_shares_ordered,
+                    gkg_seed = gkg_seed,
                     num_obs = as.integer(n_obs),
                     log_n = as.integer(log_n),
                     log_scale = as.integer(log_scale))
@@ -302,12 +314,15 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   combined <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
   if (is.list(combined)) combined <- combined[[1]]
   cpk <- combined$collective_public_key
+  galois_keys <- combined$galois_keys
   message("  CPK created on ", first_server)
 
-  # Distribute CPK to other servers
+  # Distribute CPK and Galois keys to other servers
   for (server in server_list[-1]) {
     conn_idx <- which(server_names == server)
-    call_expr <- call("mheStoreCPKDS", cpk = cpk)
+    call_expr <- call("mheStoreCPKDS",
+                      cpk = cpk,
+                      galois_keys = galois_keys)
     DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
     message("  CPK stored on ", server)
   }
