@@ -39,26 +39,31 @@ may be curious about others' data.
 
 During distributed correlation, cross-server products are computed on encrypted
 data. Each server encrypts its standardized columns under a collective public
-key (CPK). No single server can decrypt the ciphertexts.
+key (CPK). No single server can decrypt the ciphertexts. Threshold decryption
+uses **share-wrapping** so the client never sees raw partial decryption shares.
 
 | Step | Data Flow | Protection |
 |------|-----------|------------|
 | Encryption | Server k encrypts Z_k under CPK | Only collective decryption possible |
 | Cross-product | Server A computes z_A x Enc(z_B) | Server A sees Enc(z_B), not z_B |
-| Partial decrypt | Each server provides share_k | Individual shares are meaningless |
-| Fuse | Client combines all K shares | Only aggregate correlation revealed |
+| Wrapped partial decrypt | Each non-fusion server wraps share_k under fusion PK | Client sees only opaque blobs |
+| Server-side fusion | Fusion server unwraps, aggregates, DecodePublic | Only aggregate correlation revealed |
 
-### GLM with Encrypted Labels
+### GLM with Encrypted Labels and Secure Routing
 
 The response variable y never leaves the label server in plaintext. Non-label
-servers compute gradient contributions using encrypted y.
+servers compute gradient contributions using encrypted y. Individual-level
+vectors (eta, mu, w, v) are **transport-encrypted end-to-end** between servers;
+the client acts as a blind relay.
 
 | Step | Data Flow | Protection |
 |------|-----------|------------|
 | Encrypt y | Label server encrypts y under CPK | ct_y is opaque to all others |
-| Gradient | Non-label server computes X_k^T (ct_y - mu) | Result is encrypted |
-| Threshold decrypt | All K servers provide partial shares | Only p_k-length gradient revealed |
-| BCD update | Server k solves local system | Raw features X_k stay local |
+| Coordinator step | Label server encrypts (mu,w,v) under each non-label PK | Client sees opaque blobs only |
+| Gradient | Non-label decrypts (mu,w,v) locally, computes X_k^T(ct_y-mu) | Result is CKKS-encrypted |
+| Share-wrapped decrypt | Partial shares wrapped under fusion PK | Only p_k-length gradient revealed |
+| Block solve + eta encrypt | Non-label encrypts eta_k under coordinator PK | Client sees opaque blob only |
+| Deviance | Coordinator computes deviance server-side | Client never sees n-length eta |
 
 ---
 
@@ -69,15 +74,19 @@ The client (researcher coordinating the analysis) receives:
 1. **Collective Public Key (CPK)** -- cannot decrypt anything alone
 2. **Encrypted ciphertexts** -- opaque blobs, undecryptable without all K
    secret key shares
-3. **Partial decryption shares** -- each share individually reveals nothing
-4. **Final aggregated results** -- correlation coefficients, GLM coefficients,
-   deviance
+3. **Wrapped partial decryption shares** -- transport-encrypted under the
+   fusion server's X25519 key; the client cannot read or manipulate them
+4. **Transport-encrypted blobs** -- eta, mu/w/v vectors encrypted end-to-end
+   between servers; the client relays them blindly
+5. **Final aggregated results** -- correlation coefficients, GLM coefficients
+   (p_k-length), deviance
 
 The client CANNOT see:
 
 - Individual-level data from any server
-- Raw feature values
-- Response variable values
+- Raw feature values or response variable values
+- Linear predictor vectors (eta), fitted values (mu), IRLS weights (w, v)
+- Raw partial decryption shares (wrapped before leaving the server)
 - Residuals or per-observation predictions
 
 ---
@@ -183,10 +192,73 @@ underlying identifier values.
 
 ---
 
+## Transport Encryption
+
+### X25519 + AES-256-GCM
+
+All sensitive intermediate values are transport-encrypted using an ECIES pattern:
+
+1. Generate an ephemeral X25519 keypair
+2. ECDH(ephemeral\_SK, recipient\_PK) → shared secret
+3. HKDF-SHA256(shared\_secret, "dsVert-transport-v1") → AES-256 key
+4. AES-256-GCM encrypt(key, random\_nonce, plaintext)
+5. Output: ephemeral\_PK (32 bytes) || nonce (12) || ciphertext || tag (16)
+
+**Properties:**
+
+- **Forward secrecy**: Each encryption uses a fresh ephemeral key
+- **Authenticated encryption**: AES-GCM provides integrity and confidentiality
+- **No new dependencies**: Uses Go standard library (`crypto/ecdh`, `crypto/aes`)
+
+### Share-Wrapping Protocol
+
+Partial decryption shares are **never** visible to the client:
+
+1. Non-fusion servers compute their partial decryption share (same as before)
+2. Each share is transport-encrypted under the fusion server's X25519 PK
+3. The client relays opaque wrapped shares to the fusion server
+4. The fusion server unwraps all shares, computes its own, aggregates, and
+   returns only the sanitized scalar/vector via `DecodePublic(logprec=32)`
+
+This eliminates the risk of a malicious client reusing shares or manipulating
+the fusion process.
+
+### GLM Secure Routing
+
+The GLM protocol uses the label server as **coordinator** and routes all
+individual-level vectors through transport encryption:
+
+| Data | Size | Client sees? |
+|------|------|:------------:|
+| Betas (coefficients) | p_k per server | Yes (safe aggregate) |
+| Means and SDs | 1 per variable | Yes (safe aggregate) |
+| Deviance, null deviance | scalar | Yes (safe aggregate) |
+| eta, mu, w, v | n per server | **No** (transport-encrypted) |
+| Decryption shares | ~100KB each | **No** (share-wrapped) |
+| Gradients (encrypted) | p_k ciphertexts | Yes but CKKS-encrypted |
+| Gradients (decrypted) | p_k scalars | **No** (fused server-side) |
+
+### Protocol Firewall
+
+A SHA-256 ciphertext registry prevents **decryption oracle attacks**:
+
+- Each ciphertext produced by an authorized operation (`mheCrossProductEncDS`,
+  `mheGLMGradientDS`) is registered with a SHA-256 hash
+- Before any decryption, the ciphertext hash is validated against the registry
+- Each authorization is **one-time use**: after decryption, the hash is consumed
+- Arbitrary or replayed ciphertexts are rejected
+
+This ensures that even a compromised client cannot submit crafted ciphertexts to
+extract information beyond what the protocol intends to reveal.
+
+---
+
 ## Assumptions and Limitations
 
 1. **Semi-honest model**: Parties are assumed to follow the protocol correctly.
-   A malicious party could send corrupted key shares or ciphertexts. Verifiable
+   A malicious party could send corrupted key shares or ciphertexts. The
+   The Protocol Firewall mitigates decryption oracle attacks, and
+   share-wrapping prevents client-side share manipulation, but full verifiable
    computation is not implemented.
 
 2. **RLWE hardness**: Security relies on the Ring Learning With Errors problem
@@ -195,7 +267,9 @@ underlying identifier values.
 
 3. **Network security**: The protocol assumes secure (TLS) communication
    channels between the client and servers. DataSHIELD/Opal provides this via
-   HTTPS.
+   HTTPS. Additionally, transport encryption (X25519 + AES-256-GCM)
+   provides end-to-end protection for sensitive intermediate values, independent
+   of the TLS layer.
 
 4. **Aggregate leakage**: The revealed aggregate statistics (correlations,
    coefficients) could theoretically allow inference about individuals if the
@@ -206,3 +280,11 @@ underlying identifier values.
    of intermediate computations but does not add noise to final outputs.
    Combining MHE with differential privacy is possible but not currently
    implemented.
+
+6. **Label server sees eta_other**: In the GLM secure routing protocol, the
+   coordinator (label server) sees the decrypted $\eta_k$ from each non-label
+   server. This is necessary for computing $\eta_{\text{total}} = \sum_k
+   \eta_k$. While each $\eta_k = X_k \beta_k$ is an aggregate linear
+   combination (not raw features), a label server with knowledge of the current
+   $\beta_k$ could in principle invert $\eta_k$ to recover $X_k$ if $p_k \leq
+   n$. This is a known limitation of any BCD-style vertical GLM protocol.
