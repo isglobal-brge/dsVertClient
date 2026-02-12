@@ -1,4 +1,8 @@
-# Align Records Across Servers
+# Align Records Across Servers (Deprecated)
+
+**Deprecated**: Use
+[`ds.psiAlign`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md)
+instead.
 
 Client-side function that aligns records on DataSHIELD servers to match
 a reference set of hashed identifiers. This ensures observations are
@@ -57,6 +61,13 @@ Invisibly returns a list with alignment statistics for each server:
 
 ## Details
 
+**Deprecated**: This function uses SHA-256 hash-based alignment. The
+client receives raw SHA-256 hashes of patient identifiers, which are
+vulnerable to dictionary attacks when IDs are predictable. Use
+[`ds.psiAlign`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md)
+instead, which provides ECDH-PSI alignment where the client only sees
+opaque elliptic curve points.
+
 This function performs record alignment for vertically partitioned data:
 
 1.  Takes reference hashes (from `ds.hashId` on one server)
@@ -81,8 +92,10 @@ After alignment, all servers will have:
 
 ## See also
 
+[`ds.psiAlign`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md)
+for the recommended replacement,
 [`ds.hashId`](https://isglobal-brge.github.io/dsVertClient/reference/ds.hashId.md)
-for obtaining reference hashes
+for obtaining reference hashes (legacy)
 
 ## Examples
 

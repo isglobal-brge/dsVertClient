@@ -185,7 +185,16 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     output$value
   }
 
+  # --- GLM link/variance helpers ---
+  # These compute the mean, IRLS weights, and variance correction factor
+  # on the client side. The client broadcasts mu and w to all servers at
+  # each BCD iteration so they can compute their local contributions.
+
   .compute_mu <- function(eta, family) {
+    # Inverse link: converts linear predictor eta to mean mu.
+    # Clipping prevents numerical overflow in exp() and division by 0.
+    # - eta in [-20, 20] keeps exp() in [~2e-9, ~5e8]
+    # - mu clamped to [1e-10, 1-1e-10] for binomial avoids log(0)
     if (family == "gaussian") {
       eta
     } else if (family == "binomial") {
@@ -197,6 +206,12 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   }
 
   .compute_w <- function(mu, family) {
+    # IRLS weights: w = 1 / (V(mu) * (d_eta/d_mu)^2)
+    # For canonical links, simplifies to:
+    #   gaussian: w = 1, binomial: w = mu(1-mu), poisson: w = mu
+    # For non-canonical links with log link:
+    #   Gamma (V=mu^2): w = 1/(mu^2 * 1/mu^2) = 1
+    #   inverse.gaussian (V=mu^3): w = 1/(mu^3 * 1/mu^2) = 1/mu
     if (family == "gaussian") {
       rep(1, length(mu))
     } else if (family == "binomial") {
@@ -211,6 +226,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   }
 
   .compute_v <- function(mu, family) {
+    # Variance correction factor for the encrypted gradient. For canonical
+    # links, the gradient is X^T(y - mu) and v = NULL (no correction).
+    # For non-canonical links, the gradient needs: X^T * v * (y - mu)
+    # where v = (d_mu/d_eta) / V(mu).
     if (family %in% c("gaussian", "binomial", "poisson")) {
       NULL
     } else if (family == "Gamma") {
@@ -416,9 +435,14 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # ===========================================================================
   # Phase 3: BCD Iterations (on standardized scale)
   # ===========================================================================
-  # For non-Gaussian families, the label server gets an explicit intercept
-  # column because features are centered but y is not standardized.
-  # (Gaussian standardizes both X and y, so centering removes the mean.)
+  # Standardization ensures all features have comparable scale, which is
+  # critical for BCD convergence: without it, blocks with larger-magnitude
+  # features would dominate the linear predictor and convergence would stall.
+  #
+  # For Gaussian family, both X and y are standardized, so the intercept
+  # is implicitly zero on the standardized scale (recovered in Phase 4).
+  # For non-Gaussian families, y is NOT standardized (the link function is
+  # nonlinear), so the label server needs an explicit intercept column.
   label_intercept <- !standardize_y
 
   betas <- list()
@@ -444,7 +468,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       vars <- x_vars[[server]]
 
       if (server == y_server) {
-        # Label server: standard IRLS on STANDARDIZED data
+        # LABEL SERVER: has y in plaintext, so standard IRLS is sufficient.
+        # No encryption needed -- data stays on this server.
+        # eta_other = sum of linear predictor contributions from other servers.
         other_servers <- setdiff(server_list, server)
         if (length(other_servers) > 0) {
           eta_other <- Reduce(`+`, etas[other_servers])
@@ -465,15 +491,22 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         etas[[server]] <- result$eta
 
       } else {
-        # Non-label server: encrypted gradient protocol
+        # NON-LABEL SERVER: does NOT have y. Must use encrypted gradient
+        # protocol. Steps:
+        #   1. Client computes mu, w from current eta (broadcast to server)
+        #   2. Server computes g_k = X_k^T(ct_y - mu) homomorphically
+        #   3. Threshold decryption reveals the p_k-length gradient
+        #   4. Server solves BCD block update using plaintext gradient
 
-        # mu on standardized scale (Gaussian) or original scale (non-Gaussian)
+        # Compute IRLS quantities from the current aggregate linear predictor.
+        # These are broadcast to the server (they contain no individual y values).
         eta_total <- Reduce(`+`, etas)
         mu <- .compute_mu(eta_total, family)
         w <- .compute_w(mu, family)
         v <- .compute_v(mu, family)
 
-        # Encrypted gradient uses STANDARDIZED X on server
+        # Step 2: Server computes encrypted gradient using stored ct_y and local X_k.
+        # The result is p_k encrypted scalars (one per feature on this server).
         grad_result <- DSI::datashield.aggregate(
           conns = datasources[conn_idx],
           expr = call("mheGLMGradientDS",
@@ -489,7 +522,11 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         enc_gradients <- grad_result$encrypted_gradients
         p_k <- length(vars)
 
-        # Threshold decrypt each gradient component
+        # Step 3: Threshold decrypt each gradient component.
+        # Each encrypted gradient[j] is a single CKKS ciphertext. We collect
+        # partial decryption shares from ALL K servers, then fuse them on the
+        # client to recover the plaintext gradient scalar. This reveals only
+        # the aggregate gradient (safe), not individual observations of y.
         gradient <- numeric(p_k)
         for (j in seq_len(p_k)) {
           ct_grad <- enc_gradients[j]
@@ -530,7 +567,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
           )
         }
 
-        # Block solve on STANDARDIZED X
+        # Step 4: BCD block update using the decrypted gradient.
+        # The server solves: beta_new = (X^TWX + λI)^{-1}(X^TWX*beta + g_k)
+        # This happens on the server using plaintext X_k and the gradient.
         solve_result <- DSI::datashield.aggregate(
           conns = datasources[conn_idx],
           expr = call("glmBlockSolveDS",
@@ -573,14 +612,15 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # ===========================================================================
   # Phase 4: Unstandardize coefficients
   # ===========================================================================
-  # BCD produced beta_std on the standardized scale.
-  # Original-scale: beta_orig[j] = beta_std[j] * (y_sd / x_sd[j])  [Gaussian]
-  #                 beta_orig[j] = beta_std[j] / x_sd[j]            [non-Gaussian]
-  # Intercept:
-  #   Gaussian: beta_0 = y_mean - sum(beta_orig * x_mean)
-  #   Non-Gaussian: label server had explicit intercept column, so beta_0 is
-  #     the first element of its beta_std. The centering adjustment applies:
-  #     beta_0_orig = beta_0_std - sum(beta_orig * x_mean)
+  # BCD produced coefficients on the standardized scale: y_std = X_std * beta_std.
+  # To recover original-scale coefficients: y = X * beta_orig + beta_0.
+  #
+  # Since x_std = (x - x_mean) / x_sd and y_std = (y - y_mean) / y_sd:
+  #   Gaussian:     beta_orig[j] = beta_std[j] * (y_sd / x_sd[j])
+  #                 beta_0 = y_mean - sum(beta_orig * x_mean)
+  #   Non-Gaussian: beta_orig[j] = beta_std[j] / x_sd[j]  (y not standardized)
+  #                 beta_0 = beta_0_std - sum(beta_orig * x_mean)
+  #                 where beta_0_std comes from the label server's intercept column
 
   all_coefs_std <- numeric()
   all_x_means <- numeric()

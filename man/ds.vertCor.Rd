@@ -104,10 +104,8 @@ requires one round-trip per server per cross-correlation element.
 # Connect to Opal/DataSHIELD servers
 connections <- DSI::datashield.login(builder$build())
 
-# Align records across servers
-ref_hashes <- ds.hashId("D", "patient_id", datasource = connections["server1"])
-ds.alignRecords("D", "patient_id", ref_hashes$hashes,
-                newobj = "D_aligned", datasources = connections)
+# Align records across servers using ECDH-PSI
+ds.psiAlign("D", "patient_id", "D_aligned", datasources = connections)
 
 # Define which variables are on which server
 vars <- list(
@@ -116,7 +114,7 @@ vars <- list(
 )
 
 # Compute privacy-preserving correlation
-result <- ds.vertCor("D_aligned", vars)
+result <- ds.vertCor("D_aligned", vars, datasources = connections)
 print(result)
 }
 

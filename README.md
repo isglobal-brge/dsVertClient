@@ -8,19 +8,26 @@
 
 This package provides user-friendly functions for:
 
-- **ID Validation**: Check identifier format consistency before alignment
-- **Record Alignment**: Align records across servers using secure hashing
+- **ECDH-PSI Record Alignment**: Privacy-preserving record matching using P-256 elliptic curves (no dictionary attacks possible)
 - **Correlation Analysis**: Compute correlation matrices using **Multiparty Homomorphic Encryption (MHE)** with threshold decryption
 - **Principal Component Analysis**: Perform PCA from the MHE-based correlation matrix
-- **Generalized Linear Models**: Fit GLMs using Block Coordinate Descent (5 families)
+- **Generalized Linear Models**: Fit GLMs using Block Coordinate Descent with encrypted labels (5 families)
 
 ## Security Guarantees
 
-The MHE-based correlation uses the CKKS homomorphic encryption scheme with **threshold decryption**:
+### Record Alignment (ECDH-PSI)
 
 | Property | What it prevents |
 |----------|-----------------|
-| **Client privacy** | The researcher CANNOT decrypt any individual data. Only aggregate statistics (correlation coefficients) are revealed after all servers cooperate. |
+| **Dictionary attack resistance** | Unlike SHA-256 hashing, the client CANNOT reverse-engineer patient IDs from the masked curve points (requires server's secret scalar) |
+| **Scalar confidentiality** | Each server's P-256 random scalar stays on-server |
+| **Unlinkability (DDH)** | The client CANNOT link single-masked points across servers |
+
+### Statistical Analysis (MHE-CKKS)
+
+| Property | What it prevents |
+|----------|-----------------|
+| **Client privacy** | The researcher CANNOT decrypt any individual data. Only aggregate statistics (correlations, coefficients) are revealed after all servers cooperate. |
 | **Server privacy** | Each server's raw data never leaves the server. Other servers only see encrypted ciphertexts (opaque). |
 | **Collusion resistance** | Even K-1 colluding servers cannot decrypt without the K-th server's key share. Full decryption requires ALL K servers. |
 
@@ -40,32 +47,28 @@ library(DSI)
 # Connect to Opal/DataSHIELD servers
 conns <- datashield.login(logindata)
 
-# 1. Validate ID format consistency
-validation <- ds.validateIdFormat("D", "patient_id", datasources = conns)
-print(validation)
+# 1. Align records across servers using ECDH-PSI
+ds.psiAlign("D", "patient_id", "D_aligned", datasources = conns)
 
-# 2. Align records across servers
-ref_hashes <- ds.hashId("D", "patient_id", datasource = conns["server1"])
-ds.alignRecords("D", "patient_id", ref_hashes$hashes, "D_aligned", datasources = conns)
-
-# 3. Define which variables are on which server
+# 2. Define which variables are on which server
 variables <- list(
   hospital_A = c("age", "bmi"),
   hospital_B = c("glucose", "systolic_bp"),
   hospital_C = c("cholesterol", "hdl")
 )
 
-# 4. Compute correlation matrix (MHE with threshold decryption)
+# 3. Compute correlation matrix (MHE with threshold decryption)
 cor_result <- ds.vertCor("D_aligned", variables, datasources = conns)
 print(cor_result)
 
-# 5. Perform PCA
+# 4. Perform PCA
 pca <- ds.vertPCA("D_aligned", variables, n_components = 3, datasources = conns)
 print(pca)
 
-# 6. Fit a GLM
+# 5. Fit a GLM
 model <- ds.vertGLM("D_aligned", "outcome", variables,
-                    family = "gaussian", datasources = conns)
+                    y_server = "hospital_B", family = "gaussian",
+                    datasources = conns)
 summary(model)
 
 # Disconnect
@@ -76,22 +79,23 @@ datashield.logout(conns)
 
 | Function | Description |
 |----------|-------------|
-| `ds.validateIdFormat` | Validate identifier format consistency across servers |
-| `ds.hashId` | Get hashed identifiers from a server |
-| `ds.alignRecords` | Align records across servers to match hashes |
+| `ds.psiAlign` | Align records across servers using ECDH-PSI (recommended) |
 | `ds.vertCor` | Compute cross-server correlation matrix via MHE threshold decryption |
 | `ds.vertPCA` | Perform PCA from the MHE-based correlation matrix |
-| `ds.vertGLM` | Fit Generalized Linear Models via Block Coordinate Descent |
+| `ds.vertGLM` | Fit Generalized Linear Models via encrypted-label BCD |
+| `ds.validateIdFormat` | Validate identifier format consistency across servers |
+| `ds.hashId` | Get hashed identifiers (deprecated, use `ds.psiAlign`) |
+| `ds.alignRecords` | Hash-based alignment (deprecated, use `ds.psiAlign`) |
 
-## Workflow: Validate → Align → Analyze
+## Workflow: Align → Analyze
 
 ```
- ┌───────────┐   ┌──────────────┐   ┌───────────────────────────┐
- │ Validate  │──▶│    Align     │──▶│        Analyze            │
- │ ID format │   │   records    │   │  ds.vertCor (MHE)         │
- │           │   │ (hash-based) │   │  ds.vertPCA               │
- │           │   │              │   │  ds.vertGLM (BCD)         │
- └───────────┘   └──────────────┘   └───────────────────────────┘
+ ┌──────────────────┐   ┌───────────────────────────┐
+ │  ds.psiAlign     │──▶│        Analyze            │
+ │  (ECDH-PSI)      │   │  ds.vertCor (MHE)         │
+ │                   │   │  ds.vertPCA               │
+ │                   │   │  ds.vertGLM (BCD + MHE)   │
+ └──────────────────┘   └───────────────────────────┘
 ```
 
 ## MHE Correlation: How It Works
@@ -124,10 +128,11 @@ The 6-phase threshold MHE protocol:
 
 ## Documentation
 
-- [Getting Started](https://isglobal-brge.github.io/dsVertClient/articles/a-getting-started.html): Introduction and record alignment
+- [Getting Started](https://isglobal-brge.github.io/dsVertClient/articles/a-getting-started.html): Setup, PSI record alignment, first analysis
 - [Statistical Analysis](https://isglobal-brge.github.io/dsVertClient/articles/b-statistical-analysis.html): Correlation, PCA, and GLMs
-- [Methodology](https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.html): Mathematical details
-- [Security Validation](https://isglobal-brge.github.io/dsVertClient/articles/d-security-validation.html): MHE security analysis and local vs Opal comparison
+- [Methodology](https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.html): MHE protocol, BCD-IRLS, ECDH-PSI details
+- [Validation](https://isglobal-brge.github.io/dsVertClient/articles/d-validation.html): Numerical comparison against local R
+- [Security Model](https://isglobal-brge.github.io/dsVertClient/articles/e-security.html): Threat model, MHE guarantees, PSI security
 
 ## Authors
 
@@ -137,6 +142,7 @@ The 6-phase threshold MHE protocol:
 
 ## References
 
+- De Cristofaro, E. & Tsudik, G. (2010). "Practical Private Set Intersection Protocols with Linear Complexity". *FC 2010*.
 - Mouchet, C. et al. (2021). "Multiparty Homomorphic Encryption from Ring-Learning-With-Errors". *Proceedings on Privacy Enhancing Technologies (PETS)*.
 - Cheon, J.H. et al. (2017). "Homomorphic Encryption for Arithmetic of Approximate Numbers". *ASIACRYPT 2017*.
 - van Kesteren, E.J. et al. (2019). "Privacy-preserving generalized linear models using distributed block coordinate descent". arXiv:1911.03183.

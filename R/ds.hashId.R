@@ -1,5 +1,7 @@
-#' @title Hash Identifier Column
-#' @description Client-side function that retrieves hashed identifiers from
+#' @title Hash Identifier Column (Deprecated)
+#' @description \strong{Deprecated}: Use \code{\link{ds.psiAlign}} instead.
+#'
+#'   Client-side function that retrieves hashed identifiers from
 #'   a DataSHIELD server. Used as the first step in record matching for
 #'   vertically partitioned data.
 #'
@@ -16,11 +18,18 @@
 #'   }
 #'
 #' @details
+#' \strong{Deprecated}: This function uses SHA-256 hashing, which is vulnerable
+#' to dictionary attacks when identifiers are predictable (e.g. sequential
+#' patient IDs). Use \code{\link{ds.psiAlign}} instead, which provides
+#' ECDH-PSI alignment with stronger privacy guarantees: the client only sees
+#' opaque elliptic curve points that cannot be reversed to identifiers.
+#'
 #' This function is typically called on the "reference" server in a
 #' vertical partitioning scenario. The returned hashes are then passed
 #' to \code{\link{ds.alignRecords}} on other servers to align the data.
 #'
-#' @seealso \code{\link{ds.alignRecords}} for aligning records across servers
+#' @seealso \code{\link{ds.psiAlign}} for the recommended replacement,
+#'   \code{\link{ds.alignRecords}} for legacy hash-based alignment
 #'
 #' @examples
 #' \dontrun{

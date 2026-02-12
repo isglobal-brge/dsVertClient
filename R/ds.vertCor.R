@@ -84,10 +84,8 @@
 #' # Connect to Opal/DataSHIELD servers
 #' connections <- DSI::datashield.login(builder$build())
 #'
-#' # Align records across servers
-#' ref_hashes <- ds.hashId("D", "patient_id", datasource = connections["server1"])
-#' ds.alignRecords("D", "patient_id", ref_hashes$hashes,
-#'                 newobj = "D_aligned", datasources = connections)
+#' # Align records across servers using ECDH-PSI
+#' ds.psiAlign("D", "patient_id", "D_aligned", datasources = connections)
 #'
 #' # Define which variables are on which server
 #' vars <- list(
@@ -96,7 +94,7 @@
 #' )
 #'
 #' # Compute privacy-preserving correlation
-#' result <- ds.vertCor("D_aligned", vars)
+#' result <- ds.vertCor("D_aligned", vars, datasources = connections)
 #' print(result)
 #' }
 #'
@@ -228,6 +226,13 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   # ===========================================================================
   # Phase 1: Key Generation
   # ===========================================================================
+  # Each server generates an RLWE secret key share sk_k and a public key share.
+  # Party 0 (first server) additionally generates:
+  #   - CRP (Common Reference Polynomial): shared randomness needed by all
+  #     parties to construct compatible public key shares.
+  #   - GKG seed: shared seed for Galois Key Generation, enabling all parties
+  #     to independently generate matching Galois rotation keys (needed for
+  #     ciphertext slot rotations in inner-product computation).
   message("\n[Phase 1] Key generation on each server...")
 
   # Get observation count
@@ -295,6 +300,11 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   # ===========================================================================
   # Phase 2: Combine public key shares into CPK
   # ===========================================================================
+  # Public key shares are added together to form the Collective Public Key (CPK).
+  # The CPK has a critical property: data encrypted under it can ONLY be
+  # decrypted when ALL K servers cooperate (K-of-K threshold). No subset of
+  # K-1 servers (or the client alone) can decrypt. The combining is done on
+  # one server; the resulting CPK + Galois keys are distributed to all others.
   message("\n[Phase 2] Combining public key shares...")
 
   conn_idx <- which(server_names == first_server)
@@ -367,10 +377,23 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   # ===========================================================================
   # Phase 5: Cross-server correlations with THRESHOLD DECRYPTION
   # ===========================================================================
+  # This is the core privacy-preserving computation. For each server pair
+  # (A, B), server A computes z_A * Enc(z_B) homomorphically -- the result
+  # is still encrypted. To recover the inner product (correlation), we need
+  # threshold decryption: each of the K servers computes a partial decryption
+  # share using its secret key, and the client fuses all K shares to recover
+  # the plaintext. No single server or the client alone can decrypt.
+  #
+  # The loop below processes each cross-correlation element individually:
+  # for each (i,j) pair, it collects K partial decryption shares and fuses
+  # them. This is the dominant cost of the protocol.
   message("\n[Phase 5] Computing cross-server correlations (threshold decryption)...")
 
   cross_cors <- list()
-  chunk_size <- 10000  # ~10KB per chunk, safe for R parser
+  # CKKS ciphertexts are 50-200KB as base64url strings. DataSHIELD passes
+  # function arguments through R's parser, which has limits on string length.
+  # Chunking at 10KB per chunk stays well within parser limits on all Opal versions.
+  chunk_size <- 10000
 
   for (i in 1:(length(server_list) - 1)) {
     for (j in (i + 1):length(server_list)) {
@@ -436,7 +459,10 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
             ct <- er[[(row_i - 1) * n_B + col_j]]
           }
 
-          # Collect partial decryptions from ALL servers
+          # Threshold decryption: collect partial shares from ALL K servers.
+          # Each server computes share_k = PartialDecrypt(ct, sk_k).
+          # Individually, each share is indistinguishable from random noise.
+          # Only when ALL K shares are fused can the plaintext be recovered.
           partial_shares <- list()
           for (server in server_list) {
             conn_idx <- which(server_names == server)
@@ -464,7 +490,9 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
             partial_shares[[server]] <- pd$decryption_share
           }
 
-          # Client fuses partial decryptions
+          # Client-side fusion: combine all K partial shares to recover the
+          # plaintext inner product. This calls the mhe-tool binary's mhe-fuse
+          # command, which performs the CKKS-specific threshold decryption algebra.
           value <- .mheFuseLocal(ct, unlist(partial_shares, use.names = FALSE),
                                  log_n = log_n, log_scale = log_scale,
                                  num_slots = n_obs)
@@ -472,7 +500,9 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
         }
       }
 
-      # Convert to correlation (divide by n-1)
+      # The homomorphic computation yields sum(z_A * z_B) -- the raw inner
+      # product of standardized columns. Dividing by (n-1) converts to
+      # Pearson correlation (same as cor() on standardized data).
       cross_cor <- result_matrix / (n_obs - 1)
       rownames(cross_cor) <- variables[[server_A]]
       colnames(cross_cor) <- variables[[server_B]]

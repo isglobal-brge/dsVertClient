@@ -9,9 +9,9 @@ Functions for aligning records across servers
 - [`ds.validateIdFormat()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.validateIdFormat.md)
   : Validate Identifier Format Across Servers
 - [`ds.hashId()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.hashId.md)
-  : Hash Identifier Column
+  : Hash Identifier Column (Deprecated)
 - [`ds.alignRecords()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.alignRecords.md)
-  : Align Records Across Servers
+  : Align Records Across Servers (Deprecated)
 
 ## Correlation and PCA
 
