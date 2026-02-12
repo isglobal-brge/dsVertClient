@@ -2,16 +2,10 @@
 
 ## Record Alignment
 
-Functions for aligning records across servers
+Privacy-preserving record alignment using ECDH-PSI
 
 - [`ds.psiAlign()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md)
   : ECDH-PSI Record Alignment
-- [`ds.validateIdFormat()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.validateIdFormat.md)
-  : Validate Identifier Format Across Servers
-- [`ds.hashId()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.hashId.md)
-  : Hash Identifier Column (Deprecated)
-- [`ds.alignRecords()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.alignRecords.md)
-  : Align Records Across Servers (Deprecated)
 
 ## Correlation and PCA
 
@@ -24,7 +18,7 @@ Distributed correlation and principal component analysis
 
 ## Generalized Linear Models
 
-Privacy-preserving GLM fitting
+Privacy-preserving GLM fitting with encrypted labels
 
 - [`ds.vertGLM()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGLM.md)
   : Generalized Linear Model for Vertically Partitioned Data
@@ -43,5 +37,3 @@ Helper methods
   : Print Method for ds.cor Objects
 - [`print(`*`<ds.pca>`*`)`](https://isglobal-brge.github.io/dsVertClient/reference/print.ds.pca.md)
   : Print Method for ds.pca Objects
-- [`print(`*`<ds.id.validation>`*`)`](https://isglobal-brge.github.io/dsVertClient/reference/print.ds.id.validation.md)
-  : Print Method for ds.id.validation Objects

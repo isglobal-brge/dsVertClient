@@ -58,27 +58,6 @@ connections <- datashield.login(builder$build(), assign = TRUE, symbol = "D")
 Logging into the collaborating servers
 ```
 
-## Validate Identifiers
-
-Before aligning records, confirm that the patient identifiers are present,
-unique, and consistently formatted at every server. `ds.validateIdFormat()`
-performs these checks without revealing the actual identifier values.
-
-```{r validate}
-validation <- ds.validateIdFormat("D", "patient_id", datasources = connections)
-validation
-```
-
-```r
-## # Identifier Validation Summary
-##
-## | Server  | Valid IDs | Total | Format        | Example       |
-## |---------|----------|-------|---------------|---------------|
-## | server1 | 50       | 50    | PATIENT_NNNNN | PATIENT_00001 |
-## | server2 | 50       | 50    | PATIENT_NNNNN | PATIENT_00001 |
-## | server3 | 50       | 50    | PATIENT_NNNNN | PATIENT_00001 |
-```
-
 ## Align Records
 
 Records across servers are stored in different row orders. `ds.psiAlign()`

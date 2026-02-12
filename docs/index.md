@@ -89,13 +89,10 @@ datashield.logout(conns)
 
 | Function | Description |
 |----|----|
-| `ds.psiAlign` | Align records across servers using ECDH-PSI (recommended) |
+| `ds.psiAlign` | Align records across servers using ECDH-PSI |
 | `ds.vertCor` | Compute cross-server correlation matrix via MHE threshold decryption |
 | `ds.vertPCA` | Perform PCA from the MHE-based correlation matrix |
 | `ds.vertGLM` | Fit Generalized Linear Models via encrypted-label BCD |
-| `ds.validateIdFormat` | Validate identifier format consistency across servers |
-| `ds.hashId` | Get hashed identifiers (deprecated, use `ds.psiAlign`) |
-| `ds.alignRecords` | Hash-based alignment (deprecated, use `ds.psiAlign`) |
 
 ## Workflow: Align → Analyze
 

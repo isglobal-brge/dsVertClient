@@ -55,34 +55,20 @@ test_that("ds.vertGLM rejects non-list x_vars", {
 })
 
 # =============================================================================
-# ds.hashId input validation
+# ds.psiAlign input validation
 # =============================================================================
 
-test_that("ds.hashId rejects non-character data_name", {
-  expect_error(ds.hashId(123, "id"),
+test_that("ds.psiAlign rejects non-character data_name", {
+  expect_error(ds.psiAlign(123, "id"),
                "data_name must be a single character string")
 })
 
-test_that("ds.hashId rejects non-character id_variable", {
-  expect_error(ds.hashId("D", 123),
+test_that("ds.psiAlign rejects non-character id_col", {
+  expect_error(ds.psiAlign("D", 123),
                "id_col must be a single character string")
 })
 
-# =============================================================================
-# ds.alignRecords input validation
-# =============================================================================
-
-test_that("ds.alignRecords rejects non-character data_name", {
-  expect_error(ds.alignRecords(123, "id", c("a", "b")),
-               "data_name must be a single character string")
-})
-
-test_that("ds.alignRecords rejects non-character id_variable", {
-  expect_error(ds.alignRecords("D", 123, c("a", "b")),
-               "id_col must be a single character string")
-})
-
-test_that("ds.alignRecords rejects non-character reference_hashes", {
-  expect_error(ds.alignRecords("D", "id", 123),
-               "reference_hashes must be a non-empty character vector")
+test_that("ds.psiAlign rejects non-character newobj", {
+  expect_error(ds.psiAlign("D", "id", newobj = 123),
+               "newobj must be a single character string")
 })
