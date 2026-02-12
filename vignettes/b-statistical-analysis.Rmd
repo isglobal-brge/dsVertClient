@@ -40,9 +40,7 @@ builder$append(server = "server3", url = "https://opal3.example.org",
                password = "password", driver = "OpalDriver")
 
 connections <- datashield.login(builder$build(), assign = TRUE, symbol = "D")
-ref_hashes <- ds.hashId("D", "patient_id", datasource = connections["server1"])
-ds.alignRecords("D", "patient_id", ref_hashes$hashes, "D_aligned",
-                datasources = connections)
+ds.psiAlign("D", "patient_id", "D_aligned", datasources = connections)
 ```
 
 With records aligned, the three servers hold the following variables:

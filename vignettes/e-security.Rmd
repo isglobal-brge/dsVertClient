@@ -138,6 +138,51 @@ be taken with very small samples or highly identifying variable combinations.
 
 ---
 
+## PSI Alignment Security
+
+Record alignment uses an ECDH-based Private Set Intersection (PSI) protocol.
+Each server holds a secret P-256 scalar that never leaves the server. The
+protocol has the following security properties:
+
+### Dictionary Attack Resistance
+
+Unlike SHA-256 hashing, where an attacker who obtains the hash list can
+pre-compute hashes for a dictionary of plausible identifiers and match them,
+ECDH-PSI masks each identifier with a server-held secret scalar. Without
+knowledge of the scalar, the masked curve points are computationally
+indistinguishable from random group elements. An attacker who intercepts the
+masked points cannot mount a dictionary attack because they cannot reproduce the
+server's scalar multiplication.
+
+### Server Scalar Confidentiality
+
+Each server $k$ draws a secret scalar $\alpha_k$ uniformly at random from the
+P-256 curve order. This scalar is generated and stored exclusively on the
+server. It is never transmitted to the client or to other servers. The masked
+points $\alpha_k \cdot H(\text{id})$ are one-way under the elliptic-curve
+discrete logarithm assumption: given a masked point, recovering $\alpha_k$ is
+computationally infeasible.
+
+### Unlinkability Across Servers (DDH)
+
+The client receives doubly-masked points from each server pair. Under the
+Decisional Diffie--Hellman (DDH) assumption on P-256, the client cannot link a
+singly-masked point from server $A$ to the corresponding singly-masked point
+from server $B$. The client can only determine whether two doubly-masked points
+(one from each direction) correspond to the same identifier, which is exactly
+the information needed for alignment and nothing more.
+
+### Non-Matching Identifier Privacy
+
+No party learns which identifiers are held by other servers but are absent from
+its own dataset. The intersection protocol reveals only the set of common
+identifiers (in masked form). Identifiers present on server $A$ but absent from
+server $B$ produce masked points that have no match in the doubly-masked output,
+and the client simply discards them without learning anything about the
+underlying identifier values.
+
+---
+
 ## Assumptions and Limitations
 
 1. **Semi-honest model**: Parties are assumed to follow the protocol correctly.

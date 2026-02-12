@@ -26,7 +26,7 @@ the protocol design.
 | MHE-CKKS Correlation | `ds.vertCor()` | Cross-server correlation via threshold encryption |
 | Spectral PCA | `ds.vertPCA()` | PCA from distributed correlation matrix |
 | Encrypted-Label BCD-IRLS | `ds.vertGLM()` | GLM with response on one server only |
-| SHA-256 Hashing | `ds.hashId()` + `ds.alignRecords()` | Privacy-preserving record linkage |
+| ECDH-PSI Alignment | `ds.psiAlign()` | Privacy-preserving record linkage |
 
 ---
 
@@ -297,26 +297,39 @@ the AIC is $D + 2k$ where $k$ is the number of parameters.
 
 Before any statistical computation, records across servers must be aligned so
 that the same row position corresponds to the same individual. dsVertClient uses
-SHA-256 hashing of patient identifiers for privacy-preserving record linkage.
+an Elliptic-Curve Diffie--Hellman Private Set Intersection (ECDH-PSI) protocol
+for privacy-preserving record linkage.
 
-SHA-256 has three properties that make it suitable:
+### ECDH-PSI Protocol
 
-- **One-way.** Given a hash, it is computationally infeasible to recover the
-  original identifier.
-- **Deterministic.** The same identifier always produces the same 256-bit hash,
-  so matching across servers is exact.
-- **Collision-resistant.** The probability that two different identifiers
-  produce the same hash is negligible ($< 2^{-128}$).
+Each server $k$ draws a secret scalar $\alpha_k$ uniformly at random from the
+P-256 curve order and keeps it permanently on the server. The protocol exploits
+the **commutativity** of scalar multiplication on elliptic curves:
 
-The protocol is straightforward: the reference server's hash order defines the
-canonical row ordering, and every other server reorders its data frame to match.
-The original identifiers never leave their respective servers; only the
-irreversible hashes are transmitted.
+$$\alpha \cdot (\beta \cdot H(\text{id})) = \beta \cdot (\alpha \cdot H(\text{id}))$$
+
+where $H(\text{id})$ maps a patient identifier to a point on the NIST P-256
+curve using hash-to-curve (RFC 9380). The alignment proceeds in three rounds:
+
+1. **Mask.** Each server $k$ computes $\alpha_k \cdot H(\text{id})$ for every
+   identifier in its local table and sends the resulting curve points to the
+   client.
+2. **Double-mask.** The client forwards server $A$'s masked points to server $B$
+   (and vice versa). Each server applies its own scalar to the other server's
+   points, producing doubly-masked points
+   $\alpha_B \cdot (\alpha_A \cdot H(\text{id}))$ and
+   $\alpha_A \cdot (\alpha_B \cdot H(\text{id}))$. By commutativity these are
+   equal for the same identifier.
+3. **Intersect and reorder.** The client matches the doubly-masked points across
+   servers to find the common identifiers and instructs each server to reorder
+   its rows accordingly.
+
+The client sees only opaque elliptic-curve points at every stage and cannot
+invert them to recover the original identifiers. Security holds under the
+Decisional Diffie--Hellman (DDH) assumption in the semi-honest model.
 
 ```{r alignment}
-ref_hashes <- ds.hashId("D", "patient_id", datasource = connections["server1"])
-ds.alignRecords("D", "patient_id", ref_hashes$hashes, "D_aligned",
-                datasources = connections)
+ds.psiAlign("D", "patient_id", "D_aligned", datasources = connections)
 ```
 
 ---

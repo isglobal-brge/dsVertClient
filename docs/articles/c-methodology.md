@@ -1,276 +1,379 @@
 # Methodology
 
-This vignette explains the mathematical methodology behind
-dsVertClient’s privacy-preserving algorithms. Understanding these
-methods helps users interpret results correctly and appreciate the
-privacy guarantees.
+dsVertClient implements three distributed algorithms for vertically
+partitioned data: MHE-CKKS correlation with threshold decryption,
+spectral PCA from a distributed correlation matrix, and encrypted-label
+Block Coordinate Descent with IRLS for generalized linear models. This
+vignette describes the mathematical foundations of each algorithm, the
+cryptographic protocol that protects individual-level data, and the
+security guarantees that follow from the protocol design.
 
-## Overview of Methods
+## Overview
 
-dsVertClient implements three main distributed algorithms:
-
-1.  **Multiparty Homomorphic Encryption (MHE)** - For correlation and
-    PCA via threshold CKKS
-2.  **Block Coordinate Descent (BCD)** - For GLM coefficient estimation
-3.  **Iteratively Reweighted Least Squares (IRLS)** - For non-Gaussian
-    GLMs
-
-All methods share a key principle: **decompose computations so each
-institution only sees its own data, while sharing only aggregate
-statistics or encrypted intermediates**.
+| Method | Function | Purpose |
+|----|----|----|
+| MHE-CKKS Correlation | [`ds.vertCor()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md) | Cross-server correlation via threshold encryption |
+| Spectral PCA | [`ds.vertPCA()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertPCA.md) | PCA from distributed correlation matrix |
+| Encrypted-Label BCD-IRLS | [`ds.vertGLM()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGLM.md) | GLM with response on one server only |
+| ECDH-PSI Alignment | [`ds.psiAlign()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md) | Privacy-preserving record linkage |
 
 ------------------------------------------------------------------------
 
 ## Multiparty Homomorphic Encryption for Correlation
 
-### The Problem
+### CKKS Scheme
 
-Given data matrix $`Z`$ split column-wise across $`K`$ institutions:
-
-``` math
-Z = [Z_1 | Z_2 | \ldots | Z_K]
-```
-
-where institution $`k`$ holds $`Z_k`$ (its subset of standardized
-columns), we want to compute:
-
-- Correlation matrix: $`R = Z^T Z / (n-1)`$ (for standardized data with
-  mean 0 and variance 1)
-
-But no institution can see the full $`Z`$, and we want strong
-cryptographic privacy guarantees for cross-institution correlations.
-
-### The CKKS Homomorphic Encryption Scheme
-
-dsVertClient uses the **CKKS scheme** (Cheon-Kim-Kim-Song), a
-homomorphic encryption scheme designed for approximate arithmetic on
-real numbers. CKKS operates over the polynomial ring:
+The protocol uses the CKKS scheme (Cheon–Kim–Kim–Song), a homomorphic
+encryption scheme designed for approximate arithmetic on real numbers.
+CKKS operates over the polynomial ring
 
 ``` math
-R = \mathbb{Z}[X] / (X^N + 1)
+R = \mathbb{Z}[X] / (X^N + 1), \quad N = 2^{\texttt{log\_n}}
 ```
 
-where $`N`$ is a power of 2 (controlled by the `log_n` parameter). The
-ring supports **SIMD (Single Instruction, Multiple Data)** encoding: a
-single ciphertext can pack up to $`N/2`$ real-valued slots. For example,
-with `log_n = 12` ($`N = 4096`$), each ciphertext holds up to 2048 real
-numbers.
+where the `log_n` parameter controls the ring dimension. The scheme has
+four properties that make it well suited to distributed correlation:
 
-Key properties of CKKS for our application:
-
-- **Approximate arithmetic**: Additions and multiplications on encrypted
-  data introduce small rounding errors (typically $`10^{-3}`$ to
-  $`10^{-4}`$), which is acceptable for statistical correlation
-- **SIMD batching**: An entire column of observations (up to $`N/2`$
-  values) is packed into a single ciphertext, enabling element-wise
-  operations on full vectors in one operation
-- **Security**: Based on the Ring Learning With Errors (RLWE) problem,
-  which is believed to be hard even for quantum computers
+- **SIMD encoding.** A single ciphertext packs up to $`N/2`$ real-valued
+  slots. With `log_n = 12` ($`N = 4096`$), each ciphertext holds 2048
+  values, so an entire column of observations fits in one ciphertext.
+- **Approximate arithmetic.** Additions and multiplications on encrypted
+  data introduce small rounding errors, typically on the order of
+  $`10^{-4}`$. This is negligible for statistical correlation.
+- **Security.** The scheme is based on the Ring Learning With Errors
+  (RLWE) problem, which is believed to be hard even for quantum
+  computers (post-quantum candidate).
+- **Efficient batching.** Element-wise operations on full vectors
+  execute in a single homomorphic operation, avoiding per-element
+  overhead.
 
 ### Threshold Decryption
 
-Rather than having a single secret key holder, the MHE protocol uses
-**threshold decryption** via additive secret sharing. The collective
-secret key is split across all $`K`$ parties:
+Rather than entrusting a single party with the secret key, the MHE
+protocol uses additive secret sharing. The collective secret key is the
+sum of all $`K`$ individual shares:
 
 ``` math
 sk = sk_1 + sk_2 + \ldots + sk_K
 ```
 
-No single party holds the full secret key. Decryption requires **all**
-$`K`$ parties to cooperate by providing their partial decryption shares.
-This ensures that even $`K-1`$ colluding parties cannot decrypt any
-ciphertext without the remaining party’s cooperation.
+No single party holds $`sk`$. Decryption requires **all** $`K`$ parties
+to provide their partial decryption shares. Even $`K - 1`$ colluding
+parties cannot decrypt any ciphertext without the remaining party’s
+cooperation.
 
-### The 6-Phase MHE Protocol
+### 6-Phase Protocol
 
-The correlation computation proceeds through six phases:
+The correlation computation proceeds through six phases, each mapped to
+a specific server-side function:
 
-#### Phase 1: Key Generation
+| Phase | Operation | Server Function | Description |
+|----|----|----|----|
+| 1 | Key Generation | `mheInitDS` | Each party generates $`sk_k`$, $`pk_k`$. Party 0 creates the Common Reference Polynomial (CRP). |
+| 2 | Key Combination | `mheCombineDS` | Aggregate public key shares into a Collective Public Key (CPK) and Galois keys. |
+| 3 | Encryption | `mheEncryptLocalDS` | Z-score columns, encrypt each under the CPK. |
+| 4 | Local Correlation | `localCorDS` | Compute plaintext $`\text{cor}(X_k)`$ for within-server blocks. |
+| 5 | Cross-Products | `mheCrossProductEncDS` + `mhePartialDecryptDS` | Plaintext $`\times`$ ciphertext multiplication, then threshold decrypt. |
+| 6 | Assembly | Client `ds.vertCor` | Fuse all $`K`$ partial shares, divide by $`(n - 1)`$ to obtain $`r_{ij}`$. |
 
-Each party $`k`$ independently generates its own secret key share
-$`sk_k`$. Party 0 additionally generates a **Common Reference Polynomial
-(CRP)** $`a`$, which is a uniformly random element of the polynomial
-ring shared by all parties. Each party computes its public key share:
+**Phase 1.** Each party $`k`$ independently generates a secret key share
+$`sk_k`$. Party 0 additionally generates a Common Reference Polynomial
+$`a`$, a uniformly random element of the polynomial ring shared by all
+parties. Each party computes its public key share:
 
 ``` math
 pk_k = (-a \cdot sk_k + e_k, \; a)
 ```
 
 where $`e_k`$ is a small error polynomial sampled from a discrete
-Gaussian distribution. The CRP $`a`$ is distributed to all other parties
-so they can generate compatible key shares.
+Gaussian distribution. The CRP $`a`$ is distributed so all parties
+generate compatible key material.
 
 ``` r
 
-# Phase 1 happens automatically inside ds.vertCor()
-# Party 0 generates CRP and its key share
-# Other parties receive CRP and generate their key shares
 result <- ds.vertCor(
   data_name = "D_aligned",
-  variables = list(inst_A = c("age", "weight"), inst_B = c("glucose")),
-  log_n = 12,       # Ring dimension: N = 2^12 = 4096
-  log_scale = 40,   # Precision: ~12 decimal digits
+  variables = list(server1 = c("age", "bmi"), server2 = c("glucose")),
+  log_n = 12,
+  log_scale = 40,
   datasources = connections
 )
 ```
 
-#### Phase 2: Key Combination
-
-The individual public key shares are combined into a **Collective Public
-Key (CPK)**:
+**Phase 2.** The individual public key shares are combined into a
+Collective Public Key:
 
 ``` math
 CPK = \sum_{k=1}^{K} pk_k
 ```
 
 Data encrypted under the CPK can only be decrypted when all $`K`$
-parties cooperate. The CPK is distributed to all servers so that any
-server can encrypt data that requires collective decryption.
+parties cooperate. Galois keys (rotation keys) are similarly aggregated.
+No relinearization keys are generated, because the protocol only
+requires plaintext $`\times`$ ciphertext multiplication (see below).
 
-#### Phase 3: Encryption
+**Phase 3.** Each institution $`k`$ standardizes its columns to Z-scores
+(mean 0, standard deviation 1) and encrypts each column vector $`z_j`$
+under the CPK. The SIMD encoding packs the full $`n`$-length column into
+a single ciphertext.
 
-Each institution $`k`$ standardizes its columns to Z-scores (mean 0,
-standard deviation 1) and encrypts each column vector $`z_j`$ under the
-collective public key:
-
-``` math
-ct_j = \text{Enc}_{CPK}(z_j)
-```
-
-The CKKS SIMD encoding packs the entire column vector into a single
-ciphertext. For example, 200 patient observations for one variable
-become a single encrypted object.
-
-#### Phase 4: Local Correlation
-
-Within-institution correlations are computed in **plaintext** since no
-data needs to leave the server:
+**Phase 4.** Within-server correlations are computed in plaintext since
+no data needs to leave the server:
 
 ``` math
 R_{kk} = \text{cor}(Z_k)
 ```
 
-This is a standard Pearson correlation on the local data. No encryption
-overhead is incurred for these diagonal blocks of the correlation
-matrix.
+No encryption overhead is incurred for these diagonal blocks.
 
-#### Phase 5: Cross-Product and Threshold Decryption
-
-This is the core cryptographic step. For each pair of institutions
-$`(A, B)`$, institution $`A`$ receives the encrypted columns from
-institution $`B`$ and computes the element-wise product of its plaintext
-column $`z_{A,i}`$ with the encrypted column $`\text{Enc}(z_{B,j})`$:
+**Phase 5.** For each pair of institutions $`(A, B)`$, institution $`A`$
+multiplies its plaintext column $`z_{A,i}`$ by the encrypted column from
+institution $`B`$:
 
 ``` math
 z_{A,i} \cdot \text{Enc}(z_{B,j}) = \text{Enc}(z_{A,i} \odot z_{B,j})
 ```
 
-where $`\odot`$ denotes element-wise multiplication across the SIMD
-slots. This is a **plaintext-by-ciphertext multiplication**, which is a
-critical design choice:
-
-> **Plaintext $`\times`$ ciphertext multiplication produces a degree-1
-> ciphertext.** This means no relinearization keys are needed, no
-> ciphertext-ciphertext multiplication occurs, and the noise growth is
-> minimal. This keeps the protocol simple and efficient.
-
-The encrypted product vector $`\text{Enc}(z_{A,i} \odot z_{B,j})`$ must
-then be decrypted to obtain the inner product. This uses **threshold
-decryption**:
-
-1.  The encrypted result is sent to each party $`k`$
-2.  Each party computes a **partial decryption share** using its secret
-    key: $`\text{share}_k = \text{KeySwitch}(sk_k, ct)`$
-3.  The client collects all $`K`$ shares and **fuses** them to recover
-    the plaintext
-
-Concretely, for a RLWE ciphertext $`ct = (ct[0], ct[1])`$, each party
-produces:
-
-``` math
-\text{share}_k = -sk_k \cdot ct[1] + e_k'
-```
-
-where $`e_k'`$ is a fresh smudging noise term. The client fuses all
-shares:
+The encrypted product is then threshold-decrypted: each party $`k`$
+computes a partial decryption share
+$`\text{share}_k = -sk_k \cdot ct[1] + e_k'`$ (where $`e_k'`$ is a
+smudging noise term). The client fuses all shares:
 
 ``` math
 m \approx ct[0] + \sum_{k=1}^{K} \text{share}_k
 ```
 
-This recovers the plaintext vector $`z_{A,i} \odot z_{B,j}`$ (with small
-CKKS approximation error).
-
-#### Phase 6: Post-Decryption Assembly
-
-After decryption, the client sums the first $`n`$ slots of the recovered
-plaintext to obtain the inner product:
+**Phase 6.** The client sums the first $`n`$ slots of the recovered
+plaintext to obtain the inner product, then divides by $`(n - 1)`$:
 
 ``` math
-\langle z_{A,i}, z_{B,j} \rangle = \sum_{l=1}^{n} (z_{A,i} \odot z_{B,j})_l
+r_{ij} = \frac{\sum_{l=1}^{n} (z_{A,i} \odot z_{B,j})_l}{n - 1}
 ```
 
-The cross-correlation is then:
+The full correlation matrix is assembled from exact diagonal blocks
+(Phase 4) and approximate off-diagonal blocks (Phase 5, with CKKS error
+on the order of $`10^{-4}`$).
 
-``` math
-r_{ij} = \frac{\langle z_{A,i}, z_{B,j} \rangle}{n - 1}
-```
+### Plaintext x Ciphertext Design Choice
 
-The full $`p \times p`$ correlation matrix is assembled from:
+A critical design decision is that the homomorphic computation is
+limited to **plaintext $`\times`$ ciphertext** multiplication. This has
+three consequences:
 
-- **Diagonal blocks**: Local correlations $`R_{kk}`$ from Phase 4
-  (exact)
-- **Off-diagonal blocks**: Cross-correlations from Phase 5 (approximate,
-  with CKKS error on the order of $`10^{-3}`$ to $`10^{-4}`$)
-
-### Why Plaintext-Ciphertext Multiplication Matters
-
-A crucial design decision in this protocol is that the homomorphic
-computation is limited to **plaintext $`\times`$ ciphertext**
-multiplication. In the CKKS scheme:
-
-- **Ciphertext $`\times`$ ciphertext** multiplication doubles the
-  ciphertext degree (from degree 1 to degree 2), requiring
-  **relinearization keys** to reduce back to degree 1. Generating
-  relinearization keys in the multiparty setting requires additional
-  rounds of interaction.
-- **Plaintext $`\times`$ ciphertext** multiplication keeps the
-  ciphertext at degree 1. No relinearization is needed, no evaluation
-  keys need to be generated collectively, and the protocol remains
-  simple.
+1.  **Degree stays at 1.** A plaintext-by-ciphertext product keeps the
+    ciphertext at degree 1, so no relinearization keys are needed.
+2.  **Minimal noise growth.** Without ciphertext-ciphertext
+    multiplication, the noise budget is consumed slowly.
+3.  **Protocol simplicity.** No evaluation keys, no relinearization
+    rounds, no bootstrapping. The only collective key material needed is
+    the CPK and Galois keys (for slot rotations in the GLM gradient
+    protocol).
 
 This works because institution $`A`$ holds its own data in plaintext and
 only the other institution’s data is encrypted. The element-wise product
 $`z_{A,i} \cdot \text{Enc}(z_{B,j})`$ is exactly the
 plaintext-ciphertext case.
 
-### Security Analysis
+### Security Model
 
-The MHE protocol provides the following security guarantees under the
-**semi-honest** (honest-but-curious) adversary model:
-
-**What each party learns:**
-
-| Entity | Sees | Does NOT See |
+| Entity | Learns | Does NOT Learn |
 |----|----|----|
-| Institution $`A`$ | Its own data $`Z_A`$, encrypted columns $`\text{Enc}(Z_B)`$ from other institutions (opaque ciphertexts) | Raw data $`Z_B`$ from any other institution |
-| Institution $`B`$ | Its own data $`Z_B`$, encrypted cross-products sent for partial decryption (opaque ciphertexts) | Raw data $`Z_A`$, the plaintext cross-products |
-| Client (researcher) | Partial decryption shares (individually meaningless), final aggregate correlations $`r_{ij}`$ | Any individual-level data, any single institution’s raw values |
+| Server $`k`$ | Own data $`Z_k`$, encrypted columns from others (opaque ciphertexts) | Other servers’ raw data |
+| Client | Final correlation matrix $`r_{ij}`$ | Any individual-level data |
+| $`K - 1`$ colluding servers | Own data, encrypted intermediates | Remaining server’s data (missing key share masks decryption) |
 
-**Collusion resistance:** Even if $`K-1`$ institutions collude, they
-cannot decrypt any ciphertext without the remaining institution’s secret
-key share. Full decryption requires cooperation from **all** $`K`$
-parties.
+------------------------------------------------------------------------
 
-**What is revealed:** Only the final correlation coefficients $`r_{ij}`$
-are revealed to the client. These are aggregate statistics over $`n`$
-observations and do not directly reveal individual data points. However,
-as with any statistical release, sufficiently many correlations could
-theoretically allow inference about individuals, so the number of
-variables and observations should be considered.
+## Encrypted-Label BCD-IRLS for GLMs
 
-### References
+### Vertical Decomposition
+
+A Generalized Linear Model relates the response $`y`$ to predictors
+$`X`$ through $`g(\mu) = \eta = X\beta`$, where $`g(\cdot)`$ is the link
+function, $`\mu = E[y]`$, and $`\eta`$ is the linear predictor. With
+vertically partitioned data, the linear predictor decomposes:
+
+``` math
+\eta = X_1\beta_1 + X_2\beta_2 + \ldots + X_K\beta_K
+```
+
+### Key Mathematical Insight
+
+The IRLS update for block $`k`$ is:
+
+``` math
+\beta_k^{\text{new}} = (X_k^T W X_k + \lambda I)^{-1} \, X_k^T W (z - \eta_{-k})
+```
+
+Decomposing the right-hand side:
+
+``` math
+X_k^T W (z - \eta_{-k}) = X_k^T W X_k \, \beta_k + g_k
+```
+
+where $`g_k = X_k^T u`$ with $`u = v \odot (y - \mu)`$.
+
+For canonical links (Gaussian, Binomial, Poisson), $`v = 1`$, so
+$`u = y - \mu`$.
+
+The key insight is that **only $`g_k = X_k^T u`$ depends on $`y`$**;
+everything else ($`\mu`$, $`W`$) is computable from $`\eta`$ alone.
+Furthermore, $`g_k`$ has length $`p_k`$ (the number of features on
+server $`k`$), **not** length $`n`$ (the number of observations).
+Therefore only a $`p_k`$-dimensional gradient needs to be decrypted via
+threshold decryption, rather than the full $`n`$-dimensional residual
+vector. Since typically $`p_k \ll n`$, this dramatically reduces the
+information revealed through decryption.
+
+### Encrypted Protocol
+
+The encrypted-label BCD-IRLS protocol proceeds as follows:
+
+``` r
+
+model <- ds.vertGLM(
+  data_name = "D_aligned",
+  y_var = "bp",
+  x_vars = list(server1 = c("age", "bmi"), server2 = c("glucose"),
+                server3 = c("cholesterol", "heart_rate")),
+  y_server = "server2",
+  family = "gaussian",
+  datasources = connections
+)
+```
+
+1.  The label server encrypts $`y`$ under the CPK, producing $`ct_y`$.
+    This ciphertext is distributed to all non-label servers.
+2.  $`ct_y`$ is distributed to non-label servers via a chunked transfer
+    protocol.
+3.  A non-label server $`k`$ computes:
+    $`ct_u = ct_y - \text{encode}(\mu)`$, then
+    $`g_k[j] = \text{InnerSum}(\text{encode}(x_j) \cdot ct_u)`$ for each
+    feature $`j`$. The InnerSum operation uses Galois rotations to sum
+    all $`n`$ SIMD slots into a single scalar, collapsing $`n`$
+    individual-level products into one aggregate inside the encrypted
+    domain.
+4.  Threshold decrypt $`g_k`$ (length $`p_k`$). Each of the $`K`$
+    servers provides a partial decryption share; the client fuses all
+    shares to recover the plaintext gradient.
+5.  Server $`k`$ solves:
+    $`\beta_k^{\text{new}} = (X_k^T W X_k + \lambda I)^{-1} (X_k^T W X_k \, \beta_k + g_k)`$
+
+The label server uses standard IRLS with plaintext $`y`$; no encryption
+is needed for its own block.
+
+### Feature Standardization
+
+Features are automatically standardized (centered and scaled) on each
+server before BCD to ensure fast convergence. Without standardization,
+correlated features cause slow convergence with contraction rates near
+0.98. With standardization, the BCD algorithm converges in 6–12
+iterations.
+
+After convergence, coefficients are transformed back to the original
+scale:
+
+- **Gaussian family.** Both features and response are standardized.
+  $`\beta_{\text{orig}}[j] = \beta_{\text{std}}[j] \times \sigma_y / \sigma_{x_j}`$.
+  The intercept is
+  $`\beta_0 = \bar{y} - \sum_j \beta_{\text{orig}}[j] \, \bar{x}_j`$.
+- **Non-Gaussian families.** Only features are standardized; $`y`$
+  remains on the original scale.
+  $`\beta_{\text{orig}}[j] = \beta_{\text{std}}[j] / \sigma_{x_j}`$. The
+  intercept is recovered from the label server’s IRLS, adjusted for the
+  centering:
+  $`\beta_0 = \beta_{0,\text{std}} - \sum_j \beta_{\text{orig}}[j] \, \bar{x}_j`$.
+
+### IRLS Family Table
+
+| Family | Link $`g(\mu)`$ | Mean $`\mu(\eta)`$ | Weight $`w`$ | $`v`$ | $`u = v \odot (y - \mu)`$ |
+|----|----|----|----|----|----|
+| Gaussian | $`\eta`$ | $`\eta`$ | $`1`$ | $`1`$ | $`y - \mu`$ |
+| Binomial | $`\log\frac{\mu}{1-\mu}`$ | $`\frac{1}{1+e^{-\eta}}`$ | $`\mu(1-\mu)`$ | $`1`$ | $`y - \mu`$ |
+| Poisson | $`\log(\mu)`$ | $`e^{\eta}`$ | $`\mu`$ | $`1`$ | $`y - \mu`$ |
+| Gamma | $`\log(\mu)`$ | $`e^{\eta}`$ | $`1`$ | $`1/\mu`$ | $`(y - \mu)/\mu`$ |
+| Inv. Gaussian | $`\log(\mu)`$ | $`e^{\eta}`$ | $`1/\mu`$ | $`1`$ | $`y - \mu`$ |
+
+For the three canonical-link families (Gaussian, Binomial, Poisson),
+$`v = 1`$. This simplifies the encrypted computation to
+$`X_k^T (ct_y - \mu)`$, eliminating the need to encode and multiply by a
+separate $`v`$ vector.
+
+### Security Properties
+
+| Entity | Learns | Does NOT Learn |
+|----|----|----|
+| Client | Final coefficients, deviance, AIC | Individual $`y`$ values, row-level residuals |
+| Label server | Own data + $`y`$, $`\eta_{\text{other}}`$ during updates | Other servers’ raw features |
+| Non-label server $`k`$ | Own $`X_k`$, $`\mu`$ and $`w`$ (derived from $`\eta`$) | $`y`$ (sees only $`ct_y`$; needs all $`K`$ shares to decrypt) |
+
+### Deviance
+
+Deviance is computed on the label server, which has plaintext $`y`$ and
+receives the final total linear predictor $`\eta_{\text{total}}`$.
+Standard formulas:
+
+| Family | Deviance |
+|----|----|
+| Gaussian | $`\sum_i (y_i - \mu_i)^2`$ |
+| Binomial | $`2\sum_i \left[ y_i \log\frac{y_i}{\mu_i} + (1 - y_i) \log\frac{1 - y_i}{1 - \mu_i} \right]`$ |
+| Poisson | $`2\sum_i \left[ y_i \log\frac{y_i}{\mu_i} - (y_i - \mu_i) \right]`$ |
+
+McFadden’s pseudo $`R^2`$ is then
+$`1 - D_{\text{model}} / D_{\text{null}}`$, and the AIC is $`D + 2k`$
+where $`k`$ is the number of parameters.
+
+------------------------------------------------------------------------
+
+## Record Alignment
+
+Before any statistical computation, records across servers must be
+aligned so that the same row position corresponds to the same
+individual. dsVertClient uses an Elliptic-Curve Diffie–Hellman Private
+Set Intersection (ECDH-PSI) protocol for privacy-preserving record
+linkage.
+
+### ECDH-PSI Protocol
+
+Each server $`k`$ draws a secret scalar $`\alpha_k`$ uniformly at random
+from the P-256 curve order and keeps it permanently on the server. The
+protocol exploits the **commutativity** of scalar multiplication on
+elliptic curves:
+
+``` math
+\alpha \cdot (\beta \cdot H(\text{id})) = \beta \cdot (\alpha \cdot H(\text{id}))
+```
+
+where $`H(\text{id})`$ maps a patient identifier to a point on the NIST
+P-256 curve using hash-to-curve (RFC 9380). The alignment proceeds in
+three rounds:
+
+1.  **Mask.** Each server $`k`$ computes $`\alpha_k \cdot H(\text{id})`$
+    for every identifier in its local table and sends the resulting
+    curve points to the client.
+2.  **Double-mask.** The client forwards server $`A`$’s masked points to
+    server $`B`$ (and vice versa). Each server applies its own scalar to
+    the other server’s points, producing doubly-masked points
+    $`\alpha_B \cdot (\alpha_A \cdot H(\text{id}))`$ and
+    $`\alpha_A \cdot (\alpha_B \cdot H(\text{id}))`$. By commutativity
+    these are equal for the same identifier.
+3.  **Intersect and reorder.** The client matches the doubly-masked
+    points across servers to find the common identifiers and instructs
+    each server to reorder its rows accordingly.
+
+The client sees only opaque elliptic-curve points at every stage and
+cannot invert them to recover the original identifiers. Security holds
+under the Decisional Diffie–Hellman (DDH) assumption in the semi-honest
+model.
+
+``` r
+
+ds.psiAlign("D", "patient_id", "D_aligned", datasources = connections)
+```
+
+------------------------------------------------------------------------
+
+## References
 
 - Cheon, J.H., Kim, A., Kim, M. & Song, Y. (2017). “Homomorphic
   Encryption for Arithmetic of Approximate Numbers”. *ASIACRYPT 2017*.
@@ -280,274 +383,9 @@ variables and observations should be considered.
   Ring-Learning-With-Errors”. *Proceedings on Privacy Enhancing
   Technologies (PETS) 2021*.
   [doi:10.2478/popets-2021-0071](https://doi.org/10.2478/popets-2021-0071)
-- Lattigo v6: A Go library for lattice-based multiparty homomorphic
-  encryption.
-  [github.com/tuneinsight/lattigo](https://github.com/tuneinsight/lattigo)
-
-------------------------------------------------------------------------
-
-## Block Coordinate Descent (BCD) for GLMs
-
-### The Standard GLM Framework
-
-A Generalized Linear Model relates response $`y`$ to predictors $`X`$
-through:
-
-``` math
-g(\mu) = \eta = X\beta
-```
-
-where:
-
-- $`g(\cdot)`$ is the link function
-- $`\mu = E[y]`$ is the expected response
-- $`\eta`$ is the linear predictor
-- $`\beta`$ are the coefficients to estimate
-
-### The Distributed Setting
-
-With vertically partitioned data:
-
-``` math
-X = [X_1 | X_2 | \ldots | X_K]
-```
-``` math
-\beta = [\beta_1^T, \beta_2^T, \ldots, \beta_K^T]^T
-```
-
-The linear predictor decomposes as:
-
-``` math
-\eta = X_1\beta_1 + X_2\beta_2 + \ldots + X_K\beta_K
-```
-
-### The BCD Algorithm
-
-Block Coordinate Descent iteratively updates each block while holding
-others fixed:
-
-    Initialize: beta_1 = beta_2 = ... = beta_K = 0
-
-    Repeat until convergence:
-        For each institution k = 1, ..., K:
-
-            1. Compute contribution from OTHER institutions:
-               eta_{-k} = sum_{j != k} X_j * beta_j  (shared as aggregate)
-
-            2. Institution k solves locally:
-               beta_k = argmin L(y; eta_{-k} + X_k * beta_k) + lambda * ||beta_k||^2
-
-            3. Compute and share new contribution:
-               eta_k = X_k * beta_k  (shared as aggregate)
-
-        Check convergence: sum_k ||beta_k_new - beta_k_old|| < tolerance
-
-**Privacy guarantee:** Only the linear predictor contributions
-$`\eta_k`$ are shared, never the raw data $`X_k`$ or intermediate
-coefficient values during iteration.
-
-### IRLS for Non-Gaussian Families
-
-For non-Gaussian families, each local update uses Iteratively Reweighted
-Least Squares (IRLS). The update at institution $`k`$ is:
-
-``` math
-\beta_k^{new} = (X_k^T W X_k + \lambda I)^{-1} X_k^T W (z - \eta_{-k})
-```
-
-where:
-
-- $`W`$ is the weight matrix (depends on family)
-- $`z`$ is the working response (depends on family)
-- $`\lambda`$ is the L2 regularization parameter
-- $`\eta_{-k}`$ is the contribution from other institutions
-
-### Family-Specific Formulas
-
-For link function $`g(\mu) = \eta`$, variance function $`V(\mu)`$, and
-response $`y`$:
-
-| Family | Link | Mean $`\mu`$ | Weight $`w`$ | Working Response $`z`$ |
-|----|----|----|----|----|
-| Gaussian | Identity | $`\eta`$ | $`1`$ | $`y`$ |
-| Binomial | Logit | $`\frac{1}{1+e^{-\eta}}`$ | $`\mu(1-\mu)`$ | $`\eta + \frac{y-\mu}{\mu(1-\mu)}`$ |
-| Poisson | Log | $`e^\eta`$ | $`\mu`$ | $`\eta + \frac{y-\mu}{\mu}`$ |
-| Gamma | Log | $`e^\eta`$ | $`1`$ | $`\eta + \frac{y-\mu}{\mu}`$ |
-| Inv. Gaussian | Log | $`e^\eta`$ | $`\frac{1}{\mu}`$ | $`\eta + \frac{y-\mu}{\mu}`$ |
-
-### Convergence Properties
-
-The BCD algorithm for GLMs has the following properties:
-
-- **Monotonic descent**: Each iteration decreases (or maintains) the
-  objective
-- **Linear convergence**: Converges at a geometric rate for
-  well-conditioned problems
-- **Regularization**: The $`\lambda`$ parameter ensures numerical
-  stability
-
-Typical convergence requires 20-100 iterations depending on data
-characteristics.
-
-### Reference
-
-van Kesteren, E.J. et al. (2019). [Privacy-preserving generalized linear
-models using distributed block coordinate
-descent](https://arxiv.org/abs/1911.03183). *arXiv:1911.03183*.
-
-------------------------------------------------------------------------
-
-## Privacy-Preserving Record Alignment
-
-### The Hashing Approach
-
-To align records across institutions without revealing identifiers:
-
-1.  Each institution computes SHA-256 hashes of its identifiers
-2.  Only hashes are shared (irreversible)
-3.  Institutions reorder data to match a reference hash order
-
-**SHA-256 properties:**
-
-- One-way function: Cannot recover input from output
-- Collision resistant: Extremely unlikely for two inputs to produce same
-  hash
-- Deterministic: Same input always produces same hash
-
-### Example
-
-| Original ID     |     | SHA-256 Hash                          |
-|-----------------|-----|---------------------------------------|
-| `PATIENT_00042` | -\> | `a3f8c9d2e1b7...` (64 hex characters) |
-
-Given only the hash, recovering “PATIENT_00042” would require:
-
-- Trying all possible inputs (computationally infeasible)
-- Even knowing it’s a patient ID doesn’t significantly reduce the search
-  space
-
-------------------------------------------------------------------------
-
-## Model Diagnostics
-
-### Deviance
-
-Deviance measures how well the model fits, compared to a saturated
-model:
-
-``` math
-D = 2 \times [\log L(\text{saturated}) - \log L(\text{fitted})]
-```
-
-For each family:
-
-| Family | Deviance Formula |
-|----|----|
-| Gaussian | $`\sum_i (y_i - \mu_i)^2`$ |
-| Binomial | $`2\sum_i [y_i \log\frac{y_i}{\mu_i} + (1-y_i)\log\frac{1-y_i}{1-\mu_i}]`$ |
-| Poisson | $`2\sum_i [y_i \log\frac{y_i}{\mu_i} - (y_i - \mu_i)]`$ |
-| Gamma | $`2\sum_i [-\log\frac{y_i}{\mu_i} + \frac{y_i - \mu_i}{\mu_i}]`$ |
-| Inv. Gaussian | $`\sum_i \frac{(y_i - \mu_i)^2}{\mu_i^2 y_i}`$ |
-
-### Pseudo R-squared
-
-McFadden’s pseudo R-squared:
-
-``` math
-R^2_{pseudo} = 1 - \frac{D_{model}}{D_{null}}
-```
-
-where $`D_{null}`$ is the deviance of an intercept-only model.
-
-Interpretation:
-
-- 0: Model no better than intercept only
-- 1: Perfect fit (deviance = 0)
-- Typical values: 0.2-0.4 considered good for logistic regression
-
-### AIC
-
-Akaike Information Criterion:
-
-``` math
-AIC = D + 2k
-```
-
-where $`k`$ is the number of parameters. Lower AIC indicates better
-model (balancing fit and complexity).
-
-------------------------------------------------------------------------
-
-## Limitations and Considerations
-
-### Semi-honest Security
-
-The current implementation assumes **semi-honest** (honest-but-curious)
-parties:
-
-- Institutions follow the protocol correctly
-- But may try to infer information from received messages
-- More sophisticated attacks (malicious adversaries) are not addressed
-
-For the MHE-based correlation, semi-honest security means each party
-correctly computes its key shares, encryptions, and partial decryption
-shares, but may attempt to learn about other parties’ data from the
-encrypted values and decryption shares it observes.
-
-### Numerical Considerations
-
-- **CKKS approximation**: The homomorphic encryption scheme introduces
-  small errors (typically $`10^{-3}`$ to $`10^{-4}`$) in
-  cross-institution correlations. Within-institution correlations are
-  computed in plaintext and are exact.
-- **Convergence**: BCD may require many iterations for ill-conditioned
-  data
-- **Regularization**: Small $`\lambda`$ (default 1e-4) prevents singular
-  matrices
-- **Scaling**: Very large or very small values may cause numerical
-  issues
-- **Ring dimension**: The `log_n` parameter must be large enough to
-  accommodate the number of observations
-  ($`n \leq N/2 = 2^{log\_n - 1}`$)
-
-### When to Use Each Method
-
-| Scenario                    | Recommended Approach   |
-|-----------------------------|------------------------|
-| Exploratory analysis        | Correlation (MHE-CKKS) |
-| Continuous outcome          | Gaussian GLM           |
-| Binary outcome              | Binomial GLM           |
-| Count data                  | Poisson GLM            |
-| Positive continuous (costs) | Gamma GLM              |
-| High-variance positive data | Inverse Gaussian GLM   |
-
-------------------------------------------------------------------------
-
-## Summary
-
-dsVertClient enables privacy-preserving analysis through:
-
-1.  **Multiparty Homomorphic Encryption**: Computes cross-institution
-    correlations using threshold CKKS encryption, where no single party
-    can decrypt intermediate results
-2.  **Block Coordinate Descent**: Iteratively updates coefficients,
-    sharing only linear predictors
-3.  **Cryptographic Hashing**: Aligns records without revealing
-    identifiers
-
-These methods provide strong privacy guarantees while enabling
-meaningful statistical analysis across vertically partitioned data.
-
-### References
-
-- Cheon, J.H., Kim, A., Kim, M. & Song, Y. (2017). “Homomorphic
-  Encryption for Arithmetic of Approximate Numbers”. *ASIACRYPT 2017*.
-- Mouchet, C., Troncoso-Pastoriza, J., Bossuat, J.P. & Hubaux, J.P.
-  (2021). “Multiparty Homomorphic Encryption from
-  Ring-Learning-With-Errors”. *Proceedings on Privacy Enhancing
-  Technologies (PETS) 2021*.
+- van Kesteren, E.J., Hausknecht, D. & Bos, A. (2019).
+  “Privacy-Preserving Generalized Linear Models Using Distributed Block
+  Coordinate Descent”. *arXiv:1911.03183*.
+  [arxiv.org/abs/1911.03183](https://arxiv.org/abs/1911.03183)
 - Lattigo v6. Tune Insight SA.
-  [github.com/tuneinsight/lattigo](https://github.com/tuneinsight/lattigo).
-- van Kesteren, E.J. et al. (2019). “Privacy-preserving generalized
-  linear models using distributed block coordinate descent”.
-  *arXiv:1911.03183*.
+  [github.com/tuneinsight/lattigo](https://github.com/tuneinsight/lattigo)

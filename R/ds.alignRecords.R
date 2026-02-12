@@ -60,6 +60,8 @@
 ds.alignRecords <- function(data_name, id_col, reference_hashes,
                             newobj = "D_aligned", algo = "sha256",
                             datasources = NULL) {
+  .Deprecated("ds.psiAlign",
+    msg = "ds.alignRecords() is deprecated. Use ds.psiAlign() for ECDH-PSI alignment (stronger privacy).")
   # Validate inputs
   if (!is.character(data_name) || length(data_name) != 1) {
     stop("data_name must be a single character string", call. = FALSE)

@@ -1,7 +1,11 @@
 # Generalized Linear Model for Vertically Partitioned Data
 
 Client-side function that fits a Generalized Linear Model across
-vertically partitioned data using Block Coordinate Descent.
+vertically partitioned data using Block Coordinate Descent with
+encrypted labels. The response variable y only needs to exist on ONE
+server (the "label server"). Non-label servers compute gradient updates
+using y encrypted under the MHE collective public key, and only the
+aggregated p_k-length gradient is revealed via threshold decryption.
 
 ## Usage
 
@@ -10,10 +14,13 @@ ds.vertGLM(
   data_name,
   y_var,
   x_vars,
+  y_server = NULL,
   family = "gaussian",
   max_iter = 100,
-  tol = 1e-06,
+  tol = 1e-04,
   lambda = 1e-04,
+  log_n = 12,
+  log_scale = 40,
   verbose = TRUE,
   datasources = NULL
 )
@@ -27,14 +34,20 @@ ds.vertGLM(
 
 - y_var:
 
-  Character string. Name of the response variable (must exist on ALL
-  servers).
+  Character string. Name of the response variable (must exist on the
+  label server specified by `y_server`).
 
 - x_vars:
 
   A named list where each name corresponds to a server name and each
   element is a character vector of predictor variable names from that
   server.
+
+- y_server:
+
+  Character string. Name of the server holding the response variable.
+  This server uses plaintext IRLS; all other servers use the encrypted
+  gradient protocol.
 
 - family:
 
@@ -43,19 +56,29 @@ ds.vertGLM(
 
 - max_iter:
 
-  Integer. Maximum number of iterations. Default is 100.
+  Integer. Maximum number of BCD iterations. Default is 100.
 
 - tol:
 
-  Numeric. Convergence tolerance. Default is 1e-6.
+  Numeric. Convergence tolerance on coefficient change. Default is 1e-4
+  (accounts for CKKS approximation noise).
 
 - lambda:
 
   Numeric. L2 regularization parameter. Default is 1e-4.
 
+- log_n:
+
+  Integer. CKKS ring dimension parameter (12, 13, or 14). Default is 12
+  (2048 slots, supports up to 2048 observations).
+
+- log_scale:
+
+  Integer. CKKS scale parameter. Default is 40.
+
 - verbose:
 
-  Logical. Print iteration progress. Default is TRUE.
+  Logical. Print progress messages. Default is TRUE.
 
 - datasources:
 
@@ -66,7 +89,8 @@ ds.vertGLM(
 
 A list with class "ds.glm" containing:
 
-- `coefficients`: Named vector of coefficient estimates
+- `coefficients`: Named vector of coefficient estimates (on original
+  scale, including intercept)
 
 - `iterations`: Number of iterations until convergence
 
@@ -76,7 +100,9 @@ A list with class "ds.glm" containing:
 
 - `n_obs`: Number of observations
 
-- `n_vars`: Number of predictor variables
+- `n_vars`: Number of predictor variables (including intercept)
+
+- `lambda`: Regularization parameter used
 
 - `deviance`: Residual deviance of the fitted model
 
@@ -86,61 +112,70 @@ A list with class "ds.glm" containing:
 
 - `aic`: Akaike Information Criterion
 
+- `y_server`: Name of the label server
+
 - `call`: The matched call
 
 ## Details
 
-This function implements the Block Coordinate Descent (BCD) algorithm
-for privacy-preserving GLM fitting on vertically partitioned data.
+### Feature Standardization
 
-The algorithm iteratively:
+Features are automatically standardized (centered and scaled) on each
+server before BCD to ensure fast convergence. For Gaussian family, the
+response is also standardized. Coefficients are transformed back to the
+original scale after convergence, and an intercept is computed.
 
-1.  For each partition i:
+### Encrypted-Label BCD-IRLS Protocol
 
-    - Compute eta_other = sum of X_j \* beta_j for all j != i
+The response variable y resides on a single "label server". Non-label
+servers never see y in plaintext. The protocol proceeds as:
 
-    - Update beta_i using IRLS with eta_other
+1.  **MHE Key Setup**: All servers generate key shares and combine them
+    into a Collective Public Key (CPK) with Galois keys.
 
-    - Share new eta_i = X_i \* beta_i (NOT raw data or coefficients)
+2.  **Standardize**: Each server standardizes its features.
 
-2.  Check convergence (sum of \|beta_new - beta_old\| \< tol)
+3.  **Encrypt y**: The label server encrypts (standardized) y under the
+    CPK and distributes the ciphertext to non-label servers.
 
-3.  Repeat until converged or max_iter reached
+4.  **BCD Loop**: For each iteration, each server updates its block of
+    coefficients on the standardized scale.
 
-Privacy is preserved because:
+5.  **Unstandardize**: Coefficients are transformed back to the original
+    scale and an intercept is computed.
 
-- Only linear predictor contributions (eta) are shared
-
-- Raw data never leaves servers
-
-- Final coefficients are computed locally on each server
+6.  **Deviance**: Computed on the label server using plaintext y and the
+    final linear predictor (original scale).
 
 ## References
 
 van Kesteren, E.J. et al. (2019). Privacy-preserving generalized linear
 models using distributed block coordinate descent. arXiv:1911.03183.
 
+Mouchet, C. et al. (2021). "Multiparty Homomorphic Encryption from
+Ring-Learning-With-Errors". *Proceedings on Privacy Enhancing
+Technologies*.
+
 ## See also
 
-[`glm`](https://rdrr.io/r/stats/glm.html) for standard GLM fitting
+[`ds.vertCor`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md)
+for correlation analysis,
+[`ds.vertPCA`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertPCA.md)
+for PCA analysis
 
 ## Examples
 
 ``` r
 if (FALSE) { # \dontrun{
-# Define predictor variables per server
 x_vars <- list(
-  server1 = c("age", "weight"),
-  server2 = c("height", "bmi"),
-  server3 = c("glucose", "cholesterol")
+  server1 = c("age", "bmi"),
+  server2 = c("glucose"),
+  server3 = c("cholesterol", "heart_rate")
 )
 
-# Fit Gaussian GLM (linear regression)
-model <- ds.vertGLM("D_aligned", "outcome", x_vars, family = "gaussian")
+# Gaussian GLM (bp on server2)
+model <- ds.vertGLM("D_aligned", "bp", x_vars,
+                     y_server = "server2", family = "gaussian")
 print(model)
-
-# Fit logistic regression
-model_logit <- ds.vertGLM("D_aligned", "binary_outcome", x_vars,
-                          family = "binomial")
 } # }
 ```

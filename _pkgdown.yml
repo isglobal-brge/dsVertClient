@@ -29,6 +29,7 @@ reference:
   - title: Record Alignment
     desc: Functions for aligning records across servers
     contents:
+      - ds.psiAlign
       - ds.validateIdFormat
       - ds.hashId
       - ds.alignRecords

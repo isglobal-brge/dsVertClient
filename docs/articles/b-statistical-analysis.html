@@ -5,13 +5,13 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Statistical Analysis with dsVertClient • dsVertClient</title>
+<title>Statistical Analysis • dsVertClient</title>
 <script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <link href="../deps/bootstrap-5.3.1/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
-<meta property="og:title" content="Statistical Analysis with dsVertClient">
+<meta property="og:title" content="Statistical Analysis">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -21,7 +21,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">dsVertClient</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.2.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.4.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -35,9 +35,10 @@
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="../articles/a-getting-started.html">Getting Started with dsVertClient</a></li>
-    <li><a class="dropdown-item" href="../articles/b-statistical-analysis.html">Statistical Analysis with dsVertClient</a></li>
+    <li><a class="dropdown-item" href="../articles/b-statistical-analysis.html">Statistical Analysis</a></li>
     <li><a class="dropdown-item" href="../articles/c-methodology.html">Methodology</a></li>
-    <li><a class="dropdown-item" href="../articles/d-security-validation.html">Security Validation</a></li>
+    <li><a class="dropdown-item" href="../articles/d-validation.html">Validation</a></li>
+    <li><a class="dropdown-item" href="../articles/e-security.html">Security Model</a></li>
   </ul>
 </li>
       </ul>
@@ -59,7 +60,7 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
 
-      <h1>Statistical Analysis with dsVertClient</h1>
+      <h1>Statistical Analysis</h1>
             
       
       <small class="dont-index">Source: <a href="https://github.com/isglobal-brge/dsVertClient/blob/HEAD/vignettes/b-statistical-analysis.Rmd" class="external-link"><code>vignettes/b-statistical-analysis.Rmd</code></a></small>
@@ -68,419 +69,342 @@
 
     
     
-<p>This vignette demonstrates the full statistical analysis workflow in
-dsVertClient: computing correlation matrices, performing principal
-component analysis (PCA), and fitting generalized linear models (GLMs)
-across vertically partitioned data. All of these methods operate on
-aligned data and preserve privacy so that raw individual-level data
-never leaves any server.</p>
+<p>This vignette demonstrates all statistical methods available in
+dsVertClient: correlation analysis, principal component analysis (PCA),
+and generalized linear models (GLMs) across vertically partitioned
+data.</p>
+<hr>
 <div class="section level2">
-<h2 id="prerequisites">Prerequisites<a class="anchor" aria-label="anchor" href="#prerequisites"></a>
+<h2 id="setup">Setup<a class="anchor" aria-label="anchor" href="#setup"></a>
 </h2>
-<p>Before running any statistical analysis, records must be aligned
-across servers so that the same row position corresponds to the same
-patient everywhere. The <a href="a-getting-started.html">Getting
-Started</a> vignette covers connection setup, identifier validation, and
-record alignment in detail.</p>
-<p>We assume the following environment is already in place:</p>
+<p>Load the packages, connect to three Opal servers, and align records
+into the server-side symbol <code>D_aligned</code>. For details on each
+step, see the <a href="a-getting-started.html">Getting Started</a>
+vignette.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/isglobal-brge/dsVertClient" class="external-link">dsVertClient</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/datashield/DSI/" class="external-link">DSI</a></span><span class="op">)</span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/datashield/DSOpal/" class="external-link">DSOpal</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Three institutions, already connected and with data assigned to "D"</span></span>
-<span><span class="co"># inst_A holds: age, weight         (plus outcome variables)</span></span>
-<span><span class="co"># inst_B holds: height, bmi         (plus outcome variables)</span></span>
-<span><span class="co"># inst_C holds: glucose, cholesterol (plus outcome variables)</span></span>
+<span><span class="va">builder</span> <span class="op">&lt;-</span> <span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/newDSLoginBuilder.html" class="external-link">newDSLoginBuilder</a></span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="va">builder</span><span class="op">$</span><span class="fu">append</span><span class="op">(</span>server <span class="op">=</span> <span class="st">"server1"</span>, url <span class="op">=</span> <span class="st">"https://opal1.example.org"</span>,</span>
+<span>               table <span class="op">=</span> <span class="st">"project.server1_data"</span>, user <span class="op">=</span> <span class="st">"analyst"</span>,</span>
+<span>               password <span class="op">=</span> <span class="st">"password"</span>, driver <span class="op">=</span> <span class="st">"OpalDriver"</span><span class="op">)</span></span>
+<span><span class="va">builder</span><span class="op">$</span><span class="fu">append</span><span class="op">(</span>server <span class="op">=</span> <span class="st">"server2"</span>, url <span class="op">=</span> <span class="st">"https://opal2.example.org"</span>,</span>
+<span>               table <span class="op">=</span> <span class="st">"project.server2_data"</span>, user <span class="op">=</span> <span class="st">"analyst"</span>,</span>
+<span>               password <span class="op">=</span> <span class="st">"password"</span>, driver <span class="op">=</span> <span class="st">"OpalDriver"</span><span class="op">)</span></span>
+<span><span class="va">builder</span><span class="op">$</span><span class="fu">append</span><span class="op">(</span>server <span class="op">=</span> <span class="st">"server3"</span>, url <span class="op">=</span> <span class="st">"https://opal3.example.org"</span>,</span>
+<span>               table <span class="op">=</span> <span class="st">"project.server3_data"</span>, user <span class="op">=</span> <span class="st">"analyst"</span>,</span>
+<span>               password <span class="op">=</span> <span class="st">"password"</span>, driver <span class="op">=</span> <span class="st">"OpalDriver"</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Records have been aligned into "D_aligned" using ds.hashId + ds.alignRecords</span></span>
-<span><span class="co"># (see the Getting Started vignette)</span></span></code></pre></div>
-<hr>
-</div>
-<div class="section level2">
-<h2 id="step-1-correlation-analysis">Step 1: Correlation Analysis<a class="anchor" aria-label="anchor" href="#step-1-correlation-analysis"></a>
-</h2>
-<div class="section level3">
-<h3 id="the-challenge">The Challenge<a class="anchor" aria-label="anchor" href="#the-challenge"></a>
-</h3>
-<p>Computing correlations across vertically partitioned data is
-non-trivial. Consider computing the correlation between <code>age</code>
-(at Institution A) and <code>glucose</code> (at Institution C):</p>
-<ul>
-<li>Institution A knows <code>age</code> values but not
-<code>glucose</code>
-</li>
-<li>Institution C knows <code>glucose</code> values but not
-<code>age</code>
-</li>
-<li>Neither can compute the correlation alone</li>
-<li>We cannot send raw values between institutions</li>
-</ul>
-</div>
-<div class="section level3">
-<h3 id="the-solution-multiparty-homomorphic-encryption-mhe">The Solution: Multiparty Homomorphic Encryption (MHE)<a class="anchor" aria-label="anchor" href="#the-solution-multiparty-homomorphic-encryption-mhe"></a>
-</h3>
-<p><code>ds.vertCor</code> uses <strong>Multiparty Homomorphic
-Encryption (MHE)</strong> with threshold decryption to compute
-cross-server correlations without exposing raw data. The protocol
-proceeds in six phases:</p>
-<ol style="list-style-type: decimal">
-<li>
-<strong>Key Generation</strong> – Each server generates its own
-secret key share and a public key share. One server also generates a
-Common Reference Polynomial (CRP) shared by all parties.</li>
-<li>
-<strong>Key Combination</strong> – Public key shares are combined
-into a Collective Public Key (CPK). Data encrypted under the CPK can
-only be decrypted when ALL servers cooperate.</li>
-<li>
-<strong>Encryption</strong> – Each server standardizes its columns
-(Z-scores) and encrypts them column-by-column under the CPK using the
-CKKS approximate homomorphic encryption scheme.</li>
-<li>
-<strong>Local Correlation</strong> – Within-server correlations are
-computed in plaintext (no encryption needed for data that stays on one
-server).</li>
-<li>
-<strong>Cross-Server Correlation</strong> – For each pair of servers
-(A, B), server A receives the encrypted columns from B and computes the
-element-wise product homomorphically. The encrypted result is then
-partially decrypted by each server in turn. The client fuses all partial
-decryption shares to recover the inner product (and thus the correlation
-coefficient).</li>
-<li>
-<strong>Assembly</strong> – The client assembles the full p x p
-correlation matrix from local correlations (diagonal blocks) and
-cross-server correlations (off-diagonal blocks).</li>
-</ol>
-<p>The key security property is that <strong>no single server can
-decrypt the cross-server results</strong>. Full decryption requires
-cooperation from every server.</p>
-</div>
-<div class="section level3">
-<h3 id="computing-the-correlation-matrix">Computing the Correlation Matrix<a class="anchor" aria-label="anchor" href="#computing-the-correlation-matrix"></a>
-</h3>
-<p>Define which variables reside on which server, then call
-<code>ds.vertCor</code>:</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">variables</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>  inst_A <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"weight"</span><span class="op">)</span>,</span>
-<span>  inst_B <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"height"</span>, <span class="st">"bmi"</span><span class="op">)</span>,</span>
-<span>  inst_C <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glucose"</span>, <span class="st">"cholesterol"</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">cor_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertCor.html">ds.vertCor</a></span><span class="op">(</span></span>
-<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>,</span>
-<span>  variables <span class="op">=</span> <span class="va">variables</span>,</span>
-<span>  log_n <span class="op">=</span> <span class="fl">12</span>,        <span class="co"># CKKS ring dimension (12 = 2048 slots, good for n &lt;= 2048)</span></span>
-<span>  log_scale <span class="op">=</span> <span class="fl">40</span>,    <span class="co"># CKKS precision (~12 decimal digits)</span></span>
-<span>  datasources <span class="op">=</span> <span class="va">connections</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>The <code>log_n</code> parameter controls the CKKS ring dimension and
-determines the maximum number of observations that can be processed:</p>
+<span><span class="va">connections</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.login.html" class="external-link">datashield.login</a></span><span class="op">(</span><span class="va">builder</span><span class="op">$</span><span class="fu">build</span><span class="op">(</span><span class="op">)</span>, assign <span class="op">=</span> <span class="cn">TRUE</span>, symbol <span class="op">=</span> <span class="st">"D"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/ds.psiAlign.html">ds.psiAlign</a></span><span class="op">(</span><span class="st">"D"</span>, <span class="st">"patient_id"</span>, <span class="st">"D_aligned"</span>, datasources <span class="op">=</span> <span class="va">connections</span><span class="op">)</span></span></code></pre></div>
+<p>With records aligned, the three servers hold the following
+variables:</p>
 <table class="table">
 <thead><tr class="header">
-<th><code>log_n</code></th>
-<th>Max observations</th>
-<th>Speed</th>
+<th>Server</th>
+<th>Variables</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td>12</td>
-<td>2,048</td>
-<td>Fastest</td>
+<td>server1</td>
+<td>age, bmi</td>
 </tr>
 <tr class="even">
-<td>13</td>
-<td>4,096</td>
-<td>Moderate</td>
+<td>server2</td>
+<td>glucose, bp, hypertension, visits</td>
 </tr>
 <tr class="odd">
-<td>14</td>
-<td>8,192</td>
-<td>Slowest</td>
+<td>server3</td>
+<td>cholesterol, heart_rate</td>
 </tr>
 </tbody>
 </table>
-<p>For most datasets with a few thousand patients, the default
-<code>log_n = 12</code> is appropriate.</p>
-</div>
-<div class="section level3">
-<h3 id="viewing-the-result">Viewing the Result<a class="anchor" aria-label="anchor" href="#viewing-the-result"></a>
-</h3>
-<p>The <code>print</code> method provides a formatted summary:</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">cor_result</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Correlation Matrix (MHE-CKKS-Threshold)</span></span>
-<span><span class="co">#&gt; =====================================</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Observations: 200</span></span>
-<span><span class="co">#&gt; Variables: 6</span></span>
-<span><span class="co">#&gt; Servers: inst_A, inst_B, inst_C</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt;                  age  weight  height     bmi glucose cholesterol</span></span>
-<span><span class="co">#&gt; age           1.0000  0.0312 -0.0187  0.0451  0.3021      0.4518</span></span>
-<span><span class="co">#&gt; weight        0.0312  1.0000  0.1245  0.8712  0.2103      0.3215</span></span>
-<span><span class="co">#&gt; height       -0.0187  0.1245  1.0000 -0.4523 -0.0312     -0.0198</span></span>
-<span><span class="co">#&gt; bmi           0.0451  0.8712 -0.4523  1.0000  0.2456      0.3789</span></span>
-<span><span class="co">#&gt; glucose       0.3021  0.2103 -0.0312  0.2456  1.0000      0.5124</span></span>
-<span><span class="co">#&gt; cholesterol   0.4518  0.3215 -0.0198  0.3789  0.5124      1.0000</span></span></code></pre></div>
-<p>This 6x6 matrix contains correlations computed from data spread
-across all three servers. The diagonal blocks (e.g., age-weight within
-inst_A) were computed in plaintext. The off-diagonal blocks (e.g.,
-age-glucose between inst_A and inst_C) were computed via the MHE
-threshold decryption protocol.</p>
-</div>
-<div class="section level3">
-<h3 id="accessing-correlation-components">Accessing Correlation Components<a class="anchor" aria-label="anchor" href="#accessing-correlation-components"></a>
-</h3>
-<p>The result object contains several useful fields:</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># The full correlation matrix</span></span>
-<span><span class="va">cor_result</span><span class="op">$</span><span class="va">correlation</span></span>
-<span></span>
-<span><span class="co"># Method used</span></span>
-<span><span class="va">cor_result</span><span class="op">$</span><span class="va">method</span></span>
-<span><span class="co">#&gt; [1] "MHE-CKKS-Threshold"</span></span>
-<span></span>
-<span><span class="co"># Within-server correlations (computed without encryption)</span></span>
-<span><span class="va">cor_result</span><span class="op">$</span><span class="va">local_correlations</span><span class="op">$</span><span class="va">inst_A</span></span>
-<span><span class="co">#&gt;            age   weight</span></span>
-<span><span class="co">#&gt; age     1.0000  0.0312</span></span>
-<span><span class="co">#&gt; weight  0.0312  1.0000</span></span>
-<span></span>
-<span><span class="co"># Cross-server correlations (computed via MHE)</span></span>
-<span><span class="va">cor_result</span><span class="op">$</span><span class="va">cross_correlations</span><span class="op">$</span><span class="va">inst_A_inst_C</span></span>
-<span><span class="co">#&gt;            glucose cholesterol</span></span>
-<span><span class="co">#&gt; age       0.3021      0.4518</span></span>
-<span><span class="co">#&gt; weight    0.2103      0.3215</span></span>
-<span></span>
-<span><span class="co"># MHE parameters used</span></span>
-<span><span class="va">cor_result</span><span class="op">$</span><span class="va">mhe_params</span></span>
-<span><span class="co">#&gt; $log_n</span></span>
-<span><span class="co">#&gt; [1] 12</span></span>
-<span><span class="co">#&gt; $log_scale</span></span>
-<span><span class="co">#&gt; [1] 40</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="interpreting-cross-institution-correlations">Interpreting Cross-Institution Correlations<a class="anchor" aria-label="anchor" href="#interpreting-cross-institution-correlations"></a>
-</h3>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Extract the correlation matrix</span></span>
-<span><span class="va">R</span> <span class="op">&lt;-</span> <span class="va">cor_result</span><span class="op">$</span><span class="va">correlation</span></span>
-<span></span>
-<span><span class="co"># Within-institution correlations</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Within inst_A: cor(age, weight) ="</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">R</span><span class="op">[</span><span class="st">"age"</span>, <span class="st">"weight"</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Within inst_B: cor(height, bmi) ="</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">R</span><span class="op">[</span><span class="st">"height"</span>, <span class="st">"bmi"</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Within inst_C: cor(glucose, cholesterol) ="</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">R</span><span class="op">[</span><span class="st">"glucose"</span>, <span class="st">"cholesterol"</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Cross-institution correlations (the interesting ones!)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"\nCross-institution:\n"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"  cor(age, glucose)       [A x C] ="</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">R</span><span class="op">[</span><span class="st">"age"</span>, <span class="st">"glucose"</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"  cor(bmi, cholesterol)   [B x C] ="</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">R</span><span class="op">[</span><span class="st">"bmi"</span>, <span class="st">"cholesterol"</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"  cor(weight, bmi)        [A x B] ="</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">R</span><span class="op">[</span><span class="st">"weight"</span>, <span class="st">"bmi"</span><span class="op">]</span>, <span class="fl">3</span><span class="op">)</span>, <span class="st">"\n"</span><span class="op">)</span></span></code></pre></div>
-<p>The cross-institution correlations are the key result: they reveal
-relationships between variables held by different institutions, computed
-without either institution seeing the other’s raw data.</p>
-</div>
-<div class="section level3">
-<h3 id="visualizing-correlations">Visualizing Correlations<a class="anchor" aria-label="anchor" href="#visualizing-correlations"></a>
-</h3>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">R</span> <span class="op">&lt;-</span> <span class="va">cor_result</span><span class="op">$</span><span class="va">correlation</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/heatmap.html" class="external-link">heatmap</a></span><span class="op">(</span></span>
-<span>  <span class="va">R</span>,</span>
-<span>  symm <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/grDevices/colorRamp.html" class="external-link">colorRampPalette</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"#2166AC"</span>, <span class="st">"#F7F7F7"</span>, <span class="st">"#B2182B"</span><span class="op">)</span><span class="op">)</span><span class="op">(</span><span class="fl">50</span><span class="op">)</span>,</span>
-<span>  margins <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">10</span>, <span class="fl">10</span><span class="op">)</span>,</span>
-<span>  main <span class="op">=</span> <span class="st">"Cross-Institution Correlation Matrix\n(Computed via MHE Threshold Decryption)"</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="a-note-on-precision">A Note on Precision<a class="anchor" aria-label="anchor" href="#a-note-on-precision"></a>
-</h3>
-<p>Because CKKS is an <em>approximate</em> homomorphic encryption
-scheme, cross-server correlation values have a small numerical error
-(typically on the order of 10^-3 to 10^-4). This is negligible for
-practical purposes but worth noting when comparing with exact
-computations.</p>
 <hr>
 </div>
-</div>
 <div class="section level2">
-<h2 id="step-2-principal-component-analysis-pca">Step 2: Principal Component Analysis (PCA)<a class="anchor" aria-label="anchor" href="#step-2-principal-component-analysis-pca"></a>
+<h2 id="correlation-analysis">Correlation Analysis<a class="anchor" aria-label="anchor" href="#correlation-analysis"></a>
 </h2>
 <div class="section level3">
-<h3 id="understanding-distributed-pca">Understanding Distributed PCA<a class="anchor" aria-label="anchor" href="#understanding-distributed-pca"></a>
+<h3 id="computing-the-correlation-matrix">Computing the Correlation Matrix<a class="anchor" aria-label="anchor" href="#computing-the-correlation-matrix"></a>
 </h3>
-<p>PCA finds linear combinations of variables that capture the maximum
-variance in the data. When variables are spread across institutions,
-traditional PCA is impossible because no single entity has access to all
-columns.</p>
-<p><code>ds.vertPCA</code> solves this by building on the
-privacy-preserving correlation matrix from <code>ds.vertCor</code>.
-Since PCA on standardized data is mathematically equivalent to eigen
-decomposition of the correlation matrix, we can:</p>
-<ol style="list-style-type: decimal">
-<li>Compute the correlation matrix via MHE (as shown above)</li>
-<li>Perform eigen decomposition on the correlation matrix</li>
-<li>Extract loadings (eigenvectors) and eigenvalues</li>
-</ol>
-</div>
-<div class="section level3">
-<h3 id="performing-pca">Performing PCA<a class="anchor" aria-label="anchor" href="#performing-pca"></a>
-</h3>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">pca_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertPCA.html">ds.vertPCA</a></span><span class="op">(</span></span>
-<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>,</span>
-<span>  variables <span class="op">=</span> <span class="va">variables</span>,</span>
-<span>  n_components <span class="op">=</span> <span class="fl">4</span>,      <span class="co"># Return top 4 components (out of 6 possible)</span></span>
-<span>  log_n <span class="op">=</span> <span class="fl">12</span>,</span>
-<span>  datasources <span class="op">=</span> <span class="va">connections</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="viewing-pca-results">Viewing PCA Results<a class="anchor" aria-label="anchor" href="#viewing-pca-results"></a>
-</h3>
-<p>The <code>print</code> method shows variance explained and the top
-loadings:</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">pca_result</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Principal Component Analysis (Privacy-Preserving)</span></span>
-<span><span class="co">#&gt; ==================================================</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Observations: 200</span></span>
-<span><span class="co">#&gt; Variables: 6</span></span>
-<span><span class="co">#&gt; Components: 4</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Variance Explained:</span></span>
-<span><span class="co">#&gt;  Component Eigenvalue Percent Cumulative</span></span>
-<span><span class="co">#&gt;        PC1     2.4312   40.52      40.52</span></span>
-<span><span class="co">#&gt;        PC2     1.3187   21.98      62.50</span></span>
-<span><span class="co">#&gt;        PC3     0.9823   16.37      78.87</span></span>
-<span><span class="co">#&gt;        PC4     0.6102   10.17      89.04</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Loadings (top variables for first 2 PCs):</span></span>
-<span><span class="co">#&gt;                 PC1    PC2</span></span>
-<span><span class="co">#&gt; age           0.381  0.412</span></span>
-<span><span class="co">#&gt; weight        0.452 -0.201</span></span>
-<span><span class="co">#&gt; height       -0.112 -0.623</span></span>
-<span><span class="co">#&gt; bmi           0.487  0.158</span></span>
-<span><span class="co">#&gt; glucose       0.401  0.198</span></span>
-<span><span class="co">#&gt; cholesterol   0.489 -0.102</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="interpreting-pca-output">Interpreting PCA Output<a class="anchor" aria-label="anchor" href="#interpreting-pca-output"></a>
-</h3>
-<p>The result contains three key pieces of information:</p>
-<p><strong>Variance explained</strong> – how much of the total variance
-each component captures:</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  Component <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"PC"</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">4</span><span class="op">)</span>,</span>
-<span>  Eigenvalue <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">pca_result</span><span class="op">$</span><span class="va">eigenvalues</span>, <span class="fl">4</span><span class="op">)</span>,</span>
-<span>  Percent <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">pca_result</span><span class="op">$</span><span class="va">variance_pct</span>, <span class="fl">1</span><span class="op">)</span>, <span class="st">"%"</span><span class="op">)</span>,</span>
-<span>  Cumulative <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">pca_result</span><span class="op">$</span><span class="va">cumulative_pct</span>, <span class="fl">1</span><span class="op">)</span>, <span class="st">"%"</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p><strong>Loadings</strong> – how much each variable contributes to
-each component. Values close to +1 or -1 indicate strong contribution;
-values near 0 indicate weak contribution. The sign indicates the
-direction of the relationship.</p>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">loadings_df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">pca_result</span><span class="op">$</span><span class="va">loadings</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">colnames</a></span><span class="op">(</span><span class="va">loadings_df</span><span class="op">)</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"PC"</span>, <span class="fl">1</span><span class="op">:</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">ncol</a></span><span class="op">(</span><span class="va">loadings_df</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">loadings_df</span></span></code></pre></div>
-<p>A loading pattern where <code>bmi</code>, <code>weight</code>,
-<code>cholesterol</code>, and <code>glucose</code> all load heavily on
-PC1 would suggest that PC1 captures a “metabolic health” dimension,
-combining information from all three institutions.</p>
-<p><strong>Note on scores:</strong> <code>ds.vertPCA</code> does not
-return principal component scores because computing them would require
-access to raw data across all servers. If scores are needed, the
-loadings can be sent to each server for local projection, which is a
-separate operation.</p>
-</div>
-<div class="section level3">
-<h3 id="visualizing-pca">Visualizing PCA<a class="anchor" aria-label="anchor" href="#visualizing-pca"></a>
-</h3>
-<p><strong>Scree plot</strong> – shows how much variance each component
-explains:</p>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/barplot.html" class="external-link">barplot</a></span><span class="op">(</span></span>
-<span>  <span class="va">pca_result</span><span class="op">$</span><span class="va">variance_pct</span>,</span>
-<span>  names.arg <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"PC"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_along</a></span><span class="op">(</span><span class="va">pca_result</span><span class="op">$</span><span class="va">variance_pct</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  main <span class="op">=</span> <span class="st">"Scree Plot: Variance Explained by Component"</span>,</span>
-<span>  ylab <span class="op">=</span> <span class="st">"Percentage of Variance (%)"</span>,</span>
-<span>  col <span class="op">=</span> <span class="st">"steelblue"</span>,</span>
-<span>  ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="va">pca_result</span><span class="op">$</span><span class="va">variance_pct</span><span class="op">)</span> <span class="op">*</span> <span class="fl">1.3</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p><strong>Biplot of loadings</strong> – shows how variables relate to
-the first two components:</p>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">loadings</span> <span class="op">&lt;-</span> <span class="va">pca_result</span><span class="op">$</span><span class="va">loadings</span></span>
+<p>Cross-server correlations are computed using Multiparty Homomorphic
+Encryption (MHE). Each server encrypts its standardized columns under a
+collective public key, and cross-products are computed on encrypted
+data. Within-server correlations are computed in plaintext (exact). See
+the <a href="c-methodology.html">Methodology</a> vignette for the full
+protocol.</p>
+<p>Define which variables reside on which server and call
+<code>ds.vertCor</code>.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">x_vars</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>  server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span><span class="op">)</span>,</span>
+<span>  server2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glucose"</span>, <span class="st">"bp"</span><span class="op">)</span>,</span>
+<span>  server3 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"cholesterol"</span>, <span class="st">"heart_rate"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">loadings</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span>, <span class="va">loadings</span><span class="op">[</span>, <span class="fl">2</span><span class="op">]</span>,</span>
-<span>     xlim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">1</span>, <span class="fl">1</span><span class="op">)</span>, ylim <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">1</span>, <span class="fl">1</span><span class="op">)</span>,</span>
-<span>     xlab <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"PC1 ("</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">pca_result</span><span class="op">$</span><span class="va">variance_pct</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, <span class="fl">1</span><span class="op">)</span>, <span class="st">"%)"</span><span class="op">)</span>,</span>
-<span>     ylab <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"PC2 ("</span>, <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">pca_result</span><span class="op">$</span><span class="va">variance_pct</span><span class="op">[</span><span class="fl">2</span><span class="op">]</span>, <span class="fl">1</span><span class="op">)</span>, <span class="st">"%)"</span><span class="op">)</span>,</span>
-<span>     main <span class="op">=</span> <span class="st">"PCA Loading Plot\n(Variables from 3 Institutions)"</span>,</span>
-<span>     pch <span class="op">=</span> <span class="fl">19</span>, col <span class="op">=</span> <span class="st">"steelblue"</span>, cex <span class="op">=</span> <span class="fl">1.5</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/text.html" class="external-link">text</a></span><span class="op">(</span><span class="va">loadings</span><span class="op">[</span>, <span class="fl">1</span><span class="op">]</span>, <span class="va">loadings</span><span class="op">[</span>, <span class="fl">2</span><span class="op">]</span>,</span>
-<span>     labels <span class="op">=</span> <span class="va">pca_result</span><span class="op">$</span><span class="va">var_names</span>,</span>
-<span>     pos <span class="op">=</span> <span class="fl">3</span>, cex <span class="op">=</span> <span class="fl">0.9</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/abline.html" class="external-link">abline</a></span><span class="op">(</span>h <span class="op">=</span> <span class="fl">0</span>, v <span class="op">=</span> <span class="fl">0</span>, lty <span class="op">=</span> <span class="fl">2</span>, col <span class="op">=</span> <span class="st">"gray60"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Draw unit circle for reference</span></span>
-<span><span class="va">theta</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">2</span> <span class="op">*</span> <span class="va">pi</span>, length.out <span class="op">=</span> <span class="fl">100</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/lines.html" class="external-link">lines</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">cos</a></span><span class="op">(</span><span class="va">theta</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/Trig.html" class="external-link">sin</a></span><span class="op">(</span><span class="va">theta</span><span class="op">)</span>, lty <span class="op">=</span> <span class="fl">3</span>, col <span class="op">=</span> <span class="st">"gray80"</span><span class="op">)</span></span></code></pre></div>
-<p>Variables that cluster together in the loading plot are positively
-correlated. Variables on opposite sides of the origin are negatively
-correlated. Variables near the unit circle are well-represented by the
-first two components.</p>
-<hr>
-</div>
-</div>
-<div class="section level2">
-<h2 id="step-3-generalized-linear-models-glm">Step 3: Generalized Linear Models (GLM)<a class="anchor" aria-label="anchor" href="#step-3-generalized-linear-models-glm"></a>
-</h2>
-<div class="section level3">
-<h3 id="the-block-coordinate-descent-algorithm">The Block Coordinate Descent Algorithm<a class="anchor" aria-label="anchor" href="#the-block-coordinate-descent-algorithm"></a>
-</h3>
-<p><code>ds.vertGLM</code> fits GLMs using <strong>Block Coordinate
-Descent (BCD)</strong>, an iterative algorithm designed for vertically
-partitioned data:</p>
-<ol style="list-style-type: decimal">
-<li>Divide predictors into “blocks” (one per institution)</li>
-<li>Initialize all coefficients to zero</li>
-<li>For each institution in turn:
+<span><span class="va">cor_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertCor.html">ds.vertCor</a></span><span class="op">(</span><span class="st">"D_aligned"</span>, <span class="va">x_vars</span>, datasources <span class="op">=</span> <span class="va">connections</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">cor_result</span><span class="op">$</span><span class="va">correlation</span>, <span class="fl">4</span><span class="op">)</span></span></code></pre></div>
+<table class="table">
+<colgroup>
+<col width="17%">
+<col width="12%">
+<col width="12%">
+<col width="12%">
+<col width="12%">
+<col width="17%">
+<col width="16%">
+</colgroup>
+<thead><tr class="header">
+<th></th>
+<th>age</th>
+<th>bmi</th>
+<th>glucose</th>
+<th>bp</th>
+<th>cholesterol</th>
+<th>heart_rate</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>age</td>
+<td>1.0000</td>
+<td>-0.3202</td>
+<td>-0.0997</td>
+<td>0.0051</td>
+<td>0.2215</td>
+<td>-0.0877</td>
+</tr>
+<tr class="even">
+<td>bmi</td>
+<td>-0.3202</td>
+<td>1.0000</td>
+<td>-0.0855</td>
+<td>0.2266</td>
+<td>-0.0159</td>
+<td>0.3117</td>
+</tr>
+<tr class="odd">
+<td>glucose</td>
+<td>-0.0997</td>
+<td>-0.0855</td>
+<td>1.0000</td>
+<td>-0.0357</td>
+<td>-0.0025</td>
+<td>0.1311</td>
+</tr>
+<tr class="even">
+<td>bp</td>
+<td>0.0051</td>
+<td>0.2266</td>
+<td>-0.0357</td>
+<td>1.0000</td>
+<td>-0.0452</td>
+<td>0.2440</td>
+</tr>
+<tr class="odd">
+<td>cholesterol</td>
+<td>0.2215</td>
+<td>-0.0159</td>
+<td>-0.0025</td>
+<td>-0.0452</td>
+<td>1.0000</td>
+<td>-0.2407</td>
+</tr>
+<tr class="even">
+<td>heart_rate</td>
+<td>-0.0877</td>
+<td>0.3117</td>
+<td>0.1311</td>
+<td>0.2440</td>
+<td>-0.2407</td>
+<td>1.0000</td>
+</tr>
+</tbody>
+</table>
+<p>Observations:</p>
 <ul>
-<li>Compute the linear predictor contribution from all <em>other</em>
-institutions</li>
-<li>Update this institution’s coefficients using local IRLS (Iteratively
-Reweighted Least Squares), treating the other contributions as an
-offset</li>
-<li>Share the updated linear predictor (not raw data or
-coefficients)</li>
+<li>BMI and heart_rate show the strongest positive correlation (0.31),
+spanning server1 and server3 – a relationship neither institution could
+discover alone.</li>
+<li>Age and BMI are negatively correlated (-0.32).</li>
+<li>Cross-server correlations carry CKKS approximation error on the
+order of 10^-4, which is negligible for interpretation.</li>
 </ul>
-</li>
-<li>Check convergence: if the total change in coefficients is below the
-tolerance, stop; otherwise return to step 3</li>
-</ol>
-<p>Privacy is preserved because only the <strong>linear
-predictor</strong> (a single numeric vector of length n) is shared
-between iterations. Raw data and intermediate coefficients never leave
-their respective servers.</p>
 </div>
 <div class="section level3">
-<h3 id="supported-glm-families">Supported GLM Families<a class="anchor" aria-label="anchor" href="#supported-glm-families"></a>
+<h3 id="correlation-heatmap">Correlation Heatmap<a class="anchor" aria-label="anchor" href="#correlation-heatmap"></a>
+</h3>
+<div class="float">
+<img src="figures/correlation_heatmap.png" alt="Correlation heatmap of all six clinical variables across three servers."><div class="figcaption">Correlation heatmap of all six clinical
+variables across three servers.</div>
+</div>
+<hr>
+</div>
+</div>
+<div class="section level2">
+<h2 id="principal-component-analysis">Principal Component Analysis<a class="anchor" aria-label="anchor" href="#principal-component-analysis"></a>
+</h2>
+<p>PCA is computed from the distributed correlation matrix. Since eigen
+decomposition is a deterministic operation on the correlation matrix, it
+runs entirely on the client side after <code>ds.vertCor</code> has
+produced the matrix. Here we run PCA on the five predictor variables
+(excluding the outcome variable bp).</p>
+<p>Compute the correlation matrix on the predictors only, then pass it
+to <code>ds.vertPCA</code>.</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">pca_vars</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>  server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span><span class="op">)</span>,</span>
+<span>  server2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glucose"</span><span class="op">)</span>,</span>
+<span>  server3 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"cholesterol"</span>, <span class="st">"heart_rate"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">cor_pca</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertCor.html">ds.vertCor</a></span><span class="op">(</span><span class="st">"D_aligned"</span>, <span class="va">pca_vars</span>, datasources <span class="op">=</span> <span class="va">connections</span><span class="op">)</span></span>
+<span><span class="va">pca_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertPCA.html">ds.vertPCA</a></span><span class="op">(</span>cor_result <span class="op">=</span> <span class="va">cor_pca</span>, n_components <span class="op">=</span> <span class="fl">5</span><span class="op">)</span></span>
+<span><span class="va">pca_result</span></span></code></pre></div>
+<div class="section level3">
+<h3 id="variance-explained">Variance Explained<a class="anchor" aria-label="anchor" href="#variance-explained"></a>
+</h3>
+<table class="table">
+<thead><tr class="header">
+<th>Component</th>
+<th>Eigenvalue</th>
+<th>Variance (%)</th>
+<th>Cumulative (%)</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>PC1</td>
+<td>1.6153</td>
+<td>32.31</td>
+<td>32.31</td>
+</tr>
+<tr class="even">
+<td>PC2</td>
+<td>1.0710</td>
+<td>21.42</td>
+<td>53.73</td>
+</tr>
+<tr class="odd">
+<td>PC3</td>
+<td>0.9567</td>
+<td>19.13</td>
+<td>72.86</td>
+</tr>
+<tr class="even">
+<td>PC4</td>
+<td>0.9083</td>
+<td>18.17</td>
+<td>91.03</td>
+</tr>
+<tr class="odd">
+<td>PC5</td>
+<td>0.4486</td>
+<td>8.97</td>
+<td>100.00</td>
+</tr>
+</tbody>
+</table>
+<p>PC1 and PC2 together explain about 54% of the total variance. All
+five eigenvalues are relatively close in magnitude, indicating that no
+single component dominates the variance structure.</p>
+</div>
+<div class="section level3">
+<h3 id="loadings">Loadings<a class="anchor" aria-label="anchor" href="#loadings"></a>
+</h3>
+<table class="table">
+<thead><tr class="header">
+<th></th>
+<th>PC1</th>
+<th>PC2</th>
+<th>PC3</th>
+<th>PC4</th>
+<th>PC5</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>age</td>
+<td>0.5154</td>
+<td>-0.0605</td>
+<td>-0.0932</td>
+<td>0.7146</td>
+<td>-0.4598</td>
+</tr>
+<tr class="even">
+<td>bmi</td>
+<td>-0.5277</td>
+<td>0.4934</td>
+<td>0.3719</td>
+<td>0.1016</td>
+<td>-0.5740</td>
+</tr>
+<tr class="odd">
+<td>glucose</td>
+<td>-0.1238</td>
+<td>-0.8105</td>
+<td>0.4860</td>
+<td>-0.0996</td>
+<td>-0.2856</td>
+</tr>
+<tr class="even">
+<td>cholesterol</td>
+<td>0.4053</td>
+<td>0.2661</td>
+<td>0.7849</td>
+<td>0.0760</td>
+<td>0.3782</td>
+</tr>
+<tr class="odd">
+<td>heart_rate</td>
+<td>-0.5257</td>
+<td>-0.1585</td>
+<td>0.0259</td>
+<td>0.6807</td>
+<td>0.4843</td>
+</tr>
+</tbody>
+</table>
+<p>PC1 captures a contrast between age and cholesterol (positive
+loadings) on one side, and bmi and heart_rate (negative loadings) on the
+other. This first component separates patients with higher age and
+cholesterol from those with higher bmi and heart_rate, combining
+information from all three servers. PC2 is dominated by glucose (loading
+of -0.81), effectively isolating the metabolic measurement from the
+other predictors.</p>
+</div>
+<div class="section level3">
+<h3 id="scree-plot-and-biplot">Scree Plot and Biplot<a class="anchor" aria-label="anchor" href="#scree-plot-and-biplot"></a>
+</h3>
+<div class="float">
+<img src="figures/pca_scree.png" alt="Scree plot showing variance explained by each principal component."><div class="figcaption">Scree plot showing variance explained by each
+principal component.</div>
+</div>
+<div class="float">
+<img src="figures/pca_biplot.png" alt="PCA biplot with variable loadings colored by server origin."><div class="figcaption">PCA biplot with variable loadings colored by
+server origin.</div>
+</div>
+<hr>
+</div>
+</div>
+<div class="section level2">
+<h2 id="generalized-linear-models">Generalized Linear Models<a class="anchor" aria-label="anchor" href="#generalized-linear-models"></a>
+</h2>
+<p>The <code>ds.vertGLM</code> function fits GLMs across vertically
+partitioned data using the encrypted-label Block Coordinate Descent with
+Iteratively Reweighted Least Squares (BCD-IRLS) protocol. The response
+variable y only needs to exist on one server (the “label server”). Other
+servers compute gradient contributions using y encrypted under the MHE
+collective public key. Raw data and intermediate coefficients never
+leave their respective institutions.</p>
+<div class="section level3">
+<h3 id="supported-families">Supported Families<a class="anchor" aria-label="anchor" href="#supported-families"></a>
 </h3>
 <table class="table">
 <colgroup>
 <col width="25%">
-<col width="12%">
-<col width="26%">
-<col width="36%">
+<col width="14%">
+<col width="28%">
+<col width="31%">
 </colgroup>
 <thead><tr class="header">
 <th>Family</th>
@@ -490,326 +414,239 @@ their respective servers.</p>
 </tr></thead>
 <tbody>
 <tr class="odd">
-<td><code>gaussian</code></td>
+<td>Gaussian</td>
 <td>Identity</td>
 <td>Continuous</td>
-<td>Blood pressure, BMI</td>
+<td>Blood pressure</td>
 </tr>
 <tr class="even">
-<td><code>binomial</code></td>
+<td>Binomial</td>
 <td>Logit</td>
 <td>Binary (0/1)</td>
-<td>Disease status, mortality</td>
+<td>Hypertension status</td>
 </tr>
 <tr class="odd">
-<td><code>poisson</code></td>
+<td>Poisson</td>
 <td>Log</td>
 <td>Count</td>
-<td>Hospital visits, events</td>
+<td>Number of visits</td>
 </tr>
 <tr class="even">
-<td><code>Gamma</code></td>
+<td>Gamma</td>
 <td>Log</td>
 <td>Positive continuous</td>
-<td>Healthcare costs, durations</td>
+<td>Medical costs</td>
 </tr>
 <tr class="odd">
-<td><code>inverse.gaussian</code></td>
+<td>Inverse Gaussian</td>
 <td>Log</td>
 <td>Positive continuous</td>
-<td>Reaction times</td>
+<td>Duration data</td>
 </tr>
 </tbody>
 </table>
+<p>All families use the same <code>ds.vertGLM</code> interface; only the
+<code>family</code> argument changes.</p>
 </div>
 <div class="section level3">
-<h3 id="example-1-gaussian-glm-linear-regression">Example 1: Gaussian GLM (Linear Regression)<a class="anchor" aria-label="anchor" href="#example-1-gaussian-glm-linear-regression"></a>
+<h3 id="gaussian-glm">Gaussian GLM<a class="anchor" aria-label="anchor" href="#gaussian-glm"></a>
 </h3>
-<p>Predict blood pressure from predictors held at different
-institutions:</p>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<p>Predict blood pressure (continuous outcome on server2) from five
+predictors spread across all three servers.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">x_vars</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>  inst_A <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"weight"</span><span class="op">)</span>,</span>
-<span>  inst_B <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"bmi"</span><span class="op">)</span>,</span>
-<span>  inst_C <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glucose"</span><span class="op">)</span></span>
+<span>  server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span><span class="op">)</span>,</span>
+<span>  server2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glucose"</span><span class="op">)</span>,</span>
+<span>  server3 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"cholesterol"</span>, <span class="st">"heart_rate"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">model_bp</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
-<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>,</span>
-<span>  y_var <span class="op">=</span> <span class="st">"outcome_bp"</span>,</span>
+<span><span class="va">model_gaussian</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
+<span>  <span class="st">"D_aligned"</span>,</span>
+<span>  y_var <span class="op">=</span> <span class="st">"bp"</span>,</span>
 <span>  x_vars <span class="op">=</span> <span class="va">x_vars</span>,</span>
+<span>  y_server <span class="op">=</span> <span class="st">"server2"</span>,</span>
 <span>  family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
-<span>  tol <span class="op">=</span> <span class="fl">1e-5</span>,</span>
-<span>  verbose <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  datasources <span class="op">=</span> <span class="va">connections</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>Use <code>print</code> for a concise overview or <code>summary</code>
-for full details:</p>
-<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">model_bp</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Vertically Partitioned GLM (Block Coordinate Descent)</span></span>
-<span><span class="co">#&gt; =======================================================</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Call:</span></span>
-<span><span class="co">#&gt; ds.vertGLM(data_name = "D_aligned", y_var = "outcome_bp",</span></span>
-<span><span class="co">#&gt;     x_vars = x_vars, family = "gaussian", tol = 1e-05, verbose = FALSE,</span></span>
-<span><span class="co">#&gt;     datasources = connections)</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Family: gaussian</span></span>
-<span><span class="co">#&gt; Observations: 200</span></span>
-<span><span class="co">#&gt; Predictors: 4</span></span>
-<span><span class="co">#&gt; Regularization (lambda): 1e-04</span></span>
-<span><span class="co">#&gt; Iterations: 23</span></span>
-<span><span class="co">#&gt; Converged: TRUE</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Coefficients:</span></span>
-<span><span class="co">#&gt;       age    weight       bmi   glucose</span></span>
-<span><span class="co">#&gt;  0.389012  0.042318  0.571234  0.098745</span></span></code></pre></div>
-<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">model_bp</span><span class="op">)</span></span>
-<span><span class="co">#&gt; Vertically Partitioned GLM - Summary</span></span>
-<span><span class="co">#&gt; ====================================</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Call:</span></span>
-<span><span class="co">#&gt; ds.vertGLM(data_name = "D_aligned", y_var = "outcome_bp",</span></span>
-<span><span class="co">#&gt;     x_vars = x_vars, family = "gaussian", tol = 1e-05, verbose = FALSE,</span></span>
-<span><span class="co">#&gt;     datasources = connections)</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Family: gaussian</span></span>
-<span><span class="co">#&gt; Observations: 200</span></span>
-<span><span class="co">#&gt; Predictors: 4</span></span>
-<span><span class="co">#&gt; Regularization (lambda): 1e-04</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Convergence:</span></span>
-<span><span class="co">#&gt;   Iterations: 23</span></span>
-<span><span class="co">#&gt;   Converged: TRUE</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Deviance:</span></span>
-<span><span class="co">#&gt;   Null deviance:     48312.1234  on 199 degrees of freedom</span></span>
-<span><span class="co">#&gt;   Residual deviance: 12487.5678  on 196 degrees of freedom</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Model Fit:</span></span>
-<span><span class="co">#&gt;   Pseudo R-squared (McFadden): 0.7415</span></span>
-<span><span class="co">#&gt;   AIC: 12495.5678</span></span>
-<span><span class="co">#&gt;</span></span>
-<span><span class="co">#&gt; Coefficients:</span></span>
-<span><span class="co">#&gt;          Estimate</span></span>
-<span><span class="co">#&gt; age      0.389012</span></span>
-<span><span class="co">#&gt; weight   0.042318</span></span>
-<span><span class="co">#&gt; bmi      0.571234</span></span>
-<span><span class="co">#&gt; glucose  0.098745</span></span></code></pre></div>
-<p>The summary includes:</p>
-<ul>
-<li>
-<strong>Coefficients</strong>: The estimated effect of each
-predictor. For a Gaussian GLM these are on the original scale (e.g., a
-one-unit increase in age is associated with a ~0.39 unit increase in
-blood pressure).</li>
-<li>
-<strong>Deviance</strong>: Measures model fit. The residual deviance
-should be substantially lower than the null deviance.</li>
-<li>
-<strong>Pseudo R-squared (McFadden)</strong>: Proportion of deviance
-explained by the model (1 - residual/null). Higher is better.</li>
-<li>
-<strong>AIC</strong>: Akaike Information Criterion for model
-comparison. Lower is better.</li>
-</ul>
+<span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">model_gaussian</span><span class="op">)</span></span></code></pre></div>
+<p><strong>Coefficients:</strong></p>
+<table class="table">
+<thead><tr class="header">
+<th>Coefficient</th>
+<th>Estimate</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>(Intercept)</td>
+<td>76.4445</td>
+</tr>
+<tr class="even">
+<td>age</td>
+<td>0.0654</td>
+</tr>
+<tr class="odd">
+<td>bmi</td>
+<td>0.5411</td>
+</tr>
+<tr class="even">
+<td>glucose</td>
+<td>-0.0270</td>
+</tr>
+<tr class="odd">
+<td>cholesterol</td>
+<td>-0.0062</td>
+</tr>
+<tr class="even">
+<td>heart_rate</td>
+<td>0.2765</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Fit statistics:</strong></p>
+<pre><code>Deviance:          8199.0731
+Null deviance:     9034.3400
+Pseudo R-squared:  0.0925
+Converged:         TRUE (6 iterations)</code></pre>
+<p>The model explains about 9.3% of the deviance in blood pressure.
+Consistent with the correlation analysis, bmi (0.54) and heart_rate
+(0.28) are the strongest predictors. Age has a small positive effect
+(0.07), while glucose and cholesterol contribute minimally.</p>
 </div>
 <div class="section level3">
-<h3 id="extracting-coefficients">Extracting Coefficients<a class="anchor" aria-label="anchor" href="#extracting-coefficients"></a>
+<h3 id="binomial-glm">Binomial GLM<a class="anchor" aria-label="anchor" href="#binomial-glm"></a>
 </h3>
-<p>Use the <code>coef</code> method to extract the coefficient
-vector:</p>
-<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">model_bp</span><span class="op">)</span></span>
-<span><span class="co">#&gt;       age    weight       bmi   glucose</span></span>
-<span><span class="co">#&gt;  0.389012  0.042318  0.571234  0.098745</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="example-2-binomial-glm-logistic-regression">Example 2: Binomial GLM (Logistic Regression)<a class="anchor" aria-label="anchor" href="#example-2-binomial-glm-logistic-regression"></a>
-</h3>
-<p>Predict diabetes risk from the same predictors:</p>
-<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">model_diabetes</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
-<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>,</span>
-<span>  y_var <span class="op">=</span> <span class="st">"outcome_diabetes"</span>,</span>
+<p>Predict hypertension status (binary outcome on server2) using the
+same set of predictors. The encrypted-label protocol protects the
+response during fitting.</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">model_binomial</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
+<span>  <span class="st">"D_aligned"</span>,</span>
+<span>  y_var <span class="op">=</span> <span class="st">"hypertension"</span>,</span>
 <span>  x_vars <span class="op">=</span> <span class="va">x_vars</span>,</span>
+<span>  y_server <span class="op">=</span> <span class="st">"server2"</span>,</span>
 <span>  family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
-<span>  tol <span class="op">=</span> <span class="fl">1e-5</span>,</span>
-<span>  verbose <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  datasources <span class="op">=</span> <span class="va">connections</span></span>
 <span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">model_diabetes</span><span class="op">)</span></span></code></pre></div>
-<p>For logistic regression, coefficients are on the <strong>log-odds
-scale</strong>. To get odds ratios, exponentiate the coefficients:</p>
-<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">odds_ratios</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">model_diabetes</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  Variable <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">odds_ratios</span><span class="op">)</span>,</span>
-<span>  Coefficient <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">model_diabetes</span><span class="op">)</span>, <span class="fl">4</span><span class="op">)</span>,</span>
-<span>  OddsRatio <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">odds_ratios</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>An odds ratio greater than 1 means that a one-unit increase in the
-predictor is associated with higher odds of diabetes. For example, an
-odds ratio of 1.05 for <code>age</code> means each additional year of
-age increases the odds of diabetes by 5%.</p>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">model_binomial</span><span class="op">)</span></span></code></pre></div>
+<p><strong>Coefficients (log-odds scale):</strong></p>
+<table class="table">
+<thead><tr class="header">
+<th>Coefficient</th>
+<th>Estimate</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>(Intercept)</td>
+<td>-4.8320</td>
+</tr>
+<tr class="even">
+<td>age</td>
+<td>0.0240</td>
+</tr>
+<tr class="odd">
+<td>bmi</td>
+<td>0.0487</td>
+</tr>
+<tr class="even">
+<td>glucose</td>
+<td>0.0056</td>
+</tr>
+<tr class="odd">
+<td>cholesterol</td>
+<td>-0.0051</td>
+</tr>
+<tr class="even">
+<td>heart_rate</td>
+<td>0.0354</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Fit statistics:</strong></p>
+<pre><code>Deviance:          65.6153
+Null deviance:     69.3147
+Pseudo R-squared:  0.0534
+Converged:         TRUE (7 iterations)</code></pre>
+<p>On the log-odds scale, bmi (0.049) and heart_rate (0.035) are again
+the strongest predictors, consistent with the Gaussian model. The pseudo
+R-squared of 0.053 indicates modest predictive power for hypertension
+classification.</p>
 </div>
 <div class="section level3">
-<h3 id="example-3-poisson-glm-count-data">Example 3: Poisson GLM (Count Data)<a class="anchor" aria-label="anchor" href="#example-3-poisson-glm-count-data"></a>
+<h3 id="poisson-glm">Poisson GLM<a class="anchor" aria-label="anchor" href="#poisson-glm"></a>
 </h3>
-<p>Predict the number of hospital visits:</p>
-<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">model_visits</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
-<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>,</span>
-<span>  y_var <span class="op">=</span> <span class="st">"outcome_visits"</span>,</span>
-<span>  x_vars <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>    inst_A <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span><span class="op">)</span>,</span>
-<span>    inst_B <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"bmi"</span><span class="op">)</span></span>
-<span>  <span class="op">)</span>,</span>
+<p>Model the number of visits (count outcome on server2) from the same
+predictors.</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">model_poisson</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
+<span>  <span class="st">"D_aligned"</span>,</span>
+<span>  y_var <span class="op">=</span> <span class="st">"visits"</span>,</span>
+<span>  x_vars <span class="op">=</span> <span class="va">x_vars</span>,</span>
+<span>  y_server <span class="op">=</span> <span class="st">"server2"</span>,</span>
 <span>  family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
-<span>  tol <span class="op">=</span> <span class="fl">1e-5</span>,</span>
-<span>  verbose <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  datasources <span class="op">=</span> <span class="va">connections</span></span>
 <span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">model_visits</span><span class="op">)</span></span></code></pre></div>
-<p>For Poisson regression, coefficients are on the <strong>log
-scale</strong>. Exponentiating gives <strong>rate ratios</strong>:</p>
-<div class="sourceCode" id="cb21"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">rate_ratios</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">model_visits</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  Variable <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">rate_ratios</span><span class="op">)</span>,</span>
-<span>  Coefficient <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">model_visits</span><span class="op">)</span>, <span class="fl">4</span><span class="op">)</span>,</span>
-<span>  RateRatio <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">rate_ratios</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>A rate ratio of 1.02 for <code>age</code> means each additional year
-of age is associated with a 2% increase in the expected number of
-hospital visits.</p>
+<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">model_poisson</span><span class="op">)</span></span></code></pre></div>
+<p><strong>Coefficients (log scale):</strong></p>
+<table class="table">
+<thead><tr class="header">
+<th>Coefficient</th>
+<th>Estimate</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>(Intercept)</td>
+<td>1.6309</td>
+</tr>
+<tr class="even">
+<td>age</td>
+<td>-0.0054</td>
+</tr>
+<tr class="odd">
+<td>bmi</td>
+<td>-0.0063</td>
+</tr>
+<tr class="even">
+<td>glucose</td>
+<td>0.0062</td>
+</tr>
+<tr class="odd">
+<td>cholesterol</td>
+<td>-0.0015</td>
+</tr>
+<tr class="even">
+<td>heart_rate</td>
+<td>0.0068</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Fit statistics:</strong></p>
+<pre><code>Deviance:          60.6546
+Null deviance:     73.7885
+Pseudo R-squared:  0.1780
+Converged:         TRUE (10 iterations)</code></pre>
+<p>The Poisson model has the highest pseudo R-squared (0.178) of the
+three models fitted. Glucose and heart_rate have small positive effects
+on the expected visit count, while age and bmi have small negative
+effects. The model required 10 iterations to converge, more than the
+Gaussian (6) or binomial (7), which is typical for count data.</p>
 </div>
 <div class="section level3">
-<h3 id="example-4-gamma-glm-positive-continuous-data">Example 4: Gamma GLM (Positive Continuous Data)<a class="anchor" aria-label="anchor" href="#example-4-gamma-glm-positive-continuous-data"></a>
+<h3 id="other-families">Other Families<a class="anchor" aria-label="anchor" href="#other-families"></a>
 </h3>
-<p>Predict healthcare costs. The Gamma family is appropriate for
-strictly positive, right-skewed outcomes where variance increases with
-the mean:</p>
-<div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">model_cost</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
-<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>,</span>
-<span>  y_var <span class="op">=</span> <span class="st">"outcome_cost"</span>,</span>
-<span>  x_vars <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>    inst_A <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span><span class="op">)</span>,</span>
-<span>    inst_B <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"bmi"</span><span class="op">)</span></span>
-<span>  <span class="op">)</span>,</span>
-<span>  family <span class="op">=</span> <span class="st">"Gamma"</span>,</span>
-<span>  tol <span class="op">=</span> <span class="fl">1e-5</span>,</span>
-<span>  verbose <span class="op">=</span> <span class="cn">FALSE</span>,</span>
-<span>  datasources <span class="op">=</span> <span class="va">connections</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">model_cost</span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="comparing-models">Comparing Models<a class="anchor" aria-label="anchor" href="#comparing-models"></a>
-</h3>
-<p>When you have fitted multiple models, you can compare them side by
-side:</p>
-<div class="sourceCode" id="cb23"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">models</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>  <span class="st">"Blood Pressure (gaussian)"</span>  <span class="op">=</span> <span class="va">model_bp</span>,</span>
-<span>  <span class="st">"Diabetes Risk (binomial)"</span>   <span class="op">=</span> <span class="va">model_diabetes</span>,</span>
-<span>  <span class="st">"Hospital Visits (poisson)"</span>  <span class="op">=</span> <span class="va">model_visits</span>,</span>
-<span>  <span class="st">"Healthcare Cost (Gamma)"</span>    <span class="op">=</span> <span class="va">model_cost</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">comparison</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  Model      <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">models</span><span class="op">)</span>,</span>
-<span>  Family     <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">models</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="va">m</span><span class="op">$</span><span class="va">family</span><span class="op">)</span>,</span>
-<span>  Predictors <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">models</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="va">m</span><span class="op">$</span><span class="va">n_vars</span><span class="op">)</span>,</span>
-<span>  Iterations <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">models</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="va">m</span><span class="op">$</span><span class="va">iterations</span><span class="op">)</span>,</span>
-<span>  Deviance   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">models</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">m</span><span class="op">$</span><span class="va">deviance</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  Pseudo_R2  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">models</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">m</span><span class="op">$</span><span class="va">pseudo_r2</span>, <span class="fl">4</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  AIC        <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">models</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">m</span><span class="op">$</span><span class="va">aic</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  Converged  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply</a></span><span class="op">(</span><span class="va">models</span>, <span class="kw">function</span><span class="op">(</span><span class="va">m</span><span class="op">)</span> <span class="va">m</span><span class="op">$</span><span class="va">converged</span><span class="op">)</span>,</span>
-<span>  row.names  <span class="op">=</span> <span class="cn">NULL</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">comparison</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="convergence-considerations">Convergence Considerations<a class="anchor" aria-label="anchor" href="#convergence-considerations"></a>
-</h3>
-<p>The BCD algorithm typically converges in 20–100 iterations. If a
-model does not converge, consider:</p>
-<ul>
-<li>
-<strong>Increasing <code>max_iter</code></strong>: The default is
-100, which is sufficient for most problems. Set it higher for difficult
-cases.</li>
-<li>
-<strong>Relaxing <code>tol</code></strong>: The default tolerance is
-1e-6. A value of 1e-5 or 1e-4 may be sufficient for exploratory
-analysis.</li>
-<li>
-<strong>Checking data quality</strong>: Highly collinear predictors
-or extreme outliers can slow convergence. The <code>lambda</code>
-parameter (default 1e-4) provides L2 regularization that helps with
-collinearity.</li>
-</ul>
-<div class="sourceCode" id="cb24"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Check convergence details</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Converged:"</span>, <span class="va">model_bp</span><span class="op">$</span><span class="va">converged</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Iterations:"</span>, <span class="va">model_bp</span><span class="op">$</span><span class="va">iterations</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Lambda (regularization):"</span>, <span class="va">model_bp</span><span class="op">$</span><span class="va">lambda</span>, <span class="st">"\n"</span><span class="op">)</span></span></code></pre></div>
+<p>The Gamma and inverse Gaussian families use the same
+<code>ds.vertGLM</code> interface. Both are appropriate for positive
+continuous response variables. Specify <code>family = "Gamma"</code> or
+<code>family = "inverse.gaussian"</code> and ensure that the response
+variable contains strictly positive values. The log link is used by
+default for both families.</p>
 <hr>
 </div>
 </div>
 <div class="section level2">
-<h2 id="privacy-summary">Privacy Summary<a class="anchor" aria-label="anchor" href="#privacy-summary"></a>
-</h2>
-<p>Throughout all analyses, privacy is maintained:</p>
-<table class="table">
-<colgroup>
-<col width="14%">
-<col width="47%">
-<col width="37%">
-</colgroup>
-<thead><tr class="header">
-<th>Analysis</th>
-<th>What Is Shared</th>
-<th>What Stays Private</th>
-</tr></thead>
-<tbody>
-<tr class="odd">
-<td>Correlation</td>
-<td>Encrypted columns (CKKS ciphertexts), partial decryption shares</td>
-<td>Raw variable values</td>
-</tr>
-<tr class="even">
-<td>PCA</td>
-<td>Same as correlation (PCA is built on it)</td>
-<td>Raw variable values</td>
-</tr>
-<tr class="odd">
-<td>GLM</td>
-<td>Linear predictor vector (eta = X * beta)</td>
-<td>Raw data, coefficients during iteration</td>
-</tr>
-</tbody>
-</table>
-<p><strong>No raw patient-level data ever leaves any
-institution.</strong> Cross-server correlation uses MHE with threshold
-decryption, meaning no single server (and not even the client) can
-decrypt without cooperation from all parties.</p>
-<p>For a detailed mathematical treatment of these methods, see the <a href="c-methodology.html">Methodology</a> vignette.</p>
-</div>
-<div class="section level2">
 <h2 id="cleanup">Cleanup<a class="anchor" aria-label="anchor" href="#cleanup"></a>
 </h2>
-<p>When you are finished with the analysis, log out of all
-connections:</p>
-<div class="sourceCode" id="cb25"><pre class="downlit sourceCode r">
+<p>Close all server connections when the analysis is complete.</p>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.logout.html" class="external-link">datashield.logout</a></span><span class="op">(</span><span class="va">connections</span><span class="op">)</span></span></code></pre></div>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
