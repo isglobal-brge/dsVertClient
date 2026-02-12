@@ -129,113 +129,63 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # Helpers
   # ===========================================================================
 
-  .b64url_to_b64 <- function(x) {
-    x <- gsub("-", "+", x, fixed = TRUE)
-    x <- gsub("_", "/", x, fixed = TRUE)
-    pad <- (4 - nchar(x) %% 4) %% 4
-    if (pad > 0) x <- paste0(x, paste(rep("=", pad), collapse = ""))
-    x
+  chunk_size <- 10000  # DataSHIELD parser-safe chunk size
+
+  # Send CT chunks to a server (reusable helper)
+  .sendCTChunks <- function(ct_str, conn_idx) {
+    n_chars_ct <- nchar(ct_str)
+    n_ct_chunks <- ceiling(n_chars_ct / chunk_size)
+    for (ch in seq_len(n_ct_chunks)) {
+      start <- (ch - 1) * chunk_size + 1
+      end <- min(ch * chunk_size, n_chars_ct)
+      DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call("mheStoreCTChunkDS",
+                    chunk_index = as.integer(ch),
+                    chunk = substr(ct_str, start, end))
+      )
+    }
+    n_ct_chunks
   }
 
-  .findMheTool <- function() {
-    os <- .Platform$OS.type
-    binary_name <- if (os == "windows") "mhe-tool.exe" else "mhe-tool"
-    arch <- Sys.info()["machine"]
-    if (Sys.info()["sysname"] == "Darwin") {
-      subdir <- if (arch == "arm64") "darwin-arm64" else "darwin-amd64"
-    } else if (os == "windows") {
-      subdir <- "windows-amd64"
+  # Relay a wrapped share to the fusion server in chunks
+  .sendWrappedShare <- function(wrapped_share, party_id, fusion_conn_idx) {
+    n_chars <- nchar(wrapped_share)
+    n_chunks <- ceiling(n_chars / chunk_size)
+    for (ch in seq_len(n_chunks)) {
+      start <- (ch - 1) * chunk_size + 1
+      end <- min(ch * chunk_size, n_chars)
+      DSI::datashield.aggregate(
+        conns = datasources[fusion_conn_idx],
+        expr = call("mheStoreWrappedShareDS",
+                    party_id = as.integer(party_id),
+                    share_data = substr(wrapped_share, start, end))
+      )
+    }
+  }
+
+  # Send a blob to a server, chunking if necessary
+  .sendBlob <- function(blob, key, conn_idx) {
+    n_chars <- nchar(blob)
+    n_chunks <- ceiling(n_chars / chunk_size)
+    if (n_chunks == 1) {
+      DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call("mheStoreBlobDS", key = key, chunk = blob)
+      )
     } else {
-      subdir <- "linux-amd64"
-    }
-    bin_path <- system.file("bin", subdir, binary_name, package = "dsVertClient")
-    if (bin_path != "" && file.exists(bin_path)) return(bin_path)
-    bin_path <- system.file("bin", subdir, binary_name, package = "dsVert")
-    if (bin_path != "" && file.exists(bin_path)) return(bin_path)
-    env_path <- Sys.getenv("DSVERT_MHE_TOOL")
-    if (env_path != "" && file.exists(env_path)) return(env_path)
-    stop("mhe-tool binary not found for platform ", subdir, call. = FALSE)
-  }
-
-  .mheFuseLocal <- function(ciphertext, decryption_shares, log_n, log_scale,
-                             num_slots = 0) {
-    bin_path <- .findMheTool()
-    ct_std <- .b64url_to_b64(ciphertext)
-    shares_std <- sapply(decryption_shares, .b64url_to_b64, USE.NAMES = FALSE)
-    input <- list(
-      ciphertext = ct_std,
-      decryption_shares = as.list(shares_std),
-      num_slots = as.integer(num_slots),
-      log_n = as.integer(log_n),
-      log_scale = as.integer(log_scale)
-    )
-    input_file <- tempfile(fileext = ".json")
-    output_file <- tempfile(fileext = ".json")
-    on.exit({
-      if (file.exists(input_file)) unlink(input_file)
-      if (file.exists(output_file)) unlink(output_file)
-    })
-    jsonlite::write_json(input, input_file, auto_unbox = TRUE)
-    status <- system2(bin_path, "mhe-fuse",
-                      stdin = input_file, stdout = output_file,
-                      stderr = output_file)
-    output <- jsonlite::read_json(output_file, simplifyVector = TRUE)
-    if (!is.null(output$error) && nzchar(output$error))
-      stop("mhe-fuse error: ", output$error, call. = FALSE)
-    output$value
-  }
-
-  # --- GLM link/variance helpers ---
-  # These compute the mean, IRLS weights, and variance correction factor
-  # on the client side. The client broadcasts mu and w to all servers at
-  # each BCD iteration so they can compute their local contributions.
-
-  .compute_mu <- function(eta, family) {
-    # Inverse link: converts linear predictor eta to mean mu.
-    # Clipping prevents numerical overflow in exp() and division by 0.
-    # - eta in [-20, 20] keeps exp() in [~2e-9, ~5e8]
-    # - mu clamped to [1e-10, 1-1e-10] for binomial avoids log(0)
-    if (family == "gaussian") {
-      eta
-    } else if (family == "binomial") {
-      eta <- pmax(pmin(eta, 20), -20)
-      pmax(pmin(1 / (1 + exp(-eta)), 1 - 1e-10), 1e-10)
-    } else {
-      pmax(exp(pmin(eta, 20)), 1e-10)
-    }
-  }
-
-  .compute_w <- function(mu, family) {
-    # IRLS weights: w = 1 / (V(mu) * (d_eta/d_mu)^2)
-    # For canonical links, simplifies to:
-    #   gaussian: w = 1, binomial: w = mu(1-mu), poisson: w = mu
-    # For non-canonical links with log link:
-    #   Gamma (V=mu^2): w = 1/(mu^2 * 1/mu^2) = 1
-    #   inverse.gaussian (V=mu^3): w = 1/(mu^3 * 1/mu^2) = 1/mu
-    if (family == "gaussian") {
-      rep(1, length(mu))
-    } else if (family == "binomial") {
-      mu * (1 - mu)
-    } else if (family == "poisson") {
-      mu
-    } else if (family == "Gamma") {
-      rep(1, length(mu))
-    } else if (family == "inverse.gaussian") {
-      1 / mu
-    }
-  }
-
-  .compute_v <- function(mu, family) {
-    # Variance correction factor for the encrypted gradient. For canonical
-    # links, the gradient is X^T(y - mu) and v = NULL (no correction).
-    # For non-canonical links, the gradient needs: X^T * v * (y - mu)
-    # where v = (d_mu/d_eta) / V(mu).
-    if (family %in% c("gaussian", "binomial", "poisson")) {
-      NULL
-    } else if (family == "Gamma") {
-      1 / mu
-    } else if (family == "inverse.gaussian") {
-      1 / (mu^2)
+      for (ch in seq_len(n_chunks)) {
+        start <- (ch - 1) * chunk_size + 1
+        end <- min(ch * chunk_size, n_chars)
+        DSI::datashield.aggregate(
+          conns = datasources[conn_idx],
+          expr = call("mheStoreBlobDS",
+                      key = key,
+                      chunk = substr(blob, start, end),
+                      chunk_index = as.integer(ch),
+                      n_chunks = as.integer(n_chunks))
+        )
+      }
     }
   }
 
@@ -282,8 +232,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   }
 
   # ===========================================================================
-  # Phase 0: MHE Key Setup (only needed if non-label servers exist)
+  # Phase 0: MHE Key Setup + Transport Keys (only needed if non-label servers exist)
   # ===========================================================================
+  transport_pks <- list()  # Collect transport PKs for secure routing + share-wrapping
+
   if (length(non_label_servers) > 0) {
     if (verbose) message("\n[Phase 0] MHE key setup...")
 
@@ -304,6 +256,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     gkg_shares <- list()
     pk_shares[[server_list[1]]] <- result0$public_key_share
     gkg_shares[[server_list[1]]] <- result0$galois_key_shares
+    transport_pks[[server_list[1]]] <- result0$transport_pk
 
     for (i in 2:length(server_list)) {
       server <- server_list[i]
@@ -320,6 +273,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       if (is.list(result)) result <- result[[1]]
       pk_shares[[server]] <- result$public_key_share
       gkg_shares[[server]] <- result$galois_key_shares
+      transport_pks[[server]] <- result$transport_pk
     }
 
     conn_idx <- which(server_names == server_list[1])
@@ -346,7 +300,25 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         expr = call("mheStoreCPKDS", cpk = cpk, galois_keys = galois_keys)
       )
     }
-    if (verbose) message("  Key setup complete")
+
+    # Distribute transport keys for share-wrapping and secure routing
+    fusion_server <- server_list[1]  # Party 0
+    fusion_conn_idx <- which(server_names == fusion_server)
+    non_fusion_servers <- setdiff(server_list, fusion_server)
+
+    for (server in server_list) {
+      conn_idx <- which(server_names == server)
+      tk_map <- list(fusion = transport_pks[[fusion_server]])
+      for (s in server_list) {
+        tk_map[[s]] <- transport_pks[[s]]
+      }
+      DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call("mheStoreTransportKeysDS", transport_keys = tk_map)
+      )
+    }
+
+    if (verbose) message("  Key setup + transport keys complete")
   }
 
   # ===========================================================================
@@ -433,179 +405,188 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   }
 
   # ===========================================================================
-  # Phase 3: BCD Iterations (on standardized scale)
+  # Phase 3: BCD Iterations with Secure Routing (on standardized scale)
   # ===========================================================================
-  # Standardization ensures all features have comparable scale, which is
-  # critical for BCD convergence: without it, blocks with larger-magnitude
-  # features would dominate the linear predictor and convergence would stall.
+  # Secure Routing Protocol: individual-level vectors (eta, mu, w, v) are
+  # transport-encrypted end-to-end between the coordinator (label server)
+  # and non-label servers. The client only handles:
+  #   - Betas: p_k-length coefficient vectors (safe aggregate statistics)
+  #   - Opaque encrypted blobs: transport-encrypted vectors the client cannot read
   #
-  # For Gaussian family, both X and y are standardized, so the intercept
-  # is implicitly zero on the standardized scale (recovered in Phase 4).
-  # For non-Gaussian families, y is NOT standardized (the link function is
-  # nonlinear), so the label server needs an explicit intercept column.
+  # BCD variant: Jacobi-style. All non-label servers receive the same mu/w/v
+  # snapshot per iteration (computed by coordinator at iteration start).
   label_intercept <- !standardize_y
 
+  # Coordinator = label server (has y, runs IRLS)
+  coordinator <- y_server
+  coordinator_conn <- which(server_names == coordinator)
+  coordinator_pk <- if (length(transport_pks) > 0) transport_pks[[coordinator]] else NULL
+
+  # Non-label server PKs for the coordinator to encrypt (mu, w, v) under
+  non_label_pk_map <- list()
+  for (s in non_label_servers) {
+    non_label_pk_map[[s]] <- transport_pks[[s]]
+  }
+
   betas <- list()
-  etas <- list()
   for (server in server_list) {
     p <- length(x_vars[[server]])
-    if (server == y_server && label_intercept) p <- p + 1
+    if (server == coordinator && label_intercept) p <- p + 1
     betas[[server]] <- rep(0, p)
-    etas[[server]] <- rep(0, n_obs)
   }
+
+  # Encrypted eta blobs (opaque to client): server_name -> base64url string
+  encrypted_etas <- list()
 
   converged <- FALSE
   final_iter <- 0
 
-  if (verbose) message("\n[Phase 3] BCD iterations...")
+  if (verbose) message("\n[Phase 3] BCD iterations (secure routing)...")
 
   for (iter in seq_len(max_iter)) {
     betas_old <- betas
     max_diff <- 0
 
-    for (server in server_list) {
+    # --- Phase 3a: Coordinator step (label server) ---
+    # The coordinator receives encrypted etas from non-label servers,
+    # decrypts them, runs IRLS, computes mu/w/v, and encrypts (mu, w, v)
+    # under each non-label server's transport PK.
+
+    # Send encrypted eta blobs to coordinator (if any, from previous iteration)
+    eta_blob_keys <- character(0)
+    if (length(encrypted_etas) > 0) {
+      for (s in names(encrypted_etas)) {
+        blob <- encrypted_etas[[s]]
+        if (!is.null(blob) && nzchar(blob)) {
+          key <- paste0("eta_", s)
+          .sendBlob(blob, key, coordinator_conn)
+          eta_blob_keys <- c(eta_blob_keys, key)
+        }
+      }
+    }
+
+    coord_result <- DSI::datashield.aggregate(
+      conns = datasources[coordinator_conn],
+      expr = call("glmCoordinatorStepDS",
+                  data_name = std_data,
+                  y_var = y_var,
+                  x_vars = x_vars[[coordinator]],
+                  encrypted_eta_blobs = NULL,
+                  eta_blob_keys = if (length(eta_blob_keys) > 0) eta_blob_keys else NULL,
+                  non_label_pks = non_label_pk_map,
+                  family = family,
+                  beta_current = betas[[coordinator]],
+                  lambda = lambda,
+                  intercept = label_intercept,
+                  n_obs = as.integer(n_obs))
+    )
+    if (is.list(coord_result) && length(coord_result) == 1)
+      coord_result <- coord_result[[1]]
+
+    betas[[coordinator]] <- coord_result$beta
+    mwv_blobs <- coord_result$encrypted_blobs  # Named list: server -> blob
+
+    diff_coord <- sum(abs(betas[[coordinator]] - betas_old[[coordinator]]))
+    max_diff <- max(max_diff, diff_coord)
+
+    # --- Phase 3b: Non-label servers (secure gradient + share-wrapped decrypt + block solve) ---
+    encrypted_etas <- list()  # Reset for this iteration
+
+    for (server in non_label_servers) {
       conn_idx <- which(server_names == server)
       vars <- x_vars[[server]]
+      p_k <- length(vars)
 
-      if (server == y_server) {
-        # LABEL SERVER: has y in plaintext, so standard IRLS is sufficient.
-        # No encryption needed -- data stays on this server.
-        # eta_other = sum of linear predictor contributions from other servers.
-        other_servers <- setdiff(server_list, server)
-        if (length(other_servers) > 0) {
-          eta_other <- Reduce(`+`, etas[other_servers])
-        } else {
-          eta_other <- rep(0, n_obs)
-        }
+      # Step 1: Send encrypted (mu, w, v) blob to non-label server
+      mwv_blob <- mwv_blobs[[server]]
+      .sendBlob(mwv_blob, "mwv", conn_idx)
 
-        result <- DSI::datashield.aggregate(
-          conns = datasources[conn_idx],
-          expr = call("glmPartialFitDS",
-                      std_data, y_var, vars,
-                      eta_other, betas[[server]],
-                      family, lambda, label_intercept)
-        )
-        if (is.list(result) && length(result) == 1) result <- result[[1]]
+      # Step 2: Server computes encrypted gradient using decrypted mu/v + ct_y
+      grad_result <- DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call("glmSecureGradientDS",
+                    data_name = std_data,
+                    x_vars = vars,
+                    encrypted_mwv = NULL,
+                    num_obs = as.integer(n_obs))
+      )
+      if (is.list(grad_result) && length(grad_result) == 1)
+        grad_result <- grad_result[[1]]
 
-        betas[[server]] <- result$beta
-        etas[[server]] <- result$eta
+      enc_gradients <- grad_result$encrypted_gradients
+      ct_hashes <- grad_result$ct_hashes
 
-      } else {
-        # NON-LABEL SERVER: does NOT have y. Must use encrypted gradient
-        # protocol. Steps:
-        #   1. Client computes mu, w from current eta (broadcast to server)
-        #   2. Server computes g_k = X_k^T(ct_y - mu) homomorphically
-        #   3. Threshold decryption reveals the p_k-length gradient
-        #   4. Server solves BCD block update using plaintext gradient
-
-        # Compute IRLS quantities from the current aggregate linear predictor.
-        # These are broadcast to the server (they contain no individual y values).
-        eta_total <- Reduce(`+`, etas)
-        mu <- .compute_mu(eta_total, family)
-        w <- .compute_w(mu, family)
-        v <- .compute_v(mu, family)
-
-        # Step 2: Server computes encrypted gradient using stored ct_y and local X_k.
-        # The result is p_k encrypted scalars (one per feature on this server).
-        grad_result <- DSI::datashield.aggregate(
-          conns = datasources[conn_idx],
-          expr = call("mheGLMGradientDS",
-                      data_name = std_data,
-                      x_vars = vars,
-                      mu = mu,
-                      v = v,
-                      num_obs = as.integer(n_obs))
-        )
-        if (is.list(grad_result) && length(grad_result) == 1)
-          grad_result <- grad_result[[1]]
-
-        enc_gradients <- grad_result$encrypted_gradients
-        ct_hashes <- grad_result$ct_hashes
-        p_k <- length(vars)
-
-        # Protocol Firewall: authorize gradient ciphertexts on non-producing servers.
-        # The producing server (current non-label server) already has them registered.
-        if (!is.null(ct_hashes) && length(ct_hashes) > 0) {
-          for (auth_server in server_list) {
-            if (auth_server != server) {
-              auth_conn <- which(server_names == auth_server)
-              DSI::datashield.aggregate(
-                conns = datasources[auth_conn],
-                expr = call("mheAuthorizeCTDS",
-                            ct_hashes = ct_hashes,
-                            op_type = "glm-gradient")
-              )
-            }
-          }
-        }
-
-        # Step 3: Threshold decrypt each gradient component.
-        # Each encrypted gradient[j] is a single CKKS ciphertext. We collect
-        # partial decryption shares from ALL K servers, then fuse them on the
-        # client to recover the plaintext gradient scalar. This reveals only
-        # the aggregate gradient (safe), not individual observations of y.
-        gradient <- numeric(p_k)
-        for (j in seq_len(p_k)) {
-          ct_grad <- enc_gradients[j]
-
-          partial_shares <- list()
-          for (dec_server in server_list) {
-            dec_conn <- which(server_names == dec_server)
-
-            ct_str <- ct_grad
-            n_ct_chars <- nchar(ct_str)
-            n_ct_chunks <- ceiling(n_ct_chars / chunk_size)
-
-            for (ch in seq_len(n_ct_chunks)) {
-              start <- (ch - 1) * chunk_size + 1
-              end <- min(ch * chunk_size, n_ct_chars)
-              DSI::datashield.aggregate(
-                conns = datasources[dec_conn],
-                expr = call("mheStoreCTChunkDS",
-                            chunk_index = as.integer(ch),
-                            chunk = substr(ct_str, start, end))
-              )
-            }
-
-            pd <- DSI::datashield.aggregate(
-              conns = datasources[dec_conn],
-              expr = call("mhePartialDecryptDS",
-                          n_chunks = as.integer(n_ct_chunks))
+      # Protocol Firewall: authorize gradient ciphertexts on non-producing servers
+      if (!is.null(ct_hashes) && length(ct_hashes) > 0) {
+        for (auth_server in server_list) {
+          if (auth_server != server) {
+            auth_conn <- which(server_names == auth_server)
+            DSI::datashield.aggregate(
+              conns = datasources[auth_conn],
+              expr = call("mheAuthorizeCTDS",
+                          ct_hashes = ct_hashes,
+                          op_type = "glm-gradient")
             )
-            if (is.list(pd)) pd <- pd[[1]]
-            partial_shares[[dec_server]] <- pd$decryption_share
           }
-
-          gradient[j] <- .mheFuseLocal(
-            ct_grad,
-            unlist(partial_shares, use.names = FALSE),
-            log_n = log_n, log_scale = log_scale,
-            num_slots = 0
-          )
         }
-
-        # Step 4: BCD block update using the decrypted gradient.
-        # The server solves: beta_new = (X^TWX + λI)^{-1}(X^TWX*beta + g_k)
-        # This happens on the server using plaintext X_k and the gradient.
-        solve_result <- DSI::datashield.aggregate(
-          conns = datasources[conn_idx],
-          expr = call("glmBlockSolveDS",
-                      data_name = std_data,
-                      x_vars = vars,
-                      w = w,
-                      beta_current = betas[[server]],
-                      gradient = gradient,
-                      lambda = lambda)
-        )
-        if (is.list(solve_result) && length(solve_result) == 1)
-          solve_result <- solve_result[[1]]
-
-        betas[[server]] <- solve_result$beta
-        etas[[server]] <- solve_result$eta
       }
 
-      diff <- sum(abs(betas[[server]] - betas_old[[server]]))
-      max_diff <- max(max_diff, diff)
+      # Step 3: Share-wrapped threshold decryption of each gradient component
+      gradient <- numeric(p_k)
+      for (j in seq_len(p_k)) {
+        ct_grad <- enc_gradients[j]
+
+        # Collect wrapped shares from non-fusion servers
+        for (nf_server in non_fusion_servers) {
+          nf_conn <- which(server_names == nf_server)
+          nf_party_id <- which(server_list == nf_server) - 1
+
+          n_ct_chunks <- .sendCTChunks(ct_grad, nf_conn)
+          pd <- DSI::datashield.aggregate(
+            conns = datasources[nf_conn],
+            expr = call("mhePartialDecryptWrappedDS",
+                        n_chunks = as.integer(n_ct_chunks))
+          )
+          if (is.list(pd)) pd <- pd[[1]]
+          .sendWrappedShare(pd$wrapped_share, nf_party_id, fusion_conn_idx)
+        }
+
+        # Send CT to fusion server and fuse
+        n_ct_chunks <- .sendCTChunks(ct_grad, fusion_conn_idx)
+        fuse_result <- DSI::datashield.aggregate(
+          conns = datasources[fusion_conn_idx],
+          expr = call("mheFuseServerDS",
+                      n_parties = as.integer(length(server_list)),
+                      n_ct_chunks = as.integer(n_ct_chunks),
+                      num_slots = 0L)
+        )
+        if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
+        gradient[j] <- fuse_result$value
+      }
+
+      # Step 4: BCD block solve with encrypted eta output
+      # Send mwv blob again for the block solve (w needed for IRLS weights)
+      .sendBlob(mwv_blob, "mwv", conn_idx)
+
+      solve_result <- DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call("glmSecureBlockSolveDS",
+                    data_name = std_data,
+                    x_vars = vars,
+                    encrypted_mwv = NULL,
+                    beta_current = betas[[server]],
+                    gradient = gradient,
+                    lambda = lambda,
+                    coordinator_pk = coordinator_pk)
+      )
+      if (is.list(solve_result) && length(solve_result) == 1)
+        solve_result <- solve_result[[1]]
+
+      betas[[server]] <- solve_result$beta
+      encrypted_etas[[server]] <- solve_result$encrypted_eta
+
+      diff_server <- sum(abs(betas[[server]] - betas_old[[server]]))
+      max_diff <- max(max_diff, diff_server)
     }
 
     final_iter <- iter
@@ -629,16 +610,6 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # ===========================================================================
   # Phase 4: Unstandardize coefficients
   # ===========================================================================
-  # BCD produced coefficients on the standardized scale: y_std = X_std * beta_std.
-  # To recover original-scale coefficients: y = X * beta_orig + beta_0.
-  #
-  # Since x_std = (x - x_mean) / x_sd and y_std = (y - y_mean) / y_sd:
-  #   Gaussian:     beta_orig[j] = beta_std[j] * (y_sd / x_sd[j])
-  #                 beta_0 = y_mean - sum(beta_orig * x_mean)
-  #   Non-Gaussian: beta_orig[j] = beta_std[j] / x_sd[j]  (y not standardized)
-  #                 beta_0 = beta_0_std - sum(beta_orig * x_mean)
-  #                 where beta_0_std comes from the label server's intercept column
-
   all_coefs_std <- numeric()
   all_x_means <- numeric()
   all_x_sds <- numeric()
@@ -647,10 +618,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   for (server in server_list) {
     server_beta <- betas[[server]]
-    if (server == y_server && label_intercept) {
-      # First element is the intercept from the label server's IRLS
+    if (server == coordinator && label_intercept) {
       beta_0_from_label <- server_beta[1]
-      server_beta <- server_beta[-1]  # remaining are feature coefficients
+      server_beta <- server_beta[-1]
     }
     all_coefs_std <- c(all_coefs_std, server_beta)
     all_x_means <- c(all_x_means, x_means[[server]])
@@ -671,19 +641,36 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   n_vars_total <- length(all_coefs)
 
   # ===========================================================================
-  # Phase 5: Deviance (label server only, on ORIGINAL-scale data)
+  # Phase 5: Deviance (server-side, on ORIGINAL-scale data)
   # ===========================================================================
-  # Compute eta_total on original scale
-  eta_total_orig <- Reduce(`+`, etas)
-  if (standardize_y && !is.null(y_sd)) {
-    # Transform standardized eta back to original scale
-    eta_total_orig <- eta_total_orig * y_sd + y_mean
+  # Deviance is computed on the coordinator (label server) using stored
+  # eta values. The client relays the final encrypted etas from non-label
+  # servers so the coordinator can reconstruct eta_total server-side.
+  # The client NEVER sees the n-length eta_total vector.
+
+  # Send final encrypted etas to coordinator
+  eta_blob_keys_final <- character(0)
+  if (length(encrypted_etas) > 0) {
+    for (s in names(encrypted_etas)) {
+      blob <- encrypted_etas[[s]]
+      if (!is.null(blob) && nzchar(blob)) {
+        key <- paste0("eta_", s)
+        .sendBlob(blob, key, coordinator_conn)
+        eta_blob_keys_final <- c(eta_blob_keys_final, key)
+      }
+    }
   }
 
-  conn_idx <- which(server_names == y_server)
   deviance_result <- DSI::datashield.aggregate(
-    conns = datasources[conn_idx],
-    expr = call("glmDevianceDS", data_name, y_var, eta_total_orig, family)
+    conns = datasources[coordinator_conn],
+    expr = call("glmSecureDevianceDS",
+                data_name = data_name,
+                y_var = y_var,
+                encrypted_eta_blobs = NULL,
+                eta_blob_keys = if (length(eta_blob_keys_final) > 0) eta_blob_keys_final else NULL,
+                family = family,
+                y_sd = if (!is.null(y_sd)) y_sd else NULL,
+                y_mean = if (!is.null(y_mean)) y_mean else NULL)
   )
   if (is.list(deviance_result) && length(deviance_result) == 1)
     deviance_result <- deviance_result[[1]]

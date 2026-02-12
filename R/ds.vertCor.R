@@ -128,77 +128,39 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
 
   # Helpers -------------------------------------------------------------------
 
-  # Convert base64url to standard base64 (with padding)
-  .b64url_to_b64 <- function(x) {
-    x <- gsub("-", "+", x, fixed = TRUE)
-    x <- gsub("_", "/", x, fixed = TRUE)
-    pad <- (4 - nchar(x) %% 4) %% 4
-    if (pad > 0) x <- paste0(x, paste(rep("=", pad), collapse = ""))
-    x
+  chunk_size <- 10000  # DataSHIELD parser-safe chunk size
+
+  # Send CT chunks to a server (reusable helper)
+  .sendCTChunks <- function(ct_str, conn_idx) {
+    n_chars_ct <- nchar(ct_str)
+    n_ct_chunks <- ceiling(n_chars_ct / chunk_size)
+    for (ch in seq_len(n_ct_chunks)) {
+      start <- (ch - 1) * chunk_size + 1
+      end <- min(ch * chunk_size, n_chars_ct)
+      DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call("mheStoreCTChunkDS",
+                    chunk_index = as.integer(ch),
+                    chunk = substr(ct_str, start, end))
+      )
+    }
+    n_ct_chunks
   }
 
-  # Find mhe-tool binary (platform-aware)
-  .findMheTool <- function() {
-    os <- .Platform$OS.type
-    binary_name <- if (os == "windows") "mhe-tool.exe" else "mhe-tool"
-
-    arch <- Sys.info()["machine"]
-    if (Sys.info()["sysname"] == "Darwin") {
-      subdir <- if (arch == "arm64") "darwin-arm64" else "darwin-amd64"
-    } else if (os == "windows") {
-      subdir <- "windows-amd64"
-    } else {
-      subdir <- "linux-amd64"
+  # Relay a wrapped share to the fusion server in chunks
+  .sendWrappedShare <- function(wrapped_share, party_id, fusion_conn_idx) {
+    n_chars <- nchar(wrapped_share)
+    n_chunks <- ceiling(n_chars / chunk_size)
+    for (ch in seq_len(n_chunks)) {
+      start <- (ch - 1) * chunk_size + 1
+      end <- min(ch * chunk_size, n_chars)
+      DSI::datashield.aggregate(
+        conns = datasources[fusion_conn_idx],
+        expr = call("mheStoreWrappedShareDS",
+                    party_id = as.integer(party_id),
+                    share_data = substr(wrapped_share, start, end))
+      )
     }
-
-    # Check dsVertClient package
-    bin_path <- system.file("bin", subdir, binary_name, package = "dsVertClient")
-    if (bin_path != "" && file.exists(bin_path)) return(bin_path)
-
-    # Check dsVert package
-    bin_path <- system.file("bin", subdir, binary_name, package = "dsVert")
-    if (bin_path != "" && file.exists(bin_path)) return(bin_path)
-
-    # Check environment variable
-    env_path <- Sys.getenv("DSVERT_MHE_TOOL")
-    if (env_path != "" && file.exists(env_path)) return(env_path)
-
-    stop("mhe-tool binary not found for platform ", subdir, ". ",
-         "Install dsVert or set DSVERT_MHE_TOOL env var.", call. = FALSE)
-  }
-
-  # Fuse partial decryption shares on the client (no server involvement)
-  .mheFuseLocal <- function(ciphertext, decryption_shares, log_n, log_scale, num_slots = 0) {
-    bin_path <- .findMheTool()
-
-    ct_std <- .b64url_to_b64(ciphertext)
-    shares_std <- sapply(decryption_shares, .b64url_to_b64, USE.NAMES = FALSE)
-
-    input <- list(
-      ciphertext = ct_std,
-      decryption_shares = as.list(shares_std),
-      num_slots = as.integer(num_slots),
-      log_n = as.integer(log_n),
-      log_scale = as.integer(log_scale)
-    )
-
-    input_file <- tempfile(fileext = ".json")
-    output_file <- tempfile(fileext = ".json")
-    on.exit({
-      if (file.exists(input_file)) unlink(input_file)
-      if (file.exists(output_file)) unlink(output_file)
-    })
-    jsonlite::write_json(input, input_file, auto_unbox = TRUE)
-
-    status <- system2(bin_path, "mhe-fuse", stdin = input_file,
-                      stdout = output_file, stderr = output_file)
-
-    output <- jsonlite::read_json(output_file, simplifyVector = TRUE)
-    if (!is.null(output$error) && nzchar(output$error)) {
-      stop("mhe-fuse error: ", output$error, call. = FALSE)
-    }
-
-    output$value
   }
 
   # ===========================================================================
@@ -275,8 +237,10 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   # Other parties initialize with CRP and shared GKG seed
   pk_shares <- list()
   gkg_shares <- list()
+  transport_pks <- list()  # Collect transport public keys for share-wrapping
   pk_shares[[first_server]] <- result0$public_key_share
   gkg_shares[[first_server]] <- result0$galois_key_shares
+  transport_pks[[first_server]] <- result0$transport_pk
 
   for (i in 2:length(server_list)) {
     server <- server_list[i]
@@ -294,6 +258,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     if (is.list(result)) result <- result[[1]]
     pk_shares[[server]] <- result$public_key_share
     gkg_shares[[server]] <- result$galois_key_shares
+    transport_pks[[server]] <- result$transport_pk
     message("  ", server, ": Party ", i - 1, " initialized")
   }
 
@@ -337,6 +302,26 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     message("  CPK stored on ", server)
   }
 
+  # Distribute transport keys for share-wrapping protocol.
+  # The "fusion" key identifies the fusion server (Party 0) whose transport PK
+  # is used by non-fusion servers to wrap their partial decryption shares.
+  fusion_server <- first_server
+  fusion_conn_idx <- which(server_names == fusion_server)
+
+  for (server in server_list) {
+    conn_idx <- which(server_names == server)
+    tk_map <- list(fusion = transport_pks[[fusion_server]])
+    # Also store all server PKs (needed for GLM secure routing)
+    for (s in server_list) {
+      tk_map[[s]] <- transport_pks[[s]]
+    }
+    DSI::datashield.aggregate(
+      conns = datasources[conn_idx],
+      expr = call("mheStoreTransportKeysDS", transport_keys = tk_map)
+    )
+  }
+  message("  Transport keys distributed for share-wrapping")
+
   # ===========================================================================
   # Phase 3: Encrypt data on each server
   # ===========================================================================
@@ -375,25 +360,20 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   }
 
   # ===========================================================================
-  # Phase 5: Cross-server correlations with THRESHOLD DECRYPTION
+  # Phase 5: Cross-server correlations with SHARE-WRAPPED THRESHOLD DECRYPTION
   # ===========================================================================
   # This is the core privacy-preserving computation. For each server pair
   # (A, B), server A computes z_A * Enc(z_B) homomorphically -- the result
-  # is still encrypted. To recover the inner product (correlation), we need
-  # threshold decryption: each of the K servers computes a partial decryption
-  # share using its secret key, and the client fuses all K shares to recover
-  # the plaintext. No single server or the client alone can decrypt.
-  #
-  # The loop below processes each cross-correlation element individually:
-  # for each (i,j) pair, it collects K partial decryption shares and fuses
-  # them. This is the dominant cost of the protocol.
-  message("\n[Phase 5] Computing cross-server correlations (threshold decryption)...")
+  # is still encrypted. To recover the inner product, we use share-wrapped
+  # threshold decryption: each non-fusion server computes a partial decryption
+  # share, wraps it under the fusion server's transport PK, and the client
+  # relays the opaque wrapped shares to the fusion server. The fusion server
+  # unwraps all shares, computes its own share, and fuses them to recover
+  # the plaintext. The client NEVER sees raw shares or unsanitized plaintext.
+  message("\n[Phase 5] Computing cross-server correlations (share-wrapped threshold decryption)...")
 
   cross_cors <- list()
-  # CKKS ciphertexts are 50-200KB as base64url strings. DataSHIELD passes
-  # function arguments through R's parser, which has limits on string length.
-  # Chunking at 10KB per chunk stays well within parser limits on all Opal versions.
-  chunk_size <- 10000
+  non_fusion_servers <- setdiff(server_list, fusion_server)
 
   for (i in 1:(length(server_list) - 1)) {
     for (j in (i + 1):length(server_list)) {
@@ -445,8 +425,6 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
       message("    Encrypted cross-product: ", n_A, "x", n_B)
 
       # Protocol Firewall: authorize ciphertexts on non-producing servers.
-      # server_A produced the ciphertexts (already registered locally).
-      # Other servers need batch authorization via ct_hashes.
       ct_hashes <- enc_result$ct_hashes
       if (!is.null(ct_hashes) && length(ct_hashes) > 0) {
         for (server in server_list) {
@@ -460,7 +438,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
         }
       }
 
-      # For each encrypted result, do threshold decryption
+      # For each encrypted result, do share-wrapped threshold decryption
       result_matrix <- matrix(NA, nrow = n_A, ncol = n_B)
 
       for (row_i in 1:n_A) {
@@ -475,44 +453,46 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
             ct <- er[[(row_i - 1) * n_B + col_j]]
           }
 
-          # Threshold decryption: collect partial shares from ALL K servers.
-          # Each server computes share_k = PartialDecrypt(ct, sk_k).
-          # Individually, each share is indistinguishable from random noise.
-          # Only when ALL K shares are fused can the plaintext be recovered.
-          partial_shares <- list()
-          for (server in server_list) {
-            conn_idx <- which(server_names == server)
+          # Step 1: Collect wrapped shares from non-fusion servers.
+          # Each non-fusion server computes its partial decryption share and
+          # wraps it under the fusion server's transport PK. The client
+          # receives only opaque blobs it cannot read.
+          for (nf_server in non_fusion_servers) {
+            nf_conn <- which(server_names == nf_server)
+            nf_party_id <- which(server_list == nf_server) - 1
 
-            # Send ciphertext in chunks
-            ct_str <- ct
-            n_chars_ct <- nchar(ct_str)
-            n_ct_chunks <- ceiling(n_chars_ct / chunk_size)
+            # Send CT chunks to non-fusion server
+            n_ct_chunks <- .sendCTChunks(ct, nf_conn)
 
-            for (ch in seq_len(n_ct_chunks)) {
-              start <- (ch - 1) * chunk_size + 1
-              end <- min(ch * chunk_size, n_chars_ct)
-              chunk_str <- substr(ct_str, start, end)
-              store_expr <- call("mheStoreCTChunkDS",
-                                 chunk_index = as.integer(ch),
-                                 chunk = chunk_str)
-              DSI::datashield.aggregate(conns = datasources[conn_idx], expr = store_expr)
-            }
-
-            # Compute partial decryption
-            call_expr <- call("mhePartialDecryptDS",
-                              n_chunks = as.integer(n_ct_chunks))
-            pd <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
+            # Compute wrapped partial decryption
+            pd <- DSI::datashield.aggregate(
+              conns = datasources[nf_conn],
+              expr = call("mhePartialDecryptWrappedDS",
+                          n_chunks = as.integer(n_ct_chunks))
+            )
             if (is.list(pd)) pd <- pd[[1]]
-            partial_shares[[server]] <- pd$decryption_share
+
+            # Relay wrapped share to fusion server (in chunks)
+            .sendWrappedShare(pd$wrapped_share, nf_party_id, fusion_conn_idx)
           }
 
-          # Client-side fusion: combine all K partial shares to recover the
-          # plaintext inner product. This calls the mhe-tool binary's mhe-fuse
-          # command, which performs the CKKS-specific threshold decryption algebra.
-          value <- .mheFuseLocal(ct, unlist(partial_shares, use.names = FALSE),
-                                 log_n = log_n, log_scale = log_scale,
-                                 num_slots = n_obs)
-          result_matrix[row_i, col_j] <- value
+          # Step 2: Send CT to fusion server and fuse.
+          # The fusion server unwraps all shares, computes its own partial
+          # decrypt share (with noise smudging), aggregates, and applies
+          # KeySwitch + DecodePublic(logprec=32). Returns only the sanitized
+          # scalar value.
+          n_ct_chunks <- .sendCTChunks(ct, fusion_conn_idx)
+
+          fuse_result <- DSI::datashield.aggregate(
+            conns = datasources[fusion_conn_idx],
+            expr = call("mheFuseServerDS",
+                        n_parties = as.integer(length(server_list)),
+                        n_ct_chunks = as.integer(n_ct_chunks),
+                        num_slots = as.integer(n_obs))
+          )
+          if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
+
+          result_matrix[row_i, col_j] <- fuse_result$value
         }
       }
 
@@ -524,7 +504,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
       colnames(cross_cor) <- variables[[server_B]]
       cross_cors[[paste(server_A, server_B, sep = "_")]] <- cross_cor
 
-      message("    Threshold decryption complete")
+      message("    Threshold decryption complete (server-side fusion)")
     }
   }
 

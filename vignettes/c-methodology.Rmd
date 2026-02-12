@@ -78,8 +78,8 @@ specific server-side function:
 | 2 | Key Combination | `mheCombineDS` | Aggregate public key shares into a Collective Public Key (CPK) and Galois keys. |
 | 3 | Encryption | `mheEncryptLocalDS` | Z-score columns, encrypt each under the CPK. |
 | 4 | Local Correlation | `localCorDS` | Compute plaintext $\text{cor}(X_k)$ for within-server blocks. |
-| 5 | Cross-Products | `mheCrossProductEncDS` + `mhePartialDecryptDS` | Plaintext $\times$ ciphertext multiplication, then threshold decrypt. |
-| 6 | Assembly | Client `ds.vertCor` | Fuse all $K$ partial shares, divide by $(n - 1)$ to obtain $r_{ij}$. |
+| 5 | Cross-Products | `mheCrossProductEncDS` + share-wrapped threshold decrypt | Plaintext $\times$ ciphertext multiplication, then server-side fusion. |
+| 6 | Assembly | Client `ds.vertCor` | Collect fused scalars, divide by $(n - 1)$ to obtain $r_{ij}$. |
 
 **Phase 1.** Each party $k$ independently generates a secret key share $sk_k$.
 Party 0 additionally generates a Common Reference Polynomial $a$, a uniformly
@@ -129,14 +129,27 @@ its plaintext column $z_{A,i}$ by the encrypted column from institution $B$:
 
 $$z_{A,i} \cdot \text{Enc}(z_{B,j}) = \text{Enc}(z_{A,i} \odot z_{B,j})$$
 
-The encrypted product is then threshold-decrypted: each party $k$ computes a
-partial decryption share $\text{share}_k = -sk_k \cdot ct[1] + e_k'$ (where
-$e_k'$ is a smudging noise term). The client fuses all shares:
+The encrypted product is then threshold-decrypted using the **share-wrapping**
+protocol: each non-fusion party $k$ computes a partial decryption share
+$\text{share}_k = -sk_k \cdot ct[1] + e_k'$ (where $e_k'$ is a smudging noise
+term with $\sigma = 128$ bits), then transport-encrypts (wraps) the share under
+the fusion server's X25519 public key. The client relays these opaque blobs to
+the fusion server (party 0), which:
+
+1. Unwraps each share using its X25519 secret key
+2. Computes its own partial decryption share
+3. Aggregates all shares via KeySwitch + `DecodePublic(logprec=32)`
+4. Returns only the sanitized scalar to the client
+
+The client **never** sees raw partial decryption shares or unsanitized plaintext.
+The mathematical result is equivalent to:
 
 $$m \approx ct[0] + \sum_{k=1}^{K} \text{share}_k$$
 
-**Phase 6.** The client sums the first $n$ slots of the recovered plaintext to
-obtain the inner product, then divides by $(n - 1)$:
+but the fusion happens entirely server-side.
+
+**Phase 6.** The client collects the fused scalars for each cross-product,
+sums the first $n$ slots, and divides by $(n - 1)$:
 
 $$r_{ij} = \frac{\sum_{l=1}^{n} (z_{A,i} \odot z_{B,j})_l}{n - 1}$$
 
@@ -205,9 +218,12 @@ be decrypted via threshold decryption, rather than the full $n$-dimensional
 residual vector. Since typically $p_k \ll n$, this dramatically reduces the
 information revealed through decryption.
 
-### Encrypted Protocol
+### Encrypted Protocol with Secure Routing
 
-The encrypted-label BCD-IRLS protocol proceeds as follows:
+The encrypted-label BCD-IRLS protocol uses **secure routing** to ensure that
+individual-level vectors ($\eta$, $\mu$, $w$, $v$) are never visible to the
+client. The label server acts as **coordinator**, and the client acts as a
+**blind relay** for transport-encrypted blobs.
 
 ```{r encrypted-protocol}
 model <- ds.vertGLM(
@@ -221,22 +237,44 @@ model <- ds.vertGLM(
 )
 ```
 
-1. The label server encrypts $y$ under the CPK, producing $ct_y$. This
-   ciphertext is distributed to all non-label servers.
-2. $ct_y$ is distributed to non-label servers via a chunked transfer protocol.
-3. A non-label server $k$ computes: $ct_u = ct_y - \text{encode}(\mu)$, then
-   $g_k[j] = \text{InnerSum}(\text{encode}(x_j) \cdot ct_u)$ for each feature
-   $j$. The InnerSum operation uses Galois rotations to sum all $n$ SIMD slots
-   into a single scalar, collapsing $n$ individual-level products into one
-   aggregate inside the encrypted domain.
-4. Threshold decrypt $g_k$ (length $p_k$). Each of the $K$ servers provides a
-   partial decryption share; the client fuses all shares to recover the
-   plaintext gradient.
-5. Server $k$ solves:
-   $\beta_k^{\text{new}} = (X_k^T W X_k + \lambda I)^{-1} (X_k^T W X_k \, \beta_k + g_k)$
+**Setup.** The label server encrypts $y$ under the CPK, producing $ct_y$, which
+is distributed to all non-label servers via a chunked transfer protocol. Each
+server also generates an X25519 transport keypair; public keys are exchanged.
 
-The label server uses standard IRLS with plaintext $y$; no encryption is needed
-for its own block.
+**Per BCD iteration:**
+
+1. **Coordinator step** (label server, `glmCoordinatorStepDS`): receives
+   transport-encrypted $\eta_k$ blobs from non-label servers (zero on first
+   iteration), decrypts them, sums to get $\eta_{\text{other}}$, runs IRLS with
+   plaintext $y$ to compute $\eta_{\text{total}}$, $\mu$, $w$, $v$. Then
+   encrypts $(\mu, w, v)$ under each non-label server's X25519 transport PK.
+   Returns: $\beta_{\text{label}}$ (safe) and opaque encrypted blobs.
+
+2. **Gradient** (non-label server $k$, `glmSecureGradientDS`): decrypts its
+   $(\mu, w, v)$ blob locally, then computes:
+   $ct_u = ct_y - \text{encode}(\mu)$, then
+   $g_k[j] = \text{InnerSum}(\text{encode}(x_j) \cdot ct_u)$.
+   The InnerSum uses Galois rotations to sum all $n$ SIMD slots into a single
+   scalar, collapsing $n$ individual-level products into one aggregate inside
+   the encrypted domain.
+
+3. **Threshold decrypt** $g_k$ (length $p_k$) using **share-wrapped** fusion:
+   each server wraps its partial decryption share under the fusion server's
+   transport PK. The fusion server unwraps, aggregates, and returns only the
+   $p_k$-length plaintext gradient. The client never sees raw shares.
+
+4. **Block solve** (non-label server $k$, `glmSecureBlockSolveDS`): decrypts
+   $(\mu, w, v)$ again for IRLS weights, solves:
+   $\beta_k^{\text{new}} = (X_k^T W X_k + \lambda I)^{-1} (X_k^T W X_k \, \beta_k + g_k)$,
+   then encrypts $\eta_k = X_k \beta_k$ under the coordinator's transport PK.
+   Returns: $\beta_k$ (safe) and opaque encrypted $\eta_k$.
+
+**The client only handles:** coefficient vectors $\beta_k$ (length $p_k$, safe
+aggregate statistics) and opaque transport-encrypted blobs it cannot read.
+
+**After convergence:** Deviance is computed server-side by the coordinator
+(`glmSecureDevianceDS`), which has local $y$ and receives the final encrypted
+$\eta_k$ blobs. The client never sees the $n$-length $\eta_{\text{total}}$.
 
 ### Feature Standardization
 
@@ -273,9 +311,9 @@ the need to encode and multiply by a separate $v$ vector.
 
 | Entity | Learns | Does NOT Learn |
 |--------|--------|----------------|
-| Client | Final coefficients, deviance, AIC | Individual $y$ values, row-level residuals |
-| Label server | Own data + $y$, $\eta_{\text{other}}$ during updates | Other servers' raw features |
-| Non-label server $k$ | Own $X_k$, $\mu$ and $w$ (derived from $\eta$) | $y$ (sees only $ct_y$; needs all $K$ shares to decrypt) |
+| Client | Final coefficients ($p_k$-length), deviance, AIC | Individual $y$ values, $\eta$, $\mu$, $w$, $v$ (all transport-encrypted), raw partial decryption shares (wrapped) |
+| Label server (coordinator) | Own data + $y$, $\eta_{\text{other}}$ during updates | Other servers' raw features $X_k$ |
+| Non-label server $k$ | Own $X_k$, $\mu$ and $w$ (decrypted from coordinator blob) | $y$ (sees only $ct_y$; needs all $K$ shares to decrypt) |
 
 ### Deviance
 

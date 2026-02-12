@@ -1,7 +1,7 @@
 Package: dsVertClient
 Type: Package
 Title: DataSHIELD Client Functions for Vertically Partitioned Data
-Version: 1.4.0
+Version: 1.6.0
 Authors@R: c(
     person("David", "Sarrat González", email = "david.sarrat@isglobal.org",
            role = c("aut", "cre")),
