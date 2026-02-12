@@ -61,7 +61,8 @@ articles:
       - a-getting-started
       - b-statistical-analysis
       - c-methodology
-      - d-security-validation
+      - d-validation
+      - e-security
 
 authors:
   David Sarrat González:
