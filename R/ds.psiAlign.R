@@ -108,6 +108,9 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   # ==================================================================
   # Phase 1: Reference server masks its IDs
   # ==================================================================
+  # The ref server generates a random P-256 scalar α and computes
+  # α·H(id) for each ID. These masked points are returned to the client.
+  # The scalar α stays on the server (NEVER transmitted).
   cat("[Phase 1] Reference server masking IDs...\n")
   ref_result <- DSI::datashield.aggregate(
     conns = ref_conn,
@@ -121,7 +124,10 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     target_conn <- datasources[target_name]
 
     # ==================================================================
-    # Phases 2+3: Send ref masked points to target, get target masked back
+    # Phases 2+3: Client relays ref masked points to target server.
+    # Target generates its own scalar β, double-masks ref points
+    # (β·(α·H(id)) — stored locally for matching), and returns its own
+    # masked IDs (β·H(id)) to the client.
     # ==================================================================
     cat(sprintf("[Phase 2-3] %s: processing...\n", target_name))
     target_result <- DSI::datashield.aggregate(
@@ -133,7 +139,10 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     cat(sprintf("  %s: %d IDs masked\n", target_name, target_result$n))
 
     # ==================================================================
-    # Phases 4+5: Send target masked to ref, get double-masked back
+    # Phases 4+5: Client relays target's masked IDs to the ref server.
+    # Ref server double-masks them: α·(β·H(id)). By ECDH commutativity,
+    # α·β·H(id) = β·α·H(id), so the target can match these against its
+    # stored double-masked ref points to find common IDs.
     # ==================================================================
     cat(sprintf("[Phase 4-5] %s: double-masking via %s...\n",
                 target_name, ref_server))
@@ -144,7 +153,9 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     dm_result <- dm_result[[1]]
 
     # ==================================================================
-    # Phases 6+7: Send double-masked to target, match & align
+    # Phases 6+7: Client relays double-masked own points to target.
+    # Target matches them against stored double-masked ref points,
+    # identifies common IDs, and reorders its data to match ref order.
     # ==================================================================
     cat(sprintf("[Phase 6-7] %s: matching and aligning...\n", target_name))
     DSI::datashield.assign(
@@ -168,6 +179,11 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   # ==================================================================
   # Phase 8: Multi-server intersection
   # ==================================================================
+  # After Phases 2-7, each target has aligned to the reference, but
+  # different target servers may have matched different subsets of ref IDs
+  # (e.g. server2 has patients 1-40, server3 has patients 10-50).
+  # We intersect all matched index sets to keep only records present
+  # on ALL servers. This ensures the final aligned data is consistent.
   cat("[Phase 8] Computing multi-server intersection...\n")
   all_indices <- list()
   for (name in server_names) {

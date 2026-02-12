@@ -67,21 +67,49 @@
 <p>This package provides user-friendly functions for:</p>
 <ul>
 <li>
-<strong>ID Validation</strong>: Check identifier format consistency before alignment</li>
-<li>
-<strong>Record Alignment</strong>: Align records across servers using secure hashing</li>
+<strong>ECDH-PSI Record Alignment</strong>: Privacy-preserving record matching using P-256 elliptic curves (no dictionary attacks possible)</li>
 <li>
 <strong>Correlation Analysis</strong>: Compute correlation matrices using <strong>Multiparty Homomorphic Encryption (MHE)</strong> with threshold decryption</li>
 <li>
 <strong>Principal Component Analysis</strong>: Perform PCA from the MHE-based correlation matrix</li>
 <li>
-<strong>Generalized Linear Models</strong>: Fit GLMs using Block Coordinate Descent (5 families)</li>
+<strong>Generalized Linear Models</strong>: Fit GLMs using Block Coordinate Descent with encrypted labels (5 families)</li>
 </ul>
 </div>
 <div class="section level2">
 <h2 id="security-guarantees">Security Guarantees<a class="anchor" aria-label="anchor" href="#security-guarantees"></a>
 </h2>
-<p>The MHE-based correlation uses the CKKS homomorphic encryption scheme with <strong>threshold decryption</strong>:</p>
+<div class="section level3">
+<h3 id="record-alignment-ecdh-psi">Record Alignment (ECDH-PSI)<a class="anchor" aria-label="anchor" href="#record-alignment-ecdh-psi"></a>
+</h3>
+<table class="table">
+<colgroup>
+<col width="37%">
+<col width="62%">
+</colgroup>
+<thead><tr>
+<th>Property</th>
+<th>What it prevents</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><strong>Dictionary attack resistance</strong></td>
+<td>Unlike SHA-256 hashing, the client CANNOT reverse-engineer patient IDs from the masked curve points (requires server’s secret scalar)</td>
+</tr>
+<tr>
+<td><strong>Scalar confidentiality</strong></td>
+<td>Each server’s P-256 random scalar stays on-server</td>
+</tr>
+<tr>
+<td><strong>Unlinkability (DDH)</strong></td>
+<td>The client CANNOT link single-masked points across servers</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section level3">
+<h3 id="statistical-analysis-mhe-ckks">Statistical Analysis (MHE-CKKS)<a class="anchor" aria-label="anchor" href="#statistical-analysis-mhe-ckks"></a>
+</h3>
 <table class="table">
 <colgroup>
 <col width="37%">
@@ -94,7 +122,7 @@
 <tbody>
 <tr>
 <td><strong>Client privacy</strong></td>
-<td>The researcher CANNOT decrypt any individual data. Only aggregate statistics (correlation coefficients) are revealed after all servers cooperate.</td>
+<td>The researcher CANNOT decrypt any individual data. Only aggregate statistics (correlations, coefficients) are revealed after all servers cooperate.</td>
 </tr>
 <tr>
 <td><strong>Server privacy</strong></td>
@@ -107,12 +135,13 @@
 </tbody>
 </table>
 </div>
+</div>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
 </h2>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Install from GitHub (install dsVert first on servers)</span></span>
-<span><span class="fu">devtools</span><span class="fu">::</span><span class="fu"><a href="https://remotes.r-lib.org/reference/install_github.html" class="external-link">install_github</a></span><span class="op">(</span><span class="st">"isglobal-brge/dsVertClient"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">devtools</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/remotes/man/install_github.html" class="external-link">install_github</a></span><span class="op">(</span><span class="st">"isglobal-brge/dsVertClient"</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="quick-start">Quick Start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
@@ -124,32 +153,28 @@
 <span><span class="co"># Connect to Opal/DataSHIELD servers</span></span>
 <span><span class="va">conns</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.login.html" class="external-link">datashield.login</a></span><span class="op">(</span><span class="va">logindata</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 1. Validate ID format consistency</span></span>
-<span><span class="va">validation</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.validateIdFormat.html">ds.validateIdFormat</a></span><span class="op">(</span><span class="st">"D"</span>, <span class="st">"patient_id"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">validation</span><span class="op">)</span></span>
+<span><span class="co"># 1. Align records across servers using ECDH-PSI</span></span>
+<span><span class="fu"><a href="reference/ds.psiAlign.html">ds.psiAlign</a></span><span class="op">(</span><span class="st">"D"</span>, <span class="st">"patient_id"</span>, <span class="st">"D_aligned"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 2. Align records across servers</span></span>
-<span><span class="va">ref_hashes</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.hashId.html">ds.hashId</a></span><span class="op">(</span><span class="st">"D"</span>, <span class="st">"patient_id"</span>, datasource <span class="op">=</span> <span class="va">conns</span><span class="op">[</span><span class="st">"server1"</span><span class="op">]</span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/ds.alignRecords.html">ds.alignRecords</a></span><span class="op">(</span><span class="st">"D"</span>, <span class="st">"patient_id"</span>, <span class="va">ref_hashes</span><span class="op">$</span><span class="va">hashes</span>, <span class="st">"D_aligned"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># 3. Define which variables are on which server</span></span>
+<span><span class="co"># 2. Define which variables are on which server</span></span>
 <span><span class="va">variables</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
 <span>  hospital_A <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span><span class="op">)</span>,</span>
 <span>  hospital_B <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glucose"</span>, <span class="st">"systolic_bp"</span><span class="op">)</span>,</span>
 <span>  hospital_C <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"cholesterol"</span>, <span class="st">"hdl"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 4. Compute correlation matrix (MHE with threshold decryption)</span></span>
+<span><span class="co"># 3. Compute correlation matrix (MHE with threshold decryption)</span></span>
 <span><span class="va">cor_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertCor.html">ds.vertCor</a></span><span class="op">(</span><span class="st">"D_aligned"</span>, <span class="va">variables</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">cor_result</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 5. Perform PCA</span></span>
+<span><span class="co"># 4. Perform PCA</span></span>
 <span><span class="va">pca</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertPCA.html">ds.vertPCA</a></span><span class="op">(</span><span class="st">"D_aligned"</span>, <span class="va">variables</span>, n_components <span class="op">=</span> <span class="fl">3</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">pca</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 6. Fit a GLM</span></span>
+<span><span class="co"># 5. Fit a GLM</span></span>
 <span><span class="va">model</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span><span class="st">"D_aligned"</span>, <span class="st">"outcome"</span>, <span class="va">variables</span>,</span>
-<span>                    family <span class="op">=</span> <span class="st">"gaussian"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span>                    y_server <span class="op">=</span> <span class="st">"hospital_B"</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
+<span>                    datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">model</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Disconnect</span></span>
@@ -169,16 +194,8 @@
 </tr></thead>
 <tbody>
 <tr>
-<td><code>ds.validateIdFormat</code></td>
-<td>Validate identifier format consistency across servers</td>
-</tr>
-<tr>
-<td><code>ds.hashId</code></td>
-<td>Get hashed identifiers from a server</td>
-</tr>
-<tr>
-<td><code>ds.alignRecords</code></td>
-<td>Align records across servers to match hashes</td>
+<td><code>ds.psiAlign</code></td>
+<td>Align records across servers using ECDH-PSI (recommended)</td>
 </tr>
 <tr>
 <td><code>ds.vertCor</code></td>
@@ -190,20 +207,32 @@
 </tr>
 <tr>
 <td><code>ds.vertGLM</code></td>
-<td>Fit Generalized Linear Models via Block Coordinate Descent</td>
+<td>Fit Generalized Linear Models via encrypted-label BCD</td>
+</tr>
+<tr>
+<td><code>ds.validateIdFormat</code></td>
+<td>Validate identifier format consistency across servers</td>
+</tr>
+<tr>
+<td><code>ds.hashId</code></td>
+<td>Get hashed identifiers (deprecated, use <code>ds.psiAlign</code>)</td>
+</tr>
+<tr>
+<td><code>ds.alignRecords</code></td>
+<td>Hash-based alignment (deprecated, use <code>ds.psiAlign</code>)</td>
 </tr>
 </tbody>
 </table>
 </div>
 <div class="section level2">
-<h2 id="workflow-validate--align--analyze">Workflow: Validate → Align → Analyze<a class="anchor" aria-label="anchor" href="#workflow-validate--align--analyze"></a>
+<h2 id="workflow-align--analyze">Workflow: Align → Analyze<a class="anchor" aria-label="anchor" href="#workflow-align--analyze"></a>
 </h2>
-<pre><code> ┌───────────┐   ┌──────────────┐   ┌───────────────────────────┐
- │ Validate  │──▶│    Align     │──▶│        Analyze            │
- │ ID format │   │   records    │   │  ds.vertCor (MHE)         │
- │           │   │ (hash-based) │   │  ds.vertPCA               │
- │           │   │              │   │  ds.vertGLM (BCD)         │
- └───────────┘   └──────────────┘   └───────────────────────────┘</code></pre>
+<pre><code> ┌──────────────────┐   ┌───────────────────────────┐
+ │  ds.psiAlign     │──▶│        Analyze            │
+ │  (ECDH-PSI)      │   │  ds.vertCor (MHE)         │
+ │                   │   │  ds.vertPCA               │
+ │                   │   │  ds.vertGLM (BCD + MHE)   │
+ └──────────────────┘   └───────────────────────────┘</code></pre>
 </div>
 <div class="section level2">
 <h2 id="mhe-correlation-how-it-works">MHE Correlation: How It Works<a class="anchor" aria-label="anchor" href="#mhe-correlation-how-it-works"></a>
@@ -277,13 +306,15 @@
 </h2>
 <ul>
 <li>
-<a href="https://isglobal-brge.github.io/dsVertClient/articles/a-getting-started.html">Getting Started</a>: Introduction and record alignment</li>
+<a href="https://isglobal-brge.github.io/dsVertClient/articles/a-getting-started.html">Getting Started</a>: Setup, PSI record alignment, first analysis</li>
 <li>
 <a href="https://isglobal-brge.github.io/dsVertClient/articles/b-statistical-analysis.html">Statistical Analysis</a>: Correlation, PCA, and GLMs</li>
 <li>
-<a href="https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.html">Methodology</a>: Mathematical details</li>
+<a href="https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.html">Methodology</a>: MHE protocol, BCD-IRLS, ECDH-PSI details</li>
 <li>
-<a href="https://isglobal-brge.github.io/dsVertClient/articles/d-security-validation.html">Security Validation</a>: MHE security analysis and local vs Opal comparison</li>
+<a href="https://isglobal-brge.github.io/dsVertClient/articles/d-validation.html">Validation</a>: Numerical comparison against local R</li>
+<li>
+<a href="https://isglobal-brge.github.io/dsVertClient/articles/e-security.html">Security Model</a>: Threat model, MHE guarantees, PSI security</li>
 </ul>
 </div>
 <div class="section level2">
@@ -299,6 +330,7 @@
 <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
 </h2>
 <ul>
+<li>De Cristofaro, E. &amp; Tsudik, G. (2010). “Practical Private Set Intersection Protocols with Linear Complexity”. <em>FC 2010</em>.</li>
 <li>Mouchet, C. et al. (2021). “Multiparty Homomorphic Encryption from Ring-Learning-With-Errors”. <em>Proceedings on Privacy Enhancing Technologies (PETS)</em>.</li>
 <li>Cheon, J.H. et al. (2017). “Homomorphic Encryption for Arithmetic of Approximate Numbers”. <em>ASIACRYPT 2017</em>.</li>
 <li>van Kesteren, E.J. et al. (2019). “Privacy-preserving generalized linear models using distributed block coordinate descent”. arXiv:1911.03183.</li>

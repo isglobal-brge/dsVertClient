@@ -1,5 +1,7 @@
-#' @title Align Records Across Servers
-#' @description Client-side function that aligns records on DataSHIELD servers
+#' @title Align Records Across Servers (Deprecated)
+#' @description \strong{Deprecated}: Use \code{\link{ds.psiAlign}} instead.
+#'
+#'   Client-side function that aligns records on DataSHIELD servers
 #'   to match a reference set of hashed identifiers. This ensures observations
 #'   are properly matched across vertically partitioned data.
 #'
@@ -21,6 +23,12 @@
 #'   }
 #'
 #' @details
+#' \strong{Deprecated}: This function uses SHA-256 hash-based alignment.
+#' The client receives raw SHA-256 hashes of patient identifiers, which are
+#' vulnerable to dictionary attacks when IDs are predictable. Use
+#' \code{\link{ds.psiAlign}} instead, which provides ECDH-PSI alignment where
+#' the client only sees opaque elliptic curve points.
+#'
 #' This function performs record alignment for vertically partitioned data:
 #'
 #' \enumerate{
@@ -41,7 +49,8 @@
 #'   \item Only observations present in all partitions
 #' }
 #'
-#' @seealso \code{\link{ds.hashId}} for obtaining reference hashes
+#' @seealso \code{\link{ds.psiAlign}} for the recommended replacement,
+#'   \code{\link{ds.hashId}} for obtaining reference hashes (legacy)
 #'
 #' @examples
 #' \dontrun{

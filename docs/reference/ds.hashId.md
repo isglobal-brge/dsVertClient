@@ -1,4 +1,8 @@
-# Hash Identifier Column
+# Hash Identifier Column (Deprecated)
+
+**Deprecated**: Use
+[`ds.psiAlign`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md)
+instead.
 
 Client-side function that retrieves hashed identifiers from a DataSHIELD
 server. Used as the first step in record matching for vertically
@@ -39,6 +43,14 @@ A list containing:
 
 ## Details
 
+**Deprecated**: This function uses SHA-256 hashing, which is vulnerable
+to dictionary attacks when identifiers are predictable (e.g. sequential
+patient IDs). Use
+[`ds.psiAlign`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md)
+instead, which provides ECDH-PSI alignment with stronger privacy
+guarantees: the client only sees opaque elliptic curve points that
+cannot be reversed to identifiers.
+
 This function is typically called on the "reference" server in a
 vertical partitioning scenario. The returned hashes are then passed to
 [`ds.alignRecords`](https://isglobal-brge.github.io/dsVertClient/reference/ds.alignRecords.md)
@@ -46,8 +58,10 @@ on other servers to align the data.
 
 ## See also
 
+[`ds.psiAlign`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md)
+for the recommended replacement,
 [`ds.alignRecords`](https://isglobal-brge.github.io/dsVertClient/reference/ds.alignRecords.md)
-for aligning records across servers
+for legacy hash-based alignment
 
 ## Examples
 

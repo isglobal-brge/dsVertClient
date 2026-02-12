@@ -11,11 +11,12 @@ Authors@R: c(
            role = "aut")
   )
 Description: Client-side DataSHIELD functions for privacy-preserving analysis
-    of vertically partitioned federated data. Provides user-facing functions
-    for record alignment, correlation analysis via Multiparty Homomorphic
-    Encryption (MHE) with threshold decryption, PCA, and Generalized Linear
-    Models across multiple data sources. Works with the companion dsVert
-    server package.
+    of vertically partitioned federated data. Provides ECDH-PSI record
+    alignment (P-256 elliptic curve Private Set Intersection), correlation
+    analysis via Multiparty Homomorphic Encryption (MHE) with threshold
+    decryption, PCA, and Generalized Linear Models with encrypted labels
+    across multiple data sources. Works with the companion dsVert server
+    package.
 License: MIT + file LICENSE
 URL: https://github.com/isglobal-brge/dsVertClient,
     https://isglobal-brge.github.io/dsVertClient/

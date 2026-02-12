@@ -133,18 +133,23 @@ ds.vertPCA <- function(data_name = NULL, variables = NULL, n_components = NULL,
     var_names <- cor_result$var_names
   }
 
-  # Step 2: Eigen decomposition
+  # Step 2: Eigen decomposition of the correlation matrix.
+  # PCA on standardized data = eigen decomposition of correlation matrix R.
+  # symmetric = TRUE tells eigen() that R is real symmetric, enabling a more
+  # numerically stable and efficient algorithm (uses LAPACK dsyev).
   message("Performing PCA via eigen decomposition...")
   eigen_result <- eigen(R, symmetric = TRUE)
 
-  # Extract components
-  eigenvalues <- eigen_result$values
-  loadings <- eigen_result$vectors
+  eigenvalues <- eigen_result$values   # variance captured by each PC
+  loadings <- eigen_result$vectors     # variable contributions to each PC
 
-  # Handle numerical issues: set small negative eigenvalues to 0
+  # CKKS approximation noise can produce tiny negative eigenvalues (e.g. -1e-16)
+  # for what should be a positive semi-definite matrix. Clamp to 0 to avoid
+  # reporting negative "variance explained".
   eigenvalues[eigenvalues < 0] <- 0
 
-  # Variance explained
+  # For a correlation matrix, total_var = trace(R) = number of variables.
+  # Each eigenvalue represents the variance captured by that PC.
   total_var <- sum(eigenvalues)
   variance_pct <- 100 * eigenvalues / total_var
   cumulative_pct <- cumsum(variance_pct)
