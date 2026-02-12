@@ -35,6 +35,8 @@
 #' @importFrom DSI datashield.aggregate datashield.connections_find
 #' @export
 ds.hashId <- function(data_name, id_col, algo = "sha256", datasource = NULL) {
+  .Deprecated("ds.psiAlign",
+    msg = "ds.hashId() is deprecated. Use ds.psiAlign() for ECDH-PSI alignment (stronger privacy).")
   # Validate inputs
   if (!is.character(data_name) || length(data_name) != 1) {
     stop("data_name must be a single character string", call. = FALSE)

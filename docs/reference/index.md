@@ -4,6 +4,8 @@
 
 Functions for aligning records across servers
 
+- [`ds.psiAlign()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md)
+  : ECDH-PSI Record Alignment
 - [`ds.validateIdFormat()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.validateIdFormat.md)
   : Validate Identifier Format Across Servers
 - [`ds.hashId()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.hashId.md)

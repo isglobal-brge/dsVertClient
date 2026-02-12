@@ -180,6 +180,8 @@ The 6-phase threshold MHE protocol:
 
 Functions for aligning records across servers
 
+- [`ds.psiAlign()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md)
+  : ECDH-PSI Record Alignment
 - [`ds.validateIdFormat()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.validateIdFormat.md)
   : Validate Identifier Format Across Servers
 - [`ds.hashId()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.hashId.md)
@@ -226,8 +228,9 @@ Helper methods
 
 - [Getting Started with
   dsVertClient](https://isglobal-brge.github.io/dsVertClient/articles/a-getting-started.md):
-- [Statistical Analysis with
-  dsVertClient](https://isglobal-brge.github.io/dsVertClient/articles/b-statistical-analysis.md):
+- [Statistical
+  Analysis](https://isglobal-brge.github.io/dsVertClient/articles/b-statistical-analysis.md):
 - [Methodology](https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.md):
+- [Validation](https://isglobal-brge.github.io/dsVertClient/articles/d-validation.md):
 - [Security
-  Validation](https://isglobal-brge.github.io/dsVertClient/articles/d-security-validation.md):
+  Model](https://isglobal-brge.github.io/dsVertClient/articles/e-security.md):

@@ -81,16 +81,15 @@ validation
 
 ## Align Records
 
-Records across servers are stored in different row orders. `ds.hashId()`
-retrieves SHA-256 hashes of the identifiers from a reference server, and
-`ds.alignRecords()` uses those hashes to reorder every server so that the
-same row position corresponds to the same patient. The original identifiers
-never leave their respective servers.
+Records across servers are stored in different row orders. `ds.psiAlign()`
+uses an ECDH-based Private Set Intersection (PSI) protocol to determine the
+common set of patient identifiers and reorder every server so that the same
+row position corresponds to the same patient. Each server masks its
+identifiers with a secret elliptic-curve scalar; the client sees only opaque
+curve points and cannot recover the original identifiers.
 
 ```{r align}
-ref_hashes <- ds.hashId("D", "patient_id", datasource = connections["server1"])
-ds.alignRecords("D", "patient_id", ref_hashes$hashes, "D_aligned",
-                datasources = connections)
+ds.psiAlign("D", "patient_id", "D_aligned", datasources = connections)
 ```
 
 ```

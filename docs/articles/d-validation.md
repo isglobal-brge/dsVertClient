@@ -1,24 +1,13 @@
----
-title: "Validation"
-output: rmarkdown::html_vignette
-vignette: >
-  %\VignetteIndexEntry{Validation}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
----
-
-```{r setup, include = FALSE, purl = FALSE}
-knitr::opts_chunk$set(eval = FALSE, purl = FALSE, collapse = TRUE)
-```
+# Validation
 
 ## Introduction
 
 This vignette validates the distributed analysis pipeline implemented in
-dsVertClient by comparing it against a standard local analysis where all data
-is pooled in one place. If the distributed protocol is correct, both scenarios
-should produce nearly identical results, differing only by the small
-approximation error inherent to CKKS homomorphic encryption and the L2
-regularisation used in distributed GLM.
+dsVertClient by comparing it against a standard local analysis where all
+data is pooled in one place. If the distributed protocol is correct,
+both scenarios should produce nearly identical results, differing only
+by the small approximation error inherent to CKKS homomorphic encryption
+and the L2 regularisation used in distributed GLM.
 
 | Scenario    | Description                                              |
 |-------------|----------------------------------------------------------|
@@ -27,23 +16,24 @@ regularisation used in distributed GLM.
 
 The data is split across three servers as follows:
 
-| Server  | Variables                              |
-|---------|----------------------------------------|
-| server1 | patient_id, age, bmi                   |
+| Server  | Variables                                     |
+|---------|-----------------------------------------------|
+| server1 | patient_id, age, bmi                          |
 | server2 | patient_id, glucose, bp, hypertension, visits |
-| server3 | patient_id, cholesterol, heart_rate    |
+| server3 | patient_id, cholesterol, heart_rate           |
 
----
+------------------------------------------------------------------------
 
 ## Scenario 1: Local Analysis
 
-In this scenario we download the raw data from all three servers, merge by
-`patient_id`, and run standard R functions. This serves as the ground truth
-against which the distributed results are compared.
+In this scenario we download the raw data from all three servers, merge
+by `patient_id`, and run standard R functions. This serves as the ground
+truth against which the distributed results are compared.
 
 ### Data
 
-```{r local-data}
+``` r
+
 library(opalr)
 
 o1 <- opal.login("administrator", "admin123", url = "https://opal1.example.org")
@@ -63,7 +53,8 @@ merged <- merge(merge(d1, d2, by = "patient_id"), d3, by = "patient_id")
 
 ### Local Correlation
 
-```{r local-cor}
+``` r
+
 vars <- c("age", "bmi", "glucose", "cholesterol", "heart_rate", "bp")
 local_cor <- cor(merged[, vars])
 round(local_cor, 4)
@@ -80,26 +71,28 @@ round(local_cor, 4)
 
 ### Local PCA
 
-```{r local-pca}
+``` r
+
 pca_vars <- c("age", "bmi", "glucose", "cholesterol", "heart_rate")
 local_pca <- prcomp(merged[, pca_vars], scale. = TRUE)
 summary(local_pca)
 ```
 
 | Component | Eigenvalue | Variance (%) | Cumulative (%) |
-|-----------|-----------|--------------|----------------|
-| PC1       | 1.6153    | 32.31        | 32.31          |
-| PC2       | 1.0710    | 21.42        | 53.73          |
-| PC3       | 0.9567    | 19.13        | 72.86          |
-| PC4       | 0.9083    | 18.17        | 91.03          |
-| PC5       | 0.4486    | 8.97         | 100.00         |
+|-----------|------------|--------------|----------------|
+| PC1       | 1.6153     | 32.31        | 32.31          |
+| PC2       | 1.0710     | 21.42        | 53.73          |
+| PC3       | 0.9567     | 19.13        | 72.86          |
+| PC4       | 0.9083     | 18.17        | 91.03          |
+| PC5       | 0.4486     | 8.97         | 100.00         |
 
 ### Local GLMs
 
 Three GLMs are fitted locally on the merged data, one for each supported
 family. The same five predictors are used in all models.
 
-```{r local-glm}
+``` r
+
 fit_gaussian <- glm(bp ~ age + bmi + glucose + cholesterol + heart_rate,
                     data = merged, family = gaussian())
 fit_binomial <- glm(hypertension ~ age + bmi + glucose + cholesterol + heart_rate,
@@ -110,7 +103,7 @@ fit_poisson <- glm(visits ~ age + bmi + glucose + cholesterol + heart_rate,
 
 **Gaussian coefficients:**
 
-| Coefficient  | Estimate |
+| Coefficient | Estimate |
 |-------------|----------|
 | (Intercept) | 76.4455  |
 | age         | 0.0654   |
@@ -121,7 +114,7 @@ fit_poisson <- glm(visits ~ age + bmi + glucose + cholesterol + heart_rate,
 
 **Binomial coefficients:**
 
-| Coefficient  | Estimate |
+| Coefficient | Estimate |
 |-------------|----------|
 | (Intercept) | -4.8323  |
 | age         | 0.0240   |
@@ -132,7 +125,7 @@ fit_poisson <- glm(visits ~ age + bmi + glucose + cholesterol + heart_rate,
 
 **Poisson coefficients:**
 
-| Coefficient  | Estimate |
+| Coefficient | Estimate |
 |-------------|----------|
 | (Intercept) | 1.6309   |
 | age         | -0.0054  |
@@ -141,18 +134,19 @@ fit_poisson <- glm(visits ~ age + bmi + glucose + cholesterol + heart_rate,
 | cholesterol | -0.0015  |
 | heart_rate  | 0.0068   |
 
----
+------------------------------------------------------------------------
 
 ## Scenario 2: Distributed Analysis
 
 In this scenario the data never leaves the three Opal servers. All
-computations are performed using dsVertClient functions, which rely on MHE
-threshold decryption for correlation and PCA, and Block Coordinate Descent
-for GLM.
+computations are performed using dsVertClient functions, which rely on
+MHE threshold decryption for correlation and PCA, and Block Coordinate
+Descent for GLM.
 
 ### Connect and Align
 
-```{r dist-connect}
+``` r
+
 library(dsVertClient)
 library(DSI)
 library(DSOpal)
@@ -174,7 +168,8 @@ ds.psiAlign("D", "patient_id", "D_aligned", datasources = connections)
 
 ### Distributed Correlation
 
-```{r dist-cor}
+``` r
+
 x_vars <- list(
   server1 = c("age", "bmi"),
   server2 = c("glucose", "bp"),
@@ -196,7 +191,8 @@ round(cor_dist$correlation, 4)
 
 ### Distributed PCA
 
-```{r dist-pca}
+``` r
+
 pca_vars <- list(
   server1 = c("age", "bmi"),
   server2 = c("glucose"),
@@ -209,16 +205,17 @@ pca_dist
 ```
 
 | Component | Eigenvalue | Variance (%) | Cumulative (%) |
-|-----------|-----------|--------------|----------------|
-| PC1       | 1.6154    | 32.31        | 32.31          |
-| PC2       | 1.0711    | 21.42        | 53.73          |
-| PC3       | 0.9566    | 19.13        | 72.86          |
-| PC4       | 0.9084    | 18.17        | 91.03          |
-| PC5       | 0.4485    | 8.97         | 100.00         |
+|-----------|------------|--------------|----------------|
+| PC1       | 1.6154     | 32.31        | 32.31          |
+| PC2       | 1.0711     | 21.42        | 53.73          |
+| PC3       | 0.9566     | 19.13        | 72.86          |
+| PC4       | 0.9084     | 18.17        | 91.03          |
+| PC5       | 0.4485     | 8.97         | 100.00         |
 
 ### Distributed GLMs
 
-```{r dist-glm-gaussian}
+``` r
+
 x_vars <- list(
   server1 = c("age", "bmi"),
   server2 = c("glucose"),
@@ -238,7 +235,7 @@ round(coef(model_gaussian), 4)
 
 **Distributed Gaussian coefficients:**
 
-| Coefficient  | Estimate |
+| Coefficient | Estimate |
 |-------------|----------|
 | (Intercept) | 76.4445  |
 | age         | 0.0654   |
@@ -247,7 +244,8 @@ round(coef(model_gaussian), 4)
 | cholesterol | -0.0062  |
 | heart_rate  | 0.2765   |
 
-```{r dist-glm-binomial}
+``` r
+
 model_binomial <- ds.vertGLM(
   "D_aligned",
   y_var = "hypertension",
@@ -261,7 +259,7 @@ round(coef(model_binomial), 4)
 
 **Distributed Binomial coefficients:**
 
-| Coefficient  | Estimate |
+| Coefficient | Estimate |
 |-------------|----------|
 | (Intercept) | -4.8320  |
 | age         | 0.0240   |
@@ -270,7 +268,8 @@ round(coef(model_binomial), 4)
 | cholesterol | -0.0051  |
 | heart_rate  | 0.0354   |
 
-```{r dist-glm-poisson}
+``` r
+
 model_poisson <- ds.vertGLM(
   "D_aligned",
   y_var = "visits",
@@ -284,7 +283,7 @@ round(coef(model_poisson), 4)
 
 **Distributed Poisson coefficients:**
 
-| Coefficient  | Estimate |
+| Coefficient | Estimate |
 |-------------|----------|
 | (Intercept) | 1.6309   |
 | age         | -0.0054  |
@@ -293,39 +292,41 @@ round(coef(model_poisson), 4)
 | cholesterol | -0.0015  |
 | heart_rate  | 0.0068   |
 
----
+------------------------------------------------------------------------
 
 ## Comparison
 
 ### Correlation Comparison
 
-Within-server correlations are computed in plaintext and are therefore exact.
-Cross-server correlations are computed via MHE threshold decryption using the
-CKKS approximate encryption scheme. The following table compares key
-cross-server pairs.
+Within-server correlations are computed in plaintext and are therefore
+exact. Cross-server correlations are computed via MHE threshold
+decryption using the CKKS approximate encryption scheme. The following
+table compares key cross-server pairs.
 
-```{r cor-compare}
+``` r
+
 diff_cor <- local_cor - cor_dist$correlation[rownames(local_cor), colnames(local_cor)]
 round(diff_cor, 4)
 ```
 
-| Pair                  | Local   | Distributed | Difference  |
-|-----------------------|---------|-------------|-------------|
-| age x glucose         | -0.0997 | -0.0997     | 0.0000      |
-| age x cholesterol     | 0.2215  | 0.2215      | 0.0000      |
-| bmi x bp              | 0.2266  | 0.2266      | 0.0000      |
-| bmi x heart_rate      | 0.3116  | 0.3117      | +0.0001     |
-| age x heart_rate      | -0.0878 | -0.0877     | +0.0001     |
+| Pair              | Local   | Distributed | Difference |
+|-------------------|---------|-------------|------------|
+| age x glucose     | -0.0997 | -0.0997     | 0.0000     |
+| age x cholesterol | 0.2215  | 0.2215      | 0.0000     |
+| bmi x bp          | 0.2266  | 0.2266      | 0.0000     |
+| bmi x heart_rate  | 0.3116  | 0.3117      | +0.0001    |
+| age x heart_rate  | -0.0878 | -0.0877     | +0.0001    |
 
 Maximum absolute error: 0.0001. Within-server correlations are exact;
 cross-server differences arise from CKKS approximate arithmetic.
 
 ### PCA Comparison
 
-Because PCA is computed via eigen decomposition of the correlation matrix,
-its errors are propagated from the correlation differences.
+Because PCA is computed via eigen decomposition of the correlation
+matrix, its errors are propagated from the correlation differences.
 
-```{r pca-compare}
+``` r
+
 data.frame(
   Component = paste0("PC", 1:5),
   Local = round(local_pca$sdev^2, 4),
@@ -346,14 +347,15 @@ Maximum absolute eigenvalue difference is approximately 10^-4.
 
 ### GLM Comparison
 
-For each GLM family, the coefficients from the local fit and the distributed
-fit are compared. The distributed GLM uses Block Coordinate Descent with L2
-regularisation (`lambda = 1e-4`), which introduces a small systematic bias
-toward zero.
+For each GLM family, the coefficients from the local fit and the
+distributed fit are compared. The distributed GLM uses Block Coordinate
+Descent with L2 regularisation (`lambda = 1e-4`), which introduces a
+small systematic bias toward zero.
 
 **Gaussian:**
 
-```{r glm-gauss-compare}
+``` r
+
 data.frame(
   Coefficient = names(coef(fit_gaussian)),
   Local = round(coef(fit_gaussian), 4),
@@ -362,18 +364,19 @@ data.frame(
 )
 ```
 
-| Coefficient  | Local   | Distributed | Difference  |
-|-------------|---------|-------------|-------------|
-| (Intercept) | 76.4455 | 76.4445     | -0.0010     |
-| age         | 0.0654  | 0.0654      | +0.0000     |
-| bmi         | 0.5411  | 0.5411      | +0.0001     |
-| glucose     | -0.0270 | -0.0270     | +0.0000     |
-| cholesterol | -0.0062 | -0.0062     | -0.0000     |
-| heart_rate  | 0.2766  | 0.2765      | -0.0000     |
+| Coefficient | Local   | Distributed | Difference |
+|-------------|---------|-------------|------------|
+| (Intercept) | 76.4455 | 76.4445     | -0.0010    |
+| age         | 0.0654  | 0.0654      | +0.0000    |
+| bmi         | 0.5411  | 0.5411      | +0.0001    |
+| glucose     | -0.0270 | -0.0270     | +0.0000    |
+| cholesterol | -0.0062 | -0.0062     | -0.0000    |
+| heart_rate  | 0.2766  | 0.2765      | -0.0000    |
 
 **Binomial:**
 
-```{r glm-binom-compare}
+``` r
+
 data.frame(
   Coefficient = names(coef(fit_binomial)),
   Local = round(coef(fit_binomial), 4),
@@ -382,18 +385,19 @@ data.frame(
 )
 ```
 
-| Coefficient  | Local   | Distributed | Difference  |
-|-------------|---------|-------------|-------------|
-| (Intercept) | -4.8323 | -4.8320     | +0.0004     |
-| age         | 0.0240  | 0.0240      | +0.0000     |
-| bmi         | 0.0486  | 0.0487      | +0.0000     |
-| glucose     | 0.0056  | 0.0056      | +0.0000     |
-| cholesterol | -0.0051 | -0.0051     | -0.0000     |
-| heart_rate  | 0.0354  | 0.0354      | -0.0000     |
+| Coefficient | Local   | Distributed | Difference |
+|-------------|---------|-------------|------------|
+| (Intercept) | -4.8323 | -4.8320     | +0.0004    |
+| age         | 0.0240  | 0.0240      | +0.0000    |
+| bmi         | 0.0486  | 0.0487      | +0.0000    |
+| glucose     | 0.0056  | 0.0056      | +0.0000    |
+| cholesterol | -0.0051 | -0.0051     | -0.0000    |
+| heart_rate  | 0.0354  | 0.0354      | -0.0000    |
 
 **Poisson:**
 
-```{r glm-pois-compare}
+``` r
+
 data.frame(
   Coefficient = names(coef(fit_poisson)),
   Local = round(coef(fit_poisson), 4),
@@ -402,49 +406,52 @@ data.frame(
 )
 ```
 
-| Coefficient  | Local   | Distributed | Difference  |
-|-------------|---------|-------------|-------------|
-| (Intercept) | 1.6309  | 1.6309      | +0.0000     |
-| age         | -0.0054 | -0.0054     | -0.0000     |
-| bmi         | -0.0063 | -0.0063     | -0.0000     |
-| glucose     | 0.0062  | 0.0062      | -0.0000     |
-| cholesterol | -0.0015 | -0.0015     | +0.0000     |
-| heart_rate  | 0.0068  | 0.0068      | +0.0000     |
+| Coefficient | Local   | Distributed | Difference |
+|-------------|---------|-------------|------------|
+| (Intercept) | 1.6309  | 1.6309      | +0.0000    |
+| age         | -0.0054 | -0.0054     | -0.0000    |
+| bmi         | -0.0063 | -0.0063     | -0.0000    |
+| glucose     | 0.0062  | 0.0062      | -0.0000    |
+| cholesterol | -0.0015 | -0.0015     | +0.0000    |
+| heart_rate  | 0.0068  | 0.0068      | +0.0000    |
 
----
+------------------------------------------------------------------------
 
 ## Error Summary
 
-| Analysis         | Max |Error|    | Source                              |
-|------------------|----------------|------------------------------------|
-| Correlation      | ~10^-4         | CKKS approximate arithmetic        |
-| PCA Eigenvalues  | ~10^-4         | Propagated from correlation        |
-| GLM Gaussian     | ~10^-3         | L2 regularisation + BCD convergence |
-| GLM Binomial     | ~10^-3         | Same + logistic nonlinearity       |
-| GLM Poisson      | ~10^-4         | Same + exp link                    |
+| Analysis        | Max    | Error                               |
+|-----------------|--------|-------------------------------------|
+| Correlation     | ~10^-4 | CKKS approximate arithmetic         |
+| PCA Eigenvalues | ~10^-4 | Propagated from correlation         |
+| GLM Gaussian    | ~10^-3 | L2 regularisation + BCD convergence |
+| GLM Binomial    | ~10^-3 | Same + logistic nonlinearity        |
+| GLM Poisson     | ~10^-4 | Same + exp link                     |
 
 All distributed results match local R analysis to high accuracy. Small
 differences arise from three independent sources:
 
-1. **CKKS approximation error** -- The homomorphic encryption scheme used for
-   cross-server correlation encodes real numbers with finite precision. With
-   the default `log_scale = 40`, individual operations carry approximately 12
-   decimal digits of precision, but the accumulation of additions in the inner
-   product results in final errors around 10^-4 for typical sample sizes.
+1.  **CKKS approximation error** – The homomorphic encryption scheme
+    used for cross-server correlation encodes real numbers with finite
+    precision. With the default `log_scale = 40`, individual operations
+    carry approximately 12 decimal digits of precision, but the
+    accumulation of additions in the inner product results in final
+    errors around 10^-4 for typical sample sizes.
 
-2. **L2 regularisation** -- The BCD algorithm adds a small ridge penalty
-   (`lambda = 1e-4`) to the diagonal of each block's cross-product matrix.
-   This prevents singular or near-singular systems during iterative updates
-   but introduces a small systematic bias toward zero.
+2.  **L2 regularisation** – The BCD algorithm adds a small ridge penalty
+    (`lambda = 1e-4`) to the diagonal of each block’s cross-product
+    matrix. This prevents singular or near-singular systems during
+    iterative updates but introduces a small systematic bias toward
+    zero.
 
-3. **BCD convergence tolerance** -- The iterative solver terminates when the
-   relative change in coefficients falls below a threshold, leaving residual
-   optimisation error that is negligible in practice.
+3.  **BCD convergence tolerance** – The iterative solver terminates when
+    the relative change in coefficients falls below a threshold, leaving
+    residual optimisation error that is negligible in practice.
 
----
+------------------------------------------------------------------------
 
 ## Cleanup
 
-```{r cleanup}
+``` r
+
 datashield.logout(connections)
 ```
