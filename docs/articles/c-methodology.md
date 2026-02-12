@@ -291,11 +291,9 @@ scale:
 | Gaussian | $`\eta`$ | $`\eta`$ | $`1`$ | $`1`$ | $`y - \mu`$ |
 | Binomial | $`\log\frac{\mu}{1-\mu}`$ | $`\frac{1}{1+e^{-\eta}}`$ | $`\mu(1-\mu)`$ | $`1`$ | $`y - \mu`$ |
 | Poisson | $`\log(\mu)`$ | $`e^{\eta}`$ | $`\mu`$ | $`1`$ | $`y - \mu`$ |
-| Gamma | $`\log(\mu)`$ | $`e^{\eta}`$ | $`1`$ | $`1/\mu`$ | $`(y - \mu)/\mu`$ |
-| Inv. Gaussian | $`\log(\mu)`$ | $`e^{\eta}`$ | $`1/\mu`$ | $`1`$ | $`y - \mu`$ |
 
-For the three canonical-link families (Gaussian, Binomial, Poisson),
-$`v = 1`$. This simplifies the encrypted computation to
+For all three supported families, $`v = 1`$ (canonical links).
+This simplifies the encrypted computation to
 $`X_k^T (ct_y - \mu)`$, eliminating the need to encode and multiply by a
 separate $`v`$ vector.
 

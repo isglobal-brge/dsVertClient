@@ -17,7 +17,7 @@
 #'   variable. This server uses plaintext IRLS; all other servers use the
 #'   encrypted gradient protocol.
 #' @param family Character string. GLM family: "gaussian", "binomial",
-#'   "poisson", "Gamma", or "inverse.gaussian". Default is "gaussian".
+#'   or "poisson". Default is "gaussian".
 #' @param max_iter Integer. Maximum number of BCD iterations. Default is 100.
 #' @param tol Numeric. Convergence tolerance on coefficient change.
 #'   Default is 1e-4 (accounts for CKKS approximation noise).
@@ -116,8 +116,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   if (!is.list(x_vars) || is.null(names(x_vars)))
     stop("x_vars must be a named list mapping server names to variable vectors",
          call. = FALSE)
-  if (!family %in% c("gaussian", "binomial", "poisson", "Gamma", "inverse.gaussian"))
-    stop("family must be 'gaussian', 'binomial', 'poisson', 'Gamma', or 'inverse.gaussian'",
+  if (!family %in% c("gaussian", "binomial", "poisson"))
+    stop("family must be 'gaussian', 'binomial', or 'poisson'",
          call. = FALSE)
   if (is.null(y_server))
     stop("y_server must be specified: the server holding '", y_var, "'",

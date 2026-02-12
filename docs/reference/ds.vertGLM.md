@@ -51,8 +51,8 @@ ds.vertGLM(
 
 - family:
 
-  Character string. GLM family: "gaussian", "binomial", "poisson",
-  "Gamma", or "inverse.gaussian". Default is "gaussian".
+  Character string. GLM family: "gaussian", "binomial", or "poisson".
+  Default is "gaussian".
 
 - max_iter:
 

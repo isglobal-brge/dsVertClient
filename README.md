@@ -11,7 +11,7 @@ This package provides user-friendly functions for:
 - **ECDH-PSI Record Alignment**: Privacy-preserving record matching using P-256 elliptic curves (no dictionary attacks possible)
 - **Correlation Analysis**: Compute correlation matrices using **Multiparty Homomorphic Encryption (MHE)** with share-wrapped threshold decryption
 - **Principal Component Analysis**: Perform PCA from the MHE-based correlation matrix
-- **Generalized Linear Models**: Fit GLMs using IRLS with encrypted-label BCD and GLM secure routing (5 families)
+- **Generalized Linear Models**: Fit GLMs using IRLS with encrypted-label BCD and GLM secure routing (3 families)
 
 ## Security Guarantees
 
@@ -133,8 +133,6 @@ This ensures the client acts as a transport layer with no access to observation-
 | `gaussian` | Identity | Continuous outcomes (linear regression) |
 | `binomial` | Logit | Binary outcomes (logistic regression) |
 | `poisson` | Log | Count data |
-| `Gamma` | Log | Positive continuous data (costs, times) |
-| `inverse.gaussian` | Log | Positive continuous with high variance |
 
 ## Requirements
 
