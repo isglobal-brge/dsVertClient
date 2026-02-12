@@ -40,8 +40,8 @@ across vertically partitioned DataSHIELD servers so that rows correspond
 to the same individuals, without exposing identifiers.
 }
 \details{
-This function replaces \code{\link{ds.hashId}} + \code{\link{ds.alignRecords}}
-with a single call that provides stronger privacy guarantees.
+This function performs privacy-preserving record alignment in a single call,
+using ECDH-PSI instead of SHA-256 hashing for stronger privacy guarantees.
 
 \subsection{Protocol overview}{
 ECDH-PSI exploits the commutativity of elliptic curve scalar multiplication:

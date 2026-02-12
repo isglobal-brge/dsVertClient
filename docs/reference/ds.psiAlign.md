@@ -52,10 +52,9 @@ Invisibly returns a list with alignment statistics for each server:
 
 ## Details
 
-This function replaces
-[`ds.hashId`](https://isglobal-brge.github.io/dsVertClient/reference/ds.hashId.md) +
-[`ds.alignRecords`](https://isglobal-brge.github.io/dsVertClient/reference/ds.alignRecords.md)
-with a single call that provides stronger privacy guarantees.
+This function performs privacy-preserving record alignment in a single
+call, using ECDH-PSI instead of SHA-256 hashing for stronger privacy
+guarantees.
 
 ### Protocol overview
 

@@ -27,12 +27,9 @@ home:
 
 reference:
   - title: Record Alignment
-    desc: Functions for aligning records across servers
+    desc: Privacy-preserving record alignment using ECDH-PSI
     contents:
       - ds.psiAlign
-      - ds.validateIdFormat
-      - ds.hashId
-      - ds.alignRecords
 
   - title: Correlation and PCA
     desc: Distributed correlation and principal component analysis
@@ -41,7 +38,7 @@ reference:
       - ds.vertPCA
 
   - title: Generalized Linear Models
-    desc: Privacy-preserving GLM fitting
+    desc: Privacy-preserving GLM fitting with encrypted labels
     contents:
       - ds.vertGLM
       - coef.ds.glm
@@ -53,7 +50,6 @@ reference:
     contents:
       - print.ds.cor
       - print.ds.pca
-      - print.ds.id.validation
 
 articles:
   - title: User Guides

@@ -98,8 +98,8 @@ If NULL, uses all available connections.</p></dd>
 </ul></div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
-    <p>This function replaces <code><a href="ds.hashId.html">ds.hashId</a></code> + <code><a href="ds.alignRecords.html">ds.alignRecords</a></code>
-with a single call that provides stronger privacy guarantees.</p>
+    <p>This function performs privacy-preserving record alignment in a single call,
+using ECDH-PSI instead of SHA-256 hashing for stronger privacy guarantees.</p>
 <div class="section">
 <h3 id="protocol-overview">Protocol overview<a class="anchor" aria-label="anchor" href="#protocol-overview"></a></h3>
 <p>ECDH-PSI exploits the commutativity of elliptic curve scalar multiplication:
