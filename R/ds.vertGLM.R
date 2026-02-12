@@ -520,7 +520,24 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
           grad_result <- grad_result[[1]]
 
         enc_gradients <- grad_result$encrypted_gradients
+        ct_hashes <- grad_result$ct_hashes
         p_k <- length(vars)
+
+        # Protocol Firewall: authorize gradient ciphertexts on non-producing servers.
+        # The producing server (current non-label server) already has them registered.
+        if (!is.null(ct_hashes) && length(ct_hashes) > 0) {
+          for (auth_server in server_list) {
+            if (auth_server != server) {
+              auth_conn <- which(server_names == auth_server)
+              DSI::datashield.aggregate(
+                conns = datasources[auth_conn],
+                expr = call("mheAuthorizeCTDS",
+                            ct_hashes = ct_hashes,
+                            op_type = "glm-gradient")
+              )
+            }
+          }
+        }
 
         # Step 3: Threshold decrypt each gradient component.
         # Each encrypted gradient[j] is a single CKKS ciphertext. We collect
@@ -698,6 +715,16 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     y_server = y_server,
     call = call_matched
   )
+
+  # Clean up cryptographic state on all servers
+  for (server in server_list) {
+    conn_idx <- which(server_names == server)
+    tryCatch(
+      DSI::datashield.aggregate(conns = datasources[conn_idx],
+                                expr = call("mheCleanupDS")),
+      error = function(e) NULL
+    )
+  }
 
   class(result) <- c("ds.glm", "list")
   return(result)

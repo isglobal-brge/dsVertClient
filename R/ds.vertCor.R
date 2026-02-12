@@ -444,6 +444,22 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
       n_B <- length(variables[[server_B]])
       message("    Encrypted cross-product: ", n_A, "x", n_B)
 
+      # Protocol Firewall: authorize ciphertexts on non-producing servers.
+      # server_A produced the ciphertexts (already registered locally).
+      # Other servers need batch authorization via ct_hashes.
+      ct_hashes <- enc_result$ct_hashes
+      if (!is.null(ct_hashes) && length(ct_hashes) > 0) {
+        for (server in server_list) {
+          if (server != server_A) {
+            conn_idx <- which(server_names == server)
+            auth_expr <- call("mheAuthorizeCTDS",
+                              ct_hashes = ct_hashes,
+                              op_type = "cross-product")
+            DSI::datashield.aggregate(conns = datasources[conn_idx], expr = auth_expr)
+          }
+        }
+      }
+
       # For each encrypted result, do threshold decryption
       result_matrix <- matrix(NA, nrow = n_A, ncol = n_B)
 
@@ -559,6 +575,16 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     cross_correlations = cross_cors,
     mhe_params = list(log_n = log_n, log_scale = log_scale)
   )
+
+  # Clean up cryptographic state on all servers
+  for (server in server_list) {
+    conn_idx <- which(server_names == server)
+    tryCatch(
+      DSI::datashield.aggregate(conns = datasources[conn_idx],
+                                expr = call("mheCleanupDS")),
+      error = function(e) NULL
+    )
+  }
 
   class(result) <- c("ds.cor", "list")
   return(result)
