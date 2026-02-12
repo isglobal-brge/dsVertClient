@@ -19,7 +19,7 @@ This package provides user-friendly functions for:
 - **Principal Component Analysis**: Perform PCA from the MHE-based
   correlation matrix
 - **Generalized Linear Models**: Fit GLMs using Block Coordinate Descent
-  with encrypted labels (5 families)
+  with encrypted labels (3 families)
 
 ## Security Guarantees
 
@@ -131,8 +131,6 @@ The 6-phase threshold MHE protocol:
 | `gaussian`         | Identity | Continuous outcomes (linear regression) |
 | `binomial`         | Logit    | Binary outcomes (logistic regression)   |
 | `poisson`          | Log      | Count data                              |
-| `Gamma`            | Log      | Positive continuous data (costs, times) |
-| `inverse.gaussian` | Log      | Positive continuous with high variance  |
 
 ## Requirements
 

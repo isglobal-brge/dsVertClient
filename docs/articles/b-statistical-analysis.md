@@ -185,8 +185,6 @@ leave their respective institutions.
 | Gaussian         | Identity | Continuous          | Blood pressure      |
 | Binomial         | Logit    | Binary (0/1)        | Hypertension status |
 | Poisson          | Log      | Count               | Number of visits    |
-| Gamma            | Log      | Positive continuous | Medical costs       |
-| Inverse Gaussian | Log      | Positive continuous | Duration data       |
 
 All families use the same `ds.vertGLM` interface; only the `family`
 argument changes.
@@ -321,14 +319,6 @@ models fitted. Glucose and heart_rate have small positive effects on the
 expected visit count, while age and bmi have small negative effects. The
 model required 10 iterations to converge, more than the Gaussian (6) or
 binomial (7), which is typical for count data.
-
-### Other Families
-
-The Gamma and inverse Gaussian families use the same `ds.vertGLM`
-interface. Both are appropriate for positive continuous response
-variables. Specify `family = "Gamma"` or `family = "inverse.gaussian"`
-and ensure that the response variable contains strictly positive values.
-The log link is used by default for both families.
 
 ------------------------------------------------------------------------
 

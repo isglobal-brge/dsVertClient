@@ -35,7 +35,7 @@ variable. This server uses plaintext IRLS; all other servers use the
 encrypted gradient protocol.}
 
 \item{family}{Character string. GLM family: "gaussian", "binomial",
-"poisson", "Gamma", or "inverse.gaussian". Default is "gaussian".}
+or "poisson". Default is "gaussian".}
 
 \item{max_iter}{Integer. Maximum number of BCD iterations. Default is 100.}
 

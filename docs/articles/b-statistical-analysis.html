@@ -431,18 +431,6 @@ leave their respective institutions.</p>
 <td>Count</td>
 <td>Number of visits</td>
 </tr>
-<tr class="even">
-<td>Gamma</td>
-<td>Log</td>
-<td>Positive continuous</td>
-<td>Medical costs</td>
-</tr>
-<tr class="odd">
-<td>Inverse Gaussian</td>
-<td>Log</td>
-<td>Positive continuous</td>
-<td>Duration data</td>
-</tr>
 </tbody>
 </table>
 <p>All families use the same <code>ds.vertGLM</code> interface; only the
@@ -629,17 +617,6 @@ three models fitted. Glucose and heart_rate have small positive effects
 on the expected visit count, while age and bmi have small negative
 effects. The model required 10 iterations to converge, more than the
 Gaussian (6) or binomial (7), which is typical for count data.</p>
-</div>
-<div class="section level3">
-<h3 id="other-families">Other Families<a class="anchor" aria-label="anchor" href="#other-families"></a>
-</h3>
-<p>The Gamma and inverse Gaussian families use the same
-<code>ds.vertGLM</code> interface. Both are appropriate for positive
-continuous response variables. Specify <code>family = "Gamma"</code> or
-<code>family = "inverse.gaussian"</code> and ensure that the response
-variable contains strictly positive values. The log link is used by
-default for both families.</p>
-<hr>
 </div>
 </div>
 <div class="section level2">
