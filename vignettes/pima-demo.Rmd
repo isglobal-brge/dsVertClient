@@ -486,7 +486,7 @@ knitr::kable(
 
 ```{r cmp-gauss-plot, echo = FALSE, fig.width = 8, fig.height = 5}
 idx <- seq_along(gauss_local)
-par(mar = c(5, 4, 3, 1))
+par(mar = c(5, 4, 3, 8))
 plot(idx - 0.1, gauss_local, pch = 16, col = col_local, cex = 1.5,
      xlab = "", ylab = "Coefficient", main = "Gaussian GLM (y = glu)",
      xaxt = "n", xlim = c(0.5, length(idx) + 0.5),
@@ -496,8 +496,8 @@ segments(idx - 0.1, gauss_local, idx + 0.1, gauss_dsvert,
          col = "grey60", lty = 2)
 axis(1, at = idx, labels = names(gauss_local), las = 1)
 abline(h = 0, col = "grey80")
-legend("topright", legend = c("Centralized", "dsVert"),
-       pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n")
+legend(par("usr")[2], par("usr")[4], legend = c("Centralized", "dsVert"),
+       pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n", xpd = TRUE)
 ```
 
 Maximum absolute coefficient difference:
@@ -523,7 +523,7 @@ knitr::kable(
 
 ```{r cmp-binom-plot, echo = FALSE, fig.width = 8, fig.height = 5}
 idx <- seq_along(binom_local)
-par(mar = c(5, 4, 3, 1))
+par(mar = c(5, 4, 3, 8))
 plot(idx - 0.1, binom_local, pch = 16, col = col_local, cex = 1.5,
      xlab = "", ylab = "Coefficient", main = "Binomial GLM (y = diabetes)",
      xaxt = "n", xlim = c(0.5, length(idx) + 0.5),
@@ -533,8 +533,8 @@ segments(idx - 0.1, binom_local, idx + 0.1, binom_dsvert,
          col = "grey60", lty = 2)
 axis(1, at = idx, labels = names(binom_local), las = 1)
 abline(h = 0, col = "grey80")
-legend("topright", legend = c("Centralized", "dsVert"),
-       pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n")
+legend(par("usr")[2], par("usr")[4], legend = c("Centralized", "dsVert"),
+       pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n", xpd = TRUE)
 ```
 
 Maximum absolute coefficient difference:
@@ -560,7 +560,7 @@ knitr::kable(
 
 ```{r cmp-pois-plot, echo = FALSE, fig.width = 8, fig.height = 5}
 idx <- seq_along(pois_local)
-par(mar = c(5, 4, 3, 1))
+par(mar = c(5, 4, 3, 8))
 plot(idx - 0.1, pois_local, pch = 16, col = col_local, cex = 1.5,
      xlab = "", ylab = "Coefficient", main = "Poisson GLM (y = npreg)",
      xaxt = "n", xlim = c(0.5, length(idx) + 0.5),
@@ -570,8 +570,8 @@ segments(idx - 0.1, pois_local, idx + 0.1, pois_dsvert,
          col = "grey60", lty = 2)
 axis(1, at = idx, labels = names(pois_local), las = 1)
 abline(h = 0, col = "grey80")
-legend("topright", legend = c("Centralized", "dsVert"),
-       pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n")
+legend(par("usr")[2], par("usr")[4], legend = c("Centralized", "dsVert"),
+       pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n", xpd = TRUE)
 ```
 
 Maximum absolute coefficient difference:
