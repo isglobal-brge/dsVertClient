@@ -292,10 +292,9 @@ scale:
 | Binomial | $`\log\frac{\mu}{1-\mu}`$ | $`\frac{1}{1+e^{-\eta}}`$ | $`\mu(1-\mu)`$ | $`1`$ | $`y - \mu`$ |
 | Poisson | $`\log(\mu)`$ | $`e^{\eta}`$ | $`\mu`$ | $`1`$ | $`y - \mu`$ |
 
-For all three supported families, $`v = 1`$ (canonical links).
-This simplifies the encrypted computation to
-$`X_k^T (ct_y - \mu)`$, eliminating the need to encode and multiply by a
-separate $`v`$ vector.
+For all three supported families (canonical links), $`v = 1`$. This
+simplifies the encrypted computation to $`X_k^T (ct_y - \mu)`$,
+eliminating the need to encode and multiply by a separate $`v`$ vector.
 
 ### Security Properties
 

@@ -134,6 +134,18 @@ This ensures the client acts as a transport layer with no access to observation-
 | `binomial` | Logit | Binary outcomes (logistic regression) |
 | `poisson` | Log | Count data |
 
+## Chunked Transfer Protocol
+
+DataSHIELD's R expression parser limits the size of arguments that can be
+passed inline in `call()` expressions. Cryptographic objects (CKKS
+ciphertexts, EC points, key shares, transport-encrypted blobs) routinely
+exceed this limit. dsVertClient automatically splits all large payloads into
+10 KB chunks via `mheStoreBlobDS`, which the server reassembles transparently.
+This chunking is applied uniformly across all protocols (PSI, MHE correlation,
+GLM) for any data that scales with the number of observations, variables, or
+servers --- ensuring that no DataSHIELD call can overflow regardless of
+dataset size or number of parties.
+
 ## Requirements
 
 - R >= 4.0.0
@@ -143,11 +155,7 @@ This ensures the client acts as a transport layer with no access to observation-
 
 ## Documentation
 
-- [Getting Started](https://isglobal-brge.github.io/dsVertClient/articles/a-getting-started.html): Setup, PSI record alignment, first analysis
-- [Statistical Analysis](https://isglobal-brge.github.io/dsVertClient/articles/b-statistical-analysis.html): Correlation, PCA, and GLMs
-- [Methodology](https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.html): MHE protocol, BCD-IRLS, ECDH-PSI details
-- [Validation](https://isglobal-brge.github.io/dsVertClient/articles/d-validation.html): Numerical comparison against local R
-- [Security Model](https://isglobal-brge.github.io/dsVertClient/articles/e-security.html): Threat model, MHE guarantees, PSI security
+- [Pima Validation Demo](https://isglobal-brge.github.io/dsVertClient/articles/pima-demo.html): Full pipeline validation against centralized R
 
 ## Authors
 

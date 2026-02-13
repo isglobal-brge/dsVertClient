@@ -23,7 +23,7 @@
 
     <a class="navbar-brand me-2" href="index.html">dsVertClient</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.4.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -36,11 +36,7 @@
 <li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="articles/a-getting-started.html">Getting Started with dsVertClient</a></li>
-    <li><a class="dropdown-item" href="articles/b-statistical-analysis.html">Statistical Analysis</a></li>
-    <li><a class="dropdown-item" href="articles/c-methodology.html">Methodology</a></li>
-    <li><a class="dropdown-item" href="articles/d-validation.html">Validation</a></li>
-    <li><a class="dropdown-item" href="articles/e-security.html">Security Model</a></li>
+<li><a class="dropdown-item" href="articles/pima-demo.html">dsVert Validation: Pima Diabetes Dataset</a></li>
   </ul>
 </li>
       </ul>
@@ -69,11 +65,11 @@
 <li>
 <strong>ECDH-PSI Record Alignment</strong>: Privacy-preserving record matching using P-256 elliptic curves (no dictionary attacks possible)</li>
 <li>
-<strong>Correlation Analysis</strong>: Compute correlation matrices using <strong>Multiparty Homomorphic Encryption (MHE)</strong> with threshold decryption</li>
+<strong>Correlation Analysis</strong>: Compute correlation matrices using <strong>Multiparty Homomorphic Encryption (MHE)</strong> with share-wrapped threshold decryption</li>
 <li>
 <strong>Principal Component Analysis</strong>: Perform PCA from the MHE-based correlation matrix</li>
 <li>
-<strong>Generalized Linear Models</strong>: Fit GLMs using Block Coordinate Descent with encrypted labels (3 families)</li>
+<strong>Generalized Linear Models</strong>: Fit GLMs using IRLS with encrypted-label BCD and GLM secure routing (3 families)</li>
 </ul>
 </div>
 <div class="section level2">
@@ -135,6 +131,34 @@
 </tbody>
 </table>
 </div>
+<div class="section level3">
+<h3 id="transport--routing-security">Transport &amp; Routing Security<a class="anchor" aria-label="anchor" href="#transport--routing-security"></a>
+</h3>
+<table class="table">
+<colgroup>
+<col width="37%">
+<col width="62%">
+</colgroup>
+<thead><tr>
+<th>Property</th>
+<th>What it prevents</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><strong>Share-wrapping</strong></td>
+<td>Client CANNOT see or manipulate partial decryption shares. Each share is transport-encrypted under the fusion server’s X25519 key before relay.</td>
+</tr>
+<tr>
+<td><strong>GLM secure routing</strong></td>
+<td>Client CANNOT see individual-level vectors (eta, mu, w, v). Only sees p_k-length coefficient vectors and opaque encrypted blobs.</td>
+</tr>
+<tr>
+<td><strong>Protocol Firewall</strong></td>
+<td>Only ciphertexts produced by authorized operations can be decrypted. Prevents decryption oracle attacks.</td>
+</tr>
+</tbody>
+</table>
+</div>
 </div>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
@@ -163,7 +187,7 @@
 <span>  hospital_C <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"cholesterol"</span>, <span class="st">"hdl"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 3. Compute correlation matrix (MHE with threshold decryption)</span></span>
+<span><span class="co"># 3. Compute correlation matrix (MHE with share-wrapped threshold decryption)</span></span>
 <span><span class="va">cor_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertCor.html">ds.vertCor</a></span><span class="op">(</span><span class="st">"D_aligned"</span>, <span class="va">variables</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">cor_result</span><span class="op">)</span></span>
 <span></span>
@@ -199,7 +223,7 @@
 </tr>
 <tr>
 <td><code>ds.vertCor</code></td>
-<td>Compute cross-server correlation matrix via MHE threshold decryption</td>
+<td>Compute cross-server correlation matrix via MHE share-wrapped threshold decryption</td>
 </tr>
 <tr>
 <td><code>ds.vertPCA</code></td>
@@ -207,13 +231,13 @@
 </tr>
 <tr>
 <td><code>ds.vertGLM</code></td>
-<td>Fit Generalized Linear Models via encrypted-label BCD</td>
+<td>Fit Generalized Linear Models via encrypted-label BCD with GLM secure routing</td>
 </tr>
 </tbody>
 </table>
 </div>
 <div class="section level2">
-<h2 id="workflow-align--analyze">Workflow: Align → Analyze<a class="anchor" aria-label="anchor" href="#workflow-align--analyze"></a>
+<h2 id="workflow-align---analyze">Workflow: Align -&gt; Analyze<a class="anchor" aria-label="anchor" href="#workflow-align---analyze"></a>
 </h2>
 <pre><code> ┌──────────────────┐   ┌───────────────────────────┐
  │  ds.psiAlign     │──▶│        Analyze            │
@@ -236,10 +260,40 @@
 <li>
 <strong>Local Correlation</strong>: Within-server correlations are computed in plaintext.</li>
 <li>
-<strong>Cross-Server Correlation</strong>: For each server pair (A, B): server A computes Z_A * Enc(Z_B) homomorphically. Each server provides a partial decryption share. The client fuses all shares to recover the inner product.</li>
+<strong>Cross-Server Correlation (share-wrapped threshold decryption)</strong>: For each server pair (A, B): server A computes Z_A * Enc(Z_B) homomorphically. Each server produces a partial decryption share, <strong>wrapped</strong> (transport-encrypted) under the fusion server’s X25519 public key. The client relays these opaque wrapped shares to the fusion server (party 0). The fusion server unwraps all shares, computes its own share, and returns only the final aggregate scalar. The client <strong>never</strong> sees raw partial shares.</li>
 <li>
 <strong>Assembly</strong>: The full p x p correlation matrix is assembled from local and cross-server blocks.</li>
 </ol>
+</div>
+<div class="section level2">
+<h2 id="glm-secure-routing-coordinator-model">GLM Secure Routing (Coordinator Model)<a class="anchor" aria-label="anchor" href="#glm-secure-routing-coordinator-model"></a>
+</h2>
+<p>The GLM protocol uses a <strong>coordinator model</strong> so that individual-level vectors never pass through the client:</p>
+<table class="table">
+<colgroup>
+<col width="26%">
+<col width="73%">
+</colgroup>
+<thead><tr>
+<th>Role</th>
+<th>Responsibilities</th>
+</tr></thead>
+<tbody>
+<tr>
+<td><strong>Label server (coordinator)</strong></td>
+<td>Runs the IRLS loop. Encrypts individual-level vectors (mu, w, v) under each non-label server’s public key and sends the ciphertexts through the client as opaque blobs.</td>
+</tr>
+<tr>
+<td><strong>Non-label servers</strong></td>
+<td>Decrypt locally, compute their gradient contribution (X_k’ W v), encrypt eta_k for the coordinator.</td>
+</tr>
+<tr>
+<td><strong>Client (blind relay)</strong></td>
+<td>Routes opaque encrypted blobs between servers. Sees only p_k-length coefficient vectors (public model output) and encrypted payloads it cannot decrypt.</td>
+</tr>
+</tbody>
+</table>
+<p>This ensures the client acts as a transport layer with no access to observation-level information.</p>
 </div>
 <div class="section level2">
 <h2 id="supported-glm-families">Supported GLM Families<a class="anchor" aria-label="anchor" href="#supported-glm-families"></a>
@@ -270,6 +324,11 @@
 </table>
 </div>
 <div class="section level2">
+<h2 id="chunked-transfer-protocol">Chunked Transfer Protocol<a class="anchor" aria-label="anchor" href="#chunked-transfer-protocol"></a>
+</h2>
+<p>DataSHIELD’s R expression parser limits the size of arguments that can be passed inline in <code><a href="https://rdrr.io/r/base/call.html" class="external-link">call()</a></code> expressions. Cryptographic objects (CKKS ciphertexts, EC points, key shares, transport-encrypted blobs) routinely exceed this limit. dsVertClient automatically splits all large payloads into 10 KB chunks via <code>mheStoreBlobDS</code>, which the server reassembles transparently. This chunking is applied uniformly across all protocols (PSI, MHE correlation, GLM) for any data that scales with the number of observations, variables, or servers — ensuring that no DataSHIELD call can overflow regardless of dataset size or number of parties.</p>
+</div>
+<div class="section level2">
 <h2 id="requirements">Requirements<a class="anchor" aria-label="anchor" href="#requirements"></a>
 </h2>
 <ul>
@@ -284,15 +343,7 @@
 </h2>
 <ul>
 <li>
-<a href="https://isglobal-brge.github.io/dsVertClient/articles/a-getting-started.html">Getting Started</a>: Setup, PSI record alignment, first analysis</li>
-<li>
-<a href="https://isglobal-brge.github.io/dsVertClient/articles/b-statistical-analysis.html">Statistical Analysis</a>: Correlation, PCA, and GLMs</li>
-<li>
-<a href="https://isglobal-brge.github.io/dsVertClient/articles/c-methodology.html">Methodology</a>: MHE protocol, BCD-IRLS, ECDH-PSI details</li>
-<li>
-<a href="https://isglobal-brge.github.io/dsVertClient/articles/d-validation.html">Validation</a>: Numerical comparison against local R</li>
-<li>
-<a href="https://isglobal-brge.github.io/dsVertClient/articles/e-security.html">Security Model</a>: Threat model, MHE guarantees, PSI security</li>
+<a href="https://isglobal-brge.github.io/dsVertClient/articles/pima-demo.html">Pima Validation Demo</a>: Full pipeline validation against centralized R</li>
 </ul>
 </div>
 <div class="section level2">
