@@ -101,6 +101,27 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   ref_conn <- datasources[ref_server]
   target_names <- setdiff(server_names, ref_server)
 
+  chunk_size <- 10000  # DataSHIELD parser-safe chunk size
+
+  # Store a large blob on a server via chunked mheStoreBlobDS calls.
+  # This avoids R's C stack overflow for large call() expressions.
+  .storeLargeBlob <- function(key, data, conn) {
+    n_chars <- nchar(data)
+    n_chunks <- ceiling(n_chars / chunk_size)
+    for (ch in seq_len(n_chunks)) {
+      start <- (ch - 1) * chunk_size + 1
+      end <- min(ch * chunk_size, n_chars)
+      DSI::datashield.aggregate(
+        conns = conn,
+        expr = call("mheStoreBlobDS",
+                    key = key,
+                    chunk = substr(data, start, end),
+                    chunk_index = as.integer(ch),
+                    n_chunks = as.integer(n_chunks))
+      )
+    }
+  }
+
   cat("=== ECDH-PSI Record Alignment ===\n")
   cat(sprintf("Reference: %s, Targets: %s\n\n", ref_server,
               paste(target_names, collapse = ", ")))
@@ -125,30 +146,36 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
 
     # ==================================================================
     # Phases 2+3: Client relays ref masked points to target server.
-    # Target generates its own scalar β, double-masks ref points
-    # (β·(α·H(id)) — stored locally for matching), and returns its own
-    # masked IDs (β·H(id)) to the client.
+    # EC points are sent via chunked blob storage to prevent R's C stack
+    # overflow with large datasets. Each point is ~44 bytes base64url;
+    # at n=100K records the vector would be ~14MB inline — well above
+    # R's call expression parser limit.
     # ==================================================================
     cat(sprintf("[Phase 2-3] %s: processing...\n", target_name))
+    ref_points_blob <- paste(ref_result$masked_points, collapse = ",")
+    .storeLargeBlob("ref_masked_points", ref_points_blob, target_conn)
+
     target_result <- DSI::datashield.aggregate(
       conns = target_conn,
       expr = call("psiProcessTargetDS", data_name, id_col,
-                  ref_result$masked_points)
+                  from_storage = TRUE)
     )
     target_result <- target_result[[1]]
     cat(sprintf("  %s: %d IDs masked\n", target_name, target_result$n))
 
     # ==================================================================
     # Phases 4+5: Client relays target's masked IDs to the ref server.
-    # Ref server double-masks them: α·(β·H(id)). By ECDH commutativity,
-    # α·β·H(id) = β·α·H(id), so the target can match these against its
-    # stored double-masked ref points to find common IDs.
+    # Ref server double-masks them: α·(β·H(id)). Same blob storage
+    # pattern for the n-length EC point vector.
     # ==================================================================
     cat(sprintf("[Phase 4-5] %s: double-masking via %s...\n",
                 target_name, ref_server))
+    target_points_blob <- paste(target_result$own_masked_points, collapse = ",")
+    .storeLargeBlob("target_masked_points", target_points_blob, ref_conn)
+
     dm_result <- DSI::datashield.aggregate(
       conns = ref_conn,
-      expr = call("psiDoubleMaskDS", target_result$own_masked_points)
+      expr = call("psiDoubleMaskDS", from_storage = TRUE)
     )
     dm_result <- dm_result[[1]]
 
@@ -158,11 +185,14 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     # identifies common IDs, and reorders its data to match ref order.
     # ==================================================================
     cat(sprintf("[Phase 6-7] %s: matching and aligning...\n", target_name))
+    dm_points_blob <- paste(dm_result$double_masked_points, collapse = ",")
+    .storeLargeBlob("double_masked_points", dm_points_blob, target_conn)
+
     DSI::datashield.assign(
       conns = target_conn,
       symbol = newobj,
       value = call("psiMatchAndAlignDS", data_name,
-                   dm_result$double_masked_points)
+                   from_storage = TRUE)
     )
   }
 
@@ -201,13 +231,17 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
 
   cat(sprintf("  Common records: %d\n", length(common_indices)))
 
-  # Broadcast common indices to all servers and filter
+  # Broadcast common indices to all servers via blob storage and filter.
+  # The index vector grows with n_common; at n=200K the integer vector
+  # would be ~15MB inline, exceeding R's call expression limit.
   for (name in server_names) {
     conn <- datasources[name]
+    indices_blob <- paste(common_indices, collapse = ",")
+    .storeLargeBlob("common_indices", indices_blob, conn)
     DSI::datashield.assign(
       conns = conn,
       symbol = newobj,
-      value = call("psiFilterCommonDS", newobj, common_indices)
+      value = call("psiFilterCommonDS", newobj, from_storage = TRUE)
     )
   }
 

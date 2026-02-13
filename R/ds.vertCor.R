@@ -264,10 +264,14 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     server <- server_list[i]
     conn_idx <- which(server_names == server)
 
+    # CRP can be several MB at log_n=14; send via blob storage to avoid
+    # R's call expression parser C stack overflow.
+    .storeLargeBlob("crp", crp, conn_idx)
+    .storeLargeBlob("gkg_seed", gkg_seed, conn_idx)
+
     call_expr <- call("mheInitDS",
                       party_id = as.integer(i - 1),
-                      crp = crp,
-                      gkg_seed = gkg_seed,
+                      from_storage = TRUE,
                       num_obs = as.integer(n_obs),
                       log_n = as.integer(log_n),
                       log_scale = as.integer(log_scale))
@@ -460,15 +464,20 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
       message("    Encrypted cross-product: ", n_A, "x", n_B)
 
       # Protocol Firewall: authorize ciphertexts on non-producing servers.
+      # ct_hashes scales with p_A * p_B; sent via blob storage to handle
+      # cases where many variables produce a large hash vector.
       ct_hashes <- enc_result$ct_hashes
       if (!is.null(ct_hashes) && length(ct_hashes) > 0) {
+        ct_hashes_blob <- paste(ct_hashes, collapse = ",")
         for (server in server_list) {
           if (server != server_A) {
             conn_idx <- which(server_names == server)
-            auth_expr <- call("mheAuthorizeCTDS",
-                              ct_hashes = ct_hashes,
-                              op_type = "cross-product")
-            DSI::datashield.aggregate(conns = datasources[conn_idx], expr = auth_expr)
+            .storeLargeBlob("ct_hashes", ct_hashes_blob, conn_idx)
+            DSI::datashield.aggregate(
+              conns = datasources[conn_idx],
+              expr = call("mheAuthorizeCTDS",
+                          op_type = "cross-product",
+                          from_storage = TRUE))
           }
         }
       }
