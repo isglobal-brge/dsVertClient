@@ -180,11 +180,11 @@ leave their respective institutions.
 
 ### Supported Families
 
-| Family           | Link     | Response Type       | Example             |
-|------------------|----------|---------------------|---------------------|
-| Gaussian         | Identity | Continuous          | Blood pressure      |
-| Binomial         | Logit    | Binary (0/1)        | Hypertension status |
-| Poisson          | Log      | Count               | Number of visits    |
+| Family   | Link     | Response Type | Example             |
+|----------|----------|---------------|---------------------|
+| Gaussian | Identity | Continuous    | Blood pressure      |
+| Binomial | Logit    | Binary (0/1)  | Hypertension status |
+| Poisson  | Log      | Count         | Number of visits    |
 
 All families use the same `ds.vertGLM` interface; only the `family`
 argument changes.
@@ -319,8 +319,6 @@ models fitted. Glucose and heart_rate have small positive effects on the
 expected visit count, while age and bmi have small negative effects. The
 model required 10 iterations to converge, more than the Gaussian (6) or
 binomial (7), which is typical for count data.
-
-------------------------------------------------------------------------
 
 ## Cleanup
 

@@ -55,11 +55,7 @@ articles:
   - title: User Guides
     navbar: ~
     contents:
-      - a-getting-started
-      - b-statistical-analysis
-      - c-methodology
-      - d-validation
-      - e-security
+      - pima-demo
 
 authors:
   David Sarrat González:
