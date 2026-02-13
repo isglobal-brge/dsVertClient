@@ -276,15 +276,31 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       transport_pks[[server]] <- result$transport_pk
     }
 
+    # Store PK shares, CRP, GKG seed, and GKG shares on the combining server
+    # via chunked blob storage. Cryptographic objects can be several MB each,
+    # exceeding R's expression parser stack limit if passed as call arguments.
     conn_idx <- which(server_names == server_list[1])
-    gkg_shares_ordered <- lapply(server_list, function(s) gkg_shares[[s]])
+
+    for (i in seq_along(server_list)) {
+      .sendBlob(pk_shares[[server_list[i]]], paste0("pk_", i - 1), conn_idx)
+    }
+    .sendBlob(crp, "crp", conn_idx)
+    .sendBlob(gkg_seed, "gkg_seed", conn_idx)
+
+    n_gkg_shares <- length(gkg_shares[[server_list[1]]])
+    for (i in seq_along(server_list)) {
+      shares <- gkg_shares[[server_list[i]]]
+      for (j in seq_along(shares)) {
+        .sendBlob(shares[j], paste0("gkg_", i - 1, "_", j - 1), conn_idx)
+      }
+    }
+
     combined <- DSI::datashield.aggregate(
       conns = datasources[conn_idx],
       expr = call("mheCombineDS",
-                  public_key_shares = unlist(pk_shares, use.names = FALSE),
-                  crp = crp,
-                  galois_key_shares = gkg_shares_ordered,
-                  gkg_seed = gkg_seed,
+                  from_storage = TRUE,
+                  n_parties = as.integer(length(server_list)),
+                  n_gkg_shares = as.integer(n_gkg_shares),
                   num_obs = as.integer(n_obs),
                   log_n = as.integer(log_n),
                   log_scale = as.integer(log_scale))
@@ -293,11 +309,18 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     cpk <- combined$collective_public_key
     galois_keys <- combined$galois_keys
 
+    # Distribute CPK and Galois keys to other servers via chunked blob storage
     for (server in server_list[-1]) {
-      conn_idx <- which(server_names == server)
+      srv_conn <- which(server_names == server)
+      .sendBlob(cpk, "cpk", srv_conn)
+      if (!is.null(galois_keys)) {
+        for (gk_i in seq_along(galois_keys)) {
+          .sendBlob(galois_keys[gk_i], paste0("gk_", gk_i - 1), srv_conn)
+        }
+      }
       DSI::datashield.aggregate(
-        conns = datasources[conn_idx],
-        expr = call("mheStoreCPKDS", cpk = cpk, galois_keys = galois_keys)
+        conns = datasources[srv_conn],
+        expr = call("mheStoreCPKDS", from_storage = TRUE)
       )
     }
 
