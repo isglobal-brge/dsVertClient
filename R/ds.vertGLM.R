@@ -261,11 +261,16 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     for (i in 2:length(server_list)) {
       server <- server_list[i]
       conn_idx <- which(server_names == server)
+
+      # CRP can be several MB at log_n=14; send via blob storage
+      .sendBlob(crp, "crp", conn_idx)
+      .sendBlob(gkg_seed, "gkg_seed", conn_idx)
+
       result <- DSI::datashield.aggregate(
         conns = datasources[conn_idx],
         expr = call("mheInitDS",
-                    party_id = as.integer(i - 1), crp = crp,
-                    gkg_seed = gkg_seed,
+                    party_id = as.integer(i - 1),
+                    from_storage = TRUE,
                     num_obs = as.integer(n_obs),
                     log_n = as.integer(log_n),
                     log_scale = as.integer(log_scale))
@@ -539,16 +544,19 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       enc_gradients <- grad_result$encrypted_gradients
       ct_hashes <- grad_result$ct_hashes
 
-      # Protocol Firewall: authorize gradient ciphertexts on non-producing servers
+      # Protocol Firewall: authorize gradient ciphertexts on non-producing servers.
+      # ct_hashes sent via blob storage for robustness with many variables.
       if (!is.null(ct_hashes) && length(ct_hashes) > 0) {
+        ct_hashes_blob <- paste(ct_hashes, collapse = ",")
         for (auth_server in server_list) {
           if (auth_server != server) {
             auth_conn <- which(server_names == auth_server)
+            .sendBlob(ct_hashes_blob, "ct_hashes", auth_conn)
             DSI::datashield.aggregate(
               conns = datasources[auth_conn],
               expr = call("mheAuthorizeCTDS",
-                          ct_hashes = ct_hashes,
-                          op_type = "glm-gradient")
+                          op_type = "glm-gradient",
+                          from_storage = TRUE)
             )
           }
         }
