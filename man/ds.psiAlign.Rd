@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.psiAlign.R
 \name{ds.psiAlign}
 \alias{ds.psiAlign}
-\title{ECDH-PSI Record Alignment}
+\title{ECDH-PSI Record Alignment (Blind Relay)}
 \usage{
 ds.psiAlign(
   data_name,
@@ -35,41 +35,48 @@ Invisibly returns a list with alignment statistics for each server:
 }
 \description{
 Privacy-preserving record alignment using Elliptic Curve
-Diffie-Hellman Private Set Intersection (ECDH-PSI). Aligns data frames
-across vertically partitioned DataSHIELD servers so that rows correspond
-to the same individuals, without exposing identifiers.
+Diffie-Hellman Private Set Intersection (ECDH-PSI) with blind-relay
+transport encryption. Aligns data frames across vertically partitioned
+DataSHIELD servers so that rows correspond to the same individuals.
+The client never sees raw EC points — only opaque encrypted blobs.
 }
 \details{
 This function performs privacy-preserving record alignment in a single call,
-using ECDH-PSI instead of SHA-256 hashing for stronger privacy guarantees.
+using ECDH-PSI with blind-relay transport encryption.
 
 \subsection{Protocol overview}{
 ECDH-PSI exploits the commutativity of elliptic curve scalar multiplication:
 \eqn{\alpha \cdot (\beta \cdot H(id)) = \beta \cdot (\alpha \cdot H(id))}.
 
+All EC point exchanges are encrypted server-to-server (X25519 + AES-256-GCM
+ECIES). The client acts as a blind relay, seeing only opaque blobs.
+
 \enumerate{
-\item The reference server hashes IDs to P-256 curve points and multiplies
-by a random scalar \eqn{\alpha}. Returns masked points to client.
+\item \strong{Phase 0}: Each server generates an X25519 transport keypair.
+Public keys are exchanged via the client.
+\item \strong{Phase 1}: The reference server masks IDs with scalar
+\eqn{\alpha}. Points are stored server-side (not returned to client).
 \item For each target server:
 \itemize{
-\item The target generates scalar \eqn{\beta}, double-masks ref points
-with \eqn{\beta} (stores locally), and masks own IDs with \eqn{\beta}.
-\item The reference double-masks target points with \eqn{\alpha}.
-\item The target matches double-masked sets to find the intersection,
-then reorders its data to match the reference order.
+\item The reference encrypts masked points under the target's PK.
+\item The target decrypts, generates scalar \eqn{\beta}, double-masks
+ref points (stores locally), masks own IDs, encrypts them under
+the ref's PK.
+\item The reference decrypts, double-masks with \eqn{\alpha},
+encrypts result under target's PK.
+\item The target decrypts, matches double-masked sets, aligns data.
 }
 \item A multi-server intersection ensures only records present on ALL
 servers are retained.
 }
 }
 
-\subsection{Security (DDH assumption on P-256)}{
+\subsection{Security (DDH assumption on P-256, malicious-client model)}{
 \itemize{
-\item The client sees only opaque elliptic curve points — not reversible
-to identifiers, not vulnerable to dictionary attacks.
+\item The client sees only opaque encrypted blobs — not EC points.
 \item Each server's scalar never leaves the server.
-\item The DDH assumption prevents the client from linking single-masked
-points across servers.
+\item PSI firewall: phase ordering + one-shot semantics prevent OPRF
+oracle attacks.
 }
 }
 }

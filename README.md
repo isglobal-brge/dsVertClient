@@ -15,13 +15,16 @@ This package provides user-friendly functions for:
 
 ## Security Guarantees
 
-### Record Alignment (ECDH-PSI)
+### Record Alignment (ECDH-PSI with Blind Relay)
 
 | Property | What it prevents |
 |----------|-----------------|
 | **Dictionary attack resistance** | Unlike SHA-256 hashing, the client CANNOT reverse-engineer patient IDs from the masked curve points (requires server's secret scalar) |
 | **Scalar confidentiality** | Each server's P-256 random scalar stays on-server |
 | **Unlinkability (DDH)** | The client CANNOT link single-masked points across servers |
+| **Blind relay** | Client sees ONLY opaque encrypted blobs (X25519 + AES-256-GCM). All EC point exchanges are transport-encrypted server-to-server. |
+| **PSI Firewall** | Server-side FSM enforces phase ordering and one-shot semantics per target, preventing OPRF oracle attacks |
+| **MITM-resistant mode** | Optional pre-shared key pinning validates transport PKs against administrator-configured peers, detecting key substitution |
 
 ### Statistical Analysis (MHE-CKKS)
 
