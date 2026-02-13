@@ -147,6 +147,24 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     n_ct_chunks
   }
 
+  # Store a large base64url blob on a server via chunked mheStoreBlobDS calls
+  .storeLargeBlob <- function(key, data, conn_idx) {
+    n_chars <- nchar(data)
+    n_chunks <- ceiling(n_chars / chunk_size)
+    for (ch in seq_len(n_chunks)) {
+      start <- (ch - 1) * chunk_size + 1
+      end <- min(ch * chunk_size, n_chars)
+      DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call("mheStoreBlobDS",
+                    key = key,
+                    chunk = substr(data, start, end),
+                    chunk_index = as.integer(ch),
+                    n_chunks = as.integer(n_chunks))
+      )
+    }
+  }
+
   # Relay a wrapped share to the fusion server in chunks
   .sendWrappedShare <- function(wrapped_share, party_id, fusion_conn_idx) {
     n_chars <- nchar(wrapped_share)
@@ -274,14 +292,27 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
 
   conn_idx <- which(server_names == first_server)
 
-  # Organize GKG shares as [party][galEl] for the combine step
-  gkg_shares_ordered <- lapply(server_list, function(s) gkg_shares[[s]])
+  # Store PK shares, CRP, GKG seed, and GKG shares on the combining server
+  # via chunked blob storage. Cryptographic objects can be several MB each,
+  # exceeding R's expression parser stack limit if passed as call arguments.
+  for (i in seq_along(server_list)) {
+    .storeLargeBlob(paste0("pk_", i - 1), pk_shares[[server_list[i]]], conn_idx)
+  }
+  .storeLargeBlob("crp", crp, conn_idx)
+  .storeLargeBlob("gkg_seed", gkg_seed, conn_idx)
+
+  n_gkg_shares <- length(gkg_shares[[server_list[1]]])
+  for (i in seq_along(server_list)) {
+    shares <- gkg_shares[[server_list[i]]]
+    for (j in seq_along(shares)) {
+      .storeLargeBlob(paste0("gkg_", i - 1, "_", j - 1), shares[j], conn_idx)
+    }
+  }
 
   call_expr <- call("mheCombineDS",
-                    public_key_shares = unlist(pk_shares, use.names = FALSE),
-                    crp = crp,
-                    galois_key_shares = gkg_shares_ordered,
-                    gkg_seed = gkg_seed,
+                    from_storage = TRUE,
+                    n_parties = as.integer(length(server_list)),
+                    n_gkg_shares = as.integer(n_gkg_shares),
                     num_obs = as.integer(n_obs),
                     log_n = as.integer(log_n),
                     log_scale = as.integer(log_scale))
@@ -292,13 +323,17 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   galois_keys <- combined$galois_keys
   message("  CPK created on ", first_server)
 
-  # Distribute CPK and Galois keys to other servers
+  # Distribute CPK and Galois keys to other servers via chunked blob storage
   for (server in server_list[-1]) {
-    conn_idx <- which(server_names == server)
-    call_expr <- call("mheStoreCPKDS",
-                      cpk = cpk,
-                      galois_keys = galois_keys)
-    DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
+    srv_conn <- which(server_names == server)
+    .storeLargeBlob("cpk", cpk, srv_conn)
+    if (!is.null(galois_keys)) {
+      for (gk_i in seq_along(galois_keys)) {
+        .storeLargeBlob(paste0("gk_", gk_i - 1), galois_keys[gk_i], srv_conn)
+      }
+    }
+    DSI::datashield.aggregate(conns = datasources[srv_conn],
+                              expr = call("mheStoreCPKDS", from_storage = TRUE))
     message("  CPK stored on ", server)
   }
 

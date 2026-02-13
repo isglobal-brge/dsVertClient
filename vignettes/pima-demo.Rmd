@@ -1,0 +1,314 @@
+---
+title: "dsVert Demo: Pima Diabetes Dataset"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{dsVert Demo: Pima Diabetes Dataset}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+This vignette demonstrates the full dsVert pipeline on the **Pima Indian women
+diabetes dataset** (`Pima.tr` from the MASS package, $n = 200$), vertically
+partitioned across three DataSHIELD servers.
+
+## Dataset description
+
+The Pima dataset contains clinical measurements for 200 women of Pima heritage
+aged $\geq 21$ years (Smith et al., 1988; Venables & Ripley, 2002). It provides:
+
+- **Numerical variables** (7): `npreg`, `glu`, `bp`, `skin`, `bmi`, `ped`, `age`
+- **Binary outcome**: `diabetes` (0/1, derived from `type`)
+
+## Vertical partitioning
+
+| Server | Role | Variables |
+|--------|------|-----------|
+| server1 | Anthropometric / risk | `patient_id`, `age`, `bmi`, `ped` |
+| server2 | Clinical | `patient_id`, `glu`, `bp`, `skin` |
+| server3 | Outcomes | `patient_id`, `npreg`, `diabetes` |
+
+Row order is independently shuffled per server to validate PSI alignment.
+
+## 1. Prepare CSV files
+
+```{r prepare-data}
+library(MASS)
+data("Pima.tr", package = "MASS")
+df <- as.data.frame(Pima.tr)
+
+# Synthetic patient ID
+df$patient_id <- sprintf("P%03d", seq_len(nrow(df)))
+
+# Binary diabetes (0/1)
+df$diabetes <- ifelse(df$type == "Yes", 1L, 0L)
+
+# Vertical split
+server1 <- df[, c("patient_id", "age", "bmi", "ped")]
+server2 <- df[, c("patient_id", "glu", "bp", "skin")]
+server3 <- df[, c("patient_id", "npreg", "diabetes")]
+
+# Shuffle rows independently (so PSI has real work)
+set.seed(1); server1 <- server1[sample(nrow(server1)), ]
+set.seed(2); server2 <- server2[sample(nrow(server2)), ]
+set.seed(3); server3 <- server3[sample(nrow(server3)), ]
+
+# Export CSVs (upload these to each Opal datasource)
+write.csv(server1, "pima_server1.csv", row.names = FALSE)
+write.csv(server2, "pima_server2.csv", row.names = FALSE)
+write.csv(server3, "pima_server3.csv", row.names = FALSE)
+```
+
+Upload each CSV to the corresponding Opal server as a table in a project
+(e.g., `pima_project.pima_data`).
+
+## 2. Connect to DataSHIELD
+
+```{r connect}
+library(DSI)
+library(DSOpal)
+library(dsVertClient)
+
+options(opal.verifyssl = FALSE)
+
+builder <- DSI::newDSLoginBuilder()
+builder$append(server = "server1",
+               url = "https://localhost:8443",
+               user = "administrator", password = "admin123",
+               driver = "OpalDriver",
+               table = "pima_project.pima_data")
+builder$append(server = "server2",
+               url = "https://localhost:8444",
+               user = "administrator", password = "admin123",
+               driver = "OpalDriver",
+               table = "pima_project.pima_data")
+builder$append(server = "server3",
+               url = "https://localhost:8445",
+               user = "administrator", password = "admin123",
+               driver = "OpalDriver",
+               table = "pima_project.pima_data")
+
+conns <- DSI::datashield.login(builder$build(), assign = TRUE, symbol = "D")
+on.exit(DSI::datashield.logout(conns), add = TRUE)
+```
+
+## 3. Local ground truth (for validation)
+
+```{r ground-truth}
+# Reconstruct the merged dataset locally for comparison
+full <- merge(merge(
+  read.csv("pima_server1.csv"),
+  read.csv("pima_server2.csv"), by = "patient_id"),
+  read.csv("pima_server3.csv"), by = "patient_id")
+full <- full[order(full$patient_id), ]
+
+num_vars <- c("age", "bmi", "ped", "glu", "bp", "skin", "npreg")
+local_cor <- cor(full[, num_vars])
+local_pca <- eigen(local_cor)
+```
+
+## A) PSI alignment
+
+```{r psi-align}
+psi_result <- ds.psiAlign(
+  data_name   = "D",
+  id_col      = "patient_id",
+  newobj      = "D_aligned",
+  datasources = conns
+)
+
+cat("Matched cohort size:", psi_result$n_intersect, "\n")
+cat("Alignment time:", psi_result$timing$total, "sec\n")
+```
+
+After alignment, `D_aligned` on every server has the same rows in the same
+order, with `patient_id` removed. All subsequent analyses use `D_aligned`.
+
+## B) Correlation ($7 \times 7$)
+
+```{r correlation}
+variables <- list(
+  server1 = c("age", "bmi", "ped"),
+  server2 = c("glu", "bp", "skin"),
+  server3 = c("npreg")
+)
+
+cor_result <- ds.vertCor(
+  data_name   = "D_aligned",
+  variables   = variables,
+  log_n       = 12,
+  log_scale   = 40,
+  datasources = conns
+)
+
+# dsVert correlation matrix
+print(round(cor_result$correlation, 4))
+
+# Compare with local
+max_cor_error <- max(abs(cor_result$correlation - local_cor))
+cat("Max absolute correlation error:", max_cor_error, "\n")
+```
+
+## C) PCA (reusing correlation)
+
+```{r pca}
+pca_result <- ds.vertPCA(
+  cor_result   = cor_result,
+  n_components = 7
+)
+
+# Eigenvalues
+cat("dsVert eigenvalues:", round(pca_result$eigenvalues, 4), "\n")
+cat("Local  eigenvalues:", round(local_pca$values, 4), "\n")
+
+max_eig_error <- max(abs(pca_result$eigenvalues - local_pca$values))
+cat("Max eigenvalue error:", max_eig_error, "\n")
+
+# Variance explained
+cat("Proportion of variance:\n")
+print(round(pca_result$variance_explained, 4))
+```
+
+## D) GLM Gaussian (response: `glu` on server2)
+
+```{r glm-gaussian}
+x_vars_gauss <- list(
+  server1 = c("age", "bmi", "ped"),
+  server2 = c("bp", "skin"),
+  server3 = c("npreg", "diabetes")
+)
+
+glm_gauss <- ds.vertGLM(
+  data_name   = "D_aligned",
+  y_var       = "glu",
+  x_vars      = x_vars_gauss,
+  y_server    = "server2",
+  family      = "gaussian",
+  max_iter    = 100,
+  tol         = 1e-4,
+  lambda      = 1e-4,
+  log_n       = 12,
+  log_scale   = 40,
+  verbose     = TRUE,
+  datasources = conns
+)
+
+summary(glm_gauss)
+
+# Compare with local GLM
+local_gauss <- glm(glu ~ age + bmi + ped + bp + skin + npreg + diabetes,
+                   data = full, family = gaussian)
+cat("\nLocal coefficients:\n")
+print(round(coef(local_gauss), 4))
+
+cat("\ndsVert coefficients:\n")
+print(round(coef(glm_gauss), 4))
+
+max_gauss_err <- max(abs(coef(glm_gauss) - coef(local_gauss)))
+cat("\nMax coefficient error:", max_gauss_err, "\n")
+```
+
+## E) GLM Binomial (response: `diabetes` on server3)
+
+```{r glm-binomial}
+x_vars_binom <- list(
+  server1 = c("age", "bmi", "ped"),
+  server2 = c("glu", "bp", "skin"),
+  server3 = c("npreg")
+)
+
+glm_binom <- ds.vertGLM(
+  data_name   = "D_aligned",
+  y_var       = "diabetes",
+  x_vars      = x_vars_binom,
+  y_server    = "server3",
+  family      = "binomial",
+  max_iter    = 100,
+  tol         = 1e-4,
+  lambda      = 1e-4,
+  log_n       = 12,
+  log_scale   = 40,
+  verbose     = TRUE,
+  datasources = conns
+)
+
+summary(glm_binom)
+
+# Compare with local GLM
+local_binom <- glm(diabetes ~ age + bmi + ped + glu + bp + skin + npreg,
+                   data = full, family = binomial)
+cat("\nLocal coefficients:\n")
+print(round(coef(local_binom), 4))
+
+cat("\ndsVert coefficients:\n")
+print(round(coef(glm_binom), 4))
+
+max_binom_err <- max(abs(coef(glm_binom) - coef(local_binom)))
+cat("\nMax coefficient error:", max_binom_err, "\n")
+```
+
+## F) GLM Poisson (response: `npreg` on server3)
+
+```{r glm-poisson}
+x_vars_pois <- list(
+  server1 = c("age", "bmi", "ped"),
+  server2 = c("glu", "bp", "skin"),
+  server3 = c("diabetes")
+)
+
+glm_pois <- ds.vertGLM(
+  data_name   = "D_aligned",
+  y_var       = "npreg",
+  x_vars      = x_vars_pois,
+  y_server    = "server3",
+  family      = "poisson",
+  max_iter    = 100,
+  tol         = 1e-4,
+  lambda      = 1e-4,
+  log_n       = 12,
+  log_scale   = 40,
+  verbose     = TRUE,
+  datasources = conns
+)
+
+summary(glm_pois)
+
+# Compare with local GLM
+local_pois <- glm(npreg ~ age + bmi + ped + glu + bp + skin + diabetes,
+                  data = full, family = poisson)
+cat("\nLocal coefficients:\n")
+print(round(coef(local_pois), 4))
+
+cat("\ndsVert coefficients:\n")
+print(round(coef(glm_pois), 4))
+
+max_pois_err <- max(abs(coef(glm_pois) - coef(local_pois)))
+cat("\nMax coefficient error:", max_pois_err, "\n")
+```
+
+## Summary
+
+```{r summary-table}
+cat("\n=== Validation Summary ===\n")
+cat(sprintf("%-20s %s\n", "Protocol", "Max Error"))
+cat(sprintf("%-20s %s\n", "---", "---"))
+cat(sprintf("%-20s %.6f\n", "PSI Alignment", 0))
+cat(sprintf("%-20s %.6f\n", "Correlation", max_cor_error))
+cat(sprintf("%-20s %.6f\n", "PCA", max_eig_error))
+cat(sprintf("%-20s %.6f\n", "GLM Gaussian", max_gauss_err))
+cat(sprintf("%-20s %.6f\n", "GLM Binomial", max_binom_err))
+cat(sprintf("%-20s %.6f\n", "GLM Poisson", max_pois_err))
+```
+
+## Disconnect
+
+```{r disconnect}
+DSI::datashield.logout(conns)
+```
