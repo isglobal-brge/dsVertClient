@@ -1,8 +1,9 @@
-#' @title ECDH-PSI Record Alignment
+#' @title ECDH-PSI Record Alignment (Blind Relay)
 #' @description Privacy-preserving record alignment using Elliptic Curve
-#'   Diffie-Hellman Private Set Intersection (ECDH-PSI). Aligns data frames
-#'   across vertically partitioned DataSHIELD servers so that rows correspond
-#'   to the same individuals, without exposing identifiers.
+#'   Diffie-Hellman Private Set Intersection (ECDH-PSI) with blind-relay
+#'   transport encryption. Aligns data frames across vertically partitioned
+#'   DataSHIELD servers so that rows correspond to the same individuals.
+#'   The client never sees raw EC points — only opaque encrypted blobs.
 #'
 #' @param data_name Character string. Name of the data frame on each server.
 #' @param id_col Character string. Name of the identifier column.
@@ -21,35 +22,41 @@
 #'
 #' @details
 #' This function performs privacy-preserving record alignment in a single call,
-#' using ECDH-PSI instead of SHA-256 hashing for stronger privacy guarantees.
+#' using ECDH-PSI with blind-relay transport encryption.
 #'
 #' \subsection{Protocol overview}{
 #' ECDH-PSI exploits the commutativity of elliptic curve scalar multiplication:
 #' \eqn{\alpha \cdot (\beta \cdot H(id)) = \beta \cdot (\alpha \cdot H(id))}.
 #'
+#' All EC point exchanges are encrypted server-to-server (X25519 + AES-256-GCM
+#' ECIES). The client acts as a blind relay, seeing only opaque blobs.
+#'
 #' \enumerate{
-#'   \item The reference server hashes IDs to P-256 curve points and multiplies
-#'     by a random scalar \eqn{\alpha}. Returns masked points to client.
+#'   \item \strong{Phase 0}: Each server generates an X25519 transport keypair.
+#'     Public keys are exchanged via the client.
+#'   \item \strong{Phase 1}: The reference server masks IDs with scalar
+#'     \eqn{\alpha}. Points are stored server-side (not returned to client).
 #'   \item For each target server:
 #'     \itemize{
-#'       \item The target generates scalar \eqn{\beta}, double-masks ref points
-#'         with \eqn{\beta} (stores locally), and masks own IDs with \eqn{\beta}.
-#'       \item The reference double-masks target points with \eqn{\alpha}.
-#'       \item The target matches double-masked sets to find the intersection,
-#'         then reorders its data to match the reference order.
+#'       \item The reference encrypts masked points under the target's PK.
+#'       \item The target decrypts, generates scalar \eqn{\beta}, double-masks
+#'         ref points (stores locally), masks own IDs, encrypts them under
+#'         the ref's PK.
+#'       \item The reference decrypts, double-masks with \eqn{\alpha},
+#'         encrypts result under target's PK.
+#'       \item The target decrypts, matches double-masked sets, aligns data.
 #'     }
 #'   \item A multi-server intersection ensures only records present on ALL
 #'     servers are retained.
 #' }
 #' }
 #'
-#' \subsection{Security (DDH assumption on P-256)}{
+#' \subsection{Security (DDH assumption on P-256, malicious-client model)}{
 #' \itemize{
-#'   \item The client sees only opaque elliptic curve points — not reversible
-#'     to identifiers, not vulnerable to dictionary attacks.
+#'   \item The client sees only opaque encrypted blobs — not EC points.
 #'   \item Each server's scalar never leaves the server.
-#'   \item The DDH assumption prevents the client from linking single-masked
-#'     points across servers.
+#'   \item PSI firewall: phase ordering + one-shot semantics prevent OPRF
+#'     oracle attacks.
 #' }
 #' }
 #'
@@ -104,7 +111,6 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   chunk_size <- 10000  # DataSHIELD parser-safe chunk size
 
   # Store a large blob on a server via chunked mheStoreBlobDS calls.
-  # This avoids R's C stack overflow for large call() expressions.
   .storeLargeBlob <- function(key, data, conn) {
     n_chars <- nchar(data)
     n_chunks <- ceiling(n_chars / chunk_size)
@@ -122,38 +128,76 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     }
   }
 
-  cat("=== ECDH-PSI Record Alignment ===\n")
+  cat("=== ECDH-PSI Record Alignment (Blind Relay) ===\n")
   cat(sprintf("Reference: %s, Targets: %s\n\n", ref_server,
               paste(target_names, collapse = ", ")))
+
+  # ==================================================================
+  # Phase 0: PSI Transport Key Exchange
+  # ==================================================================
+  # Each server generates an X25519 transport keypair. The client
+  # collects PKs and distributes them so servers can encrypt messages
+  # for each other. The client never receives the secret keys.
+  cat("[Phase 0] Transport key exchange...\n")
+  psi_transport_pks <- list()
+  for (name in server_names) {
+    conn <- datasources[name]
+    result <- DSI::datashield.aggregate(
+      conns = conn,
+      expr = call("psiInitDS")
+    )
+    psi_transport_pks[[name]] <- result[[1]]$transport_pk
+  }
+
+  # Distribute transport PKs to all servers
+  for (name in server_names) {
+    conn <- datasources[name]
+    # Build key map: all server names + "ref" alias
+    keys_for_server <- psi_transport_pks
+    keys_for_server[["ref"]] <- psi_transport_pks[[ref_server]]
+    DSI::datashield.aggregate(
+      conns = conn,
+      expr = call("psiStoreTransportKeysDS", keys_for_server)
+    )
+  }
+  cat("  Transport keys exchanged.\n")
 
   # ==================================================================
   # Phase 1: Reference server masks its IDs
   # ==================================================================
   # The ref server generates a random P-256 scalar α and computes
-  # α·H(id) for each ID. These masked points are returned to the client.
-  # The scalar α stays on the server (NEVER transmitted).
+  # α·H(id) for each ID. Points are stored server-side (NOT returned).
   cat("[Phase 1] Reference server masking IDs...\n")
   ref_result <- DSI::datashield.aggregate(
     conns = ref_conn,
     expr = call("psiMaskIdsDS", data_name, id_col)
   )
   ref_result <- ref_result[[1]]
-  cat(sprintf("  %s: %d IDs masked\n", ref_server, ref_result$n))
+  cat(sprintf("  %s: %d IDs masked (stored server-side)\n",
+              ref_server, ref_result$n))
 
-  # For each target server: Phases 2-7
+  # For each target server: Phases 2-7 (all via encrypted blobs)
   for (target_name in target_names) {
     target_conn <- datasources[target_name]
 
     # ==================================================================
-    # Phases 2+3: Client relays ref masked points to target server.
-    # EC points are sent via chunked blob storage to prevent R's C stack
-    # overflow with large datasets. Each point is ~44 bytes base64url;
-    # at n=100K records the vector would be ~14MB inline — well above
-    # R's call expression parser limit.
+    # Phase 2: Ref exports encrypted masked points for this target
     # ==================================================================
-    cat(sprintf("[Phase 2-3] %s: processing...\n", target_name))
-    ref_points_blob <- paste(ref_result$masked_points, collapse = ",")
-    .storeLargeBlob("ref_masked_points", ref_points_blob, target_conn)
+    cat(sprintf("[Phase 2] %s: exporting encrypted points for %s...\n",
+                ref_server, target_name))
+    export_result <- DSI::datashield.aggregate(
+      conns = ref_conn,
+      expr = call("psiExportMaskedDS", target_name)
+    )
+    encrypted_ref_blob <- export_result[[1]]$encrypted_blob
+
+    # ==================================================================
+    # Phase 3: Client relays encrypted blob to target.
+    # Target decrypts, processes (masks own IDs, double-masks ref points),
+    # returns encrypted own masked points under ref's PK.
+    # ==================================================================
+    cat(sprintf("[Phase 3] %s: processing (blind relay)...\n", target_name))
+    .storeLargeBlob("ref_encrypted_blob", encrypted_ref_blob, target_conn)
 
     target_result <- DSI::datashield.aggregate(
       conns = target_conn,
@@ -162,31 +206,33 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     )
     target_result <- target_result[[1]]
     cat(sprintf("  %s: %d IDs masked\n", target_name, target_result$n))
+    encrypted_target_blob <- target_result$encrypted_blob
 
     # ==================================================================
-    # Phases 4+5: Client relays target's masked IDs to the ref server.
-    # Ref server double-masks them: α·(β·H(id)). Same blob storage
-    # pattern for the n-length EC point vector.
+    # Phases 4+5: Client relays target's encrypted blob to ref.
+    # Ref decrypts, double-masks with α, re-encrypts under target's PK.
+    # One-shot per target (PSI firewall enforced).
     # ==================================================================
-    cat(sprintf("[Phase 4-5] %s: double-masking via %s...\n",
+    cat(sprintf("[Phase 4-5] %s: double-masking via %s (blind relay)...\n",
                 target_name, ref_server))
-    target_points_blob <- paste(target_result$own_masked_points, collapse = ",")
-    .storeLargeBlob("target_masked_points", target_points_blob, ref_conn)
+    .storeLargeBlob("target_encrypted_blob", encrypted_target_blob, ref_conn)
 
     dm_result <- DSI::datashield.aggregate(
       conns = ref_conn,
-      expr = call("psiDoubleMaskDS", from_storage = TRUE)
+      expr = call("psiDoubleMaskDS",
+                  target_name = target_name,
+                  from_storage = TRUE)
     )
-    dm_result <- dm_result[[1]]
+    encrypted_dm_blob <- dm_result[[1]]$encrypted_blob
 
     # ==================================================================
-    # Phases 6+7: Client relays double-masked own points to target.
-    # Target matches them against stored double-masked ref points,
-    # identifies common IDs, and reorders its data to match ref order.
+    # Phases 6+7: Client relays encrypted double-masked blob to target.
+    # Target decrypts, matches against stored ref double-masked points,
+    # and reorders its data to match ref order.
     # ==================================================================
-    cat(sprintf("[Phase 6-7] %s: matching and aligning...\n", target_name))
-    dm_points_blob <- paste(dm_result$double_masked_points, collapse = ",")
-    .storeLargeBlob("double_masked_points", dm_points_blob, target_conn)
+    cat(sprintf("[Phase 6-7] %s: matching and aligning (blind relay)...\n",
+                target_name))
+    .storeLargeBlob("dm_encrypted_blob", encrypted_dm_blob, target_conn)
 
     DSI::datashield.assign(
       conns = target_conn,
@@ -209,11 +255,7 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   # ==================================================================
   # Phase 8: Multi-server intersection
   # ==================================================================
-  # After Phases 2-7, each target has aligned to the reference, but
-  # different target servers may have matched different subsets of ref IDs
-  # (e.g. server2 has patients 1-40, server3 has patients 10-50).
-  # We intersect all matched index sets to keep only records present
-  # on ALL servers. This ensures the final aligned data is consistent.
+  # Integer indices are safe aggregate statistics (no EC points).
   cat("[Phase 8] Computing multi-server intersection...\n")
   all_indices <- list()
   for (name in server_names) {
@@ -232,8 +274,6 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   cat(sprintf("  Common records: %d\n", length(common_indices)))
 
   # Broadcast common indices to all servers via blob storage and filter.
-  # The index vector grows with n_common; at n=200K the integer vector
-  # would be ~15MB inline, exceeding R's call expression limit.
   for (name in server_names) {
     conn <- datasources[name]
     indices_blob <- paste(common_indices, collapse = ",")
