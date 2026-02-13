@@ -52,7 +52,7 @@ reference:
       - print.ds.pca
 
 articles:
-  - title: User Guides
+  - title: Validation
     navbar: ~
     contents:
       - pima-demo

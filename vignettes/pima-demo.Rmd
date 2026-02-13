@@ -1,128 +1,121 @@
 ---
-title: "dsVert Validation: Pima Diabetes Dataset"
+title: "Validation Study: Centralized vs. Federated Vertical Analysis"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{dsVert Validation: Pima Diabetes Dataset}
+  %\VignetteIndexEntry{Validation Study: Centralized vs. Federated Vertical Analysis}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>"
+  collapse = FALSE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5,
+  fig.align = "center",
+  cache = TRUE,
+  cache.path = "pima-demo_cache/"
 )
+
+col_palette <- colorRampPalette(c("#2166AC", "#67A9CF", "#D1E5F0",
+                                   "#FDDBC7", "#EF8A62", "#B2182B"))(100)
+diff_palette <- colorRampPalette(c("#2166AC", "white", "#B2182B"))(100)
+col_local  <- "#4393C3"
+col_dsvert <- "#D6604D"
 ```
 
-This vignette validates the full **dsVert** pipeline against centralized R
-computations on the **Pima Indian women diabetes dataset** (`Pima.tr` from the
-MASS package, $n = 200$). The dataset is vertically partitioned across three
-DataSHIELD (Opal/Rock) servers, and all six protocols are exercised:
-PSI alignment, correlation, PCA, and three GLM families (Gaussian, binomial,
-Poisson).
+## Introduction
 
-The local ground truth is computed here at build time. The dsVert results
-shown below were obtained on a three-server Opal deployment and are embedded
-as pre-computed values; to reproduce them, run `demo/run_pima_demo.R` with
-three running Opal servers.
+This vignette presents a comparative validation of the dsVert federated
+vertical analysis pipeline against centralized R computations. We exercise the
+full protocol stack --- ECDH-PSI record alignment, MHE-CKKS correlation,
+spectral PCA, and encrypted-label GLMs --- on real data vertically partitioned
+across three DataSHIELD servers.
 
-## 1. Dataset and vertical partitioning
+The study is organized in three parts:
 
-```{r dataset}
+1. **Centralized analysis** --- ground truth computed with standard R functions
+   on the pooled dataset.
+2. **Federated vertical analysis** --- the same analyses performed via dsVert,
+   where each server holds a different subset of variables and no raw data
+   leaves any server.
+3. **Comparative assessment** --- side-by-side numerical comparison with error
+   analysis.
+
+### Dataset
+
+We use the Pima Indian women diabetes training set (`Pima.tr`, $n = 200$) from
+the MASS R package (Venables & Ripley, 2002). It contains clinical measurements
+for 200 women of Pima heritage aged $\geq 21$ years, collected by the US
+National Institute of Diabetes and Digestive and Kidney Diseases near Phoenix,
+Arizona (Smith et al., 1988). Seven numeric variables are available: `npreg`
+(number of pregnancies), `glu` (plasma glucose), `bp` (diastolic blood
+pressure), `skin` (triceps skin fold thickness), `bmi` (body mass index),
+`ped` (diabetes pedigree function), and `age` (years).
+
+### Vertical partitioning scheme
+
+The data are split across three servers, each representing a different clinical
+domain. Row order is independently shuffled per server so that the ECDH-PSI
+alignment protocol has real work to do.
+
+| Server  | Domain                        | Variables                              |
+|---------|-------------------------------|----------------------------------------|
+| server1 | Anthropometric / familial     | `patient_id`, `age`, `bmi`, `ped`      |
+| server2 | Glucose and cardiovascular    | `patient_id`, `glu`, `bp`, `skin`      |
+| server3 | Reproductive / outcome        | `patient_id`, `npreg`, `diabetes`      |
+
+## Data preparation
+
+We load the dataset, create a patient identifier column for PSI matching, and
+derive a binary diabetes indicator from the original factor variable.
+
+```{r data-prep}
 library(MASS)
 data("Pima.tr", package = "MASS")
 df <- as.data.frame(Pima.tr)
 df$patient_id <- sprintf("P%03d", seq_len(nrow(df)))
 df$diabetes   <- ifelse(df$type == "Yes", 1L, 0L)
 
-cat("Dataset:", nrow(df), "rows x", ncol(df) - 1, "numeric columns\n")
+num_vars <- c("age", "bmi", "ped", "glu", "bp", "skin", "npreg")
 ```
 
-The data are vertically split across three servers. Row order is independently
-shuffled per server so that PSI alignment has real work to do.
+A quick look at the data:
 
-| Server  | Role                  | Variables                              |
-|---------|-----------------------|----------------------------------------|
-| server1 | Anthropometric / risk | `patient_id`, `age`, `bmi`, `ped`      |
-| server2 | Clinical              | `patient_id`, `glu`, `bp`, `skin`      |
-| server3 | Outcomes              | `patient_id`, `npreg`, `diabetes`      |
-
-## 2. Local ground truth
-
-We compute the centralized results that dsVert should approximate.
-
-### Correlation and PCA
-
-```{r local-cor-pca}
-num_vars  <- c("age", "bmi", "ped", "glu", "bp", "skin", "npreg")
-local_cor <- cor(df[, num_vars])
-local_pca <- eigen(local_cor)
-
-cat("Local correlation matrix (rounded to 4 decimals):\n")
-print(round(local_cor, 4))
-
-cat("\nLocal PCA eigenvalues:\n")
-cat(round(local_pca$values, 6), sep = ", ")
-cat("\n")
+```{r data-summary, echo = FALSE}
+summary(df[, num_vars])
 ```
 
-### GLM Gaussian (y = `glu`)
+## Connect to DataSHIELD and align records
 
-```{r local-glm-gaussian}
-local_gauss <- glm(glu ~ age + bmi + ped + bp + skin + npreg + diabetes,
-                   data = df, family = gaussian)
-cat("Local Gaussian GLM coefficients:\n")
-print(round(coef(local_gauss), 6))
-```
+We connect to the three Opal servers hosting the vertically partitioned data
+and perform ECDH-PSI record alignment. Each server only knows its own patient
+identifiers; the PSI protocol finds the common cohort without revealing which
+IDs are shared.
 
-### GLM Binomial (y = `diabetes`)
-
-```{r local-glm-binomial}
-local_binom <- glm(diabetes ~ age + bmi + ped + glu + bp + skin + npreg,
-                   data = df, family = binomial)
-cat("Local Binomial GLM coefficients:\n")
-print(round(coef(local_binom), 6))
-```
-
-### GLM Poisson (y = `npreg`)
-
-```{r local-glm-poisson}
-local_pois <- glm(npreg ~ age + bmi + ped + glu + bp + skin + diabetes,
-                  data = df, family = poisson)
-cat("Local Poisson GLM coefficients:\n")
-print(round(coef(local_pois), 6))
-```
-
-## 3. dsVert pipeline (DataSHIELD code)
-
-The following code blocks show the dsVert calls used on the three-server Opal
-deployment. They are not executed during vignette build (they require live
-servers); the results are shown in Section 4.
-
-### Connect to DataSHIELD
-
-```{r connect, eval = FALSE}
+```{r connect, results = "hide", message = FALSE, cache = FALSE}
 library(DSI)
 library(DSOpal)
 library(dsVertClient)
 
+options(opal.verifyssl = FALSE)
+
 builder <- DSI::newDSLoginBuilder()
-builder$append(server = "server1", url = "https://opal1:8443",
-               user = "administrator", password = "password",
-               driver = "OpalDriver", table = "project.data")
-builder$append(server = "server2", url = "https://opal2:8443",
-               user = "administrator", password = "password",
-               driver = "OpalDriver", table = "project.data")
-builder$append(server = "server3", url = "https://opal3:8443",
-               user = "administrator", password = "password",
-               driver = "OpalDriver", table = "project.data")
+builder$append(server = "server1", url = "https://localhost:8443",
+               user = "administrator", password = "admin123",
+               driver = "OpalDriver", table = "pima_project.pima_data")
+builder$append(server = "server2", url = "https://localhost:8444",
+               user = "administrator", password = "admin123",
+               driver = "OpalDriver", table = "pima_project.pima_data")
+builder$append(server = "server3", url = "https://localhost:8445",
+               user = "administrator", password = "admin123",
+               driver = "OpalDriver", table = "pima_project.pima_data")
 
 conns <- DSI::datashield.login(builder$build(), assign = TRUE, symbol = "D")
 ```
 
-### A) PSI alignment
-
-```{r psi, eval = FALSE}
+```{r psi, results = "hide", message = FALSE, cache = FALSE}
 psi_result <- ds.psiAlign(
   data_name   = "D",
   id_col      = "patient_id",
@@ -131,9 +124,146 @@ psi_result <- ds.psiAlign(
 )
 ```
 
-### B) Correlation
+```{r psi-print, echo = FALSE}
+print(psi_result)
+```
 
-```{r cor, eval = FALSE}
+All 200 patients were matched across all three servers (100% match rate). The
+ECDH-PSI protocol correctly identified the common cohort despite independent
+row shuffling per server.
+
+---
+
+## Centralized analysis (ground truth)
+
+All analyses in this section use the full pooled dataset with standard R
+functions. These results serve as the reference baseline for comparison with
+the federated protocol.
+
+### Pearson correlation
+
+We compute the $7 \times 7$ correlation matrix across all numeric variables.
+
+```{r local-cor}
+local_cor <- cor(df[, num_vars])
+```
+
+```{r local-cor-print, echo = FALSE}
+print(round(local_cor, 4))
+```
+
+```{r local-cor-heatmap, echo = FALSE, fig.height = 5.5}
+heatmap(local_cor, symm = TRUE, col = col_palette, margins = c(8, 8),
+        main = "Centralized Pearson Correlation")
+```
+
+The strongest correlations are between age and npreg, as well as between bmi
+and skin.
+
+### PCA (spectral decomposition)
+
+We perform PCA via eigendecomposition of the correlation matrix.
+
+```{r local-pca}
+local_pca <- eigen(local_cor)
+local_eigenvalues <- local_pca$values
+local_loadings    <- local_pca$vectors
+rownames(local_loadings) <- num_vars
+colnames(local_loadings) <- paste0("PC", seq_along(num_vars))
+local_ve <- local_eigenvalues / sum(local_eigenvalues) * 100
+```
+
+```{r local-pca-table, echo = FALSE}
+pca_df <- data.frame(
+  Component  = paste0("PC", 1:7),
+  Eigenvalue = round(local_eigenvalues, 4),
+  Variance   = paste0(round(local_ve, 1), "%"),
+  Cumulative = paste0(round(cumsum(local_ve), 1), "%")
+)
+knitr::kable(pca_df, align = c("l", "r", "r", "r"),
+             caption = "Centralized PCA: eigenvalues and variance explained")
+```
+
+```{r local-scree, echo = FALSE, fig.height = 4}
+barplot(local_ve, names.arg = paste0("PC", 1:7),
+        ylab = "Variance explained (%)", col = col_local,
+        main = "Centralized PCA: Scree Plot", border = NA, las = 1)
+```
+
+The first two components explain
+`r round(sum(local_ve[1:2]), 1)`% of total variance.
+
+```{r local-loadings-plot, echo = FALSE, fig.height = 5}
+ld <- local_loadings[, 1:3]
+image(1:3, seq_along(num_vars), t(ld), col = col_palette,
+      xlab = "", ylab = "", axes = FALSE,
+      main = "Centralized PCA: Loadings (PC1--PC3)")
+axis(1, at = 1:3, labels = colnames(ld))
+axis(2, at = seq_along(num_vars), labels = num_vars, las = 1)
+for (i in 1:3) for (j in seq_along(num_vars))
+  text(i, j, round(ld[j, i], 2), cex = 0.8)
+```
+
+### GLM --- Gaussian (y = `glu`)
+
+We fit a Gaussian GLM with glucose concentration as the response variable and
+all remaining numeric variables (plus diabetes status) as predictors.
+
+```{r local-gauss}
+local_gauss <- glm(glu ~ age + bmi + ped + bp + skin + npreg + diabetes,
+                   data = df, family = gaussian)
+```
+
+```{r local-gauss-print, echo = FALSE}
+summary(local_gauss)
+```
+
+### GLM --- Binomial (y = `diabetes`)
+
+We fit a logistic regression to predict diabetes status from all seven clinical
+variables.
+
+```{r local-binom}
+local_binom <- glm(diabetes ~ age + bmi + ped + glu + bp + skin + npreg,
+                   data = df, family = binomial)
+```
+
+```{r local-binom-print, echo = FALSE}
+summary(local_binom)
+```
+
+### GLM --- Poisson (y = `npreg`)
+
+We model the number of pregnancies as a count variable using a Poisson GLM
+with a log link.
+
+```{r local-pois}
+local_pois <- glm(npreg ~ age + bmi + ped + glu + bp + skin + diabetes,
+                  data = df, family = poisson)
+```
+
+```{r local-pois-print, echo = FALSE}
+summary(local_pois)
+```
+
+---
+
+## Federated vertical analysis (dsVert)
+
+We now repeat every analysis using the dsVert federated protocol. Each server
+only has access to its own subset of variables. Cross-server quantities (such
+as correlation matrix off-diagonal blocks, and gradients involving variables
+from multiple servers) are computed under multiparty homomorphic encryption
+(MHE-CKKS) with threshold decryption, so individual-level data never leaves
+any server.
+
+### Correlation (MHE-CKKS)
+
+The `ds.vertCor` function computes the full $7 \times 7$ Pearson correlation
+matrix. Within-server blocks are computed locally; cross-server blocks use
+CKKS encrypted dot products with threshold decryption and server-side fusion.
+
+```{r dsvert-cor, results = "hide", message = FALSE}
 variables <- list(
   server1 = c("age", "bmi", "ped"),
   server2 = c("glu", "bp", "skin"),
@@ -147,148 +277,354 @@ cor_result <- ds.vertCor(
   log_scale   = 40,
   datasources = conns
 )
+
+dsvert_cor <- cor_result$correlation
 ```
 
-### C) PCA
-
-```{r pca, eval = FALSE}
-pca_result <- ds.vertPCA(cor_result = cor_result, n_components = 7)
+```{r dsvert-cor-print, echo = FALSE}
+print(round(dsvert_cor, 4))
 ```
 
-### D) GLM Gaussian
+```{r dsvert-cor-heatmap, echo = FALSE, fig.height = 5.5}
+heatmap(dsvert_cor, symm = TRUE, col = col_palette, margins = c(8, 8),
+        main = "dsVert Federated Pearson Correlation (MHE-CKKS)")
+```
 
-```{r glm-gauss, eval = FALSE}
+### PCA
+
+PCA is computed by eigendecomposition of the federated correlation matrix.
+
+```{r dsvert-pca}
+dsvert_pca <- eigen(dsvert_cor)
+dsvert_eigenvalues <- dsvert_pca$values
+dsvert_loadings    <- dsvert_pca$vectors
+rownames(dsvert_loadings) <- num_vars
+colnames(dsvert_loadings) <- paste0("PC", seq_along(num_vars))
+dsvert_ve <- dsvert_eigenvalues / sum(dsvert_eigenvalues) * 100
+```
+
+```{r dsvert-pca-table, echo = FALSE}
+pca_df2 <- data.frame(
+  Component  = paste0("PC", 1:7),
+  Eigenvalue = round(dsvert_eigenvalues, 4),
+  Variance   = paste0(round(dsvert_ve, 1), "%"),
+  Cumulative = paste0(round(cumsum(dsvert_ve), 1), "%")
+)
+knitr::kable(pca_df2, align = c("l", "r", "r", "r"),
+             caption = "dsVert PCA: eigenvalues and variance explained")
+```
+
+```{r dsvert-scree, echo = FALSE, fig.height = 4}
+barplot(dsvert_ve, names.arg = paste0("PC", 1:7),
+        ylab = "Variance explained (%)", col = col_dsvert,
+        main = "dsVert PCA: Scree Plot", border = NA, las = 1)
+```
+
+```{r dsvert-loadings-plot, echo = FALSE, fig.height = 5}
+ld2 <- dsvert_loadings[, 1:3]
+image(1:3, seq_along(num_vars), t(ld2), col = col_palette,
+      xlab = "", ylab = "", axes = FALSE,
+      main = "dsVert PCA: Loadings (PC1--PC3)")
+axis(1, at = 1:3, labels = colnames(ld2))
+axis(2, at = seq_along(num_vars), labels = num_vars, las = 1)
+for (i in 1:3) for (j in seq_along(num_vars))
+  text(i, j, round(ld2[j, i], 2), cex = 0.8)
+```
+
+### GLM --- Gaussian (y = `glu`)
+
+The dsVert GLM uses encrypted-label block coordinate descent (BCD-IRLS).
+The label variable (`glu`) resides on server2; the remaining predictors are
+distributed across all three servers. Gradients are computed under MHE-CKKS
+and decrypted via share-wrapped threshold decryption with server-side fusion.
+
+```{r dsvert-gauss, results = "hide", message = FALSE}
 glm_gauss <- ds.vertGLM(
   data_name = "D_aligned", y_var = "glu",
   x_vars    = list(server1 = c("age", "bmi", "ped"),
                    server2 = c("bp", "skin"),
                    server3 = c("npreg", "diabetes")),
   y_server  = "server2", family = "gaussian",
-  lambda = 1e-4, datasources = conns
+  max_iter = 100, tol = 1e-4, lambda = 1e-4,
+  log_n = 12, log_scale = 40,
+  datasources = conns
 )
 ```
 
-### E) GLM Binomial
+```{r dsvert-gauss-print, echo = FALSE}
+summary(glm_gauss)
+```
 
-```{r glm-binom, eval = FALSE}
+### GLM --- Binomial (y = `diabetes`)
+
+Logistic regression with the binary outcome on server3. The IRLS working
+weights are computed on the label server and routed to non-label servers via
+transport encryption.
+
+```{r dsvert-binom, results = "hide", message = FALSE}
 glm_binom <- ds.vertGLM(
   data_name = "D_aligned", y_var = "diabetes",
   x_vars    = list(server1 = c("age", "bmi", "ped"),
                    server2 = c("glu", "bp", "skin"),
                    server3 = c("npreg")),
   y_server  = "server3", family = "binomial",
-  lambda = 1e-4, datasources = conns
+  max_iter = 100, tol = 1e-4, lambda = 1e-4,
+  log_n = 12, log_scale = 40,
+  datasources = conns
 )
 ```
 
-### F) GLM Poisson
+```{r dsvert-binom-print, echo = FALSE}
+summary(glm_binom)
+```
 
-```{r glm-pois, eval = FALSE}
+### GLM --- Poisson (y = `npreg`)
+
+Count regression for the number of pregnancies. The Poisson log-link compresses
+the coefficient scale, which tends to aid convergence of the encrypted BCD
+procedure.
+
+```{r dsvert-pois, results = "hide", message = FALSE}
 glm_pois <- ds.vertGLM(
   data_name = "D_aligned", y_var = "npreg",
   x_vars    = list(server1 = c("age", "bmi", "ped"),
                    server2 = c("glu", "bp", "skin"),
                    server3 = c("diabetes")),
   y_server  = "server3", family = "poisson",
-  lambda = 1e-4, datasources = conns
+  max_iter = 100, tol = 1e-4, lambda = 1e-4,
+  log_n = 12, log_scale = 40,
+  datasources = conns
 )
 ```
 
-## 4. Validation: dsVert vs. local R
-
-The results below were obtained on a three-server Opal deployment
-(Opal 4.8 + Rock, Docker, macOS host) running dsVert 2.0.0 and
-dsVertClient 2.0.0.
-
-### A) PSI alignment
-
-All 200 patients were matched across all three servers (100% match rate).
-This confirms that the ECDH-PSI protocol correctly identifies the
-intersection despite independent row shuffling.
-
-```{r psi-result}
-cat("PSI result: 200 / 200 matched (100%)\n")
+```{r dsvert-pois-print, echo = FALSE}
+summary(glm_pois)
 ```
 
-### B) Correlation
+---
 
-```{r cor-validation}
-# Pre-computed dsVert correlation max absolute error
-dsvert_cor_max_error <- 7.37e-06
+## Comparative assessment
 
-cat(sprintf("Max |r_dsVert - r_local|: %.2e\n", dsvert_cor_max_error))
-cat("All 21 unique off-diagonal entries match to at least 5 decimal places.\n")
+We now compare the centralized and federated results quantitatively.
+
+### Correlation: element-wise differences
+
+We compute the element-wise difference matrix between the dsVert and
+centralized correlation matrices.
+
+```{r cmp-cor-diff}
+cor_diff <- dsvert_cor - local_cor
 ```
 
-### C) PCA
-
-```{r pca-validation}
-dsvert_eig_max_error <- 3.18e-06
-
-cat("Local eigenvalues: ", paste(round(local_pca$values, 4), collapse = ", "), "\n")
-cat(sprintf("Max |eigenvalue_dsVert - eigenvalue_local|: %.2e\n", dsvert_eig_max_error))
+```{r cmp-cor-diff-print, echo = FALSE}
+print(round(cor_diff, 7))
 ```
 
-### D) GLM coefficient comparison
+```{r cmp-cor-heatmap, echo = FALSE, fig.height = 5.5}
+max_abs <- max(abs(cor_diff))
+image(seq_along(num_vars), seq_along(num_vars), cor_diff,
+      col = diff_palette, zlim = c(-max_abs, max_abs),
+      xlab = "", ylab = "", axes = FALSE,
+      main = paste0("Correlation Difference (dsVert - Centralized)\nmax |diff| = ",
+                     format(max_abs, digits = 3, scientific = TRUE)))
+axis(1, at = seq_along(num_vars), labels = num_vars, las = 2)
+axis(2, at = seq_along(num_vars), labels = num_vars, las = 1)
+for (i in seq_along(num_vars)) for (j in seq_along(num_vars))
+  text(i, j, format(cor_diff[i, j], digits = 2, scientific = TRUE), cex = 0.6)
+```
 
-```{r glm-comparison}
-# Pre-computed dsVert max coefficient errors (L-infinity norm)
-dsvert_gauss_err <- 6.23e-03
-dsvert_binom_err <- 4.02e-04
-dsvert_pois_err  <- 1.84e-04
+All element-wise differences are of order $10^{-6}$, well below any
+substantively meaningful threshold.
 
-comparison <- data.frame(
-  Family   = c("Gaussian (y=glu)", "Binomial (y=diabetes)", "Poisson (y=npreg)"),
-  Local_n_coefs = c(length(coef(local_gauss)),
-                    length(coef(local_binom)),
-                    length(coef(local_pois))),
-  Max_coef_error = c(dsvert_gauss_err, dsvert_binom_err, dsvert_pois_err),
-  stringsAsFactors = FALSE
+### PCA: eigenvalue comparison
+
+```{r cmp-pca}
+eig_diff <- dsvert_eigenvalues - local_eigenvalues
+```
+
+```{r cmp-pca-table, echo = FALSE}
+eig_cmp <- data.frame(
+  Component  = paste0("PC", 1:7),
+  Local      = round(local_eigenvalues, 6),
+  dsVert     = round(dsvert_eigenvalues, 6),
+  Difference = format(eig_diff, digits = 3, scientific = TRUE)
 )
-
-knitr::kable(comparison,
-             col.names = c("Family", "Coefficients", "Max |dsVert - local|"),
-             align = c("l", "c", "r"),
-             caption = "GLM coefficient accuracy (dsVert vs. centralized R glm())")
+knitr::kable(eig_cmp, align = c("l", "r", "r", "r"),
+             caption = "Eigenvalue comparison (centralized vs. dsVert)")
 ```
 
-### E) Overall validation summary
+```{r cmp-pca-plot, echo = FALSE, fig.height = 4.5}
+x <- barplot(rbind(local_eigenvalues, dsvert_eigenvalues),
+             beside = TRUE, names.arg = paste0("PC", 1:7),
+             col = c(col_local, col_dsvert), border = NA, las = 1,
+             ylab = "Eigenvalue",
+             main = "PCA Eigenvalue Comparison")
+legend("topright", legend = c("Centralized", "dsVert"),
+       fill = c(col_local, col_dsvert), border = NA, bty = "n")
+```
 
-```{r summary}
-summary_df <- data.frame(
-  Protocol = c("PSI Alignment", "Correlation", "PCA",
-               "GLM Gaussian", "GLM Binomial", "GLM Poisson"),
-  Metric   = c("Matched cohort", "Max |r| error", "Max eigenvalue error",
-               "Max coef error", "Max coef error", "Max coef error"),
-  Value    = c("200/200 (100%)",
-               sprintf("%.2e", dsvert_cor_max_error),
-               sprintf("%.2e", dsvert_eig_max_error),
-               sprintf("%.2e", dsvert_gauss_err),
-               sprintf("%.2e", dsvert_binom_err),
-               sprintf("%.2e", dsvert_pois_err)),
-  stringsAsFactors = FALSE
+The eigenvalues are virtually identical; differences are of order $10^{-6}$,
+propagated directly from the correlation matrix precision.
+
+### GLM: Gaussian coefficient comparison (y = `glu`)
+
+```{r cmp-gauss-setup}
+gauss_local  <- coef(local_gauss)
+gauss_dsvert <- coef(glm_gauss)
+gauss_diff   <- gauss_dsvert - gauss_local
+```
+
+```{r cmp-gauss-table, echo = FALSE}
+knitr::kable(
+  data.frame(Term = names(gauss_local),
+             Local = round(gauss_local, 4),
+             dsVert = round(gauss_dsvert, 4),
+             Difference = format(gauss_diff, digits = 3, scientific = TRUE)),
+  row.names = FALSE, align = c("l", "r", "r", "r"),
+  caption = "Gaussian GLM coefficient comparison (y = glu)")
+```
+
+```{r cmp-gauss-plot, echo = FALSE, fig.width = 8, fig.height = 5}
+idx <- seq_along(gauss_local)
+par(mar = c(5, 4, 3, 1))
+plot(idx - 0.1, gauss_local, pch = 16, col = col_local, cex = 1.5,
+     xlab = "", ylab = "Coefficient", main = "Gaussian GLM (y = glu)",
+     xaxt = "n", xlim = c(0.5, length(idx) + 0.5),
+     ylim = range(c(gauss_local, gauss_dsvert)) * 1.1)
+points(idx + 0.1, gauss_dsvert, pch = 17, col = col_dsvert, cex = 1.5)
+segments(idx - 0.1, gauss_local, idx + 0.1, gauss_dsvert,
+         col = "grey60", lty = 2)
+axis(1, at = idx, labels = names(gauss_local), las = 1)
+abline(h = 0, col = "grey80")
+legend("topright", legend = c("Centralized", "dsVert"),
+       pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n")
+```
+
+Maximum absolute coefficient difference:
+`r format(max(abs(gauss_diff)), digits = 3, scientific = TRUE)`.
+
+### GLM: Binomial coefficient comparison (y = `diabetes`)
+
+```{r cmp-binom-setup}
+binom_local  <- coef(local_binom)
+binom_dsvert <- coef(glm_binom)
+binom_diff   <- binom_dsvert - binom_local
+```
+
+```{r cmp-binom-table, echo = FALSE}
+knitr::kable(
+  data.frame(Term = names(binom_local),
+             Local = round(binom_local, 4),
+             dsVert = round(binom_dsvert, 4),
+             Difference = format(binom_diff, digits = 3, scientific = TRUE)),
+  row.names = FALSE, align = c("l", "r", "r", "r"),
+  caption = "Binomial GLM coefficient comparison (y = diabetes)")
+```
+
+```{r cmp-binom-plot, echo = FALSE, fig.width = 8, fig.height = 5}
+idx <- seq_along(binom_local)
+par(mar = c(5, 4, 3, 1))
+plot(idx - 0.1, binom_local, pch = 16, col = col_local, cex = 1.5,
+     xlab = "", ylab = "Coefficient", main = "Binomial GLM (y = diabetes)",
+     xaxt = "n", xlim = c(0.5, length(idx) + 0.5),
+     ylim = range(c(binom_local, binom_dsvert)) * 1.1)
+points(idx + 0.1, binom_dsvert, pch = 17, col = col_dsvert, cex = 1.5)
+segments(idx - 0.1, binom_local, idx + 0.1, binom_dsvert,
+         col = "grey60", lty = 2)
+axis(1, at = idx, labels = names(binom_local), las = 1)
+abline(h = 0, col = "grey80")
+legend("topright", legend = c("Centralized", "dsVert"),
+       pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n")
+```
+
+Maximum absolute coefficient difference:
+`r format(max(abs(binom_diff)), digits = 3, scientific = TRUE)`.
+
+### GLM: Poisson coefficient comparison (y = `npreg`)
+
+```{r cmp-pois-setup}
+pois_local  <- coef(local_pois)
+pois_dsvert <- coef(glm_pois)
+pois_diff   <- pois_dsvert - pois_local
+```
+
+```{r cmp-pois-table, echo = FALSE}
+knitr::kable(
+  data.frame(Term = names(pois_local),
+             Local = round(pois_local, 4),
+             dsVert = round(pois_dsvert, 4),
+             Difference = format(pois_diff, digits = 3, scientific = TRUE)),
+  row.names = FALSE, align = c("l", "r", "r", "r"),
+  caption = "Poisson GLM coefficient comparison (y = npreg)")
+```
+
+```{r cmp-pois-plot, echo = FALSE, fig.width = 8, fig.height = 5}
+idx <- seq_along(pois_local)
+par(mar = c(5, 4, 3, 1))
+plot(idx - 0.1, pois_local, pch = 16, col = col_local, cex = 1.5,
+     xlab = "", ylab = "Coefficient", main = "Poisson GLM (y = npreg)",
+     xaxt = "n", xlim = c(0.5, length(idx) + 0.5),
+     ylim = range(c(pois_local, pois_dsvert)) * 1.1)
+points(idx + 0.1, pois_dsvert, pch = 17, col = col_dsvert, cex = 1.5)
+segments(idx - 0.1, pois_local, idx + 0.1, pois_dsvert,
+         col = "grey60", lty = 2)
+axis(1, at = idx, labels = names(pois_local), las = 1)
+abline(h = 0, col = "grey80")
+legend("topright", legend = c("Centralized", "dsVert"),
+       pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n")
+```
+
+Maximum absolute coefficient difference:
+`r format(max(abs(pois_diff)), digits = 3, scientific = TRUE)`.
+
+### Summary
+
+```{r cmp-summary, echo = FALSE}
+knitr::kable(
+  data.frame(
+    Protocol = c("PSI Alignment", "Correlation", "PCA",
+                 "GLM Gaussian", "GLM Binomial", "GLM Poisson"),
+    Metric = c("Matched cohort",
+               "Max |r| error",
+               "Max eigenvalue error",
+               "Max |coef| error",
+               "Max |coef| error",
+               "Max |coef| error"),
+    Value = c("200 / 200 (100%)",
+              format(max(abs(cor_diff)), digits = 3, scientific = TRUE),
+              format(max(abs(eig_diff)), digits = 3, scientific = TRUE),
+              format(max(abs(gauss_diff)), digits = 3, scientific = TRUE),
+              format(max(abs(binom_diff)), digits = 3, scientific = TRUE),
+              format(max(abs(pois_diff)), digits = 3, scientific = TRUE))
+  ),
+  align = c("l", "l", "r"),
+  caption = "Validation summary (dsVert vs. centralized R)"
 )
-
-knitr::kable(summary_df,
-             col.names = c("Protocol", "Metric", "Value"),
-             align = c("l", "l", "r"),
-             caption = "Validation summary: dsVert vs. centralized R (Pima dataset, K=3, n=200)")
 ```
 
-All protocols produce results that are numerically close to centralized
-computation. The small errors in correlation and PCA ($< 10^{-5}$) arise from
-CKKS approximate arithmetic. The slightly larger GLM errors ($< 10^{-2}$)
-reflect both CKKS approximation in encrypted gradient computation and the
-ridge regularization ($\lambda = 10^{-4}$) used for BCD convergence.
+### Error analysis
 
-## 5. Reproducing these results
+The three error regimes observed correspond to different sources of
+approximation in the dsVert pipeline:
 
-To reproduce, you need three Opal/Rock servers with dsVert installed:
+**Correlation and PCA** ($\sim 10^{-6}$). These errors arise from CKKS
+approximate arithmetic used in the MHE threshold protocol. The encoding
+precision is governed by `log_scale = 40`, providing approximately $2^{40}
+\approx 10^{12}$ precision units. After encoding, homomorphic multiplication,
+inner-sum rotations, and threshold decryption, the effective precision degrades
+to $\sim 10^{-6}$, consistent with CKKS error propagation theory.
 
-1. Prepare the CSV files and upload to each Opal server
-2. Install dsVert on each Rock server
-3. Install dsVertClient locally
-4. Run `demo/run_pima_demo.R`
+**GLM coefficients** ($10^{-4}$ to $10^{-3}$). GLM errors are slightly larger
+because they accumulate over multiple BCD-IRLS iterations, each involving an
+encrypted gradient computation. Additionally, the ridge regularization parameter
+($\lambda = 10^{-4}$) introduces a small systematic bias relative to the
+unpenalized centralized `glm()`. The binomial and Poisson families show smaller
+errors than Gaussian because their link functions (logit, log) compress the
+coefficient scale.
 
-See the [Getting Started guide](https://isglobal-brge.github.io/dsVertClient/)
-for detailed setup instructions.
+In all cases, the errors are far below any practically meaningful threshold for
+statistical inference.
+
+```{r disconnect, include = FALSE, cache = FALSE}
+DSI::datashield.logout(conns)
+```
