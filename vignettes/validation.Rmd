@@ -475,7 +475,8 @@ x <- barplot(rbind(local_eigenvalues, dsvert_eigenvalues),
              ylab = "Eigenvalue",
              main = "PCA Eigenvalue Comparison")
 legend("topright", legend = c("Centralized", "dsVert"),
-       fill = c(col_local, col_dsvert), border = NA, bty = "n")
+       fill = c(col_local, col_dsvert), border = NA,
+       bty = "o", bg = "white", box.col = "black")
 ```
 
 The eigenvalues are virtually identical; differences are of order $10^{-6}$,
@@ -511,8 +512,10 @@ segments(idx - 0.1, gauss_local, idx + 0.1, gauss_dsvert,
          col = "grey60", lty = 2)
 axis(1, at = idx, labels = names(gauss_local), las = 1)
 abline(h = 0, col = "grey80")
-legend("topright", inset = c(-0.18, 0), legend = c("Centralized", "dsVert"),
-       pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n", xpd = TRUE)
+legend(par("usr")[2] + 0.4, par("usr")[4],
+       legend = c("Centralized", "dsVert"),
+       pch = c(16, 17), col = c(col_local, col_dsvert),
+       bty = "o", bg = "white", box.col = "black", xpd = TRUE)
 ```
 
 Maximum absolute coefficient difference:
@@ -548,8 +551,10 @@ segments(idx - 0.1, binom_local, idx + 0.1, binom_dsvert,
          col = "grey60", lty = 2)
 axis(1, at = idx, labels = names(binom_local), las = 1)
 abline(h = 0, col = "grey80")
-legend("topright", inset = c(-0.18, 0), legend = c("Centralized", "dsVert"),
-       pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n", xpd = TRUE)
+legend(par("usr")[2] + 0.4, par("usr")[4],
+       legend = c("Centralized", "dsVert"),
+       pch = c(16, 17), col = c(col_local, col_dsvert),
+       bty = "o", bg = "white", box.col = "black", xpd = TRUE)
 ```
 
 Maximum absolute coefficient difference:
@@ -585,8 +590,10 @@ segments(idx - 0.1, pois_local, idx + 0.1, pois_dsvert,
          col = "grey60", lty = 2)
 axis(1, at = idx, labels = names(pois_local), las = 1)
 abline(h = 0, col = "grey80")
-legend("topright", inset = c(-0.18, 0), legend = c("Centralized", "dsVert"),
-       pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n", xpd = TRUE)
+legend(par("usr")[2] + 0.4, par("usr")[4],
+       legend = c("Centralized", "dsVert"),
+       pch = c(16, 17), col = c(col_local, col_dsvert),
+       bty = "o", bg = "white", box.col = "black", xpd = TRUE)
 ```
 
 Maximum absolute coefficient difference:

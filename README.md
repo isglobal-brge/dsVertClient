@@ -158,7 +158,7 @@ dataset size or number of parties.
 
 ## Documentation
 
-- [Pima Validation Demo](https://isglobal-brge.github.io/dsVertClient/articles/pima-demo.html): Full pipeline validation against centralized R
+- [Validation Study](https://isglobal-brge.github.io/dsVertClient/articles/validation.html): Full pipeline validation against centralized R
 
 ## Authors
 
