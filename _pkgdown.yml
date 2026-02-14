@@ -53,9 +53,8 @@ reference:
 
 articles:
   - title: Validation
-    navbar: ~
     contents:
-      - pima-demo
+      - validation
 
 authors:
   David Sarrat González:

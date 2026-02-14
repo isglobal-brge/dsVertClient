@@ -1,6 +1,6 @@
 # Articles
 
-### User Guides
+### Validation
 
-- [dsVert Validation: Pima Diabetes
-  Dataset](https://isglobal-brge.github.io/dsVertClient/articles/pima-demo.md):
+- [Validation Study: Centralized vs. Federated Vertical
+  Analysis](https://isglobal-brge.github.io/dsVertClient/articles/validation.md):
