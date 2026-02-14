@@ -23,7 +23,7 @@
 
     <a class="navbar-brand me-2" href="index.html">dsVertClient</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.6.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.7.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -33,12 +33,7 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
-  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><a class="dropdown-item" href="articles/pima-demo.html">Validation Study: Centralized vs. Federated Vertical Analysis</a></li>
-  </ul>
-</li>
+<li class="nav-item"><a class="nav-link" href="articles/index.html">Articles</a></li>
       </ul>
 <ul class="navbar-nav">
 <li class="nav-item"><form class="form-inline" role="search">
@@ -76,7 +71,7 @@
 <h2 id="security-guarantees">Security Guarantees<a class="anchor" aria-label="anchor" href="#security-guarantees"></a>
 </h2>
 <div class="section level3">
-<h3 id="record-alignment-ecdh-psi">Record Alignment (ECDH-PSI)<a class="anchor" aria-label="anchor" href="#record-alignment-ecdh-psi"></a>
+<h3 id="record-alignment-ecdh-psi-with-blind-relay">Record Alignment (ECDH-PSI with Blind Relay)<a class="anchor" aria-label="anchor" href="#record-alignment-ecdh-psi-with-blind-relay"></a>
 </h3>
 <table class="table">
 <colgroup>
@@ -99,6 +94,18 @@
 <tr>
 <td><strong>Unlinkability (DDH)</strong></td>
 <td>The client CANNOT link single-masked points across servers</td>
+</tr>
+<tr>
+<td><strong>Blind relay</strong></td>
+<td>Client sees ONLY opaque encrypted blobs (X25519 + AES-256-GCM). All EC point exchanges are transport-encrypted server-to-server.</td>
+</tr>
+<tr>
+<td><strong>PSI Firewall</strong></td>
+<td>Server-side FSM enforces phase ordering and one-shot semantics per target, preventing OPRF oracle attacks</td>
+</tr>
+<tr>
+<td><strong>MITM-resistant mode</strong></td>
+<td>Optional pre-shared key pinning validates transport PKs against administrator-configured peers, detecting key substitution</td>
 </tr>
 </tbody>
 </table>
@@ -242,8 +249,8 @@
 <pre><code> ┌──────────────────┐   ┌───────────────────────────┐
  │  ds.psiAlign     │──▶│        Analyze            │
  │  (ECDH-PSI)      │   │  ds.vertCor (MHE)         │
- │                   │   │  ds.vertPCA               │
- │                   │   │  ds.vertGLM (BCD + MHE)   │
+ │                  │   │  ds.vertPCA               │
+ │                  │   │  ds.vertGLM (BCD + MHE)   │
  └──────────────────┘   └───────────────────────────┘</code></pre>
 </div>
 <div class="section level2">
@@ -350,21 +357,9 @@
 <h2 id="authors">Authors<a class="anchor" aria-label="anchor" href="#authors"></a>
 </h2>
 <ul>
-<li>David Sarrat Gonzalez</li>
-<li>Miron Banjac</li>
-<li>Juan R Gonzalez</li>
-</ul>
-</div>
-<div class="section level2">
-<h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
-</h2>
-<ul>
-<li>De Cristofaro, E. &amp; Tsudik, G. (2010). “Practical Private Set Intersection Protocols with Linear Complexity”. <em>FC 2010</em>.</li>
-<li>Mouchet, C. et al. (2021). “Multiparty Homomorphic Encryption from Ring-Learning-With-Errors”. <em>Proceedings on Privacy Enhancing Technologies (PETS)</em>.</li>
-<li>Cheon, J.H. et al. (2017). “Homomorphic Encryption for Arithmetic of Approximate Numbers”. <em>ASIACRYPT 2017</em>.</li>
-<li>van Kesteren, E.J. et al. (2019). “Privacy-preserving generalized linear models using distributed block coordinate descent”. arXiv:1911.03183.</li>
-<li>Lattigo v6: <a href="https://github.com/tuneinsight/lattigo" class="external-link uri">https://github.com/tuneinsight/lattigo</a>
-</li>
+<li>David Sarrat González (<a href="mailto:david.sarrat@isglobal.org" class="email">david.sarrat@isglobal.org</a>)</li>
+<li>Miron Banjac (<a href="mailto:miron.banjac@isglobal.org" class="email">miron.banjac@isglobal.org</a>)</li>
+<li>Juan R González (<a href="mailto:juanr.gonzalez@isglobal.org" class="email">juanr.gonzalez@isglobal.org</a>)</li>
 </ul>
 </div>
 </div>

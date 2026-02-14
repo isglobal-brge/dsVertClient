@@ -24,13 +24,16 @@ This package provides user-friendly functions for:
 
 ## Security Guarantees
 
-### Record Alignment (ECDH-PSI)
+### Record Alignment (ECDH-PSI with Blind Relay)
 
 | Property | What it prevents |
 |----|----|
 | **Dictionary attack resistance** | Unlike SHA-256 hashing, the client CANNOT reverse-engineer patient IDs from the masked curve points (requires server’s secret scalar) |
 | **Scalar confidentiality** | Each server’s P-256 random scalar stays on-server |
 | **Unlinkability (DDH)** | The client CANNOT link single-masked points across servers |
+| **Blind relay** | Client sees ONLY opaque encrypted blobs (X25519 + AES-256-GCM). All EC point exchanges are transport-encrypted server-to-server. |
+| **PSI Firewall** | Server-side FSM enforces phase ordering and one-shot semantics per target, preventing OPRF oracle attacks |
+| **MITM-resistant mode** | Optional pre-shared key pinning validates transport PKs against administrator-configured peers, detecting key substitution |
 
 ### Statistical Analysis (MHE-CKKS)
 
@@ -108,8 +111,8 @@ datashield.logout(conns)
      ┌──────────────────┐   ┌───────────────────────────┐
      │  ds.psiAlign     │──▶│        Analyze            │
      │  (ECDH-PSI)      │   │  ds.vertCor (MHE)         │
-     │                   │   │  ds.vertPCA               │
-     │                   │   │  ds.vertGLM (BCD + MHE)   │
+     │                  │   │  ds.vertPCA               │
+     │                  │   │  ds.vertGLM (BCD + MHE)   │
      └──────────────────┘   └───────────────────────────┘
 
 ## MHE Correlation: How It Works
@@ -187,20 +190,6 @@ can overflow regardless of dataset size or number of parties.
 
 ## Authors
 
-- David Sarrat Gonzalez
-- Miron Banjac
-- Juan R Gonzalez
-
-## References
-
-- De Cristofaro, E. & Tsudik, G. (2010). “Practical Private Set
-  Intersection Protocols with Linear Complexity”. *FC 2010*.
-- Mouchet, C. et al. (2021). “Multiparty Homomorphic Encryption from
-  Ring-Learning-With-Errors”. *Proceedings on Privacy Enhancing
-  Technologies (PETS)*.
-- Cheon, J.H. et al. (2017). “Homomorphic Encryption for Arithmetic of
-  Approximate Numbers”. *ASIACRYPT 2017*.
-- van Kesteren, E.J. et al. (2019). “Privacy-preserving generalized
-  linear models using distributed block coordinate descent”.
-  arXiv:1911.03183.
-- Lattigo v6: <https://github.com/tuneinsight/lattigo>
+- David Sarrat González (<david.sarrat@isglobal.org>)
+- Miron Banjac (<miron.banjac@isglobal.org>)
+- Juan R González (<juanr.gonzalez@isglobal.org>)

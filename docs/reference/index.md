@@ -5,7 +5,7 @@
 Privacy-preserving record alignment using ECDH-PSI
 
 - [`ds.psiAlign()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md)
-  : ECDH-PSI Record Alignment
+  : ECDH-PSI Record Alignment (Blind Relay)
 
 ## Correlation and PCA
 

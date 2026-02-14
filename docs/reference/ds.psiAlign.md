@@ -1,9 +1,10 @@
-# ECDH-PSI Record Alignment
+# ECDH-PSI Record Alignment (Blind Relay)
 
 Privacy-preserving record alignment using Elliptic Curve Diffie-Hellman
-Private Set Intersection (ECDH-PSI). Aligns data frames across
-vertically partitioned DataSHIELD servers so that rows correspond to the
-same individuals, without exposing identifiers.
+Private Set Intersection (ECDH-PSI) with blind-relay transport
+encryption. Aligns data frames across vertically partitioned DataSHIELD
+servers so that rows correspond to the same individuals. The client
+never sees raw EC points — only opaque encrypted blobs.
 
 ## Usage
 
@@ -53,8 +54,7 @@ Invisibly returns a list with alignment statistics for each server:
 ## Details
 
 This function performs privacy-preserving record alignment in a single
-call, using ECDH-PSI instead of SHA-256 hashing for stronger privacy
-guarantees.
+call, using ECDH-PSI with blind-relay transport encryption.
 
 ### Protocol overview
 
@@ -62,31 +62,40 @@ ECDH-PSI exploits the commutativity of elliptic curve scalar
 multiplication: \\\alpha \cdot (\beta \cdot H(id)) = \beta \cdot (\alpha
 \cdot H(id))\\.
 
-1.  The reference server hashes IDs to P-256 curve points and multiplies
-    by a random scalar \\\alpha\\. Returns masked points to client.
+All EC point exchanges are encrypted server-to-server (X25519 +
+AES-256-GCM ECIES). The client acts as a blind relay, seeing only opaque
+blobs.
 
-2.  For each target server:
+1.  **Phase 0**: Each server generates an X25519 transport keypair.
+    Public keys are exchanged via the client.
 
-    - The target generates scalar \\\beta\\, double-masks ref points
-      with \\\beta\\ (stores locally), and masks own IDs with \\\beta\\.
+2.  **Phase 1**: The reference server masks IDs with scalar \\\alpha\\.
+    Points are stored server-side (not returned to client).
 
-    - The reference double-masks target points with \\\alpha\\.
+3.  For each target server:
 
-    - The target matches double-masked sets to find the intersection,
-      then reorders its data to match the reference order.
+    - The reference encrypts masked points under the target's PK.
 
-3.  A multi-server intersection ensures only records present on ALL
+    - The target decrypts, generates scalar \\\beta\\, double-masks ref
+      points (stores locally), masks own IDs, encrypts them under the
+      ref's PK.
+
+    - The reference decrypts, double-masks with \\\alpha\\, encrypts
+      result under target's PK.
+
+    - The target decrypts, matches double-masked sets, aligns data.
+
+4.  A multi-server intersection ensures only records present on ALL
     servers are retained.
 
-### Security (DDH assumption on P-256)
+### Security (DDH assumption on P-256, malicious-client model)
 
-- The client sees only opaque elliptic curve points — not reversible to
-  identifiers, not vulnerable to dictionary attacks.
+- The client sees only opaque encrypted blobs — not EC points.
 
 - Each server's scalar never leaves the server.
 
-- The DDH assumption prevents the client from linking single-masked
-  points across servers.
+- PSI firewall: phase ordering + one-shot semantics prevent OPRF oracle
+  attacks.
 
 ## See also
 

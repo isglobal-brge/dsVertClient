@@ -13,10 +13,21 @@ knitr::opts_chunk$set(
   comment = "#>",
   fig.width = 7,
   fig.height = 5,
-  fig.align = "center",
-  cache = TRUE,
-  cache.path = "pima-demo_cache/"
+  fig.align = "center"
 )
+
+# Load pre-computed results (generated with live servers, cached for offline use)
+.rds_candidates <- c(
+  "precomputed_results.rds",
+  system.file("extdata", "precomputed_results.rds", package = "dsVertClient"),
+  file.path("..", "inst", "extdata", "precomputed_results.rds")
+)
+.rds_path <- Filter(file.exists, .rds_candidates)[1]
+if (!is.na(.rds_path)) {
+  .pre <- readRDS(.rds_path)
+  for (.nm in names(.pre)) assign(.nm, .pre[[.nm]])
+  rm(.pre, .nm)
+}
 
 col_palette <- colorRampPalette(c("#2166AC", "#67A9CF", "#D1E5F0",
                                    "#FDDBC7", "#EF8A62", "#B2182B"))(100)
@@ -89,12 +100,16 @@ summary(df[, num_vars])
 
 ## Connect to DataSHIELD and align records
 
-We connect to the three Opal servers hosting the vertically partitioned data
-and perform ECDH-PSI record alignment. Each server only knows its own patient
-identifiers; the PSI protocol finds the common cohort without revealing which
-IDs are shared.
+We connect to three independent DataSHIELD sessions, each hosting one vertical
+partition. Because all three partitions reside on the same Opal host, this
+demonstration validates end-to-end protocol correctness and client-relay
+orchestration; performance figures are not intended to represent a
+geographically distributed multi-institution deployment.
 
-```{r connect, results = "hide", message = FALSE, cache = FALSE}
+Each server only knows its own patient identifiers; the PSI protocol finds
+the common cohort without revealing which IDs are shared.
+
+```{r connect, results = "hide", message = FALSE, eval = FALSE}
 library(DSI)
 library(DSOpal)
 library(dsVertClient)
@@ -115,7 +130,7 @@ builder$append(server = "server3", url = "https://localhost:8445",
 conns <- DSI::datashield.login(builder$build(), assign = TRUE, symbol = "D")
 ```
 
-```{r psi, results = "hide", message = FALSE, cache = FALSE}
+```{r psi, results = "hide", message = FALSE, eval = FALSE}
 psi_result <- ds.psiAlign(
   data_name   = "D",
   id_col      = "patient_id",
@@ -263,7 +278,7 @@ The `ds.vertCor` function computes the full $7 \times 7$ Pearson correlation
 matrix. Within-server blocks are computed locally; cross-server blocks use
 CKKS encrypted dot products with threshold decryption and server-side fusion.
 
-```{r dsvert-cor, results = "hide", message = FALSE}
+```{r dsvert-cor, results = "hide", message = FALSE, eval = FALSE}
 variables <- list(
   server1 = c("age", "bmi", "ped"),
   server2 = c("glu", "bp", "skin"),
@@ -338,7 +353,7 @@ The label variable (`glu`) resides on server2; the remaining predictors are
 distributed across all three servers. Gradients are computed under MHE-CKKS
 and decrypted via share-wrapped threshold decryption with server-side fusion.
 
-```{r dsvert-gauss, results = "hide", message = FALSE}
+```{r dsvert-gauss, results = "hide", message = FALSE, eval = FALSE}
 glm_gauss <- ds.vertGLM(
   data_name = "D_aligned", y_var = "glu",
   x_vars    = list(server1 = c("age", "bmi", "ped"),
@@ -361,7 +376,7 @@ Logistic regression with the binary outcome on server3. The IRLS working
 weights are computed on the label server and routed to non-label servers via
 transport encryption.
 
-```{r dsvert-binom, results = "hide", message = FALSE}
+```{r dsvert-binom, results = "hide", message = FALSE, eval = FALSE}
 glm_binom <- ds.vertGLM(
   data_name = "D_aligned", y_var = "diabetes",
   x_vars    = list(server1 = c("age", "bmi", "ped"),
@@ -384,7 +399,7 @@ Count regression for the number of pregnancies. The Poisson log-link compresses
 the coefficient scale, which tends to aid convergence of the encrypted BCD
 procedure.
 
-```{r dsvert-pois, results = "hide", message = FALSE}
+```{r dsvert-pois, results = "hide", message = FALSE, eval = FALSE}
 glm_pois <- ds.vertGLM(
   data_name = "D_aligned", y_var = "npreg",
   x_vars    = list(server1 = c("age", "bmi", "ped"),
@@ -496,7 +511,7 @@ segments(idx - 0.1, gauss_local, idx + 0.1, gauss_dsvert,
          col = "grey60", lty = 2)
 axis(1, at = idx, labels = names(gauss_local), las = 1)
 abline(h = 0, col = "grey80")
-legend(par("usr")[2], par("usr")[4], legend = c("Centralized", "dsVert"),
+legend("topright", inset = c(-0.18, 0), legend = c("Centralized", "dsVert"),
        pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n", xpd = TRUE)
 ```
 
@@ -533,7 +548,7 @@ segments(idx - 0.1, binom_local, idx + 0.1, binom_dsvert,
          col = "grey60", lty = 2)
 axis(1, at = idx, labels = names(binom_local), las = 1)
 abline(h = 0, col = "grey80")
-legend(par("usr")[2], par("usr")[4], legend = c("Centralized", "dsVert"),
+legend("topright", inset = c(-0.18, 0), legend = c("Centralized", "dsVert"),
        pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n", xpd = TRUE)
 ```
 
@@ -570,7 +585,7 @@ segments(idx - 0.1, pois_local, idx + 0.1, pois_dsvert,
          col = "grey60", lty = 2)
 axis(1, at = idx, labels = names(pois_local), las = 1)
 abline(h = 0, col = "grey80")
-legend(par("usr")[2], par("usr")[4], legend = c("Centralized", "dsVert"),
+legend("topright", inset = c(-0.18, 0), legend = c("Centralized", "dsVert"),
        pch = c(16, 17), col = c(col_local, col_dsvert), bty = "n", xpd = TRUE)
 ```
 
@@ -625,6 +640,6 @@ coefficient scale.
 In all cases, the errors are far below any practically meaningful threshold for
 statistical inference.
 
-```{r disconnect, include = FALSE, cache = FALSE}
+```{r disconnect, include = FALSE, eval = FALSE}
 DSI::datashield.logout(conns)
 ```
