@@ -2,7 +2,6 @@
    Code input blocks styling
    ============================================ */
 pre.sourceCode {
-  background-color: #f6f8fa;
   border: 1px solid #e1e4e8;
   border-radius: 6px;
   padding: 16px;
@@ -41,31 +40,20 @@ pre.sourceCode code .dv, pre.sourceCode code .fl {
 /* ============================================
    Output blocks styling
    ============================================ */
-pre.bg-light {
-  background-color: #f8f9fa !important;
-  border: 1px solid #dee2e6;
-  border-left: 4px solid #28a745;
-  border-radius: 6px;
-  padding: 16px;
-  margin: 16px 0;
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  font-size: 0.875em;
-}
-
-pre.bg-light code {
-  color: #495057;
-  background-color: transparent !important;
-}
-
-/* ============================================
-   General pre blocks (pseudocode, etc)
-   ============================================ */
+pre.bg-light,
 pre:not(.sourceCode):not(.bg-light) {
-  background-color: #f6f8fa;
+  background-color: #fefce8 !important;
   border: 1px solid #e1e4e8;
   border-radius: 6px;
   padding: 16px;
   margin: 16px 0;
+  overflow-x: auto;
+}
+
+pre.bg-light code,
+pre:not(.sourceCode):not(.bg-light) code {
+  color: #2c3e50;
+  background-color: transparent !important;
 }
 
 /* ============================================
@@ -79,10 +67,29 @@ div.sourceCode {
   margin-bottom: 24px;
 }
 
-/* Tables */
-.table {
-  margin-top: 16px;
-  margin-bottom: 16px;
+/* Tables — centered with visible captions */
+main .table,
+.col-md-9 .table,
+.section .table {
+  width: fit-content !important;
+  max-width: 90% !important;
+  margin-top: 16px !important;
+  margin-bottom: 16px !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+table caption,
+.table caption,
+.table > caption {
+  caption-side: top !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  color: #333 !important;
+  font-weight: 600 !important;
+  font-size: 0.95em !important;
+  padding-top: 0.5em !important;
+  padding-bottom: 0.5em !important;
 }
 
 /* Remove syntax highlighting background artifacts */

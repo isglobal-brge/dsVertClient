@@ -184,8 +184,8 @@ can overflow regardless of dataset size or number of parties.
 
 ## Documentation
 
-- [Pima Validation
-  Demo](https://isglobal-brge.github.io/dsVertClient/articles/pima-demo.html):
+- [Validation
+  Study](https://isglobal-brge.github.io/dsVertClient/articles/validation.html):
   Full pipeline validation against centralized R
 
 ## Authors
