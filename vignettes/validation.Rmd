@@ -169,6 +169,7 @@ print(round(local_cor, 4))
 
 ```{r local-cor-heatmap, echo = FALSE, fig.height = 5.5}
 heatmap(local_cor, symm = TRUE, col = col_palette, margins = c(8, 8),
+        Rowv = NA, Colv = NA,
         main = "Centralized Pearson Correlation")
 ```
 
@@ -302,6 +303,7 @@ print(round(dsvert_cor, 4))
 
 ```{r dsvert-cor-heatmap, echo = FALSE, fig.height = 5.5}
 heatmap(dsvert_cor, symm = TRUE, col = col_palette, margins = c(8, 8),
+        Rowv = NA, Colv = NA,
         main = "dsVert Federated Pearson Correlation (MHE-CKKS)")
 ```
 
@@ -650,3 +652,4 @@ statistical inference.
 ```{r disconnect, include = FALSE, eval = FALSE}
 DSI::datashield.logout(conns)
 ```
+
