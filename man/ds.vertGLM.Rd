@@ -16,7 +16,8 @@ ds.vertGLM(
   log_n = 12,
   log_scale = 40,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  eta_privacy = "auto"
 )
 }
 \arguments{
@@ -53,6 +54,11 @@ Default is 12 (2048 slots, supports up to 2048 observations).}
 
 \item{datasources}{DataSHIELD connection object or list of connections.
 If NULL, uses all available connections.}
+
+\item{eta_privacy}{Character string. Privacy mode for linear predictor
+aggregation: \code{"auto"} (default) selects HE-Link for K=2 binomial,
+\code{"transport"} uses standard secure routing, \code{"he_link"} forces
+homomorphic sigmoid evaluation (requires K=2, binomial, log_n >= 14).}
 }
 \value{
 A list with class "ds.glm" containing:
