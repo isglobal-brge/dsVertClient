@@ -93,7 +93,7 @@ datashield.logout(conns)
 | `ds.psiAlign` | Align records across servers using ECDH-PSI |
 | `ds.vertCor` | Compute cross-server correlation matrix via MHE share-wrapped threshold decryption |
 | `ds.vertPCA` | Perform PCA from the MHE-based correlation matrix |
-| `ds.vertGLM` | Fit Generalized Linear Models via encrypted-label BCD with GLM secure routing |
+| `ds.vertGLM` | Fit Generalized Linear Models via encrypted-label BCD with GLM secure routing or HE-Link |
 
 ## Workflow: Align -> Analyze
 
@@ -128,6 +128,20 @@ The GLM protocol uses a **coordinator model** so that individual-level vectors n
 | **Client (blind relay)** | Routes opaque encrypted blobs between servers. Sees only p_k-length coefficient vectors (public model output) and encrypted payloads it cannot decrypt. |
 
 This ensures the client acts as a transport layer with no access to observation-level information.
+
+## HE-Link: Homomorphic Sigmoid for K=2
+
+With K=2 servers, standard secure routing leaks the non-label server's `eta_nonlabel` to the label server (because `eta_total = eta_label + eta_nonlabel`). The `eta_privacy = "he_link"` mode fixes this by computing `mu = sigmoid(eta_total)` entirely in the encrypted domain using CKKS polynomial approximation:
+
+- Each server encrypts `eta_k` under the CPK
+- Coordinator evaluates degree-7 sigmoid polynomial homomorphically → `ct_mu`
+- Gradient computed from `ct_y - ct_mu` (both encrypted)
+- Only p_k-length gradient scalars are threshold-decrypted
+
+The `eta_privacy` parameter controls this behavior:
+- `"auto"` (default): automatically uses HE-Link for K=2 binomial
+- `"transport"`: always uses standard secure routing
+- `"he_link"`: forces HE-Link mode (requires K=2, binomial, `log_n >= 14`)
 
 ## Supported GLM Families
 
