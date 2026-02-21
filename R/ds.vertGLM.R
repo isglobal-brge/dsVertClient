@@ -131,28 +131,33 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     stop("y_server '", y_server, "' must be in x_vars", call. = FALSE)
 
   # Resolve eta_privacy mode
-  if (!eta_privacy %in% c("auto", "transport", "he_link"))
-    stop("eta_privacy must be 'auto', 'transport', or 'he_link'", call. = FALSE)
+  if (!eta_privacy %in% c("auto", "transport", "he_link", "secure_agg"))
+    stop("eta_privacy must be 'auto', 'transport', 'he_link', or 'secure_agg'",
+         call. = FALSE)
 
   n_partitions_check <- length(x_vars)
   non_label_count <- n_partitions_check - 1
 
   if (eta_privacy == "auto") {
-    # Use HE-Link when K=2 and nonlinear link (binomial/poisson) to prevent
-    # eta_nonlabel reconstruction by the label server
-    if (non_label_count == 1 && family %in% c("binomial", "poisson")) {
-      eta_privacy <- "he_link"
+    if (non_label_count >= 2) {
+      eta_privacy <- "secure_agg"    # K>=3: pairwise PRG masks
+    } else if (non_label_count == 1 && family %in% c("binomial", "poisson")) {
+      eta_privacy <- "he_link"       # K=2 nonlinear: homomorphic sigmoid
       if (log_n < 14) {
-        # HE-Link needs 4 multiplicative levels; logN=14 provides 6
         log_n <- 14L
       }
     } else {
-      eta_privacy <- "transport"
+      eta_privacy <- "transport"     # K=2 gaussian or K=1
     }
   }
 
   use_he_link <- (eta_privacy == "he_link")
+  use_secure_agg <- (eta_privacy == "secure_agg")
 
+  # Policy enforcement
+  if (use_secure_agg && non_label_count < 2)
+    stop("secure_agg requires >= 3 servers (>= 2 non-label). ",
+         "For K=2, use 'he_link' (binomial) or 'transport'.", call. = FALSE)
   if (use_he_link) {
     if (non_label_count != 1)
       stop("HE-Link mode requires exactly 2 servers (1 label + 1 non-label). ",
@@ -447,6 +452,12 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     }
 
     if (verbose) message("  Key setup + transport keys complete")
+
+    # Generate session ID for secure aggregation and FSM
+    session_id <- paste0(
+      format(Sys.time(), "%Y%m%d%H%M%S"), "-",
+      paste(sample(c(0:9, letters[1:6]), 16, replace = TRUE), collapse = "")
+    )
   }
 
   # ===========================================================================
@@ -556,7 +567,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   betas <- list()
   for (server in server_list) {
     p <- length(x_vars[[server]])
-    if (server == coordinator && label_intercept && !use_he_link) p <- p + 1
+    if (server == coordinator && label_intercept && !use_he_link && !use_secure_agg) p <- p + 1
     betas[[server]] <- rep(0, p)
   }
 
@@ -566,7 +577,253 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # Encrypted eta blobs (opaque to client): server_name -> base64url string
   encrypted_etas <- list()
 
-  if (use_he_link) {
+  if (use_secure_agg) {
+    # =========================================================================
+    # Phase 3 (Secure Aggregation): BCD with pairwise PRG masks (K>=3)
+    # =========================================================================
+    # Secure Aggregation Protocol: non-label servers add correlated masks to
+    # their eta vectors before sending to coordinator. Masks cancel when summed,
+    # so coordinator only sees aggregate eta. Individual per-server eta values
+    # are never visible.
+    #
+    # Uses Jacobi (synchronous) BCD: all non-label servers receive the same
+    # mu/w snapshot per iteration (computed by coordinator at iteration start).
+
+    non_label_pk_map <- list()
+    for (s in non_label_servers) {
+      non_label_pk_map[[s]] <- transport_pks[[s]]
+    }
+
+    # Sort non-label server names for canonical ordering in seed derivation
+    nonlabel_sorted <- sort(non_label_servers)
+
+    # Fusion server and non-fusion servers (for threshold decryption)
+    fusion_server <- server_list[1]  # Party 0
+    fusion_conn_idx <- which(server_names == fusion_server)
+    non_fusion_servers <- setdiff(server_list, fusion_server)
+
+    if (verbose) message("\n[Phase 3] BCD iterations (secure aggregation, K=",
+                         n_partitions, " servers)...")
+
+    # Initialize FSM on coordinator
+    DSI::datashield.aggregate(
+      conns = datasources[coordinator_conn],
+      expr = call("glmFSMInitDS",
+                  session_id = session_id,
+                  n_nonlabel = as.integer(non_label_count),
+                  mode = "secure_agg")
+    )
+
+    # Initialize secure aggregation on each non-label server
+    for (server in non_label_servers) {
+      conn_idx <- which(server_names == server)
+      DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call("glmSecureAggInitDS",
+                    self_name = server,
+                    session_id = session_id,
+                    nonlabel_names = nonlabel_sorted,
+                    scale_bits = 20L)
+      )
+    }
+
+    if (verbose) message("  Secure aggregation initialized on all non-label servers")
+
+    for (iter in seq_len(max_iter)) {
+      betas_old <- betas
+      max_diff <- 0
+
+      # --- Phase 3a: FSM check + Coordinator step (label server) ---
+      # Send masked eta blobs to coordinator (from previous iteration)
+      eta_blob_keys <- character(0)
+      if (length(encrypted_etas) > 0) {
+        for (s in names(encrypted_etas)) {
+          blob <- encrypted_etas[[s]]
+          if (!is.null(blob) && nzchar(blob)) {
+            key <- paste0("eta_", s)
+            .sendBlob(blob, key, coordinator_conn)
+            eta_blob_keys <- c(eta_blob_keys, key)
+
+            # FSM: register eta receipt
+            DSI::datashield.aggregate(
+              conns = datasources[coordinator_conn],
+              expr = call("glmFSMCheckDS",
+                          session_id = session_id,
+                          action = "receive_eta",
+                          server_name = s)
+            )
+          }
+        }
+      }
+
+      # FSM: authorize coordinator step
+      DSI::datashield.aggregate(
+        conns = datasources[coordinator_conn],
+        expr = call("glmFSMCheckDS",
+                    session_id = session_id,
+                    action = "coordinator_step",
+                    iteration = as.integer(iter))
+      )
+
+      coord_result <- DSI::datashield.aggregate(
+        conns = datasources[coordinator_conn],
+        expr = call("glmSecureAggCoordinatorStepDS",
+                    data_name = std_data,
+                    y_var = y_var,
+                    x_vars = x_vars[[coordinator]],
+                    eta_blob_keys = if (length(eta_blob_keys) > 0) eta_blob_keys else NULL,
+                    non_label_pks = non_label_pk_map,
+                    family = family,
+                    beta_current = betas[[coordinator]],
+                    lambda = lambda,
+                    intercept = label_intercept,
+                    n_obs = as.integer(n_obs),
+                    scale_bits = 20L)
+      )
+      if (is.list(coord_result) && length(coord_result) == 1)
+        coord_result <- coord_result[[1]]
+
+      betas[[coordinator]] <- coord_result$beta
+      mwv_blobs <- coord_result$encrypted_blobs
+
+      diff_coord <- sum(abs(betas[[coordinator]] - betas_old[[coordinator]]))
+      max_diff <- max(max_diff, diff_coord)
+
+      # FSM: distribute_mwv
+      DSI::datashield.aggregate(
+        conns = datasources[coordinator_conn],
+        expr = call("glmFSMCheckDS",
+                    session_id = session_id,
+                    action = "distribute_mwv")
+      )
+
+      # --- Phase 3b: Non-label servers (gradient + decrypt + masked block solve) ---
+      encrypted_etas <- list()  # Reset for this iteration
+
+      for (server in non_label_servers) {
+        conn_idx <- which(server_names == server)
+        vars <- x_vars[[server]]
+        p_k <- length(vars)
+
+        # Step 1: Send encrypted (mu, w) blob
+        mwv_blob <- mwv_blobs[[server]]
+        .sendBlob(mwv_blob, "mwv", conn_idx)
+
+        # Step 2: Compute encrypted gradient (REUSE existing function)
+        grad_result <- DSI::datashield.aggregate(
+          conns = datasources[conn_idx],
+          expr = call("glmSecureGradientDS",
+                      data_name = std_data,
+                      x_vars = vars,
+                      encrypted_mwv = NULL,
+                      num_obs = as.integer(n_obs))
+        )
+        if (is.list(grad_result) && length(grad_result) == 1)
+          grad_result <- grad_result[[1]]
+
+        enc_gradients <- grad_result$encrypted_gradients
+        ct_hashes <- grad_result$ct_hashes
+
+        # Protocol Firewall: authorize gradient CTs (REUSE existing pattern)
+        if (!is.null(ct_hashes) && length(ct_hashes) > 0) {
+          ct_hashes_blob <- paste(ct_hashes, collapse = ",")
+          for (auth_server in server_list) {
+            if (auth_server != server) {
+              auth_conn <- which(server_names == auth_server)
+              .sendBlob(ct_hashes_blob, "ct_hashes", auth_conn)
+              DSI::datashield.aggregate(
+                conns = datasources[auth_conn],
+                expr = call("mheAuthorizeCTDS",
+                            op_type = "glm-gradient",
+                            from_storage = TRUE)
+              )
+            }
+          }
+        }
+
+        # Step 3: Threshold decrypt each gradient component (REUSE)
+        gradient <- numeric(p_k)
+        for (j in seq_len(p_k)) {
+          ct_grad <- enc_gradients[j]
+
+          for (nf_server in non_fusion_servers) {
+            nf_conn <- which(server_names == nf_server)
+            nf_party_id <- which(server_list == nf_server) - 1
+
+            n_ct_chunks <- .sendCTChunks(ct_grad, nf_conn)
+            pd <- DSI::datashield.aggregate(
+              conns = datasources[nf_conn],
+              expr = call("mhePartialDecryptWrappedDS",
+                          n_chunks = as.integer(n_ct_chunks))
+            )
+            if (is.list(pd)) pd <- pd[[1]]
+            .sendWrappedShare(pd$wrapped_share, nf_party_id, fusion_conn_idx)
+          }
+
+          n_ct_chunks <- .sendCTChunks(ct_grad, fusion_conn_idx)
+          fuse_result <- DSI::datashield.aggregate(
+            conns = datasources[fusion_conn_idx],
+            expr = call("mheFuseServerDS",
+                        n_parties = as.integer(length(server_list)),
+                        n_ct_chunks = as.integer(n_ct_chunks),
+                        num_slots = 0L)
+          )
+          if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
+          gradient[j] <- fuse_result$value
+        }
+
+        # Step 4: Send (mu, w) blob again for block solve (w needed for IRLS)
+        .sendBlob(mwv_blob, "mwv", conn_idx)
+
+        # Step 5: Masked block solve (secure aggregation version)
+        solve_result <- DSI::datashield.aggregate(
+          conns = datasources[conn_idx],
+          expr = call("glmSecureAggBlockSolveDS",
+                      data_name = std_data,
+                      x_vars = vars,
+                      beta_current = betas[[server]],
+                      gradient = gradient,
+                      lambda = lambda,
+                      coordinator_pk = coordinator_pk,
+                      iteration = as.integer(iter))
+        )
+        if (is.list(solve_result) && length(solve_result) == 1)
+          solve_result <- solve_result[[1]]
+
+        betas[[server]] <- solve_result$beta
+        encrypted_etas[[server]] <- solve_result$encrypted_masked_eta
+
+        diff_server <- sum(abs(betas[[server]] - betas_old[[server]]))
+        max_diff <- max(max_diff, diff_server)
+
+        # FSM: block complete
+        DSI::datashield.aggregate(
+          conns = datasources[coordinator_conn],
+          expr = call("glmFSMCheckDS",
+                      session_id = session_id,
+                      action = "block_complete")
+        )
+      }
+
+      final_iter <- iter
+
+      if (max_diff < tol) {
+        converged <- TRUE
+        if (verbose)
+          message(sprintf("  Converged after %d iterations (diff = %.2e)",
+                          iter, max_diff))
+        break
+      }
+
+      if (verbose && iter %% 5 == 0)
+        message(sprintf("  Iteration %d: max diff = %.2e", iter, max_diff))
+    }
+
+    if (!converged && verbose)
+      warning(sprintf("Did not converge after %d iterations (diff = %.2e)",
+                      max_iter, max_diff))
+
+  } else if (use_he_link) {
     # =========================================================================
     # Phase 3 (HE-Link): BCD with homomorphic link function
     # =========================================================================
@@ -945,7 +1202,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   for (server in server_list) {
     server_beta <- betas[[server]]
-    if (server == coordinator && label_intercept && !use_he_link) {
+    if (server == coordinator && label_intercept && !use_he_link && !use_secure_agg) {
       beta_0_from_label <- server_beta[1]
       server_beta <- server_beta[-1]
     }
@@ -975,7 +1232,51 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # servers so the coordinator can reconstruct eta_total server-side.
   # The client NEVER sees the n-length eta_total vector.
 
-  if (use_he_link) {
+  if (use_secure_agg) {
+    # Secure Aggregation deviance: one-time unmasked eta transmission.
+    # Same pattern as HE-Link deviance: coordinator stores eta_label locally,
+    # non-label servers send UNMASKED eta (one-time, transport-encrypted).
+    if (verbose) message("\n[Phase 5] Computing deviance (one-time secure routing)...")
+
+    # FSM: transition to deviance
+    DSI::datashield.aggregate(
+      conns = datasources[coordinator_conn],
+      expr = call("glmFSMCheckDS",
+                  session_id = session_id,
+                  action = "deviance")
+    )
+
+    # Coordinator: store eta_label locally
+    DSI::datashield.aggregate(
+      conns = datasources[coordinator_conn],
+      expr = call("glmSecureAggPrepDevianceDS",
+                  data_name = std_data,
+                  x_vars = x_vars[[coordinator]],
+                  beta = betas[[coordinator]],
+                  coordinator_pk = NULL)
+    )
+
+    # Non-label servers: compute and transport-encrypt eta (UNMASKED)
+    eta_blob_keys_final <- character(0)
+    for (server in non_label_servers) {
+      conn_idx <- which(server_names == server)
+      prep_result <- DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call("glmSecureAggPrepDevianceDS",
+                    data_name = std_data,
+                    x_vars = x_vars[[server]],
+                    beta = betas[[server]],
+                    coordinator_pk = coordinator_pk)
+      )
+      if (is.list(prep_result)) prep_result <- prep_result[[1]]
+
+      if (!is.null(prep_result$encrypted_eta)) {
+        key <- paste0("eta_", server)
+        .sendBlob(prep_result$encrypted_eta, key, coordinator_conn)
+        eta_blob_keys_final <- c(eta_blob_keys_final, key)
+      }
+    }
+  } else if (use_he_link) {
     # HE-Link deviance: one-time secure-routing deviance computation.
     # Each server computes its final eta = X*beta on the standardized scale.
     # The coordinator stores its own eta locally; non-label servers

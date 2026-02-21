@@ -138,10 +138,21 @@ With K=2 servers, standard secure routing leaks the non-label server's `eta_nonl
 - Gradient computed from `ct_y - ct_mu` (both encrypted)
 - Only p_k-length gradient scalars are threshold-decrypted
 
-The `eta_privacy` parameter controls this behavior:
-- `"auto"` (default): automatically uses HE-Link for K=2 binomial
-- `"transport"`: always uses standard secure routing
+## Secure Aggregation: Pairwise PRG Masks for K>=3
+
+With K>=3 servers (>=2 non-label), the `eta_privacy = "secure_agg"` mode uses **pairwise PRG masks** so the coordinator only sees the aggregate `sum(eta_k)`, never individual per-server contributions. Masks are generated via ChaCha20 PRG from shared seeds (X25519 ECDH + HKDF) and cancel exactly thanks to fixed-point integer arithmetic. A server-side **FSM firewall** prevents protocol abuse (out-of-order calls, iteration replay, partial aggregation).
+
+## eta_privacy Modes
+
+The `eta_privacy` parameter controls which privacy protection is used for the linear predictor exchange:
+
+- `"auto"` (default): selects the strongest available mode:
+  - K>=3 servers → `"secure_agg"` (pairwise PRG masks)
+  - K=2 servers + binomial/poisson → `"he_link"` (homomorphic sigmoid)
+  - K=2 servers + gaussian → `"transport"` (standard secure routing)
+- `"secure_agg"`: forces pairwise PRG mask aggregation (requires K>=3)
 - `"he_link"`: forces HE-Link mode (requires K=2, binomial, `log_n >= 14`)
+- `"transport"`: always uses standard secure routing (eta visible to coordinator)
 
 ## Supported GLM Families
 
