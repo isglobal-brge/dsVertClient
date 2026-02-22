@@ -567,7 +567,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   betas <- list()
   for (server in server_list) {
     p <- length(x_vars[[server]])
-    if (server == coordinator && label_intercept && !use_he_link && !use_secure_agg) p <- p + 1
+    if (server == coordinator && label_intercept && !use_he_link) p <- p + 1
     betas[[server]] <- rep(0, p)
   }
 
@@ -1202,7 +1202,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   for (server in server_list) {
     server_beta <- betas[[server]]
-    if (server == coordinator && label_intercept && !use_he_link && !use_secure_agg) {
+    if (server == coordinator && label_intercept && !use_he_link) {
       beta_0_from_label <- server_beta[1]
       server_beta <- server_beta[-1]
     }
