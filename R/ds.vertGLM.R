@@ -174,7 +174,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # Helpers
   # ===========================================================================
 
-  chunk_size <- 10000  # DataSHIELD parser-safe chunk size
+  chunk_size <- 100000  # DataSHIELD parser-safe chunk size (100KB)
 
   # Send CT chunks to a server (reusable helper)
   .sendCTChunks <- function(ct_str, conn_idx) {
@@ -187,7 +187,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         conns = datasources[conn_idx],
         expr = call("mheStoreCTChunkDS",
                     chunk_index = as.integer(ch),
-                    chunk = substr(ct_str, start, end))
+                    chunk = substr(ct_str, start, end),
+                    session_id = session_id)
       )
     }
     n_ct_chunks
@@ -204,7 +205,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         conns = datasources[fusion_conn_idx],
         expr = call("mheStoreWrappedShareDS",
                     party_id = as.integer(party_id),
-                    share_data = substr(wrapped_share, start, end))
+                    share_data = substr(wrapped_share, start, end),
+                    session_id = session_id)
       )
     }
   }
@@ -216,7 +218,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     if (n_chunks == 1) {
       DSI::datashield.aggregate(
         conns = datasources[conn_idx],
-        expr = call("mheStoreBlobDS", key = key, chunk = blob)
+        expr = call("mheStoreBlobDS", key = key, chunk = blob,
+                    session_id = session_id)
       )
     } else {
       for (ch in seq_len(n_chunks)) {
@@ -228,7 +231,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                       key = key,
                       chunk = substr(blob, start, end),
                       chunk_index = as.integer(ch),
-                      n_chunks = as.integer(n_chunks))
+                      n_chunks = as.integer(n_chunks),
+                      session_id = session_id)
         )
       }
     }
@@ -252,7 +256,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   server_list <- names(x_vars)
   non_label_servers <- setdiff(server_list, y_server)
   n_partitions <- length(x_vars)
-  chunk_size <- 10000
+  chunk_size <- 100000
 
   # Get observation count
   first_conn <- which(server_names == server_list[1])
@@ -276,6 +280,20 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                       paste(non_label_servers, collapse = ", ")))
   }
 
+  # Generate session_id for all protocol phases (crypto state isolation)
+  session_id <- local({
+    hex <- sample(c(0:9, letters[1:6]), 32, replace = TRUE)
+    hex[13] <- "4"  # UUID v4
+    hex[17] <- sample(c("8","9","a","b"), 1)  # variant 1
+    paste0(
+      paste(hex[1:8], collapse = ""), "-",
+      paste(hex[9:12], collapse = ""), "-",
+      paste(hex[13:16], collapse = ""), "-",
+      paste(hex[17:20], collapse = ""), "-",
+      paste(hex[21:32], collapse = "")
+    )
+  })
+
   # ===========================================================================
   # Phase 0: MHE Key Setup + Transport Keys (only needed if non-label servers exist)
   # ===========================================================================
@@ -292,7 +310,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                   num_obs = as.integer(n_obs),
                   log_n = as.integer(log_n),
                   log_scale = as.integer(log_scale),
-                  generate_rlk = use_he_link)
+                  generate_rlk = use_he_link,
+                  session_id = session_id)
     )
     if (is.list(result0)) result0 <- result0[[1]]
     crp <- result0$crp
@@ -324,7 +343,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     num_obs = as.integer(n_obs),
                     log_n = as.integer(log_n),
                     log_scale = as.integer(log_scale),
-                    generate_rlk = use_he_link)
+                    generate_rlk = use_he_link,
+                    session_id = session_id)
       )
       if (is.list(result)) result <- result[[1]]
       pk_shares[[server]] <- result$public_key_share
@@ -350,7 +370,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         conns = datasources[combine_conn],
         expr = call("mheRLKAggregateR1DS",
                     from_storage = TRUE,
-                    n_parties = as.integer(length(server_list)))
+                    n_parties = as.integer(length(server_list)),
+                    session_id = session_id)
       )
       if (is.list(agg_r1_result)) agg_r1_result <- agg_r1_result[[1]]
       agg_r1 <- agg_r1_result$aggregated_round1
@@ -368,7 +389,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         r2_result <- DSI::datashield.aggregate(
           conns = datasources[srv_conn],
           expr = call("mheRLKRound2DS",
-                      from_storage = (i > 1))
+                      from_storage = (i > 1),
+                      session_id = session_id)
         )
         if (is.list(r2_result)) r2_result <- r2_result[[1]]
         rlk_r2_shares[[server_list[i]]] <- r2_result$rlk_round2_share
@@ -409,7 +431,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                   n_gkg_shares = as.integer(n_gkg_shares),
                   num_obs = as.integer(n_obs),
                   log_n = as.integer(log_n),
-                  log_scale = as.integer(log_scale))
+                  log_scale = as.integer(log_scale),
+                  session_id = session_id)
     )
     if (is.list(combined)) combined <- combined[[1]]
     cpk <- combined$collective_public_key
@@ -430,7 +453,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       }
       DSI::datashield.aggregate(
         conns = datasources[srv_conn],
-        expr = call("mheStoreCPKDS", from_storage = TRUE)
+        expr = call("mheStoreCPKDS", from_storage = TRUE,
+                    session_id = session_id)
       )
     }
 
@@ -447,17 +471,12 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       }
       DSI::datashield.aggregate(
         conns = datasources[conn_idx],
-        expr = call("mheStoreTransportKeysDS", transport_keys = tk_map)
+        expr = call("mheStoreTransportKeysDS", transport_keys = tk_map,
+                    session_id = session_id)
       )
     }
 
     if (verbose) message("  Key setup + transport keys complete")
-
-    # Generate session ID for secure aggregation and FSM
-    session_id <- paste0(
-      format(Sys.time(), "%Y%m%d%H%M%S"), "-",
-      paste(sample(c(0:9, letters[1:6]), 16, replace = TRUE), collapse = "")
-    )
   }
 
   # ===========================================================================
@@ -483,7 +502,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                   data_name = data_name,
                   output_name = std_data,
                   x_vars = x_vars[[server]],
-                  y_var = y_arg)
+                  y_var = y_arg,
+                  session_id = session_id)
     )
     if (is.list(std_result) && length(std_result) == 1)
       std_result <- std_result[[1]]
@@ -511,7 +531,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     enc_result <- DSI::datashield.aggregate(
       conns = datasources[conn_idx],
       expr = call("mheEncryptRawDS",
-                  data_name = enc_data, y_var = y_var)
+                  data_name = enc_data, y_var = y_var,
+                  session_id = session_id)
     )
     if (is.list(enc_result)) enc_result <- enc_result[[1]]
     ct_y <- enc_result$encrypted_y
@@ -523,7 +544,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       label_conn <- which(server_names == y_server)
       DSI::datashield.aggregate(
         conns = datasources[label_conn],
-        expr = call("mheStoreEncYDS", enc_y = ct_y)
+        expr = call("mheStoreEncYDS", enc_y = ct_y,
+                    session_id = session_id)
       )
       if (verbose) message("  ct_y stored locally on label server (HE-Link mode)")
     }
@@ -541,13 +563,15 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
           expr = call("mheStoreEncChunkDS",
                       col_index = 1L,
                       chunk_index = as.integer(ch),
-                      chunk = substr(ct_y, start, end))
+                      chunk = substr(ct_y, start, end),
+                      session_id = session_id)
         )
       }
       DSI::datashield.aggregate(
         conns = datasources[conn_idx],
         expr = call("mheAssembleEncColumnDS",
-                    col_index = 1L, n_chunks = as.integer(n_chunks))
+                    col_index = 1L, n_chunks = as.integer(n_chunks),
+                    session_id = session_id)
       )
       if (verbose)
         message("  ct_y transferred to ", server, " (", n_chunks, " chunks)")
@@ -678,7 +702,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     lambda = lambda,
                     intercept = label_intercept,
                     n_obs = as.integer(n_obs),
-                    scale_bits = 20L)
+                    scale_bits = 20L,
+                    session_id = session_id)
       )
       if (is.list(coord_result) && length(coord_result) == 1)
         coord_result <- coord_result[[1]]
@@ -716,7 +741,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                       data_name = std_data,
                       x_vars = vars,
                       encrypted_mwv = NULL,
-                      num_obs = as.integer(n_obs))
+                      num_obs = as.integer(n_obs),
+                      session_id = session_id)
         )
         if (is.list(grad_result) && length(grad_result) == 1)
           grad_result <- grad_result[[1]]
@@ -735,7 +761,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                 conns = datasources[auth_conn],
                 expr = call("mheAuthorizeCTDS",
                             op_type = "glm-gradient",
-                            from_storage = TRUE)
+                            from_storage = TRUE,
+                            session_id = session_id)
               )
             }
           }
@@ -754,7 +781,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
             pd <- DSI::datashield.aggregate(
               conns = datasources[nf_conn],
               expr = call("mhePartialDecryptWrappedDS",
-                          n_chunks = as.integer(n_ct_chunks))
+                          n_chunks = as.integer(n_ct_chunks),
+                          session_id = session_id)
             )
             if (is.list(pd)) pd <- pd[[1]]
             .sendWrappedShare(pd$wrapped_share, nf_party_id, fusion_conn_idx)
@@ -766,7 +794,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
             expr = call("mheFuseServerDS",
                         n_parties = as.integer(length(server_list)),
                         n_ct_chunks = as.integer(n_ct_chunks),
-                        num_slots = 0L)
+                        num_slots = 0L,
+                        session_id = session_id)
           )
           if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
           gradient[j] <- fuse_result$value
@@ -785,7 +814,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                       gradient = gradient,
                       lambda = lambda,
                       coordinator_pk = coordinator_pk,
-                      iteration = as.integer(iter))
+                      iteration = as.integer(iter),
+                      session_id = session_id)
         )
         if (is.list(solve_result) && length(solve_result) == 1)
           solve_result <- solve_result[[1]]
@@ -867,7 +897,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
           expr = call("glmHEEncryptEtaDS",
                       data_name = std_data,
                       x_vars = x_vars[[server]],
-                      beta = betas[[server]])
+                      beta = betas[[server]],
+                      session_id = session_id)
         )
         if (is.list(enc_eta_result)) enc_eta_result <- enc_eta_result[[1]]
 
@@ -881,7 +912,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         conns = datasources[coordinator_conn],
         expr = call("glmHELinkStepDS",
                     from_storage = TRUE,
-                    n_parties = as.integer(length(server_list)))
+                    n_parties = as.integer(length(server_list)),
+                    session_id = session_id)
       )
       if (is.list(link_result)) link_result <- link_result[[1]]
       ct_mu <- link_result$ct_mu
@@ -905,7 +937,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                       data_name = std_data,
                       x_vars = vars,
                       num_obs = as.integer(n_obs),
-                      from_storage = (server != coordinator))
+                      from_storage = (server != coordinator),
+                      session_id = session_id)
         )
         if (is.list(grad_result)) grad_result <- grad_result[[1]]
 
@@ -923,7 +956,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                 conns = datasources[auth_conn],
                 expr = call("mheAuthorizeCTDS",
                             op_type = "he-link-gradient",
-                            from_storage = TRUE)
+                            from_storage = TRUE,
+                            session_id = session_id)
               )
             }
           }
@@ -943,7 +977,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
             pd <- DSI::datashield.aggregate(
               conns = datasources[nf_conn],
               expr = call("mhePartialDecryptWrappedDS",
-                          n_chunks = as.integer(n_ct_chunks))
+                          n_chunks = as.integer(n_ct_chunks),
+                          session_id = session_id)
             )
             if (is.list(pd)) pd <- pd[[1]]
             .sendWrappedShare(pd$wrapped_share, nf_party_id, fusion_conn_idx)
@@ -956,21 +991,25 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
             expr = call("mheFuseServerDS",
                         n_parties = as.integer(length(server_list)),
                         n_ct_chunks = as.integer(n_ct_chunks),
-                        num_slots = 0L)
+                        num_slots = 0L,
+                        session_id = session_id)
           )
           if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
           gradient[j] <- fuse_result$value
         }
 
-        # GD block update (simple gradient descent, no IRLS weights needed)
+        # GD block update (gradient descent with adaptive step size)
+        # Use alpha = 1/(1 + iter/10) schedule: starts aggressive, decays
+        he_alpha <- 1.0 / (1.0 + iter / 10.0)
         update_result <- DSI::datashield.aggregate(
           conns = datasources[conn_idx],
           expr = call("glmHEBlockUpdateDS",
                       beta_current = betas[[server]],
                       gradient = gradient,
-                      alpha = 0.1,
+                      alpha = he_alpha,
                       lambda = lambda,
-                      n_obs = as.integer(n_obs))
+                      n_obs = as.integer(n_obs),
+                      session_id = session_id)
         )
         if (is.list(update_result)) update_result <- update_result[[1]]
 
@@ -1058,7 +1097,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     beta_current = betas[[coordinator]],
                     lambda = lambda,
                     intercept = label_intercept,
-                    n_obs = as.integer(n_obs))
+                    n_obs = as.integer(n_obs),
+                    session_id = session_id)
       )
       if (is.list(coord_result) && length(coord_result) == 1)
         coord_result <- coord_result[[1]]
@@ -1088,7 +1128,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                       data_name = std_data,
                       x_vars = vars,
                       encrypted_mwv = NULL,
-                      num_obs = as.integer(n_obs))
+                      num_obs = as.integer(n_obs),
+                      session_id = session_id)
         )
         if (is.list(grad_result) && length(grad_result) == 1)
           grad_result <- grad_result[[1]]
@@ -1108,7 +1149,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                 conns = datasources[auth_conn],
                 expr = call("mheAuthorizeCTDS",
                             op_type = "glm-gradient",
-                            from_storage = TRUE)
+                            from_storage = TRUE,
+                            session_id = session_id)
               )
             }
           }
@@ -1128,7 +1170,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
             pd <- DSI::datashield.aggregate(
               conns = datasources[nf_conn],
               expr = call("mhePartialDecryptWrappedDS",
-                          n_chunks = as.integer(n_ct_chunks))
+                          n_chunks = as.integer(n_ct_chunks),
+                          session_id = session_id)
             )
             if (is.list(pd)) pd <- pd[[1]]
             .sendWrappedShare(pd$wrapped_share, nf_party_id, fusion_conn_idx)
@@ -1141,7 +1184,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
             expr = call("mheFuseServerDS",
                         n_parties = as.integer(length(server_list)),
                         n_ct_chunks = as.integer(n_ct_chunks),
-                        num_slots = 0L)
+                        num_slots = 0L,
+                        session_id = session_id)
           )
           if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
           gradient[j] <- fuse_result$value
@@ -1160,7 +1204,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                       beta_current = betas[[server]],
                       gradient = gradient,
                       lambda = lambda,
-                      coordinator_pk = coordinator_pk)
+                      coordinator_pk = coordinator_pk,
+                      session_id = session_id)
         )
         if (is.list(solve_result) && length(solve_result) == 1)
           solve_result <- solve_result[[1]]
@@ -1253,7 +1298,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                   data_name = std_data,
                   x_vars = x_vars[[coordinator]],
                   beta = betas[[coordinator]],
-                  coordinator_pk = NULL)
+                  coordinator_pk = NULL,
+                  session_id = session_id)
     )
 
     # Non-label servers: compute and transport-encrypt eta (UNMASKED)
@@ -1266,7 +1312,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     data_name = std_data,
                     x_vars = x_vars[[server]],
                     beta = betas[[server]],
-                    coordinator_pk = coordinator_pk)
+                    coordinator_pk = coordinator_pk,
+                    session_id = session_id)
       )
       if (is.list(prep_result)) prep_result <- prep_result[[1]]
 
@@ -1291,7 +1338,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                   data_name = std_data,
                   x_vars = x_vars[[coordinator]],
                   beta = betas[[coordinator]],
-                  coordinator_pk = NULL)
+                  coordinator_pk = NULL,
+                  session_id = session_id)
     )
 
     # Non-label servers: compute and transport-encrypt eta
@@ -1304,7 +1352,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     data_name = std_data,
                     x_vars = x_vars[[server]],
                     beta = betas[[server]],
-                    coordinator_pk = coordinator_pk)
+                    coordinator_pk = coordinator_pk,
+                    session_id = session_id)
       )
       if (is.list(prep_result)) prep_result <- prep_result[[1]]
 
@@ -1339,7 +1388,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                 eta_blob_keys = if (length(eta_blob_keys_final) > 0) eta_blob_keys_final else NULL,
                 family = family,
                 y_sd = if (!is.null(y_sd)) y_sd else NULL,
-                y_mean = if (!is.null(y_mean)) y_mean else NULL)
+                y_mean = if (!is.null(y_mean)) y_mean else NULL,
+                session_id = session_id)
   )
   if (is.list(deviance_result) && length(deviance_result) == 1)
     deviance_result <- deviance_result[[1]]
@@ -1378,7 +1428,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     conn_idx <- which(server_names == server)
     tryCatch(
       DSI::datashield.aggregate(conns = datasources[conn_idx],
-                                expr = call("mheCleanupDS")),
+                                expr = call("mheCleanupDS",
+                                            session_id = session_id)),
       error = function(e) NULL
     )
   }
