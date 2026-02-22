@@ -126,9 +126,23 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
          call. = FALSE)
   }
 
+  # Generate session_id for MHE protocol state isolation
+  session_id <- local({
+    hex <- sample(c(0:9, letters[1:6]), 32, replace = TRUE)
+    hex[13] <- "4"  # UUID v4
+    hex[17] <- sample(c("8","9","a","b"), 1)  # variant 1
+    paste0(
+      paste(hex[1:8], collapse = ""), "-",
+      paste(hex[9:12], collapse = ""), "-",
+      paste(hex[13:16], collapse = ""), "-",
+      paste(hex[17:20], collapse = ""), "-",
+      paste(hex[21:32], collapse = "")
+    )
+  })
+
   # Helpers -------------------------------------------------------------------
 
-  chunk_size <- 10000  # DataSHIELD parser-safe chunk size
+  chunk_size <- 100000  # DataSHIELD parser-safe chunk size (100KB)
 
   # Send CT chunks to a server (reusable helper)
   .sendCTChunks <- function(ct_str, conn_idx) {
@@ -141,7 +155,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
         conns = datasources[conn_idx],
         expr = call("mheStoreCTChunkDS",
                     chunk_index = as.integer(ch),
-                    chunk = substr(ct_str, start, end))
+                    chunk = substr(ct_str, start, end),
+                    session_id = session_id)
       )
     }
     n_ct_chunks
@@ -160,7 +175,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
                     key = key,
                     chunk = substr(data, start, end),
                     chunk_index = as.integer(ch),
-                    n_chunks = as.integer(n_chunks))
+                    n_chunks = as.integer(n_chunks),
+                    session_id = session_id)
       )
     }
   }
@@ -176,7 +192,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
         conns = datasources[fusion_conn_idx],
         expr = call("mheStoreWrappedShareDS",
                     party_id = as.integer(party_id),
-                    share_data = substr(wrapped_share, start, end))
+                    share_data = substr(wrapped_share, start, end),
+                    session_id = session_id)
       )
     }
   }
@@ -221,7 +238,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     conn_idx <- which(server_names == server)
     call_expr <- call("mheGetObsDS",
                       data_name = data_name,
-                      variables = variables[[server]])
+                      variables = variables[[server]],
+                      session_id = session_id)
     count <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
     if (is.list(count)) count <- count[[1]]
 
@@ -244,7 +262,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
                     gkg_seed = NULL,
                     num_obs = as.integer(n_obs),
                     log_n = as.integer(log_n),
-                    log_scale = as.integer(log_scale))
+                    log_scale = as.integer(log_scale),
+                    session_id = session_id)
 
   result0 <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
   if (is.list(result0)) result0 <- result0[[1]]
@@ -274,7 +293,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
                       from_storage = TRUE,
                       num_obs = as.integer(n_obs),
                       log_n = as.integer(log_n),
-                      log_scale = as.integer(log_scale))
+                      log_scale = as.integer(log_scale),
+                      session_id = session_id)
 
     result <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
     if (is.list(result)) result <- result[[1]]
@@ -319,7 +339,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
                     n_gkg_shares = as.integer(n_gkg_shares),
                     num_obs = as.integer(n_obs),
                     log_n = as.integer(log_n),
-                    log_scale = as.integer(log_scale))
+                    log_scale = as.integer(log_scale),
+                    session_id = session_id)
 
   combined <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
   if (is.list(combined)) combined <- combined[[1]]
@@ -337,7 +358,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
       }
     }
     DSI::datashield.aggregate(conns = datasources[srv_conn],
-                              expr = call("mheStoreCPKDS", from_storage = TRUE))
+                              expr = call("mheStoreCPKDS", from_storage = TRUE,
+                                         session_id = session_id))
     message("  CPK stored on ", server)
   }
 
@@ -356,7 +378,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     }
     DSI::datashield.aggregate(
       conns = datasources[conn_idx],
-      expr = call("mheStoreTransportKeysDS", transport_keys = tk_map)
+      expr = call("mheStoreTransportKeysDS", transport_keys = tk_map,
+                  session_id = session_id)
     )
   }
   message("  Transport keys distributed for share-wrapping")
@@ -372,7 +395,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
 
     call_expr <- call("mheEncryptLocalDS",
                       data_name = data_name,
-                      variables = variables[[server]])
+                      variables = variables[[server]],
+                      session_id = session_id)
 
     result <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
     if (is.list(result)) result <- result[[1]]
@@ -390,7 +414,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     conn_idx <- which(server_names == server)
     call_expr <- call("localCorDS",
                       data_name = data_name,
-                      variables = variables[[server]])
+                      variables = variables[[server]],
+                      session_id = session_id)
 
     result <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
     if (is.list(result)) result <- result[[1]]
@@ -438,14 +463,16 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
           store_expr <- call("mheStoreEncChunkDS",
                              col_index = as.integer(col_k),
                              chunk_index = as.integer(ch),
-                             chunk = chunk_str)
+                             chunk = chunk_str,
+                             session_id = session_id)
           DSI::datashield.aggregate(conns = datasources[conn_idx_A], expr = store_expr)
         }
 
         # Assemble the column from chunks
         assemble_expr <- call("mheAssembleEncColumnDS",
                               col_index = as.integer(col_k),
-                              n_chunks = as.integer(chunks))
+                              n_chunks = as.integer(chunks),
+                              session_id = session_id)
         DSI::datashield.aggregate(conns = datasources[conn_idx_A], expr = assemble_expr)
       }
 
@@ -454,7 +481,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
                         data_name = data_name,
                         variables = variables[[server_A]],
                         n_enc_cols = as.integer(length(enc_cols_B)),
-                        n_obs = as.integer(n_obs))
+                        n_obs = as.integer(n_obs),
+                        session_id = session_id)
 
       enc_result <- DSI::datashield.aggregate(conns = datasources[conn_idx_A], expr = call_expr)
       if (is.list(enc_result)) enc_result <- enc_result[[1]]
@@ -477,7 +505,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
               conns = datasources[conn_idx],
               expr = call("mheAuthorizeCTDS",
                           op_type = "cross-product",
-                          from_storage = TRUE))
+                          from_storage = TRUE,
+                          session_id = session_id))
           }
         }
       }
@@ -512,7 +541,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
             pd <- DSI::datashield.aggregate(
               conns = datasources[nf_conn],
               expr = call("mhePartialDecryptWrappedDS",
-                          n_chunks = as.integer(n_ct_chunks))
+                          n_chunks = as.integer(n_ct_chunks),
+                          session_id = session_id)
             )
             if (is.list(pd)) pd <- pd[[1]]
 
@@ -532,7 +562,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
             expr = call("mheFuseServerDS",
                         n_parties = as.integer(length(server_list)),
                         n_ct_chunks = as.integer(n_ct_chunks),
-                        num_slots = as.integer(n_obs))
+                        num_slots = as.integer(n_obs),
+                        session_id = session_id)
           )
           if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
 
@@ -605,7 +636,8 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     conn_idx <- which(server_names == server)
     tryCatch(
       DSI::datashield.aggregate(conns = datasources[conn_idx],
-                                expr = call("mheCleanupDS")),
+                                expr = call("mheCleanupDS",
+                                           session_id = session_id)),
       error = function(e) NULL
     )
   }

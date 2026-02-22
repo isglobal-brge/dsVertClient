@@ -108,7 +108,21 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   ref_conn <- datasources[ref_server]
   target_names <- setdiff(server_names, ref_server)
 
-  chunk_size <- 10000  # DataSHIELD parser-safe chunk size
+  # Generate session_id for PSI protocol state isolation
+  session_id <- local({
+    hex <- sample(c(0:9, letters[1:6]), 32, replace = TRUE)
+    hex[13] <- "4"  # UUID v4
+    hex[17] <- sample(c("8","9","a","b"), 1)  # variant 1
+    paste0(
+      paste(hex[1:8], collapse = ""), "-",
+      paste(hex[9:12], collapse = ""), "-",
+      paste(hex[13:16], collapse = ""), "-",
+      paste(hex[17:20], collapse = ""), "-",
+      paste(hex[21:32], collapse = "")
+    )
+  })
+
+  chunk_size <- 100000  # DataSHIELD parser-safe chunk size (100KB)
 
   # Store a large blob on a server via chunked mheStoreBlobDS calls.
   .storeLargeBlob <- function(key, data, conn) {
@@ -123,7 +137,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
                     key = key,
                     chunk = substr(data, start, end),
                     chunk_index = as.integer(ch),
-                    n_chunks = as.integer(n_chunks))
+                    n_chunks = as.integer(n_chunks),
+                    session_id = session_id)
       )
     }
   }
@@ -144,7 +159,7 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     conn <- datasources[name]
     result <- DSI::datashield.aggregate(
       conns = conn,
-      expr = call("psiInitDS")
+      expr = call("psiInitDS", session_id = session_id)
     )
     psi_transport_pks[[name]] <- result[[1]]$transport_pk
   }
@@ -157,7 +172,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     keys_for_server[["ref"]] <- psi_transport_pks[[ref_server]]
     DSI::datashield.aggregate(
       conns = conn,
-      expr = call("psiStoreTransportKeysDS", keys_for_server)
+      expr = call("psiStoreTransportKeysDS", keys_for_server,
+                    session_id = session_id)
     )
   }
   cat("  Transport keys exchanged.\n")
@@ -170,7 +186,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   cat("[Phase 1] Reference server masking IDs...\n")
   ref_result <- DSI::datashield.aggregate(
     conns = ref_conn,
-    expr = call("psiMaskIdsDS", data_name, id_col)
+    expr = call("psiMaskIdsDS", data_name, id_col,
+                  session_id = session_id)
   )
   ref_result <- ref_result[[1]]
   cat(sprintf("  %s: %d IDs masked (stored server-side)\n",
@@ -187,7 +204,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
                 ref_server, target_name))
     export_result <- DSI::datashield.aggregate(
       conns = ref_conn,
-      expr = call("psiExportMaskedDS", target_name)
+      expr = call("psiExportMaskedDS", target_name,
+                    session_id = session_id)
     )
     encrypted_ref_blob <- export_result[[1]]$encrypted_blob
 
@@ -202,7 +220,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     target_result <- DSI::datashield.aggregate(
       conns = target_conn,
       expr = call("psiProcessTargetDS", data_name, id_col,
-                  from_storage = TRUE)
+                  from_storage = TRUE,
+                  session_id = session_id)
     )
     target_result <- target_result[[1]]
     cat(sprintf("  %s: %d IDs masked\n", target_name, target_result$n))
@@ -221,7 +240,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
       conns = ref_conn,
       expr = call("psiDoubleMaskDS",
                   target_name = target_name,
-                  from_storage = TRUE)
+                  from_storage = TRUE,
+                  session_id = session_id)
     )
     encrypted_dm_blob <- dm_result[[1]]$encrypted_blob
 
@@ -238,7 +258,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
       conns = target_conn,
       symbol = newobj,
       value = call("psiMatchAndAlignDS", data_name,
-                   from_storage = TRUE)
+                   from_storage = TRUE,
+                   session_id = session_id)
     )
   }
 
@@ -249,7 +270,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   DSI::datashield.assign(
     conns = ref_conn,
     symbol = newobj,
-    value = call("psiSelfAlignDS", data_name)
+    value = call("psiSelfAlignDS", data_name,
+                   session_id = session_id)
   )
 
   # ==================================================================
@@ -262,7 +284,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     conn <- datasources[name]
     idx <- DSI::datashield.aggregate(
       conns = conn,
-      expr = call("psiGetMatchedIndicesDS")
+      expr = call("psiGetMatchedIndicesDS",
+                    session_id = session_id)
     )
     all_indices[[name]] <- idx[[1]]
   }
@@ -281,7 +304,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     DSI::datashield.assign(
       conns = conn,
       symbol = newobj,
-      value = call("psiFilterCommonDS", newobj, from_storage = TRUE)
+      value = call("psiFilterCommonDS", newobj, from_storage = TRUE,
+                     session_id = session_id)
     )
   }
 

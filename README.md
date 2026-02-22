@@ -162,13 +162,22 @@ The `eta_privacy` parameter controls which privacy protection is used for the li
 | `binomial` | Logit | Binary outcomes (logistic regression) |
 | `poisson` | Log | Count data |
 
+## Session Isolation
+
+Each call to `ds.vertGLM`, `ds.psiAlign`, or `ds.vertCor` automatically
+generates a UUIDv4 session identifier and passes it to every server-side
+function call. This ensures that multiple concurrent analyses use completely
+independent server-side storage --- keys, ciphertexts, and protocol state
+never collide between parallel jobs. Session cleanup happens automatically
+at the end of each analysis (or via 24-hour TTL expiry for failed jobs).
+
 ## Chunked Transfer Protocol
 
 DataSHIELD's R expression parser limits the size of arguments that can be
 passed inline in `call()` expressions. Cryptographic objects (CKKS
 ciphertexts, EC points, key shares, transport-encrypted blobs) routinely
 exceed this limit. dsVertClient automatically splits all large payloads into
-10 KB chunks via `mheStoreBlobDS`, which the server reassembles transparently.
+100 KB chunks via `mheStoreBlobDS`, which the server reassembles transparently.
 This chunking is applied uniformly across all protocols (PSI, MHE correlation,
 GLM) for any data that scales with the number of observations, variables, or
 servers --- ensuring that no DataSHIELD call can overflow regardless of
