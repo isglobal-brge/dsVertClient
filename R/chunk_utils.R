@@ -41,7 +41,7 @@ NULL
   if (!is.null(.dsvert_chunk_env$effective_chunk_size)) {
     return(.dsvert_chunk_env$effective_chunk_size)
   }
-  as.integer(getOption("dsvert.chunk_size", 500000L))
+  as.integer(getOption("dsvert.chunk_size", 200000L))
 }
 
 #' Set the effective chunk size (internal)
@@ -67,9 +67,9 @@ NULL
 #'
 #' Wraps the standard chunk-and-send pattern with automatic fallback.
 #' On the first large send in a session, probes the server with the initial
-#' chunk size. If the probe fails (expression too large), halves the
-#' chunk size and retries until a working size is found (or the minimum
-#' is reached). The successful chunk size is cached for all subsequent
+#' chunk size. If the probe fails (expression too large), reduces the
+#' chunk size by 25\% and retries until a working size is found (or the
+#' minimum is reached). The successful chunk size is cached for all subsequent
 #' sends.
 #'
 #' Small payloads (less than half the chunk size) are sent directly without
@@ -115,7 +115,7 @@ NULL
     }
     # Fast path failed — different server with stricter limits. Re-probe.
     .dsvert_chunk_env$probed <- FALSE
-    chunk_size <- chunk_size %/% 2L
+    chunk_size <- (chunk_size * 3L) %/% 4L  # reduce by 25%
     message(sprintf("[dsVert] Cached chunk size too large for this server, reducing to %dKB",
                     chunk_size %/% 1000L))
   }
@@ -160,8 +160,8 @@ NULL
       return(invisible(n_chunks))
     }
 
-    # Probe failed — halve chunk size and retry
-    chunk_size <- chunk_size %/% 2L
+    # Probe failed — reduce chunk size by 25% and retry
+    chunk_size <- (chunk_size * 3L) %/% 4L
     if (chunk_size < min_chunk_size) {
       stop("DataSHIELD chunk transfer failed even at ", min_chunk_size,
            " byte chunks. Check Opal/Rock server configuration.",
