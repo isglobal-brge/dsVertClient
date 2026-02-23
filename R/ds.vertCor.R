@@ -142,47 +142,45 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
 
   # Helpers -------------------------------------------------------------------
 
-  chunk_size <- 100000  # DataSHIELD parser-safe chunk size (100KB)
-
-  # Send CT chunks to a server (reusable helper)
+  # Send CT chunks to a server (adaptive chunk size)
   .sendCTChunks <- function(ct_str, conn_idx) {
-    n_chars_ct <- nchar(ct_str)
-    n_ct_chunks <- ceiling(n_chars_ct / chunk_size)
-    for (ch in seq_len(n_ct_chunks)) {
-      start <- (ch - 1) * chunk_size + 1
-      end <- min(ch * chunk_size, n_chars_ct)
+    .dsvert_adaptive_send(ct_str, function(chunk_str, chunk_idx, n_chunks) {
       DSI::datashield.aggregate(
         conns = datasources[conn_idx],
         expr = call("mheStoreCTChunkDS",
-                    chunk_index = as.integer(ch),
-                    chunk = substr(ct_str, start, end),
+                    chunk_index = chunk_idx,
+                    chunk = chunk_str,
                     session_id = session_id)
       )
-    }
-    n_ct_chunks
+    })
   }
 
-  # Store a large base64url blob on a server via chunked mheStoreBlobDS calls
+  # Store a large base64url blob on a server with adaptive chunking and fallback
   .storeLargeBlob <- function(key, data, conn_idx) {
-    n_chars <- nchar(data)
-    n_chunks <- ceiling(n_chars / chunk_size)
-    for (ch in seq_len(n_chunks)) {
-      start <- (ch - 1) * chunk_size + 1
-      end <- min(ch * chunk_size, n_chars)
-      DSI::datashield.aggregate(
-        conns = datasources[conn_idx],
-        expr = call("mheStoreBlobDS",
-                    key = key,
-                    chunk = substr(data, start, end),
-                    chunk_index = as.integer(ch),
-                    n_chunks = as.integer(n_chunks),
-                    session_id = session_id)
-      )
-    }
+    .dsvert_adaptive_send(data, function(chunk_str, chunk_idx, n_chunks) {
+      if (n_chunks == 1L) {
+        DSI::datashield.aggregate(
+          conns = datasources[conn_idx],
+          expr = call("mheStoreBlobDS", key = key, chunk = chunk_str,
+                      session_id = session_id)
+        )
+      } else {
+        DSI::datashield.aggregate(
+          conns = datasources[conn_idx],
+          expr = call("mheStoreBlobDS",
+                      key = key,
+                      chunk = chunk_str,
+                      chunk_index = chunk_idx,
+                      n_chunks = n_chunks,
+                      session_id = session_id)
+        )
+      }
+    })
   }
 
-  # Relay a wrapped share to the fusion server in chunks
+  # Relay a wrapped share to the fusion server in chunks (adaptive chunk size)
   .sendWrappedShare <- function(wrapped_share, party_id, fusion_conn_idx) {
+    chunk_size <- .dsvert_get_chunk_size()
     n_chars <- nchar(wrapped_share)
     n_chunks <- ceiling(n_chars / chunk_size)
     for (ch in seq_len(n_chunks)) {
@@ -452,26 +450,21 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
 
       for (col_k in seq_along(enc_cols_B)) {
         col_str <- enc_cols_B[[col_k]]
-        n_chars <- nchar(col_str)
-        chunks <- ceiling(n_chars / chunk_size)
-
-        for (ch in seq_len(chunks)) {
-          start <- (ch - 1) * chunk_size + 1
-          end <- min(ch * chunk_size, n_chars)
-          chunk_str <- substr(col_str, start, end)
-
-          store_expr <- call("mheStoreEncChunkDS",
-                             col_index = as.integer(col_k),
-                             chunk_index = as.integer(ch),
-                             chunk = chunk_str,
-                             session_id = session_id)
-          DSI::datashield.aggregate(conns = datasources[conn_idx_A], expr = store_expr)
-        }
+        n_chunks_sent <- .dsvert_adaptive_send(col_str, function(chunk_str, chunk_idx, n_chunks) {
+          DSI::datashield.aggregate(
+            conns = datasources[conn_idx_A],
+            expr = call("mheStoreEncChunkDS",
+                        col_index = as.integer(col_k),
+                        chunk_index = chunk_idx,
+                        chunk = chunk_str,
+                        session_id = session_id)
+          )
+        })
 
         # Assemble the column from chunks
         assemble_expr <- call("mheAssembleEncColumnDS",
                               col_index = as.integer(col_k),
-                              n_chunks = as.integer(chunks),
+                              n_chunks = as.integer(n_chunks_sent),
                               session_id = session_id)
         DSI::datashield.aggregate(conns = datasources[conn_idx_A], expr = assemble_expr)
       }
