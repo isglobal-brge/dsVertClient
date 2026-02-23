@@ -188,12 +188,16 @@ at the end of each analysis (or via 24-hour TTL expiry for failed jobs).
 DataSHIELD's R expression parser limits the size of arguments that can be
 passed inline in `call()` expressions. Cryptographic objects (CKKS
 ciphertexts, EC points, key shares, transport-encrypted blobs) routinely
-exceed this limit. dsVertClient automatically splits all large payloads into
-100 KB chunks via `mheStoreBlobDS`, which the server reassembles transparently.
-This chunking is applied uniformly across all protocols (PSI, MHE correlation,
-GLM) for any data that scales with the number of observations, variables, or
-servers --- ensuring that no DataSHIELD call can overflow regardless of
-dataset size or number of parties.
+exceed this limit. dsVertClient uses **adaptive chunking** (default 200 KB,
+configurable via `options(dsvert.chunk_size = N)`) that automatically detects
+each server's expression size limit and reduces chunk size by 25% on failure.
+Payloads are sent via `mheStoreBlobDS`, which the server reassembles
+transparently. The working chunk size is cached for the session and converges
+to the minimum across all connected servers. This chunking is applied
+uniformly across all protocols (PSI, MHE correlation, GLM) for any data that
+scales with the number of observations, variables, or servers --- ensuring
+that no DataSHIELD call can overflow regardless of dataset size or number of
+parties.
 
 ## Requirements
 
