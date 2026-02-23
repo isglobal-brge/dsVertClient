@@ -122,25 +122,27 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     )
   })
 
-  chunk_size <- 100000  # DataSHIELD parser-safe chunk size (100KB)
-
-  # Store a large blob on a server via chunked mheStoreBlobDS calls.
+  # Store a large blob on a server with adaptive chunking and fallback
   .storeLargeBlob <- function(key, data, conn) {
-    n_chars <- nchar(data)
-    n_chunks <- ceiling(n_chars / chunk_size)
-    for (ch in seq_len(n_chunks)) {
-      start <- (ch - 1) * chunk_size + 1
-      end <- min(ch * chunk_size, n_chars)
-      DSI::datashield.aggregate(
-        conns = conn,
-        expr = call("mheStoreBlobDS",
-                    key = key,
-                    chunk = substr(data, start, end),
-                    chunk_index = as.integer(ch),
-                    n_chunks = as.integer(n_chunks),
-                    session_id = session_id)
-      )
-    }
+    .dsvert_adaptive_send(data, function(chunk_str, chunk_idx, n_chunks) {
+      if (n_chunks == 1L) {
+        DSI::datashield.aggregate(
+          conns = conn,
+          expr = call("mheStoreBlobDS", key = key, chunk = chunk_str,
+                      session_id = session_id)
+        )
+      } else {
+        DSI::datashield.aggregate(
+          conns = conn,
+          expr = call("mheStoreBlobDS",
+                      key = key,
+                      chunk = chunk_str,
+                      chunk_index = chunk_idx,
+                      n_chunks = n_chunks,
+                      session_id = session_id)
+        )
+      }
+    })
   }
 
   cat("=== ECDH-PSI Record Alignment (Blind Relay) ===\n")

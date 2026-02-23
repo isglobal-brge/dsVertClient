@@ -192,28 +192,22 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # Helpers
   # ===========================================================================
 
-  chunk_size <- 100000  # DataSHIELD parser-safe chunk size (100KB)
-
-  # Send CT chunks to a server (reusable helper)
+  # Send CT chunks to a server (reusable helper, adaptive chunk size)
   .sendCTChunks <- function(ct_str, conn_idx) {
-    n_chars_ct <- nchar(ct_str)
-    n_ct_chunks <- ceiling(n_chars_ct / chunk_size)
-    for (ch in seq_len(n_ct_chunks)) {
-      start <- (ch - 1) * chunk_size + 1
-      end <- min(ch * chunk_size, n_chars_ct)
+    .dsvert_adaptive_send(ct_str, function(chunk_str, chunk_idx, n_chunks) {
       DSI::datashield.aggregate(
         conns = datasources[conn_idx],
         expr = call("mheStoreCTChunkDS",
-                    chunk_index = as.integer(ch),
-                    chunk = substr(ct_str, start, end),
+                    chunk_index = chunk_idx,
+                    chunk = chunk_str,
                     session_id = session_id)
       )
-    }
-    n_ct_chunks
+    })
   }
 
-  # Relay a wrapped share to the fusion server in chunks
+  # Relay a wrapped share to the fusion server in chunks (adaptive chunk size)
   .sendWrappedShare <- function(wrapped_share, party_id, fusion_conn_idx) {
+    chunk_size <- .dsvert_get_chunk_size()
     n_chars <- nchar(wrapped_share)
     n_chunks <- ceiling(n_chars / chunk_size)
     for (ch in seq_len(n_chunks)) {
@@ -229,31 +223,27 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     }
   }
 
-  # Send a blob to a server, chunking if necessary
+  # Send a blob to a server with adaptive chunking and fallback
   .sendBlob <- function(blob, key, conn_idx) {
-    n_chars <- nchar(blob)
-    n_chunks <- ceiling(n_chars / chunk_size)
-    if (n_chunks == 1) {
-      DSI::datashield.aggregate(
-        conns = datasources[conn_idx],
-        expr = call("mheStoreBlobDS", key = key, chunk = blob,
-                    session_id = session_id)
-      )
-    } else {
-      for (ch in seq_len(n_chunks)) {
-        start <- (ch - 1) * chunk_size + 1
-        end <- min(ch * chunk_size, n_chars)
+    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
+      if (n_chunks == 1L) {
+        DSI::datashield.aggregate(
+          conns = datasources[conn_idx],
+          expr = call("mheStoreBlobDS", key = key, chunk = chunk_str,
+                      session_id = session_id)
+        )
+      } else {
         DSI::datashield.aggregate(
           conns = datasources[conn_idx],
           expr = call("mheStoreBlobDS",
                       key = key,
-                      chunk = substr(blob, start, end),
-                      chunk_index = as.integer(ch),
-                      n_chunks = as.integer(n_chunks),
+                      chunk = chunk_str,
+                      chunk_index = chunk_idx,
+                      n_chunks = n_chunks,
                       session_id = session_id)
         )
       }
-    }
+    })
   }
 
   # ===========================================================================
@@ -274,7 +264,6 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   server_list <- names(x_vars)
   non_label_servers <- setdiff(server_list, y_server)
   n_partitions <- length(x_vars)
-  chunk_size <- 100000
 
   # Get observation count
   first_conn <- which(server_names == server_list[1])
@@ -640,29 +629,24 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
     for (server in non_label_servers) {
       conn_idx <- which(server_names == server)
-      n_chars <- nchar(ct_y)
-      n_chunks <- ceiling(n_chars / chunk_size)
-
-      for (ch in seq_len(n_chunks)) {
-        start <- (ch - 1) * chunk_size + 1
-        end <- min(ch * chunk_size, n_chars)
+      n_chunks_sent <- .dsvert_adaptive_send(ct_y, function(chunk_str, chunk_idx, n_chunks) {
         DSI::datashield.aggregate(
           conns = datasources[conn_idx],
           expr = call("mheStoreEncChunkDS",
                       col_index = 1L,
-                      chunk_index = as.integer(ch),
-                      chunk = substr(ct_y, start, end),
+                      chunk_index = chunk_idx,
+                      chunk = chunk_str,
                       session_id = session_id)
         )
-      }
+      })
       DSI::datashield.aggregate(
         conns = datasources[conn_idx],
         expr = call("mheAssembleEncColumnDS",
-                    col_index = 1L, n_chunks = as.integer(n_chunks),
+                    col_index = 1L, n_chunks = as.integer(n_chunks_sent),
                     session_id = session_id)
       )
       if (verbose)
-        message("  ct_y transferred to ", server, " (", n_chunks, " chunks)")
+        message("  ct_y transferred to ", server, " (", n_chunks_sent, " chunks)")
     }
   }
 
