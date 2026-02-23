@@ -17,7 +17,8 @@ ds.vertGLM(
   log_scale = 40,
   verbose = TRUE,
   datasources = NULL,
-  eta_privacy = "auto"
+  eta_privacy = "auto",
+  topology = "pairwise"
 )
 }
 \arguments{
@@ -59,6 +60,11 @@ If NULL, uses all available connections.}
 aggregation: \code{"auto"} (default) selects HE-Link for K=2 binomial,
 \code{"transport"} uses standard secure routing, \code{"he_link"} forces
 homomorphic sigmoid evaluation (requires K=2, binomial, log_n >= 14).}
+
+\item{topology}{Character string. Seed derivation topology for secure
+aggregation: \code{"pairwise"} (default, O(K-1) seeds per server) or
+\code{"ring"} (O(2) seeds per server for K>=4). For K=3, ring and
+pairwise are identical. Only used when \code{eta_privacy = "secure_agg"}.}
 }
 \value{
 A list with class "ds.glm" containing:
