@@ -32,6 +32,10 @@
 #'   aggregation: \code{"auto"} (default) selects HE-Link for K=2 binomial,
 #'   \code{"transport"} uses standard secure routing, \code{"he_link"} forces
 #'   homomorphic sigmoid evaluation (requires K=2, binomial, log_n >= 14).
+#' @param topology Character string. Seed derivation topology for secure
+#'   aggregation: \code{"pairwise"} (default, O(K-1) seeds per server) or
+#'   \code{"ring"} (O(2) seeds per server for K>=4). For K=3, ring and
+#'   pairwise are identical. Only used when \code{eta_privacy = "secure_agg"}.
 #'
 #' @return A list with class "ds.glm" containing:
 #'   \itemize{
@@ -108,7 +112,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                        family = "gaussian", max_iter = 100, tol = 1e-4,
                        lambda = 1e-4, log_n = 12, log_scale = 40,
                        verbose = TRUE, datasources = NULL,
-                       eta_privacy = "auto") {
+                       eta_privacy = "auto",
+                       topology = "pairwise") {
   call_matched <- match.call()
 
   # ===========================================================================
@@ -135,6 +140,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     stop("eta_privacy must be 'auto', 'transport', 'he_link', or 'secure_agg'",
          call. = FALSE)
 
+  # Validate topology parameter
+  if (!topology %in% c("pairwise", "ring"))
+    stop("topology must be 'pairwise' or 'ring'", call. = FALSE)
+
   n_partitions_check <- length(x_vars)
   non_label_count <- n_partitions_check - 1
 
@@ -148,6 +157,15 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       }
     } else {
       eta_privacy <- "transport"     # K=2 gaussian or K=1
+      if (non_label_count == 1 && family == "gaussian") {
+        warning(
+          "K=2 with Gaussian family: using 'transport' mode. The coordinator ",
+          "(label server) will see the non-label server's eta vector. ",
+          "Consider K>=3 (secure_agg) for stronger eta privacy. ",
+          "Set eta_privacy='transport' explicitly to suppress this warning.",
+          call. = FALSE
+        )
+      }
     }
   }
 
@@ -477,6 +495,76 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     }
 
     if (verbose) message("  Key setup + transport keys complete")
+
+    # =========================================================================
+    # Phase 0.5: Peer Manifest Consensus (when use_secure_agg)
+    # =========================================================================
+    # Cross-validate that all servers see the same peer set and configuration.
+    # Prevents phantom peer injection by a malicious client.
+    if (use_secure_agg) {
+      if (verbose) message("\n[Phase 0.5] Peer manifest consensus...")
+
+      # Build canonical manifest (client-side helper)
+      .buildManifest <- function() {
+        peers <- sort(server_list)
+        pk_sorted <- transport_pks[sort(names(transport_pks))]
+        manifest <- list(
+          job_id = session_id,
+          method = family,
+          non_label_servers = sort(non_label_servers),
+          peers = peers,
+          topology = topology,
+          transport_pks = pk_sorted,
+          y_server = y_server
+        )
+        jsonlite::toJSON(manifest, auto_unbox = TRUE)
+      }
+      manifest_json <- .buildManifest()
+
+      # Each server: store manifest + get encrypted hashes
+      server_enc_hashes <- list()
+      for (server in server_list) {
+        conn_idx <- which(server_names == server)
+        store_result <- DSI::datashield.aggregate(
+          conns = datasources[conn_idx],
+          expr = call("peerManifestStoreDS",
+                      manifest_json = as.character(manifest_json),
+                      session_id = session_id)
+        )
+        if (is.list(store_result) && length(store_result) == 1)
+          store_result <- store_result[[1]]
+        server_enc_hashes[[server]] <- store_result
+      }
+
+      # Relay each server's encrypted hash to each peer via blob storage
+      for (sender in server_list) {
+        hashes <- server_enc_hashes[[sender]]
+        for (recipient in server_list) {
+          if (recipient == sender) next
+          hash_blob <- hashes[[recipient]]
+          if (is.null(hash_blob)) next
+          recipient_conn <- which(server_names == recipient)
+          blob_key <- paste0("manifest_hash_", sender)
+          .sendBlob(hash_blob, blob_key, recipient_conn)
+        }
+      }
+
+      # Each server: validate every peer's hash
+      for (server in server_list) {
+        conn_idx <- which(server_names == server)
+        for (peer in server_list) {
+          if (peer == server) next
+          DSI::datashield.aggregate(
+            conns = datasources[conn_idx],
+            expr = call("peerManifestValidateDS",
+                        peer_name = peer,
+                        session_id = session_id)
+          )
+        }
+      }
+
+      if (verbose) message("  Manifest consensus validated across all servers")
+    }
   }
 
   # ===========================================================================
@@ -647,7 +735,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     self_name = server,
                     session_id = session_id,
                     nonlabel_names = nonlabel_sorted,
-                    scale_bits = 20L)
+                    scale_bits = 20L,
+                    topology = topology)
       )
     }
 
@@ -1420,6 +1509,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     aic = aic,
     y_server = y_server,
     eta_privacy = eta_privacy,
+    topology = topology,
     call = call_matched
   )
 

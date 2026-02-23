@@ -142,6 +142,18 @@ With K=2 servers, standard secure routing leaks the non-label server's `eta_nonl
 
 With K>=3 servers (>=2 non-label), the `eta_privacy = "secure_agg"` mode uses **pairwise PRG masks** so the coordinator only sees the aggregate `sum(eta_k)`, never individual per-server contributions. Masks are generated via ChaCha20 PRG from shared seeds (X25519 ECDH + HKDF) and cancel exactly thanks to fixed-point integer arithmetic. A server-side **FSM firewall** prevents protocol abuse (out-of-order calls, iteration replay, partial aggregation).
 
+### Ring Topology
+
+For K>=4 servers, the `topology = "ring"` option reduces seed derivations from O(K-1) to O(2) per server. Instead of all-pairs seed derivation, servers are arranged in a sorted circular order and each server only derives seeds with its two ring neighbors. For K=3, ring and pairwise topologies are identical.
+
+### Peer Manifest Consensus
+
+When `use_secure_agg = TRUE`, the client automatically runs a **peer manifest consensus** protocol (Phase 0.5) before the BCD loop. Each server computes `SHA-256(canonical_manifest_json)` and transport-encrypts its hash to every peer. Peers decrypt and compare. Any mismatch (e.g., phantom peer injection by a malicious client) triggers an immediate stop. This is enabled by default in Phase 0.5 when secure aggregation is active; server-side enforcement via `glmSecureAggInitDS` is controlled by the `dsvert.manifest_consensus` option.
+
+### K=2 Gaussian Warning
+
+When `eta_privacy = "auto"` and K=2 with Gaussian family, the auto-selection picks `"transport"` mode where the coordinator sees the non-label server's eta vector directly. A warning is emitted to alert users to this privacy limitation. Set `eta_privacy = "transport"` explicitly to suppress the warning.
+
 ## eta_privacy Modes
 
 The `eta_privacy` parameter controls which privacy protection is used for the linear predictor exchange:
