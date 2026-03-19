@@ -113,7 +113,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                        lambda = 1e-4, log_n = 12, log_scale = 40,
                        verbose = TRUE, datasources = NULL,
                        eta_privacy = "auto",
-                       topology = "pairwise") {
+                       topology = "pairwise",
+                       reuse_mhe = FALSE) {
   call_matched <- match.call()
 
   # ===========================================================================
@@ -309,163 +310,216 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   if (length(non_label_servers) > 0) {
     if (verbose) message("\n[Phase 0] MHE key setup...")
 
-    conn_idx <- which(server_names == server_list[1])
-    result0 <- DSI::datashield.aggregate(
-      conns = datasources[conn_idx],
-      expr = call("mheInitDS",
-                  party_id = 0L, crp = NULL, gkg_seed = NULL,
-                  num_obs = as.integer(n_obs),
-                  log_n = as.integer(log_n),
-                  log_scale = as.integer(log_scale),
-                  generate_rlk = use_he_link,
-                  session_id = session_id)
-    )
-    if (is.list(result0)) result0 <- result0[[1]]
-    crp <- result0$crp
-    gkg_seed <- result0$gkg_seed
+    mhe_reused <- FALSE
 
-    pk_shares <- list()
-    gkg_shares <- list()
-    rlk_r1_shares <- list()
-    pk_shares[[server_list[1]]] <- result0$public_key_share
-    gkg_shares[[server_list[1]]] <- result0$galois_key_shares
-    transport_pks[[server_list[1]]] <- result0$transport_pk
-    if (use_he_link && !is.null(result0$rlk_round1_share)) {
-      rlk_r1_shares[[server_list[1]]] <- result0$rlk_round1_share
+    # --- MHE Context Reuse Check ---
+    context_id <- paste0(
+      "peers:", paste(sort(server_list), collapse = ","),
+      "|log_n:", log_n,
+      "|log_scale:", log_scale,
+      "|num_obs:", n_obs,
+      "|rlk:", tolower(as.character(use_he_link))
+    )
+
+    if (isTRUE(reuse_mhe)) {
+      reuse_results <- list()
+      all_reusable <- TRUE
+      for (server in server_list) {
+        conn_idx <- which(server_names == server)
+        res <- DSI::datashield.aggregate(
+          conns = datasources[conn_idx],
+          expr = call("mheReuseContextDS",
+                      context_id = context_id,
+                      session_id = session_id)
+        )
+        if (is.list(res) && !is.null(res[[1]])) res <- res[[1]]
+        reuse_results[[server]] <- res
+        if (!isTRUE(res$reusable)) {
+          all_reusable <- FALSE
+          break
+        }
+      }
+
+      if (all_reusable) {
+        mhe_reused <- TRUE
+        for (server in server_list) {
+          transport_pks[[server]] <- reuse_results[[server]]$transport_pk
+        }
+        if (verbose) message("  MHE keys reused from cached context (skipped)")
+      }
     }
 
-    for (i in 2:length(server_list)) {
-      server <- server_list[i]
-      conn_idx <- which(server_names == server)
-
-      # CRP can be several MB at log_n=14; send via blob storage
-      .sendBlob(crp, "crp", conn_idx)
-      .sendBlob(gkg_seed, "gkg_seed", conn_idx)
-
-      result <- DSI::datashield.aggregate(
+    if (!mhe_reused) {
+      conn_idx <- which(server_names == server_list[1])
+      result0 <- DSI::datashield.aggregate(
         conns = datasources[conn_idx],
         expr = call("mheInitDS",
-                    party_id = as.integer(i - 1),
-                    from_storage = TRUE,
+                    party_id = 0L, crp = NULL, gkg_seed = NULL,
                     num_obs = as.integer(n_obs),
                     log_n = as.integer(log_n),
                     log_scale = as.integer(log_scale),
                     generate_rlk = use_he_link,
                     session_id = session_id)
       )
-      if (is.list(result)) result <- result[[1]]
-      pk_shares[[server]] <- result$public_key_share
-      gkg_shares[[server]] <- result$galois_key_shares
-      transport_pks[[server]] <- result$transport_pk
-      if (use_he_link && !is.null(result$rlk_round1_share)) {
-        rlk_r1_shares[[server]] <- result$rlk_round1_share
-      }
-    }
+      if (is.list(result0)) result0 <- result0[[1]]
+      crp <- result0$crp
+      gkg_seed <- result0$gkg_seed
 
-    # Two-round RLK generation protocol (HE-Link mode only)
-    if (use_he_link && length(rlk_r1_shares) > 0) {
-      if (verbose) message("  Generating collective relinearization key (2-round protocol)...")
-
-      # Round 1 aggregation: send all R1 shares to coordinator (party 0)
-      combine_conn <- which(server_names == server_list[1])
-      for (i in seq_along(server_list)) {
-        .sendBlob(rlk_r1_shares[[server_list[i]]],
-                  paste0("rlk_r1_", i - 1), combine_conn)
+      pk_shares <- list()
+      gkg_shares <- list()
+      rlk_r1_shares <- list()
+      pk_shares[[server_list[1]]] <- result0$public_key_share
+      gkg_shares[[server_list[1]]] <- result0$galois_key_shares
+      transport_pks[[server_list[1]]] <- result0$transport_pk
+      if (use_he_link && !is.null(result0$rlk_round1_share)) {
+        rlk_r1_shares[[server_list[1]]] <- result0$rlk_round1_share
       }
 
-      agg_r1_result <- DSI::datashield.aggregate(
-        conns = datasources[combine_conn],
-        expr = call("mheRLKAggregateR1DS",
-                    from_storage = TRUE,
-                    n_parties = as.integer(length(server_list)),
-                    session_id = session_id)
-      )
-      if (is.list(agg_r1_result)) agg_r1_result <- agg_r1_result[[1]]
-      agg_r1 <- agg_r1_result$aggregated_round1
-
-      # Distribute aggregated R1 to non-coordinator servers for round 2
       for (i in 2:length(server_list)) {
-        srv_conn <- which(server_names == server_list[i])
-        .sendBlob(agg_r1, "rlk_agg_r1", srv_conn)
-      }
+        server <- server_list[i]
+        conn_idx <- which(server_names == server)
 
-      # Round 2: each server generates its R2 share
-      rlk_r2_shares <- list()
-      for (i in seq_along(server_list)) {
-        srv_conn <- which(server_names == server_list[i])
-        r2_result <- DSI::datashield.aggregate(
-          conns = datasources[srv_conn],
-          expr = call("mheRLKRound2DS",
-                      from_storage = (i > 1),
+        # CRP can be several MB at log_n=14; send via blob storage
+        .sendBlob(crp, "crp", conn_idx)
+        .sendBlob(gkg_seed, "gkg_seed", conn_idx)
+
+        result <- DSI::datashield.aggregate(
+          conns = datasources[conn_idx],
+          expr = call("mheInitDS",
+                      party_id = as.integer(i - 1),
+                      from_storage = TRUE,
+                      num_obs = as.integer(n_obs),
+                      log_n = as.integer(log_n),
+                      log_scale = as.integer(log_scale),
+                      generate_rlk = use_he_link,
                       session_id = session_id)
         )
-        if (is.list(r2_result)) r2_result <- r2_result[[1]]
-        rlk_r2_shares[[server_list[i]]] <- r2_result$rlk_round2_share
-      }
-
-      # Store aggregated R1 and R2 shares on coordinator for mheCombineDS
-      .sendBlob(agg_r1, "rlk_agg_r1", combine_conn)
-      for (i in seq_along(server_list)) {
-        .sendBlob(rlk_r2_shares[[server_list[i]]],
-                  paste0("rlk_r2_", i - 1), combine_conn)
-      }
-    }
-
-    # Store PK shares, CRP, GKG seed, and GKG shares on the combining server
-    # via chunked blob storage. Cryptographic objects can be several MB each,
-    # exceeding R's expression parser stack limit if passed as call arguments.
-    conn_idx <- which(server_names == server_list[1])
-
-    for (i in seq_along(server_list)) {
-      .sendBlob(pk_shares[[server_list[i]]], paste0("pk_", i - 1), conn_idx)
-    }
-    .sendBlob(crp, "crp", conn_idx)
-    .sendBlob(gkg_seed, "gkg_seed", conn_idx)
-
-    n_gkg_shares <- length(gkg_shares[[server_list[1]]])
-    for (i in seq_along(server_list)) {
-      shares <- gkg_shares[[server_list[i]]]
-      for (j in seq_along(shares)) {
-        .sendBlob(shares[j], paste0("gkg_", i - 1, "_", j - 1), conn_idx)
-      }
-    }
-
-    combined <- DSI::datashield.aggregate(
-      conns = datasources[conn_idx],
-      expr = call("mheCombineDS",
-                  from_storage = TRUE,
-                  n_parties = as.integer(length(server_list)),
-                  n_gkg_shares = as.integer(n_gkg_shares),
-                  num_obs = as.integer(n_obs),
-                  log_n = as.integer(log_n),
-                  log_scale = as.integer(log_scale),
-                  session_id = session_id)
-    )
-    if (is.list(combined)) combined <- combined[[1]]
-    cpk <- combined$collective_public_key
-    galois_keys <- combined$galois_keys
-    relin_key <- combined$relin_key  # Non-NULL when RLK was generated
-
-    # Distribute CPK, Galois keys, and RLK to other servers via chunked blob storage
-    for (server in server_list[-1]) {
-      srv_conn <- which(server_names == server)
-      .sendBlob(cpk, "cpk", srv_conn)
-      if (!is.null(galois_keys)) {
-        for (gk_i in seq_along(galois_keys)) {
-          .sendBlob(galois_keys[gk_i], paste0("gk_", gk_i - 1), srv_conn)
+        if (is.list(result)) result <- result[[1]]
+        pk_shares[[server]] <- result$public_key_share
+        gkg_shares[[server]] <- result$galois_key_shares
+        transport_pks[[server]] <- result$transport_pk
+        if (use_he_link && !is.null(result$rlk_round1_share)) {
+          rlk_r1_shares[[server]] <- result$rlk_round1_share
         }
       }
-      if (!is.null(relin_key) && nzchar(relin_key)) {
-        .sendBlob(relin_key, "rk", srv_conn)
+
+      # Two-round RLK generation protocol (HE-Link mode only)
+      if (use_he_link && length(rlk_r1_shares) > 0) {
+        if (verbose) message("  Generating collective relinearization key (2-round protocol)...")
+
+        # Round 1 aggregation: send all R1 shares to coordinator (party 0)
+        combine_conn <- which(server_names == server_list[1])
+        for (i in seq_along(server_list)) {
+          .sendBlob(rlk_r1_shares[[server_list[i]]],
+                    paste0("rlk_r1_", i - 1), combine_conn)
+        }
+
+        agg_r1_result <- DSI::datashield.aggregate(
+          conns = datasources[combine_conn],
+          expr = call("mheRLKAggregateR1DS",
+                      from_storage = TRUE,
+                      n_parties = as.integer(length(server_list)),
+                      session_id = session_id)
+        )
+        if (is.list(agg_r1_result)) agg_r1_result <- agg_r1_result[[1]]
+        agg_r1 <- agg_r1_result$aggregated_round1
+
+        # Distribute aggregated R1 to non-coordinator servers for round 2
+        for (i in 2:length(server_list)) {
+          srv_conn <- which(server_names == server_list[i])
+          .sendBlob(agg_r1, "rlk_agg_r1", srv_conn)
+        }
+
+        # Round 2: each server generates its R2 share
+        rlk_r2_shares <- list()
+        for (i in seq_along(server_list)) {
+          srv_conn <- which(server_names == server_list[i])
+          r2_result <- DSI::datashield.aggregate(
+            conns = datasources[srv_conn],
+            expr = call("mheRLKRound2DS",
+                        from_storage = (i > 1),
+                        session_id = session_id)
+          )
+          if (is.list(r2_result)) r2_result <- r2_result[[1]]
+          rlk_r2_shares[[server_list[i]]] <- r2_result$rlk_round2_share
+        }
+
+        # Store aggregated R1 and R2 shares on coordinator for mheCombineDS
+        .sendBlob(agg_r1, "rlk_agg_r1", combine_conn)
+        for (i in seq_along(server_list)) {
+          .sendBlob(rlk_r2_shares[[server_list[i]]],
+                    paste0("rlk_r2_", i - 1), combine_conn)
+        }
       }
-      DSI::datashield.aggregate(
-        conns = datasources[srv_conn],
-        expr = call("mheStoreCPKDS", from_storage = TRUE,
+
+      # Store PK shares, CRP, GKG seed, and GKG shares on the combining server
+      # via chunked blob storage. Cryptographic objects can be several MB each,
+      # exceeding R's expression parser stack limit if passed as call arguments.
+      conn_idx <- which(server_names == server_list[1])
+
+      for (i in seq_along(server_list)) {
+        .sendBlob(pk_shares[[server_list[i]]], paste0("pk_", i - 1), conn_idx)
+      }
+      .sendBlob(crp, "crp", conn_idx)
+      .sendBlob(gkg_seed, "gkg_seed", conn_idx)
+
+      n_gkg_shares <- length(gkg_shares[[server_list[1]]])
+      for (i in seq_along(server_list)) {
+        shares <- gkg_shares[[server_list[i]]]
+        for (j in seq_along(shares)) {
+          .sendBlob(shares[j], paste0("gkg_", i - 1, "_", j - 1), conn_idx)
+        }
+      }
+
+      combined <- DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call("mheCombineDS",
+                    from_storage = TRUE,
+                    n_parties = as.integer(length(server_list)),
+                    n_gkg_shares = as.integer(n_gkg_shares),
+                    num_obs = as.integer(n_obs),
+                    log_n = as.integer(log_n),
+                    log_scale = as.integer(log_scale),
                     session_id = session_id)
       )
-    }
+      if (is.list(combined)) combined <- combined[[1]]
+      cpk <- combined$collective_public_key
+      galois_keys <- combined$galois_keys
+      relin_key <- combined$relin_key  # Non-NULL when RLK was generated
+
+      # Distribute CPK, Galois keys, and RLK to other servers via chunked blob storage
+      for (server in server_list[-1]) {
+        srv_conn <- which(server_names == server)
+        .sendBlob(cpk, "cpk", srv_conn)
+        if (!is.null(galois_keys)) {
+          for (gk_i in seq_along(galois_keys)) {
+            .sendBlob(galois_keys[gk_i], paste0("gk_", gk_i - 1), srv_conn)
+          }
+        }
+        if (!is.null(relin_key) && nzchar(relin_key)) {
+          .sendBlob(relin_key, "rk", srv_conn)
+        }
+        DSI::datashield.aggregate(
+          conns = datasources[srv_conn],
+          expr = call("mheStoreCPKDS", from_storage = TRUE,
+                      session_id = session_id)
+        )
+      }
+
+      # Register context for future reuse
+      for (server in server_list) {
+        conn_idx <- which(server_names == server)
+        DSI::datashield.aggregate(
+          conns = datasources[conn_idx],
+          expr = call("mheRegisterContextDS",
+                      context_id = context_id,
+                      session_id = session_id)
+        )
+      }
+    }  # end if (!mhe_reused)
 
     # Distribute transport keys for share-wrapping and secure routing
+    # (always needed - fresh transport keys even when MHE keys are reused)
     fusion_server <- server_list[1]  # Party 0
     fusion_conn_idx <- which(server_names == fusion_server)
     non_fusion_servers <- setdiff(server_list, fusion_server)

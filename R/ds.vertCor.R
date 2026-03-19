@@ -108,7 +108,7 @@
 #' @importFrom DSI datashield.aggregate datashield.connections_find
 #' @export
 ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
-                       datasources = NULL) {
+                       datasources = NULL, reuse_mhe = FALSE) {
 
   # ===========================================================================
   # Input Validation
@@ -228,9 +228,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   #   - GKG seed: shared seed for Galois Key Generation, enabling all parties
   #     to independently generate matching Galois rotation keys (needed for
   #     ciphertext slot rotations in inner-product computation).
-  message("\n[Phase 1] Key generation on each server...")
-
-  # Get observation count
+  # Get observation count (always needed, regardless of key reuse)
   n_obs <- NULL
   for (server in server_list) {
     conn_idx <- which(server_names == server)
@@ -250,118 +248,179 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   }
   message("  Observations: ", n_obs)
 
-  # Party 0 generates CRP and GKG seed
   first_server <- server_list[1]
-  conn_idx <- which(server_names == first_server)
+  transport_pks <- list()
+  mhe_reused <- FALSE
 
-  call_expr <- call("mheInitDS",
-                    party_id = 0L,
-                    crp = NULL,
-                    gkg_seed = NULL,
-                    num_obs = as.integer(n_obs),
-                    log_n = as.integer(log_n),
-                    log_scale = as.integer(log_scale),
+  # --- MHE Context Reuse Check ---
+  # Compute a canonical context_id from peer set + params. If all servers
+  # have a cached session with matching context_id, skip key generation
+  # and combination entirely (only fresh transport keys are generated).
+  context_id <- paste0(
+    "peers:", paste(sort(server_list), collapse = ","),
+    "|log_n:", log_n,
+    "|log_scale:", log_scale,
+    "|num_obs:", n_obs,
+    "|rlk:false"
+  )
+
+  if (isTRUE(reuse_mhe)) {
+    reuse_results <- list()
+    all_reusable <- TRUE
+    for (server in server_list) {
+      conn_idx <- which(server_names == server)
+      res <- DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call("mheReuseContextDS",
+                    context_id = context_id,
                     session_id = session_id)
+      )
+      if (is.list(res) && !is.null(res[[1]])) res <- res[[1]]
+      reuse_results[[server]] <- res
+      if (!isTRUE(res$reusable)) {
+        all_reusable <- FALSE
+        break
+      }
+    }
 
-  result0 <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
-  if (is.list(result0)) result0 <- result0[[1]]
-  crp <- result0$crp
-  gkg_seed <- result0$gkg_seed
-  message("  ", first_server, ": Party 0 initialized (CRP generated)")
+    if (all_reusable) {
+      mhe_reused <- TRUE
+      for (server in server_list) {
+        transport_pks[[server]] <- reuse_results[[server]]$transport_pk
+      }
+      message("\n[Phase 1-2] MHE keys reused from cached context (skipped)")
+    }
+  }
 
-  # Other parties initialize with CRP and shared GKG seed
-  pk_shares <- list()
-  gkg_shares <- list()
-  transport_pks <- list()  # Collect transport public keys for share-wrapping
-  pk_shares[[first_server]] <- result0$public_key_share
-  gkg_shares[[first_server]] <- result0$galois_key_shares
-  transport_pks[[first_server]] <- result0$transport_pk
+  if (!mhe_reused) {
+    # ===========================================================================
+    # Phase 1: Key Generation
+    # ===========================================================================
+    message("\n[Phase 1] Key generation on each server...")
 
-  for (i in 2:length(server_list)) {
-    server <- server_list[i]
-    conn_idx <- which(server_names == server)
-
-    # CRP can be several MB at log_n=14; send via blob storage to avoid
-    # R's call expression parser C stack overflow.
-    .storeLargeBlob("crp", crp, conn_idx)
-    .storeLargeBlob("gkg_seed", gkg_seed, conn_idx)
+    # Party 0 generates CRP and GKG seed
+    conn_idx <- which(server_names == first_server)
 
     call_expr <- call("mheInitDS",
-                      party_id = as.integer(i - 1),
-                      from_storage = TRUE,
+                      party_id = 0L,
+                      crp = NULL,
+                      gkg_seed = NULL,
                       num_obs = as.integer(n_obs),
                       log_n = as.integer(log_n),
                       log_scale = as.integer(log_scale),
                       session_id = session_id)
 
-    result <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
-    if (is.list(result)) result <- result[[1]]
-    pk_shares[[server]] <- result$public_key_share
-    gkg_shares[[server]] <- result$galois_key_shares
-    transport_pks[[server]] <- result$transport_pk
-    message("  ", server, ": Party ", i - 1, " initialized")
-  }
+    result0 <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
+    if (is.list(result0)) result0 <- result0[[1]]
+    crp <- result0$crp
+    gkg_seed <- result0$gkg_seed
+    message("  ", first_server, ": Party 0 initialized (CRP generated)")
 
-  # ===========================================================================
-  # Phase 2: Combine public key shares into CPK
-  # ===========================================================================
-  # Public key shares are added together to form the Collective Public Key (CPK).
-  # The CPK has a critical property: data encrypted under it can ONLY be
-  # decrypted when ALL K servers cooperate (K-of-K threshold). No subset of
-  # K-1 servers (or the client alone) can decrypt. The combining is done on
-  # one server; the resulting CPK + Galois keys are distributed to all others.
-  message("\n[Phase 2] Combining public key shares...")
+    # Other parties initialize with CRP and shared GKG seed
+    pk_shares <- list()
+    gkg_shares <- list()
+    pk_shares[[first_server]] <- result0$public_key_share
+    gkg_shares[[first_server]] <- result0$galois_key_shares
+    transport_pks[[first_server]] <- result0$transport_pk
 
-  conn_idx <- which(server_names == first_server)
+    for (i in 2:length(server_list)) {
+      server <- server_list[i]
+      conn_idx <- which(server_names == server)
 
-  # Store PK shares, CRP, GKG seed, and GKG shares on the combining server
-  # via chunked blob storage. Cryptographic objects can be several MB each,
-  # exceeding R's expression parser stack limit if passed as call arguments.
-  for (i in seq_along(server_list)) {
-    .storeLargeBlob(paste0("pk_", i - 1), pk_shares[[server_list[i]]], conn_idx)
-  }
-  .storeLargeBlob("crp", crp, conn_idx)
-  .storeLargeBlob("gkg_seed", gkg_seed, conn_idx)
+      # CRP can be several MB at log_n=14; send via blob storage to avoid
+      # R's call expression parser C stack overflow.
+      .storeLargeBlob("crp", crp, conn_idx)
+      .storeLargeBlob("gkg_seed", gkg_seed, conn_idx)
 
-  n_gkg_shares <- length(gkg_shares[[server_list[1]]])
-  for (i in seq_along(server_list)) {
-    shares <- gkg_shares[[server_list[i]]]
-    for (j in seq_along(shares)) {
-      .storeLargeBlob(paste0("gkg_", i - 1, "_", j - 1), shares[j], conn_idx)
+      call_expr <- call("mheInitDS",
+                        party_id = as.integer(i - 1),
+                        from_storage = TRUE,
+                        num_obs = as.integer(n_obs),
+                        log_n = as.integer(log_n),
+                        log_scale = as.integer(log_scale),
+                        session_id = session_id)
+
+      result <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
+      if (is.list(result)) result <- result[[1]]
+      pk_shares[[server]] <- result$public_key_share
+      gkg_shares[[server]] <- result$galois_key_shares
+      transport_pks[[server]] <- result$transport_pk
+      message("  ", server, ": Party ", i - 1, " initialized")
     }
-  }
 
-  call_expr <- call("mheCombineDS",
-                    from_storage = TRUE,
-                    n_parties = as.integer(length(server_list)),
-                    n_gkg_shares = as.integer(n_gkg_shares),
-                    num_obs = as.integer(n_obs),
-                    log_n = as.integer(log_n),
-                    log_scale = as.integer(log_scale),
-                    session_id = session_id)
+    # ===========================================================================
+    # Phase 2: Combine public key shares into CPK
+    # ===========================================================================
+    # Public key shares are added together to form the Collective Public Key (CPK).
+    # The CPK has a critical property: data encrypted under it can ONLY be
+    # decrypted when ALL K servers cooperate (K-of-K threshold). No subset of
+    # K-1 servers (or the client alone) can decrypt. The combining is done on
+    # one server; the resulting CPK + Galois keys are distributed to all others.
+    message("\n[Phase 2] Combining public key shares...")
 
-  combined <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
-  if (is.list(combined)) combined <- combined[[1]]
-  cpk <- combined$collective_public_key
-  galois_keys <- combined$galois_keys
-  message("  CPK created on ", first_server)
+    conn_idx <- which(server_names == first_server)
 
-  # Distribute CPK and Galois keys to other servers via chunked blob storage
-  for (server in server_list[-1]) {
-    srv_conn <- which(server_names == server)
-    .storeLargeBlob("cpk", cpk, srv_conn)
-    if (!is.null(galois_keys)) {
-      for (gk_i in seq_along(galois_keys)) {
-        .storeLargeBlob(paste0("gk_", gk_i - 1), galois_keys[gk_i], srv_conn)
+    # Store PK shares, CRP, GKG seed, and GKG shares on the combining server
+    # via chunked blob storage. Cryptographic objects can be several MB each,
+    # exceeding R's expression parser stack limit if passed as call arguments.
+    for (i in seq_along(server_list)) {
+      .storeLargeBlob(paste0("pk_", i - 1), pk_shares[[server_list[i]]], conn_idx)
+    }
+    .storeLargeBlob("crp", crp, conn_idx)
+    .storeLargeBlob("gkg_seed", gkg_seed, conn_idx)
+
+    n_gkg_shares <- length(gkg_shares[[server_list[1]]])
+    for (i in seq_along(server_list)) {
+      shares <- gkg_shares[[server_list[i]]]
+      for (j in seq_along(shares)) {
+        .storeLargeBlob(paste0("gkg_", i - 1, "_", j - 1), shares[j], conn_idx)
       }
     }
-    DSI::datashield.aggregate(conns = datasources[srv_conn],
-                              expr = call("mheStoreCPKDS", from_storage = TRUE,
-                                         session_id = session_id))
-    message("  CPK stored on ", server)
-  }
 
-  # Distribute transport keys for share-wrapping protocol.
+    call_expr <- call("mheCombineDS",
+                      from_storage = TRUE,
+                      n_parties = as.integer(length(server_list)),
+                      n_gkg_shares = as.integer(n_gkg_shares),
+                      num_obs = as.integer(n_obs),
+                      log_n = as.integer(log_n),
+                      log_scale = as.integer(log_scale),
+                      session_id = session_id)
+
+    combined <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
+    if (is.list(combined)) combined <- combined[[1]]
+    cpk <- combined$collective_public_key
+    galois_keys <- combined$galois_keys
+    message("  CPK created on ", first_server)
+
+    # Distribute CPK and Galois keys to other servers via chunked blob storage
+    for (server in server_list[-1]) {
+      srv_conn <- which(server_names == server)
+      .storeLargeBlob("cpk", cpk, srv_conn)
+      if (!is.null(galois_keys)) {
+        for (gk_i in seq_along(galois_keys)) {
+          .storeLargeBlob(paste0("gk_", gk_i - 1), galois_keys[gk_i], srv_conn)
+        }
+      }
+      DSI::datashield.aggregate(conns = datasources[srv_conn],
+                                expr = call("mheStoreCPKDS", from_storage = TRUE,
+                                           session_id = session_id))
+      message("  CPK stored on ", server)
+    }
+
+    # Register context for future reuse
+    for (server in server_list) {
+      conn_idx <- which(server_names == server)
+      DSI::datashield.aggregate(
+        conns = datasources[conn_idx],
+        expr = call("mheRegisterContextDS",
+                    context_id = context_id,
+                    session_id = session_id)
+      )
+    }
+  }  # end if (!mhe_reused)
+
+  # Distribute transport keys for share-wrapping protocol (always needed -
+  # fresh transport keys are generated even when MHE keys are reused).
   # The "fusion" key identifies the fusion server (Party 0) whose transport PK
   # is used by non-fusion servers to wrap their partial decryption shares.
   fusion_server <- first_server
