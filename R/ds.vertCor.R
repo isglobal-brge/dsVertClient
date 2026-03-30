@@ -256,12 +256,15 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   # Compute a canonical context_id from peer set + params. If all servers
   # have a cached session with matching context_id, skip key generation
   # and combination entirely (only fresh transport keys are generated).
+  # NOTE: Use '_' as separator — Opal's R expression parser rejects many
+  # special characters ('|', '/', etc.) inside string arguments passed via
+  # datashield.aggregate(). Only alphanumeric, '_', ',', ':', '-' are safe.
   context_id <- paste0(
-    "peers:", paste(sort(server_list), collapse = ","),
-    "|log_n:", log_n,
-    "|log_scale:", log_scale,
-    "|num_obs:", n_obs,
-    "|rlk:false"
+    "peers_", paste(sort(server_list), collapse = ","),
+    "_logn_", log_n,
+    "_logscale_", log_scale,
+    "_numobs_", n_obs,
+    "_rlk_false"
   )
 
   if (isTRUE(reuse_mhe)) {
