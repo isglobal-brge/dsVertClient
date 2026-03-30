@@ -1,5 +1,6 @@
 ---
 title: "Validation Study: Centralized vs. Federated Vertical Analysis"
+author: "David Sarrat González"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{Validation Study: Centralized vs. Federated Vertical Analysis}
