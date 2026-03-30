@@ -313,12 +313,15 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     mhe_reused <- FALSE
 
     # --- MHE Context Reuse Check ---
+    # NOTE: Use '_' as separator — Opal's R expression parser rejects many
+    # special characters ('|', '/', etc.) inside string arguments passed via
+    # datashield.aggregate(). Only alphanumeric, '_', ',', ':', '-' are safe.
     context_id <- paste0(
-      "peers:", paste(sort(server_list), collapse = ","),
-      "|log_n:", log_n,
-      "|log_scale:", log_scale,
-      "|num_obs:", n_obs,
-      "|rlk:", tolower(as.character(use_he_link))
+      "peers_", paste(sort(server_list), collapse = ","),
+      "_logn_", log_n,
+      "_logscale_", log_scale,
+      "_numobs_", n_obs,
+      "_rlk_", tolower(as.character(use_he_link))
     )
 
     if (isTRUE(reuse_mhe)) {
@@ -564,6 +567,14 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       }
       manifest_json <- .buildManifest()
 
+      # B64url-encode the manifest JSON to avoid Opal parser issues with
+      # special characters ('{', '}', '+', '/', '=') in string arguments.
+      manifest_b64 <- jsonlite::base64_enc(charToRaw(as.character(manifest_json)))
+      manifest_b64 <- gsub("[\r\n]", "", manifest_b64)  # strip MIME line breaks
+      manifest_b64 <- gsub("+", "-", manifest_b64, fixed = TRUE)
+      manifest_b64 <- gsub("/", "_", manifest_b64, fixed = TRUE)
+      manifest_b64 <- gsub("=", "", manifest_b64, fixed = TRUE)
+
       # Each server: store manifest + get encrypted hashes
       server_enc_hashes <- list()
       for (server in server_list) {
@@ -571,7 +582,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         store_result <- DSI::datashield.aggregate(
           conns = datasources[conn_idx],
           expr = call("peerManifestStoreDS",
-                      manifest_json = as.character(manifest_json),
+                      manifest_json = manifest_b64,
                       session_id = session_id)
         )
         if (is.list(store_result) && length(store_result) == 1)
