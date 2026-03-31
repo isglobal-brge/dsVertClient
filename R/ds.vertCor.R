@@ -326,29 +326,41 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     gkg_shares[[first_server]] <- result0$galois_key_shares
     transport_pks[[first_server]] <- result0$transport_pk
 
-    for (i in 2:length(server_list)) {
-      server <- server_list[i]
-      conn_idx <- which(server_names == server)
+    # Send CRP, GKG seed, and party_id to all non-party0 servers (sequential
+    # blob transfer, then parallel mheInitDS calls).
+    other_servers <- server_list[-1]
+    other_conn_idxs <- integer(length(other_servers))
+    for (i in seq_along(other_servers)) {
+      server <- other_servers[i]
+      ci <- which(server_names == server)
+      other_conn_idxs[i] <- ci
+      .storeLargeBlob("crp", crp, ci)
+      .storeLargeBlob("gkg_seed", gkg_seed, ci)
+      .storeLargeBlob("party_id", as.character(i), ci)
+    }
 
-      # CRP can be several MB at log_n=14; send via blob storage to avoid
-      # R's call expression parser C stack overflow.
-      .storeLargeBlob("crp", crp, conn_idx)
-      .storeLargeBlob("gkg_seed", gkg_seed, conn_idx)
+    # Launch mheInitDS on all non-party0 servers in parallel (same expression,
+    # each server reads its own party_id from blob storage).
+    init_expr <- call("mheInitDS",
+                      party_id = 0L,
+                      from_storage = TRUE,
+                      num_obs = as.integer(n_obs),
+                      log_n = as.integer(log_n),
+                      log_scale = as.integer(log_scale),
+                      session_id = session_id)
 
-      call_expr <- call("mheInitDS",
-                        party_id = as.integer(i - 1),
-                        from_storage = TRUE,
-                        num_obs = as.integer(n_obs),
-                        log_n = as.integer(log_n),
-                        log_scale = as.integer(log_scale),
-                        session_id = session_id)
+    init_results <- DSI::datashield.aggregate(
+      conns = datasources[other_servers],
+      expr = init_expr
+    )
 
-      result <- DSI::datashield.aggregate(conns = datasources[conn_idx], expr = call_expr)
-      if (is.list(result)) result <- result[[1]]
+    for (i in seq_along(other_servers)) {
+      server <- other_servers[i]
+      result <- init_results[[server]]
       pk_shares[[server]] <- result$public_key_share
       gkg_shares[[server]] <- result$galois_key_shares
       transport_pks[[server]] <- result$transport_pk
-      message("  ", server, ": Party ", i - 1, " initialized")
+      message("  ", server, ": Party ", i, " initialized")
     }
 
     # ===========================================================================
@@ -396,30 +408,33 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     message("  CPK created on ", first_server)
 
     # Distribute CPK and Galois keys to other servers via chunked blob storage
-    for (server in server_list[-1]) {
+    other_srv_conns <- integer(length(server_list) - 1)
+    for (si in seq_along(server_list[-1])) {
+      server <- server_list[-1][si]
       srv_conn <- which(server_names == server)
+      other_srv_conns[si] <- srv_conn
       .storeLargeBlob("cpk", cpk, srv_conn)
       if (!is.null(galois_keys)) {
         for (gk_i in seq_along(galois_keys)) {
           .storeLargeBlob(paste0("gk_", gk_i - 1), galois_keys[gk_i], srv_conn)
         }
       }
-      DSI::datashield.aggregate(conns = datasources[srv_conn],
-                                expr = call("mheStoreCPKDS", from_storage = TRUE,
-                                           session_id = session_id))
-      message("  CPK stored on ", server)
     }
+    # Store CPK on all non-party0 servers in parallel
+    DSI::datashield.aggregate(
+      conns = datasources[server_list[-1]],
+      expr = call("mheStoreCPKDS", from_storage = TRUE,
+                  session_id = session_id)
+    )
+    for (server in server_list[-1]) message("  CPK stored on ", server)
 
-    # Register context for future reuse
-    for (server in server_list) {
-      conn_idx <- which(server_names == server)
-      DSI::datashield.aggregate(
-        conns = datasources[conn_idx],
-        expr = call("mheRegisterContextDS",
-                    context_id = context_id,
-                    session_id = session_id)
-      )
-    }
+    # Register context for future reuse (parallel across all servers)
+    DSI::datashield.aggregate(
+      conns = datasources[server_list],
+      expr = call("mheRegisterContextDS",
+                  context_id = context_id,
+                  session_id = session_id)
+    )
   }  # end if (!mhe_reused)
 
   # Distribute transport keys for share-wrapping protocol (always needed -
