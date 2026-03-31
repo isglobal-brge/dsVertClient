@@ -218,9 +218,9 @@ are unique to each server.</p>
 <span><span class="co">#&gt; [Phase 8] Computing multi-server intersection...</span></span>
 <span><span class="co">#&gt;   Common records: 155</span></span></code></pre>
 <pre><code><span><span class="co">#&gt; PSI alignment complete.</span></span></code></pre>
-<p>The PSI protocol identified **** patients present in all three
-servers. The matched cohort is now row-aligned across servers: each row
-index corresponds to the same patient, enabling cross-server
+<p>The PSI protocol identified <strong>155</strong> patients present in
+all three servers. The matched cohort is now row-aligned across servers:
+each row index corresponds to the same patient, enabling cross-server
 computations.</p>
 <hr>
 </div>
@@ -231,20 +231,11 @@ computations.</p>
 <p>We load the matched ground truth dataset and compute all analyses
 with standard R functions. These serve as the reference baseline.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">demo_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/normalizePath.html" class="external-link">normalizePath</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span>package <span class="op">=</span> <span class="st">"dsVertClient"</span><span class="op">)</span>, <span class="st">".."</span>, <span class="st">".."</span>, <span class="st">"demo"</span></span>
-<span><span class="op">)</span>, mustWork <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span><span class="kw">if</span> <span class="op">(</span><span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/files2.html" class="external-link">dir.exists</a></span><span class="op">(</span><span class="va">demo_dir</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="va">demo_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/normalizePath.html" class="external-link">normalizePath</a></span><span class="op">(</span><span class="st">"../../demo"</span>, mustWork <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span><span class="kw">if</span> <span class="op">(</span><span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/files2.html" class="external-link">dir.exists</a></span><span class="op">(</span><span class="va">demo_dir</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="va">demo_dir</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Sys.getenv.html" class="external-link">Sys.getenv</a></span><span class="op">(</span><span class="st">"DSVERT_DEMO_DIR"</span>,</span>
-<span>    unset <span class="op">=</span> <span class="st">"/Users/david/Documents/GitHub/dsvert-paper/demo"</span><span class="op">)</span></span>
-<span></span>
+<code class="sourceCode R"><span><span class="va">extdata</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"extdata"</span>, package <span class="op">=</span> <span class="st">"dsVertClient"</span><span class="op">)</span></span>
 <span><span class="va">full</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/merge.html" class="external-link">merge</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/merge.html" class="external-link">merge</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.csv</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">demo_dir</span>, <span class="st">"pima_server1.csv"</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.csv</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">demo_dir</span>, <span class="st">"pima_server2.csv"</span><span class="op">)</span><span class="op">)</span>, by <span class="op">=</span> <span class="st">"patient_id"</span><span class="op">)</span>,</span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.csv</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">demo_dir</span>, <span class="st">"pima_server3.csv"</span><span class="op">)</span><span class="op">)</span>, by <span class="op">=</span> <span class="st">"patient_id"</span><span class="op">)</span></span>
-<span><span class="co"># Keep only the matched cohort</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.csv</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">extdata</span>, <span class="st">"pima_server1.csv"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.csv</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">extdata</span>, <span class="st">"pima_server2.csv"</span><span class="op">)</span><span class="op">)</span>, by <span class="op">=</span> <span class="st">"patient_id"</span><span class="op">)</span>,</span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.csv</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">extdata</span>, <span class="st">"pima_server3.csv"</span><span class="op">)</span><span class="op">)</span>, by <span class="op">=</span> <span class="st">"patient_id"</span><span class="op">)</span></span>
 <span><span class="va">full</span> <span class="op">&lt;-</span> <span class="va">full</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/order.html" class="external-link">order</a></span><span class="op">(</span><span class="va">full</span><span class="op">$</span><span class="va">patient_id</span><span class="op">)</span>, <span class="op">]</span></span>
 <span><span class="va">num_vars</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span>, <span class="st">"glu"</span>, <span class="st">"bp"</span>, <span class="st">"skin"</span>, <span class="st">"npreg"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Ground truth dataset:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">full</span><span class="op">)</span>, <span class="st">"rows x"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">ncol</a></span><span class="op">(</span><span class="va">full</span><span class="op">)</span>, <span class="st">"columns\n"</span><span class="op">)</span></span></code></pre></div>
@@ -587,14 +578,14 @@ threshold decryption with server-side fusion.</p>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients:</span></span>
 <span><span class="co">#&gt;               Estimate</span></span>
-<span><span class="co">#&gt; (Intercept)  61.576513</span></span>
+<span><span class="co">#&gt; (Intercept)  61.576512</span></span>
 <span><span class="co">#&gt; age           0.475936</span></span>
 <span><span class="co">#&gt; bmi           0.303228</span></span>
 <span><span class="co">#&gt; ped         -10.602720</span></span>
 <span><span class="co">#&gt; bp            0.521073</span></span>
 <span><span class="co">#&gt; skin         -0.067970</span></span>
 <span><span class="co">#&gt; npreg        -0.538202</span></span>
-<span><span class="co">#&gt; diabetes     24.501691</span></span></code></pre>
+<span><span class="co">#&gt; diabetes     24.501690</span></span></code></pre>
 </div>
 <div class="section level3">
 <h3 id="glm-binomial-y-diabetes-1">GLM — Binomial (y = <code>diabetes</code>)<a class="anchor" aria-label="anchor" href="#glm-binomial-y-diabetes-1"></a>
@@ -644,7 +635,7 @@ servers via transport encryption.</p>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients:</span></span>
 <span><span class="co">#&gt;              Estimate</span></span>
-<span><span class="co">#&gt; (Intercept) -8.883204</span></span>
+<span><span class="co">#&gt; (Intercept) -8.883205</span></span>
 <span><span class="co">#&gt; age          0.026651</span></span>
 <span><span class="co">#&gt; bmi          0.096783</span></span>
 <span><span class="co">#&gt; ped          2.080948</span></span>
@@ -759,13 +750,13 @@ well below any substantively meaningful threshold.</p>
 <td align="left">PC2</td>
 <td align="right">1.564613</td>
 <td align="right">1.564613</td>
-<td align="right">-8.81e-09</td>
+<td align="right">-6.13e-09</td>
 </tr>
 <tr class="odd">
 <td align="left">PC3</td>
 <td align="right">0.924137</td>
 <td align="right">0.924137</td>
-<td align="right">2.68e-07</td>
+<td align="right">2.67e-07</td>
 </tr>
 <tr class="even">
 <td align="left">PC4</td>
@@ -906,25 +897,25 @@ propagated directly from the correlation matrix precision.</p>
 <td align="left">ped</td>
 <td align="right">2.0810</td>
 <td align="right">2.0809</td>
-<td align="right">-1.03e-05</td>
+<td align="right">-1.02e-05</td>
 </tr>
 <tr class="odd">
 <td align="left">glu</td>
 <td align="right">0.0334</td>
 <td align="right">0.0334</td>
-<td align="right">4.45e-07</td>
+<td align="right">4.46e-07</td>
 </tr>
 <tr class="even">
 <td align="left">bp</td>
 <td align="right">-0.0188</td>
 <td align="right">-0.0188</td>
-<td align="right">-7.06e-07</td>
+<td align="right">-7.05e-07</td>
 </tr>
 <tr class="odd">
 <td align="left">skin</td>
 <td align="right">-0.0092</td>
 <td align="right">-0.0092</td>
-<td align="right">8.38e-06</td>
+<td align="right">8.39e-06</td>
 </tr>
 <tr class="even">
 <td align="left">npreg</td>
@@ -969,7 +960,7 @@ propagated directly from the correlation matrix precision.</p>
 <td align="left">bmi</td>
 <td align="right">-0.0152</td>
 <td align="right">-0.0152</td>
-<td align="right">-2.95e-05</td>
+<td align="right">-2.94e-05</td>
 </tr>
 <tr class="even">
 <td align="left">ped</td>
@@ -1020,7 +1011,7 @@ propagated directly from the correlation matrix precision.</p>
 <tr class="odd">
 <td align="left">PSI Alignment</td>
 <td align="left">Matched cohort</td>
-<td align="right">/ 200</td>
+<td align="right">155 / 200</td>
 </tr>
 <tr class="even">
 <td align="left">Correlation</td>

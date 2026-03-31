@@ -116,7 +116,11 @@ psi_result <- ds.psiAlign(
 )
 ```
 
-The PSI protocol identified **`r psi_result$n_intersect`** patients present
+```{r psi-summary, echo = FALSE}
+n_matched <- psi_result$server1$n_matched
+```
+
+The PSI protocol identified **`r n_matched`** patients present
 in all three servers. The matched cohort is now row-aligned across servers:
 each row index corresponds to the same patient, enabling cross-server
 computations.
@@ -129,20 +133,11 @@ We load the matched ground truth dataset and compute all analyses with
 standard R functions. These serve as the reference baseline.
 
 ```{r ground-truth}
-demo_dir <- normalizePath(file.path(
-  system.file(package = "dsVertClient"), "..", "..", "demo"
-), mustWork = FALSE)
-if (!dir.exists(demo_dir))
-  demo_dir <- normalizePath("../../demo", mustWork = FALSE)
-if (!dir.exists(demo_dir))
-  demo_dir <- Sys.getenv("DSVERT_DEMO_DIR",
-    unset = "/Users/david/Documents/GitHub/dsvert-paper/demo")
-
+extdata <- system.file("extdata", package = "dsVertClient")
 full <- merge(merge(
-  read.csv(file.path(demo_dir, "pima_server1.csv")),
-  read.csv(file.path(demo_dir, "pima_server2.csv")), by = "patient_id"),
-  read.csv(file.path(demo_dir, "pima_server3.csv")), by = "patient_id")
-# Keep only the matched cohort
+  read.csv(file.path(extdata, "pima_server1.csv")),
+  read.csv(file.path(extdata, "pima_server2.csv")), by = "patient_id"),
+  read.csv(file.path(extdata, "pima_server3.csv")), by = "patient_id")
 full <- full[order(full$patient_id), ]
 num_vars <- c("age", "bmi", "ped", "glu", "bp", "skin", "npreg")
 cat("Ground truth dataset:", nrow(full), "rows x", ncol(full), "columns\n")
@@ -563,7 +558,7 @@ knitr::kable(
                "Max |coef| error",
                "Max |coef| error",
                "Max |coef| error"),
-    Value = c(paste0(psi_result$n_intersect, " / 200"),
+    Value = c(paste0(n_matched, " / 200"),
               format(max(abs(cor_diff)), digits = 3, scientific = TRUE),
               format(max(abs(eig_diff)), digits = 3, scientific = TRUE),
               format(max(abs(gauss_diff)), digits = 3, scientific = TRUE),
