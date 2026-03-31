@@ -102,14 +102,57 @@ thickness), <code>bmi</code> (body mass index), <code>ped</code>
 (diabetes pedigree function), and <code>age</code> (years).</p>
 </div>
 <div class="section level3">
-<h3 id="vertical-partitioning-scheme">Vertical partitioning scheme<a class="anchor" aria-label="anchor" href="#vertical-partitioning-scheme"></a>
+<h3 id="data-preparation-and-vertical-partitioning">Data preparation and vertical partitioning<a class="anchor" aria-label="anchor" href="#data-preparation-and-vertical-partitioning"></a>
 </h3>
-<p>The data are vertically split across three servers, each representing
-a different clinical domain. Crucially, <strong>the patient populations
-are not identical</strong>: each server holds a different number of
-patients, with only a partial overlap. This simulates a realistic
-scenario where institutions have data on overlapping but non-identical
-patient cohorts.</p>
+<p>We load the dataset from <code><a href="https://rdrr.io/pkg/MASS/man/Pima.tr.html" class="external-link">MASS::Pima.tr</a></code>, assign patient
+identifiers, and partition it into three vertical fragments with
+<strong>deliberately non-identical patient populations</strong>. This
+simulates a realistic scenario where institutions have data on
+overlapping but non-identical patient cohorts.</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="http://www.stats.ox.ac.uk/pub/MASS4/" class="external-link">MASS</a></span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/data.html" class="external-link">data</a></span><span class="op">(</span><span class="st">"Pima.tr"</span>, package <span class="op">=</span> <span class="st">"MASS"</span><span class="op">)</span></span>
+<span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame</a></span><span class="op">(</span><span class="va">Pima.tr</span><span class="op">)</span></span>
+<span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"P%03d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">df</span><span class="op">$</span><span class="va">diabetes</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">df</span><span class="op">$</span><span class="va">type</span> <span class="op">==</span> <span class="st">"Yes"</span>, <span class="fl">1L</span>, <span class="fl">0L</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">123</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># 150 patients are shared across all 3 servers (the "common core")</span></span>
+<span><span class="va">core_ids</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span>, <span class="fl">150</span><span class="op">)</span></span>
+<span><span class="va">remaining</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span>, <span class="va">core_ids</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Each server gets the core + a different subset of extras</span></span>
+<span><span class="va">ids1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core_ids</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">remaining</span>, <span class="fl">30</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>  <span class="co"># 180 patients</span></span>
+<span><span class="va">ids2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core_ids</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">remaining</span>, <span class="fl">25</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>  <span class="co"># 175 patients</span></span>
+<span><span class="va">ids3</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core_ids</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">remaining</span>, <span class="fl">20</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>  <span class="co"># 170 patients</span></span>
+<span></span>
+<span><span class="co"># Vertical split: each server holds different variables</span></span>
+<span><span class="va">server1_data</span> <span class="op">&lt;-</span> <span class="va">df</span><span class="op">[</span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids1</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="va">server2_data</span> <span class="op">&lt;-</span> <span class="va">df</span><span class="op">[</span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids2</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"glu"</span>, <span class="st">"bp"</span>, <span class="st">"skin"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="va">server3_data</span> <span class="op">&lt;-</span> <span class="va">df</span><span class="op">[</span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids3</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"npreg"</span>, <span class="st">"diabetes"</span><span class="op">)</span><span class="op">]</span></span>
+<span></span>
+<span><span class="co"># Shuffle row order independently (PSI must handle this)</span></span>
+<span><span class="va">server1_data</span> <span class="op">&lt;-</span> <span class="va">server1_data</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server1_data</span><span class="op">)</span><span class="op">)</span>, <span class="op">]</span></span>
+<span><span class="va">server2_data</span> <span class="op">&lt;-</span> <span class="va">server2_data</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server2_data</span><span class="op">)</span><span class="op">)</span>, <span class="op">]</span></span>
+<span><span class="va">server3_data</span> <span class="op">&lt;-</span> <span class="va">server3_data</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server3_data</span><span class="op">)</span><span class="op">)</span>, <span class="op">]</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"Server 1: %d patients (age, bmi, ped)\n"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server1_data</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">#&gt; Server 1: 180 patients (age, bmi, ped)</span></span></code></pre>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"Server 2: %d patients (glu, bp, skin)\n"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server2_data</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">#&gt; Server 2: 175 patients (glu, bp, skin)</span></span></code></pre>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"Server 3: %d patients (npreg, diabetes)\n"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server3_data</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">#&gt; Server 3: 170 patients (npreg, diabetes)</span></span></code></pre>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"True intersection: %d patients\n"</span>,</span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/funprog.html" class="external-link">Reduce</a></span><span class="op">(</span><span class="va">intersect</span>, <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">ids1</span>, <span class="va">ids2</span>, <span class="va">ids3</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">#&gt; True intersection: 158 patients</span></span></code></pre>
+<p>These are the fragments that each Opal server contains. Row order is
+independently shuffled, so the ECDH-PSI alignment protocol has real work
+to do — it must identify the common cohort without revealing which IDs
+are shared or which patients are unique to each server.</p>
 <table style="width:100%;" class="table">
 <colgroup>
 <col width="10%">
@@ -153,9 +196,6 @@ patient cohorts.</p>
 </tr>
 </tbody>
 </table>
-<p>Row order is independently shuffled per server. The ECDH-PSI protocol
-must identify the common cohort (155 patients present in all three
-servers) without revealing which IDs are shared.</p>
 <hr>
 </div>
 </div>
@@ -164,7 +204,7 @@ servers) without revealing which IDs are shared.</p>
 </h2>
 <p>We connect to three independent DataSHIELD sessions, each hosting one
 vertical partition on separate Opal instances.</p>
-<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/datashield/DSI/" class="external-link">DSI</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/datashield/DSOpal/" class="external-link">DSOpal</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/isglobal-brge/dsVertClient" class="external-link">dsVertClient</a></span><span class="op">)</span></span>
@@ -190,7 +230,7 @@ vertical partition on separate Opal instances.</p>
 protocol finds the common cohort using elliptic curve Diffie-Hellman
 blind relay, without revealing which IDs are shared or which patients
 are unique to each server.</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">psi_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.psiAlign.html">ds.psiAlign</a></span><span class="op">(</span></span>
 <span>  data_name   <span class="op">=</span> <span class="st">"D"</span>,</span>
 <span>  id_col      <span class="op">=</span> <span class="st">"patient_id"</span>,</span>
@@ -216,9 +256,9 @@ are unique to each server.</p>
 <span><span class="co">#&gt; [Phase 6-7] server3: matching and aligning (blind relay)...</span></span>
 <span><span class="co">#&gt; [Phase 7] server1: self-aligning...</span></span>
 <span><span class="co">#&gt; [Phase 8] Computing multi-server intersection...</span></span>
-<span><span class="co">#&gt;   Common records: 155</span></span></code></pre>
+<span><span class="co">#&gt;   Common records: 158</span></span></code></pre>
 <pre><code><span><span class="co">#&gt; PSI alignment complete.</span></span></code></pre>
-<p>The PSI protocol identified <strong>155</strong> patients present in
+<p>The PSI protocol identified <strong>158</strong> patients present in
 all three servers. The matched cohort is now row-aligned across servers:
 each row index corresponds to the same patient, enabling cross-server
 computations.</p>
@@ -228,37 +268,36 @@ computations.</p>
 <div class="section level2">
 <h2 id="centralized-analysis-ground-truth">Centralized analysis (ground truth)<a class="anchor" aria-label="anchor" href="#centralized-analysis-ground-truth"></a>
 </h2>
-<p>We load the matched ground truth dataset and compute all analyses
-with standard R functions. These serve as the reference baseline.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">extdata</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/system.file.html" class="external-link">system.file</a></span><span class="op">(</span><span class="st">"extdata"</span>, package <span class="op">=</span> <span class="st">"dsVertClient"</span><span class="op">)</span></span>
-<span><span class="va">full</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/merge.html" class="external-link">merge</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/merge.html" class="external-link">merge</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.csv</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">extdata</span>, <span class="st">"pima_server1.csv"</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.csv</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">extdata</span>, <span class="st">"pima_server2.csv"</span><span class="op">)</span><span class="op">)</span>, by <span class="op">=</span> <span class="st">"patient_id"</span><span class="op">)</span>,</span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/utils/read.table.html" class="external-link">read.csv</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/file.path.html" class="external-link">file.path</a></span><span class="op">(</span><span class="va">extdata</span>, <span class="st">"pima_server3.csv"</span><span class="op">)</span><span class="op">)</span>, by <span class="op">=</span> <span class="st">"patient_id"</span><span class="op">)</span></span>
+<p>We reconstruct the ground truth by merging the three server fragments
+on <code>patient_id</code> — only patients present in all three servers
+are kept. This is exactly the cohort that the PSI protocol should have
+identified.</p>
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">full</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/merge.html" class="external-link">merge</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/merge.html" class="external-link">merge</a></span><span class="op">(</span><span class="va">server1_data</span>, <span class="va">server2_data</span>, by <span class="op">=</span> <span class="st">"patient_id"</span><span class="op">)</span>,</span>
+<span>              <span class="va">server3_data</span>, by <span class="op">=</span> <span class="st">"patient_id"</span><span class="op">)</span></span>
 <span><span class="va">full</span> <span class="op">&lt;-</span> <span class="va">full</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/order.html" class="external-link">order</a></span><span class="op">(</span><span class="va">full</span><span class="op">$</span><span class="va">patient_id</span><span class="op">)</span>, <span class="op">]</span></span>
 <span><span class="va">num_vars</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span>, <span class="st">"glu"</span>, <span class="st">"bp"</span>, <span class="st">"skin"</span>, <span class="st">"npreg"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Ground truth dataset:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">full</span><span class="op">)</span>, <span class="st">"rows x"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">ncol</a></span><span class="op">(</span><span class="va">full</span><span class="op">)</span>, <span class="st">"columns\n"</span><span class="op">)</span></span></code></pre></div>
-<pre><code><span><span class="co">#&gt; Ground truth dataset: 155 rows x 9 columns</span></span></code></pre>
+<pre><code><span><span class="co">#&gt; Ground truth dataset: 158 rows x 9 columns</span></span></code></pre>
 <div class="section level3">
 <h3 id="pearson-correlation">Pearson correlation<a class="anchor" aria-label="anchor" href="#pearson-correlation"></a>
 </h3>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">local_cor</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">full</span><span class="op">[</span>, <span class="va">num_vars</span><span class="op">]</span><span class="op">)</span></span></code></pre></div>
-<pre><code><span><span class="co">#&gt;           age    bmi     ped     glu     bp   skin   npreg</span></span>
-<span><span class="co">#&gt; age    1.0000 0.1132 -0.0810  0.3346 0.3806 0.1731  0.6468</span></span>
-<span><span class="co">#&gt; bmi    0.1132 1.0000  0.1601  0.1982 0.2785 0.6993  0.0229</span></span>
-<span><span class="co">#&gt; ped   -0.0810 0.1601  1.0000 -0.0182 0.0358 0.1056 -0.0645</span></span>
-<span><span class="co">#&gt; glu    0.3346 0.1982 -0.0182  1.0000 0.3176 0.1639  0.2048</span></span>
-<span><span class="co">#&gt; bp     0.3806 0.2785  0.0358  0.3176 1.0000 0.3099  0.2371</span></span>
-<span><span class="co">#&gt; skin   0.1731 0.6993  0.1056  0.1639 0.3099 1.0000  0.0962</span></span>
-<span><span class="co">#&gt; npreg  0.6468 0.0229 -0.0645  0.2048 0.2371 0.0962  1.0000</span></span></code></pre>
+<pre><code><span><span class="co">#&gt;           age    bmi     ped    glu      bp   skin   npreg</span></span>
+<span><span class="co">#&gt; age    1.0000 0.1888 -0.0785 0.3660  0.4253 0.3206  0.5738</span></span>
+<span><span class="co">#&gt; bmi    0.1888 1.0000  0.1530 0.2371  0.1977 0.6567  0.0625</span></span>
+<span><span class="co">#&gt; ped   -0.0785 0.1530  1.0000 0.0680 -0.1128 0.0817 -0.1214</span></span>
+<span><span class="co">#&gt; glu    0.3660 0.2371  0.0680 1.0000  0.2831 0.2365  0.1637</span></span>
+<span><span class="co">#&gt; bp     0.4253 0.1977 -0.1128 0.2831  1.0000 0.2566  0.2622</span></span>
+<span><span class="co">#&gt; skin   0.3206 0.6567  0.0817 0.2365  0.2566 1.0000  0.1086</span></span>
+<span><span class="co">#&gt; npreg  0.5738 0.0625 -0.1214 0.1637  0.2622 0.1086  1.0000</span></span></code></pre>
 <p><img src="validation_files/figure-html/local-cor-heatmap-1.png" class="r-plt" width="672" style="display: block; margin: auto;"></p>
 </div>
 <div class="section level3">
 <h3 id="pca-spectral-decomposition">PCA (spectral decomposition)<a class="anchor" aria-label="anchor" href="#pca-spectral-decomposition"></a>
 </h3>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">local_pca</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eigen.html" class="external-link">eigen</a></span><span class="op">(</span><span class="va">local_cor</span><span class="op">)</span></span>
 <span><span class="va">local_eigenvalues</span> <span class="op">&lt;-</span> <span class="va">local_pca</span><span class="op">$</span><span class="va">values</span></span>
 <span><span class="va">local_loadings</span>    <span class="op">&lt;-</span> <span class="va">local_pca</span><span class="op">$</span><span class="va">vectors</span></span>
@@ -276,44 +315,44 @@ with standard R functions. These serve as the reference baseline.</p>
 <tbody>
 <tr class="odd">
 <td align="left">PC1</td>
-<td align="right">2.4078</td>
-<td align="right">34.4%</td>
-<td align="right">34.4%</td>
+<td align="right">2.4720</td>
+<td align="right">35.3%</td>
+<td align="right">35.3%</td>
 </tr>
 <tr class="even">
 <td align="left">PC2</td>
-<td align="right">1.5646</td>
-<td align="right">22.4%</td>
-<td align="right">56.7%</td>
+<td align="right">1.4480</td>
+<td align="right">20.7%</td>
+<td align="right">56%</td>
 </tr>
 <tr class="odd">
 <td align="left">PC3</td>
-<td align="right">0.9241</td>
+<td align="right">0.9211</td>
 <td align="right">13.2%</td>
-<td align="right">70%</td>
+<td align="right">69.2%</td>
 </tr>
 <tr class="even">
 <td align="left">PC4</td>
-<td align="right">0.8302</td>
-<td align="right">11.9%</td>
-<td align="right">81.8%</td>
+<td align="right">0.8025</td>
+<td align="right">11.5%</td>
+<td align="right">80.6%</td>
 </tr>
 <tr class="odd">
 <td align="left">PC5</td>
-<td align="right">0.6546</td>
+<td align="right">0.6568</td>
 <td align="right">9.4%</td>
-<td align="right">91.2%</td>
+<td align="right">90%</td>
 </tr>
 <tr class="even">
 <td align="left">PC6</td>
-<td align="right">0.3268</td>
-<td align="right">4.7%</td>
-<td align="right">95.8%</td>
+<td align="right">0.3992</td>
+<td align="right">5.7%</td>
+<td align="right">95.7%</td>
 </tr>
 <tr class="odd">
 <td align="left">PC7</td>
-<td align="right">0.2919</td>
-<td align="right">4.2%</td>
+<td align="right">0.3004</td>
+<td align="right">4.3%</td>
 <td align="right">100%</td>
 </tr>
 </tbody>
@@ -323,7 +362,7 @@ with standard R functions. These serve as the reference baseline.</p>
 <div class="section level3">
 <h3 id="glm-gaussian-y-glu">GLM — Gaussian (y = <code>glu</code>)<a class="anchor" aria-label="anchor" href="#glm-gaussian-y-glu"></a>
 </h3>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">local_gauss</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/glm.html" class="external-link">glm</a></span><span class="op">(</span><span class="va">glu</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">ped</span> <span class="op">+</span> <span class="va">bp</span> <span class="op">+</span> <span class="va">skin</span> <span class="op">+</span> <span class="va">npreg</span> <span class="op">+</span> <span class="va">diabetes</span>,</span>
 <span>                   data <span class="op">=</span> <span class="va">full</span>, family <span class="op">=</span> <span class="va">gaussian</span><span class="op">)</span></span></code></pre></div>
 <pre><code><span><span class="co">#&gt; </span></span>
@@ -333,29 +372,29 @@ with standard R functions. These serve as the reference baseline.</p>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients:</span></span>
 <span><span class="co">#&gt;              Estimate Std. Error t value Pr(&gt;|t|)    </span></span>
-<span><span class="co">#&gt; (Intercept)  61.57049   17.16640   3.587 0.000455 ***</span></span>
-<span><span class="co">#&gt; age           0.47625    0.26661   1.786 0.076110 .  </span></span>
-<span><span class="co">#&gt; bmi           0.30336    0.50069   0.606 0.545527    </span></span>
-<span><span class="co">#&gt; ped         -10.60197    8.53231  -1.243 0.216006    </span></span>
-<span><span class="co">#&gt; bp            0.52103    0.21724   2.398 0.017719 *  </span></span>
-<span><span class="co">#&gt; skin         -0.06805    0.28099  -0.242 0.808966    </span></span>
-<span><span class="co">#&gt; npreg        -0.53896    0.83648  -0.644 0.520378    </span></span>
-<span><span class="co">#&gt; diabetes     24.50020    5.08192   4.821 3.53e-06 ***</span></span>
+<span><span class="co">#&gt; (Intercept) 59.224214  17.124813   3.458 0.000707 ***</span></span>
+<span><span class="co">#&gt; age          0.601834   0.277074   2.172 0.031419 *  </span></span>
+<span><span class="co">#&gt; bmi          0.342807   0.460681   0.744 0.457961    </span></span>
+<span><span class="co">#&gt; ped          1.774110   7.271280   0.244 0.807573    </span></span>
+<span><span class="co">#&gt; bp           0.403735   0.204122   1.978 0.049771 *  </span></span>
+<span><span class="co">#&gt; skin        -0.004942   0.245287  -0.020 0.983953    </span></span>
+<span><span class="co">#&gt; npreg       -0.951066   0.803931  -1.183 0.238673    </span></span>
+<span><span class="co">#&gt; diabetes    23.457027   5.465637   4.292 3.17e-05 ***</span></span>
 <span><span class="co">#&gt; ---</span></span>
 <span><span class="co">#&gt; Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1</span></span>
 <span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; (Dispersion parameter for gaussian family taken to be 709.1053)</span></span>
+<span><span class="co">#&gt; (Dispersion parameter for gaussian family taken to be 718.794)</span></span>
 <span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt;     Null deviance: 145150  on 154  degrees of freedom</span></span>
-<span><span class="co">#&gt; Residual deviance: 104238  on 147  degrees of freedom</span></span>
-<span><span class="co">#&gt; AIC: 1467.1</span></span>
+<span><span class="co">#&gt;     Null deviance: 148781  on 157  degrees of freedom</span></span>
+<span><span class="co">#&gt; Residual deviance: 107819  on 150  degrees of freedom</span></span>
+<span><span class="co">#&gt; AIC: 1497.4</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Number of Fisher Scoring iterations: 2</span></span></code></pre>
 </div>
 <div class="section level3">
 <h3 id="glm-binomial-y-diabetes">GLM — Binomial (y = <code>diabetes</code>)<a class="anchor" aria-label="anchor" href="#glm-binomial-y-diabetes"></a>
 </h3>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">local_binom</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/glm.html" class="external-link">glm</a></span><span class="op">(</span><span class="va">diabetes</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">ped</span> <span class="op">+</span> <span class="va">glu</span> <span class="op">+</span> <span class="va">bp</span> <span class="op">+</span> <span class="va">skin</span> <span class="op">+</span> <span class="va">npreg</span>,</span>
 <span>                   data <span class="op">=</span> <span class="va">full</span>, family <span class="op">=</span> <span class="va">binomial</span><span class="op">)</span></span></code></pre></div>
 <pre><code><span><span class="co">#&gt; </span></span>
@@ -365,29 +404,29 @@ with standard R functions. These serve as the reference baseline.</p>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients:</span></span>
 <span><span class="co">#&gt;              Estimate Std. Error z value Pr(&gt;|z|)    </span></span>
-<span><span class="co">#&gt; (Intercept) -8.883453   1.890999  -4.698 2.63e-06 ***</span></span>
-<span><span class="co">#&gt; age          0.026652   0.024444   1.090   0.2756    </span></span>
-<span><span class="co">#&gt; bmi          0.096796   0.047663   2.031   0.0423 *  </span></span>
-<span><span class="co">#&gt; ped          2.080959   0.815194   2.553   0.0107 *  </span></span>
-<span><span class="co">#&gt; glu          0.033378   0.008099   4.122 3.76e-05 ***</span></span>
-<span><span class="co">#&gt; bp          -0.018833   0.021507  -0.876   0.3812    </span></span>
-<span><span class="co">#&gt; skin        -0.009199   0.025722  -0.358   0.7206    </span></span>
-<span><span class="co">#&gt; npreg        0.123347   0.075740   1.629   0.1034    </span></span>
+<span><span class="co">#&gt; (Intercept) -9.474861   2.069566  -4.578 4.69e-06 ***</span></span>
+<span><span class="co">#&gt; age          0.049426   0.025953   1.904 0.056847 .  </span></span>
+<span><span class="co">#&gt; bmi          0.087041   0.049277   1.766 0.077335 .  </span></span>
+<span><span class="co">#&gt; ped          1.606924   0.798573   2.012 0.044194 *  </span></span>
+<span><span class="co">#&gt; glu          0.029988   0.008096   3.704 0.000212 ***</span></span>
+<span><span class="co">#&gt; bp          -0.018396   0.020518  -0.897 0.369942    </span></span>
+<span><span class="co">#&gt; skin         0.009106   0.026240   0.347 0.728587    </span></span>
+<span><span class="co">#&gt; npreg        0.131035   0.073656   1.779 0.075237 .  </span></span>
 <span><span class="co">#&gt; ---</span></span>
 <span><span class="co">#&gt; Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; (Dispersion parameter for binomial family taken to be 1)</span></span>
 <span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt;     Null deviance: 194.93  on 154  degrees of freedom</span></span>
-<span><span class="co">#&gt; Residual deviance: 142.42  on 147  degrees of freedom</span></span>
-<span><span class="co">#&gt; AIC: 158.42</span></span>
+<span><span class="co">#&gt;     Null deviance: 188.79  on 157  degrees of freedom</span></span>
+<span><span class="co">#&gt; Residual deviance: 130.11  on 150  degrees of freedom</span></span>
+<span><span class="co">#&gt; AIC: 146.11</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Number of Fisher Scoring iterations: 5</span></span></code></pre>
 </div>
 <div class="section level3">
 <h3 id="glm-poisson-y-npreg">GLM — Poisson (y = <code>npreg</code>)<a class="anchor" aria-label="anchor" href="#glm-poisson-y-npreg"></a>
 </h3>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">local_pois</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/glm.html" class="external-link">glm</a></span><span class="op">(</span><span class="va">npreg</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">ped</span> <span class="op">+</span> <span class="va">glu</span> <span class="op">+</span> <span class="va">bp</span> <span class="op">+</span> <span class="va">skin</span> <span class="op">+</span> <span class="va">diabetes</span>,</span>
 <span>                  data <span class="op">=</span> <span class="va">full</span>, family <span class="op">=</span> <span class="va">poisson</span><span class="op">)</span></span></code></pre></div>
 <pre><code><span><span class="co">#&gt; </span></span>
@@ -396,23 +435,23 @@ with standard R functions. These serve as the reference baseline.</p>
 <span><span class="co">#&gt;     family = poisson, data = full)</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients:</span></span>
-<span><span class="co">#&gt;              Estimate Std. Error z value Pr(&gt;|z|)    </span></span>
-<span><span class="co">#&gt; (Intercept)  0.230581   0.366587   0.629  0.52935    </span></span>
-<span><span class="co">#&gt; age          0.040632   0.003696  10.994  &lt; 2e-16 ***</span></span>
-<span><span class="co">#&gt; bmi         -0.015161   0.010225  -1.483  0.13815    </span></span>
-<span><span class="co">#&gt; ped         -0.148033   0.179165  -0.826  0.40867    </span></span>
-<span><span class="co">#&gt; glu         -0.002226   0.001556  -1.431  0.15244    </span></span>
-<span><span class="co">#&gt; bp           0.002513   0.004372   0.575  0.56545    </span></span>
-<span><span class="co">#&gt; skin         0.006332   0.005583   1.134  0.25676    </span></span>
-<span><span class="co">#&gt; diabetes     0.274992   0.102384   2.686  0.00723 ** </span></span>
+<span><span class="co">#&gt;               Estimate Std. Error z value Pr(&gt;|z|)    </span></span>
+<span><span class="co">#&gt; (Intercept)  0.0571560  0.3811101   0.150   0.8808    </span></span>
+<span><span class="co">#&gt; age          0.0387675  0.0042274   9.171   &lt;2e-16 ***</span></span>
+<span><span class="co">#&gt; bmi         -0.0008473  0.0096665  -0.088   0.9302    </span></span>
+<span><span class="co">#&gt; ped         -0.3576770  0.1732612  -2.064   0.0390 *  </span></span>
+<span><span class="co">#&gt; glu         -0.0030037  0.0016091  -1.867   0.0619 .  </span></span>
+<span><span class="co">#&gt; bp           0.0053715  0.0042199   1.273   0.2031    </span></span>
+<span><span class="co">#&gt; skin        -0.0044764  0.0042805  -1.046   0.2957    </span></span>
+<span><span class="co">#&gt; diabetes     0.3402630  0.1065085   3.195   0.0014 ** </span></span>
 <span><span class="co">#&gt; ---</span></span>
 <span><span class="co">#&gt; Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; (Dispersion parameter for poisson family taken to be 1)</span></span>
 <span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt;     Null deviance: 491.6  on 154  degrees of freedom</span></span>
-<span><span class="co">#&gt; Residual deviance: 310.1  on 147  degrees of freedom</span></span>
-<span><span class="co">#&gt; AIC: 730.14</span></span>
+<span><span class="co">#&gt;     Null deviance: 487.64  on 157  degrees of freedom</span></span>
+<span><span class="co">#&gt; Residual deviance: 327.69  on 150  degrees of freedom</span></span>
+<span><span class="co">#&gt; AIC: 741.8</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Number of Fisher Scoring iterations: 5</span></span></code></pre>
 <hr>
@@ -435,7 +474,7 @@ so individual-level data never leaves any server.</p>
 Pearson correlation matrix. Within-server blocks are computed locally;
 cross-server blocks use CKKS encrypted dot products with threshold
 decryption and server-side fusion.</p>
-<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb24"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">variables</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
 <span>  server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span>,</span>
 <span>  server2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glu"</span>, <span class="st">"bp"</span>, <span class="st">"skin"</span><span class="op">)</span>,</span>
@@ -451,14 +490,14 @@ decryption and server-side fusion.</p>
 <span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">dsvert_cor</span> <span class="op">&lt;-</span> <span class="va">cor_result</span><span class="op">$</span><span class="va">correlation</span></span></code></pre></div>
-<pre><code><span><span class="co">#&gt;           age    bmi     ped     glu     bp   skin   npreg</span></span>
-<span><span class="co">#&gt; age    1.0000 0.1132 -0.0810  0.3346 0.3806 0.1731  0.6468</span></span>
-<span><span class="co">#&gt; bmi    0.1132 1.0000  0.1601  0.1982 0.2785 0.6993  0.0229</span></span>
-<span><span class="co">#&gt; ped   -0.0810 0.1601  1.0000 -0.0182 0.0358 0.1056 -0.0645</span></span>
-<span><span class="co">#&gt; glu    0.3346 0.1982 -0.0182  1.0000 0.3176 0.1639  0.2048</span></span>
-<span><span class="co">#&gt; bp     0.3806 0.2785  0.0358  0.3176 1.0000 0.3099  0.2371</span></span>
-<span><span class="co">#&gt; skin   0.1731 0.6993  0.1056  0.1639 0.3099 1.0000  0.0962</span></span>
-<span><span class="co">#&gt; npreg  0.6468 0.0229 -0.0645  0.2048 0.2371 0.0962  1.0000</span></span></code></pre>
+<pre><code><span><span class="co">#&gt;           age    bmi     ped    glu      bp   skin   npreg</span></span>
+<span><span class="co">#&gt; age    1.0000 0.1888 -0.0785 0.3660  0.4253 0.3206  0.5738</span></span>
+<span><span class="co">#&gt; bmi    0.1888 1.0000  0.1530 0.2371  0.1977 0.6567  0.0625</span></span>
+<span><span class="co">#&gt; ped   -0.0785 0.1530  1.0000 0.0680 -0.1128 0.0817 -0.1214</span></span>
+<span><span class="co">#&gt; glu    0.3660 0.2371  0.0680 1.0000  0.2831 0.2365  0.1637</span></span>
+<span><span class="co">#&gt; bp     0.4253 0.1977 -0.1128 0.2831  1.0000 0.2566  0.2622</span></span>
+<span><span class="co">#&gt; skin   0.3206 0.6567  0.0817 0.2365  0.2566 1.0000  0.1086</span></span>
+<span><span class="co">#&gt; npreg  0.5738 0.0625 -0.1214 0.1637  0.2622 0.1086  1.0000</span></span></code></pre>
 <p><img src="validation_files/figure-html/dsvert-cor-heatmap-1.png" class="r-plt" width="672" style="display: block; margin: auto;"></p>
 </div>
 <div class="section level3">
@@ -466,7 +505,7 @@ decryption and server-side fusion.</p>
 </h3>
 <p>PCA is computed by eigendecomposition of the federated correlation
 matrix.</p>
-<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb26"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dsvert_pca</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eigen.html" class="external-link">eigen</a></span><span class="op">(</span><span class="va">dsvert_cor</span><span class="op">)</span></span>
 <span><span class="va">dsvert_eigenvalues</span> <span class="op">&lt;-</span> <span class="va">dsvert_pca</span><span class="op">$</span><span class="va">values</span></span>
 <span><span class="va">dsvert_loadings</span>    <span class="op">&lt;-</span> <span class="va">dsvert_pca</span><span class="op">$</span><span class="va">vectors</span></span>
@@ -484,44 +523,44 @@ matrix.</p>
 <tbody>
 <tr class="odd">
 <td align="left">PC1</td>
-<td align="right">2.4078</td>
-<td align="right">34.4%</td>
-<td align="right">34.4%</td>
+<td align="right">2.4720</td>
+<td align="right">35.3%</td>
+<td align="right">35.3%</td>
 </tr>
 <tr class="even">
 <td align="left">PC2</td>
-<td align="right">1.5646</td>
-<td align="right">22.4%</td>
-<td align="right">56.7%</td>
+<td align="right">1.4480</td>
+<td align="right">20.7%</td>
+<td align="right">56%</td>
 </tr>
 <tr class="odd">
 <td align="left">PC3</td>
-<td align="right">0.9241</td>
+<td align="right">0.9211</td>
 <td align="right">13.2%</td>
-<td align="right">70%</td>
+<td align="right">69.2%</td>
 </tr>
 <tr class="even">
 <td align="left">PC4</td>
-<td align="right">0.8302</td>
-<td align="right">11.9%</td>
-<td align="right">81.8%</td>
+<td align="right">0.8025</td>
+<td align="right">11.5%</td>
+<td align="right">80.6%</td>
 </tr>
 <tr class="odd">
 <td align="left">PC5</td>
-<td align="right">0.6546</td>
+<td align="right">0.6568</td>
 <td align="right">9.4%</td>
-<td align="right">91.2%</td>
+<td align="right">90%</td>
 </tr>
 <tr class="even">
 <td align="left">PC6</td>
-<td align="right">0.3268</td>
-<td align="right">4.7%</td>
-<td align="right">95.8%</td>
+<td align="right">0.3992</td>
+<td align="right">5.7%</td>
+<td align="right">95.7%</td>
 </tr>
 <tr class="odd">
 <td align="left">PC7</td>
-<td align="right">0.2919</td>
-<td align="right">4.2%</td>
+<td align="right">0.3004</td>
+<td align="right">4.3%</td>
 <td align="right">100%</td>
 </tr>
 </tbody>
@@ -536,7 +575,7 @@ matrix.</p>
 the remaining predictors are distributed across all three servers.
 Gradients are computed under MHE-CKKS and decrypted via share-wrapped
 threshold decryption with server-side fusion.</p>
-<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb27"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">glm_gauss</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
 <span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>, y_var <span class="op">=</span> <span class="st">"glu"</span>,</span>
 <span>  x_vars    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span>,</span>
@@ -559,33 +598,33 @@ threshold decryption with server-side fusion.</p>
 <span><span class="co">#&gt;     log_scale = 40, datasources = conns)</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Family: gaussian </span></span>
-<span><span class="co">#&gt; Observations: 155 </span></span>
+<span><span class="co">#&gt; Observations: 158 </span></span>
 <span><span class="co">#&gt; Predictors: 8 </span></span>
 <span><span class="co">#&gt; Regularization (lambda): 1e-04 </span></span>
 <span><span class="co">#&gt; Label server: server2 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Convergence:</span></span>
-<span><span class="co">#&gt;   Iterations: 15 </span></span>
+<span><span class="co">#&gt;   Iterations: 16 </span></span>
 <span><span class="co">#&gt;   Converged: TRUE </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Deviance:</span></span>
-<span><span class="co">#&gt;   Null deviance:     145149.9097  on 154 degrees of freedom</span></span>
-<span><span class="co">#&gt;   Residual deviance: 104238.4427  on 147 degrees of freedom</span></span>
+<span><span class="co">#&gt;   Null deviance:     148780.9430  on 157 degrees of freedom</span></span>
+<span><span class="co">#&gt;   Residual deviance: 107819.5191  on 150 degrees of freedom</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Model Fit:</span></span>
-<span><span class="co">#&gt;   Pseudo R-squared (McFadden): 0.2819 </span></span>
-<span><span class="co">#&gt;   AIC: 104254.4427 </span></span>
+<span><span class="co">#&gt;   Pseudo R-squared (McFadden): 0.2753 </span></span>
+<span><span class="co">#&gt;   AIC: 107835.5191 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients:</span></span>
-<span><span class="co">#&gt;               Estimate</span></span>
-<span><span class="co">#&gt; (Intercept)  61.576512</span></span>
-<span><span class="co">#&gt; age           0.475936</span></span>
-<span><span class="co">#&gt; bmi           0.303228</span></span>
-<span><span class="co">#&gt; ped         -10.602720</span></span>
-<span><span class="co">#&gt; bp            0.521073</span></span>
-<span><span class="co">#&gt; skin         -0.067970</span></span>
-<span><span class="co">#&gt; npreg        -0.538202</span></span>
-<span><span class="co">#&gt; diabetes     24.501690</span></span></code></pre>
+<span><span class="co">#&gt;              Estimate</span></span>
+<span><span class="co">#&gt; (Intercept) 59.232011</span></span>
+<span><span class="co">#&gt; age          0.601460</span></span>
+<span><span class="co">#&gt; bmi          0.342493</span></span>
+<span><span class="co">#&gt; ped          1.774155</span></span>
+<span><span class="co">#&gt; bp           0.403806</span></span>
+<span><span class="co">#&gt; skin        -0.004745</span></span>
+<span><span class="co">#&gt; npreg       -0.950345</span></span>
+<span><span class="co">#&gt; diabetes    23.460446</span></span></code></pre>
 </div>
 <div class="section level3">
 <h3 id="glm-binomial-y-diabetes-1">GLM — Binomial (y = <code>diabetes</code>)<a class="anchor" aria-label="anchor" href="#glm-binomial-y-diabetes-1"></a>
@@ -593,7 +632,7 @@ threshold decryption with server-side fusion.</p>
 <p>Logistic regression with the binary outcome on server3. The IRLS
 working weights are computed on the label server and routed to non-label
 servers via transport encryption.</p>
-<div class="sourceCode" id="cb21"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb29"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">glm_binom</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
 <span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>, y_var <span class="op">=</span> <span class="st">"diabetes"</span>,</span>
 <span>  x_vars    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span>,</span>
@@ -616,33 +655,33 @@ servers via transport encryption.</p>
 <span><span class="co">#&gt;     datasources = conns)</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Family: binomial </span></span>
-<span><span class="co">#&gt; Observations: 155 </span></span>
+<span><span class="co">#&gt; Observations: 158 </span></span>
 <span><span class="co">#&gt; Predictors: 8 </span></span>
 <span><span class="co">#&gt; Regularization (lambda): 1e-04 </span></span>
 <span><span class="co">#&gt; Label server: server3 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Convergence:</span></span>
-<span><span class="co">#&gt;   Iterations: 22 </span></span>
+<span><span class="co">#&gt;   Iterations: 20 </span></span>
 <span><span class="co">#&gt;   Converged: TRUE </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Deviance:</span></span>
-<span><span class="co">#&gt;   Null deviance:     194.9278  on 154 degrees of freedom</span></span>
-<span><span class="co">#&gt;   Residual deviance: 224.5964  on 147 degrees of freedom</span></span>
+<span><span class="co">#&gt;   Null deviance:     188.7908  on 157 degrees of freedom</span></span>
+<span><span class="co">#&gt;   Residual deviance: 247.5809  on 150 degrees of freedom</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Model Fit:</span></span>
-<span><span class="co">#&gt;   Pseudo R-squared (McFadden): -0.1522 </span></span>
-<span><span class="co">#&gt;   AIC: 240.5964 </span></span>
+<span><span class="co">#&gt;   Pseudo R-squared (McFadden): -0.3114 </span></span>
+<span><span class="co">#&gt;   AIC: 263.5809 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients:</span></span>
 <span><span class="co">#&gt;              Estimate</span></span>
-<span><span class="co">#&gt; (Intercept) -8.883205</span></span>
-<span><span class="co">#&gt; age          0.026651</span></span>
-<span><span class="co">#&gt; bmi          0.096783</span></span>
-<span><span class="co">#&gt; ped          2.080948</span></span>
-<span><span class="co">#&gt; glu          0.033379</span></span>
-<span><span class="co">#&gt; bp          -0.018834</span></span>
-<span><span class="co">#&gt; skin        -0.009190</span></span>
-<span><span class="co">#&gt; npreg        0.123350</span></span></code></pre>
+<span><span class="co">#&gt; (Intercept) -9.474427</span></span>
+<span><span class="co">#&gt; age          0.049420</span></span>
+<span><span class="co">#&gt; bmi          0.087021</span></span>
+<span><span class="co">#&gt; ped          1.606834</span></span>
+<span><span class="co">#&gt; glu          0.029989</span></span>
+<span><span class="co">#&gt; bp          -0.018395</span></span>
+<span><span class="co">#&gt; skin         0.009116</span></span>
+<span><span class="co">#&gt; npreg        0.131038</span></span></code></pre>
 </div>
 <div class="section level3">
 <h3 id="glm-poisson-y-npreg-1">GLM — Poisson (y = <code>npreg</code>)<a class="anchor" aria-label="anchor" href="#glm-poisson-y-npreg-1"></a>
@@ -650,7 +689,7 @@ servers via transport encryption.</p>
 <p>Count regression for the number of pregnancies. The Poisson log-link
 compresses the coefficient scale, which tends to aid convergence of the
 encrypted BCD procedure.</p>
-<div class="sourceCode" id="cb23"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb31"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">glm_pois</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
 <span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>, y_var <span class="op">=</span> <span class="st">"npreg"</span>,</span>
 <span>  x_vars    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span>,</span>
@@ -673,33 +712,33 @@ encrypted BCD procedure.</p>
 <span><span class="co">#&gt;     datasources = conns)</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Family: poisson </span></span>
-<span><span class="co">#&gt; Observations: 155 </span></span>
+<span><span class="co">#&gt; Observations: 158 </span></span>
 <span><span class="co">#&gt; Predictors: 8 </span></span>
 <span><span class="co">#&gt; Regularization (lambda): 1e-04 </span></span>
 <span><span class="co">#&gt; Label server: server3 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Convergence:</span></span>
-<span><span class="co">#&gt;   Iterations: 22 </span></span>
+<span><span class="co">#&gt;   Iterations: 24 </span></span>
 <span><span class="co">#&gt;   Converged: TRUE </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Deviance:</span></span>
-<span><span class="co">#&gt;   Null deviance:     491.5981  on 154 degrees of freedom</span></span>
-<span><span class="co">#&gt;   Residual deviance: 1542.8860  on 147 degrees of freedom</span></span>
+<span><span class="co">#&gt;   Null deviance:     487.6448  on 157 degrees of freedom</span></span>
+<span><span class="co">#&gt;   Residual deviance: 1354.5837  on 150 degrees of freedom</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Model Fit:</span></span>
-<span><span class="co">#&gt;   Pseudo R-squared (McFadden): -2.1385 </span></span>
-<span><span class="co">#&gt;   AIC: 1558.8860 </span></span>
+<span><span class="co">#&gt;   Pseudo R-squared (McFadden): -1.7778 </span></span>
+<span><span class="co">#&gt;   AIC: 1370.5837 </span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients:</span></span>
 <span><span class="co">#&gt;              Estimate</span></span>
-<span><span class="co">#&gt; (Intercept)  0.230961</span></span>
-<span><span class="co">#&gt; age          0.040628</span></span>
-<span><span class="co">#&gt; bmi         -0.015190</span></span>
-<span><span class="co">#&gt; ped         -0.148091</span></span>
-<span><span class="co">#&gt; glu         -0.002226</span></span>
-<span><span class="co">#&gt; bp           0.002517</span></span>
-<span><span class="co">#&gt; skin         0.006345</span></span>
-<span><span class="co">#&gt; diabetes     0.275068</span></span></code></pre>
+<span><span class="co">#&gt; (Intercept)  0.057340</span></span>
+<span><span class="co">#&gt; age          0.038760</span></span>
+<span><span class="co">#&gt; bmi         -0.000865</span></span>
+<span><span class="co">#&gt; ped         -0.357688</span></span>
+<span><span class="co">#&gt; glu         -0.003003</span></span>
+<span><span class="co">#&gt; bp           0.005376</span></span>
+<span><span class="co">#&gt; skin        -0.004470</span></span>
+<span><span class="co">#&gt; diabetes     0.340319</span></span></code></pre>
 <hr>
 </div>
 </div>
@@ -711,16 +750,16 @@ quantitatively.</p>
 <div class="section level3">
 <h3 id="correlation-element-wise-differences">Correlation: element-wise differences<a class="anchor" aria-label="anchor" href="#correlation-element-wise-differences"></a>
 </h3>
-<div class="sourceCode" id="cb25"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb33"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">cor_diff</span> <span class="op">&lt;-</span> <span class="va">dsvert_cor</span> <span class="op">-</span> <span class="va">local_cor</span></span></code></pre></div>
-<pre><code><span><span class="co">#&gt;            age      bmi      ped      glu       bp     skin    npreg</span></span>
-<span><span class="co">#&gt; age    0.0e+00  0.0e+00  0.0e+00 -2.3e-06 -6.6e-06 -4.8e-06 -1.1e-06</span></span>
-<span><span class="co">#&gt; bmi    0.0e+00  0.0e+00  0.0e+00 -3.1e-06 -3.3e-06  4.0e-07 -2.7e-06</span></span>
-<span><span class="co">#&gt; ped    0.0e+00  0.0e+00  0.0e+00  5.8e-06 -6.0e-07 -2.0e-07  2.1e-06</span></span>
-<span><span class="co">#&gt; glu   -2.3e-06 -3.1e-06  5.8e-06  0.0e+00  0.0e+00  0.0e+00 -3.3e-06</span></span>
-<span><span class="co">#&gt; bp    -6.6e-06 -3.3e-06 -6.0e-07  0.0e+00  0.0e+00  0.0e+00 -6.3e-06</span></span>
-<span><span class="co">#&gt; skin  -4.8e-06  4.0e-07 -2.0e-07  0.0e+00  0.0e+00  0.0e+00  3.3e-06</span></span>
-<span><span class="co">#&gt; npreg -1.1e-06 -2.7e-06  2.1e-06 -3.3e-06 -6.3e-06  3.3e-06  0.0e+00</span></span></code></pre>
+<pre><code><span><span class="co">#&gt;           age      bmi      ped      glu       bp     skin    npreg</span></span>
+<span><span class="co">#&gt; age   0.0e+00  0.0e+00  0.0e+00  3.5e-06  8.0e-07  4.0e-06  2.9e-06</span></span>
+<span><span class="co">#&gt; bmi   0.0e+00  0.0e+00  0.0e+00  4.0e-06 -1.6e-06 -8.2e-06  1.8e-06</span></span>
+<span><span class="co">#&gt; ped   0.0e+00  0.0e+00  0.0e+00 -7.0e-07 -2.4e-06 -9.0e-07 -2.0e-06</span></span>
+<span><span class="co">#&gt; glu   3.5e-06  4.0e-06 -7.0e-07  0.0e+00  0.0e+00  0.0e+00  3.1e-06</span></span>
+<span><span class="co">#&gt; bp    8.0e-07 -1.6e-06 -2.4e-06  0.0e+00  0.0e+00  0.0e+00 -1.2e-06</span></span>
+<span><span class="co">#&gt; skin  4.0e-06 -8.2e-06 -9.0e-07  0.0e+00  0.0e+00  0.0e+00  4.0e-06</span></span>
+<span><span class="co">#&gt; npreg 2.9e-06  1.8e-06 -2.0e-06  3.1e-06 -1.2e-06  4.0e-06  0.0e+00</span></span></code></pre>
 <p><img src="validation_files/figure-html/cmp-cor-heatmap-1.png" class="r-plt" width="672" style="display: block; margin: auto;"></p>
 <p>All element-wise differences are of order
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>6</mn></mrow></msup><annotation encoding="application/x-tex">10^{-6}</annotation></semantics></math>,
@@ -729,7 +768,7 @@ well below any substantively meaningful threshold.</p>
 <div class="section level3">
 <h3 id="pca-eigenvalue-comparison">PCA: eigenvalue comparison<a class="anchor" aria-label="anchor" href="#pca-eigenvalue-comparison"></a>
 </h3>
-<div class="sourceCode" id="cb27"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb35"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">eig_diff</span> <span class="op">&lt;-</span> <span class="va">dsvert_eigenvalues</span> <span class="op">-</span> <span class="va">local_eigenvalues</span></span></code></pre></div>
 <table class="table">
 <caption>Eigenvalue comparison (centralized vs. dsVert)</caption>
@@ -742,45 +781,45 @@ well below any substantively meaningful threshold.</p>
 <tbody>
 <tr class="odd">
 <td align="left">PC1</td>
-<td align="right">2.407823</td>
-<td align="right">2.407813</td>
-<td align="right">-1.00e-05</td>
+<td align="right">2.472022</td>
+<td align="right">2.472026</td>
+<td align="right">4.45e-06</td>
 </tr>
 <tr class="even">
 <td align="left">PC2</td>
-<td align="right">1.564613</td>
-<td align="right">1.564613</td>
-<td align="right">-6.13e-09</td>
+<td align="right">1.448002</td>
+<td align="right">1.447997</td>
+<td align="right">-4.97e-06</td>
 </tr>
 <tr class="odd">
 <td align="left">PC3</td>
-<td align="right">0.924137</td>
-<td align="right">0.924137</td>
-<td align="right">2.67e-07</td>
+<td align="right">0.921104</td>
+<td align="right">0.921101</td>
+<td align="right">-2.45e-06</td>
 </tr>
 <tr class="even">
 <td align="left">PC4</td>
-<td align="right">0.830159</td>
-<td align="right">0.830166</td>
-<td align="right">6.49e-06</td>
+<td align="right">0.802466</td>
+<td align="right">0.802465</td>
+<td align="right">-1.59e-06</td>
 </tr>
 <tr class="odd">
 <td align="left">PC5</td>
-<td align="right">0.654605</td>
-<td align="right">0.654608</td>
-<td align="right">2.34e-06</td>
+<td align="right">0.656830</td>
+<td align="right">0.656830</td>
+<td align="right">4.46e-07</td>
 </tr>
 <tr class="even">
 <td align="left">PC6</td>
-<td align="right">0.326805</td>
-<td align="right">0.326807</td>
-<td align="right">2.22e-06</td>
+<td align="right">0.399221</td>
+<td align="right">0.399223</td>
+<td align="right">2.02e-06</td>
 </tr>
 <tr class="odd">
 <td align="left">PC7</td>
-<td align="right">0.291858</td>
-<td align="right">0.291857</td>
-<td align="right">-1.29e-06</td>
+<td align="right">0.300356</td>
+<td align="right">0.300358</td>
+<td align="right">2.10e-06</td>
 </tr>
 </tbody>
 </table>
@@ -792,7 +831,7 @@ propagated directly from the correlation matrix precision.</p>
 <div class="section level3">
 <h3 id="glm-gaussian-coefficient-comparison-y-glu">GLM: Gaussian coefficient comparison (y = <code>glu</code>)<a class="anchor" aria-label="anchor" href="#glm-gaussian-coefficient-comparison-y-glu"></a>
 </h3>
-<div class="sourceCode" id="cb28"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb36"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">gauss_local</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">local_gauss</span><span class="op">)</span></span>
 <span><span class="va">gauss_dsvert</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">glm_gauss</span><span class="op">)</span></span>
 <span><span class="va">gauss_diff</span>   <span class="op">&lt;-</span> <span class="va">gauss_dsvert</span> <span class="op">-</span> <span class="va">gauss_local</span></span></code></pre></div>
@@ -807,62 +846,62 @@ propagated directly from the correlation matrix precision.</p>
 <tbody>
 <tr class="odd">
 <td align="left">(Intercept)</td>
-<td align="right">61.5705</td>
-<td align="right">61.5765</td>
-<td align="right">6.02e-03</td>
+<td align="right">59.2242</td>
+<td align="right">59.2320</td>
+<td align="right">7.80e-03</td>
 </tr>
 <tr class="even">
 <td align="left">age</td>
-<td align="right">0.4762</td>
-<td align="right">0.4759</td>
-<td align="right">-3.11e-04</td>
+<td align="right">0.6018</td>
+<td align="right">0.6015</td>
+<td align="right">-3.73e-04</td>
 </tr>
 <tr class="odd">
 <td align="left">bmi</td>
-<td align="right">0.3034</td>
-<td align="right">0.3032</td>
-<td align="right">-1.30e-04</td>
+<td align="right">0.3428</td>
+<td align="right">0.3425</td>
+<td align="right">-3.14e-04</td>
 </tr>
 <tr class="even">
 <td align="left">ped</td>
-<td align="right">-10.6020</td>
-<td align="right">-10.6027</td>
-<td align="right">-7.45e-04</td>
+<td align="right">1.7741</td>
+<td align="right">1.7742</td>
+<td align="right">4.48e-05</td>
 </tr>
 <tr class="odd">
 <td align="left">bp</td>
-<td align="right">0.5210</td>
-<td align="right">0.5211</td>
-<td align="right">3.89e-05</td>
+<td align="right">0.4037</td>
+<td align="right">0.4038</td>
+<td align="right">7.08e-05</td>
 </tr>
 <tr class="even">
 <td align="left">skin</td>
-<td align="right">-0.0681</td>
-<td align="right">-0.0680</td>
-<td align="right">8.31e-05</td>
+<td align="right">-0.0049</td>
+<td align="right">-0.0047</td>
+<td align="right">1.97e-04</td>
 </tr>
 <tr class="odd">
 <td align="left">npreg</td>
-<td align="right">-0.5390</td>
-<td align="right">-0.5382</td>
-<td align="right">7.54e-04</td>
+<td align="right">-0.9511</td>
+<td align="right">-0.9503</td>
+<td align="right">7.20e-04</td>
 </tr>
 <tr class="even">
 <td align="left">diabetes</td>
-<td align="right">24.5002</td>
-<td align="right">24.5017</td>
-<td align="right">1.49e-03</td>
+<td align="right">23.4570</td>
+<td align="right">23.4604</td>
+<td align="right">3.42e-03</td>
 </tr>
 </tbody>
 </table>
 <p><img src="validation_files/figure-html/cmp-gauss-plot-1.png" class="r-plt" width="768" style="display: block; margin: auto;"></p>
-<p>Maximum absolute coefficient difference: 6.02e-03.</p>
+<p>Maximum absolute coefficient difference: 7.8e-03.</p>
 </div>
 <div class="section level3">
 <h3 id="glm-binomial-coefficient-comparison-y-diabetes">GLM: Binomial coefficient comparison (y =
 <code>diabetes</code>)<a class="anchor" aria-label="anchor" href="#glm-binomial-coefficient-comparison-y-diabetes"></a>
 </h3>
-<div class="sourceCode" id="cb29"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb37"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">binom_local</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">local_binom</span><span class="op">)</span></span>
 <span><span class="va">binom_dsvert</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">glm_binom</span><span class="op">)</span></span>
 <span><span class="va">binom_diff</span>   <span class="op">&lt;-</span> <span class="va">binom_dsvert</span> <span class="op">-</span> <span class="va">binom_local</span></span></code></pre></div>
@@ -877,61 +916,61 @@ propagated directly from the correlation matrix precision.</p>
 <tbody>
 <tr class="odd">
 <td align="left">(Intercept)</td>
-<td align="right">-8.8835</td>
-<td align="right">-8.8832</td>
-<td align="right">2.49e-04</td>
+<td align="right">-9.4749</td>
+<td align="right">-9.4744</td>
+<td align="right">4.34e-04</td>
 </tr>
 <tr class="even">
 <td align="left">age</td>
-<td align="right">0.0267</td>
-<td align="right">0.0267</td>
-<td align="right">-1.13e-06</td>
+<td align="right">0.0494</td>
+<td align="right">0.0494</td>
+<td align="right">-6.52e-06</td>
 </tr>
 <tr class="odd">
 <td align="left">bmi</td>
-<td align="right">0.0968</td>
-<td align="right">0.0968</td>
-<td align="right">-1.39e-05</td>
+<td align="right">0.0870</td>
+<td align="right">0.0870</td>
+<td align="right">-1.96e-05</td>
 </tr>
 <tr class="even">
 <td align="left">ped</td>
-<td align="right">2.0810</td>
-<td align="right">2.0809</td>
-<td align="right">-1.02e-05</td>
+<td align="right">1.6069</td>
+<td align="right">1.6068</td>
+<td align="right">-9.07e-05</td>
 </tr>
 <tr class="odd">
 <td align="left">glu</td>
-<td align="right">0.0334</td>
-<td align="right">0.0334</td>
-<td align="right">4.46e-07</td>
+<td align="right">0.0300</td>
+<td align="right">0.0300</td>
+<td align="right">7.05e-07</td>
 </tr>
 <tr class="even">
 <td align="left">bp</td>
-<td align="right">-0.0188</td>
-<td align="right">-0.0188</td>
-<td align="right">-7.05e-07</td>
+<td align="right">-0.0184</td>
+<td align="right">-0.0184</td>
+<td align="right">9.71e-07</td>
 </tr>
 <tr class="odd">
 <td align="left">skin</td>
-<td align="right">-0.0092</td>
-<td align="right">-0.0092</td>
-<td align="right">8.39e-06</td>
+<td align="right">0.0091</td>
+<td align="right">0.0091</td>
+<td align="right">1.09e-05</td>
 </tr>
 <tr class="even">
 <td align="left">npreg</td>
-<td align="right">0.1233</td>
-<td align="right">0.1234</td>
-<td align="right">3.45e-06</td>
+<td align="right">0.1310</td>
+<td align="right">0.1310</td>
+<td align="right">2.81e-06</td>
 </tr>
 </tbody>
 </table>
 <p><img src="validation_files/figure-html/cmp-binom-plot-1.png" class="r-plt" width="768" style="display: block; margin: auto;"></p>
-<p>Maximum absolute coefficient difference: 2.49e-04.</p>
+<p>Maximum absolute coefficient difference: 4.34e-04.</p>
 </div>
 <div class="section level3">
 <h3 id="glm-poisson-coefficient-comparison-y-npreg">GLM: Poisson coefficient comparison (y = <code>npreg</code>)<a class="anchor" aria-label="anchor" href="#glm-poisson-coefficient-comparison-y-npreg"></a>
 </h3>
-<div class="sourceCode" id="cb30"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb38"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">pois_local</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">local_pois</span><span class="op">)</span></span>
 <span><span class="va">pois_dsvert</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">glm_pois</span><span class="op">)</span></span>
 <span><span class="va">pois_diff</span>   <span class="op">&lt;-</span> <span class="va">pois_dsvert</span> <span class="op">-</span> <span class="va">pois_local</span></span></code></pre></div>
@@ -946,56 +985,56 @@ propagated directly from the correlation matrix precision.</p>
 <tbody>
 <tr class="odd">
 <td align="left">(Intercept)</td>
-<td align="right">0.2306</td>
-<td align="right">0.2310</td>
-<td align="right">3.80e-04</td>
+<td align="right">0.0572</td>
+<td align="right">0.0573</td>
+<td align="right">1.84e-04</td>
 </tr>
 <tr class="even">
 <td align="left">age</td>
-<td align="right">0.0406</td>
-<td align="right">0.0406</td>
-<td align="right">-4.11e-06</td>
+<td align="right">0.0388</td>
+<td align="right">0.0388</td>
+<td align="right">-7.16e-06</td>
 </tr>
 <tr class="odd">
 <td align="left">bmi</td>
-<td align="right">-0.0152</td>
-<td align="right">-0.0152</td>
-<td align="right">-2.94e-05</td>
+<td align="right">-0.0008</td>
+<td align="right">-0.0009</td>
+<td align="right">-1.77e-05</td>
 </tr>
 <tr class="even">
 <td align="left">ped</td>
-<td align="right">-0.1480</td>
-<td align="right">-0.1481</td>
-<td align="right">-5.79e-05</td>
+<td align="right">-0.3577</td>
+<td align="right">-0.3577</td>
+<td align="right">-1.06e-05</td>
 </tr>
 <tr class="odd">
 <td align="left">glu</td>
-<td align="right">-0.0022</td>
-<td align="right">-0.0022</td>
-<td align="right">1.73e-07</td>
+<td align="right">-0.0030</td>
+<td align="right">-0.0030</td>
+<td align="right">1.06e-06</td>
 </tr>
 <tr class="even">
 <td align="left">bp</td>
-<td align="right">0.0025</td>
-<td align="right">0.0025</td>
-<td align="right">4.15e-06</td>
+<td align="right">0.0054</td>
+<td align="right">0.0054</td>
+<td align="right">4.35e-06</td>
 </tr>
 <tr class="odd">
 <td align="left">skin</td>
-<td align="right">0.0063</td>
-<td align="right">0.0063</td>
-<td align="right">1.33e-05</td>
+<td align="right">-0.0045</td>
+<td align="right">-0.0045</td>
+<td align="right">6.61e-06</td>
 </tr>
 <tr class="even">
 <td align="left">diabetes</td>
-<td align="right">0.2750</td>
-<td align="right">0.2751</td>
-<td align="right">7.60e-05</td>
+<td align="right">0.3403</td>
+<td align="right">0.3403</td>
+<td align="right">5.64e-05</td>
 </tr>
 </tbody>
 </table>
 <p><img src="validation_files/figure-html/cmp-pois-plot-1.png" class="r-plt" width="768" style="display: block; margin: auto;"></p>
-<p>Maximum absolute coefficient difference: 3.8e-04.</p>
+<p>Maximum absolute coefficient difference: 1.84e-04.</p>
 </div>
 <div class="section level3">
 <h3 id="summary">Summary<a class="anchor" aria-label="anchor" href="#summary"></a>
@@ -1011,32 +1050,32 @@ propagated directly from the correlation matrix precision.</p>
 <tr class="odd">
 <td align="left">PSI Alignment</td>
 <td align="left">Matched cohort</td>
-<td align="right">155 / 200</td>
+<td align="right">158 / 200</td>
 </tr>
 <tr class="even">
 <td align="left">Correlation</td>
 <td align="left">Max |r| error</td>
-<td align="right">6.64e-06</td>
+<td align="right">8.2e-06</td>
 </tr>
 <tr class="odd">
 <td align="left">PCA</td>
 <td align="left">Max eigenvalue error</td>
-<td align="right">1e-05</td>
+<td align="right">4.97e-06</td>
 </tr>
 <tr class="even">
 <td align="left">GLM Gaussian</td>
 <td align="left">Max |coef| error</td>
-<td align="right">6.02e-03</td>
+<td align="right">7.8e-03</td>
 </tr>
 <tr class="odd">
 <td align="left">GLM Binomial</td>
 <td align="left">Max |coef| error</td>
-<td align="right">2.49e-04</td>
+<td align="right">4.34e-04</td>
 </tr>
 <tr class="even">
 <td align="left">GLM Poisson</td>
 <td align="left">Max |coef| error</td>
-<td align="right">3.8e-04</td>
+<td align="right">1.84e-04</td>
 </tr>
 </tbody>
 </table>
