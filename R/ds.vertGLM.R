@@ -501,7 +501,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       galois_keys <- combined$galois_keys
       relin_key <- combined$relin_key  # Non-NULL when RLK was generated
 
-      # Distribute CPK, Galois keys, and RLK to other servers via chunked blob storage
+      # Distribute CPK, Galois keys, and RLK to other servers (blob send then parallel store)
       for (server in server_list[-1]) {
         srv_conn <- which(server_names == server)
         .sendBlob(cpk, "cpk", srv_conn)
@@ -513,23 +513,21 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         if (!is.null(relin_key) && nzchar(relin_key)) {
           .sendBlob(relin_key, "rk", srv_conn)
         }
-        DSI::datashield.aggregate(
-          conns = datasources[srv_conn],
-          expr = call("mheStoreCPKDS", from_storage = TRUE,
-                      session_id = session_id)
-        )
       }
+      # Store CPK on all non-party0 servers in parallel
+      DSI::datashield.aggregate(
+        conns = datasources[server_list[-1]],
+        expr = call("mheStoreCPKDS", from_storage = TRUE,
+                    session_id = session_id)
+      )
 
-      # Register context for future reuse
-      for (server in server_list) {
-        conn_idx <- which(server_names == server)
-        DSI::datashield.aggregate(
-          conns = datasources[conn_idx],
-          expr = call("mheRegisterContextDS",
-                      context_id = context_id,
-                      session_id = session_id)
-        )
-      }
+      # Register context for future reuse (parallel across all servers)
+      DSI::datashield.aggregate(
+        conns = datasources[server_list],
+        expr = call("mheRegisterContextDS",
+                    context_id = context_id,
+                    session_id = session_id)
+      )
     }  # end if (!mhe_reused)
 
     # Distribute transport keys for share-wrapping and secure routing
@@ -538,18 +536,14 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     fusion_conn_idx <- which(server_names == fusion_server)
     non_fusion_servers <- setdiff(server_list, fusion_server)
 
-    for (server in server_list) {
-      conn_idx <- which(server_names == server)
-      tk_map <- list(fusion = transport_pks[[fusion_server]])
-      for (s in server_list) {
-        tk_map[[s]] <- transport_pks[[s]]
-      }
-      DSI::datashield.aggregate(
-        conns = datasources[conn_idx],
-        expr = call("mheStoreTransportKeysDS", transport_keys = tk_map,
-                    session_id = session_id)
-      )
-    }
+    tk_map <- list(fusion = transport_pks[[fusion_server]])
+    for (s in server_list) tk_map[[s]] <- transport_pks[[s]]
+    # Distribute transport keys to all servers in parallel (same key map)
+    DSI::datashield.aggregate(
+      conns = datasources[server_list],
+      expr = call("mheStoreTransportKeysDS", transport_keys = tk_map,
+                  session_id = session_id)
+    )
 
     if (verbose) message("  Key setup + transport keys complete")
 
