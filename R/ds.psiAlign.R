@@ -156,28 +156,23 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   # collects PKs and distributes them so servers can encrypt messages
   # for each other. The client never receives the secret keys.
   cat("[Phase 0] Transport key exchange...\n")
+  # Initialize PSI on all servers in parallel
+  init_results <- DSI::datashield.aggregate(
+    conns = datasources,
+    expr = call("psiInitDS", session_id = session_id)
+  )
   psi_transport_pks <- list()
-  for (name in server_names) {
-    conn <- datasources[name]
-    result <- DSI::datashield.aggregate(
-      conns = conn,
-      expr = call("psiInitDS", session_id = session_id)
-    )
-    psi_transport_pks[[name]] <- result[[1]]$transport_pk
-  }
+  for (name in server_names)
+    psi_transport_pks[[name]] <- init_results[[name]]$transport_pk
 
-  # Distribute transport PKs to all servers
-  for (name in server_names) {
-    conn <- datasources[name]
-    # Build key map: all server names + "ref" alias
-    keys_for_server <- psi_transport_pks
-    keys_for_server[["ref"]] <- psi_transport_pks[[ref_server]]
-    DSI::datashield.aggregate(
-      conns = conn,
-      expr = call("psiStoreTransportKeysDS", keys_for_server,
-                    session_id = session_id)
-    )
-  }
+  # Distribute transport PKs to all servers in parallel (same key map)
+  keys_for_server <- psi_transport_pks
+  keys_for_server[["ref"]] <- psi_transport_pks[[ref_server]]
+  DSI::datashield.aggregate(
+    conns = datasources,
+    expr = call("psiStoreTransportKeysDS", keys_for_server,
+                  session_id = session_id)
+  )
   cat("  Transport keys exchanged.\n")
 
   # ==================================================================
@@ -282,15 +277,12 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   # Integer indices are safe aggregate statistics (no EC points).
   cat("[Phase 8] Computing multi-server intersection...\n")
   all_indices <- list()
-  for (name in server_names) {
-    conn <- datasources[name]
-    idx <- DSI::datashield.aggregate(
-      conns = conn,
-      expr = call("psiGetMatchedIndicesDS",
-                    session_id = session_id)
-    )
-    all_indices[[name]] <- idx[[1]]
-  }
+  # Collect matched indices from all servers in parallel
+  idx_results <- DSI::datashield.aggregate(
+    conns = datasources,
+    expr = call("psiGetMatchedIndicesDS", session_id = session_id)
+  )
+  for (name in server_names) all_indices[[name]] <- idx_results[[name]]
 
   # Intersect all index sets
   common_indices <- Reduce(intersect, all_indices)
@@ -298,28 +290,27 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
 
   cat(sprintf("  Common records: %d\n", length(common_indices)))
 
-  # Broadcast common indices to all servers via blob storage and filter.
+  # Broadcast common indices to all servers via blob storage
+  indices_blob <- paste(common_indices, collapse = ",")
   for (name in server_names) {
-    conn <- datasources[name]
-    indices_blob <- paste(common_indices, collapse = ",")
-    .storeLargeBlob("common_indices", indices_blob, conn)
-    DSI::datashield.assign(
-      conns = conn,
-      symbol = newobj,
-      value = call("psiFilterCommonDS", newobj, from_storage = TRUE,
-                     session_id = session_id)
-    )
+    .storeLargeBlob("common_indices", indices_blob, datasources[name])
   }
+  # Filter in parallel
+  DSI::datashield.assign(
+    conns = datasources,
+    symbol = newobj,
+    value = call("psiFilterCommonDS", newobj, from_storage = TRUE,
+                   session_id = session_id)
+  )
 
-  # Verify alignment
+  # Verify alignment in parallel
+  count_results <- DSI::datashield.aggregate(
+    conns = datasources,
+    expr = call("getObsCountDS", newobj)
+  )
   stats <- list()
   for (name in server_names) {
-    conn <- datasources[name]
-    count <- DSI::datashield.aggregate(
-      conns = conn,
-      expr = call("getObsCountDS", newobj)
-    )
-    count <- count[[1]]
+    count <- count_results[[name]]
     n_server <- all_indices[[name]]
     stats[[name]] <- list(
       n_matched = count$n_obs,
