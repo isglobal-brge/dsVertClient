@@ -54,23 +54,58 @@ glucose), `bp` (diastolic blood pressure), `skin` (triceps skin fold
 thickness), `bmi` (body mass index), `ped` (diabetes pedigree function), and
 `age` (years).
 
-### Vertical partitioning scheme
+### Data preparation and vertical partitioning
 
-The data are vertically split across three servers, each representing a
-different clinical domain. Crucially, **the patient populations are not
-identical**: each server holds a different number of patients, with only a
-partial overlap. This simulates a realistic scenario where institutions have
-data on overlapping but non-identical patient cohorts.
+We load the dataset from `MASS::Pima.tr`, assign patient identifiers, and
+partition it into three vertical fragments with **deliberately non-identical
+patient populations**. This simulates a realistic scenario where institutions
+have data on overlapping but non-identical patient cohorts.
+
+```{r data-prep}
+library(MASS)
+data("Pima.tr", package = "MASS")
+df <- as.data.frame(Pima.tr)
+df$patient_id <- sprintf("P%03d", seq_len(nrow(df)))
+df$diabetes   <- ifelse(df$type == "Yes", 1L, 0L)
+
+set.seed(123)
+
+# 150 patients are shared across all 3 servers (the "common core")
+core_ids <- sample(df$patient_id, 150)
+remaining <- setdiff(df$patient_id, core_ids)
+
+# Each server gets the core + a different subset of extras
+ids1 <- sample(c(core_ids, sample(remaining, 30)))  # 180 patients
+ids2 <- sample(c(core_ids, sample(remaining, 25)))  # 175 patients
+ids3 <- sample(c(core_ids, sample(remaining, 20)))  # 170 patients
+
+# Vertical split: each server holds different variables
+server1_data <- df[df$patient_id %in% ids1, c("patient_id", "age", "bmi", "ped")]
+server2_data <- df[df$patient_id %in% ids2, c("patient_id", "glu", "bp", "skin")]
+server3_data <- df[df$patient_id %in% ids3, c("patient_id", "npreg", "diabetes")]
+
+# Shuffle row order independently (PSI must handle this)
+server1_data <- server1_data[sample(nrow(server1_data)), ]
+server2_data <- server2_data[sample(nrow(server2_data)), ]
+server3_data <- server3_data[sample(nrow(server3_data)), ]
+
+cat(sprintf("Server 1: %d patients (age, bmi, ped)\n", nrow(server1_data)))
+cat(sprintf("Server 2: %d patients (glu, bp, skin)\n", nrow(server2_data)))
+cat(sprintf("Server 3: %d patients (npreg, diabetes)\n", nrow(server3_data)))
+cat(sprintf("True intersection: %d patients\n",
+    length(Reduce(intersect, list(ids1, ids2, ids3)))))
+```
+
+These are the fragments that each Opal server contains. Row order is
+independently shuffled, so the ECDH-PSI alignment protocol has real work to
+do --- it must identify the common cohort without revealing which IDs are
+shared or which patients are unique to each server.
 
 | Server  | Patients | Domain                        | Variables                         |
 |---------|----------|-------------------------------|-----------------------------------|
 | server1 | 180      | Anthropometric / familial     | `patient_id`, `age`, `bmi`, `ped` |
 | server2 | 175      | Glucose and cardiovascular    | `patient_id`, `glu`, `bp`, `skin` |
 | server3 | 170      | Reproductive / outcome        | `patient_id`, `npreg`, `diabetes` |
-
-Row order is independently shuffled per server. The ECDH-PSI protocol must
-identify the common cohort (155 patients present in all three servers) without
-revealing which IDs are shared.
 
 ---
 
@@ -129,15 +164,13 @@ computations.
 
 ## Centralized analysis (ground truth)
 
-We load the matched ground truth dataset and compute all analyses with
-standard R functions. These serve as the reference baseline.
+We reconstruct the ground truth by merging the three server fragments on
+`patient_id` --- only patients present in all three servers are kept. This
+is exactly the cohort that the PSI protocol should have identified.
 
 ```{r ground-truth}
-extdata <- system.file("extdata", package = "dsVertClient")
-full <- merge(merge(
-  read.csv(file.path(extdata, "pima_server1.csv")),
-  read.csv(file.path(extdata, "pima_server2.csv")), by = "patient_id"),
-  read.csv(file.path(extdata, "pima_server3.csv")), by = "patient_id")
+full <- merge(merge(server1_data, server2_data, by = "patient_id"),
+              server3_data, by = "patient_id")
 full <- full[order(full$patient_id), ]
 num_vars <- c("age", "bmi", "ped", "glu", "bp", "skin", "npreg")
 cat("Ground truth dataset:", nrow(full), "rows x", ncol(full), "columns\n")
@@ -558,7 +591,7 @@ knitr::kable(
                "Max |coef| error",
                "Max |coef| error",
                "Max |coef| error"),
-    Value = c(paste0(n_matched, " / 200"),
+    Value = c(paste0(n_matched, " / ", nrow(df)),
               format(max(abs(cor_diff)), digits = 3, scientific = TRUE),
               format(max(abs(eig_diff)), digits = 3, scientific = TRUE),
               format(max(abs(gauss_diff)), digits = 3, scientific = TRUE),
