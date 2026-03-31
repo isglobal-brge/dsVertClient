@@ -378,26 +378,37 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         rlk_r1_shares[[server_list[1]]] <- result0$rlk_round1_share
       }
 
-      for (i in 2:length(server_list)) {
-        server <- server_list[i]
-        conn_idx <- which(server_names == server)
+      # Send CRP, GKG seed, and party_id to all non-party0 servers (sequential
+      # blob transfer, then parallel mheInitDS calls).
+      other_servers <- server_list[-1]
+      other_conn_idxs <- integer(length(other_servers))
+      for (i in seq_along(other_servers)) {
+        server <- other_servers[i]
+        ci <- which(server_names == server)
+        other_conn_idxs[i] <- ci
+        .sendBlob(crp, "crp", ci)
+        .sendBlob(gkg_seed, "gkg_seed", ci)
+        .sendBlob(as.character(i), "party_id", ci)
+      }
 
-        # CRP can be several MB at log_n=14; send via blob storage
-        .sendBlob(crp, "crp", conn_idx)
-        .sendBlob(gkg_seed, "gkg_seed", conn_idx)
+      # Launch mheInitDS on all non-party0 servers in parallel
+      init_expr <- call("mheInitDS",
+                        party_id = 0L,
+                        from_storage = TRUE,
+                        num_obs = as.integer(n_obs),
+                        log_n = as.integer(log_n),
+                        log_scale = as.integer(log_scale),
+                        generate_rlk = use_he_link,
+                        session_id = session_id)
 
-        result <- DSI::datashield.aggregate(
-          conns = datasources[conn_idx],
-          expr = call("mheInitDS",
-                      party_id = as.integer(i - 1),
-                      from_storage = TRUE,
-                      num_obs = as.integer(n_obs),
-                      log_n = as.integer(log_n),
-                      log_scale = as.integer(log_scale),
-                      generate_rlk = use_he_link,
-                      session_id = session_id)
-        )
-        if (is.list(result)) result <- result[[1]]
+      init_results <- DSI::datashield.aggregate(
+        conns = datasources[other_servers],
+        expr = init_expr
+      )
+
+      for (i in seq_along(other_servers)) {
+        server <- other_servers[i]
+        result <- init_results[[server]]
         pk_shares[[server]] <- result$public_key_share
         gkg_shares[[server]] <- result$galois_key_shares
         transport_pks[[server]] <- result$transport_pk
