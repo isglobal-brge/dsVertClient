@@ -581,65 +581,67 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
         }
       }
 
-      # For each encrypted result, do share-wrapped threshold decryption
-      result_matrix <- matrix(NA, nrow = n_A, ncol = n_B)
+      # Batched share-wrapped threshold decryption.
+      # Instead of one round-trip per CT per server, we send ALL CTs for this
+      # server pair as blobs, then call batch decrypt once per server.
+      er <- enc_result$encrypted_results
+      n_cts <- n_A * n_B
+      all_cts <- character(n_cts)
 
       for (row_i in 1:n_A) {
         for (col_j in 1:n_B) {
-          # Handle both matrix and list-of-lists return formats
-          er <- enc_result$encrypted_results
+          idx <- (row_i - 1) * n_B + col_j
           if (is.matrix(er)) {
-            ct <- er[row_i, col_j]
+            all_cts[idx] <- er[row_i, col_j]
           } else if (is.list(er) && length(er) >= row_i) {
-            ct <- er[[row_i]][col_j]
+            all_cts[idx] <- er[[row_i]][col_j]
           } else {
-            ct <- er[[(row_i - 1) * n_B + col_j]]
+            all_cts[idx] <- er[[idx]]
           }
-
-          # Step 1: Collect wrapped shares from non-fusion servers.
-          # Each non-fusion server computes its partial decryption share and
-          # wraps it under the fusion server's transport PK. The client
-          # receives only opaque blobs it cannot read.
-          for (nf_server in non_fusion_servers) {
-            nf_conn <- which(server_names == nf_server)
-            nf_party_id <- which(server_list == nf_server) - 1
-
-            # Send CT chunks to non-fusion server
-            n_ct_chunks <- .sendCTChunks(ct, nf_conn)
-
-            # Compute wrapped partial decryption
-            pd <- DSI::datashield.aggregate(
-              conns = datasources[nf_conn],
-              expr = call("mhePartialDecryptWrappedDS",
-                          n_chunks = as.integer(n_ct_chunks),
-                          session_id = session_id)
-            )
-            if (is.list(pd)) pd <- pd[[1]]
-
-            # Relay wrapped share to fusion server (in chunks)
-            .sendWrappedShare(pd$wrapped_share, nf_party_id, fusion_conn_idx)
-          }
-
-          # Step 2: Send CT to fusion server and fuse.
-          # The fusion server unwraps all shares, computes its own partial
-          # decrypt share (with noise smudging), aggregates, and applies
-          # KeySwitch + DecodePublic(logprec=32). Returns only the sanitized
-          # scalar value.
-          n_ct_chunks <- .sendCTChunks(ct, fusion_conn_idx)
-
-          fuse_result <- DSI::datashield.aggregate(
-            conns = datasources[fusion_conn_idx],
-            expr = call("mheFuseServerDS",
-                        n_parties = as.integer(length(server_list)),
-                        n_ct_chunks = as.integer(n_ct_chunks),
-                        num_slots = as.integer(n_obs),
-                        session_id = session_id)
-          )
-          if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
-
-          result_matrix[row_i, col_j] <- fuse_result$value
         }
       }
+
+      # Step 1: Send all CTs to each non-fusion server as batch blobs,
+      # then call mhePartialDecryptBatchWrappedDS once per server.
+      for (nf_server in non_fusion_servers) {
+        nf_conn <- which(server_names == nf_server)
+        nf_party_id <- which(server_list == nf_server) - 1
+
+        for (ct_i in seq_len(n_cts)) {
+          .storeLargeBlob(paste0("ct_batch_", ct_i), all_cts[ct_i], nf_conn)
+        }
+
+        pd <- DSI::datashield.aggregate(
+          conns = datasources[nf_conn],
+          expr = call("mhePartialDecryptBatchWrappedDS",
+                      n_cts = as.integer(n_cts),
+                      session_id = session_id)
+        )
+        if (is.list(pd)) pd <- pd[[1]]
+
+        # Relay each wrapped share to fusion server
+        for (ct_i in seq_len(n_cts)) {
+          share_key <- paste0("wrapped_share_", nf_party_id, "_ct_", ct_i)
+          .storeLargeBlob(share_key, pd$wrapped_shares[ct_i], fusion_conn_idx)
+        }
+      }
+
+      # Step 2: Send all CTs to fusion server, then fuse all at once.
+      for (ct_i in seq_len(n_cts)) {
+        .storeLargeBlob(paste0("ct_batch_", ct_i), all_cts[ct_i], fusion_conn_idx)
+      }
+
+      fuse_result <- DSI::datashield.aggregate(
+        conns = datasources[fusion_conn_idx],
+        expr = call("mheFuseBatchDS",
+                    n_cts = as.integer(n_cts),
+                    n_parties = as.integer(length(server_list)),
+                    num_slots = as.integer(n_obs),
+                    session_id = session_id)
+      )
+      if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
+
+      result_matrix <- matrix(fuse_result$values, nrow = n_A, ncol = n_B, byrow = TRUE)
 
       # The homomorphic computation yields sum(z_A * z_B) -- the raw inner
       # product of standardized columns. Dividing by (n-1) converts to
