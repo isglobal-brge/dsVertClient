@@ -204,7 +204,9 @@ parties.
 dsVertClient implements several optimizations to reduce communication overhead:
 
 - **Parallel DSI dispatch**: Key generation, CPK distribution, transport key exchange, PSI init, index collection, and cleanup are dispatched to all servers simultaneously using DSI's async aggregate calls.
-- **Batched threshold decryption**: All ciphertexts for a cross-server correlation block are sent as blobs and processed in a single server-side call, reducing client-server round-trips from O(p_A × p_B × K) to O(K).
+- **Batched threshold decryption**: All ciphertexts for a cross-server correlation block and GLM gradient components are sent as blobs and processed in a single server-side call, reducing client-server round-trips from O(p_A × p_B × K) to O(K).
+- **Adaptive storage**: Large cryptographic objects (>50KB: CKKS ciphertexts, Galois keys, CPK) are stored on disk instead of R memory; small objects (transport keys, metadata) stay in memory. Prevents R heap exhaustion with many variables while maintaining speed for small payloads.
+- **Guaranteed cleanup**: `on.exit()` ensures server-side cryptographic state is cleaned up even if the function errors mid-protocol, preventing session leaks across consecutive runs.
 - **MHE context caching**: When `reuse_mhe = TRUE`, consecutive analyses with the same peer set and CKKS parameters reuse cached encryption keys, skipping the expensive key-generation and key-combination phases. Forward secrecy is preserved via fresh X25519 transport keys per job.
 - **Binary wire formats**: PSI points use compressed P-256 binary packing (~66% smaller). GLM transport vectors use little-endian IEEE 754 binary format (~2× smaller than JSON).
 - **Adaptive chunking**: Automatic chunk size probing and fallback for large payloads (default 200 KB, cached per session).
