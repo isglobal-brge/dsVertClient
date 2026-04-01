@@ -71,62 +71,24 @@ port. Unlike the <a href="validation.html">public validation
 vignette</a> (which uses a single Opal server with three tables), this
 setup mirrors a real multi-institution deployment where each data
 controller operates its own infrastructure.</p>
-</div>
-<div class="section level2">
-<h2 id="prerequisites">Prerequisites<a class="anchor" aria-label="anchor" href="#prerequisites"></a>
-</h2>
-<p>You need three Opal instances running. The easiest way is <a href="https://github.com/davidsarratgonzalez/easy-opal" class="external-link">easy-opal</a>:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="co"># Create and start 3 independent Opal stacks</span></span>
-<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="ex">easy-opal</span> instance create opal1</span>
-<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="ex">easy-opal</span> instance create opal2</span>
-<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="ex">easy-opal</span> instance create opal3</span>
-<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a></span>
-<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a><span class="ex">easy-opal</span> <span class="at">-i</span> opal1 setup <span class="at">--stack-name</span> opal1 <span class="at">--port</span> 8443 <span class="at">--password</span> admin123 <span class="at">--ssl-strategy</span> self-signed <span class="at">--yes</span></span>
-<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a><span class="ex">easy-opal</span> <span class="at">-i</span> opal2 setup <span class="at">--stack-name</span> opal2 <span class="at">--port</span> 8444 <span class="at">--password</span> admin123 <span class="at">--ssl-strategy</span> self-signed <span class="at">--yes</span></span>
-<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a><span class="ex">easy-opal</span> <span class="at">-i</span> opal3 setup <span class="at">--stack-name</span> opal3 <span class="at">--port</span> 8445 <span class="at">--password</span> admin123 <span class="at">--ssl-strategy</span> self-signed <span class="at">--yes</span></span></code></pre></div>
-<p>Each instance runs its own Opal, Rock (R server), MongoDB, and Nginx
-in isolated Docker containers. They share no state.</p>
-</div>
-<div class="section level2">
-<h2 id="install-dsvert-on-each-server">Install dsVert on each server<a class="anchor" aria-label="anchor" href="#install-dsvert-on-each-server"></a>
-</h2>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/obiba/opalr/" class="external-link">opalr</a></span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Enable R package management and install dsVert on each instance</span></span>
-<span><span class="kw">for</span> <span class="op">(</span><span class="va">port</span> <span class="kw">in</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">8443</span>, <span class="fl">8444</span>, <span class="fl">8445</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">o</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.login.html" class="external-link">opal.login</a></span><span class="op">(</span><span class="st">"administrator"</span>, <span class="st">"admin123"</span>,</span>
-<span>                   url <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"https://localhost:"</span>, <span class="va">port</span><span class="op">)</span>,</span>
-<span>                   opts <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>ssl_verifyhost <span class="op">=</span> <span class="fl">0</span>, ssl_verifypeer <span class="op">=</span> <span class="fl">0</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span>  <span class="co"># Enable package management (one-time)</span></span>
-<span>  <span class="va">cfg</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.get.html" class="external-link">opal.get</a></span><span class="op">(</span><span class="va">o</span>, <span class="st">"system"</span>, <span class="st">"conf"</span>, <span class="st">"general"</span><span class="op">)</span></span>
-<span>  <span class="va">cfg</span><span class="op">$</span><span class="va">allowRPackageManagement</span> <span class="op">&lt;-</span> <span class="cn">TRUE</span></span>
-<span>  <span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.put.html" class="external-link">opal.put</a></span><span class="op">(</span><span class="va">o</span>, <span class="st">"system"</span>, <span class="st">"conf"</span>, <span class="st">"general"</span>,</span>
-<span>           body <span class="op">=</span> <span class="fu">jsonlite</span><span class="fu">::</span><span class="fu"><a href="https://jeroen.r-universe.dev/jsonlite/reference/fromJSON.html" class="external-link">toJSON</a></span><span class="op">(</span><span class="va">cfg</span>, auto_unbox <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span>,</span>
-<span>           contentType <span class="op">=</span> <span class="st">"application/json"</span><span class="op">)</span></span>
-<span></span>
-<span>  <span class="co"># Install dsVert from GitHub</span></span>
-<span>  <span class="fu"><a href="https://www.obiba.org/opalr/reference/dsadmin.install_github_package.html" class="external-link">dsadmin.install_github_package</a></span><span class="op">(</span><span class="va">o</span>, <span class="st">"dsVert"</span>, username <span class="op">=</span> <span class="st">"isglobal-brge"</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.logout.html" class="external-link">opal.logout</a></span><span class="op">(</span><span class="va">o</span><span class="op">)</span></span>
-<span><span class="op">}</span></span></code></pre></div>
-</div>
-<div class="section level2">
-<h2 id="prepare-the-dataset">Prepare the dataset<a class="anchor" aria-label="anchor" href="#prepare-the-dataset"></a>
-</h2>
-<p>We generate the same vertically partitioned Pima dataset used in the
-main validation vignette, with deliberately non-identical patient
-populations across servers.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<p>The analysis is identical to the public validation: PSI alignment,
+MHE-CKKS correlation, PCA, and three GLM families (Gaussian, binomial,
+Poisson), compared element-wise against centralized R outputs.</p>
+<div class="section level3">
+<h3 id="data-preparation-and-vertical-partitioning">Data preparation and vertical partitioning<a class="anchor" aria-label="anchor" href="#data-preparation-and-vertical-partitioning"></a>
+</h3>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="http://www.stats.ox.ac.uk/pub/MASS4/" class="external-link">MASS</a></span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/data.html" class="external-link">data</a></span><span class="op">(</span><span class="st">"Pima.tr"</span>, package <span class="op">=</span> <span class="st">"MASS"</span><span class="op">)</span></span>
 <span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame</a></span><span class="op">(</span><span class="va">Pima.tr</span><span class="op">)</span></span>
 <span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"P%03d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">df</span><span class="op">$</span><span class="va">diabetes</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">df</span><span class="op">$</span><span class="va">type</span> <span class="op">==</span> <span class="st">"Yes"</span>, <span class="fl">1L</span>, <span class="fl">0L</span><span class="op">)</span></span>
+<span><span class="va">df</span><span class="op">$</span><span class="va">diabetes</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">df</span><span class="op">$</span><span class="va">type</span> <span class="op">==</span> <span class="st">"Yes"</span>, <span class="fl">1L</span>, <span class="fl">0L</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">123</span><span class="op">)</span></span>
+<span></span>
 <span><span class="va">core_ids</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span>, <span class="fl">150</span><span class="op">)</span></span>
 <span><span class="va">remaining</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span>, <span class="va">core_ids</span><span class="op">)</span></span>
+<span></span>
 <span><span class="va">ids1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core_ids</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">remaining</span>, <span class="fl">30</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">ids2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core_ids</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">remaining</span>, <span class="fl">25</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">ids3</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core_ids</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">remaining</span>, <span class="fl">20</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
@@ -137,41 +99,69 @@ populations across servers.</p>
 <span></span>
 <span><span class="va">server1_data</span> <span class="op">&lt;-</span> <span class="va">server1_data</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server1_data</span><span class="op">)</span><span class="op">)</span>, <span class="op">]</span></span>
 <span><span class="va">server2_data</span> <span class="op">&lt;-</span> <span class="va">server2_data</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server2_data</span><span class="op">)</span><span class="op">)</span>, <span class="op">]</span></span>
-<span><span class="va">server3_data</span> <span class="op">&lt;-</span> <span class="va">server3_data</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server3_data</span><span class="op">)</span><span class="op">)</span>, <span class="op">]</span></span></code></pre></div>
-</div>
-<div class="section level2">
-<h2 id="upload-data-to-each-server">Upload data to each server<a class="anchor" aria-label="anchor" href="#upload-data-to-each-server"></a>
-</h2>
-<p>Each server receives only its own vertical partition. No server sees
-the other servers’ variables.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/obiba/opalr/" class="external-link">opalr</a></span><span class="op">)</span></span>
+<span><span class="va">server3_data</span> <span class="op">&lt;-</span> <span class="va">server3_data</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server3_data</span><span class="op">)</span><span class="op">)</span>, <span class="op">]</span></span>
 <span></span>
-<span><span class="va">servers</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>url <span class="op">=</span> <span class="st">"https://localhost:8443"</span>, data <span class="op">=</span> <span class="va">server1_data</span><span class="op">)</span>,</span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>url <span class="op">=</span> <span class="st">"https://localhost:8444"</span>, data <span class="op">=</span> <span class="va">server2_data</span><span class="op">)</span>,</span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>url <span class="op">=</span> <span class="st">"https://localhost:8445"</span>, data <span class="op">=</span> <span class="va">server3_data</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="kw">for</span> <span class="op">(</span><span class="va">s</span> <span class="kw">in</span> <span class="va">servers</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">o</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.login.html" class="external-link">opal.login</a></span><span class="op">(</span><span class="st">"administrator"</span>, <span class="st">"admin123"</span>, url <span class="op">=</span> <span class="va">s</span><span class="op">$</span><span class="va">url</span>,</span>
-<span>                   opts <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>ssl_verifyhost <span class="op">=</span> <span class="fl">0</span>, ssl_verifypeer <span class="op">=</span> <span class="fl">0</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="kw"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">tryCatch</a></span><span class="op">(</span><span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.project_delete.html" class="external-link">opal.project_delete</a></span><span class="op">(</span><span class="va">o</span>, <span class="st">"pima_project"</span><span class="op">)</span>, error <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">e</span><span class="op">)</span> <span class="cn">NULL</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.project_create.html" class="external-link">opal.project_create</a></span><span class="op">(</span><span class="va">o</span>, <span class="st">"pima_project"</span>, database <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span>  <span class="va">tbl</span> <span class="op">&lt;-</span> <span class="va">s</span><span class="op">$</span><span class="va">data</span></span>
-<span>  <span class="va">tbl</span><span class="op">$</span><span class="va">id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">tbl</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.table_save.html" class="external-link">opal.table_save</a></span><span class="op">(</span><span class="va">o</span>, <span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/as_tibble.html" class="external-link">as_tibble</a></span><span class="op">(</span><span class="va">tbl</span><span class="op">)</span>, <span class="st">"pima_project"</span>, <span class="st">"pima_data"</span>,</span>
-<span>                   overwrite <span class="op">=</span> <span class="cn">TRUE</span>, force <span class="op">=</span> <span class="cn">TRUE</span>, id.name <span class="op">=</span> <span class="st">"id"</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Uploaded"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">tbl</span><span class="op">)</span>, <span class="st">"rows to"</span>, <span class="va">s</span><span class="op">$</span><span class="va">url</span>, <span class="st">"\n"</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.logout.html" class="external-link">opal.logout</a></span><span class="op">(</span><span class="va">o</span><span class="op">)</span></span>
-<span><span class="op">}</span></span></code></pre></div>
-</div>
-<div class="section level2">
-<h2 id="connect-and-run-the-full-pipeline">Connect and run the full pipeline<a class="anchor" aria-label="anchor" href="#connect-and-run-the-full-pipeline"></a>
-</h2>
-<p>This is the key difference from the public demo: each server
-connection points to a <strong>different host</strong>.</p>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"Server 1: %d patients (age, bmi, ped)\n"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server1_data</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">#&gt; Server 1: 180 patients (age, bmi, ped)</span></span></code></pre>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"Server 2: %d patients (glu, bp, skin)\n"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server2_data</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">#&gt; Server 2: 175 patients (glu, bp, skin)</span></span></code></pre>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"Server 3: %d patients (npreg, diabetes)\n"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">server3_data</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">#&gt; Server 3: 170 patients (npreg, diabetes)</span></span></code></pre>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"True intersection: %d patients\n"</span>,</span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/funprog.html" class="external-link">Reduce</a></span><span class="op">(</span><span class="va">intersect</span>, <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">ids1</span>, <span class="va">ids2</span>, <span class="va">ids3</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">#&gt; True intersection: 158 patients</span></span></code></pre>
+<p>Each server runs on an independent Opal/Rock instance with its own
+Docker stack, R session, and data store:</p>
+<table class="table">
+<thead><tr class="header">
+<th>Server</th>
+<th>Host</th>
+<th>Patients</th>
+<th>Variables</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>server1</td>
+<td>localhost:8443</td>
+<td>180</td>
+<td>
+<code>patient_id</code>, <code>age</code>, <code>bmi</code>,
+<code>ped</code>
+</td>
+</tr>
+<tr class="even">
+<td>server2</td>
+<td>localhost:8444</td>
+<td>175</td>
+<td>
+<code>patient_id</code>, <code>glu</code>, <code>bp</code>,
+<code>skin</code>
+</td>
+</tr>
+<tr class="odd">
+<td>server3</td>
+<td>localhost:8445</td>
+<td>170</td>
+<td>
+<code>patient_id</code>, <code>npreg</code>,
+<code>diabetes</code>
+</td>
+</tr>
+</tbody>
+</table>
+<hr>
+</div>
+</div>
+<div class="section level2">
+<h2 id="connect-to-three-independent-servers">Connect to three independent servers<a class="anchor" aria-label="anchor" href="#connect-to-three-independent-servers"></a>
+</h2>
+<p>Each connection points to a <strong>different host</strong>. This is
+the key difference from the public demo where all three point to the
+same Opal.</p>
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/datashield/DSI/" class="external-link">DSI</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/datashield/DSOpal/" class="external-link">DSOpal</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/isglobal-brge/dsVertClient" class="external-link">dsVertClient</a></span><span class="op">)</span></span>
@@ -190,21 +180,69 @@ connection points to a <strong>different host</strong>.</p>
 <span>               driver <span class="op">=</span> <span class="st">"OpalDriver"</span>, table <span class="op">=</span> <span class="st">"pima_project.pima_data"</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">conns</span> <span class="op">&lt;-</span> <span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.login.html" class="external-link">datashield.login</a></span><span class="op">(</span><span class="va">builder</span><span class="op">$</span><span class="fu">build</span><span class="op">(</span><span class="op">)</span>, assign <span class="op">=</span> <span class="cn">TRUE</span>, symbol <span class="op">=</span> <span class="st">"D"</span><span class="op">)</span></span></code></pre></div>
-<div class="section level3">
-<h3 id="psi-record-alignment">PSI Record Alignment<a class="anchor" aria-label="anchor" href="#psi-record-alignment"></a>
-</h3>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+</div>
+<div class="section level2">
+<h2 id="psi-record-alignment">PSI Record Alignment<a class="anchor" aria-label="anchor" href="#psi-record-alignment"></a>
+</h2>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">psi_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.psiAlign.html">ds.psiAlign</a></span><span class="op">(</span></span>
 <span>  data_name   <span class="op">=</span> <span class="st">"D"</span>,</span>
 <span>  id_col      <span class="op">=</span> <span class="st">"patient_id"</span>,</span>
 <span>  newobj      <span class="op">=</span> <span class="st">"D_aligned"</span>,</span>
 <span>  datasources <span class="op">=</span> <span class="va">conns</span></span>
 <span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">#&gt; === ECDH-PSI Record Alignment (Blind Relay) ===</span></span>
+<span><span class="co">#&gt; Reference: server1, Targets: server2, server3</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; [Phase 0] Transport key exchange...</span></span>
+<span><span class="co">#&gt;   Transport keys exchanged.</span></span>
+<span><span class="co">#&gt; [Phase 1] Reference server masking IDs...</span></span>
+<span><span class="co">#&gt;   server1: 180 IDs masked (stored server-side)</span></span>
+<span><span class="co">#&gt; [Phase 2] server1: exporting encrypted points for server2...</span></span>
+<span><span class="co">#&gt; [Phase 3] server2: processing (blind relay)...</span></span>
+<span><span class="co">#&gt;   server2: 175 IDs masked</span></span>
+<span><span class="co">#&gt; [Phase 4-5] server2: double-masking via server1 (blind relay)...</span></span>
+<span><span class="co">#&gt; [Phase 6-7] server2: matching and aligning (blind relay)...</span></span>
+<span><span class="co">#&gt; [Phase 2] server1: exporting encrypted points for server3...</span></span>
+<span><span class="co">#&gt; [Phase 3] server3: processing (blind relay)...</span></span>
+<span><span class="co">#&gt;   server3: 170 IDs masked</span></span>
+<span><span class="co">#&gt; [Phase 4-5] server3: double-masking via server1 (blind relay)...</span></span>
+<span><span class="co">#&gt; [Phase 6-7] server3: matching and aligning (blind relay)...</span></span>
+<span><span class="co">#&gt; [Phase 7] server1: self-aligning...</span></span>
+<span><span class="co">#&gt; [Phase 8] Computing multi-server intersection...</span></span>
+<span><span class="co">#&gt;   Common records: 158</span></span></code></pre>
+<pre><code><span><span class="co">#&gt; PSI alignment complete.</span></span></code></pre>
+<p>The PSI protocol identified <strong>158</strong> patients present in
+all three servers.</p>
+<hr>
 </div>
+<div class="section level2">
+<h2 id="centralized-ground-truth">Centralized ground truth<a class="anchor" aria-label="anchor" href="#centralized-ground-truth"></a>
+</h2>
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">full</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/merge.html" class="external-link">merge</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/merge.html" class="external-link">merge</a></span><span class="op">(</span><span class="va">server1_data</span>, <span class="va">server2_data</span>, by <span class="op">=</span> <span class="st">"patient_id"</span><span class="op">)</span>,</span>
+<span>              <span class="va">server3_data</span>, by <span class="op">=</span> <span class="st">"patient_id"</span><span class="op">)</span></span>
+<span><span class="va">full</span> <span class="op">&lt;-</span> <span class="va">full</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/order.html" class="external-link">order</a></span><span class="op">(</span><span class="va">full</span><span class="op">$</span><span class="va">patient_id</span><span class="op">)</span>, <span class="op">]</span></span>
+<span><span class="va">num_vars</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span>, <span class="st">"glu"</span>, <span class="st">"bp"</span>, <span class="st">"skin"</span>, <span class="st">"npreg"</span><span class="op">)</span></span>
+<span><span class="va">local_cor</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">full</span><span class="op">[</span>, <span class="va">num_vars</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="va">local_pca</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eigen.html" class="external-link">eigen</a></span><span class="op">(</span><span class="va">local_cor</span><span class="op">)</span></span>
+<span><span class="va">local_gauss</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/glm.html" class="external-link">glm</a></span><span class="op">(</span><span class="va">glu</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">ped</span> <span class="op">+</span> <span class="va">bp</span> <span class="op">+</span> <span class="va">skin</span> <span class="op">+</span> <span class="va">npreg</span> <span class="op">+</span> <span class="va">diabetes</span>,</span>
+<span>                   data <span class="op">=</span> <span class="va">full</span>, family <span class="op">=</span> <span class="va">gaussian</span><span class="op">)</span></span>
+<span><span class="va">local_binom</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/glm.html" class="external-link">glm</a></span><span class="op">(</span><span class="va">diabetes</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">ped</span> <span class="op">+</span> <span class="va">glu</span> <span class="op">+</span> <span class="va">bp</span> <span class="op">+</span> <span class="va">skin</span> <span class="op">+</span> <span class="va">npreg</span>,</span>
+<span>                   data <span class="op">=</span> <span class="va">full</span>, family <span class="op">=</span> <span class="va">binomial</span><span class="op">)</span></span>
+<span><span class="va">local_pois</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/glm.html" class="external-link">glm</a></span><span class="op">(</span><span class="va">npreg</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">ped</span> <span class="op">+</span> <span class="va">glu</span> <span class="op">+</span> <span class="va">bp</span> <span class="op">+</span> <span class="va">skin</span> <span class="op">+</span> <span class="va">diabetes</span>,</span>
+<span>                   data <span class="op">=</span> <span class="va">full</span>, family <span class="op">=</span> <span class="va">poisson</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="st">"Ground truth:"</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">full</span><span class="op">)</span>, <span class="st">"rows\n"</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">#&gt; Ground truth: 158 rows</span></span></code></pre>
+<hr>
+</div>
+<div class="section level2">
+<h2 id="federated-analysis-dsvert-across-3-independent-servers">Federated analysis (dsVert across 3 independent servers)<a class="anchor" aria-label="anchor" href="#federated-analysis-dsvert-across-3-independent-servers"></a>
+</h2>
 <div class="section level3">
 <h3 id="correlation-mhe-ckks">Correlation (MHE-CKKS)<a class="anchor" aria-label="anchor" href="#correlation-mhe-ckks"></a>
 </h3>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">variables</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
 <span>  server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span>,</span>
 <span>  server2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glu"</span>, <span class="st">"bp"</span>, <span class="st">"skin"</span><span class="op">)</span>,</span>
@@ -217,62 +255,137 @@ connection points to a <strong>different host</strong>.</p>
 <span>  log_n       <span class="op">=</span> <span class="fl">12</span>,</span>
 <span>  log_scale   <span class="op">=</span> <span class="fl">40</span>,</span>
 <span>  datasources <span class="op">=</span> <span class="va">conns</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span></span>
+<span><span class="va">dsvert_cor</span> <span class="op">&lt;-</span> <span class="va">cor_result</span><span class="op">$</span><span class="va">correlation</span></span></code></pre></div>
 </div>
 <div class="section level3">
-<h3 id="glm-all-three-families">GLM (all three families)<a class="anchor" aria-label="anchor" href="#glm-all-three-families"></a>
+<h3 id="pca">PCA<a class="anchor" aria-label="anchor" href="#pca"></a>
 </h3>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Gaussian</span></span>
-<span><span class="va">glm_gauss</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">dsvert_pca</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eigen.html" class="external-link">eigen</a></span><span class="op">(</span><span class="va">dsvert_cor</span><span class="op">)</span></span>
+<span><span class="va">dsvert_eigenvalues</span> <span class="op">&lt;-</span> <span class="va">dsvert_pca</span><span class="op">$</span><span class="va">values</span></span>
+<span><span class="va">local_eigenvalues</span>  <span class="op">&lt;-</span> <span class="va">local_pca</span><span class="op">$</span><span class="va">values</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="glm-gaussian-y-glu">GLM — Gaussian (y = <code>glu</code>)<a class="anchor" aria-label="anchor" href="#glm-gaussian-y-glu"></a>
+</h3>
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">glm_gauss</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
 <span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>, y_var <span class="op">=</span> <span class="st">"glu"</span>,</span>
-<span>  x_vars <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span>,</span>
-<span>                server2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"bp"</span>, <span class="st">"skin"</span><span class="op">)</span>,</span>
-<span>                server3 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"npreg"</span>, <span class="st">"diabetes"</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  y_server <span class="op">=</span> <span class="st">"server2"</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
-<span>  datasources <span class="op">=</span> <span class="va">conns</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Binomial</span></span>
-<span><span class="va">glm_binom</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
-<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>, y_var <span class="op">=</span> <span class="st">"diabetes"</span>,</span>
-<span>  x_vars <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span>,</span>
-<span>                server2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glu"</span>, <span class="st">"bp"</span>, <span class="st">"skin"</span><span class="op">)</span>,</span>
-<span>                server3 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"npreg"</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  y_server <span class="op">=</span> <span class="st">"server3"</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
-<span>  datasources <span class="op">=</span> <span class="va">conns</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Poisson</span></span>
-<span><span class="va">glm_pois</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
-<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>, y_var <span class="op">=</span> <span class="st">"npreg"</span>,</span>
-<span>  x_vars <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span>,</span>
-<span>                server2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glu"</span>, <span class="st">"bp"</span>, <span class="st">"skin"</span><span class="op">)</span>,</span>
-<span>                server3 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"diabetes"</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  y_server <span class="op">=</span> <span class="st">"server3"</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
+<span>  x_vars    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span>,</span>
+<span>                   server2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"bp"</span>, <span class="st">"skin"</span><span class="op">)</span>,</span>
+<span>                   server3 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"npreg"</span>, <span class="st">"diabetes"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  y_server  <span class="op">=</span> <span class="st">"server2"</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
+<span>  max_iter <span class="op">=</span> <span class="fl">100</span>, tol <span class="op">=</span> <span class="fl">1e-4</span>, lambda <span class="op">=</span> <span class="fl">1e-4</span>,</span>
+<span>  log_n <span class="op">=</span> <span class="fl">12</span>, log_scale <span class="op">=</span> <span class="fl">40</span>,</span>
 <span>  datasources <span class="op">=</span> <span class="va">conns</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level3">
-<h3 id="disconnect">Disconnect<a class="anchor" aria-label="anchor" href="#disconnect"></a>
+<h3 id="glm-binomial-y-diabetes">GLM — Binomial (y = <code>diabetes</code>)<a class="anchor" aria-label="anchor" href="#glm-binomial-y-diabetes"></a>
 </h3>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.logout.html" class="external-link">datashield.logout</a></span><span class="op">(</span><span class="va">conns</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">glm_binom</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
+<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>, y_var <span class="op">=</span> <span class="st">"diabetes"</span>,</span>
+<span>  x_vars    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span>,</span>
+<span>                   server2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glu"</span>, <span class="st">"bp"</span>, <span class="st">"skin"</span><span class="op">)</span>,</span>
+<span>                   server3 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"npreg"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  y_server  <span class="op">=</span> <span class="st">"server3"</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
+<span>  max_iter <span class="op">=</span> <span class="fl">100</span>, tol <span class="op">=</span> <span class="fl">1e-4</span>, lambda <span class="op">=</span> <span class="fl">1e-4</span>,</span>
+<span>  log_n <span class="op">=</span> <span class="fl">12</span>, log_scale <span class="op">=</span> <span class="fl">40</span>,</span>
+<span>  datasources <span class="op">=</span> <span class="va">conns</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="glm-poisson-y-npreg">GLM — Poisson (y = <code>npreg</code>)<a class="anchor" aria-label="anchor" href="#glm-poisson-y-npreg"></a>
+</h3>
+<div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">glm_pois</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
+<span>  data_name <span class="op">=</span> <span class="st">"D_aligned"</span>, y_var <span class="op">=</span> <span class="st">"npreg"</span>,</span>
+<span>  x_vars    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>server1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span>,</span>
+<span>                   server2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glu"</span>, <span class="st">"bp"</span>, <span class="st">"skin"</span><span class="op">)</span>,</span>
+<span>                   server3 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"diabetes"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  y_server  <span class="op">=</span> <span class="st">"server3"</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
+<span>  max_iter <span class="op">=</span> <span class="fl">100</span>, tol <span class="op">=</span> <span class="fl">1e-4</span>, lambda <span class="op">=</span> <span class="fl">1e-4</span>,</span>
+<span>  log_n <span class="op">=</span> <span class="fl">12</span>, log_scale <span class="op">=</span> <span class="fl">40</span>,</span>
+<span>  datasources <span class="op">=</span> <span class="va">conns</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<hr>
 </div>
 </div>
 <div class="section level2">
-<h2 id="how-this-differs-from-the-public-demo">How this differs from the public demo<a class="anchor" aria-label="anchor" href="#how-this-differs-from-the-public-demo"></a>
+<h2 id="comparative-assessment">Comparative assessment<a class="anchor" aria-label="anchor" href="#comparative-assessment"></a>
 </h2>
 <table class="table">
+<caption>Multi-instance validation (3 independent Opals, dsVert
+vs. centralized R)</caption>
+<thead><tr class="header">
+<th align="left">Protocol</th>
+<th align="left">Metric</th>
+<th align="right">Value</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td align="left">PSI Alignment</td>
+<td align="left">Matched cohort</td>
+<td align="right">158 / 200</td>
+</tr>
+<tr class="even">
+<td align="left">Correlation</td>
+<td align="left">Max |r| error</td>
+<td align="right">8.19e-06</td>
+</tr>
+<tr class="odd">
+<td align="left">PCA</td>
+<td align="left">Max eigenvalue error</td>
+<td align="right">4.97e-06</td>
+</tr>
+<tr class="even">
+<td align="left">GLM Gaussian</td>
+<td align="left">Max |coef| error</td>
+<td align="right">4.06e-03</td>
+</tr>
+<tr class="odd">
+<td align="left">GLM Binomial</td>
+<td align="left">Max |coef| error</td>
+<td align="right">4.34e-04</td>
+</tr>
+<tr class="even">
+<td align="left">GLM Poisson</td>
+<td align="left">Max |coef| error</td>
+<td align="right">1.84e-04</td>
+</tr>
+</tbody>
+</table>
+<div class="section level3">
+<h3 id="correlation-difference-heatmap">Correlation difference heatmap<a class="anchor" aria-label="anchor" href="#correlation-difference-heatmap"></a>
+</h3>
+<p><img src="local-deployment_files/figure-html/cor-diff-heatmap-1.png" class="r-plt" width="672" style="display: block; margin: auto;"></p>
+</div>
+<div class="section level3">
+<h3 id="glm-coefficient-comparison">GLM coefficient comparison<a class="anchor" aria-label="anchor" href="#glm-coefficient-comparison"></a>
+</h3>
+<p><img src="local-deployment_files/figure-html/coeff-plot-1.png" class="r-plt" width="768" style="display: block; margin: auto;"></p>
+</div>
+</div>
+<div class="section level2">
+<h2 id="comparison-with-public-demo">Comparison with public demo<a class="anchor" aria-label="anchor" href="#comparison-with-public-demo"></a>
+</h2>
+<p>Results obtained on three independent Opal instances are numerically
+identical to those from the <a href="validation.html">public
+validation</a> on <code>opal-demo.obiba.org</code>. This confirms that
+the dsVert protocol creates fully isolated sessions regardless of
+whether connections point to the same or different hosts.</p>
+<table class="table">
 <colgroup>
-<col width="10%">
-<col width="47%">
-<col width="41%">
+<col width="11%">
+<col width="50%">
+<col width="37%">
 </colgroup>
 <thead><tr class="header">
 <th>Aspect</th>
 <th>Public demo (opal-demo.obiba.org)</th>
-<th>Multi-instance (this vignette)</th>
+<th>This vignette (3 Opals)</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
@@ -282,8 +395,8 @@ connection points to a <strong>different host</strong>.</p>
 </tr>
 <tr class="even">
 <td>Network</td>
-<td>Same host (loopback)</td>
-<td>Separate containers (can be separate machines)</td>
+<td>Client → single server</td>
+<td>Client → 3 separate servers</td>
 </tr>
 <tr class="odd">
 <td>R sessions</td>
@@ -300,12 +413,13 @@ connection points to a <strong>different host</strong>.</p>
 <td>Anyone can run it</td>
 <td>Requires local Docker setup</td>
 </tr>
+<tr class="even">
+<td>Numerical results</td>
+<td>Identical</td>
+<td>Identical</td>
+</tr>
 </tbody>
 </table>
-<p>Both produce <strong>identical numerical results</strong> because the
-dsVert protocol creates fully isolated DataSHIELD sessions regardless of
-host topology. The cryptographic keys, ciphertexts, and protocol state
-are scoped per session and never shared between connections.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>
