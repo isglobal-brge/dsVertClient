@@ -101,36 +101,35 @@ independently shuffled, so the ECDH-PSI alignment protocol has real work to
 do --- it must identify the common cohort without revealing which IDs are
 shared or which patients are unique to each server.
 
-| Server  | Patients | Domain                        | Variables                         |
-|---------|----------|-------------------------------|-----------------------------------|
-| server1 | 180      | Anthropometric / familial     | `patient_id`, `age`, `bmi`, `ped` |
-| server2 | 175      | Glucose and cardiovascular    | `patient_id`, `glu`, `bp`, `skin` |
-| server3 | 170      | Reproductive / outcome        | `patient_id`, `npreg`, `diabetes` |
+| Server  | Patients | Table (vert\_demo) | Variables                         |
+|---------|----------|--------------------|-----------------------------------|
+| server1 | 180      | pima\_server1      | `patient_id`, `age`, `bmi`, `ped` |
+| server2 | 175      | pima\_server2      | `patient_id`, `glu`, `bp`, `skin` |
+| server3 | 170      | pima\_server3      | `patient_id`, `npreg`, `diabetes` |
 
 ---
 
 ## Connect to DataSHIELD and align records
 
-We connect to three independent DataSHIELD sessions, each hosting one vertical
-partition on separate Opal instances.
+We connect to three DataSHIELD sessions on the OBiBa community Opal server
+([opal-demo.obiba.org](https://opal-demo.obiba.org)), each pointing to a
+different vertical partition of the dataset stored in the `vert_demo` project.
+This demonstrates that dsVert works on a real, publicly accessible Opal
+deployment --- not just a local Docker setup.
 
 ```{r connect, results = "hide", message = FALSE}
 library(DSI)
 library(DSOpal)
 library(dsVertClient)
 
-options(opal.verifyssl = FALSE)
-
 builder <- DSI::newDSLoginBuilder()
-builder$append(server = "server1", url = "https://localhost:8443",
-               user = "administrator", password = "admin123",
-               driver = "OpalDriver", table = "pima_project.pima_data")
-builder$append(server = "server2", url = "https://localhost:8444",
-               user = "administrator", password = "admin123",
-               driver = "OpalDriver", table = "pima_project.pima_data")
-builder$append(server = "server3", url = "https://localhost:8445",
-               user = "administrator", password = "admin123",
-               driver = "OpalDriver", table = "pima_project.pima_data")
+for (i in 1:3) {
+  builder$append(server = paste0("server", i),
+                 url = "https://opal-demo.obiba.org",
+                 user = "administrator", password = "password",
+                 driver = "OpalDriver",
+                 table = paste0("vert_demo.pima_server", i))
+}
 
 conns <- DSI::datashield.login(builder$build(), assign = TRUE, symbol = "D")
 ```
