@@ -55,6 +55,7 @@ articles:
   - title: Validation
     contents:
       - validation
+      - local-deployment
 
 authors:
   David Sarrat González:
