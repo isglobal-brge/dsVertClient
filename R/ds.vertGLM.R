@@ -302,6 +302,17 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     )
   })
 
+  # Guaranteed cleanup on exit (even if error occurs mid-protocol)
+  on.exit({
+    for (.srv in server_list) {
+      .ci <- which(server_names == .srv)
+      tryCatch(
+        DSI::datashield.aggregate(conns = datasources[.ci],
+          expr = call("mheCleanupDS", session_id = session_id)),
+        error = function(e) NULL)
+    }
+  }, add = TRUE)
+
   # ===========================================================================
   # Phase 0: MHE Key Setup + Transport Keys (only needed if non-label servers exist)
   # ===========================================================================
@@ -911,38 +922,45 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
           }
         }
 
-        # Step 3: Threshold decrypt each gradient component (REUSE)
+        # Step 3: Batched threshold decryption of gradient components
+        # Send all p_k gradient CTs as batch blobs, then one round-trip per
+        # server instead of O(p_k * K) individual round-trips.
         gradient <- numeric(p_k)
-        for (j in seq_len(p_k)) {
-          ct_grad <- enc_gradients[j]
 
-          for (nf_server in non_fusion_servers) {
-            nf_conn <- which(server_names == nf_server)
-            nf_party_id <- which(server_list == nf_server) - 1
-
-            n_ct_chunks <- .sendCTChunks(ct_grad, nf_conn)
-            pd <- DSI::datashield.aggregate(
-              conns = datasources[nf_conn],
-              expr = call("mhePartialDecryptWrappedDS",
-                          n_chunks = as.integer(n_ct_chunks),
-                          session_id = session_id)
-            )
-            if (is.list(pd)) pd <- pd[[1]]
-            .sendWrappedShare(pd$wrapped_share, nf_party_id, fusion_conn_idx)
+        # Send all gradient CTs to each non-fusion server
+        for (nf_server in non_fusion_servers) {
+          nf_conn <- which(server_names == nf_server)
+          nf_party_id <- which(server_list == nf_server) - 1
+          for (j in seq_len(p_k)) {
+            .sendBlob(enc_gradients[j], paste0("ct_batch_", j), nf_conn)
           }
-
-          n_ct_chunks <- .sendCTChunks(ct_grad, fusion_conn_idx)
-          fuse_result <- DSI::datashield.aggregate(
-            conns = datasources[fusion_conn_idx],
-            expr = call("mheFuseServerDS",
-                        n_parties = as.integer(length(server_list)),
-                        n_ct_chunks = as.integer(n_ct_chunks),
-                        num_slots = 0L,
+          pd <- DSI::datashield.aggregate(
+            conns = datasources[nf_conn],
+            expr = call("mhePartialDecryptBatchWrappedDS",
+                        n_cts = as.integer(p_k),
                         session_id = session_id)
           )
-          if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
-          gradient[j] <- fuse_result$value
+          if (is.list(pd)) pd <- pd[[1]]
+          for (j in seq_len(p_k)) {
+            share_key <- paste0("wrapped_share_", nf_party_id, "_ct_", j)
+            .sendBlob(pd$wrapped_shares[j], share_key, fusion_conn_idx)
+          }
         }
+
+        # Send all gradient CTs to fusion server and batch fuse
+        for (j in seq_len(p_k)) {
+          .sendBlob(enc_gradients[j], paste0("ct_batch_", j), fusion_conn_idx)
+        }
+        fuse_result <- DSI::datashield.aggregate(
+          conns = datasources[fusion_conn_idx],
+          expr = call("mheFuseBatchDS",
+                      n_cts = as.integer(p_k),
+                      n_parties = as.integer(length(server_list)),
+                      num_slots = 0L,
+                      session_id = session_id)
+        )
+        if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
+        gradient <- fuse_result$values
 
         # Step 4: Send (mu, w) blob again for block solve (w needed for IRLS)
         .sendBlob(mwv_blob, "mwv", conn_idx)
@@ -1567,16 +1585,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     call = call_matched
   )
 
-  # Clean up cryptographic state on all servers
-  for (server in server_list) {
-    conn_idx <- which(server_names == server)
-    tryCatch(
-      DSI::datashield.aggregate(conns = datasources[conn_idx],
-                                expr = call("mheCleanupDS",
-                                            session_id = session_id)),
-      error = function(e) NULL
-    )
-  }
+  # Cleanup handled by on.exit()
 
   class(result) <- c("ds.glm", "list")
   return(result)
