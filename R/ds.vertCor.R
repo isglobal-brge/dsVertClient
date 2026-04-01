@@ -140,6 +140,18 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     )
   })
 
+  # Guaranteed cleanup: if the function errors at any point, clean up server-side
+  # cryptographic state. This prevents session leaks that accumulate memory.
+  on.exit({
+    for (.srv in server_list) {
+      .ci <- which(server_names == .srv)
+      tryCatch(
+        DSI::datashield.aggregate(conns = datasources[.ci],
+          expr = call("mheCleanupDS", session_id = session_id)),
+        error = function(e) NULL)
+    }
+  }, add = TRUE)
+
   # Helpers -------------------------------------------------------------------
 
   # Send CT chunks to a server (adaptive chunk size)
@@ -703,16 +715,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     mhe_params = list(log_n = log_n, log_scale = log_scale)
   )
 
-  # Clean up cryptographic state on all servers
-  for (server in server_list) {
-    conn_idx <- which(server_names == server)
-    tryCatch(
-      DSI::datashield.aggregate(conns = datasources[conn_idx],
-                                expr = call("mheCleanupDS",
-                                           session_id = session_id)),
-      error = function(e) NULL
-    )
-  }
+  # Cleanup is handled by on.exit() — runs whether we succeed or fail
 
   class(result) <- c("ds.cor", "list")
   return(result)
