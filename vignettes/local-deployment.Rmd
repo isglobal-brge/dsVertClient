@@ -1,0 +1,235 @@
+---
+title: "Multi-Instance Deployment: Three Independent Opal Servers"
+author: "David Sarrat González"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Multi-Instance Deployment: Three Independent Opal Servers}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = FALSE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Overview
+
+This vignette demonstrates dsVert running across **three independent Opal/Rock
+instances**, each on a separate host and port. Unlike the
+[public validation vignette](validation.html) (which uses a single Opal server
+with three tables), this setup mirrors a real multi-institution deployment where
+each data controller operates its own infrastructure.
+
+## Prerequisites
+
+You need three Opal instances running. The easiest way is
+[easy-opal](https://github.com/davidsarratgonzalez/easy-opal):
+
+```bash
+# Create and start 3 independent Opal stacks
+easy-opal instance create opal1
+easy-opal instance create opal2
+easy-opal instance create opal3
+
+easy-opal -i opal1 setup --stack-name opal1 --port 8443 --password admin123 --ssl-strategy self-signed --yes
+easy-opal -i opal2 setup --stack-name opal2 --port 8444 --password admin123 --ssl-strategy self-signed --yes
+easy-opal -i opal3 setup --stack-name opal3 --port 8445 --password admin123 --ssl-strategy self-signed --yes
+```
+
+Each instance runs its own Opal, Rock (R server), MongoDB, and Nginx in
+isolated Docker containers. They share no state.
+
+## Install dsVert on each server
+
+```{r install}
+library(opalr)
+
+# Enable R package management and install dsVert on each instance
+for (port in c(8443, 8444, 8445)) {
+  o <- opal.login("administrator", "admin123",
+                   url = paste0("https://localhost:", port),
+                   opts = list(ssl_verifyhost = 0, ssl_verifypeer = 0))
+
+  # Enable package management (one-time)
+  cfg <- opal.get(o, "system", "conf", "general")
+  cfg$allowRPackageManagement <- TRUE
+  opal.put(o, "system", "conf", "general",
+           body = jsonlite::toJSON(cfg, auto_unbox = TRUE),
+           contentType = "application/json")
+
+  # Install dsVert from GitHub
+  dsadmin.install_github_package(o, "dsVert", username = "isglobal-brge")
+  opal.logout(o)
+}
+```
+
+## Prepare the dataset
+
+We generate the same vertically partitioned Pima dataset used in the main
+validation vignette, with deliberately non-identical patient populations
+across servers.
+
+```{r data-prep}
+library(MASS)
+data("Pima.tr", package = "MASS")
+df <- as.data.frame(Pima.tr)
+df$patient_id <- sprintf("P%03d", seq_len(nrow(df)))
+df$diabetes <- ifelse(df$type == "Yes", 1L, 0L)
+
+set.seed(123)
+core_ids <- sample(df$patient_id, 150)
+remaining <- setdiff(df$patient_id, core_ids)
+ids1 <- sample(c(core_ids, sample(remaining, 30)))
+ids2 <- sample(c(core_ids, sample(remaining, 25)))
+ids3 <- sample(c(core_ids, sample(remaining, 20)))
+
+server1_data <- df[df$patient_id %in% ids1, c("patient_id", "age", "bmi", "ped")]
+server2_data <- df[df$patient_id %in% ids2, c("patient_id", "glu", "bp", "skin")]
+server3_data <- df[df$patient_id %in% ids3, c("patient_id", "npreg", "diabetes")]
+
+server1_data <- server1_data[sample(nrow(server1_data)), ]
+server2_data <- server2_data[sample(nrow(server2_data)), ]
+server3_data <- server3_data[sample(nrow(server3_data)), ]
+```
+
+## Upload data to each server
+
+Each server receives only its own vertical partition. No server sees the
+other servers' variables.
+
+```{r upload}
+library(opalr)
+
+servers <- list(
+  list(url = "https://localhost:8443", data = server1_data),
+  list(url = "https://localhost:8444", data = server2_data),
+  list(url = "https://localhost:8445", data = server3_data)
+)
+
+for (s in servers) {
+  o <- opal.login("administrator", "admin123", url = s$url,
+                   opts = list(ssl_verifyhost = 0, ssl_verifypeer = 0))
+  tryCatch(opal.project_delete(o, "pima_project"), error = function(e) NULL)
+  opal.project_create(o, "pima_project", database = TRUE)
+  tbl <- s$data
+  tbl$id <- seq_len(nrow(tbl))
+  opal.table_save(o, tibble::as_tibble(tbl), "pima_project", "pima_data",
+                   overwrite = TRUE, force = TRUE, id.name = "id")
+  cat("Uploaded", nrow(tbl), "rows to", s$url, "\n")
+  opal.logout(o)
+}
+```
+
+## Connect and run the full pipeline
+
+This is the key difference from the public demo: each server connection
+points to a **different host**.
+
+```{r connect}
+library(DSI)
+library(DSOpal)
+library(dsVertClient)
+
+options(opal.verifyssl = FALSE)
+
+builder <- DSI::newDSLoginBuilder()
+builder$append(server = "server1", url = "https://localhost:8443",
+               user = "administrator", password = "admin123",
+               driver = "OpalDriver", table = "pima_project.pima_data")
+builder$append(server = "server2", url = "https://localhost:8444",
+               user = "administrator", password = "admin123",
+               driver = "OpalDriver", table = "pima_project.pima_data")
+builder$append(server = "server3", url = "https://localhost:8445",
+               user = "administrator", password = "admin123",
+               driver = "OpalDriver", table = "pima_project.pima_data")
+
+conns <- DSI::datashield.login(builder$build(), assign = TRUE, symbol = "D")
+```
+
+### PSI Record Alignment
+
+```{r psi}
+psi_result <- ds.psiAlign(
+  data_name   = "D",
+  id_col      = "patient_id",
+  newobj      = "D_aligned",
+  datasources = conns
+)
+```
+
+### Correlation (MHE-CKKS)
+
+```{r cor}
+variables <- list(
+  server1 = c("age", "bmi", "ped"),
+  server2 = c("glu", "bp", "skin"),
+  server3 = c("npreg")
+)
+
+cor_result <- ds.vertCor(
+  data_name   = "D_aligned",
+  variables   = variables,
+  log_n       = 12,
+  log_scale   = 40,
+  datasources = conns
+)
+```
+
+### GLM (all three families)
+
+```{r glm}
+# Gaussian
+glm_gauss <- ds.vertGLM(
+  data_name = "D_aligned", y_var = "glu",
+  x_vars = list(server1 = c("age", "bmi", "ped"),
+                server2 = c("bp", "skin"),
+                server3 = c("npreg", "diabetes")),
+  y_server = "server2", family = "gaussian",
+  datasources = conns
+)
+
+# Binomial
+glm_binom <- ds.vertGLM(
+  data_name = "D_aligned", y_var = "diabetes",
+  x_vars = list(server1 = c("age", "bmi", "ped"),
+                server2 = c("glu", "bp", "skin"),
+                server3 = c("npreg")),
+  y_server = "server3", family = "binomial",
+  datasources = conns
+)
+
+# Poisson
+glm_pois <- ds.vertGLM(
+  data_name = "D_aligned", y_var = "npreg",
+  x_vars = list(server1 = c("age", "bmi", "ped"),
+                server2 = c("glu", "bp", "skin"),
+                server3 = c("diabetes")),
+  y_server = "server3", family = "poisson",
+  datasources = conns
+)
+```
+
+### Disconnect
+
+```{r disconnect}
+DSI::datashield.logout(conns)
+```
+
+## How this differs from the public demo
+
+| Aspect | Public demo (opal-demo.obiba.org) | Multi-instance (this vignette) |
+|--------|-----------------------------------|-------------------------------|
+| Servers | 1 Opal, 3 tables | 3 Opals, 3 hosts |
+| Network | Same host (loopback) | Separate containers (can be separate machines) |
+| R sessions | 3 sessions on same Rock | 3 sessions on 3 independent Rocks |
+| CPU/memory | Shared | Independent per instance |
+| Reproducibility | Anyone can run it | Requires local Docker setup |
+
+Both produce **identical numerical results** because the dsVert protocol
+creates fully isolated DataSHIELD sessions regardless of host topology.
+The cryptographic keys, ciphertexts, and protocol state are scoped per
+session and never shared between connections.
