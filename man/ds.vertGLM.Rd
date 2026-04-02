@@ -18,7 +18,8 @@ ds.vertGLM(
   verbose = TRUE,
   datasources = NULL,
   eta_privacy = "auto",
-  topology = "pairwise"
+  topology = "pairwise",
+  reuse_mhe = FALSE
 )
 }
 \arguments{
@@ -57,9 +58,10 @@ Default is 12 (2048 slots, supports up to 2048 observations).}
 If NULL, uses all available connections.}
 
 \item{eta_privacy}{Character string. Privacy mode for linear predictor
-aggregation: \code{"auto"} (default) selects HE-Link for K=2 binomial,
-\code{"transport"} uses standard secure routing, \code{"he_link"} forces
-homomorphic sigmoid evaluation (requires K=2, binomial, log_n >= 14).}
+aggregation: \code{"auto"} (default) selects HE-Link for K=2 (all
+families), \code{"transport"} uses standard secure routing,
+\code{"he_link"} forces encrypted link-function mode (requires K=2,
+log_n >= 14).}
 
 \item{topology}{Character string. Seed derivation topology for secure
 aggregation: \code{"pairwise"} (default, O(K-1) seeds per server) or

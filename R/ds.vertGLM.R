@@ -29,9 +29,10 @@
 #' @param datasources DataSHIELD connection object or list of connections.
 #'   If NULL, uses all available connections.
 #' @param eta_privacy Character string. Privacy mode for linear predictor
-#'   aggregation: \code{"auto"} (default) selects HE-Link for K=2 binomial,
-#'   \code{"transport"} uses standard secure routing, \code{"he_link"} forces
-#'   homomorphic sigmoid evaluation (requires K=2, binomial, log_n >= 14).
+#'   aggregation: \code{"auto"} (default) selects HE-Link for K=2 (all
+#'   families), \code{"transport"} uses standard secure routing,
+#'   \code{"he_link"} forces encrypted link-function mode (requires K=2,
+#'   log_n >= 14).
 #' @param topology Character string. Seed derivation topology for secure
 #'   aggregation: \code{"pairwise"} (default, O(K-1) seeds per server) or
 #'   \code{"ring"} (O(2) seeds per server for K>=4). For K=3, ring and
@@ -151,22 +152,16 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   if (eta_privacy == "auto") {
     if (non_label_count >= 2) {
       eta_privacy <- "secure_agg"    # K>=3: pairwise PRG masks
-    } else if (non_label_count == 1 && family == "binomial") {
-      eta_privacy <- "he_link"       # K=2 binomial: homomorphic sigmoid
-      if (log_n < 14) {
+    } else if (non_label_count == 1) {
+      eta_privacy <- "he_link"       # K=2: encrypted link-function mode
+      # Minimum log_n depends on family:
+      #   Gaussian (identity link): no polynomial → log_n=12 suffices
+      #   Binomial/Poisson (polynomial): need multiplicative depth → log_n>=14
+      if (family != "gaussian" && log_n < 14) {
         log_n <- 14L
       }
     } else {
-      eta_privacy <- "transport"     # K=2 gaussian or K=1
-      if (non_label_count == 1 && family == "gaussian") {
-        warning(
-          "K=2 with Gaussian family: using 'transport' mode. The coordinator ",
-          "(label server) will see the non-label server's eta vector. ",
-          "Consider K>=3 (secure_agg) for stronger eta privacy. ",
-          "Set eta_privacy='transport' explicitly to suppress this warning.",
-          call. = FALSE
-        )
-      }
+      eta_privacy <- "transport"     # K=1 (single server, no privacy concern)
     }
   }
 
@@ -181,22 +176,80 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     if (non_label_count != 1)
       stop("HE-Link mode requires exactly 2 servers (1 label + 1 non-label). ",
            "Got ", n_partitions_check, " partitions.", call. = FALSE)
-    if (!family %in% c("binomial"))
-      stop("HE-Link mode currently supports binomial family only. ",
-           "Got '", family, "'.", call. = FALSE)
-    if (log_n < 14)
-      stop("HE-Link mode requires log_n >= 14 (need 4 multiplicative levels). ",
+    if (family != "gaussian" && log_n < 14)
+      stop("HE-Link mode with ", family, " requires log_n >= 14 ",
+           "(need multiplicative levels for polynomial). ",
            "Got log_n = ", log_n, ".", call. = FALSE)
+  }
+
+  # Gaussian identity link doesn't need polynomial evaluation → no RLK
+  generate_rlk <- use_he_link && family != "gaussian"
+
+  # Binomial/Poisson HE-Link uses gradient descent → needs more iterations
+  if (use_he_link && family %in% c("binomial", "poisson") && max_iter <= 100) {
+    max_iter <- 300L
+    if (verbose) message("  Auto-increasing max_iter to 300 for HE-Link GD mode")
   }
 
   # ===========================================================================
   # Helpers
   # ===========================================================================
 
+  # Async-safe datashield.aggregate: submits the call asynchronously and polls
+  # for the result, preventing reverse-proxy (nginx) read-timeout on heavy
+  # computations (e.g., CKKS operations at log_n >= 14). Each poll is a short
+  # HTTP GET request (< 5 s), so no connection is held open for minutes.
+  # Falls back to standard synchronous call for non-Opal backends or when
+  # operations are expected to be fast (log_n <= 13).
+  # Async polling wrapper: prevents reverse-proxy (nginx) read-timeout on
+  # heavy CKKS operations by submitting the command asynchronously and polling
+  # for completion with short HTTP GETs. Only activates for known heavy
+  # operations when log_n >= 14 (where single CKKS calls can exceed typical
+  # 60s proxy timeouts). Chunk transfers and lightweight calls always use
+  # standard synchronous dispatch.
+  .need_async <- (use_he_link && log_n >= 14)
+
+  .heavy_fns <- c("mheInitDS", "mheCombineDS", "mheEncryptRawDS",
+    "glmHEEncryptEtaDS", "glmHELinkStepDS", "glmHEGradientEncDS",
+    "mhePartialDecryptBatchWrappedDS", "mheFuseBatchDS",
+    "mheRLKAggregateR1DS", "mheRLKRound2DS",
+    "mhePartialDecryptWrappedDS", "mheFuseServerDS")
+
+  .dsAgg <- function(conns, expr, ...) {
+    if (.need_async && length(conns) == 1 && is.call(expr) &&
+        as.character(expr[[1]]) %in% .heavy_fns) {
+      conn <- conns[[1]]
+      if (inherits(conn, "OpalConnection")) {
+        opal <- conn@opal
+        script <- asNamespace("DSOpal")$.deparse(expr)
+        cmd_id <- opalr::opal.post(opal, "datashield", "session",
+          opal$rid, "aggregate", query = list(async = "true"),
+          body = script, contentType = "application/x-rscript",
+          acceptType = "application/octet-stream")
+        repeat {
+          Sys.sleep(2)
+          cmd <- opalr::opal.command(opal, cmd_id, wait = FALSE)
+          if (cmd$status %in% c("COMPLETED", "FAILED", "CANCELED"))
+            break
+        }
+        if (cmd$status != "COMPLETED") {
+          msg <- cmd$error %||% cmd$status
+          opalr::opal.command_rm(opal, cmd_id)
+          stop("Server-side command failed on '", names(conns)[1],
+               "': ", msg, call. = FALSE)
+        }
+        result <- opalr::opal.command_result(opal, cmd_id)
+        opalr::opal.command_rm(opal, cmd_id)
+        return(setNames(list(result), names(conns)[1]))
+      }
+    }
+    DSI::datashield.aggregate(conns = conns, expr = expr, ...)
+  }
+
   # Send CT chunks to a server (reusable helper, adaptive chunk size)
   .sendCTChunks <- function(ct_str, conn_idx) {
     .dsvert_adaptive_send(ct_str, function(chunk_str, chunk_idx, n_chunks) {
-      DSI::datashield.aggregate(
+      .dsAgg(
         conns = datasources[conn_idx],
         expr = call("mheStoreCTChunkDS",
                     chunk_index = chunk_idx,
@@ -214,7 +267,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     for (ch in seq_len(n_chunks)) {
       start <- (ch - 1) * chunk_size + 1
       end <- min(ch * chunk_size, n_chars)
-      DSI::datashield.aggregate(
+      .dsAgg(
         conns = datasources[fusion_conn_idx],
         expr = call("mheStoreWrappedShareDS",
                     party_id = as.integer(party_id),
@@ -228,13 +281,13 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   .sendBlob <- function(blob, key, conn_idx) {
     .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
       if (n_chunks == 1L) {
-        DSI::datashield.aggregate(
+        .dsAgg(
           conns = datasources[conn_idx],
           expr = call("mheStoreBlobDS", key = key, chunk = chunk_str,
                       session_id = session_id)
         )
       } else {
-        DSI::datashield.aggregate(
+        .dsAgg(
           conns = datasources[conn_idx],
           expr = call("mheStoreBlobDS",
                       key = key,
@@ -268,7 +321,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   # Get observation count
   first_conn <- which(server_names == server_list[1])
-  count_result <- DSI::datashield.aggregate(
+  count_result <- .dsAgg(
     conns = datasources[first_conn],
     expr = call("getObsCountDS", data_name)
   )
@@ -307,7 +360,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     for (.srv in server_list) {
       .ci <- which(server_names == .srv)
       tryCatch(
-        DSI::datashield.aggregate(conns = datasources[.ci],
+        .dsAgg(conns = datasources[.ci],
           expr = call("mheCleanupDS", session_id = session_id)),
         error = function(e) NULL)
     }
@@ -332,7 +385,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       "_logn_", log_n,
       "_logscale_", log_scale,
       "_numobs_", n_obs,
-      "_rlk_", tolower(as.character(use_he_link))
+      "_rlk_", tolower(as.character(generate_rlk))
     )
 
     if (isTRUE(reuse_mhe)) {
@@ -340,7 +393,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       all_reusable <- TRUE
       for (server in server_list) {
         conn_idx <- which(server_names == server)
-        res <- DSI::datashield.aggregate(
+        res <- .dsAgg(
           conns = datasources[conn_idx],
           expr = call("mheReuseContextDS",
                       context_id = context_id,
@@ -365,14 +418,14 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
     if (!mhe_reused) {
       conn_idx <- which(server_names == server_list[1])
-      result0 <- DSI::datashield.aggregate(
+      result0 <- .dsAgg(
         conns = datasources[conn_idx],
         expr = call("mheInitDS",
                     party_id = 0L, crp = NULL, gkg_seed = NULL,
                     num_obs = as.integer(n_obs),
                     log_n = as.integer(log_n),
                     log_scale = as.integer(log_scale),
-                    generate_rlk = use_he_link,
+                    generate_rlk = generate_rlk,
                     session_id = session_id)
       )
       if (is.list(result0)) result0 <- result0[[1]]
@@ -385,7 +438,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       pk_shares[[server_list[1]]] <- result0$public_key_share
       gkg_shares[[server_list[1]]] <- result0$galois_key_shares
       transport_pks[[server_list[1]]] <- result0$transport_pk
-      if (use_he_link && !is.null(result0$rlk_round1_share)) {
+      if (generate_rlk && !is.null(result0$rlk_round1_share)) {
         rlk_r1_shares[[server_list[1]]] <- result0$rlk_round1_share
       }
 
@@ -409,10 +462,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                         num_obs = as.integer(n_obs),
                         log_n = as.integer(log_n),
                         log_scale = as.integer(log_scale),
-                        generate_rlk = use_he_link,
+                        generate_rlk = generate_rlk,
                         session_id = session_id)
 
-      init_results <- DSI::datashield.aggregate(
+      init_results <- .dsAgg(
         conns = datasources[other_servers],
         expr = init_expr
       )
@@ -423,13 +476,13 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         pk_shares[[server]] <- result$public_key_share
         gkg_shares[[server]] <- result$galois_key_shares
         transport_pks[[server]] <- result$transport_pk
-        if (use_he_link && !is.null(result$rlk_round1_share)) {
+        if (generate_rlk && !is.null(result$rlk_round1_share)) {
           rlk_r1_shares[[server]] <- result$rlk_round1_share
         }
       }
 
-      # Two-round RLK generation protocol (HE-Link mode only)
-      if (use_he_link && length(rlk_r1_shares) > 0) {
+      # Two-round RLK generation protocol (binomial/Poisson HE-Link only)
+      if (generate_rlk && length(rlk_r1_shares) > 0) {
         if (verbose) message("  Generating collective relinearization key (2-round protocol)...")
 
         # Round 1 aggregation: send all R1 shares to coordinator (party 0)
@@ -439,7 +492,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     paste0("rlk_r1_", i - 1), combine_conn)
         }
 
-        agg_r1_result <- DSI::datashield.aggregate(
+        agg_r1_result <- .dsAgg(
           conns = datasources[combine_conn],
           expr = call("mheRLKAggregateR1DS",
                       from_storage = TRUE,
@@ -459,7 +512,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         rlk_r2_shares <- list()
         for (i in seq_along(server_list)) {
           srv_conn <- which(server_names == server_list[i])
-          r2_result <- DSI::datashield.aggregate(
+          r2_result <- .dsAgg(
             conns = datasources[srv_conn],
             expr = call("mheRLKRound2DS",
                         from_storage = (i > 1),
@@ -496,7 +549,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         }
       }
 
-      combined <- DSI::datashield.aggregate(
+      combined <- .dsAgg(
         conns = datasources[conn_idx],
         expr = call("mheCombineDS",
                     from_storage = TRUE,
@@ -526,14 +579,14 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         }
       }
       # Store CPK on all non-party0 servers in parallel
-      DSI::datashield.aggregate(
+      .dsAgg(
         conns = datasources[server_list[-1]],
         expr = call("mheStoreCPKDS", from_storage = TRUE,
                     session_id = session_id)
       )
 
       # Register context for future reuse (parallel across all servers)
-      DSI::datashield.aggregate(
+      .dsAgg(
         conns = datasources[server_list],
         expr = call("mheRegisterContextDS",
                     context_id = context_id,
@@ -550,7 +603,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     tk_map <- list(fusion = transport_pks[[fusion_server]])
     for (s in server_list) tk_map[[s]] <- transport_pks[[s]]
     # Distribute transport keys to all servers in parallel (same key map)
-    DSI::datashield.aggregate(
+    .dsAgg(
       conns = datasources[server_list],
       expr = call("mheStoreTransportKeysDS", transport_keys = tk_map,
                   session_id = session_id)
@@ -595,7 +648,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       server_enc_hashes <- list()
       for (server in server_list) {
         conn_idx <- which(server_names == server)
-        store_result <- DSI::datashield.aggregate(
+        store_result <- .dsAgg(
           conns = datasources[conn_idx],
           expr = call("peerManifestStoreDS",
                       manifest_json = manifest_b64,
@@ -624,7 +677,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         conn_idx <- which(server_names == server)
         for (peer in server_list) {
           if (peer == server) next
-          DSI::datashield.aggregate(
+          .dsAgg(
             conns = datasources[conn_idx],
             expr = call("peerManifestValidateDS",
                         peer_name = peer,
@@ -654,7 +707,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     conn_idx <- which(server_names == server)
     y_arg <- if (server == y_server && standardize_y) y_var else NULL
 
-    std_result <- DSI::datashield.aggregate(
+    std_result <- .dsAgg(
       conns = datasources[conn_idx],
       expr = call("glmStandardizeDS",
                   data_name = data_name,
@@ -686,32 +739,23 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     enc_data <- if (standardize_y) std_data else data_name
 
     conn_idx <- which(server_names == y_server)
-    enc_result <- DSI::datashield.aggregate(
+    enc_result <- .dsAgg(
       conns = datasources[conn_idx],
       expr = call("mheEncryptRawDS",
                   data_name = enc_data, y_var = y_var,
+                  store_local = use_he_link,
                   session_id = session_id)
     )
     if (is.list(enc_result)) enc_result <- enc_result[[1]]
     ct_y <- enc_result$encrypted_y
     if (verbose) message("  Encrypted y on ", y_server)
-
-    # In HE-Link mode, the label server also needs ct_y stored locally
-    # (for computing gradient with encrypted mu: ct_y - ct_mu)
-    if (use_he_link) {
-      label_conn <- which(server_names == y_server)
-      DSI::datashield.aggregate(
-        conns = datasources[label_conn],
-        expr = call("mheStoreEncYDS", enc_y = ct_y,
-                    session_id = session_id)
-      )
-      if (verbose) message("  ct_y stored locally on label server (HE-Link mode)")
-    }
+    if (use_he_link && verbose)
+      message("  ct_y stored locally on label server (HE-Link mode)")
 
     for (server in non_label_servers) {
       conn_idx <- which(server_names == server)
       n_chunks_sent <- .dsvert_adaptive_send(ct_y, function(chunk_str, chunk_idx, n_chunks) {
-        DSI::datashield.aggregate(
+        .dsAgg(
           conns = datasources[conn_idx],
           expr = call("mheStoreEncChunkDS",
                       col_index = 1L,
@@ -720,7 +764,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                       session_id = session_id)
         )
       })
-      DSI::datashield.aggregate(
+      .dsAgg(
         conns = datasources[conn_idx],
         expr = call("mheAssembleEncColumnDS",
                     col_index = 1L, n_chunks = as.integer(n_chunks_sent),
@@ -783,7 +827,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                          n_partitions, " servers)...")
 
     # Initialize FSM on coordinator
-    DSI::datashield.aggregate(
+    .dsAgg(
       conns = datasources[coordinator_conn],
       expr = call("glmFSMInitDS",
                   session_id = session_id,
@@ -794,7 +838,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     # Initialize secure aggregation on each non-label server
     for (server in non_label_servers) {
       conn_idx <- which(server_names == server)
-      DSI::datashield.aggregate(
+      .dsAgg(
         conns = datasources[conn_idx],
         expr = call("glmSecureAggInitDS",
                     self_name = server,
@@ -823,7 +867,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
             eta_blob_keys <- c(eta_blob_keys, key)
 
             # FSM: register eta receipt
-            DSI::datashield.aggregate(
+            .dsAgg(
               conns = datasources[coordinator_conn],
               expr = call("glmFSMCheckDS",
                           session_id = session_id,
@@ -835,7 +879,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       }
 
       # FSM: authorize coordinator step
-      DSI::datashield.aggregate(
+      .dsAgg(
         conns = datasources[coordinator_conn],
         expr = call("glmFSMCheckDS",
                     session_id = session_id,
@@ -843,7 +887,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     iteration = as.integer(iter))
       )
 
-      coord_result <- DSI::datashield.aggregate(
+      coord_result <- .dsAgg(
         conns = datasources[coordinator_conn],
         expr = call("glmSecureAggCoordinatorStepDS",
                     data_name = std_data,
@@ -869,7 +913,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       max_diff <- max(max_diff, diff_coord)
 
       # FSM: distribute_mwv
-      DSI::datashield.aggregate(
+      .dsAgg(
         conns = datasources[coordinator_conn],
         expr = call("glmFSMCheckDS",
                     session_id = session_id,
@@ -889,7 +933,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         .sendBlob(mwv_blob, "mwv", conn_idx)
 
         # Step 2: Compute encrypted gradient (REUSE existing function)
-        grad_result <- DSI::datashield.aggregate(
+        grad_result <- .dsAgg(
           conns = datasources[conn_idx],
           expr = call("glmSecureGradientDS",
                       data_name = std_data,
@@ -911,7 +955,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
             if (auth_server != server) {
               auth_conn <- which(server_names == auth_server)
               .sendBlob(ct_hashes_blob, "ct_hashes", auth_conn)
-              DSI::datashield.aggregate(
+              .dsAgg(
                 conns = datasources[auth_conn],
                 expr = call("mheAuthorizeCTDS",
                             op_type = "glm-gradient",
@@ -934,7 +978,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
           for (j in seq_len(p_k)) {
             .sendBlob(enc_gradients[j], paste0("ct_batch_", j), nf_conn)
           }
-          pd <- DSI::datashield.aggregate(
+          pd <- .dsAgg(
             conns = datasources[nf_conn],
             expr = call("mhePartialDecryptBatchWrappedDS",
                         n_cts = as.integer(p_k),
@@ -951,7 +995,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         for (j in seq_len(p_k)) {
           .sendBlob(enc_gradients[j], paste0("ct_batch_", j), fusion_conn_idx)
         }
-        fuse_result <- DSI::datashield.aggregate(
+        fuse_result <- .dsAgg(
           conns = datasources[fusion_conn_idx],
           expr = call("mheFuseBatchDS",
                       n_cts = as.integer(p_k),
@@ -966,7 +1010,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         .sendBlob(mwv_blob, "mwv", conn_idx)
 
         # Step 5: Masked block solve (secure aggregation version)
-        solve_result <- DSI::datashield.aggregate(
+        solve_result <- .dsAgg(
           conns = datasources[conn_idx],
           expr = call("glmSecureAggBlockSolveDS",
                       data_name = std_data,
@@ -988,7 +1032,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         max_diff <- max(max_diff, diff_server)
 
         # FSM: block complete
-        DSI::datashield.aggregate(
+        .dsAgg(
           conns = datasources[coordinator_conn],
           expr = call("glmFSMCheckDS",
                       session_id = session_id,
@@ -1016,22 +1060,44 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   } else if (use_he_link) {
     # =========================================================================
-    # Phase 3 (HE-Link): BCD with homomorphic link function
+    # Phase 3 (HE-Link): BCD with encrypted link function (K=2)
     # =========================================================================
     # Instead of transporting plaintext (mu, w, v) between servers, we compute
-    # mu = sigmoid(eta_total) entirely in the encrypted domain using polynomial
-    # approximation. This prevents the K=2 eta privacy leak.
+    # mu = g^{-1}(eta_total) entirely in the encrypted domain. This prevents
+    # the K=2 eta privacy leak.
+    #
+    # Family-specific pathways:
+    #   - Gaussian: identity link, ct_mu = ct_eta_total (no polynomial, no RLK)
+    #              → exact block solve with unit weights
+    #   - Binomial: sigmoid polynomial under CKKS → GD block update
+    #   - Poisson:  exp polynomial under CKKS with eta clipping → GD block update
     #
     # Each iteration:
-    #   1. Each server encrypts eta_k = X_k * beta_k under CPK
+    #   1. Each server encrypts eta_k = X_k * beta_k under CPK (Poisson: clip)
     #   2. Coordinator: ct_eta_total = ct_add(ct_eta_label, ct_eta_nonlabel)
-    #   3. Coordinator: ct_mu = eval_poly(sigmoid_coeffs, ct_eta_total, rlk)
+    #   3. Coordinator: ct_mu = poly(ct_eta_total) or ct_eta_total (Gaussian)
     #   4. Distribute ct_mu to non-label server
     #   5. Both servers: encrypted_gradient = X_k^T (ct_y - ct_mu)
     #   6. Threshold decrypt gradient scalars
-    #   7. Both servers: GD block update with gradient
+    #   7. Block update: exact solve (Gaussian) or GD (binomial/Poisson)
 
-    if (verbose) message("\n[Phase 3] BCD iterations (HE-Link, homomorphic sigmoid)...")
+    if (verbose) {
+      link_desc <- switch(family,
+        gaussian = "encrypted residual, identity link",
+        binomial = "homomorphic sigmoid",
+        poisson  = "homomorphic exp"
+      )
+      message(sprintf("\n[Phase 3] BCD iterations (HE-Link, %s)...", link_desc))
+    }
+
+    # Poisson: degree-7 Chebyshev approximation to exp(x) on [-3, 3]
+    he_link_poly <- NULL
+    he_link_clip_radius <- NULL
+    if (family == "poisson") {
+      he_link_poly <- c(9.989069e-01, 9.994338e-01, 5.043165e-01, 1.675787e-01,
+                        3.908437e-02, 7.945614e-03, 1.865407e-03, 2.576334e-04)
+      he_link_clip_radius <- 1.5  # Per-server clip → total in [-3, 3]
+    }
 
     # Non-label server PKs for coordinator
     non_label_pk_map <- list()
@@ -1053,12 +1119,13 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         conn_idx <- which(server_names == server)
         party_idx <- which(server_list == server) - 1
 
-        enc_eta_result <- DSI::datashield.aggregate(
+        enc_eta_result <- .dsAgg(
           conns = datasources[conn_idx],
           expr = call("glmHEEncryptEtaDS",
                       data_name = std_data,
                       x_vars = x_vars[[server]],
                       beta = betas[[server]],
+                      clip_radius = he_link_clip_radius,
                       session_id = session_id)
         )
         if (is.list(enc_eta_result)) enc_eta_result <- enc_eta_result[[1]]
@@ -1068,14 +1135,37 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                   paste0("ct_eta_", party_idx), coordinator_conn)
       }
 
-      # --- Step 2-3: Coordinator computes ct_mu = sigmoid(ct_eta_total) ---
-      link_result <- DSI::datashield.aggregate(
-        conns = datasources[coordinator_conn],
-        expr = call("glmHELinkStepDS",
-                    from_storage = TRUE,
-                    n_parties = as.integer(length(server_list)),
-                    session_id = session_id)
-      )
+      # --- Step 2-3: Coordinator computes ct_mu = g^{-1}(ct_eta_total) ---
+      if (family == "gaussian") {
+        # Gaussian: identity link → ct_mu = ct_eta_total (no polynomial)
+        link_result <- .dsAgg(
+          conns = datasources[coordinator_conn],
+          expr = call("glmHELinkStepDS",
+                      from_storage = TRUE,
+                      n_parties = as.integer(length(server_list)),
+                      skip_poly = TRUE,
+                      session_id = session_id)
+        )
+      } else if (family == "poisson") {
+        # Poisson: exp polynomial on ct_eta_total
+        link_result <- .dsAgg(
+          conns = datasources[coordinator_conn],
+          expr = call("glmHELinkStepDS",
+                      from_storage = TRUE,
+                      n_parties = as.integer(length(server_list)),
+                      poly_coefficients = he_link_poly,
+                      session_id = session_id)
+        )
+      } else {
+        # Binomial: default sigmoid polynomial
+        link_result <- .dsAgg(
+          conns = datasources[coordinator_conn],
+          expr = call("glmHELinkStepDS",
+                      from_storage = TRUE,
+                      n_parties = as.integer(length(server_list)),
+                      session_id = session_id)
+        )
+      }
       if (is.list(link_result)) link_result <- link_result[[1]]
       ct_mu <- link_result$ct_mu
 
@@ -1092,7 +1182,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         p_k <- length(vars)
 
         # Compute encrypted gradient: X_k^T (ct_y - ct_mu)
-        grad_result <- DSI::datashield.aggregate(
+        grad_result <- .dsAgg(
           conns = datasources[conn_idx],
           expr = call("glmHEGradientEncDS",
                       data_name = std_data,
@@ -1113,7 +1203,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
             if (auth_server != server) {
               auth_conn <- which(server_names == auth_server)
               .sendBlob(ct_hashes_blob, "ct_hashes", auth_conn)
-              DSI::datashield.aggregate(
+              .dsAgg(
                 conns = datasources[auth_conn],
                 expr = call("mheAuthorizeCTDS",
                             op_type = "he-link-gradient",
@@ -1124,57 +1214,81 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
           }
         }
 
-        # Threshold decrypt each gradient component (share-wrapped)
+        # Batched threshold decryption of all p_k gradient components
+        # Send all gradient CTs to each non-fusion server in one batch
         gradient <- numeric(p_k)
-        for (j in seq_len(p_k)) {
-          ct_grad <- enc_gradients[j]
-
-          # Collect wrapped shares from non-fusion servers
-          for (nf_server in non_fusion_servers) {
-            nf_conn <- which(server_names == nf_server)
-            nf_party_id <- which(server_list == nf_server) - 1
-
-            n_ct_chunks <- .sendCTChunks(ct_grad, nf_conn)
-            pd <- DSI::datashield.aggregate(
-              conns = datasources[nf_conn],
-              expr = call("mhePartialDecryptWrappedDS",
-                          n_chunks = as.integer(n_ct_chunks),
-                          session_id = session_id)
-            )
-            if (is.list(pd)) pd <- pd[[1]]
-            .sendWrappedShare(pd$wrapped_share, nf_party_id, fusion_conn_idx)
+        for (nf_server in non_fusion_servers) {
+          nf_conn <- which(server_names == nf_server)
+          nf_party_id <- which(server_list == nf_server) - 1
+          for (j in seq_len(p_k)) {
+            .sendBlob(enc_gradients[j], paste0("ct_batch_", j), nf_conn)
           }
-
-          # Send CT to fusion server and fuse
-          n_ct_chunks <- .sendCTChunks(ct_grad, fusion_conn_idx)
-          fuse_result <- DSI::datashield.aggregate(
-            conns = datasources[fusion_conn_idx],
-            expr = call("mheFuseServerDS",
-                        n_parties = as.integer(length(server_list)),
-                        n_ct_chunks = as.integer(n_ct_chunks),
-                        num_slots = 0L,
+          pd <- .dsAgg(
+            conns = datasources[nf_conn],
+            expr = call("mhePartialDecryptBatchWrappedDS",
+                        n_cts = as.integer(p_k),
                         session_id = session_id)
           )
-          if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
-          gradient[j] <- fuse_result$value
+          if (is.list(pd)) pd <- pd[[1]]
+          for (j in seq_len(p_k)) {
+            share_key <- paste0("wrapped_share_", nf_party_id, "_ct_", j)
+            .sendBlob(pd$wrapped_shares[j], share_key, fusion_conn_idx)
+          }
         }
 
-        # GD block update (gradient descent with adaptive step size)
-        # Use alpha = 1/(1 + iter/10) schedule: starts aggressive, decays
-        he_alpha <- 1.0 / (1.0 + iter / 10.0)
-        update_result <- DSI::datashield.aggregate(
-          conns = datasources[conn_idx],
-          expr = call("glmHEBlockUpdateDS",
-                      beta_current = betas[[server]],
-                      gradient = gradient,
-                      alpha = he_alpha,
-                      lambda = lambda,
-                      n_obs = as.integer(n_obs),
+        # Send all gradient CTs to fusion server and batch fuse
+        for (j in seq_len(p_k)) {
+          .sendBlob(enc_gradients[j], paste0("ct_batch_", j), fusion_conn_idx)
+        }
+        fuse_result <- .dsAgg(
+          conns = datasources[fusion_conn_idx],
+          expr = call("mheFuseBatchDS",
+                      n_cts = as.integer(p_k),
+                      n_parties = as.integer(length(server_list)),
+                      num_slots = 0L,
                       session_id = session_id)
         )
-        if (is.list(update_result)) update_result <- update_result[[1]]
+        if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
+        gradient <- fuse_result$values
 
-        betas[[server]] <- update_result$beta
+        # Block update: family-specific strategy
+        if (family == "gaussian") {
+          # Exact Newton step with unit weights (identity link, w=1)
+          update_result <- .dsAgg(
+            conns = datasources[conn_idx],
+            expr = call("glmBlockSolveDS",
+                        data_name = std_data,
+                        x_vars = vars,
+                        w = NULL,
+                        beta_current = betas[[server]],
+                        gradient = gradient,
+                        lambda = lambda,
+                        session_id = session_id)
+          )
+          if (is.list(update_result)) update_result <- update_result[[1]]
+          betas[[server]] <- update_result$beta
+        } else {
+          # GD block update for binomial/Poisson
+          if (family == "binomial") {
+            # Warm start at alpha=0.3, decay after 50 iterations
+            he_alpha <- if (iter <= 50) 0.3 else 0.3 / (1.0 + (iter - 50) / 20.0)
+          } else {
+            # Poisson: more conservative step size
+            he_alpha <- if (iter <= 50) 0.2 else 0.2 / (1.0 + (iter - 50) / 20.0)
+          }
+          update_result <- .dsAgg(
+            conns = datasources[conn_idx],
+            expr = call("glmHEBlockUpdateDS",
+                        beta_current = betas[[server]],
+                        gradient = gradient,
+                        alpha = he_alpha,
+                        lambda = lambda,
+                        n_obs = as.integer(n_obs),
+                        session_id = session_id)
+          )
+          if (is.list(update_result)) update_result <- update_result[[1]]
+          betas[[server]] <- update_result$beta
+        }
 
         diff_server <- max(abs(betas[[server]] - betas_old[[server]]))
         max_diff <- max(max_diff, diff_server)
@@ -1245,7 +1359,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         }
       }
 
-      coord_result <- DSI::datashield.aggregate(
+      coord_result <- .dsAgg(
         conns = datasources[coordinator_conn],
         expr = call("glmCoordinatorStepDS",
                     data_name = std_data,
@@ -1283,7 +1397,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         .sendBlob(mwv_blob, "mwv", conn_idx)
 
         # Step 2: Server computes encrypted gradient using decrypted mu/v + ct_y
-        grad_result <- DSI::datashield.aggregate(
+        grad_result <- .dsAgg(
           conns = datasources[conn_idx],
           expr = call("glmSecureGradientDS",
                       data_name = std_data,
@@ -1306,7 +1420,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
             if (auth_server != server) {
               auth_conn <- which(server_names == auth_server)
               .sendBlob(ct_hashes_blob, "ct_hashes", auth_conn)
-              DSI::datashield.aggregate(
+              .dsAgg(
                 conns = datasources[auth_conn],
                 expr = call("mheAuthorizeCTDS",
                             op_type = "glm-gradient",
@@ -1328,7 +1442,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
             nf_party_id <- which(server_list == nf_server) - 1
 
             n_ct_chunks <- .sendCTChunks(ct_grad, nf_conn)
-            pd <- DSI::datashield.aggregate(
+            pd <- .dsAgg(
               conns = datasources[nf_conn],
               expr = call("mhePartialDecryptWrappedDS",
                           n_chunks = as.integer(n_ct_chunks),
@@ -1340,7 +1454,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
           # Send CT to fusion server and fuse
           n_ct_chunks <- .sendCTChunks(ct_grad, fusion_conn_idx)
-          fuse_result <- DSI::datashield.aggregate(
+          fuse_result <- .dsAgg(
             conns = datasources[fusion_conn_idx],
             expr = call("mheFuseServerDS",
                         n_parties = as.integer(length(server_list)),
@@ -1356,7 +1470,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         # Send mwv blob again for the block solve (w needed for IRLS weights)
         .sendBlob(mwv_blob, "mwv", conn_idx)
 
-        solve_result <- DSI::datashield.aggregate(
+        solve_result <- .dsAgg(
           conns = datasources[conn_idx],
           expr = call("glmSecureBlockSolveDS",
                       data_name = std_data,
@@ -1445,7 +1559,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     if (verbose) message("\n[Phase 5] Computing deviance (one-time secure routing)...")
 
     # FSM: transition to deviance
-    DSI::datashield.aggregate(
+    .dsAgg(
       conns = datasources[coordinator_conn],
       expr = call("glmFSMCheckDS",
                   session_id = session_id,
@@ -1453,7 +1567,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     )
 
     # Coordinator: store eta_label locally
-    DSI::datashield.aggregate(
+    .dsAgg(
       conns = datasources[coordinator_conn],
       expr = call("glmSecureAggPrepDevianceDS",
                   data_name = std_data,
@@ -1467,7 +1581,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     eta_blob_keys_final <- character(0)
     for (server in non_label_servers) {
       conn_idx <- which(server_names == server)
-      prep_result <- DSI::datashield.aggregate(
+      prep_result <- .dsAgg(
         conns = datasources[conn_idx],
         expr = call("glmSecureAggPrepDevianceDS",
                     data_name = std_data,
@@ -1493,7 +1607,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     if (verbose) message("\n[Phase 5] Computing deviance (one-time secure routing)...")
 
     # Coordinator: store eta_label locally
-    DSI::datashield.aggregate(
+    .dsAgg(
       conns = datasources[coordinator_conn],
       expr = call("glmHEPrepDevianceDS",
                   data_name = std_data,
@@ -1507,7 +1621,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     eta_blob_keys_final <- character(0)
     for (server in non_label_servers) {
       conn_idx <- which(server_names == server)
-      prep_result <- DSI::datashield.aggregate(
+      prep_result <- .dsAgg(
         conns = datasources[conn_idx],
         expr = call("glmHEPrepDevianceDS",
                     data_name = std_data,
@@ -1540,7 +1654,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     }
   }
 
-  deviance_result <- DSI::datashield.aggregate(
+  deviance_result <- .dsAgg(
     conns = datasources[coordinator_conn],
     expr = call("glmSecureDevianceDS",
                 data_name = data_name,
