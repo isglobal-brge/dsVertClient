@@ -156,9 +156,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       eta_privacy <- "he_link"       # K=2: encrypted link-function mode
       # Minimum log_n depends on family:
       #   Gaussian (identity link): no polynomial → log_n=12 suffices
-      #   Binomial/Poisson (polynomial): need multiplicative depth → log_n>=14
-      if (family != "gaussian" && log_n < 14) {
-        log_n <- 14L
+      #   Binomial/Poisson (polynomial): need multiplicative depth → log_n>=13
+      if (family != "gaussian" && log_n < 13) {
+        log_n <- 13L
       }
     } else {
       eta_privacy <- "transport"     # K=1 (single server, no privacy concern)
@@ -176,8 +176,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     if (non_label_count != 1)
       stop("HE-Link mode requires exactly 2 servers (1 label + 1 non-label). ",
            "Got ", n_partitions_check, " partitions.", call. = FALSE)
-    if (family != "gaussian" && log_n < 14)
-      stop("HE-Link mode with ", family, " requires log_n >= 14 ",
+    if (family != "gaussian" && log_n < 13)
+      stop("HE-Link mode with ", family, " requires log_n >= 13 ",
            "(need multiplicative levels for polynomial). ",
            "Got log_n = ", log_n, ".", call. = FALSE)
   }
@@ -186,7 +186,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   generate_rlk <- use_he_link && family != "gaussian"
 
   # Binomial/Poisson HE-Link uses gradient descent → needs more iterations
-  if (use_he_link && family %in% c("binomial", "poisson") && max_iter <= 100) {
+  # Only auto-increase from the default (100); respect explicit user values
+  if (use_he_link && family %in% c("binomial", "poisson") && max_iter == 100) {
     max_iter <- 300L
     if (verbose) message("  Auto-increasing max_iter to 300 for HE-Link GD mode")
   }
