@@ -156,9 +156,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       eta_privacy <- "he_link"       # K=2: encrypted link-function mode
       # Minimum log_n depends on family:
       #   Gaussian (identity link): no polynomial → log_n=12 suffices
-      #   Binomial/Poisson (polynomial): need multiplicative depth → log_n>=13
-      if (family != "gaussian" && log_n < 13) {
-        log_n <- 13L
+      #   Binomial/Poisson (polynomial): need 4+ multiplicative levels → log_n>=14
+      if (family != "gaussian" && log_n < 14) {
+        log_n <- 14L
       }
     } else {
       eta_privacy <- "transport"     # K=1 (single server, no privacy concern)
@@ -176,9 +176,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     if (non_label_count != 1)
       stop("HE-Link mode requires exactly 2 servers (1 label + 1 non-label). ",
            "Got ", n_partitions_check, " partitions.", call. = FALSE)
-    if (family != "gaussian" && log_n < 13)
-      stop("HE-Link mode with ", family, " requires log_n >= 13 ",
-           "(need multiplicative levels for polynomial). ",
+    if (family != "gaussian" && log_n < 14)
+      stop("HE-Link mode with ", family, " requires log_n >= 14 ",
+           "(need 4+ multiplicative levels for polynomial + gradient). ",
            "Got log_n = ", log_n, ".", call. = FALSE)
   }
 
