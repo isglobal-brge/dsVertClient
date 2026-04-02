@@ -243,7 +243,19 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         return(setNames(list(result), names(conns)[1]))
       }
     }
-    DSI::datashield.aggregate(conns = conns, expr = expr, ...)
+    # Retry once on transient 500 errors (Opal OrientDB/session bugs)
+    tryCatch(
+      DSI::datashield.aggregate(conns = conns, expr = expr, ...),
+      error = function(e) {
+        msg <- conditionMessage(e)
+        if (grepl("500|NullPointer|Internal Server Error", msg)) {
+          Sys.sleep(2)
+          DSI::datashield.aggregate(conns = conns, expr = expr, ...)
+        } else {
+          stop(e)
+        }
+      }
+    )
   }
 
   # Send CT chunks to a server (reusable helper, adaptive chunk size)
