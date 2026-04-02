@@ -151,8 +151,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   if (eta_privacy == "auto") {
     if (non_label_count >= 2) {
       eta_privacy <- "secure_agg"    # K>=3: pairwise PRG masks
-    } else if (non_label_count == 1 && family %in% c("binomial", "poisson")) {
-      eta_privacy <- "he_link"       # K=2 nonlinear: homomorphic sigmoid
+    } else if (non_label_count == 1 && family == "binomial") {
+      eta_privacy <- "he_link"       # K=2 binomial: homomorphic sigmoid
       if (log_n < 14) {
         log_n <- 14L
       }
