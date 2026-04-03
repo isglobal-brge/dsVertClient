@@ -371,8 +371,7 @@ vectors.</p>
 <li><strong>Gaussian</strong> (identity link): no polynomial needed,
 exact Newton block solve at <code>log_n = 12</code> (fast).</li>
 <li><strong>Binomial</strong> (logit link): degree-7 sigmoid polynomial
-under CKKS, Nesterov-accelerated gradient descent at
-<code>log_n = 14</code>.</li>
+under CKKS, gradient descent at <code>log_n = 14</code>.</li>
 <li><strong>Poisson</strong> (log link): degree-7 Chebyshev exp
 polynomial with eta clipping, gradient descent at
 <code>log_n = 14</code>.</li>
@@ -535,7 +534,7 @@ cat(&quot;K=2 Gaussian (identity link, log_n=12):\n&quot;)</code></pre>
 coefs_central &lt;- coef(gauss_central)[names(coefs_k2)]
 cat(sprintf(&quot;  Max abs coefficient error: %.4e\n&quot;,
             max(abs(coefs_k2 - coefs_central))))</code></pre>
-<pre><code>#&gt;   Max abs coefficient error: 5.2670e-01</code></pre>
+<pre><code>#&gt;   Max abs coefficient error: 5.2669e-01</code></pre>
 <table>
 <caption>Gaussian GLM: K=2 vs centralized coefficients</caption>
 <thead>
@@ -549,9 +548,9 @@ cat(sprintf(&quot;  Max abs coefficient error: %.4e\n&quot;,
 <tbody>
 <tr class="odd">
 <td align="left">(Intercept)</td>
-<td align="right">-0.93768</td>
+<td align="right">-0.93767</td>
 <td align="right">-0.60010</td>
-<td align="right">-0.337580</td>
+<td align="right">-0.337565</td>
 </tr>
 <tr class="even">
 <td align="left">age</td>
@@ -569,13 +568,13 @@ cat(sprintf(&quot;  Max abs coefficient error: %.4e\n&quot;,
 <td align="left">ped</td>
 <td align="right">-0.82667</td>
 <td align="right">-0.81585</td>
-<td align="right">-0.010817</td>
+<td align="right">-0.010819</td>
 </tr>
 <tr class="odd">
 <td align="left">diabetes</td>
-<td align="right">0.51155</td>
+<td align="right">0.51156</td>
 <td align="right">1.03825</td>
-<td align="right">-0.526698</td>
+<td align="right">-0.526688</td>
 </tr>
 </tbody>
 </table>
@@ -583,8 +582,8 @@ cat(sprintf(&quot;  Max abs coefficient error: %.4e\n&quot;,
 <div id="k2-binomial-glm" class="section level2">
 <h2>K=2 Binomial GLM</h2>
 <p>Logit link with degree-7 sigmoid polynomial under CKKS
-(<code>log_n = 14</code>). Nesterov momentum gradient descent with
-conservative parameters.</p>
+(<code>log_n = 14</code>). Gradient descent with warm-start step-size
+schedule.</p>
 <p><strong>Note:</strong> This model runs at <code>log_n = 14</code> and
 each iteration involves encrypted polynomial evaluation + encrypted
 gradient computation. With the default <code>max_iter</code>, expect
@@ -684,7 +683,7 @@ cat(sprintf(&quot;  Max abs coefficient error: %.4e\n&quot;,
 <td>logit</td>
 <td>14</td>
 <td>degree-7 sigmoid</td>
-<td>Nesterov GD</td>
+<td>GD</td>
 <td><span class="math inline">\(\leq 5 \times 10^{-2}\)</span></td>
 </tr>
 <tr class="odd">
@@ -692,7 +691,7 @@ cat(sprintf(&quot;  Max abs coefficient error: %.4e\n&quot;,
 <td>log</td>
 <td>14</td>
 <td>degree-7 Chebyshev exp</td>
-<td>Nesterov GD</td>
+<td>GD</td>
 <td><span class="math inline">\(\leq 5 \times 10^{-2}\)</span></td>
 </tr>
 </tbody>
