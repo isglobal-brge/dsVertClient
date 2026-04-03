@@ -22,6 +22,26 @@ col_palette <- colorRampPalette(c("#2166AC", "#67A9CF", "#D1E5F0",
 diff_palette <- colorRampPalette(c("#2166AC", "white", "#B2182B"))(100)
 col_local  <- "#4393C3"
 col_dsvert <- "#D6604D"
+
+# Result caching: expensive dsVert computations are saved as .rds files.
+# If cached results exist, they are loaded instead of re-running.
+# Delete the cache directory to force re-execution.
+cache_dir <- file.path(getwd(), "local-deployment_cache")
+if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
+
+.cache_path <- function(name) file.path(cache_dir, paste0(name, ".rds"))
+
+.cached <- function(name, expr) {
+  path <- .cache_path(name)
+  if (file.exists(path)) {
+    message(sprintf("[cache] Loading %s from %s", name, basename(path)))
+    return(readRDS(path))
+  }
+  result <- expr
+  saveRDS(result, path)
+  message(sprintf("[cache] Saved %s to %s", name, basename(path)))
+  result
+}
 ```
 
 ## Overview
@@ -109,12 +129,14 @@ conns <- DSI::datashield.login(builder$build(), assign = TRUE, symbol = "D")
 ## PSI Record Alignment
 
 ```{r psi, message = FALSE}
-psi_result <- ds.psiAlign(
-  data_name   = "D",
-  id_col      = "patient_id",
-  newobj      = "D_aligned",
-  datasources = conns
-)
+psi_result <- .cached("psi_result", {
+  ds.psiAlign(
+    data_name   = "D",
+    id_col      = "patient_id",
+    newobj      = "D_aligned",
+    datasources = conns
+  )
+})
 ```
 
 ```{r psi-summary, echo = FALSE}
@@ -157,13 +179,15 @@ variables <- list(
   server3 = c("npreg")
 )
 
-cor_result <- ds.vertCor(
-  data_name   = "D_aligned",
-  variables   = variables,
-  log_n       = 12,
-  log_scale   = 40,
-  datasources = conns
-)
+cor_result <- .cached("cor_result", {
+  ds.vertCor(
+    data_name   = "D_aligned",
+    variables   = variables,
+    log_n       = 12,
+    log_scale   = 40,
+    datasources = conns
+  )
+})
 dsvert_cor <- cor_result$correlation
 ```
 
@@ -178,46 +202,52 @@ local_eigenvalues  <- local_pca$values
 ### GLM --- Gaussian (y = `glu`)
 
 ```{r dsvert-gauss, message = FALSE}
-glm_gauss <- ds.vertGLM(
-  data_name = "D_aligned", y_var = "glu",
-  x_vars    = list(server1 = c("age", "bmi", "ped"),
-                   server2 = c("bp", "skin"),
-                   server3 = c("npreg", "diabetes")),
-  y_server  = "server2", family = "gaussian",
-  max_iter = 100, tol = 1e-4, lambda = 1e-4,
-  log_n = 12, log_scale = 40,
-  datasources = conns
-)
+glm_gauss <- .cached("glm_gauss", {
+  ds.vertGLM(
+    data_name = "D_aligned", y_var = "glu",
+    x_vars    = list(server1 = c("age", "bmi", "ped"),
+                     server2 = c("bp", "skin"),
+                     server3 = c("npreg", "diabetes")),
+    y_server  = "server2", family = "gaussian",
+    max_iter = 100, tol = 1e-4, lambda = 1e-4,
+    log_n = 12, log_scale = 40,
+    datasources = conns
+  )
+})
 ```
 
 ### GLM --- Binomial (y = `diabetes`)
 
 ```{r dsvert-binom, message = FALSE}
-glm_binom <- ds.vertGLM(
-  data_name = "D_aligned", y_var = "diabetes",
-  x_vars    = list(server1 = c("age", "bmi", "ped"),
-                   server2 = c("glu", "bp", "skin"),
-                   server3 = c("npreg")),
-  y_server  = "server3", family = "binomial",
-  max_iter = 100, tol = 1e-4, lambda = 1e-4,
-  log_n = 12, log_scale = 40,
-  datasources = conns
-)
+glm_binom <- .cached("glm_binom", {
+  ds.vertGLM(
+    data_name = "D_aligned", y_var = "diabetes",
+    x_vars    = list(server1 = c("age", "bmi", "ped"),
+                     server2 = c("glu", "bp", "skin"),
+                     server3 = c("npreg")),
+    y_server  = "server3", family = "binomial",
+    max_iter = 100, tol = 1e-4, lambda = 1e-4,
+    log_n = 12, log_scale = 40,
+    datasources = conns
+  )
+})
 ```
 
 ### GLM --- Poisson (y = `npreg`)
 
 ```{r dsvert-pois, message = FALSE}
-glm_pois <- ds.vertGLM(
-  data_name = "D_aligned", y_var = "npreg",
-  x_vars    = list(server1 = c("age", "bmi", "ped"),
-                   server2 = c("glu", "bp", "skin"),
-                   server3 = c("diabetes")),
-  y_server  = "server3", family = "poisson",
-  max_iter = 100, tol = 1e-4, lambda = 1e-4,
-  log_n = 12, log_scale = 40,
-  datasources = conns
-)
+glm_pois <- .cached("glm_pois", {
+  ds.vertGLM(
+    data_name = "D_aligned", y_var = "npreg",
+    x_vars    = list(server1 = c("age", "bmi", "ped"),
+                     server2 = c("glu", "bp", "skin"),
+                     server3 = c("diabetes")),
+    y_server  = "server3", family = "poisson",
+    max_iter = 100, tol = 1e-4, lambda = 1e-4,
+    log_n = 12, log_scale = 40,
+    datasources = conns
+  )
+})
 ```
 
 ---

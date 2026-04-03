@@ -22,6 +22,26 @@ col_palette <- colorRampPalette(c("#2166AC", "#67A9CF", "#D1E5F0",
 diff_palette <- colorRampPalette(c("#2166AC", "white", "#B2182B"))(100)
 col_local  <- "#4393C3"
 col_dsvert <- "#D6604D"
+
+# Result caching: expensive dsVert computations are saved as .rds files.
+# If cached results exist, they are loaded instead of re-running.
+# Delete the cache directory to force re-execution.
+cache_dir <- file.path(getwd(), "validation_cache")
+if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
+
+.cache_path <- function(name) file.path(cache_dir, paste0(name, ".rds"))
+
+.cached <- function(name, expr) {
+  path <- .cache_path(name)
+  if (file.exists(path)) {
+    message(sprintf("[cache] Loading %s from %s", name, basename(path)))
+    return(readRDS(path))
+  }
+  result <- expr
+  saveRDS(result, path)
+  message(sprintf("[cache] Saved %s to %s", name, basename(path)))
+  result
+}
 ```
 
 ## Introduction
@@ -31,6 +51,10 @@ vertical analysis pipeline against centralized R computations. We exercise the
 full protocol stack --- ECDH-PSI record alignment, MHE-CKKS correlation,
 spectral PCA, and encrypted-label GLMs --- on real data vertically partitioned
 across three DataSHIELD servers.
+
+**Result caching:** Expensive server-side computations are cached as `.rds`
+files. Re-rendering the vignette loads cached results instantly. Delete the
+`validation_cache/` directory to force re-execution.
 
 The study is organized in three parts:
 
@@ -142,12 +166,14 @@ without revealing which IDs are shared or which patients are unique to each
 server.
 
 ```{r psi, message = FALSE}
-psi_result <- ds.psiAlign(
-  data_name   = "D",
-  id_col      = "patient_id",
-  newobj      = "D_aligned",
-  datasources = conns
-)
+psi_result <- .cached("psi_result", {
+  ds.psiAlign(
+    data_name   = "D",
+    id_col      = "patient_id",
+    newobj      = "D_aligned",
+    datasources = conns
+  )
+})
 ```
 
 ```{r psi-summary, echo = FALSE}
@@ -276,13 +302,15 @@ variables <- list(
   server3 = c("npreg")
 )
 
-cor_result <- ds.vertCor(
-  data_name   = "D_aligned",
-  variables   = variables,
-  log_n       = 12,
-  log_scale   = 40,
-  datasources = conns
-)
+cor_result <- .cached("cor_result", {
+  ds.vertCor(
+    data_name   = "D_aligned",
+    variables   = variables,
+    log_n       = 12,
+    log_scale   = 40,
+    datasources = conns
+  )
+})
 
 dsvert_cor <- cor_result$correlation
 ```
@@ -335,16 +363,18 @@ distributed across all three servers. Gradients are computed under MHE-CKKS
 and decrypted via share-wrapped threshold decryption with server-side fusion.
 
 ```{r dsvert-gauss, message = FALSE}
-glm_gauss <- ds.vertGLM(
-  data_name = "D_aligned", y_var = "glu",
-  x_vars    = list(server1 = c("age", "bmi", "ped"),
-                   server2 = c("bp", "skin"),
-                   server3 = c("npreg", "diabetes")),
-  y_server  = "server2", family = "gaussian",
-  max_iter = 100, tol = 1e-4, lambda = 1e-4,
-  log_n = 12, log_scale = 40,
-  datasources = conns
-)
+glm_gauss <- .cached("glm_gauss", {
+  ds.vertGLM(
+    data_name = "D_aligned", y_var = "glu",
+    x_vars    = list(server1 = c("age", "bmi", "ped"),
+                     server2 = c("bp", "skin"),
+                     server3 = c("npreg", "diabetes")),
+    y_server  = "server2", family = "gaussian",
+    max_iter = 100, tol = 1e-4, lambda = 1e-4,
+    log_n = 12, log_scale = 40,
+    datasources = conns
+  )
+})
 ```
 
 ```{r dsvert-gauss-print, echo = FALSE}
@@ -358,16 +388,18 @@ weights are computed on the label server and routed to non-label servers via
 transport encryption.
 
 ```{r dsvert-binom, message = FALSE}
-glm_binom <- ds.vertGLM(
-  data_name = "D_aligned", y_var = "diabetes",
-  x_vars    = list(server1 = c("age", "bmi", "ped"),
-                   server2 = c("glu", "bp", "skin"),
-                   server3 = c("npreg")),
-  y_server  = "server3", family = "binomial",
-  max_iter = 100, tol = 1e-4, lambda = 1e-4,
-  log_n = 12, log_scale = 40,
-  datasources = conns
-)
+glm_binom <- .cached("glm_binom", {
+  ds.vertGLM(
+    data_name = "D_aligned", y_var = "diabetes",
+    x_vars    = list(server1 = c("age", "bmi", "ped"),
+                     server2 = c("glu", "bp", "skin"),
+                     server3 = c("npreg")),
+    y_server  = "server3", family = "binomial",
+    max_iter = 100, tol = 1e-4, lambda = 1e-4,
+    log_n = 12, log_scale = 40,
+    datasources = conns
+  )
+})
 ```
 
 ```{r dsvert-binom-print, echo = FALSE}
@@ -381,16 +413,18 @@ the coefficient scale, which tends to aid convergence of the encrypted BCD
 procedure.
 
 ```{r dsvert-pois, message = FALSE}
-glm_pois <- ds.vertGLM(
-  data_name = "D_aligned", y_var = "npreg",
-  x_vars    = list(server1 = c("age", "bmi", "ped"),
-                   server2 = c("glu", "bp", "skin"),
-                   server3 = c("diabetes")),
-  y_server  = "server3", family = "poisson",
-  max_iter = 100, tol = 1e-4, lambda = 1e-4,
-  log_n = 12, log_scale = 40,
-  datasources = conns
-)
+glm_pois <- .cached("glm_pois", {
+  ds.vertGLM(
+    data_name = "D_aligned", y_var = "npreg",
+    x_vars    = list(server1 = c("age", "bmi", "ped"),
+                     server2 = c("glu", "bp", "skin"),
+                     server3 = c("diabetes")),
+    y_server  = "server3", family = "poisson",
+    max_iter = 100, tol = 1e-4, lambda = 1e-4,
+    log_n = 12, log_scale = 40,
+    datasources = conns
+  )
+})
 ```
 
 ```{r dsvert-pois-print, echo = FALSE}
