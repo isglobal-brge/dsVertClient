@@ -455,19 +455,19 @@ used in the K=3 validation.</p>
 library(DSOpal)
 library(dsVertClient)
 
-logins &lt;- data.frame(
-  server = c(&quot;server1&quot;, &quot;server3&quot;),
-  url = c(&quot;https://localhost:8443&quot;, &quot;https://localhost:8445&quot;),
-  user = c(&quot;administrator&quot;, &quot;administrator&quot;),
-  password = c(&quot;admin123&quot;, &quot;admin123&quot;),
-  table = c(&quot;pima_project.pima_data&quot;, &quot;pima_project.pima_data&quot;),
-  profile = c(&quot;default&quot;, &quot;default&quot;),
-  stringsAsFactors = FALSE
-)
-conns &lt;- DSI::datashield.login(logins, assign = FALSE,
-  opts = list(ssl_verifyhost = 0, ssl_verifypeer = 0))
-DSI::datashield.assign.table(conns[&quot;server1&quot;], &quot;D&quot;, &quot;pima_project.pima_data&quot;)
-DSI::datashield.assign.table(conns[&quot;server3&quot;], &quot;D&quot;, &quot;pima_project.pima_data&quot;)</code></pre>
+builder &lt;- DSI::newDSLoginBuilder()
+builder$append(server = &quot;server1&quot;,
+               url = &quot;https://opal-demo.obiba.org&quot;,
+               user = &quot;administrator&quot;, password = &quot;password&quot;,
+               driver = &quot;OpalDriver&quot;,
+               table = &quot;vert_demo.pima_server1&quot;)
+builder$append(server = &quot;server3&quot;,
+               url = &quot;https://opal-demo.obiba.org&quot;,
+               user = &quot;administrator&quot;, password = &quot;password&quot;,
+               driver = &quot;OpalDriver&quot;,
+               table = &quot;vert_demo.pima_server3&quot;)
+
+conns &lt;- DSI::datashield.login(builder$build(), assign = TRUE, symbol = &quot;D&quot;)</code></pre>
 <div id="psi-record-alignment" class="section level3">
 <h3>PSI Record Alignment</h3>
 <pre class="r"><code>aligned &lt;- .cached(&quot;psi_result&quot;, {
