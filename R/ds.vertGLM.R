@@ -889,6 +889,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       )
       if (is.list(link_result)) link_result <- link_result[[1]]
 
+      # Store IRLS weights from coordinator (both servers need them)
+      mpc_weights <- link_result$weights
+
       # --- Step 3: Distribute mu share + compute residuals ---
       # Send coordinator's mu share for non-label to non-label server
       .sendBlob(link_result$peer_mu_share_enc,
@@ -916,54 +919,62 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     session_id = session_id)
       )
 
-      # --- Step 4: Both compute gradient shares + exchange ---
-      grad_results <- list()
+      # --- Step 4: Reconstruct residual on both servers ---
+      # The coordinator already has its residual share. Send it to the
+      # non-label server so both can reconstruct the full residual and
+      # compute their own gradient locally.
+      #
+      # Security: the residual (mu - y) does not reveal eta_nonlabel
+      # because mu = link^{-1}(eta_total) is a non-invertible transformation.
+      # This is the same information exposed in K>=3 secure routing.
+
+      # Coordinator sends its residual share to non-label (transport-encrypted)
+      coord_residual_share_result <- .dsAgg(
+        conns = datasources[coordinator_conn],
+        expr = call("k2MpcExportResidualShareDS",
+                    peer_pk = transport_pks[[nl]],
+                    session_id = session_id)
+      )
+      if (is.list(coord_residual_share_result))
+        coord_residual_share_result <- coord_residual_share_result[[1]]
+
+      .sendBlob(coord_residual_share_result$residual_share_enc,
+                "mpc_peer_residual_share", nl_conn)
+
+      # Non-label sends its residual share to coordinator
+      nl_residual_share_result <- .dsAgg(
+        conns = datasources[nl_conn],
+        expr = call("k2MpcExportResidualShareDS",
+                    peer_pk = transport_pks[[coordinator]],
+                    session_id = session_id)
+      )
+      if (is.list(nl_residual_share_result))
+        nl_residual_share_result <- nl_residual_share_result[[1]]
+
+      .sendBlob(nl_residual_share_result$residual_share_enc,
+                "mpc_peer_residual_share", coordinator_conn)
+
+      # Both servers reconstruct full residual and compute own gradient
       for (server in server_list) {
         conn_idx <- which(server_names == server)
-        peer <- setdiff(server_list, server)
-        peer_pk <- transport_pks[[peer]]
 
-        grad_results[[server]] <- .dsAgg(
+        grad_result <- .dsAgg(
           conns = datasources[conn_idx],
-          expr = call("k2MpcGradientDS",
+          expr = call("k2MpcLocalGradientDS",
                       data_name = std_data,
                       x_vars = x_vars[[server]],
                       num_obs = as.integer(n_obs),
-                      peer_pk = peer_pk,
                       frac_bits = frac_bits,
                       session_id = session_id)
         )
-        if (is.list(grad_results[[server]]))
-          grad_results[[server]] <- grad_results[[server]][[1]]
-      }
+        if (is.list(grad_result)) grad_result <- grad_result[[1]]
 
-      # Relay gradient shares: each server's contribution to the peer
-      for (server in server_list) {
-        peer <- setdiff(server_list, server)
-        peer_conn <- which(server_names == peer)
-        .sendBlob(grad_results[[server]]$gradient_share_for_peer,
-                  "mpc_peer_gradient_share", peer_conn)
-      }
-
-      # --- Step 5: Each server reveals OWN gradient ---
-      for (server in server_list) {
-        conn_idx <- which(server_names == server)
-        vars <- x_vars[[server]]
-
-        reveal_result <- .dsAgg(
-          conns = datasources[conn_idx],
-          expr = call("k2MpcRevealGradientDS",
-                      from_storage = TRUE,
-                      num_obs = as.integer(n_obs),
-                      frac_bits = frac_bits,
-                      session_id = session_id)
-        )
-        if (is.list(reveal_result)) reveal_result <- reveal_result[[1]]
-
-        gradient <- reveal_result$gradient
+        gradient <- grad_result$gradient
 
         # --- Step 6: GD update (client-side) ---
-        he_alpha <- if (iter <= 50) 0.3 else 0.3 / (1.0 + (iter - 50) / 20.0)
+        # Plain gradient descent with exact gradients from MPC piecewise link.
+        # IRLS/Newton was tested but Jacobi BCD diverges without Gauss-Seidel.
+        he_alpha <- if (iter <= 100) 0.05 else 0.05 / (1.0 + (iter - 100) / 50.0)
         grad_update <- gradient / n_obs - lambda * betas[[server]]
         betas[[server]] <- betas[[server]] + he_alpha * grad_update
 
