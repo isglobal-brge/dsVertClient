@@ -1343,6 +1343,14 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
       if (verbose && iter %% 10 == 0)
         message(sprintf("  Iteration %d: max diff = %.2e", iter, max_diff))
+
+      # Periodic server-side GC to prevent memory buildup on long runs
+      if (iter %% 20 == 0) {
+        for (server in server_list) {
+          tryCatch(.dsAgg(conns = datasources[which(server_names == server)],
+            expr = call("mheGcDS")), error = function(e) NULL)
+        }
+      }
     }
 
     if (!converged && verbose)
