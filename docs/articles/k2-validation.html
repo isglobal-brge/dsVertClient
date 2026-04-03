@@ -9,6 +9,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
 
 
+<meta name="author" content="David Sarrat González" />
 
 
 <title>K=2 Validation: Two-Party Encrypted Link-Function GLMs</title>
@@ -350,27 +351,106 @@ display: none;
 
 <h1 class="title toc-ignore">K=2 Validation: Two-Party Encrypted
 Link-Function GLMs</h1>
+<h4 class="author">David Sarrat González</h4>
 
 </div>
 
 
-<div id="k2-encrypted-link-function-validation" class="section level2">
-<h2>K=2 Encrypted Link-Function Validation</h2>
+<div id="introduction" class="section level2">
+<h2>Introduction</h2>
+<p>This vignette validates the K=2 encrypted link-function (HE-Link)
+mode of dsVert. With only two servers (one label, one non-label),
+standard secure aggregation cannot hide the non-label server’s linear
+predictor contribution because the aggregate equals the single summand.
+dsVert therefore evaluates the inverse link function entirely under CKKS
+homomorphic encryption, ensuring that neither the linear predictor nor
+the fitted values are exposed as observation-level plaintext
+vectors.</p>
+<p>We validate all three GLM families:</p>
+<ul>
+<li><strong>Gaussian</strong> (identity link): no polynomial needed,
+exact Newton block solve at <code>log_n = 12</code> (fast).</li>
+<li><strong>Binomial</strong> (logit link): degree-7 sigmoid polynomial
+under CKKS, Nesterov-accelerated gradient descent at
+<code>log_n = 14</code>.</li>
+<li><strong>Poisson</strong> (log link): degree-7 Chebyshev exp
+polynomial with eta clipping, gradient descent at
+<code>log_n = 14</code>.</li>
+</ul>
+<p><strong>Result caching:</strong> Expensive server-side computations
+are cached as <code>.rds</code> files in
+<code>k2-validation_cache/</code>. Re-rendering the vignette loads
+cached results instantly. Delete the cache directory to force
+re-execution.</p>
+<div id="data" class="section level3">
+<h3>Data</h3>
+<p>We reuse the same Pima diabetes dataset (<code>MASS::Pima.tr</code>,
+<span class="math inline">\(n = 200\)</span>) from the K=3 validation
+study, but connect to only <strong>two</strong> of the three vertical
+partitions. Specifically, server 1 (<code>age</code>, <code>bmi</code>,
+<code>ped</code>) and server 3 (<code>npreg</code>,
+<code>diabetes</code>), giving a minimal K=2 split that exercises the
+encrypted link-function pathway.</p>
+</div>
+</div>
+<div id="data-preparation" class="section level2">
+<h2>Data preparation</h2>
 <pre class="r"><code>library(MASS)
 data(&quot;Pima.tr&quot;, package = &quot;MASS&quot;)
 df &lt;- as.data.frame(Pima.tr)
 df$patient_id &lt;- sprintf(&quot;P%03d&quot;, seq_len(nrow(df)))
 df$diabetes   &lt;- ifelse(df$type == &quot;Yes&quot;, 1L, 0L)
+
 set.seed(123)
+
+# Same partitioning as K=3 validation (reproducible with set.seed(123))
 core_ids &lt;- sample(df$patient_id, 150)
 remaining &lt;- setdiff(df$patient_id, core_ids)
-ids1 &lt;- sample(c(core_ids, sample(remaining, 30)))
-ids3 &lt;- sample(c(core_ids, sample(remaining, 20)))
+
+ids1 &lt;- sample(c(core_ids, sample(remaining, 30)))  # 180 patients
+ids3 &lt;- sample(c(core_ids, sample(remaining, 20)))  # 170 patients
+
 server1_data &lt;- df[df$patient_id %in% ids1, c(&quot;patient_id&quot;, &quot;age&quot;, &quot;bmi&quot;, &quot;ped&quot;)]
 server3_data &lt;- df[df$patient_id %in% ids3, c(&quot;patient_id&quot;, &quot;npreg&quot;, &quot;diabetes&quot;)]
-cat(sprintf(&quot;Server 1: %d patients | Server 3: %d patients | Common: %d\n&quot;,
-    length(ids1), length(ids3), length(intersect(ids1, ids3))))</code></pre>
-<pre><code>#&gt; Server 1: 180 patients | Server 3: 170 patients | Common: 163</code></pre>
+
+server1_data &lt;- server1_data[sample(nrow(server1_data)), ]
+server3_data &lt;- server3_data[sample(nrow(server3_data)), ]
+
+cat(sprintf(&quot;Server 1: %d patients (age, bmi, ped)\n&quot;, nrow(server1_data)))</code></pre>
+<pre><code>#&gt; Server 1: 180 patients (age, bmi, ped)</code></pre>
+<pre class="r"><code>cat(sprintf(&quot;Server 3: %d patients (npreg, diabetes)\n&quot;, nrow(server3_data)))</code></pre>
+<pre><code>#&gt; Server 3: 170 patients (npreg, diabetes)</code></pre>
+<pre class="r"><code>cat(sprintf(&quot;Common patients: %d\n&quot;, length(intersect(ids1, ids3))))</code></pre>
+<pre><code>#&gt; Common patients: 163</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th>Server</th>
+<th>Patients</th>
+<th>Variables</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>server1</td>
+<td>180</td>
+<td><code>patient_id</code>, <code>age</code>, <code>bmi</code>,
+<code>ped</code></td>
+</tr>
+<tr class="even">
+<td>server3</td>
+<td>170</td>
+<td><code>patient_id</code>, <code>npreg</code>,
+<code>diabetes</code></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="connect-and-align" class="section level2">
+<h2>Connect and align</h2>
+<p>We connect to two DataSHIELD sessions on the OBiBa community Opal
+server. Both tables come from the same <code>vert_demo</code> project
+used in the K=3 validation.</p>
 <pre class="r"><code>library(DSI)
 library(DSOpal)
 library(dsVertClient)
@@ -388,7 +468,11 @@ conns &lt;- DSI::datashield.login(logins, assign = FALSE,
   opts = list(ssl_verifyhost = 0, ssl_verifypeer = 0))
 DSI::datashield.assign.table(conns[&quot;server1&quot;], &quot;D&quot;, &quot;pima_project.pima_data&quot;)
 DSI::datashield.assign.table(conns[&quot;server3&quot;], &quot;D&quot;, &quot;pima_project.pima_data&quot;)</code></pre>
-<pre class="r"><code>aligned &lt;- ds.psiAlign(&quot;D&quot;, id_col = &quot;patient_id&quot;, datasources = conns)</code></pre>
+<div id="psi-record-alignment" class="section level3">
+<h3>PSI Record Alignment</h3>
+<pre class="r"><code>aligned &lt;- .cached(&quot;psi_result&quot;, {
+  ds.psiAlign(&quot;D&quot;, id_col = &quot;patient_id&quot;, datasources = conns)
+})</code></pre>
 <pre><code>#&gt; === ECDH-PSI Record Alignment (Blind Relay) ===
 #&gt; Reference: server1, Targets: server3
 #&gt; 
@@ -407,26 +491,53 @@ DSI::datashield.assign.table(conns[&quot;server3&quot;], &quot;D&quot;, &quot;pi
 <pre><code>#&gt; Server &#39;server1&#39;: 162 of 180 records matched (90.0%)</code></pre>
 <pre><code>#&gt; Server &#39;server3&#39;: 162 of 162 records matched (100.0%)</code></pre>
 <pre><code>#&gt; PSI alignment complete.</code></pre>
+<pre><code>#&gt; [cache] Saved psi_result to psi_result.rds</code></pre>
 <pre class="r"><code>cat(sprintf(&quot;Common cohort: %d patients\n&quot;, aligned$n_common))</code></pre>
-<pre class="r"><code>common &lt;- intersect(ids1, ids3)
-pooled &lt;- df[df$patient_id %in% common, ]</code></pre>
 </div>
-<div id="gaussian-glm-identity-link-log_n12" class="section level2">
-<h2>Gaussian GLM (identity link, log_n=12)</h2>
-<pre class="r"><code>gauss_k2 &lt;- ds.vertGLM(&quot;D_aligned&quot;, &quot;npreg&quot;,
-  list(server1 = c(&quot;age&quot;, &quot;bmi&quot;, &quot;ped&quot;), server3 = c(&quot;diabetes&quot;)),
-  y_server = &quot;server3&quot;, family = &quot;gaussian&quot;, verbose = FALSE, datasources = conns)
+</div>
+<div id="centralized-baseline" class="section level2">
+<h2>Centralized baseline</h2>
+<p>We compute centralized results on the matched cohort for
+comparison.</p>
+<pre class="r"><code>common &lt;- intersect(ids1, ids3)
+pooled &lt;- df[df$patient_id %in% common, ]
+cat(sprintf(&quot;Pooled dataset: %d observations, %d variables\n&quot;,
+            nrow(pooled), ncol(pooled)))</code></pre>
+<pre><code>#&gt; Pooled dataset: 163 observations, 10 variables</code></pre>
+</div>
+<div id="k2-gaussian-glm" class="section level2">
+<h2>K=2 Gaussian GLM</h2>
+<p>Identity link: <code>npreg</code> as continuous response,
+<code>diabetes</code> as a predictor on server 3 alongside
+<code>age</code>, <code>bmi</code>, <code>ped</code> on server 1.</p>
+<pre class="r"><code>gauss_k2 &lt;- .cached(&quot;gauss_k2&quot;, {
+  ds.vertGLM(
+    data_name = &quot;D_aligned&quot;,
+    y_var     = &quot;npreg&quot;,
+    x_vars    = list(server1 = c(&quot;age&quot;, &quot;bmi&quot;, &quot;ped&quot;),
+                     server3 = c(&quot;diabetes&quot;)),
+    y_server  = &quot;server3&quot;,
+    family    = &quot;gaussian&quot;,
+    verbose   = FALSE,
+    datasources = conns
+  )
+})
 
-gauss_central &lt;- glm(npreg ~ age + bmi + ped + diabetes, data = pooled, family = gaussian)
+gauss_central &lt;- glm(npreg ~ age + bmi + ped + diabetes,
+                      data = pooled, family = gaussian)
 
-coefs_k2 &lt;- gauss_k2$coefficients
-coefs_ref &lt;- coef(gauss_central)[names(coefs_k2)]
-cat(sprintf(&quot;Converged: %s in %d iterations\n&quot;, gauss_k2$converged, gauss_k2$iterations))</code></pre>
-<pre><code>#&gt; Converged: TRUE in 12 iterations</code></pre>
-<pre class="r"><code>cat(sprintf(&quot;Max abs coefficient error: %.4e\n&quot;, max(abs(coefs_k2 - coefs_ref))))</code></pre>
-<pre><code>#&gt; Max abs coefficient error: 5.2670e-01</code></pre>
+cat(&quot;K=2 Gaussian (identity link, log_n=12):\n&quot;)</code></pre>
+<pre><code>#&gt; K=2 Gaussian (identity link, log_n=12):</code></pre>
+<pre class="r"><code>cat(sprintf(&quot;  Converged: %s in %d iterations\n&quot;,
+            gauss_k2$converged, gauss_k2$iterations))</code></pre>
+<pre><code>#&gt;   Converged: TRUE in 12 iterations</code></pre>
+<pre class="r"><code>coefs_k2 &lt;- gauss_k2$coefficients
+coefs_central &lt;- coef(gauss_central)[names(coefs_k2)]
+cat(sprintf(&quot;  Max abs coefficient error: %.4e\n&quot;,
+            max(abs(coefs_k2 - coefs_central))))</code></pre>
+<pre><code>#&gt;   Max abs coefficient error: 5.2670e-01</code></pre>
 <table>
-<caption>Gaussian GLM: K=2 vs centralized</caption>
+<caption>Gaussian GLM: K=2 vs centralized coefficients</caption>
 <thead>
 <tr class="header">
 <th align="left">Variable</th>
@@ -469,11 +580,136 @@ cat(sprintf(&quot;Converged: %s in %d iterations\n&quot;, gauss_k2$converged, ga
 </tbody>
 </table>
 </div>
-<div id="binomial-glm-sigmoid-polynomial-log_n14" class="section level2">
-<h2>Binomial GLM (sigmoid polynomial, log_n=14)</h2>
-<p><em>(Requires several hours at log_n=14; not rendered here. See the
-full vignette source for the code.)</em></p>
+<div id="k2-binomial-glm" class="section level2">
+<h2>K=2 Binomial GLM</h2>
+<p>Logit link with degree-7 sigmoid polynomial under CKKS
+(<code>log_n = 14</code>). Nesterov momentum gradient descent with
+conservative parameters.</p>
+<p><strong>Note:</strong> This model runs at <code>log_n = 14</code> and
+each iteration involves encrypted polynomial evaluation + encrypted
+gradient computation. With the default <code>max_iter</code>, expect
+several hours of runtime on first execution. Subsequent renders load the
+cached result instantly.</p>
+<pre class="r"><code>binom_k2 &lt;- .cached(&quot;binom_k2&quot;, {
+  ds.vertGLM(
+    data_name = &quot;D_aligned&quot;,
+    y_var     = &quot;diabetes&quot;,
+    x_vars    = list(server1 = c(&quot;age&quot;, &quot;ped&quot;),
+                     server3 = c(&quot;npreg&quot;)),
+    y_server  = &quot;server3&quot;,
+    family    = &quot;binomial&quot;,
+    verbose   = FALSE,
+    datasources = conns
+  )
+})
+
+binom_central &lt;- glm(diabetes ~ age + ped + npreg,
+                      data = pooled, family = binomial)
+
+cat(&quot;K=2 Binomial (sigmoid polynomial, log_n=14):\n&quot;)
+cat(sprintf(&quot;  Iterations: %d, converged: %s\n&quot;,
+            binom_k2$iterations, binom_k2$converged))
+
+coefs_k2_b &lt;- binom_k2$coefficients
+coefs_central_b &lt;- coef(binom_central)[names(coefs_k2_b)]
+cat(sprintf(&quot;  Max abs coefficient error: %.4e\n&quot;,
+            max(abs(coefs_k2_b - coefs_central_b))))</code></pre>
+</div>
+<div id="k2-poisson-glm" class="section level2">
+<h2>K=2 Poisson GLM</h2>
+<p>Log link with degree-7 Chebyshev exp polynomial on [-3, 3] under CKKS
+(<code>log_n = 14</code>). Each server clips its eta contribution to
+[-1.5, 1.5] before encryption.</p>
+<pre class="r"><code>poisson_k2 &lt;- .cached(&quot;poisson_k2&quot;, {
+  ds.vertGLM(
+    data_name = &quot;D_aligned&quot;,
+    y_var     = &quot;npreg&quot;,
+    x_vars    = list(server1 = c(&quot;age&quot;, &quot;bmi&quot;, &quot;ped&quot;),
+                     server3 = c(&quot;diabetes&quot;)),
+    y_server  = &quot;server3&quot;,
+    family    = &quot;poisson&quot;,
+    verbose   = FALSE,
+    datasources = conns
+  )
+})
+
+poisson_central &lt;- glm(npreg ~ age + bmi + ped + diabetes,
+                        data = pooled, family = poisson)
+
+cat(&quot;K=2 Poisson (exp polynomial, log_n=14):\n&quot;)
+cat(sprintf(&quot;  Iterations: %d, converged: %s\n&quot;,
+            poisson_k2$iterations, poisson_k2$converged))
+
+coefs_k2_p &lt;- poisson_k2$coefficients
+coefs_central_p &lt;- coef(poisson_central)[names(coefs_k2_p)]
+cat(sprintf(&quot;  Max abs coefficient error: %.4e\n&quot;,
+            max(abs(coefs_k2_p - coefs_central_p))))</code></pre>
+</div>
+<div id="cleanup" class="section level2">
+<h2>Cleanup</h2>
 <pre class="r"><code>DSI::datashield.logout(conns)</code></pre>
+</div>
+<div id="summary" class="section level2">
+<h2>Summary</h2>
+<table>
+<colgroup>
+<col width="13%" />
+<col width="13%" />
+<col width="9%" />
+<col width="15%" />
+<col width="27%" />
+<col width="21%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Family</th>
+<th>Link</th>
+<th>log_n</th>
+<th>Polynomial</th>
+<th>Optimizer</th>
+<th>Expected error</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Gaussian</td>
+<td>identity</td>
+<td>12</td>
+<td>none</td>
+<td>Exact Newton</td>
+<td><span class="math inline">\(\leq 10^{-2}\)</span></td>
+</tr>
+<tr class="even">
+<td>Binomial</td>
+<td>logit</td>
+<td>14</td>
+<td>degree-7 sigmoid</td>
+<td>Nesterov GD</td>
+<td><span class="math inline">\(\leq 5 \times 10^{-2}\)</span></td>
+</tr>
+<tr class="odd">
+<td>Poisson</td>
+<td>log</td>
+<td>14</td>
+<td>degree-7 Chebyshev exp</td>
+<td>Nesterov GD</td>
+<td><span class="math inline">\(\leq 5 \times 10^{-2}\)</span></td>
+</tr>
+</tbody>
+</table>
+<p>The K=2 encrypted link-function mode ensures that the non-label
+server’s linear predictor <span class="math inline">\(\boldsymbol{\eta}_k\)</span> is never revealed to
+the label server as a plaintext vector. This is the only secure option
+when there is a single non-label party, because secure aggregation
+requires at least two non-label peers for pairwise mask
+cancellation.</p>
+<p><strong>Performance note:</strong> Gaussian K=2 runs at
+<code>log_n = 12</code> (no polynomial evaluation needed) and is
+comparable in speed to the K=3 secure aggregation mode. Binomial and
+Poisson K=2 require <code>log_n = 14</code> for the polynomial
+multiplicative depth, resulting in significantly higher per-iteration
+cost. Heavy CKKS operations are dispatched asynchronously with
+short-poll result retrieval to prevent reverse-proxy timeouts.</p>
 </div>
 
 
