@@ -121,6 +121,24 @@ original scale and an intercept is computed.
 plaintext y and the final linear predictor (original scale).
 }
 }
+
+\subsection{K=2 Encrypted Link-Function Mode (HE-Link)}{
+With exactly two servers, secure aggregation cannot hide the non-label
+server's eta contribution. dsVert automatically switches to encrypted
+link-function mode, which evaluates the inverse link under CKKS:
+\itemize{
+\item \strong{Gaussian}: Identity link (mu = eta); no polynomial
+evaluation needed, uses log_n = 12 and exact Newton block solve.
+\item \strong{Binomial}: Degree-7 sigmoid polynomial on \link{-8, 8};
+requires log_n >= 14 for multiplicative depth.
+\item \strong{Poisson}: Degree-7 Chebyshev exp polynomial on \link{-3, 3}
+with per-server eta clipping; requires log_n >= 14.
+}
+Binomial and Poisson use gradient descent with a warm-start step-size
+schedule (constant then decaying). Heavy CKKS operations
+at log_n = 14 are dispatched asynchronously with short-poll result
+retrieval to prevent reverse-proxy timeouts.
+}
 }
 \examples{
 \dontrun{

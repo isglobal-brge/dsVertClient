@@ -83,6 +83,24 @@
 #' }
 #' }
 #'
+#' \subsection{K=2 Encrypted Link-Function Mode (HE-Link)}{
+#' With exactly two servers, secure aggregation cannot hide the non-label
+#' server's eta contribution. dsVert automatically switches to encrypted
+#' link-function mode, which evaluates the inverse link under CKKS:
+#' \itemize{
+#'   \item \strong{Gaussian}: Identity link (mu = eta); no polynomial
+#'     evaluation needed, uses log_n = 12 and exact Newton block solve.
+#'   \item \strong{Binomial}: Degree-7 sigmoid polynomial on [-8, 8];
+#'     requires log_n >= 14 for multiplicative depth.
+#'   \item \strong{Poisson}: Degree-7 Chebyshev exp polynomial on [-3, 3]
+#'     with per-server eta clipping; requires log_n >= 14.
+#' }
+#' Binomial and Poisson use gradient descent with a warm-start step-size
+#' schedule (constant then decaying). Heavy CKKS operations
+#' at log_n = 14 are dispatched asynchronously with short-poll result
+#' retrieval to prevent reverse-proxy timeouts.
+#' }
+#'
 #' @references
 #' van Kesteren, E.J. et al. (2019). Privacy-preserving generalized linear
 #' models using distributed block coordinate descent. arXiv:1911.03183.
@@ -1127,12 +1145,11 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       betas_old <- betas
       max_diff <- 0
 
-      # --- Step 1: Each server encrypts eta_k = X_k * beta_k ---
+      # --- Step 1: Each server encrypts eta_k = X_k * beta_k (parallel) ---
+      enc_eta_results <- list()
       for (server in server_list) {
         conn_idx <- which(server_names == server)
-        party_idx <- which(server_list == server) - 1
-
-        enc_eta_result <- .dsAgg(
+        enc_eta_results[[server]] <- .dsAgg(
           conns = datasources[conn_idx],
           expr = call("glmHEEncryptEtaDS",
                       data_name = std_data,
@@ -1141,9 +1158,12 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                       clip_radius = he_link_clip_radius,
                       session_id = session_id)
         )
+      }
+      # Send encrypted etas to coordinator
+      for (server in server_list) {
+        party_idx <- which(server_list == server) - 1
+        enc_eta_result <- enc_eta_results[[server]]
         if (is.list(enc_eta_result)) enc_eta_result <- enc_eta_result[[1]]
-
-        # Send encrypted eta to coordinator via blob storage
         .sendBlob(enc_eta_result$encrypted_eta,
                   paste0("ct_eta_", party_idx), coordinator_conn)
       }
@@ -1281,26 +1301,16 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
           if (is.list(update_result)) update_result <- update_result[[1]]
           betas[[server]] <- update_result$beta
         } else {
-          # GD block update for binomial/Poisson
+          # GD block update for binomial/Poisson (client-side, no server call)
+          # Note: Nesterov momentum was tested but amplifies CKKS polynomial
+          # approximation noise, slowing convergence. Plain GD is more stable.
           if (family == "binomial") {
-            # Warm start at alpha=0.3, decay after 50 iterations
             he_alpha <- if (iter <= 50) 0.3 else 0.3 / (1.0 + (iter - 50) / 20.0)
           } else {
-            # Poisson: more conservative step size
             he_alpha <- if (iter <= 50) 0.2 else 0.2 / (1.0 + (iter - 50) / 20.0)
           }
-          update_result <- .dsAgg(
-            conns = datasources[conn_idx],
-            expr = call("glmHEBlockUpdateDS",
-                        beta_current = betas[[server]],
-                        gradient = gradient,
-                        alpha = he_alpha,
-                        lambda = lambda,
-                        n_obs = as.integer(n_obs),
-                        session_id = session_id)
-          )
-          if (is.list(update_result)) update_result <- update_result[[1]]
-          betas[[server]] <- update_result$beta
+          grad_update <- gradient / n_obs - lambda * betas[[server]]
+          betas[[server]] <- betas[[server]] + he_alpha * grad_update
         }
 
         diff_server <- max(abs(betas[[server]] - betas_old[[server]]))
