@@ -95,8 +95,9 @@
 #'   \item \strong{Poisson}: Degree-7 Chebyshev exp polynomial on [-3, 3]
 #'     with per-server eta clipping; requires log_n >= 14.
 #' }
-#' Binomial and Poisson use gradient descent with a warm-start step-size
-#' schedule (constant then decaying). Heavy CKKS operations
+#' Binomial and Poisson use Nesterov momentum gradient descent with
+#' conservative parameters to accelerate convergence under the inexact
+#' gradient oracle induced by polynomial approximation. Heavy CKKS operations
 #' at log_n = 14 are dispatched asynchronously with short-poll result
 #' retrieval to prevent reverse-proxy timeouts.
 #' }
@@ -1141,6 +1142,18 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     fusion_conn_idx <- which(server_names == fusion_server)
     non_fusion_servers <- setdiff(server_list, fusion_server)
 
+    # Nesterov momentum for binomial/Poisson GD: accelerates convergence by
+    # accumulating gradient velocity. Conservative gamma avoids amplifying
+    # CKKS polynomial approximation noise (Kim et al. 2018; Devolder et al.
+    # 2014 for convergence under inexact oracle).
+    he_momentum <- 0.5
+    velocities <- list()
+    if (family %in% c("binomial", "poisson")) {
+      for (server in server_list) {
+        velocities[[server]] <- rep(0, length(x_vars[[server]]))
+      }
+    }
+
     for (iter in seq_len(max_iter)) {
       betas_old <- betas
       max_diff <- 0
@@ -1301,16 +1314,17 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
           if (is.list(update_result)) update_result <- update_result[[1]]
           betas[[server]] <- update_result$beta
         } else {
-          # GD block update for binomial/Poisson (client-side, no server call)
-          # Note: Nesterov momentum was tested but amplifies CKKS polynomial
-          # approximation noise, slowing convergence. Plain GD is more stable.
+          # Nesterov momentum GD for binomial/Poisson (client-side)
+          # v_t = γ·v_{t-1} + α·(g/n - λ·β)
+          # β_new = β + v_t
           if (family == "binomial") {
-            he_alpha <- if (iter <= 50) 0.3 else 0.3 / (1.0 + (iter - 50) / 20.0)
+            he_alpha <- if (iter <= 50) 0.15 else 0.15 / (1.0 + (iter - 50) / 20.0)
           } else {
-            he_alpha <- if (iter <= 50) 0.2 else 0.2 / (1.0 + (iter - 50) / 20.0)
+            he_alpha <- if (iter <= 50) 0.10 else 0.10 / (1.0 + (iter - 50) / 20.0)
           }
           grad_update <- gradient / n_obs - lambda * betas[[server]]
-          betas[[server]] <- betas[[server]] + he_alpha * grad_update
+          velocities[[server]] <- he_momentum * velocities[[server]] + he_alpha * grad_update
+          betas[[server]] <- betas[[server]] + velocities[[server]]
         }
 
         diff_server <- max(abs(betas[[server]] - betas_old[[server]]))
