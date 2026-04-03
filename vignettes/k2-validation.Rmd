@@ -53,7 +53,7 @@ We validate all three GLM families:
 - **Gaussian** (identity link): no polynomial needed, exact Newton block solve
   at `log_n = 12` (fast).
 - **Binomial** (logit link): degree-7 sigmoid polynomial under CKKS,
-  Nesterov-accelerated gradient descent at `log_n = 14`.
+  gradient descent at `log_n = 14`.
 - **Poisson** (log link): degree-7 Chebyshev exp polynomial with eta clipping,
   gradient descent at `log_n = 14`.
 
@@ -194,7 +194,7 @@ knitr::kable(comparison, caption = "Gaussian GLM: K=2 vs centralized coefficient
 ## K=2 Binomial GLM
 
 Logit link with degree-7 sigmoid polynomial under CKKS (`log_n = 14`).
-Nesterov momentum gradient descent with conservative parameters.
+Gradient descent with warm-start step-size schedule.
 
 **Note:** This model runs at `log_n = 14` and each iteration involves
 encrypted polynomial evaluation + encrypted gradient computation. With the
@@ -294,8 +294,8 @@ DSI::datashield.logout(conns)
 | Family   | Link     | log_n | Polynomial | Optimizer           | Expected error |
 |----------|----------|-------|------------|---------------------|----------------|
 | Gaussian | identity | 12    | none       | Exact Newton        | $\leq 10^{-2}$ |
-| Binomial | logit    | 14    | degree-7 sigmoid | Nesterov GD    | $\leq 5 \times 10^{-2}$ |
-| Poisson  | log      | 14    | degree-7 Chebyshev exp | Nesterov GD | $\leq 5 \times 10^{-2}$ |
+| Binomial | logit    | 14    | degree-7 sigmoid | GD    | $\leq 5 \times 10^{-2}$ |
+| Poisson  | log      | 14    | degree-7 Chebyshev exp | GD | $\leq 5 \times 10^{-2}$ |
 
 The K=2 encrypted link-function mode ensures that the non-label server's
 linear predictor $\boldsymbol{\eta}_k$ is never revealed to the label server
