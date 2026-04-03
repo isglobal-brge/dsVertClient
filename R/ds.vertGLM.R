@@ -157,8 +157,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     stop("y_server '", y_server, "' must be in x_vars", call. = FALSE)
 
   # Resolve eta_privacy mode
-  if (!eta_privacy %in% c("auto", "transport", "he_link", "secure_agg"))
-    stop("eta_privacy must be 'auto', 'transport', 'he_link', or 'secure_agg'",
+  if (!eta_privacy %in% c("auto", "transport", "he_link", "secure_agg", "k2_mpc"))
+    stop("eta_privacy must be 'auto', 'transport', 'he_link', 'secure_agg', or 'k2_mpc'",
          call. = FALSE)
 
   # Validate topology parameter
@@ -172,12 +172,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     if (non_label_count >= 2) {
       eta_privacy <- "secure_agg"    # K>=3: pairwise PRG masks
     } else if (non_label_count == 1) {
-      eta_privacy <- "he_link"       # K=2: encrypted link-function mode
-      # Minimum log_n depends on family:
-      #   Gaussian (identity link): no polynomial → log_n=12 suffices
-      #   Binomial/Poisson (polynomial): need 4+ multiplicative levels → log_n>=14
-      if (family != "gaussian" && log_n < 14) {
-        log_n <- 14L
+      if (family == "gaussian") {
+        eta_privacy <- "he_link"     # K=2 Gaussian: identity link, exact via HE
+      } else {
+        eta_privacy <- "k2_mpc"      # K=2 Binomial/Poisson: MPC piecewise exact
       }
     } else {
       eta_privacy <- "transport"     # K=1 (single server, no privacy concern)
@@ -186,6 +184,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   use_he_link <- (eta_privacy == "he_link")
   use_secure_agg <- (eta_privacy == "secure_agg")
+  use_k2_mpc <- (eta_privacy == "k2_mpc")
 
   # Policy enforcement
   if (use_secure_agg && non_label_count < 2)
@@ -764,7 +763,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # ===========================================================================
   # Phase 2: Encrypt y and distribute (only if non-label servers exist)
   # ===========================================================================
-  if (length(non_label_servers) > 0) {
+  if (length(non_label_servers) > 0 && !use_k2_mpc) {
     if (verbose) message("\n[Phase 2] Encrypting response variable...")
 
     # Encrypt STANDARDIZED y (Gaussian) or raw y (non-Gaussian)
@@ -820,7 +819,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   betas <- list()
   for (server in server_list) {
     p <- length(x_vars[[server]])
-    if (server == coordinator && label_intercept && !use_he_link) p <- p + 1
+    if (server == coordinator && label_intercept && !use_he_link && !use_k2_mpc) p <- p + 1
     betas[[server]] <- rep(0, p)
   }
 
@@ -830,7 +829,167 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # Encrypted eta blobs (opaque to client): server_name -> base64url string
   encrypted_etas <- list()
 
-  if (use_secure_agg) {
+  if (use_k2_mpc) {
+    # =========================================================================
+    # Phase 3 (K=2 MPC): BCD with piecewise exact sigmoid/exp
+    # =========================================================================
+    # Secret-shared training loop via client relay. Each iteration:
+    #   1. Both servers split eta_k into shares, relay peer's share
+    #   2. Coordinator evaluates piecewise link on reconstructed eta
+    #   3. Both compute residual shares, gradient shares
+    #   4. Each server reconstructs ONLY its own gradient
+    #   5. Local GD update
+    #
+    # All shares are transport-encrypted for client-relay safety.
+
+    if (verbose) message("\n[Phase 3] BCD iterations (K=2 MPC, piecewise exact)...")
+
+    frac_bits <- 20L
+
+    for (iter in seq_len(max_iter)) {
+      betas_old <- betas
+      max_diff <- 0
+
+      # --- Step 1: Both servers split eta_k into shares ---
+      split_results <- list()
+      for (server in server_list) {
+        conn_idx <- which(server_names == server)
+        peer <- setdiff(server_list, server)
+        peer_pk <- transport_pks[[peer]]
+
+        split_results[[server]] <- .dsAgg(
+          conns = datasources[conn_idx],
+          expr = call("k2MpcSplitEtaDS",
+                      data_name = std_data,
+                      x_vars = x_vars[[server]],
+                      beta = betas[[server]],
+                      peer_pk = peer_pk,
+                      frac_bits = frac_bits,
+                      session_id = session_id)
+        )
+        if (is.list(split_results[[server]]))
+          split_results[[server]] <- split_results[[server]][[1]]
+      }
+
+      # --- Step 2: Relay shares + coordinator evaluates link ---
+      # Non-label's encrypted eta share → coordinator
+      nl <- non_label_servers[1]
+      nl_conn <- which(server_names == nl)
+      .sendBlob(split_results[[nl]]$peer_share_enc,
+                "mpc_peer_eta_share", coordinator_conn)
+
+      link_result <- .dsAgg(
+        conns = datasources[coordinator_conn],
+        expr = call("k2MpcLinkEvalDS",
+                    family = family,
+                    peer_share_key = "mpc_peer_eta_share",
+                    peer_pk = transport_pks[[nl]],
+                    frac_bits = frac_bits,
+                    session_id = session_id)
+      )
+      if (is.list(link_result)) link_result <- link_result[[1]]
+
+      # --- Step 3: Distribute mu share + compute residuals ---
+      # Send coordinator's mu share for non-label to non-label server
+      .sendBlob(link_result$peer_mu_share_enc,
+                "mpc_peer_mu_share", nl_conn)
+
+      # Both compute residual shares
+      # Coordinator (label): residual = mu_share - y
+      .dsAgg(
+        conns = datasources[coordinator_conn],
+        expr = call("k2MpcResidualDS",
+                    data_name = if (family == "gaussian") std_data else data_name,
+                    y_var = y_var,
+                    role = "label",
+                    from_storage = FALSE,
+                    frac_bits = frac_bits,
+                    session_id = session_id)
+      )
+      # Non-label: residual = mu_share (no y)
+      .dsAgg(
+        conns = datasources[nl_conn],
+        expr = call("k2MpcResidualDS",
+                    role = "nonlabel",
+                    from_storage = TRUE,
+                    frac_bits = frac_bits,
+                    session_id = session_id)
+      )
+
+      # --- Step 4: Both compute gradient shares + exchange ---
+      grad_results <- list()
+      for (server in server_list) {
+        conn_idx <- which(server_names == server)
+        peer <- setdiff(server_list, server)
+        peer_pk <- transport_pks[[peer]]
+
+        grad_results[[server]] <- .dsAgg(
+          conns = datasources[conn_idx],
+          expr = call("k2MpcGradientDS",
+                      data_name = std_data,
+                      x_vars = x_vars[[server]],
+                      num_obs = as.integer(n_obs),
+                      peer_pk = peer_pk,
+                      frac_bits = frac_bits,
+                      session_id = session_id)
+        )
+        if (is.list(grad_results[[server]]))
+          grad_results[[server]] <- grad_results[[server]][[1]]
+      }
+
+      # Relay gradient shares: each server's contribution to the peer
+      for (server in server_list) {
+        peer <- setdiff(server_list, server)
+        peer_conn <- which(server_names == peer)
+        .sendBlob(grad_results[[server]]$gradient_share_for_peer,
+                  "mpc_peer_gradient_share", peer_conn)
+      }
+
+      # --- Step 5: Each server reveals OWN gradient ---
+      for (server in server_list) {
+        conn_idx <- which(server_names == server)
+        vars <- x_vars[[server]]
+
+        reveal_result <- .dsAgg(
+          conns = datasources[conn_idx],
+          expr = call("k2MpcRevealGradientDS",
+                      from_storage = TRUE,
+                      num_obs = as.integer(n_obs),
+                      frac_bits = frac_bits,
+                      session_id = session_id)
+        )
+        if (is.list(reveal_result)) reveal_result <- reveal_result[[1]]
+
+        gradient <- reveal_result$gradient
+
+        # --- Step 6: GD update (client-side) ---
+        he_alpha <- if (iter <= 50) 0.3 else 0.3 / (1.0 + (iter - 50) / 20.0)
+        grad_update <- gradient / n_obs - lambda * betas[[server]]
+        betas[[server]] <- betas[[server]] + he_alpha * grad_update
+
+        diff_server <- max(abs(betas[[server]] - betas_old[[server]]))
+        max_diff <- max(max_diff, diff_server)
+      }
+
+      final_iter <- iter
+
+      if (max_diff < tol) {
+        converged <- TRUE
+        if (verbose)
+          message(sprintf("  Converged after %d iterations (diff = %.2e)",
+                          iter, max_diff))
+        break
+      }
+
+      if (verbose && iter %% 10 == 0)
+        message(sprintf("  Iteration %d: max diff = %.2e", iter, max_diff))
+    }
+
+    if (!converged && verbose)
+      warning(sprintf("Did not converge after %d iterations (diff = %.2e)",
+                      max_iter, max_diff))
+
+  } else if (use_secure_agg) {
     # =========================================================================
     # Phase 3 (Secure Aggregation): BCD with pairwise PRG masks (K>=3)
     # =========================================================================
@@ -1555,7 +1714,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   for (server in server_list) {
     server_beta <- betas[[server]]
-    if (server == coordinator && label_intercept && !use_he_link) {
+    if (server == coordinator && label_intercept && !use_he_link && !use_k2_mpc) {
       beta_0_from_label <- server_beta[1]
       server_beta <- server_beta[-1]
     }
@@ -1631,8 +1790,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         eta_blob_keys_final <- c(eta_blob_keys_final, key)
       }
     }
-  } else if (use_he_link) {
-    # HE-Link deviance: one-time secure-routing deviance computation.
+  } else if (use_he_link || use_k2_mpc) {
+    # HE-Link / K2-MPC deviance: one-time secure-routing deviance computation.
     # Each server computes its final eta = X*beta on the standardized scale.
     # The coordinator stores its own eta locally; non-label servers
     # transport-encrypt their eta to the coordinator. This briefly reveals
