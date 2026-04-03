@@ -16,6 +16,26 @@ knitr::opts_chunk$set(
   fig.height = 5,
   fig.align = "center"
 )
+
+# Result caching: expensive dsVert computations are saved as .rds files.
+# If cached results exist, they are loaded instead of re-running.
+# Delete the cache directory to force re-execution.
+cache_dir <- file.path(getwd(), "k2-validation_cache")
+if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
+
+.cache_path <- function(name) file.path(cache_dir, paste0(name, ".rds"))
+
+.cached <- function(name, expr) {
+  path <- .cache_path(name)
+  if (file.exists(path)) {
+    message(sprintf("[cache] Loading %s from %s", name, basename(path)))
+    return(readRDS(path))
+  }
+  result <- expr
+  saveRDS(result, path)
+  message(sprintf("[cache] Saved %s to %s", name, basename(path)))
+  result
+}
 ```
 
 ## Introduction
@@ -36,6 +56,10 @@ We validate all three GLM families:
   Nesterov-accelerated gradient descent at `log_n = 14`.
 - **Poisson** (log link): degree-7 Chebyshev exp polynomial with eta clipping,
   gradient descent at `log_n = 14`.
+
+**Result caching:** Expensive server-side computations are cached as `.rds`
+files in `k2-validation_cache/`. Re-rendering the vignette loads cached
+results instantly. Delete the cache directory to force re-execution.
 
 ### Data
 
@@ -107,7 +131,9 @@ conns <- DSI::datashield.login(builder$build(), assign = TRUE, symbol = "D")
 ### PSI Record Alignment
 
 ```{r psi}
-aligned <- ds.psiAlign("D", id_col = "patient_id", datasources = conns)
+aligned <- .cached("psi_result", {
+  ds.psiAlign("D", id_col = "patient_id", datasources = conns)
+})
 cat(sprintf("Common cohort: %d patients\n", aligned$n_common))
 ```
 
@@ -124,21 +150,22 @@ cat(sprintf("Pooled dataset: %d observations, %d variables\n",
 
 ## K=2 Gaussian GLM
 
-Identity link: `glu` is not available on these two servers, so we use
-`npreg` as continuous response (treating pregnancy count as approximately
-continuous for validation purposes).
+Identity link: `npreg` as continuous response, `diabetes` as a predictor on
+server 3 alongside `age`, `bmi`, `ped` on server 1.
 
 ```{r gaussian, message = FALSE}
-gauss_k2 <- ds.vertGLM(
-  data_name = "D_aligned",
-  y_var     = "npreg",
-  x_vars    = list(server1 = c("age", "bmi", "ped"),
-                   server3 = c("diabetes")),
-  y_server  = "server3",
-  family    = "gaussian",
-  verbose   = FALSE,
-  datasources = conns
-)
+gauss_k2 <- .cached("gauss_k2", {
+  ds.vertGLM(
+    data_name = "D_aligned",
+    y_var     = "npreg",
+    x_vars    = list(server1 = c("age", "bmi", "ped"),
+                     server3 = c("diabetes")),
+    y_server  = "server3",
+    family    = "gaussian",
+    verbose   = FALSE,
+    datasources = conns
+  )
+})
 
 gauss_central <- glm(npreg ~ age + bmi + ped + diabetes,
                       data = pooled, family = gaussian)
@@ -170,21 +197,23 @@ Logit link with degree-7 sigmoid polynomial under CKKS (`log_n = 14`).
 Nesterov momentum gradient descent with conservative parameters.
 
 **Note:** This model runs at `log_n = 14` and each iteration involves
-encrypted polynomial evaluation + encrypted gradient computation. With
-`max_iter = 50`, expect approximately 2--3 hours of runtime.
+encrypted polynomial evaluation + encrypted gradient computation. With the
+default `max_iter`, expect several hours of runtime on first execution.
+Subsequent renders load the cached result instantly.
 
 ```{r binomial, message = FALSE}
-binom_k2 <- ds.vertGLM(
-  data_name = "D_aligned",
-  y_var     = "diabetes",
-  x_vars    = list(server1 = c("age", "ped"),
-                   server3 = c("npreg")),
-  y_server  = "server3",
-  family    = "binomial",
-  max_iter  = 50,
-  verbose   = FALSE,
-  datasources = conns
-)
+binom_k2 <- .cached("binom_k2", {
+  ds.vertGLM(
+    data_name = "D_aligned",
+    y_var     = "diabetes",
+    x_vars    = list(server1 = c("age", "ped"),
+                     server3 = c("npreg")),
+    y_server  = "server3",
+    family    = "binomial",
+    verbose   = FALSE,
+    datasources = conns
+  )
+})
 
 binom_central <- glm(diabetes ~ age + ped + npreg,
                       data = pooled, family = binomial)
@@ -208,6 +237,50 @@ comparison_b <- data.frame(
   row.names  = NULL
 )
 knitr::kable(comparison_b, caption = "Binomial GLM: K=2 vs centralized coefficients")
+```
+
+## K=2 Poisson GLM
+
+Log link with degree-7 Chebyshev exp polynomial on [-3, 3] under CKKS
+(`log_n = 14`). Each server clips its eta contribution to [-1.5, 1.5]
+before encryption.
+
+```{r poisson, message = FALSE}
+poisson_k2 <- .cached("poisson_k2", {
+  ds.vertGLM(
+    data_name = "D_aligned",
+    y_var     = "npreg",
+    x_vars    = list(server1 = c("age", "bmi", "ped"),
+                     server3 = c("diabetes")),
+    y_server  = "server3",
+    family    = "poisson",
+    verbose   = FALSE,
+    datasources = conns
+  )
+})
+
+poisson_central <- glm(npreg ~ age + bmi + ped + diabetes,
+                        data = pooled, family = poisson)
+
+cat("K=2 Poisson (exp polynomial, log_n=14):\n")
+cat(sprintf("  Iterations: %d, converged: %s\n",
+            poisson_k2$iterations, poisson_k2$converged))
+
+coefs_k2_p <- poisson_k2$coefficients
+coefs_central_p <- coef(poisson_central)[names(coefs_k2_p)]
+cat(sprintf("  Max abs coefficient error: %.4e\n",
+            max(abs(coefs_k2_p - coefs_central_p))))
+```
+
+```{r poisson-table, echo = FALSE}
+comparison_p <- data.frame(
+  Variable   = names(coefs_k2_p),
+  dsVert_K2  = round(coefs_k2_p, 5),
+  Centralized = round(coefs_central_p, 5),
+  Difference = round(coefs_k2_p - coefs_central_p, 6),
+  row.names  = NULL
+)
+knitr::kable(comparison_p, caption = "Poisson GLM: K=2 vs centralized coefficients")
 ```
 
 ## Cleanup
