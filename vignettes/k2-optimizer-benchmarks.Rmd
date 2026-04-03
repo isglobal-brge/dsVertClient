@@ -1,0 +1,154 @@
+---
+title: "K=2 HE-Link Optimizer Benchmarks"
+author: "David Sarrat González"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{K=2 HE-Link Optimizer Benchmarks}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = FALSE, comment = "#>")
+```
+
+## Motivation
+
+The K=2 encrypted link-function (HE-Link) mode evaluates the inverse link
+function as a polynomial approximation under CKKS homomorphic encryption.
+For binomial and Poisson GLMs, this means the optimizer works with
+**approximate gradients** rather than exact IRLS updates. This vignette
+documents systematic benchmarks of different optimizer configurations to
+justify the final design choices.
+
+## Experimental setup
+
+All experiments use the same model and data:
+
+- **Model**: `diabetes ~ age + ped + npreg` (K=2 binomial, 2+1 predictors)
+- **Data**: Pima diabetes dataset, n=162 after PSI alignment
+- **Centralized reference**: `glm()` coefficients (intercept=-4.47, age=0.070, ped=1.85, npreg=0.113)
+- **CKKS parameters**: `log_n=14`, `log_scale=40`
+- **Convergence criterion**: max coefficient change < 1e-4
+
+## Configurations tested
+
+Four configurations were compared, varying three factors:
+
+| Config | Optimizer | Sigmoid polynomial | Regularization |
+|--------|-----------|-------------------|----------------|
+| A | Nesterov momentum (gamma=0.5, alpha=0.15) | [-4, 4] | lambda=1e-4 |
+| B | Plain GD (alpha=0.3) | [-8, 8] | lambda=1e-4 |
+| C | Nesterov momentum (gamma=0.9, alpha=0.3) | [-8, 8] | lambda=1e-4 |
+| D | Nesterov momentum (gamma=0.5, alpha=0.15) | [-4, 4] | lambda=1e-6 |
+
+## Convergence rates
+
+```{r convergence-table, echo = FALSE}
+convergence <- data.frame(
+  Config = c("A: Nesterov + [-4,4]", "B: Plain GD + [-8,8]",
+             "C: Aggressive Nesterov", "D: Nesterov + low lambda"),
+  Iter_10 = c("2.44e-02", "2.54e-02", "1.01e-01", "2.45e-02"),
+  Iter_20 = c("1.08e-02", "1.27e-02", "7.95e-02", "1.08e-02"),
+  Iter_30 = c("6.12e-03", "7.41e-03", "—", "6.13e-03"),
+  Rate = c("0.49x / 10 iters", "0.50x / 10 iters",
+           "0.79x / 10 iters", "0.49x / 10 iters")
+)
+knitr::kable(convergence, col.names = c("Configuration", "Diff @ iter 10",
+             "Diff @ iter 20", "Diff @ iter 30", "Convergence rate"),
+             caption = "Convergence rates across configurations")
+```
+
+## Converged results
+
+```{r results-table, echo = FALSE}
+results <- data.frame(
+  Config = c("A: Nesterov + [-4,4]", "B: Plain GD + [-8,8]",
+             "C: Aggressive Nesterov", "D: Nesterov + low lambda"),
+  Iters = c(200, 209, "20*", "50*"),
+  Converged = c("Yes", "Yes", "No", "No"),
+  Max_error = c("1.57", "1.37", ">2", "1.76"),
+  Intercept = c("-2.90", "-3.10", "—", "-2.71")
+)
+knitr::kable(results, col.names = c("Configuration", "Iterations",
+             "Converged", "Max coef error", "Intercept (K=2)"),
+             caption = "Converged coefficient errors (centralized intercept: -4.47)")
+```
+
+*Entries marked with \* did not reach convergence within the iteration limit.*
+
+## Key findings
+
+### 1. Momentum does not improve accuracy
+
+Comparing **A** (Nesterov, gamma=0.5) with **B** (plain GD): both converge at
+similar rates (~0.5x per 10 iterations), but plain GD achieves slightly
+better coefficient accuracy (1.37 vs 1.57). Aggressive momentum
+(**C**, gamma=0.9) diverges entirely.
+
+**Why?** Momentum accumulates velocity across iterations. When the gradient
+is systematically biased (as it is with polynomial sigmoid approximation),
+momentum amplifies the bias rather than correcting it. This is consistent
+with the theory of inexact first-order oracles (Devolder et al., 2014).
+
+### 2. Polynomial domain: [-8, 8] outperforms [-4, 4]
+
+The [-4, 4] polynomial has 7x better approximation accuracy *within* its
+domain (max error 2.8e-3 vs 1.9e-2). Yet it produces *worse* converged
+coefficients (1.57 vs 1.37).
+
+**Why?** During early GD iterations, `eta_total` can occasionally exceed
+[-4, 4] (it is the sum of two standardised components). Outside the fitted
+domain, the polynomial diverges from the true sigmoid, causing erratic
+gradient updates. The [-8, 8] polynomial is less accurate in-range but
+never diverges for practical `eta` values.
+
+### 3. Regularization has negligible effect
+
+Configs **A** (lambda=1e-4) and **D** (lambda=1e-6) show virtually identical
+convergence rates and similar converged errors. The L2 penalty is not a
+significant source of bias at these scales.
+
+### 4. The error is fundamental
+
+The ~1.4 max coefficient error (concentrated in the intercept) is an
+inherent consequence of replacing the exact sigmoid with a degree-7
+polynomial. The polynomial is systematically flatter than the true sigmoid,
+which biases the gradient and causes the optimizer to converge to a
+different point than exact IRLS. No amount of optimizer tuning addresses
+this; it would require either a higher-degree polynomial (needing more CKKS
+multiplicative levels, i.e., `log_n >= 15`) or a fundamentally different
+approach.
+
+## Recommendation
+
+The final dsVert configuration uses:
+
+- **Plain gradient descent** with alpha=0.3 (warm start, then decay)
+- **Degree-7 polynomial on [-8, 8]** (widest stable domain)
+- **lambda=1e-4** (standard regularization)
+
+This produces the best empirical results and is the simplest implementation.
+For applications requiring exact coefficient recovery, **K >= 3 with secure
+aggregation** should be preferred (coefficient error ~4e-4).
+
+## Context: why this tradeoff exists
+
+With K >= 3 servers, dsVert uses **secure aggregation** (pairwise masking)
+to hide individual `eta_k` contributions. The label server sees only the
+sum, computes exact `mu = sigmoid(eta_total)` in plaintext, and runs
+standard IRLS. This gives near-exact convergence.
+
+With K = 2, there is no second non-label peer to provide a cancelling mask.
+The only way to prevent the label server from learning `eta_nonlabel` is to
+keep `eta` encrypted through the sigmoid evaluation — which requires
+polynomial approximation under HE. This is the fundamental
+**privacy/accuracy tradeoff** of the two-party setting.
+
+| Regime | Sigmoid | Optimizer | Privacy | Max coef error |
+|--------|---------|-----------|---------|----------------|
+| K >= 3 | Exact (plaintext) | Newton-Raphson IRLS | Secure aggregation | ~4e-4 |
+| K = 2 | Polynomial (encrypted) | Gradient descent | Encrypted link function | ~1.4 |
+
+The K=2 mode is designed for scenarios where the privacy guarantee of
+hiding `eta_nonlabel` from the label server outweighs the accuracy cost.

@@ -56,6 +56,7 @@ articles:
     contents:
       - validation
       - k2-validation
+      - k2-optimizer-benchmarks
       - local-deployment
 
 authors:
