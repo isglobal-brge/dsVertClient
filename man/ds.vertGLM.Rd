@@ -134,8 +134,9 @@ requires log_n >= 14 for multiplicative depth.
 \item \strong{Poisson}: Degree-7 Chebyshev exp polynomial on \link{-3, 3}
 with per-server eta clipping; requires log_n >= 14.
 }
-Binomial and Poisson use gradient descent with a warm-start step-size
-schedule (constant then decaying). Heavy CKKS operations
+Binomial and Poisson use Nesterov momentum gradient descent with
+conservative parameters to accelerate convergence under the inexact
+gradient oracle induced by polynomial approximation. Heavy CKKS operations
 at log_n = 14 are dispatched asynchronously with short-poll result
 retrieval to prevent reverse-proxy timeouts.
 }
