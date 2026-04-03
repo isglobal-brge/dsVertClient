@@ -55,6 +55,7 @@ articles:
   - title: Validation
     contents:
       - validation
+      - k2-validation
       - local-deployment
 
 authors:
