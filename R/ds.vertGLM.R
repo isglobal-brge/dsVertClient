@@ -175,10 +175,41 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       if (family == "gaussian") {
         eta_privacy <- "he_link"     # K=2 Gaussian: identity link, exact via HE
       } else {
-        eta_privacy <- "k2_mpc"      # K=2 Binomial/Poisson: MPC piecewise exact
+        eta_privacy <- "k2_mpc"      # K=2 Binomial/Poisson: default pragmatic (GS-IRLS)
       }
     } else {
       eta_privacy <- "transport"     # K=1 (single server, no privacy concern)
+    }
+  }
+
+  # K=2 nonlinear: query non-label server for policy before committing mode
+  use_k2_pragmatic <- FALSE
+  if (eta_privacy == "k2_mpc" && non_label_count == 1) {
+    nl_server_name <- setdiff(names(x_vars), y_server)
+    nl_conn_idx <- which(names(datasources) == nl_server_name)
+    if (length(nl_conn_idx) == 0) nl_conn_idx <- which(server_names == nl_server_name)
+    p_nl_features <- length(x_vars[[nl_server_name]])
+
+    nl_policy <- tryCatch(
+      datashield.aggregate(datasources[nl_conn_idx],
+        call("k2MpcQueryPolicyDS",
+             p_nonlabel = as.integer(p_nl_features),
+             study_id = NULL))[[1]],
+      error = function(e) list(mode = "pragmatic")
+    )
+
+    if (nl_policy$mode == "abort")
+      stop("Server policy blocks K=2 nonlinear models", call. = FALSE)
+    if (nl_policy$mode == "pragmatic") {
+      eta_privacy <- "k2_mpc"        # GS-IRLS path
+      use_k2_pragmatic <- TRUE
+      if (verbose) message("  K=2 policy: pragmatic (GS-IRLS, p_nonlabel=", p_nl_features, ")")
+    } else {
+      eta_privacy <- "he_link"       # HE-Link strict path
+      if (verbose) {
+        reason <- if (!is.null(nl_policy$reason)) nl_policy$reason else "server policy"
+        message("  K=2 policy: strict (HE-Link) — ", reason)
+      }
     }
   }
 
@@ -821,7 +852,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   betas <- list()
   for (server in server_list) {
     p <- length(x_vars[[server]])
-    if (server == coordinator && label_intercept && !use_he_link) p <- p + 1
+    if (server == coordinator && label_intercept && !use_he_link && !use_k2_mpc) p <- p + 1
     betas[[server]] <- rep(0, p)
   }
 
@@ -833,30 +864,36 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   if (use_k2_mpc) {
     # =========================================================================
-    # Phase 3 (K=2): Gauss-Seidel BCD-IRLS
+    # Phase 3 (K=2 Pragmatic): Gauss-Seidel BCD-IRLS with transport encryption
     # =========================================================================
-    # Security: eta_nonlabel is a linear combination of p_nonlabel features.
-    # For p_nonlabel >= 2, eta cannot be inverted to recover individual features.
-    # For p_nonlabel == 1, exact reconstruction is possible → block with error.
+    # The coordinator (label server) sees eta_nonlabel via transport decryption,
+    # but cannot decompose it into individual features when p_nonlabel >= 3.
+    # This is the same information class as K>=3 secure routing (which reveals
+    # w -> |eta| via arcosh). Policy gates enforce minimum feature count.
+    #
+    # Per GS-IRLS iteration:
+    #   1. Non-label: compute eta_nonlabel, transport-encrypt for coordinator
+    #   2. Coordinator: decrypt eta_nonlabel, IRLS update, encrypt (w, residual)
+    #   3. Non-label: decrypt (w, residual), IRLS block solve, encrypt eta_new
+    #   4. Check convergence on beta diff
+
+    if (verbose) message("\n[Phase 3] BCD iterations (K=2 pragmatic GS-IRLS)...")
 
     nl <- non_label_servers[1]
     nl_conn <- which(server_names == nl)
+    nl_pk <- transport_pks[[nl]]
+
     p_nl <- length(x_vars[[nl]])
 
-    if (p_nl < 2) {
-      stop(paste0("K=2 MPC with p_nonlabel=", p_nl, " is not safe: ",
-                   "a single-feature non-label partition allows exact data reconstruction ",
-                   "from the linear predictor. Use at least 2 features on the non-label server, ",
-                   "or use eta_privacy='he_link' for encrypted polynomial evaluation."),
-           call. = FALSE)
-    }
-
-    if (verbose) message("\n[Phase 3] BCD iterations (K=2 Gauss-Seidel IRLS)...")
+    # For iteration 1, coordinator's k2MpcCoordinatorIrlsDS defaults eta_other=0
+    # when no blob is present. From iteration 2 onward, the non-label's
+    # encrypted_eta from the previous solve is already stored as a blob.
 
     for (iter in seq_len(max_iter)) {
       betas_old <- betas
 
-      # --- Step 1: Coordinator IRLS step ---
+      # --- Step 1: Coordinator IRLS update ---
+      # (consumes k2_eta_nonlabel blob from previous iteration, or zeros for iter=1)
       coord_result <- .dsAgg(
         conns = datasources[coordinator_conn],
         expr = call("k2MpcCoordinatorIrlsDS",
@@ -864,17 +901,20 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     y_var = y_var,
                     x_vars = x_vars[[coordinator]],
                     beta_current = betas[[coordinator]],
-                    non_label_pk = transport_pks[[nl]],
+                    non_label_pk = nl_pk,
                     family = family,
                     lambda = lambda,
-                    n_obs = as.integer(n_obs),
-                    intercept = label_intercept,
+                    intercept = FALSE,
+                    p_nonlabel = as.integer(p_nl),
+                    iter = as.integer(iter),
                     session_id = session_id)
       )
-      if (is.list(coord_result)) coord_result <- coord_result[[1]]
+      if (is.list(coord_result) && length(coord_result) == 1)
+        coord_result <- coord_result[[1]]
+
       betas[[coordinator]] <- coord_result$beta
 
-      # --- Step 2: Relay encrypted (w, residual) to non-label ---
+      # Relay encrypted (w, residual) to non-label
       .sendBlob(coord_result$encrypted_wr, "k2_wr", nl_conn)
 
       # --- Step 3: Non-label IRLS block solve ---
@@ -885,16 +925,18 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     x_vars = x_vars[[nl]],
                     beta_current = betas[[nl]],
                     lambda = lambda,
-                    coordinator_pk = transport_pks[[coordinator]],
+                    coordinator_pk = coordinator_pk,
                     session_id = session_id)
       )
-      if (is.list(nl_result)) nl_result <- nl_result[[1]]
+      if (is.list(nl_result) && length(nl_result) == 1)
+        nl_result <- nl_result[[1]]
+
       betas[[nl]] <- nl_result$beta
 
-      # --- Step 4: Relay encrypted eta_nonlabel to coordinator ---
+      # Store encrypted eta for next iteration (coordinator will consume via blob)
       .sendBlob(nl_result$encrypted_eta, "k2_eta_nonlabel", coordinator_conn)
 
-      # Check convergence
+      # --- Step 4: Check convergence ---
       max_diff <- 0
       for (server in server_list) {
         diff_server <- max(abs(betas[[server]] - betas_old[[server]]))
@@ -906,18 +948,15 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       if (max_diff < tol) {
         converged <- TRUE
         if (verbose)
-          message(sprintf("  Converged after %d iterations (diff = %.2e)",
-                          iter, max_diff))
+          message(sprintf("  Converged after %d iterations (diff = %.2e)", iter, max_diff))
         break
       }
-
-      if (verbose && iter %% 10 == 0)
+      if (verbose && iter %% 5 == 0)
         message(sprintf("  Iteration %d: max diff = %.2e", iter, max_diff))
     }
 
     if (!converged && verbose)
-      warning(sprintf("Did not converge after %d iterations (diff = %.2e)",
-                      max_iter, max_diff))
+      warning(sprintf("Did not converge after %d iterations (diff = %.2e)", max_iter, max_diff))
 
 
   } else if (use_secure_agg) {
@@ -1645,7 +1684,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   for (server in server_list) {
     server_beta <- betas[[server]]
-    if (server == coordinator && label_intercept && !use_he_link) {
+    if (server == coordinator && label_intercept && !use_he_link && !use_k2_mpc) {
       beta_0_from_label <- server_beta[1]
       server_beta <- server_beta[-1]
     }
