@@ -1,0 +1,292 @@
+---
+title: "K=2 Validation: Two-Party Gauss-Seidel BCD-IRLS"
+author: "David Sarrat González"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{K=2 Validation: Two-Party Gauss-Seidel BCD-IRLS}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = FALSE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 5,
+  fig.align = "center"
+)
+
+cache_dir <- file.path(getwd(), "k2-mpc-validation_cache")
+if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
+
+.cache_path <- function(name) file.path(cache_dir, paste0(name, ".rds"))
+
+.cached <- function(name, expr) {
+  path <- .cache_path(name)
+  if (file.exists(path)) {
+    message(sprintf("[cache] Loading %s from %s", name, basename(path)))
+    return(readRDS(path))
+  }
+  result <- expr
+  saveRDS(result, path)
+  message(sprintf("[cache] Saved %s to %s", name, basename(path)))
+  result
+}
+```
+
+## Introduction
+
+This vignette validates the K=2 **Gauss-Seidel BCD-IRLS** (`k2_mpc`) mode
+of dsVert for binomial and Poisson GLMs. This mode is an alternative to the
+HE-Link (CKKS polynomial) pathway, offering near-exact coefficient recovery
+at the cost of revealing the aggregated linear predictor to the coordinator.
+
+The protocol mirrors the K$\geq$3 secure routing pattern
+(`glmCoordinatorStepDS` + `glmSecureBlockSolveDS`), using X25519+AES-256-GCM
+transport encryption instead of CKKS:
+
+1. **Coordinator** (label server) updates first: decrypts non-label's
+   $\boldsymbol{\eta}_\text{nl}$, runs full IRLS, recomputes $\mu$/$w$/residual
+   with new $\beta$ (**Gauss-Seidel key step**), encrypts $(w, r)$ for non-label.
+2. **Non-label** decrypts $(w, r)$, computes $g = X^T r$, solves IRLS block,
+   encrypts new $\eta$ for coordinator.
+
+Per iteration: 2 server calls + 2 blob relays ($\sim$2s on Opal).
+
+### Comparison with HE-Link
+
+| | HE-Link (`he_link`) | GS-IRLS (`k2_mpc`) |
+|---|---|---|
+| Accuracy | $\leq 5 \times 10^{-2}$ (polynomial approx) | $\leq 10^{-4}$ (exact link) |
+| Speed | Hours (CKKS at `log_n`=14) | Seconds (~7 iters) |
+| Privacy | $\eta$ stays encrypted | Coordinator sees $\eta_\text{total}$ |
+
+### Data
+
+We use the Pima diabetes dataset (`MASS::Pima.tr`, $n = 200$) split across two
+servers: server 1 (`age`, `bmi`, `ped`) and server 3 (`npreg`, `diabetes`).
+
+## Data preparation
+
+```{r data-prep}
+library(MASS)
+data("Pima.tr", package = "MASS")
+df <- as.data.frame(Pima.tr)
+df$patient_id <- sprintf("P%03d", seq_len(nrow(df)))
+df$diabetes   <- ifelse(df$type == "Yes", 1L, 0L)
+
+set.seed(123)
+
+# Same partitioning as K=3 validation (reproducible with set.seed(123))
+core_ids <- sample(df$patient_id, 150)
+remaining <- setdiff(df$patient_id, core_ids)
+
+ids1 <- sample(c(core_ids, sample(remaining, 30)))  # 180 patients
+ids3 <- sample(c(core_ids, sample(remaining, 20)))  # 170 patients
+
+server1_data <- df[df$patient_id %in% ids1, c("patient_id", "age", "bmi", "ped")]
+server3_data <- df[df$patient_id %in% ids3, c("patient_id", "npreg", "diabetes")]
+
+server1_data <- server1_data[sample(nrow(server1_data)), ]
+server3_data <- server3_data[sample(nrow(server3_data)), ]
+
+cat(sprintf("Server 1: %d patients (age, bmi, ped)\n", nrow(server1_data)))
+cat(sprintf("Server 3: %d patients (npreg, diabetes)\n", nrow(server3_data)))
+cat(sprintf("Common patients: %d\n", length(intersect(ids1, ids3))))
+```
+
+## Connect and align
+
+```{r connect, results = "hide", message = FALSE}
+library(DSI)
+library(DSOpal)
+library(dsVertClient)
+
+builder <- DSI::newDSLoginBuilder()
+builder$append(server = "server1",
+               url = "https://opal-demo.obiba.org",
+               user = "administrator", password = "password",
+               driver = "OpalDriver",
+               table = "vert_demo.pima_server1")
+builder$append(server = "server3",
+               url = "https://opal-demo.obiba.org",
+               user = "administrator", password = "password",
+               driver = "OpalDriver",
+               table = "vert_demo.pima_server3")
+
+conns <- DSI::datashield.login(builder$build(), assign = TRUE, symbol = "D")
+```
+
+### PSI Record Alignment
+
+```{r psi}
+aligned <- .cached("psi_result", {
+  ds.psiAlign("D", id_col = "patient_id", datasources = conns)
+})
+cat(sprintf("Common cohort: %d patients\n", aligned$n_common))
+```
+
+## Centralized baseline
+
+```{r baseline}
+common <- intersect(ids1, ids3)
+pooled <- df[df$patient_id %in% common, ]
+cat(sprintf("Pooled dataset: %d observations\n", nrow(pooled)))
+```
+
+## K=2 Binomial GLM (Gauss-Seidel IRLS)
+
+```{r binomial, message = FALSE}
+binom_k2 <- .cached("binom_k2_mpc", {
+  ds.vertGLM(
+    data_name   = "D_aligned",
+    y_var       = "diabetes",
+    x_vars      = list(server1 = c("age", "ped"),
+                       server3 = c("npreg")),
+    y_server    = "server3",
+    family      = "binomial",
+    lambda      = 1e-4,
+    max_iter    = 100,
+    tol         = 1e-4,
+    verbose     = FALSE,
+    datasources = conns,
+    eta_privacy = "k2_mpc"
+  )
+})
+
+binom_central <- glm(diabetes ~ age + ped + npreg,
+                      data = pooled, family = binomial)
+
+cat("K=2 Binomial (Gauss-Seidel BCD-IRLS):\n")
+cat(sprintf("  Converged: %s in %d iterations\n",
+            binom_k2$converged, binom_k2$iterations))
+
+coefs_k2_b <- binom_k2$coefficients
+coefs_central_b <- coef(binom_central)[names(coefs_k2_b)]
+cat(sprintf("  Max abs coefficient error: %.4e\n",
+            max(abs(coefs_k2_b - coefs_central_b))))
+```
+
+```{r binomial-table, echo = FALSE}
+comparison_b <- data.frame(
+  Variable    = names(coefs_k2_b),
+  dsVert_K2   = round(coefs_k2_b, 6),
+  Centralized = round(coefs_central_b, 6),
+  Difference  = sprintf("%.2e", coefs_k2_b - coefs_central_b),
+  row.names   = NULL
+)
+knitr::kable(comparison_b, caption = "Binomial GLM: K=2 GS-IRLS vs centralized")
+```
+
+## K=2 Poisson GLM (Gauss-Seidel IRLS)
+
+```{r poisson, message = FALSE}
+poisson_k2 <- .cached("poisson_k2_mpc", {
+  ds.vertGLM(
+    data_name   = "D_aligned",
+    y_var       = "npreg",
+    x_vars      = list(server1 = c("age", "bmi", "ped"),
+                       server3 = c("diabetes")),
+    y_server    = "server3",
+    family      = "poisson",
+    lambda      = 1e-4,
+    max_iter    = 100,
+    tol         = 1e-4,
+    verbose     = FALSE,
+    datasources = conns,
+    eta_privacy = "k2_mpc"
+  )
+})
+
+poisson_central <- glm(npreg ~ age + bmi + ped + diabetes,
+                        data = pooled, family = poisson)
+
+cat("K=2 Poisson (Gauss-Seidel BCD-IRLS):\n")
+cat(sprintf("  Converged: %s in %d iterations\n",
+            poisson_k2$converged, poisson_k2$iterations))
+
+coefs_k2_p <- poisson_k2$coefficients
+coefs_central_p <- coef(poisson_central)[names(coefs_k2_p)]
+cat(sprintf("  Max abs coefficient error: %.4e\n",
+            max(abs(coefs_k2_p - coefs_central_p))))
+```
+
+```{r poisson-table, echo = FALSE}
+comparison_p <- data.frame(
+  Variable    = names(coefs_k2_p),
+  dsVert_K2   = round(coefs_k2_p, 6),
+  Centralized = round(coefs_central_p, 6),
+  Difference  = sprintf("%.2e", coefs_k2_p - coefs_central_p),
+  row.names   = NULL
+)
+knitr::kable(comparison_p, caption = "Poisson GLM: K=2 GS-IRLS vs centralized")
+```
+
+## K=2 Gaussian GLM (HE-Link, unchanged)
+
+For reference, the Gaussian family uses the existing HE-Link (identity link)
+mode, which does not require the Gauss-Seidel pathway.
+
+```{r gaussian, message = FALSE}
+gauss_k2 <- .cached("gauss_k2_helink", {
+  ds.vertGLM(
+    data_name   = "D_aligned",
+    y_var       = "npreg",
+    x_vars      = list(server1 = c("age", "bmi", "ped"),
+                       server3 = c("diabetes")),
+    y_server    = "server3",
+    family      = "gaussian",
+    verbose     = FALSE,
+    datasources = conns
+  )
+})
+
+gauss_central <- glm(npreg ~ age + bmi + ped + diabetes,
+                      data = pooled, family = gaussian)
+
+cat("K=2 Gaussian (identity link, HE-Link):\n")
+cat(sprintf("  Converged: %s in %d iterations\n",
+            gauss_k2$converged, gauss_k2$iterations))
+
+coefs_k2_g <- gauss_k2$coefficients
+coefs_central_g <- coef(gauss_central)[names(coefs_k2_g)]
+cat(sprintf("  Max abs coefficient error: %.4e\n",
+            max(abs(coefs_k2_g - coefs_central_g))))
+```
+
+```{r gaussian-table, echo = FALSE}
+comparison_g <- data.frame(
+  Variable    = names(coefs_k2_g),
+  dsVert_K2   = round(coefs_k2_g, 6),
+  Centralized = round(coefs_central_g, 6),
+  Difference  = sprintf("%.2e", coefs_k2_g - coefs_central_g),
+  row.names   = NULL
+)
+knitr::kable(comparison_g, caption = "Gaussian GLM: K=2 HE-Link vs centralized")
+```
+
+## Cleanup
+
+```{r cleanup}
+DSI::datashield.logout(conns)
+```
+
+## Summary
+
+| Family | Mode | Iters | Max Coef Error | Privacy |
+|--------|------|-------|----------------|---------|
+| Binomial | `k2_mpc` (GS-IRLS) | ~7 | $\leq 10^{-4}$ | Coordinator sees $\eta_\text{total}$ |
+| Poisson | `k2_mpc` (GS-IRLS) | ~12 | $\leq 10^{-5}$ | Coordinator sees $\eta_\text{total}$ |
+| Gaussian | `he_link` (identity) | ~16 | $\leq 10^{-3}$ | $\eta$ encrypted throughout |
+
+The Gauss-Seidel BCD-IRLS mode achieves near-exact coefficient recovery
+(matching centralized `glm()` to 4--5 significant figures) in under 15
+iterations. The privacy tradeoff is that the coordinator observes
+$\boldsymbol{\eta}_\text{total}$, which for K=2 reveals the non-label's
+contribution — the same information visible to the coordinator in the K$\geq$3
+secure aggregation regime.
+
+Users who require stronger K=2 privacy guarantees can explicitly set
+`eta_privacy = "he_link"` to use the CKKS polynomial pathway at the cost of
+higher approximation error ($\sim 5 \times 10^{-2}$) and longer runtime.

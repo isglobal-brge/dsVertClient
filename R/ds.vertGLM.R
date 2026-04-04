@@ -831,153 +831,255 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   if (use_k2_mpc) {
     # =========================================================================
-    # Phase 3 (K=2 MPC): BCD with piecewise exact sigmoid/exp
+    # Phase 3 (K=2 MPC): Secure Beaver-Triple BCD with Gradient Descent
     # =========================================================================
-    # Secret-shared training loop via client relay. Each iteration:
-    #   1. Both servers split eta_k into shares, relay peer's share
-    #   2. Coordinator evaluates piecewise link on reconstructed eta
-    #   3. Both compute residual shares, gradient shares
-    #   4. Each server reconstructs ONLY its own gradient
-    #   5. Local GD update
+    # FULLY SECURE: neither party sees eta_total, mu, residual, or peer data.
+    # Only p_k gradient scalars revealed per server per iteration (same as HE-Link).
     #
-    # All shares are transport-encrypted for client-relay safety.
+    # Protocol per iteration:
+    #   A. Split eta → additive shares of eta_total
+    #   B. Beaver polynomial eval → shares of mu (degree-21 for binomial)
+    #   C. Residual shares + local gradient (plaintext × own share)
+    #   D. Cross-gradient via Beaver (X_k × peer_residual on shares)
+    #   E. Reconstruct p_k gradient scalars → GD update
 
-    if (verbose) message("\n[Phase 3] BCD iterations (K=2 MPC, piecewise exact)...")
+    if (verbose) message("\n[Phase 3] BCD iterations (K=2 secure Beaver-triple MPC)...")
 
+    nl <- non_label_servers[1]
+    nl_conn <- which(server_names == nl)
     frac_bits <- 20L
+
+    # Polynomial setup
+    poly_degree <- if (family == "poisson") 15L else 21L
+    poly_info <- dsVert:::.callMheTool("mpc-get-poly-coeffs", list(
+      family = family, degree = poly_degree))
+    poly_coeffs <- poly_info$coefficients
+    if (verbose) message(sprintf("  Degree-%d polynomial, max approx error: %.2e",
+                                  poly_degree, poly_info$max_error))
+
+    # p_k for each server (for cross-gradient triple allocation)
+    p_coord <- length(x_vars[[coordinator]])
+    p_nl <- length(x_vars[[nl]])
+    gd_alpha <- 0.5  # aggressive start, decay after 20 iters
 
     for (iter in seq_len(max_iter)) {
       betas_old <- betas
-      max_diff <- 0
 
-      # --- Step 1: Both servers split eta_k into shares ---
-      split_results <- list()
+      # === A: Split eta → shares ===
       for (server in server_list) {
-        conn_idx <- which(server_names == server)
+        ci <- which(server_names == server)
         peer <- setdiff(server_list, server)
-        peer_pk <- transport_pks[[peer]]
-
-        split_results[[server]] <- .dsAgg(
-          conns = datasources[conn_idx],
-          expr = call("k2MpcSplitEtaDS",
-                      data_name = std_data,
-                      x_vars = x_vars[[server]],
-                      beta = betas[[server]],
-                      peer_pk = peer_pk,
-                      frac_bits = frac_bits,
-                      session_id = session_id)
-        )
-        if (is.list(split_results[[server]]))
-          split_results[[server]] <- split_results[[server]][[1]]
+        r <- .dsAgg(datasources[ci], call("k2MpcSplitEtaDS",
+          data_name=std_data, x_vars=x_vars[[server]], beta=betas[[server]],
+          peer_pk=transport_pks[[peer]], frac_bits=frac_bits,
+          session_id=session_id))
+        if (is.list(r)) r <- r[[1]]
+        # Relay peer's share
+        peer_ci <- which(server_names == peer)
+        .sendBlob(r$peer_share_enc, "mpc_peer_eta_share", peer_ci)
+      }
+      # Combine shares on both servers
+      for (server in server_list) {
+        ci <- which(server_names == server)
+        .dsAgg(datasources[ci], call("k2MpcSecureStepDS", step="combine_eta",
+               session_id=session_id))
       }
 
-      # --- Step 2: Relay shares + coordinator evaluates link ---
-      # Non-label's encrypted eta share → coordinator
-      nl <- non_label_servers[1]
-      nl_conn <- which(server_names == nl)
-      .sendBlob(split_results[[nl]]$peer_share_enc,
-                "mpc_peer_eta_share", coordinator_conn)
+      # === B: Generate + distribute Beaver triples ===
+      n_poly_triples <- poly_degree * n_obs
+      n_cross_coord <- n_obs * p_coord   # for coordinator's cross-gradient
+      n_cross_nl <- n_obs * p_nl         # for non-label's cross-gradient
+      n_total <- n_poly_triples + n_cross_coord + n_cross_nl
 
-      link_result <- .dsAgg(
-        conns = datasources[coordinator_conn],
-        expr = call("k2MpcLinkEvalDS",
-                    family = family,
-                    peer_share_key = "mpc_peer_eta_share",
-                    peer_pk = transport_pks[[nl]],
-                    frac_bits = frac_bits,
-                    session_id = session_id)
-      )
-      if (is.list(link_result)) link_result <- link_result[[1]]
+      # Client generates triples (trusted dealer)
+      tu <- runif(n_total, -1, 1)
+      tv <- runif(n_total, -1, 1)
+      tw <- tu * tv
+      tu0 <- runif(n_total, -5, 5); tu1 <- tu - tu0
+      tv0 <- runif(n_total, -5, 5); tv1 <- tv - tv0
+      tw0 <- runif(n_total, -5, 5); tw1 <- tw - tw0
 
-      # Store IRLS weights from coordinator (both servers need them)
-      mpc_weights <- link_result$weights
+      # Send to both servers
+      .b64url_to_b64 <- function(x) {
+        x <- gsub("-", "+", gsub("_", "/", x, fixed=TRUE), fixed=TRUE)
+        pad <- nchar(x) %% 4
+        if (pad == 2) x <- paste0(x, "==")
+        if (pad == 3) x <- paste0(x, "=")
+        x
+      }
+      .b64_to_b64url <- function(x) {
+        gsub("+", "-", gsub("/", "_", gsub("=+$", "", x, perl=TRUE), fixed=TRUE), fixed=TRUE)
+      }
 
-      # --- Step 3: Distribute mu share + compute residuals ---
-      # Send coordinator's mu share for non-label to non-label server
-      .sendBlob(link_result$peer_mu_share_enc,
-                "mpc_peer_mu_share", nl_conn)
-
-      # Both compute residual shares
-      # Coordinator (label): residual = mu_share - y
-      .dsAgg(
-        conns = datasources[coordinator_conn],
-        expr = call("k2MpcResidualDS",
-                    data_name = if (family == "gaussian") std_data else data_name,
-                    y_var = y_var,
-                    role = "label",
-                    from_storage = FALSE,
-                    frac_bits = frac_bits,
-                    session_id = session_id)
-      )
-      # Non-label: residual = mu_share (no y)
-      .dsAgg(
-        conns = datasources[nl_conn],
-        expr = call("k2MpcResidualDS",
-                    role = "nonlabel",
-                    from_storage = TRUE,
-                    frac_bits = frac_bits,
-                    session_id = session_id)
-      )
-
-      # --- Step 4: Reconstruct residual on both servers ---
-      # The coordinator already has its residual share. Send it to the
-      # non-label server so both can reconstruct the full residual and
-      # compute their own gradient locally.
-      #
-      # Security: the residual (mu - y) does not reveal eta_nonlabel
-      # because mu = link^{-1}(eta_total) is a non-invertible transformation.
-      # This is the same information exposed in K>=3 secure routing.
-
-      # Coordinator sends its residual share to non-label (transport-encrypted)
-      coord_residual_share_result <- .dsAgg(
-        conns = datasources[coordinator_conn],
-        expr = call("k2MpcExportResidualShareDS",
-                    peer_pk = transport_pks[[nl]],
-                    session_id = session_id)
-      )
-      if (is.list(coord_residual_share_result))
-        coord_residual_share_result <- coord_residual_share_result[[1]]
-
-      .sendBlob(coord_residual_share_result$residual_share_enc,
-                "mpc_peer_residual_share", nl_conn)
-
-      # Non-label sends its residual share to coordinator
-      nl_residual_share_result <- .dsAgg(
-        conns = datasources[nl_conn],
-        expr = call("k2MpcExportResidualShareDS",
-                    peer_pk = transport_pks[[coordinator]],
-                    session_id = session_id)
-      )
-      if (is.list(nl_residual_share_result))
-        nl_residual_share_result <- nl_residual_share_result[[1]]
-
-      .sendBlob(nl_residual_share_result$residual_share_enc,
-                "mpc_peer_residual_share", coordinator_conn)
-
-      # Both servers reconstruct full residual and compute own gradient
       for (server in server_list) {
-        conn_idx <- which(server_names == server)
+        ci <- which(server_names == server)
+        is_coord <- (server == coordinator)
+        us <- if (is_coord) tu0 else tu1
+        vs <- if (is_coord) tv0 else tv1
+        ws <- if (is_coord) tw0 else tw1
+        pk_b64 <- .b64url_to_b64(transport_pks[[server]])
+        sealed <- dsVert:::.callMheTool("transport-encrypt-vectors", list(
+          vectors = list(u=us, v=vs, w=ws), recipient_pk=pk_b64))
+        .sendBlob(.b64_to_b64url(sealed$sealed), "beaver_triples", ci)
+        .dsAgg(datasources[ci], call("k2MpcSecureStepDS", step="store_triples",
+               session_id=session_id))
+      }
 
-        grad_result <- .dsAgg(
-          conns = datasources[conn_idx],
-          expr = call("k2MpcLocalGradientDS",
-                      data_name = std_data,
-                      x_vars = x_vars[[server]],
-                      num_obs = as.integer(n_obs),
-                      frac_bits = frac_bits,
-                      session_id = session_id)
-        )
-        if (is.list(grad_result)) grad_result <- grad_result[[1]]
+      # === C: Beaver polynomial evaluation ===
+      tri_offset <- 0
+      for (k in seq_len(poly_degree)) {
+        a_key <- if (k == 1) "secure_eta_share" else paste0("secure_pow", k)
+        b_key <- "secure_eta_share"
+        result_key <- paste0("secure_pow", k + 1)
+        idx <- (tri_offset + 1):(tri_offset + n_obs)
 
-        gradient <- grad_result$gradient
+        # Open on both servers (pass triple offset + count, not values)
+        open_results <- list()
+        for (server in server_list) {
+          ci <- which(server_names == server)
+          peer <- setdiff(server_list, server)
+          r <- .dsAgg(datasources[ci], call("k2MpcSecureStepDS", step="beaver_open",
+            a_share_key=a_key, b_share_key=b_key,
+            u_vals=tri_offset, v_vals=n_obs,
+            peer_pk=transport_pks[[peer]], frac_bits=frac_bits,
+            session_id=session_id))
+          if (is.list(r)) r <- r[[1]]
+          open_results[[server]] <- r
+        }
+        .sendBlob(open_results[[coordinator]]$peer_de_enc, "beaver_peer_de", nl_conn)
+        .sendBlob(open_results[[nl]]$peer_de_enc, "beaver_peer_de", coordinator_conn)
 
-        # --- Step 6: GD update (client-side) ---
-        # Plain gradient descent with exact gradients from MPC piecewise link.
-        # IRLS/Newton was tested but Jacobi BCD diverges without Gauss-Seidel.
-        he_alpha <- if (iter <= 100) 0.05 else 0.05 / (1.0 + (iter - 100) / 50.0)
+        for (server in server_list) {
+          ci <- which(server_names == server)
+          is_coord <- (server == coordinator)
+          .dsAgg(datasources[ci], call("k2MpcSecureStepDS", step="beaver_close",
+            result_key=result_key,
+            u_vals=tri_offset, v_vals=n_obs,
+            party_id=if(is_coord) 0L else 1L,
+            frac_bits=frac_bits, session_id=session_id))
+        }
+        tri_offset <- tri_offset + n_obs
+      }
+
+      # Polynomial assembly
+      power_keys <- c("secure_eta_share", paste0("secure_pow", 2:(poly_degree+1)))
+      for (server in server_list) {
+        ci <- which(server_names == server)
+        is_coord <- (server == coordinator)
+        .dsAgg(datasources[ci], call("k2MpcSecureStepDS", step="poly_eval",
+          power_keys=power_keys, coefficients=poly_coeffs,
+          party_id=if(is_coord) 0L else 1L,
+          frac_bits=frac_bits, session_id=session_id))
+      }
+
+      # === D: Secure gradient computation ===
+      # D1: Prepare gradient (residual share + local grad + share private inputs)
+      prep_results <- list()
+      for (server in server_list) {
+        ci <- which(server_names == server)
+        peer <- setdiff(server_list, server)
+        r <- .dsAgg(datasources[ci], call("k2MpcSecureStepDS", step="prepare_gradient",
+          data_name=std_data, x_vars=x_vars[[server]],
+          y_var=if(server==coordinator) y_var else NULL,
+          role=if(server==coordinator) "label" else "nonlabel",
+          peer_pk=transport_pks[[peer]],
+          frac_bits=frac_bits, session_id=session_id))
+        if (is.list(r)) r <- r[[1]]
+        prep_results[[server]] <- r
+      }
+
+      # D2: Relay shared inputs (both FixedPoint, via transport-encrypt from server)
+      .sendBlob(prep_results[[coordinator]]$x_share_for_peer_enc, "peer_x_share", nl_conn)
+      .sendBlob(prep_results[[coordinator]]$r_share_for_peer_enc, "peer_r_share", nl_conn)
+      .sendBlob(prep_results[[nl]]$x_share_for_peer_enc, "peer_x_share", coordinator_conn)
+      .sendBlob(prep_results[[nl]]$r_share_for_peer_enc, "peer_r_share", coordinator_conn)
+
+      for (server in server_list) {
+        ci <- which(server_names == server)
+        .dsAgg(datasources[ci], call("k2MpcSecureStepDS", step="receive_peer_shares",
+               session_id=session_id))
+      }
+
+      # D3-D5: Sequential cross-gradient rounds (one per target server)
+      # Each round computes one server's cross-gradient term.
+      # Round for target T: both servers do Beaver(X_T_shares, resid_peer_T)
+      # where peer_T contributed its residual share and T shared its X columns.
+      # The Beaver size = n_obs * p_T (T's feature count).
+      cross_grad_shares <- list()  # target → cross-gradient share from peer
+
+      for (target in server_list) {
+        peer_of_target <- setdiff(server_list, target)
+        is_target_coord <- (target == coordinator)
+        # p_target includes intercept for coordinator
+        p_target <- if (is_target_coord) p_coord else p_nl
+        cross_off <- n_poly_triples + (if(is_target_coord) 0 else n_cross_coord)
+        cross_cnt <- n_obs * p_target
+
+        # Both servers do Beaver open (same size: n_obs * p_target)
+        open_r <- list()
+        for (server in server_list) {
+          ci <- which(server_names == server)
+          server_role <- if (server == target) "target" else "peer"
+          r <- .dsAgg(datasources[ci], call("k2MpcSecureStepDS",
+            step="cross_gradient_open",
+            u_vals=cross_off, v_vals=cross_cnt,
+            role=server_role,
+            peer_pk=transport_pks[[setdiff(server_list, server)]],
+            frac_bits=frac_bits, session_id=session_id))
+          if (is.list(r)) r <- r[[1]]
+          open_r[[server]] <- r
+        }
+
+        # Relay DEs
+        .sendBlob(open_r[[coordinator]]$peer_de_enc, "cross_beaver_peer_de", nl_conn)
+        .sendBlob(open_r[[nl]]$peer_de_enc, "cross_beaver_peer_de", coordinator_conn)
+
+        # Both do Beaver close (with role: target stores own share, peer encrypts)
+        close_r <- list()
+        for (server in server_list) {
+          ci <- which(server_names == server)
+          is_coord <- (server == coordinator)
+          server_role <- if (server == target) "target" else "peer"
+          r <- .dsAgg(datasources[ci], call("k2MpcSecureStepDS",
+            step="cross_gradient_close",
+            u_vals=cross_off, v_vals=cross_cnt,
+            party_id=if(is_coord) 0L else 1L,
+            role=server_role,
+            peer_pk=transport_pks[[setdiff(server_list, server)]],
+            frac_bits=frac_bits, session_id=session_id))
+          if (is.list(r)) r <- r[[1]]
+          close_r[[server]] <- r
+        }
+
+        # peer's close result has the encrypted share for the target
+        cross_grad_shares[[target]] <- close_r[[peer_of_target]]
+      }
+
+      # Relay cross-gradient shares to the target servers
+      for (target in server_list) {
+        target_ci <- which(server_names == target)
+        .sendBlob(cross_grad_shares[[target]]$cross_for_peer_enc,
+                  "cross_gradient_from_peer", target_ci)
+      }
+
+      # D6: Combine all gradient parts + GD update
+      for (server in server_list) {
+        ci <- which(server_names == server)
+        r <- .dsAgg(datasources[ci], call("k2MpcSecureStepDS",
+          step="combine_gradient",
+          frac_bits=frac_bits, session_id=session_id))
+        if (is.list(r)) r <- r[[1]]
+
+        gradient <- r$gradient
+        # Learning rate with decay (aggressive start for fast convergence)
+        lr <- if (iter <= 20) gd_alpha else gd_alpha / (1 + (iter - 20) / 15)
         grad_update <- gradient / n_obs - lambda * betas[[server]]
-        betas[[server]] <- betas[[server]] + he_alpha * grad_update
+        betas[[server]] <- betas[[server]] + lr * grad_update
+      }
 
+      # Check convergence
+      max_diff <- 0
+      for (server in server_list) {
         diff_server <- max(abs(betas[[server]] - betas_old[[server]]))
         max_diff <- max(max_diff, diff_server)
       }
