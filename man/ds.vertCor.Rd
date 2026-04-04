@@ -9,7 +9,8 @@ ds.vertCor(
   variables,
   log_n = 12,
   log_scale = 40,
-  datasources = NULL
+  datasources = NULL,
+  reuse_mhe = FALSE
 )
 }
 \arguments{
