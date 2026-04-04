@@ -807,6 +807,35 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   }
 
   # ===========================================================================
+  # K=2 MPC dispatch: dedicated sidecar backend for binomial/Poisson
+  # ===========================================================================
+  if (use_k2_mpc) {
+    backend <- getOption("dsvert.k2_nonlinear_backend", "mpc")
+    if (backend == "mpc" && !isTRUE(getOption("dsvert.experimental.k2_helink_fallback", FALSE))) {
+      if (verbose) message("\n[K=2 MPC] Dispatching to dedicated sidecar backend...")
+      return(.ds.vertGLM_k2_mpc(
+        data_name = data_name, y_var = y_var, x_vars = x_vars,
+        y_server = y_server, family = family, lambda = lambda,
+        max_iter = max_iter, tol = tol, log_n = log_n,
+        log_scale = log_scale, verbose = verbose,
+        datasources = datasources, session_id = session_id,
+        std_data = std_data, server_list = server_list,
+        server_names = server_names,
+        coordinator = y_server,
+        coordinator_conn = which(server_names == y_server),
+        non_label_servers = non_label_servers,
+        n_obs = n_obs, x_means = x_means, x_sds = x_sds,
+        y_mean = y_mean, y_sd = y_sd,
+        standardize_y = (family == "gaussian")
+      ))
+    } else if (isTRUE(getOption("dsvert.experimental.k2_helink_fallback", FALSE))) {
+      warning("Using experimental K=2 HE-link fallback; not used for manuscript results.")
+      use_k2_mpc <- FALSE
+      use_he_link <- TRUE
+    }
+  }
+
+  # ===========================================================================
   # Phase 3: BCD Iterations (on standardized scale)
   # ===========================================================================
   label_intercept <- !standardize_y
