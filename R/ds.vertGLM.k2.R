@@ -42,6 +42,18 @@ NULL
   # =========================================================================
   # Step 2: Prepare job on both servers
   # =========================================================================
+  # Set sidecar host options if configured (for Docker/multi-host deployments)
+  k2_hosts <- getOption("dsvert.k2_mpc_hosts", NULL)
+  if (!is.null(k2_hosts)) {
+    for (server in server_list) {
+      if (server %in% names(k2_hosts)) {
+        conn_idx <- which(server_names == server)
+        .dsAgg(datasources[conn_idx],
+          call("options", dsvert.k2_mpc_host = k2_hosts[[server]]))
+      }
+    }
+  }
+
   if (verbose) message("\n[Phase 3a] Preparing K=2 MPC job on both servers...")
 
   job_id <- session_id  # reuse session_id as job_id
@@ -88,11 +100,15 @@ NULL
     conn_idx <- which(server_names == server)
     peer <- setdiff(server_list, server)
 
+    peer_r <- prep_results[[peer]]
     .dsAgg(
       conns = datasources[conn_idx],
       expr = call("k2MpcStorePeerDS",
                   job_id = job_id,
-                  peer_info = prep_results[[peer]],
+                  peer_host = peer_r$host,
+                  peer_port = peer_r$port,
+                  peer_role = peer_r$role,
+                  peer_manifest = peer_r$manifest_hash,
                   session_id = session_id)
     )
   }
@@ -114,78 +130,40 @@ NULL
 
   run_results <- list()
 
-  # Check if connections support async
-  is_opal <- all(sapply(datasources, function(c) inherits(c, "OpalConnection")))
+  # Sequential launch: label (background) → nonlabel (foreground)
+  # Label starts sidecar in background (listening), returns immediately.
+  # Nonlabel starts sidecar foreground (connects to label), blocks until done.
+  # Then we poll label for its results.
 
-  if (is_opal) {
-    # Async dispatch: submit both, then poll for completion
-    cmd_ids <- list()
-    for (server in server_list) {
-      conn_idx <- which(server_names == server)
-      conn <- datasources[[conn_idx]]
-      opal <- conn@opal
+  # Step 1: Label launches sidecar in background
+  label_run <- .dsAgg(
+    conns = datasources[coordinator_conn],
+    expr = call("k2MpcRunDS", job_id = job_id, session_id = session_id)
+  )
+  if (is.list(label_run) && length(label_run) == 1) label_run <- label_run[[1]]
+  if (verbose) message("  Label sidecar launched in background")
 
-      script <- paste0('dsVert::k2MpcRunDS(job_id = "', job_id,
-                       '", session_id = "', session_id, '")')
+  # Step 2: Nonlabel runs sidecar (connects to label, blocks until complete)
+  nl_run <- .dsAgg(
+    conns = datasources[nl_conn],
+    expr = call("k2MpcRunDS", job_id = job_id, session_id = session_id)
+  )
+  if (is.list(nl_run) && length(nl_run) == 1) nl_run <- nl_run[[1]]
+  if (verbose)
+    message(sprintf("  Nonlabel completed: %d iters, conv=%s",
+                    nl_run$iterations, nl_run$converged))
+  run_results[[nl]] <- nl_run
 
-      cmd_id <- opalr::opal.post(opal, "datashield", "session",
-                                  opal$rid, "aggregate",
-                                  query = list(async = "true"),
-                                  body = script,
-                                  contentType = "application/x-rscript")
-      cmd_ids[[server]] <- list(opal = opal, cmd_id = cmd_id$id)
-      if (verbose) message(sprintf("  %s: sidecar launched (async cmd %s)", server, cmd_id$id))
-    }
-
-    # Poll for completion
-    for (server in server_list) {
-      opal <- cmd_ids[[server]]$opal
-      cid <- cmd_ids[[server]]$cmd_id
-
-      if (verbose) message(sprintf("  Waiting for %s...", server))
-
-      # Poll with timeout
-      timeout <- max_iter * 60  # seconds
-      t0 <- proc.time()[["elapsed"]]
-      repeat {
-        status <- opalr::opal.get(opal, "datashield", "session",
-                                   opal$rid, "command", cid)
-        if (status$status == "COMPLETED") break
-        if (status$status == "FAILED") {
-          stop(sprintf("MPC training failed on %s: %s", server,
-                       status$error %||% "unknown error"), call. = FALSE)
-        }
-        if (proc.time()[["elapsed"]] - t0 > timeout) {
-          stop(sprintf("MPC training timed out on %s after %ds", server, timeout),
-               call. = FALSE)
-        }
-        Sys.sleep(2)
-      }
-
-      # Get result
-      result <- opalr::opal.get(opal, "datashield", "session",
-                                 opal$rid, "command", cid, "result")
-      run_results[[server]] <- result
-      if (verbose)
-        message(sprintf("  %s: completed (%d iters, conv=%s, %.0fs)",
-                        server, result$iterations, result$converged,
-                        result$runtime_seconds))
-    }
-  } else {
-    # Synchronous fallback (for DSLite testing — won't work for real MPC)
-    warning("K=2 MPC requires Opal connections for async sidecar dispatch. ",
-            "DSLite cannot run interactive 2-party protocols.", call. = FALSE)
-
-    for (server in server_list) {
-      conn_idx <- which(server_names == server)
-      r <- .dsAgg(
-        conns = datasources[conn_idx],
-        expr = call("k2MpcRunDS", job_id = job_id, session_id = session_id)
-      )
-      if (is.list(r) && length(r) == 1) r <- r[[1]]
-      run_results[[server]] <- r
-    }
-  }
+  # Step 3: Poll label for results (sidecar should be done by now)
+  label_result <- .dsAgg(
+    conns = datasources[coordinator_conn],
+    expr = call("k2MpcResultDS", job_id = job_id, session_id = session_id)
+  )
+  if (is.list(label_result) && length(label_result) == 1) label_result <- label_result[[1]]
+  if (verbose)
+    message(sprintf("  Label completed: %d iters, conv=%s",
+                    label_result$iterations, label_result$converged))
+  run_results[[coordinator]] <- label_result
 
   # =========================================================================
   # Step 5: Assemble final model
