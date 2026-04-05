@@ -87,6 +87,19 @@ NULL
         session_id = session_id))
     }
 
+    # === Step 2b: Initialize x^0 = 1 share ===
+    # Party 0 holds 1.0 in FixedPoint, Party 1 holds 0
+    # This is a constant share that doesn't change between iterations
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
+      .dsAgg(datasources[ci], call("k2StrictInitOneShareDS",
+        party_id = if (is_coord) 0L else 1L,
+        n_obs = as.integer(n_obs),
+        frac_bits = frac_bits,
+        session_id = session_id))
+    }
+
     # === Step 3: Beaver power chain (degree-7 = 6 rounds) ===
     # Powers to compute: x^2, x^3, x^4, x^5, x^6, x^7
     # Using the square-and-multiply tree:
