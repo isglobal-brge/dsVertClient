@@ -201,8 +201,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     # Query both servers — the most restrictive policy wins
     policies <- list()
     for (srv in names(x_vars)) {
-      srv_idx <- which(server_names == srv)
-      if (length(srv_idx) == 0) srv_idx <- which(names(datasources) == srv)
+      srv_idx <- which(names(datasources) == srv)
       policies[[srv]] <- tryCatch(
         datashield.aggregate(datasources[srv_idx],
           call("k2MpcQueryPolicyDS",
@@ -974,19 +973,20 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
       # --- Step 1: Coordinator IRLS update ---
       # (consumes k2_eta_nonlabel blob from previous iteration, or zeros for iter=1)
+      # Coordinator runs full IRLS step inside Go binary with piecewise
+      # sigmoid/exp (1:1 with Google C++). Gets back beta + (w, residual).
       coord_result <- .dsAgg(
         conns = datasources[coordinator_conn],
-        expr = call("k2MpcCoordinatorIrlsDS",
+        expr = call("k2TrainCoordinatorDS",
                     data_name = std_data,
                     y_var = y_var,
                     x_vars = x_vars[[coordinator]],
                     beta_current = betas[[coordinator]],
-                    non_label_pk = nl_pk,
                     family = family,
                     lambda = lambda,
-                    intercept = FALSE,
-                    p_nonlabel = as.integer(p_nl),
-                    iter = as.integer(iter),
+                    max_iter = 1L,
+                    tol = tol,
+                    non_label_pk = nl_pk,
                     session_id = session_id)
       )
       if (is.list(coord_result) && length(coord_result) == 1)
