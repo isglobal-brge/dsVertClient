@@ -97,6 +97,10 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   server_names <- names(datasources)
   n_servers <- length(datasources)
 
+  on.exit({
+    .dsvert_reset_chunk_size()
+  }, add = TRUE)
+
   # Determine reference server
   if (is.null(ref_server)) {
     ref_server <- server_names[1]
