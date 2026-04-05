@@ -29,14 +29,22 @@
 #' @param datasources DataSHIELD connection object or list of connections.
 #'   If NULL, uses all available connections.
 #' @param eta_privacy Character string. Privacy mode for linear predictor
-#'   aggregation: \code{"auto"} (default) selects HE-Link for K=2 (all
-#'   families), \code{"transport"} uses standard secure routing,
-#'   \code{"he_link"} forces encrypted link-function mode (requires K=2,
-#'   log_n >= 14).
+#'   aggregation: \code{"auto"} (default) selects the appropriate mode based
+#'   on K and family — secure aggregation for K>=3, strict HE-Link for K=2
+#'   Gaussian, and policy-dependent for K=2 binomial/Poisson (strict by
+#'   default, pragmatic if server admin enables it). Other values:
+#'   \code{"secure_agg"} (pairwise PRG masks, K>=3 only),
+#'   \code{"he_link"} (encrypted link function, K=2, requires log_n>=14 for
+#'   non-Gaussian), \code{"k2_mpc"} (Gauss-Seidel BCD-IRLS, K=2 pragmatic),
+#'   \code{"transport"} (standard secure routing).
 #' @param topology Character string. Seed derivation topology for secure
 #'   aggregation: \code{"pairwise"} (default, O(K-1) seeds per server) or
 #'   \code{"ring"} (O(2) seeds per server for K>=4). For K=3, ring and
 #'   pairwise are identical. Only used when \code{eta_privacy = "secure_agg"}.
+#' @param reuse_mhe Logical. If TRUE, reuse cached MHE context (keys, parameters)
+#'   from a previous analysis sharing the same CKKS parameters. Saves key
+#'   generation time but uses fresh transport keys for forward secrecy.
+#'   Default is FALSE.
 #'
 #' @return A list with class "ds.glm" containing:
 #'   \itemize{
@@ -157,8 +165,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     stop("y_server '", y_server, "' must be in x_vars", call. = FALSE)
 
   # Resolve eta_privacy mode
-  if (!eta_privacy %in% c("auto", "transport", "he_link", "secure_agg", "k2_mpc"))
-    stop("eta_privacy must be 'auto', 'transport', 'he_link', 'secure_agg', or 'k2_mpc'",
+  if (!eta_privacy %in% c("auto", "transport", "he_link", "secure_agg", "k2_mpc", "k2_beaver"))
+    stop("eta_privacy must be 'auto', 'transport', 'he_link', 'secure_agg', 'k2_mpc', or 'k2_beaver'",
          call. = FALSE)
 
   # Validate topology parameter
@@ -211,8 +219,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       # Warn if servers disagree
       if (any(modes == "pragmatic") && verbose) {
         strict_srvs <- names(modes)[modes == "strict"]
-        warning(sprintf("Server(s) %s require strict mode; overriding pragmatic on other server(s)",
-                        paste(strict_srvs, collapse = ", ")), call. = FALSE)
+        warning(sprintf("Server(s) %s require strict mode; overriding pragmatic on other server(s). ",
+                        paste(strict_srvs, collapse = ", ")),
+                "For binomial/Poisson, this may reduce coefficient precision to O(1e-2).",
+                call. = FALSE)
       }
     } else {
       resolved_mode <- "pragmatic"
@@ -223,12 +233,16 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       use_k2_pragmatic <- TRUE
       if (verbose) message("  K=2 policy: pragmatic (GS-IRLS, p_nonlabel=", p_nl_features, ")")
     } else {
-      eta_privacy <- "he_link"       # HE-Link strict path
+      eta_privacy <- "k2_beaver"     # Chebyshev Beaver strict path
       if (verbose) {
         reasons <- sapply(policies, function(p) if (!is.null(p$reason)) p$reason else "")
         reasons <- reasons[nzchar(reasons)]
         reason_str <- if (length(reasons) > 0) paste(reasons, collapse = "; ") else "default server policy"
         message("  K=2 policy: strict (HE-Link) — ", reason_str)
+        if (family %in% c("binomial", "poisson"))
+          message("  Note: strict mode uses polynomial approximation for the link function. ",
+                  "Coefficient error may be O(1e-2) vs centralized GLM. ",
+                  "For higher precision, the server admin can enable pragmatic mode.")
       }
     }
   }
@@ -236,6 +250,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   use_he_link <- (eta_privacy == "he_link")
   use_secure_agg <- (eta_privacy == "secure_agg")
   use_k2_mpc <- (eta_privacy == "k2_mpc")
+  use_k2_beaver <- (eta_privacy == "k2_beaver")
 
   # Policy enforcement
   if (use_secure_agg && non_label_count < 2)
@@ -818,7 +833,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # ===========================================================================
   # Phase 2: Encrypt y and distribute (only if non-label servers exist)
   # ===========================================================================
-  if (length(non_label_servers) > 0 && !use_k2_mpc) {
+  if (length(non_label_servers) > 0 && !use_k2_mpc && !use_k2_beaver) {
     if (verbose) message("\n[Phase 2] Encrypting response variable...")
 
     # Encrypt STANDARDIZED y (Gaussian) or raw y (non-Gaussian)
@@ -876,7 +891,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   betas <- list()
   for (server in server_list) {
     p <- length(x_vars[[server]])
-    if (server == coordinator && label_intercept && !use_he_link && !use_k2_mpc) p <- p + 1
+    if (server == coordinator && label_intercept && !use_he_link && !use_k2_mpc && !use_k2_beaver) p <- p + 1
     betas[[server]] <- rep(0, p)
   }
 
@@ -886,7 +901,48 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # Encrypted eta blobs (opaque to client): server_name -> base64url string
   encrypted_etas <- list()
 
-  if (use_k2_mpc) {
+  if (use_k2_beaver) {
+    # =========================================================================
+    # Phase 3 (K=2 Strict v2): Chebyshev Beaver MPC
+    # =========================================================================
+    # Secure polynomial evaluation of sigmoid/exp on secret shares.
+    # Neither party sees eta, mu, residuals, or weights in plaintext.
+    # Only p_k gradient scalars + 2 intercept scalars revealed per iteration.
+
+    if (verbose) message("\n[Phase 3] BCD iterations (K=2 strict Chebyshev Beaver)...")
+
+    nl <- non_label_servers[1]
+    nl_conn <- which(server_names == nl)
+
+    loop_result <- .k2_strict_loop(
+      datasources = datasources,
+      server_names = server_names,
+      server_list = server_list,
+      coordinator = coordinator,
+      coordinator_conn = coordinator_conn,
+      non_label_servers = non_label_servers,
+      nl = nl,
+      nl_conn = nl_conn,
+      x_vars = x_vars,
+      y_var = y_var,
+      std_data = std_data,
+      transport_pks = transport_pks,
+      session_id = session_id,
+      family = family,
+      lambda = lambda,
+      max_iter = max_iter,
+      tol = tol,
+      n_obs = n_obs,
+      verbose = verbose,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob
+    )
+
+    betas <- loop_result$betas
+    converged <- loop_result$converged
+    final_iter <- loop_result$iterations
+
+  } else if (use_k2_mpc) {
     # =========================================================================
     # Phase 3 (K=2 Pragmatic): Gauss-Seidel BCD-IRLS with transport encryption
     # =========================================================================
@@ -968,6 +1024,14 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       }
 
       final_iter <- iter
+
+      # Periodic server-side GC to prevent memory buildup on long runs
+      if (iter %% 20 == 0) {
+        for (server in server_list) {
+          tryCatch(.dsAgg(conns = datasources[which(server_names == server)],
+            expr = call("mheGcDS")), error = function(e) NULL)
+        }
+      }
 
       if (max_diff < tol) {
         converged <- TRUE
@@ -1226,6 +1290,14 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       }
 
       final_iter <- iter
+
+      # Periodic server-side GC to prevent memory buildup on long runs
+      if (iter %% 20 == 0) {
+        for (server in server_list) {
+          tryCatch(.dsAgg(conns = datasources[which(server_names == server)],
+            expr = call("mheGcDS")), error = function(e) NULL)
+        }
+      }
 
       if (max_diff < tol) {
         converged <- TRUE
@@ -1680,6 +1752,14 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
       final_iter <- iter
 
+      # Periodic server-side GC to prevent memory buildup on long runs
+      if (iter %% 20 == 0) {
+        for (server in server_list) {
+          tryCatch(.dsAgg(conns = datasources[which(server_names == server)],
+            expr = call("mheGcDS")), error = function(e) NULL)
+        }
+      }
+
       if (max_diff < tol) {
         converged <- TRUE
         if (verbose)
@@ -1708,7 +1788,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   for (server in server_list) {
     server_beta <- betas[[server]]
-    if (server == coordinator && label_intercept && !use_he_link && !use_k2_mpc) {
+    if (server == coordinator && label_intercept && !use_he_link && !use_k2_mpc && !use_k2_beaver) {
       beta_0_from_label <- server_beta[1]
       server_beta <- server_beta[-1]
     }
@@ -1784,7 +1864,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         eta_blob_keys_final <- c(eta_blob_keys_final, key)
       }
     }
-  } else if (use_he_link || use_k2_mpc) {
+  } else if (use_he_link || use_k2_mpc || use_k2_beaver) {
     # HE-Link / K2-MPC deviance: one-time secure-routing deviance computation.
     # Each server computes its final eta = X*beta on the standardized scale.
     # The coordinator stores its own eta locally; non-label servers
