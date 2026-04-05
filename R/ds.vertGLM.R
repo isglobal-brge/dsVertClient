@@ -426,6 +426,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
           expr = call("mheCleanupDS", session_id = session_id)),
         error = function(e) NULL)
     }
+    # Reset client-side chunk size cache so the next call re-probes.
+    # Without this, a reduced chunk size from one session persists and
+    # can cause spurious failures on subsequent calls.
+    .dsvert_reset_chunk_size()
   }, add = TRUE)
 
   # ===========================================================================
