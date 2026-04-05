@@ -102,36 +102,36 @@ NULL
     n_cross_nl <- n_obs * p_nl
     n_total <- n_poly_triples + n_mu2_triples + n_cross_coord + n_cross_nl
 
-    # Generate Beaver triples using FixedPoint-exact arithmetic.
-    # The product tw = tu * tv MUST be computed in the same FixedPoint ring
-    # as the server uses, otherwise the Beaver protocol is invalid.
-    tu <- runif(n_total, -1, 1)
-    tv <- runif(n_total, -1, 1)
-    # Compute tw via mhe-tool FixedPoint multiply (NOT float64 multiply)
-    fp_tu <- dsVert:::.callMheTool("k2-float-to-fp",
-      list(values = tu, frac_bits = frac_bits))$fp_data
-    fp_tv <- dsVert:::.callMheTool("k2-float-to-fp",
-      list(values = tv, frac_bits = frac_bits))$fp_data
-    # Multiply in FixedPoint ring: tw = FPMulLocal(tu, tv)
-    fp_tw <- dsVert:::.callMheTool("k2-fp-mul",
-      list(a = fp_tu, b = fp_tv, frac_bits = frac_bits))$result
-    # Convert back to float for share splitting
-    tw <- dsVert:::.callMheTool("mpc-fp-to-float",
-      list(fp_data = fp_tw, frac_bits = frac_bits))$values
-
-    tu0 <- runif(n_total, -5, 5); tu1 <- tu - tu0
-    tv0 <- runif(n_total, -5, 5); tv1 <- tv - tv0
-    tw0 <- runif(n_total, -5, 5); tw1 <- tw - tw0
+    # Generate Beaver triples ENTIRELY in FixedPoint-exact arithmetic.
+    # ALL operations (generation, splitting, product) done in the FP ring.
+    # This prevents the float64→FP quantization error that caused gradient divergence.
+    #
+    # Uses the new k2-gen-beaver-triples command that does everything in Go:
+    # 1. Sample random A, B in the FP ring
+    # 2. Compute C = A*B (FPMulLocal, exact in ring)
+    # 3. Split A,B,C into shares (random split in the ring)
+    # 4. Return base64 FP shares for both parties
+    triple_result <- dsVert:::.callMheTool("k2-gen-beaver-triples", list(
+      n = as.integer(n_total),
+      frac_bits = as.integer(frac_bits)
+    ))
 
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
       pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-      sealed <- dsVert:::.callMheTool("transport-encrypt-vectors", list(
-        vectors = list(u = if (is_coord) tu0 else tu1,
-                      v = if (is_coord) tv0 else tv1,
-                      w = if (is_coord) tw0 else tw1),
-        recipient_pk = pk_b64))
+      # Select party's shares (base64 FP strings, NOT float64)
+      party_idx <- if (is_coord) "party0" else "party1"
+      u_share <- triple_result[[paste0(party_idx, "_u")]]
+      v_share <- triple_result[[paste0(party_idx, "_v")]]
+      w_share <- triple_result[[paste0(party_idx, "_w")]]
+
+      # Transport-encrypt the FP shares as raw data (not as float vectors)
+      msg_json <- jsonlite::toJSON(list(u = u_share, v = v_share, w = w_share),
+                                    auto_unbox = TRUE)
+      msg_b64 <- jsonlite::base64_enc(charToRaw(msg_json))
+      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+        data = msg_b64, recipient_pk = pk_b64))
       .sendBlob(.b64_to_b64url(sealed$sealed), "beaver_triples", ci)
       .dsAgg(datasources[ci], call("k2MpcSecureStepDS", step = "store_triples",
              session_id = session_id))
@@ -296,11 +296,9 @@ NULL
                 "cross_gradient_from_peer", target_ci)
     }
 
-    # === F: Combine gradient + L-BFGS update (server-local) ===
-    # L-BFGS with the polynomial gradient gives deviance=166 (matching pragmatic).
-    # The coefficient intercept differs from the MLE because the polynomial
-    # sigmoid is not the true sigmoid, but the model quality (deviance, AUC)
-    # is equivalent.
+    # === F: Combine gradient + GD update (matching C++ Google approach) ===
+    # Plain gradient descent — NO L-BFGS (which oscillated with the polynomial
+    # gradient). The C++ Google code uses GD with momentum.
     for (server in server_list) {
       ci <- which(server_names == server)
       r <- .dsAgg(datasources[ci], call("k2MpcSecureStepDS",
@@ -309,14 +307,16 @@ NULL
       if (is.list(r)) r <- r[[1]]
       gradient <- r$gradient
 
-      # L-BFGS update (server-local, no new leakage)
-      lbfgs_r <- .dsAgg(datasources[ci], call("k2MpcSecureStepDS",
-        step = "lbfgs_step",
-        u_vals = gradient / n_obs + lambda * betas[[server]],
-        v_vals = betas[[server]],
-        session_id = session_id))
-      if (is.list(lbfgs_r)) lbfgs_r <- lbfgs_r[[1]]
-      betas[[server]] <- lbfgs_r$beta_new
+      # GD update: beta -= alpha * (grad/n + lambda*beta)
+      full_grad <- gradient / n_obs + lambda * betas[[server]]
+
+      # Gradient clipping (prevents divergence)
+      grad_norm <- sqrt(sum(full_grad^2))
+      if (grad_norm > 5.0) {
+        full_grad <- full_grad * (5.0 / grad_norm)
+      }
+
+      betas[[server]] <- betas[[server]] - alpha * full_grad
     }
 
     # Check convergence
