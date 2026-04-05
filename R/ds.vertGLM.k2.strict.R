@@ -215,6 +215,16 @@ NULL
       sum_residual <- sum_residual + r1_results[[server]]$sum_residual
     }
 
+    # Debug: print gradient info for first iteration
+    if (iter == 1 && verbose) {
+      message(sprintf("  [DEBUG iter 1] gradient = %s", paste(round(gradient, 4), collapse=", ")))
+      message(sprintf("  [DEBUG iter 1] sum_residual = %.4f", sum_residual))
+      message(sprintf("  [DEBUG iter 1] coord grad_share = %s",
+        paste(round(grad_results[[coordinator]]$gradient_share, 4), collapse=", ")))
+      message(sprintf("  [DEBUG iter 1] nl grad_share = %s",
+        paste(round(grad_results[[nl]]$gradient_share, 4), collapse=", ")))
+    }
+
     # GD update
     full_grad <- gradient / n_obs + lambda * beta
     grad_norm <- sqrt(sum(full_grad^2))
