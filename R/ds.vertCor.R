@@ -150,6 +150,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
           expr = call("mheCleanupDS", session_id = session_id)),
         error = function(e) NULL)
     }
+    .dsvert_reset_chunk_size()
   }, add = TRUE)
 
   # Helpers -------------------------------------------------------------------
