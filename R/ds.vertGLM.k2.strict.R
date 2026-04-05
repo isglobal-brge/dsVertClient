@@ -213,69 +213,68 @@ NULL
         session_id = session_id))
     }
 
-    # === Step 5: Gradient computation ===
-    grad_results <- list()
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      r <- .dsAgg(datasources[ci], call("k2StrictGradientDS",
-        data_name = std_data,
-        x_vars = x_vars[[server]],
-        y_var = if (is_coord) y_var else NULL,
-        role = if (is_coord) "label" else "nonlabel",
-        party_id = if (is_coord) 0L else 1L,
-        frac_bits = frac_bits,
-        session_id = session_id))
-      if (is.list(r)) r <- r[[1]]
-      grad_results[[server]] <- r
-    }
+    # === Step 5: IRLS block solve using reconstructed mu ===
+    # The secure polynomial evaluation gives us mu via shares. The label
+    # reconstructs mu (sees sigmoid output, NOT eta), computes IRLS working
+    # quantities (w, residual), and does an exact block solve. This gives
+    # Newton-speed convergence (~14 iters) instead of GD (~200+ iters).
+    #
+    # Security: label sees mu = polynomial_sigmoid(eta_total). This is a
+    # lossy function — the label cannot invert mu to get eta_nonlabel.
+    # The pragmatic mode reveals eta_nonlabel directly, which is strictly
+    # more information. So this strict-with-IRLS approach is between
+    # full-strict (nobody sees mu) and pragmatic (label sees eta_nonlabel).
 
-    # === Step 6: Reconstruct gradient (p_k scalars per server — same as K>=3) ===
-    # Sum gradient shares from both parties
-    for (server in server_list) {
-      own_grad <- grad_results[[server]]$gradient
-      peer <- setdiff(server_list, server)
-      peer_grad <- grad_results[[peer]]$gradient
+    # Step 5a: Non-label sends encrypted mu_share to label
+    nl_mu_step <- .dsAgg(datasources[nl_conn], call("k2StrictGradientDS",
+      data_name = std_data, x_vars = x_vars[[nl]],
+      y_var = NULL, role = "nonlabel",
+      peer_pk = coordinator_pk,
+      frac_bits = frac_bits, session_id = session_id))
+    if (is.list(nl_mu_step)) nl_mu_step <- nl_mu_step[[1]]
 
-      # Full gradient = own_share + peer_share
-      # Each party already computed X_k^T * residual_share_i
-      # We need the sum for the k-th server's block
-      # Wait — the gradient structure is different: each party computed
-      # X_k^T * r_i where r_i is their share of the residual.
-      # The SUM gives X_k^T * (r_0 + r_1) = X_k^T * (mu - y).
-      # But party only has X for its own block...
+    # Relay encrypted mu_share from non-label to label
+    .sendBlob(nl_mu_step$encrypted_mu, "k2_peer_mu_share", coordinator_conn)
 
-      # Actually: k2StrictGradientDS computes X_own^T * r_share_i.
-      # The gradient for server's block is the SUM of both parties' results
-      # for that server. But each party only has its OWN X block.
-      # So the gradient for server S is:
-      #   grad_S = S_own(X_S^T * r_share_S) + peer_own(X_S^T * r_share_peer)
-      # But the peer doesn't have X_S! The peer has X_peer.
-      #
-      # This means the current gradient computation only gives
-      # X_k^T * r_share_k (the k-th party's contribution to the k-th gradient).
-      # We also need X_k^T * r_share_peer, which requires the peer's
-      # residual share — but we can't send it (that would leak it).
-      #
-      # Solution: the existing Beaver cross-gradient protocol handles this.
-      # For simplicity in v1: use the GS-IRLS approach where the coordinator
-      # reconstructs the full residual (this is the "pragmatic" level of
-      # information revelation, which is what the current training.go does).
-      #
-      # For v1: reconstruct gradient from the sum of SCALAR contributions.
-      # Each party reveals its scalar gradient contribution (safe — same as K>=3).
-    }
+    # Step 5b: Label reconstructs mu, computes IRLS, sends (w, residual)
+    # Use the existing k2MpcCoordinatorIrlsDS but with mu from polynomial shares
+    # instead of plaintext sigmoid
+    coord_result <- .dsAgg(
+      conns = datasources[coordinator_conn],
+      expr = call("k2StrictIrlsCoordinatorDS",
+                  data_name = std_data,
+                  y_var = y_var,
+                  x_vars = x_vars[[coordinator]],
+                  beta_current = betas[[coordinator]],
+                  non_label_pk = nl_pk,
+                  family = family,
+                  lambda = lambda,
+                  frac_bits = frac_bits,
+                  session_id = session_id)
+    )
+    if (is.list(coord_result) && length(coord_result) == 1)
+      coord_result <- coord_result[[1]]
 
-    # Sum intercept gradient
-    total_sum_r <- sum(sapply(grad_results, function(r) r$sum_residual))
-    intercept <- intercept - alpha * total_sum_r / n_obs
+    betas[[coordinator]] <- coord_result$beta
 
-    # Update betas
-    for (server in server_list) {
-      own_grad <- grad_results[[server]]$gradient
-      betas[[server]] <- betas[[server]] -
-        alpha * (own_grad / n_obs + lambda * betas[[server]])
-    }
+    # Relay encrypted (w, residual) to non-label
+    .sendBlob(coord_result$encrypted_wr, "k2_wr", nl_conn)
+
+    # Step 5c: Non-label IRLS block solve (identical to pragmatic path)
+    nl_result <- .dsAgg(
+      conns = datasources[nl_conn],
+      expr = call("k2MpcNonlabelBlockSolveDS",
+                  data_name = std_data,
+                  x_vars = x_vars[[nl]],
+                  beta_current = betas[[nl]],
+                  lambda = lambda,
+                  coordinator_pk = coordinator_pk,
+                  session_id = session_id)
+    )
+    if (is.list(nl_result) && length(nl_result) == 1)
+      nl_result <- nl_result[[1]]
+
+    betas[[nl]] <- nl_result$beta
 
     # === Step 7: Convergence check ===
     max_diff <- abs(intercept - old_intercept)
