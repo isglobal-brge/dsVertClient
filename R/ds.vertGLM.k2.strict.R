@@ -1,10 +1,7 @@
-#' @title K=2 Strict Mode: Input-Sharing + Beaver Polynomial + Shared Gradient
-#' @description Secure K=2 training following the Google C++ approach:
-#'   1. Input-sharing preamble: share X, y via additive splitting
-#'   2. Per iteration: local eta, Beaver polynomial for mu, local gradient
-#'   3. Client sums gradient shares, updates beta with GD
-#'
-#' No cross-gradient Beaver needed — input sharing solves the problem.
+#' @title K=2 Strict: All-Ring63 Training Pipeline
+#' @description Secure K=2 training with ALL computation in FixedPoint ring.
+#'   Input sharing → FP eta → Beaver poly eval → Ring63 Beaver gradient.
+#'   Only final p_k gradient scalars converted to float64.
 #' @name k2-strict-client
 NULL
 
@@ -34,8 +31,8 @@ NULL
   p_nl <- length(x_vars[[nl]])
   p_total <- p_coord + p_nl
 
-  # === INPUT-SHARING PREAMBLE ===
-  if (verbose) message("  Input-sharing preamble...")
+  # === INPUT-SHARING PREAMBLE (FixedPoint) ===
+  if (verbose) message("  Input-sharing preamble (FixedPoint)...")
 
   share_results <- list()
   for (server in server_list) {
@@ -71,9 +68,6 @@ NULL
     x <- gsub("-", "+", gsub("_", "/", x, fixed=TRUE), fixed=TRUE)
     pad <- nchar(x) %% 4; if(pad==2) x<-paste0(x,"=="); if(pad==3) x<-paste0(x,"="); x
   }
-  .b64_to_b64url <- function(x) {
-    gsub("+", "-", gsub("/", "_", gsub("=+$", "", x, perl=TRUE), fixed=TRUE), fixed=TRUE)
-  }
 
   beta <- rep(0, p_total)
   intercept <- 0.0
@@ -85,7 +79,7 @@ NULL
     beta_old <- beta
     intercept_old <- intercept
 
-    # === Step 1: Compute eta shares (LOCAL, no communication) ===
+    # === Step 1: Compute eta shares in FP (LOCAL) ===
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
@@ -97,8 +91,7 @@ NULL
         session_id = session_id))
     }
 
-    # === Step 2: Beaver polynomial eval for mu shares ===
-    # Generate FP-native Beaver triples for the power chain
+    # === Step 2: Beaver polynomial eval for mu shares (FP) ===
     n_poly_triples <- poly_degree * n_obs
     triple_result <- dsVert:::.callMheTool("k2-gen-beaver-triples", list(
       n = as.integer(n_poly_triples), frac_bits = as.integer(frac_bits)))
@@ -114,7 +107,7 @@ NULL
       msg_b64 <- jsonlite::base64_enc(charToRaw(msg_json))
       pk_b64 <- .b64url_to_b64(transport_pks[[server]])
       sealed <- dsVert:::.callMheTool("transport-encrypt", list(data=msg_b64, recipient_pk=pk_b64))
-      .sendBlob(.b64_to_b64url(sealed$sealed), "beaver_triples", ci)
+      .sendBlob(gsub("+", "-", gsub("/", "_", gsub("=+$", "", sealed$sealed, perl=TRUE), fixed=TRUE), fixed=TRUE), "beaver_triples", ci)
       .dsAgg(datasources[ci], call("k2MpcSecureStepDS", step="store_triples",
              session_id=session_id))
     }
@@ -148,7 +141,7 @@ NULL
       tri_offset <- tri_offset + n_obs
     }
 
-    # Polynomial eval
+    # Polynomial eval → mu shares (FP)
     power_keys <- c("secure_eta_share", paste0("secure_pow", 2:(poly_degree+1)))
     for (server in server_list) {
       ci <- which(server_names == server)
@@ -158,72 +151,63 @@ NULL
         party_id=if(is_coord) 0L else 1L, frac_bits=frac_bits, session_id=session_id))
     }
 
-    # === Step 3: Beaver matrix-vector gradient (float64, 2 rounds) ===
-    # Round 1: generate triples, each party computes (X-A, r-B)
-    # Generate float64 Beaver triple for the gradient matvec:
-    # A (n*p_total), B (n), C (p_total) where C[j] = sum_i A[i,j]*B[i]
-    A <- matrix(runif(n_obs * p_total, -5, 5), nrow = n_obs, ncol = p_total)
-    B <- runif(n_obs, -5, 5)
-    C <- as.numeric(crossprod(A, B)) # X^T * r style
+    # === Step 3: Ring63 Beaver matvec gradient ===
+    # Generate matvec triples (ring multiply for C)
+    mvt <- dsVert:::.callMheTool("k2-gen-matvec-triples", list(
+      n = as.integer(n_obs), p = as.integer(p_total)))
 
-    # Split triples
-    A0 <- matrix(runif(n_obs * p_total, -10, 10), nrow = n_obs, ncol = p_total)
-    A1 <- A - A0
-    B0 <- runif(n_obs, -10, 10)
-    B1 <- B - B0
-    C0 <- runif(p_total, -100, 100)
-    C1 <- C - C0
-
-    # Send triples to both parties
+    # Distribute triple shares to both parties
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
+      party_idx <- if (is_coord) "party0" else "party1"
+
+      # Store A, B, C shares in session
+      a_fp <- mvt[[paste0(party_idx, "_a")]]
+      b_fp <- mvt[[paste0(party_idx, "_b")]]
+      c_fp <- mvt[[paste0(party_idx, "_c")]]
+
       pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-
-      a_party <- if (is_coord) as.numeric(t(A0)) else as.numeric(t(A1))
-      b_party <- if (is_coord) B0 else B1
-
-      sealed_ab <- dsVert:::.callMheTool("transport-encrypt-vectors", list(
-        vectors = list(a = a_party, b = b_party),
-        recipient_pk = pk_b64))
-      .sendBlob(.b64_to_b64url(sealed_ab$sealed), "k2_grad_triple", ci)
-
-      c_party <- if (is_coord) C0 else C1
-      sealed_c <- dsVert:::.callMheTool("transport-encrypt-vectors", list(
-        vectors = list(c = c_party),
-        recipient_pk = pk_b64))
-      .sendBlob(.b64_to_b64url(sealed_c$sealed), "k2_grad_c", ci)
+      msg_json <- jsonlite::toJSON(list(a=a_fp, b=b_fp, c=c_fp), auto_unbox=TRUE)
+      msg_b64 <- jsonlite::base64_enc(charToRaw(msg_json))
+      sealed <- dsVert:::.callMheTool("transport-encrypt", list(data=msg_b64, recipient_pk=pk_b64))
+      .sendBlob(gsub("+", "-", gsub("/", "_", gsub("=+$", "", sealed$sealed, perl=TRUE), fixed=TRUE), fixed=TRUE), "k2_grad_triple_fp", ci)
     }
 
-    # Round 1: both parties compute masked values
+    # Each party stores the triple and computes gradient R1
     r1_results <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
       peer <- setdiff(server_list, server)
-      r <- .dsAgg(datasources[ci], call("k2BeaverGradientR1DS",
-        peer_pk = transport_pks[[peer]],
-        session_id = session_id))
+
+      # First: store the triple
+      .dsAgg(datasources[ci], call("k2StoreGradTripleDS", session_id = session_id))
+
+      # Then: compute gradient round 1
+      r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+        peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       r1_results[[server]] <- r
     }
 
-    # Relay round-1 messages
-    .sendBlob(r1_results[[coordinator]]$encrypted_round1, "k2_grad_peer_r1", nl_conn)
-    .sendBlob(r1_results[[nl]]$encrypted_round1, "k2_grad_peer_r1", coordinator_conn)
+    # Relay R1 messages
+    .sendBlob(r1_results[[coordinator]]$encrypted_r1, "k2_grad_peer_r1", nl_conn)
+    .sendBlob(r1_results[[nl]]$encrypted_r1, "k2_grad_peer_r1", coordinator_conn)
 
-    # Round 2: both parties compute gradient shares
+    # Gradient round 2
     grad_results <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
-      r <- .dsAgg(datasources[ci], call("k2BeaverGradientR2DS",
+      r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
         party_id = if (is_coord) 0L else 1L,
         session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       grad_results[[server]] <- r
     }
 
-    # === Step 4: Client sums gradient shares and updates beta ===
+    # === Step 4: Client sums gradient shares (float64) and updates beta ===
     gradient <- rep(0, p_total)
     sum_residual <- 0
     for (server in server_list) {
@@ -231,15 +215,13 @@ NULL
       sum_residual <- sum_residual + r1_results[[server]]$sum_residual
     }
 
-    # GD update with gradient clipping
+    # GD update
     full_grad <- gradient / n_obs + lambda * beta
     grad_norm <- sqrt(sum(full_grad^2))
     if (grad_norm > 5.0) full_grad <- full_grad * (5.0 / grad_norm)
     beta <- beta - alpha * full_grad
-
     intercept <- intercept - alpha * sum_residual / n_obs
 
-    # Convergence
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
     final_iter <- iter
 
