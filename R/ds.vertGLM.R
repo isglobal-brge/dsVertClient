@@ -182,33 +182,53 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     }
   }
 
-  # K=2 nonlinear: query non-label server for policy before committing mode
+  # K=2 nonlinear: query ALL servers for policy, use the most restrictive
+  # Default is strict (HE-Link). Pragmatic requires explicit admin opt-in.
+  # If any server is strict, the whole job uses strict.
   use_k2_pragmatic <- FALSE
   if (eta_privacy == "k2_mpc" && non_label_count == 1) {
     nl_server_name <- setdiff(names(x_vars), y_server)
-    nl_conn_idx <- which(names(datasources) == nl_server_name)
-    if (length(nl_conn_idx) == 0) nl_conn_idx <- which(server_names == nl_server_name)
     p_nl_features <- length(x_vars[[nl_server_name]])
 
-    nl_policy <- tryCatch(
-      datashield.aggregate(datasources[nl_conn_idx],
-        call("k2MpcQueryPolicyDS",
-             p_nonlabel = as.integer(p_nl_features),
-             study_id = NULL))[[1]],
-      error = function(e) list(mode = "pragmatic")
-    )
+    # Query both servers — the most restrictive policy wins
+    policies <- list()
+    for (srv in names(x_vars)) {
+      srv_idx <- which(server_names == srv)
+      if (length(srv_idx) == 0) srv_idx <- which(names(datasources) == srv)
+      policies[[srv]] <- tryCatch(
+        datashield.aggregate(datasources[srv_idx],
+          call("k2MpcQueryPolicyDS",
+               p_nonlabel = as.integer(p_nl_features),
+               study_id = NULL))[[1]],
+        error = function(e) list(mode = "strict")  # default to strict on error
+      )
+    }
 
-    if (nl_policy$mode == "abort")
-      stop("Server policy blocks K=2 nonlinear models", call. = FALSE)
-    if (nl_policy$mode == "pragmatic") {
+    # Most restrictive wins: if ANY server says strict, use strict
+    modes <- sapply(policies, function(p) p$mode)
+    if (any(modes == "strict")) {
+      resolved_mode <- "strict"
+      # Warn if servers disagree
+      if (any(modes == "pragmatic") && verbose) {
+        strict_srvs <- names(modes)[modes == "strict"]
+        warning(sprintf("Server(s) %s require strict mode; overriding pragmatic on other server(s)",
+                        paste(strict_srvs, collapse = ", ")), call. = FALSE)
+      }
+    } else {
+      resolved_mode <- "pragmatic"
+    }
+
+    if (resolved_mode == "pragmatic") {
       eta_privacy <- "k2_mpc"        # GS-IRLS path
       use_k2_pragmatic <- TRUE
       if (verbose) message("  K=2 policy: pragmatic (GS-IRLS, p_nonlabel=", p_nl_features, ")")
     } else {
       eta_privacy <- "he_link"       # HE-Link strict path
       if (verbose) {
-        reason <- if (!is.null(nl_policy$reason)) nl_policy$reason else "server policy"
-        message("  K=2 policy: strict (HE-Link) — ", reason)
+        reasons <- sapply(policies, function(p) if (!is.null(p$reason)) p$reason else "")
+        reasons <- reasons[nzchar(reasons)]
+        reason_str <- if (length(reasons) > 0) paste(reasons, collapse = "; ") else "default server policy"
+        message("  K=2 policy: strict (HE-Link) — ", reason_str)
       }
     }
   }
