@@ -54,6 +54,9 @@ NULL
   }
   intercept_beta0 <- 0.0
 
+  # Learning rate (matches C++ GD approach)
+  alpha <- if (family == "poisson") 0.1 else 0.3
+
   converged <- FALSE
   final_iter <- 0
 
@@ -277,7 +280,7 @@ NULL
                 "cross_gradient_from_peer", target_ci)
     }
 
-    # === F: Combine gradient + L-BFGS update ===
+    # === F: Combine gradient + GD update with small step ===
     for (server in server_list) {
       ci <- which(server_names == server)
       r <- .dsAgg(datasources[ci], call("k2MpcSecureStepDS",
@@ -286,14 +289,17 @@ NULL
       if (is.list(r)) r <- r[[1]]
       gradient <- r$gradient
 
-      # L-BFGS update (server-local)
-      lbfgs_r <- .dsAgg(datasources[ci], call("k2MpcSecureStepDS",
-        step = "lbfgs_step",
-        u_vals = gradient / n_obs + lambda * betas[[server]],
-        v_vals = betas[[server]],
-        session_id = session_id))
-      if (is.list(lbfgs_r)) lbfgs_r <- lbfgs_r[[1]]
-      betas[[server]] <- lbfgs_r$beta_new
+      # Simple GD with small, decaying step size (stable with polynomial gradient)
+      step <- alpha / (1 + 0.01 * iter)
+      full_grad <- gradient / n_obs + lambda * betas[[server]]
+
+      # Gradient clipping
+      grad_norm <- sqrt(sum(full_grad^2))
+      if (grad_norm > 2.0) {
+        full_grad <- full_grad * (2.0 / grad_norm)
+      }
+
+      betas[[server]] <- betas[[server]] - step * full_grad
     }
 
     # Check convergence
