@@ -389,12 +389,28 @@ NULL
       }
     }
 
+    # Debug: print gradient info
+    if (verbose && iter <= 3) {
+      message(sprintf("  [DEBUG iter %d] gradient = [%s]", iter, paste(round(gradient,4), collapse=", ")))
+      message(sprintf("  [DEBUG iter %d] sum_residual = %.4f, n_obs=%d", iter, sum_residual, n_obs))
+      message(sprintf("  [DEBUG iter %d] grad_fp_coord nchar=%d, grad_fp_nl nchar=%d",
+        iter, nchar(grad_fp_coord %||% ""), nchar(grad_fp_nl %||% "")))
+      message(sprintf("  [DEBUG iter %d] res_fp_coord nchar=%d, res_fp_nl nchar=%d",
+        iter, nchar(res_fp_coord %||% ""), nchar(res_fp_nl %||% "")))
+    }
+
     # GD update
     full_grad <- gradient / n_obs + lambda * beta
     grad_norm <- sqrt(sum(full_grad^2))
     if (grad_norm > 5.0) full_grad <- full_grad * (5.0 / grad_norm)
     beta <- beta - alpha * full_grad
     intercept <- intercept - alpha * sum_residual / n_obs
+
+    if (verbose && iter <= 3) {
+      message(sprintf("  [DEBUG iter %d] full_grad = [%s]", iter, paste(round(full_grad,6), collapse=", ")))
+      message(sprintf("  [DEBUG iter %d] beta = [%s]", iter, paste(round(beta,6), collapse=", ")))
+      message(sprintf("  [DEBUG iter %d] intercept = %.6f", iter, intercept))
+    }
 
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
     final_iter <- iter
