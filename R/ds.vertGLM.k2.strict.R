@@ -1,8 +1,7 @@
-#' @title K=2 Wide Spline: DCF-based Training Pipeline
-#' @description Secure K=2 GLM training with wide piecewise-linear spline
-#'   for sigmoid (binomial) and exp (Poisson) link functions.
-#'   Fully distributed: no eta reconstruction, non-disclosive.
-#'   Uses DCF comparisons + Beaver Hadamard for spline evaluation.
+#' @title K=2 Wide Spline: 4-phase DCF Training Pipeline
+#' @description Secure K=2 GLM training with wide piecewise-linear spline.
+#'   4-phase protocol per iteration: DCF → AND+Had1 → Had2 → assembly.
+#'   Fully distributed, non-disclosive. All spline logic in Go (no R intermediation).
 #' @name k2-wide-spline-client
 NULL
 
@@ -15,32 +14,31 @@ NULL
                              family, lambda, max_iter, tol,
                              n_obs, verbose, .dsAgg, .sendBlob) {
 
-  coordinator_pk <- transport_pks[[coordinator]]
-  nl_pk <- transport_pks[[nl]]
   frac_bits <- 20L
-
-  # Wide spline configuration
   num_intervals <- if (family == "poisson") 100L else 50L
-  if (verbose) message(sprintf("  Wide spline: %s, %d intervals", family, num_intervals))
-
-  # Learning rate
   alpha <- if (family == "poisson") 0.05 else 0.3
   if (is.null(lambda)) lambda <- 1e-4
+  if (verbose) message(sprintf("  Wide spline: %s, %d intervals", family, num_intervals))
 
   p_coord <- length(x_vars[[coordinator]])
   p_nl <- length(x_vars[[nl]])
   p_total <- p_coord + p_nl
 
-  # === INPUT-SHARING PREAMBLE (FixedPoint) ===
-  if (verbose) message("  Input-sharing preamble (FixedPoint)...")
+  # Base64url helpers
+  .to_b64url <- function(x) gsub("+","-",gsub("/","_",gsub("=+$","",x,perl=TRUE),fixed=TRUE),fixed=TRUE)
+  .b64url_to_b64 <- function(x) {
+    x <- gsub("-","+",gsub("_","/",x,fixed=TRUE),fixed=TRUE)
+    pad <- nchar(x)%%4; if(pad==2) x<-paste0(x,"=="); if(pad==3) x<-paste0(x,"="); x
+  }
 
+  # === INPUT-SHARING PREAMBLE ===
+  if (verbose) message("  Input-sharing preamble (FixedPoint)...")
   share_results <- list()
   for (server in server_list) {
     ci <- which(server_names == server)
     peer <- setdiff(server_list, server)
     is_label <- (server == coordinator)
-    # Convert peer PK to base64url (Opal parser rejects +/ in inline args)
-    peer_pk_safe <- gsub("+","-",gsub("/","_",gsub("=+$","",transport_pks[[peer]],perl=TRUE),fixed=TRUE),fixed=TRUE)
+    peer_pk_safe <- .to_b64url(transport_pks[[peer]])
     r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
       data_name = std_data, x_vars = x_vars[[server]],
       y_var = if (is_label) y_var else NULL,
@@ -48,7 +46,6 @@ NULL
     if (is.list(r) && length(r) == 1) r <- r[[1]]
     share_results[[server]] <- r
   }
-
   for (server in server_list) {
     peer <- setdiff(server_list, server)
     peer_ci <- which(server_names == peer)
@@ -56,7 +53,6 @@ NULL
     if (!is.null(share_results[[server]]$encrypted_y_share))
       .sendBlob(share_results[[server]]$encrypted_y_share, "k2_peer_y_share", peer_ci)
   }
-
   for (server in server_list) {
     ci <- which(server_names == server)
     peer <- setdiff(server_list, server)
@@ -64,13 +60,6 @@ NULL
       peer_p = as.integer(length(x_vars[[peer]])), session_id = session_id))
   }
   if (verbose) message("  Input sharing complete")
-
-  # Base64url helpers
-  .to_b64url <- function(x) gsub("+","-",gsub("/","_",gsub("=+$","",x,perl=TRUE),fixed=TRUE),fixed=TRUE)
-  .b64url_to_b64 <- function(x) {
-    x <- gsub("-", "+", gsub("_", "/", x, fixed=TRUE), fixed=TRUE)
-    pad <- nchar(x) %% 4; if(pad==2) x<-paste0(x,"=="); if(pad==3) x<-paste0(x,"="); x
-  }
 
   beta <- rep(0, p_total)
   intercept <- 0.0
@@ -81,316 +70,139 @@ NULL
     beta_old <- beta
     intercept_old <- intercept
 
-    # === Step 1: Compute eta shares in FP (LOCAL) ===
+    # === Step 1: Compute eta shares ===
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
       .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
-        beta_coord = beta[1:p_coord],
-        beta_nl = beta[(p_coord+1):p_total],
+        beta_coord = beta[1:p_coord], beta_nl = beta[(p_coord+1):p_total],
         intercept = if (is_coord) intercept else 0.0,
-        is_coordinator = is_coord,
-        session_id = session_id))
+        is_coordinator = is_coord, session_id = session_id))
     }
 
-    # === Step 2: Wide spline DCF sigmoid/exp ===
-
-    # 2a. Generate DCF keys on client
+    # === Step 2: Wide spline sigmoid (4-phase protocol) ===
+    # Generate DCF keys + 3 Beaver triples on client
     dcf <- dsVert:::.callMheTool("k2-dcf-gen-batch", list(
       family = family, n = as.integer(n_obs),
       frac_bits = frac_bits, num_intervals = num_intervals))
+    triples <- lapply(1:3, function(i) dsVert:::.callMheTool("k2-gen-beaver-triples",
+      list(n = as.integer(n_obs), frac_bits = frac_bits)))
 
-    # 2b. Send keys to servers via encrypted blob
+    # Send DCF keys + triples to servers via encrypted blobs
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
-      keys_b64 <- if (is_coord) dcf$party0_keys else dcf$party1_keys
       pk_b64 <- .b64url_to_b64(transport_pks[[server]])
+      party_idx <- if (is_coord) "party0" else "party1"
+      # DCF keys
       sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-        data = keys_b64, recipient_pk = pk_b64))
+        data = if(is_coord) dcf$party0_keys else dcf$party1_keys, recipient_pk = pk_b64))
       .sendBlob(.to_b64url(sealed$sealed), "k2_dcf_keys", ci)
+      # Triples
+      td <- list()
+      for (op in c("and","had1","had2")) {
+        ti <- switch(op, and=1, had1=2, had2=3)
+        td[[paste0(op,"_a")]] <- triples[[ti]][[paste0(party_idx,"_u")]]
+        td[[paste0(op,"_b")]] <- triples[[ti]][[paste0(party_idx,"_v")]]
+        td[[paste0(op,"_c")]] <- triples[[ti]][[paste0(party_idx,"_w")]]
+      }
+      sealed_t <- dsVert:::.callMheTool("transport-encrypt", list(
+        data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td, auto_unbox=TRUE))),
+        recipient_pk = pk_b64))
+      .sendBlob(.to_b64url(sealed_t$sealed), "k2_spline_triples", ci)
     }
 
-    # 2c. Servers store keys + evaluate DCF phase 1
-    dcf_r1 <- list()
+    # Phase 1: DCF masked values
+    ph1 <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
-      .dsAgg(datasources[ci], call("k2StoreDcfKeysDS", session_id = session_id))
-      r <- .dsAgg(datasources[ci], call("k2DcfEvalDS",
-        phase = 1L, party_id = if (is_coord) 0L else 1L,
-        family = family, num_intervals = num_intervals,
-        frac_bits = frac_bits, session_id = session_id))
-      if (is.list(r) && length(r) == 1) r <- r[[1]]
-      dcf_r1[[server]] <- r
-    }
-
-    # 2d. Relay masked values
-    .sendBlob(dcf_r1[[coordinator]]$masked_values, "k2_dcf_peer_masked", nl_conn)
-    .sendBlob(dcf_r1[[nl]]$masked_values, "k2_dcf_peer_masked", coordinator_conn)
-
-    # 2e. DCF phase 2 → comparison shares
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      .dsAgg(datasources[ci], call("k2DcfEvalDS",
-        phase = 2L, party_id = if (is_coord) 0L else 1L,
-        family = family, num_intervals = num_intervals,
-        frac_bits = frac_bits, session_id = session_id))
-    }
-
-    # 2f. Compute spline indicators locally (no communication)
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      .dsAgg(datasources[ci], call("k2SplineIndicatorsDS",
-        party_id = if (is_coord) 0L else 1L,
-        family = family, num_intervals = num_intervals,
-        frac_bits = frac_bits, session_id = session_id))
-    }
-
-    # 2g. Beaver AND: I_mid = NOT(c_low) * c_high
-    # Reuse k2BeaverRoundFPDS with x_key="k2_c_low_share_fp", y_key="k2_c_high_share_fp"
-    triple_and <- dsVert:::.callMheTool("k2-gen-beaver-triples", list(
-      n = as.integer(n_obs), frac_bits = frac_bits))
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      party_idx <- if (is_coord) "party0" else "party1"
-      pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-      triple_json <- jsonlite::toJSON(list(
-        a = triple_and[[paste0(party_idx, "_u")]],
-        b = triple_and[[paste0(party_idx, "_v")]],
-        c = triple_and[[paste0(party_idx, "_w")]]), auto_unbox = TRUE)
-      msg_b64 <- jsonlite::base64_enc(charToRaw(triple_json))
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(data = msg_b64, recipient_pk = pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_pow_triple_1", ci)
-    }
-    # Phase 1 (Beaver Hadamard for I_mid = NOT(c_low) * c_high)
-    # Inputs are FP-scaled by k2SplineIndicatorsDS → standard Hadamard with truncation
-    and_r1 <- list()
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      .dsAgg(datasources[ci], call("k2StorePowerTripleDS", triple_key = "k2_pow_triple_1", session_id = session_id))
-      r <- .dsAgg(datasources[ci], call("k2BeaverRoundFPDS",
-        x_key = "k2_c_low_share_fp", y_key = "k2_c_high_share_fp",
-        a_fp = "NONE", b_fp = "NONE",
-        party_id = if (is_coord) 0L else 1L, phase = 1L,
-        use_session_triple = 1L, session_id = session_id))
-      if (is.list(r) && length(r) == 1) r <- r[[1]]
-      and_r1[[server]] <- r
-    }
-    # Relay
-    for (server in server_list) {
-      peer <- setdiff(server_list, server)
-      peer_ci <- which(server_names == peer)
-      msg_json <- jsonlite::toJSON(list(xma = and_r1[[server]]$xma_fp, ymb = and_r1[[server]]$ymb_fp), auto_unbox = TRUE)
-      msg_b64 <- jsonlite::base64_enc(charToRaw(msg_json))
-      pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(data = msg_b64, recipient_pk = pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_br_peer_1", peer_ci)
-    }
-    # Phase 2 → result is FP-scaled I_mid (Hadamard with truncation)
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      .dsAgg(datasources[ci], call("k2BeaverRoundFPDS",
-        x_key = "k2_c_low_share_fp", y_key = "k2_c_high_share_fp",
-        a_fp = "NONE", b_fp = "NONE", c_fp = "NONE",
-        peer_xma_fp = "NONE", peer_ymb_fp = "NONE",
-        result_key = "k2_i_mid_fp", party_id = if (is_coord) 0L else 1L,
-        phase = 2L, use_session_triple = 1L,
-        peer_blob_key = "k2_br_peer_1", session_id = session_id))
-    }
-
-    # 2h. Hadamard: slope * x (reuse Beaver for Hadamard)
-    triple_sx <- dsVert:::.callMheTool("k2-gen-beaver-triples", list(
-      n = as.integer(n_obs), frac_bits = frac_bits))
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      party_idx <- if (is_coord) "party0" else "party1"
-      pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-      triple_json <- jsonlite::toJSON(list(
-        a = triple_sx[[paste0(party_idx, "_u")]],
-        b = triple_sx[[paste0(party_idx, "_v")]],
-        c = triple_sx[[paste0(party_idx, "_w")]]), auto_unbox = TRUE)
-      msg_b64 <- jsonlite::base64_enc(charToRaw(triple_json))
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(data = msg_b64, recipient_pk = pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_pow_triple_2", ci)
-    }
-    sx_r1 <- list()
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      .dsAgg(datasources[ci], call("k2StorePowerTripleDS", triple_key = "k2_pow_triple_2", session_id = session_id))
-      r <- .dsAgg(datasources[ci], call("k2BeaverRoundFPDS",
-        x_key = "k2_slope_share_fp", y_key = "secure_eta_share",
-        a_fp = "NONE", b_fp = "NONE",
-        party_id = if (is_coord) 0L else 1L, phase = 1L,
-        use_session_triple = 1L, session_id = session_id))
-      if (is.list(r) && length(r) == 1) r <- r[[1]]
-      sx_r1[[server]] <- r
-    }
-    for (server in server_list) {
-      peer <- setdiff(server_list, server)
-      peer_ci <- which(server_names == peer)
-      msg_json <- jsonlite::toJSON(list(xma = sx_r1[[server]]$xma_fp, ymb = sx_r1[[server]]$ymb_fp), auto_unbox = TRUE)
-      msg_b64 <- jsonlite::base64_enc(charToRaw(msg_json))
-      pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(data = msg_b64, recipient_pk = pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_br_peer_2", peer_ci)
-    }
-    # Phase 2 → k2_spline_value_fp = slope*x + intercept
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      .dsAgg(datasources[ci], call("k2BeaverRoundFPDS",
-        x_key = "k2_slope_share_fp", y_key = "secure_eta_share",
-        a_fp = "NONE", b_fp = "NONE", c_fp = "NONE",
-        peer_xma_fp = "NONE", peer_ymb_fp = "NONE",
-        result_key = "k2_slope_x_fp", party_id = if (is_coord) 0L else 1L,
-        phase = 2L, use_session_triple = 1L,
-        peer_blob_key = "k2_br_peer_2", session_id = session_id))
-    }
-
-    # 2i. Add intercept to slope*x: spline_value = slope*x + intercept (LOCAL)
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      .dsAgg(datasources[ci], call("k2FPAddDS",
-        a_key = "k2_slope_x_fp", b_key = "k2_intercept_share_fp",
-        result_key = "k2_spline_value_fp", frac_bits = frac_bits,
+      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase1DS",
+        party_id = if(is_coord) 0L else 1L, family = family,
+        num_intervals = num_intervals, frac_bits = frac_bits,
         session_id = session_id))
-    }
-
-    # 2j. Beaver Hadamard: I_mid * spline_value
-    # I_mid from Beaver AND is already FP-scaled (inputs were FP-scaled indicators)
-    triple_ms <- dsVert:::.callMheTool("k2-gen-beaver-triples", list(
-      n = as.integer(n_obs), frac_bits = frac_bits))
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      party_idx <- if (is_coord) "party0" else "party1"
-      pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-      triple_json <- jsonlite::toJSON(list(
-        a = triple_ms[[paste0(party_idx, "_u")]],
-        b = triple_ms[[paste0(party_idx, "_v")]],
-        c = triple_ms[[paste0(party_idx, "_w")]]), auto_unbox = TRUE)
-      msg_b64 <- jsonlite::base64_enc(charToRaw(triple_json))
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(data = msg_b64, recipient_pk = pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_pow_triple_3", ci)
-    }
-    ms_r1 <- list()
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      .dsAgg(datasources[ci], call("k2StorePowerTripleDS", triple_key = "k2_pow_triple_3", session_id = session_id))
-      r <- .dsAgg(datasources[ci], call("k2BeaverRoundFPDS",
-        x_key = "k2_i_mid_fp", y_key = "k2_spline_value_fp",
-        a_fp = "NONE", b_fp = "NONE",
-        party_id = if (is_coord) 0L else 1L, phase = 1L,
-        use_session_triple = 1L, session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]
-      ms_r1[[server]] <- r
+      ph1[[server]] <- r
     }
+    # Relay DCF masked
+    .sendBlob(ph1[[coordinator]]$dcf_masked, "k2_peer_dcf_masked", nl_conn)
+    .sendBlob(ph1[[nl]]$dcf_masked, "k2_peer_dcf_masked", coordinator_conn)
+
+    # Phase 2: DCF close + indicators + (AND + Had1) Beaver R1
+    ph2 <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
+      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase2DS",
+        party_id = if(is_coord) 0L else 1L, family = family,
+        num_intervals = num_intervals, frac_bits = frac_bits,
+        session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]
+      ph2[[server]] <- r
+    }
+    # Relay AND + Had1 Beaver R1
     for (server in server_list) {
       peer <- setdiff(server_list, server)
       peer_ci <- which(server_names == peer)
-      msg_json <- jsonlite::toJSON(list(xma = ms_r1[[server]]$xma_fp, ymb = ms_r1[[server]]$ymb_fp), auto_unbox = TRUE)
-      msg_b64 <- jsonlite::base64_enc(charToRaw(msg_json))
       pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(data = msg_b64, recipient_pk = pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_br_peer_3", peer_ci)
-    }
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      .dsAgg(datasources[ci], call("k2BeaverRoundFPDS",
-        x_key = "k2_i_mid_fp", y_key = "k2_spline_value_fp",
-        a_fp = "NONE", b_fp = "NONE", c_fp = "NONE",
-        peer_xma_fp = "NONE", peer_ymb_fp = "NONE",
-        result_key = "k2_mid_spline_share_fp", party_id = if (is_coord) 0L else 1L,
-        phase = 2L, use_session_triple = 1L,
-        peer_blob_key = "k2_br_peer_3", session_id = session_id))
+      r1_json <- jsonlite::toJSON(list(
+        and_xma=ph2[[server]]$and_xma, and_ymb=ph2[[server]]$and_ymb,
+        had1_xma=ph2[[server]]$had1_xma, had1_ymb=ph2[[server]]$had1_ymb),
+        auto_unbox=TRUE)
+      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+        data=jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk=pk_b64))
+      .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1", peer_ci)
     }
 
-    # 2l. Final assembly: mu = I_high + I_mid * spline
+    # Phase 3: AND/Had1 close + Had2 R1
+    ph3 <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
-      .dsAgg(datasources[ci], call("k2SplineAssembleDS",
-        party_id = if (is_coord) 0L else 1L,
-        family = family, frac_bits = frac_bits,
+      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase3DS",
+        party_id = if(is_coord) 0L else 1L, family = family,
+        num_intervals = num_intervals, frac_bits = frac_bits,
         session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]
+      ph3[[server]] <- r
+    }
+    # Relay Had2 R1
+    for (server in server_list) {
+      peer <- setdiff(server_list, server)
+      peer_ci <- which(server_names == peer)
+      pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
+      r1_json <- jsonlite::toJSON(list(
+        had2_xma=ph3[[server]]$had2_xma, had2_ymb=ph3[[server]]$had2_ymb),
+        auto_unbox=TRUE)
+      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+        data=jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk=pk_b64))
+      .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1", peer_ci)
     }
 
-    # DEBUG: Verify ALL intermediate values before gradient
-    if (verbose && iter <= 1) {
-      # Check every intermediate share
-      debug_keys <- c("k2_i_mid_fp", "k2_slope_x_fp", "k2_intercept_share_fp",
-                       "k2_spline_value_fp", "k2_mid_spline_share_fp",
-                       "k2_i_high_fp", "secure_mu_share", "secure_eta_share")
-      for (key in debug_keys) {
-        shares <- list()
-        for (server in server_list) {
-          ci <- which(server_names == server)
-          r <- tryCatch(.dsAgg(datasources[ci], call("k2ReadSessionKeyDS",
-            key = key, session_id = session_id)), error=function(e) list(list(value="")))
-          if (is.list(r) && length(r) == 1) r <- r[[1]]
-          shares[[server]] <- if (!is.null(r$value)) r$value else ""
-        }
-        if (all(nchar(unlist(shares)) > 0)) {
-          agg <- tryCatch(dsVert:::.callMheTool("k2-ring63-aggregate", list(
-            share_a = shares[[server_list[1]]], share_b = shares[[server_list[2]]], frac_bits = frac_bits)),
-            error=function(e) list(values=NA))
-          vals <- agg$values
-          s <- if (length(vals) > 5) sum(vals) else paste(round(vals,4), collapse=", ")
-          message(sprintf("  [SHARE-DEBUG] %s: n=%d sum=%.4f first5=[%s]",
-            key, length(vals), if(length(vals)>1) sum(vals) else vals[1],
-            paste(round(vals[1:min(5,length(vals))],4), collapse=", ")))
-        } else {
-          message(sprintf("  [SHARE-DEBUG] %s: EMPTY on %s", key,
-            paste(server_list[nchar(unlist(shares))==0], collapse=",")))
-        }
-      }
-    }
-    if (verbose && iter <= 2) {
-      mu_shares <- list()
-      for (server in server_list) {
-        ci <- which(server_names == server)
-        r <- .dsAgg(datasources[ci], call("k2ReadSessionKeyDS",
-          key = "secure_mu_share", session_id = session_id))
-        if (is.list(r) && length(r) == 1) r <- r[[1]]
-        mu_shares[[server]] <- r$value
-        message(sprintf("  [MU-DEBUG] %s: nchar=%d first40=%s", server, nchar(r$value), substr(r$value,1,40)))
-      }
-      if (length(mu_shares) == 2 && all(sapply(mu_shares, function(x) nchar(x) > 0))) {
-        mu_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
-          share_a = mu_shares[[server_list[1]]], share_b = mu_shares[[server_list[2]]], frac_bits = frac_bits))
-        message(sprintf("  [MU-DEBUG] sum(mu)=%.4f (expected %.1f for mu=0.5)", sum(mu_agg$values), n_obs*0.5))
-        message(sprintf("  [MU-DEBUG] mu[1..5]=%s", paste(round(mu_agg$values[1:min(5,length(mu_agg$values))],4), collapse=", ")))
-      }
+    # Phase 4: Had2 close + assembly → mu
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
+      .dsAgg(datasources[ci], call("k2WideSplinePhase4DS",
+        party_id = if(is_coord) 0L else 1L, family = family,
+        num_intervals = num_intervals, frac_bits = frac_bits,
+        session_id = session_id))
     }
 
     # === Step 3: Ring63 Beaver gradient ===
     mvt <- dsVert:::.callMheTool("k2-gen-matvec-triples", list(
       n = as.integer(n_obs), p = as.integer(p_total)))
-
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
       party_idx <- if (is_coord) "party0" else "party1"
-      a_fp <- mvt[[paste0(party_idx, "_a")]]
-      b_fp <- mvt[[paste0(party_idx, "_b")]]
-      c_fp <- mvt[[paste0(party_idx, "_c")]]
       pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-      msg_json <- jsonlite::toJSON(list(a=a_fp, b=b_fp, c=c_fp), auto_unbox=TRUE)
-      msg_b64 <- jsonlite::base64_enc(charToRaw(msg_json))
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(data=msg_b64, recipient_pk=pk_b64))
+      msg_json <- jsonlite::toJSON(list(a=mvt[[paste0(party_idx,"_a")]],
+        b=mvt[[paste0(party_idx,"_b")]], c=mvt[[paste0(party_idx,"_c")]]), auto_unbox=TRUE)
+      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+        data=jsonlite::base64_enc(charToRaw(msg_json)), recipient_pk=pk_b64))
       .sendBlob(.to_b64url(sealed$sealed), "k2_grad_triple_fp", ci)
     }
-
     r1_results <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
@@ -401,51 +213,36 @@ NULL
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       r1_results[[server]] <- r
     }
-
     .sendBlob(r1_results[[coordinator]]$encrypted_r1, "k2_grad_peer_r1", nl_conn)
     .sendBlob(r1_results[[nl]]$encrypted_r1, "k2_grad_peer_r1", coordinator_conn)
-
     grad_results <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
       r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
-        party_id = if (is_coord) 0L else 1L,
-        session_id = session_id))
+        party_id = if(is_coord) 0L else 1L, session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       grad_results[[server]] <- r
     }
 
-    # === Step 4: Client sums gradient shares in Ring63 ===
+    # === Step 4: Client aggregates gradient ===
     grad_fp_coord <- grad_results[[coordinator]]$gradient_fp
     grad_fp_nl <- grad_results[[nl]]$gradient_fp
     res_fp_coord <- r1_results[[coordinator]]$sum_residual_fp
     res_fp_nl <- r1_results[[nl]]$sum_residual_fp
-
     if (!is.null(grad_fp_coord) && !is.null(grad_fp_nl)) {
       agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
-        share_a = grad_fp_coord, share_b = grad_fp_nl, frac_bits = frac_bits))
+        share_a=grad_fp_coord, share_b=grad_fp_nl, frac_bits=frac_bits))
       gradient <- agg$values
       agg_res <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
-        share_a = res_fp_coord, share_b = res_fp_nl, frac_bits = frac_bits))
+        share_a=res_fp_coord, share_b=res_fp_nl, frac_bits=frac_bits))
       sum_residual <- agg_res$values[1]
     } else {
-      gradient <- rep(0, p_total)
-      sum_residual <- 0
+      gradient <- rep(0, p_total); sum_residual <- 0
       for (server in server_list) {
         gradient <- gradient + grad_results[[server]]$gradient_share
         sum_residual <- sum_residual + r1_results[[server]]$sum_residual
       }
-    }
-
-    # Debug: print gradient info
-    if (verbose && iter <= 3) {
-      message(sprintf("  [DEBUG iter %d] gradient = [%s]", iter, paste(round(gradient,4), collapse=", ")))
-      message(sprintf("  [DEBUG iter %d] sum_residual = %.4f, n_obs=%d", iter, sum_residual, n_obs))
-      message(sprintf("  [DEBUG iter %d] grad_fp_coord nchar=%d, grad_fp_nl nchar=%d",
-        iter, nchar(grad_fp_coord %||% ""), nchar(grad_fp_nl %||% "")))
-      message(sprintf("  [DEBUG iter %d] res_fp_coord nchar=%d, res_fp_nl nchar=%d",
-        iter, nchar(res_fp_coord %||% ""), nchar(res_fp_nl %||% "")))
     }
 
     # GD update
@@ -455,27 +252,17 @@ NULL
     beta <- beta - alpha * full_grad
     intercept <- intercept - alpha * sum_residual / n_obs
 
-    if (verbose && iter <= 3) {
-      message(sprintf("  [DEBUG iter %d] full_grad = [%s]", iter, paste(round(full_grad,6), collapse=", ")))
-      message(sprintf("  [DEBUG iter %d] beta = [%s]", iter, paste(round(beta,6), collapse=", ")))
-      message(sprintf("  [DEBUG iter %d] intercept = %.6f", iter, intercept))
-    }
-
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
     final_iter <- iter
-
     if (max_diff < tol) {
       converged <- TRUE
       if (verbose) message(sprintf("  Converged after %d iterations (diff = %.2e)", iter, max_diff))
       break
     }
-    if (verbose && iter %% 50 == 0) message(sprintf("  Iteration %d: max diff = %.2e, ||grad||=%.2e", iter, max_diff, grad_norm))
-
-    # Periodic GC
+    if (verbose && iter %% 50 == 0) message(sprintf("  Iter %d: diff=%.2e ||grad||=%.2e", iter, max_diff, grad_norm))
     if (iter %% 20 == 0) {
-      for (server in server_list) {
+      for (server in server_list)
         tryCatch(.dsAgg(datasources[which(server_names==server)], call("mheGcDS")), error=function(e) NULL)
-      }
     }
   }
 
@@ -485,6 +272,5 @@ NULL
   betas <- list()
   betas[[coordinator]] <- beta[1:p_coord]
   betas[[nl]] <- beta[(p_coord+1):p_total]
-
   list(betas=betas, intercept=intercept, converged=converged, iterations=final_iter, max_diff=max_diff)
 }
