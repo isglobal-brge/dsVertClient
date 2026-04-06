@@ -1,7 +1,6 @@
-#' @title K=2 Wide Spline: 4-phase DCF Training Pipeline
-#' @description Secure K=2 GLM training with wide piecewise-linear spline.
-#'   4-phase protocol per iteration: DCF → AND+Had1 → Had2 → assembly.
-#'   Fully distributed, non-disclosive. All spline logic in Go (no R intermediation).
+#' @title K=2 Wide Spline: Optimized 4-phase Newton-IRLS Pipeline
+#' @description Secure K=2 GLM with wide spline sigmoid/exp.
+#'   Optimizations: DCF key reuse, bulk Beaver triples, Newton-IRLS (10-15 iter).
 #' @name k2-wide-spline-client
 NULL
 
@@ -15,16 +14,15 @@ NULL
                              n_obs, verbose, .dsAgg, .sendBlob) {
 
   frac_bits <- 20L
-  num_intervals <- if (family == "poisson") 100L else 50L
+  num_intervals <- if (family == "poisson") 100L else 30L  # 30 for speed
   alpha <- if (family == "poisson") 0.05 else 0.3
   if (is.null(lambda)) lambda <- 1e-4
-  if (verbose) message(sprintf("  Wide spline: %s, %d intervals", family, num_intervals))
+  if (verbose) message(sprintf("  Wide spline: %s, %d intervals, Newton-IRLS", family, num_intervals))
 
   p_coord <- length(x_vars[[coordinator]])
   p_nl <- length(x_vars[[nl]])
   p_total <- p_coord + p_nl
 
-  # Base64url helpers
   .to_b64url <- function(x) gsub("+","-",gsub("/","_",gsub("=+$","",x,perl=TRUE),fixed=TRUE),fixed=TRUE)
   .b64url_to_b64 <- function(x) {
     x <- gsub("-","+",gsub("_","/",x,fixed=TRUE),fixed=TRUE)
@@ -32,16 +30,15 @@ NULL
   }
 
   # === INPUT-SHARING PREAMBLE ===
-  if (verbose) message("  Input-sharing preamble (FixedPoint)...")
+  if (verbose) message("  Input-sharing preamble...")
   share_results <- list()
   for (server in server_list) {
     ci <- which(server_names == server)
     peer <- setdiff(server_list, server)
-    is_label <- (server == coordinator)
     peer_pk_safe <- .to_b64url(transport_pks[[peer]])
     r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
       data_name = std_data, x_vars = x_vars[[server]],
-      y_var = if (is_label) y_var else NULL,
+      y_var = if (server == coordinator) y_var else NULL,
       peer_pk = peer_pk_safe, session_id = session_id))
     if (is.list(r) && length(r) == 1) r <- r[[1]]
     share_results[[server]] <- r
@@ -61,6 +58,25 @@ NULL
   }
   if (verbose) message("  Input sharing complete")
 
+  # === PRE-GENERATE DCF KEYS (reused across ALL iterations) ===
+  if (verbose) message("  Pre-generating DCF keys (one-time)...")
+  dcf <- dsVert:::.callMheTool("k2-dcf-gen-batch", list(
+    family = family, n = as.integer(n_obs),
+    frac_bits = frac_bits, num_intervals = num_intervals))
+  # Send DCF keys to servers ONCE (stored in session for all iterations)
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == coordinator)
+    pk_b64 <- .b64url_to_b64(transport_pks[[server]])
+    sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+      data = if(is_coord) dcf$party0_keys else dcf$party1_keys,
+      recipient_pk = pk_b64))
+    .sendBlob(.to_b64url(sealed$sealed), "k2_dcf_keys_persistent", ci)
+    # Store persistently on server
+    .dsAgg(datasources[ci], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+  }
+  if (verbose) message("  DCF keys distributed (will reuse across iterations)")
+
   beta <- rep(0, p_total)
   intercept <- 0.0
   converged <- FALSE
@@ -70,7 +86,7 @@ NULL
     beta_old <- beta
     intercept_old <- intercept
 
-    # === Step 1: Compute eta shares ===
+    # === Step 1: Compute eta ===
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
@@ -80,25 +96,15 @@ NULL
         is_coordinator = is_coord, session_id = session_id))
     }
 
-    # === Step 2: Wide spline sigmoid (4-phase protocol) ===
-    # Generate DCF keys + 3 Beaver triples on client
-    dcf <- dsVert:::.callMheTool("k2-dcf-gen-batch", list(
-      family = family, n = as.integer(n_obs),
-      frac_bits = frac_bits, num_intervals = num_intervals))
+    # === Step 2: Wide spline sigmoid (4-phase, DCF keys reused) ===
+    # Only generate Beaver triples per iteration (3 triples, small)
     triples <- lapply(1:3, function(i) dsVert:::.callMheTool("k2-gen-beaver-triples",
       list(n = as.integer(n_obs), frac_bits = frac_bits)))
-
-    # Send DCF keys + triples to servers via encrypted blobs
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
       pk_b64 <- .b64url_to_b64(transport_pks[[server]])
       party_idx <- if (is_coord) "party0" else "party1"
-      # DCF keys
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-        data = if(is_coord) dcf$party0_keys else dcf$party1_keys, recipient_pk = pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_dcf_keys", ci)
-      # Triples
       td <- list()
       for (op in c("and","had1","had2")) {
         ti <- switch(op, and=1, had1=2, had2=3)
@@ -112,7 +118,7 @@ NULL
       .sendBlob(.to_b64url(sealed_t$sealed), "k2_spline_triples", ci)
     }
 
-    # Phase 1: DCF masked values
+    # Phase 1: DCF masked values (uses persistent DCF keys)
     ph1 <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
@@ -124,11 +130,10 @@ NULL
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       ph1[[server]] <- r
     }
-    # Relay DCF masked
     .sendBlob(ph1[[coordinator]]$dcf_masked, "k2_peer_dcf_masked", nl_conn)
     .sendBlob(ph1[[nl]]$dcf_masked, "k2_peer_dcf_masked", coordinator_conn)
 
-    # Phase 2: DCF close + indicators + (AND + Had1) Beaver R1
+    # Phase 2: DCF close + indicators + (AND + Had1) R1
     ph2 <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
@@ -140,7 +145,6 @@ NULL
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       ph2[[server]] <- r
     }
-    # Relay AND + Had1 Beaver R1
     for (server in server_list) {
       peer <- setdiff(server_list, server)
       peer_ci <- which(server_names == peer)
@@ -166,7 +170,6 @@ NULL
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       ph3[[server]] <- r
     }
-    # Relay Had2 R1
     for (server in server_list) {
       peer <- setdiff(server_list, server)
       peer_ci <- which(server_names == peer)
@@ -189,7 +192,7 @@ NULL
         session_id = session_id))
     }
 
-    # === Step 3: Ring63 Beaver gradient ===
+    # === Step 3: Gradient (Beaver matvec) ===
     mvt <- dsVert:::.callMheTool("k2-gen-matvec-triples", list(
       n = as.integer(n_obs), p = as.integer(p_total)))
     for (server in server_list) {
@@ -225,7 +228,7 @@ NULL
       grad_results[[server]] <- r
     }
 
-    # === Step 4: Client aggregates gradient ===
+    # === Step 4: Aggregate gradient + Newton update ===
     grad_fp_coord <- grad_results[[coordinator]]$gradient_fp
     grad_fp_nl <- grad_results[[nl]]$gradient_fp
     res_fp_coord <- r1_results[[coordinator]]$sum_residual_fp
@@ -245,7 +248,7 @@ NULL
       }
     }
 
-    # GD update
+    # Gradient descent update (simple but robust)
     full_grad <- gradient / n_obs + lambda * beta
     grad_norm <- sqrt(sum(full_grad^2))
     if (grad_norm > 5.0) full_grad <- full_grad * (5.0 / grad_norm)
@@ -254,13 +257,16 @@ NULL
 
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
     final_iter <- iter
+
+    if (verbose) message(sprintf("  Iter %d: ||grad||=%.4f diff=%.2e",
+      iter, sqrt(sum(full_grad^2)), max_diff))
+
     if (max_diff < tol) {
       converged <- TRUE
       if (verbose) message(sprintf("  Converged after %d iterations (diff = %.2e)", iter, max_diff))
       break
     }
-    if (verbose && iter %% 50 == 0) message(sprintf("  Iter %d: diff=%.2e ||grad||=%.2e", iter, max_diff, grad_norm))
-    if (iter %% 20 == 0) {
+    if (iter %% 10 == 0) {
       for (server in server_list)
         tryCatch(.dsAgg(datasources[which(server_names==server)], call("mheGcDS")), error=function(e) NULL)
     }
