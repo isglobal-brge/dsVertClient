@@ -263,15 +263,8 @@ NULL
         session_id = session_id))
     }
 
-    # 2j. Scale I_mid from integer to FP for Hadamard (LOCAL)
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      .dsAgg(datasources[ci], call("k2ScaleIndicatorFPDS",
-        src_key = "k2_i_mid_fp", result_key = "k2_i_mid_scaled_fp",
-        frac_bits = frac_bits, session_id = session_id))
-    }
-
-    # 2k. Beaver Hadamard: I_mid * spline_value
+    # 2j. Beaver Hadamard: I_mid * spline_value
+    # I_mid from Beaver AND is already FP-scaled (inputs were FP-scaled indicators)
     triple_ms <- dsVert:::.callMheTool("k2-gen-beaver-triples", list(
       n = as.integer(n_obs), frac_bits = frac_bits))
     for (server in server_list) {
@@ -293,7 +286,7 @@ NULL
       is_coord <- (server == coordinator)
       .dsAgg(datasources[ci], call("k2StorePowerTripleDS", triple_key = "k2_pow_triple_3", session_id = session_id))
       r <- .dsAgg(datasources[ci], call("k2BeaverRoundFPDS",
-        x_key = "k2_i_mid_scaled_fp", y_key = "k2_spline_value_fp",
+        x_key = "k2_i_mid_fp", y_key = "k2_spline_value_fp",
         a_fp = "NONE", b_fp = "NONE",
         party_id = if (is_coord) 0L else 1L, phase = 1L,
         use_session_triple = 1L, session_id = session_id))
@@ -313,7 +306,7 @@ NULL
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
       .dsAgg(datasources[ci], call("k2BeaverRoundFPDS",
-        x_key = "k2_i_mid_scaled_fp", y_key = "k2_spline_value_fp",
+        x_key = "k2_i_mid_fp", y_key = "k2_spline_value_fp",
         a_fp = "NONE", b_fp = "NONE", c_fp = "NONE",
         peer_xma_fp = "NONE", peer_ymb_fp = "NONE",
         result_key = "k2_mid_spline_share_fp", party_id = if (is_coord) 0L else 1L,
