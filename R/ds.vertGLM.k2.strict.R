@@ -192,6 +192,62 @@ NULL
         session_id = session_id))
     }
 
+    # === Step 2.5: Newton diagonal Fisher (w = mu*(1-mu), d_j = sum(w)) ===
+    fisher_triple <- dsVert:::.callMheTool("k2-gen-beaver-triples",
+      list(n = as.integer(n_obs), frac_bits = frac_bits))
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
+      pk_b64 <- .b64url_to_b64(transport_pks[[server]])
+      party_idx <- if (is_coord) "party0" else "party1"
+      td <- list(a = fisher_triple[[paste0(party_idx,"_u")]],
+                 b = fisher_triple[[paste0(party_idx,"_v")]],
+                 c = fisher_triple[[paste0(party_idx,"_w")]])
+      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+        data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td, auto_unbox=TRUE))),
+        recipient_pk = pk_b64))
+      .sendBlob(.to_b64url(sealed$sealed), "k2_fisher_triple", ci)
+    }
+    # Fisher phase 1: Beaver R1 for w
+    fisher_ph1 <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
+      r <- .dsAgg(datasources[ci], call("k2NewtonFisherPhase1DS",
+        party_id = if(is_coord) 0L else 1L, frac_bits = frac_bits,
+        session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]
+      fisher_ph1[[server]] <- r
+    }
+    # Relay Fisher Beaver R1
+    for (server in server_list) {
+      peer <- setdiff(server_list, server)
+      peer_ci <- which(server_names == peer)
+      pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
+      r1_json <- jsonlite::toJSON(list(w_xma=fisher_ph1[[server]]$w_xma,
+        w_ymb=fisher_ph1[[server]]$w_ymb), auto_unbox=TRUE)
+      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+        data=jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk=pk_b64))
+      .sendBlob(.to_b64url(sealed$sealed), "k2_fisher_peer_r1", peer_ci)
+    }
+    # Fisher phase 2: compute d_j shares
+    fisher_shares <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
+      r <- .dsAgg(datasources[ci], call("k2NewtonFisherPhase2DS",
+        party_id = if(is_coord) 0L else 1L, frac_bits = frac_bits,
+        p_total = as.integer(p_total), session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]
+      fisher_shares[[server]] <- r
+    }
+    # Reconstruct d_j (DISCLOSED — non-disclosive aggregate)
+    fisher_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+      share_a = fisher_shares[[server_list[1]]]$fisher_diag_fp,
+      share_b = fisher_shares[[server_list[2]]]$fisher_diag_fp,
+      frac_bits = frac_bits))
+    diag_fisher <- fisher_agg$values / n_obs + lambda
+
     # === Step 3: Gradient (Beaver matvec) ===
     mvt <- dsVert:::.callMheTool("k2-gen-matvec-triples", list(
       n = as.integer(n_obs), p = as.integer(p_total)))
@@ -248,12 +304,13 @@ NULL
       }
     }
 
-    # Gradient descent update (simple but robust)
+    # Newton-IRLS update with diagonal Fisher preconditioning
     full_grad <- gradient / n_obs + lambda * beta
-    grad_norm <- sqrt(sum(full_grad^2))
-    if (grad_norm > 5.0) full_grad <- full_grad * (5.0 / grad_norm)
-    beta <- beta - alpha * full_grad
-    intercept <- intercept - alpha * sum_residual / n_obs
+    # Newton step: beta -= grad / diag_fisher (with damping for stability)
+    damping <- 0.5
+    beta <- beta - damping * full_grad / diag_fisher
+    # Intercept: use sum(w) as denominator
+    intercept <- intercept - damping * sum_residual / (diag_fisher[1] * n_obs)
 
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
     final_iter <- iter
