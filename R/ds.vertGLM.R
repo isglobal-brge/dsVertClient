@@ -190,60 +190,12 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     }
   }
 
-  # K=2 nonlinear: query ALL servers for policy, use the most restrictive
-  # Default is strict (HE-Link). Pragmatic requires explicit admin opt-in.
-  # If any server is strict, the whole job uses strict.
+  # K=2 nonlinear: single implementation — DCF wide spline (non-disclosive)
+  # No policy query needed. Always uses the wide spline Beaver path.
   use_k2_pragmatic <- FALSE
   if (eta_privacy == "k2_mpc" && non_label_count == 1) {
-    nl_server_name <- setdiff(names(x_vars), y_server)
-    p_nl_features <- length(x_vars[[nl_server_name]])
-
-    # Query both servers — the most restrictive policy wins
-    policies <- list()
-    for (srv in names(x_vars)) {
-      srv_idx <- which(names(datasources) == srv)
-      policies[[srv]] <- tryCatch(
-        datashield.aggregate(datasources[srv_idx],
-          call("k2MpcQueryPolicyDS",
-               p_nonlabel = as.integer(p_nl_features),
-               study_id = NULL))[[1]],
-        error = function(e) list(mode = "strict")  # default to strict on error
-      )
-    }
-
-    # Most restrictive wins: if ANY server says strict, use strict
-    modes <- sapply(policies, function(p) p$mode)
-    if (any(modes == "strict")) {
-      resolved_mode <- "strict"
-      # Warn if servers disagree
-      if (any(modes == "pragmatic") && verbose) {
-        strict_srvs <- names(modes)[modes == "strict"]
-        warning(sprintf("Server(s) %s require strict mode; overriding pragmatic on other server(s). ",
-                        paste(strict_srvs, collapse = ", ")),
-                "For binomial/Poisson, this may reduce coefficient precision to O(1e-2).",
-                call. = FALSE)
-      }
-    } else {
-      resolved_mode <- "pragmatic"
-    }
-
-    if (resolved_mode == "pragmatic") {
-      eta_privacy <- "k2_mpc"        # GS-IRLS path
-      use_k2_pragmatic <- TRUE
-      if (verbose) message("  K=2 policy: pragmatic (GS-IRLS, p_nonlabel=", p_nl_features, ")")
-    } else {
-      eta_privacy <- "k2_beaver"     # Chebyshev Beaver strict path
-      if (verbose) {
-        reasons <- sapply(policies, function(p) if (!is.null(p$reason)) p$reason else "")
-        reasons <- reasons[nzchar(reasons)]
-        reason_str <- if (length(reasons) > 0) paste(reasons, collapse = "; ") else "default server policy"
-        message("  K=2 policy: strict (HE-Link) — ", reason_str)
-        if (family %in% c("binomial", "poisson"))
-          message("  Note: strict mode uses polynomial approximation for the link function. ",
-                  "Coefficient error may be O(1e-2) vs centralized GLM. ",
-                  "For higher precision, the server admin can enable pragmatic mode.")
-      }
-    }
+    eta_privacy <- "k2_beaver"  # wide spline DCF path
+    if (verbose) message("  K=2 mode: wide spline DCF (non-disclosive, ~1e-3 precision)")
   }
 
   use_he_link <- (eta_privacy == "he_link")
@@ -471,7 +423,47 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # ===========================================================================
   transport_pks <- list()  # Collect transport PKs for secure routing + share-wrapping
 
-  if (length(non_label_servers) > 0) {
+  if (use_k2_beaver && length(non_label_servers) > 0) {
+    # K=2 wide spline: generate transport keys on SERVERS via lightweight mheInitDS.
+    # This creates the X25519 keypair server-side (needed for k2ReceiveShareDS decrypt).
+    if (verbose) message("\n[Phase 0] Transport key setup (K=2 wide spline)...")
+    crp_k2 <- NULL
+    gkg_k2 <- NULL
+    for (server in server_list) {
+      conn_idx <- which(server_names == server)
+      party_id <- as.integer(which(server_list == server) - 1L)
+      tk_result <- .dsAgg(
+        conns = datasources[conn_idx],
+        expr = call("mheInitDS",
+                    party_id = party_id,
+                    crp = crp_k2, gkg_seed = gkg_k2,
+                    num_obs = as.integer(n_obs),
+                    log_n = 14L, log_scale = 40L,
+                    generate_rlk = FALSE,
+                    session_id = session_id)
+      )
+      if (is.list(tk_result)) tk_result <- tk_result[[1]]
+      transport_pks[[server]] <- tk_result$transport_pk
+      if (is.null(crp_k2)) {
+        crp_k2 <- tk_result$crp
+        gkg_k2 <- tk_result$gkg_seed
+      }
+    }
+    # Store transport keys on each server (for peer PK lookup in k2ShareInputDS)
+    for (server in server_list) {
+      conn_idx <- which(server_names == server)
+      pk_sorted <- transport_pks[sort(names(transport_pks))]
+      .dsAgg(
+        conns = datasources[conn_idx],
+        expr = call("mheStoreTransportKeysDS",
+                    transport_keys = pk_sorted,
+                    session_id = session_id)
+      )
+    }
+    if (verbose) message("  Transport keys exchanged for ", length(server_list), " servers")
+  }
+
+  if (length(non_label_servers) > 0 && !use_k2_beaver) {
     if (verbose) message("\n[Phase 0] MHE key setup...")
 
     mhe_reused <- FALSE

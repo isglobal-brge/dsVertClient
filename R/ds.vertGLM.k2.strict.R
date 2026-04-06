@@ -39,10 +39,12 @@ NULL
     ci <- which(server_names == server)
     peer <- setdiff(server_list, server)
     is_label <- (server == coordinator)
+    # Convert peer PK to base64url (Opal parser rejects +/ in inline args)
+    peer_pk_safe <- gsub("+","-",gsub("/","_",gsub("=+$","",transport_pks[[peer]],perl=TRUE),fixed=TRUE),fixed=TRUE)
     r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
       data_name = std_data, x_vars = x_vars[[server]],
       y_var = if (is_label) y_var else NULL,
-      peer_pk = transport_pks[[peer]], session_id = session_id))
+      peer_pk = peer_pk_safe, session_id = session_id))
     if (is.list(r) && length(r) == 1) r <- r[[1]]
     share_results[[server]] <- r
   }
