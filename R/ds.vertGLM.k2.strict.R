@@ -324,6 +324,25 @@ NULL
         session_id = session_id))
     }
 
+    # DEBUG: Verify mu values before gradient
+    if (verbose && iter <= 2) {
+      mu_shares <- list()
+      for (server in server_list) {
+        ci <- which(server_names == server)
+        r <- .dsAgg(datasources[ci], call("k2ReadSessionKeyDS",
+          key = "secure_mu_share", session_id = session_id))
+        if (is.list(r) && length(r) == 1) r <- r[[1]]
+        mu_shares[[server]] <- r$value
+        message(sprintf("  [MU-DEBUG] %s: nchar=%d first40=%s", server, nchar(r$value), substr(r$value,1,40)))
+      }
+      if (length(mu_shares) == 2 && all(sapply(mu_shares, function(x) nchar(x) > 0))) {
+        mu_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+          share_a = mu_shares[[server_list[1]]], share_b = mu_shares[[server_list[2]]], frac_bits = frac_bits))
+        message(sprintf("  [MU-DEBUG] sum(mu)=%.4f (expected %.1f for mu=0.5)", sum(mu_agg$values), n_obs*0.5))
+        message(sprintf("  [MU-DEBUG] mu[1..5]=%s", paste(round(mu_agg$values[1:min(5,length(mu_agg$values))],4), collapse=", ")))
+      }
+    }
+
     # === Step 3: Ring63 Beaver gradient ===
     mvt <- dsVert:::.callMheTool("k2-gen-matvec-triples", list(
       n = as.integer(n_obs), p = as.integer(p_total)))
