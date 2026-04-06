@@ -166,7 +166,8 @@ NULL
       sealed <- dsVert:::.callMheTool("transport-encrypt", list(data = msg_b64, recipient_pk = pk_b64))
       .sendBlob(.to_b64url(sealed$sealed), "k2_pow_triple_1", ci)
     }
-    # Phase 1
+    # Phase 1 (Beaver Hadamard for I_mid = NOT(c_low) * c_high)
+    # Inputs are FP-scaled by k2SplineIndicatorsDS → standard Hadamard with truncation
     and_r1 <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
@@ -190,7 +191,7 @@ NULL
       sealed <- dsVert:::.callMheTool("transport-encrypt", list(data = msg_b64, recipient_pk = pk_b64))
       .sendBlob(.to_b64url(sealed$sealed), "k2_br_peer_1", peer_ci)
     }
-    # Phase 2 → result stored as k2_i_mid_fp
+    # Phase 2 → result is FP-scaled I_mid (Hadamard with truncation)
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
@@ -324,7 +325,36 @@ NULL
         session_id = session_id))
     }
 
-    # DEBUG: Verify mu values before gradient
+    # DEBUG: Verify ALL intermediate values before gradient
+    if (verbose && iter <= 1) {
+      # Check every intermediate share
+      debug_keys <- c("k2_i_mid_fp", "k2_slope_x_fp", "k2_intercept_share_fp",
+                       "k2_spline_value_fp", "k2_mid_spline_share_fp",
+                       "k2_i_high_fp", "secure_mu_share", "secure_eta_share")
+      for (key in debug_keys) {
+        shares <- list()
+        for (server in server_list) {
+          ci <- which(server_names == server)
+          r <- tryCatch(.dsAgg(datasources[ci], call("k2ReadSessionKeyDS",
+            key = key, session_id = session_id)), error=function(e) list(list(value="")))
+          if (is.list(r) && length(r) == 1) r <- r[[1]]
+          shares[[server]] <- if (!is.null(r$value)) r$value else ""
+        }
+        if (all(nchar(unlist(shares)) > 0)) {
+          agg <- tryCatch(dsVert:::.callMheTool("k2-ring63-aggregate", list(
+            share_a = shares[[server_list[1]]], share_b = shares[[server_list[2]]], frac_bits = frac_bits)),
+            error=function(e) list(values=NA))
+          vals <- agg$values
+          s <- if (length(vals) > 5) sum(vals) else paste(round(vals,4), collapse=", ")
+          message(sprintf("  [SHARE-DEBUG] %s: n=%d sum=%.4f first5=[%s]",
+            key, length(vals), if(length(vals)>1) sum(vals) else vals[1],
+            paste(round(vals[1:min(5,length(vals))],4), collapse=", ")))
+        } else {
+          message(sprintf("  [SHARE-DEBUG] %s: EMPTY on %s", key,
+            paste(server_list[nchar(unlist(shares))==0], collapse=",")))
+        }
+      }
+    }
     if (verbose && iter <= 2) {
       mu_shares <- list()
       for (server in server_list) {
