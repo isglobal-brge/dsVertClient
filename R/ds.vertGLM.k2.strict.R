@@ -252,23 +252,74 @@ NULL
         peer_blob_key = "k2_br_peer_2", session_id = session_id))
     }
 
-    # TODO: Add intercept to spline value on server: spline = slope*x + intercept
-    # For now, the k2SplineAssembleDS can handle this if we store both.
-    # The intercept share was stored by k2SplineIndicatorsDS as k2_intercept_share_fp.
-    # The slope*x was stored by BeaverRound as k2_slope_x_fp.
-    # spline_value = k2_slope_x_fp + k2_intercept_share_fp → need a server-side add.
+    # 2i. Add intercept to slope*x: spline_value = slope*x + intercept (LOCAL)
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      .dsAgg(datasources[ci], call("k2FPAddDS",
+        a_key = "k2_slope_x_fp", b_key = "k2_intercept_share_fp",
+        result_key = "k2_spline_value_fp", frac_bits = frac_bits,
+        session_id = session_id))
+    }
 
-    # 2i. Hadamard: I_mid * spline_value (need I_mid scaled to FP first)
-    # I_mid from step 2g is an integer share. Scale to FP on server, then Hadamard.
-    # For now, use k2SplineAssembleDS which handles the remaining assembly.
+    # 2j. Scale I_mid from integer to FP for Hadamard (LOCAL)
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      .dsAgg(datasources[ci], call("k2ScaleIndicatorFPDS",
+        src_key = "k2_i_mid_fp", result_key = "k2_i_mid_scaled_fp",
+        frac_bits = frac_bits, session_id = session_id))
+    }
 
-    # 2j. Final assembly: mu = I_high + I_mid * spline
-    # This needs another Beaver Hadamard for I_mid * spline.
-    # But first we need spline = slope*x + intercept (server-side add).
-    # TODO: Add a server-side command for this or extend k2SplineAssembleDS.
+    # 2k. Beaver Hadamard: I_mid * spline_value
+    triple_ms <- dsVert:::.callMheTool("k2-gen-beaver-triples", list(
+      n = as.integer(n_obs), frac_bits = frac_bits))
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
+      party_idx <- if (is_coord) "party0" else "party1"
+      pk_b64 <- .b64url_to_b64(transport_pks[[server]])
+      triple_json <- jsonlite::toJSON(list(
+        a = triple_ms[[paste0(party_idx, "_u")]],
+        b = triple_ms[[paste0(party_idx, "_v")]],
+        c = triple_ms[[paste0(party_idx, "_w")]]), auto_unbox = TRUE)
+      msg_b64 <- jsonlite::base64_enc(charToRaw(triple_json))
+      sealed <- dsVert:::.callMheTool("transport-encrypt", list(data = msg_b64, recipient_pk = pk_b64))
+      .sendBlob(.to_b64url(sealed$sealed), "k2_pow_triple_3", ci)
+    }
+    ms_r1 <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
+      .dsAgg(datasources[ci], call("k2StorePowerTripleDS", triple_key = "k2_pow_triple_3", session_id = session_id))
+      r <- .dsAgg(datasources[ci], call("k2BeaverRoundFPDS",
+        x_key = "k2_i_mid_scaled_fp", y_key = "k2_spline_value_fp",
+        a_fp = "NONE", b_fp = "NONE",
+        party_id = if (is_coord) 0L else 1L, phase = 1L,
+        use_session_triple = 1L, session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]
+      ms_r1[[server]] <- r
+    }
+    for (server in server_list) {
+      peer <- setdiff(server_list, server)
+      peer_ci <- which(server_names == peer)
+      msg_json <- jsonlite::toJSON(list(xma = ms_r1[[server]]$xma_fp, ymb = ms_r1[[server]]$ymb_fp), auto_unbox = TRUE)
+      msg_b64 <- jsonlite::base64_enc(charToRaw(msg_json))
+      pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
+      sealed <- dsVert:::.callMheTool("transport-encrypt", list(data = msg_b64, recipient_pk = pk_b64))
+      .sendBlob(.to_b64url(sealed$sealed), "k2_br_peer_3", peer_ci)
+    }
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
+      .dsAgg(datasources[ci], call("k2BeaverRoundFPDS",
+        x_key = "k2_i_mid_scaled_fp", y_key = "k2_spline_value_fp",
+        a_fp = "NONE", b_fp = "NONE", c_fp = "NONE",
+        peer_xma_fp = "NONE", peer_ymb_fp = "NONE",
+        result_key = "k2_mid_spline_share_fp", party_id = if (is_coord) 0L else 1L,
+        phase = 2L, use_session_triple = 1L,
+        peer_blob_key = "k2_br_peer_3", session_id = session_id))
+    }
 
-    # SIMPLIFIED for first integration: use k2SplineAssembleDS which computes
-    # mu from the stored session values. (Implementation pending.)
+    # 2l. Final assembly: mu = I_high + I_mid * spline
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
