@@ -932,6 +932,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     betas <- loop_result$betas
     converged <- loop_result$converged
     final_iter <- loop_result$iterations
+    # Store the loop's intercept for destandardization
+    k2_loop_intercept <- loop_result$intercept
 
   } else if (use_k2_mpc) {
     # =========================================================================
@@ -1777,6 +1779,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   all_x_sds <- numeric()
   all_names <- character()
   beta_0_from_label <- 0
+  # For K=2 beaver (wide spline), use the intercept from the loop
+  if (use_k2_beaver && exists("k2_loop_intercept")) {
+    beta_0_from_label <- k2_loop_intercept
+  }
 
   for (server in server_list) {
     server_beta <- betas[[server]]
