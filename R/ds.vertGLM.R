@@ -1172,11 +1172,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         vars <- x_vars[[server]]
         p_k <- length(vars)
 
-        # Step 1: Send encrypted (mu, w) blob
-        mwv_blob <- mwv_blobs[[server]]
-        .sendBlob(mwv_blob, "mwv", conn_idx)
+        # Send (mu, w) for gradient computation
+        .sendBlob(mwv_blobs[[server]], "mwv", conn_idx)
 
-        # Step 2: Compute encrypted gradient (REUSE existing function)
+        # Compute encrypted gradient
         grad_result <- .dsAgg(
           conns = datasources[conn_idx],
           expr = call("glmSecureGradientDS",
@@ -1298,8 +1297,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         conn_idx <- which(server_names == server)
         vars <- x_vars[[server]]
 
-        # Send (mu, w) blob for the masking step (w not used but function expects it)
-        .sendBlob(mwv_blobs[[server]], "mwv", conn_idx)
+        # Send mwv blob if available (skip_solve will clean it up)
+        if (!is.null(mwv_blobs[[server]])) {
+          .sendBlob(mwv_blobs[[server]], "mwv", conn_idx)
+        }
 
         solve_result <- .dsAgg(
           conns = datasources[conn_idx],
