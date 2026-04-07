@@ -77,7 +77,10 @@ NULL
   }
   if (verbose) message("  DCF keys distributed (will reuse across iterations)")
 
+  # Include intercept as beta[1] with implicit column of 1s
+  # This ensures the intercept gradient goes through the same Beaver path as features
   beta <- rep(0, p_total)
+  intercept_in_beta <- TRUE  # intercept handled via gradient[0], not sum_residual
   xsq_precomputed <- FALSE
   intercept <- 0.0
   converged <- FALSE
@@ -371,13 +374,15 @@ NULL
       }
     }
 
-    # Newton-IRLS update with diagonal Fisher preconditioning
+    # Newton-IRLS update with diagonal Fisher for features
     full_grad <- gradient / n_obs + lambda * beta
-    # Newton step: beta -= grad / diag_fisher (with damping for stability)
     damping <- 0.5
     beta <- beta - damping * full_grad / diag_fisher
-    # Intercept: use sum(w) as denominator
-    intercept <- intercept - damping * sum_residual / (diag_fisher[1] * n_obs)
+    # Intercept: use GD (not Newton) with larger step — the intercept has no
+    # Fisher preconditioning because it's not part of the Beaver matvec.
+    # The Go local test uses alpha=0.3 for GD and converges well.
+    intercept_grad <- sum_residual / n_obs + lambda * intercept
+    intercept <- intercept - alpha * intercept_grad
 
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
     final_iter <- iter
