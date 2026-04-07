@@ -374,15 +374,12 @@ NULL
       }
     }
 
-    # Newton-IRLS update with diagonal Fisher for features
+    # GD update for ALL coefficients (same as verified Go local test)
     full_grad <- gradient / n_obs + lambda * beta
-    damping <- 0.5
-    beta <- beta - damping * full_grad / diag_fisher
-    # Intercept: use GD (not Newton) with larger step — the intercept has no
-    # Fisher preconditioning because it's not part of the Beaver matvec.
-    # The Go local test uses alpha=0.3 for GD and converges well.
-    intercept_grad <- sum_residual / n_obs + lambda * intercept
-    intercept <- intercept - alpha * intercept_grad
+    grad_norm <- sqrt(sum(full_grad^2) + (sum_residual/n_obs)^2)
+    sc <- if (grad_norm > 5.0) 5.0/grad_norm else 1.0
+    beta <- beta - alpha * full_grad * sc
+    intercept <- intercept - alpha * (sum_residual / n_obs) * sc
 
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
     final_iter <- iter
