@@ -164,11 +164,6 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   if (!y_server %in% names(x_vars))
     stop("y_server '", y_server, "' must be in x_vars", call. = FALSE)
 
-  # Resolve eta_privacy mode
-  if (!eta_privacy %in% c("auto", "transport", "he_link", "secure_agg", "k2_mpc", "k2_beaver"))
-    stop("eta_privacy must be 'auto', 'transport', 'he_link', 'secure_agg', 'k2_mpc', or 'k2_beaver'",
-         call. = FALSE)
-
   # Validate topology parameter
   if (!topology %in% c("pairwise", "ring"))
     stop("topology must be 'pairwise' or 'ring'", call. = FALSE)
@@ -176,52 +171,29 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   n_partitions_check <- length(x_vars)
   non_label_count <- n_partitions_check - 1
 
+  # Route to the appropriate protocol:
+  #   K=2: Beaver MPC with wide spline DCF (non-disclosive, ~1e-3 precision)
+  #   K>=3: Secure aggregation with Enc(r) + L-BFGS (~8e-3 precision)
   if (eta_privacy == "auto") {
     if (non_label_count >= 2) {
-      eta_privacy <- "secure_agg"    # K>=3: pairwise PRG masks
-    } else if (non_label_count == 1) {
-      eta_privacy <- "k2_mpc"        # K=2: Beaver MPC for all families
+      eta_privacy <- "secure_agg"
+    } else if (non_label_count >= 1) {
+      eta_privacy <- "k2_beaver"
     } else {
-      eta_privacy <- "transport"     # K=1 (single server, no privacy concern)
+      stop("Need at least 2 servers (1 label + 1 non-label)", call. = FALSE)
     }
   }
 
-  # K=2 nonlinear: single implementation — DCF wide spline (non-disclosive)
-  # No policy query needed. Always uses the wide spline Beaver path.
-  use_k2_pragmatic <- FALSE
-  if (eta_privacy == "k2_mpc" && non_label_count == 1) {
-    eta_privacy <- "k2_beaver"  # wide spline DCF path
-    if (verbose) message("  K=2 mode: wide spline DCF (non-disclosive, ~1e-3 precision)")
-  }
-
-  use_he_link <- (eta_privacy == "he_link")
   use_secure_agg <- (eta_privacy == "secure_agg")
-  use_k2_mpc <- (eta_privacy == "k2_mpc")
   use_k2_beaver <- (eta_privacy == "k2_beaver")
 
-  # Policy enforcement
   if (use_secure_agg && non_label_count < 2)
-    stop("secure_agg requires >= 3 servers (>= 2 non-label). ",
-         "For K=2, use 'he_link' (binomial) or 'transport'.", call. = FALSE)
-  if (use_he_link) {
-    if (non_label_count != 1)
-      stop("HE-Link mode requires exactly 2 servers (1 label + 1 non-label). ",
-           "Got ", n_partitions_check, " partitions.", call. = FALSE)
-    if (family != "gaussian" && log_n < 14)
-      stop("HE-Link mode with ", family, " requires log_n >= 14 ",
-           "(need 4+ multiplicative levels for polynomial + gradient). ",
-           "Got log_n = ", log_n, ".", call. = FALSE)
-  }
+    stop("secure_agg requires >= 3 servers", call. = FALSE)
+  if (use_k2_beaver && non_label_count != 1)
+    stop("K=2 mode requires exactly 2 servers", call. = FALSE)
 
-  # Gaussian identity link doesn't need polynomial evaluation → no RLK
-  generate_rlk <- use_he_link && family != "gaussian"
-
-  # Binomial/Poisson HE-Link uses gradient descent → needs more iterations
-  # Only auto-increase from the default (100); respect explicit user values
-  if (use_he_link && family %in% c("binomial", "poisson") && max_iter == 100) {
-    max_iter <- 300L
-    if (verbose) message("  Auto-increasing max_iter to 300 for HE-Link GD mode")
-  }
+  # RLK not needed (no CKKS polynomial evaluation in secure_agg or K=2 Beaver)
+  generate_rlk <- FALSE
 
   # ===========================================================================
   # Helpers
@@ -239,7 +211,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # operations when log_n >= 14 (where single CKKS calls can exceed typical
   # 60s proxy timeouts). Chunk transfers and lightweight calls always use
   # standard synchronous dispatch.
-  .need_async <- (use_he_link && log_n >= 14)
+  .need_async <- FALSE  # sync dispatch for all current paths
 
   .heavy_fns <- c("mheInitDS", "mheCombineDS", "mheEncryptRawDS",
     "glmHEEncryptEtaDS", "glmHELinkStepDS", "glmHEGradientEncDS",
@@ -700,83 +672,6 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
     if (verbose) message("  Key setup + transport keys complete")
 
-    # =========================================================================
-    # Phase 0.5: Peer Manifest Consensus (when use_secure_agg)
-    # =========================================================================
-    # Cross-validate that all servers see the same peer set and configuration.
-    # Prevents phantom peer injection by a malicious client.
-    if (use_secure_agg) {
-      if (verbose) message("\n[Phase 0.5] Peer manifest consensus...")
-
-      # Build canonical manifest (client-side helper)
-      .buildManifest <- function() {
-        peers <- sort(server_list)
-        pk_sorted <- transport_pks[sort(names(transport_pks))]
-        manifest <- list(
-          job_id = session_id,
-          method = family,
-          non_label_servers = sort(non_label_servers),
-          peers = peers,
-          topology = topology,
-          transport_pks = pk_sorted,
-          y_server = y_server
-        )
-        jsonlite::toJSON(manifest, auto_unbox = TRUE)
-      }
-      manifest_json <- .buildManifest()
-
-      # B64url-encode the manifest JSON to avoid Opal parser issues with
-      # special characters ('{', '}', '+', '/', '=') in string arguments.
-      manifest_b64 <- jsonlite::base64_enc(charToRaw(as.character(manifest_json)))
-      manifest_b64 <- gsub("[\r\n]", "", manifest_b64)  # strip MIME line breaks
-      manifest_b64 <- gsub("+", "-", manifest_b64, fixed = TRUE)
-      manifest_b64 <- gsub("/", "_", manifest_b64, fixed = TRUE)
-      manifest_b64 <- gsub("=", "", manifest_b64, fixed = TRUE)
-
-      # Each server: store manifest + get encrypted hashes
-      server_enc_hashes <- list()
-      for (server in server_list) {
-        conn_idx <- which(server_names == server)
-        store_result <- .dsAgg(
-          conns = datasources[conn_idx],
-          expr = call("peerManifestStoreDS",
-                      manifest_json = manifest_b64,
-                      session_id = session_id)
-        )
-        if (is.list(store_result) && length(store_result) == 1)
-          store_result <- store_result[[1]]
-        server_enc_hashes[[server]] <- store_result
-      }
-
-      # Relay each server's encrypted hash to each peer via blob storage
-      for (sender in server_list) {
-        hashes <- server_enc_hashes[[sender]]
-        for (recipient in server_list) {
-          if (recipient == sender) next
-          hash_blob <- hashes[[recipient]]
-          if (is.null(hash_blob)) next
-          recipient_conn <- which(server_names == recipient)
-          blob_key <- paste0("manifest_hash_", sender)
-          .sendBlob(hash_blob, blob_key, recipient_conn)
-        }
-      }
-
-      # Each server: validate every peer's hash
-      for (server in server_list) {
-        conn_idx <- which(server_names == server)
-        for (peer in server_list) {
-          if (peer == server) next
-          .dsAgg(
-            conns = datasources[conn_idx],
-            expr = call("peerManifestValidateDS",
-                        peer_name = peer,
-                        session_id = session_id)
-          )
-        }
-      }
-
-      if (verbose) message("  Manifest consensus validated across all servers")
-    }
   }
 
   # ===========================================================================
@@ -821,7 +716,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # ===========================================================================
   # Phase 2: Encrypt y and distribute (only if non-label servers exist)
   # ===========================================================================
-  if (length(non_label_servers) > 0 && !use_k2_mpc && !use_k2_beaver) {
+  if (length(non_label_servers) > 0 && !use_k2_beaver) {
     if (verbose) message("\n[Phase 2] Encrypting response variable...")
 
     # Encrypt STANDARDIZED y (Gaussian) or raw y (non-Gaussian)
@@ -832,15 +727,12 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       conns = datasources[conn_idx],
       expr = call("mheEncryptRawDS",
                   data_name = enc_data, y_var = y_var,
-                  store_local = use_he_link,
+                  store_local = FALSE,
                   session_id = session_id)
     )
     if (is.list(enc_result)) enc_result <- enc_result[[1]]
     ct_y <- enc_result$encrypted_y
     if (verbose) message("  Encrypted y on ", y_server)
-    if (use_he_link && verbose)
-      message("  ct_y stored locally on label server (HE-Link mode)")
-
     for (server in non_label_servers) {
       conn_idx <- which(server_names == server)
       n_chunks_sent <- .dsvert_adaptive_send(ct_y, function(chunk_str, chunk_idx, n_chunks) {
@@ -879,7 +771,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   betas <- list()
   for (server in server_list) {
     p <- length(x_vars[[server]])
-    if (server == coordinator && label_intercept && !use_he_link && !use_k2_mpc && !use_k2_beaver) p <- p + 1
+    if (server == coordinator && label_intercept && !use_k2_beaver) p <- p + 1
     betas[[server]] <- rep(0, p)
   }
 
@@ -931,112 +823,6 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     final_iter <- loop_result$iterations
     # Store the loop's intercept for destandardization
     k2_loop_intercept <- loop_result$intercept
-
-  } else if (use_k2_mpc) {
-    # =========================================================================
-    # Phase 3 (K=2 Pragmatic): Gauss-Seidel BCD-IRLS with transport encryption
-    # =========================================================================
-    # The coordinator (label server) sees eta_nonlabel via transport decryption,
-    # but cannot decompose it into individual features when p_nonlabel >= 3.
-    # This is the same information class as K>=3 secure routing (which reveals
-    # w -> |eta| via arcosh). Policy gates enforce minimum feature count.
-    #
-    # Per GS-IRLS iteration:
-    #   1. Non-label: compute eta_nonlabel, transport-encrypt for coordinator
-    #   2. Coordinator: decrypt eta_nonlabel, IRLS update, encrypt (w, residual)
-    #   3. Non-label: decrypt (w, residual), IRLS block solve, encrypt eta_new
-    #   4. Check convergence on beta diff
-
-    if (verbose) message("\n[Phase 3] BCD iterations (K=2 pragmatic GS-IRLS)...")
-
-    nl <- non_label_servers[1]
-    nl_conn <- which(server_names == nl)
-    nl_pk <- transport_pks[[nl]]
-
-    p_nl <- length(x_vars[[nl]])
-
-    # For iteration 1, coordinator's k2MpcCoordinatorIrlsDS defaults eta_other=0
-    # when no blob is present. From iteration 2 onward, the non-label's
-    # encrypted_eta from the previous solve is already stored as a blob.
-
-    for (iter in seq_len(max_iter)) {
-      betas_old <- betas
-
-      # --- Step 1: Coordinator IRLS update ---
-      # (consumes k2_eta_nonlabel blob from previous iteration, or zeros for iter=1)
-      # Coordinator runs full IRLS step inside Go binary with piecewise
-      # sigmoid/exp (1:1 with Google C++). Gets back beta + (w, residual).
-      coord_result <- .dsAgg(
-        conns = datasources[coordinator_conn],
-        expr = call("k2TrainCoordinatorDS",
-                    data_name = std_data,
-                    y_var = y_var,
-                    x_vars = x_vars[[coordinator]],
-                    beta_current = betas[[coordinator]],
-                    family = family,
-                    lambda = lambda,
-                    max_iter = 1L,
-                    tol = tol,
-                    non_label_pk = nl_pk,
-                    session_id = session_id)
-      )
-      if (is.list(coord_result) && length(coord_result) == 1)
-        coord_result <- coord_result[[1]]
-
-      betas[[coordinator]] <- coord_result$beta
-
-      # Relay encrypted (w, residual) to non-label
-      .sendBlob(coord_result$encrypted_wr, "k2_wr", nl_conn)
-
-      # --- Step 3: Non-label IRLS block solve ---
-      nl_result <- .dsAgg(
-        conns = datasources[nl_conn],
-        expr = call("k2MpcNonlabelBlockSolveDS",
-                    data_name = std_data,
-                    x_vars = x_vars[[nl]],
-                    beta_current = betas[[nl]],
-                    lambda = lambda,
-                    coordinator_pk = coordinator_pk,
-                    session_id = session_id)
-      )
-      if (is.list(nl_result) && length(nl_result) == 1)
-        nl_result <- nl_result[[1]]
-
-      betas[[nl]] <- nl_result$beta
-
-      # Store encrypted eta for next iteration (coordinator will consume via blob)
-      .sendBlob(nl_result$encrypted_eta, "k2_eta_nonlabel", coordinator_conn)
-
-      # --- Step 4: Check convergence ---
-      max_diff <- 0
-      for (server in server_list) {
-        diff_server <- max(abs(betas[[server]] - betas_old[[server]]))
-        max_diff <- max(max_diff, diff_server)
-      }
-
-      final_iter <- iter
-
-      # Periodic server-side GC to prevent memory buildup on long runs
-      if (iter %% 20 == 0) {
-        for (server in server_list) {
-          tryCatch(.dsAgg(conns = datasources[which(server_names == server)],
-            expr = call("mheGcDS")), error = function(e) NULL)
-        }
-      }
-
-      if (max_diff < tol) {
-        converged <- TRUE
-        if (verbose)
-          message(sprintf("  Converged after %d iterations (diff = %.2e)", iter, max_diff))
-        break
-      }
-      if (verbose && iter %% 5 == 0)
-        message(sprintf("  Iteration %d: max diff = %.2e", iter, max_diff))
-    }
-
-    if (!converged && verbose)
-      warning(sprintf("Did not converge after %d iterations (diff = %.2e)", max_iter, max_diff))
-
 
   } else if (use_secure_agg) {
     # =========================================================================
@@ -1556,468 +1342,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                       max_iter, max_diff))
     }  # end else (binomial/poisson L-BFGS)
 
-  } else if (use_he_link) {
-    # =========================================================================
-    # Phase 3 (HE-Link): BCD with encrypted link function (K=2)
-    # =========================================================================
-    # Instead of transporting plaintext (mu, w, v) between servers, we compute
-    # mu = g^{-1}(eta_total) entirely in the encrypted domain. This prevents
-    # the K=2 eta privacy leak.
-    #
-    # Family-specific pathways:
-    #   - Gaussian: identity link, ct_mu = ct_eta_total (no polynomial, no RLK)
-    #              → exact block solve with unit weights
-    #   - Binomial: sigmoid polynomial under CKKS → GD block update
-    #   - Poisson:  exp polynomial under CKKS with eta clipping → GD block update
-    #
-    # Each iteration:
-    #   1. Each server encrypts eta_k = X_k * beta_k under CPK (Poisson: clip)
-    #   2. Coordinator: ct_eta_total = ct_add(ct_eta_label, ct_eta_nonlabel)
-    #   3. Coordinator: ct_mu = poly(ct_eta_total) or ct_eta_total (Gaussian)
-    #   4. Distribute ct_mu to non-label server
-    #   5. Both servers: encrypted_gradient = X_k^T (ct_y - ct_mu)
-    #   6. Threshold decrypt gradient scalars
-    #   7. Block update: exact solve (Gaussian) or GD (binomial/Poisson)
-
-    if (verbose) {
-      link_desc <- switch(family,
-        gaussian = "encrypted residual, identity link",
-        binomial = "homomorphic sigmoid",
-        poisson  = "homomorphic exp"
-      )
-      message(sprintf("\n[Phase 3] BCD iterations (HE-Link, %s)...", link_desc))
-    }
-
-    # Poisson: degree-7 Chebyshev approximation to exp(x) on [-3, 3]
-    he_link_poly <- NULL
-    he_link_clip_radius <- NULL
-    if (family == "poisson") {
-      he_link_poly <- c(9.989069e-01, 9.994338e-01, 5.043165e-01, 1.675787e-01,
-                        3.908437e-02, 7.945614e-03, 1.865407e-03, 2.576334e-04)
-      he_link_clip_radius <- 1.5  # Per-server clip → total in [-3, 3]
-    }
-
-    # Non-label server PKs for coordinator
-    non_label_pk_map <- list()
-    for (s in non_label_servers) {
-      non_label_pk_map[[s]] <- transport_pks[[s]]
-    }
-
-    # Fusion server and non-fusion servers (for threshold decryption)
-    fusion_server <- server_list[1]  # Party 0
-    fusion_conn_idx <- which(server_names == fusion_server)
-    non_fusion_servers <- setdiff(server_list, fusion_server)
-
-    for (iter in seq_len(max_iter)) {
-      betas_old <- betas
-      max_diff <- 0
-
-      # --- Step 1: Each server encrypts eta_k = X_k * beta_k (parallel) ---
-      enc_eta_results <- list()
-      for (server in server_list) {
-        conn_idx <- which(server_names == server)
-        enc_eta_results[[server]] <- .dsAgg(
-          conns = datasources[conn_idx],
-          expr = call("glmHEEncryptEtaDS",
-                      data_name = std_data,
-                      x_vars = x_vars[[server]],
-                      beta = betas[[server]],
-                      clip_radius = he_link_clip_radius,
-                      session_id = session_id)
-        )
-      }
-      # Send encrypted etas to coordinator
-      for (server in server_list) {
-        party_idx <- which(server_list == server) - 1
-        enc_eta_result <- enc_eta_results[[server]]
-        if (is.list(enc_eta_result)) enc_eta_result <- enc_eta_result[[1]]
-        .sendBlob(enc_eta_result$encrypted_eta,
-                  paste0("ct_eta_", party_idx), coordinator_conn)
-      }
-
-      # --- Step 2-3: Coordinator computes ct_mu = g^{-1}(ct_eta_total) ---
-      if (family == "gaussian") {
-        # Gaussian: identity link → ct_mu = ct_eta_total (no polynomial)
-        link_result <- .dsAgg(
-          conns = datasources[coordinator_conn],
-          expr = call("glmHELinkStepDS",
-                      from_storage = TRUE,
-                      n_parties = as.integer(length(server_list)),
-                      skip_poly = TRUE,
-                      session_id = session_id)
-        )
-      } else if (family == "poisson") {
-        # Poisson: exp polynomial on ct_eta_total
-        link_result <- .dsAgg(
-          conns = datasources[coordinator_conn],
-          expr = call("glmHELinkStepDS",
-                      from_storage = TRUE,
-                      n_parties = as.integer(length(server_list)),
-                      poly_coefficients = he_link_poly,
-                      session_id = session_id)
-        )
-      } else {
-        # Binomial: default sigmoid polynomial
-        link_result <- .dsAgg(
-          conns = datasources[coordinator_conn],
-          expr = call("glmHELinkStepDS",
-                      from_storage = TRUE,
-                      n_parties = as.integer(length(server_list)),
-                      session_id = session_id)
-        )
-      }
-      if (is.list(link_result)) link_result <- link_result[[1]]
-      ct_mu <- link_result$ct_mu
-
-      # --- Step 4: Distribute ct_mu to non-label servers ---
-      for (server in non_label_servers) {
-        conn_idx <- which(server_names == server)
-        .sendBlob(ct_mu, "ct_mu", conn_idx)
-      }
-
-      # --- Step 5-7: Each server computes gradient and updates beta ---
-      for (server in server_list) {
-        conn_idx <- which(server_names == server)
-        vars <- x_vars[[server]]
-        p_k <- length(vars)
-
-        # Compute encrypted gradient: X_k^T (ct_y - ct_mu)
-        grad_result <- .dsAgg(
-          conns = datasources[conn_idx],
-          expr = call("glmHEGradientEncDS",
-                      data_name = std_data,
-                      x_vars = vars,
-                      num_obs = as.integer(n_obs),
-                      from_storage = (server != coordinator),
-                      session_id = session_id)
-        )
-        if (is.list(grad_result)) grad_result <- grad_result[[1]]
-
-        enc_gradients <- grad_result$encrypted_gradients
-        ct_hashes <- grad_result$ct_hashes
-
-        # Protocol Firewall: authorize gradient CTs on all other servers
-        if (!is.null(ct_hashes) && length(ct_hashes) > 0) {
-          ct_hashes_blob <- paste(ct_hashes, collapse = ",")
-          for (auth_server in server_list) {
-            if (auth_server != server) {
-              auth_conn <- which(server_names == auth_server)
-              .sendBlob(ct_hashes_blob, "ct_hashes", auth_conn)
-              .dsAgg(
-                conns = datasources[auth_conn],
-                expr = call("mheAuthorizeCTDS",
-                            op_type = "he-link-gradient",
-                            from_storage = TRUE,
-                            session_id = session_id)
-              )
-            }
-          }
-        }
-
-        # Batched threshold decryption of all p_k gradient components
-        # Send all gradient CTs to each non-fusion server in one batch
-        gradient <- numeric(p_k)
-        for (nf_server in non_fusion_servers) {
-          nf_conn <- which(server_names == nf_server)
-          nf_party_id <- which(server_list == nf_server) - 1
-          for (j in seq_len(p_k)) {
-            .sendBlob(enc_gradients[j], paste0("ct_batch_", j), nf_conn)
-          }
-          pd <- .dsAgg(
-            conns = datasources[nf_conn],
-            expr = call("mhePartialDecryptBatchWrappedDS",
-                        n_cts = as.integer(p_k),
-                        session_id = session_id)
-          )
-          if (is.list(pd)) pd <- pd[[1]]
-          for (j in seq_len(p_k)) {
-            share_key <- paste0("wrapped_share_", nf_party_id, "_ct_", j)
-            .sendBlob(pd$wrapped_shares[j], share_key, fusion_conn_idx)
-          }
-        }
-
-        # Send all gradient CTs to fusion server and batch fuse
-        for (j in seq_len(p_k)) {
-          .sendBlob(enc_gradients[j], paste0("ct_batch_", j), fusion_conn_idx)
-        }
-        fuse_result <- .dsAgg(
-          conns = datasources[fusion_conn_idx],
-          expr = call("mheFuseBatchDS",
-                      n_cts = as.integer(p_k),
-                      n_parties = as.integer(length(server_list)),
-                      num_slots = 0L,
-                      session_id = session_id)
-        )
-        if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
-        gradient <- fuse_result$values
-
-        # Block update: family-specific strategy
-        if (family == "gaussian") {
-          # Exact Newton step with unit weights (identity link, w=1)
-          update_result <- .dsAgg(
-            conns = datasources[conn_idx],
-            expr = call("glmBlockSolveDS",
-                        data_name = std_data,
-                        x_vars = vars,
-                        w = NULL,
-                        beta_current = betas[[server]],
-                        gradient = gradient,
-                        lambda = lambda,
-                        session_id = session_id)
-          )
-          if (is.list(update_result)) update_result <- update_result[[1]]
-          betas[[server]] <- update_result$beta
-        } else {
-          # Plain GD for binomial/Poisson (client-side, no server call)
-          # Nesterov momentum was benchmarked but does not improve the
-          # converged error, which is dominated by the polynomial sigmoid
-          # approximation gap (see k2_optimizer_benchmarks.md).
-          if (family == "binomial") {
-            he_alpha <- if (iter <= 50) 0.3 else 0.3 / (1.0 + (iter - 50) / 20.0)
-          } else {
-            he_alpha <- if (iter <= 50) 0.2 else 0.2 / (1.0 + (iter - 50) / 20.0)
-          }
-          grad_update <- gradient / n_obs - lambda * betas[[server]]
-          betas[[server]] <- betas[[server]] + he_alpha * grad_update
-        }
-
-        diff_server <- max(abs(betas[[server]] - betas_old[[server]]))
-        max_diff <- max(max_diff, diff_server)
-      }
-
-      final_iter <- iter
-
-      if (max_diff < tol) {
-        converged <- TRUE
-        if (verbose)
-          message(sprintf("  Converged after %d iterations (diff = %.2e)",
-                          iter, max_diff))
-        break
-      }
-
-      if (verbose && iter %% 10 == 0)
-        message(sprintf("  Iteration %d: max diff = %.2e", iter, max_diff))
-
-      # Periodic server-side GC to prevent memory buildup on long runs
-      if (iter %% 20 == 0) {
-        for (server in server_list) {
-          tryCatch(.dsAgg(conns = datasources[which(server_names == server)],
-            expr = call("mheGcDS")), error = function(e) NULL)
-        }
-      }
-    }
-
-    if (!converged && verbose)
-      warning(sprintf("Did not converge after %d iterations (diff = %.2e)",
-                      max_iter, max_diff))
   } else {
-    # =========================================================================
-    # Phase 3 (Secure Routing): standard transport-encrypted BCD-IRLS
-    # =========================================================================
-    # Secure Routing Protocol: individual-level vectors (eta, mu, w, v) are
-    # transport-encrypted end-to-end between the coordinator (label server)
-    # and non-label servers. The client only handles:
-    #   - Betas: p_k-length coefficient vectors (safe aggregate statistics)
-    #   - Opaque encrypted blobs: transport-encrypted vectors the client cannot read
-    #
-    # BCD variant: Jacobi-style. All non-label servers receive the same mu/w/v
-    # snapshot per iteration (computed by coordinator at iteration start).
-
-    # Non-label server PKs for the coordinator to encrypt (mu, w, v) under
-    non_label_pk_map <- list()
-    for (s in non_label_servers) {
-      non_label_pk_map[[s]] <- transport_pks[[s]]
-    }
-
-    # Fusion server and non-fusion servers (for threshold decryption)
-    fusion_server <- server_list[1]  # Party 0
-    fusion_conn_idx <- which(server_names == fusion_server)
-    non_fusion_servers <- setdiff(server_list, fusion_server)
-
-    if (verbose) message("\n[Phase 3] BCD iterations (secure routing)...")
-
-    for (iter in seq_len(max_iter)) {
-      betas_old <- betas
-      max_diff <- 0
-
-      # --- Phase 3a: Coordinator step (label server) ---
-      # The coordinator receives encrypted etas from non-label servers,
-      # decrypts them, runs IRLS, computes mu/w/v, and encrypts (mu, w, v)
-      # under each non-label server's transport PK.
-
-      # Send encrypted eta blobs to coordinator (if any, from previous iteration)
-      eta_blob_keys <- character(0)
-      if (length(encrypted_etas) > 0) {
-        for (s in names(encrypted_etas)) {
-          blob <- encrypted_etas[[s]]
-          if (!is.null(blob) && nzchar(blob)) {
-            key <- paste0("eta_", s)
-            .sendBlob(blob, key, coordinator_conn)
-            eta_blob_keys <- c(eta_blob_keys, key)
-          }
-        }
-      }
-
-      coord_result <- .dsAgg(
-        conns = datasources[coordinator_conn],
-        expr = call("glmCoordinatorStepDS",
-                    data_name = std_data,
-                    y_var = y_var,
-                    x_vars = x_vars[[coordinator]],
-                    encrypted_eta_blobs = NULL,
-                    eta_blob_keys = if (length(eta_blob_keys) > 0) eta_blob_keys else NULL,
-                    non_label_pks = non_label_pk_map,
-                    family = family,
-                    beta_current = betas[[coordinator]],
-                    lambda = lambda,
-                    intercept = label_intercept,
-                    n_obs = as.integer(n_obs),
-                    session_id = session_id)
-      )
-      if (is.list(coord_result) && length(coord_result) == 1)
-        coord_result <- coord_result[[1]]
-
-      betas[[coordinator]] <- coord_result$beta
-      mwv_blobs <- coord_result$encrypted_blobs  # Named list: server -> blob
-
-      diff_coord <- sum(abs(betas[[coordinator]] - betas_old[[coordinator]]))
-      max_diff <- max(max_diff, diff_coord)
-
-      # --- Phase 3b: Non-label servers (secure gradient + share-wrapped decrypt + block solve) ---
-      encrypted_etas <- list()  # Reset for this iteration
-
-      for (server in non_label_servers) {
-        conn_idx <- which(server_names == server)
-        vars <- x_vars[[server]]
-        p_k <- length(vars)
-
-        # Step 1: Send encrypted (mu, w, v) blob to non-label server
-        mwv_blob <- mwv_blobs[[server]]
-        .sendBlob(mwv_blob, "mwv", conn_idx)
-
-        # Step 2: Server computes encrypted gradient using decrypted mu/v + ct_y
-        grad_result <- .dsAgg(
-          conns = datasources[conn_idx],
-          expr = call("glmSecureGradientDS",
-                      data_name = std_data,
-                      x_vars = vars,
-                      encrypted_mwv = NULL,
-                      num_obs = as.integer(n_obs),
-                      session_id = session_id)
-        )
-        if (is.list(grad_result) && length(grad_result) == 1)
-          grad_result <- grad_result[[1]]
-
-        enc_gradients <- grad_result$encrypted_gradients
-        ct_hashes <- grad_result$ct_hashes
-
-        # Protocol Firewall: authorize gradient ciphertexts on non-producing servers.
-        # ct_hashes sent via blob storage for robustness with many variables.
-        if (!is.null(ct_hashes) && length(ct_hashes) > 0) {
-          ct_hashes_blob <- paste(ct_hashes, collapse = ",")
-          for (auth_server in server_list) {
-            if (auth_server != server) {
-              auth_conn <- which(server_names == auth_server)
-              .sendBlob(ct_hashes_blob, "ct_hashes", auth_conn)
-              .dsAgg(
-                conns = datasources[auth_conn],
-                expr = call("mheAuthorizeCTDS",
-                            op_type = "glm-gradient",
-                            from_storage = TRUE,
-                            session_id = session_id)
-              )
-            }
-          }
-        }
-
-        # Step 3: Share-wrapped threshold decryption of each gradient component
-        gradient <- numeric(p_k)
-        for (j in seq_len(p_k)) {
-          ct_grad <- enc_gradients[j]
-
-          # Collect wrapped shares from non-fusion servers
-          for (nf_server in non_fusion_servers) {
-            nf_conn <- which(server_names == nf_server)
-            nf_party_id <- which(server_list == nf_server) - 1
-
-            n_ct_chunks <- .sendCTChunks(ct_grad, nf_conn)
-            pd <- .dsAgg(
-              conns = datasources[nf_conn],
-              expr = call("mhePartialDecryptWrappedDS",
-                          n_chunks = as.integer(n_ct_chunks),
-                          session_id = session_id)
-            )
-            if (is.list(pd)) pd <- pd[[1]]
-            .sendWrappedShare(pd$wrapped_share, nf_party_id, fusion_conn_idx)
-          }
-
-          # Send CT to fusion server and fuse
-          n_ct_chunks <- .sendCTChunks(ct_grad, fusion_conn_idx)
-          fuse_result <- .dsAgg(
-            conns = datasources[fusion_conn_idx],
-            expr = call("mheFuseServerDS",
-                        n_parties = as.integer(length(server_list)),
-                        n_ct_chunks = as.integer(n_ct_chunks),
-                        num_slots = 0L,
-                        session_id = session_id)
-          )
-          if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
-          gradient[j] <- fuse_result$value
-        }
-
-        # Step 4: BCD block solve with encrypted eta output
-        # Send mwv blob again for the block solve (w needed for IRLS weights)
-        .sendBlob(mwv_blob, "mwv", conn_idx)
-
-        solve_result <- .dsAgg(
-          conns = datasources[conn_idx],
-          expr = call("glmSecureBlockSolveDS",
-                      data_name = std_data,
-                      x_vars = vars,
-                      encrypted_mwv = NULL,
-                      beta_current = betas[[server]],
-                      gradient = gradient,
-                      lambda = lambda,
-                      coordinator_pk = coordinator_pk,
-                      session_id = session_id)
-        )
-        if (is.list(solve_result) && length(solve_result) == 1)
-          solve_result <- solve_result[[1]]
-
-        betas[[server]] <- solve_result$beta
-        encrypted_etas[[server]] <- solve_result$encrypted_eta
-
-        diff_server <- sum(abs(betas[[server]] - betas_old[[server]]))
-        max_diff <- max(max_diff, diff_server)
-      }
-
-      final_iter <- iter
-
-      # Periodic server-side GC to prevent memory buildup on long runs
-      if (iter %% 20 == 0) {
-        for (server in server_list) {
-          tryCatch(.dsAgg(conns = datasources[which(server_names == server)],
-            expr = call("mheGcDS")), error = function(e) NULL)
-        }
-      }
-
-      if (max_diff < tol) {
-        converged <- TRUE
-        if (verbose)
-          message(sprintf("  Converged after %d iterations (diff = %.2e)",
-                          iter, max_diff))
-        break
-      }
-
-      if (verbose && iter %% 5 == 0)
-        message(sprintf("  Iteration %d: max diff = %.2e", iter, max_diff))
-    }
-
-    if (!converged && verbose)
-      warning(sprintf("Did not converge after %d iterations (diff = %.2e)",
-                      max_iter, max_diff))
+    stop("Unsupported eta_privacy mode: ", eta_privacy, call. = FALSE)
   }
-
   # ===========================================================================
   # Phase 4: Unstandardize coefficients
   # ===========================================================================
@@ -2033,7 +1360,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   for (server in server_list) {
     server_beta <- betas[[server]]
-    if (server == coordinator && label_intercept && !use_he_link && !use_k2_mpc && !use_k2_beaver) {
+    if (server == coordinator && label_intercept && !use_k2_beaver) {
       beta_0_from_label <- server_beta[1]
       server_beta <- server_beta[-1]
     }
@@ -2109,7 +1436,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         eta_blob_keys_final <- c(eta_blob_keys_final, key)
       }
     }
-  } else if (use_he_link || use_k2_mpc || use_k2_beaver) {
+  } else if (use_k2_beaver) {
     # HE-Link / K2-MPC deviance: one-time secure-routing deviance computation.
     # Each server computes its final eta = X*beta on the standardized scale.
     # The coordinator stores its own eta locally; non-label servers
