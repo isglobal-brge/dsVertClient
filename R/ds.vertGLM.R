@@ -478,11 +478,53 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     }
 
     if (!mhe_reused) {
+      # ---- Coin-Tossing CRP (distributed randomness) ----
+      if (verbose) message("  Coin-tossing CRP (distributed randomness)...")
+
+      commit_results <- DSI::datashield.aggregate(
+        conns = datasources[server_list],
+        expr = call("mheCoinTossCommitDS", session_id = session_id)
+      )
+      commitments <- character(length(server_list))
+      for (i in seq_along(server_list)) {
+        r <- commit_results[[server_list[i]]]
+        if (is.list(r) && length(r) == 1 && is.list(r[[1]])) r <- r[[1]]
+        commitments[i] <- r$commitment
+      }
+
+      reveal_results <- DSI::datashield.aggregate(
+        conns = datasources[server_list],
+        expr = call("mheCoinTossRevealDS", session_id = session_id)
+      )
+      contributions <- character(length(server_list))
+      for (i in seq_along(server_list)) {
+        r <- reveal_results[[server_list[i]]]
+        if (is.list(r) && length(r) == 1 && is.list(r[[1]])) r <- r[[1]]
+        contributions[i] <- r$contribution
+      }
+
+      for (i in seq_along(server_list)) {
+        ci <- which(server_names == server_list[i])
+        DSI::datashield.aggregate(
+          conns = datasources[ci],
+          expr = call("mheCoinTossDeriveCRPDS",
+                      contributions = unname(contributions),
+                      commitments = unname(commitments),
+                      log_n = as.integer(log_n),
+                      log_scale = as.integer(log_scale),
+                      party_id = as.integer(i - 1L),
+                      session_id = session_id)
+        )
+      }
+
+      if (verbose) message("  CRP derived from ", length(server_list), "-party coin-toss")
+
+      # ---- Key Setup (all from coin-toss CRP) ----
       conn_idx <- which(server_names == server_list[1])
       result0 <- .dsAgg(
         conns = datasources[conn_idx],
         expr = call("mheInitDS",
-                    party_id = 0L, crp = NULL, gkg_seed = NULL,
+                    party_id = 0L, from_storage = TRUE,
                     num_obs = as.integer(n_obs),
                     log_n = as.integer(log_n),
                     log_scale = as.integer(log_scale),
