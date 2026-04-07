@@ -374,12 +374,19 @@ NULL
       }
     }
 
-    # GD update for ALL coefficients (same as verified Go local test)
-    full_grad <- gradient / n_obs + lambda * beta
-    grad_norm <- sqrt(sum(full_grad^2) + (sum_residual/n_obs)^2)
-    sc <- if (grad_norm > 5.0) 5.0/grad_norm else 1.0
-    beta <- beta - alpha * full_grad * sc
-    intercept <- intercept - alpha * (sum_residual / n_obs) * sc
+    # Newton-IRLS: diagonal Fisher preconditioning for ALL coefficients
+    full_grad <- c(sum_residual / n_obs, gradient / n_obs) + lambda * c(intercept, beta)
+    intercept_d <- mean(diag_fisher)
+    full_fisher <- c(intercept_d, diag_fisher)
+    damping <- 0.5
+    full_step <- damping * full_grad / full_fisher
+    if (verbose && iter <= 3) {
+      message(sprintf("  [NEWTON] sum_res=%.4f, int_grad=%.6f, int_fisher=%.6f, int_step=%.6f",
+        sum_residual, full_grad[1], full_fisher[1], full_step[1]))
+      message(sprintf("  [NEWTON] grad=[%s]", paste(round(full_grad, 6), collapse=", ")))
+    }
+    intercept <- intercept - full_step[1]
+    beta <- beta - full_step[-1]
 
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
     final_iter <- iter
