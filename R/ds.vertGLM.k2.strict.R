@@ -267,7 +267,7 @@ NULL
     f_ph1 <- list()
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == coordinator)
-      r <- .dsAgg(datasources[ci], call("k2RealFisherPhase1DS",
+      r <- .dsAgg(datasources[ci], call("k2RealFisherPhase1DS", family = family,
         party_id=if(is_coord) 0L else 1L, frac_bits=frac_bits, session_id=session_id))
       if (is.list(r) && length(r)==1) r <- r[[1]]; f_ph1[[server]] <- r
     }
@@ -285,7 +285,7 @@ NULL
     f_ph2 <- list()
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == coordinator)
-      r <- .dsAgg(datasources[ci], call("k2RealFisherPhase2DS",
+      r <- .dsAgg(datasources[ci], call("k2RealFisherPhase2DS", family = family,
         party_id=if(is_coord) 0L else 1L, frac_bits=frac_bits,
         p_total=as.integer(p_total), session_id=session_id))
       if (is.list(r) && length(r)==1) r <- r[[1]]; f_ph2[[server]] <- r
@@ -304,7 +304,7 @@ NULL
     fisher_shares <- list()
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == coordinator)
-      r <- .dsAgg(datasources[ci], call("k2RealFisherPhase3DS",
+      r <- .dsAgg(datasources[ci], call("k2RealFisherPhase3DS", family = family,
         party_id=if(is_coord) 0L else 1L, frac_bits=frac_bits,
         p_total=as.integer(p_total), session_id=session_id))
       if (is.list(r) && length(r)==1) r <- r[[1]]; fisher_shares[[server]] <- r
