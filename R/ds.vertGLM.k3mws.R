@@ -170,9 +170,12 @@ NULL
     # =================================================================
     # Step 2: Set Ring63 shares + run K=2 wide spline DCF
     # =================================================================
-    # Fusion server: share_A = η_total + r
+    # Fusion server: share_A = η_total + r (pass via blob, too large for call())
+    eta_masked_json <- jsonlite::base64_enc(charToRaw(
+      jsonlite::toJSON(eta_masked, digits = 17)))
+    .sendBlob(eta_masked_json, "mws_eta_share", fusion_conn)
     .dsAgg(datasources[fusion_conn],
-      call("glmMWSSetEtaShareDS", eta_float = eta_masked,
+      call("glmMWSSetEtaShareDS", from_storage = TRUE,
            frac_bits = as.integer(frac_bits), session_id = session_id))
 
     # Coordinator already has share_B = -r (set by glmMWSMaskEtaDS)
