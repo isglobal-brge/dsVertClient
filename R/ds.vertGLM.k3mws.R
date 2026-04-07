@@ -171,9 +171,22 @@ NULL
     # Step 2: Set Ring63 shares + run K=2 wide spline DCF
     # =================================================================
     # Fusion server: share_A = η_total + r (pass via blob, too large for call())
-    eta_masked_json <- jsonlite::base64_enc(charToRaw(
-      jsonlite::toJSON(eta_masked, digits = 17)))
-    .sendBlob(eta_masked_json, "mws_eta_share", fusion_conn)
+    # Store eta_masked on fusion server via chunked transfer (too large for blob)
+    eta_json <- jsonlite::toJSON(eta_masked, digits = 17)
+    eta_b64 <- jsonlite::base64_enc(charToRaw(as.character(eta_json)))
+    eta_b64url <- gsub("[\r\n]","",eta_b64)
+    eta_b64url <- gsub("+","-",eta_b64url,fixed=TRUE)
+    eta_b64url <- gsub("/","_",eta_b64url,fixed=TRUE)
+    eta_b64url <- gsub("=","",eta_b64url,fixed=TRUE)
+    nc <- .dsvert_adaptive_send(eta_b64url, function(chunk_str, chunk_idx, n_chunks) {
+      .dsAgg(datasources[fusion_conn],
+        call("mheStoreEncChunkDS", col_index = 4L,
+             chunk_index = chunk_idx, chunk = chunk_str,
+             session_id = session_id))
+    })
+    .dsAgg(datasources[fusion_conn],
+      call("mheAssembleEncColumnDS", col_index = 4L,
+           n_chunks = as.integer(nc), session_id = session_id))
     .dsAgg(datasources[fusion_conn],
       call("glmMWSSetEtaShareDS", from_storage = TRUE,
            frac_bits = as.integer(frac_bits), session_id = session_id))
