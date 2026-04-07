@@ -180,11 +180,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     if (non_label_count >= 2) {
       eta_privacy <- "secure_agg"    # K>=3: pairwise PRG masks
     } else if (non_label_count == 1) {
-      if (family == "gaussian") {
-        eta_privacy <- "he_link"     # K=2 Gaussian: identity link, exact via HE
-      } else {
-        eta_privacy <- "k2_mpc"      # K=2 Binomial/Poisson: default pragmatic (GS-IRLS)
-      }
+      eta_privacy <- "k2_mpc"        # K=2: Beaver MPC for all families
     } else {
       eta_privacy <- "transport"     # K=1 (single server, no privacy concern)
     }
