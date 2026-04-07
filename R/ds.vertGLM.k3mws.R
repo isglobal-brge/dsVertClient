@@ -83,7 +83,7 @@ NULL
       data = jsonlite::base64_enc(charToRaw(dcf_key_result[[key_field]])),
       recipient_pk = pk_b64
     ))
-    .sendBlob(.to_b64url(sealed$sealed), "k2_dcf_keys", ci)
+    .sendBlob(.to_b64url(sealed$sealed), "k2_dcf_keys_persistent", ci)
     .dsAgg(datasources[ci], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
   }
   if (verbose) message("  DCF keys distributed to ", fusion_server, " + ", coordinator)
@@ -101,12 +101,23 @@ NULL
     for (k in seq_along(server_list)) {
       server <- server_list[k]
       ci <- which(server_names == server)
+      # Coordinator may have intercept in betas — separate it for encryption
+      beta_for_encrypt <- betas[[server]]
+      if (server == coordinator && label_intercept &&
+          length(betas[[server]]) == length(x_vars[[server]]) + 1) {
+        beta_for_encrypt <- betas[[server]][-1]  # drop intercept for X*beta
+      }
       enc_result <- .dsAgg(datasources[ci],
         call("glmHEEncryptEtaDS", data_name = std_data,
-             x_vars = x_vars[[server]], beta = betas[[server]],
+             x_vars = x_vars[[server]], beta = beta_for_encrypt,
              session_id = session_id))
       if (is.list(enc_result)) enc_result <- enc_result[[1]]
       .sendBlob(enc_result$encrypted_eta, paste0("ct_eta_", k - 1), coordinator_conn)
+    }
+    # If coordinator has intercept, add it to the encrypted sum via a constant CT
+    mws_intercept <- 0
+    if (label_intercept && length(betas[[coordinator]]) > length(x_vars[[coordinator]])) {
+      mws_intercept <- betas[[coordinator]][1]
     }
 
     # Coordinator: sum etas (skip polynomial — just addition)
@@ -115,12 +126,27 @@ NULL
            n_parties = as.integer(length(server_list)),
            skip_poly = TRUE, session_id = session_id))
 
-    # Coordinator: mask with random r
+    # Coordinator: mask with random r (add intercept if present)
     mask_result <- .dsAgg(datasources[coordinator_conn],
       call("glmMWSMaskEtaDS", n_obs = as.integer(n_obs),
+           intercept = mws_intercept,
            frac_bits = as.integer(frac_bits), session_id = session_id))
     if (is.list(mask_result)) mask_result <- mask_result[[1]]
     ct_masked <- mask_result$ct_masked
+
+    # Authorize ct_masked on all servers for threshold decryption
+    ct_hash <- mask_result$ct_hash
+    if (!is.null(ct_hash)) {
+      for (server in server_list) {
+        if (server != coordinator) {  # coordinator already registered it
+          ci <- which(server_names == server)
+          .sendBlob(ct_hash, "ct_hashes", ci)
+          .dsAgg(datasources[ci],
+            call("mheAuthorizeCTDS", op_type = "mws-masked-eta",
+                 from_storage = TRUE, session_id = session_id))
+        }
+      }
+    }
 
     # Distribute ct_masked to fusion server for threshold decryption
     .sendBlob(ct_masked, "ct_batch_1", fusion_conn)
