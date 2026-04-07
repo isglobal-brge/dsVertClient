@@ -52,7 +52,7 @@ NULL
   if (is.null(lambda)) lambda <- 1e-4
   if (verbose) {
     if (is_gaussian) {
-      message("  L-BFGS: gaussian, identity link (2 rounds/iter)")
+      message("  Gaussian one-shot: X^T X + X^T y via Beaver, direct solve")
     } else {
       message(sprintf("  L-BFGS: %s, %d-interval spline (6 rounds/iter, no Fisher)", family, num_intervals))
     }
@@ -97,6 +97,102 @@ NULL
   }
   if (verbose) message("  Input sharing complete")
 
+  # === GAUSSIAN ONE-SHOT: compute X^T X and X^T y via Beaver, solve directly ===
+  if (is_gaussian) {
+    if (verbose) message("  Computing eta for X_full initialization...")
+    # Need one eta computation to populate k2_x_full_fp on servers
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
+      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+        beta_coord = rep(0, p_coord), beta_nl = rep(0, p_nl),
+        intercept = 0.0, is_coordinator = is_coord, session_id = session_id))
+    }
+
+    if (verbose) message("  Computing X^T X and X^T y via Beaver cross-products...")
+    total_pairs <- as.integer((p_total * p_total + p_total) * n_obs)
+    oneshot_t <- dsVert:::.callMheTool("k2-gen-beaver-triples",
+      list(n = total_pairs, frac_bits = frac_bits))
+
+    # Send triples to servers
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
+      pk_b64 <- .b64url_to_b64(transport_pks[[server]])
+      party_idx <- if (is_coord) "party0" else "party1"
+      td <- list(a=oneshot_t[[paste0(party_idx,"_u")]],
+                 b=oneshot_t[[paste0(party_idx,"_v")]],
+                 c=oneshot_t[[paste0(party_idx,"_w")]])
+      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+        data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td,auto_unbox=TRUE))),
+        recipient_pk=pk_b64))
+      .sendBlob(.to_b64url(sealed$sealed), "k2_oneshot_triples", ci)
+    }
+
+    # Phase 1: local X^T X + Beaver R1
+    ph1 <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server); is_coord <- (server == coordinator)
+      r <- .dsAgg(datasources[ci], call("k2GaussianOneshotPhase1DS",
+        party_id=if(is_coord) 0L else 1L, p_total=as.integer(p_total),
+        frac_bits=frac_bits, session_id=session_id))
+      if (is.list(r) && length(r)==1) r <- r[[1]]; ph1[[server]] <- r
+    }
+
+    # Relay Beaver R1
+    for (server in server_list) {
+      peer <- setdiff(server_list,server); peer_ci <- which(server_names==peer)
+      pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
+      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+        data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(
+          list(xma=ph1[[server]]$xma, ymb=ph1[[server]]$ymb),auto_unbox=TRUE))),
+        recipient_pk=pk_b64))
+      .sendBlob(.to_b64url(sealed$sealed), "k2_oneshot_peer_r1", peer_ci)
+    }
+
+    # Phase 2: Beaver close → cross-products
+    ph2 <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server); is_coord <- (server == coordinator)
+      r <- .dsAgg(datasources[ci], call("k2GaussianOneshotPhase2DS",
+        party_id=if(is_coord) 0L else 1L, p_total=as.integer(p_total),
+        frac_bits=frac_bits, session_id=session_id))
+      if (is.list(r) && length(r)==1) r <- r[[1]]; ph2[[server]] <- r
+    }
+
+    # Reconstruct X^T X and X^T y on client
+    # The Beaver product already gives the FULL product (not just cross terms)
+    # z = (X_share_0 + X_share_1)[:,j] * (X_share_0 + X_share_1)[:,k]
+    # So cross_xtx shares, when summed, give the full X^T X. No local terms needed.
+    xtx_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+      share_a = ph2[[server_list[1]]]$cross_xtx_fp,
+      share_b = ph2[[server_list[2]]]$cross_xtx_fp,
+      frac_bits = frac_bits))
+    XtX <- matrix(xtx_agg$values, p_total, p_total, byrow = TRUE)
+
+    xty_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+      share_a = ph2[[server_list[1]]]$cross_xty_fp,
+      share_b = ph2[[server_list[2]]]$cross_xty_fp,
+      frac_bits = frac_bits))
+    XtY <- xty_agg$values
+
+    # Solve: beta = (X^T X / n + lambda*I)^{-1} * (X^T y / n)
+    XtX_reg <- XtX / n_obs + lambda * diag(p_total)
+    XtY_norm <- XtY / n_obs
+    beta <- as.numeric(solve(XtX_reg, XtY_norm))
+    intercept <- 0.0  # standardized features have zero mean → intercept ≈ 0
+
+    if (verbose) {
+      message(sprintf("  [ONE-SHOT] X^T X computed (%d Beaver products)", p_total^2 + p_total))
+      message(sprintf("  [ONE-SHOT] beta = [%s]", paste(round(beta, 6), collapse=", ")))
+    }
+
+    betas <- list()
+    betas[[coordinator]] <- beta[1:p_coord]
+    betas[[nl]] <- beta[(p_coord+1):p_total]
+    return(list(betas=betas, intercept=intercept, converged=TRUE, iterations=0L, max_diff=0.0))
+  }
+
   # === PRE-GENERATE DCF KEYS (only for binomial/poisson) ===
   if (!is_gaussian) {
     if (verbose) message("  Pre-generating DCF keys (one-time)...")
@@ -127,7 +223,6 @@ NULL
   y_hist <- list()
   prev_theta <- NULL
   prev_grad <- NULL
-  eta_computed <- FALSE  # track whether first eta has been computed (for x² precompute)
 
   for (iter in seq_len(max_iter)) {
     beta_old <- beta
@@ -143,73 +238,8 @@ NULL
         is_coordinator = is_coord, session_id = session_id))
     }
 
-    # Gaussian: pre-compute x^2 once (first iteration, after eta creates X_full)
-    if (is_gaussian && !eta_computed) {
-      if (verbose) message("  Pre-computing x\u00b2 for Gaussian Fisher...")
-      xsq_t <- dsVert:::.callMheTool("k2-gen-beaver-triples",
-        list(n = as.integer(n_obs * p_total), frac_bits = frac_bits))
-      for (server in server_list) {
-        ci <- which(server_names == server); is_coord <- (server == coordinator)
-        pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-        party_idx <- if (is_coord) "party0" else "party1"
-        td <- list(a=xsq_t[[paste0(party_idx,"_u")]],b=xsq_t[[paste0(party_idx,"_v")]],c=xsq_t[[paste0(party_idx,"_w")]])
-        sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-          data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td,auto_unbox=TRUE))),recipient_pk=pk_b64))
-        .sendBlob(.to_b64url(sealed$sealed), "k2_xsq_triples", ci)
-      }
-      xsq_ph1 <- list()
-      for (server in server_list) {
-        ci <- which(server_names == server); is_coord <- (server == coordinator)
-        r <- .dsAgg(datasources[ci], call("k2PrecomputeXSqPhase1DS",
-          party_id=if(is_coord) 0L else 1L, frac_bits=frac_bits,
-          p_total=as.integer(p_total), session_id=session_id))
-        if (is.list(r) && length(r)==1) r <- r[[1]]; xsq_ph1[[server]] <- r
-      }
-      for (server in server_list) {
-        peer <- setdiff(server_list,server); peer_ci <- which(server_names==peer)
-        pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
-        sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-          data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(xma=xsq_ph1[[server]]$xma,ymb=xsq_ph1[[server]]$ymb),auto_unbox=TRUE))),
-          recipient_pk=pk_b64))
-        .sendBlob(.to_b64url(sealed$sealed), "k2_xsq_peer_r1", peer_ci)
-      }
-      for (server in server_list) {
-        ci <- which(server_names == server); is_coord <- (server == coordinator)
-        .dsAgg(datasources[ci], call("k2PrecomputeXSqPhase2DS",
-          party_id=if(is_coord) 0L else 1L, frac_bits=frac_bits,
-          p_total=as.integer(p_total), session_id=session_id))
-      }
-      if (verbose) message("  x\u00b2 pre-computed")
-
-      # Gaussian constant Fisher: d_j = sum(x^2_j)/n + lambda
-      fisher_shares <- list()
-      for (server in server_list) {
-        ci <- which(server_names == server)
-        r <- .dsAgg(datasources[ci], call("k2GaussianFisherDS",
-          p_total = as.integer(p_total), frac_bits = frac_bits,
-          session_id = session_id))
-        if (is.list(r) && length(r) == 1) r <- r[[1]]
-        fisher_shares[[server]] <- r
-      }
-      fisher_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
-        share_a = fisher_shares[[server_list[1]]]$fisher_diag_fp,
-        share_b = fisher_shares[[server_list[2]]]$fisher_diag_fp,
-        frac_bits = frac_bits))
-      diag_fisher_gauss <- fisher_agg$values / n_obs + lambda
-      if (verbose) message(sprintf("  [Fisher] constant d_j = [%s]",
-        paste(round(diag_fisher_gauss, 4), collapse=", ")))
-      eta_computed <- TRUE
-    }
-    if (!is_gaussian) eta_computed <- TRUE
-
-    # === Step 2: Link function ===
-    if (is_gaussian) {
-      for (server in server_list) {
-        ci <- which(server_names == server)
-        .dsAgg(datasources[ci], call("k2IdentityLinkDS", session_id = session_id))
-      }
-    } else {
-      # Binomial/Poisson: 4-phase wide spline sigmoid/exp
+    # === Step 2: Link function (binomial/poisson only — Gaussian uses one-shot) ===
+    {
       triples <- lapply(1:3, function(i) dsVert:::.callMheTool("k2-gen-beaver-triples",
         list(n = as.integer(n_obs), frac_bits = frac_bits)))
       for (server in server_list) {
