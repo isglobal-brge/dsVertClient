@@ -77,52 +77,8 @@ NULL
   }
   if (verbose) message("  DCF keys distributed (will reuse across iterations)")
 
-  # === PRE-COMPUTE x²_j (ONCE, for real diagonal Fisher) ===
-  if (verbose) message("  Pre-computing x² for diagonal Fisher...")
-  xsq_triples_raw <- dsVert:::.callMheTool("k2-gen-beaver-triples",
-    list(n = as.integer(n_obs * p_total), frac_bits = frac_bits))
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    is_coord <- (server == coordinator)
-    pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-    party_idx <- if (is_coord) "party0" else "party1"
-    td <- list(a = xsq_triples_raw[[paste0(party_idx,"_u")]],
-               b = xsq_triples_raw[[paste0(party_idx,"_v")]],
-               c = xsq_triples_raw[[paste0(party_idx,"_w")]])
-    sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-      data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td, auto_unbox=TRUE))),
-      recipient_pk = pk_b64))
-    .sendBlob(.to_b64url(sealed$sealed), "k2_xsq_triples", ci)
-  }
-  xsq_ph1 <- list()
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    is_coord <- (server == coordinator)
-    r <- .dsAgg(datasources[ci], call("k2PrecomputeXSqPhase1DS",
-      party_id = if(is_coord) 0L else 1L, frac_bits = frac_bits,
-      p_total = as.integer(p_total), session_id = session_id))
-    if (is.list(r) && length(r) == 1) r <- r[[1]]
-    xsq_ph1[[server]] <- r
-  }
-  for (server in server_list) {
-    peer <- setdiff(server_list, server)
-    peer_ci <- which(server_names == peer)
-    pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
-    r1_json <- jsonlite::toJSON(list(xma=xsq_ph1[[server]]$xma, ymb=xsq_ph1[[server]]$ymb), auto_unbox=TRUE)
-    sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-      data=jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk=pk_b64))
-    .sendBlob(.to_b64url(sealed$sealed), "k2_xsq_peer_r1", peer_ci)
-  }
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    is_coord <- (server == coordinator)
-    .dsAgg(datasources[ci], call("k2PrecomputeXSqPhase2DS",
-      party_id = if(is_coord) 0L else 1L, frac_bits = frac_bits,
-      p_total = as.integer(p_total), session_id = session_id))
-  }
-  if (verbose) message("  x² pre-computed and stored in session")
-
   beta <- rep(0, p_total)
+  xsq_precomputed <- FALSE
   intercept <- 0.0
   converged <- FALSE
   final_iter <- 0
@@ -139,6 +95,46 @@ NULL
         beta_coord = beta[1:p_coord], beta_nl = beta[(p_coord+1):p_total],
         intercept = if (is_coord) intercept else 0.0,
         is_coordinator = is_coord, session_id = session_id))
+    }
+
+    # Pre-compute x² on first iteration (after k2ComputeEtaShareDS creates k2_x_full_fp)
+    if (!xsq_precomputed) {
+      if (verbose) message("  Pre-computing x² for diagonal Fisher...")
+      xsq_t <- dsVert:::.callMheTool("k2-gen-beaver-triples",
+        list(n = as.integer(n_obs * p_total), frac_bits = frac_bits))
+      for (server in server_list) {
+        ci <- which(server_names == server); is_coord <- (server == coordinator)
+        pk_b64 <- .b64url_to_b64(transport_pks[[server]])
+        party_idx <- if (is_coord) "party0" else "party1"
+        td <- list(a=xsq_t[[paste0(party_idx,"_u")]],b=xsq_t[[paste0(party_idx,"_v")]],c=xsq_t[[paste0(party_idx,"_w")]])
+        sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+          data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td,auto_unbox=TRUE))),recipient_pk=pk_b64))
+        .sendBlob(.to_b64url(sealed$sealed), "k2_xsq_triples", ci)
+      }
+      xsq_ph1 <- list()
+      for (server in server_list) {
+        ci <- which(server_names == server); is_coord <- (server == coordinator)
+        r <- .dsAgg(datasources[ci], call("k2PrecomputeXSqPhase1DS",
+          party_id=if(is_coord) 0L else 1L, frac_bits=frac_bits,
+          p_total=as.integer(p_total), session_id=session_id))
+        if (is.list(r) && length(r)==1) r <- r[[1]]; xsq_ph1[[server]] <- r
+      }
+      for (server in server_list) {
+        peer <- setdiff(server_list,server); peer_ci <- which(server_names==peer)
+        pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
+        sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+          data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(xma=xsq_ph1[[server]]$xma,ymb=xsq_ph1[[server]]$ymb),auto_unbox=TRUE))),
+          recipient_pk=pk_b64))
+        .sendBlob(.to_b64url(sealed$sealed), "k2_xsq_peer_r1", peer_ci)
+      }
+      for (server in server_list) {
+        ci <- which(server_names == server); is_coord <- (server == coordinator)
+        .dsAgg(datasources[ci], call("k2PrecomputeXSqPhase2DS",
+          party_id=if(is_coord) 0L else 1L, frac_bits=frac_bits,
+          p_total=as.integer(p_total), session_id=session_id))
+      }
+      xsq_precomputed <- TRUE
+      if (verbose) message("  x² pre-computed")
     }
 
     # === Step 2: Wide spline sigmoid (4-phase, DCF keys reused) ===
