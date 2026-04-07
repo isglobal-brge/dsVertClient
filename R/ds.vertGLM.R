@@ -1090,6 +1090,183 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     }
 
     if (verbose) message("  Secure aggregation initialized on all non-label servers")
+
+    # === GAUSSIAN ONE-SHOT for K>=3 ===
+    if (family == "gaussian") {
+      if (verbose) message("  Gaussian one-shot: pairwise Beaver X^T X + CKKS X^T y")
+      frac_bits_k3 <- 20L
+
+      # Step 1: Each server computes local X_k^T X_k (and X_label^T y for label)
+      local_results <- list()
+      for (server in server_list) {
+        conn_idx <- which(server_names == server)
+        r <- .dsAgg(datasources[conn_idx],
+          call("glmGaussianLocalXtXDS", data_name = std_data,
+               x_vars = x_vars[[server]],
+               y_var = if (server == coordinator) y_var else NULL,
+               session_id = session_id))
+        if (is.list(r) && length(r) == 1) r <- r[[1]]
+        local_results[[server]] <- r
+      }
+      xty_all <- list()
+      xty_all[[coordinator]] <- local_results[[coordinator]]$xty_local
+
+      # Step 2: Pairwise Beaver for X_j^T X_k cross-blocks AND X_k^T y
+      # Each pair uses the k2-gaussian-oneshot Go command with zero-padded features
+      pair_list <- list()
+      for (i in seq_along(server_list)) {
+        for (j in seq_along(server_list)) {
+          if (i < j) pair_list[[length(pair_list)+1]] <- c(server_list[i], server_list[j])
+        }
+      }
+
+      cross_blocks <- list()
+      for (pair in pair_list) {
+        s_a <- pair[1]; s_b <- pair[2]
+        p_a <- length(x_vars[[s_a]]); p_b <- length(x_vars[[s_b]])
+        p_combined <- p_a + p_b
+        ci_a <- which(server_names == s_a); ci_b <- which(server_names == s_b)
+
+        # Generate Beaver triples for the combined feature space
+        n_elems <- as.integer((p_combined^2 + p_combined) * n_obs)
+        cross_t <- dsVert:::.callMheTool("k2-gen-beaver-triples",
+          list(n = n_elems, frac_bits = frac_bits_k3))
+
+        # Distribute triples
+        for (info in list(list(s=s_a, ci=ci_a, pid=0L, party="party0"),
+                          list(s=s_b, ci=ci_b, pid=1L, party="party1"))) {
+          pk_b64 <- gsub("-","+",gsub("_","/",transport_pks[[info$s]],fixed=TRUE),fixed=TRUE)
+          pad <- nchar(pk_b64)%%4; if(pad==2) pk_b64<-paste0(pk_b64,"=="); if(pad==3) pk_b64<-paste0(pk_b64,"=")
+          td <- list(a=cross_t[[paste0(info$party,"_u")]],
+                     b=cross_t[[paste0(info$party,"_v")]],
+                     c=cross_t[[paste0(info$party,"_w")]])
+          sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+            data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td,auto_unbox=TRUE))),
+            recipient_pk=pk_b64))
+          .sendBlob(gsub("+","-",gsub("/","_",gsub("=+$","",sealed$sealed,perl=TRUE),fixed=TRUE),fixed=TRUE), "pairwise_cross_triples", info$ci)
+        }
+
+        # Phase 1: Beaver R1 (label server also provides y for X^T y computation)
+        ph1 <- list()
+        for (info in list(list(s=s_a, ci=ci_a, pid=0L, peer_p=p_b),
+                          list(s=s_b, ci=ci_b, pid=1L, peer_p=p_a))) {
+          yv <- if (info$s == coordinator) y_var else NULL
+          r <- .dsAgg(datasources[info$ci],
+            call("glmPairwiseCrossProductDS", data_name = std_data,
+                 x_vars = x_vars[[info$s]], peer_p = as.integer(info$peer_p),
+                 party_id = info$pid, phase = 1L, y_var = yv,
+                 frac_bits = frac_bits_k3, session_id = session_id))
+          if (is.list(r) && length(r)==1) r <- r[[1]]
+          ph1[[info$s]] <- r
+        }
+
+        # Relay Beaver R1
+        for (info in list(list(from=s_a, to=s_b, ci_to=ci_b),
+                          list(from=s_b, to=s_a, ci_to=ci_a))) {
+          pk_b64 <- gsub("-","+",gsub("_","/",transport_pks[[info$to]],fixed=TRUE),fixed=TRUE)
+          pad <- nchar(pk_b64)%%4; if(pad==2) pk_b64<-paste0(pk_b64,"=="); if(pad==3) pk_b64<-paste0(pk_b64,"=")
+          sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+            data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(
+              list(xma=ph1[[info$from]]$xma, ymb=ph1[[info$from]]$ymb),auto_unbox=TRUE))),
+            recipient_pk=pk_b64))
+          .sendBlob(gsub("+","-",gsub("/","_",gsub("=+$","",sealed$sealed,perl=TRUE),fixed=TRUE),fixed=TRUE), "pairwise_cross_peer_r1", info$ci_to)
+        }
+
+        # Phase 2: Beaver close
+        ph2 <- list()
+        for (info in list(list(s=s_a, ci=ci_a, pid=0L, peer_p=p_b),
+                          list(s=s_b, ci=ci_b, pid=1L, peer_p=p_a))) {
+          yv <- if (info$s == coordinator) y_var else NULL
+          r <- .dsAgg(datasources[info$ci],
+            call("glmPairwiseCrossProductDS", data_name = std_data,
+                 x_vars = x_vars[[info$s]], peer_p = as.integer(info$peer_p),
+                 party_id = info$pid, phase = 2L, y_var = yv,
+                 frac_bits = frac_bits_k3, session_id = session_id))
+          if (is.list(r) && length(r)==1) r <- r[[1]]
+          ph2[[info$s]] <- r
+        }
+
+        # Reconstruct cross-product block (X^T X off-diagonal)
+        cross_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+          share_a = ph2[[s_a]]$cross_xtx_fp,
+          share_b = ph2[[s_b]]$cross_xtx_fp,
+          frac_bits = frac_bits_k3))
+        full_mat <- matrix(cross_agg$values, p_combined, p_combined, byrow = TRUE)
+        cross_block <- full_mat[1:p_a, (p_a+1):p_combined, drop = FALSE]
+        cross_blocks[[paste0(s_a, "_", s_b)]] <- cross_block
+
+        # Extract X^T y from pairs involving the label server
+        if (s_a == coordinator || s_b == coordinator) {
+          xty_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+            share_a = ph2[[s_a]]$cross_xty_fp,
+            share_b = ph2[[s_b]]$cross_xty_fp,
+            frac_bits = frac_bits_k3))
+          xty_vec <- xty_agg$values  # length p_a + p_b
+          # The non-label server's X^T y is in the first p_nonlabel positions
+          if (s_a == coordinator) {
+            # s_b is non-label (party 0), its X^T y is positions 1:p_b
+            xty_all[[s_b]] <- xty_vec[1:p_b]
+          } else {
+            # s_a is non-label (party 0), its X^T y is positions 1:p_a
+            xty_all[[s_a]] <- xty_vec[1:p_a]
+          }
+        }
+      }
+
+      # Step 4: Assemble full X^T X matrix
+      p_total_k3 <- sum(sapply(server_list, function(s) length(x_vars[[s]])))
+      XtX <- matrix(0, p_total_k3, p_total_k3)
+      XtY <- numeric(p_total_k3)
+      idx <- 1
+      for (server in server_list) {
+        p_s <- length(x_vars[[server]])
+        # Diagonal block
+        XtX[idx:(idx+p_s-1), idx:(idx+p_s-1)] <- matrix(
+          local_results[[server]]$xtx_local, p_s, p_s)
+        # X^T y block
+        XtY[idx:(idx+p_s-1)] <- xty_all[[server]]
+        idx <- idx + p_s
+      }
+      # Off-diagonal blocks (symmetric)
+      idx_i <- 1
+      for (i in seq_along(server_list)) {
+        p_i <- length(x_vars[[server_list[i]]])
+        idx_j <- idx_i + p_i
+        for (j in (i+1):min(length(server_list), length(server_list))) {
+          if (j > length(server_list)) break
+          p_j <- length(x_vars[[server_list[j]]])
+          key <- paste0(server_list[i], "_", server_list[j])
+          if (!is.null(cross_blocks[[key]])) {
+            XtX[idx_i:(idx_i+p_i-1), idx_j:(idx_j+p_j-1)] <- cross_blocks[[key]]
+            XtX[idx_j:(idx_j+p_j-1), idx_i:(idx_i+p_i-1)] <- t(cross_blocks[[key]])
+          }
+          idx_j <- idx_j + p_j
+        }
+        idx_i <- idx_i + p_i
+      }
+
+      # Step 5: Solve on client
+      XtX_reg <- XtX / n_obs + lambda * diag(p_total_k3)
+      XtY_norm <- XtY / n_obs
+      beta_solved <- as.numeric(solve(XtX_reg, XtY_norm))
+
+      if (verbose) {
+        message(sprintf("  [ONE-SHOT] X^T X: %dx%d, %d pairwise Beaver rounds",
+          p_total_k3, p_total_k3, length(pair_list)))
+        message(sprintf("  [ONE-SHOT] beta = [%s]", paste(round(beta_solved, 6), collapse=", ")))
+      }
+
+      # Distribute betas
+      idx <- 1
+      for (server in server_list) {
+        p_s <- length(x_vars[[server]])
+        betas[[server]] <- beta_solved[idx:(idx+p_s-1)]
+        idx <- idx + p_s
+      }
+      converged <- TRUE; final_iter <- 0
+
+    } else {
+    # === L-BFGS for Binomial/Poisson K>=3 ===
     if (verbose) message("  Using L-BFGS optimizer (client-side)")
 
     # L-BFGS state (client-side only)
@@ -1377,6 +1554,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     if (!converged && verbose)
       warning(sprintf("Did not converge after %d iterations (diff = %.2e)",
                       max_iter, max_diff))
+    }  # end else (binomial/poisson L-BFGS)
 
   } else if (use_he_link) {
     # =========================================================================
