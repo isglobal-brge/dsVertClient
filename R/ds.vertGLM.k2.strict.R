@@ -1,9 +1,41 @@
-#' @title K=2 Beaver Newton-IRLS Pipeline
-#' @description Secure K=2 GLM with Newton-IRLS and diagonal Fisher preconditioning.
-#'   Gaussian: identity link, constant Fisher (2 rounds/iter, no spline/DCF).
-#'   Binomial/Poisson: wide spline sigmoid/exp (9 rounds/iter).
-#' @name k2-beaver-newton-client
+#' @title K=2 Beaver L-BFGS Pipeline
+#' @description Secure K=2 GLM with L-BFGS optimizer.
+#'   Gaussian: identity link, constant Fisher, L-BFGS (2 rounds/iter).
+#'   Binomial/Poisson: wide spline sigmoid/exp, L-BFGS (6 rounds/iter, no Fisher).
+#' @name k2-beaver-lbfgs-client
 NULL
+
+#' L-BFGS two-loop recursion (Nocedal & Wright, Algorithm 7.4)
+#' @keywords internal
+.lbfgs_direction <- function(grad, s_hist, y_hist) {
+  k <- length(s_hist)
+  if (k == 0) return(-grad)  # first iteration: steepest descent
+
+  q <- grad
+  alpha_h <- numeric(k)
+
+  # Forward loop
+  for (i in k:1) {
+    rho <- 1 / sum(y_hist[[i]] * s_hist[[i]])
+    if (!is.finite(rho)) rho <- 0
+    alpha_h[i] <- rho * sum(s_hist[[i]] * q)
+    q <- q - alpha_h[i] * y_hist[[i]]
+  }
+
+  # Initial Hessian: gamma * I (scaled by most recent curvature pair)
+  gamma <- sum(s_hist[[k]] * y_hist[[k]]) / sum(y_hist[[k]]^2)
+  if (!is.finite(gamma) || gamma <= 0) gamma <- 1.0
+  r <- gamma * q
+
+  # Backward loop
+  for (i in 1:k) {
+    rho <- 1 / sum(y_hist[[i]] * s_hist[[i]])
+    if (!is.finite(rho)) rho <- 0
+    r <- r + s_hist[[i]] * (alpha_h[i] - rho * sum(y_hist[[i]] * r))
+  }
+
+  return(-r)
+}
 
 #' @keywords internal
 .k2_strict_loop <- function(datasources, server_names, server_list,
@@ -17,13 +49,12 @@ NULL
   frac_bits <- 20L
   is_gaussian <- (family == "gaussian")
   num_intervals <- if (family == "poisson") 100L else 50L
-  alpha <- switch(family, poisson = 0.05, gaussian = 0.5, 0.3)
   if (is.null(lambda)) lambda <- 1e-4
   if (verbose) {
     if (is_gaussian) {
-      message("  Beaver Newton-IRLS: gaussian, identity link, constant Fisher")
+      message("  L-BFGS: gaussian, identity link (2 rounds/iter)")
     } else {
-      message(sprintf("  Wide spline: %s, %d intervals, Newton-IRLS", family, num_intervals))
+      message(sprintf("  L-BFGS: %s, %d-interval spline (6 rounds/iter, no Fisher)", family, num_intervals))
     }
   }
 
@@ -86,11 +117,17 @@ NULL
   }
 
   beta <- rep(0, p_total)
-  xsq_precomputed <- FALSE
   intercept <- 0.0
   converged <- FALSE
   final_iter <- 0
-  diag_fisher <- NULL  # For Gaussian: pre-computed once; for others: per-iteration
+
+  # L-BFGS state (client-side only)
+  lbfgs_m <- 7L  # number of (s,y) pairs to keep
+  s_hist <- list()
+  y_hist <- list()
+  prev_theta <- NULL
+  prev_grad <- NULL
+  eta_computed <- FALSE  # track whether first eta has been computed (for x² precompute)
 
   for (iter in seq_len(max_iter)) {
     beta_old <- beta
@@ -106,9 +143,9 @@ NULL
         is_coordinator = is_coord, session_id = session_id))
     }
 
-    # Pre-compute x² on first iteration (needed for Fisher, all families)
-    if (!xsq_precomputed) {
-      if (verbose) message("  Pre-computing x\u00b2 for diagonal Fisher...")
+    # Gaussian: pre-compute x^2 once (first iteration, after eta creates X_full)
+    if (is_gaussian && !eta_computed) {
+      if (verbose) message("  Pre-computing x\u00b2 for Gaussian Fisher...")
       xsq_t <- dsVert:::.callMheTool("k2-gen-beaver-triples",
         list(n = as.integer(n_obs * p_total), frac_bits = frac_bits))
       for (server in server_list) {
@@ -142,33 +179,31 @@ NULL
           party_id=if(is_coord) 0L else 1L, frac_bits=frac_bits,
           p_total=as.integer(p_total), session_id=session_id))
       }
-      xsq_precomputed <- TRUE
       if (verbose) message("  x\u00b2 pre-computed")
 
-      # Gaussian: compute constant Fisher once (d_j = sum(x²_j), w=1)
-      if (is_gaussian) {
-        fisher_shares <- list()
-        for (server in server_list) {
-          ci <- which(server_names == server)
-          r <- .dsAgg(datasources[ci], call("k2GaussianFisherDS",
-            p_total = as.integer(p_total), frac_bits = frac_bits,
-            session_id = session_id))
-          if (is.list(r) && length(r) == 1) r <- r[[1]]
-          fisher_shares[[server]] <- r
-        }
-        fisher_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
-          share_a = fisher_shares[[server_list[1]]]$fisher_diag_fp,
-          share_b = fisher_shares[[server_list[2]]]$fisher_diag_fp,
-          frac_bits = frac_bits))
-        diag_fisher <- fisher_agg$values / n_obs + lambda
-        if (verbose) message(sprintf("  [Fisher] constant d_j = [%s]",
-          paste(round(diag_fisher, 4), collapse=", ")))
+      # Gaussian constant Fisher: d_j = sum(x^2_j)/n + lambda
+      fisher_shares <- list()
+      for (server in server_list) {
+        ci <- which(server_names == server)
+        r <- .dsAgg(datasources[ci], call("k2GaussianFisherDS",
+          p_total = as.integer(p_total), frac_bits = frac_bits,
+          session_id = session_id))
+        if (is.list(r) && length(r) == 1) r <- r[[1]]
+        fisher_shares[[server]] <- r
       }
+      fisher_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+        share_a = fisher_shares[[server_list[1]]]$fisher_diag_fp,
+        share_b = fisher_shares[[server_list[2]]]$fisher_diag_fp,
+        frac_bits = frac_bits))
+      diag_fisher_gauss <- fisher_agg$values / n_obs + lambda
+      if (verbose) message(sprintf("  [Fisher] constant d_j = [%s]",
+        paste(round(diag_fisher_gauss, 4), collapse=", ")))
+      eta_computed <- TRUE
     }
+    if (!is_gaussian) eta_computed <- TRUE
 
     # === Step 2: Link function ===
     if (is_gaussian) {
-      # Identity link: mu = eta (no spline, no DCF, no Beaver)
       for (server in server_list) {
         ci <- which(server_names == server)
         .dsAgg(datasources[ci], call("k2IdentityLinkDS", session_id = session_id))
@@ -195,36 +230,29 @@ NULL
         .sendBlob(.to_b64url(sealed_t$sealed), "k2_spline_triples", ci)
       }
 
-      # Phase 1: DCF masked values
       ph1 <- list()
       for (server in server_list) {
-        ci <- which(server_names == server)
-        is_coord <- (server == coordinator)
+        ci <- which(server_names == server); is_coord <- (server == coordinator)
         r <- .dsAgg(datasources[ci], call("k2WideSplinePhase1DS",
           party_id = if(is_coord) 0L else 1L, family = family,
           num_intervals = num_intervals, frac_bits = frac_bits,
           session_id = session_id))
-        if (is.list(r) && length(r) == 1) r <- r[[1]]
-        ph1[[server]] <- r
+        if (is.list(r) && length(r) == 1) r <- r[[1]]; ph1[[server]] <- r
       }
       .sendBlob(ph1[[coordinator]]$dcf_masked, "k2_peer_dcf_masked", nl_conn)
       .sendBlob(ph1[[nl]]$dcf_masked, "k2_peer_dcf_masked", coordinator_conn)
 
-      # Phase 2: DCF close + indicators + (AND + Had1) R1
       ph2 <- list()
       for (server in server_list) {
-        ci <- which(server_names == server)
-        is_coord <- (server == coordinator)
+        ci <- which(server_names == server); is_coord <- (server == coordinator)
         r <- .dsAgg(datasources[ci], call("k2WideSplinePhase2DS",
           party_id = if(is_coord) 0L else 1L, family = family,
           num_intervals = num_intervals, frac_bits = frac_bits,
           session_id = session_id))
-        if (is.list(r) && length(r) == 1) r <- r[[1]]
-        ph2[[server]] <- r
+        if (is.list(r) && length(r) == 1) r <- r[[1]]; ph2[[server]] <- r
       }
       for (server in server_list) {
-        peer <- setdiff(server_list, server)
-        peer_ci <- which(server_names == peer)
+        peer <- setdiff(server_list, server); peer_ci <- which(server_names == peer)
         pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
         r1_json <- jsonlite::toJSON(list(
           and_xma=ph2[[server]]$and_xma, and_ymb=ph2[[server]]$and_ymb,
@@ -235,21 +263,17 @@ NULL
         .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1", peer_ci)
       }
 
-      # Phase 3: AND/Had1 close + Had2 R1
       ph3 <- list()
       for (server in server_list) {
-        ci <- which(server_names == server)
-        is_coord <- (server == coordinator)
+        ci <- which(server_names == server); is_coord <- (server == coordinator)
         r <- .dsAgg(datasources[ci], call("k2WideSplinePhase3DS",
           party_id = if(is_coord) 0L else 1L, family = family,
           num_intervals = num_intervals, frac_bits = frac_bits,
           session_id = session_id))
-        if (is.list(r) && length(r) == 1) r <- r[[1]]
-        ph3[[server]] <- r
+        if (is.list(r) && length(r) == 1) r <- r[[1]]; ph3[[server]] <- r
       }
       for (server in server_list) {
-        peer <- setdiff(server_list, server)
-        peer_ci <- which(server_names == peer)
+        peer <- setdiff(server_list, server); peer_ci <- which(server_names == peer)
         pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
         r1_json <- jsonlite::toJSON(list(
           had2_xma=ph3[[server]]$had2_xma, had2_ymb=ph3[[server]]$had2_ymb),
@@ -259,88 +283,13 @@ NULL
         .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1", peer_ci)
       }
 
-      # Phase 4: Had2 close + assembly -> mu
       for (server in server_list) {
-        ci <- which(server_names == server)
-        is_coord <- (server == coordinator)
+        ci <- which(server_names == server); is_coord <- (server == coordinator)
         .dsAgg(datasources[ci], call("k2WideSplinePhase4DS",
           party_id = if(is_coord) 0L else 1L, family = family,
           num_intervals = num_intervals, frac_bits = frac_bits,
           session_id = session_id))
       }
-    }
-
-    # === Step 2.5: Diagonal Fisher (binomial/poisson only — Gaussian uses pre-computed) ===
-    if (!is_gaussian) {
-      # 3-phase protocol: w R1 -> w close + w*x^2 R1 -> w*x^2 close + d_j
-      w_triple <- dsVert:::.callMheTool("k2-gen-beaver-triples",
-        list(n = as.integer(n_obs), frac_bits = frac_bits))
-      wx_triple <- dsVert:::.callMheTool("k2-gen-beaver-triples",
-        list(n = as.integer(n_obs * p_total), frac_bits = frac_bits))
-
-      for (server in server_list) {
-        ci <- which(server_names == server)
-        is_coord <- (server == coordinator)
-        pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-        party_idx <- if (is_coord) "party0" else "party1"
-        td_w <- list(a=w_triple[[paste0(party_idx,"_u")]],b=w_triple[[paste0(party_idx,"_v")]],c=w_triple[[paste0(party_idx,"_w")]])
-        sealed_w <- dsVert:::.callMheTool("transport-encrypt", list(
-          data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td_w,auto_unbox=TRUE))),recipient_pk=pk_b64))
-        .sendBlob(.to_b64url(sealed_w$sealed), "k2_fisher_w_triple", ci)
-        td_wx <- list(a=wx_triple[[paste0(party_idx,"_u")]],b=wx_triple[[paste0(party_idx,"_v")]],c=wx_triple[[paste0(party_idx,"_w")]])
-        sealed_wx <- dsVert:::.callMheTool("transport-encrypt", list(
-          data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td_wx,auto_unbox=TRUE))),recipient_pk=pk_b64))
-        .sendBlob(.to_b64url(sealed_wx$sealed), "k2_fisher_wx_triple", ci)
-      }
-
-      f_ph1 <- list()
-      for (server in server_list) {
-        ci <- which(server_names == server); is_coord <- (server == coordinator)
-        r <- .dsAgg(datasources[ci], call("k2RealFisherPhase1DS", family = family,
-          party_id=if(is_coord) 0L else 1L, frac_bits=frac_bits, session_id=session_id))
-        if (is.list(r) && length(r)==1) r <- r[[1]]; f_ph1[[server]] <- r
-      }
-      for (server in server_list) {
-        peer <- setdiff(server_list,server); peer_ci <- which(server_names==peer)
-        pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
-        sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-          data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(w_xma=f_ph1[[server]]$w_xma,w_ymb=f_ph1[[server]]$w_ymb),auto_unbox=TRUE))),
-          recipient_pk=pk_b64))
-        .sendBlob(.to_b64url(sealed$sealed), "k2_fisher_w_peer_r1", peer_ci)
-      }
-
-      f_ph2 <- list()
-      for (server in server_list) {
-        ci <- which(server_names == server); is_coord <- (server == coordinator)
-        r <- .dsAgg(datasources[ci], call("k2RealFisherPhase2DS", family = family,
-          party_id=if(is_coord) 0L else 1L, frac_bits=frac_bits,
-          p_total=as.integer(p_total), session_id=session_id))
-        if (is.list(r) && length(r)==1) r <- r[[1]]; f_ph2[[server]] <- r
-      }
-      for (server in server_list) {
-        peer <- setdiff(server_list,server); peer_ci <- which(server_names==peer)
-        pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
-        sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-          data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(wx_xma=f_ph2[[server]]$wx_xma,wx_ymb=f_ph2[[server]]$wx_ymb),auto_unbox=TRUE))),
-          recipient_pk=pk_b64))
-        .sendBlob(.to_b64url(sealed$sealed), "k2_fisher_wx_peer_r1", peer_ci)
-      }
-
-      fisher_shares <- list()
-      for (server in server_list) {
-        ci <- which(server_names == server); is_coord <- (server == coordinator)
-        r <- .dsAgg(datasources[ci], call("k2RealFisherPhase3DS", family = family,
-          party_id=if(is_coord) 0L else 1L, frac_bits=frac_bits,
-          p_total=as.integer(p_total), session_id=session_id))
-        if (is.list(r) && length(r)==1) r <- r[[1]]; fisher_shares[[server]] <- r
-      }
-      fisher_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
-        share_a = fisher_shares[[server_list[1]]]$fisher_diag_fp,
-        share_b = fisher_shares[[server_list[2]]]$fisher_diag_fp,
-        frac_bits = frac_bits))
-      diag_fisher <- fisher_agg$values / n_obs + lambda
-      if (verbose && iter <= 3) message(sprintf("  [Fisher] d_j = [%s]",
-        paste(round(diag_fisher, 4), collapse=", ")))
     }
 
     # === Step 3: Gradient (Beaver matvec) ===
@@ -379,7 +328,7 @@ NULL
       grad_results[[server]] <- r
     }
 
-    # === Step 4: Aggregate gradient + Newton update ===
+    # === Step 4: Aggregate gradient + L-BFGS update ===
     grad_fp_coord <- grad_results[[coordinator]]$gradient_fp
     grad_fp_nl <- grad_results[[nl]]$gradient_fp
     res_fp_coord <- r1_results[[coordinator]]$sum_residual_fp
@@ -399,19 +348,40 @@ NULL
       }
     }
 
-    # Newton-IRLS: diagonal Fisher preconditioning for ALL coefficients
-    full_grad <- c(sum_residual / n_obs, gradient / n_obs) + lambda * c(intercept, beta)
-    intercept_d <- mean(diag_fisher)
-    full_fisher <- c(intercept_d, diag_fisher)
-    damping <- 0.5
-    full_step <- damping * full_grad / full_fisher
+    # Full gradient with L2 regularization
+    theta <- c(intercept, beta)
+    full_grad <- c(sum_residual / n_obs, gradient / n_obs) + lambda * theta
+
     if (verbose && iter <= 3) {
-      message(sprintf("  [NEWTON] sum_res=%.4f, int_grad=%.6f, int_fisher=%.6f, int_step=%.6f",
-        sum_residual, full_grad[1], full_fisher[1], full_step[1]))
-      message(sprintf("  [NEWTON] grad=[%s]", paste(round(full_grad, 6), collapse=", ")))
+      message(sprintf("  [L-BFGS] sum_res=%.4f, ||grad||=%.6f",
+        sum_residual, sqrt(sum(full_grad^2))))
+      message(sprintf("  [L-BFGS] grad=[%s]", paste(round(full_grad, 6), collapse=", ")))
     }
-    intercept <- intercept - full_step[1]
-    beta <- beta - full_step[-1]
+
+    # Update L-BFGS history
+    if (!is.null(prev_theta)) {
+      sk <- theta - prev_theta
+      yk <- full_grad - prev_grad
+      if (sum(sk * yk) > 1e-10) {  # curvature condition
+        s_hist <- c(s_hist, list(sk))
+        y_hist <- c(y_hist, list(yk))
+        if (length(s_hist) > lbfgs_m) {
+          s_hist <- s_hist[-1]
+          y_hist <- y_hist[-1]
+        }
+      }
+    }
+    prev_theta <- theta
+    prev_grad <- full_grad
+
+    # Compute L-BFGS direction
+    direction <- .lbfgs_direction(full_grad, s_hist, y_hist)
+
+    # Cautious first step (helps Poisson convergence), full step after
+    step_size <- if (iter <= 1) 0.3 else 1.0
+    new_theta <- theta + step_size * direction
+    intercept <- new_theta[1]
+    beta <- new_theta[-1]
 
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
     final_iter <- iter
