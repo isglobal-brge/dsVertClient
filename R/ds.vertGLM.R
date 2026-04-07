@@ -867,17 +867,35 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     k2_loop_intercept <- loop_result$intercept
 
   } else if (use_secure_agg) {
-    k3_result <- .k3_secure_agg_loop(
-      datasources = datasources, server_list = server_list,
-      server_names = server_names, x_vars = x_vars,
-      coordinator = coordinator, coordinator_conn = coordinator_conn,
-      non_label_servers = non_label_servers, transport_pks = transport_pks,
-      std_data = std_data, y_var = y_var, family = family,
-      betas = betas, n_obs = n_obs, lambda = lambda,
-      log_n = log_n, log_scale = log_scale, session_id = session_id,
-      max_iter = max_iter, tol = tol, verbose = verbose,
-      topology = topology, label_intercept = label_intercept,
-      .dsAgg = .dsAgg, .sendBlob = .sendBlob)
+    if (family == "gaussian") {
+      # Gaussian one-shot: pairwise Beaver X^T X (already non-disclosive)
+      k3_result <- .k3_secure_agg_loop(
+        datasources = datasources, server_list = server_list,
+        server_names = server_names, x_vars = x_vars,
+        coordinator = coordinator, coordinator_conn = coordinator_conn,
+        non_label_servers = non_label_servers, transport_pks = transport_pks,
+        std_data = std_data, y_var = y_var, family = family,
+        betas = betas, n_obs = n_obs, lambda = lambda,
+        log_n = log_n, log_scale = log_scale, session_id = session_id,
+        max_iter = max_iter, tol = tol, verbose = verbose,
+        topology = topology, label_intercept = label_intercept,
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob)
+    } else {
+      # Binomial/Poisson: Masked Wide Spline (non-disclosive)
+      if (verbose) message("\n[Phase 3] Masked Wide Spline (non-disclosive, K=",
+                           length(server_list), " servers)...")
+      k3_result <- .k3_masked_wide_spline_loop(
+        datasources = datasources, server_list = server_list,
+        server_names = server_names, x_vars = x_vars,
+        coordinator = coordinator, coordinator_conn = coordinator_conn,
+        non_label_servers = non_label_servers, transport_pks = transport_pks,
+        std_data = std_data, y_var = y_var, family = family,
+        betas = betas, n_obs = n_obs, lambda = lambda,
+        log_n = log_n, log_scale = log_scale, session_id = session_id,
+        max_iter = max_iter, tol = tol, verbose = verbose,
+        label_intercept = label_intercept,
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob)
+    }
     betas <- k3_result$betas
     converged <- k3_result$converged
     final_iter <- k3_result$final_iter
