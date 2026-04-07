@@ -407,10 +407,11 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         .dsAgg(conns = datasources[.ci],
           expr = call("mheCleanupDS", session_id = session_id)),
         error = function(e) NULL)
+      tryCatch(
+        .dsAgg(conns = datasources[.ci],
+          expr = call("mheGcDS")),
+        error = function(e) NULL)
     }
-    # Reset client-side chunk size cache so the next call re-probes.
-    # Without this, a reduced chunk size from one session persists and
-    # can cause spurious failures on subsequent calls.
     .dsvert_reset_chunk_size()
   }, add = TRUE)
 
@@ -1167,13 +1168,33 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       encrypted_etas <- list()
       nl_gradients <- list()
 
+      # Send Enc(r) or (mu,w) to non-label servers for gradient computation
+      enc_r <- coord_result$encrypted_residual
+      use_enc_r <- !is.null(enc_r)
+      if (use_enc_r) {
+        # Transfer Enc(r) via chunked send — non-label servers never see mu or w
+        for (server in non_label_servers) {
+          ci <- which(server_names == server)
+          nc <- .dsvert_adaptive_send(enc_r, function(chunk_str, chunk_idx, n_chunks) {
+            .dsAgg(conns = datasources[ci],
+              expr = call("mheStoreEncChunkDS", col_index = 2L,
+                          chunk_index = chunk_idx, chunk = chunk_str,
+                          session_id = session_id))
+          })
+          .dsAgg(conns = datasources[ci],
+            expr = call("mheAssembleEncColumnDS", col_index = 2L,
+                        n_chunks = as.integer(nc), session_id = session_id))
+        }
+      }
+
       for (server in non_label_servers) {
         conn_idx <- which(server_names == server)
         vars <- x_vars[[server]]
         p_k <- length(vars)
 
-        # Send (mu, w) for gradient computation
-        .sendBlob(mwv_blobs[[server]], "mwv", conn_idx)
+        if (!use_enc_r) {
+          .sendBlob(mwv_blobs[[server]], "mwv", conn_idx)
+        }
 
         # Compute encrypted gradient
         grad_result <- .dsAgg(
@@ -1183,6 +1204,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                       x_vars = vars,
                       encrypted_mwv = NULL,
                       num_obs = as.integer(n_obs),
+                      use_enc_residual = use_enc_r,
                       session_id = session_id)
         )
         if (is.list(grad_result) && length(grad_result) == 1)
