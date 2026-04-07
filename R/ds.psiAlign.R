@@ -194,73 +194,64 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   cat(sprintf("  %s: %d IDs masked (stored server-side)\n",
               ref_server, ref_result$n))
 
-  # For each target server: Phases 2-7 (all via encrypted blobs)
+  # Phase 2: Ref exports encrypted masked points for each target
+  encrypted_ref_blobs <- list()
   for (target_name in target_names) {
-    target_conn <- datasources[target_name]
-
-    # ==================================================================
-    # Phase 2: Ref exports encrypted masked points for this target
-    # ==================================================================
     cat(sprintf("[Phase 2] %s: exporting encrypted points for %s...\n",
                 ref_server, target_name))
     export_result <- DSI::datashield.aggregate(
       conns = ref_conn,
-      expr = call("psiExportMaskedDS", target_name,
-                    session_id = session_id)
+      expr = call("psiExportMaskedDS", target_name, session_id = session_id)
     )
-    encrypted_ref_blob <- export_result[[1]]$encrypted_blob
+    encrypted_ref_blobs[[target_name]] <- export_result[[1]]$encrypted_blob
+  }
 
-    # ==================================================================
-    # Phase 3: Client relays encrypted blob to target.
-    # Target decrypts, processes (masks own IDs, double-masks ref points),
-    # returns encrypted own masked points under ref's PK.
-    # ==================================================================
-    cat(sprintf("[Phase 3] %s: processing (blind relay)...\n", target_name))
-    .storeLargeBlob("ref_encrypted_blob", encrypted_ref_blob, target_conn)
+  # Deliver blobs to all targets (sequential — different blobs per target)
+  for (target_name in target_names) {
+    .storeLargeBlob("ref_encrypted_blob", encrypted_ref_blobs[[target_name]],
+                    datasources[target_name])
+  }
 
-    target_result <- DSI::datashield.aggregate(
-      conns = target_conn,
-      expr = call("psiProcessTargetDS", data_name, id_col,
-                  from_storage = TRUE,
-                  session_id = session_id)
-    )
-    target_result <- target_result[[1]]
-    cat(sprintf("  %s: %d IDs masked\n", target_name, target_result$n))
-    encrypted_target_blob <- target_result$encrypted_blob
+  # Phase 3: ALL targets process in PARALLEL (independent operations)
+  cat(sprintf("[Phase 3] %s: processing (parallel)...\n",
+              paste(target_names, collapse = ", ")))
+  target_results <- DSI::datashield.aggregate(
+    conns = datasources[target_names],
+    expr = call("psiProcessTargetDS", data_name, id_col,
+                from_storage = TRUE, session_id = session_id)
+  )
+  for (target_name in target_names) {
+    tr <- target_results[[target_name]]
+    cat(sprintf("  %s: %d IDs masked\n", target_name, tr$n))
+  }
 
-    # ==================================================================
-    # Phases 4+5: Client relays target's encrypted blob to ref.
-    # Ref decrypts, double-masks with α, re-encrypts under target's PK.
-    # One-shot per target (PSI firewall enforced).
-    # ==================================================================
+  # Phases 4-7: Sequential per target (ref must process each individually)
+  for (target_name in target_names) {
+    encrypted_target_blob <- target_results[[target_name]]$encrypted_blob
+
+    # Phase 4-5: Relay target blob to ref for double-masking
     cat(sprintf("[Phase 4-5] %s: double-masking via %s (blind relay)...\n",
                 target_name, ref_server))
     .storeLargeBlob("target_encrypted_blob", encrypted_target_blob, ref_conn)
 
     dm_result <- DSI::datashield.aggregate(
       conns = ref_conn,
-      expr = call("psiDoubleMaskDS",
-                  target_name = target_name,
-                  from_storage = TRUE,
-                  session_id = session_id)
+      expr = call("psiDoubleMaskDS", target_name = target_name,
+                  from_storage = TRUE, session_id = session_id)
     )
     encrypted_dm_blob <- dm_result[[1]]$encrypted_blob
 
-    # ==================================================================
-    # Phases 6+7: Client relays encrypted double-masked blob to target.
-    # Target decrypts, matches against stored ref double-masked points,
-    # and reorders its data to match ref order.
-    # ==================================================================
+    # Phase 6-7: Relay double-masked blob to target for matching
     cat(sprintf("[Phase 6-7] %s: matching and aligning (blind relay)...\n",
                 target_name))
-    .storeLargeBlob("dm_encrypted_blob", encrypted_dm_blob, target_conn)
+    .storeLargeBlob("dm_encrypted_blob", encrypted_dm_blob,
+                    datasources[target_name])
 
     DSI::datashield.assign(
-      conns = target_conn,
+      conns = datasources[target_name],
       symbol = newobj,
       value = call("psiMatchAndAlignDS", data_name,
-                   from_storage = TRUE,
-                   session_id = session_id)
+                   from_storage = TRUE, session_id = session_id)
     )
   }
 
