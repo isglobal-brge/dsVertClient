@@ -1089,6 +1089,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     }
 
     if (verbose) message("  Secure aggregation initialized on all non-label servers")
+    if (verbose) message("  Using L-BFGS optimizer (client-side)")
+
+    # L-BFGS state (client-side only)
+    lbfgs_s <- list(); lbfgs_y <- list(); lbfgs_prev_theta <- NULL; lbfgs_prev_grad <- NULL
 
     for (iter in seq_len(max_iter)) {
       betas_old <- betas
@@ -1159,8 +1163,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     action = "distribute_mwv")
       )
 
-      # --- Phase 3b: Non-label servers (gradient + decrypt + masked block solve) ---
-      encrypted_etas <- list()  # Reset for this iteration
+      # --- Phase 3b: Non-label servers (gradient computation + threshold decrypt) ---
+      encrypted_etas <- list()
+      nl_gradients <- list()
 
       for (server in non_label_servers) {
         conn_idx <- which(server_names == server)
@@ -1243,32 +1248,76 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                       session_id = session_id)
         )
         if (is.list(fuse_result)) fuse_result <- fuse_result[[1]]
-        gradient <- fuse_result$values
+        nl_gradients[[server]] <- fuse_result$values
+      }
 
-        # Step 4: Send (mu, w) blob again for block solve (w needed for IRLS)
-        .sendBlob(mwv_blob, "mwv", conn_idx)
+      # --- Phase 3c: L-BFGS update (client-side) ---
+      # Assemble full gradient: [coordinator block, non-label blocks]
+      # All gradients are X^T(y-mu) (unnormalized). Divide by n for average.
+      coord_grad <- coord_result$gradient_label
+      if (is.null(coord_grad)) coord_grad <- rep(0, length(x_vars[[coordinator]]))
 
-        # Step 5: Masked block solve (secure aggregation version)
+      raw_gradient <- coord_grad  # X_label^T(y-mu), unnormalized
+      for (server in non_label_servers) {
+        raw_gradient <- c(raw_gradient, nl_gradients[[server]])
+      }
+
+      # Gradient of NLL = -X^T(y-mu)/n + lambda*theta = X^T(mu-y)/n + lambda*theta
+      theta <- unlist(betas[c(coordinator, non_label_servers)])
+      full_grad <- -raw_gradient / n_obs + lambda * theta
+
+      # Update L-BFGS history
+      if (!is.null(lbfgs_prev_theta)) {
+        sk <- theta - lbfgs_prev_theta
+        yk <- full_grad - lbfgs_prev_grad
+        if (sum(sk * yk) > 1e-10) {
+          lbfgs_s <- c(lbfgs_s, list(sk)); lbfgs_y <- c(lbfgs_y, list(yk))
+          if (length(lbfgs_s) > 7) { lbfgs_s <- lbfgs_s[-1]; lbfgs_y <- lbfgs_y[-1] }
+        }
+      }
+      lbfgs_prev_theta <- theta; lbfgs_prev_grad <- full_grad
+
+      # L-BFGS direction (reuse .lbfgs_direction from K=2)
+      direction <- .lbfgs_direction(full_grad, lbfgs_s, lbfgs_y)
+      step_size <- if (iter <= 1) 0.3 else 1.0
+      new_theta <- theta + step_size * direction
+
+      # Distribute new betas to servers (coordinator may include intercept)
+      idx <- 1
+      for (server in c(coordinator, non_label_servers)) {
+        p_s <- length(betas[[server]])  # use actual beta length (includes intercept if present)
+        betas[[server]] <- new_theta[idx:(idx + p_s - 1)]
+        idx <- idx + p_s
+      }
+
+      if (verbose && iter <= 3)
+        message(sprintf("  [L-BFGS] ||grad||=%.6f", sqrt(sum(full_grad^2))))
+
+      # --- Phase 3d: Non-label servers: compute masked eta with L-BFGS beta ---
+      for (server in non_label_servers) {
+        conn_idx <- which(server_names == server)
+        vars <- x_vars[[server]]
+
+        # Send (mu, w) blob for the masking step (w not used but function expects it)
+        .sendBlob(mwv_blobs[[server]], "mwv", conn_idx)
+
         solve_result <- .dsAgg(
           conns = datasources[conn_idx],
           expr = call("glmSecureAggBlockSolveDS",
                       data_name = std_data,
                       x_vars = vars,
                       beta_current = betas[[server]],
-                      gradient = gradient,
+                      gradient = rep(0, length(vars)),
                       lambda = lambda,
                       coordinator_pk = coordinator_pk,
                       iteration = as.integer(iter),
+                      skip_solve = TRUE,
                       session_id = session_id)
         )
         if (is.list(solve_result) && length(solve_result) == 1)
           solve_result <- solve_result[[1]]
 
-        betas[[server]] <- solve_result$beta
         encrypted_etas[[server]] <- solve_result$encrypted_masked_eta
-
-        diff_server <- sum(abs(betas[[server]] - betas_old[[server]]))
-        max_diff <- max(max_diff, diff_server)
 
         # FSM: block complete
         .dsAgg(
@@ -1279,9 +1328,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         )
       }
 
+      # Convergence check
+      max_diff <- max(abs(new_theta - unlist(betas_old[c(coordinator, non_label_servers)])))
       final_iter <- iter
 
-      # Periodic server-side GC to prevent memory buildup on long runs
       if (iter %% 20 == 0) {
         for (server in server_list) {
           tryCatch(.dsAgg(conns = datasources[which(server_names == server)],
@@ -1297,7 +1347,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         break
       }
 
-      if (verbose && iter %% 5 == 0)
+      if (verbose)
         message(sprintf("  Iteration %d: max diff = %.2e", iter, max_diff))
     }
 
