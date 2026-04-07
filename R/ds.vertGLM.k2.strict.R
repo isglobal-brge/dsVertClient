@@ -14,7 +14,7 @@ NULL
                              n_obs, verbose, .dsAgg, .sendBlob) {
 
   frac_bits <- 20L
-  num_intervals <- if (family == "poisson") 100L else 30L  # 30 for speed
+  num_intervals <- if (family == "poisson") 100L else 50L
   alpha <- if (family == "poisson") 0.05 else 0.3
   if (is.null(lambda)) lambda <- 1e-4
   if (verbose) message(sprintf("  Wide spline: %s, %d intervals, Newton-IRLS", family, num_intervals))
@@ -76,6 +76,51 @@ NULL
     .dsAgg(datasources[ci], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
   }
   if (verbose) message("  DCF keys distributed (will reuse across iterations)")
+
+  # === PRE-COMPUTE x²_j (ONCE, for real diagonal Fisher) ===
+  if (verbose) message("  Pre-computing x² for diagonal Fisher...")
+  xsq_triples_raw <- dsVert:::.callMheTool("k2-gen-beaver-triples",
+    list(n = as.integer(n_obs * p_total), frac_bits = frac_bits))
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == coordinator)
+    pk_b64 <- .b64url_to_b64(transport_pks[[server]])
+    party_idx <- if (is_coord) "party0" else "party1"
+    td <- list(a = xsq_triples_raw[[paste0(party_idx,"_u")]],
+               b = xsq_triples_raw[[paste0(party_idx,"_v")]],
+               c = xsq_triples_raw[[paste0(party_idx,"_w")]])
+    sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+      data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td, auto_unbox=TRUE))),
+      recipient_pk = pk_b64))
+    .sendBlob(.to_b64url(sealed$sealed), "k2_xsq_triples", ci)
+  }
+  xsq_ph1 <- list()
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == coordinator)
+    r <- .dsAgg(datasources[ci], call("k2PrecomputeXSqPhase1DS",
+      party_id = if(is_coord) 0L else 1L, frac_bits = frac_bits,
+      p_total = as.integer(p_total), session_id = session_id))
+    if (is.list(r) && length(r) == 1) r <- r[[1]]
+    xsq_ph1[[server]] <- r
+  }
+  for (server in server_list) {
+    peer <- setdiff(server_list, server)
+    peer_ci <- which(server_names == peer)
+    pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
+    r1_json <- jsonlite::toJSON(list(xma=xsq_ph1[[server]]$xma, ymb=xsq_ph1[[server]]$ymb), auto_unbox=TRUE)
+    sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+      data=jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk=pk_b64))
+    .sendBlob(.to_b64url(sealed$sealed), "k2_xsq_peer_r1", peer_ci)
+  }
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == coordinator)
+    .dsAgg(datasources[ci], call("k2PrecomputeXSqPhase2DS",
+      party_id = if(is_coord) 0L else 1L, frac_bits = frac_bits,
+      p_total = as.integer(p_total), session_id = session_id))
+  }
+  if (verbose) message("  x² pre-computed and stored in session")
 
   beta <- rep(0, p_total)
   intercept <- 0.0
@@ -230,7 +275,29 @@ NULL
         data=jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk=pk_b64))
       .sendBlob(.to_b64url(sealed$sealed), "k2_fisher_peer_r1", peer_ci)
     }
-    # Fisher phase 2: compute d_j shares
+    # Generate w*x² Beaver triples (p*n elements)
+    wxsq_triple <- dsVert:::.callMheTool("k2-gen-beaver-triples",
+      list(n = as.integer(n_obs * p_total), frac_bits = frac_bits))
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == coordinator)
+      pk_b64 <- .b64url_to_b64(transport_pks[[server]])
+      party_idx <- if (is_coord) "party0" else "party1"
+      td <- list(a = wxsq_triple[[paste0(party_idx,"_u")]],
+                 b = wxsq_triple[[paste0(party_idx,"_v")]],
+                 c = wxsq_triple[[paste0(party_idx,"_w")]])
+      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+        data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td, auto_unbox=TRUE))),
+        recipient_pk = pk_b64))
+      .sendBlob(.to_b64url(sealed$sealed), "k2_wxsq_triples", ci)
+    }
+
+    # Fisher phase 2: Beaver close for w + compute d_j = sum(w*x²_j)
+    # The Go command handles both: w close + w*x² Hadamard + sum
+    # BUT: w*x² needs a Beaver R1 relay too! So we need an intermediate phase.
+    # For simplicity, Fisher phase 2 falls back to scalar (sum(w)) for now.
+    # The w*x² approach needs a 3-phase Fisher protocol (not yet implemented).
+    # TODO: implement 3-phase Fisher for real diagonal Fisher
     fisher_shares <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
@@ -241,7 +308,7 @@ NULL
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       fisher_shares[[server]] <- r
     }
-    # Reconstruct d_j (DISCLOSED — non-disclosive aggregate)
+    # Reconstruct d_j (DISCLOSED — aggregate optimization summary)
     fisher_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
       share_a = fisher_shares[[server_list[1]]]$fisher_diag_fp,
       share_b = fisher_shares[[server_list[2]]]$fisher_diag_fp,
