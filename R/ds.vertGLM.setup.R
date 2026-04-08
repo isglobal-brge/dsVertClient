@@ -357,24 +357,27 @@
         if (is.list(agg_r1_result)) agg_r1_result <- agg_r1_result[[1]]
         agg_r1 <- agg_r1_result$aggregated_round1
 
-        # Distribute aggregated R1 to non-coordinator servers for round 2
-        for (i in 2:length(server_list)) {
-          srv_conn <- which(server_names == server_list[i])
+        # Distribute aggregated R1 to ALL servers for parallel round 2
+        for (srv in server_list) {
+          srv_conn <- which(server_names == srv)
           .sendBlob(agg_r1, "rlk_agg_r1", srv_conn)
         }
 
-        # Round 2: each server generates its R2 share
+        # Round 2: all servers generate R2 shares in PARALLEL
+        # Party 0 has agg_r1 in session; others got it via blob
+        all_r2 <- DSI::datashield.aggregate(
+          conns = datasources[server_list],
+          expr = call("mheRLKRound2DS",
+                      from_storage = TRUE,
+                      session_id = session_id)
+        )
         rlk_r2_shares <- list()
-        for (i in seq_along(server_list)) {
-          srv_conn <- which(server_names == server_list[i])
-          r2_result <- .dsAgg(
-            conns = datasources[srv_conn],
-            expr = call("mheRLKRound2DS",
-                        from_storage = (i > 1),
-                        session_id = session_id)
-          )
-          if (is.list(r2_result)) r2_result <- r2_result[[1]]
-          rlk_r2_shares[[server_list[i]]] <- r2_result$rlk_round2_share
+        for (srv in server_list) {
+          r2 <- all_r2[[srv]]
+          if (is.list(r2) && !is.null(r2$rlk_round2_share))
+            rlk_r2_shares[[srv]] <- r2$rlk_round2_share
+          else if (!is.null(r2[[1]]$rlk_round2_share))
+            rlk_r2_shares[[srv]] <- r2[[1]]$rlk_round2_share
         }
 
         # Store aggregated R1 and R2 shares on coordinator for mheCombineDS
