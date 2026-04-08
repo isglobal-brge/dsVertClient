@@ -194,7 +194,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   # Ring63 DCF: NO CKKS infrastructure needed (no CPK, Galois, RLK, encrypted y)
   generate_rlk <- FALSE
-  skip_ckks <- (use_secure_agg && family != "gaussian")
+  # Ring63 for ALL families (Gaussian=identity link, others=DCF spline)
+  skip_ckks <- use_secure_agg
 
   # Adaptive log_n for large n: max_slots = 2^(log_n-1)
   # n ≤ 4096 → log_n=13, n ≤ 8192 → log_n=14, n ≤ 16384 → log_n=15
@@ -391,35 +392,20 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     k2_loop_intercept <- loop_result$intercept
 
   } else if (use_secure_agg) {
-    if (family == "gaussian") {
-      # Gaussian one-shot: pairwise Beaver X^T X (already non-disclosive)
-      k3_result <- .k3_secure_agg_loop(
-        datasources = datasources, server_list = server_list,
-        server_names = server_names, x_vars = x_vars,
-        coordinator = coordinator, coordinator_conn = coordinator_conn,
-        non_label_servers = non_label_servers, transport_pks = transport_pks,
-        std_data = std_data, y_var = y_var, family = family,
-        betas = betas, n_obs = n_obs, lambda = lambda,
-        log_n = log_n, log_scale = log_scale, session_id = session_id,
-        max_iter = max_iter, tol = tol, verbose = verbose,
-        topology = topology, label_intercept = label_intercept,
-        .dsAgg = .dsAgg, .sendBlob = .sendBlob)
-    } else {
-      # Binomial/Poisson: Ring63 DCF + CKKS gradient (non-disclosive, higher precision)
-      if (verbose) message("\n[Phase 3] Ring63 DCF Wide Spline + Beaver Gradient (K=",
-                           length(server_list), " servers)...")
-      k3_result <- .k3_ring63_gradient_loop(
-        datasources = datasources, server_list = server_list,
-        server_names = server_names, x_vars = x_vars,
-        coordinator = coordinator, coordinator_conn = coordinator_conn,
-        non_label_servers = non_label_servers, transport_pks = transport_pks,
-        std_data = std_data, y_var = y_var, family = family,
-        betas = betas, n_obs = n_obs, lambda = lambda,
-        log_n = log_n, log_scale = log_scale, session_id = session_id,
-        max_iter = max_iter, tol = tol, verbose = verbose,
-        label_intercept = label_intercept,
-        .dsAgg = .dsAgg, .sendBlob = .sendBlob)
-    }
+    # ALL families: Ring63 Beaver gradient (Gaussian=identity link, others=DCF wide spline)
+    if (verbose) message("\n[Phase 3] Ring63 Beaver Gradient (K=",
+                         length(server_list), " servers, family=", family, ")...")
+    k3_result <- .k3_ring63_gradient_loop(
+      datasources = datasources, server_list = server_list,
+      server_names = server_names, x_vars = x_vars,
+      coordinator = coordinator, coordinator_conn = coordinator_conn,
+      non_label_servers = non_label_servers, transport_pks = transport_pks,
+      std_data = std_data, y_var = y_var, family = family,
+      betas = betas, n_obs = n_obs, lambda = lambda,
+      log_n = log_n, log_scale = log_scale, session_id = session_id,
+      max_iter = max_iter, tol = tol, verbose = verbose,
+      label_intercept = label_intercept,
+      .dsAgg = .dsAgg, .sendBlob = .sendBlob)
     betas <- k3_result$betas
     converged <- k3_result$converged
     final_iter <- k3_result$final_iter
