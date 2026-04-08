@@ -84,17 +84,23 @@ NULL
       enc_result <- .dsAgg(datasources[ci],
         call("glmHEEncryptEtaDS", data_name = std_data,
              x_vars = x_vars[[server]], beta = beta_for_encrypt,
+             clip_radius = 2.5,
              session_id = session_id))
       if (is.list(enc_result)) enc_result <- enc_result[[1]]
       .sendBlob(enc_result$encrypted_eta, paste0("ct_eta_", k - 1), coordinator_conn)
     }
 
-    # Coordinator: sum etas + polynomial sigmoid
+    # Coordinator: sum etas + add intercept + polynomial sigmoid
+    mws_intercept <- 0
+    if (label_intercept && length(betas[[coordinator]]) > length(x_vars[[coordinator]]))
+      mws_intercept <- betas[[coordinator]][1]
+
     link_result <- .dsAgg(datasources[coordinator_conn],
       call("glmHELinkStepDS", from_storage = TRUE,
            n_parties = as.integer(length(server_list)),
            poly_coefficients = poly_coefficients,
            skip_poly = FALSE,
+           intercept = mws_intercept,
            session_id = session_id))
     if (is.list(link_result)) link_result <- link_result[[1]]
 
