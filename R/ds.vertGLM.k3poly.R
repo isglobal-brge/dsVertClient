@@ -111,20 +111,12 @@ NULL
 
     if (verbose) message(sprintf("    [%d.2] Distributing Enc(mu)...", iter))
 
-    # Distribute Enc(mu) to all servers (parallel: same blob to all via chunking)
+    # Distribute Enc(mu) to all servers
     ct_mu <- link_result$ct_mu
-    .dsvert_adaptive_send(ct_mu, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        DSI::datashield.aggregate(conns = datasources[server_list],
-          expr = call("mheStoreBlobDS", key = "ct_mu", chunk = chunk_str,
-                      session_id = session_id))
-      } else {
-        DSI::datashield.aggregate(conns = datasources[server_list],
-          expr = call("mheStoreBlobDS", key = "ct_mu", chunk = chunk_str,
-                      chunk_index = chunk_idx, n_chunks = n_chunks,
-                      session_id = session_id))
-      }
-    })
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      .sendBlob(ct_mu, "ct_mu", ci)
+    }
 
     # =================================================================
     # Step 2: Encrypted gradient on each server + threshold decrypt
