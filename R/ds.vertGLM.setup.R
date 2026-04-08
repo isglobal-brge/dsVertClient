@@ -424,47 +424,19 @@
       galois_keys <- combined$galois_keys
       relin_key <- combined$relin_key  # Non-NULL when RLK was generated
 
-      # Distribute CPK, Galois keys, and RLK to other servers (parallel blob send)
-      other_srv <- server_list[-1]
-      if (verbose) message("  [Key Setup] Distributing CPK + Galois keys to ", length(other_srv), " servers (parallel)...")
-      # Send CPK to all non-party0 servers simultaneously (per-chunk parallel)
-      .dsvert_adaptive_send(cpk, function(chunk_str, chunk_idx, n_chunks) {
-        if (n_chunks == 1L) {
-          DSI::datashield.aggregate(datasources[other_srv],
-            call("mheStoreBlobDS", key="cpk", chunk=chunk_str, session_id=session_id))
-        } else {
-          DSI::datashield.aggregate(datasources[other_srv],
-            call("mheStoreBlobDS", key="cpk", chunk=chunk_str,
-                 chunk_index=chunk_idx, n_chunks=n_chunks, session_id=session_id))
-        }
-      })
-      # Galois keys: parallel per-key across servers
-      if (!is.null(galois_keys)) {
-        for (gk_i in seq_along(galois_keys)) {
-          .dsvert_adaptive_send(galois_keys[gk_i], function(chunk_str, chunk_idx, n_chunks) {
-            if (n_chunks == 1L) {
-              DSI::datashield.aggregate(datasources[other_srv],
-                call("mheStoreBlobDS", key=paste0("gk_",gk_i-1), chunk=chunk_str, session_id=session_id))
-            } else {
-              DSI::datashield.aggregate(datasources[other_srv],
-                call("mheStoreBlobDS", key=paste0("gk_",gk_i-1), chunk=chunk_str,
-                     chunk_index=chunk_idx, n_chunks=n_chunks, session_id=session_id))
-            }
-          })
-        }
-      }
-      # RLK: parallel
-      if (!is.null(relin_key) && nzchar(relin_key)) {
-        .dsvert_adaptive_send(relin_key, function(chunk_str, chunk_idx, n_chunks) {
-          if (n_chunks == 1L) {
-            DSI::datashield.aggregate(datasources[other_srv],
-              call("mheStoreBlobDS", key="rk", chunk=chunk_str, session_id=session_id))
-          } else {
-            DSI::datashield.aggregate(datasources[other_srv],
-              call("mheStoreBlobDS", key="rk", chunk=chunk_str,
-                   chunk_index=chunk_idx, n_chunks=n_chunks, session_id=session_id))
+      # Distribute CPK, Galois keys, and RLK to other servers (sequential per server)
+      if (verbose) message("  [Key Setup] Distributing CPK + Galois keys to ", length(server_list) - 1, " servers...")
+      for (server in server_list[-1]) {
+        srv_conn <- which(server_names == server)
+        .sendBlob(cpk, "cpk", srv_conn)
+        if (!is.null(galois_keys)) {
+          for (gk_i in seq_along(galois_keys)) {
+            .sendBlob(galois_keys[gk_i], paste0("gk_", gk_i - 1), srv_conn)
           }
-        })
+        }
+        if (!is.null(relin_key) && nzchar(relin_key)) {
+          .sendBlob(relin_key, "rk", srv_conn)
+        }
       }
       # Store CPK on all non-party0 servers in parallel
       .dsAgg(
@@ -568,26 +540,28 @@
     ct_y <- enc_result$encrypted_y
     if (verbose) message(sprintf("  [Encrypt] y encrypted on %s (%d chars)",
                                    y_server, nchar(ct_y)))
-    # Send ct_y chunks to ALL non-label servers in parallel
-    n_chunks_sent <- .dsvert_adaptive_send(ct_y, function(chunk_str, chunk_idx, n_chunks) {
-      DSI::datashield.aggregate(
-        conns = datasources[non_label_servers],
-        expr = call("mheStoreEncChunkDS",
-                    col_index = 1L,
-                    chunk_index = chunk_idx,
-                    chunk = chunk_str,
+    for (server in non_label_servers) {
+      conn_idx <- which(server_names == server)
+      n_chunks_sent <- .dsvert_adaptive_send(ct_y, function(chunk_str, chunk_idx, n_chunks) {
+        .dsAgg(
+          conns = datasources[conn_idx],
+          expr = call("mheStoreEncChunkDS",
+                      col_index = 1L,
+                      chunk_index = chunk_idx,
+                      chunk = chunk_str,
+                      session_id = session_id)
+        )
+      })
+      .dsAgg(
+        conns = datasources[conn_idx],
+        expr = call("mheAssembleEncColumnDS",
+                    col_index = 1L, n_chunks = as.integer(n_chunks_sent),
                     session_id = session_id)
       )
-    })
-    DSI::datashield.aggregate(
-      conns = datasources[non_label_servers],
-      expr = call("mheAssembleEncColumnDS",
-                  col_index = 1L, n_chunks = as.integer(n_chunks_sent),
-                  session_id = session_id)
-      )
       if (verbose)
-        message(sprintf("  [Encrypt] ct(y) -> %d servers (%d chunks each, %.1fs)",
-                        length(non_label_servers), n_chunks_sent, proc.time()[[3]] - t0_enc))
+        message(sprintf("  [Encrypt] ct(y) -> %s (%d chunks, %.1fs)",
+                        server, n_chunks_sent, proc.time()[[3]] - t0_enc))
+    }
   }
 
   # =========================================================================
