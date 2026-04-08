@@ -119,64 +119,79 @@ NULL
     }
 
     # =================================================================
-    # Step 2: Encrypted gradient on each server + threshold decrypt
+    # Step 2: Compute ALL gradients, then ONE batch threshold decrypt
     # =================================================================
     if (verbose) message(sprintf("    [%d.3] Computing gradients...", iter))
 
-    server_gradients <- list()
+    # Phase A: compute all encrypted gradients (sequential per server)
+    all_enc_grads <- character(0)
+    all_ct_hashes <- character(0)
+    server_p_k <- integer(0)
     for (server in server_list) {
       ci <- which(server_names == server)
       use_intercept <- (server == coordinator && label_intercept &&
                         length(betas[[server]]) == length(x_vars[[server]]) + 1)
-
       grad_result <- .dsAgg(datasources[ci],
         call("glmHEGradientEncDS", data_name = std_data,
              x_vars = x_vars[[server]], num_obs = as.integer(n_obs),
              from_storage = TRUE, include_intercept = use_intercept,
              session_id = session_id))
       if (is.list(grad_result)) grad_result <- grad_result[[1]]
+      all_enc_grads <- c(all_enc_grads, grad_result$encrypted_gradients)
+      all_ct_hashes <- c(all_ct_hashes, grad_result$ct_hashes)
+      server_p_k <- c(server_p_k, length(grad_result$encrypted_gradients))
+    }
+    total_cts <- length(all_enc_grads)
 
-      enc_grads <- grad_result$encrypted_gradients
-      ct_hashes <- grad_result$ct_hashes
-      p_k <- length(enc_grads)
-
-      # Authorize gradient CTs on non-computing servers
+    # Phase B: ONE batch authorize + partial decrypt + fuse
+    # Authorize ALL gradient CTs on non-fusion servers
+    if (length(all_ct_hashes) > 0) {
+      hashes_str <- paste(all_ct_hashes, collapse = ",")
       for (nf_server in non_fusion_servers) {
         nf_conn <- which(server_names == nf_server)
-        nf_party_id <- which(server_list == nf_server) - 1
-        if (!is.null(ct_hashes) && length(ct_hashes) > 0) {
-          .sendBlob(paste(ct_hashes, collapse = ","), "ct_hashes", nf_conn)
-          .dsAgg(datasources[nf_conn],
-            call("mheAuthorizeCTDS", op_type = "he-link-gradient",
-                 from_storage = TRUE, session_id = session_id))
-        }
-        for (j in seq_len(p_k))
-          .sendBlob(enc_grads[j], paste0("ct_batch_", j), nf_conn)
-        pd <- .dsAgg(datasources[nf_conn],
-          call("mhePartialDecryptBatchWrappedDS",
-               n_cts = as.integer(p_k), session_id = session_id))
-        if (is.list(pd)) pd <- pd[[1]]
-        for (j in seq_len(p_k))
-          .sendBlob(pd$wrapped_shares[j],
-                    paste0("wrapped_share_", nf_party_id, "_ct_", j),
-                    fusion_conn)
-      }
-
-      # Authorize + send to fusion
-      if (!is.null(ct_hashes) && length(ct_hashes) > 0 && fusion_server != server) {
-        .sendBlob(paste(ct_hashes, collapse = ","), "ct_hashes", fusion_conn)
-        .dsAgg(datasources[fusion_conn],
+        .sendBlob(hashes_str, "ct_hashes", nf_conn)
+        .dsAgg(datasources[nf_conn],
           call("mheAuthorizeCTDS", op_type = "he-link-gradient",
                from_storage = TRUE, session_id = session_id))
       }
-      for (j in seq_len(p_k))
-        .sendBlob(enc_grads[j], paste0("ct_batch_", j), fusion_conn)
-      fuse_grad <- .dsAgg(datasources[fusion_conn],
-        call("mheFuseBatchDS", n_cts = as.integer(p_k),
-             n_parties = as.integer(length(server_list)),
-             num_slots = 0L, session_id = session_id))
-      if (is.list(fuse_grad)) fuse_grad <- fuse_grad[[1]]
-      server_gradients[[server]] <- fuse_grad$values
+      # Authorize on fusion too (for CTs from other servers)
+      .sendBlob(hashes_str, "ct_hashes", fusion_conn)
+      .dsAgg(datasources[fusion_conn],
+        call("mheAuthorizeCTDS", op_type = "he-link-gradient",
+             from_storage = TRUE, session_id = session_id))
+    }
+
+    # Send ALL CTs to non-fusion servers for partial decrypt
+    for (nf_server in non_fusion_servers) {
+      nf_conn <- which(server_names == nf_server)
+      nf_party_id <- which(server_list == nf_server) - 1
+      for (j in seq_len(total_cts))
+        .sendBlob(all_enc_grads[j], paste0("ct_batch_", j), nf_conn)
+      pd <- .dsAgg(datasources[nf_conn],
+        call("mhePartialDecryptBatchWrappedDS",
+             n_cts = as.integer(total_cts), session_id = session_id))
+      if (is.list(pd)) pd <- pd[[1]]
+      for (j in seq_len(total_cts))
+        .sendBlob(pd$wrapped_shares[j],
+                  paste0("wrapped_share_", nf_party_id, "_ct_", j), fusion_conn)
+    }
+
+    # Send ALL CTs to fusion + fuse
+    for (j in seq_len(total_cts))
+      .sendBlob(all_enc_grads[j], paste0("ct_batch_", j), fusion_conn)
+    fuse_all <- .dsAgg(datasources[fusion_conn],
+      call("mheFuseBatchDS", n_cts = as.integer(total_cts),
+           n_parties = as.integer(length(server_list)),
+           num_slots = 0L, session_id = session_id))
+    if (is.list(fuse_all)) fuse_all <- fuse_all[[1]]
+
+    # Split fused gradients back to per-server
+    server_gradients <- list()
+    idx <- 1
+    for (i in seq_along(server_list)) {
+      pk <- server_p_k[i]
+      server_gradients[[server_list[i]]] <- fuse_all$values[idx:(idx + pk - 1)]
+      idx <- idx + pk
     }
 
     # =================================================================

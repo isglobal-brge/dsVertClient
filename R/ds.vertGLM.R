@@ -195,8 +195,12 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # RLK needed for polynomial sigmoid (K>=3 binomial/poisson)
   generate_rlk <- (use_secure_agg && family != "gaussian")
 
-  # Polynomial sigmoid needs 5 CKKS levels (3 poly + 1 gradient + 1 safety)
+  # Polynomial sigmoid needs 5+ CKKS levels (3 poly + 1 gradient + spare)
   if (generate_rlk && log_n < 13) log_n <- 13L
+
+  # Adaptive log_n for large n: max_slots = 2^(log_n-1)
+  # n ≤ 4096 → log_n=13, n ≤ 8192 → log_n=14, n ≤ 16384 → log_n=15
+  # Note: this is set here before n_obs is known; adjusted later after getObsCountDS
 
   # ===========================================================================
   # Setup
@@ -226,6 +230,19 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   if (is.list(count_result) && length(count_result) == 1)
     count_result <- count_result[[1]]
   n_obs <- count_result$n_obs
+
+  # Adaptive log_n: ensure max_slots >= n_obs
+  max_slots <- 2^(log_n - 1)
+  if (n_obs > max_slots) {
+    new_log_n <- ceiling(log2(n_obs)) + 1
+    if (new_log_n > 15) {
+      warning(sprintf("n_obs=%d exceeds max for log_n=15 (%d slots). Using log_n=15 with observation batching.",
+                       n_obs, 2^14))
+      new_log_n <- 15L
+    }
+    if (verbose) message(sprintf("  [Adaptive] log_n bumped %d→%d for n=%d observations", log_n, new_log_n, n_obs))
+    log_n <- as.integer(new_log_n)
+  }
 
   n_vars_total <- sum(sapply(x_vars, length))
 
