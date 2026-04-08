@@ -192,8 +192,11 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   if (use_k2_beaver && non_label_count != 1)
     stop("K=2 mode requires exactly 2 servers", call. = FALSE)
 
-  # RLK not needed (no CKKS polynomial evaluation in secure_agg or K=2 Beaver)
-  generate_rlk <- FALSE
+  # RLK needed for polynomial sigmoid (K>=3 binomial/poisson)
+  generate_rlk <- (use_secure_agg && family != "gaussian")
+
+  # Polynomial sigmoid needs 5 CKKS levels (3 poly + 1 gradient + 1 safety)
+  if (generate_rlk && log_n < 13) log_n <- 13L
 
   # ===========================================================================
   # Setup
@@ -386,10 +389,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         topology = topology, label_intercept = label_intercept,
         .dsAgg = .dsAgg, .sendBlob = .sendBlob)
     } else {
-      # Binomial/Poisson: Masked Wide Spline (non-disclosive)
-      if (verbose) message("\n[Phase 3] Masked Wide Spline (non-disclosive, K=",
+      # Binomial/Poisson: CKKS Polynomial Sigmoid (non-disclosive)
+      if (verbose) message("\n[Phase 3] Polynomial Sigmoid (non-disclosive, K=",
                            length(server_list), " servers)...")
-      k3_result <- .k3_masked_wide_spline_loop(
+      k3_result <- .k3_poly_sigmoid_loop(
         datasources = datasources, server_list = server_list,
         server_names = server_names, x_vars = x_vars,
         coordinator = coordinator, coordinator_conn = coordinator_conn,
@@ -399,7 +402,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         log_n = log_n, log_scale = log_scale, session_id = session_id,
         max_iter = max_iter, tol = tol, verbose = verbose,
         label_intercept = label_intercept,
-        cpk = cpk, .dsAgg = .dsAgg, .sendBlob = .sendBlob)
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob)
     }
     betas <- k3_result$betas
     converged <- k3_result$converged
