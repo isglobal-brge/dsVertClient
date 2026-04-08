@@ -67,6 +67,7 @@ NULL
 
   if (verbose) message(sprintf("\n[Phase 3] K>=3 poly-sigmoid L-BFGS (family=%s, K=%d, n=%d, lambda=%.1e)",
                                  family, length(server_list), n_obs, lambda))
+
   t0_loop <- proc.time()[[3]]
 
   for (iter in seq_len(max_iter)) {
