@@ -192,11 +192,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   if (use_k2_beaver && non_label_count != 1)
     stop("K=2 mode requires exactly 2 servers", call. = FALSE)
 
-  # RLK needed for polynomial sigmoid (K>=3 binomial/poisson)
-  generate_rlk <- (use_secure_agg && family != "gaussian")
-
-  # Polynomial sigmoid needs 5+ CKKS levels (3 poly + 1 gradient + spare)
-  if (generate_rlk && log_n < 13) log_n <- 13L
+  # Ring63 DCF: NO RLK needed (no polynomial). Only CPK + Galois for gradient.
+  generate_rlk <- FALSE
 
   # Adaptive log_n for large n: max_slots = 2^(log_n-1)
   # n ≤ 4096 → log_n=13, n ≤ 8192 → log_n=14, n ≤ 16384 → log_n=15
@@ -406,10 +403,10 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
         topology = topology, label_intercept = label_intercept,
         .dsAgg = .dsAgg, .sendBlob = .sendBlob)
     } else {
-      # Binomial/Poisson: CKKS Polynomial Sigmoid (non-disclosive)
-      if (verbose) message("\n[Phase 3] Polynomial Sigmoid (non-disclosive, K=",
+      # Binomial/Poisson: Ring63 DCF + CKKS gradient (non-disclosive, higher precision)
+      if (verbose) message("\n[Phase 3] Ring63 DCF Wide Spline + Beaver Gradient (K=",
                            length(server_list), " servers)...")
-      k3_result <- .k3_poly_sigmoid_loop(
+      k3_result <- .k3_ring63_gradient_loop(
         datasources = datasources, server_list = server_list,
         server_names = server_names, x_vars = x_vars,
         coordinator = coordinator, coordinator_conn = coordinator_conn,
