@@ -41,7 +41,7 @@ NULL
   if (!is.null(.dsvert_chunk_env$effective_chunk_size)) {
     return(.dsvert_chunk_env$effective_chunk_size)
   }
-  as.integer(getOption("dsvert.chunk_size", 200000L))
+  as.integer(getOption("dsvert.chunk_size", 100000L))
 }
 
 #' Set the effective chunk size (internal)
