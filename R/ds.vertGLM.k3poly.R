@@ -89,7 +89,7 @@ NULL
       enc_result <- .dsAgg(datasources[ci],
         call("glmHEEncryptEtaDS", data_name = std_data,
              x_vars = x_vars[[server]], beta = beta_for_encrypt,
-             clip_radius = 2.5,
+             clip_radius = 8.0 / length(server_list),  # adaptive: domain / K
              session_id = session_id))
       if (is.list(enc_result)) enc_result <- enc_result[[1]]
       .sendBlob(enc_result$encrypted_eta, paste0("ct_eta_", k - 1), coordinator_conn)
