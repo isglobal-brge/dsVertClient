@@ -99,8 +99,8 @@ NULL
   if (verbose) message(sprintf("  [Input Sharing] Complete: p_coord=%d, p_nl=%d (%.1fs)",
                                  p_coord, p_nl, proc.time()[[3]] - t0_share))
 
-  # === GAUSSIAN ONE-SHOT: compute X^T X and X^T y via Beaver, solve directly ===
-  if (is_gaussian) {
+  # === GAUSSIAN: iterative L-BFGS with identity link (no one-shot X^T X disclosure) ===
+  if (FALSE && is_gaussian) {  # DISABLED: one-shot discloses X^T X sufficient statistics
     t0_oneshot <- proc.time()[[3]]
     if (verbose) message("  [One-Shot] Initializing X_full via zero-beta eta computation...")
     # Need one eta computation to populate k2_x_full_fp on servers
@@ -248,8 +248,14 @@ NULL
         is_coordinator = is_coord, session_id = session_id))
     }
 
-    # === Step 2: Link function (binomial/poisson only — Gaussian uses one-shot) ===
-    {
+    # === Step 2: Link function ===
+    if (is_gaussian) {
+      # Identity link: mu = eta (copy eta share to mu share)
+      for (server in server_list) {
+        ci <- which(server_names == server)
+        .dsAgg(datasources[ci], call("k2IdentityLinkDS", session_id = session_id))
+      }
+    } else {
       triples <- lapply(1:3, function(i) dsVert:::.callMheTool("k2-gen-beaver-triples",
         list(n = as.integer(n_obs), frac_bits = frac_bits)))
       for (server in server_list) {
@@ -330,7 +336,7 @@ NULL
           num_intervals = num_intervals, frac_bits = frac_bits,
           session_id = session_id))
       }
-    }
+    }  # close else (non-Gaussian wide spline)
 
     # === Step 3: Gradient (Beaver matvec) ===
     mvt <- dsVert:::.callMheTool("k2-gen-matvec-triples", list(

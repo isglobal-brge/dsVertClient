@@ -57,6 +57,7 @@ NULL
   dcf_conns <- sapply(dcf_parties, function(s) which(server_names == s))
 
   frac_bits <- 20L
+  is_gaussian <- (family == "gaussian")
   num_intervals <- if (family == "poisson") 100L else 50L
   dcf_family <- if (family == "poisson") "poisson" else "sigmoid"
 
@@ -158,31 +159,32 @@ NULL
 
   # ===========================================================================
   # Step B: Pre-generate DCF keys (on NON-DCF server, not client)
+  #   Skipped for Gaussian (identity link, no sigmoid/exp needed)
   # ===========================================================================
-  # Security: DCF keys generated server-side → client never sees them.
-  # A malicious client cannot craft keys to leak information.
-  t0_dcf <- proc.time()[[3]]
   dealer <- non_dcf_servers[1]  # first non-DCF server acts as dealer
   dealer_conn <- which(server_names == dealer)
-  if (verbose) message(sprintf("  [DCF] Server %s generating keys (n=%d, %d intervals)...",
-                                 dealer, n_obs, num_intervals))
 
-  dcf_result <- .dsAgg(datasources[dealer_conn],
-    call("glmRing63GenDcfKeysDS",
-         dcf0_pk = transport_pks[[dcf_parties[1]]],
-         dcf1_pk = transport_pks[[dcf_parties[2]]],
-         family = dcf_family, n = as.integer(n_obs),
-         frac_bits = frac_bits, num_intervals = num_intervals,
-         session_id = session_id))
-  if (is.list(dcf_result)) dcf_result <- dcf_result[[1]]
+  if (!is_gaussian) {
+    t0_dcf <- proc.time()[[3]]
+    if (verbose) message(sprintf("  [DCF] Server %s generating keys (n=%d, %d intervals)...",
+                                   dealer, n_obs, num_intervals))
 
-  # Relay opaque blobs to DCF parties (client can't read them)
-  .sendBlob(dcf_result$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[1])
-  .dsAgg(datasources[dcf_conns[1]], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
-  .sendBlob(dcf_result$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[2])
-  .dsAgg(datasources[dcf_conns[2]], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+    dcf_result <- .dsAgg(datasources[dealer_conn],
+      call("glmRing63GenDcfKeysDS",
+           dcf0_pk = transport_pks[[dcf_parties[1]]],
+           dcf1_pk = transport_pks[[dcf_parties[2]]],
+           family = dcf_family, n = as.integer(n_obs),
+           frac_bits = frac_bits, num_intervals = num_intervals,
+           session_id = session_id))
+    if (is.list(dcf_result)) dcf_result <- dcf_result[[1]]
 
-  if (verbose) message(sprintf("  [DCF] Keys distributed (%.1fs)", proc.time()[[3]] - t0_dcf))
+    .sendBlob(dcf_result$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[1])
+    .dsAgg(datasources[dcf_conns[1]], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+    .sendBlob(dcf_result$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[2])
+    .dsAgg(datasources[dcf_conns[2]], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+
+    if (verbose) message(sprintf("  [DCF] Keys distributed (%.1fs)", proc.time()[[3]] - t0_dcf))
+  }
 
   # ===========================================================================
   # Iteration loop
@@ -267,82 +269,91 @@ NULL
     }
 
     # =================================================================
-    # Step 2: DCF Wide Spline (4-phase between DCF parties)
+    # Step 2: Link function
+    #   Gaussian: identity (mu = eta, no DCF needed)
+    #   Binomial/Poisson: DCF wide spline (4-phase between DCF parties)
     # =================================================================
-    if (verbose && iter <= 3) message(sprintf("    [%d.2] DCF wide spline...", iter))
+    if (is_gaussian) {
+      # Identity link: mu_share = eta_share (stored as secure_mu_share for gradient)
+      for (i in seq_along(dcf_parties)) {
+        ci <- dcf_conns[i]
+        .dsAgg(datasources[ci], call("k2IdentityLinkDS", session_id = session_id))
+      }
+    } else {
+      if (verbose && iter <= 3) message(sprintf("    [%d.2] DCF wide spline...", iter))
 
-    # Generate spline Beaver triples on dealer server (not client)
-    spline_t <- .dsAgg(datasources[dealer_conn],
-      call("glmRing63GenSplineTriplesDS",
-           dcf0_pk = transport_pks[[dcf_parties[1]]],
-           dcf1_pk = transport_pks[[dcf_parties[2]]],
-           n = as.integer(n_obs), frac_bits = frac_bits,
-           session_id = session_id))
-    if (is.list(spline_t)) spline_t <- spline_t[[1]]
-    # Relay opaque blobs (client can't read)
-    .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", dcf_conns[1])
-    .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", dcf_conns[2])
+      # Generate spline Beaver triples on dealer server (not client)
+      spline_t <- .dsAgg(datasources[dealer_conn],
+        call("glmRing63GenSplineTriplesDS",
+             dcf0_pk = transport_pks[[dcf_parties[1]]],
+             dcf1_pk = transport_pks[[dcf_parties[2]]],
+             n = as.integer(n_obs), frac_bits = frac_bits,
+             session_id = session_id))
+      if (is.list(spline_t)) spline_t <- spline_t[[1]]
+      .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", dcf_conns[1])
+      .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", dcf_conns[2])
 
-    # Phase 1-4 (same as K=2)
-    ph1 <- list()
-    for (i in seq_along(dcf_parties)) {
-      ci <- dcf_conns[i]
-      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase1DS",
-        party_id = as.integer(i - 1), family = family,
-        num_intervals = num_intervals, frac_bits = frac_bits,
-        session_id = session_id))
-      if (is.list(r) && length(r) == 1) r <- r[[1]]; ph1[[i]] <- r
-    }
-    .sendBlob(ph1[[1]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[2])
-    .sendBlob(ph1[[2]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[1])
+      # Phase 1-4
+      ph1 <- list()
+      for (i in seq_along(dcf_parties)) {
+        ci <- dcf_conns[i]
+        r <- .dsAgg(datasources[ci], call("k2WideSplinePhase1DS",
+          party_id = as.integer(i - 1), family = family,
+          num_intervals = num_intervals, frac_bits = frac_bits,
+          session_id = session_id))
+        if (is.list(r) && length(r) == 1) r <- r[[1]]; ph1[[i]] <- r
+      }
+      .sendBlob(ph1[[1]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[2])
+      .sendBlob(ph1[[2]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[1])
 
-    ph2 <- list()
-    for (i in seq_along(dcf_parties)) {
-      ci <- dcf_conns[i]
-      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase2DS",
-        party_id = as.integer(i - 1), family = family,
-        num_intervals = num_intervals, frac_bits = frac_bits,
-        session_id = session_id))
-      if (is.list(r) && length(r) == 1) r <- r[[1]]; ph2[[i]] <- r
-    }
-    for (i in seq_along(dcf_parties)) {
-      peer_idx <- 3 - i; peer_ci <- dcf_conns[peer_idx]
-      pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[peer_idx]]])
-      r1_json <- jsonlite::toJSON(list(
-        and_xma = ph2[[i]]$and_xma, and_ymb = ph2[[i]]$and_ymb,
-        had1_xma = ph2[[i]]$had1_xma, had1_ymb = ph2[[i]]$had1_ymb),
-        auto_unbox = TRUE)
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-        data = jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk = pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1", peer_ci)
-    }
+      ph2 <- list()
+      for (i in seq_along(dcf_parties)) {
+        ci <- dcf_conns[i]
+        r <- .dsAgg(datasources[ci], call("k2WideSplinePhase2DS",
+          party_id = as.integer(i - 1), family = family,
+          num_intervals = num_intervals, frac_bits = frac_bits,
+          session_id = session_id))
+        if (is.list(r) && length(r) == 1) r <- r[[1]]; ph2[[i]] <- r
+      }
+      for (i in seq_along(dcf_parties)) {
+        peer_idx <- 3 - i; peer_ci <- dcf_conns[peer_idx]
+        pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[peer_idx]]])
+        r1_json <- jsonlite::toJSON(list(
+          and_xma = ph2[[i]]$and_xma, and_ymb = ph2[[i]]$and_ymb,
+          had1_xma = ph2[[i]]$had1_xma, had1_ymb = ph2[[i]]$had1_ymb),
+          auto_unbox = TRUE)
+        sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+          data = jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk = pk_b64))
+        .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1", peer_ci)
+      }
 
-    ph3 <- list()
-    for (i in seq_along(dcf_parties)) {
-      ci <- dcf_conns[i]
-      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase3DS",
-        party_id = as.integer(i - 1), family = family,
-        num_intervals = num_intervals, frac_bits = frac_bits,
-        session_id = session_id))
-      if (is.list(r) && length(r) == 1) r <- r[[1]]; ph3[[i]] <- r
-    }
-    for (i in seq_along(dcf_parties)) {
-      peer_idx <- 3 - i; peer_ci <- dcf_conns[peer_idx]
-      pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[peer_idx]]])
-      r1_json <- jsonlite::toJSON(list(
-        had2_xma = ph3[[i]]$had2_xma, had2_ymb = ph3[[i]]$had2_ymb),
-        auto_unbox = TRUE)
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-        data = jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk = pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1", peer_ci)
-    }
+      ph3 <- list()
+      for (i in seq_along(dcf_parties)) {
+        ci <- dcf_conns[i]
+        r <- .dsAgg(datasources[ci], call("k2WideSplinePhase3DS",
+          party_id = as.integer(i - 1), family = family,
+          num_intervals = num_intervals, frac_bits = frac_bits,
+          session_id = session_id))
+        if (is.list(r) && length(r) == 1) r <- r[[1]]; ph3[[i]] <- r
+      }
+      for (i in seq_along(dcf_parties)) {
+        peer_idx <- 3 - i; peer_ci <- dcf_conns[peer_idx]
+        pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[peer_idx]]])
+        r1_json <- jsonlite::toJSON(list(
+          had2_xma = ph3[[i]]$had2_xma, had2_ymb = ph3[[i]]$had2_ymb),
+          auto_unbox = TRUE)
+        sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+          data = jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk = pk_b64))
+        .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1", peer_ci)
+      }
 
-    for (i in seq_along(dcf_parties)) {
-      ci <- dcf_conns[i]
-      .dsAgg(datasources[ci], call("k2WideSplinePhase4DS",
-        party_id = as.integer(i - 1), family = family,
-        num_intervals = num_intervals, frac_bits = frac_bits,
-        session_id = session_id))
+      for (i in seq_along(dcf_parties)) {
+        ci <- dcf_conns[i]
+        .dsAgg(datasources[ci], call("k2WideSplinePhase4DS",
+          party_id = as.integer(i - 1), family = family,
+          num_intervals = num_intervals, frac_bits = frac_bits,
+          session_id = session_id))
+      }
     }
 
     # =================================================================
@@ -453,9 +464,13 @@ NULL
     if (converged) "Converged" else "Stopped",
     final_iter, proc.time()[[3]] - t0_loop))
 
-  # Build betas in per-server format (coordinator gets intercept prepended)
+  # Build betas in per-server format
   betas_out <- list()
-  betas_out[[coordinator]] <- c(intercept, beta[1:p_coord])
+  if (label_intercept) {
+    betas_out[[coordinator]] <- c(intercept, beta[1:p_coord])
+  } else {
+    betas_out[[coordinator]] <- beta[1:p_coord]
+  }
   idx <- p_coord + 1
   for (server in server_list) {
     if (server == coordinator) next
@@ -464,5 +479,7 @@ NULL
     idx <- idx + p_s
   }
 
-  list(betas = betas_out, converged = converged, final_iter = final_iter)
+  result <- list(betas = betas_out, converged = converged, final_iter = final_iter)
+  if (!label_intercept) result$intercept <- intercept  # for Gaussian destandardization
+  result
 }
