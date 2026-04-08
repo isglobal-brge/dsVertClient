@@ -295,17 +295,20 @@
         rlk_r1_shares[[server_list[1]]] <- result0$rlk_round1_share
       }
 
-      # Send CRP, GKG seed, and party_id to all non-party0 servers (sequential
-      # blob transfer, then parallel mheInitDS calls).
+      # Send CRP, GKG seed, and party_id to all non-party0 servers
+      # Uses batch transfer (1 call per server instead of 3)
       other_servers <- server_list[-1]
       other_conn_idxs <- integer(length(other_servers))
       for (i in seq_along(other_servers)) {
         server <- other_servers[i]
         ci <- which(server_names == server)
         other_conn_idxs[i] <- ci
-        .sendBlob(crp, "crp", ci)
-        .sendBlob(gkg_seed, "gkg_seed", ci)
-        .sendBlob(as.character(i), "party_id", ci)
+        batch <- jsonlite::toJSON(list(crp = crp, gkg_seed = gkg_seed,
+                                        party_id = as.character(i)),
+                                   auto_unbox = TRUE)
+        .dsAgg(conns = datasources[ci],
+          expr = call("mheStoreBlobBatchDS", batch_json = as.character(batch),
+                      session_id = session_id))
       }
 
       # Launch mheInitDS on all non-party0 servers in parallel
@@ -429,13 +432,16 @@
       # Phase B: Process (mheStoreCPKDS) in parallel
       other_servers <- server_list[-1]
       if (verbose) message("  [Key Setup] Distributing CPK + Galois keys to ", length(other_servers), " servers...")
+      # Bundle all Galois keys into one blob (reduces 12 sends to 1)
+      gk_bundle <- NULL
+      if (!is.null(galois_keys)) {
+        gk_bundle <- paste(galois_keys, collapse = "|")
+      }
       for (server in other_servers) {
         srv_conn <- which(server_names == server)
         .sendBlob(cpk, "cpk", srv_conn)
-        if (!is.null(galois_keys)) {
-          for (gk_i in seq_along(galois_keys))
-            .sendBlob(galois_keys[gk_i], paste0("gk_", gk_i - 1), srv_conn)
-        }
+        if (!is.null(gk_bundle))
+          .sendBlob(gk_bundle, "gk_bundle", srv_conn)
         if (!is.null(relin_key) && nzchar(relin_key))
           .sendBlob(relin_key, "rk", srv_conn)
       }
