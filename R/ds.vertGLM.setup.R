@@ -14,7 +14,8 @@
                            non_label_servers, y_server, y_var, x_vars,
                            data_name, family, n_obs, log_n, log_scale,
                            generate_rlk, use_secure_agg, use_k2_beaver,
-                           reuse_mhe, session_id, verbose) {
+                           reuse_mhe, session_id, verbose,
+                           skip_ckks = FALSE) {
 
   # =========================================================================
   # Helpers (closures capturing datasources, session_id)
@@ -180,7 +181,39 @@
                                    length(server_list), proc.time()[[3]] - t0_key))
   }
 
-  if (length(non_label_servers) > 0 && !use_k2_beaver) {
+  if (isTRUE(skip_ckks) && length(non_label_servers) > 0 && !use_k2_beaver) {
+    # Ring63 DCF path: only transport keys needed (no CRP, no CPK, no Galois, no RLK)
+    if (verbose) message("\n[Phase 0] Transport key setup (Ring63 DCF, ", length(server_list), " servers)...")
+    t0_key <- proc.time()[[3]]
+    crp_k2 <- NULL; gkg_k2 <- NULL
+    for (server in server_list) {
+      conn_idx <- which(server_names == server)
+      party_id <- as.integer(which(server_list == server) - 1L)
+      tk_result <- .dsAgg(
+        conns = datasources[conn_idx],
+        expr = call("mheInitDS",
+                    party_id = party_id,
+                    crp = crp_k2, gkg_seed = gkg_k2,
+                    num_obs = as.integer(n_obs),
+                    log_n = 12L, log_scale = 40L,
+                    generate_rlk = FALSE,
+                    session_id = session_id))
+      if (is.list(tk_result)) tk_result <- tk_result[[1]]
+      transport_pks[[server]] <- tk_result$transport_pk
+      if (is.null(crp_k2)) { crp_k2 <- tk_result$crp; gkg_k2 <- tk_result$gkg_seed }
+    }
+    for (server in server_list) {
+      conn_idx <- which(server_names == server)
+      pk_sorted <- transport_pks[sort(names(transport_pks))]
+      .dsAgg(conns = datasources[conn_idx],
+        expr = call("mheStoreTransportKeysDS",
+                    transport_keys = pk_sorted,
+                    session_id = session_id))
+    }
+    if (verbose) message(sprintf("  [Key Setup] Transport keys exchanged (%d servers, %.1fs)",
+                                   length(server_list), proc.time()[[3]] - t0_key))
+
+  } else if (length(non_label_servers) > 0 && !use_k2_beaver) {
     if (verbose) message("\n[Phase 0] MHE key setup (", length(server_list), " servers, logN=", log_n, ", logScale=", log_scale, ")...")
     t0_mhe <- proc.time()[[3]]
 
@@ -522,7 +555,7 @@
   # =========================================================================
   # Phase 2: Encrypt y and distribute (only if non-label servers exist)
   # =========================================================================
-  if (length(non_label_servers) > 0 && !use_k2_beaver) {
+  if (length(non_label_servers) > 0 && !use_k2_beaver && !isTRUE(skip_ckks)) {
     if (verbose) message("\n[Phase 2] Encrypting response variable (n=", n_obs, ")...")
     t0_enc <- proc.time()[[3]]
 
