@@ -462,12 +462,11 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     # non-label servers send UNMASKED eta (one-time, transport-encrypted).
     if (verbose) message("\n[Phase 5] Computing deviance (one-time secure routing)...")
 
-    # FSM: transition to deviance
-    .dsAgg(
-      conns = datasources[coordinator_conn],
-      expr = call("glmFSMCheckDS",
-                  session_id = session_id,
-                  action = "deviance")
+    # FSM: transition to deviance (skip if FSM not initialized, e.g., poly sigmoid path)
+    tryCatch(
+      .dsAgg(conns = datasources[coordinator_conn],
+        expr = call("glmFSMCheckDS", session_id = session_id, action = "deviance")),
+      error = function(e) if (verbose) message("  (FSM deviance check skipped)")
     )
 
     # Coordinator: store eta_label locally

@@ -67,8 +67,8 @@ NULL
   fusion_conn_idx <- which(server_names == fusion_server)
   non_fusion_servers <- setdiff(server_list, fusion_server)
 
-  if (verbose) message("\n[Phase 3] BCD iterations (secure aggregation, K=",
-                       n_partitions, " servers)...")
+  if (verbose) message(sprintf("\n[Phase 3] Secure aggregation (K=%d, family=%s, n=%d, lambda=%.1e)",
+                                 n_partitions, family, n_obs, lambda))
 
   # Initialize FSM on coordinator
   .dsAgg(
@@ -93,11 +93,13 @@ NULL
     )
   }
 
-  if (verbose) message("  Secure aggregation initialized on all non-label servers")
+  if (verbose) message(sprintf("  [Init] FSM + secure aggregation initialized (%d non-label servers, topology=%s)",
+                                 non_label_count, topology))
 
   # === GAUSSIAN ONE-SHOT for K>=3 ===
   if (family == "gaussian") {
-    if (verbose) message("  Gaussian one-shot: pairwise Beaver X^T X + CKKS X^T y")
+    t0_oneshot <- proc.time()[[3]]
+    if (verbose) message("  [One-Shot] Gaussian: pairwise Beaver X^T X + X^T y")
     frac_bits_k3 <- 20L
 
     # Step 1: Each server computes local X_k^T X_k (and X_label^T y for label)
@@ -255,9 +257,11 @@ NULL
     beta_solved <- as.numeric(solve(XtX_reg, XtY_norm))
 
     if (verbose) {
-      message(sprintf("  [ONE-SHOT] X^T X: %dx%d, %d pairwise Beaver rounds",
-        p_total_k3, p_total_k3, length(pair_list)))
-      message(sprintf("  [ONE-SHOT] beta = [%s]", paste(round(beta_solved, 6), collapse=", ")))
+      message(sprintf("  [One-Shot] X^T X: %dx%d, %d pairwise rounds, cond=%.1e (%.1fs)",
+        p_total_k3, p_total_k3, length(pair_list), kappa(XtX_reg),
+        proc.time()[[3]] - t0_oneshot))
+      message(sprintf("  [One-Shot] ||beta||=%.4f, range=[%.4f, %.4f]",
+        sqrt(sum(beta_solved^2)), min(beta_solved), max(beta_solved)))
     }
 
     # Distribute betas
@@ -271,7 +275,9 @@ NULL
 
   } else {
   # === L-BFGS for Binomial/Poisson K>=3 ===
-  if (verbose) message("  Using L-BFGS optimizer (client-side)")
+  if (verbose) message(sprintf("  [L-BFGS] %s, %d non-label servers, Enc(r) threshold decrypt",
+                                 family, non_label_count))
+  t0_loop <- proc.time()[[3]]
 
   # Encrypted eta blobs (opaque to client)
   encrypted_etas <- list()
@@ -280,6 +286,7 @@ NULL
   lbfgs_s <- list(); lbfgs_y <- list(); lbfgs_prev_theta <- NULL; lbfgs_prev_grad <- NULL
 
   for (iter in seq_len(max_iter)) {
+    t0_iter <- proc.time()[[3]]
     betas_old <- betas
     max_diff <- 0
 
@@ -496,7 +503,8 @@ NULL
     }
 
     if (verbose && iter <= 3)
-      message(sprintf("  [L-BFGS] ||grad||=%.6f", sqrt(sum(full_grad^2))))
+      message(sprintf("  [L-BFGS] ||grad||=%.6f, grad_range=[%.4f, %.4f]",
+                       sqrt(sum(full_grad^2)), min(full_grad), max(full_grad)))
 
     # --- Phase 3d: Non-label servers: compute masked eta with L-BFGS beta ---
     for (server in non_label_servers) {
@@ -555,12 +563,18 @@ NULL
     }
 
     if (verbose)
-      message(sprintf("  Iteration %d: max diff = %.2e", iter, max_diff))
+      message(sprintf("  Iter %d: ||grad||=%.4f, step=%.2f, diff=%.2e, theta=[%.3f, %.3f] (%.1fs)",
+                       iter, sqrt(sum(full_grad^2)), step_size, max_diff,
+                       min(new_theta), max(new_theta), proc.time()[[3]] - t0_iter))
   }
 
   if (!converged && verbose)
     warning(sprintf("Did not converge after %d iterations (diff = %.2e)",
                     max_iter, max_diff))
+
+  if (verbose) message(sprintf("  [Secure-Agg] %s after %d iters (total %.1fs)",
+                                 if (converged) "Converged" else "Stopped",
+                                 final_iter, proc.time()[[3]] - t0_loop))
   }  # end else (binomial/poisson L-BFGS)
 
   return(list(betas = betas, converged = converged, final_iter = final_iter))
