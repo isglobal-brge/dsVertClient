@@ -424,23 +424,24 @@
       galois_keys <- combined$galois_keys
       relin_key <- combined$relin_key  # Non-NULL when RLK was generated
 
-      # Distribute CPK, Galois keys, and RLK to other servers (sequential per server)
-      if (verbose) message("  [Key Setup] Distributing CPK + Galois keys to ", length(server_list) - 1, " servers...")
-      for (server in server_list[-1]) {
+      # Distribute CPK, Galois keys, and RLK:
+      # Phase A: Send all blobs to all non-party0 servers (sequential sends, interleaved)
+      # Phase B: Process (mheStoreCPKDS) in parallel
+      other_servers <- server_list[-1]
+      if (verbose) message("  [Key Setup] Distributing CPK + Galois keys to ", length(other_servers), " servers...")
+      for (server in other_servers) {
         srv_conn <- which(server_names == server)
         .sendBlob(cpk, "cpk", srv_conn)
         if (!is.null(galois_keys)) {
-          for (gk_i in seq_along(galois_keys)) {
+          for (gk_i in seq_along(galois_keys))
             .sendBlob(galois_keys[gk_i], paste0("gk_", gk_i - 1), srv_conn)
-          }
         }
-        if (!is.null(relin_key) && nzchar(relin_key)) {
+        if (!is.null(relin_key) && nzchar(relin_key))
           .sendBlob(relin_key, "rk", srv_conn)
-        }
       }
-      # Store CPK on all non-party0 servers in parallel
-      .dsAgg(
-        conns = datasources[server_list[-1]],
+      # Parallel: all servers process their blobs simultaneously
+      DSI::datashield.aggregate(
+        conns = datasources[other_servers],
         expr = call("mheStoreCPKDS", from_storage = TRUE,
                     session_id = session_id)
       )
