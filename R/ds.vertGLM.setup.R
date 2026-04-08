@@ -140,8 +140,10 @@
     # K=2 wide spline: generate transport keys on SERVERS via lightweight mheInitDS.
     # This creates the X25519 keypair server-side (needed for k2ReceiveShareDS decrypt).
     if (verbose) message("\n[Phase 0] Transport key setup (K=2 wide spline)...")
+    t0_key <- proc.time()[[3]]
     crp_k2 <- NULL
     gkg_k2 <- NULL
+    if (verbose) message("  [Key Setup] Generating X25519 keypairs on ", length(server_list), " servers...")
     for (server in server_list) {
       conn_idx <- which(server_names == server)
       party_id <- as.integer(which(server_list == server) - 1L)
@@ -163,6 +165,7 @@
       }
     }
     # Store transport keys on each server (for peer PK lookup in k2ShareInputDS)
+    if (verbose) message("  [Key Setup] Distributing transport public keys...")
     for (server in server_list) {
       conn_idx <- which(server_names == server)
       pk_sorted <- transport_pks[sort(names(transport_pks))]
@@ -173,11 +176,13 @@
                     session_id = session_id)
       )
     }
-    if (verbose) message("  Transport keys exchanged for ", length(server_list), " servers")
+    if (verbose) message(sprintf("  [Key Setup] Transport keys exchanged for %d servers (%.1fs)",
+                                   length(server_list), proc.time()[[3]] - t0_key))
   }
 
   if (length(non_label_servers) > 0 && !use_k2_beaver) {
-    if (verbose) message("\n[Phase 0] MHE key setup...")
+    if (verbose) message("\n[Phase 0] MHE key setup (", length(server_list), " servers, logN=", log_n, ", logScale=", log_scale, ")...")
+    t0_mhe <- proc.time()[[3]]
 
     mhe_reused <- FALSE
 
@@ -223,7 +228,7 @@
 
     if (!mhe_reused) {
       # ---- Coin-Tossing CRP (distributed randomness) ----
-      if (verbose) message("  Coin-tossing CRP (distributed randomness)...")
+      if (verbose) message("  [Key Setup] Coin-toss CRP: generating commitments (", length(server_list), " servers)...")
 
       commit_results <- DSI::datashield.aggregate(
         conns = datasources[server_list],
@@ -261,9 +266,10 @@
         )
       }
 
-      if (verbose) message("  CRP derived from ", length(server_list), "-party coin-toss")
+      if (verbose) message("  [Key Setup] CRP derived from ", length(server_list), "-party coin-toss (commit-reveal-derive)")
 
       # ---- Key Setup (all from coin-toss CRP) ----
+      if (verbose) message("  [Key Setup] Generating per-party secret keys + PK shares...")
       conn_idx <- which(server_names == server_list[1])
       result0 <- .dsAgg(
         conns = datasources[conn_idx],
@@ -328,9 +334,11 @@
         }
       }
 
+      if (verbose) message("  [Key Setup] PK shares collected from ", length(server_list), " servers")
+
       # Two-round RLK generation protocol (binomial/Poisson HE-Link only)
       if (generate_rlk && length(rlk_r1_shares) > 0) {
-        if (verbose) message("  Generating collective relinearization key (2-round protocol)...")
+        if (verbose) message("  [Key Setup] Generating collective relinearization key (2-round protocol)...")
 
         # Round 1 aggregation: send all R1 shares to coordinator (party 0)
         combine_conn <- which(server_names == server_list[1])
@@ -396,6 +404,7 @@
         }
       }
 
+      if (verbose) message("  [Key Setup] Combining PK shares + Galois keys on coordinator...")
       combined <- .dsAgg(
         conns = datasources[conn_idx],
         expr = call("mheCombineDS",
@@ -413,6 +422,7 @@
       relin_key <- combined$relin_key  # Non-NULL when RLK was generated
 
       # Distribute CPK, Galois keys, and RLK to other servers (blob send then parallel store)
+      if (verbose) message("  [Key Setup] Distributing CPK + Galois keys to ", length(server_list) - 1, " servers...")
       for (server in server_list[-1]) {
         srv_conn <- which(server_names == server)
         .sendBlob(cpk, "cpk", srv_conn)
@@ -456,14 +466,15 @@
                   session_id = session_id)
     )
 
-    if (verbose) message("  Key setup + transport keys complete")
+    if (verbose) message(sprintf("  [Key Setup] Complete (%.1fs)", proc.time()[[3]] - t0_mhe))
 
   }
 
   # =========================================================================
   # Phase 1: Standardize features (and y for Gaussian) for fast BCD
   # =========================================================================
-  if (verbose) message("\n[Phase 1] Standardizing features...")
+  if (verbose) message("\n[Phase 1] Standardizing features across ", length(server_list), " servers...")
+  t0_std <- proc.time()[[3]]
 
   std_data <- paste0(data_name, "_std")
   standardize_y <- (family == "gaussian")
@@ -497,13 +508,19 @@
       y_sd <- std_result$y_sd
     }
   }
-  if (verbose) message("  Features standardized on all servers")
+  if (verbose) {
+    total_feats <- sum(sapply(x_vars, length))
+    message(sprintf("  [Standardize] %d total features standardized (y %s, %.1fs)",
+                    total_feats, if (standardize_y) "standardized" else "raw",
+                    proc.time()[[3]] - t0_std))
+  }
 
   # =========================================================================
   # Phase 2: Encrypt y and distribute (only if non-label servers exist)
   # =========================================================================
   if (length(non_label_servers) > 0 && !use_k2_beaver) {
-    if (verbose) message("\n[Phase 2] Encrypting response variable...")
+    if (verbose) message("\n[Phase 2] Encrypting response variable (n=", n_obs, ")...")
+    t0_enc <- proc.time()[[3]]
 
     # Encrypt STANDARDIZED y (Gaussian) or raw y (non-Gaussian)
     enc_data <- if (standardize_y) std_data else data_name
@@ -518,7 +535,8 @@
     )
     if (is.list(enc_result)) enc_result <- enc_result[[1]]
     ct_y <- enc_result$encrypted_y
-    if (verbose) message("  Encrypted y on ", y_server)
+    if (verbose) message(sprintf("  [Encrypt] y encrypted on %s (%d chars)",
+                                   y_server, nchar(ct_y)))
     for (server in non_label_servers) {
       conn_idx <- which(server_names == server)
       n_chunks_sent <- .dsvert_adaptive_send(ct_y, function(chunk_str, chunk_idx, n_chunks) {
@@ -538,7 +556,8 @@
                     session_id = session_id)
       )
       if (verbose)
-        message("  ct_y transferred to ", server, " (", n_chunks_sent, " chunks)")
+        message(sprintf("  [Encrypt] ct(y) -> %s (%d chunks, %.1fs)",
+                        server, n_chunks_sent, proc.time()[[3]] - t0_enc))
     }
   }
 

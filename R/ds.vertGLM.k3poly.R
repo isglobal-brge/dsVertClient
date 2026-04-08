@@ -65,7 +65,12 @@ NULL
   prev_theta <- NULL; prev_grad <- NULL
   converged <- FALSE; final_iter <- 0
 
+  if (verbose) message(sprintf("\n[Phase 3] K>=3 poly-sigmoid L-BFGS (family=%s, K=%d, n=%d, lambda=%.1e)",
+                                 family, length(server_list), n_obs, lambda))
+  t0_loop <- proc.time()[[3]]
+
   for (iter in seq_len(max_iter)) {
+    t0_iter <- proc.time()[[3]]
     betas_old <- betas
 
     # =================================================================
@@ -206,7 +211,11 @@ NULL
     }
 
     final_iter <- iter
-    if (verbose) message(sprintf("  Iter %d: max diff = %.2e", iter, max_diff))
+    grad_norm <- sqrt(sum(full_grad^2))
+    if (verbose) message(sprintf("  Iter %d: ||grad||=%.4f, step=%.2f, diff=%.2e, theta=[%.3f, %.3f] (%.1fs)",
+                                   iter, grad_norm, step_size, max_diff,
+                                   min(new_theta), max(new_theta),
+                                   proc.time()[[3]] - t0_iter))
 
     if (max_diff < tol) {
       converged <- TRUE
@@ -224,6 +233,10 @@ NULL
 
   if (!converged && verbose)
     warning(sprintf("Did not converge after %d iterations (diff = %.2e)", max_iter, max_diff))
+
+  if (verbose) message(sprintf("  [Poly-Sigmoid] %s after %d iters (total %.1fs)",
+                                 if (converged) "Converged" else "Stopped",
+                                 final_iter, proc.time()[[3]] - t0_loop))
 
   list(betas = betas, converged = converged, final_iter = final_iter)
 }

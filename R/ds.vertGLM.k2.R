@@ -69,7 +69,8 @@ NULL
   }
 
   # === INPUT-SHARING PREAMBLE ===
-  if (verbose) message("  Input-sharing preamble...")
+  if (verbose) message("  [Input Sharing] Generating additive secret shares (2 servers)...")
+  t0_share <- proc.time()[[3]]
   share_results <- list()
   for (server in server_list) {
     ci <- which(server_names == server)
@@ -95,11 +96,13 @@ NULL
     .dsAgg(datasources[ci], call("k2ReceiveShareDS",
       peer_p = as.integer(length(x_vars[[peer]])), session_id = session_id))
   }
-  if (verbose) message("  Input sharing complete")
+  if (verbose) message(sprintf("  [Input Sharing] Complete: p_coord=%d, p_nl=%d (%.1fs)",
+                                 p_coord, p_nl, proc.time()[[3]] - t0_share))
 
   # === GAUSSIAN ONE-SHOT: compute X^T X and X^T y via Beaver, solve directly ===
   if (is_gaussian) {
-    if (verbose) message("  Computing eta for X_full initialization...")
+    t0_oneshot <- proc.time()[[3]]
+    if (verbose) message("  [One-Shot] Initializing X_full via zero-beta eta computation...")
     # Need one eta computation to populate k2_x_full_fp on servers
     for (server in server_list) {
       ci <- which(server_names == server)
@@ -109,7 +112,8 @@ NULL
         intercept = 0.0, is_coordinator = is_coord, session_id = session_id))
     }
 
-    if (verbose) message("  Computing X^T X and X^T y via Beaver cross-products...")
+    if (verbose) message(sprintf("  [One-Shot] Computing X^T X and X^T y via Beaver (%d triples)...",
+                                   (p_total * p_total + p_total) * n_obs))
     total_pairs <- as.integer((p_total * p_total + p_total) * n_obs)
     oneshot_t <- dsVert:::.callMheTool("k2-gen-beaver-triples",
       list(n = total_pairs, frac_bits = frac_bits))
@@ -183,8 +187,10 @@ NULL
     intercept <- 0.0  # standardized features have zero mean → intercept ≈ 0
 
     if (verbose) {
-      message(sprintf("  [ONE-SHOT] X^T X computed (%d Beaver products)", p_total^2 + p_total))
-      message(sprintf("  [ONE-SHOT] beta = [%s]", paste(round(beta, 6), collapse=", ")))
+      message(sprintf("  [One-Shot] X^T X: %dx%d, cond=%.1e (%.1fs)",
+                       p_total, p_total, kappa(XtX_reg), proc.time()[[3]] - t0_oneshot))
+      message(sprintf("  [One-Shot] ||beta||=%.4f, range=[%.4f, %.4f]",
+                       sqrt(sum(beta^2)), min(beta), max(beta)))
     }
 
     betas <- list()
@@ -195,7 +201,8 @@ NULL
 
   # === PRE-GENERATE DCF KEYS (only for binomial/poisson) ===
   if (!is_gaussian) {
-    if (verbose) message("  Pre-generating DCF keys (one-time)...")
+    t0_dcf <- proc.time()[[3]]
+    if (verbose) message(sprintf("  [DCF] Pre-generating keys (n=%d, %d intervals)...", n_obs, num_intervals))
     dcf <- dsVert:::.callMheTool("k2-dcf-gen-batch", list(
       family = family, n = as.integer(n_obs),
       frac_bits = frac_bits, num_intervals = num_intervals))
@@ -209,7 +216,7 @@ NULL
       .sendBlob(.to_b64url(sealed$sealed), "k2_dcf_keys_persistent", ci)
       .dsAgg(datasources[ci], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
     }
-    if (verbose) message("  DCF keys distributed (will reuse across iterations)")
+    if (verbose) message(sprintf("  [DCF] Keys distributed to both servers (%.1fs)", proc.time()[[3]] - t0_dcf))
   }
 
   beta <- rep(0, p_total)
@@ -224,7 +231,10 @@ NULL
   prev_theta <- NULL
   prev_grad <- NULL
 
+  if (verbose) message(sprintf("\n[Phase 3] K=2 L-BFGS iterations (p=%d, n=%d, lambda=%.1e)", p_total, n_obs, lambda))
+
   for (iter in seq_len(max_iter)) {
+    t0_iter <- proc.time()[[3]]
     beta_old <- beta
     intercept_old <- intercept
 
@@ -383,9 +393,8 @@ NULL
     full_grad <- c(sum_residual / n_obs, gradient / n_obs) + lambda * theta
 
     if (verbose && iter <= 3) {
-      message(sprintf("  [L-BFGS] sum_res=%.4f, ||grad||=%.6f",
-        sum_residual, sqrt(sum(full_grad^2))))
-      message(sprintf("  [L-BFGS] grad=[%s]", paste(round(full_grad, 6), collapse=", ")))
+      message(sprintf("  [L-BFGS] sum_res=%.4f, ||grad||=%.6f, grad_range=[%.4f, %.4f]",
+        sum_residual, sqrt(sum(full_grad^2)), min(full_grad), max(full_grad)))
     }
 
     # Update L-BFGS history
@@ -416,8 +425,9 @@ NULL
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
     final_iter <- iter
 
-    if (verbose) message(sprintf("  Iter %d: ||grad||=%.4f diff=%.2e",
-      iter, sqrt(sum(full_grad^2)), max_diff))
+    if (verbose) message(sprintf("  Iter %d: ||grad||=%.4f, step=%.2f, diff=%.2e, theta=[%.3f, %.3f] (%.1fs)",
+      iter, sqrt(sum(full_grad^2)), step_size, max_diff,
+      min(new_theta), max(new_theta), proc.time()[[3]] - t0_iter))
 
     if (max_diff < tol) {
       converged <- TRUE
