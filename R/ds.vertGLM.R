@@ -192,8 +192,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   if (use_k2_beaver && non_label_count != 1)
     stop("K=2 mode requires exactly 2 servers", call. = FALSE)
 
-  # Ring63 DCF: NO RLK needed (no polynomial). Only CPK + Galois for gradient.
+  # Ring63 DCF: NO CKKS infrastructure needed (no CPK, Galois, RLK, encrypted y)
   generate_rlk <- FALSE
+  skip_ckks <- (use_secure_agg && family != "gaussian")
 
   # Adaptive log_n for large n: max_slots = 2^(log_n-1)
   # n ≤ 4096 → log_n=13, n ≤ 8192 → log_n=14, n ≤ 16384 → log_n=15
@@ -307,7 +308,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     use_k2_beaver    = use_k2_beaver,
     reuse_mhe        = reuse_mhe,
     session_id       = session_id,
-    verbose          = verbose
+    verbose          = verbose,
+    skip_ckks        = skip_ckks
   )
 
   # Unpack setup results
