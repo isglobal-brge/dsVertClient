@@ -424,19 +424,47 @@
       galois_keys <- combined$galois_keys
       relin_key <- combined$relin_key  # Non-NULL when RLK was generated
 
-      # Distribute CPK, Galois keys, and RLK to other servers (blob send then parallel store)
-      if (verbose) message("  [Key Setup] Distributing CPK + Galois keys to ", length(server_list) - 1, " servers...")
-      for (server in server_list[-1]) {
-        srv_conn <- which(server_names == server)
-        .sendBlob(cpk, "cpk", srv_conn)
-        if (!is.null(galois_keys)) {
-          for (gk_i in seq_along(galois_keys)) {
-            .sendBlob(galois_keys[gk_i], paste0("gk_", gk_i - 1), srv_conn)
+      # Distribute CPK, Galois keys, and RLK to other servers (parallel blob send)
+      other_srv <- server_list[-1]
+      if (verbose) message("  [Key Setup] Distributing CPK + Galois keys to ", length(other_srv), " servers (parallel)...")
+      # Send CPK to all non-party0 servers simultaneously (per-chunk parallel)
+      .dsvert_adaptive_send(cpk, function(chunk_str, chunk_idx, n_chunks) {
+        if (n_chunks == 1L) {
+          DSI::datashield.aggregate(datasources[other_srv],
+            call("mheStoreBlobDS", key="cpk", chunk=chunk_str, session_id=session_id))
+        } else {
+          DSI::datashield.aggregate(datasources[other_srv],
+            call("mheStoreBlobDS", key="cpk", chunk=chunk_str,
+                 chunk_index=chunk_idx, n_chunks=n_chunks, session_id=session_id))
+        }
+      })
+      # Galois keys: parallel per-key across servers
+      if (!is.null(galois_keys)) {
+        for (gk_i in seq_along(galois_keys)) {
+          .dsvert_adaptive_send(galois_keys[gk_i], function(chunk_str, chunk_idx, n_chunks) {
+            if (n_chunks == 1L) {
+              DSI::datashield.aggregate(datasources[other_srv],
+                call("mheStoreBlobDS", key=paste0("gk_",gk_i-1), chunk=chunk_str, session_id=session_id))
+            } else {
+              DSI::datashield.aggregate(datasources[other_srv],
+                call("mheStoreBlobDS", key=paste0("gk_",gk_i-1), chunk=chunk_str,
+                     chunk_index=chunk_idx, n_chunks=n_chunks, session_id=session_id))
+            }
+          })
+        }
+      }
+      # RLK: parallel
+      if (!is.null(relin_key) && nzchar(relin_key)) {
+        .dsvert_adaptive_send(relin_key, function(chunk_str, chunk_idx, n_chunks) {
+          if (n_chunks == 1L) {
+            DSI::datashield.aggregate(datasources[other_srv],
+              call("mheStoreBlobDS", key="rk", chunk=chunk_str, session_id=session_id))
+          } else {
+            DSI::datashield.aggregate(datasources[other_srv],
+              call("mheStoreBlobDS", key="rk", chunk=chunk_str,
+                   chunk_index=chunk_idx, n_chunks=n_chunks, session_id=session_id))
           }
-        }
-        if (!is.null(relin_key) && nzchar(relin_key)) {
-          .sendBlob(relin_key, "rk", srv_conn)
-        }
+        })
       }
       # Store CPK on all non-party0 servers in parallel
       .dsAgg(
