@@ -157,24 +157,31 @@ NULL
     p_total, proc.time()[[3]] - t0_share))
 
   # ===========================================================================
-  # Step B: Pre-generate DCF keys
+  # Step B: Pre-generate DCF keys (on NON-DCF server, not client)
   # ===========================================================================
+  # Security: DCF keys generated server-side → client never sees them.
+  # A malicious client cannot craft keys to leak information.
   t0_dcf <- proc.time()[[3]]
-  if (verbose) message(sprintf("  [DCF] Pre-generating keys (n=%d, %d intervals)...", n_obs, num_intervals))
+  dealer <- non_dcf_servers[1]  # first non-DCF server acts as dealer
+  dealer_conn <- which(server_names == dealer)
+  if (verbose) message(sprintf("  [DCF] Server %s generating keys (n=%d, %d intervals)...",
+                                 dealer, n_obs, num_intervals))
 
-  dcf <- dsVert:::.callMheTool("k2-dcf-gen-batch", list(
-    family = dcf_family, n = as.integer(n_obs),
-    frac_bits = frac_bits, num_intervals = num_intervals))
+  dcf_result <- .dsAgg(datasources[dealer_conn],
+    call("glmRing63GenDcfKeysDS",
+         dcf0_pk = transport_pks[[dcf_parties[1]]],
+         dcf1_pk = transport_pks[[dcf_parties[2]]],
+         family = dcf_family, n = as.integer(n_obs),
+         frac_bits = frac_bits, num_intervals = num_intervals,
+         session_id = session_id))
+  if (is.list(dcf_result)) dcf_result <- dcf_result[[1]]
 
-  dcf_keys_list <- list(dcf$party0_keys, dcf$party1_keys)
-  for (i in seq_along(dcf_parties)) {
-    ci <- dcf_conns[i]
-    pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[i]]])
-    sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-      data = dcf_keys_list[[i]], recipient_pk = pk_b64))
-    .sendBlob(.to_b64url(sealed$sealed), "k2_dcf_keys_persistent", ci)
-    .dsAgg(datasources[ci], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
-  }
+  # Relay opaque blobs to DCF parties (client can't read them)
+  .sendBlob(dcf_result$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[1])
+  .dsAgg(datasources[dcf_conns[1]], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+  .sendBlob(dcf_result$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[2])
+  .dsAgg(datasources[dcf_conns[2]], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+
   if (verbose) message(sprintf("  [DCF] Keys distributed (%.1fs)", proc.time()[[3]] - t0_dcf))
 
   # ===========================================================================
@@ -264,28 +271,17 @@ NULL
     # =================================================================
     if (verbose && iter <= 3) message(sprintf("    [%d.2] DCF wide spline...", iter))
 
-    # Generate Beaver triples
-    triples <- lapply(1:3, function(j)
-      dsVert:::.callMheTool("k2-gen-beaver-triples",
-        list(n = as.integer(n_obs), frac_bits = frac_bits)))
-
-    # Send triples to DCF parties
-    for (i in seq_along(dcf_parties)) {
-      ci <- dcf_conns[i]
-      pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[i]]])
-      party_idx <- paste0("party", i - 1)
-      td <- list()
-      for (op in c("and", "had1", "had2")) {
-        ti <- switch(op, and = 1, had1 = 2, had2 = 3)
-        td[[paste0(op, "_a")]] <- triples[[ti]][[paste0(party_idx, "_u")]]
-        td[[paste0(op, "_b")]] <- triples[[ti]][[paste0(party_idx, "_v")]]
-        td[[paste0(op, "_c")]] <- triples[[ti]][[paste0(party_idx, "_w")]]
-      }
-      sealed_t <- dsVert:::.callMheTool("transport-encrypt", list(
-        data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td, auto_unbox = TRUE))),
-        recipient_pk = pk_b64))
-      .sendBlob(.to_b64url(sealed_t$sealed), "k2_spline_triples", ci)
-    }
+    # Generate spline Beaver triples on dealer server (not client)
+    spline_t <- .dsAgg(datasources[dealer_conn],
+      call("glmRing63GenSplineTriplesDS",
+           dcf0_pk = transport_pks[[dcf_parties[1]]],
+           dcf1_pk = transport_pks[[dcf_parties[2]]],
+           n = as.integer(n_obs), frac_bits = frac_bits,
+           session_id = session_id))
+    if (is.list(spline_t)) spline_t <- spline_t[[1]]
+    # Relay opaque blobs (client can't read)
+    .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", dcf_conns[1])
+    .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", dcf_conns[2])
 
     # Phase 1-4 (same as K=2)
     ph1 <- list()
@@ -354,20 +350,17 @@ NULL
     # =================================================================
     if (verbose && iter <= 3) message(sprintf("    [%d.3] Beaver gradient...", iter))
 
-    mvt <- dsVert:::.callMheTool("k2-gen-matvec-triples", list(
-      n = as.integer(n_obs), p = as.integer(p_total)))
-    for (i in seq_along(dcf_parties)) {
-      ci <- dcf_conns[i]
-      party_idx <- paste0("party", i - 1)
-      pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[i]]])
-      msg_json <- jsonlite::toJSON(list(
-        a = mvt[[paste0(party_idx, "_a")]],
-        b = mvt[[paste0(party_idx, "_b")]],
-        c = mvt[[paste0(party_idx, "_c")]]), auto_unbox = TRUE)
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-        data = jsonlite::base64_enc(charToRaw(msg_json)), recipient_pk = pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_grad_triple_fp", ci)
-    }
+    # Generate gradient Beaver triples on dealer server (not client)
+    grad_t <- .dsAgg(datasources[dealer_conn],
+      call("glmRing63GenGradTriplesDS",
+           dcf0_pk = transport_pks[[dcf_parties[1]]],
+           dcf1_pk = transport_pks[[dcf_parties[2]]],
+           n = as.integer(n_obs), p = as.integer(p_total),
+           session_id = session_id))
+    if (is.list(grad_t)) grad_t <- grad_t[[1]]
+    # Relay opaque blobs (client can't read)
+    .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", dcf_conns[1])
+    .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp", dcf_conns[2])
 
     r1_results <- list()
     for (i in seq_along(dcf_parties)) {
