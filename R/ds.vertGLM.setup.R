@@ -182,34 +182,30 @@
   }
 
   if (isTRUE(skip_ckks) && length(non_label_servers) > 0 && !use_k2_beaver) {
-    # Ring63 DCF path: only transport keys needed (no CRP, no CPK, no Galois, no RLK)
-    if (verbose) message("\n[Phase 0] Transport key setup (Ring63 DCF, ", length(server_list), " servers)...")
+    # Ring63 DCF: transport keys ONLY (no CKKS keys, no CRP, no Galois)
+    if (verbose) message("\n[Phase 0] Transport key setup (Ring63, ", length(server_list), " servers)...")
     t0_key <- proc.time()[[3]]
-    crp_k2 <- NULL; gkg_k2 <- NULL
+
+    # Generate transport keys on ALL servers in parallel
+    tk_results <- DSI::datashield.aggregate(
+      conns = datasources[server_list],
+      expr = call("glmRing63TransportInitDS", session_id = session_id))
     for (server in server_list) {
-      conn_idx <- which(server_names == server)
-      party_id <- as.integer(which(server_list == server) - 1L)
-      tk_result <- .dsAgg(
-        conns = datasources[conn_idx],
-        expr = call("mheInitDS",
-                    party_id = party_id,
-                    crp = crp_k2, gkg_seed = gkg_k2,
-                    num_obs = as.integer(n_obs),
-                    log_n = 12L, log_scale = 40L,
-                    generate_rlk = FALSE,
-                    session_id = session_id))
-      if (is.list(tk_result)) tk_result <- tk_result[[1]]
-      transport_pks[[server]] <- tk_result$transport_pk
-      if (is.null(crp_k2)) { crp_k2 <- tk_result$crp; gkg_k2 <- tk_result$gkg_seed }
+      r <- tk_results[[server]]
+      if (is.list(r) && !is.null(r$transport_pk)) transport_pks[[server]] <- r$transport_pk
+      else transport_pks[[server]] <- r[[1]]$transport_pk
     }
+
+    # Distribute transport PKs to all servers
+    pk_sorted <- transport_pks[sort(names(transport_pks))]
     for (server in server_list) {
       conn_idx <- which(server_names == server)
-      pk_sorted <- transport_pks[sort(names(transport_pks))]
       .dsAgg(conns = datasources[conn_idx],
         expr = call("mheStoreTransportKeysDS",
                     transport_keys = pk_sorted,
                     session_id = session_id))
     }
+
     if (verbose) message(sprintf("  [Key Setup] Transport keys exchanged (%d servers, %.1fs)",
                                    length(server_list), proc.time()[[3]] - t0_key))
 
