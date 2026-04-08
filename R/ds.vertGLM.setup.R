@@ -428,13 +428,16 @@
       # Phase B: Process (mheStoreCPKDS) in parallel
       other_servers <- server_list[-1]
       if (verbose) message("  [Key Setup] Distributing CPK + Galois keys to ", length(other_servers), " servers...")
-      # Send keys to each server (bundled Galois keys reduce 12 sends to 1)
-      gk_bundle <- if (!is.null(galois_keys)) paste(galois_keys, collapse = ",") else NULL
+      # Send keys to each server individually (bundling fails: exceeds parser limit)
       for (server in other_servers) {
         srv_conn <- which(server_names == server)
         .sendBlob(cpk, "cpk", srv_conn)
-        if (!is.null(gk_bundle)) .sendBlob(gk_bundle, "gk_bundle", srv_conn)
-        if (!is.null(relin_key) && nzchar(relin_key)) .sendBlob(relin_key, "rk", srv_conn)
+        if (!is.null(galois_keys)) {
+          for (gk_i in seq_along(galois_keys))
+            .sendBlob(galois_keys[gk_i], paste0("gk_", gk_i - 1), srv_conn)
+        }
+        if (!is.null(relin_key) && nzchar(relin_key))
+          .sendBlob(relin_key, "rk", srv_conn)
       }
       # Parallel: all servers process their blobs simultaneously
       DSI::datashield.aggregate(
