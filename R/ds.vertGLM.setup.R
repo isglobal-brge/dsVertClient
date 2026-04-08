@@ -296,19 +296,15 @@
       }
 
       # Send CRP, GKG seed, and party_id to all non-party0 servers
-      # Uses batch transfer (1 call per server instead of 3)
       other_servers <- server_list[-1]
       other_conn_idxs <- integer(length(other_servers))
       for (i in seq_along(other_servers)) {
         server <- other_servers[i]
         ci <- which(server_names == server)
         other_conn_idxs[i] <- ci
-        batch <- jsonlite::toJSON(list(crp = crp, gkg_seed = gkg_seed,
-                                        party_id = as.character(i)),
-                                   auto_unbox = TRUE)
-        .dsAgg(conns = datasources[ci],
-          expr = call("mheStoreBlobBatchDS", batch_json = as.character(batch),
-                      session_id = session_id))
+        .sendBlob(crp, "crp", ci)
+        .sendBlob(gkg_seed, "gkg_seed", ci)
+        .sendBlob(as.character(i), "party_id", ci)
       }
 
       # Launch mheInitDS on all non-party0 servers in parallel
@@ -432,14 +428,13 @@
       # Phase B: Process (mheStoreCPKDS) in parallel
       other_servers <- server_list[-1]
       if (verbose) message("  [Key Setup] Distributing CPK + Galois keys to ", length(other_servers), " servers...")
-      # Bundle ALL keys into ONE mega-blob: cpk||gk_0|gk_1|...|gk_N||rk
-      # Reduces ~14 sends per server to 1 send
-      gk_part <- if (!is.null(galois_keys)) paste(galois_keys, collapse = "|") else ""
-      rk_part <- if (!is.null(relin_key) && nzchar(relin_key)) relin_key else ""
-      mega_blob <- paste(cpk, gk_part, rk_part, sep = "||")
+      # Send keys to each server (bundled Galois keys reduce 12 sends to 1)
+      gk_bundle <- if (!is.null(galois_keys)) paste(galois_keys, collapse = ",") else NULL
       for (server in other_servers) {
         srv_conn <- which(server_names == server)
-        .sendBlob(mega_blob, "key_bundle", srv_conn)
+        .sendBlob(cpk, "cpk", srv_conn)
+        if (!is.null(gk_bundle)) .sendBlob(gk_bundle, "gk_bundle", srv_conn)
+        if (!is.null(relin_key) && nzchar(relin_key)) .sendBlob(relin_key, "rk", srv_conn)
       }
       # Parallel: all servers process their blobs simultaneously
       DSI::datashield.aggregate(
