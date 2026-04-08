@@ -568,28 +568,26 @@
     ct_y <- enc_result$encrypted_y
     if (verbose) message(sprintf("  [Encrypt] y encrypted on %s (%d chars)",
                                    y_server, nchar(ct_y)))
-    for (server in non_label_servers) {
-      conn_idx <- which(server_names == server)
-      n_chunks_sent <- .dsvert_adaptive_send(ct_y, function(chunk_str, chunk_idx, n_chunks) {
-        .dsAgg(
-          conns = datasources[conn_idx],
-          expr = call("mheStoreEncChunkDS",
-                      col_index = 1L,
-                      chunk_index = chunk_idx,
-                      chunk = chunk_str,
-                      session_id = session_id)
-        )
-      })
-      .dsAgg(
-        conns = datasources[conn_idx],
-        expr = call("mheAssembleEncColumnDS",
-                    col_index = 1L, n_chunks = as.integer(n_chunks_sent),
+    # Send ct_y chunks to ALL non-label servers in parallel
+    n_chunks_sent <- .dsvert_adaptive_send(ct_y, function(chunk_str, chunk_idx, n_chunks) {
+      DSI::datashield.aggregate(
+        conns = datasources[non_label_servers],
+        expr = call("mheStoreEncChunkDS",
+                    col_index = 1L,
+                    chunk_index = chunk_idx,
+                    chunk = chunk_str,
                     session_id = session_id)
       )
+    })
+    DSI::datashield.aggregate(
+      conns = datasources[non_label_servers],
+      expr = call("mheAssembleEncColumnDS",
+                  col_index = 1L, n_chunks = as.integer(n_chunks_sent),
+                  session_id = session_id)
+      )
       if (verbose)
-        message(sprintf("  [Encrypt] ct(y) -> %s (%d chunks, %.1fs)",
-                        server, n_chunks_sent, proc.time()[[3]] - t0_enc))
-    }
+        message(sprintf("  [Encrypt] ct(y) -> %d servers (%d chunks each, %.1fs)",
+                        length(non_label_servers), n_chunks_sent, proc.time()[[3]] - t0_enc))
   }
 
   # =========================================================================
