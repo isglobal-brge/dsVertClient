@@ -339,8 +339,60 @@ NULL
   if (!converged && verbose)
     warning(sprintf("Did not converge after %d iterations (diff = %.2e)", max_iter, max_diff))
 
+  # === Secure deviance: Σ(mu-y)² via Beaver dot-product ===
+  if (verbose) message("  [Deviance] Secure Beaver Σr²...")
+
+  # Prepare: store residual as x_full (n×1) on both parties
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    .dsAgg(datasources[ci], call("glmRing63PrepDevianceDS", session_id = session_id))
+  }
+
+  # Generate deviance triples on dealer (n×1)
+  dev_t <- .dsAgg(datasources[dealer_conn],
+    call("glmRing63GenGradTriplesDS",
+         dcf0_pk = transport_pks[[coordinator]],
+         dcf1_pk = transport_pks[[nl]],
+         n = as.integer(n_obs), p = 1L,
+         session_id = session_id))
+  if (is.list(dev_t)) dev_t <- dev_t[[1]]
+  .sendBlob(dev_t$grad_blob_0, "k2_grad_triple_fp", coordinator_conn)
+  .sendBlob(dev_t$grad_blob_1, "k2_grad_triple_fp", nl_conn)
+
+  # Beaver R1/R2 for dot-product
+  dev_r1 <- list()
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    peer <- setdiff(server_list, server)
+    .dsAgg(datasources[ci], call("k2StoreGradTripleDS", session_id = session_id))
+    r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+      peer_pk = transport_pks[[peer]], session_id = session_id))
+    if (is.list(r) && length(r) == 1) r <- r[[1]]
+    dev_r1[[server]] <- r
+  }
+  .sendBlob(dev_r1[[coordinator]]$encrypted_r1, "k2_grad_peer_r1", nl_conn)
+  .sendBlob(dev_r1[[nl]]$encrypted_r1, "k2_grad_peer_r1", coordinator_conn)
+
+  dev_r2 <- list()
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == coordinator)
+    r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+      party_id = if(is_coord) 0L else 1L, session_id = session_id))
+    if (is.list(r) && length(r) == 1) r <- r[[1]]
+    dev_r2[[server]] <- r
+  }
+
+  dev_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+    share_a = dev_r2[[coordinator]]$gradient_fp,
+    share_b = dev_r2[[nl]]$gradient_fp,
+    frac_bits = frac_bits))
+  k2_deviance <- dev_agg$values[1]
+  if (verbose) message(sprintf("  [Deviance] Secure RSS = %.4f", k2_deviance))
+
   betas <- list()
   betas[[coordinator]] <- beta[1:p_coord]
   betas[[nl]] <- beta[(p_coord+1):p_total]
-  list(betas=betas, intercept=intercept, converged=converged, iterations=final_iter, max_diff=max_diff)
+  list(betas=betas, intercept=intercept, converged=converged,
+       iterations=final_iter, max_diff=max_diff, deviance=k2_deviance)
 }
