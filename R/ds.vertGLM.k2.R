@@ -341,23 +341,55 @@ NULL
   if (!converged && verbose)
     warning(sprintf("Did not converge after %d iterations (diff = %.2e)", max_iter, max_diff))
 
-  # === Standard errors from L-BFGS inverse Hessian (client-side, zero disclosure) ===
-  inv_hessian <- NULL
-  if (length(s_hist) > 0) {
-    p_plus1 <- length(c(intercept, beta))
-    gamma <- sum(s_hist[[length(s_hist)]] * y_hist[[length(s_hist)]]) /
-             sum(y_hist[[length(s_hist)]]^2)
-    if (!is.finite(gamma) || gamma <= 0) gamma <- 1.0
-    H <- gamma * diag(p_plus1)
-    for (i in seq_along(s_hist)) {
-      s <- s_hist[[i]]; y <- y_hist[[i]]
-      rho <- 1 / sum(y * s)
-      if (!is.finite(rho)) next
-      V <- diag(p_plus1) - rho * outer(y, s)
-      H <- t(V) %*% H %*% V + rho * outer(s, s)
+  # === Standard errors via finite-difference Hessian (K=2) ===
+  if (verbose) message("  [SE] Computing Hessian (forward differences)...")
+  p_plus1 <- p_total + 1
+  delta_se <- 0.01
+  hessian_k2 <- matrix(0, p_plus1, p_plus1)
+  theta_conv <- c(intercept, beta)
+  grad_conv <- full_grad
+
+  for (jj in seq_len(p_plus1)) {
+    th_p <- theta_conv; th_p[jj] <- th_p[jj] + delta_se
+    int_p <- th_p[1]; bet_p <- th_p[-1]
+    for (server in server_list) {
+      ci <- which(server_names == server); is_coord <- (server == coordinator)
+      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+        beta_coord = bet_p[1:p_coord], beta_nl = bet_p[(p_coord+1):p_total],
+        intercept = if (is_coord) int_p else 0.0,
+        is_coordinator = is_coord, session_id = session_id))
     }
-    inv_hessian <- H
+    if (is_gaussian) {
+      for (server in server_list) .dsAgg(datasources[which(server_names==server)],
+        call("k2IdentityLinkDS", session_id=session_id))
+    } else {
+      st <- .dsAgg(datasources[dealer_conn], call("glmRing63GenSplineTriplesDS",
+        dcf0_pk=transport_pks[[coordinator]], dcf1_pk=transport_pks[[nl]],
+        n=as.integer(n_obs), frac_bits=frac_bits, session_id=session_id))
+      if(is.list(st)) st<-st[[1]]
+      .sendBlob(st$spline_blob_0,"k2_spline_triples",coordinator_conn)
+      .sendBlob(st$spline_blob_1,"k2_spline_triples",nl_conn)
+      for(ph in 1:4){pr<-list(); for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(paste0("k2WideSplinePhase",ph,"DS"),party_id=if(is_coord)0L else 1L,family=family,num_intervals=num_intervals,frac_bits=frac_bits,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];pr[[server]]<-r};if(ph==1){.sendBlob(pr[[coordinator]]$dcf_masked,"k2_peer_dcf_masked",nl_conn);.sendBlob(pr[[nl]]$dcf_masked,"k2_peer_dcf_masked",coordinator_conn)}else if(ph==2){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMheTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[server]]$and_xma,and_ymb=pr[[server]]$and_ymb,had1_xma=pr[[server]]$had1_xma,had1_ymb=pr[[server]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_beaver_r1",peer_ci)}}else if(ph==3){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMheTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[server]]$had2_xma,had2_ymb=pr[[server]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_had2_r1",peer_ci)}}}
+    }
+    gt <- .dsAgg(datasources[dealer_conn], call("glmRing63GenGradTriplesDS",
+      dcf0_pk=transport_pks[[coordinator]], dcf1_pk=transport_pks[[nl]],
+      n=as.integer(n_obs), p=as.integer(p_total), session_id=session_id))
+    if(is.list(gt)) gt<-gt[[1]]
+    .sendBlob(gt$grad_blob_0,"k2_grad_triple_fp",coordinator_conn)
+    .sendBlob(gt$grad_blob_1,"k2_grad_triple_fp",nl_conn)
+    r1p<-list(); for(server in server_list){ci<-which(server_names==server);peer<-setdiff(server_list,server);.dsAgg(datasources[ci],call("k2StoreGradTripleDS",session_id=session_id));r<-.dsAgg(datasources[ci],call("k2GradientR1DS",peer_pk=transport_pks[[peer]],session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r1p[[server]]<-r}
+    .sendBlob(r1p[[coordinator]]$encrypted_r1,"k2_grad_peer_r1",nl_conn)
+    .sendBlob(r1p[[nl]]$encrypted_r1,"k2_grad_peer_r1",coordinator_conn)
+    r2p<-list(); for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call("k2GradientR2DS",party_id=if(is_coord)0L else 1L,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r2p[[server]]<-r}
+    ag<-dsVert:::.callMheTool("k2-ring63-aggregate",list(share_a=r2p[[coordinator]]$gradient_fp,share_b=r2p[[nl]]$gradient_fp,frac_bits=frac_bits))
+    ar<-dsVert:::.callMheTool("k2-ring63-aggregate",list(share_a=r1p[[coordinator]]$sum_residual_fp,share_b=r1p[[nl]]$sum_residual_fp,frac_bits=frac_bits))
+    gp<-c(ar$values[1]/n_obs,ag$values/n_obs)+lambda*th_p
+    hessian_k2[,jj] <- (gp - grad_conv) / delta_se
+    if(verbose) message(sprintf("    [SE] Column %d/%d",jj,p_plus1))
   }
+  hessian_k2 <- (hessian_k2 + t(hessian_k2)) / 2
+  inv_hessian <- list()
+  attr(inv_hessian, "raw_hessian") <- hessian_k2
 
   # === Secure deviance: Σ(mu-y)² via Beaver dot-product ===
   if (verbose) message("  [Deviance] Secure Beaver Σr²...")
