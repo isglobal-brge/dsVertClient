@@ -465,15 +465,20 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       if (verbose) message(sprintf("\n[Phase 5] Secure deviance (Beaver): %.4f", k3_result$deviance))
     }
   } else if (use_k2_beaver) {
-    # K=2: deviance skipped (old path revealed individual η to coordinator)
-    # Future: secure Beaver deviance computation
-    if (verbose) message("\n[Phase 5] Deviance: skipped (secure computation pending)")
+    # K=2: secure deviance already computed in loop
+    if (!is.null(loop_result$deviance)) {
+      if (verbose) message(sprintf("\n[Phase 5] Secure deviance (K=2 Beaver): %.4f", loop_result$deviance))
+    }
   }
 
-  # Deviance: use secure result from Ring63 loop if available, otherwise NA
+  # Deviance: from secure Beaver Σr² (available in both K=2 and K≥3)
   deviance <- NA; null_deviance <- NA
   if (use_secure_agg && exists("k3_result") && !is.null(k3_result$deviance)) {
     deviance <- k3_result$deviance
+    null_deviance <- n_obs
+    if (!is.null(y_sd)) null_deviance <- n_obs * y_sd^2
+  } else if (use_k2_beaver && exists("loop_result") && !is.null(loop_result$deviance)) {
+    deviance <- loop_result$deviance
     null_deviance <- n_obs
     if (!is.null(y_sd)) null_deviance <- n_obs * y_sd^2
   }

@@ -480,14 +480,19 @@ NULL
   }
 
   # ===========================================================================
-  # Secure deviance: Σ(mu-y)² via Beaver matvec with p=1
-  # Uses existing gradient infrastructure: treat residual as both "X" and "r"
-  # → "gradient" of 1-column r matrix × r = Σ r_i² (1 scalar)
-  # No individual η, μ, or y-μ revealed.
+  # Secure deviance: Σ(mu-y)² via Beaver dot-product (1 scalar)
+  # Reuses existing k2GradientR1DS/R2DS with X = residual (n×1 "matrix").
+  # Beaver computes X^T × r = r^T × r = Σ r_i². Zero individual disclosure.
   # ===========================================================================
   if (verbose) message("  [Deviance] Secure Beaver Σr²...")
 
-  # Generate Beaver triples for the deviance dot-product (n×1 "matrix")
+  # 1. Prepare: store residual as x_full (n×1) on both DCF parties
+  for (i in seq_along(dcf_parties)) {
+    ci <- dcf_conns[i]
+    .dsAgg(datasources[ci], call("glmRing63PrepDevianceDS", session_id = session_id))
+  }
+
+  # 2. Generate deviance Beaver triples (n×1) on dealer
   dev_t <- .dsAgg(datasources[dealer_conn],
     call("glmRing63GenGradTriplesDS",
          dcf0_pk = transport_pks[[dcf_parties[1]]],
@@ -498,27 +503,37 @@ NULL
   .sendBlob(dev_t$grad_blob_0, "k2_grad_triple_fp", dcf_conns[1])
   .sendBlob(dev_t$grad_blob_1, "k2_grad_triple_fp", dcf_conns[2])
 
-  # Use the EXISTING k2GradientR1DS/R2DS to compute Σ r² as a "gradient" of a 1-col matrix.
-  # The trick: the residual r = mu - y is already in `secure_mu_share` and `k2_y_share_fp`.
-  # k2-full-iter-r3 reads x_share_fp (we need this to be = r_share), mu_share_fp, y_share_fp.
-  # We need x_full_fp = r_share (as n×1 matrix) for the Beaver matvec.
-  # But x_full_fp was overwritten each iteration. Instead, use a dedicated deviance function.
+  # 3. Reuse existing Beaver R1/R2 (now computing r^T × r = Σ r²)
+  dev_r1 <- list()
+  for (i in seq_along(dcf_parties)) {
+    ci <- dcf_conns[i]
+    peer <- dcf_parties[3 - i]
+    .dsAgg(datasources[ci], call("k2StoreGradTripleDS", session_id = session_id))
+    r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+      peer_pk = transport_pks[[peer]], session_id = session_id))
+    if (is.list(r) && length(r) == 1) r <- r[[1]]
+    dev_r1[[i]] <- r
+  }
+  .sendBlob(dev_r1[[1]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[2])
+  .sendBlob(dev_r1[[2]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[1])
 
-  # Simpler: just reuse sum_residual from last gradient iteration
-  # sum_residual = Σ(mu-y) = sum of residuals, already returned as a scalar
-  # For deviance we need Σ(mu-y)² which IS more than sum_residual
-  # But we can approximate: the gradient already gave us Σ x_j (mu-y) for each feature
-  # For Gaussian: deviance = ||y - Xβ||² which we can compute from the final coefficients
+  dev_r2 <- list()
+  for (i in seq_along(dcf_parties)) {
+    ci <- dcf_conns[i]
+    r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+      party_id = as.integer(i - 1), session_id = session_id))
+    if (is.list(r) && length(r) == 1) r <- r[[1]]
+    dev_r2[[i]] <- r
+  }
 
-  # Actually, for now: compute deviance from the gradient output at β_final.
-  # At convergence: gradient ≈ 0, so X^T(mu-y) ≈ 0.
-  # deviance = Σ(y-mu)² = Σ y² - 2·Σ y·mu + Σ mu²
-  # We know: Σ(mu-y) from sum_residual. But not Σ(mu-y)².
+  # 4. Aggregate: Σ r² (1 scalar)
+  dev_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+    share_a = dev_r2[[1]]$gradient_fp,
+    share_b = dev_r2[[2]]$gradient_fp,
+    frac_bits = frac_bits))
+  secure_deviance <- dev_agg$values[1]
 
-  # The simplest correct approach: skip deviance for now, return NA.
-  # The secure Beaver deviance requires more infrastructure (storing r as x_full for a new matvec).
-  secure_deviance <- NA
-  if (verbose) message("  [Deviance] Skipped (secure computation pending)")
+  if (verbose) message(sprintf("  [Deviance] Secure RSS = %.4f", secure_deviance))
 
   result <- list(betas = betas_out, converged = converged, final_iter = final_iter,
                  deviance = secure_deviance)
