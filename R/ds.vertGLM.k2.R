@@ -99,124 +99,26 @@ NULL
   if (verbose) message(sprintf("  [Input Sharing] Complete: p_coord=%d, p_nl=%d (%.1fs)",
                                  p_coord, p_nl, proc.time()[[3]] - t0_share))
 
-  # === GAUSSIAN: iterative L-BFGS with identity link (no one-shot X^T X disclosure) ===
-  if (FALSE && is_gaussian) {  # DISABLED: one-shot discloses X^T X sufficient statistics
-    t0_oneshot <- proc.time()[[3]]
-    if (verbose) message("  [One-Shot] Initializing X_full via zero-beta eta computation...")
-    # Need one eta computation to populate k2_x_full_fp on servers
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
-        beta_coord = rep(0, p_coord), beta_nl = rep(0, p_nl),
-        intercept = 0.0, is_coordinator = is_coord, session_id = session_id))
-    }
-
-    if (verbose) message(sprintf("  [One-Shot] Computing X^T X and X^T y via Beaver (%d triples)...",
-                                   (p_total * p_total + p_total) * n_obs))
-    total_pairs <- as.integer((p_total * p_total + p_total) * n_obs)
-    oneshot_t <- dsVert:::.callMheTool("k2-gen-beaver-triples",
-      list(n = total_pairs, frac_bits = frac_bits))
-
-    # Send triples to servers
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-      party_idx <- if (is_coord) "party0" else "party1"
-      td <- list(a=oneshot_t[[paste0(party_idx,"_u")]],
-                 b=oneshot_t[[paste0(party_idx,"_v")]],
-                 c=oneshot_t[[paste0(party_idx,"_w")]])
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-        data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td,auto_unbox=TRUE))),
-        recipient_pk=pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_oneshot_triples", ci)
-    }
-
-    # Phase 1: local X^T X + Beaver R1
-    ph1 <- list()
-    for (server in server_list) {
-      ci <- which(server_names == server); is_coord <- (server == coordinator)
-      r <- .dsAgg(datasources[ci], call("k2GaussianOneshotPhase1DS",
-        party_id=if(is_coord) 0L else 1L, p_total=as.integer(p_total),
-        frac_bits=frac_bits, session_id=session_id))
-      if (is.list(r) && length(r)==1) r <- r[[1]]; ph1[[server]] <- r
-    }
-
-    # Relay Beaver R1
-    for (server in server_list) {
-      peer <- setdiff(server_list,server); peer_ci <- which(server_names==peer)
-      pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-        data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(
-          list(xma=ph1[[server]]$xma, ymb=ph1[[server]]$ymb),auto_unbox=TRUE))),
-        recipient_pk=pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_oneshot_peer_r1", peer_ci)
-    }
-
-    # Phase 2: Beaver close → cross-products
-    ph2 <- list()
-    for (server in server_list) {
-      ci <- which(server_names == server); is_coord <- (server == coordinator)
-      r <- .dsAgg(datasources[ci], call("k2GaussianOneshotPhase2DS",
-        party_id=if(is_coord) 0L else 1L, p_total=as.integer(p_total),
-        frac_bits=frac_bits, session_id=session_id))
-      if (is.list(r) && length(r)==1) r <- r[[1]]; ph2[[server]] <- r
-    }
-
-    # Reconstruct X^T X and X^T y on client
-    # The Beaver product already gives the FULL product (not just cross terms)
-    # z = (X_share_0 + X_share_1)[:,j] * (X_share_0 + X_share_1)[:,k]
-    # So cross_xtx shares, when summed, give the full X^T X. No local terms needed.
-    xtx_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
-      share_a = ph2[[server_list[1]]]$cross_xtx_fp,
-      share_b = ph2[[server_list[2]]]$cross_xtx_fp,
-      frac_bits = frac_bits))
-    XtX <- matrix(xtx_agg$values, p_total, p_total, byrow = TRUE)
-
-    xty_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
-      share_a = ph2[[server_list[1]]]$cross_xty_fp,
-      share_b = ph2[[server_list[2]]]$cross_xty_fp,
-      frac_bits = frac_bits))
-    XtY <- xty_agg$values
-
-    # Solve: beta = (X^T X / n + lambda*I)^{-1} * (X^T y / n)
-    XtX_reg <- XtX / n_obs + lambda * diag(p_total)
-    XtY_norm <- XtY / n_obs
-    beta <- as.numeric(solve(XtX_reg, XtY_norm))
-    intercept <- 0.0  # standardized features have zero mean → intercept ≈ 0
-
-    if (verbose) {
-      message(sprintf("  [One-Shot] X^T X: %dx%d, cond=%.1e (%.1fs)",
-                       p_total, p_total, kappa(XtX_reg), proc.time()[[3]] - t0_oneshot))
-      message(sprintf("  [One-Shot] ||beta||=%.4f, range=[%.4f, %.4f]",
-                       sqrt(sum(beta^2)), min(beta), max(beta)))
-    }
-
-    betas <- list()
-    betas[[coordinator]] <- beta[1:p_coord]
-    betas[[nl]] <- beta[(p_coord+1):p_total]
-    return(list(betas=betas, intercept=intercept, converged=TRUE, iterations=0L, max_diff=0.0))
-  }
-
-  # === PRE-GENERATE DCF KEYS (only for binomial/poisson) ===
+  # === PRE-GENERATE DCF KEYS (server-side, not client) ===
+  # Non-label server acts as dealer → client never sees key values.
+  dealer <- nl; dealer_conn <- nl_conn
   if (!is_gaussian) {
     t0_dcf <- proc.time()[[3]]
-    if (verbose) message(sprintf("  [DCF] Pre-generating keys (n=%d, %d intervals)...", n_obs, num_intervals))
-    dcf <- dsVert:::.callMheTool("k2-dcf-gen-batch", list(
-      family = family, n = as.integer(n_obs),
-      frac_bits = frac_bits, num_intervals = num_intervals))
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-        data = if(is_coord) dcf$party0_keys else dcf$party1_keys,
-        recipient_pk = pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_dcf_keys_persistent", ci)
-      .dsAgg(datasources[ci], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
-    }
-    if (verbose) message(sprintf("  [DCF] Keys distributed to both servers (%.1fs)", proc.time()[[3]] - t0_dcf))
+    if (verbose) message(sprintf("  [DCF] Server %s generating keys (n=%d, %d intervals)...",
+                                   dealer, n_obs, num_intervals))
+    dcf_result <- .dsAgg(datasources[dealer_conn],
+      call("glmRing63GenDcfKeysDS",
+           dcf0_pk = transport_pks[[coordinator]],
+           dcf1_pk = transport_pks[[nl]],
+           family = if (family == "poisson") "poisson" else "sigmoid",
+           n = as.integer(n_obs), frac_bits = frac_bits,
+           num_intervals = num_intervals, session_id = session_id))
+    if (is.list(dcf_result)) dcf_result <- dcf_result[[1]]
+    .sendBlob(dcf_result$dcf_blob_0, "k2_dcf_keys_persistent", coordinator_conn)
+    .dsAgg(datasources[coordinator_conn], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+    .sendBlob(dcf_result$dcf_blob_1, "k2_dcf_keys_persistent", nl_conn)
+    .dsAgg(datasources[nl_conn], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+    if (verbose) message(sprintf("  [DCF] Keys distributed (%.1fs)", proc.time()[[3]] - t0_dcf))
   }
 
   beta <- rep(0, p_total)
@@ -256,25 +158,16 @@ NULL
         .dsAgg(datasources[ci], call("k2IdentityLinkDS", session_id = session_id))
       }
     } else {
-      triples <- lapply(1:3, function(i) dsVert:::.callMheTool("k2-gen-beaver-triples",
-        list(n = as.integer(n_obs), frac_bits = frac_bits)))
-      for (server in server_list) {
-        ci <- which(server_names == server)
-        is_coord <- (server == coordinator)
-        pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-        party_idx <- if (is_coord) "party0" else "party1"
-        td <- list()
-        for (op in c("and","had1","had2")) {
-          ti <- switch(op, and=1, had1=2, had2=3)
-          td[[paste0(op,"_a")]] <- triples[[ti]][[paste0(party_idx,"_u")]]
-          td[[paste0(op,"_b")]] <- triples[[ti]][[paste0(party_idx,"_v")]]
-          td[[paste0(op,"_c")]] <- triples[[ti]][[paste0(party_idx,"_w")]]
-        }
-        sealed_t <- dsVert:::.callMheTool("transport-encrypt", list(
-          data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(td, auto_unbox=TRUE))),
-          recipient_pk = pk_b64))
-        .sendBlob(.to_b64url(sealed_t$sealed), "k2_spline_triples", ci)
-      }
+      # Spline triples generated on dealer server (not client)
+      spline_t <- .dsAgg(datasources[dealer_conn],
+        call("glmRing63GenSplineTriplesDS",
+             dcf0_pk = transport_pks[[coordinator]],
+             dcf1_pk = transport_pks[[nl]],
+             n = as.integer(n_obs), frac_bits = frac_bits,
+             session_id = session_id))
+      if (is.list(spline_t)) spline_t <- spline_t[[1]]
+      .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", coordinator_conn)
+      .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", nl_conn)
 
       ph1 <- list()
       for (server in server_list) {
@@ -339,19 +232,16 @@ NULL
     }  # close else (non-Gaussian wide spline)
 
     # === Step 3: Gradient (Beaver matvec) ===
-    mvt <- dsVert:::.callMheTool("k2-gen-matvec-triples", list(
-      n = as.integer(n_obs), p = as.integer(p_total)))
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_coord <- (server == coordinator)
-      party_idx <- if (is_coord) "party0" else "party1"
-      pk_b64 <- .b64url_to_b64(transport_pks[[server]])
-      msg_json <- jsonlite::toJSON(list(a=mvt[[paste0(party_idx,"_a")]],
-        b=mvt[[paste0(party_idx,"_b")]], c=mvt[[paste0(party_idx,"_c")]]), auto_unbox=TRUE)
-      sealed <- dsVert:::.callMheTool("transport-encrypt", list(
-        data=jsonlite::base64_enc(charToRaw(msg_json)), recipient_pk=pk_b64))
-      .sendBlob(.to_b64url(sealed$sealed), "k2_grad_triple_fp", ci)
-    }
+    # Gradient triples generated on dealer server (not client)
+    grad_t <- .dsAgg(datasources[dealer_conn],
+      call("glmRing63GenGradTriplesDS",
+           dcf0_pk = transport_pks[[coordinator]],
+           dcf1_pk = transport_pks[[nl]],
+           n = as.integer(n_obs), p = as.integer(p_total),
+           session_id = session_id))
+    if (is.list(grad_t)) grad_t <- grad_t[[1]]
+    .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", coordinator_conn)
+    .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp", nl_conn)
     r1_results <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
