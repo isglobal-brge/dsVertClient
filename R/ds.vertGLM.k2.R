@@ -100,7 +100,9 @@ NULL
                                  p_coord, p_nl, proc.time()[[3]] - t0_share))
 
   # === PRE-GENERATE DCF KEYS (server-side, not client) ===
-  # Non-label server acts as dealer → client never sees key values.
+  # K=2: only 1 non-DCF server (non-label) → fixed dealer, no rotation.
+  # Security: analyst needs both servers to extract data.
+  # For K≥3: dealer rotation provides stronger guarantees.
   dealer <- nl; dealer_conn <- nl_conn
   if (!is_gaussian) {
     t0_dcf <- proc.time()[[3]]

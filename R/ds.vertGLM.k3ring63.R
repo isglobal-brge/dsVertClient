@@ -161,7 +161,11 @@ NULL
   # Step B: Pre-generate DCF keys (on NON-DCF server, not client)
   #   Skipped for Gaussian (identity link, no sigmoid/exp needed)
   # ===========================================================================
-  dealer <- non_dcf_servers[1]  # first non-DCF server acts as dealer
+  # Dealer rotation: different non-DCF server generates triples each iteration.
+  # Analyst must compromise ALL dealers + 1 DCF party to extract data.
+  # For K servers: security threshold = (K-1)/K.
+  all_dealers <- if (length(non_dcf_servers) > 0) non_dcf_servers else c(fusion_server)
+  dealer <- all_dealers[1]  # initial dealer for DCF keys
   dealer_conn <- which(server_names == dealer)
 
   if (!is_gaussian) {
@@ -207,6 +211,11 @@ NULL
     t0_iter <- proc.time()[[3]]
     beta_old <- beta
     intercept_old <- intercept
+
+    # Rotate dealer: each non-DCF server takes turns generating triples.
+    # Analyst must control ALL dealers to extract data from ALL iterations.
+    dealer <- all_dealers[((iter - 1L) %% length(all_dealers)) + 1L]
+    dealer_conn <- which(server_names == dealer)
 
     # =================================================================
     # Step 1: Compute eta shares (Ring63 FP, both DCF parties)
