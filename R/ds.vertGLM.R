@@ -490,10 +490,67 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     deviance, null_deviance, pseudo_r2))
 
   # ===========================================================================
+  # Standard Errors + P-values from L-BFGS inverse Hessian
+  # Entirely client-side — ZERO additional server calls, ZERO disclosure.
+  # The L-BFGS (s,y) history implicitly encodes the inverse Fisher matrix.
+  # ===========================================================================
+  inv_H <- NULL
+  if (use_secure_agg && exists("k3_result")) inv_H <- k3_result$inv_hessian
+  if (use_k2_beaver && exists("loop_result")) inv_H <- loop_result$inv_hessian
+
+  std_errors <- rep(NA, n_vars_total)
+  z_values <- rep(NA, n_vars_total)
+  p_values <- rep(NA, n_vars_total)
+
+  if (!is.null(inv_H)) {
+    # Hessian = X^T W X / n + λI. Fisher = X^T W X = n × (Hessian - λI).
+    # SE = sqrt(diag(Fisher^{-1})) = sqrt(diag((n × (H - λI))^{-1}))
+    H_adj <- inv_H  # already inverted from loop
+    # If we have the raw Hessian (not inverted), invert now
+    if (!is.null(attr(inv_H, "raw_hessian"))) {
+      H_raw <- attr(inv_H, "raw_hessian")
+      H_adj_raw <- H_raw - lambda * diag(nrow(H_raw))
+      fisher <- n_obs * H_adj_raw
+      inv_fisher <- tryCatch(solve(fisher), error = function(e) NULL)
+      if (!is.null(inv_fisher)) {
+        var_diag <- diag(inv_fisher)
+      } else {
+        var_diag <- rep(NA, nrow(H_raw))
+      }
+    } else {
+      var_diag <- n_obs * diag(inv_H)
+    }
+    se_raw <- sqrt(pmax(var_diag, 0))
+    std_errors <- se_raw
+    names(std_errors) <- names(all_coefs)
+    # Z-values and p-values
+    z_values <- all_coefs / std_errors
+    z_values[!is.finite(z_values)] <- NA
+    p_values <- 2 * stats::pnorm(-abs(z_values))
+    names(z_values) <- names(p_values) <- names(all_coefs)
+
+    if (verbose) {
+      message("\nCoefficients:")
+      message(sprintf("  %-15s %10s %10s %10s %10s", "", "Estimate", "Std.Error", "z value", "Pr(>|z|)"))
+      for (nm in names(all_coefs)) {
+        sig <- if (!is.na(p_values[nm]) && p_values[nm] < 0.001) "***"
+               else if (!is.na(p_values[nm]) && p_values[nm] < 0.01) "**"
+               else if (!is.na(p_values[nm]) && p_values[nm] < 0.05) "*"
+               else ""
+        message(sprintf("  %-15s %10.4f %10.4f %10.3f %10.4f %s",
+          nm, all_coefs[nm], std_errors[nm], z_values[nm], p_values[nm], sig))
+      }
+    }
+  }
+
+  # ===========================================================================
   # Assemble Result
   # ===========================================================================
   result <- list(
     coefficients = all_coefs,
+    std_errors = std_errors,
+    z_values = z_values,
+    p_values = p_values,
     iterations = final_iter,
     converged = converged,
     family = family,
