@@ -341,6 +341,24 @@ NULL
   if (!converged && verbose)
     warning(sprintf("Did not converge after %d iterations (diff = %.2e)", max_iter, max_diff))
 
+  # === Standard errors from L-BFGS inverse Hessian (client-side, zero disclosure) ===
+  inv_hessian <- NULL
+  if (length(s_hist) > 0) {
+    p_plus1 <- length(c(intercept, beta))
+    gamma <- sum(s_hist[[length(s_hist)]] * y_hist[[length(s_hist)]]) /
+             sum(y_hist[[length(s_hist)]]^2)
+    if (!is.finite(gamma) || gamma <= 0) gamma <- 1.0
+    H <- gamma * diag(p_plus1)
+    for (i in seq_along(s_hist)) {
+      s <- s_hist[[i]]; y <- y_hist[[i]]
+      rho <- 1 / sum(y * s)
+      if (!is.finite(rho)) next
+      V <- diag(p_plus1) - rho * outer(y, s)
+      H <- t(V) %*% H %*% V + rho * outer(s, s)
+    }
+    inv_hessian <- H
+  }
+
   # === Secure deviance: Σ(mu-y)² via Beaver dot-product ===
   if (verbose) message("  [Deviance] Secure Beaver Σr²...")
 
@@ -396,5 +414,6 @@ NULL
   betas[[coordinator]] <- beta[1:p_coord]
   betas[[nl]] <- beta[(p_coord+1):p_total]
   list(betas=betas, intercept=intercept, converged=converged,
-       iterations=final_iter, max_diff=max_diff, deviance=k2_deviance)
+       iterations=final_iter, max_diff=max_diff, deviance=k2_deviance,
+       inv_hessian=inv_hessian)
 }
