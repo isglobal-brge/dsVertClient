@@ -138,46 +138,24 @@
   cpk <- NULL
 
   if (use_k2_beaver && length(non_label_servers) > 0) {
-    # K=2 wide spline: generate transport keys on SERVERS via lightweight mheInitDS.
-    # This creates the X25519 keypair server-side (needed for k2ReceiveShareDS decrypt).
-    if (verbose) message("\n[Phase 0] Transport key setup (K=2 wide spline)...")
+    # K=2: transport keys only (no CKKS — same as K≥3 Ring63 path)
+    if (verbose) message("\n[Phase 0] Transport key setup (K=2)...")
     t0_key <- proc.time()[[3]]
-    crp_k2 <- NULL
-    gkg_k2 <- NULL
-    if (verbose) message("  [Key Setup] Generating X25519 keypairs on ", length(server_list), " servers...")
     for (server in server_list) {
       conn_idx <- which(server_names == server)
-      party_id <- as.integer(which(server_list == server) - 1L)
-      tk_result <- .dsAgg(
-        conns = datasources[conn_idx],
-        expr = call("mheInitDS",
-                    party_id = party_id,
-                    crp = crp_k2, gkg_seed = gkg_k2,
-                    num_obs = as.integer(n_obs),
-                    log_n = 14L, log_scale = 40L,
-                    generate_rlk = FALSE,
-                    session_id = session_id)
-      )
+      tk_result <- .dsAgg(conns = datasources[conn_idx],
+        expr = call("glmRing63TransportInitDS", session_id = session_id))
       if (is.list(tk_result)) tk_result <- tk_result[[1]]
       transport_pks[[server]] <- tk_result$transport_pk
-      if (is.null(crp_k2)) {
-        crp_k2 <- tk_result$crp
-        gkg_k2 <- tk_result$gkg_seed
-      }
     }
-    # Store transport keys on each server (for peer PK lookup in k2ShareInputDS)
-    if (verbose) message("  [Key Setup] Distributing transport public keys...")
+    pk_sorted <- transport_pks[sort(names(transport_pks))]
     for (server in server_list) {
       conn_idx <- which(server_names == server)
-      pk_sorted <- transport_pks[sort(names(transport_pks))]
-      .dsAgg(
-        conns = datasources[conn_idx],
+      .dsAgg(conns = datasources[conn_idx],
         expr = call("mheStoreTransportKeysDS",
-                    transport_keys = pk_sorted,
-                    session_id = session_id)
-      )
+                    transport_keys = pk_sorted, session_id = session_id))
     }
-    if (verbose) message(sprintf("  [Key Setup] Transport keys exchanged for %d servers (%.1fs)",
+    if (verbose) message(sprintf("  [Key Setup] Transport keys exchanged (%d servers, %.1fs)",
                                    length(server_list), proc.time()[[3]] - t0_key))
   }
 
