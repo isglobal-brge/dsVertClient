@@ -490,9 +490,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                     deviance, null_deviance, pseudo_r2))
 
   # ===========================================================================
-  # Standard Errors + P-values from L-BFGS inverse Hessian
-  # Entirely client-side — ZERO additional server calls, ZERO disclosure.
-  # The L-BFGS (s,y) history implicitly encodes the inverse Fisher matrix.
+  # Standard Errors + P-values (exact, via finite-difference Hessian)
+  # Computed in STANDARDIZED space, then destandardized via Jacobian.
   # ===========================================================================
   inv_H <- NULL
   if (use_secure_agg && exists("k3_result")) inv_H <- k3_result$inv_hessian
@@ -502,34 +501,46 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   z_values <- rep(NA, n_vars_total)
   p_values <- rep(NA, n_vars_total)
 
-  if (!is.null(inv_H)) {
-    # Hessian = X^T W X / n + λI. Fisher = X^T W X = n × (Hessian - λI).
-    # SE = sqrt(diag(Fisher^{-1})) = sqrt(diag((n × (H - λI))^{-1}))
-    H_adj <- inv_H  # already inverted from loop
-    # If we have the raw Hessian (not inverted), invert now
-    if (!is.null(attr(inv_H, "raw_hessian"))) {
-      H_raw <- attr(inv_H, "raw_hessian")
-      H_adj_raw <- H_raw - lambda * diag(nrow(H_raw))
-      fisher <- n_obs * H_adj_raw
-      inv_fisher <- tryCatch(solve(fisher), error = function(e) NULL)
-      if (!is.null(inv_fisher)) {
-        var_diag <- diag(inv_fisher)
-      } else {
-        var_diag <- rep(NA, nrow(H_raw))
-      }
-    } else {
-      var_diag <- n_obs * diag(inv_H)
-    }
-    se_raw <- sqrt(pmax(var_diag, 0))
-    std_errors <- se_raw
-    names(std_errors) <- names(all_coefs)
-    # Z-values and p-values
-    z_values <- all_coefs / std_errors
-    z_values[!is.finite(z_values)] <- NA
-    p_values <- 2 * stats::pnorm(-abs(z_values))
-    names(z_values) <- names(p_values) <- names(all_coefs)
+  if (!is.null(inv_H) && !is.null(attr(inv_H, "raw_hessian"))) {
+    H_raw <- attr(inv_H, "raw_hessian")
+    # Fisher = n × (Hessian - λI) where Hessian = X_std^T W X_std / n + λI
+    H_adj <- H_raw - lambda * diag(nrow(H_raw))
+    fisher_std <- n_obs * H_adj
+    cov_std <- tryCatch(solve(fisher_std), error = function(e) NULL)
 
-    if (verbose) {
+    if (!is.null(cov_std)) {
+      # Destandardize: construct Jacobian J where θ_orig = J × θ_std + const
+      p_feat <- length(all_x_sds)
+      J <- diag(p_feat + 1)  # (intercept + features)
+
+      if (standardize_y && !is.null(y_sd)) {
+        # Gaussian: β_orig_j = β_std_j × y_sd / x_sd_j
+        for (jj in seq_len(p_feat)) {
+          J[jj + 1, jj + 1] <- y_sd / all_x_sds[jj]
+          J[1, jj + 1] <- -y_sd * all_x_means[jj] / all_x_sds[jj]
+        }
+        J[1, 1] <- y_sd
+      } else {
+        # Binomial/Poisson: β_orig_j = β_std_j / x_sd_j
+        for (jj in seq_len(p_feat)) {
+          J[jj + 1, jj + 1] <- 1.0 / all_x_sds[jj]
+          J[1, jj + 1] <- -all_x_means[jj] / all_x_sds[jj]
+        }
+      }
+
+      # Transform covariance to original space
+      cov_orig <- J %*% cov_std %*% t(J)
+      se_orig <- sqrt(pmax(diag(cov_orig), 0))
+      std_errors <- se_orig
+      names(std_errors) <- names(all_coefs)
+
+      z_values <- all_coefs / std_errors
+      z_values[!is.finite(z_values)] <- NA
+      p_values <- 2 * stats::pnorm(-abs(z_values))
+      names(z_values) <- names(p_values) <- names(all_coefs)
+    }
+
+    if (verbose && any(!is.na(std_errors))) {
       message("\nCoefficients:")
       message(sprintf("  %-15s %10s %10s %10s %10s", "", "Estimate", "Std.Error", "z value", "Pr(>|z|)"))
       for (nm in names(all_coefs)) {
@@ -537,7 +548,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                else if (!is.na(p_values[nm]) && p_values[nm] < 0.01) "**"
                else if (!is.na(p_values[nm]) && p_values[nm] < 0.05) "*"
                else ""
-        message(sprintf("  %-15s %10.4f %10.4f %10.3f %10.4f %s",
+        message(sprintf("  %-15s %10.4f %10.4f %10.3f %10.6f %s",
           nm, all_coefs[nm], std_errors[nm], z_values[nm], p_values[nm], sig))
       }
     }

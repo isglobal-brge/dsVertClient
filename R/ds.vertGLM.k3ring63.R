@@ -494,16 +494,16 @@ NULL
   # Each gives one column of the Hessian. Exact, uses existing Beaver.
   # Disclosure: only aggregate gradients (same as iterations). SAFE.
   # ===========================================================================
-  if (verbose) message("  [SE] Computing exact Hessian via finite differences...")
-  p_plus1 <- p_total + 1  # intercept + features
-  delta <- 1e-4  # perturbation size
+  if (verbose) message("  [SE] Computing exact Hessian (central differences)...")
+  p_plus1 <- p_total + 1
+  delta <- 0.01  # larger delta for better signal vs Ring63 noise
   hessian <- matrix(0, p_plus1, p_plus1)
-  grad_base <- full_grad  # gradient at convergence (≈ 0)
 
   for (j in seq_len(p_plus1)) {
-    # Perturb theta[j]
+    # Central difference: H_j = (g(θ+δe_j) - g(θ-δe_j)) / (2δ)
+    # More accurate: O(δ²) error instead of O(δ)
     theta_pert <- theta
-    theta_pert[j] <- theta_pert[j] + delta
+    theta_pert[j] <- theta[j] + delta
     int_pert <- theta_pert[1]
     beta_pert <- theta_pert[-1]
 
@@ -632,9 +632,86 @@ NULL
       frac_bits = frac_bits))
     grad_pert_full <- c(agg_res$values[1] / n_obs, gradient_pert / n_obs) + lambda * theta_pert
 
-    # Finite difference: j-th column of Hessian
-    hessian[, j] <- (grad_pert_full - grad_base) / delta
-    if (verbose && j <= 3) message(sprintf("    [SE] Column %d/%d", j, p_plus1))
+    grad_forward <- grad_pert_full
+
+    # Backward perturbation: θ - δe_j (same code, negative delta)
+    theta_back <- theta
+    theta_back[j] <- theta[j] - delta
+    int_back <- theta_back[1]; beta_back <- theta_back[-1]
+    dealer_b <- all_dealers[((final_iter + p_plus1 + j - 1L) %% length(all_dealers)) + 1L]
+    dealer_conn_b <- which(server_names == dealer_b)
+    for (di in seq_along(dcf_parties)) {
+      ci <- dcf_conns[di]; srv <- dcf_parties[di]; is_coord <- (srv == coordinator)
+      if (is_coord) {
+        bc <- beta_back[beta_map[[coordinator]]]; bnl <- c(beta_back[beta_map[[dcf_parties[1]]]])
+        for (ns in non_dcf_servers) bnl <- c(bnl, beta_back[beta_map[[ns]]])
+      } else {
+        bc <- beta_back[beta_map[[coordinator]]]; bnl <- c()
+        for (ns in non_dcf_servers) bnl <- c(bnl, beta_back[beta_map[[ns]]])
+        bnl <- c(bnl, beta_back[beta_map[[srv]]])
+      }
+      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS", beta_coord=bc, beta_nl=bnl,
+        intercept=if(is_coord) int_back else 0, is_coordinator=is_coord, session_id=session_id))
+      if (!is_coord && p_extras > 0)
+        .dsAgg(datasources[ci], call("glmRing63ReorderXFullDS",
+          p_coord=as.integer(p_coord), p_fusion=as.integer(p_fusion),
+          p_extras=as.integer(p_extras), session_id=session_id))
+    }
+    if (is_gaussian) {
+      for (di in seq_along(dcf_parties))
+        .dsAgg(datasources[dcf_conns[di]], call("k2IdentityLinkDS", session_id=session_id))
+    } else {
+      st2 <- .dsAgg(datasources[dealer_conn_b], call("glmRing63GenSplineTriplesDS",
+        dcf0_pk=transport_pks[[dcf_parties[1]]], dcf1_pk=transport_pks[[dcf_parties[2]]],
+        n=as.integer(n_obs), frac_bits=frac_bits, session_id=session_id))
+      if (is.list(st2)) st2 <- st2[[1]]
+      .sendBlob(st2$spline_blob_0, "k2_spline_triples", dcf_conns[1])
+      .sendBlob(st2$spline_blob_1, "k2_spline_triples", dcf_conns[2])
+      for (ph in 1:4) {
+        pr <- list()
+        for (di in 1:2) {
+          r <- .dsAgg(datasources[dcf_conns[di]], call(paste0("k2WideSplinePhase",ph,"DS"),
+            party_id=as.integer(di-1), family=family, num_intervals=num_intervals,
+            frac_bits=frac_bits, session_id=session_id))
+          if (is.list(r)&&length(r)==1) r<-r[[1]]; pr[[di]]<-r
+        }
+        if (ph==1) { .sendBlob(pr[[1]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[2]); .sendBlob(pr[[2]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[1]) }
+        else if (ph==2) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMheTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[di]]$and_xma,and_ymb=pr[[di]]$and_ymb,had1_xma=pr[[di]]$had1_xma,had1_ymb=pr[[di]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_beaver_r1",dcf_conns[pi2])} }
+        else if (ph==3) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMheTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[di]]$had2_xma,had2_ymb=pr[[di]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_had2_r1",dcf_conns[pi2])} }
+      }
+    }
+    gt2 <- .dsAgg(datasources[dealer_conn_b], call("glmRing63GenGradTriplesDS",
+      dcf0_pk=transport_pks[[dcf_parties[1]]], dcf1_pk=transport_pks[[dcf_parties[2]]],
+      n=as.integer(n_obs), p=as.integer(p_total), session_id=session_id))
+    if (is.list(gt2)) gt2 <- gt2[[1]]
+    .sendBlob(gt2$grad_blob_0,"k2_grad_triple_fp",dcf_conns[1])
+    .sendBlob(gt2$grad_blob_1,"k2_grad_triple_fp",dcf_conns[2])
+    br1 <- list()
+    for (di in 1:2) {
+      ci<-dcf_conns[di]; peer<-dcf_parties[3-di]
+      .dsAgg(datasources[ci], call("k2StoreGradTripleDS", session_id=session_id))
+      r<-.dsAgg(datasources[ci], call("k2GradientR1DS", peer_pk=transport_pks[[peer]], session_id=session_id))
+      if(is.list(r)&&length(r)==1) r<-r[[1]]; br1[[di]]<-r
+    }
+    .sendBlob(br1[[1]]$encrypted_r1,"k2_grad_peer_r1",dcf_conns[2])
+    .sendBlob(br1[[2]]$encrypted_r1,"k2_grad_peer_r1",dcf_conns[1])
+    br2 <- list()
+    for (di in 1:2) {
+      r<-.dsAgg(datasources[dcf_conns[di]], call("k2GradientR2DS", party_id=as.integer(di-1), session_id=session_id))
+      if(is.list(r)&&length(r)==1) r<-r[[1]]; br2[[di]]<-r
+    }
+    ba <- dsVert:::.callMheTool("k2-ring63-aggregate", list(share_a=br2[[1]]$gradient_fp, share_b=br2[[2]]$gradient_fp, frac_bits=frac_bits))
+    gp2 <- numeric(p_total)
+    gp2[beta_map[[coordinator]]] <- ba$values[1:p_coord]
+    gp2[beta_map[[fusion_server]]] <- ba$values[(p_coord+1):(p_coord+p_fusion)]
+    gii <- p_coord+p_fusion+1
+    for(ns in non_dcf_servers){pn<-length(x_vars[[ns]]);gp2[beta_map[[ns]]]<-ba$values[gii:(gii+pn-1)];gii<-gii+pn}
+    ar2 <- dsVert:::.callMheTool("k2-ring63-aggregate", list(share_a=br1[[1]]$sum_residual_fp, share_b=br1[[2]]$sum_residual_fp, frac_bits=frac_bits))
+    grad_backward <- c(ar2$values[1]/n_obs, gp2/n_obs) + lambda*theta_back
+
+    # Central difference: H_j = (g_forward - g_backward) / (2δ)
+    hessian[, j] <- (grad_forward - grad_backward) / (2 * delta)
+    if (verbose) message(sprintf("    [SE] Column %d/%d", j, p_plus1))
   }
 
   # Symmetrize (numerical noise)
