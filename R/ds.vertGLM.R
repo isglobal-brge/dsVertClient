@@ -465,83 +465,17 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       if (verbose) message(sprintf("\n[Phase 5] Secure deviance (Beaver): %.4f", k3_result$deviance))
     }
   } else if (use_k2_beaver) {
-    # HE-Link / K2-MPC deviance: one-time secure-routing deviance computation.
-    # Each server computes its final eta = X*beta on the standardized scale.
-    # The coordinator stores its own eta locally; non-label servers
-    # transport-encrypt their eta to the coordinator. This briefly reveals
-    # eta_nonlabel to the coordinator for the FINAL iteration only.
-    if (verbose) message("\n[Phase 5] Computing deviance (one-time secure routing)...")
-
-    # Coordinator: store eta_label locally
-    .dsAgg(
-      conns = datasources[coordinator_conn],
-      expr = call("glmHEPrepDevianceDS",
-                  data_name = std_data,
-                  x_vars = x_vars[[coordinator]],
-                  beta = betas[[coordinator]],
-                  coordinator_pk = NULL,
-                  session_id = session_id)
-    )
-
-    # Non-label servers: compute and transport-encrypt eta
-    eta_blob_keys_final <- character(0)
-    for (server in non_label_servers) {
-      conn_idx <- which(server_names == server)
-      prep_result <- .dsAgg(
-        conns = datasources[conn_idx],
-        expr = call("glmHEPrepDevianceDS",
-                    data_name = std_data,
-                    x_vars = x_vars[[server]],
-                    beta = betas[[server]],
-                    coordinator_pk = coordinator_pk,
-                    session_id = session_id)
-      )
-      if (is.list(prep_result)) prep_result <- prep_result[[1]]
-
-      if (!is.null(prep_result$encrypted_eta)) {
-        key <- paste0("eta_", server)
-        .sendBlob(prep_result$encrypted_eta, key, coordinator_conn)
-        eta_blob_keys_final <- c(eta_blob_keys_final, key)
-      }
-    }
-  } else {
-    # Secure Routing deviance: use stored encrypted etas from last iteration
-    # Send final encrypted etas to coordinator
-    eta_blob_keys_final <- character(0)
-    if (length(encrypted_etas) > 0) {
-      for (s in names(encrypted_etas)) {
-        blob <- encrypted_etas[[s]]
-        if (!is.null(blob) && nzchar(blob)) {
-          key <- paste0("eta_", s)
-          .sendBlob(blob, key, coordinator_conn)
-          eta_blob_keys_final <- c(eta_blob_keys_final, key)
-        }
-      }
-    }
+    # K=2: deviance skipped (old path revealed individual η to coordinator)
+    # Future: secure Beaver deviance computation
+    if (verbose) message("\n[Phase 5] Deviance: skipped (secure computation pending)")
   }
 
-  if (use_secure_agg && !is.null(k3_result$deviance)) {
-    # Secure deviance from Beaver dot-product (Σ r² = residual sum of squares)
+  # Deviance: use secure result from Ring63 loop if available, otherwise NA
+  deviance <- NA; null_deviance <- NA
+  if (use_secure_agg && exists("k3_result") && !is.null(k3_result$deviance)) {
     deviance <- k3_result$deviance
-    # Null deviance: Σ(y - mean(y))² ≈ n * var(y) for standardized data
-    null_deviance <- n_obs  # standardized y has var ≈ 1
-    if (!is.null(y_sd)) null_deviance <- n_obs * y_sd^2  # unstandardize
-  } else {
-    deviance_result <- .dsAgg(
-      conns = datasources[coordinator_conn],
-      expr = call("glmSecureDevianceDS",
-                  data_name = data_name,
-                  y_var = y_var,
-                  encrypted_eta_blobs = NULL,
-                  eta_blob_keys = if (exists("eta_blob_keys_final") && length(eta_blob_keys_final) > 0) eta_blob_keys_final else NULL,
-                  family = family,
-                  y_sd = if (!is.null(y_sd)) y_sd else NULL,
-                  y_mean = if (!is.null(y_mean)) y_mean else NULL,
-                  session_id = session_id))
-    if (is.list(deviance_result) && length(deviance_result) == 1)
-      deviance_result <- deviance_result[[1]]
-    deviance <- deviance_result$deviance
-    null_deviance <- deviance_result$null_deviance
+    null_deviance <- n_obs
+    if (!is.null(y_sd)) null_deviance <- n_obs * y_sd^2
   }
   pseudo_r2 <- 1 - (deviance / null_deviance)
   aic <- deviance + 2 * n_vars_total
