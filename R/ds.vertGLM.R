@@ -315,7 +315,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   # Unpack setup results
   transport_pks <- setup$transport_pks
-  cpk           <- setup$cpk
+  # cpk removed (no CKKS)
   x_means       <- setup$x_means
   x_sds         <- setup$x_sds
   y_mean        <- setup$y_mean
