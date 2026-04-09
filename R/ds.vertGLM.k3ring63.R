@@ -107,10 +107,9 @@ NULL
     }
   }
 
-  # Non-DCF servers: share features with BOTH DCF parties
-  # CRITICAL: Split ONCE → send each half to one DCF party.
-  # k2ShareInputDS(peer=fusion) → peer_share to fusion, own_share stays on server.
-  # Then export own_share → coordinator (the complement).
+  # Non-DCF servers: split features into 2 additive shares, one per DCF party.
+  # Each server calls k2ShareInputDS ONCE (targeting fusion), then exports the
+  # complement (own_share) to coordinator. This ensures share_0 + share_1 = X_k.
   non_dcf_servers <- setdiff(server_list, dcf_parties)
   for (server in non_dcf_servers) {
     ci <- which(server_names == server)

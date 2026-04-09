@@ -1,10 +1,10 @@
 #' @title Generalized Linear Model for Vertically Partitioned Data
-#' @description Client-side function that fits a Generalized Linear Model
-#'   across vertically partitioned data using Block Coordinate Descent with
-#'   encrypted labels. The response variable y only needs to exist on ONE
-#'   server (the "label server"). Non-label servers compute gradient updates
-#'   using y encrypted under the MHE collective public key, and only the
-#'   aggregated p_k-length gradient is revealed via threshold decryption.
+#' @description Fits a GLM across vertically partitioned data using Ring63
+#'   Beaver MPC with DCF wide spline for the link function. The response
+#'   variable y exists on one server (the "label server"). All computation
+#'   uses additive secret sharing in Ring63 fixed-point arithmetic. Only
+#'   p-dimensional aggregate gradients are revealed to the client per
+#'   iteration. No observation-level data is ever disclosed.
 #'
 #' @param data_name Character string. Name of the (aligned) data frame on
 #'   each server.
