@@ -34,7 +34,7 @@
 #'   Gaussian, and policy-dependent for K=2 binomial/Poisson (strict by
 #'   default, pragmatic if server admin enables it). Other values:
 #'   \code{"secure_agg"} (pairwise PRG masks, K>=3 only),
-#'   \code{"he_link"} (encrypted link function, K=2, requires log_n>=14 for
+#'   \code{"k2_beaver"} (K=2 Ring63 Beaver MPC) or \code{"secure_agg"} (K>=3 Ring63, requires
 #'   non-Gaussian), \code{"k2_mpc"} (Gauss-Seidel BCD-IRLS, K=2 pragmatic),
 #'   \code{"transport"} (standard secure routing).
 #' @param topology Character string. Seed derivation topology for secure
@@ -315,7 +315,6 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   # Unpack setup results
   transport_pks <- setup$transport_pks
-  # cpk removed (no CKKS)
   x_means       <- setup$x_means
   x_sds         <- setup$x_sds
   y_mean        <- setup$y_mean
@@ -326,14 +325,11 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   .sendBlob     <- setup$.sendBlob
 
   # ===========================================================================
-  # Phase 3: BCD Iterations (on standardized scale)
+  # Phase 3: Iterative Ring63 Beaver (on standardized scale)
   # ===========================================================================
   label_intercept <- !standardize_y
-
-  # Coordinator = label server (has y, runs IRLS)
   coordinator <- y_server
   coordinator_conn <- which(server_names == coordinator)
-  coordinator_pk <- if (length(transport_pks) > 0) transport_pks[[coordinator]] else NULL
 
   betas <- list()
   for (server in server_list) {
