@@ -1,22 +1,16 @@
 #' @title Principal Component Analysis for Vertically Partitioned Data
 #' @description Performs PCA on vertically partitioned data using the
-#'   privacy-preserving correlation matrix computed via Homomorphic Encryption.
+#'   privacy-preserving correlation matrix from Ring63 Beaver MPC.
 #'
-#' @param data_name Character string. Name of the (aligned) data frame on
-#'   each server. Ignored if \code{cor_result} is provided.
-#' @param variables A named list where each name corresponds to a server name
-#'   and each element is a character vector of variable names from that server.
+#' @param data_name Character string. Name of the (aligned) data frame.
 #'   Ignored if \code{cor_result} is provided.
-#' @param n_components Integer. Number of principal components to return.
-#'   Default is NULL (returns all).
+#' @param variables Named list: server -> variable names.
+#'   Ignored if \code{cor_result} is provided.
+#' @param n_components Integer. Number of components. Default NULL (all).
 #' @param cor_result An existing \code{ds.cor} object from \code{\link{ds.vertCor}}.
-#'   If provided, the MHE protocol is NOT re-run; the PCA is computed directly
-#'   from this correlation matrix. This avoids running the expensive MHE protocol
-#'   twice when you already have the correlation.
-#' @param log_n Integer. CKKS ring dimension parameter for MHE. Default is 12.
-#'   Ignored if \code{cor_result} is provided.
-#' @param log_scale Integer. CKKS precision parameter for MHE. Default is 40.
-#'   Ignored if \code{cor_result} is provided.
+#'   If provided, the correlation protocol is not re-run.
+#' @param log_n Integer. Unused (kept for API compatibility).
+#' @param log_scale Integer. Unused (kept for API compatibility).
 #' @param datasources DataSHIELD connection object or list of connections.
 #'   If NULL, uses all available connections. Ignored if \code{cor_result} is
 #'   provided.
@@ -34,7 +28,7 @@
 #'
 #' @details
 #' This function performs PCA using the correlation matrix obtained via
-#' Multiparty Homomorphic Encryption (MHE). The approach is:
+#' Ring63 Beaver MPC (via \code{\link{ds.vertCor}}). The approach is:
 #'
 #' \enumerate{
 #'   \item Compute the privacy-preserving correlation matrix using \code{\link{ds.vertCor}}
@@ -80,7 +74,7 @@
 #'
 #' pca_result <- ds.vertPCA("D_aligned", vars, n_components = 3)
 #'
-#' # Or reuse an existing correlation result (avoids running MHE again):
+#' # Or reuse an existing correlation result (avoids running protocol again):
 #' cor_result <- ds.vertCor("D_aligned", vars)
 #' pca_result <- ds.vertPCA(cor_result = cor_result, n_components = 3)
 #'
@@ -108,7 +102,7 @@ ds.vertPCA <- function(data_name = NULL, variables = NULL, n_components = NULL,
     if (!inherits(cor_result, "ds.cor")) {
       stop("cor_result must be a ds.cor object from ds.vertCor()", call. = FALSE)
     }
-    message("Using provided correlation matrix (skipping MHE protocol)...")
+    message("Using provided correlation matrix (skipping Ring63 protocol)...")
     R <- cor_result$correlation
     n_obs <- cor_result$n_obs
     var_names <- cor_result$var_names
@@ -143,7 +137,7 @@ ds.vertPCA <- function(data_name = NULL, variables = NULL, n_components = NULL,
   eigenvalues <- eigen_result$values   # variance captured by each PC
   loadings <- eigen_result$vectors     # variable contributions to each PC
 
-  # CKKS approximation noise can produce tiny negative eigenvalues (e.g. -1e-16)
+  # Ring63 FP rounding can produce tiny negative eigenvalues (e.g. -1e-16)
   # for what should be a positive semi-definite matrix. Clamp to 0 to avoid
   # reporting negative "variance explained".
   eigenvalues[eigenvalues < 0] <- 0
