@@ -9,7 +9,7 @@
 ## Quick Start
 
 ```r
-library(DSI); library(dsVertClient)
+library(DSI); library(DSOpal); library(dsVertClient)
 
 # Connect to servers
 conns <- DSI::datashield.login(logins = builder$build())
