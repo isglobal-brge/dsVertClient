@@ -20,14 +20,12 @@
 #' @param tol Numeric. Convergence tolerance on coefficient change.
 #'   Default is 1e-4.
 #' @param lambda Numeric. L2 regularization parameter. Default is 1e-4.
-#' @param log_n Integer. Unused (kept for API compatibility). Default is 12.
-#' @param log_scale Integer. Unused (kept for API compatibility). Default is 40.
+#' @param log_n Integer. Base-2 log of CKKS slot count. Adaptively bumped
+#'   when n_obs exceeds 2^(log_n-1). Default is 12.
 #' @param verbose Logical. Print progress messages. Default is TRUE.
 #' @param datasources DataSHIELD connection object or list of connections.
 #' @param eta_privacy Character. \code{"auto"} (default) selects
 #'   \code{"k2_beaver"} for K=2 or \code{"secure_agg"} for K>=3.
-#' @param topology Character. Unused (kept for API compatibility).
-#' @param reuse_session Logical. Unused (kept for API compatibility).
 #'
 #' @return A list with class "ds.glm" containing:
 #'   \itemize{
@@ -101,11 +99,9 @@
 #' @export
 ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                        family = "gaussian", max_iter = 100, tol = 1e-4,
-                       lambda = 1e-4, log_n = 12, log_scale = 40,
+                       lambda = 1e-4, log_n = 12,
                        verbose = TRUE, datasources = NULL,
-                       eta_privacy = "auto",
-                       topology = "pairwise",
-                       reuse_session = FALSE) {
+                       eta_privacy = "auto") {
   call_matched <- match.call()
 
   # ===========================================================================
@@ -126,10 +122,6 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
          call. = FALSE)
   if (!y_server %in% names(x_vars))
     stop("y_server '", y_server, "' must be in x_vars", call. = FALSE)
-
-  # Validate topology parameter
-  if (!topology %in% c("pairwise", "ring"))
-    stop("topology must be 'pairwise' or 'ring'", call. = FALSE)
 
   n_partitions_check <- length(x_vars)
   non_label_count <- n_partitions_check - 1
@@ -154,10 +146,6 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     stop("secure_agg requires >= 3 servers", call. = FALSE)
   if (use_k2_beaver && non_label_count != 1)
     stop("K=2 mode requires exactly 2 servers", call. = FALSE)
-
-  # Ring63 DCF: transport keys only
-  generate_rlk <- FALSE
-  # Ring63 for ALL families (Gaussian=identity link, others=DCF spline)
 
   # Adaptive log_n for large n: max_slots = 2^(log_n-1)
   # n ≤ 4096 → log_n=13, n ≤ 8192 → log_n=14, n ≤ 16384 → log_n=15
@@ -263,13 +251,6 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     x_vars           = x_vars,
     data_name        = data_name,
     family           = family,
-    n_obs            = n_obs,
-    log_n            = log_n,
-    log_scale        = log_scale,
-    generate_rlk     = generate_rlk,
-    use_secure_agg   = use_secure_agg,
-    use_k2_beaver    = use_k2_beaver,
-    reuse_session        = reuse_session,
     session_id       = session_id,
     verbose          = verbose
   )
@@ -359,7 +340,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
       non_label_servers = non_label_servers, transport_pks = transport_pks,
       std_data = std_data, y_var = y_var, family = family,
       betas = betas, n_obs = n_obs, lambda = lambda,
-      log_n = log_n, log_scale = log_scale, session_id = session_id,
+      session_id = session_id,
       max_iter = max_iter, tol = tol, verbose = verbose,
       label_intercept = label_intercept,
       .dsAgg = .dsAgg, .sendBlob = .sendBlob)
@@ -531,7 +512,6 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     aic = aic,
     y_server = y_server,
     eta_privacy = eta_privacy,
-    topology = topology,
     call = call_matched
   )
 

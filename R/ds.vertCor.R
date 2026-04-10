@@ -7,8 +7,8 @@
 #' @param datasources DataSHIELD connections.
 #' @return List with correlation matrix, variable names, n_obs.
 #' @export
-ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
-                       verbose = TRUE, datasources = NULL, reuse_session = FALSE) {
+ds.vertCor <- function(data_name, variables,
+                       verbose = TRUE, datasources = NULL) {
   if (!is.list(variables) || is.null(names(variables)))
     stop("variables must be a named list", call. = FALSE)
   if (length(variables) < 2)

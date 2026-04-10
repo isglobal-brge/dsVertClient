@@ -7,9 +7,7 @@
 
 .glm_mpc_setup <- function(datasources, server_names, server_list,
                            non_label_servers, y_server, y_var, x_vars,
-                           data_name, family, n_obs, log_n, log_scale,
-                           generate_rlk, use_secure_agg, use_k2_beaver,
-                           reuse_session, session_id, verbose) {
+                           data_name, family, session_id, verbose) {
 
   # =========================================================================
   # Helpers (closures capturing datasources, session_id)
