@@ -269,3 +269,20 @@ ds.vertCor <- function(data_name, variables,
     local_correlations = local_cors
   ), class = "ds.cor")
 }
+
+#' @title Print Method for ds.cor Objects
+#' @description Prints a summary of correlation results.
+#' @param x A ds.cor object
+#' @param digits Number of digits for correlation matrix. Default 3.
+#' @param ... Additional arguments (ignored)
+#' @export
+print.ds.cor <- function(x, digits = 3, ...) {
+  cat("Pearson Correlation (Privacy-Preserving)\n")
+  cat("=========================================\n\n")
+  cat("Method:", x$method, "\n")
+  cat("Observations:", x$n_obs, "\n")
+  cat("Variables:", length(x$var_names), "\n")
+  cat("Servers:", paste(x$servers, collapse = ", "), "\n\n")
+  print(round(x$correlation, digits))
+  invisible(x)
+}
