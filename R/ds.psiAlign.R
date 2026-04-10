@@ -168,15 +168,25 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     expr = call("psiInitDS", session_id = session_id)
   )
   psi_transport_pks <- list()
-  for (name in server_names)
+  psi_identity_info <- list()
+  for (name in server_names) {
     psi_transport_pks[[name]] <- init_results[[name]]$transport_pk
+    if (!is.null(init_results[[name]]$identity_pk))
+      psi_identity_info[[name]] <- list(
+        identity_pk = init_results[[name]]$identity_pk,
+        signature   = init_results[[name]]$signature)
+  }
 
-  # Distribute transport PKs to all servers in parallel (same key map)
+  # Distribute transport PKs + identity info to all servers in parallel
   keys_for_server <- psi_transport_pks
   keys_for_server[["ref"]] <- psi_transport_pks[[ref_server]]
+  id_for_server <- if (length(psi_identity_info) > 0) psi_identity_info else NULL
+  if (!is.null(id_for_server))
+    id_for_server[["ref"]] <- psi_identity_info[[ref_server]]
   DSI::datashield.aggregate(
     conns = datasources,
     expr = call("psiStoreTransportKeysDS", keys_for_server,
+                  identity_info = id_for_server,
                   session_id = session_id)
   )
   if (verbose) message("  Transport keys exchanged.")

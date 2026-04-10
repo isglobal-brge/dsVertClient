@@ -46,9 +46,10 @@
   }
 
   # =========================================================================
-  # Phase 0: Transport Key Setup (Ring63)
+  # Phase 0: Transport Key Setup (Ring63) + Identity Verification
   # =========================================================================
   transport_pks <- list()
+  identity_info <- list()
 
   if (length(non_label_servers) > 0) {
     if (verbose) message("\n[Phase 0] Transport key setup (", length(server_list), " servers)...")
@@ -60,14 +61,19 @@
         expr = call("glmRing63TransportInitDS", session_id = session_id))
       if (is.list(tk_result)) tk_result <- tk_result[[1]]
       transport_pks[[server]] <- tk_result$transport_pk
+      if (!is.null(tk_result$identity_pk))
+        identity_info[[server]] <- list(
+          identity_pk = tk_result$identity_pk, signature = tk_result$signature)
     }
 
     pk_sorted <- transport_pks[sort(names(transport_pks))]
+    id_sorted <- if (length(identity_info) > 0) identity_info[sort(names(identity_info))] else NULL
     for (server in server_list) {
       conn_idx <- which(server_names == server)
       .dsAgg(conns = datasources[conn_idx],
         expr = call("mpcStoreTransportKeysDS",
-                    transport_keys = pk_sorted, session_id = session_id))
+                    transport_keys = pk_sorted, identity_info = id_sorted,
+                    session_id = session_id))
     }
 
     if (verbose) message(sprintf("  [Key Setup] Transport keys exchanged (%d servers, %.1fs)",
