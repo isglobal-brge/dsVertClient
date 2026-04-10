@@ -60,26 +60,27 @@ ds.vertCor <- function(data_name, variables,
   all_vars <- unlist(variables[server_list])
   if (verbose) message(sprintf("=== Ring63 Correlation (p=%d, %d servers) ===", p_total, length(server_list)))
 
-  # Phase 0: Transport key setup
+  # Phase 0: Transport key setup + identity verification
   t0 <- proc.time()[[3]]
   if (verbose) message("[Phase 0] Transport keys...")
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    r <- .dsAgg(datasources[ci], call("glmRing63TransportInitDS", session_id = session_id))
-    if (is.list(r)) r <- r[[1]]
-  }
   transport_pks <- list()
+  identity_info <- list()
   for (server in server_list) {
     ci <- which(server_names == server)
     r <- .dsAgg(datasources[ci], call("glmRing63TransportInitDS", session_id = session_id))
     if (is.list(r)) r <- r[[1]]
     transport_pks[[server]] <- r$transport_pk
+    if (!is.null(r$identity_pk))
+      identity_info[[server]] <- list(
+        identity_pk = r$identity_pk, signature = r$signature)
   }
   pk_sorted <- transport_pks[sort(names(transport_pks))]
+  id_sorted <- if (length(identity_info) > 0) identity_info[sort(names(identity_info))] else NULL
   for (server in server_list) {
     ci <- which(server_names == server)
     .dsAgg(datasources[ci], call("mpcStoreTransportKeysDS",
-      transport_keys = pk_sorted, session_id = session_id))
+      transport_keys = pk_sorted, identity_info = id_sorted,
+      session_id = session_id))
   }
 
   # Phase 1: Standardize + get observation count
