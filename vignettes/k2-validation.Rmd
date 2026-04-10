@@ -44,7 +44,7 @@ This vignette validates the K=2 encrypted link-function (HE-Link) mode of
 dsVert. With only two servers (one label, one non-label), standard secure
 aggregation cannot hide the non-label server's linear predictor contribution
 because the aggregate equals the single summand. dsVert therefore evaluates
-the inverse link function entirely under CKKS homomorphic encryption, ensuring
+the inverse link function entirely under Ring63 MPC, ensuring
 that neither the linear predictor nor the fitted values are exposed as
 observation-level plaintext vectors.
 
@@ -52,7 +52,7 @@ We validate all three GLM families:
 
 - **Gaussian** (identity link): no polynomial needed, exact Newton block solve
   at `log_n = 12` (fast).
-- **Binomial** (logit link): degree-7 sigmoid polynomial under CKKS,
+- **Binomial** (logit link): degree-7 sigmoid polynomial under Ring63,
   gradient descent at `log_n = 14`.
 - **Poisson** (log link): degree-7 Chebyshev exp polynomial with eta clipping,
   gradient descent at `log_n = 14`.
@@ -193,7 +193,7 @@ knitr::kable(comparison, caption = "Gaussian GLM: K=2 vs centralized coefficient
 
 ## K=2 Binomial GLM
 
-Logit link with degree-7 sigmoid polynomial under CKKS (`log_n = 14`).
+Logit link with degree-7 sigmoid polynomial under Ring63 (`log_n = 14`).
 Gradient descent with warm-start step-size schedule.
 
 **Note:** This model runs at `log_n = 14` and each iteration involves
@@ -241,7 +241,7 @@ knitr::kable(comparison_b, caption = "Binomial GLM: K=2 vs centralized coefficie
 
 ## K=2 Poisson GLM
 
-Log link with degree-7 Chebyshev exp polynomial on [-3, 3] under CKKS
+Log link with degree-7 Chebyshev exp polynomial on [-3, 3] under Ring63
 (`log_n = 14`). Each server clips its eta contribution to [-1.5, 1.5]
 before encryption.
 
@@ -307,5 +307,5 @@ peers for pairwise mask cancellation.
 evaluation needed) and is comparable in speed to the K=3 secure aggregation
 mode. Binomial and Poisson K=2 require `log_n = 14` for the polynomial
 multiplicative depth, resulting in significantly higher per-iteration cost.
-Heavy CKKS operations are dispatched asynchronously with short-poll result
+Encrypted operations are dispatched asynchronously with short-poll result
 retrieval to prevent reverse-proxy timeouts.

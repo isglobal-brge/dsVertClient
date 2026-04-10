@@ -52,7 +52,7 @@ instances**, each on a separate host and port. Unlike the
 with three tables), this setup mirrors a real multi-institution deployment where
 each data controller operates its own infrastructure.
 
-The analysis is identical to the public validation: PSI alignment, MHE-CKKS
+The analysis is identical to the public validation: PSI alignment, Ring63-Beaver
 correlation, PCA, and three GLM families (Gaussian, binomial, Poisson),
 compared element-wise against centralized R outputs.
 
@@ -170,7 +170,7 @@ cat("Ground truth:", nrow(full), "rows\n")
 
 ## Federated analysis (dsVert across 3 independent servers)
 
-### Correlation (MHE-CKKS)
+### Correlation (Ring63-Beaver)
 
 ```{r dsvert-cor, message = FALSE}
 variables <- list(

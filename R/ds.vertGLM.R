@@ -27,7 +27,7 @@
 #' @param eta_privacy Character. \code{"auto"} (default) selects
 #'   \code{"k2_beaver"} for K=2 or \code{"secure_agg"} for K>=3.
 #' @param topology Character. Unused (kept for API compatibility).
-#' @param reuse_mhe Logical. Unused (kept for API compatibility).
+#' @param reuse_session Logical. Unused (kept for API compatibility).
 #'
 #' @return A list with class "ds.glm" containing:
 #'   \itemize{
@@ -105,7 +105,7 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
                        verbose = TRUE, datasources = NULL,
                        eta_privacy = "auto",
                        topology = "pairwise",
-                       reuse_mhe = FALSE) {
+                       reuse_session = FALSE) {
   call_matched <- match.call()
 
   # ===========================================================================
@@ -155,10 +155,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   if (use_k2_beaver && non_label_count != 1)
     stop("K=2 mode requires exactly 2 servers", call. = FALSE)
 
-  # Ring63 DCF: NO CKKS infrastructure needed (no CPK, Galois, RLK, encrypted y)
+  # Ring63 DCF: transport keys only
   generate_rlk <- FALSE
   # Ring63 for ALL families (Gaussian=identity link, others=DCF spline)
-  skip_ckks <- use_secure_agg
 
   # Adaptive log_n for large n: max_slots = 2^(log_n-1)
   # n ≤ 4096 → log_n=13, n ≤ 8192 → log_n=14, n ≤ 16384 → log_n=15
@@ -234,17 +233,17 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   # Guaranteed cleanup on exit (even if error occurs mid-protocol).
   # Uses DSI::datashield.aggregate directly (not .dsAgg) so cleanup works
-  # even if .glm_mhe_setup() fails before returning the closure.
+  # even if .glm_mpc_setup() fails before returning the closure.
   on.exit({
     for (.srv in server_list) {
       .ci <- which(server_names == .srv)
       tryCatch(
         DSI::datashield.aggregate(conns = datasources[.ci],
-          expr = call("mheCleanupDS", session_id = session_id)),
+          expr = call("mpcCleanupDS", session_id = session_id)),
         error = function(e) NULL)
       tryCatch(
         DSI::datashield.aggregate(conns = datasources[.ci],
-          expr = call("mheGcDS")),
+          expr = call("mpcGcDS")),
         error = function(e) NULL)
     }
     .dsvert_reset_chunk_size()
@@ -252,9 +251,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
 
   # ===========================================================================
   # Phase 0-1: Transport key setup + standardize features
-  #   (delegated to .glm_mhe_setup in ds.vertGLM.setup.R)
+  #   (delegated to .glm_mpc_setup in ds.vertGLM.setup.R)
   # ===========================================================================
-  setup <- .glm_mhe_setup(
+  setup <- .glm_mpc_setup(
     datasources      = datasources,
     server_names     = server_names,
     server_list      = server_list,
@@ -270,10 +269,9 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
     generate_rlk     = generate_rlk,
     use_secure_agg   = use_secure_agg,
     use_k2_beaver    = use_k2_beaver,
-    reuse_mhe        = reuse_mhe,
+    reuse_session        = reuse_session,
     session_id       = session_id,
-    verbose          = verbose,
-    skip_ckks        = skip_ckks
+    verbose          = verbose
   )
 
   # Unpack setup results

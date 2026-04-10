@@ -1,16 +1,15 @@
 #' @title GLM Setup: Transport Keys + Standardization
 #' @description Initializes transport keys on all servers and standardizes
-#'   features. Pure Ring63 — no CKKS infrastructure.
+#'   features. Pure Ring63 MPC.
 #' @return List with transport_pks, x_means, x_sds, y_mean, y_sd,
 #'   std_data, standardize_y, .dsAgg, .sendBlob
 #' @keywords internal
 
-.glm_mhe_setup <- function(datasources, server_names, server_list,
+.glm_mpc_setup <- function(datasources, server_names, server_list,
                            non_label_servers, y_server, y_var, x_vars,
                            data_name, family, n_obs, log_n, log_scale,
                            generate_rlk, use_secure_agg, use_k2_beaver,
-                           reuse_mhe, session_id, verbose,
-                           skip_ckks = FALSE) {
+                           reuse_session, session_id, verbose) {
 
   # =========================================================================
   # Helpers (closures capturing datasources, session_id)
@@ -37,11 +36,11 @@
     .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
       if (n_chunks == 1L) {
         .dsAgg(conns = datasources[conn_idx],
-          expr = call("mheStoreBlobDS", key = key, chunk = chunk_str,
+          expr = call("mpcStoreBlobDS", key = key, chunk = chunk_str,
                       session_id = session_id))
       } else {
         .dsAgg(conns = datasources[conn_idx],
-          expr = call("mheStoreBlobDS", key = key, chunk = chunk_str,
+          expr = call("mpcStoreBlobDS", key = key, chunk = chunk_str,
                       chunk_index = chunk_idx, n_chunks = n_chunks,
                       session_id = session_id))
       }
@@ -49,7 +48,7 @@
   }
 
   # =========================================================================
-  # Phase 0: Transport Key Setup (Ring63, no CKKS)
+  # Phase 0: Transport Key Setup (Ring63)
   # =========================================================================
   transport_pks <- list()
 
@@ -69,7 +68,7 @@
     for (server in server_list) {
       conn_idx <- which(server_names == server)
       .dsAgg(conns = datasources[conn_idx],
-        expr = call("mheStoreTransportKeysDS",
+        expr = call("mpcStoreTransportKeysDS",
                     transport_keys = pk_sorted, session_id = session_id))
     }
 

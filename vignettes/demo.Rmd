@@ -19,7 +19,7 @@ different features for the same observations. No server sees another's
 raw data. The analyst (client) receives only aggregate statistics.
 
 All computation uses **Ring63 Beaver MPC** — pure fixed-point arithmetic
-with additive secret sharing. No homomorphic encryption. No observation-level
+with additive secret sharing. No observation-level
 data is ever disclosed.
 
 ### Supported analyses

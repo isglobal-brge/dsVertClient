@@ -84,7 +84,7 @@ Deviance: 22.09
 - **Server-generated Beaver triples**: client never sees cryptographic material
 - **Dealer rotation**: different server generates triples each iteration (K>=4)
 - **Transport encryption**: X25519 + AES-256-GCM between servers
-- **No CKKS/Lattigo**: pure Ring63 fixed-point MPC
+- **Pure Ring63 MPC**: fixed-point additive secret sharing
 
 ## Performance (Pima diabetes, p=6)
 

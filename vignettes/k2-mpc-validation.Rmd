@@ -39,12 +39,12 @@ if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 
 This vignette validates the K=2 **Gauss-Seidel BCD-IRLS** (`k2_mpc`) mode
 of dsVert for binomial and Poisson GLMs. This mode is an alternative to the
-HE-Link (CKKS polynomial) pathway, offering near-exact coefficient recovery
+legacy polynomial pathway, offering near-exact coefficient recovery
 at the cost of revealing the aggregated linear predictor to the coordinator.
 
 The protocol mirrors the K$\geq$3 secure routing pattern
 (`glmCoordinatorStepDS` + `glmSecureBlockSolveDS`), using X25519+AES-256-GCM
-transport encryption instead of CKKS:
+transport encryption for transport encryption:
 
 1. **Coordinator** (label server) updates first: decrypts non-label's
    $\boldsymbol{\eta}_\text{nl}$, runs full IRLS, recomputes $\mu$/$w$/residual
@@ -54,12 +54,12 @@ transport encryption instead of CKKS:
 
 Per iteration: 2 server calls + 2 blob relays ($\sim$2s on Opal).
 
-### Comparison with HE-Link
+### Comparison with legacy polynomial mode
 
-| | HE-Link (`he_link`) | GS-IRLS (`k2_mpc`) |
+| | Legacy polynomial (`he_link`) | GS-IRLS (`k2_mpc`) |
 |---|---|---|
 | Accuracy | $\leq 5 \times 10^{-2}$ (polynomial approx) | $\leq 10^{-4}$ (exact link) |
-| Speed | Hours (CKKS at `log_n`=14) | Seconds (~7 iters) |
+| Speed | Hours | Seconds (~7 iters) |
 | Privacy | $\eta$ stays encrypted | Coordinator sees $\eta_\text{total}$ |
 
 ### Data
@@ -288,5 +288,5 @@ contribution — the same information visible to the coordinator in the K$\geq$3
 secure aggregation regime.
 
 Users who require stronger K=2 privacy guarantees can explicitly set
-`eta_privacy = "he_link"` to use the CKKS polynomial pathway at the cost of
+`eta_privacy = "he_link"` to use the legacy pathway at the cost of
 higher approximation error ($\sim 5 \times 10^{-2}$) and longer runtime.

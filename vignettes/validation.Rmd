@@ -48,7 +48,7 @@ if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 
 This vignette presents a comparative validation of the dsVert federated
 vertical analysis pipeline against centralized R computations. We exercise the
-full protocol stack --- ECDH-PSI record alignment, MHE-CKKS correlation,
+full protocol stack --- ECDH-PSI record alignment, Ring63-Beaver correlation,
 spectral PCA, and encrypted-label GLMs --- on real data vertically partitioned
 across three DataSHIELD servers.
 
@@ -285,15 +285,15 @@ summary(local_pois)
 We now repeat every analysis using the dsVert federated protocol. Each server
 only has access to its own subset of variables. Cross-server quantities (such
 as correlation matrix off-diagonal blocks, and gradients involving variables
-from multiple servers) are computed under multiparty homomorphic encryption
-(MHE-CKKS) with threshold decryption, so individual-level data never leaves
-any server.
+from multiple servers) are computed under Ring63 MPC
+(Ring63-Beaver) with secret-shared cross-products, so individual-level data
+never leaves any server.
 
-### Correlation (MHE-CKKS)
+### Correlation (Ring63-Beaver)
 
 The `ds.vertCor` function computes the full $7 \times 7$ Pearson correlation
 matrix. Within-server blocks are computed locally; cross-server blocks use
-CKKS encrypted dot products with threshold decryption and server-side fusion.
+Ring63 Beaver cross-products and server-side fusion.
 
 ```{r dsvert-cor, message = FALSE}
 variables <- list(
@@ -322,7 +322,7 @@ print(round(dsvert_cor, 4))
 ```{r dsvert-cor-heatmap, echo = FALSE, fig.height = 5.5}
 heatmap(dsvert_cor, symm = TRUE, col = col_palette, margins = c(8, 8),
         Rowv = NA, Colv = NA,
-        main = "dsVert Federated Pearson Correlation (MHE-CKKS)")
+        main = "dsVert Federated Pearson Correlation (Ring63-Beaver)")
 ```
 
 ### PCA
@@ -359,8 +359,8 @@ barplot(dsvert_ve, names.arg = paste0("PC", 1:7),
 
 The dsVert GLM uses encrypted-label block coordinate descent (BCD-IRLS).
 The label variable (`glu`) resides on server2; the remaining predictors are
-distributed across all three servers. Gradients are computed under MHE-CKKS
-and decrypted via share-wrapped threshold decryption with server-side fusion.
+distributed across all three servers. Gradients are computed under Ring63-Beaver
+MPC and reconstructed via share-wrapped secret sharing with server-side fusion.
 
 ```{r dsvert-gauss, message = FALSE}
 glm_gauss <- .cached("glm_gauss", {
@@ -641,12 +641,13 @@ knitr::kable(
 The three error regimes observed correspond to different sources of
 approximation in the dsVert pipeline:
 
-**Correlation and PCA** ($\sim 10^{-6}$). These errors arise from CKKS
-approximate arithmetic used in the MHE threshold protocol. The encoding
-precision is governed by `log_scale = 40`, providing approximately $2^{40}
-\approx 10^{12}$ precision units. After encoding, homomorphic multiplication,
-inner-sum rotations, and threshold decryption, the effective precision degrades
-to $\sim 10^{-6}$, consistent with CKKS error propagation theory.
+**Correlation and PCA** ($\sim 10^{-6}$). These errors arise from Ring63
+fixed-point arithmetic used in the Beaver MPC protocol. Values are encoded
+as 63-bit ring integers with a configurable fractional precision, providing
+approximately $2^{40} \approx 10^{12}$ precision units. After encoding,
+Beaver triple multiplication, inner-sum accumulation, and secret-share
+reconstruction, the effective precision degrades to $\sim 10^{-6}$,
+consistent with fixed-point error propagation theory.
 
 **GLM coefficients** ($10^{-4}$ to $10^{-3}$). GLM errors are slightly larger
 because they accumulate over multiple BCD-IRLS iterations, each involving an
