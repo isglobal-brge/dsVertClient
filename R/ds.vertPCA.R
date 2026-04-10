@@ -11,6 +11,7 @@
 #'   If provided, the correlation protocol is not re-run.
 #' @param log_n Integer. Unused (kept for API compatibility).
 #' @param log_scale Integer. Unused (kept for API compatibility).
+#' @param verbose Logical. If TRUE (default), print progress messages.
 #' @param datasources DataSHIELD connection object or list of connections.
 #'   If NULL, uses all available connections. Ignored if \code{cor_result} is
 #'   provided.
@@ -95,14 +96,15 @@
 #' @export
 ds.vertPCA <- function(data_name = NULL, variables = NULL, n_components = NULL,
                        cor_result = NULL,
-                       log_n = 12, log_scale = 40, datasources = NULL) {
+                       log_n = 12, log_scale = 40, verbose = TRUE,
+                       datasources = NULL) {
 
   # If an existing correlation result is provided, use it directly
   if (!is.null(cor_result)) {
     if (!inherits(cor_result, "ds.cor")) {
       stop("cor_result must be a ds.cor object from ds.vertCor()", call. = FALSE)
     }
-    message("Using provided correlation matrix (skipping Ring63 protocol)...")
+    if (verbose) message("Using provided correlation matrix (skipping Ring63 protocol)...")
     R <- cor_result$correlation
     n_obs <- cor_result$n_obs
     var_names <- cor_result$var_names
@@ -117,10 +119,10 @@ ds.vertPCA <- function(data_name = NULL, variables = NULL, n_components = NULL,
     }
 
     # Step 1: Compute privacy-preserving correlation matrix
-    message("Computing privacy-preserving correlation matrix...")
+    if (verbose) message("Computing privacy-preserving correlation matrix...")
     cor_result <- ds.vertCor(data_name, variables,
                              log_n = log_n, log_scale = log_scale,
-                             datasources = datasources)
+                             verbose = verbose, datasources = datasources)
 
     R <- cor_result$correlation
     n_obs <- cor_result$n_obs
@@ -131,7 +133,7 @@ ds.vertPCA <- function(data_name = NULL, variables = NULL, n_components = NULL,
   # PCA on standardized data = eigen decomposition of correlation matrix R.
   # symmetric = TRUE tells eigen() that R is real symmetric, enabling a more
   # numerically stable and efficient algorithm (uses LAPACK dsyev).
-  message("Performing PCA via eigen decomposition...")
+  if (verbose) message("Performing PCA via eigen decomposition...")
   eigen_result <- eigen(R, symmetric = TRUE)
 
   eigenvalues <- eigen_result$values   # variance captured by each PC
@@ -176,7 +178,7 @@ ds.vertPCA <- function(data_name = NULL, variables = NULL, n_components = NULL,
   )
 
   class(result) <- c("ds.pca", "list")
-  message("PCA complete: ", n_components, " components extracted.")
+  if (verbose) message("PCA complete: ", n_components, " components extracted.")
   return(result)
 }
 

@@ -11,6 +11,7 @@
 #'   Default is \code{"D_aligned"}.
 #' @param ref_server Character string or NULL. Name of the reference server.
 #'   If NULL (default), the first connection is used.
+#' @param verbose Logical. If TRUE (default), print progress messages.
 #' @param datasources DataSHIELD connection object or list of connections.
 #'   If NULL, uses all available connections.
 #'
@@ -74,7 +75,8 @@
 #' @importFrom DSI datashield.aggregate datashield.assign datashield.connections_find
 #' @export
 ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
-                         ref_server = NULL, datasources = NULL) {
+                         ref_server = NULL, verbose = TRUE,
+                         datasources = NULL) {
   # Validate inputs
   if (!is.character(data_name) || length(data_name) != 1) {
     stop("data_name must be a single character string", call. = FALSE)
@@ -132,13 +134,13 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
       if (n_chunks == 1L) {
         DSI::datashield.aggregate(
           conns = conn,
-          expr = call("mheStoreBlobDS", key = key, chunk = chunk_str,
+          expr = call("mpcStoreBlobDS", key = key, chunk = chunk_str,
                       session_id = session_id)
         )
       } else {
         DSI::datashield.aggregate(
           conns = conn,
-          expr = call("mheStoreBlobDS",
+          expr = call("mpcStoreBlobDS",
                       key = key,
                       chunk = chunk_str,
                       chunk_index = chunk_idx,
@@ -149,8 +151,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     })
   }
 
-  cat("=== ECDH-PSI Record Alignment (Blind Relay) ===\n")
-  cat(sprintf("Reference: %s, Targets: %s\n\n", ref_server,
+  if (verbose) message("=== ECDH-PSI Record Alignment (Blind Relay) ===")
+  if (verbose) message(sprintf("Reference: %s, Targets: %s\n", ref_server,
               paste(target_names, collapse = ", ")))
 
   # ==================================================================
@@ -159,7 +161,7 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   # Each server generates an X25519 transport keypair. The client
   # collects PKs and distributes them so servers can encrypt messages
   # for each other. The client never receives the secret keys.
-  cat("[Phase 0] Transport key exchange...\n")
+  if (verbose) message("[Phase 0] Transport key exchange...")
   # Initialize PSI on all servers in parallel
   init_results <- DSI::datashield.aggregate(
     conns = datasources,
@@ -177,27 +179,27 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     expr = call("psiStoreTransportKeysDS", keys_for_server,
                   session_id = session_id)
   )
-  cat("  Transport keys exchanged.\n")
+  if (verbose) message("  Transport keys exchanged.")
 
   # ==================================================================
   # Phase 1: Reference server masks its IDs
   # ==================================================================
   # The ref server generates a random P-256 scalar α and computes
   # α·H(id) for each ID. Points are stored server-side (NOT returned).
-  cat("[Phase 1] Reference server masking IDs...\n")
+  if (verbose) message("[Phase 1] Reference server masking IDs...")
   ref_result <- DSI::datashield.aggregate(
     conns = ref_conn,
     expr = call("psiMaskIdsDS", data_name, id_col,
                   session_id = session_id)
   )
   ref_result <- ref_result[[1]]
-  cat(sprintf("  %s: %d IDs masked (stored server-side)\n",
+  if (verbose) message(sprintf("  %s: %d IDs masked (stored server-side)",
               ref_server, ref_result$n))
 
   # Phase 2: Ref exports encrypted masked points for each target
   encrypted_ref_blobs <- list()
   for (target_name in target_names) {
-    cat(sprintf("[Phase 2] %s: exporting encrypted points for %s...\n",
+    if (verbose) message(sprintf("[Phase 2] %s: exporting encrypted points for %s...",
                 ref_server, target_name))
     export_result <- DSI::datashield.aggregate(
       conns = ref_conn,
@@ -213,7 +215,7 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   }
 
   # Phase 3: ALL targets process in PARALLEL (independent operations)
-  cat(sprintf("[Phase 3] %s: processing (parallel)...\n",
+  if (verbose) message(sprintf("[Phase 3] %s: processing (parallel)...",
               paste(target_names, collapse = ", ")))
   target_results <- DSI::datashield.aggregate(
     conns = datasources[target_names],
@@ -222,7 +224,7 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   )
   for (target_name in target_names) {
     tr <- target_results[[target_name]]
-    cat(sprintf("  %s: %d IDs masked\n", target_name, tr$n))
+    if (verbose) message(sprintf("  %s: %d IDs masked", target_name, tr$n))
   }
 
   # Phases 4-7: Sequential per target (ref must process each individually)
@@ -230,7 +232,7 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     encrypted_target_blob <- target_results[[target_name]]$encrypted_blob
 
     # Phase 4-5: Relay target blob to ref for double-masking
-    cat(sprintf("[Phase 4-5] %s: double-masking via %s (blind relay)...\n",
+    if (verbose) message(sprintf("[Phase 4-5] %s: double-masking via %s (blind relay)...",
                 target_name, ref_server))
     .storeLargeBlob("target_encrypted_blob", encrypted_target_blob, ref_conn)
 
@@ -242,7 +244,7 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     encrypted_dm_blob <- dm_result[[1]]$encrypted_blob
 
     # Phase 6-7: Relay double-masked blob to target for matching
-    cat(sprintf("[Phase 6-7] %s: matching and aligning (blind relay)...\n",
+    if (verbose) message(sprintf("[Phase 6-7] %s: matching and aligning (blind relay)...",
                 target_name))
     .storeLargeBlob("dm_encrypted_blob", encrypted_dm_blob,
                     datasources[target_name])
@@ -258,7 +260,7 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   # ==================================================================
   # Phase 7 for ref: Self-align (identity operation)
   # ==================================================================
-  cat(sprintf("[Phase 7] %s: self-aligning...\n", ref_server))
+  if (verbose) message(sprintf("[Phase 7] %s: self-aligning...", ref_server))
   DSI::datashield.assign(
     conns = ref_conn,
     symbol = newobj,
@@ -270,7 +272,7 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   # Phase 8: Multi-server intersection
   # ==================================================================
   # Integer indices are safe aggregate statistics (no EC points).
-  cat("[Phase 8] Computing multi-server intersection...\n")
+  if (verbose) message("[Phase 8] Computing multi-server intersection...")
   all_indices <- list()
   # Collect matched indices from all servers in parallel
   idx_results <- DSI::datashield.aggregate(
@@ -283,7 +285,7 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   common_indices <- Reduce(intersect, all_indices)
   common_indices <- sort(as.integer(common_indices))
 
-  cat(sprintf("  Common records: %d\n", length(common_indices)))
+  if (verbose) message(sprintf("  Common records: %d", length(common_indices)))
 
   # Broadcast common indices to all servers via blob storage
   indices_blob <- paste(common_indices, collapse = ",")
@@ -311,14 +313,15 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
       n_matched = count$n_obs,
       n_total = length(n_server)
     )
-    message(sprintf(
+    if (verbose) message(sprintf(
       "Server '%s': %d of %d records matched (%.1f%%)",
       name, count$n_obs, length(n_server),
       100 * count$n_obs / max(length(n_server), 1)
     ))
   }
 
-  cat("PSI alignment complete.\n")
+  if (verbose) message("PSI alignment complete.")
 
+  stats$n_common <- length(common_indices)
   invisible(stats)
 }

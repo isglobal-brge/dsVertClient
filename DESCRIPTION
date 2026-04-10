@@ -14,7 +14,7 @@ Description: Client-side DataSHIELD functions for privacy-preserving analysis
     of vertically partitioned federated data. Provides ECDH-PSI record
     alignment, GLM (Gaussian, Binomial, Poisson) with standard errors and
     p-values, Pearson correlation, and PCA. All protocols use Ring63 Beaver
-    MPC with DCF wide spline link functions. No homomorphic encryption.
+    MPC with DCF wide spline link functions.
     Zero observation-level disclosure. Works with the companion dsVert
     server package.
 License: MIT + file LICENSE

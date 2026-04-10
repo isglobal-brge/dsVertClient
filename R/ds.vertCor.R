@@ -1,13 +1,14 @@
 #' @title Ring63 Privacy-Preserving Correlation for Vertically Partitioned Data
 #' @description Computes Pearson correlation matrix using Ring63 Beaver MPC.
-#'   No CKKS, no smudging noise. Only aggregate scalars disclosed.
+#'   Only aggregate scalars disclosed.
 #' @param data_name Character. Aligned data frame name.
 #' @param variables Named list: server -> variable names.
+#' @param verbose Logical. If TRUE (default), print progress messages.
 #' @param datasources DataSHIELD connections.
 #' @return List with correlation matrix, variable names, n_obs.
 #' @export
 ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
-                       datasources = NULL, reuse_mhe = FALSE) {
+                       verbose = TRUE, datasources = NULL, reuse_session = FALSE) {
   if (!is.list(variables) || is.null(names(variables)))
     stop("variables must be a named list", call. = FALSE)
   if (length(variables) < 2)
@@ -29,7 +30,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
     for (.s in server_list) {
       .ci <- which(server_names == .s)
       tryCatch(DSI::datashield.aggregate(datasources[.ci],
-        call("mheCleanupDS", session_id = session_id)), error = function(e) NULL)
+        call("mpcCleanupDS", session_id = session_id)), error = function(e) NULL)
     }
   })
 
@@ -40,10 +41,10 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   .sendBlob <- function(blob, key, conn_idx) {
     .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
       if (n_chunks == 1L) {
-        .dsAgg(datasources[conn_idx], call("mheStoreBlobDS", key = key,
+        .dsAgg(datasources[conn_idx], call("mpcStoreBlobDS", key = key,
           chunk = chunk_str, session_id = session_id))
       } else {
-        .dsAgg(datasources[conn_idx], call("mheStoreBlobDS", key = key,
+        .dsAgg(datasources[conn_idx], call("mpcStoreBlobDS", key = key,
           chunk = chunk_str, chunk_index = chunk_idx, n_chunks = n_chunks,
           session_id = session_id))
       }
@@ -57,11 +58,11 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
 
   p_total <- sum(sapply(server_list, function(s) length(variables[[s]])))
   all_vars <- unlist(variables[server_list])
-  message(sprintf("=== Ring63 Correlation (p=%d, %d servers) ===", p_total, length(server_list)))
+  if (verbose) message(sprintf("=== Ring63 Correlation (p=%d, %d servers) ===", p_total, length(server_list)))
 
   # Phase 0: Transport key setup
   t0 <- proc.time()[[3]]
-  message("[Phase 0] Transport keys...")
+  if (verbose) message("[Phase 0] Transport keys...")
   for (server in server_list) {
     ci <- which(server_names == server)
     r <- .dsAgg(datasources[ci], call("glmRing63TransportInitDS", session_id = session_id))
@@ -77,12 +78,12 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   pk_sorted <- transport_pks[sort(names(transport_pks))]
   for (server in server_list) {
     ci <- which(server_names == server)
-    .dsAgg(datasources[ci], call("mheStoreTransportKeysDS",
+    .dsAgg(datasources[ci], call("mpcStoreTransportKeysDS",
       transport_keys = pk_sorted, session_id = session_id))
   }
 
   # Phase 1: Standardize + get observation count
-  message("[Phase 1] Standardizing...")
+  if (verbose) message("[Phase 1] Standardizing...")
   # Get n_obs
   r_count <- .dsAgg(datasources[which(server_names == server_list[1])],
     call("getObsCountDS", data_name = data_name))
@@ -97,7 +98,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   }
 
   # Phase 2: Local correlations (within-server, plaintext)
-  message("[Phase 2] Local correlations...")
+  if (verbose) message("[Phase 2] Local correlations...")
   local_cors <- list()
   for (server in server_list) {
     ci <- which(server_names == server)
@@ -109,7 +110,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   }
 
   # Phase 3: Input sharing (features to 2 computation parties)
-  message("[Phase 3] Input sharing...")
+  if (verbose) message("[Phase 3] Input sharing...")
   fusion <- server_list[1]; coord <- server_list[length(server_list)]
   dcf_parties <- c(fusion, coord)
   dcf_conns <- sapply(dcf_parties, function(s) which(server_names == s))
@@ -190,7 +191,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   }
 
   # Phase 4: Cross-server correlations via Beaver
-  message(sprintf("[Phase 4] Beaver cross-products (%d columns)...", p_total))
+  if (verbose) message(sprintf("[Phase 4] Beaver cross-products (%d columns)...", p_total))
   dealer <- if (length(non_dcf) > 0) non_dcf[1] else fusion
   dealer_conn <- which(server_names == dealer)
 
@@ -237,10 +238,10 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
       r2[[di]] <- r
     }
 
-    agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+    agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = r2[[1]]$gradient_fp, share_b = r2[[2]]$gradient_fp, frac_bits = 20L))
     xtx[, j] <- agg$values
-    message(sprintf("  Column %d/%d done", j, p_total))
+    if (verbose) message(sprintf("  Column %d/%d done", j, p_total))
   }
 
   # Phase 5: Assembly
@@ -257,7 +258,7 @@ ds.vertCor <- function(data_name, variables, log_n = 12, log_scale = 40,
   }
 
   elapsed <- proc.time()[[3]] - t0
-  message(sprintf("Correlation complete (%.0fs)", elapsed))
+  if (verbose) message(sprintf("Correlation complete (%.0fs)", elapsed))
 
   structure(list(
     correlation = corr,

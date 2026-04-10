@@ -10,13 +10,13 @@ test_that("print.ds.cor displays correctly", {
                          dimnames = list(c("x", "y"), c("x", "y"))),
     var_names = c("x", "y"),
     n_obs = 100,
-    method = "MHE-CKKS-Threshold",
+    method = "Ring63-Beaver",
     servers = c("server1", "server2")
   )
   class(mock_cor) <- c("ds.cor", "list")
 
   output <- capture.output(print(mock_cor))
-  expect_true(any(grepl("MHE-CKKS-Threshold", output)))
+  expect_true(any(grepl("Ring63-Beaver", output)))
   expect_true(any(grepl("100", output)))
   expect_true(any(grepl("server1", output)))
 })
@@ -27,7 +27,7 @@ test_that("print.ds.cor respects digits parameter", {
                          dimnames = list(c("x", "y"), c("x", "y"))),
     var_names = c("x", "y"),
     n_obs = 50,
-    method = "MHE-CKKS-Threshold",
+    method = "Ring63-Beaver",
     servers = c("s1", "s2")
   )
   class(mock_cor) <- c("ds.cor", "list")

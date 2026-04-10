@@ -15,7 +15,7 @@ knitr::opts_chunk$set(collapse = FALSE, comment = "#>")
 ## Motivation
 
 The K=2 encrypted link-function (HE-Link) mode evaluates the inverse link
-function as a polynomial approximation under CKKS homomorphic encryption.
+function as a polynomial approximation under Ring63 fixed-point arithmetic.
 For binomial and Poisson GLMs, this means the optimizer works with
 **approximate gradients** rather than exact IRLS updates. This vignette
 documents systematic benchmarks of different optimizer configurations to
@@ -28,7 +28,7 @@ All experiments use the same model and data:
 - **Model**: `diabetes ~ age + ped + npreg` (K=2 binomial, 2+1 predictors)
 - **Data**: Pima diabetes dataset, n=162 after PSI alignment
 - **Centralized reference**: `glm()` coefficients (intercept=-4.47, age=0.070, ped=1.85, npreg=0.113)
-- **CKKS parameters**: `log_n=14`, `log_scale=40`
+- **Ring63 parameters**: `log_n=14`, `log_scale=40`
 - **Convergence criterion**: max coefficient change < 1e-4
 
 ## Configurations tested
@@ -116,8 +116,8 @@ inherent consequence of replacing the exact sigmoid with a degree-7
 polynomial. The polynomial is systematically flatter than the true sigmoid,
 which biases the gradient and causes the optimizer to converge to a
 different point than exact IRLS. No amount of optimizer tuning addresses
-this; it would require either a higher-degree polynomial (needing more CKKS
-multiplicative levels, i.e., `log_n >= 15`) or a fundamentally different
+this; it would require either a higher-degree polynomial (needing more
+multiplicative depth, i.e., `log_n >= 15`) or a fundamentally different
 approach.
 
 ## Recommendation
@@ -142,7 +142,7 @@ standard IRLS. This gives near-exact convergence.
 With K = 2, there is no second non-label peer to provide a cancelling mask.
 The only way to prevent the label server from learning `eta_nonlabel` is to
 keep `eta` encrypted through the sigmoid evaluation — which requires
-polynomial approximation under HE. This is the fundamental
+polynomial approximation under encrypted arithmetic. This is the fundamental
 **privacy/accuracy tradeoff** of the two-party setting.
 
 | Regime | Sigmoid | Optimizer | Privacy | Max coef error |

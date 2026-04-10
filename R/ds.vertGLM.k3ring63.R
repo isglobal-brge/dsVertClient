@@ -1,8 +1,8 @@
-#' @title K>=3 Ring63 DCF + Beaver Gradient Loop (Zero CKKS, Zero Noise)
+#' @title K>=3 Ring63 DCF + Beaver Gradient Loop
 #' @description Pure Ring63 protocol for K>=3 binomial/Poisson GLM.
 #'   Uses additive secret sharing of features to 2 DCF parties,
 #'   DCF wide spline for sigmoid/exp, and Beaver matvec for gradient.
-#'   No CKKS, no threshold decryption, no smudging noise.
+#'   Pure Ring63 additive secret sharing.
 #'
 #' @details Protocol:
 #' \enumerate{
@@ -15,7 +15,7 @@
 #' }
 #'
 #' Requires: transport keys only. No CPK, Galois, or RLK.
-#' Precision: ~1e-3 (DCF approximation only, no MHE noise).
+#' Precision: ~1e-3 (DCF approximation).
 #' @name k3-ring63-dcf-loop
 NULL
 
@@ -330,7 +330,7 @@ NULL
           and_xma = ph2[[i]]$and_xma, and_ymb = ph2[[i]]$and_ymb,
           had1_xma = ph2[[i]]$had1_xma, had1_ymb = ph2[[i]]$had1_ymb),
           auto_unbox = TRUE)
-        sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+        sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
           data = jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk = pk_b64))
         .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1", peer_ci)
       }
@@ -350,7 +350,7 @@ NULL
         r1_json <- jsonlite::toJSON(list(
           had2_xma = ph3[[i]]$had2_xma, had2_ymb = ph3[[i]]$had2_ymb),
           auto_unbox = TRUE)
-        sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+        sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
           data = jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk = pk_b64))
         .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1", peer_ci)
       }
@@ -365,7 +365,7 @@ NULL
     }
 
     # =================================================================
-    # Step 3: Beaver gradient (Ring63, exact, no CKKS)
+    # Step 3: Beaver gradient (Ring63)
     # =================================================================
     if (verbose && iter <= 3) message(sprintf("    [%d.3] Beaver gradient...", iter))
 
@@ -409,13 +409,13 @@ NULL
     # Both DCF parties now have X_full in canonical order [coord|fusion|extras]
     # (fusion was reordered by glmRing63ReorderXFullDS)
     # Simple Ring63 aggregation — no permutation needed.
-    agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+    agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = grad_results[[1]]$gradient_fp,
       share_b = grad_results[[2]]$gradient_fp,
       frac_bits = frac_bits))
     gradient_canonical <- agg$values  # in canonical order [coord|fusion|extras]
 
-    agg_res <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+    agg_res <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = r1_results[[1]]$sum_residual_fp,
       share_b = r1_results[[2]]$sum_residual_fp,
       frac_bits = frac_bits))
@@ -568,7 +568,7 @@ NULL
         } else if (ph == 2) {
           for (di in 1:2) {
             pi2 <- 3 - di; pk <- .b64url_to_b64(transport_pks[[dcf_parties[pi2]]])
-            sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+            sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
               data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(
                 list(and_xma=ph_r[[di]]$and_xma, and_ymb=ph_r[[di]]$and_ymb,
                      had1_xma=ph_r[[di]]$had1_xma, had1_ymb=ph_r[[di]]$had1_ymb),
@@ -578,7 +578,7 @@ NULL
         } else if (ph == 3) {
           for (di in 1:2) {
             pi2 <- 3 - di; pk <- .b64url_to_b64(transport_pks[[dcf_parties[pi2]]])
-            sealed <- dsVert:::.callMheTool("transport-encrypt", list(
+            sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
               data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(
                 list(had2_xma=ph_r[[di]]$had2_xma, had2_ymb=ph_r[[di]]$had2_ymb),
                 auto_unbox=TRUE))), recipient_pk=pk))
@@ -615,7 +615,7 @@ NULL
         party_id = as.integer(di - 1), session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]; se_r2[[di]] <- r
     }
-    agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+    agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = se_r2[[1]]$gradient_fp, share_b = se_r2[[2]]$gradient_fp,
       frac_bits = frac_bits))
     gradient_pert <- numeric(p_total)
@@ -626,7 +626,7 @@ NULL
       pn <- length(x_vars[[ns]])
       gradient_pert[beta_map[[ns]]] <- agg$values[gi:(gi+pn-1)]; gi <- gi + pn
     }
-    agg_res <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+    agg_res <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = se_r1[[1]]$sum_residual_fp, share_b = se_r1[[2]]$sum_residual_fp,
       frac_bits = frac_bits))
     grad_pert_full <- c(agg_res$values[1] / n_obs, gradient_pert / n_obs) + lambda * theta_pert
@@ -675,8 +675,8 @@ NULL
           if (is.list(r)&&length(r)==1) r<-r[[1]]; pr[[di]]<-r
         }
         if (ph==1) { .sendBlob(pr[[1]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[2]); .sendBlob(pr[[2]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[1]) }
-        else if (ph==2) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMheTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[di]]$and_xma,and_ymb=pr[[di]]$and_ymb,had1_xma=pr[[di]]$had1_xma,had1_ymb=pr[[di]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_beaver_r1",dcf_conns[pi2])} }
-        else if (ph==3) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMheTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[di]]$had2_xma,had2_ymb=pr[[di]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_had2_r1",dcf_conns[pi2])} }
+        else if (ph==2) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[di]]$and_xma,and_ymb=pr[[di]]$and_ymb,had1_xma=pr[[di]]$had1_xma,had1_ymb=pr[[di]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_beaver_r1",dcf_conns[pi2])} }
+        else if (ph==3) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[di]]$had2_xma,had2_ymb=pr[[di]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_had2_r1",dcf_conns[pi2])} }
       }
     }
     gt2 <- .dsAgg(datasources[dealer_conn_b], call("glmRing63GenGradTriplesDS",
@@ -699,13 +699,13 @@ NULL
       r<-.dsAgg(datasources[dcf_conns[di]], call("k2GradientR2DS", party_id=as.integer(di-1), session_id=session_id))
       if(is.list(r)&&length(r)==1) r<-r[[1]]; br2[[di]]<-r
     }
-    ba <- dsVert:::.callMheTool("k2-ring63-aggregate", list(share_a=br2[[1]]$gradient_fp, share_b=br2[[2]]$gradient_fp, frac_bits=frac_bits))
+    ba <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(share_a=br2[[1]]$gradient_fp, share_b=br2[[2]]$gradient_fp, frac_bits=frac_bits))
     gp2 <- numeric(p_total)
     gp2[beta_map[[coordinator]]] <- ba$values[1:p_coord]
     gp2[beta_map[[fusion_server]]] <- ba$values[(p_coord+1):(p_coord+p_fusion)]
     gii <- p_coord+p_fusion+1
     for(ns in non_dcf_servers){pn<-length(x_vars[[ns]]);gp2[beta_map[[ns]]]<-ba$values[gii:(gii+pn-1)];gii<-gii+pn}
-    ar2 <- dsVert:::.callMheTool("k2-ring63-aggregate", list(share_a=br1[[1]]$sum_residual_fp, share_b=br1[[2]]$sum_residual_fp, frac_bits=frac_bits))
+    ar2 <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(share_a=br1[[1]]$sum_residual_fp, share_b=br1[[2]]$sum_residual_fp, frac_bits=frac_bits))
     grad_backward <- c(ar2$values[1]/n_obs, gp2/n_obs) + lambda*theta_back
 
     # Central difference: H_j = (g_forward - g_backward) / (2δ)
@@ -767,7 +767,7 @@ NULL
   }
 
   # 4. Aggregate: Σ r² (1 scalar)
-  dev_agg <- dsVert:::.callMheTool("k2-ring63-aggregate", list(
+  dev_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
     share_a = dev_r2[[1]]$gradient_fp,
     share_b = dev_r2[[2]]$gradient_fp,
     frac_bits = frac_bits))

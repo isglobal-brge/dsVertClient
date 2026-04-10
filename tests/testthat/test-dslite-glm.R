@@ -1,13 +1,13 @@
 # DSLite Integration Tests: ds.vertGLM with Different Server Counts
 #
-# These tests run the FULL distributed GLM pipeline (MHE keys, PSI alignment,
-# BCD-IRLS, deviance) using DSLite and compare against local lm()/glm().
-# Requires: DSLite, dsVert (with mhe-tool binary), dsVertClient.
+# These tests run the FULL distributed GLM pipeline (transport keys, PSI
+# alignment, L-BFGS, deviance) using DSLite and compare against local lm()/glm().
+# Requires: DSLite, dsVert (with dsvert-mpc binary), dsVertClient.
 
 skip_on_cran()
 skip_if_not_installed("DSLite")
 skip_if_not_installed("dsVert")
-skip_if_not(dsVert::mheAvailable(), "mhe-tool binary not available")
+skip_if_not(dsVert::mpcAvailable(), "dsvert-mpc binary not available")
 
 # =============================================================================
 # Helper: setup and run a full DSLite GLM scenario
