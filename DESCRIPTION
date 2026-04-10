@@ -12,17 +12,16 @@ Authors@R: c(
   )
 Description: Client-side DataSHIELD functions for privacy-preserving analysis
     of vertically partitioned federated data. Provides ECDH-PSI record
-    alignment (P-256 elliptic curve Private Set Intersection), correlation
-    analysis via Multiparty Homomorphic Encryption (MHE) with threshold
-    decryption, PCA, and Generalized Linear Models with encrypted labels
-    across multiple data sources. Works with the companion dsVert server
-    package.
+    alignment, GLM (Gaussian, Binomial, Poisson) with standard errors and
+    p-values, Pearson correlation, and PCA. All protocols use Ring63 Beaver
+    MPC with DCF wide spline link functions. No homomorphic encryption.
+    Zero observation-level disclosure. Works with the companion dsVert
+    server package.
 License: MIT + file LICENSE
 URL: https://github.com/isglobal-brge/dsVertClient,
     https://isglobal-brge.github.io/dsVertClient/
 BugReports: https://github.com/isglobal-brge/dsVertClient/issues
 Encoding: UTF-8
-LazyData: true
 Depends: R (>= 4.0.0)
 Imports:
     DSI,
