@@ -9,7 +9,7 @@
 ## Quick Start
 
 ```r
-library(DSI); library(DSOpal); library(dsVertClient)
+library(DSI); library(dsVertClient)
 
 # Connect to servers
 conns <- DSI::datashield.login(logins = builder$build())
@@ -108,4 +108,4 @@ R CMD build --no-build-vignettes .
 R CMD INSTALL dsVertClient_2.0.0.tar.gz
 ```
 
-Requires the server-side package [dsVert](https://github.com/isglobal-brge/dsVert) installed on all DataSHIELD/Opal servers.
+Requires the server-side package [dsVert](https://github.com/isglobal-brge/dsVert) installed on all DataSHIELD servers.
