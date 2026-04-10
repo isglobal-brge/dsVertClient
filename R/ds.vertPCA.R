@@ -9,8 +9,6 @@
 #' @param n_components Integer. Number of components. Default NULL (all).
 #' @param cor_result An existing \code{ds.cor} object from \code{\link{ds.vertCor}}.
 #'   If provided, the correlation protocol is not re-run.
-#' @param log_n Integer. Unused (kept for API compatibility).
-#' @param log_scale Integer. Unused (kept for API compatibility).
 #' @param verbose Logical. If TRUE (default), print progress messages.
 #' @param datasources DataSHIELD connection object or list of connections.
 #'   If NULL, uses all available connections. Ignored if \code{cor_result} is
@@ -96,7 +94,7 @@
 #' @export
 ds.vertPCA <- function(data_name = NULL, variables = NULL, n_components = NULL,
                        cor_result = NULL,
-                       log_n = 12, log_scale = 40, verbose = TRUE,
+                       verbose = TRUE,
                        datasources = NULL) {
 
   # If an existing correlation result is provided, use it directly
@@ -121,7 +119,6 @@ ds.vertPCA <- function(data_name = NULL, variables = NULL, n_components = NULL,
     # Step 1: Compute privacy-preserving correlation matrix
     if (verbose) message("Computing privacy-preserving correlation matrix...")
     cor_result <- ds.vertCor(data_name, variables,
-                             log_n = log_n, log_scale = log_scale,
                              verbose = verbose, datasources = datasources)
 
     R <- cor_result$correlation

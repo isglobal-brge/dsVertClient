@@ -19,33 +19,12 @@
 #' @name k3-ring63-dcf-loop
 NULL
 
-.lbfgs_direction_ring63 <- function(grad, s_hist, y_hist) {
-  k <- length(s_hist)
-  if (k == 0) return(-grad)
-  q <- grad; alpha_h <- numeric(k)
-  for (i in k:1) {
-    rho <- 1 / sum(y_hist[[i]] * s_hist[[i]])
-    if (!is.finite(rho)) rho <- 0
-    alpha_h[i] <- rho * sum(s_hist[[i]] * q)
-    q <- q - alpha_h[i] * y_hist[[i]]
-  }
-  gamma <- sum(s_hist[[k]] * y_hist[[k]]) / sum(y_hist[[k]]^2)
-  if (!is.finite(gamma) || gamma <= 0) gamma <- 1.0
-  r <- gamma * q
-  for (i in 1:k) {
-    rho <- 1 / sum(y_hist[[i]] * s_hist[[i]])
-    if (!is.finite(rho)) rho <- 0
-    r <- r + s_hist[[i]] * (alpha_h[i] - rho * sum(y_hist[[i]] * r))
-  }
-  -r
-}
-
 #' @keywords internal
 .k3_ring63_gradient_loop <- function(
     datasources, server_list, server_names, x_vars,
     coordinator, coordinator_conn, non_label_servers,
     transport_pks, std_data, y_var, family,
-    betas, n_obs, lambda, log_n, log_scale,
+    betas, n_obs, lambda,
     session_id, max_iter, tol, verbose,
     label_intercept, .dsAgg, .sendBlob) {
 
@@ -444,7 +423,7 @@ NULL
     }
     prev_theta <- theta; prev_grad <- full_grad
 
-    direction <- .lbfgs_direction_ring63(full_grad, lbfgs_s, lbfgs_y)
+    direction <- .lbfgs_direction(full_grad, lbfgs_s, lbfgs_y)
     step_size <- if (iter <= 1) 0.3 else 1.0
     new_theta <- theta + step_size * direction
     intercept <- new_theta[1]
