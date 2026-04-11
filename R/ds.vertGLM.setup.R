@@ -85,6 +85,37 @@
   }
 
   # =========================================================================
+  # Phase 0.5: Coordinated NA exclusion (like glm()'s na.omit)
+  # =========================================================================
+  # Each server reports which rows have NAs in the formula variables.
+  # We compute the union of NA rows and drop them from ALL servers.
+  all_formula_vars <- c(y_var, unlist(x_vars, use.names = FALSE))
+  na_results <- list()
+  for (server in server_list) {
+    conn_idx <- which(server_names == server)
+    srv_vars <- intersect(all_formula_vars, c(x_vars[[server]], if (server == y_server) y_var))
+    if (length(srv_vars) > 0) {
+      na_results[[server]] <- .dsAgg(conns = datasources[conn_idx],
+        expr = call("dsvertNaCheckDS", data_name = data_name,
+                    vars = srv_vars))
+      if (is.list(na_results[[server]]) && length(na_results[[server]]) == 1)
+        na_results[[server]] <- na_results[[server]][[1]]
+    }
+  }
+  # Union of all NA rows
+  all_na_rows <- unique(unlist(lapply(na_results, function(r) r$na_rows)))
+  if (length(all_na_rows) > 0) {
+    if (verbose) message(sprintf("[NA handling] Dropping %d rows with NAs (like glm na.omit)...",
+      length(all_na_rows)))
+    for (server in server_list) {
+      conn_idx <- which(server_names == server)
+      .dsAgg(conns = datasources[conn_idx],
+        expr = call("dsvertDropRowsDS", data_name = data_name,
+                    output_name = data_name, drop_rows = all_na_rows))
+    }
+  }
+
+  # =========================================================================
   # Phase 1: Standardize features
   # =========================================================================
   if (verbose) message("\n[Phase 1] Standardizing features across ", length(server_list), " servers...")
