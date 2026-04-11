@@ -765,14 +765,14 @@ NULL
     agg$values[1]
   }
 
-  if (family == "gaussian" || family == "binomial") {
-    # Gaussian: RSS = canonical deviance. Binomial: RSS approximation.
+  if (family == "gaussian") {
+    # Gaussian: RSS = canonical deviance
     for (i in seq_along(dcf_parties))
       .dsAgg(datasources[dcf_conns[i]], call("glmRing63PrepDevianceDS",
         mode = "rss", session_id = session_id))
     secure_deviance <- .k3_beaver_dot()
 
-  } else if (FALSE) {
+  } else if (family == "binomial") {
     # Canonical binomial: D = 2*(Σsoftplus(η) - y^T·η) — future work
     sp_dcf <- .dsAgg(datasources[dealer_conn],
       call("glmRing63GenDcfKeysDS",
@@ -805,7 +805,7 @@ NULL
           session_id = session_id))
         if (is.list(r) && length(r) == 1) r <- r[[1]]; pr[[di]] <- r
       }
-      if (ph==1) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(pr[[di]]$dcf_masked)),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_dcf_masked",dcf_conns[pi2])} }
+      if (ph==1) { .sendBlob(pr[[1]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[2]);.sendBlob(pr[[2]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[1]) }
       else if (ph==2) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[di]]$and_xma,and_ymb=pr[[di]]$and_ymb,had1_xma=pr[[di]]$had1_xma,had1_ymb=pr[[di]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_beaver_r1",dcf_conns[pi2])} }
       else if (ph==3) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[di]]$had2_xma,had2_ymb=pr[[di]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_had2_r1",dcf_conns[pi2])} }
     }

@@ -456,7 +456,7 @@ NULL
     agg$values[1]
   }
 
-  if (family == "gaussian" || family == "binomial") {
+  if (family == "gaussian") {
     # Gaussian: RSS = canonical deviance. Binomial: RSS approximation.
     for (s in server_list) {
       ci <- which(server_names == s)
@@ -503,12 +503,9 @@ NULL
         if (is.list(r) && length(r) == 1) r <- r[[1]]; pr[[di]] <- r
       }
       if (ph == 1) {
-        for (di in 1:2) {
-          pi2 <- 3 - di; pk <- .b64url_to_b64(transport_pks[[dcf_parties[pi2]]])
-          s <- dsVert:::.callMpcTool("transport-encrypt", list(
-            data = jsonlite::base64_enc(charToRaw(pr[[di]]$dcf_masked)), recipient_pk = pk))
-          .sendBlob(.to_b64url(s$sealed), "k2_peer_dcf_masked", dcf_conns[pi2])
-        }
+        # Send dcf_masked RAW (same as iteration loop — Phase 2 expects raw, not encrypted)
+        .sendBlob(pr[[1]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[2])
+        .sendBlob(pr[[2]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[1])
       } else if (ph == 2) {
         for (di in 1:2) {
           pi2 <- 3 - di; pk <- .b64url_to_b64(transport_pks[[dcf_parties[pi2]]])

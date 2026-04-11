@@ -143,8 +143,18 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   # ===========================================================================
   # Input Validation + Smart Auto-Detection
   # ===========================================================================
+
+  # data can be: "DA" (same name on all servers) or list(s1="tableA", s2="tableB")
+  # For now we require all servers use the same data frame name (standard in DataSHIELD).
+  if (is.list(data_name) && !is.null(names(data_name))) {
+    # Named list: validate and extract. For future use.
+    # Currently DataSHIELD requires the same assign name on all servers.
+    stop("Named list for data is not yet supported. Use ds.psiAlign() to align data first, ",
+         "then pass the aligned name (e.g. 'DA').", call. = FALSE)
+  }
   if (!is.character(data_name) || length(data_name) != 1)
-    stop("data_name must be a single character string", call. = FALSE)
+    stop("data must be a single character string (the name of the aligned data frame on all servers).",
+         call. = FALSE)
   if (!is.character(y_var) || length(y_var) != 1)
     stop("y_var must be a single character string", call. = FALSE)
   if (!family %in% c("gaussian", "binomial", "poisson"))
@@ -164,20 +174,37 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       call("dsvertColNamesDS", data_name = data_name))
     server_names <- names(datasources)
 
-    # Build column map: which server has which variable
+    # Build column map: which server has which variable (exclude IDs)
     col_map <- list()
-    for (srv in server_names)
-      col_map[[srv]] <- setdiff(col_results[[srv]]$columns, c("id", "patient_id"))
+    all_available <- character(0)
+    for (srv in server_names) {
+      cols <- setdiff(col_results[[srv]]$columns, c("id", "patient_id"))
+      col_map[[srv]] <- cols
+      all_available <- c(all_available, cols)
+    }
+    all_available <- unique(all_available)
+
+    # Validate: all requested variables must exist somewhere
+    if (!is.null(user_x_vars)) {
+      missing <- setdiff(user_x_vars, all_available)
+      if (length(missing) > 0)
+        stop("Variables not found on any server: ", paste(missing, collapse = ", "),
+             "\n  Available: ", paste(all_available, collapse = ", "), call. = FALSE)
+    }
+    if (!y_var %in% all_available)
+      stop("Response variable '", y_var, "' not found on any server.\n",
+           "  Available columns per server:\n",
+           paste(sapply(server_names, function(s)
+             paste0("    ", s, ": ", paste(col_map[[s]], collapse = ", "))),
+             collapse = "\n"), call. = FALSE)
 
     # Find y_server automatically
     if (is.null(y_server)) {
       y_servers <- server_names[sapply(server_names, function(s) y_var %in% col_map[[s]])]
-      if (length(y_servers) == 0)
-        stop("Response variable '", y_var, "' not found on any server.\n",
-             "  Available: ", paste(sapply(server_names, function(s)
-               paste0(s, ": ", paste(col_map[[s]], collapse=", "))), collapse = "\n  "),
-             call. = FALSE)
       y_server <- y_servers[1]
+      if (length(y_servers) > 1 && verbose)
+        message("  Note: '", y_var, "' found on multiple servers (",
+                paste(y_servers, collapse = ", "), "). Using: ", y_server)
       if (verbose) message("  y_var '", y_var, "' found on: ", y_server)
     }
 
