@@ -106,7 +106,7 @@ devtools::install_github("isglobal-brge/dsVertClient")
 
 # Or from source
 R CMD build --no-build-vignettes .
-R CMD INSTALL dsVertClient_2.0.0.tar.gz
+R CMD INSTALL dsVertClient_1.0.0.tar.gz
 ```
 
 Requires the server-side package [dsVert](https://github.com/isglobal-brge/dsVert) installed on all DataSHIELD servers.
