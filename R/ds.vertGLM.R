@@ -21,8 +21,8 @@
 #' @param tol Numeric. Convergence tolerance on coefficient change.
 #'   Default is 1e-4.
 #' @param lambda Numeric. L2 regularization parameter. Default is 1e-4.
-#' @param log_n Integer. Base-2 log of CKKS slot count. Adaptively bumped
-#'   when n_obs exceeds 2^(log_n-1). Default is 12.
+#' @param log_n Integer. Legacy parameter (ignored). Kept for backward
+#'   compatibility.
 #' @param verbose Logical. Print progress messages. Default is TRUE.
 #' @param datasources DataSHIELD connection object or list of connections.
 #' @param eta_privacy Character. \code{"auto"} (default) selects
