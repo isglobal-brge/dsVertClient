@@ -41,6 +41,8 @@ NULL
   dcf_family <- if (family == "poisson") "poisson" else "sigmoid"
 
   .to_b64url <- function(x) gsub("+","-",gsub("/","_",gsub("=+$","",x,perl=TRUE),fixed=TRUE),fixed=TRUE)
+  # Safe beta extraction: returns NULL for empty index (avoids numeric(0) in Opal calls)
+  .bsafe <- function(b, idx) { if (is.null(idx) || length(idx) == 0) NULL else b[idx] }
   .b64url_to_b64 <- function(x) {
     x <- gsub("-","+",gsub("_","/",x,fixed=TRUE),fixed=TRUE)
     pad <- nchar(x)%%4; if(pad==2) x<-paste0(x,"=="); if(pad==3) x<-paste0(x,"="); x
@@ -213,10 +215,11 @@ NULL
     # Build a map: server -> beta indices
     beta_map <- list()
     idx <- 1
-    beta_map[[coordinator]] <- idx:(idx + p_coord - 1); idx <- idx + p_coord
+    if (p_coord > 0) { beta_map[[coordinator]] <- idx:(idx + p_coord - 1); idx <- idx + p_coord }
     for (srv in server_list) {
       if (srv == coordinator) next
       p_s <- length(x_vars[[srv]])
+      if (p_s == 0) next
       beta_map[[srv]] <- idx:(idx + p_s - 1); idx <- idx + p_s
     }
 
@@ -229,18 +232,18 @@ NULL
       if (is_coord) {
         # Coordinator: X = [own(coord) | peer(fusion) | extra...]
         # beta_coord = own betas, beta_nl = [fusion betas | extra betas]
-        b_coord <- beta[beta_map[[coordinator]]]
-        b_nl <- c(beta[beta_map[[peer_srv]]])
-        for (ns in non_dcf_servers) b_nl <- c(b_nl, beta[beta_map[[ns]]])
+        b_coord <- .bsafe(beta, beta_map[[coordinator]])
+        b_nl <- c(.bsafe(beta, beta_map[[peer_srv]]))
+        for (ns in non_dcf_servers) b_nl <- c(b_nl, .bsafe(beta, beta_map[[ns]]))
       } else {
         # Fusion: X = [peer(coord) | extra... | own(fusion)]
         # The Go cmd with is_party_zero=FALSE puts: [peer | own]
         # peer = coord_share + extras, own = fusion_share
         # So beta_coord = coord betas, beta_nl = [extra betas | own betas]
-        b_coord <- beta[beta_map[[coordinator]]]
+        b_coord <- .bsafe(beta, beta_map[[coordinator]])
         b_nl <- c()
-        for (ns in non_dcf_servers) b_nl <- c(b_nl, beta[beta_map[[ns]]])
-        b_nl <- c(b_nl, beta[beta_map[[srv]]])  # own (fusion) last
+        for (ns in non_dcf_servers) b_nl <- c(b_nl, .bsafe(beta, beta_map[[ns]]))
+        b_nl <- c(b_nl, .bsafe(beta, beta_map[[srv]]))  # own (fusion) last
       }
 
       .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
@@ -404,13 +407,14 @@ NULL
 
     # Remap from canonical [coord | fusion | extras] to beta order [coord | non-coord-by-server-list]
     gradient <- numeric(p_total)
-    gradient[beta_map[[coordinator]]] <- gradient_canonical[1:p_coord]
-    gradient[beta_map[[fusion_server]]] <- gradient_canonical[(p_coord + 1):(p_coord + p_fusion)]
-    grad_idx <- p_coord + p_fusion + 1
+    gi <- 1
+    if (p_coord > 0) { gradient[beta_map[[coordinator]]] <- gradient_canonical[gi:(gi+p_coord-1)]; gi <- gi + p_coord }
+    if (p_fusion > 0) { gradient[beta_map[[fusion_server]]] <- gradient_canonical[gi:(gi+p_fusion-1)]; gi <- gi + p_fusion }
     for (ns in non_dcf_servers) {
       p_ns <- length(x_vars[[ns]])
-      gradient[beta_map[[ns]]] <- gradient_canonical[grad_idx:(grad_idx + p_ns - 1)]
-      grad_idx <- grad_idx + p_ns
+      if (p_ns == 0) next
+      gradient[beta_map[[ns]]] <- gradient_canonical[gi:(gi + p_ns - 1)]
+      gi <- gi + p_ns
     }
 
     theta <- c(intercept, beta)
@@ -455,15 +459,20 @@ NULL
 
   # Build betas in per-server format
   betas_out <- list()
-  if (label_intercept) {
-    betas_out[[coordinator]] <- c(intercept, beta[1:p_coord])
-  } else {
-    betas_out[[coordinator]] <- beta[1:p_coord]
+  if (p_coord > 0) {
+    if (label_intercept) {
+      betas_out[[coordinator]] <- c(intercept, beta[1:p_coord])
+    } else {
+      betas_out[[coordinator]] <- beta[1:p_coord]
+    }
+  } else if (label_intercept) {
+    betas_out[[coordinator]] <- intercept
   }
   idx <- p_coord + 1
   for (server in server_list) {
     if (server == coordinator) next
     p_s <- length(x_vars[[server]])
+    if (p_s == 0) next
     betas_out[[server]] <- beta[idx:(idx + p_s - 1)]
     idx <- idx + p_s
   }
@@ -497,14 +506,14 @@ NULL
       srv <- dcf_parties[di]
       is_coord <- (srv == coordinator)
       if (is_coord) {
-        b_coord <- beta_pert[beta_map[[coordinator]]]
+        b_coord <- .bsafe(beta_pert, beta_map[[coordinator]])
         b_nl <- c(beta_pert[beta_map[[dcf_parties[1]]]])
-        for (ns in non_dcf_servers) b_nl <- c(b_nl, beta_pert[beta_map[[ns]]])
+        for (ns in non_dcf_servers) b_nl <- c(b_nl, .bsafe(beta_pert, beta_map[[ns]]))
       } else {
-        b_coord <- beta_pert[beta_map[[coordinator]]]
+        b_coord <- .bsafe(beta_pert, beta_map[[coordinator]])
         b_nl <- c()
-        for (ns in non_dcf_servers) b_nl <- c(b_nl, beta_pert[beta_map[[ns]]])
-        b_nl <- c(b_nl, beta_pert[beta_map[[srv]]])
+        for (ns in non_dcf_servers) b_nl <- c(b_nl, .bsafe(beta_pert, beta_map[[ns]]))
+        b_nl <- c(b_nl, .bsafe(beta_pert, beta_map[[srv]]))
       }
       .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
         beta_coord = b_coord, beta_nl = b_nl,
@@ -600,11 +609,12 @@ NULL
       share_a = se_r2[[1]]$gradient_fp, share_b = se_r2[[2]]$gradient_fp,
       frac_bits = frac_bits))
     gradient_pert <- numeric(p_total)
-    gradient_pert[beta_map[[coordinator]]] <- agg$values[1:p_coord]
-    gradient_pert[beta_map[[fusion_server]]] <- agg$values[(p_coord+1):(p_coord+p_fusion)]
-    gi <- p_coord + p_fusion + 1
+    gi <- 1
+    if (p_coord > 0) { gradient_pert[beta_map[[coordinator]]] <- agg$values[gi:(gi+p_coord-1)]; gi <- gi + p_coord }
+    if (p_fusion > 0) { gradient_pert[beta_map[[fusion_server]]] <- agg$values[gi:(gi+p_fusion-1)]; gi <- gi + p_fusion }
     for (ns in non_dcf_servers) {
       pn <- length(x_vars[[ns]])
+      if (pn == 0) next
       gradient_pert[beta_map[[ns]]] <- agg$values[gi:(gi+pn-1)]; gi <- gi + pn
     }
     agg_res <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
@@ -681,11 +691,10 @@ NULL
       if(is.list(r)&&length(r)==1) r<-r[[1]]; br2[[di]]<-r
     }
     ba <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(share_a=br2[[1]]$gradient_fp, share_b=br2[[2]]$gradient_fp, frac_bits=frac_bits))
-    gp2 <- numeric(p_total)
-    gp2[beta_map[[coordinator]]] <- ba$values[1:p_coord]
-    gp2[beta_map[[fusion_server]]] <- ba$values[(p_coord+1):(p_coord+p_fusion)]
-    gii <- p_coord+p_fusion+1
-    for(ns in non_dcf_servers){pn<-length(x_vars[[ns]]);gp2[beta_map[[ns]]]<-ba$values[gii:(gii+pn-1)];gii<-gii+pn}
+    gp2 <- numeric(p_total); gii <- 1
+    if(p_coord>0){gp2[beta_map[[coordinator]]]<-ba$values[gii:(gii+p_coord-1)];gii<-gii+p_coord}
+    if(p_fusion>0){gp2[beta_map[[fusion_server]]]<-ba$values[gii:(gii+p_fusion-1)];gii<-gii+p_fusion}
+    for(ns in non_dcf_servers){pn<-length(x_vars[[ns]]);if(pn==0)next;gp2[beta_map[[ns]]]<-ba$values[gii:(gii+pn-1)];gii<-gii+pn}
     ar2 <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(share_a=br1[[1]]$sum_residual_fp, share_b=br1[[2]]$sum_residual_fp, frac_bits=frac_bits))
     grad_backward <- c(ar2$values[1]/n_obs, gp2/n_obs) + lambda*theta_back
 
@@ -709,8 +718,14 @@ NULL
   for (di in seq_along(dcf_parties)) {
     ci <- dcf_conns[di]
     is_coord <- (dcf_parties[di] == coordinator)
-    b_coord <- beta[1:p_coord]
-    b_nl <- if (is_coord) beta[(p_coord+1):p_total] else beta[c((p_coord+p_fusion+1):p_total, (p_coord+1):(p_coord+p_fusion))]
+    b_coord <- if (p_coord > 0) beta[1:p_coord] else NULL
+    b_nl_range <- (p_coord+1):p_total
+    if (p_coord >= p_total) b_nl_range <- integer(0)
+    b_nl <- if (is_coord) beta[b_nl_range] else {
+      if (p_fusion > 0 && length(b_nl_range) > p_fusion) {
+        beta[c((p_coord+p_fusion+1):p_total, (p_coord+1):(p_coord+p_fusion))]
+      } else beta[b_nl_range]
+    }
     .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
       beta_coord = b_coord, beta_nl = b_nl,
       intercept = intercept, is_coordinator = is_coord,

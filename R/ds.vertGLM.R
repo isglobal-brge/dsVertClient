@@ -358,6 +358,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   # Phase 3: Iterative Ring63 Beaver (on standardized scale)
   # ===========================================================================
   label_intercept <- !standardize_y
+
   coordinator <- y_server
   coordinator_conn <- which(server_names == coordinator)
 
