@@ -186,10 +186,11 @@ pca_result <- ds.vertPCA(
 | Analysis | K=2 | K=3 |
 |----------|-----|-----|
 | Key setup | 0.3s | 0.5s |
-| GLM Binomial (12 iters) | 270s | 350s |
-| GLM Gaussian (11 iters) | 45s | 60s |
-| Correlation (p=6) | — | 18s |
-| PCA (p=6) | — | 18s |
+| GLM Binomial (12 iters + SE) | ~330s | ~350s |
+| GLM Gaussian (11 iters + SE) | ~60s | ~65s |
+| GLM Poisson (11 iters + SE) | ~500s | ~540s |
+| Correlation (p=6) | 16s | 18s |
+| PCA (p=6) | <1s (from cor) | 18s |
 
 ```{r cleanup, eval=FALSE}
 DSI::datashield.logout(conns)
