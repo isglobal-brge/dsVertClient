@@ -76,7 +76,7 @@
 #' @export
 ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
                          ref_server = NULL, verbose = TRUE,
-                         datasources = NULL) {
+                         datasources = NULL, na.action = "na.omit") {
   # Validate inputs
   if (!is.character(data_name) || length(data_name) != 1) {
     stop("data_name must be a single character string", call. = FALSE)
@@ -102,6 +102,24 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   on.exit({
     .dsvert_reset_chunk_size()
   }, add = TRUE)
+
+  # NA handling: na.omit per-server BEFORE PSI (non-disclosive, like glm na.action)
+  if (identical(na.action, "na.omit")) {
+    if (verbose) message("[NA handling] Per-server na.omit (before PSI)...")
+    for (srv in server_names) {
+      ci <- which(names(datasources) == srv)
+      r <- tryCatch(
+        DSI::datashield.aggregate(datasources[ci],
+          call("dsvertNaOmitDS", data_name = data_name)),
+        error = function(e) NULL)
+      if (!is.null(r)) {
+        if (is.list(r) && length(r) == 1) r <- r[[1]]
+        if (!is.null(r$n_dropped) && r$n_dropped > 0 && verbose)
+          message(sprintf("  %s: dropped %d rows with NAs (%d -> %d)",
+            srv, r$n_dropped, r$n_before, r$n_after))
+      }
+    }
+  }
 
   # Determine reference server
   if (is.null(ref_server)) {
