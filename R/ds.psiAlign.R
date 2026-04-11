@@ -183,12 +183,20 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   id_for_server <- if (length(psi_identity_info) > 0) psi_identity_info else NULL
   if (!is.null(id_for_server))
     id_for_server[["ref"]] <- psi_identity_info[[ref_server]]
-  DSI::datashield.aggregate(
-    conns = datasources,
-    expr = call("psiStoreTransportKeysDS", keys_for_server,
-                  identity_info = id_for_server,
-                  session_id = session_id)
-  )
+  # Store transport keys per-server (list args as base64url JSON to avoid Opal parser)
+  .to_b64url <- function(x) gsub("\\+","-",gsub("/","_",gsub("=+$","",x,perl=TRUE),fixed=TRUE),fixed=TRUE)
+  .json_to_b64url <- function(x) .to_b64url(gsub("\n","",jsonlite::base64_enc(charToRaw(jsonlite::toJSON(x, auto_unbox = TRUE))),fixed=TRUE))
+  keys_b64 <- .json_to_b64url(keys_for_server)
+  id_b64 <- if (!is.null(id_for_server)) .json_to_b64url(id_for_server) else ""
+  for (name in server_names) {
+    ci <- which(names(datasources) == name)
+    DSI::datashield.aggregate(
+      conns = datasources[ci],
+      expr = call("psiStoreTransportKeysDS",
+                    transport_keys_b64 = keys_b64,
+                    identity_info_b64 = id_b64,
+                    session_id = session_id))
+  }
   if (verbose) message("  Transport keys exchanged.")
 
   # ==================================================================

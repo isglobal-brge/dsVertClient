@@ -7,8 +7,26 @@
 #' @param datasources DataSHIELD connections.
 #' @return List with correlation matrix, variable names, n_obs.
 #' @export
-ds.vertCor <- function(data_name, variables,
+ds.vertCor <- function(data_name, variables = NULL,
                        verbose = TRUE, datasources = NULL) {
+  if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
+
+  # Auto-detect: if variables is NULL or a character vector, query servers
+  if (is.null(variables) || is.character(variables)) {
+    user_vars <- variables
+    if (verbose) message("[Auto-detect] Querying server columns...")
+    col_results <- DSI::datashield.aggregate(datasources,
+      call("dsvertColNamesDS", data_name = data_name))
+    variables <- list()
+    for (srv in names(datasources)) {
+      feats <- setdiff(col_results[[srv]]$columns, c("id", "patient_id"))
+      if (!is.null(user_vars)) feats <- intersect(feats, user_vars)
+      if (length(feats) > 0) variables[[srv]] <- feats
+    }
+    if (verbose) for (srv in names(variables))
+      message("  ", srv, ": ", paste(variables[[srv]], collapse = ", "))
+  }
+
   if (!is.list(variables) || is.null(names(variables)))
     stop("variables must be a named list", call. = FALSE)
   if (length(variables) < 2)
@@ -22,7 +40,6 @@ ds.vertCor <- function(data_name, variables,
            paste(hex[21:32],collapse=""))
   })
 
-  if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
   server_list <- names(variables)
 
@@ -76,10 +93,14 @@ ds.vertCor <- function(data_name, variables,
   }
   pk_sorted <- transport_pks[sort(names(transport_pks))]
   id_sorted <- if (length(identity_info) > 0) identity_info[sort(names(identity_info))] else NULL
+  .to_b64url <- function(x) gsub("\\+","-",gsub("/","_",gsub("=+$","",x,perl=TRUE),fixed=TRUE),fixed=TRUE)
+  .json_to_b64url <- function(x) .to_b64url(gsub("\n","",jsonlite::base64_enc(charToRaw(jsonlite::toJSON(x, auto_unbox = TRUE))),fixed=TRUE))
+  pk_b64 <- .json_to_b64url(pk_sorted)
+  id_b64 <- if (!is.null(id_sorted)) .json_to_b64url(id_sorted) else ""
   for (server in server_list) {
     ci <- which(server_names == server)
     .dsAgg(datasources[ci], call("mpcStoreTransportKeysDS",
-      transport_keys = pk_sorted, identity_info = id_sorted,
+      transport_keys_b64 = pk_b64, identity_info_b64 = id_b64,
       session_id = session_id))
   }
 

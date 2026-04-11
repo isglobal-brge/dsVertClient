@@ -68,11 +68,15 @@
 
     pk_sorted <- transport_pks[sort(names(transport_pks))]
     id_sorted <- if (length(identity_info) > 0) identity_info[sort(names(identity_info))] else NULL
+    .to_b64url <- function(x) gsub("\\+","-",gsub("/","_",gsub("=+$","",x,perl=TRUE),fixed=TRUE),fixed=TRUE)
+    .json_to_b64url <- function(x) .to_b64url(gsub("\n","",jsonlite::base64_enc(charToRaw(jsonlite::toJSON(x, auto_unbox = TRUE))),fixed=TRUE))
+    pk_b64 <- .json_to_b64url(pk_sorted)
+    id_b64 <- if (!is.null(id_sorted)) .json_to_b64url(id_sorted) else ""
     for (server in server_list) {
       conn_idx <- which(server_names == server)
       .dsAgg(conns = datasources[conn_idx],
         expr = call("mpcStoreTransportKeysDS",
-                    transport_keys = pk_sorted, identity_info = id_sorted,
+                    transport_keys_b64 = pk_b64, identity_info_b64 = id_b64,
                     session_id = session_id))
     }
 
@@ -97,10 +101,12 @@
     conn_idx <- which(server_names == server)
     y_arg <- if (server == y_server && standardize_y) y_var else NULL
 
+    srv_x <- x_vars[[server]]
+    if (length(srv_x) == 0) srv_x <- NULL
     std_result <- .dsAgg(conns = datasources[conn_idx],
       expr = call("glmStandardizeDS",
                   data_name = data_name, output_name = std_data,
-                  x_vars = x_vars[[server]], y_var = y_arg,
+                  x_vars = srv_x, y_var = y_arg,
                   session_id = session_id))
     if (is.list(std_result) && length(std_result) == 1)
       std_result <- std_result[[1]]

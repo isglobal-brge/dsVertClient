@@ -1,18 +1,19 @@
 #' @title Generalized Linear Model for Vertically Partitioned Data
 #' @description Fits a GLM across vertically partitioned data using Ring63
-#'   Beaver MPC with DCF wide spline for the link function. The response
-#'   variable y exists on one server (the "label server"). All computation
-#'   uses additive secret sharing in Ring63 fixed-point arithmetic. Only
-#'   p-dimensional aggregate gradients are revealed to the client per
-#'   iteration. No observation-level data is ever disclosed.
+#'   Beaver MPC with DCF wide spline for the link function. The system
+#'   auto-detects which server holds each variable. Only p-dimensional
+#'   aggregate gradients are revealed to the client per iteration.
+#'   No observation-level data is ever disclosed.
 #'
-#' @param data_name Character string. Name of the (aligned) data frame on
+#' @param formula A formula (e.g. \code{npreg ~ age + bmi + glu}) or
+#'   character string (\code{"npreg ~ age + bmi + glu"}). Can also be
+#'   a data_name string for backward compatibility.
+#' @param data Character string. Name of the (aligned) data frame on
 #'   each server.
-#' @param y_var Character string. Name of the response variable (must exist
-#'   on the label server specified by \code{y_server}).
-#' @param x_vars A named list where each name corresponds to a server name
-#'   and each element is a character vector of predictor variable names
-#'   from that server.
+#' @param x_vars Optional. Character vector of predictor names, or a
+#'   named list mapping server names to variable vectors. If NULL and
+#'   formula is used, extracted from the formula. If NULL and no formula,
+#'   all available columns (minus y and IDs) are used.
 #' @param y_server Character string. Name of the server holding the response.
 #' @param family Character string. GLM family: "gaussian", "binomial",
 #'   or "poisson". Default is "gaussian".
@@ -83,39 +84,130 @@
 #'
 #' @examples
 #' \dontrun{
-#' x_vars <- list(
-#'   server1 = c("age", "bmi"),
-#'   server2 = c("glucose"),
-#'   server3 = c("cholesterol", "heart_rate")
-#' )
+#' # Simplest: formula interface (auto-detects everything)
+#' model <- ds.vertGLM(npreg ~ age + bmi + glu + bp + skin,
+#'                      data = "DA", family = "gaussian")
 #'
-#' # Gaussian GLM (bp on server2)
-#' model <- ds.vertGLM("D_aligned", "bp", x_vars,
-#'                      y_server = "server2", family = "gaussian")
-#' print(model)
+#' # String formula
+#' model <- ds.vertGLM("diabetes ~ age + bmi + glu",
+#'                      data = "DA", family = "binomial")
+#'
+#' # Auto-detect all features
+#' model <- ds.vertGLM("DA", "npreg", family = "poisson")
+#'
+#' # Manual server mapping (legacy)
+#' model <- ds.vertGLM("DA", "npreg",
+#'   list(s1 = c("age", "bmi"), s2 = c("glu", "bp")),
+#'   y_server = "s2", family = "gaussian")
 #' }
 #'
 #' @importFrom DSI datashield.aggregate datashield.connections_find
 #' @export
-ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
+ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        family = "gaussian", max_iter = 100, tol = 1e-4,
                        lambda = 1e-4, log_n = 12,
                        verbose = TRUE, datasources = NULL,
-                       eta_privacy = "auto") {
+                       eta_privacy = "auto",
+                       # Legacy positional args for backward compatibility
+                       data_name = NULL, y_var = NULL) {
   call_matched <- match.call()
 
   # ===========================================================================
-  # Input Validation
+  # Parse formula or legacy arguments
+  # ===========================================================================
+  if (!missing(formula)) {
+    if (inherits(formula, "formula")) {
+      # R formula object: npreg ~ age + bmi + ped
+      f_terms <- terms(formula)
+      y_var <- as.character(attr(f_terms, "variables")[[2]])
+      x_from_formula <- attr(f_terms, "term.labels")
+      if (is.null(x_vars)) x_vars <- x_from_formula
+      data_name <- data
+    } else if (is.character(formula) && grepl("~", formula)) {
+      # String formula: "npreg ~ age + bmi + ped"
+      f <- as.formula(formula)
+      f_terms <- terms(f)
+      y_var <- as.character(attr(f_terms, "variables")[[2]])
+      x_from_formula <- attr(f_terms, "term.labels")
+      if (is.null(x_vars)) x_vars <- x_from_formula
+      data_name <- data
+    } else if (is.character(formula) && !grepl("~", formula)) {
+      # Legacy: first arg is data_name (backward compat)
+      data_name <- formula
+      y_var <- data
+      # x_vars stays as passed
+    }
+  }
+  if (is.null(data_name) && !is.null(data)) data_name <- data
+
+  # ===========================================================================
+  # Input Validation + Smart Auto-Detection
   # ===========================================================================
   if (!is.character(data_name) || length(data_name) != 1)
     stop("data_name must be a single character string", call. = FALSE)
   if (!is.character(y_var) || length(y_var) != 1)
     stop("y_var must be a single character string", call. = FALSE)
-  if (!is.list(x_vars) || is.null(names(x_vars)))
-    stop("x_vars must be a named list mapping server names to variable vectors",
-         call. = FALSE)
   if (!family %in% c("gaussian", "binomial", "poisson"))
     stop("family must be 'gaussian', 'binomial', or 'poisson'",
+         call. = FALSE)
+
+  if (is.null(datasources))
+    datasources <- DSI::datashield.connections_find()
+  if (length(datasources) == 0)
+    stop("No DataSHIELD connections found", call. = FALSE)
+
+  # Auto-detect: query servers for their columns and map variables automatically
+  if (is.null(x_vars) || is.character(x_vars)) {
+    user_x_vars <- x_vars  # NULL = use all available, character = specific vars
+    if (verbose) message("[Auto-detect] Querying server columns...")
+    col_results <- DSI::datashield.aggregate(datasources,
+      call("dsvertColNamesDS", data_name = data_name))
+    server_names <- names(datasources)
+
+    # Build column map: which server has which variable
+    col_map <- list()
+    for (srv in server_names)
+      col_map[[srv]] <- setdiff(col_results[[srv]]$columns, c("id", "patient_id"))
+
+    # Find y_server automatically
+    if (is.null(y_server)) {
+      y_servers <- server_names[sapply(server_names, function(s) y_var %in% col_map[[s]])]
+      if (length(y_servers) == 0)
+        stop("Response variable '", y_var, "' not found on any server.\n",
+             "  Available: ", paste(sapply(server_names, function(s)
+               paste0(s, ": ", paste(col_map[[s]], collapse=", "))), collapse = "\n  "),
+             call. = FALSE)
+      y_server <- y_servers[1]
+      if (verbose) message("  y_var '", y_var, "' found on: ", y_server)
+    }
+
+    # Build x_vars automatically
+    x_vars <- list()
+    for (srv in server_names) {
+      feats <- col_map[[srv]]
+      # Always exclude y_var from features (even on non-label servers)
+      feats <- setdiff(feats, y_var)
+      # If user specified specific vars, filter to those
+      if (!is.null(user_x_vars))
+        feats <- intersect(feats, user_x_vars)
+      x_vars[[srv]] <- feats
+    }
+
+    # Remove response-only vars from feature lists
+    # Keep server in x_vars even if it has 0 features (label server)
+    if (verbose) {
+      for (srv in server_names) {
+        role <- if (srv == y_server) " (label)" else ""
+        if (length(x_vars[[srv]]) > 0)
+          message("  ", srv, role, ": ", paste(x_vars[[srv]], collapse = ", "))
+        else
+          message("  ", srv, role, ": (response only)")
+      }
+    }
+  }
+
+  if (!is.list(x_vars) || is.null(names(x_vars)))
+    stop("x_vars must be a named list mapping server names to variable vectors",
          call. = FALSE)
   if (is.null(y_server))
     stop("y_server must be specified: the server holding '", y_var, "'",
@@ -152,12 +244,8 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   # Note: this is set here before n_obs is known; adjusted later after getObsCountDS
 
   # ===========================================================================
-  # Setup
+  # Setup (datasources already resolved above for auto-detect)
   # ===========================================================================
-  if (is.null(datasources))
-    datasources <- DSI::datashield.connections_find()
-  if (length(datasources) == 0)
-    stop("No DataSHIELD connections found", call. = FALSE)
 
   server_names <- names(datasources)
   if (!all(names(x_vars) %in% server_names)) {
@@ -413,15 +501,17 @@ ds.vertGLM <- function(data_name, y_var, x_vars, y_server = NULL,
   deviance <- NA; null_deviance <- NA
   if (use_secure_agg && exists("k3_result") && !is.null(k3_result$deviance)) {
     deviance <- k3_result$deviance
-    null_deviance <- n_obs
-    if (!is.null(y_sd)) null_deviance <- n_obs * y_sd^2
   } else if (use_k2_beaver && exists("loop_result") && !is.null(loop_result$deviance)) {
     deviance <- loop_result$deviance
-    null_deviance <- n_obs
-    if (!is.null(y_sd)) null_deviance <- n_obs * y_sd^2
   }
-  pseudo_r2 <- 1 - (deviance / null_deviance)
-  aic <- deviance + 2 * n_vars_total
+  # Gaussian deviance is computed in standardized space — destandardize
+  if (family == "gaussian" && !is.null(y_sd) && !is.na(deviance)) {
+    deviance <- deviance * y_sd^2
+  }
+  # Null deviance: for Gaussian = Σ(y-ȳ)² = (n-1)*var(y). In std space, var(y_std)=1.
+  null_deviance <- if (family == "gaussian") (n_obs - 1) * (y_sd %||% 1)^2 else NA
+  pseudo_r2 <- if (!is.na(null_deviance) && null_deviance > 0) 1 - (deviance / null_deviance) else NA
+  aic <- if (!is.na(deviance)) deviance + 2 * n_vars_total else NA
 
   if (verbose)
     message(sprintf("\nDeviance: %.4f, Null deviance: %.4f, Pseudo R2: %.4f",
