@@ -75,8 +75,8 @@ Deviance: 22.09
 | Poisson | L-BFGS + DCF exp (100 intervals) | L-BFGS + DCF exp |
 | SE + p-values | Finite-difference Hessian | Central-difference Hessian |
 | Deviance | Beaver dot-product (1 scalar) | Beaver dot-product |
-| Correlation | — | Ring63 Beaver (p matvec) |
-| PCA | — | Eigen of correlation |
+| Correlation | Ring63 Beaver (p matvec) | Ring63 Beaver (p matvec) |
+| PCA | Eigen of correlation | Eigen of correlation |
 
 ## Security
 
@@ -85,6 +85,7 @@ Deviance: 22.09
 - **Dealer rotation**: different server generates triples each iteration (K>=4)
 - **Transport encryption**: X25519 + AES-256-GCM between servers
 - **Pure Ring63 MPC**: fixed-point additive secret sharing
+- **Pinned peers (Ed25519)**: servers verify each other's identity, preventing Sybil attacks
 
 ## Performance (Pima diabetes, p=6)
 
@@ -94,8 +95,8 @@ Deviance: 22.09
 | Binomial GLM | ~330s (12 iters + SE) | ~360s (14 iters + SE) |
 | Gaussian GLM | ~60s (11 iters + SE) | ~60s (11 iters + SE) |
 | Poisson GLM | ~580s (11 iters + SE) | ~580s (12 iters + SE) |
-| Correlation | — | 18s |
-| PCA | — | 18s |
+| Correlation | 16s | 18s |
+| PCA | <1s (from cor) | 18s |
 
 ## Installation
 
