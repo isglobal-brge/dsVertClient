@@ -71,8 +71,9 @@ NULL
         # This server IS a DCF party — just call k2ShareInputDS targeting the other DCF party
         peer_dcf <- dcf_parties[3 - di]
         peer_pk_safe <- .to_b64url(transport_pks[[peer_dcf]])
+        srv_x <- x_vars[[server]]; if (length(srv_x) == 0) srv_x <- NULL
         r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
-          data_name = std_data, x_vars = x_vars[[server]],
+          data_name = std_data, x_vars = srv_x,
           y_var = if (server == coordinator) y_var else NULL,
           peer_pk = peer_pk_safe, session_id = session_id))
         if (is.list(r) && length(r) == 1) r <- r[[1]]
@@ -94,8 +95,9 @@ NULL
     ci <- which(server_names == server)
     # Split once targeting fusion as peer
     fusion_pk_safe <- .to_b64url(transport_pks[[fusion_server]])
+    srv_x <- x_vars[[server]]; if (length(srv_x) == 0) srv_x <- NULL
     r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
-      data_name = std_data, x_vars = x_vars[[server]],
+      data_name = std_data, x_vars = srv_x,
       y_var = NULL,
       peer_pk = fusion_pk_safe, session_id = session_id))
     if (is.list(r) && length(r) == 1) r <- r[[1]]
@@ -699,60 +701,135 @@ NULL
   attr(inv_hessian, "raw_hessian") <- hessian
 
   # ===========================================================================
-  # Secure deviance: Σ(mu-y)² via Beaver dot-product (1 scalar)
-  # Reuses existing k2GradientR1DS/R2DS with X = residual (n×1 "matrix").
-  # Beaver computes X^T × r = r^T × r = Σ r_i². Zero individual disclosure.
+  # Secure canonical deviance
   # ===========================================================================
-  if (verbose) message("  [Deviance] Secure Beaver Σr²...")
+  if (verbose) message("  [Deviance] Computing canonical deviance...")
 
-  # 1. Prepare: store residual as x_full (n×1) on both DCF parties
-  for (i in seq_along(dcf_parties)) {
-    ci <- dcf_conns[i]
-    .dsAgg(datasources[ci], call("glmRing63PrepDevianceDS", session_id = session_id))
+  # Recompute η from converged β (SE computation may have overwritten shares)
+  for (di in seq_along(dcf_parties)) {
+    ci <- dcf_conns[di]
+    is_coord <- (dcf_parties[di] == coordinator)
+    b_coord <- beta[1:p_coord]
+    b_nl <- if (is_coord) beta[(p_coord+1):p_total] else beta[c((p_coord+p_fusion+1):p_total, (p_coord+1):(p_coord+p_fusion))]
+    .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+      beta_coord = b_coord, beta_nl = b_nl,
+      intercept = intercept, is_coordinator = is_coord,
+      session_id = session_id))
   }
 
-  # 2. Generate deviance Beaver triples (n×1) on dealer
-  dev_t <- .dsAgg(datasources[dealer_conn],
-    call("glmRing63GenGradTriplesDS",
-         dcf0_pk = transport_pks[[dcf_parties[1]]],
-         dcf1_pk = transport_pks[[dcf_parties[2]]],
-         n = as.integer(n_obs), p = 1L,
-         session_id = session_id))
-  if (is.list(dev_t)) dev_t <- dev_t[[1]]
-  .sendBlob(dev_t$grad_blob_0, "k2_grad_triple_fp", dcf_conns[1])
-  .sendBlob(dev_t$grad_blob_1, "k2_grad_triple_fp", dcf_conns[2])
-
-  # 3. Reuse existing Beaver R1/R2 (now computing r^T × r = Σ r²)
-  dev_r1 <- list()
-  for (i in seq_along(dcf_parties)) {
-    ci <- dcf_conns[i]
-    peer <- dcf_parties[3 - i]
-    .dsAgg(datasources[ci], call("k2StoreGradTripleDS", session_id = session_id))
-    r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
-      peer_pk = transport_pks[[peer]], session_id = session_id))
-    if (is.list(r) && length(r) == 1) r <- r[[1]]
-    dev_r1[[i]] <- r
+  # Helper: Beaver dot-product (n×1) on both DCF parties, returns scalar
+  .k3_beaver_dot <- function() {
+    dt <- .dsAgg(datasources[dealer_conn],
+      call("glmRing63GenGradTriplesDS",
+           dcf0_pk = transport_pks[[dcf_parties[1]]],
+           dcf1_pk = transport_pks[[dcf_parties[2]]],
+           n = as.integer(n_obs), p = 1L, session_id = session_id))
+    if (is.list(dt)) dt <- dt[[1]]
+    .sendBlob(dt$grad_blob_0, "k2_grad_triple_fp", dcf_conns[1])
+    .sendBlob(dt$grad_blob_1, "k2_grad_triple_fp", dcf_conns[2])
+    dr1 <- list()
+    for (i in seq_along(dcf_parties)) {
+      ci <- dcf_conns[i]; peer <- dcf_parties[3-i]
+      .dsAgg(datasources[ci], call("k2StoreGradTripleDS", session_id = session_id))
+      r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+        peer_pk = transport_pks[[peer]], session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]; dr1[[i]] <- r
+    }
+    .sendBlob(dr1[[1]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[2])
+    .sendBlob(dr1[[2]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[1])
+    dr2 <- list()
+    for (i in seq_along(dcf_parties)) {
+      ci <- dcf_conns[i]
+      r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+        party_id = as.integer(i-1), session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]; dr2[[i]] <- r
+    }
+    agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+      share_a = dr2[[1]]$gradient_fp, share_b = dr2[[2]]$gradient_fp,
+      frac_bits = frac_bits))
+    agg$values[1]
   }
-  .sendBlob(dev_r1[[1]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[2])
-  .sendBlob(dev_r1[[2]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[1])
 
-  dev_r2 <- list()
-  for (i in seq_along(dcf_parties)) {
-    ci <- dcf_conns[i]
-    r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
-      party_id = as.integer(i - 1), session_id = session_id))
-    if (is.list(r) && length(r) == 1) r <- r[[1]]
-    dev_r2[[i]] <- r
+  if (family == "gaussian" || family == "binomial") {
+    # Gaussian: RSS = canonical deviance. Binomial: RSS approximation.
+    for (i in seq_along(dcf_parties))
+      .dsAgg(datasources[dcf_conns[i]], call("glmRing63PrepDevianceDS",
+        mode = "rss", session_id = session_id))
+    secure_deviance <- .k3_beaver_dot()
+
+  } else if (FALSE) {
+    # Canonical binomial: D = 2*(Σsoftplus(η) - y^T·η) — future work
+    sp_dcf <- .dsAgg(datasources[dealer_conn],
+      call("glmRing63GenDcfKeysDS",
+           dcf0_pk = transport_pks[[dcf_parties[1]]],
+           dcf1_pk = transport_pks[[dcf_parties[2]]],
+           family = "softplus", n = as.integer(n_obs),
+           frac_bits = as.integer(frac_bits),
+           num_intervals = 80L, session_id = session_id))
+    if (is.list(sp_dcf)) sp_dcf <- sp_dcf[[1]]
+    .sendBlob(sp_dcf$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[1])
+    .sendBlob(sp_dcf$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[2])
+    for (i in seq_along(dcf_parties))
+      .dsAgg(datasources[dcf_conns[i]], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+    sp_t <- .dsAgg(datasources[dealer_conn],
+      call("glmRing63GenSplineTriplesDS",
+           dcf0_pk = transport_pks[[dcf_parties[1]]],
+           dcf1_pk = transport_pks[[dcf_parties[2]]],
+           n = as.integer(n_obs), frac_bits = as.integer(frac_bits),
+           session_id = session_id))
+    if (is.list(sp_t)) sp_t <- sp_t[[1]]
+    .sendBlob(sp_t$spline_blob_0, "k2_spline_triples", dcf_conns[1])
+    .sendBlob(sp_t$spline_blob_1, "k2_spline_triples", dcf_conns[2])
+    for (ph in 1:4) {
+      pr <- list()
+      for (di in seq_along(dcf_parties)) {
+        ci <- dcf_conns[di]
+        r <- .dsAgg(datasources[ci], call(paste0("k2WideSplinePhase",ph,"DS"),
+          party_id = as.integer(di-1), family = "softplus",
+          num_intervals = 80L, frac_bits = as.integer(frac_bits),
+          session_id = session_id))
+        if (is.list(r) && length(r) == 1) r <- r[[1]]; pr[[di]] <- r
+      }
+      if (ph==1) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(pr[[di]]$dcf_masked)),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_dcf_masked",dcf_conns[pi2])} }
+      else if (ph==2) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[di]]$and_xma,and_ymb=pr[[di]]$and_ymb,had1_xma=pr[[di]]$had1_xma,had1_ymb=pr[[di]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_beaver_r1",dcf_conns[pi2])} }
+      else if (ph==3) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[di]]$had2_xma,had2_ymb=pr[[di]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_had2_r1",dcf_conns[pi2])} }
+    }
+    sums <- list()
+    for (di in seq_along(dcf_parties)) {
+      r <- .dsAgg(datasources[dcf_conns[di]], call("glmRing63DevianceSumsDS",
+        family = "binomial", session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]; sums[[di]] <- r
+    }
+    sp_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+      share_a = sums[[1]]$sum_fp, share_b = sums[[2]]$sum_fp, frac_bits = frac_bits))
+    sum_softplus <- sp_agg$values[1]
+    for (i in seq_along(dcf_parties))
+      .dsAgg(datasources[dcf_conns[i]], call("glmRing63PrepDevianceDS",
+        mode = "canonical", session_id = session_id))
+    y_dot_eta <- .k3_beaver_dot()
+    secure_deviance <- 2 * (sum_softplus - y_dot_eta)
+
+  } else {
+    # Poisson: D = 2*(Σμ - y^T·η + C)
+    sums <- list()
+    for (di in seq_along(dcf_parties)) {
+      r <- .dsAgg(datasources[dcf_conns[di]], call("glmRing63DevianceSumsDS",
+        family = "poisson", session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]; sums[[di]] <- r
+    }
+    mu_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+      share_a = sums[[1]]$sum_fp, share_b = sums[[2]]$sum_fp, frac_bits = frac_bits))
+    sum_mu <- mu_agg$values[1]
+    # Only the label server returns a non-zero null_term; sum to pick it up
+    null_term <- sum(sapply(sums, function(s) if(!is.null(s$null_term)) s$null_term else 0))
+    for (i in seq_along(dcf_parties))
+      .dsAgg(datasources[dcf_conns[i]], call("glmRing63PrepDevianceDS",
+        mode = "canonical", session_id = session_id))
+    y_dot_eta <- .k3_beaver_dot()
+    secure_deviance <- 2 * (sum_mu - y_dot_eta + null_term)
   }
 
-  # 4. Aggregate: Σ r² (1 scalar)
-  dev_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-    share_a = dev_r2[[1]]$gradient_fp,
-    share_b = dev_r2[[2]]$gradient_fp,
-    frac_bits = frac_bits))
-  secure_deviance <- dev_agg$values[1]
-
-  if (verbose) message(sprintf("  [Deviance] Secure RSS = %.4f", secure_deviance))
+  if (verbose) message(sprintf("  [Deviance] = %.4f", secure_deviance))
 
   result <- list(betas = betas_out, converged = converged, final_iter = final_iter,
                  deviance = secure_deviance, inv_hessian = inv_hessian)

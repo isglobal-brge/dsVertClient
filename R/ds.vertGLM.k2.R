@@ -76,8 +76,9 @@ NULL
     ci <- which(server_names == server)
     peer <- setdiff(server_list, server)
     peer_pk_safe <- .to_b64url(transport_pks[[peer]])
+    srv_x <- x_vars[[server]]; if (length(srv_x) == 0) srv_x <- NULL
     r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
-      data_name = std_data, x_vars = x_vars[[server]],
+      data_name = std_data, x_vars = srv_x,
       y_var = if (server == coordinator) y_var else NULL,
       peer_pk = peer_pk_safe, session_id = session_id))
     if (is.list(r) && length(r) == 1) r <- r[[1]]
@@ -405,56 +406,177 @@ NULL
   inv_hessian <- list()
   attr(inv_hessian, "raw_hessian") <- hessian_k2
 
-  # === Secure deviance: Σ(mu-y)² via Beaver dot-product ===
-  if (verbose) message("  [Deviance] Secure Beaver Σr²...")
+  # === Secure canonical deviance ===
+  if (verbose) message("  [Deviance] Computing canonical deviance...")
 
-  # Prepare: store residual as x_full (n×1) on both parties
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    .dsAgg(datasources[ci], call("glmRing63PrepDevianceDS", session_id = session_id))
+  # K=2 party aliases for spline phases
+  dcf_parties <- c(coordinator, nl)
+  dcf_conns <- c(coordinator_conn, nl_conn)
+
+  # Recompute η from converged β (SE computation may have overwritten shares)
+  for (s in server_list) {
+    ci <- which(server_names == s); is_coord <- (s == coordinator)
+    b_coord <- beta[1:p_coord]; b_nl <- beta[(p_coord+1):p_total]
+    .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+      beta_coord = b_coord, beta_nl = b_nl, intercept = intercept,
+      is_coordinator = is_coord, session_id = session_id))
   }
 
-  # Generate deviance triples on dealer (n×1)
-  dev_t <- .dsAgg(datasources[dealer_conn],
-    call("glmRing63GenGradTriplesDS",
-         dcf0_pk = transport_pks[[coordinator]],
-         dcf1_pk = transport_pks[[nl]],
-         n = as.integer(n_obs), p = 1L,
-         session_id = session_id))
-  if (is.list(dev_t)) dev_t <- dev_t[[1]]
-  .sendBlob(dev_t$grad_blob_0, "k2_grad_triple_fp", coordinator_conn)
-  .sendBlob(dev_t$grad_blob_1, "k2_grad_triple_fp", nl_conn)
-
-  # Beaver R1/R2 for dot-product
-  dev_r1 <- list()
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    peer <- setdiff(server_list, server)
-    .dsAgg(datasources[ci], call("k2StoreGradTripleDS", session_id = session_id))
-    r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
-      peer_pk = transport_pks[[peer]], session_id = session_id))
-    if (is.list(r) && length(r) == 1) r <- r[[1]]
-    dev_r1[[server]] <- r
+  # Helper: run one Beaver dot-product (n×1) and return aggregated scalar
+  .beaver_dot <- function() {
+    dt <- .dsAgg(datasources[dealer_conn],
+      call("glmRing63GenGradTriplesDS",
+           dcf0_pk = transport_pks[[coordinator]],
+           dcf1_pk = transport_pks[[nl]],
+           n = as.integer(n_obs), p = 1L,
+           session_id = session_id))
+    if (is.list(dt)) dt <- dt[[1]]
+    .sendBlob(dt$grad_blob_0, "k2_grad_triple_fp", coordinator_conn)
+    .sendBlob(dt$grad_blob_1, "k2_grad_triple_fp", nl_conn)
+    dr1 <- list()
+    for (s in server_list) {
+      ci <- which(server_names == s); peer <- setdiff(server_list, s)
+      .dsAgg(datasources[ci], call("k2StoreGradTripleDS", session_id = session_id))
+      r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+        peer_pk = transport_pks[[peer]], session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]; dr1[[s]] <- r
+    }
+    .sendBlob(dr1[[coordinator]]$encrypted_r1, "k2_grad_peer_r1", nl_conn)
+    .sendBlob(dr1[[nl]]$encrypted_r1, "k2_grad_peer_r1", coordinator_conn)
+    dr2 <- list()
+    for (s in server_list) {
+      ci <- which(server_names == s); is_c <- (s == coordinator)
+      r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+        party_id = if(is_c) 0L else 1L, session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]; dr2[[s]] <- r
+    }
+    agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+      share_a = dr2[[coordinator]]$gradient_fp,
+      share_b = dr2[[nl]]$gradient_fp, frac_bits = frac_bits))
+    agg$values[1]
   }
-  .sendBlob(dev_r1[[coordinator]]$encrypted_r1, "k2_grad_peer_r1", nl_conn)
-  .sendBlob(dev_r1[[nl]]$encrypted_r1, "k2_grad_peer_r1", coordinator_conn)
 
-  dev_r2 <- list()
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    is_coord <- (server == coordinator)
-    r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
-      party_id = if(is_coord) 0L else 1L, session_id = session_id))
-    if (is.list(r) && length(r) == 1) r <- r[[1]]
-    dev_r2[[server]] <- r
+  if (family == "gaussian" || family == "binomial") {
+    # Gaussian: RSS = canonical deviance. Binomial: RSS approximation.
+    for (s in server_list) {
+      ci <- which(server_names == s)
+      .dsAgg(datasources[ci], call("glmRing63PrepDevianceDS",
+        mode = "rss", session_id = session_id))
+    }
+    k2_deviance <- .beaver_dot()
+
+  } else if (family == "binomial") {
+    # Binomial: D = 2*(Σsoftplus(η) - y^T·η)
+    # Step 1: softplus spline on η
+    sp_dcf <- .dsAgg(datasources[dealer_conn],
+      call("glmRing63GenDcfKeysDS",
+           dcf0_pk = transport_pks[[coordinator]],
+           dcf1_pk = transport_pks[[nl]],
+           family = "softplus", n = as.integer(n_obs),
+           frac_bits = as.integer(frac_bits),
+           num_intervals = 80L, session_id = session_id))
+    if (is.list(sp_dcf)) sp_dcf <- sp_dcf[[1]]
+    .sendBlob(sp_dcf$dcf_blob_0, "k2_dcf_keys_persistent", coordinator_conn)
+    .sendBlob(sp_dcf$dcf_blob_1, "k2_dcf_keys_persistent", nl_conn)
+    for (s in server_list) {
+      ci <- which(server_names == s)
+      .dsAgg(datasources[ci], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+    }
+    sp_triples <- .dsAgg(datasources[dealer_conn],
+      call("glmRing63GenSplineTriplesDS",
+           dcf0_pk = transport_pks[[coordinator]],
+           dcf1_pk = transport_pks[[nl]],
+           n = as.integer(n_obs), frac_bits = as.integer(frac_bits),
+           session_id = session_id))
+    if (is.list(sp_triples)) sp_triples <- sp_triples[[1]]
+    .sendBlob(sp_triples$spline_blob_0, "k2_spline_triples", coordinator_conn)
+    .sendBlob(sp_triples$spline_blob_1, "k2_spline_triples", nl_conn)
+    # Run 4-phase softplus spline (same as sigmoid/exp but family="softplus")
+    for (ph in 1:4) {
+      pr <- list()
+      for (di in seq_along(dcf_parties)) {
+        ci <- dcf_conns[di]
+        r <- .dsAgg(datasources[ci], call(paste0("k2WideSplinePhase", ph, "DS"),
+          party_id = as.integer(di - 1), family = "softplus",
+          num_intervals = 80L, frac_bits = as.integer(frac_bits),
+          session_id = session_id))
+        if (is.list(r) && length(r) == 1) r <- r[[1]]; pr[[di]] <- r
+      }
+      if (ph == 1) {
+        for (di in 1:2) {
+          pi2 <- 3 - di; pk <- .b64url_to_b64(transport_pks[[dcf_parties[pi2]]])
+          s <- dsVert:::.callMpcTool("transport-encrypt", list(
+            data = jsonlite::base64_enc(charToRaw(pr[[di]]$dcf_masked)), recipient_pk = pk))
+          .sendBlob(.to_b64url(s$sealed), "k2_peer_dcf_masked", dcf_conns[pi2])
+        }
+      } else if (ph == 2) {
+        for (di in 1:2) {
+          pi2 <- 3 - di; pk <- .b64url_to_b64(transport_pks[[dcf_parties[pi2]]])
+          s <- dsVert:::.callMpcTool("transport-encrypt", list(
+            data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(
+              and_xma=pr[[di]]$and_xma, and_ymb=pr[[di]]$and_ymb,
+              had1_xma=pr[[di]]$had1_xma, had1_ymb=pr[[di]]$had1_ymb),
+              auto_unbox=TRUE))), recipient_pk=pk))
+          .sendBlob(.to_b64url(s$sealed), "k2_peer_beaver_r1", dcf_conns[pi2])
+        }
+      } else if (ph == 3) {
+        for (di in 1:2) {
+          pi2 <- 3 - di; pk <- .b64url_to_b64(transport_pks[[dcf_parties[pi2]]])
+          s <- dsVert:::.callMpcTool("transport-encrypt", list(
+            data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(
+              had2_xma=pr[[di]]$had2_xma, had2_ymb=pr[[di]]$had2_ymb),
+              auto_unbox=TRUE))), recipient_pk=pk))
+          .sendBlob(.to_b64url(s$sealed), "k2_peer_had2_r1", dcf_conns[pi2])
+        }
+      }
+    }
+    # Step 2: get Σsoftplus from both parties
+    sums <- list()
+    for (s in server_list) {
+      ci <- which(server_names == s)
+      r <- .dsAgg(datasources[ci], call("glmRing63DevianceSumsDS",
+        family = "binomial", session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]; sums[[s]] <- r
+    }
+    sum_sp_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+      share_a = sums[[coordinator]]$sum_fp, share_b = sums[[nl]]$sum_fp,
+      frac_bits = frac_bits))
+    sum_softplus <- sum_sp_agg$values[1]
+    # Step 3: Beaver y^T·η
+    for (s in server_list) {
+      ci <- which(server_names == s)
+      .dsAgg(datasources[ci], call("glmRing63PrepDevianceDS",
+        mode = "canonical", session_id = session_id))
+    }
+    y_dot_eta <- .beaver_dot()
+    k2_deviance <- 2 * (sum_softplus - y_dot_eta)
+
+  } else {
+    # Poisson: D = 2*(Σμ - y^T·η + C) where C = Σ(y·log(y) - y)
+    sums <- list()
+    for (s in server_list) {
+      ci <- which(server_names == s)
+      r <- .dsAgg(datasources[ci], call("glmRing63DevianceSumsDS",
+        family = "poisson", session_id = session_id))
+      if (is.list(r) && length(r) == 1) r <- r[[1]]; sums[[s]] <- r
+    }
+    sum_mu_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+      share_a = sums[[coordinator]]$sum_fp, share_b = sums[[nl]]$sum_fp,
+      frac_bits = frac_bits))
+    sum_mu <- sum_mu_agg$values[1]
+    # Only the label server returns non-zero null_term; sum to pick it up
+    null_term <- sum(sapply(sums, function(s) if(!is.null(s$null_term)) s$null_term else 0))
+    # Beaver y^T·η
+    for (s in server_list) {
+      ci <- which(server_names == s)
+      .dsAgg(datasources[ci], call("glmRing63PrepDevianceDS",
+        mode = "canonical", session_id = session_id))
+    }
+    y_dot_eta <- .beaver_dot()
+    k2_deviance <- 2 * (sum_mu - y_dot_eta + null_term)
   }
 
-  dev_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-    share_a = dev_r2[[coordinator]]$gradient_fp,
-    share_b = dev_r2[[nl]]$gradient_fp,
-    frac_bits = frac_bits))
-  k2_deviance <- dev_agg$values[1]
-  if (verbose) message(sprintf("  [Deviance] Secure RSS = %.4f", k2_deviance))
+  if (verbose) message(sprintf("  [Deviance] = %.4f", k2_deviance))
 
   betas <- list()
   betas[[coordinator]] <- beta[1:p_coord]
