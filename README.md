@@ -15,30 +15,20 @@ library(DSI); library(DSOpal); library(dsVertClient)
 conns <- DSI::datashield.login(logins = builder$build())
 DSI::datashield.assign.table(conns, "D", "project.data")
 
-# 1. Align records (find common patients across servers)
-ds.psiAlign("D", "patient_id", "D_aligned", datasources = conns)
+# 1. Align records (NAs removed automatically, like glm na.omit)
+ds.psiAlign("D", "patient_id", "DA", datasources = conns)
 
-# 2. Fit a logistic regression
-result <- ds.vertGLM(
-  data_name = "D_aligned",
-  y_var     = "diabetes",
-  x_vars    = list(
-    hospital_A = c("age", "bmi"),
-    hospital_B = c("glu", "bp")
-  ),
-  y_server  = "hospital_B",
-  family    = "binomial",
-  datasources = conns
-)
+# 2. Fit GLM using formula (auto-detects which server has each variable)
+result <- ds.vertGLM(diabetes ~ age + bmi + glu + bp,
+                     data = "DA", family = "binomial",
+                     datasources = conns)
 
-# 3. View results (coefficients + SE + p-values)
+# 3. View results (coefficients + SE + p-values + canonical deviance)
 print(result)
 
-# 4. Correlation matrix
-cor <- ds.vertCor("D_aligned", variables = list(...), datasources = conns)
-
-# 5. PCA
-pca <- ds.vertPCA("D_aligned", variables = list(...), datasources = conns)
+# 4. Correlation + PCA (auto-detects variables)
+cor <- ds.vertCor("DA", datasources = conns)
+pca <- ds.vertPCA(cor_result = cor)
 
 DSI::datashield.logout(conns)
 ```
