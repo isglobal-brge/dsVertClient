@@ -29,8 +29,10 @@ NULL
     label_intercept, .dsAgg, .sendBlob) {
 
   K <- length(server_list)
-  # DCF parties: first server = fusion (party 0), coordinator = party 1
-  fusion_server <- server_list[1]
+  # DCF parties: fusion (party 0) must differ from coordinator (party 1)
+  # Pick the first non-coordinator server with the most features as fusion
+  non_coord <- setdiff(server_list, coordinator)
+  fusion_server <- non_coord[which.max(sapply(non_coord, function(s) length(x_vars[[s]])))]
   fusion_conn <- which(server_names == fusion_server)
   dcf_parties <- c(fusion_server, coordinator)
   dcf_conns <- sapply(dcf_parties, function(s) which(server_names == s))
