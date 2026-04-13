@@ -14,7 +14,7 @@ vectors) can exceed the parser or HTTP body size limit. This module
 implements adaptive chunking:
 
 \enumerate{
-\item Start with a large initial chunk size (default 200KB, configurable
+\item Start with a large initial chunk size (default 100KB, configurable
 via \code{options(dsvert.chunk_size = N)})
 \item On first large send, probe whether the chunk size is accepted
 \item If the probe fails, reduce the chunk size by 25\\% and retry

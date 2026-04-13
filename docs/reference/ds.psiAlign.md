@@ -14,7 +14,9 @@ ds.psiAlign(
   id_col,
   newobj = "D_aligned",
   ref_server = NULL,
-  datasources = NULL
+  verbose = TRUE,
+  datasources = NULL,
+  na.action = "na.omit"
 )
 ```
 
@@ -37,6 +39,10 @@ ds.psiAlign(
 
   Character string or NULL. Name of the reference server. If NULL
   (default), the first connection is used.
+
+- verbose:
+
+  Logical. If TRUE (default), print progress messages.
 
 - datasources:
 

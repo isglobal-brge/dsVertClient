@@ -38,7 +38,7 @@ reference:
       - ds.vertPCA
 
   - title: Generalized Linear Models
-    desc: Privacy-preserving GLM fitting with encrypted labels
+    desc: Privacy-preserving GLM fitting via Ring63 Beaver MPC
     contents:
       - ds.vertGLM
       - coef.ds.glm
@@ -46,18 +46,23 @@ reference:
       - summary.ds.glm
 
   - title: Utility Functions
-    desc: Helper methods
+    desc: Helper and administrative methods
     contents:
+      - ds.getIdentityPks
       - print.ds.cor
       - print.ds.pca
+
+  - title: Internal
+    desc: Internal protocol implementations
+    contents:
+      - chunk-utils
+      - k2-beaver-lbfgs-client
+      - k3-ring63-dcf-loop
 
 articles:
   - title: Validation
     contents:
       - validation
-      - k2-validation
-      - k2-optimizer-benchmarks
-      - local-deployment
 
 authors:
   David Sarrat González:

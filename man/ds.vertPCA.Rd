@@ -9,32 +9,23 @@ ds.vertPCA(
   variables = NULL,
   n_components = NULL,
   cor_result = NULL,
-  log_n = 12,
-  log_scale = 40,
+  verbose = TRUE,
   datasources = NULL
 )
 }
 \arguments{
-\item{data_name}{Character string. Name of the (aligned) data frame on
-each server. Ignored if \code{cor_result} is provided.}
-
-\item{variables}{A named list where each name corresponds to a server name
-and each element is a character vector of variable names from that server.
+\item{data_name}{Character string. Name of the (aligned) data frame.
 Ignored if \code{cor_result} is provided.}
 
-\item{n_components}{Integer. Number of principal components to return.
-Default is NULL (returns all).}
+\item{variables}{Named list: server -> variable names.
+Ignored if \code{cor_result} is provided.}
+
+\item{n_components}{Integer. Number of components. Default NULL (all).}
 
 \item{cor_result}{An existing \code{ds.cor} object from \code{\link{ds.vertCor}}.
-If provided, the MHE protocol is NOT re-run; the PCA is computed directly
-from this correlation matrix. This avoids running the expensive MHE protocol
-twice when you already have the correlation.}
+If provided, the correlation protocol is not re-run.}
 
-\item{log_n}{Integer. CKKS ring dimension parameter for MHE. Default is 12.
-Ignored if \code{cor_result} is provided.}
-
-\item{log_scale}{Integer. CKKS precision parameter for MHE. Default is 40.
-Ignored if \code{cor_result} is provided.}
+\item{verbose}{Logical. If TRUE (default), print progress messages.}
 
 \item{datasources}{DataSHIELD connection object or list of connections.
 If NULL, uses all available connections. Ignored if \code{cor_result} is
@@ -54,11 +45,11 @@ A list with class "ds.pca" containing:
 }
 \description{
 Performs PCA on vertically partitioned data using the
-privacy-preserving correlation matrix computed via Homomorphic Encryption.
+privacy-preserving correlation matrix from Ring63 Beaver MPC.
 }
 \details{
 This function performs PCA using the correlation matrix obtained via
-Multiparty Homomorphic Encryption (MHE). The approach is:
+Ring63 Beaver MPC (via \code{\link{ds.vertCor}}). The approach is:
 
 \enumerate{
 \item Compute the privacy-preserving correlation matrix using \code{\link{ds.vertCor}}
@@ -104,7 +95,7 @@ vars <- list(
 
 pca_result <- ds.vertPCA("D_aligned", vars, n_components = 3)
 
-# Or reuse an existing correlation result (avoids running MHE again):
+# Or reuse an existing correlation result (avoids running protocol again):
 cor_result <- ds.vertCor("D_aligned", vars)
 pca_result <- ds.vertPCA(cor_result = cor_result, n_components = 3)
 

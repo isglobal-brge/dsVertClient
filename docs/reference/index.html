@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">dsVertClient</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.7.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.0.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -62,7 +62,7 @@
           <code><a href="ds.vertCor.html">ds.vertCor()</a></code>
 
         </dt>
-        <dd>Privacy-Preserving Correlation for Vertically Partitioned Data</dd>
+        <dd>Ring63 Privacy-Preserving Correlation for Vertically Partitioned Data</dd>
 
         <dt>
 
@@ -73,7 +73,7 @@
       </dl></div><div class="section level2">
       <h2 id="generalized-linear-models">Generalized Linear Models<a class="anchor" aria-label="anchor" href="#generalized-linear-models"></a></h2>
 
-      <div class="section-desc"><p>Privacy-preserving GLM fitting with encrypted labels</p></div>
+      <div class="section-desc"><p>Privacy-preserving GLM fitting via Ring63 Beaver MPC</p></div>
 
       <dl></dl></div><div class="section level2">
 
@@ -110,7 +110,7 @@
       </dl></div><div class="section level2">
       <h2 id="utility-functions">Utility Functions<a class="anchor" aria-label="anchor" href="#utility-functions"></a></h2>
 
-      <div class="section-desc"><p>Helper methods</p></div>
+      <div class="section-desc"><p>Helper and administrative methods</p></div>
 
       <dl></dl></div><div class="section level2">
 
@@ -118,6 +118,13 @@
 
 
       <dl><dt>
+
+          <code><a href="ds.getIdentityPks.html">ds.getIdentityPks()</a></code>
+
+        </dt>
+        <dd>Query Server Identity Public Keys</dd>
+
+        <dt>
 
           <code><a href="print.ds.cor.html">print(<i>&lt;ds.cor&gt;</i>)</a></code>
 
@@ -130,6 +137,36 @@
 
         </dt>
         <dd>Print Method for ds.pca Objects</dd>
+      </dl></div><div class="section level2">
+      <h2 id="internal">Internal<a class="anchor" aria-label="anchor" href="#internal"></a></h2>
+
+      <div class="section-desc"><p>Internal protocol implementations</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="chunk-utils.html">chunk-utils</a></code>
+
+        </dt>
+        <dd>Adaptive Chunking for DataSHIELD Transport</dd>
+
+        <dt>
+
+          <code><a href="k2-beaver-lbfgs-client.html">k2-beaver-lbfgs-client</a></code>
+
+        </dt>
+        <dd>K=2 Beaver L-BFGS Pipeline</dd>
+
+        <dt>
+
+          <code><a href="k3-ring63-dcf-loop.html">k3-ring63-dcf-loop</a></code>
+
+        </dt>
+        <dd>K&gt;=3 Ring63 DCF + Beaver Gradient Loop</dd>
       </dl></div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

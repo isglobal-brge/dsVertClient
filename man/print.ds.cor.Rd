@@ -4,12 +4,12 @@
 \alias{print.ds.cor}
 \title{Print Method for ds.cor Objects}
 \usage{
-\method{print}{ds.cor}(x, digits = 4, ...)
+\method{print}{ds.cor}(x, digits = 3, ...)
 }
 \arguments{
 \item{x}{A ds.cor object}
 
-\item{digits}{Number of digits to display}
+\item{digits}{Number of digits for correlation matrix. Default 3.}
 
 \item{...}{Additional arguments (ignored)}
 }

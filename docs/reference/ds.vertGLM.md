@@ -1,53 +1,54 @@
 # Generalized Linear Model for Vertically Partitioned Data
 
-Client-side function that fits a Generalized Linear Model across
-vertically partitioned data using Block Coordinate Descent with
-encrypted labels. The response variable y only needs to exist on ONE
-server (the "label server"). Non-label servers compute gradient updates
-using y encrypted under the MHE collective public key, and only the
-aggregated p_k-length gradient is revealed via threshold decryption.
+Fits a GLM across vertically partitioned data using Ring63 Beaver MPC
+with DCF wide spline for the link function. The system auto-detects
+which server holds each variable. Only p-dimensional aggregate gradients
+are revealed to the client per iteration. No observation-level data is
+ever disclosed.
 
 ## Usage
 
 ``` r
 ds.vertGLM(
-  data_name,
-  y_var,
-  x_vars,
+  formula,
+  data = NULL,
+  x_vars = NULL,
   y_server = NULL,
   family = "gaussian",
   max_iter = 100,
   tol = 1e-04,
   lambda = 1e-04,
   log_n = 12,
-  log_scale = 40,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  eta_privacy = "auto",
+  data_name = NULL,
+  y_var = NULL
 )
 ```
 
 ## Arguments
 
-- data_name:
+- formula:
+
+  A formula (e.g. `npreg ~ age + bmi + glu`) or character string
+  (`"npreg ~ age + bmi + glu"`). Can also be a data_name string for
+  backward compatibility.
+
+- data:
 
   Character string. Name of the (aligned) data frame on each server.
 
-- y_var:
-
-  Character string. Name of the response variable (must exist on the
-  label server specified by `y_server`).
-
 - x_vars:
 
-  A named list where each name corresponds to a server name and each
-  element is a character vector of predictor variable names from that
-  server.
+  Optional. Character vector of predictor names, or a named list mapping
+  server names to variable vectors. If NULL and formula is used,
+  extracted from the formula. If NULL and no formula, all available
+  columns (minus y and IDs) are used.
 
 - y_server:
 
-  Character string. Name of the server holding the response variable.
-  This server uses plaintext IRLS; all other servers use the encrypted
-  gradient protocol.
+  Character string. Name of the server holding the response.
 
 - family:
 
@@ -56,12 +57,11 @@ ds.vertGLM(
 
 - max_iter:
 
-  Integer. Maximum number of BCD iterations. Default is 100.
+  Integer. Maximum L-BFGS iterations. Default is 100.
 
 - tol:
 
-  Numeric. Convergence tolerance on coefficient change. Default is 1e-4
-  (accounts for CKKS approximation noise).
+  Numeric. Convergence tolerance on coefficient change. Default is 1e-4.
 
 - lambda:
 
@@ -69,12 +69,7 @@ ds.vertGLM(
 
 - log_n:
 
-  Integer. CKKS ring dimension parameter (12, 13, or 14). Default is 12
-  (2048 slots, supports up to 2048 observations).
-
-- log_scale:
-
-  Integer. CKKS scale parameter. Default is 40.
+  Integer. Legacy parameter (ignored). Kept for backward compatibility.
 
 - verbose:
 
@@ -82,70 +77,75 @@ ds.vertGLM(
 
 - datasources:
 
-  DataSHIELD connection object or list of connections. If NULL, uses all
-  available connections.
+  DataSHIELD connection object or list of connections.
+
+- eta_privacy:
+
+  Character. `"auto"` (default) selects `"k2_beaver"` for K=2 or
+  `"secure_agg"` for K\>=3.
 
 ## Value
 
 A list with class "ds.glm" containing:
 
-- `coefficients`: Named vector of coefficient estimates (on original
-  scale, including intercept)
+- `coefficients`: Named coefficient vector (original scale)
 
-- `iterations`: Number of iterations until convergence
+- `std_errors`: Standard errors (finite-difference Hessian)
 
-- `converged`: Logical indicating convergence
+- `z_values`: z-statistics (coef / SE)
+
+- `p_values`: Two-sided p-values
+
+- `iterations`: Number of iterations
+
+- `converged`: Logical
 
 - `family`: Family used
 
 - `n_obs`: Number of observations
 
-- `n_vars`: Number of predictor variables (including intercept)
+- `deviance`: Residual sum of squares
 
-- `lambda`: Regularization parameter used
-
-- `deviance`: Residual deviance of the fitted model
-
-- `null_deviance`: Null deviance (intercept-only model)
-
-- `pseudo_r2`: McFadden's pseudo R-squared
-
-- `aic`: Akaike Information Criterion
-
-- `y_server`: Name of the label server
-
-- `call`: The matched call
+- `pseudo_r2`: 1 - deviance/null_deviance
 
 ## Details
 
-### Feature Standardization
+### Protocol
 
-Features are automatically standardized (centered and scaled) on each
-server before BCD to ensure fast convergence. For Gaussian family, the
-response is also standardized. Coefficients are transformed back to the
-original scale after convergence, and an intercept is computed.
+All computation uses Ring63 fixed-point arithmetic with Beaver MPC:
 
-### Encrypted-Label BCD-IRLS Protocol
+1.  **Transport keys**: X25519 keypairs on all servers (~0.5s)
 
-The response variable y resides on a single "label server". Non-label
-servers never see y in plaintext. The protocol proceeds as:
+2.  **Standardize**: Each server standardizes its features
 
-1.  **MHE Key Setup**: All servers generate key shares and combine them
-    into a Collective Public Key (CPK) with Galois keys.
+3.  **Input sharing**: Features split into additive Ring63 shares
+    between 2 DCF parties. Non-DCF servers contribute shares.
 
-2.  **Standardize**: Each server standardizes its features.
+4.  **L-BFGS loop**: Per iteration:
 
-3.  **Encrypt y**: The label server encrypts (standardized) y under the
-    CPK and distributes the ciphertext to non-label servers.
+    - Compute eta shares (Ring63 matrix-vector)
 
-4.  **BCD Loop**: For each iteration, each server updates its block of
-    coefficients on the standardized scale.
+    - DCF wide spline for sigmoid/exp (binomial/Poisson) or identity
+      link (Gaussian)
 
-5.  **Unstandardize**: Coefficients are transformed back to the original
-    scale and an intercept is computed.
+    - Beaver matvec for gradient (server-generated triples)
 
-6.  **Deviance**: Computed on the label server using plaintext y and the
-    final linear predictor (original scale).
+    - Client aggregates Ring63 shares -\> p gradient scalars
+
+    - L-BFGS quasi-Newton update
+
+5.  **SE**: p+1 gradient evaluations (finite-difference Hessian)
+
+6.  **Deviance**: Beaver dot-product for residual sum of squares
+
+7.  **Unstandardize**: Coefficients + SE via Jacobian transform
+
+### Security
+
+No observation-level data is disclosed. The client sees only
+p-dimensional aggregate gradients per iteration. Beaver triples are
+generated server-side (never seen by client). Dealer rotation for K\>=4
+ensures the analyst must compromise (K-1)/K servers to extract data.
 
 ## References
 
@@ -167,15 +167,20 @@ for PCA analysis
 
 ``` r
 if (FALSE) { # \dontrun{
-x_vars <- list(
-  server1 = c("age", "bmi"),
-  server2 = c("glucose"),
-  server3 = c("cholesterol", "heart_rate")
-)
+# Simplest: formula interface (auto-detects everything)
+model <- ds.vertGLM(npreg ~ age + bmi + glu + bp + skin,
+                     data = "DA", family = "gaussian")
 
-# Gaussian GLM (bp on server2)
-model <- ds.vertGLM("D_aligned", "bp", x_vars,
-                     y_server = "server2", family = "gaussian")
-print(model)
+# String formula
+model <- ds.vertGLM("diabetes ~ age + bmi + glu",
+                     data = "DA", family = "binomial")
+
+# Auto-detect all features
+model <- ds.vertGLM("DA", "npreg", family = "poisson")
+
+# Manual server mapping (legacy)
+model <- ds.vertGLM("DA", "npreg",
+  list(s1 = c("age", "bmi"), s2 = c("glu", "bp")),
+  y_server = "s2", family = "gaussian")
 } # }
 ```
