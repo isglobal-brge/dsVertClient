@@ -121,23 +121,24 @@ each institution would hold its own data; here we simulate this with local conta
 ```{r upload, eval=FALSE}
 library(opalr)
 
-# birthwt K=2
-for (i in 1:2) {
-  o <- opal.login("administrator", "password",
-    url = sprintf("https://server%d.example.org", i))
-  opal.table_save(o, list(s1, s2)[[i]], "bw_project", "bw_data",
-                  overwrite = TRUE, force = TRUE)
-  opal.logout(o)
-}
+# All data is uploaded to the same Opal demo server.
+# Each partition is stored as a separate table within its project.
+# When the client opens K connections (each targeting a different table),
+# the protocol behaves identically to K physically separate servers.
+opal_url <- "https://opal-demo.obiba.org"
 
-# CGD K=3
-for (i in 1:3) {
-  o <- opal.login("administrator", "password",
-    url = sprintf("https://server%d.example.org", i))
-  opal.table_save(o, list(s1, s2, s3)[[i]], "cgd_project", "cgd_data",
-                  overwrite = TRUE, force = TRUE)
-  opal.logout(o)
-}
+o <- opal.login("administrator", "password", url = opal_url)
+
+# birthwt K=2: two tables in the same project
+opal.table_save(o, s1, "dsvert_bw", "hospital_a", overwrite = TRUE, force = TRUE)
+opal.table_save(o, s2, "dsvert_bw", "hospital_b", overwrite = TRUE, force = TRUE)
+
+# CGD K=3: three tables
+opal.table_save(o, s1, "dsvert_cgd", "demographics", overwrite = TRUE, force = TRUE)
+opal.table_save(o, s2, "dsvert_cgd", "treatment", overwrite = TRUE, force = TRUE)
+opal.table_save(o, s3, "dsvert_cgd", "outcomes", overwrite = TRUE, force = TRUE)
+
+opal.logout(o)
 ```
 
 ## 3. dsVert validation: birthwt ($K=2$)
@@ -149,13 +150,20 @@ library(DSI)
 library(DSOpal)
 library(dsVertClient)
 
+# Two connections to the same Opal, each pointing to a different table.
+# This simulates two independent hospitals.
+opal_url <- "https://opal-demo.obiba.org"
 builder <- DSI::newDSLoginBuilder()
-builder$append(server = "hospitalA", url = "https://server1.example.org",
-               user = "analyst", password = "...", table = "bw_project.bw_data")
-builder$append(server = "hospitalB", url = "https://server2.example.org",
-               user = "analyst", password = "...", table = "bw_project.bw_data")
+builder$append(server = "hospitalA", url = opal_url,
+               user = "dsuser", password = "password",
+               table = "dsvert_bw.hospital_a")
+builder$append(server = "hospitalB", url = opal_url,
+               user = "dsuser", password = "password",
+               table = "dsvert_bw.hospital_b")
 conns <- DSI::datashield.login(logins = builder$build())
-DSI::datashield.assign.table(conns, "D", "bw_project.bw_data")
+DSI::datashield.assign.table(conns, "D",
+  list(hospitalA = "dsvert_bw.hospital_a",
+       hospitalB = "dsvert_bw.hospital_b"))
 
 # Align records — NAs are automatically removed before PSI
 psi <- ds.psiAlign("D", "patient_id", "DA", datasources = conns)
@@ -223,15 +231,22 @@ DSI::datashield.logout(conns)
 ### 4.1 Connect and align
 
 ```{r cgd-connect}
+# Three connections to the same Opal, simulating three independent institutions.
 builder <- DSI::newDSLoginBuilder()
-builder$append(server = "demographics", url = "https://server1.example.org",
-               user = "analyst", password = "...", table = "cgd_project.cgd_data")
-builder$append(server = "treatment",    url = "https://server2.example.org",
-               user = "analyst", password = "...", table = "cgd_project.cgd_data")
-builder$append(server = "outcomes",     url = "https://server3.example.org",
-               user = "analyst", password = "...", table = "cgd_project.cgd_data")
+builder$append(server = "demographics", url = opal_url,
+               user = "dsuser", password = "password",
+               table = "dsvert_cgd.demographics")
+builder$append(server = "treatment",    url = opal_url,
+               user = "dsuser", password = "password",
+               table = "dsvert_cgd.treatment")
+builder$append(server = "outcomes",     url = opal_url,
+               user = "dsuser", password = "password",
+               table = "dsvert_cgd.outcomes")
 conns <- DSI::datashield.login(logins = builder$build())
-DSI::datashield.assign.table(conns, "D", "cgd_project.cgd_data")
+DSI::datashield.assign.table(conns, "D",
+  list(demographics = "dsvert_cgd.demographics",
+       treatment    = "dsvert_cgd.treatment",
+       outcomes     = "dsvert_cgd.outcomes"))
 
 psi <- ds.psiAlign("D", "patient_id", "DA", datasources = conns)
 ```
