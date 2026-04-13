@@ -2,5 +2,5 @@
 
 ### Validation
 
-- [Validation Study: Centralized vs. Federated Vertical
-  Analysis](https://isglobal-brge.github.io/dsVertClient/articles/validation.md):
+- [dsVert Validation: Privacy-Preserving Vertical GLM, Correlation, and
+  PCA](https://isglobal-brge.github.io/dsVertClient/articles/validation.md):

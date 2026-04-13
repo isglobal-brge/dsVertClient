@@ -5,154 +5,126 @@
 \title{Generalized Linear Model for Vertically Partitioned Data}
 \usage{
 ds.vertGLM(
-  data_name,
-  y_var,
-  x_vars,
+  formula,
+  data = NULL,
+  x_vars = NULL,
   y_server = NULL,
   family = "gaussian",
   max_iter = 100,
   tol = 1e-04,
   lambda = 1e-04,
   log_n = 12,
-  log_scale = 40,
   verbose = TRUE,
   datasources = NULL,
   eta_privacy = "auto",
-  topology = "pairwise",
-  reuse_mhe = FALSE
+  data_name = NULL,
+  y_var = NULL
 )
 }
 \arguments{
-\item{data_name}{Character string. Name of the (aligned) data frame on
+\item{formula}{A formula (e.g. \code{npreg ~ age + bmi + glu}) or
+character string (\code{"npreg ~ age + bmi + glu"}). Can also be
+a data_name string for backward compatibility.}
+
+\item{data}{Character string. Name of the (aligned) data frame on
 each server.}
 
-\item{y_var}{Character string. Name of the response variable (must exist
-on the label server specified by \code{y_server}).}
+\item{x_vars}{Optional. Character vector of predictor names, or a
+named list mapping server names to variable vectors. If NULL and
+formula is used, extracted from the formula. If NULL and no formula,
+all available columns (minus y and IDs) are used.}
 
-\item{x_vars}{A named list where each name corresponds to a server name
-and each element is a character vector of predictor variable names
-from that server.}
-
-\item{y_server}{Character string. Name of the server holding the response
-variable. This server uses plaintext IRLS; all other servers use the
-encrypted gradient protocol.}
+\item{y_server}{Character string. Name of the server holding the response.}
 
 \item{family}{Character string. GLM family: "gaussian", "binomial",
 or "poisson". Default is "gaussian".}
 
-\item{max_iter}{Integer. Maximum number of BCD iterations. Default is 100.}
+\item{max_iter}{Integer. Maximum L-BFGS iterations. Default is 100.}
 
 \item{tol}{Numeric. Convergence tolerance on coefficient change.
-Default is 1e-4 (accounts for CKKS approximation noise).}
+Default is 1e-4.}
 
 \item{lambda}{Numeric. L2 regularization parameter. Default is 1e-4.}
 
-\item{log_n}{Integer. CKKS ring dimension parameter (12, 13, or 14).
-Default is 12 (2048 slots, supports up to 2048 observations).}
-
-\item{log_scale}{Integer. CKKS scale parameter. Default is 40.}
+\item{log_n}{Integer. Legacy parameter (ignored). Kept for backward
+compatibility.}
 
 \item{verbose}{Logical. Print progress messages. Default is TRUE.}
 
-\item{datasources}{DataSHIELD connection object or list of connections.
-If NULL, uses all available connections.}
+\item{datasources}{DataSHIELD connection object or list of connections.}
 
-\item{eta_privacy}{Character string. Privacy mode for linear predictor
-aggregation: \code{"auto"} (default) selects HE-Link for K=2 (all
-families), \code{"transport"} uses standard secure routing,
-\code{"he_link"} forces encrypted link-function mode (requires K=2,
-log_n >= 14).}
-
-\item{topology}{Character string. Seed derivation topology for secure
-aggregation: \code{"pairwise"} (default, O(K-1) seeds per server) or
-\code{"ring"} (O(2) seeds per server for K>=4). For K=3, ring and
-pairwise are identical. Only used when \code{eta_privacy = "secure_agg"}.}
+\item{eta_privacy}{Character. \code{"auto"} (default) selects
+\code{"k2_beaver"} for K=2 or \code{"secure_agg"} for K>=3.}
 }
 \value{
 A list with class "ds.glm" containing:
 \itemize{
-\item \code{coefficients}: Named vector of coefficient estimates
-(on original scale, including intercept)
-\item \code{iterations}: Number of iterations until convergence
-\item \code{converged}: Logical indicating convergence
+\item \code{coefficients}: Named coefficient vector (original scale)
+\item \code{std_errors}: Standard errors (finite-difference Hessian)
+\item \code{z_values}: z-statistics (coef / SE)
+\item \code{p_values}: Two-sided p-values
+\item \code{iterations}: Number of iterations
+\item \code{converged}: Logical
 \item \code{family}: Family used
 \item \code{n_obs}: Number of observations
-\item \code{n_vars}: Number of predictor variables (including intercept)
-\item \code{lambda}: Regularization parameter used
-\item \code{deviance}: Residual deviance of the fitted model
-\item \code{null_deviance}: Null deviance (intercept-only model)
-\item \code{pseudo_r2}: McFadden's pseudo R-squared
-\item \code{aic}: Akaike Information Criterion
-\item \code{y_server}: Name of the label server
-\item \code{call}: The matched call
+\item \code{deviance}: Residual sum of squares
+\item \code{pseudo_r2}: 1 - deviance/null_deviance
 }
 }
 \description{
-Client-side function that fits a Generalized Linear Model
-across vertically partitioned data using Block Coordinate Descent with
-encrypted labels. The response variable y only needs to exist on ONE
-server (the "label server"). Non-label servers compute gradient updates
-using y encrypted under the MHE collective public key, and only the
-aggregated p_k-length gradient is revealed via threshold decryption.
+Fits a GLM across vertically partitioned data using Ring63
+Beaver MPC with DCF wide spline for the link function. The system
+auto-detects which server holds each variable. Only p-dimensional
+aggregate gradients are revealed to the client per iteration.
+No observation-level data is ever disclosed.
 }
 \details{
-\subsection{Feature Standardization}{
-Features are automatically standardized (centered and scaled) on each
-server before BCD to ensure fast convergence. For Gaussian family, the
-response is also standardized. Coefficients are transformed back to the
-original scale after convergence, and an intercept is computed.
-}
-
-\subsection{Encrypted-Label BCD-IRLS Protocol}{
-The response variable y resides on a single "label server". Non-label
-servers never see y in plaintext. The protocol proceeds as:
-
+\subsection{Protocol}{
+All computation uses Ring63 fixed-point arithmetic with Beaver MPC:
 \enumerate{
-\item \strong{MHE Key Setup}: All servers generate key shares and
-combine them into a Collective Public Key (CPK) with Galois keys.
-\item \strong{Standardize}: Each server standardizes its features.
-\item \strong{Encrypt y}: The label server encrypts (standardized) y
-under the CPK and distributes the ciphertext to non-label servers.
-\item \strong{BCD Loop}: For each iteration, each server updates
-its block of coefficients on the standardized scale.
-\item \strong{Unstandardize}: Coefficients are transformed back to the
-original scale and an intercept is computed.
-\item \strong{Deviance}: Computed on the label server using
-plaintext y and the final linear predictor (original scale).
+\item \strong{Transport keys}: X25519 keypairs on all servers (~0.5s)
+\item \strong{Standardize}: Each server standardizes its features
+\item \strong{Input sharing}: Features split into additive Ring63 shares
+between 2 DCF parties. Non-DCF servers contribute shares.
+\item \strong{L-BFGS loop}: Per iteration:
+\itemize{
+\item Compute eta shares (Ring63 matrix-vector)
+\item DCF wide spline for sigmoid/exp (binomial/Poisson) or
+identity link (Gaussian)
+\item Beaver matvec for gradient (server-generated triples)
+\item Client aggregates Ring63 shares -> p gradient scalars
+\item L-BFGS quasi-Newton update
+}
+\item \strong{SE}: p+1 gradient evaluations (finite-difference Hessian)
+\item \strong{Deviance}: Beaver dot-product for residual sum of squares
+\item \strong{Unstandardize}: Coefficients + SE via Jacobian transform
 }
 }
 
-\subsection{K=2 Encrypted Link-Function Mode (HE-Link)}{
-With exactly two servers, secure aggregation cannot hide the non-label
-server's eta contribution. dsVert automatically switches to encrypted
-link-function mode, which evaluates the inverse link under CKKS:
-\itemize{
-\item \strong{Gaussian}: Identity link (mu = eta); no polynomial
-evaluation needed, uses log_n = 12 and exact Newton block solve.
-\item \strong{Binomial}: Degree-7 sigmoid polynomial on \link{-8, 8};
-requires log_n >= 14 for multiplicative depth.
-\item \strong{Poisson}: Degree-7 Chebyshev exp polynomial on \link{-3, 3}
-with per-server eta clipping; requires log_n >= 14.
-}
-Binomial and Poisson use gradient descent with a warm-start step-size
-schedule. The converged coefficient error is dominated by the polynomial
-approximation gap rather than optimizer choice. Heavy CKKS operations
-at log_n = 14 are dispatched asynchronously with short-poll result
-retrieval to prevent reverse-proxy timeouts.
+\subsection{Security}{
+No observation-level data is disclosed. The client sees only p-dimensional
+aggregate gradients per iteration. Beaver triples are generated server-side
+(never seen by client). Dealer rotation for K>=4 ensures the analyst must
+compromise (K-1)/K servers to extract data.
 }
 }
 \examples{
 \dontrun{
-x_vars <- list(
-  server1 = c("age", "bmi"),
-  server2 = c("glucose"),
-  server3 = c("cholesterol", "heart_rate")
-)
+# Simplest: formula interface (auto-detects everything)
+model <- ds.vertGLM(npreg ~ age + bmi + glu + bp + skin,
+                     data = "DA", family = "gaussian")
 
-# Gaussian GLM (bp on server2)
-model <- ds.vertGLM("D_aligned", "bp", x_vars,
-                     y_server = "server2", family = "gaussian")
-print(model)
+# String formula
+model <- ds.vertGLM("diabetes ~ age + bmi + glu",
+                     data = "DA", family = "binomial")
+
+# Auto-detect all features
+model <- ds.vertGLM("DA", "npreg", family = "poisson")
+
+# Manual server mapping (legacy)
+model <- ds.vertGLM("DA", "npreg",
+  list(s1 = c("age", "bmi"), s2 = c("glu", "bp")),
+  y_server = "s2", family = "gaussian")
 }
 
 }

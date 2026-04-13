@@ -23,7 +23,7 @@
 
     <a class="navbar-brand me-2" href="index.html">dsVertClient</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.7.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.0.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -48,319 +48,216 @@
 </nav><div class="container template-home">
 <div class="row">
   <main id="main" class="col-md-9"><div class="section level1">
-<div class="page-header"><h1 id="dsvertclient-datashield-client-functions-for-vertically-partitioned-data">dsVertClient: DataSHIELD Client Functions for Vertically Partitioned Data<a class="anchor" aria-label="anchor" href="#dsvertclient-datashield-client-functions-for-vertically-partitioned-data"></a>
+<div class="page-header"><h1 id="dsvertclient--datashield-client-for-vertically-partitioned-data">dsVertClient — DataSHIELD Client for Vertically Partitioned Data<a class="anchor" aria-label="anchor" href="#dsvertclient--datashield-client-for-vertically-partitioned-data"></a>
 </h1></div>
 <p><a href="https://opensource.org/licenses/MIT" class="external-link"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a></p>
 <div class="section level2">
 <h2 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
 </h2>
-<p><strong>dsVertClient</strong> is a client-side DataSHIELD package that enables privacy-preserving statistical analysis on <strong>vertically partitioned federated data</strong>. In vertical partitioning, different data sources hold different variables (columns) for the same set of observations (rows).</p>
-<p>This package provides user-friendly functions for:</p>
-<ul>
-<li>
-<strong>ECDH-PSI Record Alignment</strong>: Privacy-preserving record matching using P-256 elliptic curves (no dictionary attacks possible)</li>
-<li>
-<strong>Correlation Analysis</strong>: Compute correlation matrices using <strong>Multiparty Homomorphic Encryption (MHE)</strong> with share-wrapped threshold decryption</li>
-<li>
-<strong>Principal Component Analysis</strong>: Perform PCA from the MHE-based correlation matrix</li>
-<li>
-<strong>Generalized Linear Models</strong>: Fit GLMs using IRLS with encrypted-label BCD and GLM secure routing (3 families)</li>
-</ul>
-</div>
-<div class="section level2">
-<h2 id="security-guarantees">Security Guarantees<a class="anchor" aria-label="anchor" href="#security-guarantees"></a>
-</h2>
-<div class="section level3">
-<h3 id="record-alignment-ecdh-psi-with-blind-relay">Record Alignment (ECDH-PSI with Blind Relay)<a class="anchor" aria-label="anchor" href="#record-alignment-ecdh-psi-with-blind-relay"></a>
-</h3>
-<table class="table">
-<colgroup>
-<col width="37%">
-<col width="62%">
-</colgroup>
-<thead><tr>
-<th>Property</th>
-<th>What it prevents</th>
-</tr></thead>
-<tbody>
-<tr>
-<td><strong>Dictionary attack resistance</strong></td>
-<td>Unlike SHA-256 hashing, the client CANNOT reverse-engineer patient IDs from the masked curve points (requires server’s secret scalar)</td>
-</tr>
-<tr>
-<td><strong>Scalar confidentiality</strong></td>
-<td>Each server’s P-256 random scalar stays on-server</td>
-</tr>
-<tr>
-<td><strong>Unlinkability (DDH)</strong></td>
-<td>The client CANNOT link single-masked points across servers</td>
-</tr>
-<tr>
-<td><strong>Blind relay</strong></td>
-<td>Client sees ONLY opaque encrypted blobs (X25519 + AES-256-GCM). All EC point exchanges are transport-encrypted server-to-server.</td>
-</tr>
-<tr>
-<td><strong>PSI Firewall</strong></td>
-<td>Server-side FSM enforces phase ordering and one-shot semantics per target, preventing OPRF oracle attacks</td>
-</tr>
-<tr>
-<td><strong>MITM-resistant mode</strong></td>
-<td>Optional pre-shared key pinning validates transport PKs against administrator-configured peers, detecting key substitution</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="section level3">
-<h3 id="statistical-analysis-mhe-ckks">Statistical Analysis (MHE-CKKS)<a class="anchor" aria-label="anchor" href="#statistical-analysis-mhe-ckks"></a>
-</h3>
-<table class="table">
-<colgroup>
-<col width="37%">
-<col width="62%">
-</colgroup>
-<thead><tr>
-<th>Property</th>
-<th>What it prevents</th>
-</tr></thead>
-<tbody>
-<tr>
-<td><strong>Client privacy</strong></td>
-<td>The researcher CANNOT decrypt any individual data. Only aggregate statistics (correlations, coefficients) are revealed after all servers cooperate.</td>
-</tr>
-<tr>
-<td><strong>Server privacy</strong></td>
-<td>Each server’s raw data never leaves the server. Other servers only see encrypted ciphertexts (opaque).</td>
-</tr>
-<tr>
-<td><strong>Collusion resistance</strong></td>
-<td>Even K-1 colluding servers cannot decrypt without the K-th server’s key share. Full decryption requires ALL K servers.</td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="section level3">
-<h3 id="transport--routing-security">Transport &amp; Routing Security<a class="anchor" aria-label="anchor" href="#transport--routing-security"></a>
-</h3>
-<table class="table">
-<colgroup>
-<col width="37%">
-<col width="62%">
-</colgroup>
-<thead><tr>
-<th>Property</th>
-<th>What it prevents</th>
-</tr></thead>
-<tbody>
-<tr>
-<td><strong>Share-wrapping</strong></td>
-<td>Client CANNOT see or manipulate partial decryption shares. Each share is transport-encrypted under the fusion server’s X25519 key before relay.</td>
-</tr>
-<tr>
-<td><strong>GLM secure routing</strong></td>
-<td>Client CANNOT see individual-level vectors (eta, mu, w, v). Only sees p_k-length coefficient vectors and opaque encrypted blobs.</td>
-</tr>
-<tr>
-<td><strong>Protocol Firewall</strong></td>
-<td>Only ciphertexts produced by authorized operations can be decrypted. Prevents decryption oracle attacks.</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="section level2">
-<h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
-</h2>
-<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Install from GitHub (install dsVert first on servers)</span></span>
-<span><span class="fu">devtools</span><span class="fu">::</span><span class="fu"><a href="https://remotes.r-lib.org/reference/install_github.html" class="external-link">install_github</a></span><span class="op">(</span><span class="st">"isglobal-brge/dsVertClient"</span><span class="op">)</span></span></code></pre></div>
+<p><strong>dsVertClient</strong> provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols run transparently.</p>
 </div>
 <div class="section level2">
 <h2 id="quick-start">Quick Start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
 </h2>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/isglobal-brge/dsVertClient" class="external-link">dsVertClient</a></span><span class="op">)</span></span>
-<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/datashield/DSI/" class="external-link">DSI</a></span><span class="op">)</span></span>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/datashield/DSI/" class="external-link">DSI</a></span><span class="op">)</span>; <span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/datashield/DSOpal/" class="external-link">DSOpal</a></span><span class="op">)</span>; <span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/isglobal-brge/dsVertClient" class="external-link">dsVertClient</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># Connect to Opal/DataSHIELD servers</span></span>
-<span><span class="va">conns</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.login.html" class="external-link">datashield.login</a></span><span class="op">(</span><span class="va">logindata</span><span class="op">)</span></span>
+<span><span class="co"># Connect to servers</span></span>
+<span><span class="va">conns</span> <span class="op">&lt;-</span> <span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.login.html" class="external-link">datashield.login</a></span><span class="op">(</span>logins <span class="op">=</span> <span class="va">builder</span><span class="op">$</span><span class="fu">build</span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.assign.table.html" class="external-link">datashield.assign.table</a></span><span class="op">(</span><span class="va">conns</span>, <span class="st">"D"</span>, <span class="st">"project.data"</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 1. Align records across servers using ECDH-PSI</span></span>
-<span><span class="fu"><a href="reference/ds.psiAlign.html">ds.psiAlign</a></span><span class="op">(</span><span class="st">"D"</span>, <span class="st">"patient_id"</span>, <span class="st">"D_aligned"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="co"># 1. Align records (NAs removed automatically, like glm na.omit)</span></span>
+<span><span class="fu"><a href="reference/ds.psiAlign.html">ds.psiAlign</a></span><span class="op">(</span><span class="st">"D"</span>, <span class="st">"patient_id"</span>, <span class="st">"DA"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 2. Define which variables are on which server</span></span>
-<span><span class="va">variables</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>  hospital_A <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span><span class="op">)</span>,</span>
-<span>  hospital_B <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"glucose"</span>, <span class="st">"systolic_bp"</span><span class="op">)</span>,</span>
-<span>  hospital_C <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"cholesterol"</span>, <span class="st">"hdl"</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
+<span><span class="co"># 2. Fit GLM using formula (auto-detects which server has each variable)</span></span>
+<span><span class="va">result</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span><span class="va">diabetes</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">glu</span> <span class="op">+</span> <span class="va">bp</span>,</span>
+<span>                     data <span class="op">=</span> <span class="st">"DA"</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
+<span>                     datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 3. Compute correlation matrix (MHE with share-wrapped threshold decryption)</span></span>
-<span><span class="va">cor_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertCor.html">ds.vertCor</a></span><span class="op">(</span><span class="st">"D_aligned"</span>, <span class="va">variables</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">cor_result</span><span class="op">)</span></span>
+<span><span class="co"># 3. View results (coefficients + SE + p-values + canonical deviance)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">result</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 4. Perform PCA</span></span>
-<span><span class="va">pca</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertPCA.html">ds.vertPCA</a></span><span class="op">(</span><span class="st">"D_aligned"</span>, <span class="va">variables</span>, n_components <span class="op">=</span> <span class="fl">3</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">pca</span><span class="op">)</span></span>
+<span><span class="co"># 4. Correlation + PCA (auto-detects variables)</span></span>
+<span><span class="va">cor</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertCor.html">ds.vertCor</a></span><span class="op">(</span><span class="st">"DA"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="va">pca</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertPCA.html">ds.vertPCA</a></span><span class="op">(</span>cor_result <span class="op">=</span> <span class="va">cor</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 5. Fit a GLM</span></span>
-<span><span class="va">model</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span><span class="st">"D_aligned"</span>, <span class="st">"outcome"</span>, <span class="va">variables</span>,</span>
-<span>                    y_server <span class="op">=</span> <span class="st">"hospital_B"</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
-<span>                    datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">model</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Disconnect</span></span>
-<span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.logout.html" class="external-link">datashield.logout</a></span><span class="op">(</span><span class="va">conns</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.logout.html" class="external-link">datashield.logout</a></span><span class="op">(</span><span class="va">conns</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="client-side-functions">Client-Side Functions<a class="anchor" aria-label="anchor" href="#client-side-functions"></a>
+<h2 id="functions">Functions<a class="anchor" aria-label="anchor" href="#functions"></a>
 </h2>
 <table class="table">
 <colgroup>
-<col width="43%">
-<col width="56%">
+<col width="32%">
+<col width="41%">
+<col width="25%">
 </colgroup>
 <thead><tr>
 <th>Function</th>
 <th>Description</th>
+<th>Output</th>
 </tr></thead>
 <tbody>
 <tr>
-<td><code>ds.psiAlign</code></td>
-<td>Align records across servers using ECDH-PSI</td>
+<td><code><a href="reference/ds.psiAlign.html">ds.psiAlign()</a></code></td>
+<td>Private Set Intersection</td>
+<td>Aligned data frame</td>
 </tr>
 <tr>
-<td><code>ds.vertCor</code></td>
-<td>Compute cross-server correlation matrix via MHE share-wrapped threshold decryption</td>
+<td><code><a href="reference/ds.vertGLM.html">ds.vertGLM()</a></code></td>
+<td>GLM (Gaussian, Binomial, Poisson)</td>
+<td>Coefficients, SE, p-values, deviance</td>
 </tr>
 <tr>
-<td><code>ds.vertPCA</code></td>
-<td>Perform PCA from the MHE-based correlation matrix</td>
+<td><code><a href="reference/ds.vertCor.html">ds.vertCor()</a></code></td>
+<td>Pearson correlation matrix</td>
+<td>p x p correlation matrix</td>
 </tr>
 <tr>
-<td><code>ds.vertGLM</code></td>
-<td>Fit Generalized Linear Models via encrypted-label BCD with GLM secure routing</td>
+<td><code><a href="reference/ds.vertPCA.html">ds.vertPCA()</a></code></td>
+<td>Principal Component Analysis</td>
+<td>Loadings, eigenvalues, variance %</td>
 </tr>
 </tbody>
 </table>
 </div>
 <div class="section level2">
-<h2 id="workflow-align---analyze">Workflow: Align -&gt; Analyze<a class="anchor" aria-label="anchor" href="#workflow-align---analyze"></a>
+<h2 id="glm-output">GLM Output<a class="anchor" aria-label="anchor" href="#glm-output"></a>
 </h2>
-<pre><code> ┌──────────────────┐   ┌───────────────────────────┐
- │  ds.psiAlign     │──▶│        Analyze            │
- │  (ECDH-PSI)      │   │  ds.vertCor (MHE)         │
- │                  │   │  ds.vertPCA               │
- │                  │   │  ds.vertGLM (BCD + MHE)   │
- └──────────────────┘   └───────────────────────────┘</code></pre>
+<pre><code>Coefficients:
+                Estimate Std.Error z value  Pr(&gt;|z|)
+(Intercept)     -9.2784    2.0981  -4.425  0.000010 ***
+age              0.0733    0.0223   3.301  0.000993 ***
+bmi              0.0798    0.0522   1.534  0.126024
+glu              0.0290    0.0101   2.878  0.004046 **
+
+Converged: TRUE (14 iterations)
+Deviance: 22.09</code></pre>
 </div>
 <div class="section level2">
-<h2 id="mhe-correlation-how-it-works">MHE Correlation: How It Works<a class="anchor" aria-label="anchor" href="#mhe-correlation-how-it-works"></a>
+<h2 id="supported-configurations">Supported Configurations<a class="anchor" aria-label="anchor" href="#supported-configurations"></a>
 </h2>
-<p>The 6-phase threshold MHE protocol:</p>
-<ol style="list-style-type: decimal">
-<li>
-<strong>Key Generation</strong>: Each server generates its own secret key share and public key share. Party 0 creates the Common Reference Polynomial (CRP).</li>
-<li>
-<strong>Key Combination</strong>: Public key shares are combined into a Collective Public Key (CPK). Encryption under the CPK requires ALL servers for decryption.</li>
-<li>
-<strong>Encryption</strong>: Each server standardizes its data (Z-scores) and encrypts columns under the CPK.</li>
-<li>
-<strong>Local Correlation</strong>: Within-server correlations are computed in plaintext.</li>
-<li>
-<strong>Cross-Server Correlation (share-wrapped threshold decryption)</strong>: For each server pair (A, B): server A computes Z_A * Enc(Z_B) homomorphically. Each server produces a partial decryption share, <strong>wrapped</strong> (transport-encrypted) under the fusion server’s X25519 public key. The client relays these opaque wrapped shares to the fusion server (party 0). The fusion server unwraps all shares, computes its own share, and returns only the final aggregate scalar. The client <strong>never</strong> sees raw partial shares.</li>
-<li>
-<strong>Assembly</strong>: The full p x p correlation matrix is assembled from local and cross-server blocks.</li>
-</ol>
-</div>
-<div class="section level2">
-<h2 id="glm-secure-routing-coordinator-model">GLM Secure Routing (Coordinator Model)<a class="anchor" aria-label="anchor" href="#glm-secure-routing-coordinator-model"></a>
-</h2>
-<p>The GLM protocol uses a <strong>coordinator model</strong> so that individual-level vectors never pass through the client:</p>
 <table class="table">
 <colgroup>
-<col width="26%">
-<col width="73%">
+<col width="15%">
+<col width="38%">
+<col width="46%">
 </colgroup>
 <thead><tr>
-<th>Role</th>
-<th>Responsibilities</th>
+<th></th>
+<th>K=2</th>
+<th>K&gt;=3</th>
 </tr></thead>
 <tbody>
 <tr>
-<td><strong>Label server (coordinator)</strong></td>
-<td>Runs the IRLS loop. Encrypts individual-level vectors (mu, w, v) under each non-label server’s public key and sends the ciphertexts through the client as opaque blobs.</td>
+<td>Gaussian</td>
+<td>L-BFGS + identity link</td>
+<td>L-BFGS + identity link</td>
 </tr>
 <tr>
-<td><strong>Non-label servers</strong></td>
-<td>Decrypt locally, compute their gradient contribution (X_k’ W v), encrypt eta_k for the coordinator.</td>
+<td>Binomial</td>
+<td>L-BFGS + DCF sigmoid (50 intervals)</td>
+<td>L-BFGS + DCF sigmoid</td>
 </tr>
 <tr>
-<td><strong>Client (blind relay)</strong></td>
-<td>Routes opaque encrypted blobs between servers. Sees only p_k-length coefficient vectors (public model output) and encrypted payloads it cannot decrypt.</td>
-</tr>
-</tbody>
-</table>
-<p>This ensures the client acts as a transport layer with no access to observation-level information.</p>
-</div>
-<div class="section level2">
-<h2 id="supported-glm-families">Supported GLM Families<a class="anchor" aria-label="anchor" href="#supported-glm-families"></a>
-</h2>
-<table class="table">
-<thead><tr>
-<th>Family</th>
-<th>Link</th>
-<th>Use Case</th>
-</tr></thead>
-<tbody>
-<tr>
-<td><code>gaussian</code></td>
-<td>Identity</td>
-<td>Continuous outcomes (linear regression)</td>
+<td>Poisson</td>
+<td>L-BFGS + DCF exp (100 intervals)</td>
+<td>L-BFGS + DCF exp</td>
 </tr>
 <tr>
-<td><code>binomial</code></td>
-<td>Logit</td>
-<td>Binary outcomes (logistic regression)</td>
+<td>SE + p-values</td>
+<td>Finite-difference Hessian</td>
+<td>Central-difference Hessian</td>
 </tr>
 <tr>
-<td><code>poisson</code></td>
-<td>Log</td>
-<td>Count data</td>
+<td>Deviance</td>
+<td>Beaver dot-product (1 scalar)</td>
+<td>Beaver dot-product</td>
+</tr>
+<tr>
+<td>Correlation</td>
+<td>Ring63 Beaver (p matvec)</td>
+<td>Ring63 Beaver (p matvec)</td>
+</tr>
+<tr>
+<td>PCA</td>
+<td>Eigen of correlation</td>
+<td>Eigen of correlation</td>
 </tr>
 </tbody>
 </table>
 </div>
 <div class="section level2">
-<h2 id="chunked-transfer-protocol">Chunked Transfer Protocol<a class="anchor" aria-label="anchor" href="#chunked-transfer-protocol"></a>
-</h2>
-<p>DataSHIELD’s R expression parser limits the size of arguments that can be passed inline in <code><a href="https://rdrr.io/r/base/call.html" class="external-link">call()</a></code> expressions. Cryptographic objects (CKKS ciphertexts, EC points, key shares, transport-encrypted blobs) routinely exceed this limit. dsVertClient automatically splits all large payloads into 10 KB chunks via <code>mheStoreBlobDS</code>, which the server reassembles transparently. This chunking is applied uniformly across all protocols (PSI, MHE correlation, GLM) for any data that scales with the number of observations, variables, or servers — ensuring that no DataSHIELD call can overflow regardless of dataset size or number of parties.</p>
-</div>
-<div class="section level2">
-<h2 id="requirements">Requirements<a class="anchor" aria-label="anchor" href="#requirements"></a>
-</h2>
-<ul>
-<li>R &gt;= 4.0.0</li>
-<li>DSI package</li>
-<li>jsonlite package</li>
-<li>dsVert package installed on DataSHIELD servers (Opal/Rock)</li>
-</ul>
-</div>
-<div class="section level2">
-<h2 id="documentation">Documentation<a class="anchor" aria-label="anchor" href="#documentation"></a>
+<h2 id="security">Security<a class="anchor" aria-label="anchor" href="#security"></a>
 </h2>
 <ul>
 <li>
-<a href="https://isglobal-brge.github.io/dsVertClient/articles/validation.html">Validation Study</a>: Full pipeline validation against centralized R</li>
+<strong>Zero observation-level disclosure</strong>: client sees only p-dimensional aggregates</li>
+<li>
+<strong>Server-generated Beaver triples</strong>: client never sees cryptographic material</li>
+<li>
+<strong>Dealer rotation</strong>: different server generates triples each iteration (K&gt;=4)</li>
+<li>
+<strong>Transport encryption</strong>: X25519 + AES-256-GCM between servers</li>
+<li>
+<strong>Pure Ring63 MPC</strong>: fixed-point additive secret sharing</li>
+<li>
+<strong>Pinned peers (Ed25519)</strong>: servers verify each other’s identity, preventing Sybil attacks</li>
 </ul>
 </div>
 <div class="section level2">
-<h2 id="authors">Authors<a class="anchor" aria-label="anchor" href="#authors"></a>
+<h2 id="performance-pima-diabetes-p6">Performance (Pima diabetes, p=6)<a class="anchor" aria-label="anchor" href="#performance-pima-diabetes-p6"></a>
 </h2>
-<ul>
-<li>David Sarrat González (<a href="mailto:david.sarrat@isglobal.org" class="email">david.sarrat@isglobal.org</a>)</li>
-<li>Miron Banjac (<a href="mailto:miron.banjac@isglobal.org" class="email">miron.banjac@isglobal.org</a>)</li>
-<li>Juan R González (<a href="mailto:juanr.gonzalez@isglobal.org" class="email">juanr.gonzalez@isglobal.org</a>)</li>
-</ul>
+<table class="table">
+<thead><tr>
+<th>Analysis</th>
+<th>K=2</th>
+<th>K=3</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>Key setup</td>
+<td>0.3s</td>
+<td>0.5s</td>
+</tr>
+<tr>
+<td>Binomial GLM</td>
+<td>~330s (12 iters + SE)</td>
+<td>~360s (14 iters + SE)</td>
+</tr>
+<tr>
+<td>Gaussian GLM</td>
+<td>~60s (11 iters + SE)</td>
+<td>~60s (11 iters + SE)</td>
+</tr>
+<tr>
+<td>Poisson GLM</td>
+<td>~580s (11 iters + SE)</td>
+<td>~580s (12 iters + SE)</td>
+</tr>
+<tr>
+<td>Correlation</td>
+<td>16s</td>
+<td>18s</td>
+</tr>
+<tr>
+<td>PCA</td>
+<td>&lt;1s (from cor)</td>
+<td>18s</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section level2">
+<h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
+</h2>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="co"># From GitHub</span></span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>devtools<span class="sc">::</span><span class="fu">install_github</span>(<span class="st">"isglobal-brge/dsVertClient"</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co"># Or from source</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>R CMD build <span class="sc">--</span>no<span class="sc">-</span>build<span class="sc">-</span>vignettes .</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>R CMD INSTALL dsVertClient_1.<span class="dv">0</span>.<span class="fl">0.</span>tar.gz</span></code></pre></div>
+<p>Requires the server-side package <a href="https://github.com/isglobal-brge/dsVert" class="external-link">dsVert</a> installed on all DataSHIELD servers.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">

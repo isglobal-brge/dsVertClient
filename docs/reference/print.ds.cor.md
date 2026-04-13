@@ -6,7 +6,7 @@ Prints a summary of correlation results.
 
 ``` r
 # S3 method for class 'ds.cor'
-print(x, digits = 4, ...)
+print(x, digits = 3, ...)
 ```
 
 ## Arguments
@@ -17,7 +17,7 @@ print(x, digits = 4, ...)
 
 - digits:
 
-  Number of digits to display
+  Number of digits for correlation matrix. Default 3.
 
 - ...:
 

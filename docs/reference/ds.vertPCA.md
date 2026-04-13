@@ -1,7 +1,7 @@
 # Principal Component Analysis for Vertically Partitioned Data
 
 Performs PCA on vertically partitioned data using the privacy-preserving
-correlation matrix computed via Homomorphic Encryption.
+correlation matrix from Ring63 Beaver MPC.
 
 ## Usage
 
@@ -11,8 +11,7 @@ ds.vertPCA(
   variables = NULL,
   n_components = NULL,
   cor_result = NULL,
-  log_n = 12,
-  log_scale = 40,
+  verbose = TRUE,
   datasources = NULL
 )
 ```
@@ -21,37 +20,27 @@ ds.vertPCA(
 
 - data_name:
 
-  Character string. Name of the (aligned) data frame on each server.
-  Ignored if `cor_result` is provided.
+  Character string. Name of the (aligned) data frame. Ignored if
+  `cor_result` is provided.
 
 - variables:
 
-  A named list where each name corresponds to a server name and each
-  element is a character vector of variable names from that server.
-  Ignored if `cor_result` is provided.
+  Named list: server -\> variable names. Ignored if `cor_result` is
+  provided.
 
 - n_components:
 
-  Integer. Number of principal components to return. Default is NULL
-  (returns all).
+  Integer. Number of components. Default NULL (all).
 
 - cor_result:
 
   An existing `ds.cor` object from
   [`ds.vertCor`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md).
-  If provided, the MHE protocol is NOT re-run; the PCA is computed
-  directly from this correlation matrix. This avoids running the
-  expensive MHE protocol twice when you already have the correlation.
+  If provided, the correlation protocol is not re-run.
 
-- log_n:
+- verbose:
 
-  Integer. CKKS ring dimension parameter for MHE. Default is 12. Ignored
-  if `cor_result` is provided.
-
-- log_scale:
-
-  Integer. CKKS precision parameter for MHE. Default is 40. Ignored if
-  `cor_result` is provided.
+  Logical. If TRUE (default), print progress messages.
 
 - datasources:
 
@@ -79,7 +68,9 @@ A list with class "ds.pca" containing:
 ## Details
 
 This function performs PCA using the correlation matrix obtained via
-Multiparty Homomorphic Encryption (MHE). The approach is:
+Ring63 Beaver MPC (via
+[`ds.vertCor`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md)).
+The approach is:
 
 1.  Compute the privacy-preserving correlation matrix using
     [`ds.vertCor`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md)
@@ -136,7 +127,7 @@ vars <- list(
 
 pca_result <- ds.vertPCA("D_aligned", vars, n_components = 3)
 
-# Or reuse an existing correlation result (avoids running MHE again):
+# Or reuse an existing correlation result (avoids running protocol again):
 cor_result <- ds.vertCor("D_aligned", vars)
 pca_result <- ds.vertPCA(cor_result = cor_result, n_components = 3)
 

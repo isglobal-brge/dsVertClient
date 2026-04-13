@@ -9,7 +9,9 @@ ds.psiAlign(
   id_col,
   newobj = "D_aligned",
   ref_server = NULL,
-  datasources = NULL
+  verbose = TRUE,
+  datasources = NULL,
+  na.action = "na.omit"
 )
 }
 \arguments{
@@ -22,6 +24,8 @@ Default is \code{"D_aligned"}.}
 
 \item{ref_server}{Character string or NULL. Name of the reference server.
 If NULL (default), the first connection is used.}
+
+\item{verbose}{Logical. If TRUE (default), print progress messages.}
 
 \item{datasources}{DataSHIELD connection object or list of connections.
 If NULL, uses all available connections.}

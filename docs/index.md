@@ -1,195 +1,111 @@
-# dsVertClient: DataSHIELD Client Functions for Vertically Partitioned Data
+# dsVertClient — DataSHIELD Client for Vertically Partitioned Data
 
 [![License:
 MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Overview
 
-**dsVertClient** is a client-side DataSHIELD package that enables
-privacy-preserving statistical analysis on **vertically partitioned
-federated data**. In vertical partitioning, different data sources hold
-different variables (columns) for the same set of observations (rows).
-
-This package provides user-friendly functions for:
-
-- **ECDH-PSI Record Alignment**: Privacy-preserving record matching
-  using P-256 elliptic curves (no dictionary attacks possible)
-- **Correlation Analysis**: Compute correlation matrices using
-  **Multiparty Homomorphic Encryption (MHE)** with share-wrapped
-  threshold decryption
-- **Principal Component Analysis**: Perform PCA from the MHE-based
-  correlation matrix
-- **Generalized Linear Models**: Fit GLMs using IRLS with
-  encrypted-label BCD and GLM secure routing (3 families)
-
-## Security Guarantees
-
-### Record Alignment (ECDH-PSI with Blind Relay)
-
-| Property | What it prevents |
-|----|----|
-| **Dictionary attack resistance** | Unlike SHA-256 hashing, the client CANNOT reverse-engineer patient IDs from the masked curve points (requires server’s secret scalar) |
-| **Scalar confidentiality** | Each server’s P-256 random scalar stays on-server |
-| **Unlinkability (DDH)** | The client CANNOT link single-masked points across servers |
-| **Blind relay** | Client sees ONLY opaque encrypted blobs (X25519 + AES-256-GCM). All EC point exchanges are transport-encrypted server-to-server. |
-| **PSI Firewall** | Server-side FSM enforces phase ordering and one-shot semantics per target, preventing OPRF oracle attacks |
-| **MITM-resistant mode** | Optional pre-shared key pinning validates transport PKs against administrator-configured peers, detecting key substitution |
-
-### Statistical Analysis (MHE-CKKS)
-
-| Property | What it prevents |
-|----|----|
-| **Client privacy** | The researcher CANNOT decrypt any individual data. Only aggregate statistics (correlations, coefficients) are revealed after all servers cooperate. |
-| **Server privacy** | Each server’s raw data never leaves the server. Other servers only see encrypted ciphertexts (opaque). |
-| **Collusion resistance** | Even K-1 colluding servers cannot decrypt without the K-th server’s key share. Full decryption requires ALL K servers. |
-
-### Transport & Routing Security
-
-| Property | What it prevents |
-|----|----|
-| **Share-wrapping** | Client CANNOT see or manipulate partial decryption shares. Each share is transport-encrypted under the fusion server’s X25519 key before relay. |
-| **GLM secure routing** | Client CANNOT see individual-level vectors (eta, mu, w, v). Only sees p_k-length coefficient vectors and opaque encrypted blobs. |
-| **Protocol Firewall** | Only ciphertexts produced by authorized operations can be decrypted. Prevents decryption oracle attacks. |
-
-## Installation
-
-``` r
-
-# Install from GitHub (install dsVert first on servers)
-devtools::install_github("isglobal-brge/dsVertClient")
-```
+**dsVertClient** provides user-friendly R functions for
+privacy-preserving analysis on vertically partitioned data across
+DataSHIELD servers. The analyst calls simple functions; all
+cryptographic protocols run transparently.
 
 ## Quick Start
 
 ``` r
 
-library(dsVertClient)
-library(DSI)
+library(DSI); library(DSOpal); library(dsVertClient)
 
-# Connect to Opal/DataSHIELD servers
-conns <- datashield.login(logindata)
+# Connect to servers
+conns <- DSI::datashield.login(logins = builder$build())
+DSI::datashield.assign.table(conns, "D", "project.data")
 
-# 1. Align records across servers using ECDH-PSI
-ds.psiAlign("D", "patient_id", "D_aligned", datasources = conns)
+# 1. Align records (NAs removed automatically, like glm na.omit)
+ds.psiAlign("D", "patient_id", "DA", datasources = conns)
 
-# 2. Define which variables are on which server
-variables <- list(
-  hospital_A = c("age", "bmi"),
-  hospital_B = c("glucose", "systolic_bp"),
-  hospital_C = c("cholesterol", "hdl")
-)
+# 2. Fit GLM using formula (auto-detects which server has each variable)
+result <- ds.vertGLM(diabetes ~ age + bmi + glu + bp,
+                     data = "DA", family = "binomial",
+                     datasources = conns)
 
-# 3. Compute correlation matrix (MHE with share-wrapped threshold decryption)
-cor_result <- ds.vertCor("D_aligned", variables, datasources = conns)
-print(cor_result)
+# 3. View results (coefficients + SE + p-values + canonical deviance)
+print(result)
 
-# 4. Perform PCA
-pca <- ds.vertPCA("D_aligned", variables, n_components = 3, datasources = conns)
-print(pca)
+# 4. Correlation + PCA (auto-detects variables)
+cor <- ds.vertCor("DA", datasources = conns)
+pca <- ds.vertPCA(cor_result = cor)
 
-# 5. Fit a GLM
-model <- ds.vertGLM("D_aligned", "outcome", variables,
-                    y_server = "hospital_B", family = "gaussian",
-                    datasources = conns)
-summary(model)
-
-# Disconnect
-datashield.logout(conns)
+DSI::datashield.logout(conns)
 ```
 
-## Client-Side Functions
+## Functions
 
-| Function | Description |
-|----|----|
-| `ds.psiAlign` | Align records across servers using ECDH-PSI |
-| `ds.vertCor` | Compute cross-server correlation matrix via MHE share-wrapped threshold decryption |
-| `ds.vertPCA` | Perform PCA from the MHE-based correlation matrix |
-| `ds.vertGLM` | Fit Generalized Linear Models via encrypted-label BCD with GLM secure routing |
+| Function | Description | Output |
+|----|----|----|
+| [`ds.psiAlign()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md) | Private Set Intersection | Aligned data frame |
+| [`ds.vertGLM()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGLM.md) | GLM (Gaussian, Binomial, Poisson) | Coefficients, SE, p-values, deviance |
+| [`ds.vertCor()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md) | Pearson correlation matrix | p x p correlation matrix |
+| [`ds.vertPCA()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertPCA.md) | Principal Component Analysis | Loadings, eigenvalues, variance % |
 
-## Workflow: Align -\> Analyze
+## GLM Output
 
-     ┌──────────────────┐   ┌───────────────────────────┐
-     │  ds.psiAlign     │──▶│        Analyze            │
-     │  (ECDH-PSI)      │   │  ds.vertCor (MHE)         │
-     │                  │   │  ds.vertPCA               │
-     │                  │   │  ds.vertGLM (BCD + MHE)   │
-     └──────────────────┘   └───────────────────────────┘
+    Coefficients:
+                    Estimate Std.Error z value  Pr(>|z|)
+    (Intercept)     -9.2784    2.0981  -4.425  0.000010 ***
+    age              0.0733    0.0223   3.301  0.000993 ***
+    bmi              0.0798    0.0522   1.534  0.126024
+    glu              0.0290    0.0101   2.878  0.004046 **
 
-## MHE Correlation: How It Works
+    Converged: TRUE (14 iterations)
+    Deviance: 22.09
 
-The 6-phase threshold MHE protocol:
+## Supported Configurations
 
-1.  **Key Generation**: Each server generates its own secret key share
-    and public key share. Party 0 creates the Common Reference
-    Polynomial (CRP).
-2.  **Key Combination**: Public key shares are combined into a
-    Collective Public Key (CPK). Encryption under the CPK requires ALL
-    servers for decryption.
-3.  **Encryption**: Each server standardizes its data (Z-scores) and
-    encrypts columns under the CPK.
-4.  **Local Correlation**: Within-server correlations are computed in
-    plaintext.
-5.  **Cross-Server Correlation (share-wrapped threshold decryption)**:
-    For each server pair (A, B): server A computes Z_A \* Enc(Z_B)
-    homomorphically. Each server produces a partial decryption share,
-    **wrapped** (transport-encrypted) under the fusion server’s X25519
-    public key. The client relays these opaque wrapped shares to the
-    fusion server (party 0). The fusion server unwraps all shares,
-    computes its own share, and returns only the final aggregate scalar.
-    The client **never** sees raw partial shares.
-6.  **Assembly**: The full p x p correlation matrix is assembled from
-    local and cross-server blocks.
+|  | K=2 | K\>=3 |
+|----|----|----|
+| Gaussian | L-BFGS + identity link | L-BFGS + identity link |
+| Binomial | L-BFGS + DCF sigmoid (50 intervals) | L-BFGS + DCF sigmoid |
+| Poisson | L-BFGS + DCF exp (100 intervals) | L-BFGS + DCF exp |
+| SE + p-values | Finite-difference Hessian | Central-difference Hessian |
+| Deviance | Beaver dot-product (1 scalar) | Beaver dot-product |
+| Correlation | Ring63 Beaver (p matvec) | Ring63 Beaver (p matvec) |
+| PCA | Eigen of correlation | Eigen of correlation |
 
-## GLM Secure Routing (Coordinator Model)
+## Security
 
-The GLM protocol uses a **coordinator model** so that individual-level
-vectors never pass through the client:
+- **Zero observation-level disclosure**: client sees only p-dimensional
+  aggregates
+- **Server-generated Beaver triples**: client never sees cryptographic
+  material
+- **Dealer rotation**: different server generates triples each iteration
+  (K\>=4)
+- **Transport encryption**: X25519 + AES-256-GCM between servers
+- **Pure Ring63 MPC**: fixed-point additive secret sharing
+- **Pinned peers (Ed25519)**: servers verify each other’s identity,
+  preventing Sybil attacks
 
-| Role | Responsibilities |
-|----|----|
-| **Label server (coordinator)** | Runs the IRLS loop. Encrypts individual-level vectors (mu, w, v) under each non-label server’s public key and sends the ciphertexts through the client as opaque blobs. |
-| **Non-label servers** | Decrypt locally, compute their gradient contribution (X_k’ W v), encrypt eta_k for the coordinator. |
-| **Client (blind relay)** | Routes opaque encrypted blobs between servers. Sees only p_k-length coefficient vectors (public model output) and encrypted payloads it cannot decrypt. |
+## Performance (Pima diabetes, p=6)
 
-This ensures the client acts as a transport layer with no access to
-observation-level information.
+| Analysis     | K=2                   | K=3                   |
+|--------------|-----------------------|-----------------------|
+| Key setup    | 0.3s                  | 0.5s                  |
+| Binomial GLM | ~330s (12 iters + SE) | ~360s (14 iters + SE) |
+| Gaussian GLM | ~60s (11 iters + SE)  | ~60s (11 iters + SE)  |
+| Poisson GLM  | ~580s (11 iters + SE) | ~580s (12 iters + SE) |
+| Correlation  | 16s                   | 18s                   |
+| PCA          | \<1s (from cor)       | 18s                   |
 
-## Supported GLM Families
+## Installation
 
-| Family     | Link     | Use Case                                |
-|------------|----------|-----------------------------------------|
-| `gaussian` | Identity | Continuous outcomes (linear regression) |
-| `binomial` | Logit    | Binary outcomes (logistic regression)   |
-| `poisson`  | Log      | Count data                              |
+``` r
+# From GitHub
+devtools::install_github("isglobal-brge/dsVertClient")
 
-## Chunked Transfer Protocol
+# Or from source
+R CMD build --no-build-vignettes .
+R CMD INSTALL dsVertClient_1.0.0.tar.gz
+```
 
-DataSHIELD’s R expression parser limits the size of arguments that can
-be passed inline in [`call()`](https://rdrr.io/r/base/call.html)
-expressions. Cryptographic objects (CKKS ciphertexts, EC points, key
-shares, transport-encrypted blobs) routinely exceed this limit.
-dsVertClient automatically splits all large payloads into 10 KB chunks
-via `mheStoreBlobDS`, which the server reassembles transparently. This
-chunking is applied uniformly across all protocols (PSI, MHE
-correlation, GLM) for any data that scales with the number of
-observations, variables, or servers — ensuring that no DataSHIELD call
-can overflow regardless of dataset size or number of parties.
-
-## Requirements
-
-- R \>= 4.0.0
-- DSI package
-- jsonlite package
-- dsVert package installed on DataSHIELD servers (Opal/Rock)
-
-## Documentation
-
-- [Validation
-  Study](https://isglobal-brge.github.io/dsVertClient/articles/validation.html):
-  Full pipeline validation against centralized R
-
-## Authors
-
-- David Sarrat González (<david.sarrat@isglobal.org>)
-- Miron Banjac (<miron.banjac@isglobal.org>)
-- Juan R González (<juanr.gonzalez@isglobal.org>)
+Requires the server-side package
+[dsVert](https://github.com/isglobal-brge/dsVert) installed on all
+DataSHIELD servers.
