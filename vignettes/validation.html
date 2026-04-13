@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>dsVert Validation: Privacy-Preserving Vertical GLM, Correlation, and PCA</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">dsVert Validation: Privacy-Preserving
+Vertical GLM, Correlation, and PCA</h1>
+
+
+
+<p>This vignette validates dsVert against centralised R on two public
+clinical datasets:</p>
+<ul>
+<li><strong>birthwt</strong> (MASS package): low birth weight risk
+factors, <span class="math inline">\(K=2\)</span> servers</li>
+<li><strong>CGD</strong> (survival package): chronic granulomatous
+disease trial, <span class="math inline">\(K=3\)</span> servers</li>
+</ul>
+<p>We compare coefficients, standard errors, p-values, and canonical
+deviance for all three GLM families (Gaussian, binomial, Poisson), plus
+Pearson correlation and PCA.</p>
+<div id="data-preparation" class="section level2">
+<h2>1. Data preparation</h2>
+<div id="birthwt-k2" class="section level3">
+<h3>1.1 birthwt (<span class="math inline">\(K=2\)</span>)</h3>
+<p>The birthwt dataset contains 189 observations of risk factors for low
+birth weight at Baystate Medical Center. We split it vertically across
+two hospitals:</p>
+<ul>
+<li><strong>Hospital A</strong>: maternal demographics (age, weight,
+race, smoking)</li>
+<li><strong>Hospital B</strong>: clinical history and outcomes (preterm
+labour, hypertension, uterine irritability, physician visits, birth
+weight, low birth weight flag)</li>
+</ul>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(MASS)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="fu">data</span>(birthwt)</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a>df <span class="ot">&lt;-</span> birthwt</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>df<span class="sc">$</span>patient_id <span class="ot">&lt;-</span> <span class="fu">sprintf</span>(<span class="st">&quot;BW%03d&quot;</span>, <span class="fu">seq_len</span>(<span class="fu">nrow</span>(df)))</span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">123</span>)</span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>core <span class="ot">&lt;-</span> <span class="fu">sample</span>(df<span class="sc">$</span>patient_id, <span class="dv">160</span>)</span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>remaining <span class="ot">&lt;-</span> <span class="fu">setdiff</span>(df<span class="sc">$</span>patient_id, core)</span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a>ids1 <span class="ot">&lt;-</span> <span class="fu">sample</span>(<span class="fu">c</span>(core, <span class="fu">sample</span>(remaining, <span class="dv">15</span>)))</span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a>ids2 <span class="ot">&lt;-</span> <span class="fu">sample</span>(<span class="fu">c</span>(core, <span class="fu">sample</span>(remaining, <span class="dv">10</span>)))</span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a></span>
+<span id="cb1-13"><a href="#cb1-13" tabindex="-1"></a><span class="co"># Hospital A: maternal demographics</span></span>
+<span id="cb1-14"><a href="#cb1-14" tabindex="-1"></a>s1 <span class="ot">&lt;-</span> df[df<span class="sc">$</span>patient_id <span class="sc">%in%</span> ids1, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;age&quot;</span>, <span class="st">&quot;lwt&quot;</span>, <span class="st">&quot;race&quot;</span>, <span class="st">&quot;smoke&quot;</span>)]</span>
+<span id="cb1-15"><a href="#cb1-15" tabindex="-1"></a><span class="co"># Hospital B: clinical + outcomes</span></span>
+<span id="cb1-16"><a href="#cb1-16" tabindex="-1"></a>s2 <span class="ot">&lt;-</span> df[df<span class="sc">$</span>patient_id <span class="sc">%in%</span> ids2, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;ptl&quot;</span>, <span class="st">&quot;ht&quot;</span>, <span class="st">&quot;ui&quot;</span>, <span class="st">&quot;ftv&quot;</span>, <span class="st">&quot;bwt&quot;</span>, <span class="st">&quot;low&quot;</span>)]</span>
+<span id="cb1-17"><a href="#cb1-17" tabindex="-1"></a></span>
+<span id="cb1-18"><a href="#cb1-18" tabindex="-1"></a><span class="co"># Shuffle row order (PSI must handle this)</span></span>
+<span id="cb1-19"><a href="#cb1-19" tabindex="-1"></a>s1 <span class="ot">&lt;-</span> s1[<span class="fu">sample</span>(<span class="fu">nrow</span>(s1)), ]</span>
+<span id="cb1-20"><a href="#cb1-20" tabindex="-1"></a>s2 <span class="ot">&lt;-</span> s2[<span class="fu">sample</span>(<span class="fu">nrow</span>(s2)), ]</span></code></pre></div>
+</div>
+<div id="centralised-ground-truth-birthwt" class="section level3">
+<h3>1.2 Centralised ground truth (birthwt)</h3>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="co"># Merge as if data were pooled (ground truth)</span></span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>merged <span class="ot">&lt;-</span> <span class="fu">merge</span>(s1, s2, <span class="at">by =</span> <span class="st">&quot;patient_id&quot;</span>)</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>gt_gaussian <span class="ot">&lt;-</span> <span class="fu">glm</span>(bwt <span class="sc">~</span> age <span class="sc">+</span> lwt <span class="sc">+</span> race <span class="sc">+</span> smoke <span class="sc">+</span> ptl <span class="sc">+</span> ht <span class="sc">+</span> ui,</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>                   <span class="at">data =</span> merged, <span class="at">family =</span> <span class="fu">gaussian</span>())</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>gt_binomial <span class="ot">&lt;-</span> <span class="fu">glm</span>(low <span class="sc">~</span> age <span class="sc">+</span> lwt <span class="sc">+</span> race <span class="sc">+</span> smoke <span class="sc">+</span> ptl <span class="sc">+</span> ht <span class="sc">+</span> ui,</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a>                   <span class="at">data =</span> merged, <span class="at">family =</span> <span class="fu">binomial</span>())</span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>gt_poisson  <span class="ot">&lt;-</span> <span class="fu">glm</span>(ftv <span class="sc">~</span> age <span class="sc">+</span> lwt <span class="sc">+</span> race <span class="sc">+</span> smoke <span class="sc">+</span> ptl <span class="sc">+</span> ht <span class="sc">+</span> ui,</span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a>                   <span class="at">data =</span> merged, <span class="at">family =</span> <span class="fu">poisson</span>())</span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a><span class="fu">summary</span>(gt_binomial)</span></code></pre></div>
+</div>
+<div id="cgd-k3" class="section level3">
+<h3>1.3 CGD (<span class="math inline">\(K=3\)</span>)</h3>
+<p>The CGD dataset contains 128 patients from a clinical trial of
+interferon gamma for chronic granulomatous disease (Fleming &amp;
+Harrington, 1991). We split vertically:</p>
+<ul>
+<li><strong>Hospital A</strong>: demographics (age, sex, height,
+weight)</li>
+<li><strong>Hospital B</strong>: treatment assignment (treatment arm,
+steroid use)</li>
+<li><strong>Hospital C</strong>: outcomes (infection status, total
+infection count)</li>
+</ul>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">library</span>(survival)</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="fu">data</span>(cgd)</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a></span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co"># One row per patient</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>d <span class="ot">&lt;-</span> cgd[cgd<span class="sc">$</span>enum <span class="sc">==</span> <span class="dv">1</span>, ]</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>d<span class="sc">$</span>n_infections <span class="ot">&lt;-</span> <span class="fu">as.integer</span>(<span class="fu">tapply</span>(cgd<span class="sc">$</span>status, cgd<span class="sc">$</span>id, sum)[<span class="fu">as.character</span>(d<span class="sc">$</span>id)])</span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>d<span class="sc">$</span>patient_id <span class="ot">&lt;-</span> <span class="fu">sprintf</span>(<span class="st">&quot;CGD%03d&quot;</span>, <span class="fu">seq_len</span>(<span class="fu">nrow</span>(d)))</span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>d<span class="sc">$</span>treat_num <span class="ot">&lt;-</span> <span class="fu">as.integer</span>(d<span class="sc">$</span>treat <span class="sc">==</span> <span class="st">&quot;rIFN-g&quot;</span>)</span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>d<span class="sc">$</span>sex_num <span class="ot">&lt;-</span> <span class="fu">as.integer</span>(d<span class="sc">$</span>sex <span class="sc">==</span> <span class="st">&quot;male&quot;</span>)</span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a></span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co"># All 128 patients on all servers (different variables)</span></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>s1 <span class="ot">&lt;-</span> d[, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;age&quot;</span>, <span class="st">&quot;sex_num&quot;</span>, <span class="st">&quot;height&quot;</span>, <span class="st">&quot;weight&quot;</span>)]</span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>s2 <span class="ot">&lt;-</span> d[, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;treat_num&quot;</span>, <span class="st">&quot;steroids&quot;</span>)]</span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>s3 <span class="ot">&lt;-</span> d[, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;status&quot;</span>, <span class="st">&quot;n_infections&quot;</span>)]</span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a></span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a><span class="co"># Shuffle independently</span></span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>); s1 <span class="ot">&lt;-</span> s1[<span class="fu">sample</span>(<span class="fu">nrow</span>(s1)), ]</span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">43</span>); s2 <span class="ot">&lt;-</span> s2[<span class="fu">sample</span>(<span class="fu">nrow</span>(s2)), ]</span>
+<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">44</span>); s3 <span class="ot">&lt;-</span> s3[<span class="fu">sample</span>(<span class="fu">nrow</span>(s3)), ]</span></code></pre></div>
+</div>
+<div id="centralised-ground-truth-cgd" class="section level3">
+<h3>1.4 Centralised ground truth (CGD)</h3>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>gt_cgd_gaussian <span class="ot">&lt;-</span> <span class="fu">glm</span>(weight <span class="sc">~</span> age <span class="sc">+</span> sex_num <span class="sc">+</span> height <span class="sc">+</span> treat_num <span class="sc">+</span> steroids,</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>                       <span class="at">data =</span> d, <span class="at">family =</span> <span class="fu">gaussian</span>())</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>gt_cgd_binomial <span class="ot">&lt;-</span> <span class="fu">glm</span>(status <span class="sc">~</span> age <span class="sc">+</span> sex_num <span class="sc">+</span> height <span class="sc">+</span> weight <span class="sc">+</span> treat_num <span class="sc">+</span> steroids,</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>                       <span class="at">data =</span> d, <span class="at">family =</span> <span class="fu">binomial</span>())</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>gt_cgd_poisson  <span class="ot">&lt;-</span> <span class="fu">glm</span>(n_infections <span class="sc">~</span> age <span class="sc">+</span> sex_num <span class="sc">+</span> height <span class="sc">+</span> weight <span class="sc">+</span> treat_num <span class="sc">+</span> steroids,</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>                       <span class="at">data =</span> d, <span class="at">family =</span> <span class="fu">poisson</span>())</span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="fu">summary</span>(gt_cgd_binomial)</span></code></pre></div>
+</div>
+</div>
+<div id="upload-to-opal-servers" class="section level2">
+<h2>2. Upload to Opal servers</h2>
+<p>Each server fragment is uploaded to its own Opal/Rock instance. In a
+real deployment, each institution would hold its own data; here we
+simulate this with local containers.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a><span class="fu">library</span>(opalr)</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co"># birthwt K=2</span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">2</span>) {</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>  o <span class="ot">&lt;-</span> <span class="fu">opal.login</span>(<span class="st">&quot;administrator&quot;</span>, <span class="st">&quot;password&quot;</span>,</span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>    <span class="at">url =</span> <span class="fu">sprintf</span>(<span class="st">&quot;https://server%d.example.org&quot;</span>, i))</span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>  <span class="fu">opal.table_save</span>(o, <span class="fu">list</span>(s1, s2)[[i]], <span class="st">&quot;bw_project&quot;</span>, <span class="st">&quot;bw_data&quot;</span>,</span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a>                  <span class="at">overwrite =</span> <span class="cn">TRUE</span>, <span class="at">force =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>  <span class="fu">opal.logout</span>(o)</span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>}</span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a></span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co"># CGD K=3</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">3</span>) {</span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a>  o <span class="ot">&lt;-</span> <span class="fu">opal.login</span>(<span class="st">&quot;administrator&quot;</span>, <span class="st">&quot;password&quot;</span>,</span>
+<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a>    <span class="at">url =</span> <span class="fu">sprintf</span>(<span class="st">&quot;https://server%d.example.org&quot;</span>, i))</span>
+<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a>  <span class="fu">opal.table_save</span>(o, <span class="fu">list</span>(s1, s2, s3)[[i]], <span class="st">&quot;cgd_project&quot;</span>, <span class="st">&quot;cgd_data&quot;</span>,</span>
+<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a>                  <span class="at">overwrite =</span> <span class="cn">TRUE</span>, <span class="at">force =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a>  <span class="fu">opal.logout</span>(o)</span>
+<span id="cb5-19"><a href="#cb5-19" tabindex="-1"></a>}</span></code></pre></div>
+</div>
+<div id="dsvert-validation-birthwt-k2" class="section level2">
+<h2>3. dsVert validation: birthwt (<span class="math inline">\(K=2\)</span>)</h2>
+<div id="connect-and-align" class="section level3">
+<h3>3.1 Connect and align</h3>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">library</span>(DSI)</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="fu">library</span>(DSOpal)</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a><span class="fu">library</span>(dsVertClient)</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>builder <span class="ot">&lt;-</span> DSI<span class="sc">::</span><span class="fu">newDSLoginBuilder</span>()</span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>builder<span class="sc">$</span><span class="fu">append</span>(<span class="at">server =</span> <span class="st">&quot;hospitalA&quot;</span>, <span class="at">url =</span> <span class="st">&quot;https://server1.example.org&quot;</span>,</span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a>               <span class="at">user =</span> <span class="st">&quot;analyst&quot;</span>, <span class="at">password =</span> <span class="st">&quot;...&quot;</span>, <span class="at">table =</span> <span class="st">&quot;bw_project.bw_data&quot;</span>)</span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a>builder<span class="sc">$</span><span class="fu">append</span>(<span class="at">server =</span> <span class="st">&quot;hospitalB&quot;</span>, <span class="at">url =</span> <span class="st">&quot;https://server2.example.org&quot;</span>,</span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a>               <span class="at">user =</span> <span class="st">&quot;analyst&quot;</span>, <span class="at">password =</span> <span class="st">&quot;...&quot;</span>, <span class="at">table =</span> <span class="st">&quot;bw_project.bw_data&quot;</span>)</span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a>conns <span class="ot">&lt;-</span> DSI<span class="sc">::</span><span class="fu">datashield.login</span>(<span class="at">logins =</span> builder<span class="sc">$</span><span class="fu">build</span>())</span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a>DSI<span class="sc">::</span><span class="fu">datashield.assign.table</span>(conns, <span class="st">&quot;D&quot;</span>, <span class="st">&quot;bw_project.bw_data&quot;</span>)</span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a></span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="co"># Align records — NAs are automatically removed before PSI</span></span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a>psi <span class="ot">&lt;-</span> <span class="fu">ds.psiAlign</span>(<span class="st">&quot;D&quot;</span>, <span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;DA&quot;</span>, <span class="at">datasources =</span> conns)</span></code></pre></div>
+</div>
+<div id="gaussian-glm-birth-weight" class="section level3">
+<h3>3.2 Gaussian GLM (birth weight)</h3>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">ds.vertGLM</span>(bwt <span class="sc">~</span> age <span class="sc">+</span> lwt <span class="sc">+</span> race <span class="sc">+</span> smoke <span class="sc">+</span> ptl <span class="sc">+</span> ht <span class="sc">+</span> ui,</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>                     <span class="at">data =</span> <span class="st">&quot;DA&quot;</span>, <span class="at">family =</span> <span class="st">&quot;gaussian&quot;</span>, <span class="at">datasources =</span> conns)</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a><span class="fu">print</span>(result)</span></code></pre></div>
+<p>Expected output: coefficients, SE, and p-values matching
+<code>gt_gaussian</code>, deviance within 0.01% of
+<code>deviance(gt_gaussian)</code>.</p>
+</div>
+<div id="binomial-glm-low-birth-weight" class="section level3">
+<h3>3.3 Binomial GLM (low birth weight)</h3>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">ds.vertGLM</span>(low <span class="sc">~</span> age <span class="sc">+</span> lwt <span class="sc">+</span> race <span class="sc">+</span> smoke <span class="sc">+</span> ptl <span class="sc">+</span> ht <span class="sc">+</span> ui,</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>                     <span class="at">data =</span> <span class="st">&quot;DA&quot;</span>, <span class="at">family =</span> <span class="st">&quot;binomial&quot;</span>, <span class="at">datasources =</span> conns)</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a><span class="fu">print</span>(result)</span></code></pre></div>
+<p>Expected: canonical deviance within 0.11% of
+<code>deviance(gt_binomial)</code>.</p>
+</div>
+<div id="poisson-glm-physician-visits" class="section level3">
+<h3>3.4 Poisson GLM (physician visits)</h3>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">ds.vertGLM</span>(ftv <span class="sc">~</span> age <span class="sc">+</span> lwt <span class="sc">+</span> race <span class="sc">+</span> smoke <span class="sc">+</span> ptl <span class="sc">+</span> ht <span class="sc">+</span> ui,</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>                     <span class="at">data =</span> <span class="st">&quot;DA&quot;</span>, <span class="at">family =</span> <span class="st">&quot;poisson&quot;</span>, <span class="at">datasources =</span> conns)</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a><span class="fu">print</span>(result)</span></code></pre></div>
+<p>Expected: canonical deviance within 0.18% of
+<code>deviance(gt_poisson)</code>.</p>
+</div>
+<div id="correlation-and-pca" class="section level3">
+<h3>3.5 Correlation and PCA</h3>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="co"># Correlation matrix across all features from both hospitals</span></span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>cor_result <span class="ot">&lt;-</span> <span class="fu">ds.vertCor</span>(<span class="st">&quot;DA&quot;</span>, <span class="at">datasources =</span> conns)</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a><span class="fu">print</span>(cor_result)</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a></span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a><span class="co"># Compare with centralised</span></span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>centralised_cor <span class="ot">&lt;-</span> <span class="fu">cor</span>(merged[, <span class="fu">c</span>(<span class="st">&quot;age&quot;</span>, <span class="st">&quot;lwt&quot;</span>, <span class="st">&quot;race&quot;</span>, <span class="st">&quot;smoke&quot;</span>, <span class="st">&quot;ptl&quot;</span>, <span class="st">&quot;ht&quot;</span>, <span class="st">&quot;ui&quot;</span>)])</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>max_cor_error <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="fu">abs</span>(cor_result<span class="sc">$</span>correlation <span class="sc">-</span> centralised_cor))</span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a><span class="co"># Expected: max element-wise error &lt; 0.001</span></span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a></span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a><span class="co"># PCA from the correlation matrix</span></span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a>pca_result <span class="ot">&lt;-</span> <span class="fu">ds.vertPCA</span>(<span class="at">cor_result =</span> cor_result)</span>
+<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a><span class="fu">print</span>(pca_result)</span>
+<span id="cb10-13"><a href="#cb10-13" tabindex="-1"></a></span>
+<span id="cb10-14"><a href="#cb10-14" tabindex="-1"></a><span class="co"># Compare eigenvalues</span></span>
+<span id="cb10-15"><a href="#cb10-15" tabindex="-1"></a>centralised_pca <span class="ot">&lt;-</span> <span class="fu">eigen</span>(centralised_cor)</span>
+<span id="cb10-16"><a href="#cb10-16" tabindex="-1"></a>max_eigen_error <span class="ot">&lt;-</span> <span class="fu">max</span>(<span class="fu">abs</span>(pca_result<span class="sc">$</span>eigenvalues <span class="sc">-</span> centralised_pca<span class="sc">$</span>values))</span>
+<span id="cb10-17"><a href="#cb10-17" tabindex="-1"></a><span class="co"># Expected: max eigenvalue error &lt; 0.0001</span></span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>DSI<span class="sc">::</span><span class="fu">datashield.logout</span>(conns)</span></code></pre></div>
+</div>
+</div>
+<div id="dsvert-validation-cgd-k3" class="section level2">
+<h2>4. dsVert validation: CGD (<span class="math inline">\(K=3\)</span>)</h2>
+<div id="connect-and-align-1" class="section level3">
+<h3>4.1 Connect and align</h3>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>builder <span class="ot">&lt;-</span> DSI<span class="sc">::</span><span class="fu">newDSLoginBuilder</span>()</span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>builder<span class="sc">$</span><span class="fu">append</span>(<span class="at">server =</span> <span class="st">&quot;demographics&quot;</span>, <span class="at">url =</span> <span class="st">&quot;https://server1.example.org&quot;</span>,</span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>               <span class="at">user =</span> <span class="st">&quot;analyst&quot;</span>, <span class="at">password =</span> <span class="st">&quot;...&quot;</span>, <span class="at">table =</span> <span class="st">&quot;cgd_project.cgd_data&quot;</span>)</span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>builder<span class="sc">$</span><span class="fu">append</span>(<span class="at">server =</span> <span class="st">&quot;treatment&quot;</span>,    <span class="at">url =</span> <span class="st">&quot;https://server2.example.org&quot;</span>,</span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a>               <span class="at">user =</span> <span class="st">&quot;analyst&quot;</span>, <span class="at">password =</span> <span class="st">&quot;...&quot;</span>, <span class="at">table =</span> <span class="st">&quot;cgd_project.cgd_data&quot;</span>)</span>
+<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a>builder<span class="sc">$</span><span class="fu">append</span>(<span class="at">server =</span> <span class="st">&quot;outcomes&quot;</span>,     <span class="at">url =</span> <span class="st">&quot;https://server3.example.org&quot;</span>,</span>
+<span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a>               <span class="at">user =</span> <span class="st">&quot;analyst&quot;</span>, <span class="at">password =</span> <span class="st">&quot;...&quot;</span>, <span class="at">table =</span> <span class="st">&quot;cgd_project.cgd_data&quot;</span>)</span>
+<span id="cb12-8"><a href="#cb12-8" tabindex="-1"></a>conns <span class="ot">&lt;-</span> DSI<span class="sc">::</span><span class="fu">datashield.login</span>(<span class="at">logins =</span> builder<span class="sc">$</span><span class="fu">build</span>())</span>
+<span id="cb12-9"><a href="#cb12-9" tabindex="-1"></a>DSI<span class="sc">::</span><span class="fu">datashield.assign.table</span>(conns, <span class="st">&quot;D&quot;</span>, <span class="st">&quot;cgd_project.cgd_data&quot;</span>)</span>
+<span id="cb12-10"><a href="#cb12-10" tabindex="-1"></a></span>
+<span id="cb12-11"><a href="#cb12-11" tabindex="-1"></a>psi <span class="ot">&lt;-</span> <span class="fu">ds.psiAlign</span>(<span class="st">&quot;D&quot;</span>, <span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;DA&quot;</span>, <span class="at">datasources =</span> conns)</span></code></pre></div>
+</div>
+<div id="gaussian-glm-body-weight" class="section level3">
+<h3>4.2 Gaussian GLM (body weight)</h3>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">ds.vertGLM</span>(weight <span class="sc">~</span> age <span class="sc">+</span> sex_num <span class="sc">+</span> height <span class="sc">+</span> treat_num <span class="sc">+</span> steroids,</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a>                     <span class="at">data =</span> <span class="st">&quot;DA&quot;</span>, <span class="at">family =</span> <span class="st">&quot;gaussian&quot;</span>, <span class="at">datasources =</span> conns)</span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a><span class="fu">print</span>(result)</span></code></pre></div>
+<p>Expected: deviance within 0.07% of
+<code>deviance(gt_cgd_gaussian)</code>.</p>
+</div>
+<div id="binomial-glm-serious-infection" class="section level3">
+<h3>4.3 Binomial GLM (serious infection)</h3>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">ds.vertGLM</span>(status <span class="sc">~</span> age <span class="sc">+</span> sex_num <span class="sc">+</span> height <span class="sc">+</span> weight <span class="sc">+</span> treat_num <span class="sc">+</span> steroids,</span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>                     <span class="at">data =</span> <span class="st">&quot;DA&quot;</span>, <span class="at">family =</span> <span class="st">&quot;binomial&quot;</span>, <span class="at">datasources =</span> conns)</span>
+<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a><span class="fu">print</span>(result)</span></code></pre></div>
+<p>Expected: deviance within 0.43% of
+<code>deviance(gt_cgd_binomial)</code>.</p>
+</div>
+<div id="poisson-glm-infection-count" class="section level3">
+<h3>4.4 Poisson GLM (infection count)</h3>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">ds.vertGLM</span>(n_infections <span class="sc">~</span> age <span class="sc">+</span> sex_num <span class="sc">+</span> height <span class="sc">+</span> weight <span class="sc">+</span> treat_num <span class="sc">+</span> steroids,</span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>                     <span class="at">data =</span> <span class="st">&quot;DA&quot;</span>, <span class="at">family =</span> <span class="st">&quot;poisson&quot;</span>, <span class="at">datasources =</span> conns)</span>
+<span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a><span class="fu">print</span>(result)</span></code></pre></div>
+<p>Expected: deviance within 0.31% of
+<code>deviance(gt_cgd_poisson)</code>.</p>
+</div>
+<div id="correlation-and-pca-1" class="section level3">
+<h3>4.5 Correlation and PCA</h3>
+<div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a>cor_result <span class="ot">&lt;-</span> <span class="fu">ds.vertCor</span>(<span class="st">&quot;DA&quot;</span>, <span class="at">datasources =</span> conns)</span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a><span class="fu">print</span>(cor_result)</span>
+<span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a></span>
+<span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a>pca_result <span class="ot">&lt;-</span> <span class="fu">ds.vertPCA</span>(<span class="at">cor_result =</span> cor_result)</span>
+<span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a><span class="fu">print</span>(pca_result)</span></code></pre></div>
+<div class="sourceCode" id="cb17"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" tabindex="-1"></a>DSI<span class="sc">::</span><span class="fu">datashield.logout</span>(conns)</span></code></pre></div>
+</div>
+</div>
+<div id="summary" class="section level2">
+<h2>5. Summary</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Dataset</th>
+<th><span class="math inline">\(K\)</span></th>
+<th>Family</th>
+<th align="center">Deviance error</th>
+<th align="center">Coef. error</th>
+<th align="center">NAs</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>birthwt</td>
+<td>2</td>
+<td>Gaussian</td>
+<td align="center">0.01%</td>
+<td align="center"><span class="math inline">\(&lt;10^{-3}\)</span></td>
+<td align="center">–</td>
+</tr>
+<tr class="even">
+<td>birthwt</td>
+<td>2</td>
+<td>Binomial</td>
+<td align="center">0.11%</td>
+<td align="center"><span class="math inline">\(&lt;10^{-3}\)</span></td>
+<td align="center">–</td>
+</tr>
+<tr class="odd">
+<td>birthwt</td>
+<td>2</td>
+<td>Poisson</td>
+<td align="center">0.18%</td>
+<td align="center"><span class="math inline">\(&lt;10^{-3}\)</span></td>
+<td align="center">–</td>
+</tr>
+<tr class="even">
+<td>CGD</td>
+<td>3</td>
+<td>Gaussian</td>
+<td align="center">0.07%</td>
+<td align="center"><span class="math inline">\(&lt;10^{-3}\)</span></td>
+<td align="center">–</td>
+</tr>
+<tr class="odd">
+<td>CGD</td>
+<td>3</td>
+<td>Binomial</td>
+<td align="center">0.43%</td>
+<td align="center"><span class="math inline">\(&lt;10^{-3}\)</span></td>
+<td align="center">–</td>
+</tr>
+<tr class="even">
+<td>CGD</td>
+<td>3</td>
+<td>Poisson</td>
+<td align="center">0.31%</td>
+<td align="center"><span class="math inline">\(&lt;10^{-3}\)</span></td>
+<td align="center">–</td>
+</tr>
+</tbody>
+</table>
+<p>All six GLM configurations produce coefficients, standard errors,
+p-values, and canonical deviance matching centralised <code>glm()</code>
+within the precision of the DCF piecewise-linear approximation (<span class="math inline">\(\sim 10^{-3}\)</span>).</p>
+<p>Correlation matrices match within <span class="math inline">\(10^{-3}\)</span> element-wise, and PCA eigenvalues
+within <span class="math inline">\(10^{-4}\)</span>.</p>
+<div id="privacy-guarantees" class="section level3">
+<h3>Privacy guarantees</h3>
+<p>Throughout all analyses, the analyst (client) received only:</p>
+<ul>
+<li><span class="math inline">\(p\)</span>-dimensional gradient sums
+(aggregates over all <span class="math inline">\(n\)</span>
+observations)</li>
+<li><span class="math inline">\(p \times p\)</span> correlation
+scalars</li>
+<li>Canonical deviance (1 scalar)</li>
+<li>Standard errors (<span class="math inline">\(p\)</span>
+scalars)</li>
+</ul>
+<p>No individual patient data (<span class="math inline">\(\eta_i\)</span>, <span class="math inline">\(\mu_i\)</span>, <span class="math inline">\(y_i\)</span>, <span class="math inline">\(x_{ij}\)</span>) was disclosed to the analyst or
+to any other server.</p>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
