@@ -1,0 +1,95 @@
+# Data Preparation: Creating the Validation Datasets
+
+This document shows how the validation datasets on `opal-demo.obiba.org`
+were created. Both datasets come from standard R packages (MASS,
+survival), so any researcher can reproduce the exact same partitions
+using the seed below.
+
+## birthwt (K=2)
+
+The birthwt dataset (189 observations) is split vertically into two
+hospitals with deliberately non-identical patient populations —
+simulating a realistic scenario where institutions have overlapping but
+not identical patient registries.
+
+``` r
+
+library(MASS)
+data(birthwt)
+
+df <- birthwt
+df$patient_id <- sprintf("BW%03d", seq_len(nrow(df)))
+
+set.seed(123)
+core <- sample(df$patient_id, 160)
+remaining <- setdiff(df$patient_id, core)
+ids1 <- sample(c(core, sample(remaining, 15)))  # 175 patients
+ids2 <- sample(c(core, sample(remaining, 10)))  # 170 patients
+
+# Hospital A: maternal demographics
+hospital_a <- df[df$patient_id %in% ids1, c("patient_id", "age", "lwt", "race", "smoke")]
+
+# Hospital B: clinical history + outcomes
+hospital_b <- df[df$patient_id %in% ids2, c("patient_id", "ptl", "ht", "ui", "ftv", "bwt", "low")]
+
+# Shuffle row order independently (PSI must handle this)
+hospital_a <- hospital_a[sample(nrow(hospital_a)), ]
+hospital_b <- hospital_b[sample(nrow(hospital_b)), ]
+```
+
+## CGD (K=3)
+
+The CGD dataset (128 patients from a clinical trial of interferon gamma
+for chronic granulomatous disease) is split vertically across three
+institutions. All 128 patients are present at all three sites, but row
+order is shuffled independently.
+
+``` r
+
+library(survival)
+data(cgd)
+
+d <- cgd[cgd$enum == 1, ]
+d$n_infections <- as.integer(tapply(cgd$status, cgd$id, sum)[as.character(d$id)])
+d$patient_id <- sprintf("CGD%03d", seq_len(nrow(d)))
+d$treat_num <- as.integer(d$treat == "rIFN-g")
+d$sex_num <- as.integer(d$sex == "male")
+
+# Demographics
+demographics <- d[, c("patient_id", "age", "sex_num", "height", "weight")]
+
+# Treatment assignment
+treatment <- d[, c("patient_id", "treat_num", "steroids")]
+
+# Outcomes
+outcomes <- d[, c("patient_id", "status", "n_infections")]
+
+set.seed(42); demographics <- demographics[sample(nrow(demographics)), ]
+set.seed(43); treatment    <- treatment[sample(nrow(treatment)), ]
+set.seed(44); outcomes     <- outcomes[sample(nrow(outcomes)), ]
+```
+
+## Upload to Opal
+
+``` r
+
+library(opalr)
+
+o <- opal.login("administrator", "password", url = "https://opal-demo.obiba.org")
+
+# birthwt
+hospital_a$id <- seq_len(nrow(hospital_a))
+hospital_b$id <- seq_len(nrow(hospital_b))
+opal.table_save(o, hospital_a, "vert_demo", "bw_hospital_a", overwrite = TRUE, force = TRUE)
+opal.table_save(o, hospital_b, "vert_demo", "bw_hospital_b", overwrite = TRUE, force = TRUE)
+
+# CGD
+demographics$id <- seq_len(nrow(demographics))
+treatment$id    <- seq_len(nrow(treatment))
+outcomes$id     <- seq_len(nrow(outcomes))
+opal.table_save(o, demographics, "vert_demo", "cgd_demographics", overwrite = TRUE, force = TRUE)
+opal.table_save(o, treatment,    "vert_demo", "cgd_treatment",    overwrite = TRUE, force = TRUE)
+opal.table_save(o, outcomes,     "vert_demo", "cgd_outcomes",     overwrite = TRUE, force = TRUE)
+
+opal.logout(o)
+```

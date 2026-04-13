@@ -63,6 +63,7 @@ articles:
   - title: Validation
     contents:
       - validation
+      - data-preparation
 
 authors:
   David Sarrat González:
