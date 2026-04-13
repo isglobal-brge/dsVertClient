@@ -267,7 +267,14 @@ ds.vertCor <- function(data_name, variables = NULL,
   }
 
   # Phase 5: Assembly
-  corr <- xtx / (n_obs - 1)
+  # x_full is in canonical order [coord | fusion | extras].
+  # Remap to all_vars order [s1_vars, s2_vars, ...].
+  canonical_vars <- c(variables[[coord]], variables[[fusion]])
+  for (ns in non_dcf) canonical_vars <- c(canonical_vars, variables[[ns]])
+  # Build permutation from canonical to all_vars
+  perm <- match(all_vars, canonical_vars)
+  corr_raw <- xtx / (n_obs - 1)
+  corr <- corr_raw[perm, perm]
   rownames(corr) <- colnames(corr) <- all_vars
 
   # Overlay local correlations (more precise for within-server)
