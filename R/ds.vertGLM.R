@@ -556,6 +556,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   std_errors <- rep(NA, n_vars_total)
   z_values <- rep(NA, n_vars_total)
   p_values <- rep(NA, n_vars_total)
+  covariance <- NULL
 
   if (!is.null(inv_H) && !is.null(attr(inv_H, "raw_hessian"))) {
     H_raw <- attr(inv_H, "raw_hessian")
@@ -586,6 +587,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
       # Transform covariance to original space
       cov_orig <- J %*% cov_std %*% t(J)
+      dimnames(cov_orig) <- list(names(all_coefs), names(all_coefs))
       se_orig <- sqrt(pmax(diag(cov_orig), 0))
       std_errors <- se_orig
       names(std_errors) <- names(all_coefs)
@@ -595,6 +597,10 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       p_values <- 2 * stats::pnorm(-abs(z_values))
       names(z_values) <- names(p_values) <- names(all_coefs)
     }
+    # Expose the full covariance matrix (original scale) so downstream
+    # client-side inference (multi-coef Wald, GEE sandwich, CI on linear
+    # contrasts) can reuse it without another MPC round.
+    if (exists("cov_orig", inherits = FALSE)) covariance <- cov_orig
 
     if (verbose && any(!is.na(std_errors))) {
       message("\nCoefficients:")
@@ -618,6 +624,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     std_errors = std_errors,
     z_values = z_values,
     p_values = p_values,
+    covariance = covariance,
     iterations = final_iter,
     converged = converged,
     family = family,

@@ -172,3 +172,95 @@ print.ds.vertWald <- function(x, ...) {
   cat(sprintf("  p-value  = %s\n", format.pval(x$p_value, digits = 4L)))
   invisible(x)
 }
+
+
+#' @title Multi-coefficient Wald test via linear contrast K*beta
+#' @description Test H0: K * beta = m against the two-sided alternative
+#'   using the multivariate Wald statistic
+#'   W = (K * beta_hat - m)^T (K * Cov * K^T)^{-1} (K * beta_hat - m),
+#'   which under H0 is chi-square distributed with rank(K) degrees of
+#'   freedom. Requires the fit's full covariance matrix (exposed by
+#'   ds.vertGLM as `fit$covariance` since commit TBD).
+#'
+#' @param fit A ds.glm object with a non-NULL `covariance` slot.
+#' @param K   Contrast matrix: numeric matrix with ncol equal to the
+#'   number of coefficients. Rows define the contrasts under test.
+#'   Alternatively a named-coef character vector (treated as indicator
+#'   rows) or a character RHS parsed against the coefficient names.
+#' @param m   Null vector (length nrow(K)); default zero.
+#'
+#' @return A list of class ds.vertContrast with estimates, variance,
+#'   statistic, df, p_value.
+#' @export
+ds.vertContrast <- function(fit, K, m = NULL) {
+  if (!inherits(fit, "ds.glm")) {
+    stop("`fit` must be a ds.glm object", call. = FALSE)
+  }
+  if (is.null(fit$covariance)) {
+    stop("fit does not expose the full covariance matrix; refit with a
+         dsVert version >= the commit that stores `fit$covariance`.",
+         call. = FALSE)
+  }
+  cov <- as.matrix(fit$covariance)
+  coef <- as.numeric(fit$coefficients)
+  names(coef) <- names(fit$coefficients)
+
+  # Coerce K into a numeric matrix with one row per contrast and one
+  # column per coefficient.
+  if (is.character(K)) {
+    # Character vector of coefficient names -> identity-like contrast.
+    miss <- setdiff(K, names(coef))
+    if (length(miss)) {
+      stop("Unknown coefficient(s) in K: ", paste(miss, collapse = ", "),
+           call. = FALSE)
+    }
+    Kmat <- matrix(0, nrow = length(K), ncol = length(coef),
+                   dimnames = list(K, names(coef)))
+    for (i in seq_along(K)) Kmat[i, K[i]] <- 1
+    K <- Kmat
+  } else if (is.vector(K)) {
+    K <- matrix(K, nrow = 1L, dimnames = list(NULL, names(coef)))
+  }
+  K <- as.matrix(K)
+
+  if (ncol(K) != length(coef)) {
+    stop("ncol(K) = ", ncol(K), " must equal number of coefficients (",
+         length(coef), ")", call. = FALSE)
+  }
+  if (is.null(m)) m <- rep(0, nrow(K))
+  if (length(m) != nrow(K)) {
+    stop("length(m) must equal nrow(K)", call. = FALSE)
+  }
+
+  estimate <- drop(K %*% coef) - m
+  var_mat <- K %*% cov %*% t(K)
+  var_mat <- (var_mat + t(var_mat)) / 2  # enforce symmetry
+  inv_var <- tryCatch(solve(var_mat), error = function(e) NULL)
+  if (is.null(inv_var)) {
+    stop("K * Cov * K^T is singular; check contrast rank", call. = FALSE)
+  }
+  stat <- drop(t(estimate) %*% inv_var %*% estimate)
+  df <- nrow(K)
+  p <- stats::pchisq(stat, df = df, lower.tail = FALSE)
+
+  out <- list(
+    estimate = estimate,
+    variance = var_mat,
+    statistic = as.numeric(stat),
+    df = as.integer(df),
+    p_value = as.numeric(p),
+    K = K,
+    null = m)
+  class(out) <- c("ds.vertContrast", "list")
+  out
+}
+
+#' @export
+print.ds.vertContrast <- function(x, ...) {
+  cat(sprintf("dsVert multi-coefficient Wald / linear contrast test\n"))
+  cat(sprintf("  chi-sq = %.4f on %d df,  p-value = %s\n",
+              x$statistic, x$df, format.pval(x$p_value, digits = 4L)))
+  cat("  K * beta - m estimates:\n")
+  print(x$estimate)
+  invisible(x)
+}
