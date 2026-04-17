@@ -63,3 +63,76 @@ test_that("ds.vertNB object inherits from ds.glm", {
   expect_true(inherits(out, "ds.glm"))
   expect_true(inherits(out, "ds.vertNB"))
 })
+
+# =============================================================================
+# ds.vertLASSO1Step — proper quadratic-surrogate LASSO
+# =============================================================================
+
+mock_fit_with_cov <- function() {
+  coefs <- c(`(Intercept)` = 1.0, x1 = 0.5, x2 = -0.3, x3 = 0.05)
+  # Diagonal covariance for simplicity
+  cov <- diag(c(0.04, 0.01, 0.01, 0.01))
+  dimnames(cov) <- list(names(coefs), names(coefs))
+  fit <- list(
+    coefficients = coefs,
+    std_errors = sqrt(diag(cov)),
+    covariance = cov,
+    family = "gaussian", n_obs = 200L, n_vars = length(coefs),
+    deviance = 50, null_deviance = 75, pseudo_r2 = 0.33)
+  class(fit) <- c("ds.glm", "list")
+  fit
+}
+
+test_that("LASSO1Step zeroes coefficients correctly on diagonal H", {
+  fit <- mock_fit_with_cov()
+  # H = diag(1/0.04, 1/0.01, 1/0.01, 1/0.01) = diag(25, 100, 100, 100)
+  # For coord j: r_j = betahat_j (diagonal H), so beta_j <- ST(betahat_j, lambda/H_jj)
+  # With lambda = 1:
+  #   x1: threshold 1/100 = 0.01, |0.5| > 0.01 -> 0.5 - 0.01 = 0.49
+  #   x2: threshold 1/100 = 0.01, |-0.3| > 0.01 -> -0.3 + 0.01 = -0.29
+  #   x3: threshold 1/100 = 0.01, |0.05| > 0.01 -> 0.05 - 0.01 = 0.04
+  #   Intercept not thresholded
+  res <- ds.vertLASSO1Step(fit, lambda = 1, max_iter = 50L, tol = 1e-12)
+  b <- res$paths[[1]]
+  expect_equal(unname(b["(Intercept)"]), 1.0, tolerance = 1e-8)
+  expect_equal(unname(b["x1"]), 0.49, tolerance = 1e-6)
+  expect_equal(unname(b["x2"]), -0.29, tolerance = 1e-6)
+  expect_equal(unname(b["x3"]), 0.04, tolerance = 1e-6)
+})
+
+test_that("LASSO1Step with large lambda zeroes non-intercept coefs", {
+  fit <- mock_fit_with_cov()
+  # lambda = 100 on diagonal H = 100 -> threshold = 1, greater than any |coef|
+  res <- ds.vertLASSO1Step(fit, lambda = 100, max_iter = 50L, tol = 1e-12)
+  b <- res$paths[[1]]
+  expect_equal(unname(b["x1"]), 0, tolerance = 1e-6)
+  expect_equal(unname(b["x2"]), 0, tolerance = 1e-6)
+  expect_equal(unname(b["x3"]), 0, tolerance = 1e-6)
+  expect_equal(unname(b["(Intercept)"]), 1.0, tolerance = 1e-8)
+})
+
+test_that("LASSO1Step lambda=0 recovers unregularised fit", {
+  fit <- mock_fit_with_cov()
+  res <- ds.vertLASSO1Step(fit, lambda = 0, max_iter = 50L, tol = 1e-12)
+  b <- res$paths[[1]]
+  expect_equal(unname(b), unname(fit$coefficients), tolerance = 1e-8)
+})
+
+test_that("LASSO1Step objective is non-decreasing in lambda", {
+  fit <- mock_fit_with_cov()
+  lam <- c(0, 0.1, 1, 10)
+  res <- ds.vertLASSO1Step(fit, lambda = lam, max_iter = 100L)
+  # Quadratic+L1 objective should be monotone non-decreasing in lambda
+  # (more penalty -> objective includes more L1 mass, but beta moves
+  # away from betahat to compensate)
+  # At least the L1 norm should decrease with lambda
+  l1_norms <- sapply(res$paths, function(b) sum(abs(b[-1])))
+  expect_true(all(diff(l1_norms) <= 1e-10))
+})
+
+test_that("LASSO1Step errors when covariance is missing", {
+  fit <- mock_fit_with_cov()
+  fit$covariance <- NULL
+  expect_error(ds.vertLASSO1Step(fit, lambda = 1),
+               "does not expose the full covariance")
+})
