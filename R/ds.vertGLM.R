@@ -106,7 +106,7 @@
 ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        family = "gaussian", max_iter = 100, tol = 1e-4,
                        lambda = 1e-4, log_n = 12,
-                       offset = NULL,
+                       offset = NULL, weights = NULL,
                        verbose = TRUE, datasources = NULL,
                        eta_privacy = "auto",
                        # Legacy positional args for backward compatibility
@@ -422,6 +422,60 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   }
 
   # ===========================================================================
+  # Per-patient weights registration (for IPW / survey-weighted regression).
+  # ===========================================================================
+  # Weights live plaintext on the server that holds the weights column,
+  # typically the outcome holder. They are encrypted to the DCF peer so
+  # both DCF parties can scale their mu/y shares element-wise each
+  # iteration (local scaling, no Beaver round). The client never sees
+  # patient-level weights.
+  weights_active <- FALSE
+  if (!is.null(weights)) {
+    if (!is.character(weights) || length(weights) != 1L) {
+      stop("weights must be a single character string (column name)",
+           call. = FALSE)
+    }
+    weights_srv <- NULL
+    for (.srv in server_list) {
+      .ci <- which(server_names == .srv)
+      cols <- tryCatch(
+        DSI::datashield.aggregate(datasources[.ci],
+          call("dsvertColNamesDS", data_name = data_name))[[1]]$columns,
+        error = function(e) NULL)
+      if (!is.null(cols) && weights %in% cols) {
+        weights_srv <- .srv
+        break
+      }
+    }
+    if (is.null(weights_srv)) {
+      stop("Weights column '", weights, "' not found on any server",
+           call. = FALSE)
+    }
+    if (verbose) message(sprintf("Registering weights '%s' on server %s",
+                                  weights, weights_srv))
+    # Identify peer DCF party (the other DCF server). Prefer the
+    # coordinator-vs-nl assignment established below; at this point we
+    # only have y_server and non_label_servers, so derive it.
+    peer_srv <- if (weights_srv == y_server) non_label_servers[1] else y_server
+    peer_ci <- which(server_names == peer_srv)
+    weights_ci <- which(server_names == weights_srv)
+    setres <- .dsAgg(datasources[weights_ci], call("k2SetWeightsDS",
+      data_name = data_name,
+      weights_column = weights,
+      peer_pk = transport_pks[[peer_srv]],
+      session_id = session_id))
+    # setres is a list keyed by server; extract blob
+    if (is.list(setres) && length(setres) == 1L) setres <- setres[[1]]
+    peer_blob <- setres$peer_blob
+    # Relay encrypted blob to peer via adaptive chunked send
+    .sendBlob(peer_blob, "k2_peer_weights", peer_ci)
+    # Peer decrypts and stores
+    .dsAgg(datasources[peer_ci], call("k2ReceiveWeightsDS",
+      session_id = session_id))
+    weights_active <- TRUE
+  }
+
+  # ===========================================================================
   # Phase 3: Iterative Ring63 Beaver (on standardized scale)
   # ===========================================================================
   label_intercept <- !standardize_y
@@ -476,7 +530,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       n_obs = n_obs,
       verbose = verbose,
       .dsAgg = .dsAgg,
-      .sendBlob = .sendBlob
+      .sendBlob = .sendBlob,
+      weights_active = isTRUE(weights_active)
     )
 
     betas <- loop_result$betas
