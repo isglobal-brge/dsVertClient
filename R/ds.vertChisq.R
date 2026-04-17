@@ -143,6 +143,109 @@ ds.vertChisq <- function(data_name, var1, var2, server = NULL,
     correct = correct)
 }
 
+#' @title Federated Fisher exact test (same-server case)
+#' @description Exact conditional p-value for a 2x2 (or small 2xK) contingency
+#'   table of two variables held at the same server. Uses the
+#'   \code{stats::fisher.test} implementation on the released count matrix
+#'   (itself already subject to datashield.privacyLevel small-cell
+#'   suppression), so this is a safe exact-inference complement to
+#'   ds.vertChisq when any expected cell count is below the chi-square
+#'   validity floor.
+#'
+#' @param data_name,var1,var2,server,datasources Same semantics as in
+#'   \code{ds.vertChisq}.
+#' @param alternative One of "two.sided" (default), "greater", "less"; only
+#'   consulted for 2x2 tables.
+#' @param conf.int Logical. Return an odds-ratio confidence interval for 2x2.
+#' @param conf.level Confidence level for 2x2 OR interval.
+#'
+#' @return An object of class \code{ds.vertFisher} (a
+#'   \code{htest}-compatible list plus table metadata).
+#'
+#' @importFrom stats fisher.test
+#' @export
+ds.vertFisher <- function(data_name, var1, var2, server = NULL,
+                          alternative = c("two.sided", "greater", "less"),
+                          conf.int = TRUE, conf.level = 0.95,
+                          datasources = NULL) {
+  alternative <- match.arg(alternative)
+  if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
+
+  if (is.null(server)) {
+    col_results <- DSI::datashield.aggregate(datasources,
+      call("dsvertColNamesDS", data_name = data_name))
+    candidates <- character(0)
+    for (srv in names(datasources)) {
+      cols <- col_results[[srv]]$columns
+      if (all(c(var1, var2) %in% cols)) candidates <- c(candidates, srv)
+    }
+    if (length(candidates) == 0L) {
+      stop("No server holds both '", var1, "' and '", var2, "'",
+           call. = FALSE)
+    }
+    if (length(candidates) > 1L) {
+      stop("Variables found on multiple servers; specify `server = '...'`",
+           call. = FALSE)
+    }
+    server <- candidates
+  }
+
+  ci <- which(names(datasources) == server)
+  tab <- DSI::datashield.aggregate(datasources[ci],
+    call("dsvertContingencyDS", data_name = data_name,
+         var1 = var1, var2 = var2,
+         suppress_small_cells = TRUE))[[1]]
+
+  observed <- tab$counts
+  rownames(observed) <- tab$row_levels
+  colnames(observed) <- tab$col_levels
+  if (sum(observed) < 1) {
+    stop("Contingency table has no observations after disclosure filtering",
+         call. = FALSE)
+  }
+
+  is_2x2 <- identical(dim(observed), c(2L, 2L))
+  fish <- if (is_2x2) {
+    fisher.test(observed, alternative = alternative,
+                conf.int = conf.int, conf.level = conf.level)
+  } else {
+    fisher.test(observed)
+  }
+
+  out <- list(
+    p_value = fish$p.value,
+    odds_ratio = if (!is.null(fish$estimate)) unname(fish$estimate) else NA_real_,
+    conf_int = if (!is.null(fish$conf.int)) as.numeric(fish$conf.int) else NULL,
+    alternative = alternative,
+    observed = observed,
+    n = as.integer(tab$n),
+    n_na = as.integer(tab$n_na),
+    server = server,
+    var1 = var1,
+    var2 = var2)
+  class(out) <- c("ds.vertFisher", "list")
+  out
+}
+
+#' @export
+print.ds.vertFisher <- function(x, ...) {
+  cat(sprintf("dsVert Fisher exact test on %s x %s (server: %s)\n",
+              x$var1, x$var2, x$server))
+  cat(sprintf("  n = %d (n_na = %d)\n", x$n, x$n_na))
+  cat(sprintf("  p-value = %s  (alternative: %s)\n",
+              format.pval(x$p_value, digits = 4L), x$alternative))
+  if (!is.na(x$odds_ratio)) {
+    cat(sprintf("  odds ratio = %.4f", x$odds_ratio))
+    if (!is.null(x$conf_int)) {
+      cat(sprintf("  CI: [%.4f, %.4f]", x$conf_int[1], x$conf_int[2]))
+    }
+    cat("\n")
+  }
+  cat("\nObserved counts:\n")
+  print(x$observed)
+  invisible(x)
+}
+
 #' @export
 print.ds.vertChisq <- function(x, ...) {
   cat(sprintf("dsVert chi-square test on %s x %s (server: %s)\n",
