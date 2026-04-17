@@ -106,6 +106,7 @@
 ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        family = "gaussian", max_iter = 100, tol = 1e-4,
                        lambda = 1e-4, log_n = 12,
+                       offset = NULL,
                        verbose = TRUE, datasources = NULL,
                        eta_privacy = "auto",
                        # Legacy positional args for backward compatibility
@@ -380,6 +381,45 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   standardize_y <- setup$standardize_y
   .dsAgg        <- setup$.dsAgg
   .sendBlob     <- setup$.sendBlob
+
+  # ===========================================================================
+  # Offset registration (Poisson / NB rate regression).
+  # ===========================================================================
+  # When the caller passes offset = "colname", we auto-detect which
+  # server holds that column via the col_results from setup (or by
+  # querying once here) and register the offset on that server only.
+  # The server-side k2SetOffsetDS caches the FP-encoded offset; the
+  # modified k2ComputeEtaShareDS picks it up each iteration. Offsets
+  # never leave their home server.
+  if (!is.null(offset)) {
+    if (!is.character(offset) || length(offset) != 1L) {
+      stop("offset must be a single character string (column name)",
+           call. = FALSE)
+    }
+    offset_srv <- NULL
+    for (.srv in server_list) {
+      .ci <- which(server_names == .srv)
+      cols <- tryCatch(
+        DSI::datashield.aggregate(datasources[.ci],
+          call("dsvertColNamesDS", data_name = data_name))[[1]]$columns,
+        error = function(e) NULL)
+      if (!is.null(cols) && offset %in% cols) {
+        offset_srv <- .srv
+        break
+      }
+    }
+    if (is.null(offset_srv)) {
+      stop("Offset column '", offset, "' not found on any server",
+           call. = FALSE)
+    }
+    if (verbose) message(sprintf("Registering offset '%s' on server %s",
+                                  offset, offset_srv))
+    .ci <- which(server_names == offset_srv)
+    .dsAgg(datasources[.ci], call("k2SetOffsetDS",
+      data_name = data_name,
+      offset_column = offset,
+      session_id = session_id))
+  }
 
   # ===========================================================================
   # Phase 3: Iterative Ring63 Beaver (on standardized scale)
