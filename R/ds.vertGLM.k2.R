@@ -44,7 +44,8 @@ NULL
                              x_vars, y_var, std_data,
                              transport_pks, session_id,
                              family, lambda, max_iter, tol,
-                             n_obs, verbose, .dsAgg, .sendBlob) {
+                             n_obs, verbose, .dsAgg, .sendBlob,
+                             weights_active = FALSE) {
 
   frac_bits <- 20L
   is_gaussian <- (family == "gaussian")
@@ -233,6 +234,20 @@ NULL
           session_id = session_id))
       }
     }  # close else (non-Gaussian wide spline)
+
+    # === Optional: apply per-patient weights before gradient ===
+    # When weights were registered via ds.vertGLM(weights="col"), both
+    # DCF parties locally scale their mu / y shares element-wise. The
+    # downstream X^T r Beaver gradient then becomes X^T (W r) = weighted
+    # gradient. No Beaver round is introduced; scaling of additive
+    # shares by a publicly-known vector is a local operation.
+    if (isTRUE(weights_active)) {
+      for (server in c(coordinator, nl)) {
+        ci <- which(server_names == server)
+        .dsAgg(datasources[ci], call("k2ApplyWeightsDS",
+                                      session_id = session_id))
+      }
+    }
 
     # === Step 3: Gradient (Beaver matvec) ===
     # Gradient triples generated on dealer server (not client)
