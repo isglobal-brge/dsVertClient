@@ -1,0 +1,38 @@
+#' @title Federated linear mixed model (random intercepts, skeleton)
+#' @description Placeholder for the block-diagonal-Woodbury LMM with
+#'   random intercepts in vertically partitioned DataSHIELD. Math:
+#'
+#'     y_{ij} = x_{ij}^T beta + b_i + eps_{ij}
+#'     V_i = sigma^2 I + sigma_b^2 J
+#'     V_i^{-1} = (1/sigma^2) [I - rho_i * 1 1^T],  rho_i = sigma_b^2 / (sigma^2 + n_i sigma_b^2)
+#'     log |V_i| = (n_i - 1) log sigma^2 + log(sigma^2 + n_i sigma_b^2)
+#'
+#'   All per-cluster sums of r_ij and r_ij^2 can be computed via Beaver
+#'   on secret shares, keeping the client view to scalar variance
+#'   components and p-aggregate gradients.
+#'
+#'   Requires:
+#'     - Cluster-ID column broadcast between DCF parties (same tier of
+#'       inter-server leakage as Cox permutation; documented in the
+#'       disclosure table).
+#'     - Existing WideSplineLog + WideSplineReciprocalRefined for
+#'       log |V_i| and variance ratios (both wired into the 4-phase DCF
+#'       protocol, commits 75f6883 + 3102b2e).
+#'     - A joint outer optimiser for beta + (sigma^2, sigma_b^2);
+#'       REML-style profiled likelihood or direct ML.
+#'
+#'   This file reserves the signature and exports so downstream callers
+#'   can discover the API; full implementation is scheduled for Month 3
+#'   (see V2_PROGRESS.md).
+#' @export
+ds.vertLMM <- function(formula, data = NULL, cluster_col,
+                       reml = TRUE, max_iter = 100L, tol = 1e-5,
+                       verbose = TRUE, datasources = NULL) {
+  stop("ds.vertLMM: random-intercept LMM is scheduled for Month 3. ",
+       "The mathematical foundation (WideSplineLog for log|V|, ",
+       "WideSplineReciprocalRefined for variance ratios) is already ",
+       "wired through the 4-phase DCF protocol; what remains is the ",
+       "outer variance-component optimiser + the cluster-ID broadcast ",
+       "protocol. See V2_PROGRESS.md for the implementation plan.",
+       call. = FALSE)
+}
