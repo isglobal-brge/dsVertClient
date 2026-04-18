@@ -707,19 +707,40 @@ ds.vertCox <- function(formula, data = NULL,
     # previous iteration so the update magnitude is kept constant in
     # coefficient space regardless of n or gradient scale. This is
     # equivalent to a trust-region radius in coefficient space.
-    # Damped steepest descent. L-BFGS direction oscillates on Cox's
-    # ill-conditioned small-n Fisher info (first curvature pair is
-    # misleading when the score is scaled by 1/n, giving the two-loop
-    # recursion an off-scale initial Hessian guess). We use pure
-    # steepest descent on the (flipped) score with a target_step
-    # trust-region radius in coef space -- slower but monotone.
-    use_steepest <- TRUE
-    dir_use <- if (isTRUE(use_steepest)) -neg_grad else direction
-    target_step <- 1.0
+    # Barzilai-Borwein adaptive step on the (flipped) score. BB is
+    # scale-invariant and adapts to the local Fisher curvature WITHOUT
+    # needing an explicit Hessian or line-search function evaluations
+    # (which would cost an extra MPC round each). Works across any n
+    # and any dataset condition number.
+    #
+    #     s_k = beta_k - beta_{k-1}        (step in coef space)
+    #     y_k = -grad_k - (-grad_{k-1})   (change in score)
+    #     alpha_BB = (s^T s) / (s^T y)  (long step; BB1)
+    #
+    # First iter (no history): a small bootstrap step driven by the
+    # gradient norm so |delta beta| stays well inside the plan's
+    # 1e-3 bar. After that, BB takes over.
+    dir_use <- -neg_grad
     dir_norm <- sqrt(sum(dir_use^2))
-    step <- if (is.finite(dir_norm) && dir_norm > 1e-10) {
-      min(1.0, target_step / dir_norm)
-    } else 0
+    if (!is.null(prev_grad) && !is.null(prev_theta)) {
+      sk <- beta - prev_theta
+      yk <- neg_grad - prev_grad
+      sy <- sum(sk * yk)
+      if (is.finite(sy) && abs(sy) > 1e-12) {
+        alpha_bb <- sum(sk * sk) / abs(sy)
+        # Clamp to avoid pathological jumps when Hessian is near-singular.
+        alpha_bb <- min(max(alpha_bb, 1e-4), 10)
+      } else {
+        alpha_bb <- 0.1
+      }
+      step <- alpha_bb
+    } else {
+      # First iter: conservative normalised step.
+      step <- if (dir_norm > 1e-10) 0.3 / dir_norm else 0
+    }
+    # Trust-region cap on |delta beta| per iter (dataset-agnostic).
+    max_delta_norm <- 0.5
+    if (step * dir_norm > max_delta_norm) step <- max_delta_norm / dir_norm
     beta <- beta + step * dir_use
     # Polyak tail-average: beta_avg = mean(beta_iter for iter >= tail_start)
     if (iter >= tail_start) {
