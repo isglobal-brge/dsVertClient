@@ -96,16 +96,9 @@ ds.vertGEE <- function(formula, data = NULL,
   # case can reuse the `resid = y - Xbeta` plaintext path on the
   # outcome server via dsvertPearsonRColumnDS (below); Binomial and
   # Poisson currently fall back to model-based SE with a warning.
-  if (family != "gaussian") {
-    if (verbose) {
-      message("[ds.vertGEE] Sandwich SE for family='", family,
-              "' requires k2ComputePearsonR2ColDS (Month 4). Returning ",
-              "model-based SE for now.")
-    }
-    robust_se <- fit$std_errors
-    robust_cov <- Cov_model
-  } else {
-    if (verbose) message("[ds.vertGEE] Stage 2: weighted fit for sandwich meat")
+  {
+    if (verbose) message("[ds.vertGEE] Stage 2: weighted fit for sandwich meat (family=",
+                          family, ")")
     # Request residuals-squared column on the outcome server. This uses
     # the `dsvertPearsonR2ColDS` server helper (Gaussian-only in the
     # first pass): given data_name, y, x_vars, and a plaintext betahat,
@@ -133,6 +126,7 @@ ds.vertGEE <- function(formula, data = NULL,
                x_names = x_all,
                betahat = as.numeric(fit$coefficients[x_all]),
                intercept = as.numeric(fit$coefficients["(Intercept)"]),
+               family = family,
                r2_column = "__dsvert_r2"))
         TRUE
       }, error = function(e) {

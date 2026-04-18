@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertNB.R
 \name{ds.vertNB}
 \alias{ds.vertNB}
-\title{Federated negative binomial regression (Poisson-IRLS + dispersion)}
+\title{Federated negative binomial regression with dispersion estimate}
 \usage{
 ds.vertNB(
   formula,
@@ -13,32 +13,20 @@ ds.vertNB(
   ...
 )
 }
-\arguments{
-\item{formula}{Same as ds.vertGLM for Poisson count regression.}
-
-\item{data, ...}{Same as ds.vertGLM.}
-
-\item{theta}{Optional fixed dispersion (default NULL = Pearson
-estimate).}
-}
-\value{
-\code{ds.vertNB} object with the Poisson-stage fit,
-dispersion estimate, and an NB-corrected deviance / AIC.
-}
 \description{
-Fit a negative binomial regression by (a) fitting the
-coefficient vector \eqn{\beta} via the existing dsVert Poisson GLM
-(which yields a consistent estimator under NB overdispersion), then
-(b) estimating the NB dispersion \eqn{\theta} via Pearson moment
-method from the converged means and variances, and (c) recomputing
-the canonical NB deviance client-side using the aggregate y, mu,
-and moment sums exposed by the fit.
+Fit a negative binomial GLM on vertically partitioned
+DataSHIELD data. Two-stage:
+\enumerate{
+\item Fit \eqn{\hat\beta} via the dsVert Poisson GLM (identical
+score under canonical log link so the point estimate is
+the same; only the covariance differs).
+\item Estimate \eqn{\hat\theta} server-side via method-of-moments
+on the outcome variable: \eqn{\hat\theta = \bar y^2 /
+          (s_y^2 - \bar y)} when \eqn{s_y^2 > \bar y}, else
+\eqn{+\infty} (Poisson limit).
+\item Rescale the Poisson SE by \eqn{\sqrt{1 + \bar y / \hat\theta}}
+so the reported z-stats reflect NB variance inflation.
 }
-\details{
-The coefficient estimates are the same as Poisson IRLS
-because the score functions coincide when the link is log. The
-standard errors are the NAIVE Poisson SEs; for a proper NB
-covariance matrix the client needs the aggregated
-\eqn{\sum \mu_i^2} + \eqn{\sum y_i^2} which this wrapper does not
-currently request. Documented limitation; follow-on in Month 2.
+\eqn{\bar y} and \eqn{s_y^2} are already-aggregated moments (via
+the shipped \code{dsvertLocalMomentsDS}); no per-patient disclosure.
 }
