@@ -49,14 +49,19 @@ ds.vertCox <- function(formula, data = NULL,
     stop("formula must be an R formula", call. = FALSE)
   }
 
-  # Parse LHS: Surv(time, event) or require time_col/event_col.
+  # Parse LHS: Surv(time, event) or survival::Surv(...). The call head
+  # of `survival::Surv(x, y)` is itself a call to `::` (length 3), so
+  # comparing via as.character() + %in% gives a length-3 vector; use
+  # deparse() for a single canonical string.
   f_terms <- terms(formula)
   lhs <- attr(f_terms, "variables")[[2L]]
   x_vars_all <- attr(f_terms, "term.labels")
-  if (is.call(lhs) &&
-      as.character(lhs[[1L]]) %in% c("Surv", "survival::Surv")) {
-    if (is.null(time_col))  time_col  <- as.character(lhs[[2L]])
-    if (is.null(event_col)) event_col <- as.character(lhs[[3L]])
+  if (is.call(lhs)) {
+    head_name <- deparse(lhs[[1L]])
+    if (head_name %in% c("Surv", "survival::Surv")) {
+      if (is.null(time_col))  time_col  <- as.character(lhs[[2L]])
+      if (is.null(event_col)) event_col <- as.character(lhs[[3L]])
+    }
   }
   if (is.null(time_col) || is.null(event_col)) {
     stop("Need time_col and event_col", call. = FALSE)
@@ -116,11 +121,17 @@ ds.vertCox <- function(formula, data = NULL,
   .dsAgg <- setup$.dsAgg
   .sendBlob <- setup$.sendBlob
 
-  # Cox n: query any server for row count.
-  n_obs <- tryCatch(
-    .dsAgg(datasources[which(server_names == y_server)],
-      call("getObsCountDS", data_name = std_data))[[1L]]$n,
-    error = function(e) NULL)
+  # Cox n: the standardized frame lives in session storage, not
+  # parent.frame(), so query the raw aligned data instead (the row
+  # count is identical before and after standardisation). The count
+  # helper returns a named list with `$n_obs`, mirroring the ds.vertGLM
+  # pattern at ds.vertGLM.R:290.
+  n_obs <- tryCatch({
+    r <- .dsAgg(datasources[which(server_names == y_server)],
+                call("getObsCountDS", data_name = data))
+    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+    r$n_obs
+  }, error = function(e) NULL)
   if (is.null(n_obs)) {
     stop("could not determine n on outcome server", call. = FALSE)
   }
@@ -158,12 +169,14 @@ ds.vertCox <- function(formula, data = NULL,
 
   # === Register Cox event times + broadcast sort permutation ===
   # Outcome server sorts by ascending t, serialises (perm, delta) to
-  # the peer via transport-encrypted blob.
+  # the peer via transport-encrypted blob. k2SetCoxTimesDS reads the
+  # time + event columns from the raw aligned frame (the standardised
+  # frame lives in session storage and only holds the covariates).
   cox_times <- .dsAgg(
     datasources[which(server_names == y_server)],
-    call("k2SetCoxTimesDS", data_name = std_data,
+    call("k2SetCoxTimesDS", data_name = data,
          time_column = time_col, event_column = event_col,
-         peer_pk = .to_b64url(transport_pks[[nl]]),
+         peer_pk = transport_pks[[nl]],
          session_id = session_id))
   if (is.list(cox_times) && length(cox_times) == 1L)
     cox_times <- cox_times[[1L]]
@@ -198,29 +211,46 @@ ds.vertCox <- function(formula, data = NULL,
   final_iter <- 0L
   loglik <- NA_real_
 
-  .wide_spline_round <- function(family_name, n_target, num_intervals = 100L) {
+  .wide_spline_round <- function(family_name, n_target,
+                                  num_intervals = 100L,
+                                  need_dcf_keys = TRUE) {
     # One complete 4-phase DCF spline pass with the given family. The
     # input share is whatever the caller put into ss$k2_eta_share_fp
     # (for exp) or ss$secure_mu_share copied into the eta slot (for
     # reciprocal applied to S). Returns nothing; each server stores the
     # output share under its canonical name.
-    key_res <- .dsAgg(datasources[dealer_ci],
-      call("glmRing63GenDcfKeysDS",
+    if (isTRUE(need_dcf_keys)) {
+      key_res <- .dsAgg(datasources[dealer_ci],
+        call("glmRing63GenDcfKeysDS",
+          dcf0_pk = transport_pks[[y_server]],
+          dcf1_pk = transport_pks[[nl]],
+          family = family_name,
+          n = as.integer(n_target), frac_bits = 20L,
+          num_intervals = as.integer(num_intervals),
+          session_id = session_id))
+      if (is.list(key_res) && length(key_res) == 1L) key_res <- key_res[[1L]]
+      .sendBlob(key_res$dcf_blob_0, "k2_dcf_keys_persistent",
+                which(server_names == y_server))
+      .dsAgg(datasources[which(server_names == y_server)],
+        call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+      .sendBlob(key_res$dcf_blob_1, "k2_dcf_keys_persistent",
+                which(server_names == nl))
+      .dsAgg(datasources[which(server_names == nl)],
+        call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+    }
+    # Generate and distribute spline Beaver triples for this iteration.
+    spline_t <- .dsAgg(datasources[dealer_ci],
+      call("glmRing63GenSplineTriplesDS",
         dcf0_pk = transport_pks[[y_server]],
         dcf1_pk = transport_pks[[nl]],
-        family = family_name,
         n = as.integer(n_target), frac_bits = 20L,
-        num_intervals = as.integer(num_intervals),
         session_id = session_id))
-    if (is.list(key_res) && length(key_res) == 1L) key_res <- key_res[[1L]]
-    .sendBlob(key_res$dcf_blob_0, "k2_dcf_keys_persistent",
+    if (is.list(spline_t) && length(spline_t) == 1L)
+      spline_t <- spline_t[[1L]]
+    .sendBlob(spline_t$spline_blob_0, "k2_spline_triples",
               which(server_names == y_server))
-    .dsAgg(datasources[which(server_names == y_server)],
-      call("k2StoreDcfKeysPersistentDS", session_id = session_id))
-    .sendBlob(key_res$dcf_blob_1, "k2_dcf_keys_persistent",
+    .sendBlob(spline_t$spline_blob_1, "k2_spline_triples",
               which(server_names == nl))
-    .dsAgg(datasources[which(server_names == nl)],
-      call("k2StoreDcfKeysPersistentDS", session_id = session_id))
     # Phase 1 + 2 + 3 + 4 — reuse the wide-spline helper chain
     # exactly as ds.vertGLM.k2.R does, with family_name plumbed through.
     ph1 <- list()
@@ -258,7 +288,7 @@ ds.vertCox <- function(formula, data = NULL,
         auto_unbox = TRUE)
       sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
         data = jsonlite::base64_enc(charToRaw(r1_json)),
-        recipient_pk = transport_pks[[peer]]))
+        recipient_pk = dsVert:::.base64url_to_base64(transport_pks[[peer]])))
       .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1", peer_ci)
     }
     ph3 <- list()
@@ -281,7 +311,7 @@ ds.vertCox <- function(formula, data = NULL,
         auto_unbox = TRUE)
       sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
         data = jsonlite::base64_enc(charToRaw(r1_json)),
-        recipient_pk = transport_pks[[peer]]))
+        recipient_pk = dsVert:::.base64url_to_base64(transport_pks[[peer]])))
       .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1", peer_ci)
     }
     for (server in server_list) {

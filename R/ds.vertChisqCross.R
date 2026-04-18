@@ -126,7 +126,12 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
   if (n == 0) stop("No observations; cannot compute chi-square", call. = FALSE)
 
   # Standard Pearson chi-square on the reconstructed K x L table.
-  res_list <- .dsvert_chisq_compute(counts, correct = correct)
+  row_m <- as.integer(rowSums(counts))
+  col_m <- as.integer(colSums(counts))
+  res_list <- .dsvert_chisq_compute(counts,
+    row_margins = row_m, col_margins = col_m, n = n,
+    correct = correct)
+  names(res_list)[names(res_list) == "statistic"] <- "chisq"
   fisher_p <- NA_real_
   if (isTRUE(fisher)) {
     fisher_p <- tryCatch(
@@ -138,7 +143,7 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
   out <- list(
     observed      = counts,
     expected      = res_list$expected,
-    chisq         = res_list$chisq,
+    chisq         = res_list$chisq %||% res_list$statistic,
     df            = res_list$df,
     p_value       = res_list$p_value,
     fisher_p      = fisher_p,

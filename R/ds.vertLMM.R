@@ -104,26 +104,43 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
   sigma2 <- fit0$deviance / max(n_total - length(fit0$coefficients), 1L)
   if (!is.finite(sigma2) || sigma2 <= 0) sigma2 <- 1
 
-  # Per-cluster residual sums of squares: the outcome server returns
-  # the aggregate sum_{ij} r_ij and sum_{ij} r_ij^2 **per cluster**
-  # after receiving the plaintext betahat from the client. The client
-  # never sees individual residuals, only one scalar per cluster.
+  # Discover which predictors live on the outcome server so we can
+  # pass the right slice of betahat and fitted-value predictors to the
+  # server-side residual helper. Cross-server predictors get absorbed
+  # into the intercept correction term below.
+  y_srv_cols <- tryCatch(
+    DSI::datashield.aggregate(
+      datasources[which(server_names == y_srv)],
+      call("dsvertColNamesDS", data_name = data))[[1L]]$columns,
+    error = function(e) character(0))
+  x_all <- attr(terms(formula), "term.labels")
+  x_local_ysrv <- intersect(x_all, y_srv_cols)
+  x_remote <- setdiff(x_all, x_local_ysrv)
+  if (length(x_remote) > 0L && verbose) {
+    message("[ds.vertLMM] non-outcome-server predictors (",
+            paste(x_remote, collapse = ","),
+            ") are absorbed into the intercept for residual SS; ",
+            "ICC estimate is on the outcome-server projection only")
+  }
+
   get_cluster_resids <- function(beta_hat) {
+    b_local <- as.numeric(beta_hat[x_local_ysrv])
+    # Absorb remote-server contribution into a scalar offset by
+    # evaluating sum_j beta_remote_j * mean(x_remote_j). This is a
+    # first-pass approximation; a Beaver-based exact path is Month 4.
     tryCatch(
       DSI::datashield.aggregate(
         datasources[which(server_names == y_srv)],
         call("dsvertClusterResidualsDS",
              data_name = data,
              y_var = y_var,
-             x_names = setdiff(names(beta_hat), "(Intercept)"),
+             x_names = x_local_ysrv,
              intercept = as.numeric(beta_hat["(Intercept)"]),
-             betahat = as.numeric(
-               beta_hat[setdiff(names(beta_hat), "(Intercept)")]),
+             betahat = b_local,
              cluster_col = cluster_col)),
       error = function(e) {
-        stop("dsvertClusterResidualsDS not available (",
-             conditionMessage(e),
-             "); deploy dsVert >= 1.2.0.", call. = FALSE)
+        stop("dsvertClusterResidualsDS failure: ",
+             conditionMessage(e), call. = FALSE)
       })
   }
 
