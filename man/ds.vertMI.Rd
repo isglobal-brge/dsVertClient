@@ -2,43 +2,77 @@
 % Please edit documentation in R/ds.vertMI.R
 \name{ds.vertMI}
 \alias{ds.vertMI}
-\title{Federated multiple imputation with server-local imputations (skeleton)}
+\title{Federated multiple imputation with Rubin pooling}
 \usage{
 ds.vertMI(
   formula,
   data = NULL,
   impute_columns = NULL,
   m = 20L,
-  max_iter_per_impute = 30L,
+  family = "gaussian",
+  max_iter = 50L,
+  tol = 1e-04,
+  lambda = 1e-04,
   verbose = TRUE,
   datasources = NULL,
-  ...
+  seed = 1L
 )
 }
+\arguments{
+\item{formula}{Model formula.}
+
+\item{data}{Aligned data-frame name.}
+
+\item{impute_columns}{Character vector of column names with
+missingness that should be imputed (on whichever server holds
+them). Per-server column presence is auto-detected.}
+
+\item{m}{Number of imputations (default 20).}
+
+\item{family}{GLM family.}
+
+\item{max_iter}{Inner \code{ds.vertGLM} \code{max_iter}.}
+
+\item{tol}{Convergence tolerance for inner fits.}
+
+\item{lambda}{L2 regularisation for inner fits.}
+
+\item{verbose}{Print progress.}
+
+\item{datasources}{DataSHIELD connection object.}
+
+\item{seed}{RNG seed (default 1L). Per-round seed = \code{seed + m}.}
+}
+\value{
+A \code{ds.vertMI} object with fields \code{coefficients},
+\code{covariance} (Rubin total variance T), \code{std_errors},
+\code{within}, \code{between}, \code{fmi} (fraction of missing
+information), \code{m}, \code{family}, \code{fits} (list of the M
+inner \code{ds.glm} fits).
+}
 \description{
-Multiple imputation with imputations that stay on the
-server holding the variable with missingness. Outer loop:
+Fit a GLM on vertically partitioned DataSHIELD data with
+multiple imputation of missing values. Imputations stay on the
+server holding the missing variable (via
+\code{dsvertImputeColumnDS}); the client only ever sees the
+\eqn{M} pooled coefficient vectors and covariance matrices and
+applies Rubin's rules client-side.
 
-\if{html}{\out{<div class="sourceCode">}}\preformatted{for m in 1..M:
-  1. server imputes its own missing values using its own local
-     sampler (Bayesian ridge / PMM style, parameters derived from
-     the previous round's aggregate moments)
-  2. client runs ds.vertGLM on the imputed dataset, collecting
-     beta_m and Cov(beta_m)
-Rubin-pool (beta_m, Cov(beta_m)) client-side -> pooled_beta,
-total variance with within/between decomposition.
-}\if{html}{\out{</div>}}
+Protocol for each of \eqn{m = 1..M}:
+1. On every server holding a column with missingness, call
+\code{dsvertImputeColumnDS} with seed \eqn{s_m}. The server
+draws a local imputation using a Bayesian-ridge model
+conditional on the other complete-case columns available on
+that server. The imputed column is written back into the
+aligned data frame under a per-round name (e.g.
+\code{__dsvert_imp_<var>_<m>}).
+2. Run \code{\link{ds.vertGLM}} on the imputed data, collect
+\code{beta_m} and \code{Cov(beta_m)}.
+3. Client accumulates \eqn{(\beta_m, \mathrm{Cov}_m)}.
 
-Privacy: the M imputations stay server-local; only the M pooled
-coefficient vectors cross back to the client. This is a stronger
-privacy story than standard federated MI (which often relays
-imputed values).
-
-Requires:
-- Server-side imputation function (new: dsvertImputeColumnDS)
-that takes the aggregate moments as a prior and draws local
-imputations from a Bayesian ridge posterior.
-- Rubin-pool helpers client-side (already trivial).
-
-Scheduled for Month 3; signature reserved.
+Rubin's pooling rules are applied client-side:
+\deqn{\bar\beta = \frac{1}{M}\sum_m \beta_m}
+\deqn{W = \frac{1}{M}\sum_m \mathrm{Cov}_m}
+\deqn{B = \frac{1}{M-1} \sum_m (\beta_m-\bar\beta)(\beta_m-\bar\beta)^T}
+\deqn{T = W + (1 + 1/M) B}
 }

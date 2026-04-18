@@ -2,38 +2,49 @@
 % Please edit documentation in R/ds.vertChisqCross.R
 \name{ds.vertChisqCross}
 \alias{ds.vertChisqCross}
-\title{Cross-server chi-square via Beaver cross-products (skeleton)}
+\title{Cross-server chi-square (one-hot + Beaver cross-products)}
 \usage{
 ds.vertChisqCross(
   data,
   var1,
   var2,
-  var1_server = NULL,
-  var2_server = NULL,
   correct = TRUE,
-  datasources = NULL
+  fisher = FALSE,
+  datasources = NULL,
+  verbose = TRUE
 )
 }
+\arguments{
+\item{data}{Aligned data-frame name.}
+
+\item{var1}{Row variable (categorical or numeric treated as factor).}
+
+\item{var2}{Column variable.}
+
+\item{correct}{Apply Yates continuity correction (2x2 only).}
+
+\item{fisher}{Also return a Fisher-exact p-value (via R's
+\code{fisher.test} applied to the reconstructed aggregate table).}
+
+\item{datasources}{DataSHIELD connection object.}
+
+\item{verbose}{Print progress.}
+}
+\value{
+An object of class \code{ds.vertChisq} (same print method as
+the same-server helper) with components \code{observed},
+\code{expected}, \code{chisq}, \code{df}, \code{p_value},
+\code{fisher_p} (if requested), \code{n}, \code{row_levels},
+\code{col_levels}.
+}
 \description{
-Placeholder for a chi-square test where the two
-categorical variables are on DIFFERENT servers. The plan:
-
-\if{html}{\out{<div class="sourceCode">}}\preformatted{1. Each server one-hot encodes its variable into K (resp. L)
-   binary columns (new helper: dsvertOneHotDS).
-2. The binary indicator columns are secret-shared between the
-   two DCF parties via the existing k2ShareInputDS machinery.
-3. For each (k, l) pair: compute sum_i X_\{ki\} * Y_\{li\} via a
-   Beaver dot product on the shared indicator vectors. This is
-   exactly the n_\{kl\} cell count.
-4. Client assembles the K x L contingency table and computes
-   Pearson chi-square / Fisher exact as usual.
-}\if{html}{\out{</div>}}
-
-Requires:
-- dsvertOneHotDS server helper (new).
-- K*L Beaver dot-product invocations (reuse localCorDS-style
-infrastructure).
-
-Same-server chi-square is already supported via ds.vertChisq /
-ds.vertFisher. Scheduled for Month 3; signature reserved.
+Pearson chi-square and Fisher-exact tests on a two-way
+contingency table where the row variable is held on one server and
+the column variable is held on another. Uses the existing Ring63
+Beaver cross-product infrastructure: one-hot indicator matrices are
+constructed server-side via \code{\link[dsVert]{dsvertOneHotDS}},
+then the \eqn{K \times L} cell counts \eqn{n_{kl} = \sum_i X_{ik}
+  Y_{il}} are obtained by Beaver dot products on the shared
+indicator vectors. The client never sees any \eqn{n}-length
+indicator vector; only the \eqn{K \times L} aggregate table.
 }
