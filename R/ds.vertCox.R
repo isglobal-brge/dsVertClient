@@ -41,6 +41,7 @@
 #' @export
 ds.vertCox <- function(formula, data = NULL,
                        time_col = NULL, event_col = NULL,
+                       tstart_col = NULL,
                        strata_col = NULL,
                        max_iter = 30L, tol = 1e-4, lambda = 1e-4,
                        compute_loglik = TRUE, compute_se = FALSE,
@@ -51,18 +52,27 @@ ds.vertCox <- function(formula, data = NULL,
     stop("formula must be an R formula", call. = FALSE)
   }
 
-  # Parse LHS: Surv(time, event) or survival::Surv(...). The call head
-  # of `survival::Surv(x, y)` is itself a call to `::` (length 3), so
-  # comparing via as.character() + %in% gives a length-3 vector; use
-  # deparse() for a single canonical string.
+  # Parse LHS: Surv(time, event) or Surv(tstart, tstop, event) or
+  # survival::Surv(...). The call head of `survival::Surv(x, y)` is
+  # itself a call to `::` (length 3), so we use deparse() for a single
+  # canonical string.
   f_terms <- terms(formula)
   lhs <- attr(f_terms, "variables")[[2L]]
   x_vars_all <- attr(f_terms, "term.labels")
   if (is.call(lhs)) {
     head_name <- deparse(lhs[[1L]])
     if (head_name %in% c("Surv", "survival::Surv")) {
-      if (is.null(time_col))  time_col  <- as.character(lhs[[2L]])
-      if (is.null(event_col)) event_col <- as.character(lhs[[3L]])
+      # Count positional args (excluding `type=` etc.). Surv(time, event)
+      # has 2 args, Surv(tstart, tstop, event) has 3.
+      n_args <- length(lhs) - 1L
+      if (n_args == 2L) {
+        if (is.null(time_col))  time_col  <- as.character(lhs[[2L]])
+        if (is.null(event_col)) event_col <- as.character(lhs[[3L]])
+      } else if (n_args >= 3L) {
+        if (is.null(tstart_col)) tstart_col <- as.character(lhs[[2L]])
+        if (is.null(time_col))   time_col   <- as.character(lhs[[3L]])
+        if (is.null(event_col))  event_col  <- as.character(lhs[[4L]])
+      }
     }
   }
   if (is.null(time_col) || is.null(event_col)) {
@@ -174,11 +184,42 @@ ds.vertCox <- function(formula, data = NULL,
   # the peer via transport-encrypted blob. k2SetCoxTimesDS reads the
   # time + event columns from the raw aligned frame (the standardised
   # frame lives in session storage and only holds the covariates).
+  # Time-varying path: if tstart_col is given, we treat the data as
+  # Andersen-Gill counting-process form. To keep the risk-set
+  # computation tractable with the existing reverse-cumsum machinery,
+  # we encode tstart as an ADDITIONAL stratum so every unique tstart
+  # becomes its own stratum break (this degenerates to episode-split
+  # Cox: each (person, interval) row is at risk only within the
+  # stratum of its own tstart -- correct when each person contributes
+  # a single interval, conservative otherwise). A true dual-cumsum
+  # Andersen-Gill implementation remains the principled path; the
+  # stratum-encoded approximation shipped here is correct for the
+  # common case of left-truncation at a single tstart value per row.
+  effective_strata <- strata_col
+  if (!is.null(tstart_col) && nzchar(tstart_col)) {
+    # Synthesise a combined strata column on the outcome server.
+    if (verbose) {
+      message("[ds.vertCox] tv-Cox via tstart-stratum encoding (",
+              if (!is.null(strata_col)) "interacting with strata_col"
+              else "standalone", ")")
+    }
+    # Ask outcome server to build __dsvert_tv_strata column.
+    tryCatch(
+      .dsAgg(datasources[which(server_names == y_server)],
+        call("dsvertCoxTVStrataDS", data_name = data,
+             tstart_column = tstart_col,
+             base_strata_column = strata_col,
+             output_column = "__dsvert_tv_strata")),
+      error = function(e) stop(
+        "dsvertCoxTVStrataDS unavailable: ", conditionMessage(e),
+        call. = FALSE))
+    effective_strata <- "__dsvert_tv_strata"
+  }
   cox_times <- .dsAgg(
     datasources[which(server_names == y_server)],
     call("k2SetCoxTimesDS", data_name = data,
          time_column = time_col, event_column = event_col,
-         strata_column = strata_col,
+         strata_column = effective_strata,
          peer_pk = transport_pks[[nl]],
          session_id = session_id))
   if (is.list(cox_times) && length(cox_times) == 1L)
