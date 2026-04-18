@@ -715,7 +715,7 @@ ds.vertCox <- function(formula, data = NULL,
     # trust-region radius in coef space -- slower but monotone.
     use_steepest <- TRUE
     dir_use <- if (isTRUE(use_steepest)) -neg_grad else direction
-    target_step <- 0.08
+    target_step <- 0.4
     dir_norm <- sqrt(sum(dir_use^2))
     step <- if (is.finite(dir_norm) && dir_norm > 1e-10) {
       min(1.0, target_step / dir_norm)
