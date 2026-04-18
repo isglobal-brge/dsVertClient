@@ -1,3 +1,24 @@
+#' @title Check whether a data symbol is already PSI-aligned on every server
+#' @description Ask each server whether the named symbol has the same
+#'   row count. Used by \code{ds.vertGLM}/LMM/GEE/Cox to SKIP a fresh
+#'   PSI run when the caller already aligned the cohort. Security-
+#'   preserving: only queries shape.
+#' @export
+ds.isPsiAligned <- function(newobj = "DA", datasources = NULL) {
+  if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
+  dims <- tryCatch(
+    DSI::datashield.aggregate(datasources,
+      call("getObsCountDS", data_name = newobj)),
+    error = function(e) NULL)
+  if (is.null(dims)) return(list(aligned = FALSE, n_common = NA_integer_))
+  ns <- vapply(dims, function(x) {
+    if (is.list(x) && !is.null(x$n_obs)) as.integer(x$n_obs) else NA_integer_
+  }, integer(1L))
+  if (anyNA(ns)) return(list(aligned = FALSE, n_common = NA_integer_))
+  aligned <- all(ns == ns[1L])
+  list(aligned = aligned, n_common = if (aligned) ns[1L] else NA_integer_)
+}
+
 #' @title ECDH-PSI Record Alignment (Blind Relay)
 #' @description Privacy-preserving record alignment using Elliptic Curve
 #'   Diffie-Hellman Private Set Intersection (ECDH-PSI) with blind-relay
