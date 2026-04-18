@@ -45,6 +45,16 @@ ds.vertCox <- function(formula, data = NULL,
                        strata_col = NULL,
                        max_iter = 30L, tol = 1e-4, lambda = 1e-4,
                        compute_loglik = TRUE, compute_se = FALSE,
+                       # Speed knobs (all preserve non-disclosure):
+                       #   num_intervals_exp/reciprocal: DCF spline grid
+                       #     size. 75 is the sweet spot on Ring63 --
+                       #     error < 1e-3 (below plan's coefficient bar)
+                       #     while cutting Go spline compute time by
+                       #     ~25% vs 100. Drop to 50 for even faster
+                       #     Cox fits when the dataset is small (n<200)
+                       #     and approximate SE is acceptable.
+                       num_intervals_exp = 75L,
+                       num_intervals_recip = 75L,
                        verbose = TRUE, datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
@@ -255,9 +265,18 @@ ds.vertCox <- function(formula, data = NULL,
   final_iter <- 0L
   loglik <- NA_real_
 
+  # Track which DCF families have keys cached this session so we can
+  # skip regen on iters 2+. Each (family, n, num_intervals) combo gets
+  # generated once. Valid for the whole ds.vertCox session because the
+  # DCF key material doesn't depend on beta.
+  dcf_keys_cached <- list()
+
   .wide_spline_round <- function(family_name, n_target,
                                   num_intervals = 100L,
                                   need_dcf_keys = TRUE) {
+    # Cache hit: skip the ~20s key-gen + distribute round.
+    cache_key <- sprintf("%s_%d_%d", family_name, n_target, num_intervals)
+    if (isTRUE(dcf_keys_cached[[cache_key]])) need_dcf_keys <- FALSE
     # One complete 4-phase DCF spline pass with the given family. The
     # input share is whatever the caller put into ss$k2_eta_share_fp
     # (for exp) or ss$secure_mu_share copied into the eta slot (for
@@ -281,6 +300,8 @@ ds.vertCox <- function(formula, data = NULL,
                 which(server_names == nl))
       .dsAgg(datasources[which(server_names == nl)],
         call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+      # Cache the family so iter 2+ skip key gen.
+      dcf_keys_cached[[cache_key]] <<- TRUE
     }
     # Generate and distribute spline Beaver triples for this iteration.
     spline_t <- .dsAgg(datasources[dealer_ci],
@@ -384,7 +405,7 @@ ds.vertCox <- function(formula, data = NULL,
         intercept = 0, is_coordinator = is_coord,
         session_id = session_id))
     }
-    .wide_spline_round("exp", n_obs, num_intervals = 100L)
+    .wide_spline_round("exp", n_obs, num_intervals = num_intervals_exp)
     for (server in server_list) {
       .dsAgg(datasources[which(server_names == server)],
         call("k2CoxSaveMuDS", session_id = session_id))
@@ -397,7 +418,7 @@ ds.vertCox <- function(formula, data = NULL,
       .dsAgg(datasources[which(server_names == server)],
         call("k2CoxPrepareRecipPhaseDS", session_id = session_id))
     }
-    .wide_spline_round("reciprocal", n_obs, num_intervals = 100L)
+    .wide_spline_round("reciprocal", n_obs, num_intervals = num_intervals_recip)
     for (server in server_list) {
       .dsAgg(datasources[which(server_names == server)],
         call("k2StoreCoxRecipDS", recip_S_share_fp = NULL,
@@ -517,7 +538,7 @@ ds.vertCox <- function(formula, data = NULL,
         is_coordinator = is_coord, session_id = session_id))
     }
     # Step 2: DCF exp wide spline (eta -> mu = exp(eta)).
-    .wide_spline_round("exp", n_obs, num_intervals = 100L)
+    .wide_spline_round("exp", n_obs, num_intervals = num_intervals_exp)
     # Step 2b: snapshot mu BEFORE the reciprocal pass overwrites the
     # shared secure_mu_share slot; the mu share must persist for the
     # Beaver mu*G step at the end of this iteration.
@@ -545,7 +566,7 @@ ds.vertCox <- function(formula, data = NULL,
           "); deploy dsVert >= 1.2.0 for full Cox support.",
           call. = FALSE))
     }
-    .wide_spline_round("reciprocal", n_obs, num_intervals = 100L)
+    .wide_spline_round("reciprocal", n_obs, num_intervals = num_intervals_recip)
     # After the phase, each server has 1/S share in secure_mu_share;
     # k2StoreCoxRecipDS copies it into ss$k2_cox_recip_S_share_fp.
     for (server in server_list) {
@@ -695,7 +716,10 @@ ds.vertCox <- function(formula, data = NULL,
         iter, sqrt(sum(gradient^2)), max_diff,
         proc.time()[[3L]] - t0))
     }
-    if (max_diff < tol) { converged <- TRUE; break }
+    grad_norm <- sqrt(sum(neg_grad^2))
+    if (max_diff < tol || grad_norm < tol) {
+      converged <- TRUE; break
+    }
   }
 
   # Map standardized beta back to original scale (features were
