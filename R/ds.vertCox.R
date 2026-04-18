@@ -699,7 +699,7 @@ ds.vertCox <- function(formula, data = NULL,
     # previous iteration so the update magnitude is kept constant in
     # coefficient space regardless of n or gradient scale. This is
     # equivalent to a trust-region radius in coefficient space.
-    target_step <- 0.1   # target max |delta beta| per iter
+    target_step <- 0.25   # target max |delta beta| per iter
     dir_norm <- sqrt(sum(direction^2))
     if (!is.finite(dir_norm) || dir_norm < 1e-10) {
       step <- 0
