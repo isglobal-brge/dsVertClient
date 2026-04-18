@@ -395,7 +395,7 @@ ds.vertCox <- function(formula, data = NULL,
   # matches the L-BFGS contract). Side-effect: leaves the session with
   # mu/G/residual shares ready for subsequent re-use.
   .cox_score_round <- function(beta_in) {
-    # Step 1: eta share.
+    # Step 1: eta share (needs per-party is_coordinator; keep per-party).
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
@@ -406,28 +406,24 @@ ds.vertCox <- function(formula, data = NULL,
         session_id = session_id))
     }
     .wide_spline_round("exp", n_obs, num_intervals = num_intervals_exp)
-    for (server in server_list) {
-      .dsAgg(datasources[which(server_names == server)],
-        call("k2CoxSaveMuDS", session_id = session_id))
-    }
-    for (server in server_list) {
-      .dsAgg(datasources[which(server_names == server)],
-        call("k2CoxReverseCumsumSDS", session_id = session_id))
-    }
-    for (server in server_list) {
-      .dsAgg(datasources[which(server_names == server)],
-        call("k2CoxPrepareRecipPhaseDS", session_id = session_id))
-    }
+    # Batch the 5 symmetric cumsum / phase-prep / save-mu aggregates
+    # into SINGLE DSI calls. DSI::datashield.aggregate(conns, expr)
+    # fan-outs concurrently across `conns` at the HTTP layer, so this
+    # halves wall-clock on these steps vs per-party serial loops.
+    all_ci <- vapply(server_list, function(s) which(server_names == s),
+                      integer(1L))
+    .dsAgg(datasources[all_ci],
+      call("k2CoxSaveMuDS", session_id = session_id))
+    .dsAgg(datasources[all_ci],
+      call("k2CoxReverseCumsumSDS", session_id = session_id))
+    .dsAgg(datasources[all_ci],
+      call("k2CoxPrepareRecipPhaseDS", session_id = session_id))
     .wide_spline_round("reciprocal", n_obs, num_intervals = num_intervals_recip)
-    for (server in server_list) {
-      .dsAgg(datasources[which(server_names == server)],
-        call("k2StoreCoxRecipDS", recip_S_share_fp = NULL,
-             session_id = session_id))
-    }
-    for (server in server_list) {
-      .dsAgg(datasources[which(server_names == server)],
-        call("k2CoxForwardCumsumGDS", session_id = session_id))
-    }
+    .dsAgg(datasources[all_ci],
+      call("k2StoreCoxRecipDS", recip_S_share_fp = NULL,
+           session_id = session_id))
+    .dsAgg(datasources[all_ci],
+      call("k2CoxForwardCumsumGDS", session_id = session_id))
     # Beaver vecmul mu*G.
     tri <- .dsAgg(datasources[dealer_ci],
       call("k2BeaverVecmulGenTriplesDS",
