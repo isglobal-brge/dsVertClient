@@ -699,16 +699,20 @@ ds.vertCox <- function(formula, data = NULL,
     # previous iteration so the update magnitude is kept constant in
     # coefficient space regardless of n or gradient scale. This is
     # equivalent to a trust-region radius in coefficient space.
-    target_step <- 0.25   # target max |delta beta| per iter
-    dir_norm <- sqrt(sum(direction^2))
-    if (!is.finite(dir_norm) || dir_norm < 1e-10) {
-      step <- 0
-    } else {
-      step <- min(1.0, target_step / dir_norm)
-      # First iter (no history): use steepest-descent scaled down.
-      if (length(s_hist) == 0L) step <- min(step, 0.3)
-    }
-    beta <- beta + step * direction
+    # Damped steepest descent. L-BFGS direction oscillates on Cox's
+    # ill-conditioned small-n Fisher info (first curvature pair is
+    # misleading when the score is scaled by 1/n, giving the two-loop
+    # recursion an off-scale initial Hessian guess). We use pure
+    # steepest descent on the (flipped) score with a target_step
+    # trust-region radius in coef space -- slower but monotone.
+    use_steepest <- TRUE
+    dir_use <- if (isTRUE(use_steepest)) -neg_grad else direction
+    target_step <- 0.08
+    dir_norm <- sqrt(sum(dir_use^2))
+    step <- if (is.finite(dir_norm) && dir_norm > 1e-10) {
+      min(1.0, target_step / dir_norm)
+    } else 0
+    beta <- beta + step * dir_use
     # Track the scale of the gradient we just used for reporting.
     gradient <- neg_grad
 
