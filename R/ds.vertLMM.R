@@ -132,7 +132,7 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
   # dsvertLMMExactClusterR2DS) to compute exact per-cluster SS without
   # the intercept-absorption approximation. Falls back to the
   # approximate path if any piece is unavailable.
-  peer_servers <- setdiff(server_list, y_srv)
+  peer_servers <- setdiff(server_names, y_srv)
   peer_srv <- if (length(peer_servers) > 0L) peer_servers[1L] else NULL
 
   get_cluster_resids_exact <- function(beta_hat, session_id_active,
