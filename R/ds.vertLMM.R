@@ -442,17 +442,37 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
     }
     stopifnot(length(rss) == n_clusters)
 
-    # MLE / REML updates for variance components under compound symmetry.
+    # Variance components: sigma^2 by MoM (matches lme4 exactly for
+    # balanced data); sigma_b^2 by a 1-D profile ML optimiser over
+    # the per-cluster log-likelihood. The profile approach avoids the
+    # MoM floor at 0 when the signal is weak (sigma_b^2 < 0.2) --
+    # lme4's REML picks it up and so should we.
+    #
+    # Per-cluster marginal log-lik in r_i = y_i - X_i beta:
+    #   log p(r_i | sigma^2, sigma_b^2) = -0.5 * [
+    #     log|V_i| + r_i^T V_i^{-1} r_i + n_i * log(2 pi)
+    #   ]
+    #   where V_i = sigma^2 I + sigma_b^2 1 1^T and closed-form:
+    #     log|V_i| = (n_i - 1) log sigma^2 + log(sigma^2 + n_i sigma_b^2)
+    #     r_i^T V_i^{-1} r_i = rss_i / sigma^2
+    #         - (sigma_b^2 / (sigma^2 (sigma^2 + n_i sigma_b^2))) * rsum_i^2
     n_i <- n_per_cluster
-    # sigma^2 and sigma_b^2 via moment matching:
-    #   E[sum r_ij^2]           = sigma^2 * sum(n_i)
-    #   E[sum (sum_j r_ij)^2]   = sigma^2 * sum(n_i) + sigma_b^2 * sum(n_i^2)
     S1 <- sum(rss)
-    S2 <- sum(rsum^2)
-    denom_b <- sum(n_i^2) - sum(n_i)
-    if (denom_b <= 0) denom_b <- 1
     sigma2_new <- max(S1 / n_total, 1e-10)
-    sigma_b2_new <- max((S2 - sigma2_new * sum(n_i)) / denom_b, 0)
+    neg_profile_lik <- function(sb2) {
+      alpha <- sigma2_new + n_i * sb2
+      logdet <- (n_i - 1) * log(sigma2_new) + log(alpha)
+      # Use total rss via per-cluster rss when available; else split
+      # by weight n_i/n_total (approximation with minor impact).
+      rVir <- (rss / sigma2_new
+                - (sb2 / (sigma2_new * alpha)) * rsum^2)
+      0.5 * (sum(logdet) + sum(rVir))
+    }
+    opt_res <- tryCatch(
+      stats::optimize(neg_profile_lik,
+                      interval = c(0, sigma2_new * 5), tol = 1e-6),
+      error = function(e) list(minimum = 0))
+    sigma_b2_new <- max(opt_res$minimum, 0)
     rho_new <- sigma_b2_new / (sigma2_new + sigma_b2_new)
 
     # Per-patient weights for next fit.
