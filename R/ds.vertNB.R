@@ -1,64 +1,101 @@
-#' @title Federated negative binomial regression (Poisson-IRLS + dispersion)
-#' @description Fit a negative binomial regression by (a) fitting the
-#'   coefficient vector \eqn{\beta} via the existing dsVert Poisson GLM
-#'   (which yields a consistent estimator under NB overdispersion), then
-#'   (b) estimating the NB dispersion \eqn{\theta} via Pearson moment
-#'   method from the converged means and variances, and (c) recomputing
-#'   the canonical NB deviance client-side using the aggregate y, mu,
-#'   and moment sums exposed by the fit.
-#'
-#' @param formula Same as ds.vertGLM for Poisson count regression.
-#' @param data,...  Same as ds.vertGLM.
-#' @param theta Optional fixed dispersion (default NULL = Pearson
-#'   estimate).
-#' @return \code{ds.vertNB} object with the Poisson-stage fit,
-#'   dispersion estimate, and an NB-corrected deviance / AIC.
-#'
-#' @details The coefficient estimates are the same as Poisson IRLS
-#'   because the score functions coincide when the link is log. The
-#'   standard errors are the NAIVE Poisson SEs; for a proper NB
-#'   covariance matrix the client needs the aggregated
-#'   \eqn{\sum \mu_i^2} + \eqn{\sum y_i^2} which this wrapper does not
-#'   currently request. Documented limitation; follow-on in Month 2.
+#' @title Federated negative binomial regression with dispersion estimate
+#' @description Fit a negative binomial GLM on vertically partitioned
+#'   DataSHIELD data. Two-stage:
+#'   \enumerate{
+#'     \item Fit \eqn{\hat\beta} via the dsVert Poisson GLM (identical
+#'           score under canonical log link so the point estimate is
+#'           the same; only the covariance differs).
+#'     \item Estimate \eqn{\hat\theta} server-side via method-of-moments
+#'           on the outcome variable: \eqn{\hat\theta = \bar y^2 /
+#'           (s_y^2 - \bar y)} when \eqn{s_y^2 > \bar y}, else
+#'           \eqn{+\infty} (Poisson limit).
+#'     \item Rescale the Poisson SE by \eqn{\sqrt{1 + \bar y / \hat\theta}}
+#'           so the reported z-stats reflect NB variance inflation.
+#'   }
+#'   \eqn{\bar y} and \eqn{s_y^2} are already-aggregated moments (via
+#'   the shipped \code{dsvertLocalMomentsDS}); no per-patient disclosure.
 #' @export
 ds.vertNB <- function(formula, data = NULL, theta = NULL,
                       verbose = TRUE, datasources = NULL, ...) {
-  if (verbose) message("[ds.vertNB] Fitting Poisson-stage (coefficient estimator)")
+  if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
+  if (verbose) message("[ds.vertNB] Stage 1: Poisson GLM point estimator")
   fit <- ds.vertGLM(formula, data = data, family = "poisson",
-                    verbose = verbose,
-                    datasources = datasources, ...)
+                    verbose = FALSE, datasources = datasources, ...)
 
-  # Poisson deviance is what ds.vertGLM returned. For NB we only
-  # currently adjust the reported deviance by subtracting the
-  # overdispersion correction term using the fit's null_deviance as a
-  # proxy for Σ y log(y/mu); a tighter correction requires a dedicated
-  # Σ y^2 aggregate call, tracked as a Month 2 follow-on.
-  theta_est <- theta
-  if (is.null(theta_est)) {
-    # Moment estimate proxy from pseudo-R^2: theta >> 1 means little
-    # overdispersion. We flag this as a placeholder rather than a
-    # proper Pearson chi^2 / (n - p) estimate.
-    theta_est <- NA_real_
+  y_var <- .ds_gee_extract_lhs(formula)
+  server_names <- names(datasources)
+  y_srv <- .ds_gee_find_server_holding(datasources, server_names,
+                                        data, y_var)
+  if (is.null(y_srv)) {
+    stop("could not locate outcome server for y='", y_var, "'",
+         call. = FALSE)
   }
 
-  out <- c(unclass(fit), list(theta = theta_est,
-                              nb_correction = "placeholder",
-                              call = match.call()))
+  moments <- tryCatch({
+    r <- DSI::datashield.aggregate(
+      datasources[which(server_names == y_srv)],
+      call("dsvertLocalMomentsDS", data_name = data, x_vars = y_var))
+    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+    r
+  }, error = function(e) {
+    stop("dsvertLocalMomentsDS failed: ", conditionMessage(e),
+         call. = FALSE)
+  })
+
+  y_mean <- as.numeric(moments$means[[y_var]])
+  y_sd <- as.numeric(moments$sds[[y_var]])
+  y_var_val <- y_sd^2
+
+  theta_est <- theta
+  if (is.null(theta_est)) {
+    if (is.finite(y_mean) && is.finite(y_var_val) &&
+        y_var_val > y_mean + 1e-10) {
+      theta_est <- y_mean^2 / (y_var_val - y_mean)
+    } else {
+      theta_est <- Inf
+    }
+  }
+
+  var_inflation <- if (is.finite(theta_est) && theta_est > 0) {
+    sqrt(1 + y_mean / theta_est)
+  } else 1
+  nb_se <- fit$std_errors * var_inflation
+  nb_z <- fit$coefficients / nb_se
+  nb_p <- 2 * stats::pnorm(-abs(nb_z))
+  nb_cov <- if (!is.null(fit$covariance)) fit$covariance * var_inflation^2 else NULL
+
+  out <- list(
+    coefficients = fit$coefficients,
+    std_errors   = nb_se,
+    z_values     = nb_z,
+    p_values     = nb_p,
+    covariance   = nb_cov,
+    theta        = theta_est,
+    y_mean       = y_mean,
+    y_var        = y_var_val,
+    var_inflation = var_inflation,
+    family       = "negbin",
+    n_obs        = fit$n_obs,
+    deviance     = fit$deviance,
+    iterations   = fit$iterations,
+    converged    = fit$converged,
+    poisson_fit  = fit,
+    call         = match.call())
   class(out) <- c("ds.vertNB", "ds.glm", "list")
   out
 }
 
 #' @export
 print.ds.vertNB <- function(x, ...) {
-  cat("dsVert negative-binomial regression (Poisson-IRLS stage)\n")
-  if (!is.na(x$theta)) {
-    cat(sprintf("  Dispersion theta = %.4f\n", x$theta))
-  } else {
-    cat("  Dispersion theta: placeholder (moment-estimate follow-on)\n")
-  }
-  # Fall through to ds.glm print for the coefficient table
-  x2 <- x
-  class(x2) <- "ds.glm"
-  print(x2)
+  cat("dsVert negative-binomial regression\n")
+  cat(sprintf("  N = %d   theta = %.4g (var inflation = %.3f)\n",
+              x$n_obs, x$theta, x$var_inflation))
+  df <- data.frame(
+    Estimate = x$coefficients,
+    SE       = x$std_errors,
+    z        = x$z_values,
+    p        = x$p_values,
+    check.names = FALSE)
+  print(round(df, 5L))
   invisible(x)
 }

@@ -73,14 +73,59 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
   # beta_mat should be roughly constant across columns.
   po_diag <- apply(beta_mat, 1, function(row) max(row) - min(row))
 
+  # ==== Proper proportional-odds fit: BLUE-pool beta across thresholds ====
+  # Under PO, every β̂_k (non-intercept) is an estimator of the SAME
+  # shared β. The best linear unbiased estimator combining the K-1
+  # estimates is the inverse-variance weighted average:
+  #   β̂_PO = (Σ_k I_k)^{-1} Σ_k I_k β̂_k
+  # where I_k = Cov(β̂_k)^{-1}. We also return a Brant-style PO test
+  # statistic: under H0 (PO), Σ_k (β̂_k - β̂_PO)^T I_k (β̂_k - β̂_PO)
+  # ~ χ²_{p(K-2)} asymptotically.
+  beta_po <- NULL; cov_po <- NULL; po_test <- list()
+  have_cov <- all(vapply(fits, function(f) !is.null(f$covariance),
+                          logical(1L)))
+  if (have_cov) {
+    p_non <- length(fits[[1]]$coefficients) - 1L
+    nm <- setdiff(names(fits[[1]]$coefficients), "(Intercept)")
+    info_stack <- lapply(fits, function(f) {
+      cov_k <- f$covariance[nm, nm, drop = FALSE]
+      tryCatch(solve(cov_k), error = function(e) NULL)
+    })
+    valid <- vapply(info_stack, Negate(is.null), logical(1L))
+    if (all(valid)) {
+      # Sum of Fisher infos
+      I_sum <- Reduce(`+`, info_stack)
+      I_beta_sum <- Reduce(`+`,
+        mapply(function(I_k, f) I_k %*% as.numeric(f$coefficients[nm]),
+               info_stack, fits, SIMPLIFY = FALSE))
+      cov_po <- solve(I_sum)
+      beta_po <- drop(cov_po %*% I_beta_sum)
+      names(beta_po) <- nm
+      # Brant test: K-2 extra freedom per predictor
+      stat <- 0
+      for (k in seq_along(fits)) {
+        d <- as.numeric(fits[[k]]$coefficients[nm]) - beta_po
+        stat <- stat + drop(t(d) %*% info_stack[[k]] %*% d)
+      }
+      df_po <- p_non * (length(fits) - 1L)
+      po_test <- list(chisq = stat, df = df_po,
+                       p_value = stats::pchisq(stat, df_po,
+                                                lower.tail = FALSE))
+    }
+  }
+
   out <- list(
     fits = fits,
     thresholds = theta_hat,
     beta = beta_mat,
+    beta_po = beta_po,
+    covariance_po = cov_po,
+    po_test = po_test,
+    std_errors_po = if (!is.null(cov_po)) sqrt(pmax(diag(cov_po), 0)) else NULL,
     levels = levels_ordered,
     proportional_odds_range = po_diag,
     n_obs = fits[[1]]$n_obs,
-    family = "ordinal (naive cumulative)",
+    family = "ordinal (PO pooled)",
     call = match.call())
   class(out) <- c("ds.vertOrdinal", "list")
   out
@@ -88,16 +133,32 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
 
 #' @export
 print.ds.vertOrdinal <- function(x, ...) {
-  cat(sprintf("dsVert ordinal logistic regression (naive, %d levels)\n",
+  cat(sprintf("dsVert ordinal logistic regression (%d levels)\n",
               length(x$levels)))
   cat(sprintf("  N = %d\n\n", x$n_obs))
+  if (!is.null(x$beta_po)) {
+    cat("Proportional-odds pooled beta (BLUE across thresholds):\n")
+    df <- data.frame(
+      Estimate = x$beta_po,
+      SE       = x$std_errors_po,
+      z        = x$beta_po / x$std_errors_po,
+      check.names = FALSE)
+    df$p <- 2 * stats::pnorm(-abs(df$z))
+    print(round(df, 5L))
+    if (length(x$po_test) > 0L) {
+      cat(sprintf("\nPO test (Brant-style): chi^2 = %.3f, df = %d, p = %.4g\n",
+                   x$po_test$chisq, x$po_test$df, x$po_test$p_value))
+      if (x$po_test$p_value < 0.05) {
+        cat("  -> PO assumption MAY be violated; check per-threshold betas.\n")
+      } else {
+        cat("  -> PO assumption looks plausible.\n")
+      }
+    }
+    cat("\n")
+  }
   cat("Threshold parameters (per-level intercepts):\n")
   print(round(x$thresholds, 4L))
-  cat("\nBeta estimates (rows = predictors, columns = threshold levels):\n")
+  cat("\nPer-threshold beta (rows = predictors, cols = thresholds):\n")
   print(round(x$beta, 4L))
-  cat("\nProportional-odds diagnostic (per-predictor range across thresholds):\n")
-  print(round(x$proportional_odds_range, 4L))
-  cat("\nSmall ranges suggest the proportional-odds assumption holds;\n")
-  cat("large ranges flag violations that would benefit from a joint fit.\n")
   invisible(x)
 }
