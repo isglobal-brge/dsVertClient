@@ -9,6 +9,7 @@ ds.vertCox(
   data = NULL,
   time_col = NULL,
   event_col = NULL,
+  tstart_col = NULL,
   strata_col = NULL,
   max_iter = 30L,
   tol = 1e-04,

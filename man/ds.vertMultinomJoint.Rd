@@ -10,6 +10,8 @@ ds.vertMultinomJoint(
   levels = NULL,
   max_iter = 30L,
   tol = 1e-04,
+  full_irls = FALSE,
+  coupling_iter = 3L,
   verbose = TRUE,
   datasources = NULL
 )
@@ -25,6 +27,18 @@ reference). If NULL, inferred from the outcome server.}
 \item{max_iter}{Outer L-BFGS iterations.}
 
 \item{tol}{Convergence tolerance on max |delta beta|.}
+
+\item{full_irls}{Logical. If FALSE (default v1), use the OVR
+warm-start as the softmax-MLE-approximation. If TRUE, after the
+OVR warm-start run a single softmax-coupled Newton step using
+client-aggregated softmax probabilities derived from the
+per-class marginal predictions. The cost is (K-1) ds.vertGLM
+gradient passes per coupling iter. A full per-iter Beaver
+coupling (exp + reciprocal + vecmul on shares) is documented
+in the function header and available as the next refinement.}
+
+\item{coupling_iter}{Number of softmax-coupling iterations when
+full_irls=TRUE (default 3).}
 
 \item{verbose}{Print progress.}
 
