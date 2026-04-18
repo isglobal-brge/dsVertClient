@@ -16,6 +16,8 @@ ds.vertCox(
   lambda = 1e-04,
   compute_loglik = TRUE,
   compute_se = FALSE,
+  num_intervals_exp = 75L,
+  num_intervals_recip = 75L,
   verbose = TRUE,
   datasources = NULL
 )

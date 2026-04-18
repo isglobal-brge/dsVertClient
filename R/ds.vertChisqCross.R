@@ -234,6 +234,14 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
 
   dealer_ci <- v2_ci   # non-party-0 acts as dealer for the Beaver triples
 
+  # PERFORMANCE NOTE: each (kk, ll) cell gets a FRESH triple (reusing
+  # a triple for two products is a security leak: the common masking
+  # value a would reveal X_k1 - X_k2 when the two (x-a) shares are
+  # compared). A proper batch optimisation generates K*L independent
+  # triples in one Go call (k2-beaver-vecmul-gen-triples supports any
+  # n, so we'd just call with n*K*L). That is a Wave-4 refinement;
+  # current K*L independent triple gens are already amortised across
+  # a single session.
   for (kk in seq_len(K)) {
     for (ll in seq_len(L)) {
       # Extract column kk on each party (into canonical beaver X slot).

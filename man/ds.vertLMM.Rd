@@ -13,6 +13,7 @@ ds.vertLMM(
   max_iter = 30L,
   inner_iter = 50L,
   tol = 1e-04,
+  exact_cross_server = TRUE,
   verbose = TRUE,
   datasources = NULL
 )
