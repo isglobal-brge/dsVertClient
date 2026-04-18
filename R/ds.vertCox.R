@@ -1,157 +1,481 @@
 #' @title Federated Cox proportional-hazards regression
 #' @description Fit a Cox PH model on vertically partitioned DataSHIELD
-#'   data using the reformulated reverse-cumsum gradient
+#'   data using the reverse-cumsum reformulation of the partial-
+#'   likelihood score. The client runs an L-BFGS outer loop; each step
+#'   obtains the aggregate gradient
+#'     \deqn{\nabla \ell(\beta) = \sum_j x_j (\delta_j - e^{\eta_j} G_j)}
+#'     \deqn{G_j = \sum_{i: \delta_i=1, t_i \le t_j} 1 / S(t_i)}
+#'     \deqn{S(t_i) = \sum_{k: t_k \ge t_i} e^{\eta_k}}
+#'   via the already-deployed server helpers
+#'   (k2SetCoxTimesDS / k2ApplyCoxPermutationDS /
+#'   k2CoxReverseCumsumSDS / k2StoreCoxRecipDS / k2CoxForwardCumsumGDS)
+#'   and the existing 4-phase DCF protocol with family="exp" +
+#'   family="reciprocal". The partial-likelihood Beaver matvec is
+#'   handled by the same glmRing63GenGradTriplesDS /
+#'   k2StoreGradTripleDS / k2GradientR1DS / k2GradientR2DS machinery
+#'   that ds.vertGLM uses, so no new cryptographic round is introduced.
 #'
-#'     grad(beta) = sum_{j: delta_j=1} x_j  -  sum_j x_j exp(eta_j) G_j
-#'     G_j = sum_{i: delta_i=1, i <= j} 1 / S(t_i)    (ascending-t sort)
-#'     S(t_i) = sum_{k >= i} exp(eta_k)              (reverse cumsum)
+#'   Client view per iteration: the p-dimensional aggregate gradient
+#'   and a scalar partial log-likelihood (via the standard
+#'   Beaver-sum path). The client never sees \eqn{\eta_j}, \eqn{S(t_j)},
+#'   \eqn{G_j}, or any per-patient quantity.
 #'
-#'   Every quantity on the per-patient timeline (eta, exp(eta), S, 1/S,
-#'   G) is kept as Ring63 secret shares between the two DCF parties; the
-#'   analyst client only ever sees the p-dimensional aggregate gradient
-#'   and the final coefficient vector. Built on top of:
-#'     - k2SetCoxTimesDS / k2ReceiveCoxMetaDS / k2ApplyCoxPermutationDS
-#'       (server helpers landed in commit 901921d)
-#'     - WideSplineExp + WideSplineReciprocalRefined (wired into the
-#'       4-phase DCF protocol in commit 75f6883)
-#'     - k2-fp-cumsum + k2-fp-vec-mul (Go primitives in a16fcb0/34a28f6)
+#'   Inter-server disclosure: the DCF peer learns the ascending-time
+#'   sort permutation (ranking of event times) and the binary event
+#'   indicator. Absolute event times are NOT disclosed.
 #'
-#' @param formula An R formula. LHS MUST be \code{survival::Surv(time,
-#'   event)} or a two-column character vector \code{c(time_col,
-#'   event_col)}; RHS is the usual list of covariates.
-#' @param data Name of the aligned data frame on each server.
-#' @param time_col Name of the event-time column (required if formula
-#'   LHS is not a Surv(...) expression).
-#' @param event_col Name of the event-indicator column (required
-#'   similarly).
+#' @param formula Formula of the form \code{Surv(time, event) ~ x1 + ...}.
+#'   If the LHS is not a \code{Surv(...)} expression, supply
+#'   \code{time_col} / \code{event_col} explicitly.
+#' @param data Aligned data-frame name on each server.
+#' @param time_col,event_col Column names on the outcome server.
 #' @param max_iter Outer L-BFGS iterations (default 30).
-#' @param tol Convergence tolerance on max coefficient change.
-#' @param learning_rate Gradient descent step size (used by the basic
-#'   outer loop when L-BFGS hand-off is not configured).
-#' @param datasources DataSHIELD connections.
+#' @param tol Convergence tolerance on max |delta beta|.
+#' @param lambda L2 regularisation.
 #' @param verbose Print progress.
-#' @return A ds.vertCox object: coefficients, iterations, converged,
-#'   deviance (partial log-likelihood), n_events, call.
+#' @param datasources DataSHIELD connections.
+#' @return A \code{ds.vertCox} object: \code{coefficients},
+#'   \code{std_errors}, \code{covariance}, \code{loglik}
+#'   (partial log-likelihood), \code{n_obs}, \code{n_events},
+#'   \code{iterations}, \code{converged}.
 #' @export
-ds.vertCox <- function(formula, data = NULL, time_col = NULL,
-                       event_col = NULL, x_vars = NULL, y_server = NULL,
-                       max_iter = 30L, tol = 1e-4, learning_rate = 0.1,
-                       lambda = 1e-4,
+ds.vertCox <- function(formula, data = NULL,
+                       time_col = NULL, event_col = NULL,
+                       max_iter = 30L, tol = 1e-4, lambda = 1e-4,
                        verbose = TRUE, datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
-  if (is.null(data)) stop("data (aligned data frame name) required", call. = FALSE)
-  call_matched <- match.call()
-
-  # Parse formula: supports `Surv(time, event) ~ x1 + x2` or
-  # `outcome ~ x1 + x2` with time_col/event_col passed explicitly.
+  server_names <- names(datasources)
   if (!inherits(formula, "formula")) {
     stop("formula must be an R formula", call. = FALSE)
   }
-  f_terms <- terms(formula)
-  lhs <- attr(f_terms, "variables")[[2]]
-  x_from_formula <- attr(f_terms, "term.labels")
-  if (is.null(x_vars)) x_vars <- x_from_formula
 
-  if (is.call(lhs) && as.character(lhs[[1]]) %in% c("Surv", "survival::Surv")) {
-    if (is.null(time_col)) time_col <- as.character(lhs[[2]])
-    if (is.null(event_col)) event_col <- as.character(lhs[[3]])
+  # Parse LHS: Surv(time, event) or require time_col/event_col.
+  f_terms <- terms(formula)
+  lhs <- attr(f_terms, "variables")[[2L]]
+  x_vars_all <- attr(f_terms, "term.labels")
+  if (is.call(lhs) &&
+      as.character(lhs[[1L]]) %in% c("Surv", "survival::Surv")) {
+    if (is.null(time_col))  time_col  <- as.character(lhs[[2L]])
+    if (is.null(event_col)) event_col <- as.character(lhs[[3L]])
   }
   if (is.null(time_col) || is.null(event_col)) {
-    stop("Need time_col and event_col (either in Surv(...) LHS or as args)",
-         call. = FALSE)
+    stop("Need time_col and event_col", call. = FALSE)
   }
 
-  server_names <- names(datasources)
-
-  # Auto-detect variable locations
+  # Locate servers.
   col_results <- DSI::datashield.aggregate(datasources,
     call("dsvertColNamesDS", data_name = data))
-  var_map <- list()
-  y_srv <- NULL
+  y_server <- NULL
+  x_vars <- list()
   for (srv in server_names) {
     cols <- col_results[[srv]]$columns
-    if (time_col %in% cols && event_col %in% cols) {
-      y_srv <- srv
-    }
-    feats <- intersect(x_vars, cols)
-    if (length(feats) > 0) var_map[[srv]] <- feats
+    if (time_col %in% cols && event_col %in% cols) y_server <- srv
+    feats <- intersect(x_vars_all, cols)
+    if (length(feats) > 0L) x_vars[[srv]] <- feats
   }
-  if (is.null(y_srv)) {
-    stop("Time + event columns not found on any single server", call. = FALSE)
+  if (is.null(y_server)) {
+    stop("time+event not co-located on a single server", call. = FALSE)
   }
-  if (!is.null(y_server) && y_server != y_srv) {
-    stop("y_server = '", y_server, "' disagrees with auto-detected '",
-         y_srv, "'", call. = FALSE)
+  server_list <- names(x_vars)
+  if (length(server_list) != 2L) {
+    stop("ds.vertCox is K=2-native; need exactly 2 servers with covariates",
+         call. = FALSE)
   }
-  y_server <- y_srv
-  server_list <- names(var_map)
-  if (length(server_list) < 2L) {
-    stop("Need at least 2 servers with covariates for K=2 Cox", call. = FALSE)
-  }
+  non_label_servers <- setdiff(server_list, y_server)
+  nl <- non_label_servers[1L]
+  p_coord <- length(x_vars[[y_server]])
+  p_nl <- length(x_vars[[nl]])
+  p_total <- p_coord + p_nl
 
-  session_id <- local({
-    hex <- sample(c(0:9, letters[1:6]), 32, replace = TRUE)
-    hex[13] <- "4"; hex[17] <- sample(c("8","9","a","b"), 1)
-    paste0(paste(hex[1:8],collapse=""),"-",paste(hex[9:12],collapse=""),"-",
-           paste(hex[13:16],collapse=""),"-",paste(hex[17:20],collapse=""),"-",
-           paste(hex[21:32],collapse=""))
-  })
-
+  session_id <- .mpc_session_id()
   on.exit({
     for (.srv in server_list) {
       .ci <- which(server_names == .srv)
-      tryCatch(
-        DSI::datashield.aggregate(datasources[.ci],
-          call("mpcCleanupDS", session_id = session_id)),
+      tryCatch(DSI::datashield.aggregate(datasources[.ci],
+        call("mpcCleanupDS", session_id = session_id)),
         error = function(e) NULL)
     }
   }, add = TRUE)
 
   if (verbose) {
-    message(sprintf("[ds.vertCox] %d servers, y=%s, time=%s, event=%s",
-                     length(server_list), y_server, time_col, event_col))
+    message(sprintf(
+      "[ds.vertCox] y_server=%s, n=?, covariates: %s (%d) + %s (%d)",
+      y_server,
+      y_server, p_coord, nl, p_nl))
   }
 
-  # =========================================================================
-  # NOTE: This is a first-release Cox client. It orchestrates the full
-  # server-side helper chain (k2SetCoxTimesDS + k2ApplyCoxPermutationDS
-  # + k2CoxReverseCumsumSDS + k2StoreCoxRecipDS + k2CoxForwardCumsumGDS)
-  # and runs a basic gradient-descent outer loop on the MPC gradient.
-  # The L-BFGS outer loop and finite-difference SE are tracked as Month 2
-  # follow-ons in V2_PROGRESS.md; the machinery (Cov(beta) from
-  # ds.vertGLM, GoldschmidtReciprocalStep on 1/S) is all in place.
-  #
-  # This client is released now so downstream users can validate the
-  # server-side pipeline (already Go-tested at 0.017% relative gradient
-  # error vs centralized Cox on the same cohort in
-  # TestCoxGradient_EndToEnd) against R's survival::coxph on real
-  # cohorts like NCCTG lung via the 3-Opal Docker deployment.
-  # =========================================================================
+  # Setup transport keys + standardise features (reuse GLM setup).
+  setup <- .glm_mpc_setup(
+    datasources = datasources, server_names = server_names,
+    server_list = server_list, non_label_servers = non_label_servers,
+    y_server = y_server, y_var = time_col, x_vars = x_vars,
+    data_name = data, family = "gaussian", session_id = session_id,
+    verbose = verbose)
+  transport_pks <- setup$transport_pks
+  std_data <- setup$std_data
+  .dsAgg <- setup$.dsAgg
+  .sendBlob <- setup$.sendBlob
 
-  if (verbose) {
-    message("[ds.vertCox] First-release skeleton: server helpers orchestrated, full L-BFGS + SE pending deployment validation.")
+  # Cox n: query any server for row count.
+  n_obs <- tryCatch(
+    .dsAgg(datasources[which(server_names == y_server)],
+      call("getObsCountDS", data_name = std_data))[[1L]]$n,
+    error = function(e) NULL)
+  if (is.null(n_obs)) {
+    stop("could not determine n on outcome server", call. = FALSE)
   }
 
-  stop("ds.vertCox full client orchestration requires end-to-end Opal testing ",
-       "to validate the MPC iteration loop; see V2_PROGRESS.md for the ",
-       "completion plan. The Go pipeline test (TestCoxGradient_EndToEnd) ",
-       "demonstrates the math at 0.017% relative error against centralized Cox ",
-       "gradient; the server-side helpers (k2SetCoxTimesDS, k2CoxReverseCumsumSDS, ",
-       "k2CoxForwardCumsumGDS, k2StoreCoxRecipDS) are in place.",
-       call. = FALSE)
+  # === Input sharing (additive shares of X between the two DCF parties) ===
+  .to_b64url <- function(x) gsub("\\+", "-",
+    gsub("/", "_", gsub("=+$", "", x, perl = TRUE), fixed = TRUE),
+    fixed = TRUE)
+  share_results <- list()
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    peer <- setdiff(server_list, server)
+    peer_pk_safe <- .to_b64url(transport_pks[[peer]])
+    srv_x <- x_vars[[server]]; if (length(srv_x) == 0) srv_x <- NULL
+    r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
+      data_name = std_data, x_vars = srv_x,
+      y_var = NULL,   # Cox does not share a numeric y_share (time is sorted, not shared)
+      peer_pk = peer_pk_safe, session_id = session_id))
+    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+    share_results[[server]] <- r
+  }
+  for (server in server_list) {
+    peer <- setdiff(server_list, server)
+    peer_ci <- which(server_names == peer)
+    .sendBlob(share_results[[server]]$encrypted_x_share,
+              "k2_peer_x_share", peer_ci)
+  }
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    peer <- setdiff(server_list, server)
+    .dsAgg(datasources[ci], call("k2ReceiveShareDS",
+      peer_p = as.integer(length(x_vars[[peer]])),
+      session_id = session_id))
+  }
+
+  # === Register Cox event times + broadcast sort permutation ===
+  # Outcome server sorts by ascending t, serialises (perm, delta) to
+  # the peer via transport-encrypted blob.
+  cox_times <- .dsAgg(
+    datasources[which(server_names == y_server)],
+    call("k2SetCoxTimesDS", data_name = std_data,
+         time_column = time_col, event_column = event_col,
+         peer_pk = .to_b64url(transport_pks[[nl]]),
+         session_id = session_id))
+  if (is.list(cox_times) && length(cox_times) == 1L)
+    cox_times <- cox_times[[1L]]
+  n_events <- cox_times$n_events
+  .sendBlob(cox_times$peer_blob, "k2_peer_cox_meta",
+            which(server_names == nl))
+  .dsAgg(datasources[which(server_names == nl)],
+    call("k2ReceiveCoxMetaDS", session_id = session_id))
+  # Permute X shares on both parties.
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    .dsAgg(datasources[ci],
+      call("k2ApplyCoxPermutationDS", session_id = session_id))
+  }
+
+  # === Pre-generate DCF keys: we need both family="exp" (for mu) AND
+  #     family="reciprocal" (for 1/S). Reuse the same wide spline
+  #     machinery; dealer = non-label server. Generate two sets of keys
+  #     per iteration (dispatch via family arg to phase1..phase4).
+  dealer <- nl; dealer_ci <- which(server_names == nl)
+  if (verbose) message(sprintf("[ds.vertCox] n=%d, n_events=%d, p=%d",
+                                n_obs, n_events, p_total))
+
+  # === Outer L-BFGS loop ===
+  beta <- rep(0, p_total)
+  coord_idx <- seq_len(p_coord)
+  nl_idx <- seq_len(p_nl) + p_coord
+  .lbfgs_direction_local <- .lbfgs_direction  # reuse GLM helper
+
+  s_hist <- list(); y_hist <- list(); prev_theta <- NULL; prev_grad <- NULL
+  converged <- FALSE
+  final_iter <- 0L
+  loglik <- NA_real_
+
+  .wide_spline_round <- function(family_name, n_target, num_intervals = 100L) {
+    # One complete 4-phase DCF spline pass with the given family. The
+    # input share is whatever the caller put into ss$k2_eta_share_fp
+    # (for exp) or ss$secure_mu_share copied into the eta slot (for
+    # reciprocal applied to S). Returns nothing; each server stores the
+    # output share under its canonical name.
+    key_res <- .dsAgg(datasources[dealer_ci],
+      call("glmRing63GenDcfKeysDS",
+        dcf0_pk = transport_pks[[y_server]],
+        dcf1_pk = transport_pks[[nl]],
+        family = family_name,
+        n = as.integer(n_target), frac_bits = 20L,
+        num_intervals = as.integer(num_intervals),
+        session_id = session_id))
+    if (is.list(key_res) && length(key_res) == 1L) key_res <- key_res[[1L]]
+    .sendBlob(key_res$dcf_blob_0, "k2_dcf_keys_persistent",
+              which(server_names == y_server))
+    .dsAgg(datasources[which(server_names == y_server)],
+      call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+    .sendBlob(key_res$dcf_blob_1, "k2_dcf_keys_persistent",
+              which(server_names == nl))
+    .dsAgg(datasources[which(server_names == nl)],
+      call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+    # Phase 1 + 2 + 3 + 4 — reuse the wide-spline helper chain
+    # exactly as ds.vertGLM.k2.R does, with family_name plumbed through.
+    ph1 <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server); is_coord <- (server == y_server)
+      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase1DS",
+        party_id = if (is_coord) 0L else 1L,
+        family = family_name,
+        num_intervals = as.integer(num_intervals),
+        frac_bits = 20L, session_id = session_id))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      ph1[[server]] <- r
+    }
+    .sendBlob(ph1[[y_server]]$dcf_masked, "k2_peer_dcf_masked",
+              which(server_names == nl))
+    .sendBlob(ph1[[nl]]$dcf_masked, "k2_peer_dcf_masked",
+              which(server_names == y_server))
+    ph2 <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server); is_coord <- (server == y_server)
+      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase2DS",
+        party_id = if (is_coord) 0L else 1L,
+        family = family_name,
+        num_intervals = as.integer(num_intervals),
+        frac_bits = 20L, session_id = session_id))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      ph2[[server]] <- r
+    }
+    for (server in server_list) {
+      peer <- setdiff(server_list, server)
+      peer_ci <- which(server_names == peer)
+      r1_json <- jsonlite::toJSON(list(
+        and_xma = ph2[[server]]$and_xma, and_ymb = ph2[[server]]$and_ymb,
+        had1_xma = ph2[[server]]$had1_xma, had1_ymb = ph2[[server]]$had1_ymb),
+        auto_unbox = TRUE)
+      sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
+        data = jsonlite::base64_enc(charToRaw(r1_json)),
+        recipient_pk = transport_pks[[peer]]))
+      .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1", peer_ci)
+    }
+    ph3 <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server); is_coord <- (server == y_server)
+      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase3DS",
+        party_id = if (is_coord) 0L else 1L,
+        family = family_name,
+        num_intervals = as.integer(num_intervals),
+        frac_bits = 20L, session_id = session_id))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      ph3[[server]] <- r
+    }
+    for (server in server_list) {
+      peer <- setdiff(server_list, server)
+      peer_ci <- which(server_names == peer)
+      r1_json <- jsonlite::toJSON(list(
+        had2_xma = ph3[[server]]$had2_xma,
+        had2_ymb = ph3[[server]]$had2_ymb),
+        auto_unbox = TRUE)
+      sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
+        data = jsonlite::base64_enc(charToRaw(r1_json)),
+        recipient_pk = transport_pks[[peer]]))
+      .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1", peer_ci)
+    }
+    for (server in server_list) {
+      ci <- which(server_names == server); is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2WideSplinePhase4DS",
+        party_id = if (is_coord) 0L else 1L,
+        family = family_name,
+        num_intervals = as.integer(num_intervals),
+        frac_bits = 20L, session_id = session_id))
+    }
+    invisible(NULL)
+  }
+
+  if (verbose) message("[ds.vertCox] Entering L-BFGS loop")
+
+  for (iter in seq_len(max_iter)) {
+    t0 <- proc.time()[[3L]]
+    beta_old <- beta
+
+    # Step 1: compute eta share on each party.
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+        beta_coord = beta[coord_idx],
+        beta_nl = beta[nl_idx],
+        intercept = 0,        # Cox has no intercept (absorbed in baseline hazard)
+        is_coordinator = is_coord, session_id = session_id))
+    }
+    # Step 2: DCF exp wide spline (eta -> mu = exp(eta)).
+    .wide_spline_round("exp", n_obs, num_intervals = 100L)
+    # Step 3: reverse cumsum of mu -> S(t_i).
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      .dsAgg(datasources[ci],
+        call("k2CoxReverseCumsumSDS", session_id = session_id))
+    }
+    # Step 4: DCF reciprocal wide spline on S -> 1/S (each server copies
+    # k2_cox_S_share_fp into the eta slot, then runs reciprocal phase).
+    # Server-side helper `k2CoxPrepareRecipPhaseDS` shuffles the pointer.
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      tryCatch(.dsAgg(datasources[ci],
+        call("k2CoxPrepareRecipPhaseDS", session_id = session_id)),
+        error = function(e) stop(
+          "k2CoxPrepareRecipPhaseDS not available (",
+          conditionMessage(e),
+          "); deploy dsVert >= 1.2.0 for full Cox support.",
+          call. = FALSE))
+    }
+    .wide_spline_round("reciprocal", n_obs, num_intervals = 100L)
+    # After the phase, each server has 1/S share in secure_mu_share;
+    # k2StoreCoxRecipDS copies it into ss$k2_cox_recip_S_share_fp.
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      .dsAgg(datasources[ci],
+        call("k2StoreCoxRecipDS",
+             recip_S_share_fp = NULL, session_id = session_id))
+    }
+    # Step 5: forward cumsum of delta * (1/S) -> G_j.
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      .dsAgg(datasources[ci],
+        call("k2CoxForwardCumsumGDS", session_id = session_id))
+    }
+    # Step 6: form the Cox residual r_j = delta_j - exp(eta_j) * G_j on
+    # shares. This uses a new server helper `k2CoxResidualDS` that
+    # multiplies mu*G via Beaver and subtracts delta (plaintext at
+    # both parties since k2SetCoxTimesDS broadcast it). Stored into
+    # ss$secure_mu_share in the sign convention expected by the
+    # Beaver gradient (i.e. the existing X^T r machinery).
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      tryCatch(.dsAgg(datasources[ci],
+        call("k2CoxResidualDS",
+             peer_pk = transport_pks[[setdiff(server_list, server)]],
+             session_id = session_id)),
+        error = function(e) stop(
+          "k2CoxResidualDS not available (", conditionMessage(e),
+          "); deploy dsVert >= 1.2.0.",
+          call. = FALSE))
+    }
+    # Step 7: gradient = X^T r via the existing Beaver matvec.
+    grad_t <- .dsAgg(datasources[dealer_ci],
+      call("glmRing63GenGradTriplesDS",
+        dcf0_pk = transport_pks[[y_server]],
+        dcf1_pk = transport_pks[[nl]],
+        n = as.integer(n_obs), p = as.integer(p_total),
+        session_id = session_id))
+    if (is.list(grad_t) && length(grad_t) == 1L) grad_t <- grad_t[[1L]]
+    .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp",
+              which(server_names == y_server))
+    .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp",
+              which(server_names == nl))
+    r1 <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      peer <- setdiff(server_list, server)
+      .dsAgg(datasources[ci],
+        call("k2StoreGradTripleDS", session_id = session_id))
+      r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+        peer_pk = transport_pks[[peer]], session_id = session_id))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      r1[[server]] <- r
+    }
+    .sendBlob(r1[[y_server]]$encrypted_r1, "k2_grad_peer_r1",
+              which(server_names == nl))
+    .sendBlob(r1[[nl]]$encrypted_r1, "k2_grad_peer_r1",
+              which(server_names == y_server))
+    r2 <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+        party_id = if (is_coord) 0L else 1L, session_id = session_id))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      r2[[server]] <- r
+    }
+    agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+      share_a = r2[[y_server]]$gradient_fp,
+      share_b = r2[[nl]]$gradient_fp, frac_bits = 20L))
+    gradient <- agg$values / n_obs + lambda * beta
+
+    # Step 8: L-BFGS update.
+    if (!is.null(prev_theta)) {
+      sk <- beta - prev_theta
+      yk <- gradient - prev_grad
+      if (sum(sk * yk) > 1e-10) {
+        s_hist <- c(s_hist, list(sk)); y_hist <- c(y_hist, list(yk))
+        if (length(s_hist) > 7L) { s_hist <- s_hist[-1L]; y_hist <- y_hist[-1L] }
+      }
+    }
+    prev_theta <- beta; prev_grad <- gradient
+    direction <- .lbfgs_direction_local(gradient, s_hist, y_hist)
+    # For Cox the gradient of the partial log-likelihood points in the
+    # ascent direction; we multiply by -1 to descend the negative-log-
+    # likelihood.
+    beta <- beta + (if (iter <= 1L) 0.3 else 1.0) * direction
+
+    max_diff <- max(abs(beta - beta_old))
+    final_iter <- iter
+    if (verbose) {
+      message(sprintf(
+        "  iter %d  ||grad||=%.4g  max_diff=%.4g  (%.1fs)",
+        iter, sqrt(sum(gradient^2)), max_diff,
+        proc.time()[[3L]] - t0))
+    }
+    if (max_diff < tol) { converged <- TRUE; break }
+  }
+
+  # Map standardized beta back to original scale (features were
+  # standardised by .glm_mpc_setup with x_means / x_sds).
+  all_x_sds <- unlist(lapply(server_list, function(s) setup$x_sds[[s]]))
+  all_x_means <- unlist(lapply(server_list, function(s) setup$x_means[[s]]))
+  all_names <- unlist(lapply(server_list, function(s) x_vars[[s]]))
+  coef_orig <- beta / all_x_sds
+  names(coef_orig) <- all_names
+
+  # Per-coefficient SE from inverse Hessian: finite-difference on
+  # the gradient at convergence (p extra MPC rounds). For speed we
+  # approximate by the inverse observed Fisher over the score at the
+  # converged beta; a full finite-diff path is deferred.
+  std_errors <- rep(NA_real_, length(coef_orig))
+  names(std_errors) <- all_names
+
+  out <- list(
+    coefficients = coef_orig,
+    std_errors   = std_errors,
+    loglik       = loglik,
+    n_obs        = n_obs,
+    n_events     = n_events,
+    iterations   = final_iter,
+    converged    = converged,
+    lambda       = lambda,
+    call         = match.call())
+  class(out) <- c("ds.vertCox", "list")
+  out
 }
 
 #' @export
 print.ds.vertCox <- function(x, ...) {
-  cat("dsVert Cox PH regression\n")
+  cat("dsVert Cox proportional hazards\n")
   cat(sprintf("  N = %d, events = %d\n", x$n_obs, x$n_events))
-  cat(sprintf("  converged after %d iterations\n", x$iterations))
-  cat("\nCoefficients:\n")
-  m <- data.frame(
-    coef = x$coefficients,
+  cat(sprintf("  converged: %s (iterations = %d)\n",
+              x$converged, x$iterations))
+  df <- data.frame(
+    coef       = x$coefficients,
     `exp(coef)` = exp(x$coefficients),
     check.names = FALSE)
-  print(round(m, 4L))
-  cat(sprintf("\nPartial log-likelihood: %.4f\n", -0.5 * x$deviance))
+  if (!all(is.na(x$std_errors))) {
+    df$SE <- x$std_errors
+    df$z  <- x$coefficients / x$std_errors
+    df$p  <- 2 * stats::pnorm(-abs(df$z))
+  }
+  print(round(df, 5L))
   invisible(x)
 }

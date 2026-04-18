@@ -2,44 +2,72 @@
 % Please edit documentation in R/ds.vertLMM.R
 \name{ds.vertLMM}
 \alias{ds.vertLMM}
-\title{Federated linear mixed model (random intercepts, skeleton)}
+\title{Federated linear mixed model with a single random intercept}
 \usage{
 ds.vertLMM(
   formula,
   data = NULL,
   cluster_col,
   reml = TRUE,
-  max_iter = 100L,
-  tol = 1e-05,
+  max_iter = 30L,
+  inner_iter = 50L,
+  tol = 1e-04,
   verbose = TRUE,
   datasources = NULL
 )
 }
+\arguments{
+\item{formula}{Fixed-effects formula.}
+
+\item{data}{Aligned data-frame name.}
+
+\item{cluster_col}{Column holding the cluster id (must be on the
+outcome server).}
+
+\item{reml}{Use REML (default TRUE) vs ML.}
+
+\item{max_iter}{Outer variance-component iterations (default 30).}
+
+\item{inner_iter}{Inner \code{ds.vertGLM} iteration budget.}
+
+\item{tol}{Outer tolerance on \eqn{\rho} change.}
+
+\item{verbose}{Print progress.}
+
+\item{datasources}{DataSHIELD connection object.}
+}
+\value{
+A \code{ds.vertLMM} object with components
+\code{coefficients}, \code{covariance}, \code{std_errors},
+\code{sigma2} (residual variance), \code{sigma_b2} (random-effect
+variance), \code{icc}, \code{n_clusters}, \code{converged},
+\code{iterations}, \code{fit} (final inner \code{ds.glm}).
+}
 \description{
-Placeholder for the block-diagonal-Woodbury LMM with
-random intercepts in vertically partitioned DataSHIELD. Math:
+Fit a random-intercept linear mixed model
+\eqn{y_{ij} = x_{ij}^T \beta + b_i + \varepsilon_{ij}} on vertically
+partitioned DataSHIELD data, where the cluster indicator \code{id}
+lives on the outcome server. The REML log-likelihood profile is
+expressed in terms of a single variance ratio
+\eqn{\rho = \sigma_b^2 / (\sigma^2 + n_i\sigma_b^2)} so the outer
+optimiser is one-dimensional. Each outer step calls
+\code{\link{ds.vertGLM}} with per-patient weights derived from the
+current \eqn{\rho}, reusing the already-deployed
+\code{ds.vertGLM(weights=)} infrastructure.
 
-\if{html}{\out{<div class="sourceCode">}}\preformatted{y_\{ij\} = x_\{ij\}^T beta + b_i + eps_\{ij\}
-V_i = sigma^2 I + sigma_b^2 J
-V_i^\{-1\} = (1/sigma^2) [I - rho_i * 1 1^T],  rho_i = sigma_b^2 / (sigma^2 + n_i sigma_b^2)
-log |V_i| = (n_i - 1) log sigma^2 + log(sigma^2 + n_i sigma_b^2)
-}\if{html}{\out{</div>}}
+Derivation (Laird-Ware compact form):
+\deqn{V_i = \sigma^2 I + \sigma_b^2 \mathbf{1} \mathbf{1}^T}
+\deqn{V_i^{-1} = \frac{1}{\sigma^2}\left(I - \rho_i \mathbf{1}\mathbf{1}^T\right)}
+\deqn{\log|V_i| = (n_i - 1) \log \sigma^2 + \log(\sigma^2 + n_i\sigma_b^2)}
 
-All per-cluster sums of r_ij and r_ij^2 can be computed via Beaver
-on secret shares, keeping the client view to scalar variance
-components and p-aggregate gradients.
+Both summands are one-dimensional functions of \eqn{\rho} that the
+client evaluates on centralised aggregates (sum of \eqn{n_i \rho_i}
+and sum of \eqn{\log(\sigma^2 + n_i \sigma_b^2)}); per-cluster
+residual sums \eqn{\sum_{ij} r_{ij}} are returned by the outcome
+server as a single aggregate vector (one scalar per cluster) under
+the already-documented cluster-ID inter-server leakage tier.
 
-Requires:
-- Cluster-ID column broadcast between DCF parties (same tier of
-inter-server leakage as Cox permutation; documented in the
-disclosure table).
-- Existing WideSplineLog + WideSplineReciprocalRefined for
-log |V_i| and variance ratios (both wired into the 4-phase DCF
-protocol, commits 75f6883 + 3102b2e).
-- A joint outer optimiser for beta + (sigma^2, sigma_b^2);
-REML-style profiled likelihood or direct ML.
-
-This file reserves the signature and exports so downstream callers
-can discover the API; full implementation is scheduled for Month 3
-(see V2_PROGRESS.md).
+Inter-server disclosure: the DCF peer learns the cluster
+membership (same class as Cox event-time ordering). Absolute
+cluster sizes are revealed; individual observations are not.
 }

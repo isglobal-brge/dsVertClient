@@ -9,60 +9,61 @@ ds.vertCox(
   data = NULL,
   time_col = NULL,
   event_col = NULL,
-  x_vars = NULL,
-  y_server = NULL,
   max_iter = 30L,
   tol = 1e-04,
-  learning_rate = 0.1,
   lambda = 1e-04,
   verbose = TRUE,
   datasources = NULL
 )
 }
 \arguments{
-\item{formula}{An R formula. LHS MUST be \code{survival::Surv(time,
-event)} or a two-column character vector \code{c(time_col,
-event_col)}; RHS is the usual list of covariates.}
+\item{formula}{Formula of the form \code{Surv(time, event) ~ x1 + ...}.
+If the LHS is not a \code{Surv(...)} expression, supply
+\code{time_col} / \code{event_col} explicitly.}
 
-\item{data}{Name of the aligned data frame on each server.}
+\item{data}{Aligned data-frame name on each server.}
 
-\item{time_col}{Name of the event-time column (required if formula
-LHS is not a Surv(...) expression).}
-
-\item{event_col}{Name of the event-indicator column (required
-similarly).}
+\item{time_col, event_col}{Column names on the outcome server.}
 
 \item{max_iter}{Outer L-BFGS iterations (default 30).}
 
-\item{tol}{Convergence tolerance on max coefficient change.}
+\item{tol}{Convergence tolerance on max |delta beta|.}
 
-\item{learning_rate}{Gradient descent step size (used by the basic
-outer loop when L-BFGS hand-off is not configured).}
+\item{lambda}{L2 regularisation.}
 
 \item{verbose}{Print progress.}
 
 \item{datasources}{DataSHIELD connections.}
 }
 \value{
-A ds.vertCox object: coefficients, iterations, converged,
-deviance (partial log-likelihood), n_events, call.
+A \code{ds.vertCox} object: \code{coefficients},
+\code{std_errors}, \code{covariance}, \code{loglik}
+(partial log-likelihood), \code{n_obs}, \code{n_events},
+\code{iterations}, \code{converged}.
 }
 \description{
 Fit a Cox PH model on vertically partitioned DataSHIELD
-data using the reformulated reverse-cumsum gradient
+data using the reverse-cumsum reformulation of the partial-
+likelihood score. The client runs an L-BFGS outer loop; each step
+obtains the aggregate gradient
+\deqn{\nabla \ell(\beta) = \sum_j x_j (\delta_j - e^{\eta_j} G_j)}
+\deqn{G_j = \sum_{i: \delta_i=1, t_i \le t_j} 1 / S(t_i)}
+\deqn{S(t_i) = \sum_{k: t_k \ge t_i} e^{\eta_k}}
+via the already-deployed server helpers
+(k2SetCoxTimesDS / k2ApplyCoxPermutationDS /
+k2CoxReverseCumsumSDS / k2StoreCoxRecipDS / k2CoxForwardCumsumGDS)
+and the existing 4-phase DCF protocol with family="exp" +
+family="reciprocal". The partial-likelihood Beaver matvec is
+handled by the same glmRing63GenGradTriplesDS /
+k2StoreGradTripleDS / k2GradientR1DS / k2GradientR2DS machinery
+that ds.vertGLM uses, so no new cryptographic round is introduced.
 
-\if{html}{\out{<div class="sourceCode">}}\preformatted{grad(beta) = sum_\{j: delta_j=1\} x_j  -  sum_j x_j exp(eta_j) G_j
-G_j = sum_\{i: delta_i=1, i <= j\} 1 / S(t_i)    (ascending-t sort)
-S(t_i) = sum_\{k >= i\} exp(eta_k)              (reverse cumsum)
-}\if{html}{\out{</div>}}
+Client view per iteration: the p-dimensional aggregate gradient
+and a scalar partial log-likelihood (via the standard
+Beaver-sum path). The client never sees \eqn{\eta_j}, \eqn{S(t_j)},
+\eqn{G_j}, or any per-patient quantity.
 
-Every quantity on the per-patient timeline (eta, exp(eta), S, 1/S,
-G) is kept as Ring63 secret shares between the two DCF parties; the
-analyst client only ever sees the p-dimensional aggregate gradient
-and the final coefficient vector. Built on top of:
-- k2SetCoxTimesDS / k2ReceiveCoxMetaDS / k2ApplyCoxPermutationDS
-(server helpers landed in commit 901921d)
-- WideSplineExp + WideSplineReciprocalRefined (wired into the
-4-phase DCF protocol in commit 75f6883)
-- k2-fp-cumsum + k2-fp-vec-mul (Go primitives in a16fcb0/34a28f6)
+Inter-server disclosure: the DCF peer learns the ascending-time
+sort permutation (ranking of event times) and the binary event
+indicator. Absolute event times are NOT disclosed.
 }

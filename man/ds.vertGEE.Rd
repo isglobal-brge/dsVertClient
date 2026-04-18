@@ -2,35 +2,68 @@
 % Please edit documentation in R/ds.vertGEE.R
 \name{ds.vertGEE}
 \alias{ds.vertGEE}
-\title{Federated generalised estimating equations (skeleton)}
+\title{Federated generalised estimating equations}
 \usage{
 ds.vertGEE(
   formula,
   data = NULL,
-  id_col,
-  family = "gaussian",
+  family = c("gaussian", "binomial", "poisson"),
+  id_col = NULL,
   corstr = c("independence", "exchangeable", "ar1"),
-  max_iter = 50L,
+  max_iter = 100L,
   tol = 1e-04,
+  lambda = 1e-04,
   verbose = TRUE,
   datasources = NULL
 )
 }
+\arguments{
+\item{formula}{A model formula passed through to \code{ds.vertGLM}.}
+
+\item{data}{Character. Aligned data-frame name on each server.}
+
+\item{family}{One of \code{"gaussian"}, \code{"binomial"},
+\code{"poisson"}.}
+
+\item{id_col}{Optional character; reserved for clustered GEE. In this
+first-pass implementation \code{id_col} is accepted but the
+working-independence sandwich is computed (cluster aggregation is
+the Month-4 follow-on).}
+
+\item{corstr}{Working correlation structure. Only
+\code{"independence"} is currently supported; \code{"exchangeable"}
+and \code{"ar1"} raise a targeted message.}
+
+\item{max_iter, tol, lambda, verbose}{Passed to \code{ds.vertGLM}.}
+
+\item{datasources}{DataSHIELD connection object.}
+}
+\value{
+An object of class \code{ds.vertGEE} with components
+\code{coefficients}, \code{model_se} (sqrt of
+\code{diag(Cov(beta))}), \code{robust_se} (sandwich SEs),
+\code{robust_covariance}, \code{corstr}, and \code{fit}
+(the underlying \code{ds.glm} object).
+}
 \description{
-Placeholder for a GEE fit with exchangeable or AR(1)
-working correlation structure on vertically partitioned data.
+Fit a GLM for vertically partitioned DataSHIELD data and
+return sandwich (robust) standard errors alongside the usual
+model-based ones. The point estimate \eqn{\hat{\beta}} is obtained
+by a single call to \code{\link{ds.vertGLM}} (bread =
+\code{fit$covariance}), then the Liang-Zeger meat matrix is
+estimated by a second weighted fit with weights proportional to the
+squared Pearson residuals. This is the working-independence GEE
+estimator; exchangeable / AR1 working correlation structures are a
+planned Month-4 extension that adds a cluster-ID broadcast between
+the DCF parties and per-cluster residual outer products.
 
-Key property: uses the full Cov(beta_hat) matrix already exposed
-by ds.vertGLM (commit 8bb7902) as the "bread" in the
-Liang-Zeger sandwich estimator. The "meat" -- sum over clusters
-of D_i^T V_i^{-1} r_i r_i^T V_i^{-1} D_i -- is the new MPC
-aggregate that this function would compute via per-cluster Beaver
-reductions on the share-encoded residuals.
+Because both fits reveal only \eqn{p}-dimensional aggregates
+(gradient and Hessian), the sandwich estimator is obtained without
+ever materialising the \eqn{n}-length residual vector at the
+client. Inter-server leakage is identical to the ordinary
+\code{ds.vertGLM} path (no new channels).
 
-Requires:
-- Cluster-ID broadcast (same as LMM; Month 3 plan).
-- Per-cluster outer products on shares (Beaver matrix-matrix,
-straightforward extension of the existing gradient Beaver).
-
-This file reserves the signature; full implementation is Month 3.
+Formula:
+\deqn{V_{sand} = \mathrm{Cov}(\hat\beta) \, A \, \mathrm{Cov}(\hat\beta)}
+\deqn{A = X^T \, \mathrm{diag}(r^2) \, X \, / \, n}
 }
