@@ -14,6 +14,8 @@ ds.vertGLM(
   tol = 1e-04,
   lambda = 1e-04,
   log_n = 12,
+  offset = NULL,
+  weights = NULL,
   verbose = TRUE,
   datasources = NULL,
   eta_privacy = "auto",
