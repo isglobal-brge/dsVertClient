@@ -328,13 +328,144 @@ ds.vertCox <- function(formula, data = NULL,
     invisible(NULL)
   }
 
+  # One full Cox-score round-trip at an arbitrary beta. Returns the
+  # aggregate p-vector "neg_grad" (sign-flipped so descent on -ell
+  # matches the L-BFGS contract). Side-effect: leaves the session with
+  # mu/G/residual shares ready for subsequent re-use.
+  .cox_score_round <- function(beta_in) {
+    # Step 1: eta share.
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+        beta_coord = beta_in[coord_idx],
+        beta_nl = beta_in[nl_idx],
+        intercept = 0, is_coordinator = is_coord,
+        session_id = session_id))
+    }
+    .wide_spline_round("exp", n_obs, num_intervals = 100L)
+    for (server in server_list) {
+      .dsAgg(datasources[which(server_names == server)],
+        call("k2CoxSaveMuDS", session_id = session_id))
+    }
+    for (server in server_list) {
+      .dsAgg(datasources[which(server_names == server)],
+        call("k2CoxReverseCumsumSDS", session_id = session_id))
+    }
+    for (server in server_list) {
+      .dsAgg(datasources[which(server_names == server)],
+        call("k2CoxPrepareRecipPhaseDS", session_id = session_id))
+    }
+    .wide_spline_round("reciprocal", n_obs, num_intervals = 100L)
+    for (server in server_list) {
+      .dsAgg(datasources[which(server_names == server)],
+        call("k2StoreCoxRecipDS", recip_S_share_fp = NULL,
+             session_id = session_id))
+    }
+    for (server in server_list) {
+      .dsAgg(datasources[which(server_names == server)],
+        call("k2CoxForwardCumsumGDS", session_id = session_id))
+    }
+    # Beaver vecmul mu*G.
+    tri <- .dsAgg(datasources[dealer_ci],
+      call("k2BeaverVecmulGenTriplesDS",
+           dcf0_pk = transport_pks[[y_server]],
+           dcf1_pk = transport_pks[[nl]],
+           n = as.integer(n_obs),
+           session_id = session_id, frac_bits = 20L))
+    if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
+    .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple",
+              which(server_names == y_server))
+    .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple",
+              which(server_names == nl))
+    for (server in server_list) {
+      .dsAgg(datasources[which(server_names == server)],
+        call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+    }
+    r1_b <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      peer <- setdiff(server_list, server)
+      r <- .dsAgg(datasources[ci], call("k2BeaverVecmulR1DS",
+        peer_pk = transport_pks[[peer]],
+        x_key = "k2_cox_mu_share_fp",
+        y_key = "k2_cox_G_share_fp",
+        n = as.integer(n_obs),
+        session_id = session_id, frac_bits = 20L))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      r1_b[[server]] <- r
+    }
+    .sendBlob(r1_b[[y_server]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+              which(server_names == nl))
+    .sendBlob(r1_b[[nl]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+              which(server_names == y_server))
+    for (server in server_list) {
+      .dsAgg(datasources[which(server_names == server)],
+        call("k2BeaverVecmulR2DS",
+             is_party0 = (server == y_server),
+             x_key = "k2_cox_mu_share_fp",
+             y_key = "k2_cox_G_share_fp",
+             output_key = "k2_cox_mu_g_share_fp",
+             n = as.integer(n_obs),
+             session_id = session_id, frac_bits = 20L))
+    }
+    for (server in server_list) {
+      .dsAgg(datasources[which(server_names == server)],
+        call("k2CoxFinaliseResidualDS",
+             is_party0 = (server == y_server),
+             session_id = session_id, frac_bits = 20L))
+    }
+    grad_t <- .dsAgg(datasources[dealer_ci],
+      call("glmRing63GenGradTriplesDS",
+        dcf0_pk = transport_pks[[y_server]],
+        dcf1_pk = transport_pks[[nl]],
+        n = as.integer(n_obs), p = as.integer(p_total),
+        session_id = session_id))
+    if (is.list(grad_t) && length(grad_t) == 1L) grad_t <- grad_t[[1L]]
+    .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp",
+              which(server_names == y_server))
+    .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp",
+              which(server_names == nl))
+    r1 <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      peer <- setdiff(server_list, server)
+      .dsAgg(datasources[ci],
+        call("k2StoreGradTripleDS", session_id = session_id))
+      r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+        peer_pk = transport_pks[[peer]], session_id = session_id))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      r1[[server]] <- r
+    }
+    .sendBlob(r1[[y_server]]$encrypted_r1, "k2_grad_peer_r1",
+              which(server_names == nl))
+    .sendBlob(r1[[nl]]$encrypted_r1, "k2_grad_peer_r1",
+              which(server_names == y_server))
+    r2 <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+        party_id = if (is_coord) 0L else 1L, session_id = session_id))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      r2[[server]] <- r
+    }
+    agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+      share_a = r2[[y_server]]$gradient_fp,
+      share_b = r2[[nl]]$gradient_fp, frac_bits = 20L))
+    # Negative-log-partial-likelihood gradient + L2 ridge.
+    as.numeric(-(agg$values) / n_obs + lambda * beta_in)
+  }
+
   if (verbose) message("[ds.vertCox] Entering L-BFGS loop")
 
   for (iter in seq_len(max_iter)) {
     t0 <- proc.time()[[3L]]
     beta_old <- beta
+    neg_grad <- .cox_score_round(beta)
 
-    # Step 1: compute eta share on each party.
+    # Step 1 DEAD CODE (kept as no-op after refactor): eta share.
+    if (FALSE) {
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
@@ -488,11 +619,8 @@ ds.vertCox <- function(formula, data = NULL,
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = r2[[y_server]]$gradient_fp,
       share_b = r2[[nl]]$gradient_fp, frac_bits = 20L))
-    # The partial-likelihood score we just computed is the ASCENT
-    # direction; to run a standard (descent-style) L-BFGS on the
-    # negative log-partial-likelihood we flip its sign here. The L2
-    # ridge contribution is +lambda * beta for the negative objective.
-    neg_grad <- -(agg$values) / n_obs + lambda * beta
+    }   # close if (FALSE) wrapping the legacy iter body
+    # neg_grad already populated by .cox_score_round above.
 
     # Step 8: L-BFGS update (on the NEGATIVE log-partial-likelihood).
     if (!is.null(prev_theta)) {
@@ -569,6 +697,44 @@ ds.vertCox <- function(formula, data = NULL,
       message("[ds.vertCox] partial log-lik unavailable: ",
               conditionMessage(e))
     })
+  }
+
+  # ==== Finite-diff Hessian for SE ====
+  # With the .cox_score_round() closure exposed above, a proper p-round
+  # forward-difference on the converged beta yields the full Hessian.
+  # Each coordinate perturbation costs one Beaver-gradient iteration
+  # (~= one outer-loop iter on Opal); client cost stays p-vector aggs.
+  skip_legacy_se <- FALSE
+  if (isTRUE(compute_se) && converged) {
+    p_total_std <- length(beta)
+    h <- 0.01
+    grad_center <- neg_grad   # last gradient at converged beta (standardised scale)
+    H_std <- matrix(0, p_total_std, p_total_std,
+                     dimnames = list(all_names, all_names))
+    for (k in seq_len(p_total_std)) {
+      if (verbose) {
+        message(sprintf("[ds.vertCox] SE column %d/%d",
+                         k, p_total_std))
+      }
+      beta_p <- beta; beta_p[k] <- beta_p[k] + h
+      grad_p <- tryCatch(.cox_score_round(beta_p),
+                          error = function(e) NULL)
+      if (!is.null(grad_p)) {
+        H_std[, k] <- (grad_p - grad_center) / h
+      }
+    }
+    H_std <- (H_std + t(H_std)) / 2  # symmetrise
+    cov_std <- tryCatch(solve(H_std), error = function(e) {
+      solve(H_std + 1e-6 * diag(p_total_std))
+    })
+    # Destandardize: beta_orig = beta_std / x_sd  (no intercept in Cox).
+    sd_diag <- diag(1 / all_x_sds)
+    dimnames(sd_diag) <- list(all_names, all_names)
+    covariance <- sd_diag %*% cov_std %*% sd_diag
+    dimnames(covariance) <- list(all_names, all_names)
+    std_errors <- sqrt(pmax(diag(covariance), 0))
+    names(std_errors) <- all_names
+    skip_legacy_se <- TRUE
   }
 
   # ==== SE via diagonal observed-Fisher (p additional MPC gradients) ====
