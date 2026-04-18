@@ -235,6 +235,16 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
     if (is.null(peer_srv)) {
       return(NULL)  # single-server case falls back to approximate path
     }
+    # CRITICAL: use actual row count on outcome server, not
+    # sum(n_per_cluster) which may be smaller due to privacy
+    # suppression of small clusters. All Beaver ops need n_actual.
+    n_actual <- tryCatch({
+      r <- DSI::datashield.aggregate(datasources[which(server_names == y_srv)],
+        call("getObsCountDS", data_name = data))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      as.integer(r$n_obs)
+    }, error = function(e) NULL)
+    if (is.null(n_actual) || n_actual <= 0) return(NULL)
     # Reuse the already-live session (ds.vertGLM ran with fit-time session
     # but cleaned up; we open a fresh one for the exact pipeline).
     sess <- .mpc_session_id()
@@ -294,7 +304,9 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
     }, error = function(e) NULL)
     fin_ok <- tryCatch({
       DSI::datashield.aggregate(datasources[peer_ci],
-        call("dsvertLMMPeerResidualFinaliseDS", session_id = sess))
+        call("dsvertLMMPeerResidualFinaliseDS",
+             n = as.integer(n_actual),
+             session_id = sess))
       TRUE
     }, error = function(e) { message("[LMM exact] peer finalise: ",
       conditionMessage(e)); FALSE })
@@ -333,7 +345,7 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
     tri <- DSI::datashield.aggregate(datasources[peer_ci],
       call("k2BeaverVecmulGenTriplesDS",
            dcf0_pk = pks[[y_srv]], dcf1_pk = pks[[peer_srv]],
-           n = as.integer(n_total),
+           n = as.integer(n_actual),
            session_id = sess, frac_bits = 20L))
     if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
     DSI::datashield.aggregate(datasources[y_srv_ci],
@@ -350,13 +362,13 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
            peer_pk = pks[[peer_srv]],
            x_key = "k2_lmm_exact_r_share",
            y_key = "k2_lmm_exact_r_share",
-           n = as.integer(n_total), session_id = sess, frac_bits = 20L))
+           n = as.integer(n_actual), session_id = sess, frac_bits = 20L))
     r1b <- DSI::datashield.aggregate(datasources[peer_ci],
       call("k2BeaverVecmulR1DS",
            peer_pk = pks[[y_srv]],
            x_key = "k2_lmm_exact_r_share",
            y_key = "k2_lmm_exact_r_share",
-           n = as.integer(n_total), session_id = sess, frac_bits = 20L))
+           n = as.integer(n_actual), session_id = sess, frac_bits = 20L))
     if (is.list(r1a) && length(r1a) == 1L) r1a <- r1a[[1L]]
     if (is.list(r1b) && length(r1b) == 1L) r1b <- r1b[[1L]]
     DSI::datashield.aggregate(datasources[peer_ci],
@@ -373,7 +385,7 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
              x_key = "k2_lmm_exact_r_share",
              y_key = "k2_lmm_exact_r_share",
              output_key = "k2_lmm_exact_r2_share",
-             n = as.integer(n_total), session_id = sess,
+             n = as.integer(n_actual), session_id = sess,
              frac_bits = 20L))
     }
     # 7. Global sum r^2 (both parties) -> aggregate.
