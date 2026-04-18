@@ -102,23 +102,26 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
   # margins (oh1$row_margins, oh2$row_margins). This gives only the
   # marginal chi-square under independence, not the full joint test,
   # and emits a targeted warning.
+  # Beaver joint cells via K*L element-wise products over shared
+  # indicator vectors. For each (k, l):
+  #   1. var1_srv extracts column k of its one-hot matrix into a
+  #      per-patient FP share (and shares n-length zeros to the peer).
+  #   2. var2_srv does the symmetric thing with column l.
+  #   3. After the usual input-sharing preamble, both parties hold
+  #      shares of X_k and Y_l; we run the already-shipped 4-step
+  #      Beaver vecmul (GenTriples / Consume / R1 / R2) to obtain
+  #      shares of (X_k .* Y_l); the client sums the two shares of
+  #      sum_i (X_k Y_l)_i to get n_{kl}. No per-patient indicator
+  #      ever leaves the owning server.
   counts <- tryCatch({
-    res <- DSI::datashield.aggregate(
-      datasources[which(server_names == var1_srv)],
-      call("k2CrossOneHotCountsDS",
-           var1 = var1, var2 = var2,
-           peer_name = var2_srv,
-           peer_pk = pks[[var2_srv]],
-           session_id = session_id))
-    if (is.list(res) && length(res) == 1L) res <- res[[1]]
-    matrix(res$counts, nrow = length(oh1$levels),
-           ncol = length(oh2$levels),
-           dimnames = list(oh1$levels, oh2$levels))
+    .dsvert_chisq_bilinear_counts(
+      datasources, server_names,
+      var1_srv, var2_srv, var1, var2,
+      oh1, oh2, pks, session_id, verbose)
   }, error = function(e) {
-    warning("k2CrossOneHotCountsDS unavailable (", conditionMessage(e),
-            "); falling back to margin-based chi-square under the ",
-            "independence null. Deploy dsVert >= 1.2.0 for the Beaver ",
-            "joint cells.", call. = FALSE)
+    warning("Beaver bilinear path failed (", conditionMessage(e),
+            "); falling back to margin-based expected cells under ",
+            "the independence null.", call. = FALSE)
     outer(oh1$row_margins, oh2$row_margins) / max(oh1$n, 1L)
   })
 
@@ -158,6 +161,167 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
     method        = "Cross-server chi-square (Ring63 Beaver cross-products)")
   class(out) <- c("ds.vertChisq", "list")
   out
+}
+
+#' @keywords internal
+.dsvert_chisq_bilinear_counts <- function(datasources, server_names,
+                                           var1_srv, var2_srv,
+                                           var1, var2, oh1, oh2, pks,
+                                           session_id, verbose = FALSE) {
+  # Helpers.
+  v1_ci <- which(server_names == var1_srv)
+  v2_ci <- which(server_names == var2_srv)
+  K <- length(oh1$levels); L <- length(oh2$levels); n <- oh1$n
+  if (oh1$n != oh2$n) {
+    stop("one-hot vectors have mismatched length (", oh1$n, " vs ",
+         oh2$n, "); rerun PSI alignment", call. = FALSE)
+  }
+  sendBlob <- function(blob, key, conn_idx) {
+    DSI::datashield.aggregate(datasources[conn_idx],
+      call("mpcStoreBlobDS", key = key, chunk = blob,
+           session_id = session_id))
+  }
+
+  # Step A: mutually share the full one-hot matrices between the two
+  # servers. Each party splits its plaintext matrix into (own_share,
+  # peer_share), keeps own_share overwriting the session slot, and
+  # sends peer_share sealed to the other server.
+  var1_src <- paste0("k2_onehot_", var1, "_fp")
+  var2_src <- paste0("k2_onehot_", var2, "_fp")
+  var1_peer <- paste0("k2_onehot_peer_", var1, "_fp")
+  var2_peer <- paste0("k2_onehot_peer_", var2, "_fp")
+
+  share1 <- DSI::datashield.aggregate(datasources[v1_ci],
+    call("k2BeaverShareVectorDS",
+         source_key = var1_src,
+         peer_pk = pks[[var2_srv]],
+         session_id = session_id))
+  if (is.list(share1) && length(share1) == 1L) share1 <- share1[[1L]]
+  sendBlob(share1$peer_blob, paste0("bshr_", var1), v2_ci)
+  DSI::datashield.aggregate(datasources[v2_ci],
+    call("k2BeaverReceiveVectorDS",
+         blob_key = paste0("bshr_", var1),
+         output_key = var1_peer,
+         session_id = session_id))
+
+  share2 <- DSI::datashield.aggregate(datasources[v2_ci],
+    call("k2BeaverShareVectorDS",
+         source_key = var2_src,
+         peer_pk = pks[[var1_srv]],
+         session_id = session_id))
+  if (is.list(share2) && length(share2) == 1L) share2 <- share2[[1L]]
+  sendBlob(share2$peer_blob, paste0("bshr_", var2), v1_ci)
+  DSI::datashield.aggregate(datasources[v1_ci],
+    call("k2BeaverReceiveVectorDS",
+         blob_key = paste0("bshr_", var2),
+         output_key = var2_peer,
+         session_id = session_id))
+
+  # After this step:
+  #   var1_srv session holds SHARE of both var1 (in var1_src) and
+  #     SHARE of var2 (in var2_peer).
+  #   var2_srv session holds SHARE of var1 (in var1_peer) and SHARE of
+  #     var2 (in var2_src).
+  #
+  # For the Beaver vecmul we need (X, Y) each as shares on BOTH
+  # parties. Convention: party 0 = var1_srv.
+  #   on var1_srv:  X_share = column k of var1_src; Y_share = col l of var2_peer
+  #   on var2_srv:  X_share = column k of var1_peer; Y_share = col l of var2_src
+  # (Both pairs sum to the true X_k, Y_l.)
+
+  counts <- matrix(0, nrow = K, ncol = L,
+                    dimnames = list(oh1$levels, oh2$levels))
+
+  dealer_ci <- v2_ci   # non-party-0 acts as dealer for the Beaver triples
+
+  for (kk in seq_len(K)) {
+    for (ll in seq_len(L)) {
+      # Extract column kk on each party (into canonical beaver X slot).
+      DSI::datashield.aggregate(datasources[v1_ci],
+        call("k2BeaverExtractColumnDS",
+             source_key = var1_src, n = as.integer(n), K = as.integer(K),
+             col_index = as.integer(kk), output_key = "k2_beaver_x",
+             session_id = session_id))
+      DSI::datashield.aggregate(datasources[v2_ci],
+        call("k2BeaverExtractColumnDS",
+             source_key = var1_peer, n = as.integer(n), K = as.integer(K),
+             col_index = as.integer(kk), output_key = "k2_beaver_x",
+             session_id = session_id))
+      # Extract column ll on each party (into canonical beaver Y slot).
+      DSI::datashield.aggregate(datasources[v1_ci],
+        call("k2BeaverExtractColumnDS",
+             source_key = var2_peer, n = as.integer(n), K = as.integer(L),
+             col_index = as.integer(ll), output_key = "k2_beaver_y",
+             session_id = session_id))
+      DSI::datashield.aggregate(datasources[v2_ci],
+        call("k2BeaverExtractColumnDS",
+             source_key = var2_src, n = as.integer(n), K = as.integer(L),
+             col_index = as.integer(ll), output_key = "k2_beaver_y",
+             session_id = session_id))
+      # Beaver vecmul: dealer -> consume -> r1 (relay) -> r2.
+      tri <- DSI::datashield.aggregate(datasources[dealer_ci],
+        call("k2BeaverVecmulGenTriplesDS",
+             dcf0_pk = pks[[var1_srv]], dcf1_pk = pks[[var2_srv]],
+             n = as.integer(n),
+             session_id = session_id, frac_bits = 20L))
+      if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
+      sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple", v1_ci)
+      sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple", v2_ci)
+      DSI::datashield.aggregate(datasources[v1_ci],
+        call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+      DSI::datashield.aggregate(datasources[v2_ci],
+        call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+      r1a <- DSI::datashield.aggregate(datasources[v1_ci],
+        call("k2BeaverVecmulR1DS",
+             peer_pk = pks[[var2_srv]],
+             x_key = "k2_beaver_x", y_key = "k2_beaver_y",
+             n = as.integer(n),
+             session_id = session_id, frac_bits = 20L))
+      r1b <- DSI::datashield.aggregate(datasources[v2_ci],
+        call("k2BeaverVecmulR1DS",
+             peer_pk = pks[[var1_srv]],
+             x_key = "k2_beaver_x", y_key = "k2_beaver_y",
+             n = as.integer(n),
+             session_id = session_id, frac_bits = 20L))
+      if (is.list(r1a) && length(r1a) == 1L) r1a <- r1a[[1L]]
+      if (is.list(r1b) && length(r1b) == 1L) r1b <- r1b[[1L]]
+      sendBlob(r1a$peer_blob, "k2_beaver_vecmul_peer_masked", v2_ci)
+      sendBlob(r1b$peer_blob, "k2_beaver_vecmul_peer_masked", v1_ci)
+      DSI::datashield.aggregate(datasources[v1_ci],
+        call("k2BeaverVecmulR2DS",
+             is_party0 = TRUE,
+             x_key = "k2_beaver_x", y_key = "k2_beaver_y",
+             output_key = "k2_beaver_z", n = as.integer(n),
+             session_id = session_id, frac_bits = 20L))
+      DSI::datashield.aggregate(datasources[v2_ci],
+        call("k2BeaverVecmulR2DS",
+             is_party0 = FALSE,
+             x_key = "k2_beaver_x", y_key = "k2_beaver_y",
+             output_key = "k2_beaver_z", n = as.integer(n),
+             session_id = session_id, frac_bits = 20L))
+      # Sum shares per party -> aggregate.
+      s1 <- DSI::datashield.aggregate(datasources[v1_ci],
+        call("k2BeaverSumShareDS", source_key = "k2_beaver_z",
+             session_id = session_id, frac_bits = 20L))
+      s2 <- DSI::datashield.aggregate(datasources[v2_ci],
+        call("k2BeaverSumShareDS", source_key = "k2_beaver_z",
+             session_id = session_id, frac_bits = 20L))
+      if (is.list(s1) && length(s1) == 1L) s1 <- s1[[1L]]
+      if (is.list(s2) && length(s2) == 1L) s2 <- s2[[1L]]
+      # Aggregate the two scalar FP shares client-side via the existing
+      # k2-ring63-aggregate op (which is exactly sum-shares-and-decode).
+      agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+        share_a = s1$sum_share_fp, share_b = s2$sum_share_fp,
+        frac_bits = 20L))
+      cell <- as.integer(round(as.numeric(agg$values[1L])))
+      counts[kk, ll] <- max(0L, cell)
+      if (isTRUE(verbose)) {
+        message(sprintf("  n[%s,%s] = %d",
+                         oh1$levels[kk], oh2$levels[ll], counts[kk, ll]))
+      }
+    }
+  }
+  counts
 }
 
 #' @keywords internal

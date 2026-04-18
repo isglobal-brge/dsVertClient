@@ -9,9 +9,12 @@ ds.vertCox(
   data = NULL,
   time_col = NULL,
   event_col = NULL,
+  strata_col = NULL,
   max_iter = 30L,
   tol = 1e-04,
   lambda = 1e-04,
+  compute_loglik = TRUE,
+  compute_se = FALSE,
   verbose = TRUE,
   datasources = NULL
 )
