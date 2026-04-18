@@ -436,10 +436,8 @@ ds.vertCox <- function(formula, data = NULL,
               which(server_names == y_server))
     .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple",
               which(server_names == nl))
-    for (server in server_list) {
-      .dsAgg(datasources[which(server_names == server)],
-        call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
-    }
+    .dsAgg(datasources[all_ci],
+      call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
     r1_b <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
@@ -485,11 +483,12 @@ ds.vertCox <- function(formula, data = NULL,
     .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp",
               which(server_names == nl))
     r1 <- list()
+    # Batch the symmetric k2StoreGradTripleDS (no per-party args).
+    .dsAgg(datasources[all_ci],
+      call("k2StoreGradTripleDS", session_id = session_id))
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      .dsAgg(datasources[ci],
-        call("k2StoreGradTripleDS", session_id = session_id))
       r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
         peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
@@ -651,11 +650,12 @@ ds.vertCox <- function(formula, data = NULL,
     .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp",
               which(server_names == nl))
     r1 <- list()
+    # Batch the symmetric k2StoreGradTripleDS (no per-party args).
+    .dsAgg(datasources[all_ci],
+      call("k2StoreGradTripleDS", session_id = session_id))
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      .dsAgg(datasources[ci],
-        call("k2StoreGradTripleDS", session_id = session_id))
       r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
         peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
