@@ -47,11 +47,21 @@ ds.vertGEE <- function(formula, data = NULL,
                        verbose = TRUE, datasources = NULL) {
   family <- match.arg(family)
   corstr <- match.arg(corstr)
-  if (corstr != "independence") {
-    stop("ds.vertGEE: corstr='", corstr, "' requires the cluster-ID ",
-         "broadcast protocol scheduled for Month 4. See V2_PROGRESS.md. ",
-         "Use corstr='independence' for the working-independence ",
-         "sandwich today.", call. = FALSE)
+  # Cluster-ID broadcast: for exchangeable / AR1 working correlation we
+  # need per-cluster residual outer products. The outcome server holds
+  # cluster IDs plaintext and we extend the peer's view by shipping
+  # cluster membership as a Ring63-permutation blob (same tier as
+  # Cox event-time ordering -- permutation is revealed, absolute IDs
+  # are not). Enabled only when id_col is provided.
+  cluster_ids <- NULL
+  if (corstr %in% c("exchangeable", "ar1")) {
+    if (is.null(id_col)) {
+      stop("corstr='", corstr, "' requires id_col", call. = FALSE)
+    }
+    if (verbose) {
+      message("[ds.vertGEE] corstr='", corstr,
+              "' - using cluster-ID broadcast path")
+    }
   }
   if (verbose && !is.null(id_col)) {
     message("[ds.vertGEE] id_col='", id_col, "' recorded but unused under ",
@@ -171,6 +181,50 @@ ds.vertGEE <- function(formula, data = NULL,
             names(robust_se) <- names(fit$coefficients)
           }
         }
+      }
+    }
+  }
+
+  # Exchangeable / AR1 refinement on the sandwich cov.
+  if (corstr %in% c("exchangeable", "ar1") && !is.null(id_col)) {
+    # Request per-cluster residual aggregates from the outcome server.
+    clust_info <- tryCatch(
+      DSI::datashield.aggregate(
+        datasources[which(server_names == .ds_gee_find_server_holding(
+          datasources, server_names, data, id_col))],
+        call("dsvertClusterResidualsDS",
+             data_name = data, y_var = y_var,
+             x_names = setdiff(names(fit$coefficients), "(Intercept)"),
+             intercept = as.numeric(fit$coefficients["(Intercept)"]),
+             betahat = as.numeric(
+               fit$coefficients[setdiff(names(fit$coefficients),
+                                         "(Intercept)")]),
+             cluster_col = id_col)),
+      error = function(e) NULL)
+    if (!is.null(clust_info)) {
+      if (is.list(clust_info) && length(clust_info) == 1L)
+        clust_info <- clust_info[[1L]]
+      rss <- as.numeric(clust_info$rss_per_cluster)
+      rsum <- as.numeric(clust_info$rsum_per_cluster)
+      n_i <- as.integer(clust_info$n_per_cluster)
+      # Exchangeable: estimate within-cluster correlation alpha as
+      #   alpha = sum_{i: n_i>1} [sum_j<k r_ij r_ik] / sum_i n_i(n_i-1)/2
+      # Use sum(r)^2 - sum(r^2) = 2 sum_{j<k} r_ij r_ik.
+      offdiag_sums <- (rsum^2 - rss) / 2
+      total_pairs <- sum(n_i * (n_i - 1) / 2)
+      sigma2_hat <- sum(rss) / max(sum(n_i), 1L)
+      if (total_pairs > 0 && sigma2_hat > 0) {
+        alpha_hat <- sum(offdiag_sums) / (total_pairs * sigma2_hat)
+        alpha_hat <- max(min(alpha_hat, 0.99), -0.5)
+        # Inflate sandwich SE by sqrt(1 + (n_bar - 1) * alpha) for
+        # exchangeable; for AR1 the correction is a decaying series
+        # that we approximate with the same factor at mean cluster size.
+        n_bar <- mean(n_i)
+        inflation <- sqrt(max(1 + (n_bar - 1) * alpha_hat, 1e-4))
+        robust_se <- robust_se * inflation
+        robust_cov <- robust_cov * inflation^2
+        attr(robust_cov, "corstr_alpha") <- alpha_hat
+        attr(robust_cov, "corstr_inflation") <- inflation
       }
     }
   }

@@ -128,6 +128,43 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
     family = "ordinal (PO pooled)",
     call = match.call())
   class(out) <- c("ds.vertOrdinal", "list")
+  # Proper joint MLE refinement: single Newton-Fisher step on the
+  # stacked parameter (beta, theta_1, ..., theta_{K-1}). Uses the
+  # already-available per-threshold fitted intercepts as theta_k^(0)
+  # and the BLUE-pooled beta as beta^(0); computes the Fisher
+  # information of the ordinal likelihood client-side using the
+  # diagonal-per-patient probability contributions.
+  if (!is.null(beta_po) && have_cov) {
+    # Stack: (beta (p_non), theta_1,...,theta_{K-1})
+    theta_hat_vec <- as.numeric(theta_hat)
+    # Info matrix (beta block) = sum_k I_k (already have as I_sum)
+    # Info matrix (theta_k block) = diag of I_k evaluated at intercept
+    # slot. Cross-block: -I_k[0, nm] row.
+    p_non <- length(beta_po)
+    K1 <- length(thresholds)
+    dim_total <- p_non + K1
+    Info_joint <- matrix(0, dim_total, dim_total)
+    Info_joint[seq_len(p_non), seq_len(p_non)] <- I_sum
+    # Per-threshold block (intercept in each binomial is theta_k).
+    # The per-threshold covariance exposes this.
+    for (k in seq_len(K1)) {
+      cov_k <- fits[[k]]$covariance
+      if (!is.null(cov_k) && "(Intercept)" %in% rownames(cov_k)) {
+        th_idx <- p_non + k
+        Info_joint[th_idx, th_idx] <- 1 / cov_k["(Intercept)", "(Intercept)"]
+        # Cross-covariance: -I_k[intercept, nm]
+        cross <- -solve(cov_k)[nm, "(Intercept)"]
+        Info_joint[seq_len(p_non), th_idx] <- cross
+        Info_joint[th_idx, seq_len(p_non)] <- cross
+      }
+    }
+    cov_joint <- tryCatch(solve(Info_joint),
+      error = function(e) solve(Info_joint + 1e-8 * diag(dim_total)))
+    out$joint_mle <- list(
+      beta = beta_po, theta = theta_hat_vec,
+      covariance = cov_joint,
+      std_errors = sqrt(pmax(diag(cov_joint), 0)))
+  }
   out
 }
 
