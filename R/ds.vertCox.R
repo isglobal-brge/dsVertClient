@@ -294,11 +294,11 @@ ds.vertCox <- function(formula, data = NULL,
       if (is.list(key_res) && length(key_res) == 1L) key_res <- key_res[[1L]]
       .sendBlob(key_res$dcf_blob_0, "k2_dcf_keys_persistent",
                 which(server_names == y_server))
-      .dsAgg(datasources[which(server_names == y_server)],
-        call("k2StoreDcfKeysPersistentDS", session_id = session_id))
       .sendBlob(key_res$dcf_blob_1, "k2_dcf_keys_persistent",
                 which(server_names == nl))
-      .dsAgg(datasources[which(server_names == nl)],
+      # Batch the StoreDcfKeys call on both parties — no per-party args.
+      .dsAgg(datasources[c(which(server_names == y_server),
+                            which(server_names == nl))],
         call("k2StoreDcfKeysPersistentDS", session_id = session_id))
       # Cache the family so iter 2+ skip key gen.
       dcf_keys_cached[[cache_key]] <<- TRUE
