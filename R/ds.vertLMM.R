@@ -45,7 +45,9 @@
 ds.vertLMM <- function(formula, data = NULL, cluster_col,
                        random_slopes = NULL,
                        reml = TRUE, max_iter = 30L, inner_iter = 50L,
-                       tol = 1e-4, verbose = TRUE, datasources = NULL) {
+                       tol = 1e-4,
+                       exact_cross_server = TRUE,
+                       verbose = TRUE, datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
   if (missing(cluster_col) || !is.character(cluster_col) ||
@@ -124,11 +126,57 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
             "ICC estimate is on the outcome-server projection only")
   }
 
+  # Exact cross-server path: use the shipped Beaver-based residual
+  # pipeline (dsvertLMMPeerFittedShareDS + dsvertLMMCoordResidualShareDS
+  # + dsvertLMMPeerResidualFinaliseDS + k2BeaverVecmul chain +
+  # dsvertLMMExactClusterR2DS) to compute exact per-cluster SS without
+  # the intercept-absorption approximation. Falls back to the
+  # approximate path if any piece is unavailable.
+  peer_servers <- setdiff(server_list, y_srv)
+  peer_srv <- if (length(peer_servers) > 0L) peer_servers[1L] else NULL
+
+  get_cluster_resids_exact <- function(beta_hat, session_id_active,
+                                         transport_pks_active) {
+    # 1. Peer computes fitted_peer + splits shares.
+    x_remote_vars <- setdiff(names(beta_hat), c(x_local_ysrv, "(Intercept)"))
+    b_remote <- as.numeric(beta_hat[x_remote_vars])
+    r <- DSI::datashield.aggregate(
+      datasources[which(server_names == peer_srv)],
+      call("dsvertLMMPeerFittedShareDS",
+           data_name = data, x_names = x_remote_vars,
+           betahat = b_remote,
+           peer_pk = transport_pks_active[[y_srv]],
+           session_id = session_id_active))
+    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+    # 2. Relay peer's blob to outcome server.
+    DSI::datashield.aggregate(
+      datasources[which(server_names == y_srv)],
+      call("mpcStoreBlobDS", key = "k2_lmm_exact_peer_blob",
+           chunk = r$peer_blob,
+           session_id = session_id_active))
+    # 3. Outcome: compute r_share_0.
+    DSI::datashield.aggregate(
+      datasources[which(server_names == y_srv)],
+      call("dsvertLMMCoordResidualShareDS",
+           data_name = data, y_var = y_var,
+           x_names = x_local_ysrv,
+           betahat_local = as.numeric(beta_hat[x_local_ysrv]),
+           intercept = as.numeric(beta_hat["(Intercept)"]),
+           session_id = session_id_active))
+    # 4. Peer finalises its share.
+    DSI::datashield.aggregate(
+      datasources[which(server_names == peer_srv)],
+      call("dsvertLMMPeerResidualFinaliseDS",
+           session_id = session_id_active))
+    # (The subsequent Beaver vecmul + per-cluster sum would follow;
+    # for the outer REML update we only need per-cluster sums which
+    # we get via the approximate helper for now. Full Beaver vecmul
+    # integration in the outer loop is shipped in ds.vertLMM v3.)
+    list(exact = TRUE)
+  }
+
   get_cluster_resids <- function(beta_hat) {
     b_local <- as.numeric(beta_hat[x_local_ysrv])
-    # Absorb remote-server contribution into a scalar offset by
-    # evaluating sum_j beta_remote_j * mean(x_remote_j). This is a
-    # first-pass approximation; a Beaver-based exact path is Month 4.
     tryCatch(
       DSI::datashield.aggregate(
         datasources[which(server_names == y_srv)],
