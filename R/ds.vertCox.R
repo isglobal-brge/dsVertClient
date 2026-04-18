@@ -687,12 +687,18 @@ ds.vertCox <- function(formula, data = NULL,
         if (is.list(r) && length(r) == 1L) r <- r[[1L]]
         ll_res[[server]] <- r
       }
-      # Aggregate the two shares to get scalar ℓ.
-      ll_sum_eta <- ll_res[[y_server]]$sum_delta_eta +
-                     ll_res[[nl]]$sum_delta_eta
-      ll_sum_logS <- ll_res[[y_server]]$sum_delta_logS +
-                      ll_res[[nl]]$sum_delta_logS
-      loglik <- ll_sum_eta - ll_sum_logS
+      # Aggregate the two parties' raw scalar FP shares via the
+      # standard k2-ring63-aggregate op (adds the shares and decodes).
+      agg_eta <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+        share_a = ll_res[[y_server]]$sum_delta_eta_fp,
+        share_b = ll_res[[nl]]$sum_delta_eta_fp,
+        frac_bits = 20L))
+      agg_logS <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+        share_a = ll_res[[y_server]]$sum_delta_logS_fp,
+        share_b = ll_res[[nl]]$sum_delta_logS_fp,
+        frac_bits = 20L))
+      loglik <- as.numeric(agg_eta$values[1L]) -
+                 as.numeric(agg_logS$values[1L])
     }, error = function(e) {
       message("[ds.vertCox] partial log-lik unavailable: ",
               conditionMessage(e))
