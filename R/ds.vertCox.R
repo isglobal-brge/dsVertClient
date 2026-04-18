@@ -178,6 +178,7 @@ ds.vertCox <- function(formula, data = NULL,
     datasources[which(server_names == y_server)],
     call("k2SetCoxTimesDS", data_name = data,
          time_column = time_col, event_column = event_col,
+         strata_column = strata_col,
          peer_pk = transport_pks[[nl]],
          session_id = session_id))
   if (is.list(cox_times) && length(cox_times) == 1L)
