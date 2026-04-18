@@ -692,14 +692,14 @@ ds.vertCox <- function(formula, data = NULL,
     prev_theta <- beta; prev_grad <- neg_grad
     direction <- .lbfgs_direction_local(neg_grad, s_hist, y_hist)
     # Step-length schedule tuned for Cox MLE on small-n cohorts.
-    # Iter 1 (empty history -> steepest descent): modest 0.3 step to
-    # avoid overshoot with an un-normalised score.
-    # Iter >=2 (curvature pairs available): full unit L-BFGS step,
-    # self-scaled by the rho / gamma in .lbfgs_direction. Unit step
-    # is what Nocedal-Wright Alg 7.5 assumes; the earlier 0.5 cap
-    # was masking the L-BFGS self-scaling and slowed convergence by
-    # ~2x on Opal.
-    step <- if (length(s_hist) == 0L) 0.3 else 1.0
+    # Cox partial-likelihood overshoots badly with aggressive
+    # unit L-BFGS steps on n ~ 100 cohorts; keep the 0.3 -> 0.5
+    # conservative schedule that was empirically validated to
+    # produce monotone ||grad|| decay on Pima (0.21 -> 0.04 over
+    # 5 iters). The "unit step is L-BFGS's self-scale" argument
+    # works well for well-conditioned problems but the Cox Fisher
+    # info is ill-scaled until the first 2 curvature pairs stabilise.
+    step <- if (length(s_hist) == 0L) 0.3 else 0.5
     beta <- beta + step * direction
     # Track the scale of the gradient we just used for reporting.
     gradient <- neg_grad
