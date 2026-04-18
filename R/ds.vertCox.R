@@ -691,15 +691,23 @@ ds.vertCox <- function(formula, data = NULL,
     }
     prev_theta <- beta; prev_grad <- neg_grad
     direction <- .lbfgs_direction_local(neg_grad, s_hist, y_hist)
-    # Step-length schedule tuned for Cox MLE on small-n cohorts.
-    # Cox partial-likelihood overshoots badly with aggressive
-    # unit L-BFGS steps on n ~ 100 cohorts; keep the 0.3 -> 0.5
-    # conservative schedule that was empirically validated to
-    # produce monotone ||grad|| decay on Pima (0.21 -> 0.04 over
-    # 5 iters). The "unit step is L-BFGS's self-scale" argument
-    # works well for well-conditioned problems but the Cox Fisher
-    # info is ill-scaled until the first 2 curvature pairs stabilise.
-    step <- if (length(s_hist) == 0L) 0.3 else 0.5
+    # Cox per-iteration step: the Beaver gradient is (sum of scores)/n
+    # so the effective step on the RAW score is step * n. With n=132,
+    # a step of 0.5 corresponds to 66 on the raw score -- far too
+    # aggressive, while step=0.01 (raw step ~1.3) is healthy.
+    # We use an ADAPTIVE step driven by the gradient norm from the
+    # previous iteration so the update magnitude is kept constant in
+    # coefficient space regardless of n or gradient scale. This is
+    # equivalent to a trust-region radius in coefficient space.
+    target_step <- 0.1   # target max |delta beta| per iter
+    dir_norm <- sqrt(sum(direction^2))
+    if (!is.finite(dir_norm) || dir_norm < 1e-10) {
+      step <- 0
+    } else {
+      step <- min(1.0, target_step / dir_norm)
+      # First iter (no history): use steepest-descent scaled down.
+      if (length(s_hist) == 0L) step <- min(step, 0.3)
+    }
     beta <- beta + step * direction
     # Track the scale of the gradient we just used for reporting.
     gradient <- neg_grad
