@@ -19,6 +19,7 @@ ds.vertGLM(
   verbose = TRUE,
   datasources = NULL,
   eta_privacy = "auto",
+  keep_session = FALSE,
   data_name = NULL,
   y_var = NULL
 )

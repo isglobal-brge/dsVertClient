@@ -109,6 +109,16 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        offset = NULL, weights = NULL,
                        verbose = TRUE, datasources = NULL,
                        eta_privacy = "auto",
+                       # Keep the MPC session alive on the servers after
+                       # the fit returns. Exposes fit$session_id and
+                       # fit$transport_pks + fit$server_list so follow-on
+                       # helpers (e.g. ds.vertLMM's cluster-residual pass,
+                       # ds.vertGEE's sandwich meat) can reuse the
+                       # already-aligned shares without re-running PSI +
+                       # transport-keys + standardisation. Caller is
+                       # responsible for eventually calling
+                       # mpcCleanupDS(session_id) on every server.
+                       keep_session = FALSE,
                        # Legacy positional args for backward compatibility
                        data_name = NULL, y_var = NULL) {
   call_matched <- match.call()
@@ -338,17 +348,21 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   # Guaranteed cleanup on exit (even if error occurs mid-protocol).
   # Uses DSI::datashield.aggregate directly (not .dsAgg) so cleanup works
   # even if .glm_mpc_setup() fails before returning the closure.
+  # Skipped when keep_session = TRUE so follow-on helpers can reuse the
+  # MPC session (caller assumes cleanup responsibility).
   on.exit({
-    for (.srv in server_list) {
-      .ci <- which(server_names == .srv)
-      tryCatch(
-        DSI::datashield.aggregate(conns = datasources[.ci],
-          expr = call("mpcCleanupDS", session_id = session_id)),
-        error = function(e) NULL)
-      tryCatch(
-        DSI::datashield.aggregate(conns = datasources[.ci],
-          expr = call("mpcGcDS")),
-        error = function(e) NULL)
+    if (!isTRUE(keep_session)) {
+      for (.srv in server_list) {
+        .ci <- which(server_names == .srv)
+        tryCatch(
+          DSI::datashield.aggregate(conns = datasources[.ci],
+            expr = call("mpcCleanupDS", session_id = session_id)),
+          error = function(e) NULL)
+        tryCatch(
+          DSI::datashield.aggregate(conns = datasources[.ci],
+            expr = call("mpcGcDS")),
+          error = function(e) NULL)
+      }
     }
     .dsvert_reset_chunk_size()
   }, add = TRUE)

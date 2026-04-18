@@ -8,10 +8,23 @@ ds.vertNB(
   formula,
   data = NULL,
   theta = NULL,
+  joint = TRUE,
+  theta_max_iter = 5L,
+  theta_tol = 0.001,
   verbose = TRUE,
   datasources = NULL,
   ...
 )
+}
+\arguments{
+\item{joint}{Logical. If TRUE (default), iterate between the Poisson
+\eqn{\hat\beta} update and a \eqn{\hat\theta} update until both
+converge. If FALSE, return the Poisson \eqn{\hat\beta} with a single
+one-shot MoM \eqn{\hat\theta}.}
+
+\item{theta_max_iter}{Outer iterations for the joint update
+(default 5). Each iteration refits the Poisson GLM with the
+current theta-adjusted mean estimate.}
 }
 \description{
 Fit a negative binomial GLM on vertically partitioned
