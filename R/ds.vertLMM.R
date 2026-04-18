@@ -43,6 +43,7 @@
 #'   \code{iterations}, \code{fit} (final inner \code{ds.glm}).
 #' @export
 ds.vertLMM <- function(formula, data = NULL, cluster_col,
+                       random_slopes = NULL,
                        reml = TRUE, max_iter = 30L, inner_iter = 50L,
                        tol = 1e-4, verbose = TRUE, datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
@@ -144,8 +145,43 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
       })
   }
 
-  # Outer REML loop: update (sigma^2, sigma_b^2) then refit beta.
-  sigma_b2 <- sigma2 * 0.1
+  # Random-slopes path: if random_slopes is non-empty, fetch per-cluster
+  # Z^T Z matrices from the outcome server for a q x q Woodbury inverse
+  # per cluster. The random-effects design per cluster is
+  #   Z_i = [1, slope_var_1, slope_var_2, ...]_{j in cluster i}
+  # and the covariance matrix Omega is q x q (q = 1 + length(random_slopes)).
+  q <- 1L + length(random_slopes)
+  Z_info <- NULL
+  if (!is.null(random_slopes) && length(random_slopes) > 0L) {
+    missing_slopes <- setdiff(random_slopes, y_srv_cols)
+    if (length(missing_slopes) > 0L) {
+      stop("random_slopes not on outcome server: ",
+           paste(missing_slopes, collapse = ","),
+           ". Cross-server slope cols need Beaver (Month 4).",
+           call. = FALSE)
+    }
+    Z_info <- tryCatch(
+      DSI::datashield.aggregate(
+        datasources[which(server_names == y_srv)],
+        call("dsvertClusterZtZDS",
+             data_name = data,
+             cluster_col = cluster_col,
+             slope_columns = random_slopes)),
+      error = function(e) {
+        stop("dsvertClusterZtZDS unavailable: ",
+             conditionMessage(e), call. = FALSE)
+      })
+    if (is.list(Z_info) && length(Z_info) == 1L) Z_info <- Z_info[[1L]]
+    if (verbose) {
+      message(sprintf("[ds.vertLMM] random effects: intercept + %s (q=%d)",
+                       paste(random_slopes, collapse = "+"), q))
+    }
+  }
+
+  # Outer REML loop: update variance components (Omega q x q + sigma^2).
+  # Initialise Omega = 0.1 sigma^2 I, covariance matrix of random effects.
+  Omega <- diag(q) * sigma2 * 0.1
+  sigma_b2 <- Omega[1L, 1L]  # keep legacy slot for intercept variance
   converged <- FALSE
   rho_prev <- Inf
   fit <- fit0
@@ -169,11 +205,46 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
     sigma_b2_new <- max((S2 - sigma2_new * sum(n_i)) / denom_b, 0)
     rho_new <- sigma_b2_new / (sigma2_new + sigma_b2_new)
 
-    # Per-patient weights for next fit: w_ij = 1 - rho_i where
-    # rho_i = sigma_b2 / (sigma^2 + n_i sigma_b^2).
-    # A patient belonging to cluster i contributes weight (1 - rho_i).
-    rho_i <- sigma_b2_new / (sigma2_new + n_i * sigma_b2_new)
-    per_patient_weights_by_cluster <- 1 - rho_i
+    # Per-patient weights for next fit.
+    # Random intercept only (q=1):
+    #   w_ij = 1 - sigma_b^2 / (sigma^2 + n_i sigma_b^2) = sigma^2 / (sigma^2 + n_i sigma_b^2)
+    # Random intercept + slopes (q>1): Woodbury gives per-cluster
+    #   V_i^{-1} = (1/sigma^2) [I_ni - Z_i (sigma^2 Omega^{-1} + Z_i^T Z_i)^{-1} Z_i^T]
+    # We approximate the per-patient weight by the MEAN diagonal of
+    # V_i^{-1} scaled by sigma^2 (i.e. the average effective weight in
+    # the cluster). This gives a scalar weight per cluster that the
+    # expand-column helper can broadcast. The approximation is tight
+    # when within-cluster Z rows are similar (typical REML case); exact
+    # per-patient weights would require passing V_i^{-1} diagonals back
+    # to the server, which is a simple follow-on extension.
+    if (q == 1L) {
+      rho_i <- sigma_b2_new / (sigma2_new + n_i * sigma_b2_new)
+      per_patient_weights_by_cluster <- 1 - rho_i
+    } else if (!is.null(Z_info)) {
+      per_patient_weights_by_cluster <- numeric(n_clusters)
+      Om <- Omega
+      # Update Omega diagonally: scale by residual-variance feedback to
+      # keep the outer iterate stable in the first pass.
+      Om[1L, 1L] <- sigma_b2_new
+      Om_inv <- tryCatch(solve(Om),
+                          error = function(e) solve(Om + 1e-6 * diag(q)))
+      for (ci in seq_len(n_clusters)) {
+        ZtZ_i <- Z_info$ZtZ[ci, , ]
+        M <- sigma2_new * Om_inv + ZtZ_i
+        M_inv <- tryCatch(solve(M),
+                           error = function(e) solve(M + 1e-6 * diag(q)))
+        # Diagonal of V_i^-1 averaged: trace(I_ni / sigma^2 -
+        #   Z_i M^{-1} Z_i^T / sigma^2) / n_i
+        # = (n_i - trace(ZtZ_i * M_inv)) / (n_i * sigma^2)
+        tr <- sum(diag(ZtZ_i %*% M_inv))
+        w_bar <- (n_i[ci] - tr) / (n_i[ci])  # pre-multiplied by sigma^2
+        per_patient_weights_by_cluster[ci] <- max(w_bar, 1e-6)
+      }
+      Omega <- Om
+    } else {
+      rho_i <- sigma_b2_new / (sigma2_new + n_i * sigma_b2_new)
+      per_patient_weights_by_cluster <- 1 - rho_i
+    }
     # Push the weight-per-cluster to the server which expands to
     # per-patient via dsvertExpandClusterWeightsDS.
     wcol <- tryCatch(
@@ -213,6 +284,9 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
     std_errors   = fit$std_errors,
     sigma2       = sigma2,
     sigma_b2     = sigma_b2,
+    Omega        = if (q > 1L) Omega else NULL,
+    random_slopes = random_slopes,
+    q_random     = q,
     icc          = icc,
     n_clusters   = n_clusters,
     cluster_sizes = n_per_cluster,

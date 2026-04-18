@@ -8,6 +8,7 @@ ds.vertLMM(
   formula,
   data = NULL,
   cluster_col,
+  random_slopes = NULL,
   reml = TRUE,
   max_iter = 30L,
   inner_iter = 50L,
