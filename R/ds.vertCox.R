@@ -343,6 +343,14 @@ ds.vertCox <- function(formula, data = NULL,
     }
     # Step 2: DCF exp wide spline (eta -> mu = exp(eta)).
     .wide_spline_round("exp", n_obs, num_intervals = 100L)
+    # Step 2b: snapshot mu BEFORE the reciprocal pass overwrites the
+    # shared secure_mu_share slot; the mu share must persist for the
+    # Beaver mu*G step at the end of this iteration.
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      .dsAgg(datasources[ci],
+        call("k2CoxSaveMuDS", session_id = session_id))
+    }
     # Step 3: reverse cumsum of mu -> S(t_i).
     for (server in server_list) {
       ci <- which(server_names == server)
@@ -378,21 +386,65 @@ ds.vertCox <- function(formula, data = NULL,
         call("k2CoxForwardCumsumGDS", session_id = session_id))
     }
     # Step 6: form the Cox residual r_j = delta_j - exp(eta_j) * G_j on
-    # shares. This uses a new server helper `k2CoxResidualDS` that
-    # multiplies mu*G via Beaver and subtracts delta (plaintext at
-    # both parties since k2SetCoxTimesDS broadcast it). Stored into
-    # ss$secure_mu_share in the sign convention expected by the
-    # Beaver gradient (i.e. the existing X^T r machinery).
+    # shares. This is a 4-step 2-round Beaver protocol that keeps both
+    # mu and G strictly shared between the two DCF parties.
+    # 6a. Dealer (the non-label party) generates the element-wise
+    #     Beaver triple and seals one share per party.
+    tri <- .dsAgg(datasources[dealer_ci],
+      call("k2BeaverVecmulGenTriplesDS",
+           dcf0_pk = transport_pks[[y_server]],
+           dcf1_pk = transport_pks[[nl]],
+           n = as.integer(n_obs),
+           session_id = session_id, frac_bits = 20L))
+    if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
+    .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple",
+              which(server_names == y_server))
+    .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple",
+              which(server_names == nl))
     for (server in server_list) {
       ci <- which(server_names == server)
-      tryCatch(.dsAgg(datasources[ci],
-        call("k2CoxResidualDS",
-             peer_pk = transport_pks[[setdiff(server_list, server)]],
-             session_id = session_id)),
-        error = function(e) stop(
-          "k2CoxResidualDS not available (", conditionMessage(e),
-          "); deploy dsVert >= 1.2.0.",
-          call. = FALSE))
+      .dsAgg(datasources[ci],
+        call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+    }
+    # 6b. Round 1: each party computes (mu - a, G - b) shares and seals
+    #     to the peer.
+    r1_b <- list()
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      peer <- setdiff(server_list, server)
+      r <- .dsAgg(datasources[ci], call("k2BeaverVecmulR1DS",
+        peer_pk = transport_pks[[peer]],
+        x_key = "k2_cox_mu_share_fp",
+        y_key = "k2_cox_G_share_fp",
+        n = as.integer(n_obs),
+        session_id = session_id, frac_bits = 20L))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      r1_b[[server]] <- r
+    }
+    .sendBlob(r1_b[[y_server]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+              which(server_names == nl))
+    .sendBlob(r1_b[[nl]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+              which(server_names == y_server))
+    # 6c. Round 2: each party reconstructs the share of z = mu * G and
+    #     stores it under k2_cox_mu_g_share_fp.
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      .dsAgg(datasources[ci], call("k2BeaverVecmulR2DS",
+        is_party0 = (server == y_server),
+        x_key = "k2_cox_mu_share_fp",
+        y_key = "k2_cox_G_share_fp",
+        output_key = "k2_cox_mu_g_share_fp",
+        n = as.integer(n_obs),
+        session_id = session_id, frac_bits = 20L))
+    }
+    # 6d. Finalise the Cox residual share: r = delta - (mu*G) on party 0,
+    #     r = -(mu*G) on party 1. Result stored in secure_mu_share so the
+    #     existing X^T r Beaver matvec consumes it unchanged.
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      .dsAgg(datasources[ci], call("k2CoxFinaliseResidualDS",
+        is_party0 = (server == y_server),
+        session_id = session_id, frac_bits = 20L))
     }
     # Step 7: gradient = X^T r via the existing Beaver matvec.
     grad_t <- .dsAgg(datasources[dealer_ci],
@@ -433,23 +485,30 @@ ds.vertCox <- function(formula, data = NULL,
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = r2[[y_server]]$gradient_fp,
       share_b = r2[[nl]]$gradient_fp, frac_bits = 20L))
-    gradient <- agg$values / n_obs + lambda * beta
+    # The partial-likelihood score we just computed is the ASCENT
+    # direction; to run a standard (descent-style) L-BFGS on the
+    # negative log-partial-likelihood we flip its sign here. The L2
+    # ridge contribution is +lambda * beta for the negative objective.
+    neg_grad <- -(agg$values) / n_obs + lambda * beta
 
-    # Step 8: L-BFGS update.
+    # Step 8: L-BFGS update (on the NEGATIVE log-partial-likelihood).
     if (!is.null(prev_theta)) {
       sk <- beta - prev_theta
-      yk <- gradient - prev_grad
+      yk <- neg_grad - prev_grad
       if (sum(sk * yk) > 1e-10) {
         s_hist <- c(s_hist, list(sk)); y_hist <- c(y_hist, list(yk))
         if (length(s_hist) > 7L) { s_hist <- s_hist[-1L]; y_hist <- y_hist[-1L] }
       }
     }
-    prev_theta <- beta; prev_grad <- gradient
-    direction <- .lbfgs_direction_local(gradient, s_hist, y_hist)
-    # For Cox the gradient of the partial log-likelihood points in the
-    # ascent direction; we multiply by -1 to descend the negative-log-
-    # likelihood.
-    beta <- beta + (if (iter <= 1L) 0.3 else 1.0) * direction
+    prev_theta <- beta; prev_grad <- neg_grad
+    direction <- .lbfgs_direction_local(neg_grad, s_hist, y_hist)
+    # Conservative step size: Cox partial likelihood is sensitive to
+    # overshoot on small n. Start at 0.1, ramp to 0.5 once the history
+    # stabilises.
+    step <- if (iter <= 2L) 0.1 else 0.5
+    beta <- beta + step * direction
+    # Track the scale of the gradient we just used for reporting.
+    gradient <- neg_grad
 
     max_diff <- max(abs(beta - beta_old))
     final_iter <- iter
