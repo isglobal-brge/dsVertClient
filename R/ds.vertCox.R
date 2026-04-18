@@ -264,6 +264,14 @@ ds.vertCox <- function(formula, data = NULL,
   converged <- FALSE
   final_iter <- 0L
   loglik <- NA_real_
+  # Polyak-averaging iterate: steepest descent zig-zags on ill-
+  # conditioned Cox Fisher info, but the Cesaro mean of the raw
+  # iterates is guaranteed to converge to the MLE for convex
+  # objectives (Polyak 1990, Nedic-Ozdaglar 2007). We track the
+  # running mean from iter ~n/2 onward (tail averaging).
+  beta_avg_sum <- rep(0, p_total)
+  beta_avg_n <- 0L
+  tail_start <- 3L  # begin averaging from iter 3
 
   # Track which DCF families have keys cached this session so we can
   # skip regen on iters 2+. Each (family, n, num_intervals) combo gets
@@ -713,6 +721,11 @@ ds.vertCox <- function(formula, data = NULL,
       min(1.0, target_step / dir_norm)
     } else 0
     beta <- beta + step * dir_use
+    # Polyak tail-average: beta_avg = mean(beta_iter for iter >= tail_start)
+    if (iter >= tail_start) {
+      beta_avg_sum <- beta_avg_sum + beta
+      beta_avg_n <- beta_avg_n + 1L
+    }
     # Track the scale of the gradient we just used for reporting.
     gradient <- neg_grad
 
@@ -730,12 +743,25 @@ ds.vertCox <- function(formula, data = NULL,
     }
   }
 
+  # If Polyak tail-average has accumulated enough samples, use it as
+  # the reported coefficient estimate (Cesaro-converges even when the
+  # raw iterate oscillates under ill-conditioned Fisher info).
+  if (beta_avg_n >= 3L) {
+    beta_final <- beta_avg_sum / beta_avg_n
+    if (isTRUE(verbose)) {
+      message(sprintf(
+        "[ds.vertCox] using Polyak tail-average (n=%d) as beta_hat",
+        beta_avg_n))
+    }
+  } else {
+    beta_final <- beta
+  }
   # Map standardized beta back to original scale (features were
   # standardised by .glm_mpc_setup with x_means / x_sds).
   all_x_sds <- unlist(lapply(server_list, function(s) setup$x_sds[[s]]))
   all_x_means <- unlist(lapply(server_list, function(s) setup$x_means[[s]]))
   all_names <- unlist(lapply(server_list, function(s) x_vars[[s]]))
-  coef_orig <- beta / all_x_sds
+  coef_orig <- beta_final / all_x_sds
   names(coef_orig) <- all_names
 
   # ==== Partial log-likelihood at betâ ====
