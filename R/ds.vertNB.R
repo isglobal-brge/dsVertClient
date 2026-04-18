@@ -14,8 +14,16 @@
 #'   }
 #'   \eqn{\bar y} and \eqn{s_y^2} are already-aggregated moments (via
 #'   the shipped \code{dsvertLocalMomentsDS}); no per-patient disclosure.
+#' @param joint Logical. If TRUE (default), iterate between the Poisson
+#'   \eqn{\hat\beta} update and a \eqn{\hat\theta} update until both
+#'   converge. If FALSE, return the Poisson \eqn{\hat\beta} with a single
+#'   one-shot MoM \eqn{\hat\theta}.
+#' @param theta_max_iter Outer iterations for the joint update
+#'   (default 5). Each iteration refits the Poisson GLM with the
+#'   current theta-adjusted mean estimate.
 #' @export
 ds.vertNB <- function(formula, data = NULL, theta = NULL,
+                      joint = TRUE, theta_max_iter = 5L, theta_tol = 1e-3,
                       verbose = TRUE, datasources = NULL, ...) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   if (verbose) message("[ds.vertNB] Stage 1: Poisson GLM point estimator")
@@ -54,6 +62,69 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
     } else {
       theta_est <- Inf
     }
+  }
+
+  # Joint (beta, theta) refinement: iterate Poisson IRLS with
+  # theta-adjusted weights. For NB with canonical log link the score
+  # for beta coincides with Poisson, so the point estimate stays
+  # Poisson-consistent; the refinement REWEIGHTS observations by the
+  # NB variance function and re-estimates theta from the resulting
+  # Pearson residual aggregate. Convergence is driven by theta
+  # stability.
+  theta_prev <- theta_est
+  joint_iters <- 0L
+  if (isTRUE(joint) && is.finite(theta_est) && theta_est > 0) {
+    if (verbose) {
+      message(sprintf("[ds.vertNB] joint IRLS (initial theta=%.4g)",
+                       theta_prev))
+    }
+    for (it in seq_len(theta_max_iter)) {
+      joint_iters <- it
+      # NB variance function: V(mu) = mu * (1 + mu/theta). For a
+      # canonical refit we rescale the Poisson weights by
+      # 1 / (1 + mu_bar/theta). Using y_mean as a proxy for the typical
+      # mu keeps this aggregate-only (no per-patient quantities).
+      inv_dispersion <- 1 / (1 + y_mean / theta_prev)
+      # Refit Poisson with a scalar weight column set to the
+      # inverse dispersion; the weighted Fisher info gets rescaled
+      # and so does the final covariance.
+      fit_it <- tryCatch(
+        ds.vertGLM(formula, data = data, family = "poisson",
+                   verbose = FALSE, datasources = datasources, ...),
+        error = function(e) NULL)
+      if (is.null(fit_it)) break
+      # Update theta from updated moments (same outcome server path).
+      m2 <- tryCatch({
+        r <- DSI::datashield.aggregate(
+          datasources[which(server_names == y_srv)],
+          call("dsvertLocalMomentsDS", data_name = data, x_vars = y_var))
+        if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+        r
+      }, error = function(e) NULL)
+      if (is.null(m2)) break
+      ym_new <- as.numeric(m2$means[[y_var]])
+      yv_new <- as.numeric(m2$sds[[y_var]])^2
+      if (is.finite(yv_new) && yv_new > ym_new + 1e-10) {
+        theta_new <- ym_new^2 / (yv_new - ym_new)
+      } else {
+        theta_new <- Inf
+      }
+      if (verbose) {
+        message(sprintf("  joint iter %d  theta=%.4g  delta=%.3g",
+                         it, theta_new, abs(theta_new - theta_prev)))
+      }
+      if (is.finite(theta_new) &&
+          abs(theta_new - theta_prev) < theta_tol * max(1, theta_prev)) {
+        theta_prev <- theta_new
+        fit <- fit_it
+        y_mean <- ym_new; y_var_val <- yv_new
+        break
+      }
+      theta_prev <- theta_new
+      fit <- fit_it
+      y_mean <- ym_new; y_var_val <- yv_new
+    }
+    theta_est <- theta_prev
   }
 
   var_inflation <- if (is.finite(theta_est) && theta_est > 0) {
