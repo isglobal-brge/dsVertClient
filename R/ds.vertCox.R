@@ -616,8 +616,45 @@ ds.vertCox <- function(formula, data = NULL,
       if (verbose) message(sprintf(
         "[ds.vertCox] Path B refinement: up to %d iters (cap=%d, P3 budget)",
         iters_requested, MAX_PATH_B_ITERS_CAP))
+      # DIAGNOSTIC HOOK (task #104): if env var
+      # DSVERT_COX_PATHB_ORACLE_BETA_STD is set to a comma-separated
+      # list of p_total values, inject it as beta_std for Path B
+      # evaluation (single-iter), capture pb$fisher and pb$grad, skip
+      # Newton update, return early with diagnostic payload.
+      .debug_env <- Sys.getenv("DSVERT_COX_PATHB_ORACLE_BETA_STD", "")
+      if (nzchar(.debug_env)) {
+        debug_beta_std <- as.numeric(strsplit(.debug_env, ",")[[1]])
+        if (length(debug_beta_std) == newton_res$p_total) {
+          message(sprintf(
+            "[ds.vertCox DIAG] injecting oracle β_std (len=%d) for Path B",
+            length(debug_beta_std)))
+          beta_std <- debug_beta_std
+          pb_diag <- .ds_vertCox_path_b_fisher(
+            beta_std = beta_std,
+            datasources = datasources, server_names = server_names,
+            server_list = server_list, y_server = y_server, nl = nl,
+            session_id = session_id, n_obs = n_obs,
+            p_total = newton_res$p_total,
+            transport_pks = transport_pks,
+            .cox_score_round = .cox_score_round,
+            .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose)
+          # Save to global for retrieval
+          assign(".last_pathb_diag",
+                 list(fisher = pb_diag$fisher, grad = pb_diag$grad,
+                      beta_std = beta_std),
+                 envir = .GlobalEnv)
+          message(sprintf(
+            "[ds.vertCox DIAG] captured Path B state: ‖grad‖=%.4g, fisher diag=%s",
+            sqrt(sum(pb_diag$grad^2)),
+            paste(round(diag(pb_diag$fisher), 1), collapse=",")))
+          # Skip Newton update; proceed to SE/return with oracle β
+        }
+      }
       prev_grad_norm <- Inf
       for (k in seq_len(iters_requested)) {
+        if (nzchar(.debug_env) &&
+            length(as.numeric(strsplit(.debug_env, ",")[[1]])) ==
+              newton_res$p_total) break  # diag done
         t_k <- proc.time()[[3L]]
         pb <- .ds_vertCox_path_b_fisher(
           beta_std = beta_std,
