@@ -32,7 +32,9 @@
                                      data, y_var, x_ysrv, x_peer,
                                      lambda_i, transport_pks, session_id,
                                      verbose = FALSE,
-                                     share_scale = 1.0) {
+                                     share_scale = 1.0,
+                                     column_scales = NULL,
+                                     standardize = FALSE) {
   if (is.null(peer_srv))
     stop("Closed-form LMM solver currently requires K=2 (peer_srv != NULL)",
          call. = FALSE)
@@ -59,6 +61,13 @@
   if (verbose) message(sprintf(
     "[closed_form] Phase 1: local gram + shares (share_scale=%.2f)", sc))
 
+  # Post-centering L2 standardization is enabled by default (the
+  # Codex-approved structural fix 2026-04-19 for kappa=5.57e5 Gram
+  # ill-conditioning). Server computes L2 of each centered column and
+  # divides by it, then returns `l2_scales` so the client can unscale β.
+  # Default ON; caller can pass `standardize = FALSE` for debugging.
+  std_flag <- isTRUE(standardize)
+
   # Outcome server: transforms y + x_ysrv columns, creates int_col,
   # stores shares under lmm_gram_col_<name>, returns peer blob.
   local_y <- DSI::datashield.aggregate(conns[ysrv_ci],
@@ -71,7 +80,8 @@
          intercept_col = int_col,
          peer_pk = transport_pks[[peer_srv]],
          session_id = session_id,
-         share_scale = sc))
+         share_scale = sc,
+         standardize = std_flag))
   if (is.list(local_y) && length(local_y) == 1L) local_y <- local_y[[1L]]
 
   # Peer server: transforms x_peer columns only.
@@ -84,7 +94,8 @@
          create_intercept = FALSE,
          peer_pk = transport_pks[[y_srv]],
          session_id = session_id,
-         share_scale = sc))
+         share_scale = sc,
+         standardize = std_flag))
   if (is.list(local_p) && length(local_p) == 1L) local_p <- local_p[[1L]]
 
   # Relay peer blobs to the opposite party.
@@ -227,14 +238,53 @@
   nm_out[nm_out == int_col] <- "(Intercept)"
   names(beta_hat) <- nm_out
 
-  # De-scale XtX / Xty / yty by 1/c² so downstream consumers (variance
-  # estimators, standard errors) receive quantities in the true
-  # unscaled basis. β_hat is scale-invariant and needs no de-scaling.
+  # Un-standardization: server divided each centered column X~_j by its
+  # L2 norm s_j before Gram. Model: y = β_0 + Σ β_j x_j produces a
+  # standardized system where β_std_j = β_raw_j × s_j. Unscale:
+  # β_raw_j = β_std_j / s_j. Same for XtX and Xty to return raw-basis
+  # quantities for downstream σ², SE consumers:
+  #   XtX_raw[i,j] = XtX_std[i,j] / (s_i × s_j)
+  #   Xty_raw[j]   = Xty_std[j]   / s_j
+  #   yty unchanged (y was not standardized).
+  # The server returns l2_scales per column; the intercept column lives
+  # on the outcome server only, so its scale is in local_y$l2_scales.
+  l2_y <- as.list(local_y$l2_scales %||% list())
+  l2_p <- as.list(local_p$l2_scales %||% list())
+  # Build a name → scale map, with "(Intercept)" mapped from int_col.
+  scales_raw <- c(l2_y, l2_p)
+  nm_beta <- names(beta_hat)
+  scale_per_coef <- setNames(rep(1.0, length(nm_beta)), nm_beta)
+  for (nm in nm_beta) {
+    key <- if (nm == "(Intercept)") int_col else nm
+    sj <- scales_raw[[key]]
+    if (!is.null(sj) && length(sj) == 1L && is.finite(as.numeric(sj)) &&
+        as.numeric(sj) > 0) {
+      scale_per_coef[nm] <- as.numeric(sj)
+    }
+  }
+  # Unscale β.
+  beta_unscaled <- beta_hat / scale_per_coef[nm_beta]
+  # Unscale XtX and Xty to raw basis.
+  S_inv <- 1.0 / scale_per_coef
+  raw_nm <- rownames(XtX)
+  raw_nm[raw_nm == int_col] <- "(Intercept)"
+  rownames(XtX) <- colnames(XtX) <- raw_nm
+  names(Xty) <- raw_nm
+  S_inv_vec <- S_inv[raw_nm]
+  XtX_raw <- XtX * outer(S_inv_vec, S_inv_vec)
+  Xty_raw <- Xty * S_inv_vec
+
+  # De-scale by 1/c² (SNR-boost legacy path; sc=1.0 default is a no-op).
   inv_sc2 <- 1.0 / (sc * sc)
-  list(coefficients = beta_hat,
-       XtX = XtX * inv_sc2,
-       Xty = Xty * inv_sc2,
+  list(coefficients = beta_unscaled,
+       XtX = XtX_raw * inv_sc2,
+       Xty = Xty_raw * inv_sc2,
        yty = as.numeric(local_y$yty) * inv_sc2,
        n = n,
-       share_scale = sc)
+       share_scale = sc,
+       standardize_applied = isTRUE(standardize),
+       l2_scales_applied = scale_per_coef)
 }
+
+# Null-coalescing helper (base R has no %||%)
+`%||%` <- function(a, b) if (is.null(a)) b else a

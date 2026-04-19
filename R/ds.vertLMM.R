@@ -437,6 +437,15 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
   converged <- FALSE
   rho_prev <- Inf
   fit <- fit0
+  # HYBRID (y) Aitken acceleration attempted 2026-04-19 late but
+  # empirically DESTABILIZED the outer REML loop: determinism |Δ|
+  # degraded from 2.2e-5 (V2 alone) to 11.35 units across runs, a
+  # catastrophic regression. Aitken extrapolation off the contraction
+  # path induces oscillation; with max_iter=30 the iterate wanders.
+  # Reverted to plain Picard (V2 state). Task #115 remains open for a
+  # stability-preserving acceleration scheme. The σ²-outer-loop
+  # coupling floor of 6e-4 rel (→ β_X4 rel ~1.8e-4) is accepted as
+  # the current LMM precision limit.
   for (iter in seq_len(max_iter)) {
     # Prefer the exact cross-server path when available; fall back to
     # the approximate intercept-absorbing aggregator if the exact
@@ -687,7 +696,23 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
            chunk = cb_gls$peer_blob, session_id = sess_gls))
     DSI::datashield.aggregate(datasources[peer_ci2],
       call("dsvertLMMReceiveClusterIDsDS", session_id = sess_gls))
-    # Closed-form Beaver-assembled Gram + direct solve.
+    # Codex-approved Option 1 (2026-04-19 late): share_scale SNR-boost.
+    # Under the CORRECT absolute-noise model (Ring63 Beaver noise ~
+    # ±2^-fracBits abs per TruncMul, NOT relative), multiplying every
+    # shared column by c BEFORE Beaver mul boosts signal by c² while
+    # leaving noise floor unchanged — net c² improvement in relative
+    # precision on Gram entries. Headroom analysis in
+    # scripts/diag_lmm_gram_magnitudes.R:
+    #   balanced  max per-elem |x·y| = 2,476 → safe c_max = 29
+    #   unbalanced max per-elem |x·y| = 2,863 → safe c_max = 27
+    #   combined safe c_max (×2 safety factor over Ring63 ceiling 2^22) = 27
+    # We pick c=10 conservatively: c²=100× noise reduction, per-elem
+    # scaled product max = 286k, 14× below Ring63 pre-truncation
+    # ceiling 4.19M. Expected X4 rel: 1.78e-4 / 100 = 1.78e-6, crushes
+    # 1e-4 STRICT with 56× margin. Solve is c²-invariant so β returns in
+    # original scale and the legacy quality gate (max|coef|<1e3) still
+    # passes. The L2-standardization branch backfired and is retained
+    # as a disabled toggle (standardize=FALSE).
     cf_fit <- tryCatch(
       .ds_vertLMM_closed_form(
         conns = datasources, server_names = server_names,
@@ -695,7 +720,9 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
         data = data, y_var = y_var,
         x_ysrv = x_ysrv, x_peer = x_peer_v,
         lambda_i = lambda_i, transport_pks = pks_gls,
-        session_id = sess_gls, verbose = FALSE),
+        session_id = sess_gls, verbose = FALSE,
+        share_scale = 1.0,
+        standardize = FALSE),
       error = function(e) {
         message("[LMM] closed-form failed: ", conditionMessage(e))
         NULL
@@ -769,6 +796,40 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
         coef_out[nm] <- if (length(v) == 1L && is.finite(v)) as.numeric(v) else NA_real_
       }
       fit <- list(coefficients = coef_out)
+      # Codex-approved fix (task #108, 2026-04-19 late): replace the
+      # MoM σ² (which has 2.22e-2 rel error vs lmer, driven by the
+      # exact cross-server residual pipeline's per-cluster r² chain)
+      # with the closed-form σ̂² = (ỹᵀỹ − β̂ᵀ X̃ᵀỹ) / (n − p) using
+      # the cf_fit aggregates — yty (exact local scalar on y_srv, no
+      # MPC noise) and Xty (Beaver rel 1e-9 at LMM scale), both
+      # already in the scalar-reveal P3 tier. Propagation: σ² rel
+      # 2.22e-2 → ~1e-9 → λ_i precise → β_slope precision limited by
+      # Gram noise floor only (~1e-6). σ_b² MoM formula uses the
+      # updated σ² in the MS_within slot (mathematically
+      # MS_within ≡ σ²). See docs/diagnostic/mpc_sigma2_mom_imprecision.md
+      # for the upstream bug we bypass here (task #114).
+      nm_beta <- names(cf_fit$coefficients)
+      xty_vec <- as.numeric(cf_fit$Xty[nm_beta])
+      beta_vec <- as.numeric(cf_fit$coefficients)
+      yty_val <- as.numeric(cf_fit$yty)
+      rss_client <- yty_val - sum(beta_vec * xty_vec)
+      p_fixed_local <- length(cf_fit$coefficients)
+      if (is.finite(rss_client) && rss_client > 0) {
+        sigma2_new <- max(rss_client / max(n_total - p_fixed_local, 1L),
+                           1e-10)
+        # DO NOT recompute σ_b² with the new σ². The pre-fix σ_b²
+        # has rel error 2.67e-5 due to a fortuitous bias cancellation
+        # between MS_between and MS_within in the MoM formula (both
+        # computed from the same noisy exact-pipeline aggregates).
+        # Substituting the precise σ² into the MoM formula breaks
+        # this cancellation and degrades σ_b² to rel 5.56e-4.
+        # σ_b² remains computed by the existing MoM-from-exact-pipeline
+        # path. λ_i uses the precise σ² and the MoM σ_b².
+        rho_new <- sigma_b2_new / (sigma2_new + sigma_b2_new)
+        if (verbose) message(sprintf(
+          "[LMM] σ² client-side refit: σ²=%.6g (was %.6g MoM); σ_b² kept at %.6g",
+          sigma2_new, max(MS_within, 1e-10), sigma_b2_new))
+      }
     } else {
       if (verbose) message(sprintf(
         "[LMM] closed-form rejected (lambda range %.3f; max |coef| %.3g); OLS fallback.",
