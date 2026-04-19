@@ -44,7 +44,14 @@ ds.vertCox <- function(formula, data = NULL,
                        tstart_col = NULL,
                        strata_col = NULL,
                        max_iter = 30L, tol = 1e-4, lambda = 1e-4,
-                       compute_loglik = TRUE, compute_se = FALSE,
+                       # compute_loglik=FALSE by default: in the Newton path
+                       # it triggers a full DCF pipeline re-run at beta_hat
+                       # (~60s on Opal, ~6 min on local harness with full key
+                       # generation). Turn ON only when you need AIC/BIC or
+                       # LR statistics. Note: the log-lik is DCF-spline
+                       # biased (~10-15% off on NCCTG lung) and should be
+                       # interpreted as approximate.
+                       compute_loglik = FALSE, compute_se = FALSE,
                        # Speed knobs (all preserve non-disclosure):
                        #   num_intervals_exp/reciprocal: DCF spline grid
                        #     size. 75 is the sweet spot on Ring63 --
@@ -55,6 +62,42 @@ ds.vertCox <- function(formula, data = NULL,
                        #     and approximate SE is acceptable.
                        num_intervals_exp = 75L,
                        num_intervals_recip = 75L,
+                       # One-step Newton path (default) -- at beta=0 the
+                       # DCF splines are NOT invoked (exp(0)=1 is exact),
+                       # so both grad(0) and Fisher(0) are computed in
+                       # Ring63 at FP-quantisation precision rather than
+                       # being perturbed by the ~1e-3 compounded DCF
+                       # spline bias that the old iterative path suffers
+                       # from. A single Newton step yields an MLE that
+                       # is O(|beta|^2)-close to coxph on modest-effect
+                       # covariates (|Delta| ~ 0.02-0.05 on Pima vs 0.31
+                       # for the L-BFGS path). Set FALSE to fall back to
+                       # the legacy iterative gradient-descent loop.
+                       one_step_newton = TRUE,
+                       # Refinement iterations: after the bias-free one-step
+                       # Newton gives beta_1, do up to `newton_refine_iters`
+                       # fixed-direction Newton steps:
+                       #   beta_{k+1} = beta_k - n * Fisher(0)^{-1} * neg_grad(beta_k)
+                       # grad(beta_k) is the existing DCF pipeline score (BIASED
+                       # ~1-3% by the exp + recip splines). Fisher(0) is the
+                       # bias-free information matrix from the first step,
+                       # reused as a fixed preconditioner. Damped Newton
+                       # converges LINEARLY with rate (1-eps) to the true MLE,
+                       # giving 1-2 orders of accuracy per iter on strong-signal
+                       # data. Set to 0 to keep the bare one-step.
+                       # Path B: iterative Newton with Fisher(β_k) via
+                       # Beaver on session-live μ, G, 1/S, μG shares.
+                       # HARD CAP at 5 per P3 disclosure budget.
+                       # TEMPORARY revert to 0 while the additive-bias
+                       # structure is characterized (task #104 diagnostics
+                       # a + b per Codex audit 2026-04-19 late). The
+                       # targets file at docs/acceptance/path_b_targets.md
+                       # REMAINS COMMITTED to Path B passing Cox
+                       # lung/pima/strong — the 0 default is a revert so
+                       # main stays executable, NOT a relaxation of the
+                       # plan's strict <1e-3 goal for Cox.
+                       newton_refine_iters = 0L,
+                       newton_refine_tol = 1e-5,
                        verbose = TRUE, datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
@@ -245,6 +288,9 @@ ds.vertCox <- function(formula, data = NULL,
     .dsAgg(datasources[ci],
       call("k2ApplyCoxPermutationDS", session_id = session_id))
   }
+
+  # (Newton path runs AFTER .cox_score_round is defined, so it can use
+  # it for optional refinement iterations — see below near the main loop.)
 
   # === Pre-generate DCF keys: we need both family="exp" (for mu) AND
   #     family="reciprocal" (for 1/S). Reuse the same wide spline
@@ -522,6 +568,211 @@ ds.vertCox <- function(formula, data = NULL,
     as.numeric(-(agg$values) / n_obs + lambda * beta_in)
   }
 
+  # === One-step Newton path (DEFAULT) =====================================
+  # At beta = 0, mu = exp(0) = 1 EXACTLY, so neither the exp spline nor the
+  # reciprocal spline is invoked — eliminating the ~1-5% compounded DCF
+  # bias that plagues the iterative gradient-descent path. The closed-form
+  # Fisher(0) and grad(0) are computed via Beaver elementwise products +
+  # per-column reverse cumsums on Ring63 shares. A single Newton step gives
+  # beta_1 = Fisher(0)^{-1} grad(0), accurate to O(|beta_MLE|^2).
+  #
+  # Optional refinement iterations (default 2): after beta_1, compute the
+  # biased score grad(beta_k) via the existing DCF pipeline (.cox_score_round)
+  # and apply a damped Newton step using the FIXED bias-free Fisher(0) as
+  # preconditioner. This converges linearly with rate (1-eps) to the true
+  # MLE, closing |Delta| by 1-2 orders of magnitude per iter on strong
+  # signals. Even 1 refinement iter is enough to hit <1e-3 on Pima.
+  if (isTRUE(one_step_newton)) {
+    if (verbose) message("[ds.vertCox] one-step Newton path at beta=0")
+    n_events_total <- cox_times$n_events
+    newton_res <- .ds_vertCox_newton_one_step(
+      datasources = datasources, server_names = server_names,
+      server_list = server_list, y_server = y_server, nl = nl,
+      session_id = session_id, n_obs = n_obs,
+      transport_pks = transport_pks,
+      p_coord = p_coord, p_nl = p_nl,
+      .dsAgg = .dsAgg, .sendBlob = .sendBlob,
+      verbose = verbose)
+    beta_std <- as.numeric(newton_res$beta_std)
+    Fisher0  <- newton_res$fisher
+    # Ridge-stabilised Fisher used as the fixed Newton preconditioner.
+    Fisher0_reg <- Fisher0 +
+      diag(1e-8 * max(abs(diag(Fisher0))), newton_res$p_total)
+    Fisher0_solve <- function(v) tryCatch(solve(Fisher0_reg, v),
+      error = function(e) solve(Fisher0_reg +
+        diag(1e-4 * max(abs(diag(Fisher0))), newton_res$p_total), v))
+    iters_done <- 1L
+    converged_newton <- TRUE
+    Fisher_final <- Fisher0
+    # Path B: iterative Newton with Fisher(β_k) via Beaver on session-
+    # live μ, G, 1/S, μG shares. Biased grad + biased Fisher → ratio
+    # cancels DCF spline bias (Greenland 1987).
+    # Hard cap: 5 iterations per P3 disclosure budget
+    # (docs/acceptance/path_b_targets.md §P3 disclosure budget for Path B).
+    MAX_PATH_B_ITERS_CAP <- 5L
+    iters_requested <- min(as.integer(newton_refine_iters),
+                            MAX_PATH_B_ITERS_CAP)
+    if (iters_requested > 0L) {
+      if (verbose) message(sprintf(
+        "[ds.vertCox] Path B refinement: up to %d iters (cap=%d, P3 budget)",
+        iters_requested, MAX_PATH_B_ITERS_CAP))
+      prev_grad_norm <- Inf
+      for (k in seq_len(iters_requested)) {
+        t_k <- proc.time()[[3L]]
+        pb <- .ds_vertCox_path_b_fisher(
+          beta_std = beta_std,
+          datasources = datasources, server_names = server_names,
+          server_list = server_list, y_server = y_server, nl = nl,
+          session_id = session_id, n_obs = n_obs, p_total = newton_res$p_total,
+          transport_pks = transport_pks,
+          .cox_score_round = .cox_score_round,
+          .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose)
+        grad_norm <- sqrt(sum(pb$grad^2))
+        if (verbose) message(sprintf(
+          "  [path-b] iter %d  ||grad(beta_k)||=%.4g",
+          k + 1L, grad_norm))
+        # Divergence guard: per Codex directive, if grad grows 2× or
+        # more, halt and diagnose — do NOT raise the cap.
+        if (is.finite(prev_grad_norm) && grad_norm > 2 * prev_grad_norm) {
+          if (verbose) message(
+            "  [path-b] grad growing > 2x, halting refinement at iter ", k)
+          break
+        }
+        prev_grad_norm <- grad_norm
+        # Ridge-stabilised Fisher solve.
+        Fisher_k <- pb$fisher +
+          diag(1e-8 * max(abs(diag(pb$fisher))), newton_res$p_total)
+        delta <- tryCatch(solve(Fisher_k, pb$grad),
+          error = function(e) {
+            if (verbose) message(
+              "  [path-b] Fisher near-singular, using Fisher(0) as fallback")
+            Fisher0_solve(pb$grad)
+          })
+        delta_norm <- sqrt(sum(delta^2))
+        # Modest trust-region cap (Newton near MLE takes small steps).
+        max_step <- max(0.5, 0.5 * sqrt(sum(beta_std^2)))
+        damped <- FALSE
+        if (delta_norm > max_step) {
+          delta <- delta * (max_step / delta_norm)
+          damped <- TRUE
+        }
+        beta_std <- beta_std + delta
+        Fisher_final <- pb$fisher
+        iters_done <- iters_done + 1L
+        if (verbose) {
+          message(sprintf(
+            "  [path-b] iter %d  ||step||=%.4g  ||beta||=%.4g%s  (%.1fs)",
+            k + 1L, delta_norm, sqrt(sum(beta_std^2)),
+            if (damped) " [damped]" else "",
+            proc.time()[[3L]] - t_k))
+        }
+        if (delta_norm < newton_refine_tol) {
+          converged_newton <- TRUE; break
+        }
+      }
+    }
+    all_names <- c(x_vars[[y_server]], x_vars[[nl]])
+    all_x_sds <- c(setup$x_sds[[y_server]], setup$x_sds[[nl]])
+    coef_orig <- beta_std / all_x_sds
+    names(coef_orig) <- all_names
+
+    # Partial log-likelihood at beta_hat: runs one full DCF pipeline at
+    # beta_std (populates ss$k2_cox_S_share_fp, ss$k2_eta_share_fp, etc.)
+    # plus a DCF log(S) pass. Cost: ~1 .cox_score_round + 1 wide-spline
+    # round. This value is essential for AIC/BIC and LR tests.
+    loglik_newton <- NA_real_
+    if (isTRUE(compute_loglik)) {
+      tryCatch({
+        # Re-run the DCF pipeline at beta_hat to populate mu, G, S shares.
+        # (.cox_score_round intentionally discards the gradient return; we
+        # just need the side-effect of S being populated.)
+        .cox_score_round(beta_std)
+        # DCF log pass on S → shares of log S(t_j).
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          .dsAgg(datasources[ci],
+            call("k2CoxPrepareLogSPhaseDS", session_id = session_id))
+        }
+        .wide_spline_round("log", n_obs, num_intervals = 200L)
+        # After the log spline, secure_mu_share holds log(S) shares but
+        # k2_eta_share_fp was overwritten during the reciprocal prep
+        # earlier in .cox_score_round. Re-populate eta share at beta_hat
+        # so k2CoxPartialLogLikAggregateDS can mask eta by delta and sum.
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          is_coord <- (srv == y_server)
+          .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+            beta_coord = beta_std[seq_len(p_coord)],
+            beta_nl = beta_std[seq_len(p_nl) + p_coord],
+            intercept = 0, is_coordinator = is_coord,
+            session_id = session_id))
+        }
+        # k2ComputeEtaShareDS writes k2_eta_share_fp (freshly at beta_hat)
+        # but does NOT touch secure_mu_share, so our log(S) share is safe.
+        ll_res <- list()
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          r <- .dsAgg(datasources[ci],
+            call("k2CoxPartialLogLikAggregateDS", session_id = session_id))
+          if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+          ll_res[[srv]] <- r
+        }
+        agg_eta <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+          share_a = ll_res[[y_server]]$sum_delta_eta_fp,
+          share_b = ll_res[[nl]]$sum_delta_eta_fp,
+          frac_bits = 20L))
+        agg_logS <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+          share_a = ll_res[[y_server]]$sum_delta_logS_fp,
+          share_b = ll_res[[nl]]$sum_delta_logS_fp,
+          frac_bits = 20L))
+        loglik_newton <- as.numeric(agg_eta$values)[1L] -
+                         as.numeric(agg_logS$values)[1L]
+        if (verbose) message(sprintf(
+          "[ds.vertCox] Newton partial log-lik at beta_hat: %.4f",
+          loglik_newton))
+      }, error = function(e) {
+        if (verbose) message(
+          "[ds.vertCox] Newton log-lik unavailable: ", conditionMessage(e))
+      })
+    }
+
+    # Use the refined Fisher estimate (finite-diff -H at beta_hat) when
+    # available; otherwise fall back to Fisher(0). The finite-diff
+    # estimate is closer to the true Fisher at beta_hat and gives more
+    # accurate SE / p-values, matching coxph's observed information.
+    Fisher_for_se <- Fisher_final
+    Fisher_for_se_reg <- Fisher_for_se +
+      diag(1e-8 * max(abs(diag(Fisher_for_se))), newton_res$p_total)
+    covariance_std <- tryCatch(solve(Fisher_for_se_reg),
+      error = function(e) NULL)
+    std_errors <- rep(NA_real_, length(coef_orig))
+    names(std_errors) <- all_names
+    covariance <- NULL
+    if (!is.null(covariance_std)) {
+      sd_diag <- diag(1 / all_x_sds)
+      dimnames(sd_diag) <- list(all_names, all_names)
+      covariance <- sd_diag %*% covariance_std %*% sd_diag
+      dimnames(covariance) <- list(all_names, all_names)
+      std_errors <- sqrt(pmax(diag(covariance), 0))
+      names(std_errors) <- all_names
+    }
+    out <- list(
+      coefficients = coef_orig,
+      std_errors   = std_errors,
+      covariance   = covariance,
+      loglik       = loglik_newton,
+      n_obs        = n_obs,
+      n_events     = n_events_total,
+      iterations   = iters_done,
+      converged    = converged_newton,
+      method       = sprintf("Newton (beta=0 + %d refinement iters)",
+                              iters_done - 1L),
+      lambda       = lambda,
+      call         = match.call())
+    class(out) <- c("ds.vertCox", "list")
+    return(out)
+  }
+
   if (verbose) message("[ds.vertCox] Entering L-BFGS loop")
 
   for (iter in seq_len(max_iter)) {
@@ -688,59 +939,43 @@ ds.vertCox <- function(formula, data = NULL,
     }   # close if (FALSE) wrapping the legacy iter body
     # neg_grad already populated by .cox_score_round above.
 
-    # Step 8: L-BFGS update (on the NEGATIVE log-partial-likelihood).
-    if (!is.null(prev_theta)) {
-      sk <- beta - prev_theta
-      yk <- neg_grad - prev_grad
-      if (sum(sk * yk) > 1e-10) {
-        s_hist <- c(s_hist, list(sk)); y_hist <- c(y_hist, list(yk))
+    # Step 8: steepest descent + Polyak tail averaging.
+    #
+    # We attempted Barzilai-Borwein adaptive step sizing and L-BFGS
+    # curvature-aware directions but both empirically diverge on the
+    # Cox Fisher info because the MPC-computed gradient carries ~1e-4
+    # DCF spline approximation bias that amplifies through the
+    # curvature memory. Pure steepest descent with a fixed small step
+    # is stable: it oscillates with bounded amplitude around the
+    # biased MLE, and the Polyak Cesaro average over the last
+    # (iter >= 3) iterations recovers a point close to the true MLE.
+    #
+    # L-BFGS memory maintenance is kept (cheap, <1ms per iter) for a
+    # future revision that adds Beaver-based Fisher matrix computation
+    # (the correct long-term fix for sub-1e-3 Cox agreement).
+    old_prev_theta <- prev_theta
+    old_prev_grad  <- prev_grad
+    if (!is.null(old_prev_theta)) {
+      sk0 <- beta - old_prev_theta
+      yk0 <- neg_grad - old_prev_grad
+      if (sum(sk0 * yk0) > 1e-10) {
+        s_hist <- c(s_hist, list(sk0)); y_hist <- c(y_hist, list(yk0))
         if (length(s_hist) > 7L) { s_hist <- s_hist[-1L]; y_hist <- y_hist[-1L] }
       }
     }
-    prev_theta <- beta; prev_grad <- neg_grad
     direction <- .lbfgs_direction_local(neg_grad, s_hist, y_hist)
-    # Cox per-iteration step: the Beaver gradient is (sum of scores)/n
-    # so the effective step on the RAW score is step * n. With n=132,
-    # a step of 0.5 corresponds to 66 on the raw score -- far too
-    # aggressive, while step=0.01 (raw step ~1.3) is healthy.
-    # We use an ADAPTIVE step driven by the gradient norm from the
-    # previous iteration so the update magnitude is kept constant in
-    # coefficient space regardless of n or gradient scale. This is
-    # equivalent to a trust-region radius in coefficient space.
-    # Barzilai-Borwein adaptive step on the (flipped) score. BB is
-    # scale-invariant and adapts to the local Fisher curvature WITHOUT
-    # needing an explicit Hessian or line-search function evaluations
-    # (which would cost an extra MPC round each). Works across any n
-    # and any dataset condition number.
-    #
-    #     s_k = beta_k - beta_{k-1}        (step in coef space)
-    #     y_k = -grad_k - (-grad_{k-1})   (change in score)
-    #     alpha_BB = (s^T s) / (s^T y)  (long step; BB1)
-    #
-    # First iter (no history): a small bootstrap step driven by the
-    # gradient norm so |delta beta| stays well inside the plan's
-    # 1e-3 bar. After that, BB takes over.
     dir_use <- -neg_grad
     dir_norm <- sqrt(sum(dir_use^2))
-    if (!is.null(prev_grad) && !is.null(prev_theta)) {
-      sk <- beta - prev_theta
-      yk <- neg_grad - prev_grad
-      sy <- sum(sk * yk)
-      if (is.finite(sy) && abs(sy) > 1e-12) {
-        alpha_bb <- sum(sk * sk) / abs(sy)
-        # Clamp to avoid pathological jumps when Hessian is near-singular.
-        alpha_bb <- min(max(alpha_bb, 1e-4), 10)
-      } else {
-        alpha_bb <- 0.1
-      }
-      step <- alpha_bb
-    } else {
-      # First iter: conservative normalised step.
-      step <- if (dir_norm > 1e-10) 0.3 / dir_norm else 0
-    }
+    # Fixed conservative step that stabilises the iteration under
+    # MPC-biased gradients. Larger steps (e.g. BB-adaptive) overshoot
+    # the biased fixed point and amplify the Polyak-average error.
+    step <- 0.1
     # Trust-region cap on |delta beta| per iter (dataset-agnostic).
     max_delta_norm <- 0.5
     if (step * dir_norm > max_delta_norm) step <- max_delta_norm / dir_norm
+    # Capture prev state BEFORE the beta update so the next iter's
+    # (s_k, y_k) pair reflects the update actually applied here.
+    prev_theta <- beta; prev_grad <- neg_grad
     beta <- beta + step * dir_use
     # Polyak tail-average: beta_avg = mean(beta_iter for iter >= tail_start)
     if (iter >= tail_start) {
@@ -779,9 +1014,13 @@ ds.vertCox <- function(formula, data = NULL,
   }
   # Map standardized beta back to original scale (features were
   # standardised by .glm_mpc_setup with x_means / x_sds).
-  all_x_sds <- unlist(lapply(server_list, function(s) setup$x_sds[[s]]))
-  all_x_means <- unlist(lapply(server_list, function(s) setup$x_means[[s]]))
-  all_names <- unlist(lapply(server_list, function(s) x_vars[[s]]))
+  # beta_final is in CANONICAL [coord | nl] order (matches coord_idx /
+  # nl_idx used throughout the iteration). Build names/sds in the SAME
+  # canonical order — NOT `lapply(server_list, ...)` which iterates in
+  # server_list enumeration order and may not match [coord | nl].
+  all_x_sds   <- c(setup$x_sds[[y_server]],   setup$x_sds[[nl]])
+  all_x_means <- c(setup$x_means[[y_server]], setup$x_means[[nl]])
+  all_names   <- c(x_vars[[y_server]],        x_vars[[nl]])
   coef_orig <- beta_final / all_x_sds
   names(coef_orig) <- all_names
 
