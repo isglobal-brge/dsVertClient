@@ -42,7 +42,7 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
   moments <- tryCatch({
     r <- DSI::datashield.aggregate(
       datasources[which(server_names == y_srv)],
-      call("dsvertLocalMomentsDS", data_name = data, x_vars = y_var))
+      call("dsvertLocalMomentsDS", data_name = data, variable = y_var))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     r
   }, error = function(e) {
@@ -50,8 +50,9 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
          call. = FALSE)
   })
 
-  y_mean <- as.numeric(moments$means[[y_var]])
-  y_sd <- as.numeric(moments$sds[[y_var]])
+  # dsvertLocalMomentsDS returns $mean/$sd scalars (not nested lists).
+  y_mean <- as.numeric(moments$mean)
+  y_sd <- as.numeric(moments$sd)
   y_var_val <- y_sd^2
 
   theta_est <- theta
@@ -97,13 +98,13 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
       m2 <- tryCatch({
         r <- DSI::datashield.aggregate(
           datasources[which(server_names == y_srv)],
-          call("dsvertLocalMomentsDS", data_name = data, x_vars = y_var))
+          call("dsvertLocalMomentsDS", data_name = data, variable = y_var))
         if (is.list(r) && length(r) == 1L) r <- r[[1L]]
         r
       }, error = function(e) NULL)
       if (is.null(m2)) break
-      ym_new <- as.numeric(m2$means[[y_var]])
-      yv_new <- as.numeric(m2$sds[[y_var]])^2
+      ym_new <- as.numeric(m2$mean)
+      yv_new <- as.numeric(m2$sd)^2
       if (is.finite(yv_new) && yv_new > ym_new + 1e-10) {
         theta_new <- ym_new^2 / (yv_new - ym_new)
       } else {
