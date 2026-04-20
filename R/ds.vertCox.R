@@ -1063,15 +1063,79 @@ ds.vertCox <- function(formula, data = NULL,
       if (verbose) message(sprintf(
         "[ds.vertCox] Path B refinement: up to %d iters (cap=%d, P3 budget)",
         iters_requested, MAX_PATH_B_ITERS_CAP))
-      # DIAGNOSTIC HOOK (task #104): if env var
+      # DIAGNOSTIC HOOK (task #104, fixed task #113): if env var
       # DSVERT_COX_PATHB_ORACLE_BETA_STD is set to a comma-separated
       # list of p_total values, inject it as beta_std for Path B
       # evaluation (single-iter), capture pb$fisher and pb$grad, skip
       # Newton update, return early with diagnostic payload.
+      #
+      # Input contract (TWO MODES):
+      #   (A) Preferred: also set DSVERT_COX_PATHB_ORACLE_BETA_NAMES to
+      #       a comma-separated list of variable names matching the
+      #       order of the β values. The hook treats the input as β in
+      #       ORIGINAL scale and the user's (typically coxph formula)
+      #       order, permutes by internal [y_server, nl] order, and
+      #       scales by x_sds to form β_std. This is robust against
+      #       the scaling/ordering bugs in diag scripts (task #113).
+      #   (B) Legacy: only BETA_STD is set. The hook trusts the input
+      #       to already be in the internal [y_server_vars, nl_vars]
+      #       order and already scaled (β_raw × x_sd). Preserved for
+      #       back-compat with pre-fix diag scripts. Any ordering or
+      #       scaling mistake in the caller script silently produces
+      #       nonsense ||grad|| — the task-#113 bug symptom.
+      #
+      # Both modes log the derived β_std so the user can audit.
       .debug_env <- Sys.getenv("DSVERT_COX_PATHB_ORACLE_BETA_STD", "")
+      .debug_names_env <- Sys.getenv("DSVERT_COX_PATHB_ORACLE_BETA_NAMES", "")
+      # Compute internal canonical ordering + scales locally (they are
+      # also built further down at ~line 1190 but we need them here).
+      .all_names_internal <- c(x_vars[[y_server]], x_vars[[nl]])
+      .all_x_sds_internal <- c(setup$x_sds[[y_server]], setup$x_sds[[nl]])
       if (nzchar(.debug_env)) {
-        debug_beta_std <- as.numeric(strsplit(.debug_env, ",")[[1]])
-        if (length(debug_beta_std) == newton_res$p_total) {
+        .debug_beta_in <- as.numeric(strsplit(.debug_env, ",")[[1]])
+        debug_beta_std <- NULL
+        if (nzchar(.debug_names_env)) {
+          # Mode (A): named + original-scale input → permute + scale.
+          .debug_names_in <- strsplit(.debug_names_env, ",")[[1]]
+          if (length(.debug_beta_in) != length(.debug_names_in)) {
+            message(sprintf(
+              "[ds.vertCox DIAG] BETA_STD length %d != BETA_NAMES length %d — skipping oracle",
+              length(.debug_beta_in), length(.debug_names_in)))
+          } else if (!all(.all_names_internal %in% .debug_names_in)) {
+            message(sprintf(
+              "[ds.vertCox DIAG] BETA_NAMES missing vars: %s — skipping oracle",
+              paste(setdiff(.all_names_internal, .debug_names_in),
+                    collapse = ",")))
+          } else {
+            names(.debug_beta_in) <- .debug_names_in
+            .beta_raw_can <- .debug_beta_in[.all_names_internal]
+            debug_beta_std <- as.numeric(.beta_raw_can *
+                                           .all_x_sds_internal)
+            message(sprintf(
+              "[ds.vertCox DIAG] oracle β_raw (input order): %s",
+              paste(sprintf("%s=%.6g", .debug_names_in,
+                            .debug_beta_in[.debug_names_in]),
+                    collapse = ",")))
+            message(sprintf(
+              "[ds.vertCox DIAG] oracle β_std (internal order): %s",
+              paste(sprintf("%s=%.6g", .all_names_internal,
+                            debug_beta_std),
+                    collapse = ",")))
+          }
+        } else if (length(.debug_beta_in) == newton_res$p_total) {
+          # Mode (B) legacy: trust caller. Log so the caller can verify.
+          debug_beta_std <- .debug_beta_in
+          message(sprintf(
+            "[ds.vertCox DIAG] oracle β_std (legacy, caller-ordered): %s",
+            paste(sprintf("%s=%.6g", .all_names_internal, debug_beta_std),
+                  collapse = ",")))
+          message("[ds.vertCox DIAG] NOTE: legacy mode — if ||grad|| at MLE is ",
+                  "not ~0, verify caller's [y_server, nl] permute + x_sds scale. ",
+                  "Prefer setting DSVERT_COX_PATHB_ORACLE_BETA_NAMES for ",
+                  "auto-permute + auto-scale.")
+        }
+        if (!is.null(debug_beta_std) &&
+            length(debug_beta_std) == newton_res$p_total) {
           message(sprintf(
             "[ds.vertCox DIAG] injecting oracle β_std (len=%d) for Path B",
             length(debug_beta_std)))
@@ -1128,8 +1192,15 @@ ds.vertCox <- function(formula, data = NULL,
         }
       }
       prev_grad_norm <- Inf
+      # Skip the iter loop iff oracle injection actually happened — i.e.
+      # debug_beta_std was successfully built (length-matched Mode A or
+      # Mode B). If the env var was set but parsing failed (wrong length
+      # or missing names), fall through to the normal Newton loop so the
+      # user sees regular Path B output rather than a silent no-op.
       .skip_iter_loop_for_diag <- nzchar(.debug_env) &&
-        length(as.numeric(strsplit(.debug_env, ",")[[1]])) == newton_res$p_total
+        exists("debug_beta_std", inherits = FALSE) &&
+        !is.null(debug_beta_std) &&
+        length(debug_beta_std) == newton_res$p_total
       for (k in seq_len(iters_requested)) {
         if (.skip_iter_loop_for_diag) break  # diag-only, no iter
         t_k <- proc.time()[[3L]]
