@@ -117,6 +117,7 @@ ds.vertCox <- function(formula, data = NULL,
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
   spline_frac_bits <- if (ring == 127L) 50L else 20L
+  ring_tag <- if (ring == 127L) "ring127" else "ring63"
 
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
@@ -588,7 +589,8 @@ ds.vertCox <- function(formula, data = NULL,
     }
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = r2[[y_server]]$gradient_fp,
-      share_b = r2[[nl]]$gradient_fp, frac_bits = 20L))
+      share_b = r2[[nl]]$gradient_fp,
+      frac_bits = spline_frac_bits, ring = ring_tag))
     # Negative-log-partial-likelihood gradient + L2 ridge.
     as.numeric(-(agg$values) / n_obs + lambda * beta_in)
   }
@@ -617,7 +619,7 @@ ds.vertCox <- function(formula, data = NULL,
       transport_pks = transport_pks,
       p_coord = p_coord, p_nl = p_nl,
       .dsAgg = .dsAgg, .sendBlob = .sendBlob,
-      verbose = verbose)
+      verbose = verbose, ring = ring)
     beta_std <- as.numeric(newton_res$beta_std)
     Fisher0  <- newton_res$fisher
     # Ridge-stabilised Fisher used as the fixed Newton preconditioner.
@@ -668,7 +670,8 @@ ds.vertCox <- function(formula, data = NULL,
             p_total = newton_res$p_total,
             transport_pks = transport_pks,
             .cox_score_round = .cox_score_round,
-            .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose)
+            .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose,
+            ring = ring)
           # ---- Stepwise reveal diagnostic (task #116 G) ----
           # While session is alive, reveal each intermediate via a
           # scalar per-slot aggregate call across both servers.
@@ -685,7 +688,7 @@ ds.vertCox <- function(formula, data = NULL,
               agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
                 share_a = per_srv[[y_server]]$share_fp,
                 share_b = per_srv[[nl]]$share_fp,
-                frac_bits = 20L))
+                frac_bits = spline_frac_bits, ring = ring_tag))
               as.numeric(agg$values)
             }, error = function(e) { message("reveal err ", slot_key, ": ",
               conditionMessage(e)); NULL })
@@ -723,7 +726,8 @@ ds.vertCox <- function(formula, data = NULL,
           session_id = session_id, n_obs = n_obs, p_total = newton_res$p_total,
           transport_pks = transport_pks,
           .cox_score_round = .cox_score_round,
-          .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose)
+          .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose,
+          ring = ring)
         grad_norm <- sqrt(sum(pb$grad^2))
         if (verbose) message(sprintf(
           "  [path-b] iter %d  ||grad(beta_k)||=%.4g",
@@ -817,11 +821,11 @@ ds.vertCox <- function(formula, data = NULL,
         agg_eta <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
           share_a = ll_res[[y_server]]$sum_delta_eta_fp,
           share_b = ll_res[[nl]]$sum_delta_eta_fp,
-          frac_bits = 20L))
+          frac_bits = spline_frac_bits, ring = ring_tag))
         agg_logS <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
           share_a = ll_res[[y_server]]$sum_delta_logS_fp,
           share_b = ll_res[[nl]]$sum_delta_logS_fp,
-          frac_bits = 20L))
+          frac_bits = spline_frac_bits, ring = ring_tag))
         loglik_newton <- as.numeric(agg_eta$values)[1L] -
                          as.numeric(agg_logS$values)[1L]
         if (verbose) message(sprintf(
@@ -1153,11 +1157,11 @@ ds.vertCox <- function(formula, data = NULL,
       agg_eta <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
         share_a = ll_res[[y_server]]$sum_delta_eta_fp,
         share_b = ll_res[[nl]]$sum_delta_eta_fp,
-        frac_bits = 20L))
+        frac_bits = spline_frac_bits, ring = ring_tag))
       agg_logS <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
         share_a = ll_res[[y_server]]$sum_delta_logS_fp,
         share_b = ll_res[[nl]]$sum_delta_logS_fp,
-        frac_bits = 20L))
+        frac_bits = spline_frac_bits, ring = ring_tag))
       loglik <- as.numeric(agg_eta$values[1L]) -
                  as.numeric(agg_logS$values[1L])
     }, error = function(e) {
