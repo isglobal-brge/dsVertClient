@@ -98,7 +98,26 @@ ds.vertCox <- function(formula, data = NULL,
                        # plan's strict <1e-3 goal for Cox.
                        newton_refine_iters = 5L,
                        newton_refine_tol = 1e-5,
+                       # Ring selector (task #116 Cox STRICT closure):
+                       # 63 (default) uses the current Ring63 uint64 pipeline
+                       # at fracBits=20. 127 routes the input sharing, DCF
+                       # generation, Beaver triples, wide-spline phases, and
+                       # aggregate ops through the Uint128 Ring127 pipeline
+                       # at fracBits=50 (~1e-15 per-op vs Ring63's ~1e-6).
+                       # NOTE step 5b: ring=127 threads through the spline
+                       # path (input-sharing + DCF + spline triples + 4-phase
+                       # eval + mu aggregation). Downstream Beaver-gradient
+                       # triples / k2-ring63-aggregate callsites beyond
+                       # spline (lines ~500+ in this file) remain Ring63;
+                       # validate Path A one-step Newton behaviour first,
+                       # extend to Path B Beaver-gradient in a follow-up if
+                       # needed.
+                       ring = 63L,
                        verbose = TRUE, datasources = NULL) {
+  ring <- as.integer(ring)
+  if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
+  spline_frac_bits <- if (ring == 127L) 50L else 20L
+
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
   if (!inherits(formula, "formula")) {
@@ -214,7 +233,7 @@ ds.vertCox <- function(formula, data = NULL,
     r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
       data_name = std_data, x_vars = srv_x,
       y_var = NULL,   # Cox does not share a numeric y_share (time is sorted, not shared)
-      peer_pk = peer_pk_safe, session_id = session_id))
+      peer_pk = peer_pk_safe, ring = ring, session_id = session_id))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     share_results[[server]] <- r
   }
@@ -342,8 +361,9 @@ ds.vertCox <- function(formula, data = NULL,
           dcf0_pk = transport_pks[[y_server]],
           dcf1_pk = transport_pks[[nl]],
           family = family_name,
-          n = as.integer(n_target), frac_bits = 20L,
+          n = as.integer(n_target), frac_bits = spline_frac_bits,
           num_intervals = as.integer(num_intervals),
+          ring = ring,
           session_id = session_id))
       if (is.list(key_res) && length(key_res) == 1L) key_res <- key_res[[1L]]
       .sendBlob(key_res$dcf_blob_0, "k2_dcf_keys_persistent",
@@ -362,7 +382,8 @@ ds.vertCox <- function(formula, data = NULL,
       call("glmRing63GenSplineTriplesDS",
         dcf0_pk = transport_pks[[y_server]],
         dcf1_pk = transport_pks[[nl]],
-        n = as.integer(n_target), frac_bits = 20L,
+        n = as.integer(n_target), frac_bits = spline_frac_bits,
+        ring = ring,
         session_id = session_id))
     if (is.list(spline_t) && length(spline_t) == 1L)
       spline_t <- spline_t[[1L]]
@@ -379,7 +400,8 @@ ds.vertCox <- function(formula, data = NULL,
         party_id = if (is_coord) 0L else 1L,
         family = family_name,
         num_intervals = as.integer(num_intervals),
-        frac_bits = 20L, session_id = session_id))
+        frac_bits = spline_frac_bits, ring = ring,
+        session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       ph1[[server]] <- r
     }
@@ -394,7 +416,8 @@ ds.vertCox <- function(formula, data = NULL,
         party_id = if (is_coord) 0L else 1L,
         family = family_name,
         num_intervals = as.integer(num_intervals),
-        frac_bits = 20L, session_id = session_id))
+        frac_bits = spline_frac_bits, ring = ring,
+        session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       ph2[[server]] <- r
     }
@@ -417,7 +440,8 @@ ds.vertCox <- function(formula, data = NULL,
         party_id = if (is_coord) 0L else 1L,
         family = family_name,
         num_intervals = as.integer(num_intervals),
-        frac_bits = 20L, session_id = session_id))
+        frac_bits = spline_frac_bits, ring = ring,
+        session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       ph3[[server]] <- r
     }
@@ -439,7 +463,8 @@ ds.vertCox <- function(formula, data = NULL,
         party_id = if (is_coord) 0L else 1L,
         family = family_name,
         num_intervals = as.integer(num_intervals),
-        frac_bits = 20L, session_id = session_id))
+        frac_bits = spline_frac_bits, ring = ring,
+        session_id = session_id))
     }
     invisible(NULL)
   }
