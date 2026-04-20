@@ -34,7 +34,21 @@
                                      verbose = FALSE,
                                      share_scale = 1.0,
                                      column_scales = NULL,
-                                     standardize = FALSE) {
+                                     standardize = FALSE,
+                                     ring = "ring63") {
+  # Task #121 LMM Ring127 migration: when ring=="ring127", Beaver
+  # element-wise products use fracBits=50 (Uint128 shares) — a ~2^30
+  # reduction in per-op truncation noise vs Ring63 fracBits=20. All
+  # Beaver/gen-triples/aggregate DS ops already dispatch on `ring`.
+  ring_tag <- if (is.character(ring)) ring else "ring63"
+  if (!(ring_tag %in% c("ring63", "ring127"))) {
+    stop(".ds_vertLMM_closed_form: ring must be 'ring63' or 'ring127'",
+         call. = FALSE)
+  }
+  fb <- if (ring_tag == "ring127") 50L else 20L
+  # k2BeaverVecmulGenTriplesDS expects ring as integer (63L/127L),
+  # while the LMMGram DS wrappers accept the string form. Translate.
+  ring_int <- if (ring_tag == "ring127") 127L else 63L
   if (is.null(peer_srv))
     stop("Closed-form LMM solver currently requires K=2 (peer_srv != NULL)",
          call. = FALSE)
@@ -81,7 +95,8 @@
          peer_pk = transport_pks[[peer_srv]],
          session_id = session_id,
          share_scale = sc,
-         standardize = std_flag))
+         standardize = std_flag,
+         ring = ring_tag))
   if (is.list(local_y) && length(local_y) == 1L) local_y <- local_y[[1L]]
 
   # Peer server: transforms x_peer columns only.
@@ -95,7 +110,8 @@
          peer_pk = transport_pks[[y_srv]],
          session_id = session_id,
          share_scale = sc,
-         standardize = std_flag))
+         standardize = std_flag,
+         ring = ring_tag))
   if (is.list(local_p) && length(local_p) == 1L) local_p <- local_p[[1L]]
 
   # Relay peer blobs to the opposite party.
@@ -144,7 +160,8 @@
            dcf1_pk = transport_pks[[peer_srv]],
            n = as.integer(n),
            session_id = session_id,
-           frac_bits = 20L))
+           frac_bits = fb,
+           ring = ring_int))
     if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
     # Relay triples to both parties.
     DSI::datashield.aggregate(conns[ysrv_ci],
@@ -161,12 +178,14 @@
       call("dsvertLMMGramR1DS",
            peer_pk = transport_pks[[peer_srv]],
            x_col = a_col, y_col = b_col,
-           session_id = session_id, frac_bits = 20L))
+           session_id = session_id, frac_bits = fb,
+           ring = ring_tag))
     r1_p <- DSI::datashield.aggregate(conns[peer_ci],
       call("dsvertLMMGramR1DS",
            peer_pk = transport_pks[[y_srv]],
            x_col = a_col, y_col = b_col,
-           session_id = session_id, frac_bits = 20L))
+           session_id = session_id, frac_bits = fb,
+           ring = ring_tag))
     if (is.list(r1_y) && length(r1_y) == 1L) r1_y <- r1_y[[1L]]
     if (is.list(r1_p) && length(r1_p) == 1L) r1_p <- r1_p[[1L]]
     # Relay masks between parties.
@@ -181,18 +200,21 @@
       call("dsvertLMMGramR2DS",
            is_party0 = TRUE,
            x_col = a_col, y_col = b_col,
-           session_id = session_id, frac_bits = 20L))
+           session_id = session_id, frac_bits = fb,
+           ring = ring_tag))
     r2_p <- DSI::datashield.aggregate(conns[peer_ci],
       call("dsvertLMMGramR2DS",
            is_party0 = FALSE,
            x_col = a_col, y_col = b_col,
-           session_id = session_id, frac_bits = 20L))
+           session_id = session_id, frac_bits = fb,
+           ring = ring_tag))
     if (is.list(r2_y) && length(r2_y) == 1L) r2_y <- r2_y[[1L]]
     if (is.list(r2_p) && length(r2_p) == 1L) r2_p <- r2_p[[1L]]
     # Aggregate two scalar shares into the true dot product.
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = r2_y$scalar_share,
-      share_b = r2_p$scalar_share, frac_bits = 20L))
+      share_b = r2_p$scalar_share, frac_bits = fb,
+      ring = ring_tag))
     cross_results[k] <- as.numeric(agg$values[1L])
   }
 
