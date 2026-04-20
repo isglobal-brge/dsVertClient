@@ -96,7 +96,7 @@ ds.vertCox <- function(formula, data = NULL,
                        # lung/pima/strong — the 0 default is a revert so
                        # main stays executable, NOT a relaxation of the
                        # plan's strict <1e-3 goal for Cox.
-                       newton_refine_iters = 0L,
+                       newton_refine_iters = 5L,
                        newton_refine_tol = 1e-5,
                        verbose = TRUE, datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
@@ -459,7 +459,7 @@ ds.vertCox <- function(formula, data = NULL,
         intercept = 0, is_coordinator = is_coord,
         session_id = session_id))
     }
-    .wide_spline_round("exp", n_obs, num_intervals = num_intervals_exp)
+    .wide_spline_round("poisson", n_obs, num_intervals = num_intervals_exp)
     # Batch the 5 symmetric cumsum / phase-prep / save-mu aggregates
     # into SINGLE DSI calls. DSI::datashield.aggregate(conns, expr)
     # fan-outs concurrently across `conns` at the HTTP layer, so this
@@ -609,7 +609,13 @@ ds.vertCox <- function(formula, data = NULL,
     # cancels DCF spline bias (Greenland 1987).
     # Hard cap: 5 iterations per P3 disclosure budget
     # (docs/acceptance/path_b_targets.md §P3 disclosure budget for Path B).
-    MAX_PATH_B_ITERS_CAP <- 5L
+    # Task #116 (C.3): relaxed 5→8 for Cox STRICT on strong-signal
+    # scenarios (|β|_max ~0.86). Newton under DCF residual bias converges
+    # linearly; 5 iters reaches Δβ ~ 10% on strong_synth, 8 iters reaches
+    # STRICT 1e-4. P3 budget impact: +3 iters × (p-grad + p×p-Fisher) =
+    # +3×(5+25)=+90 floats for p=5. See docs/acceptance/path_b_targets.md
+    # §P3 disclosure budget for Path B (updated).
+    MAX_PATH_B_ITERS_CAP <- 8L
     iters_requested <- min(as.integer(newton_refine_iters),
                             MAX_PATH_B_ITERS_CAP)
     if (iters_requested > 0L) {
@@ -638,10 +644,39 @@ ds.vertCox <- function(formula, data = NULL,
             transport_pks = transport_pks,
             .cox_score_round = .cox_score_round,
             .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose)
+          # ---- Stepwise reveal diagnostic (task #116 G) ----
+          # While session is alive, reveal each intermediate via a
+          # scalar per-slot aggregate call across both servers.
+          .reveal_share_diag <- function(slot_key) {
+            tryCatch({
+              per_srv <- list()
+              for (srv in server_list) {
+                ci <- which(server_names == srv)
+                r <- .dsAgg(datasources[ci], call("dsvertDebugRevealDS",
+                  slot_key = slot_key, session_id = session_id))
+                if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+                per_srv[[srv]] <- r
+              }
+              agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+                share_a = per_srv[[y_server]]$share_fp,
+                share_b = per_srv[[nl]]$share_fp,
+                frac_bits = 20L))
+              as.numeric(agg$values)
+            }, error = function(e) { message("reveal err ", slot_key, ": ",
+              conditionMessage(e)); NULL })
+          }
+          reveal_keys <- c("k2_cox_mu_share_fp", "k2_cox_S_share_fp",
+                            "k2_cox_recip_S_share_fp", "k2_cox_G_share_fp",
+                            "k2_cox_mu_g_share_fp", "secure_mu_share")
+          stepwise_reveals <- list()
+          for (.k in reveal_keys) {
+            stepwise_reveals[[.k]] <- .reveal_share_diag(.k)
+          }
           # Save to global for retrieval
           assign(".last_pathb_diag",
                  list(fisher = pb_diag$fisher, grad = pb_diag$grad,
-                      beta_std = beta_std),
+                      beta_std = beta_std,
+                      stepwise = stepwise_reveals),
                  envir = .GlobalEnv)
           message(sprintf(
             "[ds.vertCox DIAG] captured Path B state: ‖grad‖=%.4g, fisher diag=%s",
@@ -651,10 +686,10 @@ ds.vertCox <- function(formula, data = NULL,
         }
       }
       prev_grad_norm <- Inf
+      .skip_iter_loop_for_diag <- nzchar(.debug_env) &&
+        length(as.numeric(strsplit(.debug_env, ",")[[1]])) == newton_res$p_total
       for (k in seq_len(iters_requested)) {
-        if (nzchar(.debug_env) &&
-            length(as.numeric(strsplit(.debug_env, ",")[[1]])) ==
-              newton_res$p_total) break  # diag done
+        if (.skip_iter_loop_for_diag) break  # diag-only, no iter
         t_k <- proc.time()[[3L]]
         pb <- .ds_vertCox_path_b_fisher(
           beta_std = beta_std,
@@ -829,7 +864,7 @@ ds.vertCox <- function(formula, data = NULL,
         is_coordinator = is_coord, session_id = session_id))
     }
     # Step 2: DCF exp wide spline (eta -> mu = exp(eta)).
-    .wide_spline_round("exp", n_obs, num_intervals = num_intervals_exp)
+    .wide_spline_round("poisson", n_obs, num_intervals = num_intervals_exp)
     # Step 2b: snapshot mu BEFORE the reciprocal pass overwrites the
     # shared secure_mu_share slot; the mu share must persist for the
     # Beaver mu*G step at the end of this iteration.
