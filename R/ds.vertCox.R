@@ -548,16 +548,211 @@ ds.vertCox <- function(formula, data = NULL,
     invisible(NULL)
   }
 
+  # Cache of Ring127 Chebyshev recip public coefficients + NR constants.
+  # Populated lazily in `.recip127_round` on first call via the local
+  # `.callMpcTool` binary (deterministic public constants, no DS relay).
+  recip127_coef_cache <- NULL
+
+  # Ring127 spline-less 1/x via Chebyshev-Horner initial guess (degree 30
+  # on domain [1, 3000]) + Newton-Raphson refinement (6 iters). Replaces
+  # the wide-spline reciprocal path at ring=127 only. Ring63 + other
+  # ring=127 families keep the existing DCF spline path.
+  #
+  # Input : x share (positive S(t) values) in ss$k2_eta_share_fp (written
+  #         by k2CoxPrepareRecipPhaseDS, which copies k2_cox_S_share_fp
+  #         into the eta slot before invoking this round).
+  # Output: 1/x share in ss$secure_mu_share (same slot the spline path
+  #         writes, so downstream k2StoreCoxRecipDS is unaffected).
+  #
+  # Algorithm (all on shares except public coeffs):
+  #   1. t     = x · (1/halfRange) + (-mid/halfRange)     [LocalScale + Affine]
+  #   2. twoT  = t + t                                    [Affine +1/+1]
+  #   3. Clenshaw Horner: b_{N+1}=0, b_N=c_N_party0,
+  #        for k=N-1..1:  b_k = c_k + twoT · b_{k+1} − b_{k+2}
+  #      y     = c_0 + t · b_1 − b_2    ← Chebyshev initial guess (~58% worst)
+  #   4. NR (6 iters):  y ← y · (2 − x · y)
+  #        — rel_err squares per iter, reaches Ring127 ULP.
+  #
+  # ~42 Beaver vecmuls + 35 AffineCombines per call, batched over n.
+  # 0-bit disclosure preserved (no range reduction, no shift reveal).
+  .recip127_round <- function(n_target) {
+    if (ring != 127L) {
+      stop(".recip127_round invoked with ring=", ring,
+           "; Ring127-only path.", call. = FALSE)
+    }
+    n_int <- as.integer(n_target)
+
+    # --- Step 1: fetch public recip coefficients + NR constants.
+    if (is.null(recip127_coef_cache)) {
+      recip127_coef_cache <<- dsVert:::.callMpcTool(
+        "k2-recip127-get-coeffs", list(frac_bits = 50L))
+    }
+    rc <- recip127_coef_cache
+    degree <- as.integer(rc$degree)
+    nr_steps <- as.integer(rc$nr_steps)
+    all_coeffs_raw <- jsonlite::base64_dec(rc$coeffs)
+    c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
+      s <- (idx - 1L) * 16L + 1L
+      e <- s + 15L
+      jsonlite::base64_enc(all_coeffs_raw[s:e])
+    }, character(1))
+
+    # --- Step 2a: t_pre = x · (1/halfRange)  (local scale, both parties).
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+        in_key = "k2_eta_share_fp",
+        scalar_fp = rc$one_over_half_range,
+        output_key = "k2_r127_recip_t_pre",
+        n = n_int, session_id = session_id))
+    }
+    # --- Step 2b: t = t_pre + (-mid/halfRange) on party 0 (public offset).
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = "k2_r127_recip_t_pre",
+        b_key = NULL,
+        sign_a = 1L, sign_b = 0L,
+        public_const_fp = rc$neg_mid_over_half_range,
+        is_party0 = is_coord,
+        output_key = "k2_r127_recip_t",
+        n = n_int, session_id = session_id))
+    }
+
+    # --- Step 3: twoT = t + t.
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = "k2_r127_recip_t",
+        b_key = "k2_r127_recip_t",
+        sign_a = 1L, sign_b = 1L,
+        public_const_fp = NULL,
+        is_party0 = is_coord,
+        output_key = "k2_r127_recip_twoT",
+        n = n_int, session_id = session_id))
+    }
+
+    # --- Step 4: bootstrap b_N (party0 has c_N, party1 has 0) + b_{N+1} = 0.
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = NULL, b_key = NULL,
+        sign_a = 0L, sign_b = 0L,
+        public_const_fp = c_b64[degree + 1L],
+        is_party0 = is_coord,
+        output_key = "k2_r127_recip_bB",
+        n = n_int, session_id = session_id))
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = NULL, b_key = NULL,
+        sign_a = 0L, sign_b = 0L,
+        public_const_fp = NULL,
+        is_party0 = is_coord,
+        output_key = "k2_r127_recip_bA",
+        n = n_int, session_id = session_id))
+    }
+
+    # --- Step 5: Horner loop (same rolling 2-slot pattern as .exp127_round).
+    slot_B <- "k2_r127_recip_bB"
+    slot_A <- "k2_r127_recip_bA"
+    for (k in seq.int(degree - 1L, 1L)) {
+      .run_beaver_vecmul_ring127(
+        x_key = "k2_r127_recip_twoT",
+        y_key = slot_B,
+        output_key = "k2_r127_recip_tmp",
+        n = n_int)
+      for (server in server_list) {
+        ci <- which(server_names == server)
+        is_coord <- (server == y_server)
+        .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+          a_key = "k2_r127_recip_tmp",
+          b_key = slot_A,
+          sign_a = 1L, sign_b = -1L,
+          public_const_fp = c_b64[k + 1L],
+          is_party0 = is_coord,
+          output_key = slot_A,
+          n = n_int, session_id = session_id))
+      }
+      swap <- slot_A; slot_A <- slot_B; slot_B <- swap
+    }
+    # Post-loop: slot_B = b_1, slot_A = b_2.
+
+    # --- Step 6: y_0 = c_0 + t · b_1 − b_2.
+    .run_beaver_vecmul_ring127(
+      x_key = "k2_r127_recip_t",
+      y_key = slot_B,
+      output_key = "k2_r127_recip_tmp",
+      n = n_int)
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = "k2_r127_recip_tmp",
+        b_key = slot_A,
+        sign_a = 1L, sign_b = -1L,
+        public_const_fp = c_b64[1L],
+        is_party0 = is_coord,
+        output_key = "k2_r127_recip_y",
+        n = n_int, session_id = session_id))
+    }
+
+    # --- Step 7: NR refinement y ← y · (2 − x · y), 6 iters.
+    # Rolling slot alternation to avoid server-side copies; the last iter
+    # writes directly into secure_mu_share (the spline-path output slot)
+    # so no final identity copy is needed.
+    y_cur <- "k2_r127_recip_y"
+    y_next <- "k2_r127_recip_y_alt"
+    for (iter in seq_len(nr_steps)) {
+      # xy = x · y_cur.
+      .run_beaver_vecmul_ring127(
+        x_key = "k2_eta_share_fp",
+        y_key = y_cur,
+        output_key = "k2_r127_recip_xy",
+        n = n_int)
+      # twoMinusXy = 2 − xy  (sign_a=0, sign_b=-1, const=2 on party 0).
+      for (server in server_list) {
+        ci <- which(server_names == server)
+        is_coord <- (server == y_server)
+        .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+          a_key = NULL,
+          b_key = "k2_r127_recip_xy",
+          sign_a = 0L, sign_b = -1L,
+          public_const_fp = rc$two_fp,
+          is_party0 = is_coord,
+          output_key = "k2_r127_recip_twoMinusXy",
+          n = n_int, session_id = session_id))
+      }
+      # y_next = y_cur · twoMinusXy  (Beaver). Final iter writes to
+      # secure_mu_share directly.
+      final_slot <- if (iter == nr_steps) "secure_mu_share" else y_next
+      .run_beaver_vecmul_ring127(
+        x_key = y_cur,
+        y_key = "k2_r127_recip_twoMinusXy",
+        output_key = final_slot,
+        n = n_int)
+      if (iter < nr_steps) {
+        swap <- y_cur; y_cur <- y_next; y_next <- swap
+      }
+    }
+
+    invisible(NULL)
+  }
+
   .wide_spline_round <- function(family_name, n_target,
                                   num_intervals = 100L,
                                   need_dcf_keys = TRUE) {
-    # Ring127 spline-less path: replace the poisson exp spline (noise floor
-    # ~1e-4 per-op) with Chebyshev-Horner evaluation (~3e-14 rel ULP-limited).
-    # Reciprocal remains on the spline path until 5c(I-c-6) lands the
-    # Goldschmidt NR version; other families (softplus, log) are not used
-    # in the ring=127 Cox path.
+    # Ring127 spline-less paths: replace the spline with Chebyshev-Horner
+    # evaluation (poisson) or Chebyshev-Horner + NR refinement (reciprocal),
+    # eliminating the ~1e-4 spline noise floor. Ring63 and any ring=127
+    # families other than poisson/reciprocal keep the existing DCF path.
     if (ring == 127L && identical(family_name, "poisson")) {
       .exp127_round(n_target = n_target)
+      return(invisible(NULL))
+    }
+    if (ring == 127L && identical(family_name, "reciprocal")) {
+      .recip127_round(n_target = n_target)
       return(invisible(NULL))
     }
     # Cache hit: skip the ~20s key-gen + distribute round.
