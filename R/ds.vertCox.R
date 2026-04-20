@@ -504,13 +504,16 @@ ds.vertCox <- function(formula, data = NULL,
            session_id = session_id))
     .dsAgg(datasources[all_ci],
       call("k2CoxForwardCumsumGDS", session_id = session_id))
-    # Beaver vecmul mu*G.
+    # Beaver vecmul mu*G. Ring threaded (task #116 step 5c(F)): at ring=127
+    # frac_bits=50 and Ring127 handler path through all Beaver + gradient
+    # primitives. At ring=63 fracs=20 and the legacy Ring63 path runs.
     tri <- .dsAgg(datasources[dealer_ci],
       call("k2BeaverVecmulGenTriplesDS",
            dcf0_pk = transport_pks[[y_server]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n_obs),
-           session_id = session_id, frac_bits = 20L))
+           session_id = session_id, frac_bits = spline_frac_bits,
+           ring = ring))
     if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
     .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple",
               which(server_names == y_server))
@@ -527,7 +530,8 @@ ds.vertCox <- function(formula, data = NULL,
         x_key = "k2_cox_mu_share_fp",
         y_key = "k2_cox_G_share_fp",
         n = as.integer(n_obs),
-        session_id = session_id, frac_bits = 20L))
+        session_id = session_id, frac_bits = spline_frac_bits,
+        ring = ring))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r1_b[[server]] <- r
     }
@@ -543,19 +547,22 @@ ds.vertCox <- function(formula, data = NULL,
              y_key = "k2_cox_G_share_fp",
              output_key = "k2_cox_mu_g_share_fp",
              n = as.integer(n_obs),
-             session_id = session_id, frac_bits = 20L))
+             session_id = session_id, frac_bits = spline_frac_bits,
+             ring = ring))
     }
     for (server in server_list) {
       .dsAgg(datasources[which(server_names == server)],
         call("k2CoxFinaliseResidualDS",
              is_party0 = (server == y_server),
-             session_id = session_id, frac_bits = 20L))
+             session_id = session_id, frac_bits = spline_frac_bits,
+             ring = ring))
     }
     grad_t <- .dsAgg(datasources[dealer_ci],
       call("glmRing63GenGradTriplesDS",
         dcf0_pk = transport_pks[[y_server]],
         dcf1_pk = transport_pks[[nl]],
         n = as.integer(n_obs), p = as.integer(p_total),
+        ring = ring,
         session_id = session_id))
     if (is.list(grad_t) && length(grad_t) == 1L) grad_t <- grad_t[[1L]]
     .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp",
