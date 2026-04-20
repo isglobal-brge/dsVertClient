@@ -23,12 +23,16 @@
                                          session_id, n_obs, transport_pks,
                                          p_coord, p_nl,
                                          .dsAgg = NULL, .sendBlob = NULL,
-                                         verbose = TRUE) {
+                                         verbose = TRUE, ring = 63L) {
   if (is.null(.dsAgg))    .dsAgg    <- DSI::datashield.aggregate
   if (is.null(.sendBlob)) {
     stop(".sendBlob must be provided by caller (uses adaptive chunked ",
          "relay via mpcStoreBlobDS).", call. = FALSE)
   }
+  ring <- as.integer(ring)
+  if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
+  ring_tag <- if (ring == 127L) "ring127" else "ring63"
+  frac_bits <- if (ring == 127L) 50L else 20L
   dealer_ci <- which(server_names == nl)
   single <- function(r) if (is.list(r) && length(r) == 1L) r[[1L]] else r
 
@@ -65,7 +69,7 @@
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = grad_per_srv[[y_server]][[key]],
       share_b = grad_per_srv[[nl]][[key]],
-      frac_bits = 20L))
+      frac_bits = frac_bits, ring = ring_tag))
     grad_vec[j] <- as.numeric(agg$values)[1L]
   }
   if (verbose) {
@@ -92,7 +96,8 @@
            dcf0_pk = transport_pks[[y_server]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n_obs),
-           session_id = session_id, frac_bits = 20L)))
+           session_id = session_id, frac_bits = frac_bits,
+           ring = ring)))
     .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple",
               which(server_names == y_server))
     .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple",
@@ -110,7 +115,8 @@
         x_key = "cox_n_Beaver_A_fp",
         y_key = "cox_n_Beaver_B_fp",
         n = as.integer(n_obs),
-        session_id = session_id, frac_bits = 20L)))
+        session_id = session_id, frac_bits = frac_bits,
+        ring = ring)))
       r1[[s]] <- r
     }
     .sendBlob(r1[[y_server]]$peer_blob, "k2_beaver_vecmul_peer_masked",
@@ -125,7 +131,8 @@
         y_key = "cox_n_Beaver_B_fp",
         output_key = "cox_n_Beaver_Z_fp",
         n = as.integer(n_obs),
-        session_id = session_id, frac_bits = 20L))
+        session_id = session_id, frac_bits = frac_bits,
+        ring = ring))
     }
     scalar_per_srv <- list()
     for (s in server_list) {
@@ -138,7 +145,7 @@
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = scalar_per_srv[[y_server]]$scalar_share_fp,
       share_b = scalar_per_srv[[nl]]$scalar_share_fp,
-      frac_bits = 20L))
+      frac_bits = frac_bits, ring = ring_tag))
     as.numeric(agg$values)[1L]
   }
 

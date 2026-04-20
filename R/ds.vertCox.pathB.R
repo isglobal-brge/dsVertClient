@@ -26,7 +26,12 @@
                                        server_list, y_server, nl, session_id,
                                        n_obs, p_total, transport_pks,
                                        .cox_score_round,
-                                       .dsAgg, .sendBlob, verbose = FALSE) {
+                                       .dsAgg, .sendBlob, verbose = FALSE,
+                                       ring = 63L) {
+  ring <- as.integer(ring)
+  if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
+  ring_tag <- if (ring == 127L) "ring127" else "ring63"
+  frac_bits <- if (ring == 127L) 50L else 20L
   dealer_ci <- which(server_names == nl)
   single <- function(r) if (is.list(r) && length(r) == 1L) r[[1L]] else r
 
@@ -42,7 +47,8 @@
            dcf0_pk = transport_pks[[y_server]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n_obs),
-           session_id = session_id, frac_bits = 20L)))
+           session_id = session_id, frac_bits = frac_bits,
+           ring = ring)))
     .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple",
               which(server_names == y_server))
     .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple",
@@ -59,7 +65,8 @@
         peer_pk = transport_pks[[peer]],
         x_key = x_key, y_key = y_key,
         n = as.integer(n_obs),
-        session_id = session_id, frac_bits = 20L)))
+        session_id = session_id, frac_bits = frac_bits,
+        ring = ring)))
       r1[[s]] <- r
     }
     .sendBlob(r1[[y_server]]$peer_blob, "k2_beaver_vecmul_peer_masked",
@@ -73,7 +80,8 @@
         x_key = x_key, y_key = y_key,
         output_key = output_key,
         n = as.integer(n_obs),
-        session_id = session_id, frac_bits = 20L))
+        session_id = session_id, frac_bits = frac_bits,
+        ring = ring))
     }
     invisible(NULL)
   }
@@ -93,7 +101,7 @@
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = per_srv[[y_server]]$scalar_share_fp,
       share_b = per_srv[[nl]]$scalar_share_fp,
-      frac_bits = 20L))
+      frac_bits = frac_bits, ring = ring_tag))
     as.numeric(agg$values)[1L]
   }
 
