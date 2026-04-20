@@ -1192,6 +1192,14 @@ ds.vertCox <- function(formula, data = NULL,
         }
       }
       prev_grad_norm <- Inf
+      # Track pre-iter β + Fisher so that if grad grows we can REVERT to
+      # the last good iterate (task #117 C3 determinism: Beaver-stochastic
+      # masks can cause one bad step on boundary scenarios like Pima
+      # where a single unlucky iter sends β far off, and grad-grow halt
+      # without revert ships the bad β. Revert-on-grad-grow recovers the
+      # last safe iterate instead.)
+      prev_beta_std   <- beta_std
+      prev_fisher_mat <- Fisher0
       # Skip the iter loop iff oracle injection actually happened — i.e.
       # debug_beta_std was successfully built (length-matched Mode A or
       # Mode B). If the env var was set but parsing failed (wrong length
@@ -1219,9 +1227,16 @@ ds.vertCox <- function(formula, data = NULL,
           k + 1L, grad_norm))
         # Divergence guard: per Codex directive, if grad grows 2× or
         # more, halt and diagnose — do NOT raise the cap.
+        # REVERT-ON-GROW (task #117 C3 fix): Beaver-stochastic
+        # masks can cause a single overshoot step that grows grad on
+        # boundary scenarios. Revert β to the pre-overshoot iterate so
+        # the bad step does NOT become the shipped result.
         if (is.finite(prev_grad_norm) && grad_norm > 2 * prev_grad_norm) {
-          if (verbose) message(
-            "  [path-b] grad growing > 2x, halting refinement at iter ", k)
+          if (verbose) message(sprintf(
+            "  [path-b] grad growing > 2x at iter %d; reverting to pre-iter β (‖β_pre‖=%.4g) and halting",
+            k + 1L, sqrt(sum(prev_beta_std^2))))
+          beta_std      <- prev_beta_std
+          Fisher_final  <- prev_fisher_mat
           break
         }
         prev_grad_norm <- grad_norm
@@ -1235,13 +1250,29 @@ ds.vertCox <- function(formula, data = NULL,
             Fisher0_solve(pb$grad)
           })
         delta_norm <- sqrt(sum(delta^2))
-        # Modest trust-region cap (Newton near MLE takes small steps).
-        max_step <- max(0.5, 0.5 * sqrt(sum(beta_std^2)))
+        # Damped trust-region cap (task #117 C3 fix, F2 per
+        # docs/determinism/ring127_cox_stochasticity_root_cause.md).
+        # coxph (src/coxfit6.c) halves the step when log-partial-
+        # likelihood would decrease; we approximate this with a
+        # geometric damping schedule max_step_k = 0.5 / 2^{k-1} for
+        # k ≥ 2. Rationale: under Beaver-stochastic Fisher/grad, an
+        # unlucky mask realization can push a step across a likelihood
+        # ridge; progressively smaller steps in later iters give the
+        # trajectory time to contract toward the biased-FP without
+        # overshooting. The base max_step on iter 1 remains 0.5×‖β‖
+        # so Path A's one-shot Newton can still make a full Newton
+        # move from β₀=0.
+        base_step <- max(0.5, 0.5 * sqrt(sum(beta_std^2)))
+        max_step  <- base_step / (2 ^ max(0L, k - 1L))
         damped <- FALSE
         if (delta_norm > max_step) {
           delta <- delta * (max_step / delta_norm)
           damped <- TRUE
         }
+        # Snapshot pre-step β + Fisher so revert-on-grad-grow (next iter
+        # check) can recover the last good iterate. Task #117 C3 fix.
+        prev_beta_std   <- beta_std
+        prev_fisher_mat <- pb$fisher
         beta_std <- beta_std + delta
         Fisher_final <- pb$fisher
         iters_done <- iters_done + 1L
