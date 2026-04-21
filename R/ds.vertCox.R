@@ -1026,6 +1026,86 @@ ds.vertCox <- function(formula, data = NULL,
   if (isTRUE(one_step_newton)) {
     if (verbose) message("[ds.vertCox] one-step Newton path at beta=0")
     n_events_total <- cox_times$n_events
+    # -- F4/F7 support: partial-log-likelihood probe at an arbitrary β.
+    # Re-runs the DCF pipeline at β (full .cox_score_round populating μ, G,
+    # S shares), then computes Σ_events (δ·η − δ·log S) via the existing
+    # log wide-spline + k2CoxPartialLogLikAggregateDS aggregate path. Used
+    # by F7 (Path A damping at β=0 vs β_A) and F4 (Path B step-halving on
+    # pll). Coxfit6.c-style literature-standard step-halving criterion:
+    # accept iff pll(β_new) ≥ pll(β_old) − newton_refine_tol.
+    .pll_at <- function(beta_) {
+      .pll_dbg <- identical(Sys.getenv("DSVERT_PLL_DEBUG"), "1")
+      tryCatch({
+        if (.pll_dbg) {
+          .pll_count_env <- get0(".dsvert_pll_count",
+            envir = .GlobalEnv, inherits = FALSE, ifnotfound = 0L)
+          assign(".dsvert_pll_count", .pll_count_env + 1L,
+            envir = .GlobalEnv)
+          .pll_t0 <- proc.time()[[3L]]
+          writeLines(sprintf("[pll#%d] START ||β||=%.4g",
+            .pll_count_env + 1L, sqrt(sum(beta_^2))), con = stderr())
+          flush(stderr())
+        }
+        .cox_score_round(beta_)
+        if (.pll_dbg) {
+          writeLines(sprintf("[pll#%d] cox_score_round done %.2fs",
+            .pll_count_env + 1L, proc.time()[[3L]] - .pll_t0),
+            con = stderr())
+          flush(stderr())
+        }
+        for (srv2 in server_list) {
+          ci2 <- which(server_names == srv2)
+          .dsAgg(datasources[ci2],
+            call("k2CoxPrepareLogSPhaseDS", session_id = session_id))
+        }
+        .wide_spline_round("log", n_obs, num_intervals = 200L)
+        if (.pll_dbg) {
+          writeLines(sprintf("[pll#%d] log spline done %.2fs",
+            .pll_count_env + 1L, proc.time()[[3L]] - .pll_t0),
+            con = stderr())
+          flush(stderr())
+        }
+        for (srv2 in server_list) {
+          ci2 <- which(server_names == srv2)
+          is_coord2 <- (srv2 == y_server)
+          .dsAgg(datasources[ci2], call("k2ComputeEtaShareDS",
+            beta_coord = beta_[seq_len(p_coord)],
+            beta_nl = beta_[seq_len(p_nl) + p_coord],
+            intercept = 0, is_coordinator = is_coord2,
+            session_id = session_id))
+        }
+        ll_res2 <- list()
+        for (srv2 in server_list) {
+          ci2 <- which(server_names == srv2)
+          r2 <- .dsAgg(datasources[ci2],
+            call("k2CoxPartialLogLikAggregateDS", session_id = session_id))
+          if (is.list(r2) && length(r2) == 1L) r2 <- r2[[1L]]
+          ll_res2[[srv2]] <- r2
+        }
+        agg_eta2 <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+          share_a = ll_res2[[y_server]]$sum_delta_eta_fp,
+          share_b = ll_res2[[nl]]$sum_delta_eta_fp,
+          frac_bits = spline_frac_bits, ring = ring_tag))
+        agg_logS2 <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+          share_a = ll_res2[[y_server]]$sum_delta_logS_fp,
+          share_b = ll_res2[[nl]]$sum_delta_logS_fp,
+          frac_bits = spline_frac_bits, ring = ring_tag))
+        out_pll <- as.numeric(agg_eta2$values)[1L] -
+                   as.numeric(agg_logS2$values)[1L]
+        if (.pll_dbg) {
+          writeLines(sprintf(
+            "[pll#%d] FINAL wall=%.2fs ||β||=%.4g pll=%.4g",
+            .pll_count_env + 1L, proc.time()[[3L]] - .pll_t0,
+            sqrt(sum(beta_^2)), out_pll),
+            con = stderr())
+          flush(stderr())
+        }
+        out_pll
+      }, error = function(e) {
+        if (verbose) message("[pll_at] unavailable: ", conditionMessage(e))
+        NA_real_
+      })
+    }
     newton_res <- .ds_vertCox_newton_one_step(
       datasources = datasources, server_names = server_names,
       server_list = server_list, y_server = y_server, nl = nl,
@@ -1035,6 +1115,20 @@ ds.vertCox <- function(formula, data = NULL,
       .dsAgg = .dsAgg, .sendBlob = .sendBlob,
       verbose = verbose, ring = ring)
     beta_std <- as.numeric(newton_res$beta_std)
+    # F7 (Path A damping, reviewer-revised after performance audit
+    # 2026-04-20 22:05): original pll-based variant was infeasible because
+    # the Ring127 "log" wide-spline DCF key generation first-call cost is
+    # ~6 min on local harness (compute_loglik=FALSE is the production
+    # default precisely for this reason — see ~L93 comment). Repurpose as
+    # a "virtual" Path A step recorded into prev_grad_norm / prev_beta_std
+    # / prev_delta so that iter 1 of Path B treats β_A as an already-
+    # committed step with reference grad(0). If iter 1 detects grad(β_A)
+    # grew ≥ 2× vs grad(0), F4 pll-halving engages on prev_delta = β_A
+    # (halving β_A toward 0 from baseline β=0). This gives the same
+    # structural safeguard as the original F7 without the 2× "always-on"
+    # pll cost; pll now fires ONLY on the narrow catastrophic tail events
+    # F7 was designed to catch. Aligns with reviewer's option (a) pivot.
+    grad0_norm <- sqrt(sum(as.numeric(newton_res$grad)^2))
     Fisher0  <- newton_res$fisher
     # Ridge-stabilised Fisher used as the fixed Newton preconditioner.
     Fisher0_reg <- Fisher0 +
@@ -1191,15 +1285,30 @@ ds.vertCox <- function(formula, data = NULL,
           # Skip Newton update; proceed to SE/return with oracle β
         }
       }
-      prev_grad_norm <- Inf
-      # Track pre-iter β + Fisher so that if grad grows we can REVERT to
-      # the last good iterate (task #117 C3 determinism: Beaver-stochastic
-      # masks can cause one bad step on boundary scenarios like Pima
-      # where a single unlucky iter sends β far off, and grad-grow halt
-      # without revert ships the bad β. Revert-on-grad-grow recovers the
-      # last safe iterate instead.)
-      prev_beta_std   <- beta_std
+      # Seed prev_* from Path A output so iter 1's F3/F4 check treats the
+      # Path A step (0 → β_A) as the "previous" committed step. This gives
+      # F4 pll-halving ability to recover from a bad β_A WITHOUT an
+      # always-on F7 pll-check (which was infeasible due to Ring127 log
+      # wide-spline cost). If iter 1's grad(β_A) > 2 × grad(0), F4 halves
+      # prev_delta = β_A (from baseline β=0) using pll — the narrow
+      # catastrophic-tail path we need to catch.
+      prev_grad_norm  <- grad0_norm
+      prev_beta_std   <- rep(0, p_total)
       prev_fisher_mat <- Fisher0
+      prev_delta      <- beta_std     # β_A = Path A one-shot Newton step
+      # Best-β tracker (post-F4 catastrophic-divergence insurance,
+      # reviewer directive 2026-04-20 22:55): track the iterate with the
+      # smallest grad_norm seen. If after the iter loop the final β has
+      # grad_norm >> grad(0), the iteration went catastrophically
+      # backwards (Pima 1.35 tail observed on N=10 L1 run 01 despite F4
+      # triggers). Ship the best-seen β instead. This is a deterministic
+      # post-hoc guard with zero MPC cost — purely client-side bookkeeping
+      # around already-revealed grad_norm scalars.
+      best_beta_std   <- rep(0, p_total)   # β=0 is the safest fallback
+      best_fisher     <- Fisher0
+      best_grad_norm  <- grad0_norm        # grad at β=0 is our baseline
+      # Also remember β_A in case it's better than the post-iter β (but
+      # we don't know its grad yet; iter 1's path_b_fisher will tell us).
       # Skip the iter loop iff oracle injection actually happened — i.e.
       # debug_beta_std was successfully built (length-matched Mode A or
       # Mode B). If the env var was set but parsing failed (wrong length
@@ -1225,18 +1334,40 @@ ds.vertCox <- function(formula, data = NULL,
         if (verbose) message(sprintf(
           "  [path-b] iter %d  ||grad(beta_k)||=%.4g",
           k + 1L, grad_norm))
+        # Best-β tracker update: the β that produced the smallest grad
+        # seen so far is our fallback if the iter loop ends with a
+        # catastrophically high grad_norm (Pima 1.35 tail mode).
+        if (is.finite(grad_norm) && grad_norm < best_grad_norm) {
+          best_beta_std  <- beta_std
+          best_fisher    <- pb$fisher
+          best_grad_norm <- grad_norm
+        }
         # Divergence guard: per Codex directive, if grad grows 2× or
         # more, halt and diagnose — do NOT raise the cap.
         # REVERT-ON-GROW (task #117 C3 fix): Beaver-stochastic
         # masks can cause a single overshoot step that grows grad on
         # boundary scenarios. Revert β to the pre-overshoot iterate so
         # the bad step does NOT become the shipped result.
-        if (is.finite(prev_grad_norm) && grad_norm > 2 * prev_grad_norm) {
+        # F3 revert-on-grad-grow (task #117 C3 base) + best-β guard:
+        # F4 pll-halving path removed 2026-04-21 00:05 after observed
+        # Ring63 NCCTG post-halve path_b_fisher gave bogus grad
+        # 7.5e+06 (session-state corruption from pll pipeline's log
+        # wide-spline + k2ComputeEtaShareDS interleaving). Rely instead
+        # on (1) F3 revert when grad grows > 10× above absolute floor
+        # 1.0 (catastrophic only, no NCCTG convergence false positives),
+        # (2) best-β tracker (pre-loop init from β=0), (3) post-loop
+        # divergence guard (if final grad > 1.5×grad(0), ship best-β).
+        F4_GROW_FACTOR <- 10
+        F4_ABSOLUTE_FLOOR <- 1.0
+        if (is.finite(prev_grad_norm) &&
+            grad_norm > F4_GROW_FACTOR * prev_grad_norm &&
+            grad_norm > F4_ABSOLUTE_FLOOR) {
           if (verbose) message(sprintf(
-            "  [path-b] grad growing > 2x at iter %d; reverting to pre-iter β (‖β_pre‖=%.4g) and halting",
-            k + 1L, sqrt(sum(prev_beta_std^2))))
-          beta_std      <- prev_beta_std
-          Fisher_final  <- prev_fisher_mat
+            "  [path-b F3] grad grew > %d× (%.4g → %.4g) and > floor %.4g at iter %d; reverting to β_prev and halting",
+            F4_GROW_FACTOR, prev_grad_norm, grad_norm, F4_ABSOLUTE_FLOOR,
+            k + 1L))
+          beta_std     <- prev_beta_std
+          Fisher_final <- prev_fisher_mat
           break
         }
         prev_grad_norm <- grad_norm
@@ -1250,18 +1381,13 @@ ds.vertCox <- function(formula, data = NULL,
             Fisher0_solve(pb$grad)
           })
         delta_norm <- sqrt(sum(delta^2))
-        # Damped trust-region cap (task #117 C3 fix, F2 per
-        # docs/determinism/ring127_cox_stochasticity_root_cause.md).
-        # coxph (src/coxfit6.c) halves the step when log-partial-
-        # likelihood would decrease; we approximate this with a
-        # geometric damping schedule max_step_k = 0.5 / 2^{k-1} for
-        # k ≥ 2. Rationale: under Beaver-stochastic Fisher/grad, an
-        # unlucky mask realization can push a step across a likelihood
-        # ridge; progressively smaller steps in later iters give the
-        # trajectory time to contract toward the biased-FP without
-        # overshooting. The base max_step on iter 1 remains 0.5×‖β‖
-        # so Path A's one-shot Newton can still make a full Newton
-        # move from β₀=0.
+        # F2 geometric damping trust-region (task #117 C3 fix): coxph
+        # (src/coxfit6.c) halves the step when log-partial-likelihood
+        # would decrease; under Beaver-stochastic Fisher/grad the F2
+        # schedule max_step_k = 0.5 / 2^{k-1} (for k ≥ 2) gives the
+        # trajectory room to contract toward the biased-FP without
+        # overshooting. k=1 keeps 0.5×‖β‖ so Path A's one-shot Newton
+        # can still make a full Newton move from β₀=0.
         base_step <- max(0.5, 0.5 * sqrt(sum(beta_std^2)))
         max_step  <- base_step / (2 ^ max(0L, k - 1L))
         damped <- FALSE
@@ -1269,10 +1395,11 @@ ds.vertCox <- function(formula, data = NULL,
           delta <- delta * (max_step / delta_norm)
           damped <- TRUE
         }
-        # Snapshot pre-step β + Fisher so revert-on-grad-grow (next iter
-        # check) can recover the last good iterate. Task #117 C3 fix.
+        # Snapshot pre-step β + Fisher + delta so revert-on-grad-grow +
+        # F4 pll-halving (next iter) can recover the last good iterate.
         prev_beta_std   <- beta_std
         prev_fisher_mat <- pb$fisher
+        prev_delta      <- delta
         beta_std <- beta_std + delta
         Fisher_final <- pb$fisher
         iters_done <- iters_done + 1L
@@ -1280,11 +1407,36 @@ ds.vertCox <- function(formula, data = NULL,
           message(sprintf(
             "  [path-b] iter %d  ||step||=%.4g  ||beta||=%.4g%s  (%.1fs)",
             k + 1L, delta_norm, sqrt(sum(beta_std^2)),
-            if (damped) " [damped]" else "",
+            if (damped) " [trust-damped]" else "",
             proc.time()[[3L]] - t_k))
         }
         if (delta_norm < newton_refine_tol) {
           converged_newton <- TRUE; break
+        }
+      }
+      # Post-iter catastrophic-divergence guard (reviewer directive
+      # 2026-04-20 22:55, revised 2026-04-21 00:20): use the most recent
+      # path_b_fisher measurement (pb from the last iter's start, which
+      # is grad at β_{k-1}) as the divergence signal. An extra fresh pb
+      # measurement was observed to return bogus grads (Ring63 NCCTG
+      # post-halve 7.5e+06) due to session-state interactions with the
+      # pll pipeline — that extra call is now removed. Beta-tracker
+      # records min-grad β seen. If the last-iter-start grad is way
+      # above grad(0), the iteration went catastrophically backwards
+      # at the final step; ship best-β. Threshold raised to 3× to
+      # reduce false positives on mildly-oscillating stable iters.
+      if (exists("pb", inherits = FALSE)) {
+        last_grad <- sqrt(sum(pb$grad^2))
+        if (verbose) message(sprintf(
+          "[path-b GUARD] last-iter-start ||grad||=%.4g  grad(0)=%.4g  best seen=%.4g",
+          last_grad, grad0_norm, best_grad_norm))
+        if (!is.finite(last_grad) || last_grad > 1.5 * grad0_norm) {
+          if (verbose) message(sprintf(
+            "[path-b GUARD] DIVERGENCE — reverting to best β seen (||grad||=%.4g)",
+            best_grad_norm))
+          beta_std <- best_beta_std
+          Fisher_final <- best_fisher
+          converged_newton <- FALSE
         }
       }
     }
@@ -1293,64 +1445,14 @@ ds.vertCox <- function(formula, data = NULL,
     coef_orig <- beta_std / all_x_sds
     names(coef_orig) <- all_names
 
-    # Partial log-likelihood at beta_hat: runs one full DCF pipeline at
-    # beta_std (populates ss$k2_cox_S_share_fp, ss$k2_eta_share_fp, etc.)
-    # plus a DCF log(S) pass. Cost: ~1 .cox_score_round + 1 wide-spline
-    # round. This value is essential for AIC/BIC and LR tests.
+    # Partial log-likelihood at beta_hat via the F4 .pll_at helper
+    # (defined upstream; same DCF pipeline as the Path B halving probe).
     loglik_newton <- NA_real_
     if (isTRUE(compute_loglik)) {
-      tryCatch({
-        # Re-run the DCF pipeline at beta_hat to populate mu, G, S shares.
-        # (.cox_score_round intentionally discards the gradient return; we
-        # just need the side-effect of S being populated.)
-        .cox_score_round(beta_std)
-        # DCF log pass on S → shares of log S(t_j).
-        for (srv in server_list) {
-          ci <- which(server_names == srv)
-          .dsAgg(datasources[ci],
-            call("k2CoxPrepareLogSPhaseDS", session_id = session_id))
-        }
-        .wide_spline_round("log", n_obs, num_intervals = 200L)
-        # After the log spline, secure_mu_share holds log(S) shares but
-        # k2_eta_share_fp was overwritten during the reciprocal prep
-        # earlier in .cox_score_round. Re-populate eta share at beta_hat
-        # so k2CoxPartialLogLikAggregateDS can mask eta by delta and sum.
-        for (srv in server_list) {
-          ci <- which(server_names == srv)
-          is_coord <- (srv == y_server)
-          .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
-            beta_coord = beta_std[seq_len(p_coord)],
-            beta_nl = beta_std[seq_len(p_nl) + p_coord],
-            intercept = 0, is_coordinator = is_coord,
-            session_id = session_id))
-        }
-        # k2ComputeEtaShareDS writes k2_eta_share_fp (freshly at beta_hat)
-        # but does NOT touch secure_mu_share, so our log(S) share is safe.
-        ll_res <- list()
-        for (srv in server_list) {
-          ci <- which(server_names == srv)
-          r <- .dsAgg(datasources[ci],
-            call("k2CoxPartialLogLikAggregateDS", session_id = session_id))
-          if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-          ll_res[[srv]] <- r
-        }
-        agg_eta <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-          share_a = ll_res[[y_server]]$sum_delta_eta_fp,
-          share_b = ll_res[[nl]]$sum_delta_eta_fp,
-          frac_bits = spline_frac_bits, ring = ring_tag))
-        agg_logS <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-          share_a = ll_res[[y_server]]$sum_delta_logS_fp,
-          share_b = ll_res[[nl]]$sum_delta_logS_fp,
-          frac_bits = spline_frac_bits, ring = ring_tag))
-        loglik_newton <- as.numeric(agg_eta$values)[1L] -
-                         as.numeric(agg_logS$values)[1L]
-        if (verbose) message(sprintf(
-          "[ds.vertCox] Newton partial log-lik at beta_hat: %.4f",
-          loglik_newton))
-      }, error = function(e) {
-        if (verbose) message(
-          "[ds.vertCox] Newton log-lik unavailable: ", conditionMessage(e))
-      })
+      loglik_newton <- .pll_at(beta_std)
+      if (verbose && is.finite(loglik_newton)) message(sprintf(
+        "[ds.vertCox] Newton partial log-lik at beta_hat: %.4f",
+        loglik_newton))
     }
 
     # Use the refined Fisher estimate (finite-diff -H at beta_hat) when

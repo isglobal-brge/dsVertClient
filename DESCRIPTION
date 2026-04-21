@@ -25,10 +25,23 @@ Encoding: UTF-8
 Depends: R (>= 4.0.0)
 Imports:
     DSI,
-    jsonlite
+    jsonlite,
+    digest,
+    stats,
+    utils
 Suggests:
     testthat (>= 3.0.0),
     dsVert,
+    DSOpal,
+    DSLite,
+    opalr,
+    survival,
+    lme4,
+    mice,
+    MASS,
+    nnet,
+    glmnet,
+    geepack,
     knitr,
     rmarkdown,
     pkgdown

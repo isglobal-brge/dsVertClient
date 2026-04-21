@@ -541,37 +541,74 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
     if (!is.finite(bar_n_eff) || bar_n_eff <= 0) bar_n_eff <- mean(n_i)
     sigma_b2_MoM <- max((MS_between - MS_within) / bar_n_eff, 0)
     sigma2_new   <- max(MS_within, 1e-10)
-    # Refine with the 1-D profile likelihood; seed from the MoM value
-    # so the optimizer doesn't default-lock to 0 when the profile is
-    # nearly flat near the ridge.
-    neg_profile_lik <- function(sb2) {
-      alpha <- sigma2_new + n_i * sb2
-      logdet <- (n_i - 1) * log(sigma2_new) + log(alpha)
-      rVir <- (rss / sigma2_new
-                - (sb2 / (sigma2_new * alpha)) * rsum^2)
-      0.5 * (sum(logdet) + sum(rVir))
+
+    # Task #115 structural fix (2026-04-20): replace the ML profile
+    # likelihood maximizer with the analytic REML profile that matches
+    # lme4 exactly on unbalanced designs. The MoM and ML profile both
+    # converge to estimators that systematically differ from REML for
+    # random-intercept LMM on unbalanced cluster sizes (see
+    # docs/determinism/lmm_sigma_b2_reml_root_cause.md for derivation
+    # and empirical verification).
+    #
+    # The -2 REML log-likelihood for one-way random-intercept on the
+    # per-cluster residual sufficient stats (n_c, rsum_c, rss_c), with
+    # σ² fixed at the closed-form (n-p)-df value `sigma2_new`, is:
+    #
+    #   -2 L_REML(σ_b²) = Σ_c (n_c − 1) log σ²
+    #                   + Σ_c log(σ² + n_c σ_b²)
+    #                   + Σ_c (rss_c − 2μ̂·rsum_c + μ̂²·n_c) / σ²
+    #                   − Σ_c σ_b² · (rsum_c − n_c μ̂)² / (σ²(σ²+n_c σ_b²))
+    #                   + log Σ_c n_c · w_c            ← REML Jacobian
+    #
+    # with profiled μ̂ = Σ_c n_c r̄_c w_c / Σ_c n_c w_c, w_c = 1/(σ²+n_c σ_b²).
+    # This formula matches lme4's REML σ_b² to ~4e-4 rel on our test
+    # scenarios when σ² is supplied at the precise (n-p)-df value.
+    neg2_L_REML <- function(sb2, s2) {
+      if (!is.finite(sb2) || sb2 < 0) sb2 <- 1e-12
+      s2v <- max(s2, 1e-12)
+      alpha <- s2v + n_i * sb2
+      w_c <- 1 / alpha
+      denom <- sum(n_i * w_c)
+      mu_hat <- if (denom > 0)
+        sum(n_i * bar_r_i * w_c) / denom else bar_r_all
+      term_logdetV <- sum((n_i - 1) * log(s2v)) + sum(log(alpha))
+      term_rVr <- sum((rss - 2 * mu_hat * rsum + mu_hat^2 * n_i) / s2v) -
+                  sum((sb2 / (s2v * alpha)) * (rsum - n_i * mu_hat)^2)
+      term_jac <- log(denom)
+      term_logdetV + term_rVr + term_jac
     }
-    # Search a tight interval around the MoM estimate plus a wider
-    # fallback; pick the better of the two.
-    hi_lo <- max(sigma_b2_MoM * 0.1, sigma2_new * 1e-4)
-    hi_hi <- max(sigma_b2_MoM * 10, sigma2_new * 5)
-    opt1 <- tryCatch(stats::optimize(neg_profile_lik,
-              interval = c(hi_lo, hi_hi), tol = 1e-10),
-              error = function(e) list(minimum = sigma_b2_MoM,
-                                       objective = Inf))
-    opt2 <- tryCatch(stats::optimize(neg_profile_lik,
-              interval = c(0, hi_hi), tol = 1e-10),
-              error = function(e) list(minimum = 0, objective = Inf))
-    if (opt1$objective <= opt2$objective) {
-      sigma_b2_profile <- opt1$minimum
-    } else {
-      sigma_b2_profile <- opt2$minimum
+    # JOINT REML over (σ², σ_b²): empirically matches lme4 REML to 4e-5
+    # on unbalanced designs (vs ~2e-3 when σ² is fixed first). The 2-D
+    # optim uses log-parametrization to enforce positivity and a
+    # Nelder-Mead simplex for robustness on the sometimes-flat ridge.
+    neg2_L_REML_joint <- function(par) {
+      neg2_L_REML(exp(par[2]), exp(par[1]))
     }
-    # Hybrid: take the larger of MoM and profile. Bias is asymmetric --
-    # the profile is prone to picking 0 under the ridge, MoM is
-    # unbiased; the refinement only moves away from MoM when the
-    # profile genuinely finds a better fit.
-    sigma_b2_new <- max(sigma_b2_MoM, max(sigma_b2_profile, 0))
+    par0 <- c(log(max(sigma2_new, 1e-10)),
+              log(max(sigma_b2_MoM, 1e-10)))
+    opt_joint <- tryCatch(
+      stats::optim(par0, neg2_L_REML_joint,
+                    method = "Nelder-Mead",
+                    control = list(reltol = 1e-14, maxit = 10000)),
+      error = function(e) list(par = par0, value = Inf))
+    # Fallback Brent over σ_b² with σ² at sigma2_new if joint optim
+    # failed or returned non-finite values.
+    sigma2_reml  <- exp(opt_joint$par[1])
+    sigma_b2_reml <- exp(opt_joint$par[2])
+    if (!is.finite(sigma2_reml) || sigma2_reml <= 0 ||
+        !is.finite(sigma_b2_reml) || sigma_b2_reml < 0) {
+      opt_b <- tryCatch(
+        stats::optimize(neg2_L_REML,
+                         interval = c(1e-12, max(sigma_b2_MoM * 10, 10)),
+                         s2 = sigma2_new, tol = 1e-12),
+        error = function(e) list(minimum = sigma_b2_MoM))
+      sigma2_reml  <- sigma2_new
+      sigma_b2_reml <- opt_b$minimum
+    }
+    # Use joint-REML σ_b² (exact-to-lmer). σ² is kept at the closed-form
+    # (n-p)-df refit since the residual-REML σ² differs from the full-
+    # model REML σ² by an (n-1)/(n-p) factor.
+    sigma_b2_new <- max(sigma_b2_reml, 0)
     # Oracle / benchmark override: force sigma_b^2 to a caller-supplied
     # value to isolate estimator error from downstream-fit error.
     if (!is.null(sigma_b2_override) && is.finite(sigma_b2_override))
