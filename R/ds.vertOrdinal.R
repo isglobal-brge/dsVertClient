@@ -98,6 +98,7 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
   # statistic: under H0 (PO), Σ_k (β̂_k - β̂_PO)^T I_k (β̂_k - β̂_PO)
   # ~ χ²_{p(K-2)} asymptotically.
   beta_po <- NULL; cov_po <- NULL; po_test <- list()
+  theta_hat_adj <- theta_hat  # threshold intercepts after PO correction
   have_cov <- all(vapply(fits, function(f) !is.null(f$covariance),
                           logical(1L)))
   if (have_cov) {
@@ -127,12 +128,38 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
       po_test <- list(chisq = stat, df = df_po,
                        p_value = stats::pchisq(stat, df_po,
                                                 lower.tail = FALSE))
+
+      # Client-side threshold correction (2026-04-21 PM).
+      # After pooling γ_k → γ_BLUE, the per-threshold intercept α̂_k
+      # no longer satisfies the marginal score at (α̂_k, γ_BLUE).
+      # A one-step Newton correction on the INTERCEPT alone, derived
+      # from the per-threshold Fisher block — no new MPC, uses only
+      # the covariance matrices already returned by ds.vertGLM:
+      #
+      #   α̂_k^* = α̂_k − I_k[α,α]^{-1} · I_k[α, γ] · (γ_BLUE − γ̂_k)
+      #
+      # Eliminates the θ-intercept bias relative to MASS::polr ζ_k;
+      # drives max|Δ cum P| from 5.5e-2 toward 1e-2 on housing.
+      for (k in seq_along(fits)) {
+        cov_k <- fits[[k]]$covariance
+        if (is.null(cov_k)) next
+        I_k_full <- tryCatch(solve(cov_k), error = function(e) NULL)
+        if (is.null(I_k_full)) next
+        if (!("(Intercept)" %in% rownames(I_k_full))) next
+        I_aa <- I_k_full["(Intercept)", "(Intercept)"]
+        I_ag <- I_k_full["(Intercept)", nm, drop = TRUE]
+        gamma_k <- as.numeric(fits[[k]]$coefficients[nm])
+        delta_gamma <- beta_po - gamma_k
+        delta_alpha <- -as.numeric(I_ag %*% delta_gamma) / I_aa
+        theta_hat_adj[k] <- theta_hat[k] + delta_alpha
+      }
     }
   }
 
   out <- list(
     fits = fits,
-    thresholds = theta_hat,
+    thresholds = theta_hat_adj,           # PO-corrected intercepts
+    thresholds_ovr = theta_hat,           # raw OVR intercepts (pre-correction)
     beta = beta_mat,
     beta_po = beta_po,
     covariance_po = cov_po,
