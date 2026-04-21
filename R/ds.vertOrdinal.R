@@ -22,8 +22,24 @@
 #'   \code{<level>_leq} is 1 when the patient's outcome is <= that
 #'   level. Columns must already exist server-side. Default "\%s_leq".
 #' @param ...  Passed to each underlying \code{ds.vertGLM} call.
-#' @return \code{ds.vertOrdinal} object: per-threshold fits + consolidated
-#'   beta matrix + threshold-parameter vector.
+#' @return \code{ds.vertOrdinal} object with (among other fields):
+#'   \code{thresholds} \eqn{\alpha_k} (intercepts of the K-1 cumulative
+#'     binomial fits) and \code{beta_po} \eqn{\gamma} (BLUE-pooled slope
+#'     coefficients from the K-1 fits). Both are in the
+#'     CUMULATIVE-BINOMIAL GLM convention, i.e.\ the fit form is
+#'
+#'       \eqn{P(Y \leq k | X) = \mathrm{sigmoid}(\alpha_k + X^\top \gamma)},
+#'
+#'     NOT the \code{MASS::polr} convention
+#'     \eqn{P(Y \leq k | X) = \mathrm{sigmoid}(\theta_k - X^\top \beta)}.
+#'     The two agree under \eqn{\theta_k = \alpha_k} and \eqn{\beta = -\gamma}.
+#'     Therefore a caller comparing against \code{coef(polr)} must flip the
+#'     sign of \code{beta_po} (or equivalently evaluate predictions with
+#'     \eqn{\mathrm{sigmoid}(\theta_k + X^\top \gamma)} on the \code{ds.vertOrdinal}
+#'     outputs). Empirically the cumulative probabilities agree with polr
+#'     to max \eqn{|\Delta P| \approx 5 \times 10^{-2}} on the housing
+#'     subset once the convention is honoured (probe_ordinal_harness.R,
+#'     2026-04-21).
 #' @export
 ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
                            cumulative_template = "%s_leq",
