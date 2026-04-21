@@ -787,6 +787,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     aic = aic,
     y_server = y_server,
     eta_privacy = eta_privacy,
+    x_means = setNames(all_x_means, all_names),
+    x_sds   = setNames(all_x_sds,   all_names),
     call = call_matched
   )
 
