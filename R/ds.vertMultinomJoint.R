@@ -40,15 +40,17 @@
 #' @return A \code{ds.vertMultinomJoint} object with a p x (K-1)
 #'   coefficient matrix, per-class covariance blocks, and the per-
 #'   iteration gradient norms.
-#' @param full_irls Logical. If FALSE (default v1), use the OVR
-#'   warm-start as the softmax-MLE-approximation. If TRUE, after the
-#'   OVR warm-start run a single softmax-coupled Newton step using
-#'   client-aggregated softmax probabilities derived from the
-#'   per-class marginal predictions. The cost is (K-1) ds.vertGLM
-#'   gradient passes per coupling iter. A full per-iter Beaver
-#'   coupling (exp + reciprocal + vecmul on shares) is documented
-#'   in the function header and available as the next refinement.
-#' @param coupling_iter Number of softmax-coupling iterations when
+#' @param full_irls Logical. Retained for API continuity. In the
+#'   current release the "coupling" phase only rescales the per-class
+#'   COVARIANCE blocks by the softmax variance factor; the COEFFICIENTS
+#'   remain at the OVR warm-start and the softmax↔OVR point-estimate
+#'   gap is NOT closed (probe_multinom_central_unit.R: max|Δπ| ≈ 2.4e-1
+#'   on birthwt, intrinsic to OVR regardless of Ring/MPC precision).
+#'   Full softmax Newton via shared-exp + shared-recip + Beaver-vecmul
+#'   on per-patient η_k / μ_k shares is the v2 Month 3 deliverable
+#'   (see docs/error_bounds/multinom_joint_bound.md for the upgrade
+#'   path). Setting full_irls=TRUE emits a warning.
+#' @param coupling_iter Number of covariance-rescaling passes when
 #'   full_irls=TRUE (default 3).
 #' @export
 ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
@@ -155,8 +157,13 @@ ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
   # is introduced beyond the K-1 per-class re-fits.
   coupling_log <- list()
   if (isTRUE(full_irls)) {
+    warning("ds.vertMultinomJoint(full_irls=TRUE): current release ",
+            "performs covariance rescaling only; coefficients stay at ",
+            "OVR. Full softmax Newton is a v2 Month 3 deliverable. ",
+            "See docs/error_bounds/multinom_joint_bound.md.",
+            call. = FALSE)
     if (verbose) {
-      message(sprintf("[ds.vertMultinomJoint] full IRLS (%d coupling iters)",
+      message(sprintf("[ds.vertMultinomJoint] covariance-rescale pass (%d iters)",
                        coupling_iter))
     }
     for (ci in seq_len(coupling_iter)) {
