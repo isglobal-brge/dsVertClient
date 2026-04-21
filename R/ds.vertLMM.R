@@ -776,7 +776,25 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
         standardize = FALSE,
         ring = ring),
       error = function(e) {
+        # Surface the DataSHIELD server-side errors that the
+        # aggregate wrapper collects into a generic wrapper message.
+        # Without this, "There are some DataSHIELD errors, list them
+        # with datashield.errors()" is the only thing reaching the
+        # log and the actual server stack trace is invisible — the
+        # exact seam-diagnostic masking pattern that hid the L3
+        # regression observed 2026-04-21 11:15.
         message("[LMM] closed-form failed: ", conditionMessage(e))
+        dserr <- tryCatch(DSI::datashield.errors(),
+                          error = function(err) NULL)
+        if (is.list(dserr) && length(dserr) > 0L) {
+          for (srv_nm in names(dserr)) {
+            e_msg <- dserr[[srv_nm]]
+            # Each entry can be a list with message / call / stack.
+            if (is.list(e_msg)) e_msg <- e_msg$message %||% e_msg[[1]]
+            message(sprintf("  [LMM server %s error] %s", srv_nm,
+                            paste(as.character(e_msg), collapse = " | ")))
+          }
+        }
         NULL
       })
     # Cleanup session on both servers.
