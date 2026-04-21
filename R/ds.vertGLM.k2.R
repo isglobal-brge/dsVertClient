@@ -45,7 +45,8 @@ NULL
                              transport_pks, session_id,
                              family, lambda, max_iter, tol,
                              n_obs, verbose, .dsAgg, .sendBlob,
-                             weights_active = FALSE) {
+                             weights_active = FALSE,
+                             no_intercept  = FALSE) {
 
   frac_bits <- 20L
   is_gaussian <- (family == "gaussian")
@@ -145,11 +146,18 @@ NULL
     intercept_old <- intercept
 
     # === Step 1: Compute eta ===
+    # Guard against p_nl == 0 (all predictors on coordinator, e.g.
+    # sleepstudy Reaction~Days with peer holding only patient_id):
+    # `beta[(p_coord+1):p_total]` would produce `beta[2:1]` = reversed
+    # 2-elt vector with NAs via R's `:` semantics. Use explicit
+    # seq_len-based slicing that is safe for zero-length cases.
+    beta_coord_slice <- if (p_coord > 0L) beta[seq_len(p_coord)] else numeric(0)
+    beta_nl_slice <- if (p_total > p_coord) beta[(p_coord + 1L):p_total] else numeric(0)
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
       .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
-        beta_coord = beta[1:p_coord], beta_nl = beta[(p_coord+1):p_total],
+        beta_coord = beta_coord_slice, beta_nl = beta_nl_slice,
         intercept = if (is_coord) intercept else 0.0,
         is_coordinator = is_coord, session_id = session_id))
     }
@@ -332,8 +340,13 @@ NULL
 
     # Cautious first step (helps Poisson convergence), full step after
     step_size <- if (iter <= 1) 0.3 else 1.0
+    if (isTRUE(no_intercept)) {
+      # Caller's design matrix encodes its own intercept column; we
+      # freeze the auto-intercept at zero by masking its direction.
+      direction[1] <- 0
+    }
     new_theta <- theta + step_size * direction
-    intercept <- new_theta[1]
+    intercept <- if (isTRUE(no_intercept)) 0 else new_theta[1]
     beta <- new_theta[-1]
 
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
@@ -368,10 +381,12 @@ NULL
   for (jj in seq_len(p_plus1)) {
     th_p <- theta_conv; th_p[jj] <- th_p[jj] + delta_se
     int_p <- th_p[1]; bet_p <- th_p[-1]
+    bet_p_coord <- if (p_coord > 0L) bet_p[seq_len(p_coord)] else numeric(0)
+    bet_p_nl <- if (p_total > p_coord) bet_p[(p_coord + 1L):p_total] else numeric(0)
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == coordinator)
       .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
-        beta_coord = bet_p[1:p_coord], beta_nl = bet_p[(p_coord+1):p_total],
+        beta_coord = bet_p_coord, beta_nl = bet_p_nl,
         intercept = if (is_coord) int_p else 0.0,
         is_coordinator = is_coord, session_id = session_id))
     }
@@ -404,7 +419,9 @@ NULL
     # Backward perturbation for central difference
     th_m <- theta_conv; th_m[jj] <- th_m[jj] - delta_se
     int_m <- th_m[1]; bet_m <- th_m[-1]
-    for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);.dsAgg(datasources[ci],call("k2ComputeEtaShareDS",beta_coord=bet_m[1:p_coord],beta_nl=bet_m[(p_coord+1):p_total],intercept=if(is_coord)int_m else 0,is_coordinator=is_coord,session_id=session_id))}
+    bet_m_coord <- if (p_coord > 0L) bet_m[seq_len(p_coord)] else numeric(0)
+    bet_m_nl <- if (p_total > p_coord) bet_m[(p_coord + 1L):p_total] else numeric(0)
+    for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);.dsAgg(datasources[ci],call("k2ComputeEtaShareDS",beta_coord=bet_m_coord,beta_nl=bet_m_nl,intercept=if(is_coord)int_m else 0,is_coordinator=is_coord,session_id=session_id))}
     if(is_gaussian){for(server in server_list).dsAgg(datasources[which(server_names==server)],call("k2IdentityLinkDS",session_id=session_id))}else{stb<-.dsAgg(datasources[dealer_conn],call("glmRing63GenSplineTriplesDS",dcf0_pk=transport_pks[[coordinator]],dcf1_pk=transport_pks[[nl]],n=as.integer(n_obs),frac_bits=frac_bits,session_id=session_id));if(is.list(stb))stb<-stb[[1]];.sendBlob(stb$spline_blob_0,"k2_spline_triples",coordinator_conn);.sendBlob(stb$spline_blob_1,"k2_spline_triples",nl_conn);for(ph in 1:4){pr<-list();for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(paste0("k2WideSplinePhase",ph,"DS"),party_id=if(is_coord)0L else 1L,family=family,num_intervals=num_intervals,frac_bits=frac_bits,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];pr[[server]]<-r};if(ph==1){.sendBlob(pr[[coordinator]]$dcf_masked,"k2_peer_dcf_masked",nl_conn);.sendBlob(pr[[nl]]$dcf_masked,"k2_peer_dcf_masked",coordinator_conn)}else if(ph==2){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[server]]$and_xma,and_ymb=pr[[server]]$and_ymb,had1_xma=pr[[server]]$had1_xma,had1_ymb=pr[[server]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_beaver_r1",peer_ci)}}else if(ph==3){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[server]]$had2_xma,had2_ymb=pr[[server]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_had2_r1",peer_ci)}}}}
     gtb<-.dsAgg(datasources[dealer_conn],call("glmRing63GenGradTriplesDS",dcf0_pk=transport_pks[[coordinator]],dcf1_pk=transport_pks[[nl]],n=as.integer(n_obs),p=as.integer(p_total),session_id=session_id));if(is.list(gtb))gtb<-gtb[[1]];.sendBlob(gtb$grad_blob_0,"k2_grad_triple_fp",coordinator_conn);.sendBlob(gtb$grad_blob_1,"k2_grad_triple_fp",nl_conn)
     r1b<-list();for(server in server_list){ci<-which(server_names==server);peer<-setdiff(server_list,server);.dsAgg(datasources[ci],call("k2StoreGradTripleDS",session_id=session_id));r<-.dsAgg(datasources[ci],call("k2GradientR1DS",peer_pk=transport_pks[[peer]],session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r1b[[server]]<-r}
@@ -429,9 +446,11 @@ NULL
   dcf_conns <- c(coordinator_conn, nl_conn)
 
   # Recompute η from converged β (SE computation may have overwritten shares)
+  # Guard zero-length peer slice (sleepstudy-style p_nl == 0 case).
   for (s in server_list) {
     ci <- which(server_names == s); is_coord <- (s == coordinator)
-    b_coord <- beta[1:p_coord]; b_nl <- beta[(p_coord+1):p_total]
+    b_coord <- if (p_coord > 0L) beta[seq_len(p_coord)] else numeric(0)
+    b_nl <- if (p_total > p_coord) beta[(p_coord + 1L):p_total] else numeric(0)
     .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
       beta_coord = b_coord, beta_nl = b_nl, intercept = intercept,
       is_coordinator = is_coord, session_id = session_id))
@@ -591,8 +610,8 @@ NULL
   if (verbose) message(sprintf("  [Deviance] = %.4f", k2_deviance))
 
   betas <- list()
-  betas[[coordinator]] <- beta[1:p_coord]
-  betas[[nl]] <- beta[(p_coord+1):p_total]
+  betas[[coordinator]] <- if (p_coord > 0L) beta[seq_len(p_coord)] else numeric(0)
+  betas[[nl]] <- if (p_total > p_coord) beta[(p_coord + 1L):p_total] else numeric(0)
   list(betas=betas, intercept=intercept, converged=converged,
        iterations=final_iter, max_diff=max_diff, deviance=k2_deviance,
        inv_hessian=inv_hessian)

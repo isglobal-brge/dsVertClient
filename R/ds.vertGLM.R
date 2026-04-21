@@ -119,6 +119,18 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        # responsible for eventually calling
                        # mpcCleanupDS(session_id) on every server.
                        keep_session = FALSE,
+                       # Suppress the auto-added intercept. Useful when
+                       # the caller is supplying a pre-transformed
+                       # design matrix in which one of the predictor
+                       # columns already encodes the intercept (e.g.
+                       # ds.vertLMM's cluster-mean-centred GLS fit where
+                       # "1 - lambda_i" replaces the constant).
+                       no_intercept = FALSE,
+                       # "full" (center+scale), "scale_only" (sd only,
+                       # preserves column means), or "none" (raw).
+                       # ds.vertLMM's closed-form GLS path uses
+                       # "scale_only" + no_intercept=TRUE.
+                       std_mode = "full",
                        # Legacy positional args for backward compatibility
                        data_name = NULL, y_var = NULL) {
   call_matched <- match.call()
@@ -382,7 +394,10 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     data_name        = data_name,
     family           = family,
     session_id       = session_id,
-    verbose          = verbose
+    verbose          = verbose,
+    # no_intercept=TRUE: skip y-standardisation (no mean-shift).
+    standardize_y_override = if (isTRUE(no_intercept)) FALSE else NULL,
+    std_mode = std_mode
   )
 
   # Unpack setup results
@@ -545,7 +560,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       verbose = verbose,
       .dsAgg = .dsAgg,
       .sendBlob = .sendBlob,
-      weights_active = isTRUE(weights_active)
+      weights_active = isTRUE(weights_active),
+      no_intercept  = isTRUE(no_intercept)
     )
 
     betas <- loop_result$betas
@@ -607,6 +623,12 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   } else {
     all_coefs_orig <- all_coefs_std / all_x_sds
     intercept <- beta_0_from_label - sum(all_coefs_orig * all_x_means)
+  }
+  if (isTRUE(no_intercept)) {
+    # The caller is supplying a design matrix that already contains a
+    # column encoding the intercept (e.g. "1 - lambda_i" for LMM GLS).
+    # Report intercept = 0 to avoid double-counting.
+    intercept <- 0
   }
 
   all_coefs <- c(intercept, all_coefs_orig)
