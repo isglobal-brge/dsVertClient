@@ -45,9 +45,14 @@ NULL
                              transport_pks, session_id,
                              family, lambda, max_iter, tol,
                              n_obs, verbose, .dsAgg, .sendBlob,
-                             weights_active = FALSE) {
+                             weights_active = FALSE,
+                             no_intercept  = FALSE,
+                             ring = 63L) {
 
-  frac_bits <- 20L
+  ring <- as.integer(ring)
+  if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
+  ring_tag <- if (ring == 127L) "ring127" else "ring63"
+  frac_bits <- if (ring == 127L) 50L else 20L
   is_gaussian <- (family == "gaussian")
   num_intervals <- if (family == "poisson") 100L else 50L
   if (is.null(lambda)) lambda <- 1e-4
@@ -81,7 +86,8 @@ NULL
     r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
       data_name = std_data, x_vars = srv_x,
       y_var = if (server == coordinator) y_var else NULL,
-      peer_pk = peer_pk_safe, session_id = session_id))
+      peer_pk = peer_pk_safe, session_id = session_id,
+      ring = ring))
     if (is.list(r) && length(r) == 1) r <- r[[1]]
     share_results[[server]] <- r
   }
@@ -145,11 +151,18 @@ NULL
     intercept_old <- intercept
 
     # === Step 1: Compute eta ===
+    # Guard against p_nl == 0 (all predictors on coordinator, e.g.
+    # sleepstudy Reaction~Days with peer holding only patient_id):
+    # `beta[(p_coord+1):p_total]` would produce `beta[2:1]` = reversed
+    # 2-elt vector with NAs via R's `:` semantics. Use explicit
+    # seq_len-based slicing that is safe for zero-length cases.
+    beta_coord_slice <- if (p_coord > 0L) beta[seq_len(p_coord)] else numeric(0)
+    beta_nl_slice <- if (p_total > p_coord) beta[(p_coord + 1L):p_total] else numeric(0)
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
       .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
-        beta_coord = beta[1:p_coord], beta_nl = beta[(p_coord+1):p_total],
+        beta_coord = beta_coord_slice, beta_nl = beta_nl_slice,
         intercept = if (is_coord) intercept else 0.0,
         is_coordinator = is_coord, session_id = session_id))
     }
@@ -256,6 +269,7 @@ NULL
            dcf0_pk = transport_pks[[coordinator]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n_obs), p = as.integer(p_total),
+           ring = ring,
            session_id = session_id))
     if (is.list(grad_t)) grad_t <- grad_t[[1]]
     .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", coordinator_conn)
@@ -289,10 +303,12 @@ NULL
     res_fp_nl <- r1_results[[nl]]$sum_residual_fp
     if (!is.null(grad_fp_coord) && !is.null(grad_fp_nl)) {
       agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-        share_a=grad_fp_coord, share_b=grad_fp_nl, frac_bits=frac_bits))
+        share_a=grad_fp_coord, share_b=grad_fp_nl,
+        frac_bits=frac_bits, ring=ring_tag))
       gradient <- agg$values
       agg_res <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-        share_a=res_fp_coord, share_b=res_fp_nl, frac_bits=frac_bits))
+        share_a=res_fp_coord, share_b=res_fp_nl,
+        frac_bits=frac_bits, ring=ring_tag))
       sum_residual <- agg_res$values[1]
     } else {
       gradient <- rep(0, p_total); sum_residual <- 0
@@ -332,8 +348,13 @@ NULL
 
     # Cautious first step (helps Poisson convergence), full step after
     step_size <- if (iter <= 1) 0.3 else 1.0
+    if (isTRUE(no_intercept)) {
+      # Caller's design matrix encodes its own intercept column; we
+      # freeze the auto-intercept at zero by masking its direction.
+      direction[1] <- 0
+    }
     new_theta <- theta + step_size * direction
-    intercept <- new_theta[1]
+    intercept <- if (isTRUE(no_intercept)) 0 else new_theta[1]
     beta <- new_theta[-1]
 
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
@@ -368,10 +389,12 @@ NULL
   for (jj in seq_len(p_plus1)) {
     th_p <- theta_conv; th_p[jj] <- th_p[jj] + delta_se
     int_p <- th_p[1]; bet_p <- th_p[-1]
+    bet_p_coord <- if (p_coord > 0L) bet_p[seq_len(p_coord)] else numeric(0)
+    bet_p_nl <- if (p_total > p_coord) bet_p[(p_coord + 1L):p_total] else numeric(0)
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == coordinator)
       .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
-        beta_coord = bet_p[1:p_coord], beta_nl = bet_p[(p_coord+1):p_total],
+        beta_coord = bet_p_coord, beta_nl = bet_p_nl,
         intercept = if (is_coord) int_p else 0.0,
         is_coordinator = is_coord, session_id = session_id))
     }
@@ -389,7 +412,7 @@ NULL
     }
     gt <- .dsAgg(datasources[dealer_conn], call("glmRing63GenGradTriplesDS",
       dcf0_pk=transport_pks[[coordinator]], dcf1_pk=transport_pks[[nl]],
-      n=as.integer(n_obs), p=as.integer(p_total), session_id=session_id))
+      n=as.integer(n_obs), p=as.integer(p_total), ring=ring, session_id=session_id))
     if(is.list(gt)) gt<-gt[[1]]
     .sendBlob(gt$grad_blob_0,"k2_grad_triple_fp",coordinator_conn)
     .sendBlob(gt$grad_blob_1,"k2_grad_triple_fp",nl_conn)
@@ -397,21 +420,23 @@ NULL
     .sendBlob(r1p[[coordinator]]$encrypted_r1,"k2_grad_peer_r1",nl_conn)
     .sendBlob(r1p[[nl]]$encrypted_r1,"k2_grad_peer_r1",coordinator_conn)
     r2p<-list(); for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call("k2GradientR2DS",party_id=if(is_coord)0L else 1L,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r2p[[server]]<-r}
-    ag<-dsVert:::.callMpcTool("k2-ring63-aggregate",list(share_a=r2p[[coordinator]]$gradient_fp,share_b=r2p[[nl]]$gradient_fp,frac_bits=frac_bits))
-    ar<-dsVert:::.callMpcTool("k2-ring63-aggregate",list(share_a=r1p[[coordinator]]$sum_residual_fp,share_b=r1p[[nl]]$sum_residual_fp,frac_bits=frac_bits))
+    ag<-dsVert:::.callMpcTool("k2-ring63-aggregate",list(share_a=r2p[[coordinator]]$gradient_fp,share_b=r2p[[nl]]$gradient_fp,frac_bits=frac_bits,ring=ring_tag))
+    ar<-dsVert:::.callMpcTool("k2-ring63-aggregate",list(share_a=r1p[[coordinator]]$sum_residual_fp,share_b=r1p[[nl]]$sum_residual_fp,frac_bits=frac_bits,ring=ring_tag))
     gp<-c(ar$values[1]/n_obs,ag$values/n_obs)+lambda*th_p
     grad_fwd <- gp
     # Backward perturbation for central difference
     th_m <- theta_conv; th_m[jj] <- th_m[jj] - delta_se
     int_m <- th_m[1]; bet_m <- th_m[-1]
-    for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);.dsAgg(datasources[ci],call("k2ComputeEtaShareDS",beta_coord=bet_m[1:p_coord],beta_nl=bet_m[(p_coord+1):p_total],intercept=if(is_coord)int_m else 0,is_coordinator=is_coord,session_id=session_id))}
+    bet_m_coord <- if (p_coord > 0L) bet_m[seq_len(p_coord)] else numeric(0)
+    bet_m_nl <- if (p_total > p_coord) bet_m[(p_coord + 1L):p_total] else numeric(0)
+    for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);.dsAgg(datasources[ci],call("k2ComputeEtaShareDS",beta_coord=bet_m_coord,beta_nl=bet_m_nl,intercept=if(is_coord)int_m else 0,is_coordinator=is_coord,session_id=session_id))}
     if(is_gaussian){for(server in server_list).dsAgg(datasources[which(server_names==server)],call("k2IdentityLinkDS",session_id=session_id))}else{stb<-.dsAgg(datasources[dealer_conn],call("glmRing63GenSplineTriplesDS",dcf0_pk=transport_pks[[coordinator]],dcf1_pk=transport_pks[[nl]],n=as.integer(n_obs),frac_bits=frac_bits,session_id=session_id));if(is.list(stb))stb<-stb[[1]];.sendBlob(stb$spline_blob_0,"k2_spline_triples",coordinator_conn);.sendBlob(stb$spline_blob_1,"k2_spline_triples",nl_conn);for(ph in 1:4){pr<-list();for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(paste0("k2WideSplinePhase",ph,"DS"),party_id=if(is_coord)0L else 1L,family=family,num_intervals=num_intervals,frac_bits=frac_bits,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];pr[[server]]<-r};if(ph==1){.sendBlob(pr[[coordinator]]$dcf_masked,"k2_peer_dcf_masked",nl_conn);.sendBlob(pr[[nl]]$dcf_masked,"k2_peer_dcf_masked",coordinator_conn)}else if(ph==2){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[server]]$and_xma,and_ymb=pr[[server]]$and_ymb,had1_xma=pr[[server]]$had1_xma,had1_ymb=pr[[server]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_beaver_r1",peer_ci)}}else if(ph==3){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[server]]$had2_xma,had2_ymb=pr[[server]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_had2_r1",peer_ci)}}}}
-    gtb<-.dsAgg(datasources[dealer_conn],call("glmRing63GenGradTriplesDS",dcf0_pk=transport_pks[[coordinator]],dcf1_pk=transport_pks[[nl]],n=as.integer(n_obs),p=as.integer(p_total),session_id=session_id));if(is.list(gtb))gtb<-gtb[[1]];.sendBlob(gtb$grad_blob_0,"k2_grad_triple_fp",coordinator_conn);.sendBlob(gtb$grad_blob_1,"k2_grad_triple_fp",nl_conn)
+    gtb<-.dsAgg(datasources[dealer_conn],call("glmRing63GenGradTriplesDS",dcf0_pk=transport_pks[[coordinator]],dcf1_pk=transport_pks[[nl]],n=as.integer(n_obs),p=as.integer(p_total),ring=ring,session_id=session_id));if(is.list(gtb))gtb<-gtb[[1]];.sendBlob(gtb$grad_blob_0,"k2_grad_triple_fp",coordinator_conn);.sendBlob(gtb$grad_blob_1,"k2_grad_triple_fp",nl_conn)
     r1b<-list();for(server in server_list){ci<-which(server_names==server);peer<-setdiff(server_list,server);.dsAgg(datasources[ci],call("k2StoreGradTripleDS",session_id=session_id));r<-.dsAgg(datasources[ci],call("k2GradientR1DS",peer_pk=transport_pks[[peer]],session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r1b[[server]]<-r}
     .sendBlob(r1b[[coordinator]]$encrypted_r1,"k2_grad_peer_r1",nl_conn);.sendBlob(r1b[[nl]]$encrypted_r1,"k2_grad_peer_r1",coordinator_conn)
     r2b<-list();for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call("k2GradientR2DS",party_id=if(is_coord)0L else 1L,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r2b[[server]]<-r}
-    agb<-dsVert:::.callMpcTool("k2-ring63-aggregate",list(share_a=r2b[[coordinator]]$gradient_fp,share_b=r2b[[nl]]$gradient_fp,frac_bits=frac_bits))
-    arb<-dsVert:::.callMpcTool("k2-ring63-aggregate",list(share_a=r1b[[coordinator]]$sum_residual_fp,share_b=r1b[[nl]]$sum_residual_fp,frac_bits=frac_bits))
+    agb<-dsVert:::.callMpcTool("k2-ring63-aggregate",list(share_a=r2b[[coordinator]]$gradient_fp,share_b=r2b[[nl]]$gradient_fp,frac_bits=frac_bits,ring=ring_tag))
+    arb<-dsVert:::.callMpcTool("k2-ring63-aggregate",list(share_a=r1b[[coordinator]]$sum_residual_fp,share_b=r1b[[nl]]$sum_residual_fp,frac_bits=frac_bits,ring=ring_tag))
     gm<-c(arb$values[1]/n_obs,agb$values/n_obs)+lambda*th_m
     # Central difference
     hessian_k2[,jj] <- (grad_fwd - gm) / (2 * delta_se)
@@ -429,9 +454,11 @@ NULL
   dcf_conns <- c(coordinator_conn, nl_conn)
 
   # Recompute η from converged β (SE computation may have overwritten shares)
+  # Guard zero-length peer slice (sleepstudy-style p_nl == 0 case).
   for (s in server_list) {
     ci <- which(server_names == s); is_coord <- (s == coordinator)
-    b_coord <- beta[1:p_coord]; b_nl <- beta[(p_coord+1):p_total]
+    b_coord <- if (p_coord > 0L) beta[seq_len(p_coord)] else numeric(0)
+    b_nl <- if (p_total > p_coord) beta[(p_coord + 1L):p_total] else numeric(0)
     .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
       beta_coord = b_coord, beta_nl = b_nl, intercept = intercept,
       is_coordinator = is_coord, session_id = session_id))
@@ -444,6 +471,7 @@ NULL
            dcf0_pk = transport_pks[[coordinator]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n_obs), p = 1L,
+           ring = ring,
            session_id = session_id))
     if (is.list(dt)) dt <- dt[[1]]
     .sendBlob(dt$grad_blob_0, "k2_grad_triple_fp", coordinator_conn)
@@ -467,7 +495,7 @@ NULL
     }
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = dr2[[coordinator]]$gradient_fp,
-      share_b = dr2[[nl]]$gradient_fp, frac_bits = frac_bits))
+      share_b = dr2[[nl]]$gradient_fp, frac_bits = frac_bits, ring = ring_tag))
     agg$values[1]
   }
 
@@ -552,7 +580,7 @@ NULL
     }
     sum_sp_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = sums[[coordinator]]$sum_fp, share_b = sums[[nl]]$sum_fp,
-      frac_bits = frac_bits))
+      frac_bits = frac_bits, ring = ring_tag))
     sum_softplus <- sum_sp_agg$values[1]
     # Step 3: Beaver y^T·η
     for (s in server_list) {
@@ -574,7 +602,7 @@ NULL
     }
     sum_mu_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = sums[[coordinator]]$sum_fp, share_b = sums[[nl]]$sum_fp,
-      frac_bits = frac_bits))
+      frac_bits = frac_bits, ring = ring_tag))
     sum_mu <- sum_mu_agg$values[1]
     # Only the label server returns non-zero null_term; sum to pick it up
     null_term <- sum(sapply(sums, function(s) if(!is.null(s$null_term)) s$null_term else 0))
@@ -591,8 +619,8 @@ NULL
   if (verbose) message(sprintf("  [Deviance] = %.4f", k2_deviance))
 
   betas <- list()
-  betas[[coordinator]] <- beta[1:p_coord]
-  betas[[nl]] <- beta[(p_coord+1):p_total]
+  betas[[coordinator]] <- if (p_coord > 0L) beta[seq_len(p_coord)] else numeric(0)
+  betas[[nl]] <- if (p_total > p_coord) beta[(p_coord + 1L):p_total] else numeric(0)
   list(betas=betas, intercept=intercept, converged=converged,
        iterations=final_iter, max_diff=max_diff, deviance=k2_deviance,
        inv_hessian=inv_hessian)

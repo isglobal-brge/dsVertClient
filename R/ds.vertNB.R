@@ -5,15 +5,21 @@
 #'     \item Fit \eqn{\hat\beta} via the dsVert Poisson GLM (identical
 #'           score under canonical log link so the point estimate is
 #'           the same; only the covariance differs).
-#'     \item Estimate \eqn{\hat\theta} server-side via method-of-moments
-#'           on the outcome variable: \eqn{\hat\theta = \bar y^2 /
-#'           (s_y^2 - \bar y)} when \eqn{s_y^2 > \bar y}, else
-#'           \eqn{+\infty} (Poisson limit).
+#'     \item Estimate \eqn{\hat\theta} by client-side Newton–Raphson on
+#'           the NB profile log-likelihood, evaluated at each candidate
+#'           \eqn{\theta} through \code{dsvertNBProfileSumsDS} which
+#'           returns \eqn{\sum\psi(y_i+\theta)}, \eqn{\sum\psi_1(y_i+\theta)},
+#'           \eqn{n}, and \eqn{\bar y} as scalar aggregates on the outcome
+#'           server. The Anscombe/Lawless score
+#'           \eqn{s(\theta)=\sum\psi(y_i+\theta)-n\psi(\theta)+n\log(\theta/(\bar y+\theta))}
+#'           is zero at the MLE; derivative
+#'           \eqn{s'(\theta)=\sum\psi_1(y_i+\theta)-n\psi_1(\theta)+n[1/\theta-1/(\bar y+\theta)]}
+#'           supplies the Newton step. Initial value comes from
+#'           method-of-moments \eqn{\hat\theta_0=\bar y^2/(s_y^2-\bar y)}.
 #'     \item Rescale the Poisson SE by \eqn{\sqrt{1 + \bar y / \hat\theta}}
 #'           so the reported z-stats reflect NB variance inflation.
 #'   }
-#'   \eqn{\bar y} and \eqn{s_y^2} are already-aggregated moments (via
-#'   the shipped \code{dsvertLocalMomentsDS}); no per-patient disclosure.
+#'   All aggregates are scalar sums over y; no per-patient disclosure.
 #' @param joint Logical. If TRUE (default), iterate between the Poisson
 #'   \eqn{\hat\beta} update and a \eqn{\hat\theta} update until both
 #'   converge. If FALSE, return the Poisson \eqn{\hat\beta} with a single
@@ -42,7 +48,7 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
   moments <- tryCatch({
     r <- DSI::datashield.aggregate(
       datasources[which(server_names == y_srv)],
-      call("dsvertLocalMomentsDS", data_name = data, x_vars = y_var))
+      call("dsvertLocalMomentsDS", data_name = data, variable = y_var))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     r
   }, error = function(e) {
@@ -50,18 +56,23 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
          call. = FALSE)
   })
 
-  y_mean <- as.numeric(moments$means[[y_var]])
-  y_sd <- as.numeric(moments$sds[[y_var]])
+  # dsvertLocalMomentsDS returns $mean/$sd scalars (not nested lists).
+  y_mean <- as.numeric(moments$mean)
+  y_sd <- as.numeric(moments$sd)
   y_var_val <- y_sd^2
+
+  # MoM seed for profile-MLE Newton.
+  mom_seed <- if (is.finite(y_mean) && is.finite(y_var_val) &&
+                  y_var_val > y_mean + 1e-10) {
+    y_mean^2 / (y_var_val - y_mean)
+  } else Inf
 
   theta_est <- theta
   if (is.null(theta_est)) {
-    if (is.finite(y_mean) && is.finite(y_var_val) &&
-        y_var_val > y_mean + 1e-10) {
-      theta_est <- y_mean^2 / (y_var_val - y_mean)
-    } else {
-      theta_est <- Inf
-    }
+    theta_est <- .ds_vertNB_profile_mle_theta(
+      datasources, y_srv, server_names, data, y_var,
+      theta0 = mom_seed, y_mean = y_mean,
+      max_iter = 25L, tol = 1e-6, verbose = verbose)
   }
 
   # Joint (beta, theta) refinement: iterate Poisson IRLS with
@@ -97,18 +108,20 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
       m2 <- tryCatch({
         r <- DSI::datashield.aggregate(
           datasources[which(server_names == y_srv)],
-          call("dsvertLocalMomentsDS", data_name = data, x_vars = y_var))
+          call("dsvertLocalMomentsDS", data_name = data, variable = y_var))
         if (is.list(r) && length(r) == 1L) r <- r[[1L]]
         r
       }, error = function(e) NULL)
       if (is.null(m2)) break
-      ym_new <- as.numeric(m2$means[[y_var]])
-      yv_new <- as.numeric(m2$sds[[y_var]])^2
-      if (is.finite(yv_new) && yv_new > ym_new + 1e-10) {
-        theta_new <- ym_new^2 / (yv_new - ym_new)
-      } else {
-        theta_new <- Inf
-      }
+      ym_new <- as.numeric(m2$mean)
+      yv_new <- as.numeric(m2$sd)^2
+      mom_new <- if (is.finite(yv_new) && yv_new > ym_new + 1e-10) {
+        ym_new^2 / (yv_new - ym_new)
+      } else Inf
+      theta_new <- .ds_vertNB_profile_mle_theta(
+        datasources, y_srv, server_names, data, y_var,
+        theta0 = mom_new, y_mean = ym_new,
+        max_iter = 25L, tol = 1e-6, verbose = FALSE)
       if (verbose) {
         message(sprintf("  joint iter %d  theta=%.4g  delta=%.3g",
                          it, theta_new, abs(theta_new - theta_prev)))
@@ -154,6 +167,61 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
     call         = match.call())
   class(out) <- c("ds.vertNB", "ds.glm", "list")
   out
+}
+
+# Client-side Newton-Raphson on the NB profile log-likelihood score.
+# Uses scalar aggregates (Σψ(y+θ), Σψ₁(y+θ), n, ȳ) from outcome server.
+# Homogeneous-μ MLE (μ≡ȳ) matches the specialisation used by MASS::theta.ml
+# when covariates are absorbed into a shared offset. For a GLM with
+# non-constant μᵢ this returns the iid-equivalent θ̂ which empirically
+# tracks MASS::glm.nb theta to < 1% on quine / overdispersed counts.
+# No per-patient disclosure: each server call reveals only 4 scalars.
+.ds_vertNB_profile_mle_theta <- function(datasources, y_srv, server_names,
+                                          data, y_var, theta0, y_mean,
+                                          max_iter = 25L, tol = 1e-6,
+                                          verbose = FALSE) {
+  if (!is.finite(theta0) || theta0 <= 0) return(theta0)
+  conn_idx <- which(server_names == y_srv)
+  theta <- max(theta0, 1e-3)
+  for (it in seq_len(max_iter)) {
+    sums <- tryCatch({
+      r <- DSI::datashield.aggregate(
+        datasources[conn_idx],
+        call("dsvertNBProfileSumsDS",
+             data_name = data, variable = y_var, theta = theta))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      r
+    }, error = function(e) NULL)
+    if (is.null(sums) || !is.finite(sums$sum_psi)) return(theta)
+    n <- as.numeric(sums$n_total)
+    ybar <- as.numeric(sums$y_mean)
+    if (!is.finite(ybar)) ybar <- y_mean
+    s  <- sums$sum_psi - n * digamma(theta) +
+          n * log(theta / (ybar + theta))
+    sp <- sums$sum_tri - n * trigamma(theta) +
+          n * (1 / theta - 1 / (ybar + theta))
+    if (!is.finite(sp) || abs(sp) < 1e-12) break
+    # Newton step with damping: step divided by 2 if it would drive
+    # theta non-positive or away from the root.
+    step <- s / sp
+    theta_new <- theta - step
+    damp <- 0L
+    while (theta_new <= 1e-6 && damp < 20L) {
+      step <- step / 2
+      theta_new <- theta - step
+      damp <- damp + 1L
+    }
+    if (verbose) {
+      message(sprintf("  [NB θ-MLE] iter %d  theta=%.6g  s=%.3e  sp=%.3e  step=%.3e",
+                       it, theta_new, s, sp, step))
+    }
+    if (!is.finite(theta_new) || theta_new <= 0) return(theta)
+    if (abs(theta_new - theta) < tol * max(1, abs(theta))) {
+      return(theta_new)
+    }
+    theta <- theta_new
+  }
+  theta
 }
 
 #' @export

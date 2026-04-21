@@ -7,7 +7,9 @@
 
 .glm_mpc_setup <- function(datasources, server_names, server_list,
                            non_label_servers, y_server, y_var, x_vars,
-                           data_name, family, session_id, verbose) {
+                           data_name, family, session_id, verbose,
+                           standardize_y_override = NULL,
+                           std_mode = "full") {
 
   # =========================================================================
   # Helpers (closures capturing datasources, session_id)
@@ -90,7 +92,18 @@
   if (verbose) message("\n[Phase 1] Standardizing features across ", length(server_list), " servers...")
   t0_std <- proc.time()[[3]]
   std_data <- paste0(data_name, "_std")
-  standardize_y <- (family == "gaussian")
+  # Override can disable y-standardisation (ds.vertLMM's GLS fit: the
+  # design matrix already encodes the intercept via (1-lambda_i), so
+  # mean-shifting y breaks the no-auto-intercept OLS on standardised
+  # features). When the override is FALSE we ALSO skip x-standardisation
+  # so the K=2 loop sees the raw design matrix.
+  standardize_y <- if (!is.null(standardize_y_override))
+    isTRUE(standardize_y_override) else (family == "gaussian")
+  skip_std <- !is.null(standardize_y_override) && !isTRUE(standardize_y_override)
+  # std_mode: "full" / "scale_only" / "none". "scale_only" keeps the
+  # design well-conditioned for L-BFGS without subtracting the column
+  # means (required for ds.vertLMM's no-const closed-form GLS fit).
+  .std_mode <- if (skip_std) "none" else std_mode
 
   x_means <- list()
   x_sds <- list()
@@ -107,7 +120,9 @@
       expr = call("glmStandardizeDS",
                   data_name = data_name, output_name = std_data,
                   x_vars = srv_x, y_var = y_arg,
-                  session_id = session_id))
+                  session_id = session_id,
+                  skip_standardize = isTRUE(skip_std),
+                  mode = .std_mode))
     if (is.list(std_result) && length(std_result) == 1)
       std_result <- std_result[[1]]
 

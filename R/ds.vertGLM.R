@@ -107,6 +107,14 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        family = "gaussian", max_iter = 100, tol = 1e-4,
                        lambda = 1e-4, log_n = 12,
                        offset = NULL, weights = NULL,
+                       # Ring63 (frac_bits=20, default, back-compat) or
+                       # Ring127 (frac_bits=50, STRICT-capable per
+                       # Catrina-Saxena 2^-fracbits scaling). Ring127
+                       # routes through the Uint128 Go primitives that
+                       # already exist for task #116 Cox/LMM. Used by
+                       # IPW/#98 for STRICT closure; other families may
+                       # opt in as the Ring127 regression suite expands.
+                       ring = 63L,
                        verbose = TRUE, datasources = NULL,
                        eta_privacy = "auto",
                        # Keep the MPC session alive on the servers after
@@ -119,6 +127,18 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        # responsible for eventually calling
                        # mpcCleanupDS(session_id) on every server.
                        keep_session = FALSE,
+                       # Suppress the auto-added intercept. Useful when
+                       # the caller is supplying a pre-transformed
+                       # design matrix in which one of the predictor
+                       # columns already encodes the intercept (e.g.
+                       # ds.vertLMM's cluster-mean-centred GLS fit where
+                       # "1 - lambda_i" replaces the constant).
+                       no_intercept = FALSE,
+                       # "full" (center+scale), "scale_only" (sd only,
+                       # preserves column means), or "none" (raw).
+                       # ds.vertLMM's closed-form GLS path uses
+                       # "scale_only" + no_intercept=TRUE.
+                       std_mode = "full",
                        # Legacy positional args for backward compatibility
                        data_name = NULL, y_var = NULL) {
   call_matched <- match.call()
@@ -382,7 +402,10 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     data_name        = data_name,
     family           = family,
     session_id       = session_id,
-    verbose          = verbose
+    verbose          = verbose,
+    # no_intercept=TRUE: skip y-standardisation (no mean-shift).
+    standardize_y_override = if (isTRUE(no_intercept)) FALSE else NULL,
+    std_mode = std_mode
   )
 
   # Unpack setup results
@@ -477,6 +500,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       data_name = data_name,
       weights_column = weights,
       peer_pk = transport_pks[[peer_srv]],
+      ring = ring,
       session_id = session_id))
     # setres is a list keyed by server; extract blob
     if (is.list(setres) && length(setres) == 1L) setres <- setres[[1]]
@@ -545,7 +569,9 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       verbose = verbose,
       .dsAgg = .dsAgg,
       .sendBlob = .sendBlob,
-      weights_active = isTRUE(weights_active)
+      weights_active = isTRUE(weights_active),
+      no_intercept  = isTRUE(no_intercept),
+      ring = ring
     )
 
     betas <- loop_result$betas
@@ -603,10 +629,25 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
   if (standardize_y && !is.null(y_sd)) {
     all_coefs_orig <- all_coefs_std * y_sd / all_x_sds
-    intercept <- y_mean - sum(all_coefs_orig * all_x_means)
+    # IPW fix (2026-04-21 PM): under weighted fit, the loop's α_std
+    # absorbs the (ȳ_W − ȳ)/σ_y shift because y is centered by the
+    # UNWEIGHTED mean but the weighted-score optimum has non-zero
+    # mean residual in standardized space. Add the β_0_from_label ·
+    # σ_y term to unstandardize correctly. Under unweighted fit α_std
+    # converges to ≈ 0 (weighted-by-unity mean of centered y is 0), so
+    # the term is ≈ 0 and back-compat is preserved — verified by the
+    # Ring63 w_unit probe staying at max|Δβ| = 1.12e-4 STRICT.
+    intercept <- beta_0_from_label * y_sd + y_mean -
+                 sum(all_coefs_orig * all_x_means)
   } else {
     all_coefs_orig <- all_coefs_std / all_x_sds
     intercept <- beta_0_from_label - sum(all_coefs_orig * all_x_means)
+  }
+  if (isTRUE(no_intercept)) {
+    # The caller is supplying a design matrix that already contains a
+    # column encoding the intercept (e.g. "1 - lambda_i" for LMM GLS).
+    # Report intercept = 0 to avoid double-counting.
+    intercept <- 0
   }
 
   all_coefs <- c(intercept, all_coefs_orig)
@@ -746,6 +787,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     aic = aic,
     y_server = y_server,
     eta_privacy = eta_privacy,
+    x_means = setNames(all_x_means, all_names),
+    x_sds   = setNames(all_x_sds,   all_names),
     call = call_matched
   )
 
