@@ -107,6 +107,14 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        family = "gaussian", max_iter = 100, tol = 1e-4,
                        lambda = 1e-4, log_n = 12,
                        offset = NULL, weights = NULL,
+                       # Ring63 (frac_bits=20, default, back-compat) or
+                       # Ring127 (frac_bits=50, STRICT-capable per
+                       # Catrina-Saxena 2^-fracbits scaling). Ring127
+                       # routes through the Uint128 Go primitives that
+                       # already exist for task #116 Cox/LMM. Used by
+                       # IPW/#98 for STRICT closure; other families may
+                       # opt in as the Ring127 regression suite expands.
+                       ring = 63L,
                        verbose = TRUE, datasources = NULL,
                        eta_privacy = "auto",
                        # Keep the MPC session alive on the servers after
@@ -492,6 +500,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       data_name = data_name,
       weights_column = weights,
       peer_pk = transport_pks[[peer_srv]],
+      ring = ring,
       session_id = session_id))
     # setres is a list keyed by server; extract blob
     if (is.list(setres) && length(setres) == 1L) setres <- setres[[1]]
@@ -561,7 +570,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       .dsAgg = .dsAgg,
       .sendBlob = .sendBlob,
       weights_active = isTRUE(weights_active),
-      no_intercept  = isTRUE(no_intercept)
+      no_intercept  = isTRUE(no_intercept),
+      ring = ring
     )
 
     betas <- loop_result$betas

@@ -46,9 +46,13 @@ NULL
                              family, lambda, max_iter, tol,
                              n_obs, verbose, .dsAgg, .sendBlob,
                              weights_active = FALSE,
-                             no_intercept  = FALSE) {
+                             no_intercept  = FALSE,
+                             ring = 63L) {
 
-  frac_bits <- 20L
+  ring <- as.integer(ring)
+  if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
+  ring_tag <- if (ring == 127L) "ring127" else "ring63"
+  frac_bits <- if (ring == 127L) 50L else 20L
   is_gaussian <- (family == "gaussian")
   num_intervals <- if (family == "poisson") 100L else 50L
   if (is.null(lambda)) lambda <- 1e-4
@@ -82,7 +86,8 @@ NULL
     r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
       data_name = std_data, x_vars = srv_x,
       y_var = if (server == coordinator) y_var else NULL,
-      peer_pk = peer_pk_safe, session_id = session_id))
+      peer_pk = peer_pk_safe, session_id = session_id,
+      ring = ring))
     if (is.list(r) && length(r) == 1) r <- r[[1]]
     share_results[[server]] <- r
   }
@@ -264,6 +269,7 @@ NULL
            dcf0_pk = transport_pks[[coordinator]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n_obs), p = as.integer(p_total),
+           ring = ring,
            session_id = session_id))
     if (is.list(grad_t)) grad_t <- grad_t[[1]]
     .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", coordinator_conn)
@@ -297,10 +303,12 @@ NULL
     res_fp_nl <- r1_results[[nl]]$sum_residual_fp
     if (!is.null(grad_fp_coord) && !is.null(grad_fp_nl)) {
       agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-        share_a=grad_fp_coord, share_b=grad_fp_nl, frac_bits=frac_bits))
+        share_a=grad_fp_coord, share_b=grad_fp_nl,
+        frac_bits=frac_bits, ring=ring_tag))
       gradient <- agg$values
       agg_res <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-        share_a=res_fp_coord, share_b=res_fp_nl, frac_bits=frac_bits))
+        share_a=res_fp_coord, share_b=res_fp_nl,
+        frac_bits=frac_bits, ring=ring_tag))
       sum_residual <- agg_res$values[1]
     } else {
       gradient <- rep(0, p_total); sum_residual <- 0
