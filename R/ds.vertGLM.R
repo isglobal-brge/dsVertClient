@@ -629,7 +629,16 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
   if (standardize_y && !is.null(y_sd)) {
     all_coefs_orig <- all_coefs_std * y_sd / all_x_sds
-    intercept <- y_mean - sum(all_coefs_orig * all_x_means)
+    # IPW fix (2026-04-21 PM): under weighted fit, the loop's α_std
+    # absorbs the (ȳ_W − ȳ)/σ_y shift because y is centered by the
+    # UNWEIGHTED mean but the weighted-score optimum has non-zero
+    # mean residual in standardized space. Add the β_0_from_label ·
+    # σ_y term to unstandardize correctly. Under unweighted fit α_std
+    # converges to ≈ 0 (weighted-by-unity mean of centered y is 0), so
+    # the term is ≈ 0 and back-compat is preserved — verified by the
+    # Ring63 w_unit probe staying at max|Δβ| = 1.12e-4 STRICT.
+    intercept <- beta_0_from_label * y_sd + y_mean -
+                 sum(all_coefs_orig * all_x_means)
   } else {
     all_coefs_orig <- all_coefs_std / all_x_sds
     intercept <- beta_0_from_label - sum(all_coefs_orig * all_x_means)
