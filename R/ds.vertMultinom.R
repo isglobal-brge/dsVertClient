@@ -94,14 +94,33 @@ ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
   coef_mat_corr <- coef_mat
   class_props <- NULL
   if (!is.null(fits[[1]]$x_means)) {
-    props <- tryCatch({
-      p <- sapply(classes, function(k) {
+    # Indicator columns live on a single outcome-holding server. Query
+    # each server in isolation; use the first successful response per
+    # class. ds.vertGLM already knows the outcome server (its y_server
+    # field); fall through if unavailable.
+    y_srv <- if (!is.null(fits[[1]]$y_server)) fits[[1]]$y_server else NULL
+    server_nm <- names(datasources)
+    try_one_server <- function(srv, k) {
+      tryCatch({
         r <- DSI::datashield.aggregate(
-          datasources,
+          datasources[which(server_nm == srv)],
           call("dsvertLocalMomentsDS", data_name = data,
                variable = sprintf(indicator_template, k)))
         if (is.list(r) && length(r) == 1L) r <- r[[1L]]
         if (is.list(r) && !is.null(r$mean)) as.numeric(r$mean) else NA_real_
+      }, error = function(e) NA_real_)
+    }
+    props <- tryCatch({
+      p <- sapply(classes, function(k) {
+        if (!is.null(y_srv)) {
+          v <- try_one_server(y_srv, k)
+          if (is.finite(v)) return(v)
+        }
+        for (srv in server_nm) {
+          v <- try_one_server(srv, k)
+          if (is.finite(v)) return(v)
+        }
+        NA_real_
       })
       setNames(p, classes)
     }, error = function(e) NULL)
