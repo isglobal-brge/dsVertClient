@@ -83,7 +83,8 @@ ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
   if (K < 3L) {
     if (verbose) message("[ds.vertMultinomJoint] K=", K,
                           " -> delegating to ds.vertMultinom / ds.vertGLM binomial")
-    return(ds.vertMultinom(formula, data = data, levels = levels,
+    return(ds.vertMultinom(formula, data = data,
+                            classes = levels, reference = levels[1L],
                             verbose = verbose, datasources = datasources))
   }
   # For the joint softmax we fit K-1 non-reference classes versus
@@ -110,7 +111,8 @@ ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
   }
   # Stage-1 warm-start: fit each class as independent binomial via
   # the existing ds.vertMultinom one-vs-rest path.
-  warm <- ds.vertMultinom(formula, data = data, levels = levels,
+  warm <- ds.vertMultinom(formula, data = data,
+                           classes = levels, reference = levels[1L],
                            verbose = FALSE, datasources = datasources)
   beta_mat <- do.call(cbind, lapply(warm$fits, function(f)
     as.numeric(f$coefficients)))
