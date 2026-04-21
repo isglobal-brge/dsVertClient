@@ -109,10 +109,25 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     # proxy from the fit's deviance.
     sigma2_resid <- max(sum(rss) / sum(n_i), 0.25)
     b_hat_new <- rsum / (n_i * sigma2_resid + 1 / sigma_b2)
-    sigma_b2_new <- max(stats::var(b_hat_new), 1e-6)
+    # EM update for σ_b² (task #99 fix 2026-04-21):
+    # `var(b_hat)` is biased DOWN because b_hat is a shrunk BLUP:
+    # E[b_hat_i²] = shrinkage_i · σ_b² + shrinkage_i² · posterior_var,
+    # so var(b_hat) systematically underestimates σ_b² by the
+    # shrinkage factor — on a 15×20 synth with σ_b = 0.7 the
+    # previous rule collapsed σ_b² → 0.001 instead of 0.49.
+    #
+    # The canonical Laird–Ware / Lindstrom–Bates EM update uses
+    #   σ_b²_new = mean(b_hat_i² + posterior_var_i)
+    # which is exactly the conditional-expectation of b_i² | y
+    # under the current σ_b². It is positive, non-decreasing from
+    # var(b_hat), and is the fixed point of the EM iteration that
+    # converges to the ML estimator.
+    post_var <- 1 / (n_i * sigma2_resid + 1 / sigma_b2)
+    sigma_b2_new <- max(mean(b_hat_new^2 + post_var), 1e-6)
     if (verbose) {
-      message(sprintf("[GLMM] outer %d  sigma_b^2=%.4g  var(b_hat)=%.4g",
-                       outer, sigma_b2_new, stats::var(b_hat_new)))
+      message(sprintf(
+        "[GLMM] outer %d  sigma_b^2=%.4g  var(b_hat)=%.4g  mean(post_var)=%.4g",
+        outer, sigma_b2_new, stats::var(b_hat_new), mean(post_var)))
     }
     if (abs(sigma_b2_new - sigma_b2) < tol * max(1, sigma_b2)) {
       converged <- TRUE
