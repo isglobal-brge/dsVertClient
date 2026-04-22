@@ -63,6 +63,11 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                         theta_tol = theta_tol, verbose = verbose,
                         datasources = datasources, ...)
 
+  theta_iid <- base_fit$theta
+  y_mean <- base_fit$y_mean
+  y_var <- base_fit$y_var
+  n <- base_fit$n_obs
+
   # ============================================================
   # Full-regression θ via per-patient μ (AUDITORIA C fix)
   # ============================================================
@@ -214,11 +219,6 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     class(out) <- c("ds.vertNBFullRegTheta", class(out))
     return(out)
   }
-
-  theta_iid <- base_fit$theta
-  y_mean <- base_fit$y_mean
-  y_var <- base_fit$y_var
-  n <- base_fit$n_obs
 
   if (identical(variant, "iid_mu")) {
     out <- base_fit
