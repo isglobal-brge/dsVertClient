@@ -118,11 +118,22 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   }
   .dsAgg <- function(conns, expr, ...)
     DSI::datashield.aggregate(conns, expr, ...)
+  # Canonical mpcStoreBlobDS signature: (key, chunk, chunk_index, n_chunks).
   .sendBlob <- function(blob, key, conn_idx) {
     if (is.null(blob) || !nzchar(blob)) return(invisible())
-    DSI::datashield.aggregate(datasources[conn_idx],
-      call("mpcStoreBlobDS", blob_b64 = blob, blob_key = key,
-           session_id = session_id))
+    conn <- datasources[conn_idx]
+    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
+      if (n_chunks == 1L) {
+        DSI::datashield.aggregate(conn,
+          call("mpcStoreBlobDS", key = key, chunk = chunk_str,
+               session_id = session_id))
+      } else {
+        DSI::datashield.aggregate(conn,
+          call("mpcStoreBlobDS", key = key, chunk = chunk_str,
+               chunk_index = chunk_idx, n_chunks = n_chunks,
+               session_id = session_id))
+      }
+    })
   }
 
   share_results <- list()
