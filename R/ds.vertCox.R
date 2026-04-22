@@ -441,13 +441,17 @@ ds.vertCox <- function(formula, data = NULL,
         "k2-exp127-get-coeffs", list(frac_bits = 50L))
     }
     coef_res <- exp127_coef_cache
+    # Strip base64 "=" padding: Opal's Magma DSL parser chokes on "="
+    # inside double-quoted string literals. DS functions re-pad before
+    # decoding via internal .b64_pad helper. (2026-04-22 fix.)
+    coef_res_one_over_a <- chartr("+/", "-_", sub("=+$", "", coef_res$one_over_a))
     degree <- as.integer(coef_res$degree)
     all_coeffs_raw <- jsonlite::base64_dec(coef_res$coeffs)
     # Split flat blob into one base64 string per coefficient (16 B each).
     c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
       s <- (idx - 1L) * 16L + 1L
       e <- s + 15L
-      jsonlite::base64_enc(all_coeffs_raw[s:e])
+      chartr("+/", "-_", sub("=+$", "", jsonlite::base64_enc(all_coeffs_raw[s:e])))
     }, character(1))
     # c_b64[idx] holds the base64 of c_{idx - 1} (0-indexed coefficient k).
 
@@ -456,7 +460,7 @@ ds.vertCox <- function(formula, data = NULL,
       ci <- which(server_names == server)
       .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
         in_key = "k2_eta_share_fp",
-        scalar_fp = coef_res$one_over_a,
+        scalar_fp = coef_res_one_over_a,
         output_key = "k2_r127_horner_y",
         n = n_int, session_id = session_id))
     }
@@ -594,13 +598,17 @@ ds.vertCox <- function(formula, data = NULL,
         "k2-recip127-get-coeffs", list(frac_bits = 50L))
     }
     rc <- recip127_coef_cache
+    # Opal DSL "==" fix — strip base64 padding; DS funcs re-pad.
+    rc_one_over_half_range <- chartr("+/", "-_", sub("=+$", "", rc$one_over_half_range))
+    rc_neg_mid_over_half_range <- chartr("+/", "-_", sub("=+$", "", rc$neg_mid_over_half_range))
+    rc_two_fp <- chartr("+/", "-_", sub("=+$", "", rc$two_fp))
     degree <- as.integer(rc$degree)
     nr_steps <- as.integer(rc$nr_steps)
     all_coeffs_raw <- jsonlite::base64_dec(rc$coeffs)
     c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
       s <- (idx - 1L) * 16L + 1L
       e <- s + 15L
-      jsonlite::base64_enc(all_coeffs_raw[s:e])
+      chartr("+/", "-_", sub("=+$", "", jsonlite::base64_enc(all_coeffs_raw[s:e])))
     }, character(1))
 
     # --- Step 2a: t_pre = x · (1/halfRange)  (local scale, both parties).
@@ -608,7 +616,7 @@ ds.vertCox <- function(formula, data = NULL,
       ci <- which(server_names == server)
       .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
         in_key = "k2_eta_share_fp",
-        scalar_fp = rc$one_over_half_range,
+        scalar_fp = rc_one_over_half_range,
         output_key = "k2_r127_recip_t_pre",
         n = n_int, session_id = session_id))
     }
@@ -620,7 +628,7 @@ ds.vertCox <- function(formula, data = NULL,
         a_key = "k2_r127_recip_t_pre",
         b_key = NULL,
         sign_a = 1L, sign_b = 0L,
-        public_const_fp = rc$neg_mid_over_half_range,
+        public_const_fp = rc_neg_mid_over_half_range,
         is_party0 = is_coord,
         output_key = "k2_r127_recip_t",
         n = n_int, session_id = session_id))
@@ -725,7 +733,7 @@ ds.vertCox <- function(formula, data = NULL,
           a_key = NULL,
           b_key = "k2_r127_recip_xy",
           sign_a = 0L, sign_b = -1L,
-          public_const_fp = rc$two_fp,
+          public_const_fp = rc_two_fp,
           is_party0 = is_coord,
           output_key = "k2_r127_recip_twoMinusXy",
           n = n_int, session_id = session_id))

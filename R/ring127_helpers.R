@@ -74,11 +74,14 @@
       "k2-exp127-get-coeffs", list(frac_bits = 50L))
   }
   coef_res <- .ring127_exp_coef_cache$coef_res
+  # Opal DSL "==" parser fix — strip base64 padding client-side;
+  # DS functions re-pad before decoding.
+  coef_res_one_over_a <- chartr("+/", "-_", sub("=+$", "", coef_res$one_over_a))
   degree <- as.integer(coef_res$degree)
   all_coeffs_raw <- jsonlite::base64_dec(coef_res$coeffs)
   c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
     s <- (idx - 1L) * 16L + 1L; e <- s + 15L
-    jsonlite::base64_enc(all_coeffs_raw[s:e])
+    chartr("+/", "-_", sub("=+$", "", jsonlite::base64_enc(all_coeffs_raw[s:e])))
   }, character(1))
 
   tag <- make.names(out_key, unique = TRUE)
@@ -92,7 +95,7 @@
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
-      in_key = in_key, scalar_fp = coef_res$one_over_a,
+      in_key = in_key, scalar_fp = coef_res_one_over_a,
       output_key = tmp_y, n = n_int, session_id = session_id))
     .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
       a_key = tmp_y, b_key = tmp_y, sign_a = 1L, sign_b = 1L,
@@ -152,12 +155,15 @@
       "k2-recip127-get-coeffs", list(frac_bits = 50L))
   }
   rc <- .ring127_recip_coef_cache$coef_res
+  rc_one_over_half_range <- chartr("+/", "-_", sub("=+$", "", rc$one_over_half_range))
+  rc_neg_mid_over_half_range <- chartr("+/", "-_", sub("=+$", "", rc$neg_mid_over_half_range))
+  rc_two_fp <- chartr("+/", "-_", sub("=+$", "", rc$two_fp))
   degree <- as.integer(rc$degree)
   nr_steps <- as.integer(rc$nr_steps)
   all_coeffs_raw <- jsonlite::base64_dec(rc$coeffs)
   c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
     s <- (idx - 1L) * 16L + 1L; e <- s + 15L
-    jsonlite::base64_enc(all_coeffs_raw[s:e])
+    chartr("+/", "-_", sub("=+$", "", jsonlite::base64_enc(all_coeffs_raw[s:e])))
   }, character(1))
 
   tag <- make.names(out_key, unique = TRUE)
@@ -176,11 +182,11 @@
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
-      in_key = in_key, scalar_fp = rc$one_over_half_range,
+      in_key = in_key, scalar_fp = rc_one_over_half_range,
       output_key = t_pre, n = n_int, session_id = session_id))
     .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
       a_key = t_pre, b_key = NULL, sign_a = 1L, sign_b = 0L,
-      public_const_fp = rc$neg_mid_over_half_range,
+      public_const_fp = rc_neg_mid_over_half_range,
       is_party0 = is_coord, output_key = t_key,
       n = n_int, session_id = session_id))
     .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
@@ -236,7 +242,7 @@
       is_coord <- (server == y_server)
       .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
         a_key = NULL, b_key = xy, sign_a = 0L, sign_b = -1L,
-        public_const_fp = rc$two_fp, is_party0 = is_coord,
+        public_const_fp = rc_two_fp, is_party0 = is_coord,
         output_key = tmXY, n = n_int, session_id = session_id))
     }
     final_slot <- if (iter == nr_steps) out_key else y_alt

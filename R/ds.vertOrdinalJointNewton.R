@@ -180,6 +180,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       theta_k_fp <- dsVert:::.callMpcTool("k2-float-to-fp", list(
         values = as.numeric(theta[ki]), frac_bits = 50L,
         ring = "ring127"))$fp_data
+      theta_k_fp <- chartr("+/", "-_", sub("=+$", "", theta_k_fp))
       u_key <- paste0("u_thresh_", ki)
       # u_k = theta_k (party0 constant) - eta_share
       for (srv in server_list) {
@@ -202,6 +203,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       # 1 + exp(u_k): party 0 adds constant 1
       one_fp <- dsVert:::.callMpcTool("k2-float-to-fp", list(
         values = 1.0, frac_bits = 50L, ring = "ring127"))$fp_data
+      one_fp <- chartr("+/", "-_", sub("=+$", "", one_fp))
       onePlusExp_key <- paste0("onePlusExp_thresh_", ki)
       for (srv in server_list) {
         ci <- which(server_names == srv)
