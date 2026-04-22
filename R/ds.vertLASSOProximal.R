@@ -82,6 +82,15 @@ ds.vertLASSOProximal <- function(fit, lambda,
     lambda_ridge <- if (!is.null(fit$lambda) && is.finite(fit$lambda))
       fit$lambda else 0
     H_std <- fit$hessian_std - lambda_ridge * diag(p)
+    # hessian_std may be in fit-internal (server-partition) column order,
+    # which differs from the formula-order used by beta_ols / x_means /
+    # x_sds. Permute to match beta_ols ordering when dimnames are set.
+    if (!is.null(dimnames(H_std)) && !is.null(rownames(H_std))) {
+      perm <- match(names(beta_ols), rownames(H_std))
+      if (all(!is.na(perm))) {
+        H_std <- H_std[perm, perm, drop = FALSE]
+      }
+    }
     x_means_vec <- as.numeric(fit$x_means[names(beta_ols)])
     x_sds_vec <- as.numeric(fit$x_sds[names(beta_ols)])
     # Intercept row: x̄_j = sum(X_ij)/n for slope columns; 1 for
