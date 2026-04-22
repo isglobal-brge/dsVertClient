@@ -9,6 +9,18 @@
 
 .ring127_exp_coef_cache <- new.env(parent = emptyenv())
 .ring127_recip_coef_cache <- new.env(parent = emptyenv())
+.ring127_half_fp_cache <- new.env(parent = emptyenv())
+
+# FP(0.5) for share-side argument reduction exp(x) = exp(x/2)^2.
+# Cached once per session to avoid repeated Go round-trips.
+.ring127_get_half_fp <- function() {
+  if (is.null(.ring127_half_fp_cache$v)) {
+    r <- dsVert:::.callMpcTool("k2-float-to-fp",
+      list(values = array(0.5, dim = 1L), frac_bits = 50L, ring = "ring127"))
+    .ring127_half_fp_cache$v <- r$fp_data
+  }
+  .ring127_half_fp_cache$v
+}
 
 # Standard base64 → base64url (Opal/Rock DSL parser chokes on `=`, `+`, `/`
 # inside double-quoted string literals — documented in
@@ -265,5 +277,52 @@
       swap <- y_cur; y_cur <- y_alt; y_alt <- swap
     }
   }
+  invisible(NULL)
+}
+
+# Argument-reduced exp for share-space: evaluates exp(x) for |x| ≤ ~10
+# by scaling input by 1/2, running the core [-5,5] Chebyshev, and
+# squaring the result via one Beaver vecmul.
+#
+# Mirrors Ring127ExpPlaintextExtended (dsVert/inst/dsvert-mpc/k2_exp127.go
+# lines 87-119) but operates on secret-shared inputs. Preserves interior
+# accuracy (rel ≤ 1e-12 per Trefethen ATAP §8 bound) by keeping the
+# Chebyshev core at a=5 rather than degrading coefficients at a=10.
+#
+# Use this in place of .ring127_exp_round_keyed when η may leave the
+# [-5, 5] band during Newton iterations (softmax / proportional-odds
+# sigmoid) — fixes bug #9 (max_step=NaN from exp overflow/wraparound at
+# |η|>5 on Ring127 fixed-point).
+#
+# Cost: 1 extra k2Ring127LocalScaleDS + 1 extra k2BeaverVecmul (≈ 3%
+# overhead vs the degree-30 Clenshaw core, which uses 30 vecmuls).
+.ring127_exp_round_keyed_extended <- function(in_key, out_key, n,
+                                              datasources, dealer_ci, server_list,
+                                              server_names, y_server, nl,
+                                              transport_pks, session_id,
+                                              .dsAgg, .sendBlob) {
+  n_int <- as.integer(n)
+  half_fp_b64 <- .to_b64url(.ring127_get_half_fp())
+  half_key <- paste0(in_key, "_ext_half")
+  exp_half_key <- paste0(out_key, "_ext_exphalf")
+
+  # Step 1: scale input by 0.5 locally on each server (linear, no MPC round).
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+      in_key = in_key, scalar_fp = half_fp_b64,
+      output_key = half_key, n = n_int, session_id = session_id))
+  }
+  # Step 2: evaluate exp on half-input (interior Chebyshev [-5,5]).
+  .ring127_exp_round_keyed(half_key, exp_half_key, n,
+                           datasources, dealer_ci, server_list,
+                           server_names, y_server, nl,
+                           transport_pks, session_id,
+                           .dsAgg, .sendBlob)
+  # Step 3: square via Beaver vecmul → exp(x) = exp(x/2)^2.
+  .ring127_vecmul(exp_half_key, exp_half_key, out_key, n_int,
+                  datasources, dealer_ci, server_list, server_names,
+                  y_server, nl, transport_pks, session_id,
+                  .dsAgg, .sendBlob)
   invisible(NULL)
 }

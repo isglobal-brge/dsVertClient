@@ -212,7 +212,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           session_id = session_id, output_key = eta_key))
       }
       exp_key <- paste0("exp_eta_class_", ki)
-      .ring127_exp_round_keyed(eta_key, exp_key, n_obs,
+      .ring127_exp_round_keyed_extended(eta_key, exp_key, n_obs,
                                datasources, dealer_ci, server_list,
                                server_names, y_server, nl, transport_pks,
                                session_id, .dsAgg, .sendBlob)
