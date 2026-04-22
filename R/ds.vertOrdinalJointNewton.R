@@ -89,13 +89,18 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     transport_pks[[srv]] <- r$transport_pk
   }
+  .json_to_b64url <- function(x) {
+    raw <- charToRaw(jsonlite::toJSON(x, auto_unbox = TRUE))
+    b64 <- gsub("\n", "", jsonlite::base64_enc(raw), fixed = TRUE)
+    chartr("+/", "-_", sub("=+$", "", b64, perl = TRUE))
+  }
   for (srv in server_list) {
     ci <- which(server_names == srv)
     peer_srv <- setdiff(server_list, srv)
     peers <- setNames(list(transport_pks[[peer_srv]]), peer_srv)
     DSI::datashield.aggregate(datasources[ci],
-      call("mpcStoreTransportKeysDS", peers_list_json =
-           jsonlite::toJSON(peers, auto_unbox = TRUE),
+      call("mpcStoreTransportKeysDS",
+           transport_keys_b64 = .json_to_b64url(peers),
            session_id = session_id))
   }
 
