@@ -10,6 +10,16 @@
 .ring127_exp_coef_cache <- new.env(parent = emptyenv())
 .ring127_recip_coef_cache <- new.env(parent = emptyenv())
 
+# Standard base64 → base64url (Opal/Rock DSL parser chokes on `=`, `+`, `/`
+# inside double-quoted string literals — documented in
+# dsVert/R/mpcUtils.R:175 alongside the inverse `.base64url_to_base64`
+# helper). Mirror of the local closure used inside ds.vertCox.R line 231;
+# extracted here so joint-Newton orchestrations share the canonical form.
+.to_b64url <- function(x) {
+  if (is.null(x) || !nzchar(x)) return(x)
+  chartr("+/", "-_", sub("=+$", "", x, perl = TRUE))
+}
+
 # Ring127 Beaver vecmul on shares under arbitrary session keys.
 # Mirrors dsVertClient:::.run_beaver_vecmul_ring127 (which is a closure
 # inside ds.vertCox.R and not callable externally).
@@ -76,12 +86,12 @@
   coef_res <- .ring127_exp_coef_cache$coef_res
   # Opal DSL "==" parser fix — strip base64 padding client-side;
   # DS functions re-pad before decoding.
-  coef_res_one_over_a <- chartr("+/", "-_", sub("=+$", "", coef_res$one_over_a))
+  coef_res_one_over_a <- .to_b64url(coef_res$one_over_a)
   degree <- as.integer(coef_res$degree)
   all_coeffs_raw <- jsonlite::base64_dec(coef_res$coeffs)
   c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
     s <- (idx - 1L) * 16L + 1L; e <- s + 15L
-    chartr("+/", "-_", sub("=+$", "", jsonlite::base64_enc(all_coeffs_raw[s:e])))
+    .to_b64url(jsonlite::base64_enc(all_coeffs_raw[s:e]))
   }, character(1))
 
   tag <- make.names(out_key, unique = TRUE)
@@ -155,15 +165,15 @@
       "k2-recip127-get-coeffs", list(frac_bits = 50L))
   }
   rc <- .ring127_recip_coef_cache$coef_res
-  rc_one_over_half_range <- chartr("+/", "-_", sub("=+$", "", rc$one_over_half_range))
-  rc_neg_mid_over_half_range <- chartr("+/", "-_", sub("=+$", "", rc$neg_mid_over_half_range))
-  rc_two_fp <- chartr("+/", "-_", sub("=+$", "", rc$two_fp))
+  rc_one_over_half_range <- .to_b64url(rc$one_over_half_range)
+  rc_neg_mid_over_half_range <- .to_b64url(rc$neg_mid_over_half_range)
+  rc_two_fp <- .to_b64url(rc$two_fp)
   degree <- as.integer(rc$degree)
   nr_steps <- as.integer(rc$nr_steps)
   all_coeffs_raw <- jsonlite::base64_dec(rc$coeffs)
   c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
     s <- (idx - 1L) * 16L + 1L; e <- s + 15L
-    chartr("+/", "-_", sub("=+$", "", jsonlite::base64_enc(all_coeffs_raw[s:e])))
+    .to_b64url(jsonlite::base64_enc(all_coeffs_raw[s:e]))
   }, character(1))
 
   tag <- make.names(out_key, unique = TRUE)
