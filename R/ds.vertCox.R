@@ -108,11 +108,17 @@ ds.vertCox <- function(formula, data = NULL,
                        # path (input-sharing + DCF + spline triples + 4-phase
                        # eval + mu aggregation). Downstream Beaver-gradient
                        # triples / k2-ring63-aggregate callsites beyond
-                       # spline (lines ~500+ in this file) remain Ring63;
-                       # validate Path A one-step Newton behaviour first,
-                       # extend to Path B Beaver-gradient in a follow-up if
-                       # needed.
-                       ring = 63L,
+                       # spline remain Ring63 for now.
+                       # Default flipped to 127 on 2026-04-22: empirical
+                       # 5/5 STRICT on Pima synthetic (max|Δβ|=1.06e-04
+                       # vs Ring63 mixed STRICT/TIGHT/LOOSE), and Ring127
+                       # runs ~2× faster because Path B converges in 5
+                       # iters instead of oscillating around the Ring63
+                       # Catrina-Saxena biased fixed point. See
+                       # docs/error_bounds/cox_ring127_strict_evidence.md.
+                       # Callers needing the legacy Ring63 behaviour must
+                       # pass ring = 63L explicitly.
+                       ring = 127L,
                        verbose = TRUE, datasources = NULL) {
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
