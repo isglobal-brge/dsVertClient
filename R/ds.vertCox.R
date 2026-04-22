@@ -444,14 +444,14 @@ ds.vertCox <- function(formula, data = NULL,
     # Strip base64 "=" padding: Opal's Magma DSL parser chokes on "="
     # inside double-quoted string literals. DS functions re-pad before
     # decoding via internal .b64_pad helper. (2026-04-22 fix.)
-    coef_res_one_over_a <- chartr("+/", "-_", sub("=+$", "", coef_res$one_over_a))
+    coef_res_one_over_a <- .to_b64url(coef_res$one_over_a)
     degree <- as.integer(coef_res$degree)
     all_coeffs_raw <- jsonlite::base64_dec(coef_res$coeffs)
     # Split flat blob into one base64 string per coefficient (16 B each).
     c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
       s <- (idx - 1L) * 16L + 1L
       e <- s + 15L
-      chartr("+/", "-_", sub("=+$", "", jsonlite::base64_enc(all_coeffs_raw[s:e])))
+      .to_b64url(jsonlite::base64_enc(all_coeffs_raw[s:e]))
     }, character(1))
     # c_b64[idx] holds the base64 of c_{idx - 1} (0-indexed coefficient k).
 
@@ -599,16 +599,16 @@ ds.vertCox <- function(formula, data = NULL,
     }
     rc <- recip127_coef_cache
     # Opal DSL "==" fix — strip base64 padding; DS funcs re-pad.
-    rc_one_over_half_range <- chartr("+/", "-_", sub("=+$", "", rc$one_over_half_range))
-    rc_neg_mid_over_half_range <- chartr("+/", "-_", sub("=+$", "", rc$neg_mid_over_half_range))
-    rc_two_fp <- chartr("+/", "-_", sub("=+$", "", rc$two_fp))
+    rc_one_over_half_range <- .to_b64url(rc$one_over_half_range)
+    rc_neg_mid_over_half_range <- .to_b64url(rc$neg_mid_over_half_range)
+    rc_two_fp <- .to_b64url(rc$two_fp)
     degree <- as.integer(rc$degree)
     nr_steps <- as.integer(rc$nr_steps)
     all_coeffs_raw <- jsonlite::base64_dec(rc$coeffs)
     c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
       s <- (idx - 1L) * 16L + 1L
       e <- s + 15L
-      chartr("+/", "-_", sub("=+$", "", jsonlite::base64_enc(all_coeffs_raw[s:e])))
+      .to_b64url(jsonlite::base64_enc(all_coeffs_raw[s:e]))
     }, character(1))
 
     # --- Step 2a: t_pre = x · (1/halfRange)  (local scale, both parties).
