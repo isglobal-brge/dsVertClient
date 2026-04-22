@@ -102,9 +102,12 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   x_vars_per_server <- list()
   for (srv in server_list) {
     ci <- which(server_names == srv)
-    cols_here <- tryCatch(DSI::datashield.aggregate(datasources[ci],
-      call("dsvertColNamesDS", data_name = data))[[1L]],
+    r <- tryCatch(DSI::datashield.aggregate(datasources[ci],
+      call("dsvertColNamesDS", data_name = data)),
       error = function(e) NULL)
+    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+    cols_here <- if (is.list(r) && !is.null(r$columns)) r$columns
+                 else if (is.character(r)) r else character(0)
     x_vars_per_server[[srv]] <- intersect(rhs, cols_here)
   }
 
