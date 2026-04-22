@@ -201,7 +201,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     for (ki in seq_along(thresh_levels)) {
       # theta_k public scalar → make an FP encoding
       theta_k_fp <- dsVert:::.callMpcTool("k2-float-to-fp", list(
-        values = as.numeric(theta[ki]), frac_bits = 50L,
+        values = array(as.numeric(theta[ki]), dim = 1L), frac_bits = 50L,
         ring = "ring127"))$fp_data
       theta_k_fp <- .to_b64url(theta_k_fp)
       u_key <- paste0("u_thresh_", ki)
