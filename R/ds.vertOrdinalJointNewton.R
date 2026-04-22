@@ -225,7 +225,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
                                session_id, .dsAgg, .sendBlob)
       # 1 + exp(u_k): party 0 adds constant 1
       one_fp <- dsVert:::.callMpcTool("k2-float-to-fp", list(
-        values = 1.0, frac_bits = 50L, ring = "ring127"))$fp_data
+        values = array(1.0, dim = 1L), frac_bits = 50L, ring = "ring127"))$fp_data
       one_fp <- .to_b64url(one_fp)
       onePlusExp_key <- paste0("onePlusExp_thresh_", ki)
       for (srv in server_list) {
