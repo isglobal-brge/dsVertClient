@@ -245,6 +245,15 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     }
 
     # Step 6-7: residual r_k = y_k - p_k + Beaver matvec X^T r_k
+    # Dimension handling: X is shared via k2ShareInputDS with p_shared =
+    # sum(lengths(x_vars_per_server)) columns (slopes only, no intercept
+    # column). The Beaver matvec therefore returns p_shared-length slope
+    # gradient. The intercept gradient is computed separately as the
+    # scalar aggregate sum(r_k)/n via k2BeaverSumShareDS (Σ rᵢ reveals
+    # only a scalar per class, same disclosure budget as existing GLM).
+    p_shared <- sum(vapply(x_vars_per_server, length, integer(1L)))
+    int_row <- which(cnames == "(Intercept)")
+    slope_rows <- setdiff(seq_len(p), int_row)
     gradients <- matrix(0, p, K_minus_1,
                          dimnames = list(cnames, non_ref))
     for (ki in seq_along(non_ref)) {
@@ -260,6 +269,21 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           is_outcome_server = (srv == coord),
           n = as.integer(n_obs), session_id = session_id))
       }
+      # Intercept gradient: scalar Σᵢ rᵢ via per-server share sum + reveal.
+      sum_shares <- list()
+      for (srv in server_list) {
+        ci <- which(server_names == srv)
+        rs <- .dsAgg(datasources[ci], call("k2BeaverSumShareDS",
+          source_key = r_key, session_id = session_id,
+          frac_bits = 50L))
+        if (is.list(rs) && length(rs) == 1L) rs <- rs[[1L]]
+        sum_shares[[srv]] <- rs$sum_share_fp
+      }
+      int_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+        share_a = sum_shares[[coord]],
+        share_b = sum_shares[[nl]],
+        frac_bits = 50L, ring = "ring127"))
+      gradients[int_row, ki] <- as.numeric(int_agg$values)[1L] / n_obs
       # Prep the standard gradient machinery: pipeline computes X^T(mu-y),
       # we set mu=0 and y=-r_k so X^T(mu-y) = X^T r_k.
       for (srv in server_list) {
@@ -269,12 +293,12 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           is_outcome_server = (srv == coord),
           n = as.integer(n_obs), session_id = session_id))
       }
-      # Beaver matvec: X^T (mu - y) → per-class gradient
+      # Beaver matvec: X^T (mu - y) → per-class SLOPE gradient (length p_shared)
       grad_t <- .dsAgg(datasources[dealer_ci],
         call("glmRing63GenGradTriplesDS",
              dcf0_pk = transport_pks[[coord]],
              dcf1_pk = transport_pks[[nl]],
-             n = as.integer(n_obs), p = as.integer(p),
+             n = as.integer(n_obs), p = as.integer(p_shared),
              ring = 127L, session_id = session_id))
       if (is.list(grad_t) && length(grad_t) == 1L) grad_t <- grad_t[[1L]]
       .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", y_server_ci)
@@ -305,8 +329,13 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         share_a = r2[[coord]]$gradient_fp,
         share_b = r2[[nl]]$gradient_fp,
         frac_bits = 50L, ring = "ring127"))
-      # Aggregate gradient is X^T(mu-y) = X^T(0 - (-r_k)) = X^T r_k → good
-      gradients[, ki] <- as.numeric(agg$values) / n_obs
+      # Slope gradient X^T r_k (length p_shared); intercept already filled.
+      slope_vals <- as.numeric(agg$values)
+      if (length(slope_vals) != length(slope_rows)) {
+        stop(sprintf("slope gradient length mismatch: got %d, expected %d",
+                     length(slope_vals), length(slope_rows)), call. = FALSE)
+      }
+      gradients[slope_rows, ki] <- slope_vals / n_obs
     }
 
     # Client-side Bohning Newton step
