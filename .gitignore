@@ -1,2 +1,10 @@
-.Rproj.user
-vignettes/*_cache/
+# R build artifacts
+*.Rcheck/
+..Rcheck/
+*.tar.gz
+
+# Editor + OS
+.DS_Store
+.Rhistory
+.RData
+.Rproj.user/
