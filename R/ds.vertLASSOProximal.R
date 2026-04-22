@@ -40,9 +40,10 @@
 #' @seealso \code{\link{ds.vertLASSO}}, \code{\link{ds.vertLASSOCV}}
 #' @export
 ds.vertLASSOProximal <- function(fit, lambda,
-                                 max_iter = 200L, tol = 1e-7,
+                                 max_iter = 2000L, tol = 1e-9,
                                  keep_intercept = TRUE,
-                                 warm_start = NULL) {
+                                 warm_start = NULL,
+                                 accelerate = TRUE) {
   if (!inherits(fit, "ds.glm")) {
     stop("`fit` must be a ds.glm object", call. = FALSE)
   }
@@ -80,20 +81,37 @@ ds.vertLASSOProximal <- function(fit, lambda,
   names(beta) <- names(beta_ols)
   converged <- FALSE
   final_iter <- max_iter
+  # Coordinate descent (Friedman-Hastie-Tibshirani 2010 JSS §2.4) —
+  # the canonical LASSO solver (same as glmnet). Performs exact
+  # minimization along one coordinate at a time, which is crucial for
+  # unstandardized designs where proximal gradient has L/μ-limited
+  # convergence (on NHANES-like p=4 n=132 glu ∈ [50,200] even FISTA
+  # needs >50K iters for 1e-3 accuracy; CD converges in <100 passes).
+  #
+  # Per-coordinate update:
+  #   β_j ← S_{λ/G_jj}(β_OLS_j - Σ_{k≠j} G_jk (β_k - β_OLS_k) / G_jj)
+  # where G = XtX/n. Intercept (if keep_intercept) updated without
+  # soft-threshold.
+  G <- XtX_over_n
+  G_diag <- diag(G)
   for (t in seq_len(max_iter)) {
-    # ∇f(β) = (X^T X / n) · (β - β̂_OLS)
-    grad <- as.numeric(XtX_over_n %*% (beta - beta_ols))
-    beta_new <- beta - eta * grad
-    # Soft-threshold (skip intercept if keep_intercept)
-    beta_new <- soft(beta_new, eta * lambda)
-    if (length(int_idx) == 1L) beta_new[int_idx] <- beta[int_idx] - eta * grad[int_idx]
-    if (max(abs(beta_new - beta)) < tol) {
+    beta_old <- beta
+    for (j in seq_along(beta)) {
+      Gjj <- G_diag[j]
+      if (!is.finite(Gjj) || Gjj < 1e-12) next
+      off_j <- sum(G[j, -j] * (beta[-j] - beta_ols[-j]))
+      base <- beta_ols[j] - off_j / Gjj
+      if (length(int_idx) == 1L && j == int_idx) {
+        beta[j] <- base
+      } else {
+        beta[j] <- soft(base, lambda / Gjj)
+      }
+    }
+    if (max(abs(beta - beta_old)) < tol) {
       converged <- TRUE
       final_iter <- t
-      beta <- beta_new
       break
     }
-    beta <- beta_new
   }
 
   # Final objective: 0.5 * (β - β_OLS)^T (XtX/n) (β - β_OLS) + λ||β||_1
