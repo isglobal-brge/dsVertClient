@@ -126,9 +126,14 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     ci <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
     peer_pk <- transport_pks[[peer]]
+    # Categorical outcome (bp_cls) is not shared via k2ShareInputDS
+    # (fails Go float64 unmarshal). Per-class indicator columns are
+    # read directly by the label server inside later aggregates (see
+    # indicator_template usage at ~line 240). Pass y_var=NULL for all
+    # servers in the multinom joint path.
     r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
       data_name = data, x_vars = x_vars_per_server[[srv]],
-      y_var = if (srv == y_server) y_var_char else NULL,
+      y_var = NULL,
       peer_pk = peer_pk, ring = 127L, session_id = session_id))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     share_results[[srv]] <- r
