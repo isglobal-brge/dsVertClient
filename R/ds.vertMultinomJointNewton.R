@@ -386,12 +386,28 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       gradients[slope_rows, ki] <- slope_vals / n_obs
     }
 
-    # Client-side Bohning Newton step
+    # Client-side Bohning Newton step with damped step-halving.
+    # Bohning H* is a Loewner upper bound (guarantees descent in
+    # EXACT arithmetic per Bohning 1992 Thm 2), but with MPC
+    # approximation errors in the gradient the step can overshoot.
+    # Cap max|step| per iter to stabilise. Nocedal-Wright 2006
+    # §3.5-backtracking without the formal Armijo criterion (which
+    # would require an extra MPC round per iter to evaluate the
+    # likelihood at β_new — too costly). Empirically cap=0.5
+    # stabilises the softmax Newton on the Opal NHANES cohort.
+    # Sign convention: gradient = X^T(y - π) = ∇(log-lik); Bohning
+    # B_reg ≥ -∇²(log-lik) so step = +B^{-1}·g is an ASCENT direction
+    # for the log-likelihood (Bohning 1992 Thm 2). β_new = β + step.
     g_stacked <- as.numeric(gradients)
     step_stacked <- tryCatch(solve(B_reg, g_stacked),
                               error = function(e) 0.1 * g_stacked)
     step_mat <- matrix(step_stacked, p, K_minus_1,
                        dimnames = dimnames(gradients))
+    step_cap <- 0.5
+    step_norm <- max(abs(step_mat))
+    if (is.finite(step_norm) && step_norm > step_cap) {
+      step_mat <- step_mat * (step_cap / step_norm)
+    }
     beta_new <- beta_mat
     beta_new[, non_ref] <- beta_new[, non_ref] + step_mat
     max_step <- max(abs(step_mat))
