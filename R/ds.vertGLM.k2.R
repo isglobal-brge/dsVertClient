@@ -443,6 +443,15 @@ NULL
     if(verbose) message(sprintf("    [SE] Column %d/%d",jj,p_plus1))
   }
   hessian_k2 <- (hessian_k2 + t(hessian_k2)) / 2
+  # Column order is [Intercept, x_vars[[coordinator]], x_vars[[nl]]]
+  # per theta_conv layout above. Attach dimnames so downstream consumers
+  # (ds.vertLASSOProximal Gram reconstruction, Wald contrasts) can
+  # permute to match external x_means / x_sds ordering (which may
+  # differ from server-partition order).
+  hess_names <- c("(Intercept)",
+                  x_vars[[coordinator]],
+                  if (p_nl > 0L) x_vars[[nl]] else character(0))
+  dimnames(hessian_k2) <- list(hess_names, hess_names)
   inv_hessian <- list()
   attr(inv_hessian, "raw_hessian") <- hessian_k2
 
