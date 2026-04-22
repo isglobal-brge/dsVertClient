@@ -8,6 +8,7 @@
 #' @noRd
 
 .ring127_exp_coef_cache <- new.env(parent = emptyenv())
+.ring127_recip_coef_cache <- new.env(parent = emptyenv())
 
 # Ring127 Beaver vecmul on shares under arbitrary session keys.
 # Mirrors dsVertClient:::.run_beaver_vecmul_ring127 (which is a closure
@@ -134,6 +135,118 @@
       a_key = tmp_res, b_key = slot_A, sign_a = 1L, sign_b = -1L,
       public_const_fp = c_b64[1L], is_party0 = is_coord,
       output_key = out_key, n = n_int, session_id = session_id))
+  }
+  invisible(NULL)
+}
+
+# Ring127 spline-less 1/x via Chebyshev-Horner initial guess + 6 NR
+# iterations. Mirror of ds.vertCox.R's .recip127_round but keyed I/O.
+.ring127_recip_round_keyed <- function(in_key, out_key, n,
+                                       datasources, dealer_ci, server_list,
+                                       server_names, y_server, nl,
+                                       transport_pks, session_id,
+                                       .dsAgg, .sendBlob) {
+  n_int <- as.integer(n)
+  if (is.null(.ring127_recip_coef_cache$coef_res)) {
+    .ring127_recip_coef_cache$coef_res <- dsVert:::.callMpcTool(
+      "k2-recip127-get-coeffs", list(frac_bits = 50L))
+  }
+  rc <- .ring127_recip_coef_cache$coef_res
+  degree <- as.integer(rc$degree)
+  nr_steps <- as.integer(rc$nr_steps)
+  all_coeffs_raw <- jsonlite::base64_dec(rc$coeffs)
+  c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
+    s <- (idx - 1L) * 16L + 1L; e <- s + 15L
+    jsonlite::base64_enc(all_coeffs_raw[s:e])
+  }, character(1))
+
+  tag <- make.names(out_key, unique = TRUE)
+  t_pre <- paste0("__r127_rp_tpre_", tag)
+  t_key <- paste0("__r127_rp_t_",    tag)
+  twoT  <- paste0("__r127_rp_twoT_", tag)
+  bB    <- paste0("__r127_rp_bB_",   tag)
+  bA    <- paste0("__r127_rp_bA_",   tag)
+  tmp   <- paste0("__r127_rp_tmp_",  tag)
+  y_cur <- paste0("__r127_rp_y_",    tag)
+  y_alt <- paste0("__r127_rp_yalt_", tag)
+  xy    <- paste0("__r127_rp_xy_",   tag)
+  tmXY  <- paste0("__r127_rp_twoMinusXY_", tag)
+
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == y_server)
+    .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+      in_key = in_key, scalar_fp = rc$one_over_half_range,
+      output_key = t_pre, n = n_int, session_id = session_id))
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = t_pre, b_key = NULL, sign_a = 1L, sign_b = 0L,
+      public_const_fp = rc$neg_mid_over_half_range,
+      is_party0 = is_coord, output_key = t_key,
+      n = n_int, session_id = session_id))
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = t_key, b_key = t_key, sign_a = 1L, sign_b = 1L,
+      public_const_fp = NULL, is_party0 = is_coord,
+      output_key = twoT, n = n_int, session_id = session_id))
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      public_const_fp = c_b64[degree + 1L], is_party0 = is_coord,
+      output_key = bB, n = n_int, session_id = session_id))
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      public_const_fp = NULL, is_party0 = is_coord,
+      output_key = bA, n = n_int, session_id = session_id))
+  }
+
+  slot_B <- bB; slot_A <- bA
+  for (k in seq.int(degree - 1L, 1L)) {
+    .ring127_vecmul(twoT, slot_B, tmp, n_int,
+                    datasources, dealer_ci, server_list, server_names,
+                    y_server, nl, transport_pks, session_id,
+                    .dsAgg, .sendBlob)
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+        public_const_fp = c_b64[k + 1L], is_party0 = is_coord,
+        output_key = slot_A, n = n_int, session_id = session_id))
+    }
+    swap <- slot_A; slot_A <- slot_B; slot_B <- swap
+  }
+  .ring127_vecmul(t_key, slot_B, tmp, n_int,
+                  datasources, dealer_ci, server_list, server_names,
+                  y_server, nl, transport_pks, session_id,
+                  .dsAgg, .sendBlob)
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == y_server)
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+      public_const_fp = c_b64[1L], is_party0 = is_coord,
+      output_key = y_cur, n = n_int, session_id = session_id))
+  }
+
+  for (iter in seq_len(nr_steps)) {
+    .ring127_vecmul(in_key, y_cur, xy, n_int,
+                    datasources, dealer_ci, server_list, server_names,
+                    y_server, nl, transport_pks, session_id,
+                    .dsAgg, .sendBlob)
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = NULL, b_key = xy, sign_a = 0L, sign_b = -1L,
+        public_const_fp = rc$two_fp, is_party0 = is_coord,
+        output_key = tmXY, n = n_int, session_id = session_id))
+    }
+    final_slot <- if (iter == nr_steps) out_key else y_alt
+    .ring127_vecmul(y_cur, tmXY, final_slot, n_int,
+                    datasources, dealer_ci, server_list, server_names,
+                    y_server, nl, transport_pks, session_id,
+                    .dsAgg, .sendBlob)
+    if (iter < nr_steps) {
+      swap <- y_cur; y_cur <- y_alt; y_alt <- swap
+    }
   }
   invisible(NULL)
 }
