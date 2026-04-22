@@ -59,16 +59,62 @@ ds.vertLASSOProximal <- function(fit, lambda,
   p <- length(beta_ols)
   int_idx <- if (keep_intercept) which(names(beta_ols) == "(Intercept)") else integer(0L)
 
-  # Reconstruct X^T X / n = Cov^{-1} * σ² / n
-  # For Gaussian OLS: Cov(β̂) = σ² (X^T X)^{-1}, so (X^T X) = σ² Cov^{-1}
-  # and (X^T X)/n = σ² Cov^{-1} / n. σ² is estimated as deviance/(n-p).
+  # Reconstruct X^T X / n. Preferred route: use the standardized-space
+  # Hessian exposed by ds.vertGLM as $hessian_std (X_std^T X_std / n +
+  # λI), plus $x_means, $x_sds. This avoids the double matrix
+  # inversion (Cov -> inv -> rescale) that loses precision on ill-
+  # conditioned designs.
+  #
+  # For standardized features X_std[,j] = (X_raw[,j] - x̄_j)/x_sd_j:
+  #   G[j,k] = x̄_j x̄_k + x_sd_j · x_sd_k · H_std[j,k]   (slope j,k)
+  #   G[0,j] = x̄_j                                       (intercept-slope)
+  #   G[0,0] = 1
+  #
+  # Fallback for ds.glm-like inputs without $hessian_std (e.g. lm()
+  # mocks): reconstruct via σ²_ε · Cov^{-1} / n (lm() convention) or
+  # y_sd² · Cov^{-1} / n (ds.vertGLM convention).
   sigma2_hat <- if (!is.null(fit$deviance) && is.finite(fit$deviance))
     fit$deviance / max(fit$n_obs - p, 1L) else 1
-  cov_inv <- tryCatch(solve(fit$covariance),
-                      error = function(e)
-                        solve(fit$covariance +
-                              1e-8 * diag(p) * mean(abs(diag(fit$covariance)))))
-  XtX_over_n <- sigma2_hat * cov_inv / fit$n_obs
+
+  if (!is.null(fit$hessian_std) && !is.null(fit$x_means) &&
+      !is.null(fit$x_sds) && is.matrix(fit$hessian_std) &&
+      all(dim(fit$hessian_std) == c(p, p))) {
+    lambda_ridge <- if (!is.null(fit$lambda) && is.finite(fit$lambda))
+      fit$lambda else 0
+    H_std <- fit$hessian_std - lambda_ridge * diag(p)
+    x_means_vec <- as.numeric(fit$x_means[names(beta_ols)])
+    x_sds_vec <- as.numeric(fit$x_sds[names(beta_ols)])
+    # Intercept row: x̄_j = sum(X_ij)/n for slope columns; 1 for
+    # intercept. Slope-slope block: x̄_j x̄_k + x_sd_j x_sd_k H_std[j,k].
+    XtX_over_n <- matrix(0, p, p,
+                          dimnames = list(names(beta_ols), names(beta_ols)))
+    int_j <- if (length(int_idx) == 1L) int_idx else NA_integer_
+    for (jj in seq_len(p)) {
+      for (kk in seq_len(p)) {
+        if (!is.na(int_j) && jj == int_j && kk == int_j) {
+          XtX_over_n[jj, kk] <- 1
+        } else if (!is.na(int_j) && jj == int_j) {
+          XtX_over_n[jj, kk] <- x_means_vec[kk]
+        } else if (!is.na(int_j) && kk == int_j) {
+          XtX_over_n[jj, kk] <- x_means_vec[jj]
+        } else {
+          XtX_over_n[jj, kk] <- x_means_vec[jj] * x_means_vec[kk] +
+            x_sds_vec[jj] * x_sds_vec[kk] * H_std[jj, kk]
+        }
+      }
+    }
+  } else {
+    cov_inv <- tryCatch(solve(fit$covariance),
+                        error = function(e)
+                          solve(fit$covariance +
+                                1e-8 * diag(p) * mean(abs(diag(fit$covariance)))))
+    scale_factor <- if (!is.null(fit$y_sd) && is.finite(fit$y_sd) && fit$y_sd > 0) {
+      fit$y_sd^2
+    } else {
+      sigma2_hat
+    }
+    XtX_over_n <- scale_factor * cov_inv / fit$n_obs
+  }
 
   # Step size: 1/L where L ≥ λ_max(XtX/n). Use power iteration upper bound.
   L <- max(abs(eigen(XtX_over_n, only.values = TRUE)$values))

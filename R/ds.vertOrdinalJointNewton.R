@@ -85,9 +85,9 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   for (srv in server_list) {
     ci <- which(server_names == srv)
     r <- DSI::datashield.aggregate(datasources[ci],
-      call("mpcInitTransportDS", session_id = session_id))
+      call("glmRing63TransportInitDS", session_id = session_id))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-    transport_pks[[srv]] <- r$public_key
+    transport_pks[[srv]] <- r$transport_pk
   }
   for (srv in server_list) {
     ci <- which(server_names == srv)

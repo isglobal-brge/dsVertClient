@@ -789,6 +789,11 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     eta_privacy = eta_privacy,
     x_means = setNames(all_x_means, all_names),
     x_sds   = setNames(all_x_sds,   all_names),
+    y_sd    = if (exists("y_sd", inherits = FALSE)) y_sd else NULL,
+    y_mean  = if (exists("y_mean", inherits = FALSE)) y_mean else NULL,
+    hessian_std = if (exists("inv_H", inherits = FALSE) && !is.null(inv_H) &&
+                       !is.null(attr(inv_H, "raw_hessian")))
+      attr(inv_H, "raw_hessian") else NULL,
     call = call_matched
   )
 
