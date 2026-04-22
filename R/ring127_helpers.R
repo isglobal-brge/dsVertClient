@@ -63,7 +63,8 @@
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call("k2BeaverVecmulR2DS",
-      is_party0 = is_coord, output_key = output_key,
+      is_party0 = is_coord, x_key = x_key, y_key = y_key,
+      output_key = output_key,
       n = n_int, session_id = session_id,
       frac_bits = 50L, ring = 127L))
   }
