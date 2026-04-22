@@ -219,7 +219,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       }
       # exp(u_k) via Chebyshev Horner
       exp_u_key <- paste0("exp_u_thresh_", ki)
-      .ring127_exp_round_keyed(u_key, exp_u_key, n_obs,
+      .ring127_exp_round_keyed_extended(u_key, exp_u_key, n_obs,
                                datasources, dealer_ci, server_list,
                                server_names, y_server, nl, transport_pks,
                                session_id, .dsAgg, .sendBlob)
