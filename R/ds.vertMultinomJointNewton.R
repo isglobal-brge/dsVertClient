@@ -171,14 +171,49 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   converged <- FALSE
   final_iter <- max_outer
 
-  # Bohning Hessian upper bound (client-side, constant): use any warm$fits
-  # covariance to approximate X^T X / n, then form block kronecker.
-  cov_k0 <- warm$fits[[non_ref[1L]]]$covariance
-  sigma2 <- if (!is.null(warm$fits[[non_ref[1L]]]$deviance))
-    warm$fits[[non_ref[1L]]]$deviance /
-      max(n_obs - p, 1L) else 1
-  XtX_over_n <- tryCatch(sigma2 * solve(cov_k0) / n_obs,
-                         error = function(e) diag(p))
+  # Bohning (1992) constant upper-bound Hessian: H* = (1/2)·(I_{K-1} −
+  # (1/K) 1 1^T) ⊗ (X^T X / n). PSD + β-independent → monotone Newton
+  # descent (Bohning 1992 Ann Inst Stat Math 44:197–200, Theorem 2;
+  # Krishnapuram et al 2005 IEEE PAMI 27(6)).
+  #
+  # XtX_over_n must be in FORMULA order to match beta_mat rows. The
+  # warm fit's $covariance is in fit-internal (server-partition) order
+  # per the LASSO permutation bug (same class as 4ce55a3 — see
+  # dsVertGLM.k2.R theta_conv layout). Reconstruct via hessian_std +
+  # x_means + x_sds from the warm fit (those fields ARE in formula
+  # order), applying the same Gram-from-hessian formula as LASSO:
+  #   G[j,k] = x̄_j x̄_k + x_sd_j x_sd_k · H_std[perm(j), perm(k)]  (slopes)
+  #   G[0,j] = x̄_j  G[0,0] = 1
+  w0 <- warm$fits[[non_ref[1L]]]
+  XtX_over_n <- NULL
+  if (!is.null(w0$hessian_std) && !is.null(w0$x_means) &&
+      !is.null(w0$x_sds) && is.matrix(w0$hessian_std) &&
+      all(dim(w0$hessian_std) == c(p, p))) {
+    lam_ridge <- if (!is.null(w0$lambda) && is.finite(w0$lambda)) w0$lambda else 0
+    H_std <- w0$hessian_std - lam_ridge * diag(p)
+    if (!is.null(dimnames(H_std)) && !is.null(rownames(H_std))) {
+      perm <- match(cnames, rownames(H_std))
+      if (all(!is.na(perm))) H_std <- H_std[perm, perm, drop = FALSE]
+    }
+    x_m <- as.numeric(w0$x_means[cnames]); x_m[is.na(x_m)] <- 0
+    x_s <- as.numeric(w0$x_sds[cnames]);    x_s[is.na(x_s)] <- 0
+    XtX_over_n <- matrix(0, p, p, dimnames = list(cnames, cnames))
+    int_j <- which(cnames == "(Intercept)")
+    if (length(int_j) != 1L) int_j <- NA_integer_
+    for (jj in seq_len(p)) for (kk in seq_len(p)) {
+      if (!is.na(int_j) && jj == int_j && kk == int_j) XtX_over_n[jj,kk] <- 1
+      else if (!is.na(int_j) && jj == int_j) XtX_over_n[jj,kk] <- x_m[kk]
+      else if (!is.na(int_j) && kk == int_j) XtX_over_n[jj,kk] <- x_m[jj]
+      else XtX_over_n[jj,kk] <- x_m[jj]*x_m[kk] + x_s[jj]*x_s[kk]*H_std[jj,kk]
+    }
+  } else {
+    # Fallback for external warm starts without hessian_std — use covariance.
+    cov_k0 <- w0$covariance
+    sigma2 <- if (!is.null(w0$deviance))
+      w0$deviance / max(n_obs - p, 1L) else 1
+    XtX_over_n <- tryCatch(sigma2 * solve(cov_k0) / n_obs,
+                           error = function(e) diag(p))
+  }
   B <- matrix(0, p * K_minus_1, p * K_minus_1)
   for (i in seq_len(K_minus_1))
     for (j in seq_len(K_minus_1)) {
@@ -283,7 +318,15 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         share_a = sum_shares[[coord]],
         share_b = sum_shares[[nl]],
         frac_bits = 50L, ring = "ring127"))
-      gradients[int_row, ki] <- as.numeric(int_agg$values)[1L] / n_obs
+      int_val <- as.numeric(int_agg$values)[1L]
+      if (!is.finite(int_val)) {
+        stop(sprintf("[debug bug#9] iter=%d class=%d: intercept grad NA; sum_shares coord=%s nl=%s int_agg=%s",
+                     outer, ki,
+                     substr(sum_shares[[coord]] %||% "NULL", 1, 12),
+                     substr(sum_shares[[nl]] %||% "NULL", 1, 12),
+                     paste(int_agg, collapse=" ")), call. = FALSE)
+      }
+      gradients[int_row, ki] <- int_val / n_obs
       # Prep the standard gradient machinery: pipeline computes X^T(mu-y),
       # we set mu=0 and y=-r_k so X^T(mu-y) = X^T r_k.
       for (srv in server_list) {
@@ -334,6 +377,11 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       if (length(slope_vals) != length(slope_rows)) {
         stop(sprintf("slope gradient length mismatch: got %d, expected %d",
                      length(slope_vals), length(slope_rows)), call. = FALSE)
+      }
+      if (any(!is.finite(slope_vals))) {
+        stop(sprintf("[debug bug#9] iter=%d class=%d: slope grad NA at positions [%s]",
+                     outer, ki, paste(which(!is.finite(slope_vals)), collapse=",")),
+             call. = FALSE)
       }
       gradients[slope_rows, ki] <- slope_vals / n_obs
     }
