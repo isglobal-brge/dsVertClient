@@ -170,6 +170,14 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
 
   converged <- FALSE
   final_iter <- max_outer
+  # Best-β tracking: retain argmin_k |g(β_k)|_L2. Required because the
+  # MPC-approximated gradient + step-cap interaction induces late-iter
+  # oscillation (empirically iter 7 and iter 10 spikes on NHANES
+  # Mnl trace 20260423-112816). Returning best-so-far mirrors Cox Path
+  # B's revert-on-grad-grow (memory project_ring127_p1_progress).
+  best_beta <- NULL
+  best_g_norm <- Inf
+  best_iter <- 0L
 
   # Bohning (1992) constant upper-bound Hessian: H* = (1/2)·(I_{K-1} −
   # (1/K) 1 1^T) ⊗ (X^T X / n). PSD + β-independent → monotone Newton
@@ -419,11 +427,25 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     g_stacked <- as.numeric(gradients)
     g_norm <- sqrt(sum(g_stacked^2))
     g_max  <- max(abs(g_stacked))
+    # Track best β seen so far (argmin_k |g|_L2). Newton's late-iter
+    # oscillation under MPC step-cap binds the step but may not track
+    # the likelihood maximum monotonically — best-β recovers the best
+    # point encountered.
+    if (is.finite(g_norm) && g_norm < best_g_norm) {
+      best_g_norm <- g_norm
+      best_beta <- beta_mat
+      best_iter <- outer - 1L  # β_mat is current iterate PRE step
+    }
     step_stacked <- tryCatch(solve(B_reg, g_stacked),
                               error = function(e) 0.1 * g_stacked)
     step_mat <- matrix(step_stacked, p, K_minus_1,
                        dimnames = dimnames(gradients))
-    step_cap <- 0.5
+    # Decreasing step-cap schedule: 0.5 for first 5 iters (broad
+    # descent), then 0.5 * 0.7^(iter-5) (refine near optimum, reduce
+    # oscillation amplitude as |g| shrinks). Bounded below at 0.05 so
+    # Newton always makes SOME progress. Same spirit as Nocedal-Wright
+    # §3.5 backtracking but pre-scheduled to save the Armijo MPC round.
+    step_cap <- if (outer <= 5L) 0.5 else max(0.5 * 0.7^(outer - 5L), 0.05)
     step_norm_pre <- max(abs(step_mat))
     if (is.finite(step_norm_pre) && step_norm_pre > step_cap) {
       step_mat <- step_mat * (step_cap / step_norm_pre)
@@ -456,9 +478,17 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         silent = TRUE)
   }
 
+  # Return best-β seen (argmin_k |g|_L2), not the final iterate. Under
+  # MPC step-cap oscillation the final iterate may not be the closest
+  # to the MLE; best-β tracks it. Fall back to beta_mat if no iter was
+  # recorded (e.g., max_outer=0 edge case).
+  final_beta <- if (!is.null(best_beta)) best_beta else beta_mat
   out <- warm
   out$coefficients_anchored <- warm$coefficients
-  out$coefficients <- beta_mat
+  out$coefficients <- final_beta
+  out$coefficients_final_iter <- beta_mat  # last iterate for diagnostics
+  out$best_g_norm <- best_g_norm
+  out$best_iter <- best_iter
   out$outer_iter <- final_iter
   out$converged <- converged
   out$family <- "multinomial_joint_softmax_ring127"
