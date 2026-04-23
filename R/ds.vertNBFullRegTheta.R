@@ -154,11 +154,21 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
              peer_eta_key = "nb_peer_eta",
              theta = th, session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-      list(
-        score = r$sum_psi - r$n * digamma(th) + r$sum_log_theta_ratio,
-        # derivative: Σψ₁(y+θ) − n·ψ₁(θ) + d/dθ Σ log(θ/(θ+μ))
-        deriv = r$sum_tri - r$n * trigamma(th) + r$sum_mu_ratio,
-        n = r$n)
+      # AUDITORIA correction: prior score omitted +n and −Σ(y+θ)/(θ+μ)
+      # terms (fixed point was biased → 5.87% rel err persistent).
+      # Full NB profile score/deriv per Venables-Ripley 2002 §7.4 +
+      # Lawless 1987:
+      #   ℓ'(θ)  = Σψ(y+θ) − n·ψ(θ) + n·log(θ) − Σlog(θ+μ)
+      #            + n − Σ(y+θ)/(θ+μ)
+      #   ℓ''(θ) = Σψ₁(y+θ) − n·ψ₁(θ) + n/θ − 2·Σ1/(θ+μ)
+      #            + Σ(y+θ)/(θ+μ)²
+      score_val <- r$sum_psi - r$n * digamma(th) +
+                   r$sum_log_theta_ratio +
+                   r$n - r$sum_ypt_over_tmu
+      deriv_val <- r$sum_tri - r$n * trigamma(th) +
+                   r$n / th - 2 * r$sum_inv_tmu +
+                   r$sum_ypt_over_tmu2
+      list(score = score_val, deriv = deriv_val, n = r$n)
     }
 
     # Seed from iid θ; ONE blob send covers all θ evaluations because
