@@ -170,7 +170,14 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     # cache. For safety, re-send per iter on small blob.
     # Simpler: let server keep ηᵢ in session after first decrypt —
     # we'll issue the re-send per θ eval (blob is small < 20KB).
-    theta_cur <- max(theta_iid, 1e-3)
+    # AUDITORIA warm-init: prefer MoM θ₀ = ȳ²/(Var(y) − ȳ) over
+    # theta_iid (which collapses μ → ȳ). MoM is well-conditioned for
+    # overdispersed data and gives Newton-θ a closer seed to glm.nb.
+    # Venables-Ripley 2002 §7.4 uses MoM as glm.nb's initial θ.
+    theta_mom <- if (is.finite(y_var) && y_var > y_mean + 1e-10)
+      max(y_mean^2 / max(y_var - y_mean, 1e-6), 0.1) else NA_real_
+    theta_cur <- if (is.finite(theta_mom)) theta_mom
+                 else max(theta_iid, 1e-3)
     for (it in seq_len(25L)) {
       s <- score_fullreg(theta_cur)
       if (anyNA(unlist(s[c("score","deriv")]))) break
