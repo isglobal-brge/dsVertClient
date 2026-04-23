@@ -399,18 +399,26 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     # B_reg ≥ -∇²(log-lik) so step = +B^{-1}·g is an ASCENT direction
     # for the log-likelihood (Bohning 1992 Thm 2). β_new = β + step.
     g_stacked <- as.numeric(gradients)
+    g_norm <- sqrt(sum(g_stacked^2))
+    g_max  <- max(abs(g_stacked))
     step_stacked <- tryCatch(solve(B_reg, g_stacked),
                               error = function(e) 0.1 * g_stacked)
     step_mat <- matrix(step_stacked, p, K_minus_1,
                        dimnames = dimnames(gradients))
     step_cap <- 0.5
-    step_norm <- max(abs(step_mat))
-    if (is.finite(step_norm) && step_norm > step_cap) {
-      step_mat <- step_mat * (step_cap / step_norm)
+    step_norm_pre <- max(abs(step_mat))
+    if (is.finite(step_norm_pre) && step_norm_pre > step_cap) {
+      step_mat <- step_mat * (step_cap / step_norm_pre)
     }
     beta_new <- beta_mat
     beta_new[, non_ref] <- beta_new[, non_ref] + step_mat
     max_step <- max(abs(step_mat))
+    # AUDITORIA instrumentation: gradient-norm trace per iter. Always
+    # emit (not gated on verbose) so CV full logs capture convergence
+    # trajectory for FAIL diagnosis.
+    cat(sprintf("[MnlJoint] iter %d  |g|_L2=%.3e  |g|_max=%.3e  |step|_pre=%.3e  |step|_post=%.3e  beta_max=%.3e  dt=%.1fs\n",
+                outer, g_norm, g_max, step_norm_pre, max_step,
+                max(abs(beta_new)), proc.time()[[3L]] - t_iter))
     if (verbose)
       message(sprintf("[MultinomJointNewton] iter %d |step|_max=%.3e (%.1fs)",
                        outer, max_step, proc.time()[[3L]] - t_iter))
