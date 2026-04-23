@@ -254,17 +254,42 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       F_keys[ki] <- F_k_key
     }
 
-    # Step 4-8: The remaining pipeline (f_k = F_k(1-F_k), per-patient
-    # indicator-weighted differences, reciprocal of F-difference, product,
-    # Beaver matvec) is THE CRITICAL UNSHIPPED ORCHESTRATION. For this
-    # session we compute each class's F_k on shares (done above — the
-    # main gain vs warm-start) but apply the final Newton step using the
-    # CLIENT-SIDE Fisher from warm$joint_mle$covariance. The full
-    # share-aggregated score (X^T T) wire-up is tracked as next-session
-    # (~150 additional LOC of orchestration; needs per-class F share
-    # subtraction + per-patient indicator routing on outcome server).
+    # =========================================================
+    # FUTURE WORK (AUDITORIA-documented explicit scope item):
+    # =========================================================
+    # Full proportional-odds joint Newton on shares is UNSHIPPED in
+    # this function. Current output = warm-start Fisher fallback, so
+    # L3 max|Δ cum P| ≈ 6.12e-02 reflects the federated warm-start
+    # residual (ds.vertOrdinal BLUE+threshold path), not a precision
+    # floor.
+    #
+    # Missing orchestration:
+    #   1. Per-class f_k = F_k·(1 − F_k) on shares (1 vecmul per class).
+    #   2. F-difference P(Y=k) = F_k − F_{k-1} on shares (1 affine
+    #      combine per interior class — via k2Ring127AffineCombineDS,
+    #      already shipped).
+    #   3. Reciprocal 1/P(Y=k) on shares (Chebyshev wide-spline —
+    #      k2_recip127_cheb.go, already shipped).
+    #   4. Indicator-routed patient-level product per class (outcome
+    #      server reads indicator column `%s_leq` locally, multiplies
+    #      into the share).
+    #   5. Beaver matvec X^T · T to aggregate the PO score (reuses
+    #      glmRing63GenGradTriplesDS / k2GradientR[12]DS, already
+    #      shipped).
+    #   6. Joint Newton step with PO Fisher information (client-side
+    #      solve once gradient is correct).
+    #
+    # New server function required:
+    #   dsvertOrdinalPatientDiffsDS(data_name, indicator_template,
+    #     f_keys, P_keys, recipP_keys, n, session_id)
+    #
+    # Estimated scope: 12-18h (per AUDITORIA agent audit — primitives
+    # all exist, routing + indicator logic is the remaining cost).
+    # Tracked for next-session; not a "structural precision cap" —
+    # just unshipped.
+    # =========================================================
     if (verbose)
-      message("[OrdinalJointNewton] F_k shares computed (ring127); score aggregation uses warm Fisher as bound (next-session: full X^T T Beaver matvec).")
+      message("[OrdinalJointNewton] F_k shares computed (ring127); score aggregation uses warm Fisher fallback (FUTURE WORK: full X^T T Beaver matvec — see comment block above).")
 
     # Client-side fallback Newton-like step using warm joint Fisher
     # (approximates convergence to joint MLE within Fisher conditioning)
