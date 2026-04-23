@@ -383,7 +383,25 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                      outer, ki, paste(which(!is.finite(slope_vals)), collapse=",")),
              call. = FALSE)
       }
-      gradients[slope_rows, ki] <- slope_vals / n_obs
+      # AUDITORIA root cause of multinom Newton divergence (|g|_L2
+      # INCREASING monotonically at iters 1→10 per grad-trace 9e1e8fc):
+      # slope_vals comes back from the Beaver matvec in SERVER-PARTITION
+      # order (concatenation of x_vars_per_server[[srv]] over
+      # server_list). slope_rows indexes cnames in FORMULA order (from
+      # rownames(beta_mat)). Writing slope_vals directly was pairing
+      # gradient of variable A with β of variable B. Exactly the same
+      # class of bug as LASSO 4ce55a3 (federated hessian_std column
+      # permutation). Permute to formula order before assigning.
+      server_partition_names <- unlist(x_vars_per_server, use.names = FALSE)
+      formula_slope_names <- cnames[slope_rows]
+      perm_grad <- match(formula_slope_names, server_partition_names)
+      if (any(is.na(perm_grad))) {
+        stop(sprintf("slope gradient permutation mismatch: formula names [%s] not all present in server partition [%s]",
+                     paste(formula_slope_names, collapse=","),
+                     paste(server_partition_names, collapse=",")),
+             call. = FALSE)
+      }
+      gradients[slope_rows, ki] <- slope_vals[perm_grad] / n_obs
     }
 
     # Client-side Bohning Newton step with damped step-halving.
