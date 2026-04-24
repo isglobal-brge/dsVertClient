@@ -401,12 +401,17 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
                    outer, conditionMessage(e)))
     })
 
-    # Piece 8 — joint Newton step using ACTUAL gradient + warm Fisher
-    # for the Hessian block. Warm Fisher Info_joint is the β-block of
-    # the observed information at warm_mle — sufficient as a PSD bound
-    # to drive ascent. Fall back to zero-step (warm unchanged) if
-    # joint_score_ok is FALSE (piece 6 or 7 hiccup).
-    if (!is.null(Info_joint) && isTRUE(joint_score_ok)) {
+    # Piece 8 — joint Newton step. Current empirical state (probe
+    # 2026-04-24): piece 7 matvec produces gradient but Newton diverges
+    # (max|Δ cum P| blew from 0.06 warm → 0.98 joint) due to step
+    # magnitude + Fisher scaling mismatch. Until tuning lands
+    # (step-cap decreasing schedule, line-search, or Bohning-style
+    # upper-bound Hessian for PO), default path is warm-Fisher fallback
+    # (0.06 baseline preserved). The piece-6/7 pipeline STILL RUNS —
+    # T_i and score diagnostics emit per iter so future tuning has
+    # empirical data. Flip `use_joint_step` to TRUE to activate.
+    use_joint_step <- isTRUE(getOption("dsvert.ord_joint_active", FALSE))
+    if (!is.null(Info_joint) && isTRUE(joint_score_ok) && use_joint_step) {
       # Map server-partition gradient to formula order matching beta
       # (same class as LASSO permutation fix 4ce55a3 & multinom e746edb).
       server_partition_names <- unlist(x_vars_per_server, use.names = FALSE)
