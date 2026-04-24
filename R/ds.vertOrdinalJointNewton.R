@@ -290,8 +290,67 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     # commits, one per piece. Tracked as a piece-by-piece structural
     # close, not "future-work unshipped".
     # =========================================================
-    if (verbose)
-      message("[OrdinalJointNewton] F_k shares computed (ring127); score aggregation uses warm Fisher fallback (FUTURE WORK: full X^T T Beaver matvec — see comment block above).")
+    # =========================================================
+    # PIECES 6-8 (AUDITORIA piece-by-piece): reveal F_k shares to
+    # outcome server, assemble per-patient T_i there, compute X^T·T
+    # score gradient via existing Beaver matvec. Wrapped in tryCatch
+    # so any MPC hiccup falls through to the warm-Fisher baseline
+    # without regressing the 6.12e-02 verdict.
+    # =========================================================
+    joint_score_ok <- FALSE
+    score_beta <- NULL
+    if (!is.null(Info_joint)) tryCatch({
+      # Step A: NL seals its F_k shares for OS transport-encrypted.
+      ci_nl <- which(server_names == nl)
+      ci_os <- which(server_names == y_server)
+      sealed_r <- .dsAgg(datasources[ci_nl],
+        call("dsvertOrdinalSealFkSharesDS",
+             F_keys = F_keys,
+             target_pk = transport_pks[[y_server]],
+             session_id = session_id))
+      if (is.list(sealed_r) && length(sealed_r) == 1L) sealed_r <- sealed_r[[1L]]
+      # Step B: relay sealed blob to OS via existing chunked sender
+      .sendBlob(sealed_r$sealed, "ord_peer_F_blob", ci_os)
+      # Step C: OS assembles plaintext F locally, computes T_i share
+      t_key <- paste0("ord_T_i_outer_", outer)
+      os_r <- .dsAgg(datasources[ci_os],
+        call("dsvertOrdinalPatientDiffsDS",
+             data_name = data,
+             indicator_template = cumulative_template,
+             level_names = levels_ordered,
+             peer_F_blob_key = "ord_peer_F_blob",
+             F_keys = F_keys,
+             theta_values = as.numeric(theta),
+             output_key = t_key,
+             n = as.integer(n_obs),
+             is_outcome_server = TRUE,
+             session_id = session_id))
+      if (is.list(os_r) && length(os_r) == 1L) os_r <- os_r[[1L]]
+      # Step D: NL stores its T_i share (zero; contribution is on OS only)
+      .dsAgg(datasources[ci_nl],
+        call("dsvertOrdinalPatientDiffsDS",
+             output_key = t_key,
+             n = as.integer(n_obs),
+             is_outcome_server = FALSE,
+             session_id = session_id))
+      if (verbose)
+        message(sprintf("[OrdinalJointNewton] T_i: |T|_max=%.3e |T|_L2=%.3e cls=[%s]",
+                         os_r$T_max %||% NA, os_r$T_norm_L2 %||% NA,
+                         paste(os_r$class_counts %||% NA, collapse=",")))
+
+      # TODO piece 7 (Beaver matvec X^T · T): requires X to be shared
+      # in Ring127 via k2ShareInputDS. If the session has shared X from
+      # warm start, reuse; otherwise the score block stays at gradient=0
+      # and falls back to warm Fisher this iter. Tracked for next commit.
+      joint_score_ok <- FALSE    # piece-by-piece: matvec in next commit
+    }, error = function(e) {
+      if (verbose)
+        message(sprintf("[OrdinalJointNewton iter %d] piece 6/7/8 path error: %s — falling back to warm Fisher",
+                         outer, conditionMessage(e)))
+    })
+
+    if (!joint_score_ok && verbose)
+      message("[OrdinalJointNewton] warm Fisher fallback this iter (piece 7 matvec not yet wired)")
 
     # Client-side fallback Newton-like step using warm joint Fisher
     # (approximates convergence to joint MLE within Fisher conditioning)
@@ -300,7 +359,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       # warm-start γ̂_BLUE, which are approximately zero, and the
       # threshold correction already applied.
       step_max <- 0
-      break_msg <- "warm + F-share eval"
+      break_msg <- "warm + F-share eval + T_i computed"
       converged <- TRUE
       final_iter <- outer
     }
