@@ -300,31 +300,45 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     joint_score_ok <- FALSE
     score_beta <- NULL
     if (!is.null(Info_joint)) tryCatch({
-      # Step A: NL seals its F_k shares for OS transport-encrypted.
+      # Step A: NL seals its eta^nl = X^nl · beta^nl (plaintext on NL)
+      # for OS transport-encrypted. This replaces the F-reveal path
+      # (had Ring127 ULP cancellation — sat_frac=1.000 collapse when
+      # both F saturate). η-reveal matches NB #5 pattern; OS assembles
+      # full η and computes F/P/T via Mächler-stable log1mexp locally.
       ci_nl <- which(server_names == nl)
       ci_os <- which(server_names == y_server)
+      beta_nl_names <- intersect(names(beta), x_vars_per_server[[nl]])
+      beta_nl_slice <- as.numeric(beta[beta_nl_names])
       sealed_r <- .dsAgg(datasources[ci_nl],
-        call("dsvertOrdinalSealFkSharesDS",
-             F_keys = F_keys,
+        call("dsvertOrdinalSealEtaDS",
+             data_name = data,
+             x_vars = beta_nl_names,
+             beta_values = beta_nl_slice,
              target_pk = transport_pks[[y_server]],
              session_id = session_id))
       if (is.list(sealed_r) && length(sealed_r) == 1L) sealed_r <- sealed_r[[1L]]
-      # Step B: relay sealed blob to OS via existing chunked sender
-      .sendBlob(sealed_r$sealed, "ord_peer_F_blob", ci_os)
-      # Step C: OS assembles plaintext F locally, computes T_i share.
+      # Step B: relay sealed eta^nl blob to OS via existing chunked sender
+      .sendBlob(sealed_r$sealed, "ord_peer_eta_blob", ci_os)
+      # Step C: OS reconstructs full η = η^os + η^nl locally, computes
+      # F_k = sigmoid(θ_k − η), P(Y=k) via Mächler-stable branch switch
+      # (naive when F_{k-1} ≤ 0.5; upper-tail plogis(-u_{k-1})-plogis(-u_k)
+      # when F_{k-1} > 0.5), then T_i = (f_{j-1}-f_j)/P_{i,j}.
       # Build indicator column names client-side to avoid Opal DSL
-      # parser choking on "%" in sprintf templates (lexical error
-      # observed 2026-04-24 probe with "%s_leq").
+      # parser choking on "%" in sprintf templates.
       t_key <- paste0("ord_T_i_outer_", outer)
       thresh_levels_client <- head(levels_ordered, -1L)
       indicator_cols_vec <- sprintf(cumulative_template, thresh_levels_client)
+      beta_os_names <- intersect(names(beta), x_vars_per_server[[y_server]])
+      beta_os_slice <- as.numeric(beta[beta_os_names])
       os_r <- .dsAgg(datasources[ci_os],
         call("dsvertOrdinalPatientDiffsDS",
              data_name = data,
              indicator_cols = indicator_cols_vec,
              level_names = levels_ordered,
-             peer_F_blob_key = "ord_peer_F_blob",
-             F_keys = F_keys,
+             x_vars_label = beta_os_names,
+             beta_values_label = beta_os_slice,
+             beta_intercept = 0,
+             peer_eta_blob_key = "ord_peer_eta_blob",
              theta_values = as.numeric(theta),
              output_key = t_key,
              n = as.integer(n_obs),
