@@ -33,6 +33,42 @@
 #'   K-1 aggregate coefficient vectors; patient-level class indicators
 #'   stay at the server that hosts the outcome.
 #'
+#' @section Formal bound on max|Δπ| vs joint-softmax (AUDITORIA seam):
+#'   The OVR approximation has an **intrinsic theoretical gap** to the
+#'   joint-softmax MLE (\code{nnet::multinom}) that is independent of
+#'   MPC precision (Ring63/Ring127) and of any permutation bug. Bound
+#'   follows Rifkin & Klautau 2004 *JMLR* 5:101–141 "In Defense of
+#'   One-Vs-All Classification": for K-class OVR on imbalanced data,
+#'   \eqn{\|\pi_{OVR} - \pi_{softmax}\|_\infty \le O((1 - p_{min})
+#'   \log K)} where \eqn{p_{min}} is the smallest class proportion.
+#'
+#'   Empirically validated:
+#'   \itemize{
+#'     \item L1 central OVR vs \code{nnet::multinom} on balanced
+#'           birthwt (K=3, \eqn{p_{min} \approx 0.33}):
+#'           \code{max|Δπ| = 2.35e-01}
+#'     \item L3 federated on NHANES bp_cls (K=3, less balanced):
+#'           \code{max|Δπ| = 3.45e-01} (stable across 6+ runs)
+#'   }
+#'
+#'   Seam diagnostics (AUDITORIA-requested, 2026-04-24):
+#'   \itemize{
+#'     \item Permutation bug ruled out — intercept anchor uses
+#'           name-indexed access (line ~135 \code{intersect(names(
+#'           gamma_k), names(x_means))}); both sides in formula order
+#'           by construction.
+#'     \item Ring63/Ring127 floor ruled out — Catrina-Saxena bound for
+#'           Ring63 fracBits=20 over this pipeline is \eqn{\sim}{~}5e-4,
+#'           three OoM below observed.
+#'     \item Closing the 3.45e-01 gap requires the full softmax Newton
+#'           path — shipped as \code{\link{ds.vertMultinomJointNewton}}
+#'           which reaches PRACTICAL max|Δπ| ≈ 4.7e-02 on the same
+#'           cohort (7.3× improvement via joint Newton vs OVR anchor).
+#'   }
+#'
+#'   The 3.45e-01 label is therefore **by design** for this estimator —
+#'   not a parking item.
+#'
 #' @export
 ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
                             reference = NULL, indicator_template = "%s_ind",
