@@ -338,28 +338,109 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
                          os_r$T_max %||% NA, os_r$T_norm_L2 %||% NA,
                          paste(os_r$class_counts %||% NA, collapse=",")))
 
-      # TODO piece 7 (Beaver matvec X^T · T): requires X to be shared
-      # in Ring127 via k2ShareInputDS. If the session has shared X from
-      # warm start, reuse; otherwise the score block stays at gradient=0
-      # and falls back to warm Fisher this iter. Tracked for next commit.
-      joint_score_ok <- FALSE    # piece-by-piece: matvec in next commit
+      # Piece 7 — Beaver matvec X^T · T. Reuses the gradient pipeline
+      # already validated in multinom joint. Convention:
+      # dsvertPrepareMultinomGradDS sets secure_mu_share=0, k2_y_share_fp
+      # = -T, so gradient = X^T(mu-y) = X^T(0-(-T)) = X^T · T.
+      for (srv in server_list) {
+        ci <- which(server_names == srv)
+        .dsAgg(datasources[ci], call("dsvertPrepareMultinomGradDS",
+          residual_key = t_key,
+          is_outcome_server = (srv == y_server),
+          n = as.integer(n_obs), session_id = session_id))
+      }
+      p_shared <- as.integer(sum(vapply(x_vars_per_server, length, integer(1L))))
+      grad_t <- .dsAgg(datasources[dealer_ci],
+        call("glmRing63GenGradTriplesDS",
+             dcf0_pk = transport_pks[[y_server]],
+             dcf1_pk = transport_pks[[nl]],
+             n = as.integer(n_obs), p = p_shared,
+             ring = 127L, session_id = session_id))
+      if (is.list(grad_t) && length(grad_t) == 1L) grad_t <- grad_t[[1L]]
+      .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", ci_os)
+      .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp", ci_nl)
+      r1 <- list()
+      for (srv in server_list) {
+        ci <- which(server_names == srv)
+        peer <- setdiff(server_list, srv)
+        .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
+          session_id = session_id))
+        rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+          peer_pk = transport_pks[[peer]], session_id = session_id))
+        if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
+        r1[[srv]] <- rr
+      }
+      .sendBlob(r1[[y_server]]$encrypted_r1, "k2_grad_peer_r1", ci_nl)
+      .sendBlob(r1[[nl]]$encrypted_r1, "k2_grad_peer_r1", ci_os)
+      r2 <- list()
+      for (srv in server_list) {
+        ci <- which(server_names == srv)
+        is_c <- (srv == y_server)
+        rr <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+          party_id = if (is_c) 0L else 1L, session_id = session_id))
+        if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
+        r2[[srv]] <- rr
+      }
+      agg_g <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+        share_a = r2[[y_server]]$gradient_fp,
+        share_b = r2[[nl]]$gradient_fp,
+        frac_bits = 50L, ring = "ring127"))
+      score_beta <- as.numeric(agg_g$values) / n_obs
+      joint_score_ok <- all(is.finite(score_beta)) &&
+                        length(score_beta) == p_shared
+      if (verbose)
+        message(sprintf("[OrdinalJointNewton iter %d] score |g|_L2=%.3e  |g|_max=%.3e",
+                         outer,
+                         sqrt(sum(score_beta^2)),
+                         max(abs(score_beta))))
     }, error = function(e) {
       if (verbose)
         message(sprintf("[OrdinalJointNewton iter %d] piece 6/7/8 path error: %s — falling back to warm Fisher",
                          outer, conditionMessage(e)))
     })
 
-    if (!joint_score_ok && verbose)
-      message("[OrdinalJointNewton] warm Fisher fallback this iter (piece 7 matvec not yet wired)")
-
-    # Client-side fallback Newton-like step using warm joint Fisher
-    # (approximates convergence to joint MLE within Fisher conditioning)
-    if (!is.null(Info_joint)) {
-      # Approximate score: use the per-threshold binomial scores at the
-      # warm-start γ̂_BLUE, which are approximately zero, and the
-      # threshold correction already applied.
+    # Piece 8 — joint Newton step using ACTUAL gradient + warm Fisher
+    # for the Hessian block. Warm Fisher Info_joint is the β-block of
+    # the observed information at warm_mle — sufficient as a PSD bound
+    # to drive ascent. Fall back to zero-step (warm unchanged) if
+    # joint_score_ok is FALSE (piece 6 or 7 hiccup).
+    if (!is.null(Info_joint) && isTRUE(joint_score_ok)) {
+      # Map server-partition gradient to formula order matching beta
+      # (same class as LASSO permutation fix 4ce55a3 & multinom e746edb).
+      server_partition_names <- unlist(x_vars_per_server, use.names = FALSE)
+      formula_names <- names(beta)
+      perm_g <- match(formula_names, server_partition_names)
+      score_full <- numeric(length(formula_names))
+      ok_idx <- !is.na(perm_g)
+      score_full[ok_idx] <- score_beta[perm_g[ok_idx]]
+      # Newton step: β_new = β + H^{-1} · g (ascent for log-lik)
+      step <- tryCatch(
+        as.numeric(solve(Info_joint, score_full)),
+        error = function(e) 0.1 * score_full)
+      # Step cap 0.5 (same damping rationale as multinom 9e0e6f3)
+      step_cap <- 0.5
+      step_norm <- max(abs(step))
+      if (is.finite(step_norm) && step_norm > step_cap) {
+        step <- step * (step_cap / step_norm)
+      }
+      beta_new <- beta + setNames(step, names(beta))
+      step_max <- max(abs(step))
+      if (verbose)
+        message(sprintf("[OrdinalJointNewton iter %d] step |max|=%.3e (JOINT gradient)",
+                         outer, step_max))
+      beta <- beta_new
+      if (step_max < tol) {
+        converged <- TRUE
+        break_msg <- "joint-Newton converged"
+        final_iter <- outer
+      }
+    } else if (!is.null(Info_joint)) {
+      # warm Fisher fallback (piece 7 hiccup path); zero-step
+      if (verbose)
+        message(sprintf("[OrdinalJointNewton iter %d] joint_score_ok=FALSE, warm Fisher fallback (step=0)",
+                         outer))
       step_max <- 0
-      break_msg <- "warm + F-share eval + T_i computed"
+      break_msg <- "warm + F-share eval + T_i computed (fallback)"
       converged <- TRUE
       final_iter <- outer
     }
