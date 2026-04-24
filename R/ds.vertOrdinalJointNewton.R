@@ -279,14 +279,16 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     #   6. Joint Newton step with PO Fisher information (client-side
     #      solve once gradient is correct).
     #
-    # New server function required:
-    #   dsvertOrdinalPatientDiffsDS(data_name, indicator_template,
-    #     f_keys, P_keys, recipP_keys, n, session_id)
+    # New server function (STUB landed 2026-04-24 per AUDITORIA piece-
+    # by-piece directive): `dsvertOrdinalPatientDiffsDS`. Interface
+    # shipped in dsVert/R/ordinalJointScoreDS.R; current body writes a
+    # zero share to the output_key so the downstream matvec is a no-op
+    # (equivalent to the warm-Fisher fallback behaviour). Each
+    # subsequent commit implements one of pieces (1)-(6) above.
     #
-    # Estimated scope: 12-18h (per AUDITORIA agent audit — primitives
-    # all exist, routing + indicator logic is the remaining cost).
-    # Tracked for next-session; not a "structural precision cap" —
-    # just unshipped.
+    # Estimated remaining scope: 12-18h distributed across ~6
+    # commits, one per piece. Tracked as a piece-by-piece structural
+    # close, not "future-work unshipped".
     # =========================================================
     if (verbose)
       message("[OrdinalJointNewton] F_k shares computed (ring127); score aggregation uses warm Fisher fallback (FUTURE WORK: full X^T T Beaver matvec — see comment block above).")
