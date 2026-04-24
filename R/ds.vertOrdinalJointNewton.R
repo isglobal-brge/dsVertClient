@@ -333,10 +333,9 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
              n = as.integer(n_obs),
              is_outcome_server = FALSE,
              session_id = session_id))
-      if (verbose)
-        message(sprintf("[OrdinalJointNewton] T_i: |T|_max=%.3e |T|_L2=%.3e cls=[%s]",
-                         os_r$T_max %||% NA, os_r$T_norm_L2 %||% NA,
-                         paste(os_r$class_counts %||% NA, collapse=",")))
+      cat(sprintf("[OrdJoint] iter %d  T: |T|_max=%.3e |T|_L2=%.3e cls=[%s]\n",
+                   outer, os_r$T_max %||% NA, os_r$T_norm_L2 %||% NA,
+                   paste(os_r$class_counts %||% NA, collapse=",")))
 
       # Piece 7 — Beaver matvec X^T · T. Reuses the gradient pipeline
       # already validated in multinom joint. Convention:
@@ -388,15 +387,13 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       score_beta <- as.numeric(agg_g$values) / n_obs
       joint_score_ok <- all(is.finite(score_beta)) &&
                         length(score_beta) == p_shared
-      if (verbose)
-        message(sprintf("[OrdinalJointNewton iter %d] score |g|_L2=%.3e  |g|_max=%.3e",
-                         outer,
-                         sqrt(sum(score_beta^2)),
-                         max(abs(score_beta))))
+      cat(sprintf("[OrdJoint] iter %d  score |g|_L2=%.3e |g|_max=%.3e ok=%s\n",
+                   outer,
+                   sqrt(sum(score_beta^2)),
+                   max(abs(score_beta)), joint_score_ok))
     }, error = function(e) {
-      if (verbose)
-        message(sprintf("[OrdinalJointNewton iter %d] piece 6/7/8 path error: %s — falling back to warm Fisher",
-                         outer, conditionMessage(e)))
+      cat(sprintf("[OrdJoint iter %d] ERR in piece 6/7: %s — fallback warm Fisher\n",
+                   outer, conditionMessage(e)))
     })
 
     # Piece 8 — joint Newton step using ACTUAL gradient + warm Fisher
