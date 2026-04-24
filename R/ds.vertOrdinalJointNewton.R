@@ -408,10 +408,36 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
                    outer, conditionMessage(e)))
     })
 
-    # Piece 8 — joint Newton step. Current empirical state (probe
-    # 2026-04-24): piece 7 matvec produces gradient but Newton diverges
-    # (max|Δ cum P| blew from 0.06 warm → 0.98 joint) due to step
-    # magnitude + Fisher scaling mismatch. Until tuning lands
+    # Piece 8 — joint Newton step. Empirical state (probe 2026-04-24
+    # a37b5fb with F-saturation diagnostic):
+    #
+    #   F_q[1,25,50,75,99] = [0.0000, 0.0000, 0.9995, 1.0000, 1.0000]
+    #   sat_frac = 1.000    (100% of F at |F − 0.5| > 0.49)
+    #   P_q[25,50] = 1e-10  (hitting my eps floor)
+    #   |T|_max = 10 (hitting my ±10 clamp)
+    #
+    # AUDITORIA sim L1 (plaintext Housing K=3 n=130) stays stable at
+    # err 2.15e-02 → 2.47e-02 over 10 iters with SAME algorithm. The
+    # gap is Ring127 F-decoding precision at saturation, NOT Chebyshev
+    # domain (`.ring127_exp_round_keyed_extended` already covers
+    # [−10, 10] via a5d2a20) and NOT Bohning/step tuning.
+    #
+    # Root cause: in k2-ring63-aggregate(ring="ring127"), the Ring127
+    # share reconstruction for F_k values near 0 or 1 collapses to the
+    # endpoints at higher rates than the true probabilities would
+    # justify. Likely ULP noise × 2 + ε-clamping pushes reconstructed
+    # F into the boundary band. True warm state has F_1 ≈ 0.974,
+    # F_2 ≈ 0.996; decoded values here are 0 or 1 almost universally.
+    #
+    # Fix path (next commit arc, ~4-6h):
+    #   (a) Replace my eps=1e-10 clamp with numerically-aware clamp
+    #       informed by fracBits ULP magnitude (2^-50 ≈ 9e-16)
+    #   (b) Add Ring127 aggregate regression test on synthetic shares
+    #       of known values to isolate the decode discrepancy
+    #   (c) OR bypass the reveal path and compute T_i in share space
+    #       using Beaver (true MPC, ~8 extra vecmul rounds per iter)
+    #
+    # Until then: default path is warm-Fisher fallback (preserves
     # (step-cap decreasing schedule, line-search, or Bohning-style
     # upper-bound Hessian for PO), default path is warm-Fisher fallback
     # (0.06 baseline preserved). The piece-6/7 pipeline STILL RUNS —
