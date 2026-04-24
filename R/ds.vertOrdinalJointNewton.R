@@ -311,12 +311,17 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       if (is.list(sealed_r) && length(sealed_r) == 1L) sealed_r <- sealed_r[[1L]]
       # Step B: relay sealed blob to OS via existing chunked sender
       .sendBlob(sealed_r$sealed, "ord_peer_F_blob", ci_os)
-      # Step C: OS assembles plaintext F locally, computes T_i share
+      # Step C: OS assembles plaintext F locally, computes T_i share.
+      # Build indicator column names client-side to avoid Opal DSL
+      # parser choking on "%" in sprintf templates (lexical error
+      # observed 2026-04-24 probe with "%s_leq").
       t_key <- paste0("ord_T_i_outer_", outer)
+      thresh_levels_client <- head(levels_ordered, -1L)
+      indicator_cols_vec <- sprintf(cumulative_template, thresh_levels_client)
       os_r <- .dsAgg(datasources[ci_os],
         call("dsvertOrdinalPatientDiffsDS",
              data_name = data,
-             indicator_template = cumulative_template,
+             indicator_cols = indicator_cols_vec,
              level_names = levels_ordered,
              peer_F_blob_key = "ord_peer_F_blob",
              F_keys = F_keys,
