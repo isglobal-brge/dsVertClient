@@ -341,6 +341,13 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       cat(sprintf("[OrdJoint] iter %d  T: |T|_max=%.3e |T|_L2=%.3e cls=[%s]\n",
                    outer, os_r$T_max %||% NA, os_r$T_norm_L2 %||% NA,
                    paste(os_r$class_counts %||% NA, collapse=",")))
+      if (!is.null(os_r$F_q01_q99)) {
+        cat(sprintf("[OrdJoint] iter %d  F_q[1,25,50,75,99]=[%s] sat_frac=%.3f\n",
+                     outer, paste(sprintf("%.4f", os_r$F_q01_q99), collapse=","),
+                     os_r$F_sat_frac %||% NA))
+        cat(sprintf("[OrdJoint] iter %d  P_q[1,25,50,75,99]=[%s]\n",
+                     outer, paste(sprintf("%.4e", os_r$P_q01_q99), collapse=",")))
+      }
 
       # Piece 7 — Beaver matvec X^T · T. Reuses the gradient pipeline
       # already validated in multinom joint. Convention:
