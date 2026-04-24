@@ -194,65 +194,13 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
         session_id = session_id, output_key = "eta_ord"))
     }
 
-    # Step 2-3: per threshold k, compute F_k = sigmoid(theta_k - eta)
-    # F_k = 1/(1 + exp(-(theta_k - eta))) = exp(theta_k-eta) / (1 + exp(theta_k-eta))
-    # Easiest: compute u_k = theta_k - eta (share), exp(u_k), then F_k = exp(u_k) / (1+exp(u_k))
-    F_keys <- character(length(thresh_levels))
-    for (ki in seq_along(thresh_levels)) {
-      # theta_k public scalar → make an FP encoding
-      theta_k_fp <- dsVert:::.callMpcTool("k2-float-to-fp", list(
-        values = array(as.numeric(theta[ki]), dim = 1L), frac_bits = 50L,
-        ring = "ring127"))$fp_data
-      theta_k_fp <- .to_b64url(theta_k_fp)
-      u_key <- paste0("u_thresh_", ki)
-      # u_k = theta_k (party0 constant) - eta_share
-      for (srv in server_list) {
-        ci <- which(server_names == srv)
-        is_coord <- (srv == coord)
-        .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
-          a_key = "eta_ord", b_key = NULL,
-          sign_a = -1L, sign_b = 0L,
-          public_const_fp = theta_k_fp,
-          is_party0 = is_coord,
-          output_key = u_key,
-          n = as.integer(n_obs), session_id = session_id))
-      }
-      # exp(u_k) via Chebyshev Horner
-      exp_u_key <- paste0("exp_u_thresh_", ki)
-      .ring127_exp_round_keyed_extended(u_key, exp_u_key, n_obs,
-                               datasources, dealer_ci, server_list,
-                               server_names, y_server, nl, transport_pks,
-                               session_id, .dsAgg, .sendBlob)
-      # 1 + exp(u_k): party 0 adds constant 1
-      one_fp <- dsVert:::.callMpcTool("k2-float-to-fp", list(
-        values = array(1.0, dim = 1L), frac_bits = 50L, ring = "ring127"))$fp_data
-      one_fp <- .to_b64url(one_fp)
-      onePlusExp_key <- paste0("onePlusExp_thresh_", ki)
-      for (srv in server_list) {
-        ci <- which(server_names == srv)
-        is_coord <- (srv == coord)
-        .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
-          a_key = exp_u_key, b_key = NULL,
-          sign_a = 1L, sign_b = 0L,
-          public_const_fp = one_fp,
-          is_party0 = is_coord,
-          output_key = onePlusExp_key,
-          n = as.integer(n_obs), session_id = session_id))
-      }
-      # reciprocal: 1/(1+exp(u_k))
-      invOnePlus_key <- paste0("invOnePlus_thresh_", ki)
-      .ring127_recip_round_keyed(onePlusExp_key, invOnePlus_key, n_obs,
-                                  datasources, dealer_ci, server_list,
-                                  server_names, y_server, nl, transport_pks,
-                                  session_id, .dsAgg, .sendBlob)
-      # F_k = exp(u_k) * 1/(1+exp(u_k))
-      F_k_key <- paste0("F_thresh_", ki)
-      .ring127_vecmul(exp_u_key, invOnePlus_key, F_k_key, n_obs,
-                      datasources, dealer_ci, server_list, server_names,
-                      y_server, nl, transport_pks, session_id,
-                      .dsAgg, .sendBlob)
-      F_keys[ki] <- F_k_key
-    }
+    # Step 2-3: F_k share computation was only needed by the legacy
+    # F-reveal path, which suffered Ring127 ULP catastrophic cancellation
+    # when both F values saturated. The η-reveal production path
+    # (dsvertOrdinalSealEtaDS) computes F on OS plaintext via plogis +
+    # Mächler log1mexp stable form — no F shares required. Skip the
+    # expensive MPC loop entirely when eta-reveal is the active path.
+    F_keys <- character(length(thresh_levels))  # kept as empty sentinel
 
     # =========================================================
     # FUTURE WORK (AUDITORIA-documented explicit scope item):
@@ -471,8 +419,13 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       step <- tryCatch(
         as.numeric(solve(Info_joint, score_full)),
         error = function(e) 0.1 * score_full)
-      # Step cap 0.5 (same damping rationale as multinom 9e0e6f3)
-      step_cap <- 0.5
+      # Step cap 0.05 (Nocedal-Wright 2006 §3.5 damped Newton).
+      # Rationale: for n=132, |X|_max ~ 200 (age on NHANES),
+      # step 0.5 swings η by up to 100, well past sigmoid saturation
+      # boundary. Observed oscillation iter1 F→1 iter2 F→0 iter3 F→1
+      # with step_cap=0.5 confirms over-damping. 0.05 keeps |Δη|≤10
+      # per iter — still saturating partially but monotone descent.
+      step_cap <- 0.05
       step_norm <- max(abs(step))
       if (is.finite(step_norm) && step_norm > step_cap) {
         step <- step * (step_cap / step_norm)
