@@ -43,6 +43,7 @@
 #' @export
 ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
                            cumulative_template = "%s_leq",
+                           ring = 127L,
                            verbose = TRUE, datasources = NULL, ...) {
   if (!inherits(formula, "formula")) {
     stop("`formula` must be an R formula", call. = FALSE)
@@ -50,6 +51,10 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
   if (!is.character(levels_ordered) || length(levels_ordered) < 2L) {
     stop("levels_ordered must be a character vector with >= 2 entries",
          call. = FALSE)
+  }
+  ring <- as.integer(ring)
+  if (!ring %in% c(63L, 127L)) {
+    stop("ring must be 63L or 127L", call. = FALSE)
   }
   rhs <- attr(terms(formula), "term.labels")
 
@@ -71,6 +76,7 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
     }
     fm <- as.formula(paste(ind_col, "~", paste(rhs, collapse = " + ")))
     fits[[k]] <- ds.vertGLM(fm, data = data, family = "binomial",
+                             ring = ring,
                              verbose = verbose,
                              datasources = datasources, ...)
   }
