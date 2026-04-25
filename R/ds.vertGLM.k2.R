@@ -122,7 +122,9 @@ NULL
            dcf1_pk = transport_pks[[nl]],
            family = if (family == "poisson") "poisson" else "sigmoid",
            n = as.integer(n_obs), frac_bits = frac_bits,
-           num_intervals = num_intervals, session_id = session_id))
+           num_intervals = num_intervals,
+           ring = ring,
+           session_id = session_id))
     if (is.list(dcf_result)) dcf_result <- dcf_result[[1]]
     .sendBlob(dcf_result$dcf_blob_0, "k2_dcf_keys_persistent", coordinator_conn)
     .dsAgg(datasources[coordinator_conn], call("k2StoreDcfKeysPersistentDS", session_id = session_id))
@@ -181,6 +183,7 @@ NULL
              dcf0_pk = transport_pks[[coordinator]],
              dcf1_pk = transport_pks[[nl]],
              n = as.integer(n_obs), frac_bits = frac_bits,
+             ring = ring,
              session_id = session_id))
       if (is.list(spline_t)) spline_t <- spline_t[[1]]
       .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", coordinator_conn)
@@ -192,6 +195,7 @@ NULL
         r <- .dsAgg(datasources[ci], call("k2WideSplinePhase1DS",
           party_id = if(is_coord) 0L else 1L, family = family,
           num_intervals = num_intervals, frac_bits = frac_bits,
+          ring = ring,
           session_id = session_id))
         if (is.list(r) && length(r) == 1) r <- r[[1]]; ph1[[server]] <- r
       }
@@ -204,6 +208,7 @@ NULL
         r <- .dsAgg(datasources[ci], call("k2WideSplinePhase2DS",
           party_id = if(is_coord) 0L else 1L, family = family,
           num_intervals = num_intervals, frac_bits = frac_bits,
+          ring = ring,
           session_id = session_id))
         if (is.list(r) && length(r) == 1) r <- r[[1]]; ph2[[server]] <- r
       }
@@ -225,6 +230,7 @@ NULL
         r <- .dsAgg(datasources[ci], call("k2WideSplinePhase3DS",
           party_id = if(is_coord) 0L else 1L, family = family,
           num_intervals = num_intervals, frac_bits = frac_bits,
+          ring = ring,
           session_id = session_id))
         if (is.list(r) && length(r) == 1) r <- r[[1]]; ph3[[server]] <- r
       }
@@ -244,6 +250,7 @@ NULL
         .dsAgg(datasources[ci], call("k2WideSplinePhase4DS",
           party_id = if(is_coord) 0L else 1L, family = family,
           num_intervals = num_intervals, frac_bits = frac_bits,
+          ring = ring,
           session_id = session_id))
       }
     }  # close else (non-Gaussian wide spline)
