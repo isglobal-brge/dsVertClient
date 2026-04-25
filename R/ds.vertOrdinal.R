@@ -43,7 +43,17 @@
 #' @export
 ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
                            cumulative_template = "%s_leq",
-                           ring = 127L,
+                           # ring=127L target per DIRECTIVA-2 Phase A but
+                           # reverted to 63L 2026-04-25: the Ring127 wide-
+                           # spline binomial GLM path panics in
+                           # k2_spline_protocol.go:288 (Beaver triple length
+                           # mismatch). Cox uses Ring127 without sigmoid
+                           # wide-spline so its STRICT promotion doesn't
+                           # touch this code path. Re-enable once the Go
+                           # binomial Ring127 wide-spline is fully wired
+                           # (separate task; tracked in
+                           # docs/paper_method_ledger.md M8 row).
+                           ring = 63L,
                            verbose = TRUE, datasources = NULL, ...) {
   if (!inherits(formula, "formula")) {
     stop("`formula` must be an R formula", call. = FALSE)
