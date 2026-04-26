@@ -352,14 +352,22 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
              n = as.integer(n_obs), p = as.integer(p_shared),
              ring = 127L, session_id = session_id))
       if (is.list(grad_t) && length(grad_t) == 1L) grad_t <- grad_t[[1L]]
-      .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", y_server_ci)
-      .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp", dealer_ci)
+      # Per-class blob-key namespacing (defensive: ABY3 §IV.D pool
+      # isolation; MP-SPDZ Multiplications.hpp). Eliminates cross-class
+      # blob-key collision under the shared key "k2_grad_triple_fp" that
+      # the K-1 classes within this outer iter (and the next iter) all
+      # used to share. Hypothesised root cause of intermittent iter-2
+      # NPE on s2 (3/9 ≈ 33% empirical rate, see paper §VIII bullet #4).
+      grad_triple_key <- sprintf("k2_grad_triple_fp_iter%d_class%d", outer, ki)
+      .sendBlob(grad_t$grad_blob_0, grad_triple_key, y_server_ci)
+      .sendBlob(grad_t$grad_blob_1, grad_triple_key, dealer_ci)
       r1 <- list()
       for (srv in server_list) {
         ci <- which(server_names == srv)
         peer <- setdiff(server_list, srv)
         .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
-          session_id = session_id))
+          session_id = session_id,
+          grad_triple_key = grad_triple_key))
         rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
           peer_pk = transport_pks[[peer]], session_id = session_id))
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
