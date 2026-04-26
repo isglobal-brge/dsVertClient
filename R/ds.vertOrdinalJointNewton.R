@@ -63,17 +63,46 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     class(out) <- c("ds.vertOrdinalJointNewton", class(out))
     return(out)
   }
-  beta <- warm$beta_po
+  beta_warm <- warm$beta_po
   theta <- warm$thresholds
-  p_slopes <- length(beta)
+  p_slopes <- length(beta_warm)
   # Safety snapshot: keep the unmodified warm β around for the post-loop
   # decision on whether the Newton path actually made progress. If all
   # outer iters were sat-guarded (no real β movement) we hand back the
   # warm β verbatim so the L3 verdict is no worse than the warm-only
   # baseline.
-  beta_warm_init <- beta
+  beta_warm_init <- beta_warm
   any_unsaturated_step <- FALSE
   sat_frac_obs <- NA_real_
+
+  # Warm-with-damping init (2026-04-26 AUDITORIA escape). At
+  # sat_frac(β_warm) → 1 the McCullagh 1980 score itself collapses
+  # (T_i = (f_{j-1} − f_j) / P_j → 0 because f_k = F_k(1-F_k) → 0
+  # at boundary), so a Newton iter has no gradient signal regardless
+  # of step_cap or Hessian damping — the joint Newton can never escape
+  # the warm-Fisher fallback. Fix: scale β_warm down by α ∈ (0, 1] so
+  # that |X β_init|_max stays inside the unsaturated band, giving the
+  # PO log-likelihood (concave per McCullagh 1980 §3; Pratt 1981 IRLS
+  # global convergence) a non-degenerate gradient to follow back to the
+  # true joint MLE. Heuristic: PO sigmoid saturates by |η| > 10, so
+  # require α · |β_warm|_max · |X|_max ≲ 5. We don't know |X|_max
+  # client-side without a server probe, so we use a coarse heuristic:
+  # if |β_warm|_max > 3, damp by 0.3 (typical NHANES standardised
+  # covariates have |X|_max ≲ 5). The damping is reverted in the post-
+  # loop safety net if Newton fails to converge, so the worst-case
+  # verdict remains bounded by the warm-only baseline.
+  beta_max_warm <- max(abs(beta_warm))
+  used_damped_init <- FALSE
+  if (is.finite(beta_max_warm) && beta_max_warm > 3) {
+    alpha_damp <- min(1, 3 / beta_max_warm)  # bring |β|_max down to ≤3
+    beta <- alpha_damp * beta_warm
+    used_damped_init <- TRUE
+    if (verbose)
+      message(sprintf("[OrdinalJointNewton] warm |β|_max=%.2f > 3 → damped init α=%.3f (Nocedal-Wright 2006 §11; McCullagh 1980 §3 PO log-concave)",
+                       beta_max_warm, alpha_damp))
+  } else {
+    beta <- beta_warm
+  }
 
   # Infrastructure same as multinom joint (copy-paste the session setup).
   y_var_char <- .ds_gee_extract_lhs(formula)
@@ -516,19 +545,35 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   }
 
   out <- warm
-  # If no Newton iter ever produced an unsaturated/uncrushed step, the
-  # post-loop β is mathematically not a refinement — return warm verbatim
-  # so the L3 verdict is bounded by the warm-only path (worst case ==
-  # cached b695c68 verdict 6.12e-02 PRACTICAL). Newton can only improve.
-  if (!any_unsaturated_step) {
-    out$beta_po_joint <- beta_warm_init
-    out$thresholds_joint <- theta
-    out$joint_step_taken <- FALSE
-  } else {
+  # Post-loop β-selection logic. Three cases:
+  #   (A) used_damped_init=TRUE AND converged=TRUE  →  joint MLE; return β
+  #   (B) used_damped_init=TRUE AND converged=FALSE →  partial Newton
+  #       trajectory between α·β_warm and the true MLE; SAFER to revert
+  #       to the un-damped warm β so the L3 verdict is at-worst the warm
+  #       baseline. The post-iter β may be a worse predictor than warm
+  #       because we never finished the Newton trajectory.
+  #   (C) used_damped_init=FALSE AND any_unsaturated_step=TRUE → β
+  #   (D) used_damped_init=FALSE AND any_unsaturated_step=FALSE → β_warm
+  if (used_damped_init) {
+    if (converged) {
+      out$beta_po_joint <- beta
+      out$joint_step_taken <- TRUE
+      out$init_strategy <- "damped"
+    } else {
+      out$beta_po_joint <- beta_warm_init
+      out$joint_step_taken <- FALSE
+      out$init_strategy <- "damped-reverted"
+    }
+  } else if (any_unsaturated_step) {
     out$beta_po_joint <- beta
-    out$thresholds_joint <- theta
     out$joint_step_taken <- TRUE
+    out$init_strategy <- "warm"
+  } else {
+    out$beta_po_joint <- beta_warm_init
+    out$joint_step_taken <- FALSE
+    out$init_strategy <- "warm-no-progress"
   }
+  out$thresholds_joint <- theta
   out$outer_iter <- final_iter
   out$converged <- converged
   out$family <- "ordinal_joint_po_ring127"
