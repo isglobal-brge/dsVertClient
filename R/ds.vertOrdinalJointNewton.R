@@ -75,34 +75,20 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   any_unsaturated_step <- FALSE
   sat_frac_obs <- NA_real_
 
-  # Warm-with-damping init (2026-04-26 AUDITORIA escape). At
-  # sat_frac(β_warm) → 1 the McCullagh 1980 score itself collapses
-  # (T_i = (f_{j-1} − f_j) / P_j → 0 because f_k = F_k(1-F_k) → 0
-  # at boundary), so a Newton iter has no gradient signal regardless
-  # of step_cap or Hessian damping — the joint Newton can never escape
-  # the warm-Fisher fallback. Fix: scale β_warm down by α ∈ (0, 1] so
-  # that |X β_init|_max stays inside the unsaturated band, giving the
-  # PO log-likelihood (concave per McCullagh 1980 §3; Pratt 1981 IRLS
-  # global convergence) a non-degenerate gradient to follow back to the
-  # true joint MLE. Heuristic: PO sigmoid saturates by |η| > 10, so
-  # require α · |β_warm|_max · |X|_max ≲ 5. We don't know |X|_max
-  # client-side without a server probe, so we use a coarse heuristic:
-  # if |β_warm|_max > 3, damp by 0.3 (typical NHANES standardised
-  # covariates have |X|_max ≲ 5). The damping is reverted in the post-
-  # loop safety net if Newton fails to converge, so the worst-case
-  # verdict remains bounded by the warm-only baseline.
-  beta_max_warm <- max(abs(beta_warm))
+  # Reset-init flag (2026-04-26 AUDITORIA escape, second iteration).
+  # The earlier client-side |β|_max>3 heuristic does not detect
+  # saturation reliably for raw (un-standardised) NHANES covariates
+  # where slopes are O(0.01) but the X·β product is O(20+) — sat_frac
+  # ends at 1.000 even though |β|_max stays small. The robust
+  # detection has to come from the server-side sat_frac diagnostic
+  # emitted in iter-1 of the Newton loop. We start the loop with the
+  # warm β unchanged; if iter-1 reports sat_frac > 0.5 we reset β to
+  # the origin (rep(0, p_slopes)) and continue the loop. PO log-
+  # likelihood is concave (McCullagh 1980 §3) so Newton from origin
+  # converges globally (Pratt 1981 IRLS), spending one MPC cycle as
+  # a saturation probe.
+  beta <- beta_warm
   used_damped_init <- FALSE
-  if (is.finite(beta_max_warm) && beta_max_warm > 3) {
-    alpha_damp <- min(1, 3 / beta_max_warm)  # bring |β|_max down to ≤3
-    beta <- alpha_damp * beta_warm
-    used_damped_init <- TRUE
-    if (verbose)
-      message(sprintf("[OrdinalJointNewton] warm |β|_max=%.2f > 3 → damped init α=%.3f (Nocedal-Wright 2006 §11; McCullagh 1980 §3 PO log-concave)",
-                       beta_max_warm, alpha_damp))
-  } else {
-    beta <- beta_warm
-  }
 
   # Infrastructure same as multinom joint (copy-paste the session setup).
   y_var_char <- .ds_gee_extract_lhs(formula)
@@ -458,6 +444,34 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     # still place η into saturation (|η|>10 → F clamped at sigmoid tails).
     use_joint_step <- isTRUE(getOption("dsvert.ord_joint_active", TRUE))
     sat_frac_obs   <- os_r$F_sat_frac %||% NA_real_
+
+    # Iter-1 saturation probe → β=0 reset. If the warm β placed η in
+    # the saturated band (sat_frac>0.5) the Newton score has no signal
+    # regardless of step_cap. Reset β to the origin and restart the
+    # loop; PO log-concavity (McCullagh 1980 §3; Pratt 1981 IRLS global
+    # convergence) guarantees Newton walks back to the joint MLE.
+    if (outer == 1L && !used_damped_init &&
+        is.finite(sat_frac_obs) && sat_frac_obs > 0.5) {
+      beta <- setNames(rep(0, length(beta)), names(beta))
+      used_damped_init <- TRUE
+      if (verbose)
+        message(sprintf("[OrdinalJointNewton] iter-1 sat_frac=%.3f > 0.5 → β reset to origin (Pratt 1981 IRLS global conv. on PO log-concave likelihood)",
+                         sat_frac_obs))
+      cat(sprintf("[OrdJoint] iter %d  β reset to 0; restarting Newton from origin (sat_frac=%.3f)\n",
+                   outer, sat_frac_obs))
+      # Fall through into the active branch with β=0 so iter 1 still
+      # produces a step (the score evaluated at β=0 is valid because
+      # F=plogis(θ - 0) ∈ (0.05, 0.95) for typical |θ|<3, sat_frac<0.5
+      # — but score_beta and Info_joint were computed at warm β so we
+      # need to mark them stale). Skip the step this iter; iter 2 will
+      # have a fresh score at β=0.
+      converged <- FALSE
+      final_iter <- outer
+      if (verbose) message(sprintf("[OrdinalJointNewton] iter %d (%.1fs, sat-reset)",
+                                    outer, proc.time()[[3L]] - t_iter))
+      next
+    }
+
     if (!is.null(Info_joint) && isTRUE(joint_score_ok) && use_joint_step) {
       # Map server-partition gradient to formula order matching beta
       # (same class as LASSO permutation fix 4ce55a3 & multinom e746edb).
@@ -471,14 +485,18 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       step <- tryCatch(
         as.numeric(solve(Info_joint, score_full)),
         error = function(e) 0.1 * score_full)
-      # Saturation-aware step cap. Default 0.05; halved at sat_frac>0.5,
-      # quartered at sat_frac>0.95. Preserves the user's prior step_cap
-      # rationale (n=132, |X|_max~200 → 0.05 keeps |Δη|≤10) but tightens
-      # further when F has already collapsed to the boundary band so we
-      # do not push β further into saturation. Reference: McCullagh 1980
-      # §3 (IRLS undefined at boundary); ordinal::clm.fit (Christensen
-      # 2019) step-halving on saturated observations.
-      step_cap <- 0.05
+      # Saturation-aware step cap. Baseline 0.1 (post-damp-init regime,
+      # sat_frac<0.5 typical), tightens to 0.025 / 0.0125 as F collapses
+      # to the boundary band. Rationale: at sat_frac<0.5 the PO score
+      # has signal (McCullagh 1980 §3) and the Newton direction H^-1 g
+      # is well-defined — a 0.1 cap lets Newton walk the (warm−MLE)
+      # distance in O(8) iters; at higher sat_frac the gradient is
+      # near-zero and we tighten so β cannot accidentally drift further
+      # into saturation. Reference: McCullagh 1980 §3 (IRLS undefined
+      # at boundary); Christensen 2019 ordinal::clm.fit step-halving;
+      # Nocedal-Wright 2006 §11 (trust-region radius adapting to
+      # local curvature regime).
+      step_cap <- 0.1
       if (is.finite(sat_frac_obs)) {
         if (sat_frac_obs > 0.95)      step_cap <- 0.0125
         else if (sat_frac_obs > 0.5)  step_cap <- 0.025
