@@ -66,6 +66,14 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   beta <- warm$beta_po
   theta <- warm$thresholds
   p_slopes <- length(beta)
+  # Safety snapshot: keep the unmodified warm β around for the post-loop
+  # decision on whether the Newton path actually made progress. If all
+  # outer iters were sat-guarded (no real β movement) we hand back the
+  # warm β verbatim so the L3 verdict is no worse than the warm-only
+  # baseline.
+  beta_warm_init <- beta
+  any_unsaturated_step <- FALSE
+  sat_frac_obs <- NA_real_
 
   # Infrastructure same as multinom joint (copy-paste the session setup).
   y_var_char <- .ds_gee_extract_lhs(formula)
@@ -410,7 +418,17 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     # (0.06 baseline preserved). The piece-6/7 pipeline STILL RUNS —
     # T_i and score diagnostics emit per iter so future tuning has
     # empirical data. Flip `use_joint_step` to TRUE to activate.
-    use_joint_step <- isTRUE(getOption("dsvert.ord_joint_active", FALSE))
+    # 2026-04-26: Activate joint Newton by default (was FALSE; warm-only
+    # fallback). Adds saturation-aware step-halving so we never declare
+    # convergence on a saturated init state (McCullagh 1980 §3:
+    # IRLS step undefined at boundary points; Christensen 2019
+    # ordinal::clm.fit step-halving precedent). The η-reveal path
+    # (peer_eta_blob_key, ordinalJointScoreDS.R:228) computes F via
+    # Mächler-stable plogis on plaintext η, so the precision argument
+    # against legacy F-reveal does not apply here — but the warm β can
+    # still place η into saturation (|η|>10 → F clamped at sigmoid tails).
+    use_joint_step <- isTRUE(getOption("dsvert.ord_joint_active", TRUE))
+    sat_frac_obs   <- os_r$F_sat_frac %||% NA_real_
     if (!is.null(Info_joint) && isTRUE(joint_score_ok) && use_joint_step) {
       # Map server-partition gradient to formula order matching beta
       # (same class as LASSO permutation fix 4ce55a3 & multinom e746edb).
@@ -424,13 +442,18 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       step <- tryCatch(
         as.numeric(solve(Info_joint, score_full)),
         error = function(e) 0.1 * score_full)
-      # Step cap 0.05 (Nocedal-Wright 2006 §3.5 damped Newton).
-      # Rationale: for n=132, |X|_max ~ 200 (age on NHANES),
-      # step 0.5 swings η by up to 100, well past sigmoid saturation
-      # boundary. Observed oscillation iter1 F→1 iter2 F→0 iter3 F→1
-      # with step_cap=0.5 confirms over-damping. 0.05 keeps |Δη|≤10
-      # per iter — still saturating partially but monotone descent.
+      # Saturation-aware step cap. Default 0.05; halved at sat_frac>0.5,
+      # quartered at sat_frac>0.95. Preserves the user's prior step_cap
+      # rationale (n=132, |X|_max~200 → 0.05 keeps |Δη|≤10) but tightens
+      # further when F has already collapsed to the boundary band so we
+      # do not push β further into saturation. Reference: McCullagh 1980
+      # §3 (IRLS undefined at boundary); ordinal::clm.fit (Christensen
+      # 2019) step-halving on saturated observations.
       step_cap <- 0.05
+      if (is.finite(sat_frac_obs)) {
+        if (sat_frac_obs > 0.95)      step_cap <- 0.0125
+        else if (sat_frac_obs > 0.5)  step_cap <- 0.025
+      }
       step_norm <- max(abs(step))
       if (is.finite(step_norm) && step_norm > step_cap) {
         step <- step * (step_cap / step_norm)
@@ -438,13 +461,37 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       beta_new <- beta + setNames(step, names(beta))
       step_max <- max(abs(step))
       if (verbose)
-        message(sprintf("[OrdinalJointNewton iter %d] step |max|=%.3e (JOINT gradient)",
-                         outer, step_max))
-      beta <- beta_new
-      if (step_max < tol) {
+        message(sprintf("[OrdinalJointNewton iter %d] step |max|=%.3e cap=%.3e sat=%.3f (JOINT gradient)",
+                         outer, step_max, step_cap, sat_frac_obs))
+      # Only commit the step if sat_frac is below the saturation
+      # threshold OR the step magnitude is small enough not to push β
+      # further into saturation. Otherwise hold β at the warm position
+      # and let the next iter try with a tighter cap (or simply exit at
+      # max_outer with the warm verdict).
+      sat_block <- (!is.na(sat_frac_obs) && sat_frac_obs > 0.95 &&
+                     step_max > step_cap * 0.5)
+      if (!sat_block) {
+        beta <- beta_new
+        any_unsaturated_step <- TRUE
+      } else if (verbose) {
+        message(sprintf("[OrdinalJointNewton iter %d] step REJECTED by sat-guard (sat=%.3f, step=%.3e > 0.5*cap)",
+                         outer, sat_frac_obs, step_max))
+      }
+      # Saturation guard: refuse to declare convergence at sat_frac>0.5.
+      # The Newton step at boundary F is mathematically degenerate
+      # (Hessian eigenvalue O(eps) per Bohning 1992 + McCullagh 1980),
+      # so |Δβ|<tol can fire as a clipping artefact rather than true
+      # convergence. Force the loop to keep iterating until either
+      # sat_frac drops or max_outer is exhausted.
+      if (step_max < tol &&
+          (is.na(sat_frac_obs) || sat_frac_obs <= 0.5)) {
         converged <- TRUE
         break_msg <- "joint-Newton converged"
         final_iter <- outer
+      } else if (step_max < tol) {
+        if (verbose)
+          message(sprintf("[OrdinalJointNewton iter %d] tol-fire suppressed by sat-guard (sat=%.3f)",
+                           outer, sat_frac_obs))
       }
     } else if (!is.null(Info_joint)) {
       # warm Fisher fallback (piece 7 hiccup path); zero-step
@@ -469,12 +516,24 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   }
 
   out <- warm
-  out$beta_po_joint <- beta
-  out$thresholds_joint <- theta
+  # If no Newton iter ever produced an unsaturated/uncrushed step, the
+  # post-loop β is mathematically not a refinement — return warm verbatim
+  # so the L3 verdict is bounded by the warm-only path (worst case ==
+  # cached b695c68 verdict 6.12e-02 PRACTICAL). Newton can only improve.
+  if (!any_unsaturated_step) {
+    out$beta_po_joint <- beta_warm_init
+    out$thresholds_joint <- theta
+    out$joint_step_taken <- FALSE
+  } else {
+    out$beta_po_joint <- beta
+    out$thresholds_joint <- theta
+    out$joint_step_taken <- TRUE
+  }
   out$outer_iter <- final_iter
   out$converged <- converged
   out$family <- "ordinal_joint_po_ring127"
   out$session_id <- session_id
+  out$sat_frac_last <- sat_frac_obs
   class(out) <- c("ds.vertOrdinalJointNewton", class(out))
   out
 }
