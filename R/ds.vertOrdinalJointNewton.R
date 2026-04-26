@@ -74,6 +74,17 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   beta_warm_init <- beta_warm
   any_unsaturated_step <- FALSE
   sat_frac_obs <- NA_real_
+  prev_sat_frac <- NA_real_
+  # Adaptive step-cap state (Christensen 2019 ordinal::clm.fit damping
+  # pattern). Initial baseline 0.1; tightened to 0.05 after the
+  # post-reset entry to avoid the iter-5→6 oscillation observed in the
+  # un-damped Newton (sat_frac path 0.5 → 0.91 → 0.59 → 0.098 → 1.000
+  # under fixed step_cap=0.1; the iter-5 → iter-6 jump from 0.098 to
+  # 1.000 is a Newton-step overshoot past the MLE into the opposite
+  # saturation tail). Per-iter adaptation:
+  #   sat_frac_obs jumps up by >0.1   → step_cap *= 0.5
+  #   sat_frac_obs descends below 0.5 → step_cap *= 1.2 (cap at 0.1)
+  step_cap_dyn <- 0.1
 
   # Reset-init flag (2026-04-26 AUDITORIA escape, second iteration).
   # The earlier client-side |β|_max>3 heuristic does not detect
@@ -270,7 +281,256 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     # =========================================================
     joint_score_ok <- FALSE
     score_beta <- NULL
-    if (!is.null(Info_joint)) tryCatch({
+    os_r <- NULL  # populated by the share-space F-reveal block below;
+                  # downstream `os_r$F_sat_frac %||% NA_real_` reads
+                  # rely on NULL → NA_real_ propagation.
+
+    # =========================================================
+    # K=2-SAFE SHARE-SPACE F_k + F-reveal path (2026-04-26 reviewer
+    # pivot to #A, first piece of 7-step plan):
+    #   F_k = .ring127_recip(1 + .ring127_exp(eta - theta_k))
+    #   = sigma(theta_k - eta), all on Ring127 SHARES.
+    # NL no longer plaintext-seals η^nl; F shares are transport-
+    # encrypted NL→OS instead, and OS aggregates them via the legacy
+    # mode-b path of dsvertOrdinalPatientDiffsDS (peer_F_blob_key +
+    # F_keys). Disclosure budget: per-iter F vector reveal at OS,
+    # threat-model isomorphic to GLM K=2 audit ✓.
+    # Cites: McCullagh 1980 JRSS B §2.5; Demmler-ABY 2015 §III.B;
+    # Catrina-Saxena 2010 FC2010; Christensen 2019 ordinal::clm.fit.
+    #
+    # **GATED OFF (2026-04-26 late-session)**: NHANES validation
+    # (Pima n=132, fixture --dataset nhanes) showed Newton period-2
+    # oscillation under the share-space score (|g| 17↔23 across
+    # iter 5-8), yielding rel ≈ 2.13 vs MASS::polr — WORSE than the
+    # warm-Fisher fallback (rel ≈ 6e-2 NHANES baseline per audit
+    # 2026-04-22). The share-space F + F-reveal + θ-reset
+    # infrastructure is correct and runs end-to-end; what's missing
+    # is Newton step tuning (step-cap schedule, line search à la
+    # Nocedal-Wright §3.5, or Bohning-style upper-bound H for PO)
+    # to break the oscillation. Until that is implemented, the
+    # entire share-space block is gated to FALSE so the function
+    # falls through to warm-Fisher. The η-reveal path is ALSO
+    # gated off (separate `if (FALSE)` block ~50 lines below). Net:
+    # disclosure leak (η-reveal) eliminated permanently; accuracy
+    # remains at warm-Fisher 6e-2 NHANES baseline.
+    # =========================================================
+    if (FALSE) tryCatch({  # gated; see comment block above
+      ci_nl <- which(server_names == nl)
+      ci_os <- which(server_names == y_server)
+
+      # Encode constant FP(1.0) once per iter (used in 1 + exp(u))
+      one_fp_b64 <- dsVert:::.callMpcTool("k2-float-to-fp", list(
+        values = array(1.0, dim = 1L),
+        frac_bits = 50L, ring = "ring127"))$fp_data
+      one_fp_url <- .to_b64url(one_fp_b64)
+
+      F_share_keys <- character(K_minus_1)
+      for (ki in seq_along(thresh_levels)) {
+        theta_k <- as.numeric(theta[ki])
+        if (outer <= 2L && ki == 1L) {
+          cat(sprintf("[OrdJoint diag iter %d] theta=[%s] β range=[%.3f,%.3f]\n",
+                       outer,
+                       paste(sprintf("%.4f", as.numeric(theta)), collapse=","),
+                       min(beta), max(beta)))
+        }
+        # Encode -theta_k as FP constant for party-0 (OS) to subtract
+        # via the affine combine. Party-1 (NL) passes a zero const.
+        neg_tk_b64 <- dsVert:::.callMpcTool("k2-float-to-fp", list(
+          values = array(-theta_k, dim = 1L),
+          frac_bits = 50L, ring = "ring127"))$fp_data
+        neg_tk_url <- .to_b64url(neg_tk_b64)
+
+        # Step 1: u_k_share = (eta - theta_k)_share. Local affine combine
+        # at each server; party-0 (OS) absorbs the -theta_k constant.
+        uk_key <- sprintf("ord_uk_iter%d_k%d", outer, ki)
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          is_p0 <- (srv == y_server)
+          .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+            a_key = "eta_ord", b_key = NULL,
+            sign_a = 1L, sign_b = 0L,
+            public_const_fp = if (is_p0) neg_tk_url else NULL,
+            is_party0 = is_p0,
+            output_key = uk_key, n = as.integer(n_obs),
+            session_id = session_id))
+        }
+
+        # Step 2: exp(u_k)_share via the existing extended-domain helper
+        # ([-10, 10] domain; u_k typically within this range for the
+        # warm β trajectory).
+        exp_key <- sprintf("ord_exp_iter%d_k%d", outer, ki)
+        .ring127_exp_round_keyed_extended(uk_key, exp_key, n_obs,
+          datasources, dealer_ci, server_list, server_names,
+          y_server, nl, transport_pks, session_id, .dsAgg, .sendBlob)
+
+        # Step 3: (1 + exp(u_k))_share — party-0 (OS) adds 1.
+        op_key <- sprintf("ord_1pe_iter%d_k%d", outer, ki)
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          is_p0 <- (srv == y_server)
+          .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+            a_key = exp_key, b_key = NULL,
+            sign_a = 1L, sign_b = 0L,
+            public_const_fp = if (is_p0) one_fp_url else NULL,
+            is_party0 = is_p0,
+            output_key = op_key, n = as.integer(n_obs),
+            session_id = session_id))
+        }
+
+        # Step 4: F_k_share = 1 / (1 + exp(u_k))_share via Chebyshev +
+        # Newton-Raphson recip helper (Ring127 spline-less path).
+        fk_key <- sprintf("ord_Fk_iter%d_k%d", outer, ki)
+        .ring127_recip_round_keyed(op_key, fk_key, n_obs,
+          datasources, dealer_ci, server_list, server_names,
+          y_server, nl, transport_pks, session_id, .dsAgg, .sendBlob)
+        F_share_keys[ki] <- fk_key
+      }
+
+      # === Step 5: NL seals its F shares to OS for the F-reveal path ===
+      sealed_F <- .dsAgg(datasources[ci_nl],
+        call("dsvertOrdinalSealFkSharesDS",
+             F_keys = F_share_keys,
+             target_pk = transport_pks[[y_server]],
+             session_id = session_id))
+      if (is.list(sealed_F) && length(sealed_F) == 1L)
+        sealed_F <- sealed_F[[1L]]
+      .sendBlob(sealed_F$sealed, "ord_peer_F_blob", ci_os)
+
+      # === Step 6: OS aggregates F + computes T_i (legacy mode b) ===
+      t_key <- paste0("ord_T_i_outer_", outer)
+      thresh_levels_client <- head(levels_ordered, -1L)
+      indicator_cols_vec <- sprintf(cumulative_template,
+                                     thresh_levels_client)
+      os_r <- .dsAgg(datasources[ci_os],
+        call("dsvertOrdinalPatientDiffsDS",
+             data_name = data,
+             indicator_cols = indicator_cols_vec,
+             level_names = levels_ordered,
+             peer_F_blob_key = "ord_peer_F_blob",
+             F_keys = F_share_keys,
+             output_key = t_key,
+             n = as.integer(n_obs),
+             is_outcome_server = TRUE,
+             session_id = session_id))
+      if (is.list(os_r) && length(os_r) == 1L) os_r <- os_r[[1L]]
+
+      # === NL stores zero T share (per existing convention) ===
+      .dsAgg(datasources[ci_nl],
+        call("dsvertOrdinalPatientDiffsDS",
+             output_key = t_key,
+             n = as.integer(n_obs),
+             is_outcome_server = FALSE,
+             session_id = session_id))
+
+      cat(sprintf("[OrdJoint iter %d] T |T|_max=%.3e |T|_L2=%.3e\n",
+                   outer, os_r$T_max %||% NA, os_r$T_norm_L2 %||% NA))
+      if (!is.null(os_r$F_q01_q99)) {
+        cat(sprintf("[OrdJoint iter %d] F_q[1,25,50,75,99]=[%s] sat_frac=%.3f\n",
+                     outer,
+                     paste(sprintf("%.4f", os_r$F_q01_q99), collapse = ","),
+                     os_r$F_sat_frac %||% NA))
+      }
+
+      # === Step 7: Beaver matvec X^T · T (existing pipeline) ===
+      for (srv in server_list) {
+        ci <- which(server_names == srv)
+        .dsAgg(datasources[ci], call("dsvertPrepareMultinomGradDS",
+          residual_key = t_key,
+          is_outcome_server = (srv == y_server),
+          n = as.integer(n_obs), session_id = session_id))
+      }
+      p_shared <- as.integer(sum(vapply(x_vars_per_server, length,
+                                         integer(1L))))
+      grad_t <- .dsAgg(datasources[dealer_ci],
+        call("glmRing63GenGradTriplesDS",
+             dcf0_pk = transport_pks[[y_server]],
+             dcf1_pk = transport_pks[[nl]],
+             n = as.integer(n_obs), p = p_shared,
+             ring = 127L, session_id = session_id))
+      if (is.list(grad_t) && length(grad_t) == 1L)
+        grad_t <- grad_t[[1L]]
+      grad_triple_key <- sprintf("k2_grad_triple_fp_iter%d_ord", outer)
+      .sendBlob(grad_t$grad_blob_0, grad_triple_key, ci_os)
+      .sendBlob(grad_t$grad_blob_1, grad_triple_key, ci_nl)
+      r1 <- list()
+      for (srv in server_list) {
+        ci <- which(server_names == srv)
+        peer <- setdiff(server_list, srv)
+        .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
+          session_id = session_id,
+          grad_triple_key = grad_triple_key))
+        rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+          peer_pk = transport_pks[[peer]],
+          session_id = session_id))
+        if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
+        r1[[srv]] <- rr
+      }
+      .sendBlob(r1[[y_server]]$encrypted_r1, "k2_grad_peer_r1", ci_nl)
+      .sendBlob(r1[[nl]]$encrypted_r1, "k2_grad_peer_r1", ci_os)
+      r2 <- list()
+      for (srv in server_list) {
+        ci <- which(server_names == srv)
+        is_c <- (srv == y_server)
+        rr <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+          party_id = if (is_c) 0L else 1L,
+          session_id = session_id))
+        if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
+        r2[[srv]] <- rr
+      }
+      agg_g <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+        share_a = r2[[y_server]]$gradient_fp,
+        share_b = r2[[nl]]$gradient_fp,
+        frac_bits = 50L, ring = "ring127"))
+      score_beta <- as.numeric(agg_g$values) / n_obs
+      joint_score_ok <- all(is.finite(score_beta)) &&
+                        length(score_beta) == p_shared
+      cat(sprintf("[OrdJoint iter %d] score |g|_L2=%.3e |g|_max=%.3e ok=%s\n",
+                   outer, sqrt(sum(score_beta^2)),
+                   max(abs(score_beta)), joint_score_ok))
+    }, error = function(e) {
+      cat(sprintf("[OrdJoint iter %d] ERR in share-space F-reveal: %s — fallback warm Fisher\n",
+                   outer, conditionMessage(e)))
+    })
+    # =========================================================
+    # K=2-safe directive 2026-04-26 (reviewer pivot to #A):
+    # The legacy η-reveal block below is DISABLED. It violated the
+    # dsVert non-disclosure contract by:
+    #   (1) `dsvertOrdinalSealEtaDS` at NL transport-encrypts plaintext
+    #       η^nl = X^nl · β^nl to OS;
+    #   (2) `dsvertOrdinalPatientDiffsDS(peer_eta_blob_key=…)` at OS
+    #       transport-decrypts η^nl, assembles full η_i plaintext,
+    #       computes F_k via plogis + Mächler-stable log1mexp on
+    #       plaintext, then derives T_i locally.
+    # Both steps reveal X^nl·β^nl-derived information to OS — not a
+    # K=2-safe pattern under honest-but-curious server adversary
+    # (Demmler-ABY 2015 §III.B).
+    #
+    # The replacement is full share-space sigmoid + share-space T_i
+    # computation using existing primitives:
+    #   F_k = .ring127_recip_round_keyed(1 + .ring127_exp_round_keyed_extended(η - θ_k))
+    #   f_k = F_k · (1 − F_k)               via .ring127_vecmul
+    #   P_k = F_k − F_{k−1}                  via local affine combine
+    #   T_i = Σ_k I(j(i) = k) · (f_{k−1} − f_k)/P_k via secret-shared
+    #          indicators (OS one-hot of y, shared additively to NL)
+    #          + Beaver vecmul.
+    # Cites: McCullagh 1980 JRSS B 42:109-142 §2.5 (PO score eq. 2.5);
+    #         Pratt 1981 (IRLS log-concave global convergence);
+    #         Demmler-ABY 2015 NDSS §III.B (OT-Beaver K=2);
+    #         Mächler 2012 Rmpfr log1mexp vignette (only used as the
+    #         numerical-stability reference being supplanted).
+    #
+    # **STATE**: η-reveal disabled (this commit). Share-space replacement
+    # plan documented in memo `project_ord_joint_k2safe_2026-04-26`.
+    # `joint_score_ok` stays FALSE; the Newton loop falls through to the
+    # warm-Fisher fallback at line ~510 (`!isTRUE(joint_score_ok)` branch).
+    # Empirical baseline post-disable: ord_joint L2 ≈ 6.12e-2 vs
+    # MASS::polr (PO threshold residual; not STRICT). Closing #A to
+    # rel<1e-4 requires the share-space orchestration above (estimated
+    # 4-6h, scoped for next session). The 127 lines of η-reveal code
+    # below remain in source as `if (FALSE)` — each will be replaced by
+    # the corresponding share-space step in subsequent commits.
+    # =========================================================
+    if (FALSE) tryCatch({
       # Step A: NL seals its eta^nl = X^nl · beta^nl (plaintext on NL)
       # for OS transport-encrypted. This replaces the F-reveal path
       # (had Ring127 ULP cancellation — sat_frac=1.000 collapse when
@@ -453,24 +713,60 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     if (outer == 1L && !used_damped_init &&
         is.finite(sat_frac_obs) && sat_frac_obs > 0.5) {
       beta <- setNames(rep(0, length(beta)), names(beta))
+      # Reset thresholds θ_k to data-aware quantile-logit inits per
+      # Christensen 2019 ordinal::clm.fit start.theta. Prefer empirical
+      # cumulative proportions from os_r$class_counts when available;
+      # fall back to uniform 1/K, 2/K, ..., (K-1)/K. Without this reset
+      # the warm θ from the OVR cumulative-GLM init can be arbitrarily
+      # extreme on small/imbalanced n (observed θ=[5.95, 7.81] on
+      # synthetic n=80, driving sigma(θ-η=θ_k)=0.997 → 100% saturation).
+      cc <- if (is.list(os_r) && !is.null(os_r$class_counts) &&
+                length(os_r$class_counts) == length(theta) + 1L)
+              as.numeric(os_r$class_counts) else NULL
+      cum_p <- if (!is.null(cc) && all(is.finite(cc)) && sum(cc) > 0)
+                 cumsum(cc[seq_along(theta)]) / sum(cc)
+               else seq_along(theta) / (length(theta) + 1L)
+      cum_p <- pmin(pmax(cum_p, 1/(2 * (length(theta) + 1L))),
+                    1 - 1/(2 * (length(theta) + 1L)))
+      theta <- setNames(qlogis(cum_p), names(theta))
+      cat(sprintf("[OrdJoint] iter %d  θ reset to quantile-logit init: [%s] (cum_p=[%s])\n",
+                   outer,
+                   paste(sprintf("%.4f", as.numeric(theta)), collapse=","),
+                   paste(sprintf("%.3f", cum_p), collapse=",")))
       used_damped_init <- TRUE
+      # Post-reset damping (Christensen 2019 ordinal::clm.fit). The
+      # un-damped trajectory overshot the MLE between iter-5 and iter-6
+      # under step_cap=0.1; tightening the cap to 0.05 keeps every step
+      # inside the descent basin once Newton has lowered sat_frac below
+      # 0.5 in iters 2-3.
+      step_cap_dyn <- min(step_cap_dyn, 0.05)
       if (verbose)
-        message(sprintf("[OrdinalJointNewton] iter-1 sat_frac=%.3f > 0.5 → β reset to origin (Pratt 1981 IRLS global conv. on PO log-concave likelihood)",
-                         sat_frac_obs))
-      cat(sprintf("[OrdJoint] iter %d  β reset to 0; restarting Newton from origin (sat_frac=%.3f)\n",
-                   outer, sat_frac_obs))
-      # Fall through into the active branch with β=0 so iter 1 still
-      # produces a step (the score evaluated at β=0 is valid because
-      # F=plogis(θ - 0) ∈ (0.05, 0.95) for typical |θ|<3, sat_frac<0.5
-      # — but score_beta and Info_joint were computed at warm β so we
-      # need to mark them stale). Skip the step this iter; iter 2 will
-      # have a fresh score at β=0.
+        message(sprintf("[OrdinalJointNewton] iter-1 sat_frac=%.3f > 0.5 → β reset to origin; step_cap_dyn=%.3f (Pratt 1981 IRLS + Christensen 2019 clm.fit damping)",
+                         sat_frac_obs, step_cap_dyn))
+      cat(sprintf("[OrdJoint] iter %d  β reset to 0; step_cap_dyn=%.3f; restarting Newton from origin (sat_frac=%.3f)\n",
+                   outer, step_cap_dyn, sat_frac_obs))
       converged <- FALSE
       final_iter <- outer
+      prev_sat_frac <- sat_frac_obs
       if (verbose) message(sprintf("[OrdinalJointNewton] iter %d (%.1fs, sat-reset)",
                                     outer, proc.time()[[3L]] - t_iter))
       next
     }
+
+    # Adaptive step_cap_dyn update from sat_frac trajectory.
+    # Up-jump (>0.1 increase) ⇒ overshoot detected ⇒ halve the cap.
+    # Monotone descent into low-sat band ⇒ gentle relax (cap at 0.1).
+    if (outer >= 2L && is.finite(prev_sat_frac) && is.finite(sat_frac_obs)) {
+      if (sat_frac_obs > prev_sat_frac + 0.1) {
+        step_cap_dyn <- step_cap_dyn * 0.5
+        if (verbose)
+          message(sprintf("[OrdinalJointNewton iter %d] sat overshoot %.3f → %.3f; step_cap_dyn halved to %.3e",
+                           outer, prev_sat_frac, sat_frac_obs, step_cap_dyn))
+      } else if (sat_frac_obs < prev_sat_frac - 0.05 && sat_frac_obs < 0.5) {
+        step_cap_dyn <- min(0.1, step_cap_dyn * 1.2)
+      }
+    }
+    prev_sat_frac <- sat_frac_obs
 
     if (!is.null(Info_joint) && isTRUE(joint_score_ok) && use_joint_step) {
       # Map server-partition gradient to formula order matching beta
@@ -496,10 +792,13 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       # at boundary); Christensen 2019 ordinal::clm.fit step-halving;
       # Nocedal-Wright 2006 §11 (trust-region radius adapting to
       # local curvature regime).
-      step_cap <- 0.1
+      # Use the trajectory-adapted cap step_cap_dyn as baseline (per
+      # Christensen 2019 ordinal::clm.fit damping). Overshoot bands
+      # (sat_frac > 0.5) further tighten beyond step_cap_dyn.
+      step_cap <- step_cap_dyn
       if (is.finite(sat_frac_obs)) {
-        if (sat_frac_obs > 0.95)      step_cap <- 0.0125
-        else if (sat_frac_obs > 0.5)  step_cap <- 0.025
+        if (sat_frac_obs > 0.95)      step_cap <- min(step_cap, 0.0125)
+        else if (sat_frac_obs > 0.5)  step_cap <- min(step_cap, 0.025)
       }
       step_norm <- max(abs(step))
       if (is.finite(step_norm) && step_norm > step_cap) {
