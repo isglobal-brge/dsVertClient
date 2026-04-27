@@ -1383,6 +1383,26 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
         # Joint score vector: g_β (formula order) ‖ g_θ
         g_t_avg <- as.numeric(os_r$score_theta) / n_obs
         g_joint <- c(score_full, g_t_avg)
+        # PHASE-0 D2 instrumentation — Newton conditioning amplifier probe.
+        # Logs κ(H_joint) = λ_max/λ_min and |g_joint|_∞ per outer iter so
+        # we can quantify whether observed β floor (5e-5 abs) traces back
+        # to ill-conditioning amplification of Beaver vecmul ULP through
+        # solve(H, g). Christensen 2019 §A.3 documents pathological
+        # κ(H_clm) near saturated thresholds. If log10(κ) ≥ 7 here, the
+        # ~9e-16 Ring127 fracBits=50 ULP gets amplified to ~1e-8 in
+        # solve(H,g) and through n=80 fixture residual integration to
+        # the observed 5e-5 floor in β. Gated on dsvert.phase0_diag for
+        # a/b attribution. Cites Catrina-Saxena 2010 §3.3 multiplicative
+        # depth bound for the Beaver ULP entry term.
+        if (isTRUE(getOption("dsvert.phase0_diag", FALSE)) && !is.null(ev_j)) {
+          ev_pos <- ev_j[ev_j > 0]
+          kappa_j <- if (length(ev_pos) > 0)
+            max(ev_pos) / max(min(ev_pos), .Machine$double.eps) else NA_real_
+          cat(sprintf("[D2 iter %d] log10(κ(H_joint))=%.3f  λ_min=%.3e  λ_max=%.3e  |g_joint|_∞=%.3e  |g_β|_∞=%.3e%s\n",
+                       outer, log10(kappa_j), min(ev_j), max(ev_j),
+                       max(abs(g_joint)), max(abs(score_full)),
+                       if (log10(kappa_j) >= 7) "  *** κ ≥ 1e7 ill-conditioned ***" else ""))
+        }
         joint_step <- tryCatch(
           as.numeric(solve(H_joint, g_joint)),
           error = function(e) NULL)
@@ -1716,6 +1736,22 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       out$refine_step_theta  <- setNames(dt, names(theta_pre))
       out$refine_iter_used   <- refine_iter
       out$refinement_applied <- TRUE
+      # PHASE-0 D3 instrumentation — Hessian assembly noise probe.
+      # Expose cached best-iter (g, H) so the L2 fixture can compare
+      # H_joint_revealed (assembled via MPC Beaver vecmul on shares of
+      # X^T diag(W) X) against H_oracle (recomputed in plaintext at the
+      # coordinator using the fixture's full data access). The L2 audit
+      # boundary already discloses H_joint per-iter (lines 911 + 996 +
+      # os_r$H_theta_theta column reveals); D3 is a fixture-only post-fit
+      # diagnostic, NOT a new MPC reveal. Gated by dsvert.phase0_diag.
+      if (isTRUE(getOption("dsvert.phase0_diag", FALSE))) {
+        out$d3_H_joint     <- rc$H_joint
+        out$d3_g_joint     <- rc$g_joint
+        out$d3_beta_at_H   <- rc$beta
+        out$d3_theta_at_H  <- rc$theta
+        out$d3_iter_at_H   <- refine_iter
+        out$d3_formula_names <- rc$formula_names
+      }
       cat(sprintf("[OrdJoint refine] post-Newton coordinator step (iter %d cache) |Δβ|_max=%.3e |Δθ|_max=%.3e (Pratt 1981 + Burridge 1981 + Christensen 2019 §A + Nocedal-Wright 2006 §3.5)\n",
                    refine_iter, max(abs(db)), max(abs(dt))))
     } else {
