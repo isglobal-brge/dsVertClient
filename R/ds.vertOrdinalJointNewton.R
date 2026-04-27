@@ -871,6 +871,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   #       because we never finished the Newton trajectory.
   #   (C) used_damped_init=FALSE AND any_unsaturated_step=TRUE → β
   #   (D) used_damped_init=FALSE AND any_unsaturated_step=FALSE → β_warm
+  thresholds_joint_revert <- FALSE
   if (used_damped_init) {
     if (converged) {
       out$beta_po_joint <- beta
@@ -880,6 +881,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       out$beta_po_joint <- beta_warm_init
       out$joint_step_taken <- FALSE
       out$init_strategy <- "damped-reverted"
+      thresholds_joint_revert <- TRUE
     }
   } else if (any_unsaturated_step) {
     out$beta_po_joint <- beta
@@ -889,8 +891,21 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     out$beta_po_joint <- beta_warm_init
     out$joint_step_taken <- FALSE
     out$init_strategy <- "warm-no-progress"
+    thresholds_joint_revert <- TRUE
   }
-  out$thresholds_joint <- theta
+  # Couple θ revert with β revert (post worker2 iter-1 θ-reset to
+  # qlogis(cum_p)): when the safety-net reverts β to beta_warm_init,
+  # restore θ to warm$thresholds as well. Otherwise the
+  # (β_warm, θ_post-reset) chimera produces predictions that are
+  # FURTHER from polr than the warm baseline, breaking the safety-net
+  # contract that the L3 verdict is at-worst the warm-only baseline.
+  # Empirical falsifier: prior to this fix L3 14th run produced
+  # max|Δ cum P|=8.65e-01 (FAIL) vs warm baseline 6.12e-02 (PRACTICAL).
+  if (isTRUE(thresholds_joint_revert)) {
+    out$thresholds_joint <- warm$thresholds
+  } else {
+    out$thresholds_joint <- theta
+  }
   out$outer_iter <- final_iter
   out$converged <- converged
   out$family <- "ordinal_joint_po_ring127"
