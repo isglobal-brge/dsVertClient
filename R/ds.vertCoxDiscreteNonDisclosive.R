@@ -699,23 +699,29 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
 
     # 12. Ridge ε·I + Newton solve  (Christensen 2019 §A.3 diagonal
     #     eigenvalue inflation handles all-zero-mask α_j strata where
-    #     no patient was at risk in bin j → singular block).
+    #     no patient was at risk in bin j → singular block).  Step
+    #     magnitude cap to 1.0 per coefficient prevents the iter-4 →
+    #     iter-5 overshoot observed empirically when bin2 sits near
+    #     zero (Nocedal-Wright 2006 §4.1 trust-region radius cap).
     H_ridged <- H + ridge_eps * diag(p_total)
     step <- tryCatch(solve(H_ridged, grad),
       error = function(e) {
-        # Rescue: bump ridge by 1e4 and retry once. Iter counts as wasted
-        # but Newton stays monotone with the larger ridge.
         if (verbose) message(sprintf(
           "[#D' Newton iter %d] solve failed: %s — ridge bumped to 1e-4",
           iter, conditionMessage(e)))
         solve(H + 1e-4 * diag(p_total), grad)
       })
-    step_max <- if (length(step)) max(abs(step)) else NA_real_
+    step_max_raw <- max(abs(step))
+    cap <- 1.0
+    cap_factor <- if (is.finite(step_max_raw) && step_max_raw > cap)
+                     cap / step_max_raw else 1.0
+    step_eff <- cap_factor * step
+    step_max <- max(abs(step_eff))
     step_norm_hist <- c(step_norm_hist, step_max)
-    beta <- beta + step
+    beta <- beta + step_eff
     if (verbose) message(sprintf(
-      "[#D' Newton iter %d] |step|_max=%.3e |β|_max=%.3e",
-      iter, step_max, max(abs(beta))))
+      "[#D' Newton iter %d] |step|_max=%.3e |β|_max=%.3e cap=%.3f",
+      iter, step_max, max(abs(beta)), cap_factor))
   }
 
   # If Newton diverged, fall back to best β seen.
