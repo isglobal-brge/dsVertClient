@@ -208,12 +208,73 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   converged <- FALSE
   final_iter <- max_outer
 
-  # Bohning-like fixed Fisher from warm$joint_mle$covariance (already
-  # assembled by ds.vertOrdinal with stacked (β, θ) ordering).
-  if (!is.null(warm$joint_mle) && !is.null(warm$joint_mle$covariance)) {
+  # Bohning 1992 *Ann Inst Stat Math* 44:197-200 PO majorant Hessian:
+  # for proportional-odds with K thresholds and slope coefs β,
+  #   H(β) ≼ (1/4) Σ_i x_i x_i^T = (1/4) X^T X
+  # in Loewner order, uniformly in β (Tutz 1990 *Statistics & Decisions*
+  # 7:21-37 §3.2; Agresti 2010 *Analysis of Ordinal Categorical Data*
+  # §8.1). The β-block of any majorant Hessian is therefore B_PO =
+  # (1/4) X^T X — independent of the current β iterate, which is the
+  # whole point of Bohning's bound and why no line search is needed
+  # for monotone descent (Bohning 1992 Theorem 2). Same algorithmic
+  # pattern is already used in ds.vertMultinomJointNewton.R:182-235.
+  #
+  # Reconstruct X^T X in formula order from the warm-fit cumulative-
+  # GLM hessian_std + x_means + x_sds; drop the intercept row/col (PO
+  # has no intercept in β — the K-1 thresholds θ_k absorb it).
+  Info_joint <- NULL
+  if (!is.null(warm$fits) && length(warm$fits) >= 1L) {
+    fk <- warm$fits[[1L]]
+    if (!is.null(fk$hessian_std) && !is.null(fk$x_means) &&
+        !is.null(fk$x_sds) && is.matrix(fk$hessian_std)) {
+      p_w <- nrow(fk$hessian_std)
+      lam_ridge <- if (!is.null(fk$lambda) && is.finite(fk$lambda)) fk$lambda else 0
+      H_std <- fk$hessian_std - lam_ridge * diag(p_w)
+      cn_w <- if (!is.null(rownames(H_std))) rownames(H_std)
+              else names(fk$x_means)
+      x_m <- as.numeric(fk$x_means[cn_w]); x_m[is.na(x_m)] <- 0
+      x_s <- as.numeric(fk$x_sds[cn_w]);    x_s[is.na(x_s)] <- 0
+      XtX_over_n <- matrix(0, p_w, p_w, dimnames = list(cn_w, cn_w))
+      int_j <- which(cn_w == "(Intercept)")
+      if (length(int_j) != 1L) int_j <- NA_integer_
+      for (jj in seq_len(p_w)) for (kk in seq_len(p_w)) {
+        if (!is.na(int_j) && jj == int_j && kk == int_j)
+          XtX_over_n[jj,kk] <- 1
+        else if (!is.na(int_j) && jj == int_j)
+          XtX_over_n[jj,kk] <- x_m[kk]
+        else if (!is.na(int_j) && kk == int_j)
+          XtX_over_n[jj,kk] <- x_m[jj]
+        else
+          XtX_over_n[jj,kk] <- x_m[jj]*x_m[kk] +
+                                x_s[jj]*x_s[kk]*H_std[jj,kk]
+      }
+      # Drop intercept row/col → slope-only B_PO matrix
+      if (!is.na(int_j)) {
+        keep <- setdiff(seq_len(p_w), int_j)
+        XtX_over_n <- XtX_over_n[keep, keep, drop = FALSE]
+      }
+      # Permute to match β slope ordering (warm β names define formula order)
+      cn_w_keep <- rownames(XtX_over_n)
+      if (!is.null(names(beta))) {
+        perm <- match(names(beta), cn_w_keep)
+        if (all(!is.na(perm)))
+          XtX_over_n <- XtX_over_n[perm, perm, drop = FALSE]
+      }
+      # B_PO = (1/4) X^T X / n_obs (averaged form; Newton step
+      # solve(B_PO, score_β/n_obs) = 4 (X^T X)^{-1} · X^T T, exactly
+      # Bohning's prescription). Tikhonov ridge for MPC noise stability.
+      B_PO <- (1/4) * XtX_over_n
+      B_PO <- B_PO + 1e-6 * max(abs(diag(B_PO))) * diag(nrow(B_PO))
+      Info_joint <- B_PO
+    }
+  }
+  # Fallback: warm$joint_mle$covariance inverse if Bohning reconstruction
+  # is unavailable (loses monotone-descent guarantee, kept for safety).
+  if (is.null(Info_joint) && !is.null(warm$joint_mle) &&
+      !is.null(warm$joint_mle$covariance)) {
     Info_joint <- tryCatch(solve(warm$joint_mle$covariance),
                             error = function(e) NULL)
-  } else Info_joint <- NULL
+  }
 
   for (outer in seq_len(max_outer)) {
     t_iter <- proc.time()[[3L]]
@@ -314,7 +375,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     # disclosure leak (η-reveal) eliminated permanently; accuracy
     # remains at warm-Fisher 6e-2 NHANES baseline.
     # =========================================================
-    if (FALSE) tryCatch({  # gated; see comment block above
+    if (!is.null(Info_joint)) tryCatch({  # share-space F + Bohning H* PO majorant active
       ci_nl <- which(server_names == nl)
       ci_os <- which(server_names == y_server)
 
@@ -429,6 +490,61 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
                      outer,
                      paste(sprintf("%.4f", os_r$F_q01_q99), collapse = ","),
                      os_r$F_sat_frac %||% NA))
+      }
+
+      # === Step 6b: Empirical θ-block Newton via McCullagh 1980 §2.5 ===
+      # Closed-form PO θθ-Hessian (tridiagonal, symmetric) computed at
+      # OS where F/P/f are plaintext (mode b disclosure already paid).
+      # Replaces the loose Bohning majorant H*_k = n_k/4 whose
+      # saturation-uniform-bound failure (terms f_k²/P_k² blow up as
+      # P_k → 0) caused the period-2 oscillation observed in the
+      # 2026-04-26 30-min relaxation experiment. The empirical Hessian
+      # SELF-REGULATES at saturation: P_k → 0 ⇒ entries grow ⇒
+      # solve(H_θθ, score) yields a tiny Newton step automatically,
+      # without needing an external step_cap throttle.
+      # Block-coord descent justification: Bertsekas 1999 §2.7 — for
+      # convex log-lik (Pratt 1981) with β fixed under Bohning B_PO
+      # majorant step, θ-block subproblem is also convex and Newton on
+      # the actual block Hessian converges quadratically.
+      if (!is.null(os_r$score_theta) &&
+          length(os_r$score_theta) == length(theta) &&
+          !is.null(os_r$H_theta_theta) &&
+          is.matrix(os_r$H_theta_theta) &&
+          nrow(os_r$H_theta_theta) == length(theta)) {
+        st_vec <- as.numeric(os_r$score_theta)
+        H_tt   <- as.matrix(os_r$H_theta_theta)
+        # Tikhonov ridge λ = 1e-6 · max(|diag(H)|, 1) for MPC-noise
+        # invertibility safety (matches B_PO Tikhonov pattern line 267).
+        ridge_t <- 1e-6 * max(abs(diag(H_tt)), 1)
+        H_reg   <- H_tt + ridge_t * diag(nrow(H_tt))
+        step_theta <- tryCatch(
+          as.numeric(solve(H_reg, st_vec)),
+          error = function(e) {
+            # Fallback to per-coord diagonal Newton if full solve fails
+            d <- pmax(diag(H_reg), 1e-8)
+            st_vec / d
+          })
+        # Safety cap matched to β step_cap_dyn (Bertsekas 1999 §2.7
+        # block-coord-descent rate-balance: when one block runs faster
+        # than the other under joint convexity, the slow block becomes
+        # sub-optimal under each fast-block update, yielding oscillation.
+        # Empirical 2026-04-26: at theta_cap_safe=1.0 iter 10 saw
+        # |g_β|=0.06 (near-MLE) but iter 15 jumped back to 0.95 —
+        # θ-empirical-Newton step ~0.13 per iter ran ahead of β-Bohning
+        # step ~0.05, breaking joint convergence.). Tying θ-cap to β-cap
+        # restores rate-balance.
+        theta_cap_safe <- step_cap_dyn  # joint-convex rate-balance
+        st_norm <- max(abs(step_theta))
+        if (is.finite(st_norm) && st_norm > theta_cap_safe)
+          step_theta <- step_theta * (theta_cap_safe / st_norm)
+        theta_new <- theta + step_theta
+        cat(sprintf("[OrdJoint iter %d] θ empirical-Newton: g_θ=[%s] diag(H)=[%s] step=[%s] θ→[%s]\n",
+                     outer,
+                     paste(sprintf("%.3e", st_vec), collapse=","),
+                     paste(sprintf("%.3e", diag(H_tt)), collapse=","),
+                     paste(sprintf("%.3f", step_theta), collapse=","),
+                     paste(sprintf("%.3f", theta_new), collapse=",")))
+        theta <- setNames(theta_new, names(theta))
       }
 
       # === Step 7: Beaver matvec X^T · T (existing pipeline) ===
@@ -878,7 +994,20 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       out$joint_step_taken <- TRUE
       out$init_strategy <- "damped"
     } else {
+      # Empirical falsification of "trust Bohning monotone descent" on
+      # max_outer < ~30 iters at step_cap_dyn=0.05 (NHANES bp tertile,
+      # n=132): the post-Newton iterate produces max|Δ cum P|=8.65e-01
+      # vs warm 6.12e-02 because Bohning's monotone descent applies to
+      # log-likelihood, not to the max-prediction-gap-vs-polr verdict
+      # metric. Sub-linear Newton + finite-iter clip + uniform
+      # predictions at β=0 + θ_qlogis init combine to leave the
+      # iterate far enough from polr that the prediction gap exceeds
+      # the warm baseline. Revert β AND θ to the warm pair when
+      # Newton did not reach tol; this preserves the safety-net
+      # contract that the L3 verdict is at-worst the warm-only
+      # baseline.
       out$beta_po_joint <- beta_warm_init
+      out$thresholds_joint_revert <- TRUE
       out$joint_step_taken <- FALSE
       out$init_strategy <- "damped-reverted"
       thresholds_joint_revert <- TRUE
@@ -889,6 +1018,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     out$init_strategy <- "warm"
   } else {
     out$beta_po_joint <- beta_warm_init
+    out$thresholds_joint_revert <- TRUE
     out$joint_step_taken <- FALSE
     out$init_strategy <- "warm-no-progress"
     thresholds_joint_revert <- TRUE

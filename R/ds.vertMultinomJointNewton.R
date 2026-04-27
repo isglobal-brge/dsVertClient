@@ -287,13 +287,22 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                       .dsAgg, .sendBlob)
     }
 
-    # Step 6-7: residual r_k = y_k - p_k + Beaver matvec X^T r_k
+    # Step 6-7: residual r_k = y_k - p_k + Beaver matvec X^T r_k.
     # Dimension handling: X is shared via k2ShareInputDS with p_shared =
     # sum(lengths(x_vars_per_server)) columns (slopes only, no intercept
     # column). The Beaver matvec therefore returns p_shared-length slope
-    # gradient. The intercept gradient is computed separately as the
-    # scalar aggregate sum(r_k)/n via k2BeaverSumShareDS (Σ rᵢ reveals
-    # only a scalar per class, same disclosure budget as existing GLM).
+    # gradient. The intercept gradient = Σᵢ rᵢ is read off the SAME
+    # Beaver round as a side-product of k2GradientR1DS (its
+    # `sum_residual_fp` field; identical pattern to ds.vertGLM K=2
+    # in dsVertGLM.k2.R:309). One Beaver round per (iter × class) with
+    # two k2-ring63-aggregate reveals (slope vector + intercept scalar)
+    # — threat model isomorphic to GLM K=2 audit ✓ non-disclosive.
+    # The previous separate k2BeaverSumShareDS round (which consumed an
+    # extra Beaver triple per iter per class) was removed per reviewer
+    # directive 2026-04-26. Cites: Bohning 1992 Ann Inst Stat Math
+    # 44:197-200 Theorem 2 (constant majorant Hessian); Krishnapuram
+    # -Carin-Figueiredo-Hartemink 2005 IEEE PAMI 27(6) (peer use of
+    # Bohning H* for MPC-friendly multinomial logistic regression).
     p_shared <- sum(vapply(x_vars_per_server, length, integer(1L)))
     int_row <- which(cnames == "(Intercept)")
     slope_rows <- setdiff(seq_len(p), int_row)
@@ -312,31 +321,11 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           is_outcome_server = (srv == coord),
           n = as.integer(n_obs), session_id = session_id))
       }
-      # Intercept gradient: scalar Σᵢ rᵢ via per-server share sum + reveal.
-      sum_shares <- list()
-      for (srv in server_list) {
-        ci <- which(server_names == srv)
-        rs <- .dsAgg(datasources[ci], call("k2BeaverSumShareDS",
-          source_key = r_key, session_id = session_id,
-          frac_bits = 50L))
-        if (is.list(rs) && length(rs) == 1L) rs <- rs[[1L]]
-        sum_shares[[srv]] <- rs$sum_share_fp
-      }
-      int_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-        share_a = sum_shares[[coord]],
-        share_b = sum_shares[[nl]],
-        frac_bits = 50L, ring = "ring127"))
-      int_val <- as.numeric(int_agg$values)[1L]
-      if (!is.finite(int_val)) {
-        stop(sprintf("[debug bug#9] iter=%d class=%d: intercept grad NA; sum_shares coord=%s nl=%s int_agg=%s",
-                     outer, ki,
-                     substr(sum_shares[[coord]] %||% "NULL", 1, 12),
-                     substr(sum_shares[[nl]] %||% "NULL", 1, 12),
-                     paste(int_agg, collapse=" ")), call. = FALSE)
-      }
-      gradients[int_row, ki] <- int_val / n_obs
       # Prep the standard gradient machinery: pipeline computes X^T(mu-y),
-      # we set mu=0 and y=-r_k so X^T(mu-y) = X^T r_k.
+      # we set mu=0 and y=-r_k so X^T(mu-y) = X^T r_k. As a side-product
+      # k2GradientR1DS emits Σ(mu-y) = Σᵢ rᵢ (per-server share) in
+      # `sum_residual_fp`, which we will aggregate below for the
+      # intercept gradient — same pattern as dsVertGLM.k2.R:309.
       for (srv in server_list) {
         ci <- which(server_names == srv)
         .dsAgg(datasources[ci], call("dsvertPrepareMultinomGradDS",
@@ -384,6 +373,25 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
         r2[[srv]] <- rr
       }
+      # Intercept gradient: Σᵢ rᵢ is the side-product of the SAME
+      # k2GradientR1DS round that produced the slope share (its
+      # `sum_residual_fp` field). Aggregate the two server shares to
+      # plaintext Σ rᵢ; divide by n for the intercept-row gradient.
+      # Same disclosure pattern as dsVertGLM.k2.R:309 (audit ✓).
+      int_res_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+        share_a = r1[[coord]]$sum_residual_fp,
+        share_b = r1[[nl]]$sum_residual_fp,
+        frac_bits = 50L, ring = "ring127"))
+      int_val <- as.numeric(int_res_agg$values)[1L]
+      if (!is.finite(int_val)) {
+        stop(sprintf("[mnl_joint] iter=%d class=%d: intercept grad NA from r1$sum_residual_fp; coord=%s nl=%s",
+                     outer, ki,
+                     substr(r1[[coord]]$sum_residual_fp %||% "NULL", 1, 12),
+                     substr(r1[[nl]]$sum_residual_fp %||% "NULL", 1, 12)),
+             call. = FALSE)
+      }
+      gradients[int_row, ki] <- int_val / n_obs
+
       agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
         share_a = r2[[coord]]$gradient_fp,
         share_b = r2[[nl]]$gradient_fp,
