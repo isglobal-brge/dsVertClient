@@ -1,3 +1,105 @@
+# Internal helper: evaluate PO log-likelihood at proposed (β_test,
+# θ_test) iterate via fresh F-pipeline (k2ComputeEtaShareDS + K-1
+# share-space exp/recip + NL F-seal + OS aggregate + log-lik). Used
+# by the Armijo step-halving loop in the joint Newton path
+# (Nocedal-Wright 2006 §3.5). Slots are suffixed by `arm_tag` so
+# concurrent Armijo retries never collide with the current iter's
+# state. ZERO new MPC primitive — pure orchestration of existing
+# .ring127_exp_round_keyed_extended + .ring127_recip_round_keyed +
+# dsvertOrdinalSealFkSharesDS + dsvertOrdinalPatientDiffsDS in mode b.
+.ord_joint_eval_loglik_at <- function(beta_test, theta_test, arm_tag,
+                                        datasources, dealer_ci,
+                                        server_list, server_names,
+                                        x_vars_per_server,
+                                        coord, y_server, nl,
+                                        ci_os, ci_nl, transport_pks,
+                                        data, indicator_cols_vec,
+                                        levels_ordered, thresh_levels,
+                                        K_minus_1, n_obs,
+                                        one_fp_url, session_id,
+                                        .dsAgg, .sendBlob) {
+  b_coord_vec <- beta_test[intersect(names(beta_test),
+                                       x_vars_per_server[[coord]])]
+  b_nl_vec    <- beta_test[intersect(names(beta_test),
+                                       x_vars_per_server[[nl]])]
+  eta_key <- sprintf("eta_ord_arm_%s", arm_tag)
+  for (srv in server_list) {
+    ci <- which(server_names == srv)
+    .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+      beta_coord = b_coord_vec, beta_nl = b_nl_vec,
+      intercept = 0, is_coordinator = (srv == coord),
+      session_id = session_id, output_key = eta_key))
+  }
+  F_share_keys <- character(K_minus_1)
+  for (ki in seq_along(thresh_levels)) {
+    theta_k <- as.numeric(theta_test[ki])
+    neg_tk_b64 <- dsVert:::.callMpcTool("k2-float-to-fp", list(
+      values = array(-theta_k, dim = 1L),
+      frac_bits = 50L, ring = "ring127"))$fp_data
+    neg_tk_url <- .to_b64url(neg_tk_b64)
+    uk_key <- sprintf("ord_uk_arm_%s_k%d", arm_tag, ki)
+    for (srv in server_list) {
+      ci <- which(server_names == srv)
+      is_p0 <- (srv == y_server)
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = eta_key, b_key = NULL,
+        sign_a = 1L, sign_b = 0L,
+        public_const_fp = if (is_p0) neg_tk_url else NULL,
+        is_party0 = is_p0,
+        output_key = uk_key, n = as.integer(n_obs),
+        session_id = session_id))
+    }
+    exp_key <- sprintf("ord_exp_arm_%s_k%d", arm_tag, ki)
+    .ring127_exp_round_keyed_extended(uk_key, exp_key, n_obs,
+      datasources, dealer_ci, server_list, server_names,
+      y_server, nl, transport_pks, session_id, .dsAgg, .sendBlob)
+    op_key <- sprintf("ord_1pe_arm_%s_k%d", arm_tag, ki)
+    for (srv in server_list) {
+      ci <- which(server_names == srv)
+      is_p0 <- (srv == y_server)
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = exp_key, b_key = NULL,
+        sign_a = 1L, sign_b = 0L,
+        public_const_fp = if (is_p0) one_fp_url else NULL,
+        is_party0 = is_p0,
+        output_key = op_key, n = as.integer(n_obs),
+        session_id = session_id))
+    }
+    fk_key <- sprintf("ord_Fk_arm_%s_k%d", arm_tag, ki)
+    .ring127_recip_round_keyed(op_key, fk_key, n_obs,
+      datasources, dealer_ci, server_list, server_names,
+      y_server, nl, transport_pks, session_id, .dsAgg, .sendBlob)
+    F_share_keys[ki] <- fk_key
+  }
+  blob_slot <- sprintf("ord_peer_F_blob_arm_%s", arm_tag)
+  sealed_F <- .dsAgg(datasources[ci_nl],
+    call("dsvertOrdinalSealFkSharesDS",
+         F_keys = F_share_keys,
+         target_pk = transport_pks[[y_server]],
+         session_id = session_id))
+  if (is.list(sealed_F) && length(sealed_F) == 1L) sealed_F <- sealed_F[[1L]]
+  .sendBlob(sealed_F$sealed, blob_slot, ci_os)
+  arm_t_key <- sprintf("ord_T_i_arm_%s", arm_tag)
+  os_arm_r <- .dsAgg(datasources[ci_os],
+    call("dsvertOrdinalPatientDiffsDS",
+         data_name = data,
+         indicator_cols = indicator_cols_vec,
+         level_names = levels_ordered,
+         peer_F_blob_key = blob_slot,
+         F_keys = F_share_keys,
+         output_key = arm_t_key,
+         weight_output_key = NULL,
+         weight_target_pk = NULL,
+         cross_output_keys = NULL,
+         cross_target_pk = NULL,
+         n = as.integer(n_obs),
+         is_outcome_server = TRUE,
+         session_id = session_id))
+  if (is.list(os_arm_r) && length(os_arm_r) == 1L) os_arm_r <- os_arm_r[[1L]]
+  as.numeric(os_arm_r$loglik %||% NA_real_)
+}
+
+
 #' @title Federated joint proportional-odds ordinal regression via
 #'   Ring127 MPC-orchestrated Newton iteration
 #' @description Full per-patient PO Newton. For a K-level ordered outcome
@@ -479,20 +581,10 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       thresh_levels_client <- head(levels_ordered, -1L)
       indicator_cols_vec <- sprintf(cumulative_template,
                                      thresh_levels_client)
-      # Request W secret-sharing (#A empirical β-Hessian path).
-      # NOTE 2026-04-27: joint Newton with H_βθ cross-block is
-      # IMPLEMENTED on the server side (cross_output_keys params
-      # available; M_k formula McCullagh 1980 §2.5 closed-form;
-      # client orchestration at step 9 below). However empirical
-      # validation showed the joint step oscillates ±cap around
-      # F-saturation regions where H_βθ magnitudes blow up, with
-      # |g_β| jumping from 2.9 (iter 2) to 27 (iter 3). The instability
-      # appears to come from H_βθ entries at saturated F dominating
-      # the joint matrix block structure → Newton direction sign
-      # flips per iter. Trust-region or Armijo line search needed for
-      # stable joint step (Nocedal-Wright 2006 §11). Deferred.
-      # Active path = β-only empirical Newton (no cross block); cross
-      # share request is disabled by passing NULL pk:
+      # Request W + M_k cross-block secret-sharing (joint Newton #A,
+      # McCullagh 1980 §2.5 + Tutz 1990 §3.2). Cross block enables
+      # full block-empirical Hessian inversion; Armijo step-halving
+      # below stabilises against F-saturation overshoot.
       W_share_key <- sprintf("ord_W_iter%d", outer)
       cross_share_keys <- sprintf("ord_M_iter%d_k%d", outer,
                                     seq_len(length(theta)))
@@ -506,8 +598,8 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
              output_key = t_key,
              weight_output_key = W_share_key,
              weight_target_pk = transport_pks[[nl]],
-             cross_output_keys = NULL,
-             cross_target_pk = NULL,
+             cross_output_keys = cross_share_keys,
+             cross_target_pk = transport_pks[[nl]],
              n = as.integer(n_obs),
              is_outcome_server = TRUE,
              session_id = session_id))
@@ -1322,25 +1414,103 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
         cat(sprintf("[OrdJoint iter %d] β-Newton: empirical H (McCullagh 1980 §2.5) ACTIVE\n", outer))
       }
       # Newton step: β_new = β + H^{-1} · g (ascent for log-lik).
-      # Joint mode: split joint_step into Δβ (length p) + Δθ (length K-1)
-      # and apply theta update here. Else β-only step from H_use.
+      # Joint mode: split joint_step into Δβ (length p) + Δθ (length K-1).
+      # ARMIJO step-halving (Nocedal-Wright 2006 §3.5) below adapts α
+      # for monotone log-lik increase, replacing the static caps that
+      # caused period-2 oscillation under F-saturation in 2026-04-27
+      # joint-Newton experiments.
       if (use_joint_H) {
         n_beta <- length(score_full)
-        step <- joint_step[seq_len(n_beta)]
-        step_theta_joint <- joint_step[n_beta + seq_along(theta)]
-        # Conservative per-coord cap on θ for joint Newton — joint
-        # Hessian is tighter than block-diag but can still overshoot
-        # on non-quadratic surfaces (saturation regions). Empirical
-        # 2026-04-27: cap=0.5 produced |g|_L2=27 + W_q[99]=6e+18
-        # numerical disaster after iter 3 overshoot. Cap=0.1 keeps
-        # joint Newton in trust region; convergence rate stays
-        # quadratic near MLE since joint H captures cross-coupling.
-        theta_cap_joint <- 0.1
-        step_theta_joint <- pmin(pmax(step_theta_joint, -theta_cap_joint),
-                                  theta_cap_joint)
-        theta <- setNames(theta + step_theta_joint, names(theta))
-        cat(sprintf("[OrdJoint iter %d] θ JOINT step=[%s] θ→[%s]\n",
-                     outer,
+        step_beta_full <- joint_step[seq_len(n_beta)]
+        step_theta_full <- joint_step[n_beta + seq_along(theta)]
+        # Armijo backtracking line search (Nocedal-Wright 2006 §3.5):
+        #   accept α s.t. L(β + α·d_β, θ + α·d_θ) ≥ L(β, θ) + σ_a·α·⟨g,d⟩
+        # σ_b = 0.5 (halve), σ_a = 1e-4 (Wolfe sufficient-increase
+        # default per Nocedal-Wright 2006 §3.1). Each Armijo retry
+        # costs one full F-pipeline + log-lik eval at OS — bounded
+        # to max_armijo=5 to cap worst-case runtime to 5x outer iter.
+        sigma_a <- 1e-4
+        sigma_b <- 0.5
+        max_armijo <- 5L
+        loglik_old <- as.numeric(loglik_curr %||% NA_real_)
+        g_dot_d <- as.numeric(sum(score_full * step_beta_full) +
+                                sum(g_t_avg * step_theta_full))
+        alpha <- 1.0
+        accepted <- FALSE
+        # Near-MLE convergence detection: when |g|_L2 already small,
+        # Newton step is small AND quadratically convergent — Armijo
+        # log-lik comparison is dominated by MPC Beaver-triple noise
+        # (Ring127 frac=50 ≈ 5e-13 absolute, accumulated over the
+        # K-1 exp + K-1 recip + matvec chain → effective noise floor
+        # ~1e-5 on log-lik). Below this floor, Armijo cannot
+        # distinguish a real ΔL from noise and exhausts retries
+        # against essentially-equal L. Skip Armijo and apply full
+        # Newton step (α=1.0) — Pratt 1981 + Burridge 1981 strict
+        # concavity + already-near-MLE state guarantees monotone
+        # convergence at iter+1. Threshold 0.05 selected from
+        # 2026-04-27 NHANES Pima trace where |g|_L2 dropped 0.006
+        # at iter 6 with rel cum P 1.45e-4 (PARTIAL just above STRICT).
+        g_norm_pre_step <- sqrt(sum(score_full^2) + sum(g_t_avg^2))
+        if (is.finite(g_norm_pre_step) && g_norm_pre_step < 0.05) {
+          accepted <- TRUE  # bypass Armijo loop; trust full Newton
+          cat(sprintf("[OrdJoint iter %d Armijo] |g_joint|=%.3e < 0.05 — bypass Armijo (near-MLE quadratic regime, Pratt 1981 + Burridge 1981)\n",
+                       outer, g_norm_pre_step))
+        }
+        if (!accepted &&
+            (!is.finite(loglik_old) || !is.finite(g_dot_d) ||
+             g_dot_d <= 0)) {
+          # Defensive fallback: if log-lik or directional derivative
+          # not usable (numerical NA, descent direction wrong), apply
+          # static α=0.25 to avoid Newton overshoot without re-eval.
+          alpha <- 0.25
+          accepted <- TRUE
+          cat(sprintf("[OrdJoint iter %d Armijo] L_old or g·d non-finite/non-positive (loglik_old=%.3e g_dot_d=%.3e); fallback α=0.25\n",
+                       outer, loglik_old, g_dot_d))
+        }
+        for (arm in seq_len(if (accepted) 0L else max_armijo)) {
+          beta_test <- beta + alpha * step_beta_full
+          theta_test <- setNames(as.numeric(theta) + alpha * step_theta_full,
+                                  names(theta))
+          # Re-eval log-lik at (β_test, θ_test) — full F-pipeline
+          # under Armijo-suffixed slot names (no W/cross emission to
+          # avoid clobbering current iter's joint-step state).
+          arm_tag <- sprintf("o%d_a%d", outer, arm)
+          loglik_new <- tryCatch(
+            .ord_joint_eval_loglik_at(
+              beta_test, theta_test, arm_tag,
+              datasources, dealer_ci, server_list, server_names,
+              x_vars_per_server, coord, y_server, nl,
+              ci_os, ci_nl, transport_pks,
+              data, indicator_cols_vec, levels_ordered,
+              thresh_levels, K_minus_1, n_obs,
+              one_fp_url, session_id,
+              .dsAgg, .sendBlob),
+            error = function(e) {
+              cat(sprintf("[OrdJoint iter %d Armijo arm %d] eval ERR: %s\n",
+                           outer, arm, conditionMessage(e)))
+              NA_real_
+            })
+          rhs <- loglik_old + sigma_a * alpha * g_dot_d
+          cat(sprintf("[OrdJoint iter %d Armijo %d] α=%.4f L_old=%.4e L_new=%.4e rhs=%.4e Δ=%.3e\n",
+                       outer, arm, alpha, loglik_old, loglik_new, rhs,
+                       loglik_new - loglik_old))
+          if (is.finite(loglik_new) && loglik_new >= rhs) {
+            accepted <- TRUE
+            break
+          }
+          alpha <- alpha * sigma_b
+        }
+        if (!accepted) {
+          # Armijo exhausted retries — apply min α (5 halvings = 1/32)
+          cat(sprintf("[OrdJoint iter %d Armijo] EXHAUSTED max_armijo=%d, applying α=%.4f\n",
+                       outer, max_armijo, alpha))
+        }
+        step <- alpha * step_beta_full
+        step_theta_joint <- alpha * step_theta_full
+        theta <- setNames(as.numeric(theta) + step_theta_joint,
+                           names(theta))
+        cat(sprintf("[OrdJoint iter %d] θ JOINT (Armijo α=%.4f) step=[%s] θ→[%s]\n",
+                     outer, alpha,
                      paste(sprintf("%.4f", step_theta_joint), collapse=","),
                      paste(sprintf("%.4f", as.numeric(theta)), collapse=",")))
       } else {
