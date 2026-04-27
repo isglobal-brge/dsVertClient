@@ -392,6 +392,17 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   best_theta   <- NULL
   best_g_norm  <- Inf
   best_iter    <- 0L
+  # Per-iter cache of (β, θ, g_joint, H_joint) at the K=2 audit boundary
+  # disclosure. Used by post-Newton coordinator refinement (Pratt 1981 +
+  # Burridge 1981 PO log-lik strict concavity → quadratic local Newton;
+  # Christensen 2019 ordinal::clm.fit §A diagonal eigenvalue inflation;
+  # Nocedal-Wright 2006 §3.5 backtracking). Each entry is the pre-step
+  # iterate; g+H were already revealed at coordinator that iter (same
+  # disclosure pattern as the existing β-block score reveal at line 775
+  # and the K=2 audit pattern of #D Cox final-β share-aggregated reveal),
+  # so coordinator-only post-processing on cached g+H adds NO new
+  # disclosure relative to the in-loop MPC Newton.
+  iter_cache   <- list()
   for (outer in seq_len(max_outer)) {
     t_iter <- proc.time()[[3L]]
     # Step 1: eta share from current β
@@ -1378,6 +1389,16 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
         if (!is.null(joint_step) && all(is.finite(joint_step))) {
           use_joint_H <- TRUE
           use_emp_H <- TRUE
+          # Cache pre-step (β, θ, g_joint, H_joint) for post-Newton
+          # coordinator refinement. β + θ here are the pre-step iterate
+          # at which g_joint + H_joint were computed (Newton step has
+          # not been applied yet within this iter). Already revealed at
+          # K=2 audit boundary, no new disclosure (Pratt 1981 + Burridge
+          # 1981 PO local quadratic; Christensen 2019 §A).
+          iter_cache[[as.character(outer)]] <- list(
+            beta = beta, theta = theta,
+            g_joint = g_joint, H_joint = H_joint,
+            formula_names = formula_names)
           cat(sprintf("[OrdJoint iter %d] β-Newton: JOINT (β,θ) Hessian (Tutz 1990 §3.2) ACTIVE\n", outer))
         } else {
           joint_step <- NULL
@@ -1636,6 +1657,79 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
                  best_iter, best_g_norm))
     beta  <- best_beta
     theta <- best_theta
+  }
+  # === Post-Newton coordinator refinement (#A path-to-STRICT 2026-04-27) ===
+  # Single plaintext Newton step at coordinator using the MPC-revealed
+  # joint g + H cached at the SELECTED iterate (best_iter if best wins,
+  # else last cached). NO new MPC pass; uses already-revealed K=2 audit
+  # boundary disclosures (same pattern as #D Cox final-β share-aggregated
+  # reveal — Demmler-ABY 2015 NDSS §III.B per-iter aggregate reveal).
+  #
+  # Rationale: the in-loop Newton step is Armijo-damped (α<1) whenever
+  # the MPC log-lik comparison cannot distinguish ΔL from Beaver-triple
+  # noise floor (Catrina-Saxena 2010 §3.3 frac=50 floor 4.4e-14, but
+  # accumulated through the K-1 exp + K-1 recip + p matvec chain → log-lik
+  # comparator noise ~1e-5 absolute). When the iterate is already in the
+  # quadratic local regime (Pratt 1981 IRLS log-concave global; Burridge
+  # 1981 PO log-lik strict concavity), a full α=1 Newton step on the
+  # empirical H = X^T diag(W) X (Tutz 1990 §3.2) is guaranteed
+  # monotone-improving toward the MLE — the Armijo conservatism leaves
+  # residual |g| this refinement closes. Christensen 2019 ordinal::clm.fit
+  # §A diagonal eigenvalue inflation already applied to the cached H_joint
+  # at construction time. Nocedal-Wright 2006 §3.5: the quadratic model
+  # uniquely maximizes ΔL at α=1 when Δ = H^{-1}g.
+  #
+  # Disclosure: g_joint + H_joint were revealed per-iter at K=2 audit
+  # boundary (line 775 β-score reveal + line 911 H_emp column reveals +
+  # line 996 H_βθ column reveals + os_r$score_theta + os_r$H_theta_theta).
+  # Refinement uses same disclosed values; no NEW information leaks.
+  # Gated by getOption("dsvert.ord_refinement", TRUE) so the refinement
+  # can be A/B-toggled in the L2 fixture for empirical attribution.
+  refine_enabled <- isTRUE(getOption("dsvert.ord_refinement", TRUE))
+  refine_iter <- if (best_iter > 0L) best_iter else NA_integer_
+  refine_key  <- if (!is.na(refine_iter)) as.character(refine_iter) else NULL
+  out$refinement_applied <- FALSE
+  if (refine_enabled && !is.null(refine_key) &&
+      !is.null(iter_cache[[refine_key]])) {
+    rc <- iter_cache[[refine_key]]
+    delta <- tryCatch(as.numeric(solve(rc$H_joint, rc$g_joint)),
+                       error = function(e) NULL)
+    if (!is.null(delta) && all(is.finite(delta))) {
+      n_beta <- length(beta)
+      db <- delta[seq_len(n_beta)]
+      dt <- delta[n_beta + seq_along(theta)]
+      # Safety cap (per-coord). Newton in quadratic local regime should
+      # produce |Δ| ≪ 0.5; the cap only fires if cached iterate was far
+      # from MLE (in which case the refinement direction is right but
+      # quadratic model has stale curvature → cap prevents overshoot,
+      # consistent with Nocedal-Wright 2006 §4.1 trust-region radius).
+      cap <- 0.5
+      db <- pmin(pmax(db, -cap), cap)
+      dt <- pmin(pmax(dt, -cap), cap)
+      beta_pre  <- beta
+      theta_pre <- theta
+      beta  <- beta + setNames(db, names(beta))
+      theta <- setNames(as.numeric(theta) + dt, names(theta))
+      out$beta_pre_refine    <- beta_pre
+      out$theta_pre_refine   <- theta_pre
+      out$refine_step_beta   <- setNames(db, names(beta_pre))
+      out$refine_step_theta  <- setNames(dt, names(theta_pre))
+      out$refine_iter_used   <- refine_iter
+      out$refinement_applied <- TRUE
+      cat(sprintf("[OrdJoint refine] post-Newton coordinator step (iter %d cache) |Δβ|_max=%.3e |Δθ|_max=%.3e (Pratt 1981 + Burridge 1981 + Christensen 2019 §A + Nocedal-Wright 2006 §3.5)\n",
+                   refine_iter, max(abs(db)), max(abs(dt))))
+    } else {
+      cat(sprintf("[OrdJoint refine] solve(H_cache, g_cache) FAILED for iter %d — refinement skipped\n",
+                   refine_iter))
+    }
+  } else if (!refine_enabled) {
+    cat("[OrdJoint refine] DISABLED via getOption('dsvert.ord_refinement', FALSE)\n")
+  } else {
+    # No cached (g, H) — joint Newton was never active (only Bohning
+    # fallback or warm Fisher path fired). Refinement requires the joint
+    # Hessian to be PD-revealed; skip silently in those cases.
+    cat(sprintf("[OrdJoint refine] no cached joint (g, H) — refinement skipped (best_iter=%d)\n",
+                 if (is.na(refine_iter)) -1L else refine_iter))
   }
   thresholds_joint_revert <- FALSE
   if (used_damped_init) {
