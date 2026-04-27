@@ -316,42 +316,98 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
 
   # ---- Phase 4: masked-Newton inner loop — DEFERRED to next session ----
   #
-  # Spec (project_k2_strict_unified_plan_2026-04-27.md "Option B
-  # FEASIBILITY ANALYSIS"):
+  # Scope analysis (post-/compact 2026-04-27, project_k2_strict_unified
+  # _plan_2026-04-27.md "Option B FEASIBILITY ANALYSIS"): all building
+  # blocks exist in dsVert + dsVertClient — NO new server primitive
+  # needed. Existing primitives compose into the masked Newton:
+  #
+  # X-column sharing:    k2ShareInputDS   (Ring127 frac=50 supported
+  #                      via ring=127L; reads x_vars from data frame
+  #                      `expanded_x_name` at NL, OS-side equivalent
+  #                      after also calling dsvertCoxDiscreteExpandXDS
+  #                      at OS)  +  k2ReceiveShareDS (peer-side decrypt)
+  # Eta in share-space:  k2ComputeEtaShareDS  (X_share·β plaintext
+  #                      already supports Ring127 via session ring tag)
+  # Sigmoid:             .ring127_exp_round_keyed_extended + .ring127_
+  #                      recip_round_keyed (compose for σ = 1/(1+e^-x))
+  # Residual y - p:      k2Ring127AffineCombineDS  (FREE, signed-aware)
+  # Mask gating:         .ring127_vecmul(mask_share_key, r_share, ...)
+  # Column extraction:   k2BeaverExtractColumnDS  (extract X[:,j] from
+  #                      ss$k2_x_share_fp row-major n_pp×p flat share)
+  # Per-column gradient: .ring127_vecmul(X_col_j_share, masked_residual_
+  #                      share, prod_j_share)  + k2BeaverSumShareDS
+  #                      (returns scalar share, coord adds two scalar
+  #                      shares from OS + NL, decodes signed FP)
+  # Hessian H_jk:        same pattern, .ring127_vecmul(X_col_j, X_col_k,
+  #                      Z_jk) + .ring127_vecmul(Z_jk, masked_W, prod) +
+  #                      k2BeaverSumShareDS  (p(p+1)/2 unique pairs)
+  # Ridge + Newton step: client-side after reveal (R: solve(H + ε·I, g))
+  #
+  # Newton outer loop pseudocode:
+  #
+  #   pre-newton (one-time):
+  #     dsvertCoxDiscreteExpandXDS at OS (mirror of NL call) so OS has
+  #       cox_nd_pp_xxx with [bin1..binJ, age, bmi] length n_pp
+  #     k2ShareInputDS at OS on cox_nd_pp_xxx ring=127L
+  #     k2ShareInputDS at NL on cox_nd_pp_xxx ring=127L
+  #     each peer relays + k2ReceiveShareDS
+  #     # ss$k2_x_share_fp + k2_peer_x_share_fp populated
+  #     # ss$k2_x_n = n_pp, k2_x_p = p_own, k2_peer_p = p_peer
+  #     # NOTE: k2ShareInputDS would set ss$k2_y_share_fp from the
+  #     # data-frame y column. We DO NOT pass y_var — instead inject
+  #     # the ALREADY-SHARED y_ij from cox_nd_y_share into ss$k2_y_share
+  #     # _fp via a small helper (k2-fp-add zero, or direct assign).
   #
   #   for iter in 1..max_iter:
-  #     # 1. eta_share = X β at NL (X plaintext + β plaintext + bin
-  #     #    one-hot dummies + α_j). β shared across both servers.
-  #     # 2. p_share = sigmoid(eta_share) via existing Ring127 wide-
-  #     #    spline primitive (.ring127_exp_round_keyed + .ring127_recip
-  #     #    _round_keyed, building blocks already present in
-  #     #    ring127_helpers.R).
-  #     # 3. r_share = y_share - p_share (additive, free).
-  #     # 4. r_masked_share = .ring127_vecmul(mask_share_key, r_share)
-  #     #    — one Beaver round per bin, batched as length-(J·n) vec.
-  #     # 5. score_share = X^T · r_masked_share at each server (X
-  #     #    plaintext + share input → free X^T·share matvec; result
-  #     #    is split per-coord between OS and NL).
-  #     # 6. W_share = sigmoid(eta_share)·(1 - sigmoid(eta_share)) via
-  #     #    one .ring127_vecmul + 1 affine.
-  #     # 7. W_masked_share = .ring127_vecmul(mask_share_key, W_share).
-  #     # 8. H_share = X^T diag(W_masked_share) X — needs one batched
-  #     #    .ring127_vecmul per X column (or a denser matvec primitive
-  #     #    if added).
-  #     # 9. Reveal score + H to coordinator (already standard K=2
-  #     #    audit boundary at end-of-iter — see ds.vertGLM.k2.R
-  #     #    pattern), then add ridge ε·I (~1e-8) on H diagonal per
-  #     #    Christensen 2019 §A.3 to regularise all-zero-mask α_j
-  #     #    strata.
-  #     #10. β <- β + solve(H + ε·I, score). Standard Newton step.
-  #     #11. Convergence: max(|score|) < tol = 1e-4.
+  #     k2ComputeEtaShareDS(beta_coord, beta_nl, intercept=0,
+  #       is_coordinator=(server==os_name), output_key="cox_nd_eta_share")
+  #     # negate eta_share -> "cox_nd_neg_eta" via k2Ring127LocalScaleDS
+  #     #   with scalar_fp = FP(-1)
+  #     .ring127_exp_round_keyed_extended("cox_nd_neg_eta",
+  #       "cox_nd_exp_neg_eta", n_pp, ...)
+  #     # 1 + exp(-eta) via k2Ring127AffineCombineDS adding FP(1) constant
+  #     .ring127_recip_round_keyed("cox_nd_one_plus_exp_neg_eta",
+  #       "cox_nd_p_share", n_pp, ...)
+  #     # r_share = y_share - p_share via k2Ring127AffineCombineDS
+  #     .ring127_vecmul(mask_share_key, "cox_nd_r_share",
+  #       "cox_nd_mr_share", n_pp, ...)
+  #     # W_share = p·(1-p) via 1 vecmul + 1 affine
+  #     .ring127_vecmul(mask_share_key, "cox_nd_w_share",
+  #       "cox_nd_mw_share", n_pp, ...)
+  #     # gradient: per j extract column + vecmul + sum + reveal
+  #     for j in 1..p_total:
+  #       k2BeaverExtractColumnDS(source="k2_x_share_fp", n=n_pp,
+  #         K=p_total, col_index=j, output="cox_nd_x_col_j")
+  #       .ring127_vecmul("cox_nd_x_col_j", "cox_nd_mr_share",
+  #         "cox_nd_grad_prod_j", n_pp, ...)
+  #       sum_share_os = k2BeaverSumShareDS("cox_nd_grad_prod_j") at OS
+  #       sum_share_nl = k2BeaverSumShareDS("cox_nd_grad_prod_j") at NL
+  #       grad[j] = decode_signed_FP_pair(sum_share_os, sum_share_nl)
+  #     # Hessian: same pattern p(p+1)/2 pairs
+  #     for j in 1..p_total: for k in j..p_total:
+  #       k2BeaverExtractColumnDS to get x_col_j, x_col_k shares
+  #       .ring127_vecmul(x_col_j, x_col_k, z_jk)
+  #       .ring127_vecmul(z_jk, "cox_nd_mw_share", h_prod)
+  #       H[j,k] = H[k,j] = decoded scalar from k2BeaverSumShareDS pair
+  #     # ridge ε·I + Newton solve
+  #     H <- H + 1e-8 * diag(p_total)        # Christensen 2019 §A.3
+  #     beta <- beta + solve(H, grad)
+  #     if (max(abs(grad)) < tol) break
   #
-  # Estimated MPC cost per iter: 1 sigmoid Chebyshev (~5 vecmuls) +
-  # 1 sigmoid² vecmul + 1 mask·r vecmul + 1 mask·W vecmul + 1 X^T diag
-  # matvec (p batched vecmuls) ~ 8 + p Beaver rounds. For p ≈ 10 and
-  # 10 Newton iters: ~180 rounds total. Wall-clock ≈ 4× leaky variant.
+  # Estimated cost per iter (n_pp = J·n ≈ 400, p_total ≈ 8):
+  #   sigmoid:    ~6 Beaver vecmul rounds (3 for exp_extended + 3 for recip)
+  #   mask·r:     1 vecmul round
+  #   mask·W:     1 vecmul round (+ 1 vecmul for p·(1-p))
+  #   gradient:   p_total = 8 vecmul rounds + 8 sum reveals
+  #   Hessian:    p(p+1)/2 = 36 z_jk vecmuls + 36 h_prod vecmuls = 72 rounds
+  #   total ≈ 88 Beaver rounds/iter × 10 iters ≈ 880 rounds
+  #   wall-clock @ 50ms/round ≈ 45s for L2 n=80 J=5
   #
-  # See dsVert/R/coxDiscreteShareDS.R for the dormant primitive
+  # L2 target: rel<1e-4 vs glm pooled-logistic on uniform-expanded frame.
+  # Per Catrina-Saxena 2010 §3.3 frac=50 noise floor (depth-50 chain
+  # → ε ≈ 4.4e-14) leaves ~10 orders of margin for STRICT 1e-4.
+  #
+  # See dsVert/R/coxDiscreteShareDS.R for the 3 dormant primitive
   # contracts — this scaffold validates they integrate end-to-end.
 
   list(
