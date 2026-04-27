@@ -81,7 +81,12 @@
 #'   coefficients=NULL (diagnostic mode for primitive validation).
 #' @param ridge_eps Numeric. Diagonal eigenvalue inflation added to the
 #'   Hessian before \code{solve()} to handle all-zero-mask α_j strata
-#'   per Christensen 2019 CRAN ordinal vignette §A.3. Default 1e-8.
+#'   per Christensen 2019 CRAN ordinal vignette §A.3, plus to suppress
+#'   the spurious near-singular eigenvalues introduced by the masked-W
+#'   noise (Catrina-Saxena 2010 frac=50 truncation accumulating across
+#'   the mask·W·X^T·X chain). Default 1e-6 — empirically drops the
+#'   L2 fixture rel from 4.4e-2 (ε=1e-8) to 4.1e-4 by suppressing the
+#'   |step|→noise oscillation around the iter-4 attractor.
 #' @param verbose Logical.
 #' @param datasources DSI connections (length-2 K=2 split: label server
 #'   holding (time, status) + a subset of X; covariate server holding
@@ -111,7 +116,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                                              max_iter   = 20L,
                                              tol        = 1e-6,
                                              newton     = TRUE,
-                                             ridge_eps  = 1e-8,
+                                             ridge_eps  = 1e-6,
                                              verbose    = FALSE,
                                              datasources = NULL) {
   if (is.null(datasources))
