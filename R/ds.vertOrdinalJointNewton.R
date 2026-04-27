@@ -276,6 +276,20 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
                             error = function(e) NULL)
   }
 
+  # Best-iterate tracking (argmin_iter |g|_L2). Required because the
+  # empirical-Newton trajectory can transiently overshoot near the MLE
+  # (Newton's quadratic approximation breaks for large steps far from
+  # the optimum) — the post-loop revert was reverting to warm β even
+  # when an intermediate iter reached |g|≈0 (e.g. iter 3 |g|=0.12 with
+  # NHANES Pima n=132 K=2 2026-04-27). Mirror of the mnl_joint
+  # best-β tracking (ds.vertMultinomJointNewton.R:446-454). Tracks
+  # both β and θ so the final returned pair is the best (β, θ) seen
+  # during Newton — strictly equivalent or better than the warm
+  # baseline contract.
+  best_beta    <- NULL
+  best_theta   <- NULL
+  best_g_norm  <- Inf
+  best_iter    <- 0L
   for (outer in seq_len(max_outer)) {
     t_iter <- proc.time()[[3L]]
     # Step 1: eta share from current β
@@ -375,6 +389,8 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     # disclosure leak (η-reveal) eliminated permanently; accuracy
     # remains at warm-Fisher 6e-2 NHANES baseline.
     # =========================================================
+    H_emp <- NULL  # populated below if empirical β-Hessian path succeeds
+    loglik_curr <- NA_real_
     if (!is.null(Info_joint)) tryCatch({  # share-space F + Bohning H* PO majorant active
       ci_nl <- which(server_names == nl)
       ci_os <- which(server_names == y_server)
@@ -462,6 +478,12 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       thresh_levels_client <- head(levels_ordered, -1L)
       indicator_cols_vec <- sprintf(cumulative_template,
                                      thresh_levels_client)
+      # Request W secret-sharing (#A empirical β-Hessian path,
+      # McCullagh 1980 §2.5 + Christensen 2019 §A.3). OS computes W
+      # plaintext from F/P/f (already paid mode b disclosure), splits
+      # into Ring127 additive shares, stores own at OS in
+      # `ord_W_iter<outer>` slot, and emits sealed peer share for NL.
+      W_share_key <- sprintf("ord_W_iter%d", outer)
       os_r <- .dsAgg(datasources[ci_os],
         call("dsvertOrdinalPatientDiffsDS",
              data_name = data,
@@ -470,10 +492,30 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
              peer_F_blob_key = "ord_peer_F_blob",
              F_keys = F_share_keys,
              output_key = t_key,
+             weight_output_key = W_share_key,
+             weight_target_pk = transport_pks[[nl]],
              n = as.integer(n_obs),
              is_outcome_server = TRUE,
              session_id = session_id))
       if (is.list(os_r) && length(os_r) == 1L) os_r <- os_r[[1L]]
+
+      # NL receives the sealed W blob and decodes into its Ring127
+      # share slot (paired with W_share_key at OS to form additive
+      # share of the per-patient W vector).
+      if (isTRUE(os_r$W_share_emitted) && !is.null(os_r$W_sealed_blob)) {
+        .sendBlob(os_r$W_sealed_blob, "ord_W_blob", ci_nl)
+        .dsAgg(datasources[ci_nl],
+          call("dsvertOrdinalReceiveBetaWeightsDS",
+               W_blob_key = "ord_W_blob",
+               output_key = W_share_key,
+               n = as.integer(n_obs),
+               session_id = session_id))
+        if (!is.null(os_r$W_q01_q99)) {
+          cat(sprintf("[OrdJoint iter %d] W_q[1,25,50,75,99]=[%s] (empirical PO Hessian weights)\n",
+                       outer,
+                       paste(sprintf("%.3e", os_r$W_q01_q99), collapse=",")))
+        }
+      }
 
       # === NL stores zero T share (per existing convention) ===
       .dsAgg(datasources[ci_nl],
@@ -485,6 +527,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
 
       cat(sprintf("[OrdJoint iter %d] T |T|_max=%.3e |T|_L2=%.3e\n",
                    outer, os_r$T_max %||% NA, os_r$T_norm_L2 %||% NA))
+      loglik_curr <- as.numeric(os_r$loglik %||% NA_real_)
       if (!is.null(os_r$F_q01_q99)) {
         cat(sprintf("[OrdJoint iter %d] F_q[1,25,50,75,99]=[%s] sat_frac=%.3f\n",
                      outer,
@@ -524,16 +567,16 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
             d <- pmax(diag(H_reg), 1e-8)
             st_vec / d
           })
-        # Safety cap matched to β step_cap_dyn (Bertsekas 1999 §2.7
-        # block-coord-descent rate-balance: when one block runs faster
-        # than the other under joint convexity, the slow block becomes
-        # sub-optimal under each fast-block update, yielding oscillation.
-        # Empirical 2026-04-26: at theta_cap_safe=1.0 iter 10 saw
-        # |g_β|=0.06 (near-MLE) but iter 15 jumped back to 0.95 —
-        # θ-empirical-Newton step ~0.13 per iter ran ahead of β-Bohning
-        # step ~0.05, breaking joint convergence.). Tying θ-cap to β-cap
-        # restores rate-balance.
-        theta_cap_safe <- step_cap_dyn  # joint-convex rate-balance
+        # Safety cap. Under empirical β-Hessian (#A 2026-04-27), β
+        # uses curvature-scaled per-coord steps (≈0.5 max for slow
+        # directions, ≈0.001 for high-curvature). The Bertsekas 1999
+        # §2.7 rate-balance argument that motivated θ-cap=step_cap_dyn
+        # was specific to Bohning β-step (uniformly throttled to ~0.05
+        # by step_cap floor). With empirical-H β unfrozen, θ can match
+        # at 0.5 without oscillation — θ-block has its own empirical
+        # Newton bound (McCullagh §2.5 closed-form). Bohning fallback
+        # keeps the rate-balanced cap as before.
+        theta_cap_safe <- 0.5  # empirical θ-Newton self-regulates via H_θθ
         st_norm <- max(abs(step_theta))
         if (is.finite(st_norm) && st_norm > theta_cap_safe)
           step_theta <- step_theta * (theta_cap_safe / st_norm)
@@ -603,6 +646,159 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       cat(sprintf("[OrdJoint iter %d] score |g|_L2=%.3e |g|_max=%.3e ok=%s\n",
                    outer, sqrt(sum(score_beta^2)),
                    max(abs(score_beta)), joint_score_ok))
+      # Track best (β, θ) seen so far — argmin_iter |g_joint|_L2 over
+      # the JOINT score (β + θ blocks). Pure |g_β| tracking would pick
+      # β-conditional-MLEs that are far from joint MLE in θ-space (e.g.
+      # iter 3 had |g_β|=0.12 with θ at quantile-init [−0.5, 0.9],
+      # 4 units away from polr ζ [3.91, 5.78], so cum P verdict was
+      # 0.39 not STRICT). Joint norm |g_β|² + |g_θ|² captures the
+      # full first-order optimality condition (Pratt 1981 strict
+      # concavity ⇒ joint MLE is the unique stationary point).
+      g_theta_iter <- if (!is.null(os_r$score_theta))
+                          sum(as.numeric(os_r$score_theta)^2) else 0
+      g_joint_norm <- sqrt(sum(score_beta^2) + g_theta_iter)
+      if (joint_score_ok && is.finite(g_joint_norm) &&
+          g_joint_norm < best_g_norm) {
+        best_g_norm <- g_joint_norm
+        best_beta   <- beta
+        best_theta  <- theta
+        best_iter   <- outer
+      }
+
+      # === Step 8: Empirical β-Hessian via MPC X^T diag(W) X (#A) ===
+      # Replaces the Bohning B_PO=(1/4)X^TX provably-loose majorant
+      # (Anceschi 2024 arXiv:2410.10309 PG dominates Bohning;
+      # Minka 2003 Bohning needs 10²-10³ outer iters for STRICT) with
+      # the empirical second-derivative form for quadratic local
+      # convergence (Pratt 1981 + Burridge 1981 PO log-lik strict
+      # concavity → Newton local quadratic; Christensen 2019 ordinal::
+      # clm.fit clm_fit_NR uses this exact form).
+      #
+      # Per-column matvec: H_emp[:, j] = X^T diag(W) X_:j computed via:
+      #   1. dsvertOrdinalExtractXColumnDS — gather X column j into n-share
+      #   2. .ring127_vecmul(W, X_:j) — Beaver vecmul → DX_:j shared
+      #   3. existing X^T r matvec pipeline with r=DX_:j → reveal column j
+      # at coordinator (length-p_shared, same disclosure as existing
+      # X^T T score reveal — p-vector per matvec call).
+      #
+      # Disclosure budget per outer iter: p reveals of length-p (= p²
+      # numbers) revealed at coordinator. Comparable to dsBase ds.glm
+      # Fisher-info aggregate disclosure pattern.
+      if (isTRUE(os_r$W_share_emitted) && nzchar(W_share_key)) {
+        H_emp <- matrix(0, nrow = p_shared, ncol = p_shared)
+        H_emp_ok <- TRUE
+        # X is stored as TWO partition slots per server: own X (column
+        # set per `x_vars_per_server[[srv]]`) at `k2_x_share_fp`, peer X
+        # share at `k2_peer_x_share_fp`. Global column j ∈ 1..p_shared
+        # is in server-partition order = unlist(x_vars_per_server). For
+        # each j, the OWNING server uses its own slot, the OTHER server
+        # uses peer slot, both at the local column index within that
+        # server's column ordering.
+        col_owner_map <- unlist(lapply(server_list, function(srv) {
+          rep(srv, length(x_vars_per_server[[srv]]))
+        }), use.names = FALSE)
+        col_local_idx <- unlist(lapply(server_list, function(srv) {
+          seq_along(x_vars_per_server[[srv]])
+        }), use.names = FALSE)
+        for (j in seq_len(p_shared)) {
+          Xj_key  <- sprintf("ord_Xj_iter%d_col%d", outer, j)
+          DXj_key <- sprintf("ord_DXj_iter%d_col%d", outer, j)
+          owner_srv <- col_owner_map[j]
+          local_j   <- as.integer(col_local_idx[j])
+          for (srv in server_list) {
+            ci <- which(server_names == srv)
+            is_owner <- (srv == owner_srv)
+            mat_key <- if (is_owner) "k2_x_share_fp" else "k2_peer_x_share_fp"
+            p_local <- if (is_owner) length(x_vars_per_server[[srv]])
+                       else length(x_vars_per_server[[owner_srv]])
+            .dsAgg(datasources[ci],
+              call("dsvertOrdinalExtractXColumnDS",
+                   matrix_key = mat_key,
+                   n = as.integer(n_obs),
+                   p = as.integer(p_local),
+                   col_idx = local_j,
+                   output_key = Xj_key,
+                   session_id = session_id))
+          }
+          .ring127_vecmul(W_share_key, Xj_key, DXj_key, n_obs,
+            datasources, dealer_ci, server_list, server_names,
+            y_server, nl, transport_pks, session_id, .dsAgg, .sendBlob)
+          # X^T DX_:j matvec via existing pipeline — same shape as
+          # X^T T but with DX_:j replacing T as the residual.
+          for (srv in server_list) {
+            ci <- which(server_names == srv)
+            .dsAgg(datasources[ci],
+              call("dsvertPrepareMultinomGradDS",
+                   residual_key = DXj_key,
+                   is_outcome_server = (srv == y_server),
+                   n = as.integer(n_obs), session_id = session_id))
+          }
+          grad_t_H <- .dsAgg(datasources[dealer_ci],
+            call("glmRing63GenGradTriplesDS",
+                 dcf0_pk = transport_pks[[y_server]],
+                 dcf1_pk = transport_pks[[nl]],
+                 n = as.integer(n_obs), p = p_shared,
+                 ring = 127L, session_id = session_id))
+          if (is.list(grad_t_H) && length(grad_t_H) == 1L)
+            grad_t_H <- grad_t_H[[1L]]
+          grad_triple_key_H <- sprintf("k2_grad_triple_fp_iter%d_ord_Hcol%d",
+                                         outer, j)
+          .sendBlob(grad_t_H$grad_blob_0, grad_triple_key_H, ci_os)
+          .sendBlob(grad_t_H$grad_blob_1, grad_triple_key_H, ci_nl)
+          r1H <- list()
+          for (srv in server_list) {
+            ci <- which(server_names == srv)
+            peer <- setdiff(server_list, srv)
+            .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
+              session_id = session_id,
+              grad_triple_key = grad_triple_key_H))
+            rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+              peer_pk = transport_pks[[peer]],
+              session_id = session_id))
+            if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
+            r1H[[srv]] <- rr
+          }
+          # Reuse "k2_grad_peer_r1" slot — k2GradientR2DS consumes it
+          # via .blob_consume so it's freed after each column iter.
+          .sendBlob(r1H[[y_server]]$encrypted_r1, "k2_grad_peer_r1", ci_nl)
+          .sendBlob(r1H[[nl]]$encrypted_r1, "k2_grad_peer_r1", ci_os)
+          r2H <- list()
+          for (srv in server_list) {
+            ci <- which(server_names == srv)
+            is_c <- (srv == y_server)
+            rr <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+              party_id = if (is_c) 0L else 1L,
+              session_id = session_id))
+            if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
+            r2H[[srv]] <- rr
+          }
+          agg_H_col <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+            share_a = r2H[[y_server]]$gradient_fp,
+            share_b = r2H[[nl]]$gradient_fp,
+            frac_bits = 50L, ring = "ring127"))
+          col_vals <- as.numeric(agg_H_col$values)
+          if (length(col_vals) != p_shared || any(!is.finite(col_vals))) {
+            H_emp_ok <- FALSE
+            break
+          }
+          # H_emp[:, j] = X^T DX_:j / n_obs (averaged form to match the
+          # B_PO normalisation convention currently used downstream;
+          # solve(H_emp_avg, score_avg) = solve(H_emp, score) in scale).
+          H_emp[, j] <- col_vals / n_obs
+        }
+        if (H_emp_ok) {
+          # Symmetrise (numerical noise breaks exact symmetry).
+          H_emp <- (H_emp + t(H_emp)) / 2
+          cat(sprintf("[OrdJoint iter %d] H_emp diag=[%s] sym_err=%.3e\n",
+                       outer,
+                       paste(sprintf("%.3e", diag(H_emp)), collapse=","),
+                       max(abs(H_emp - t(H_emp)))))
+        } else {
+          cat(sprintf("[OrdJoint iter %d] H_emp computation FAILED — fallback to Bohning B_PO\n",
+                       outer))
+          H_emp <- NULL
+        }
+      }
     }, error = function(e) {
       cat(sprintf("[OrdJoint iter %d] ERR in share-space F-reveal: %s — fallback warm Fisher\n",
                    outer, conditionMessage(e)))
@@ -893,9 +1089,47 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       score_full <- numeric(length(formula_names))
       ok_idx <- !is.na(perm_g)
       score_full[ok_idx] <- score_beta[perm_g[ok_idx]]
+      # === #A: empirical β-Hessian Newton step ===
+      # When `H_emp` is available (computed via `.ring127_vecmul` ×
+      # existing matvec p times — McCullagh 1980 §2.5 + Christensen
+      # 2019 §A.3), use it. Else fall back to Bohning B_PO majorant.
+      # Diagonal eigenvalue inflation per Christensen 2019 §A.3 when
+      # H_emp not PD (negative or near-zero eigenvalues from numerical
+      # noise / saturation): H_use ← H_emp + (|λ_min|+δ)·I.
+      H_use <- Info_joint  # default Bohning fallback
+      use_emp_H <- FALSE
+      if (!is.null(H_emp) && nrow(H_emp) == p_shared) {
+        # Permute H_emp from server-partition order to formula order
+        # (same permutation as score_full).
+        H_emp_full <- matrix(0, length(formula_names), length(formula_names),
+                              dimnames = list(formula_names, formula_names))
+        srv_names_H <- server_partition_names
+        for (a in seq_along(srv_names_H)) for (b in seq_along(srv_names_H)) {
+          ia <- match(srv_names_H[a], formula_names)
+          ib <- match(srv_names_H[b], formula_names)
+          if (!is.na(ia) && !is.na(ib))
+            H_emp_full[ia, ib] <- H_emp[a, b]
+        }
+        # Christensen 2019 §A.3 diagonal eigenvalue inflation.
+        ev <- tryCatch(eigen(H_emp_full, symmetric = TRUE, only.values = TRUE)$values,
+                        error = function(e) NULL)
+        delta_ridge <- 1e-6 * max(abs(diag(H_emp_full)), 1)
+        if (!is.null(ev) && min(ev) < delta_ridge) {
+          inflation <- abs(min(ev)) + delta_ridge
+          H_emp_full <- H_emp_full + inflation * diag(nrow(H_emp_full))
+          if (verbose)
+            message(sprintf("[OrdinalJointNewton iter %d] H_emp inflated by %.3e (λ_min=%.3e Christensen 2019 §A.3)",
+                             outer, inflation, min(ev)))
+        } else {
+          H_emp_full <- H_emp_full + delta_ridge * diag(nrow(H_emp_full))
+        }
+        H_use <- H_emp_full
+        use_emp_H <- TRUE
+        cat(sprintf("[OrdJoint iter %d] β-Newton: empirical H (McCullagh 1980 §2.5) ACTIVE\n", outer))
+      }
       # Newton step: β_new = β + H^{-1} · g (ascent for log-lik)
       step <- tryCatch(
-        as.numeric(solve(Info_joint, score_full)),
+        as.numeric(solve(H_use, score_full)),
         error = function(e) 0.1 * score_full)
       # Saturation-aware step cap. Baseline 0.1 (post-damp-init regime,
       # sat_frac<0.5 typical), tightens to 0.025 / 0.0125 as F collapses
@@ -911,14 +1145,30 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       # Use the trajectory-adapted cap step_cap_dyn as baseline (per
       # Christensen 2019 ordinal::clm.fit damping). Overshoot bands
       # (sat_frac > 0.5) further tighten beyond step_cap_dyn.
-      step_cap <- step_cap_dyn
+      # When empirical H is ACTIVE (#A), the Newton step is already
+      # curvature-scaled per coordinate (large H[k,k] ⇒ small step in
+      # that direction). The global L∞ cap was breaking convergence
+      # by shrinking ALL coordinates when ONE direction (e.g. binary
+      # `smoke` with small W·X² entry, large step needed) hit cap —
+      # well-conditioned coords ended up scaled to near-zero. Switch
+      # to PER-COORDINATE clipping when empirical H is active so
+      # each coordinate retains its full curvature-scaled Newton step
+      # up to a generous safety bound. Bohning fallback retains the
+      # original L∞ cap (Bohning's monotone-descent guarantee under
+      # constant majorant doesn't require per-coord differentiation).
+      step_cap <- if (use_emp_H) max(step_cap_dyn, 0.5) else step_cap_dyn
       if (is.finite(sat_frac_obs)) {
         if (sat_frac_obs > 0.95)      step_cap <- min(step_cap, 0.0125)
-        else if (sat_frac_obs > 0.5)  step_cap <- min(step_cap, 0.025)
+        else if (sat_frac_obs > 0.5)  step_cap <- min(step_cap, 0.05)
       }
-      step_norm <- max(abs(step))
-      if (is.finite(step_norm) && step_norm > step_cap) {
-        step <- step * (step_cap / step_norm)
+      if (use_emp_H) {
+        # Per-coordinate clip: each |step_k| ≤ step_cap independently.
+        step <- pmin(pmax(step, -step_cap), step_cap)
+      } else {
+        step_norm <- max(abs(step))
+        if (is.finite(step_norm) && step_norm > step_cap) {
+          step <- step * (step_cap / step_norm)
+        }
       }
       beta_new <- beta + setNames(step, names(beta))
       step_max <- max(abs(step))
@@ -987,25 +1237,43 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   #       because we never finished the Newton trajectory.
   #   (C) used_damped_init=FALSE AND any_unsaturated_step=TRUE → β
   #   (D) used_damped_init=FALSE AND any_unsaturated_step=FALSE → β_warm
+  # Reconciliation note (worker2 rebase 2026-04-28): merge worker1's
+  # `thresholds_joint_revert` safety-net flag with worker2's best-iterate
+  # tracking block (a0b1a65). Best-iterate selection fires FIRST (preferring
+  # the best (β, θ) seen during empirical Newton over the final iterate
+  # when the trajectory overshot then oscillated near MLE), THEN the
+  # safety-net flag is initialised for the down-stream cascade.
+  if (!is.null(best_beta) && !is.null(best_theta) &&
+      is.finite(best_g_norm)) {
+    cat(sprintf("[OrdJoint] best-iter %d |g|_L2=%.3e — using best (β, θ) instead of final iterate\n",
+                 best_iter, best_g_norm))
+    beta  <- best_beta
+    theta <- best_theta
+  }
   thresholds_joint_revert <- FALSE
   if (used_damped_init) {
     if (converged) {
       out$beta_po_joint <- beta
       out$joint_step_taken <- TRUE
       out$init_strategy <- "damped"
+    } else if (!is.null(best_beta) && is.finite(best_g_norm) &&
+               best_g_norm < 1.0) {
+      # Best-iterate replacement (#A 2026-04-27): when Newton's best
+      # captured score is meaningfully small (<1.0 = below the typical
+      # warm-baseline |g|), prefer the best (β, θ) over the warm
+      # revert. This restores the Newton work the previous safety-net
+      # was discarding (e.g., NHANES iter 3 reached |g|=0.12 then
+      # oscillated back to 0.6 — warm β was much further from MLE).
+      out$beta_po_joint <- beta  # already = best_beta from above
+      out$joint_step_taken <- TRUE
+      out$init_strategy <- "damped-best"
     } else {
-      # Empirical falsification of "trust Bohning monotone descent" on
-      # max_outer < ~30 iters at step_cap_dyn=0.05 (NHANES bp tertile,
-      # n=132): the post-Newton iterate produces max|Δ cum P|=8.65e-01
-      # vs warm 6.12e-02 because Bohning's monotone descent applies to
-      # log-likelihood, not to the max-prediction-gap-vs-polr verdict
-      # metric. Sub-linear Newton + finite-iter clip + uniform
-      # predictions at β=0 + θ_qlogis init combine to leave the
-      # iterate far enough from polr that the prediction gap exceeds
-      # the warm baseline. Revert β AND θ to the warm pair when
-      # Newton did not reach tol; this preserves the safety-net
-      # contract that the L3 verdict is at-worst the warm-only
-      # baseline.
+      # Falsification of "trust Bohning monotone descent" on
+      # max_outer < ~30 iters at step_cap_dyn=0.05 (2026-04-26): the
+      # post-Newton iterate produced max|Δ cum P|=8.65e-01 vs warm
+      # 6.12e-02 because Bohning monotone descent applies to log-lik,
+      # not to the prediction-gap verdict metric. When best-iterate
+      # tracking ALSO failed (best_g_norm not small), revert to warm.
       out$beta_po_joint <- beta_warm_init
       out$thresholds_joint_revert <- TRUE
       out$joint_step_taken <- FALSE
