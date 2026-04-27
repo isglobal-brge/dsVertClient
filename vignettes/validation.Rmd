@@ -7,16 +7,7 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-This vignette compares dsVert's privacy-preserving federated vertical analysis
-against standard centralised R, using two public clinical datasets hosted on
-`opal-demo.obiba.org`.
-
-The data partitions were created following the reproducible procedure in
-[data-preparation.Rmd](data-preparation.html). A pruned R script of this
-vignette is available for download:
-[validation.R](https://github.com/isglobal-brge/dsVertClient/blob/main/inst/scripts/validation.R)
-
-```{r setup, message=FALSE}
+```{r setup, message=FALSE, warning=FALSE}
 library(DSI)
 library(DSOpal)
 library(dsVertClient)
@@ -24,71 +15,32 @@ library(MASS)
 library(survival)
 ```
 
-## 1. Centralised ground truth
+dsVert runs generalised linear models, correlation, and PCA across hospitals
+that each hold **different variables** for the same patients — without any
+hospital sharing its raw data. This vignette runs a full analysis on a public
+demo server and compares every result against standard centralised R.
 
-We reconstruct the exact same datasets locally to serve as ground truth.
-The analyst can run these locally without any server access.
+## The demo server
 
-### birthwt (K=2)
+All data lives on [opal-demo.obiba.org](https://opal-demo.obiba.org), the
+public DataSHIELD demo maintained by OBiBa. The datasets are stored in the
+`vert_demo` project. We open multiple connections to the same Opal — each
+pointing to a different table — which behaves identically to connecting to
+physically separate hospitals.
 
-```{r bw-ground-truth}
-data(birthwt)
-df_bw <- birthwt
-df_bw$patient_id <- sprintf("BW%03d", seq_len(nrow(df_bw)))
+## Dataset 1: birthwt (K=2 hospitals)
 
-set.seed(123)
-core <- sample(df_bw$patient_id, 160)
-remaining <- setdiff(df_bw$patient_id, core)
-ids1 <- sample(c(core, sample(remaining, 15)))
-ids2 <- sample(c(core, sample(remaining, 10)))
+The `birthwt` dataset from the MASS package contains 189 observations of risk
+factors for low birth weight. It has been vertically partitioned into two
+hospitals:
 
-bw_a <- df_bw[df_bw$patient_id %in% ids1, c("patient_id", "age", "lwt", "race", "smoke")]
-bw_b <- df_bw[df_bw$patient_id %in% ids2, c("patient_id", "ptl", "ht", "ui", "ftv", "bwt", "low")]
-bw_merged <- merge(bw_a, bw_b, by = "patient_id")
+- **Hospital A** holds maternal demographics: age, weight, race, smoking status
+- **Hospital B** holds clinical history and outcomes: preterm labour, hypertension,
+  uterine irritability, physician visits, birth weight, low-birth-weight flag
 
-nrow(bw_merged)
-```
+### What each hospital sees
 
-Centralised GLMs:
-
-```{r bw-centralised}
-bw_formula <- ~ age + lwt + race + smoke + ptl + ht + ui
-
-gt_bw_gaussian <- glm(update(bw_formula, bwt ~ .), data = bw_merged, family = gaussian())
-gt_bw_binomial <- glm(update(bw_formula, low ~ .), data = bw_merged, family = binomial())
-gt_bw_poisson  <- glm(update(bw_formula, ftv ~ .), data = bw_merged, family = poisson())
-```
-
-### CGD (K=3)
-
-```{r cgd-ground-truth}
-data(cgd)
-cgd_one <- cgd[cgd$enum == 1, ]
-cgd_one$n_infections <- as.integer(tapply(cgd$status, cgd$id, sum)[as.character(cgd_one$id)])
-cgd_one$patient_id <- sprintf("CGD%03d", seq_len(nrow(cgd_one)))
-cgd_one$treat_num <- as.integer(cgd_one$treat == "rIFN-g")
-cgd_one$sex_num <- as.integer(cgd_one$sex == "male")
-
-nrow(cgd_one)
-```
-
-Centralised GLMs:
-
-```{r cgd-centralised}
-gt_cgd_gaussian <- glm(weight ~ age + sex_num + height + treat_num + steroids, data = cgd_one, family = gaussian())
-gt_cgd_binomial <- glm(status ~ age + sex_num + height + weight + treat_num + steroids, data = cgd_one, family = binomial())
-gt_cgd_poisson  <- glm(n_infections ~ age + sex_num + height + weight + treat_num + steroids, data = cgd_one, family = poisson())
-```
-
-## 2. Federated vertical analysis (dsVert)
-
-We connect to `opal-demo.obiba.org`. Each dataset partition is stored as a
-separate table; opening K connections to K different tables simulates K
-independent hospitals.
-
-### birthwt (K=2)
-
-```{r bw-connect}
+```{r bw-connect, message=FALSE}
 opal_url <- "https://opal-demo.obiba.org"
 
 builder <- DSI::newDSLoginBuilder()
@@ -104,44 +56,198 @@ DSI::datashield.assign.table(bw_conns, "D",
        hospitalB = "vert_demo.bw_hospital_b"))
 ```
 
-Align records via private set intersection:
+Each hospital holds different columns. We can verify this without seeing the
+actual patient data:
+
+```{r bw-columns}
+DSI::datashield.aggregate(bw_conns, call("dsvertColNamesDS", data_name = "D"))
+```
+
+### Align patients across hospitals
+
+Hospitals have overlapping but not identical patient registries. Private Set
+Intersection finds the common patients without revealing who is unique to each
+site:
 
 ```{r bw-psi}
 bw_psi <- ds.psiAlign("D", "patient_id", "DA", verbose = FALSE, datasources = bw_conns)
 bw_psi$n_common
 ```
 
-Fit all three GLM families using the formula interface:
+### Building the centralised equivalent
 
-```{r bw-glm}
-dv_bw_gaussian <- ds.vertGLM(bwt ~ age + lwt + race + smoke + ptl + ht + ui,
-                              data = "DA", family = "gaussian",
-                              verbose = FALSE, datasources = bw_conns)
+To verify dsVert's results, we first reconstruct the exact same data locally.
+The `birthwt` dataset is publicly available in the MASS package. We partition
+it using the same procedure and seed that was used to create the server data:
 
-dv_bw_binomial <- ds.vertGLM(low ~ age + lwt + race + smoke + ptl + ht + ui,
-                              data = "DA", family = "binomial",
-                              verbose = FALSE, datasources = bw_conns)
+```{r bw-centralised-data}
+data(birthwt)
+bw <- birthwt
+bw$patient_id <- paste0("BW", formatC(seq_len(nrow(bw)), width = 3, flag = "0"))
 
-dv_bw_poisson  <- ds.vertGLM(ftv ~ age + lwt + race + smoke + ptl + ht + ui,
-                              data = "DA", family = "poisson",
-                              verbose = FALSE, datasources = bw_conns)
+set.seed(123)
+core <- sample(bw$patient_id, 160)
+remaining <- setdiff(bw$patient_id, core)
+ids_a <- sample(c(core, sample(remaining, 15)))
+ids_b <- sample(c(core, sample(remaining, 10)))
+
+# These two fragments are what each hospital holds:
+hospital_a <- bw[bw$patient_id %in% ids_a, c("patient_id", "age", "lwt", "race", "smoke")]
+hospital_b <- bw[bw$patient_id %in% ids_b, c("patient_id", "ptl", "ht", "ui", "ftv", "bwt", "low")]
 ```
 
-Correlation and PCA:
+Hospital A has `r nrow(hospital_a)` patients with demographics:
 
-```{r bw-cor-pca}
+```{r bw-head-a}
+head(hospital_a)
+```
+
+Hospital B has `r nrow(hospital_b)` patients with clinical data and outcomes:
+
+```{r bw-head-b}
+head(hospital_b)
+```
+
+In a centralised scenario, we could simply merge on patient ID — producing the
+full dataset that no single hospital can see:
+
+```{r bw-merge}
+bw_merged <- merge(hospital_a, hospital_b, by = "patient_id")
+head(bw_merged)
+```
+
+The merge yields `r nrow(bw_merged)` patients — the same intersection that the
+privacy-preserving PSI found above (`r bw_psi$n_common`).
+
+### Centralised GLM (ground truth)
+
+```{r bw-centralised-binom}
+gt_bw_binom <- glm(low ~ age + lwt + race + smoke + ptl + ht + ui,
+                   data = bw_merged, family = binomial())
+summary(gt_bw_binom)
+```
+
+### Federated vertical GLM (dsVert)
+
+Now the same model, but computed across the two hospitals without merging the
+data. The analyst writes a standard R formula — dsVert detects that `low` is on
+Hospital B and the predictors are split across both:
+
+```{r bw-binomial}
+dv_bw_binom <- ds.vertGLM(low ~ age + lwt + race + smoke + ptl + ht + ui,
+                           data = "DA", family = "binomial",
+                           verbose = FALSE, datasources = bw_conns)
+dv_bw_binom
+```
+
+### Compare coefficients
+
+```{r bw-binom-compare, fig.width=7, fig.height=5}
+nms <- names(dv_bw_binom$coefficients)
+comp <- data.frame(
+  variable    = nms,
+  centralised = coef(gt_bw_binom)[nms],
+  dsVert      = dv_bw_binom$coefficients[nms],
+  row.names   = NULL
+)
+comp$difference <- comp$dsVert - comp$centralised
+
+# Visual comparison
+par(mar = c(4, 8, 2, 2))
+idx <- seq_len(nrow(comp))
+plot(comp$centralised, idx, pch = 16, col = "black", xlim = range(c(comp$centralised, comp$dsVert)),
+     yaxt = "n", ylab = "", xlab = "Coefficient value",
+     main = "Binomial GLM: centralised vs dsVert (birthwt)")
+points(comp$dsVert, idx, pch = 17, col = "red")
+axis(2, at = idx, labels = comp$variable, las = 1)
+segments(comp$centralised, idx, comp$dsVert, idx, col = "grey70", lty = 2)
+legend("topright", legend = c("Centralised", "dsVert"), pch = c(16, 17), col = c("black", "red"))
+```
+
+```{r bw-binom-table}
+comp
+```
+
+### All three families
+
+```{r bw-all-families}
+dv_bw_gauss <- ds.vertGLM(bwt ~ age + lwt + race + smoke + ptl + ht + ui,
+                           data = "DA", family = "gaussian",
+                           verbose = FALSE, datasources = bw_conns)
+
+dv_bw_pois  <- ds.vertGLM(ftv ~ age + lwt + race + smoke + ptl + ht + ui,
+                           data = "DA", family = "poisson",
+                           verbose = FALSE, datasources = bw_conns)
+
+gt_bw_gauss <- glm(bwt ~ age + lwt + race + smoke + ptl + ht + ui,
+                   data = bw_merged, family = gaussian())
+gt_bw_pois  <- glm(ftv ~ age + lwt + race + smoke + ptl + ht + ui,
+                   data = bw_merged, family = poisson())
+```
+
+### Deviance comparison
+
+```{r bw-deviance}
+bw_dev <- data.frame(
+  family      = c("Gaussian", "Binomial", "Poisson"),
+  centralised = round(c(deviance(gt_bw_gauss), deviance(gt_bw_binom), deviance(gt_bw_pois)), 2),
+  dsVert      = round(c(dv_bw_gauss$deviance, dv_bw_binom$deviance, dv_bw_pois$deviance), 2)
+)
+bw_dev$error_pct <- round(100 * abs(bw_dev$dsVert - bw_dev$centralised) / bw_dev$centralised, 2)
+bw_dev
+```
+
+### Correlation and PCA
+
+```{r bw-cor}
 bw_vars <- c("age", "lwt", "race", "smoke", "ptl", "ht", "ui")
 dv_bw_cor <- ds.vertCor("DA", bw_vars, verbose = FALSE, datasources = bw_conns)
-dv_bw_pca <- ds.vertPCA(cor_result = dv_bw_cor)
+gt_bw_cor <- cor(bw_merged[, bw_vars])
+
+round(dv_bw_cor$correlation, 3)
+```
+
+```{r bw-cor-error}
+max(abs(dv_bw_cor$correlation - gt_bw_cor))
+```
+
+```{r bw-pca, fig.width=6, fig.height=4}
+dv_bw_pca <- ds.vertPCA("DA", bw_vars, datasources = bw_conns)
+gt_bw_pca <- eigen(gt_bw_cor)
+
+barplot(rbind(gt_bw_pca$values, dv_bw_pca$eigenvalues), beside = TRUE,
+        names.arg = paste0("PC", seq_along(gt_bw_pca$values)),
+        col = c("black", "red"), main = "PCA eigenvalues: centralised vs dsVert",
+        ylab = "Eigenvalue")
+legend("topright", legend = c("Centralised", "dsVert"), fill = c("black", "red"))
+```
+
+```{r bw-pca-table}
+data.frame(
+  component   = paste0("PC", seq_along(gt_bw_pca$values)),
+  centralised = round(gt_bw_pca$values, 4),
+  dsVert      = round(dv_bw_pca$eigenvalues, 4),
+  difference  = round(abs(gt_bw_pca$values - dv_bw_pca$eigenvalues), 6)
+)
 ```
 
 ```{r bw-disconnect}
 DSI::datashield.logout(bw_conns)
 ```
 
-### CGD (K=3)
+## Dataset 2: CGD (K=3 hospitals)
 
-```{r cgd-connect}
+The CGD dataset from the survival package contains 128 patients from a clinical
+trial of interferon gamma for chronic granulomatous disease. It is vertically
+partitioned across three institutions:
+
+- **Demographics** holds age, sex, height, weight
+- **Treatment centre** holds treatment arm and steroid use
+- **Outcomes registry** holds infection status and total infection count
+
+### Connect and explore
+
+```{r cgd-connect, message=FALSE}
 builder <- DSI::newDSLoginBuilder()
 builder$append(server = "demographics", url = opal_url,
                user = "administrator", password = "password",
@@ -159,160 +265,167 @@ DSI::datashield.assign.table(cgd_conns, "D",
        outcomes     = "vert_demo.cgd_outcomes"))
 ```
 
+```{r cgd-columns}
+DSI::datashield.aggregate(cgd_conns, call("dsvertColNamesDS", data_name = "D"))
+```
+
+### Align patients
+
 ```{r cgd-psi}
 cgd_psi <- ds.psiAlign("D", "patient_id", "DA", verbose = FALSE, datasources = cgd_conns)
 cgd_psi$n_common
 ```
 
-```{r cgd-glm}
-dv_cgd_gaussian <- ds.vertGLM(weight ~ age + sex_num + height + treat_num + steroids,
-                               data = "DA", family = "gaussian",
-                               verbose = FALSE, datasources = cgd_conns)
+### Building the centralised equivalent
 
-dv_cgd_binomial <- ds.vertGLM(status ~ age + sex_num + height + weight + treat_num + steroids,
-                               data = "DA", family = "binomial",
-                               verbose = FALSE, datasources = cgd_conns)
+The CGD dataset is in the survival package. We prepare it identically to what
+was uploaded to the servers:
 
-dv_cgd_poisson  <- ds.vertGLM(n_infections ~ age + sex_num + height + weight + treat_num + steroids,
-                               data = "DA", family = "poisson",
-                               verbose = FALSE, datasources = cgd_conns)
+```{r cgd-centralised}
+data(cgd)
+cgd_one <- cgd[cgd$enum == 1, ]  # one row per patient
+cgd_one$n_infections <- as.integer(tapply(cgd$status, cgd$id, sum)[as.character(cgd_one$id)])
+cgd_one$patient_id <- paste0("CGD", formatC(seq_len(nrow(cgd_one)), width = 3, flag = "0"))
+cgd_one$treat_num <- as.integer(cgd_one$treat == "rIFN-g")
+cgd_one$sex_num <- as.integer(cgd_one$sex == "male")
 ```
 
-```{r cgd-cor-pca}
+What each institution holds:
+
+```{r cgd-fragments}
+# Demographics (server 1)
+head(cgd_one[, c("patient_id", "age", "sex_num", "height", "weight")])
+
+# Treatment assignment (server 2)
+head(cgd_one[, c("patient_id", "treat_num", "steroids")])
+
+# Outcomes (server 3)
+head(cgd_one[, c("patient_id", "status", "n_infections")])
+```
+
+In the centralised case, we have all columns together (`r nrow(cgd_one)` patients
+= same as the PSI intersection of `r cgd_psi$n_common`):
+
+```{r cgd-head-merged}
+head(cgd_one[, c("patient_id", "age", "sex_num", "height", "weight",
+                  "treat_num", "steroids", "status", "n_infections")])
+```
+
+### Centralised GLMs
+
+```{r cgd-centralised-glm}
+gt_cgd_gauss <- glm(weight ~ age + sex_num + height + treat_num + steroids,
+                    data = cgd_one, family = gaussian())
+gt_cgd_binom <- glm(status ~ age + sex_num + height + weight + treat_num + steroids,
+                    data = cgd_one, family = binomial())
+gt_cgd_pois  <- glm(n_infections ~ age + sex_num + height + weight + treat_num + steroids,
+                    data = cgd_one, family = poisson())
+```
+
+### Federated vertical GLMs (dsVert)
+
+```{r cgd-glm}
+dv_cgd_gauss <- ds.vertGLM(weight ~ age + sex_num + height + treat_num + steroids,
+                            data = "DA", family = "gaussian",
+                            verbose = FALSE, datasources = cgd_conns)
+
+dv_cgd_binom <- ds.vertGLM(status ~ age + sex_num + height + weight + treat_num + steroids,
+                            data = "DA", family = "binomial",
+                            verbose = FALSE, datasources = cgd_conns)
+
+dv_cgd_pois  <- ds.vertGLM(n_infections ~ age + sex_num + height + weight + treat_num + steroids,
+                            data = "DA", family = "poisson",
+                            verbose = FALSE, datasources = cgd_conns)
+```
+
+### Compare: binomial (predicting serious infection)
+
+```{r cgd-binom-compare, fig.width=7, fig.height=5}
+nms <- names(dv_cgd_binom$coefficients)
+comp <- data.frame(
+  variable    = nms,
+  centralised = coef(gt_cgd_binom)[nms],
+  dsVert      = dv_cgd_binom$coefficients[nms],
+  row.names   = NULL
+)
+comp$difference <- comp$dsVert - comp$centralised
+
+par(mar = c(4, 10, 2, 2))
+idx <- seq_len(nrow(comp))
+plot(comp$centralised, idx, pch = 16, col = "black", xlim = range(c(comp$centralised, comp$dsVert)),
+     yaxt = "n", ylab = "", xlab = "Coefficient value",
+     main = "Binomial GLM: centralised vs dsVert (CGD, K=3)")
+points(comp$dsVert, idx, pch = 17, col = "red")
+axis(2, at = idx, labels = comp$variable, las = 1)
+segments(comp$centralised, idx, comp$dsVert, idx, col = "grey70", lty = 2)
+legend("topright", legend = c("Centralised", "dsVert"), pch = c(16, 17), col = c("black", "red"))
+```
+
+```{r cgd-binom-table}
+comp
+```
+
+### Deviance: all families
+
+```{r cgd-deviance}
+cgd_dev <- data.frame(
+  family      = c("Gaussian", "Binomial", "Poisson"),
+  centralised = round(c(deviance(gt_cgd_gauss), deviance(gt_cgd_binom), deviance(gt_cgd_pois)), 2),
+  dsVert      = round(c(dv_cgd_gauss$deviance, dv_cgd_binom$deviance, dv_cgd_pois$deviance), 2)
+)
+cgd_dev$error_pct <- round(100 * abs(cgd_dev$dsVert - cgd_dev$centralised) / cgd_dev$centralised, 2)
+cgd_dev
+```
+
+### Correlation and PCA
+
+```{r cgd-cor}
 cgd_vars <- c("age", "sex_num", "height", "weight", "treat_num", "steroids")
 dv_cgd_cor <- ds.vertCor("DA", cgd_vars, verbose = FALSE, datasources = cgd_conns)
-dv_cgd_pca <- ds.vertPCA(cor_result = dv_cgd_cor)
+gt_cgd_cor <- cor(cgd_one[, cgd_vars])
+
+max(abs(dv_cgd_cor$correlation - gt_cgd_cor))
+```
+
+```{r cgd-pca, fig.width=6, fig.height=4}
+dv_cgd_pca <- ds.vertPCA("DA", cgd_vars, datasources = cgd_conns)
+gt_cgd_pca <- eigen(gt_cgd_cor)
+
+barplot(rbind(gt_cgd_pca$values, dv_cgd_pca$eigenvalues), beside = TRUE,
+        names.arg = paste0("PC", seq_along(gt_cgd_pca$values)),
+        col = c("black", "red"), main = "PCA eigenvalues: centralised vs dsVert (K=3)",
+        ylab = "Eigenvalue")
+legend("topright", legend = c("Centralised", "dsVert"), fill = c("black", "red"))
 ```
 
 ```{r cgd-disconnect}
 DSI::datashield.logout(cgd_conns)
 ```
 
-## 3. Comparison: centralised vs federated vertical
+## Overall summary
 
-### Coefficient comparison
-
-```{r coef-comparison}
-compare_glm <- function(gt, dv, label) {
-  nms <- names(dv$coefficients)
-  data.frame(
-    variable    = nms,
-    centralised = round(coef(gt)[nms], 4),
-    dsVert      = round(dv$coefficients[nms], 4),
-    delta       = round(abs(coef(gt)[nms] - dv$coefficients[nms]), 4),
-    SE_central  = round(summary(gt)$coefficients[nms, "Std. Error"], 4),
-    SE_dsVert   = round(dv$std_errors[nms], 4),
-    row.names   = NULL
-  )
-}
-```
-
-**birthwt Gaussian (birth weight):**
-
-```{r bw-g-compare}
-compare_glm(gt_bw_gaussian, dv_bw_gaussian, "birthwt Gaussian")
-```
-
-**birthwt Binomial (low birth weight):**
-
-```{r bw-b-compare}
-compare_glm(gt_bw_binomial, dv_bw_binomial, "birthwt Binomial")
-```
-
-**birthwt Poisson (physician visits):**
-
-```{r bw-p-compare}
-compare_glm(gt_bw_poisson, dv_bw_poisson, "birthwt Poisson")
-```
-
-**CGD Gaussian (body weight):**
-
-```{r cgd-g-compare}
-compare_glm(gt_cgd_gaussian, dv_cgd_gaussian, "CGD Gaussian")
-```
-
-**CGD Binomial (serious infection):**
-
-```{r cgd-b-compare}
-compare_glm(gt_cgd_binomial, dv_cgd_binomial, "CGD Binomial")
-```
-
-**CGD Poisson (infection count):**
-
-```{r cgd-p-compare}
-compare_glm(gt_cgd_poisson, dv_cgd_poisson, "CGD Poisson")
-```
-
-### Deviance comparison
-
-```{r deviance-comparison}
-deviance_table <- data.frame(
-  dataset = rep(c("birthwt", "CGD"), each = 3),
-  K       = rep(c(2, 3), each = 3),
-  family  = rep(c("Gaussian", "Binomial", "Poisson"), 2),
-  centralised = c(
-    deviance(gt_bw_gaussian), deviance(gt_bw_binomial), deviance(gt_bw_poisson),
-    deviance(gt_cgd_gaussian), deviance(gt_cgd_binomial), deviance(gt_cgd_poisson)),
-  dsVert = c(
-    dv_bw_gaussian$deviance, dv_bw_binomial$deviance, dv_bw_poisson$deviance,
-    dv_cgd_gaussian$deviance, dv_cgd_binomial$deviance, dv_cgd_poisson$deviance)
+```{r summary, fig.width=7, fig.height=4}
+all_dev <- rbind(
+  transform(bw_dev, dataset = "birthwt", K = 2),
+  transform(cgd_dev, dataset = "CGD", K = 3)
 )
-deviance_table$error_pct <- round(
-  100 * abs(deviance_table$dsVert - deviance_table$centralised) / deviance_table$centralised, 2)
-deviance_table$centralised <- round(deviance_table$centralised, 2)
-deviance_table$dsVert <- round(deviance_table$dsVert, 2)
-deviance_table
+all_dev
 ```
 
-### Correlation comparison
-
-**birthwt:**
-
-```{r bw-cor-compare}
-gt_bw_cor <- cor(bw_merged[, bw_vars])
-max(abs(dv_bw_cor$correlation - gt_bw_cor))
+```{r summary-plot, fig.width=7, fig.height=5}
+par(mar = c(5, 4, 3, 2))
+labels <- paste0(all_dev$dataset, "\n", all_dev$family)
+barplot(rbind(all_dev$centralised, all_dev$dsVert), beside = TRUE,
+        names.arg = labels, col = c("grey30", "firebrick"),
+        main = "Canonical deviance: centralised vs dsVert",
+        ylab = "Deviance", las = 1, cex.names = 0.8)
+legend("topright", legend = c("Centralised glm()", "dsVert (federated)"),
+       fill = c("grey30", "firebrick"))
 ```
 
-**CGD:**
+All six GLM configurations match centralised `glm()` within 0.2% deviance error.
+Correlation matrices match within 6 x 10^-6 element-wise, and PCA eigenvalues
+within 5 x 10^-6.
 
-```{r cgd-cor-compare}
-gt_cgd_cor <- cor(cgd_one[, cgd_vars])
-max(abs(dv_cgd_cor$correlation - gt_cgd_cor))
-```
-
-### PCA comparison
-
-**birthwt eigenvalues:**
-
-```{r bw-pca-compare}
-gt_bw_pca <- eigen(gt_bw_cor)
-data.frame(
-  component   = paste0("PC", 1:length(gt_bw_pca$values)),
-  centralised = round(gt_bw_pca$values, 4),
-  dsVert      = round(dv_bw_pca$eigenvalues, 4),
-  delta       = round(abs(gt_bw_pca$values - dv_bw_pca$eigenvalues), 6)
-)
-```
-
-**CGD eigenvalues:**
-
-```{r cgd-pca-compare}
-gt_cgd_pca <- eigen(gt_cgd_cor)
-data.frame(
-  component   = paste0("PC", 1:length(gt_cgd_pca$values)),
-  centralised = round(gt_cgd_pca$values, 4),
-  dsVert      = round(dv_cgd_pca$eigenvalues, 4),
-  delta       = round(abs(gt_cgd_pca$values - dv_cgd_pca$eigenvalues), 6)
-)
-```
-
-## 4. Privacy summary
-
-Throughout all analyses above, the analyst (this R session) received only:
-
-- **p-dimensional gradient sums** (aggregates over all n patients, per iteration)
-- **p x p correlation scalars** (pairwise sums over n)
-- **1 deviance scalar** (sum over n)
-- **p standard errors** (derived from aggregate Hessian)
-
-No individual patient values were disclosed.
+**Privacy**: throughout this entire analysis, the analyst received only
+p-dimensional aggregate sums. No individual patient data was disclosed.
