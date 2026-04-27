@@ -1383,25 +1383,57 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
         # Joint score vector: g_β (formula order) ‖ g_θ
         g_t_avg <- as.numeric(os_r$score_theta) / n_obs
         g_joint <- c(score_full, g_t_avg)
-        # PHASE-0 D2 instrumentation — Newton conditioning amplifier probe.
-        # Logs κ(H_joint) = λ_max/λ_min and |g_joint|_∞ per outer iter so
+        # PHASE-0 D2 + PHASE-2 D7 instrumentation — Newton conditioning
+        # amplifier probe (per-block decomposition).
+        #
+        # D2: κ(H_joint) = λ_max/λ_min and |g_joint|_∞ per outer iter so
         # we can quantify whether observed β floor (5e-5 abs) traces back
         # to ill-conditioning amplification of Beaver vecmul ULP through
         # solve(H, g). Christensen 2019 §A.3 documents pathological
-        # κ(H_clm) near saturated thresholds. If log10(κ) ≥ 7 here, the
-        # ~9e-16 Ring127 fracBits=50 ULP gets amplified to ~1e-8 in
-        # solve(H,g) and through n=80 fixture residual integration to
-        # the observed 5e-5 floor in β. Gated on dsvert.phase0_diag for
-        # a/b attribution. Cites Catrina-Saxena 2010 §3.3 multiplicative
-        # depth bound for the Beaver ULP entry term.
+        # κ(H_clm) near saturated thresholds.
+        #
+        # D7 (PHASE 2): the joint κ(H_full) hides per-block conditioning.
+        # The β-block (H_emp = X^T diag(W) X) is dense p×p, the θ-block
+        # (McCullagh 1980 §2.5 tridiagonal) is (K-1)×(K-1) with f_k(1-2F_k)
+        # entries that vanish at saturation, and the cross-block H_βθ
+        # couples them. (H6) hypothesis: κ(H_θθ) may be ≫ κ(H_ββ) at the
+        # iterate where Newton is bouncing — D7 logs them separately to
+        # disambiguate. Catrina-Saxena 2010 §3.3 multiplicative depth
+        # bound predicts ULP entry term magnitude.
         if (isTRUE(getOption("dsvert.phase0_diag", FALSE)) && !is.null(ev_j)) {
           ev_pos <- ev_j[ev_j > 0]
           kappa_j <- if (length(ev_pos) > 0)
             max(ev_pos) / max(min(ev_pos), .Machine$double.eps) else NA_real_
+          # D7: per-block κ. H_emp_full is the β-block, H_tt_avg is the
+          # θ-block, H_bt_full is cross. All built BEFORE H_joint at this
+          # point in the function (lines 1344-1368), so available here.
+          ev_bb <- tryCatch(eigen(H_emp_full, symmetric = TRUE,
+                                    only.values = TRUE)$values,
+                             error = function(e) NULL)
+          ev_tt <- tryCatch(eigen(H_tt_avg, symmetric = TRUE,
+                                    only.values = TRUE)$values,
+                             error = function(e) NULL)
+          kappa_bb <- if (!is.null(ev_bb)) {
+            evp <- ev_bb[ev_bb > 0]
+            if (length(evp) > 0) max(evp) / max(min(evp), .Machine$double.eps)
+            else NA_real_
+          } else NA_real_
+          kappa_tt <- if (!is.null(ev_tt)) {
+            evp <- ev_tt[ev_tt > 0]
+            if (length(evp) > 0) max(evp) / max(min(evp), .Machine$double.eps)
+            else NA_real_
+          } else NA_real_
           cat(sprintf("[D2 iter %d] log10(κ(H_joint))=%.3f  λ_min=%.3e  λ_max=%.3e  |g_joint|_∞=%.3e  |g_β|_∞=%.3e%s\n",
                        outer, log10(kappa_j), min(ev_j), max(ev_j),
                        max(abs(g_joint)), max(abs(score_full)),
                        if (log10(kappa_j) >= 7) "  *** κ ≥ 1e7 ill-conditioned ***" else ""))
+          cat(sprintf("[D7 iter %d] log10(κ(H_ββ))=%.3f  log10(κ(H_θθ))=%.3f  Δlog10=%+.3f%s\n",
+                       outer, log10(kappa_bb), log10(kappa_tt),
+                       log10(kappa_tt) - log10(kappa_bb),
+                       if (!is.na(kappa_tt) && !is.na(kappa_bb) &&
+                           log10(kappa_tt) - log10(kappa_bb) >= 2)
+                         "  *** θ-block ≥100× more ill-conditioned than β-block ***"
+                       else ""))
         }
         joint_step <- tryCatch(
           as.numeric(solve(H_joint, g_joint)),
