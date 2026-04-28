@@ -428,18 +428,291 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       gradients[slope_rows, ki] <- slope_vals[perm_grad] / n_obs
     }
 
-    # Client-side Bohning Newton step with damped step-halving.
-    # Bohning H* is a Loewner upper bound (guarantees descent in
-    # EXACT arithmetic per Bohning 1992 Thm 2), but with MPC
-    # approximation errors in the gradient the step can overshoot.
-    # Cap max|step| per iter to stabilise. Nocedal-Wright 2006
-    # §3.5-backtracking without the formal Armijo criterion (which
-    # would require an extra MPC round per iter to evaluate the
-    # likelihood at β_new — too costly). Empirically cap=0.5
-    # stabilises the softmax Newton on the Opal NHANES cohort.
-    # Sign convention: gradient = X^T(y - π) = ∇(log-lik); Bohning
-    # B_reg ≥ -∇²(log-lik) so step = +B^{-1}·g is an ASCENT direction
-    # for the log-likelihood (Bohning 1992 Thm 2). β_new = β + step.
+    # === Empirical Hessian H_emp_k per class via MPC X^T diag(W_k) X ===
+    # Replaces Bohning B_reg's per-class diagonal blocks with the
+    # empirical second-derivative form (Tutz 1990 §3.2 closed-form
+    # multinomial Hessian; Krishnapuram et al 2005 IEEE PAMI 27(6) §3.2;
+    # Friedman-Hastie-Tibshirani 2010 §3.2; Hosmer-Lemeshow 2013 §3.5).
+    # Quadratic local convergence (Pratt 1981 + Burridge 1981 strict
+    # concavity → multinomial analog) replaces Bohning's O(1/ε)
+    # Loewner-majorant rate (Bohning 1992 Thm 2 superseded as historical
+    # context per project_h10_msle_noise_floor 2026-04-27).
+    #
+    # Block structure: H_emp ∈ R^{(K-1)p × (K-1)p} stacked block matrix
+    # where H_emp[k, l] is the p×p sub-block.
+    #   H_emp_kk = +X^T diag(p_k(1-p_k)) X  (positive-definite diagonal)
+    #   H_emp_kl = -X^T diag(p_k p_l) X      (k ≠ l, symmetric off-diag)
+    # Both expressed including the intercept column (full p including
+    # intercept):
+    #   H_emp_kl[α, α] = +Σ_i W_kl_i               (scalar intercept-intercept)
+    #   H_emp_kl[α, β_j] = +Σ_i W_kl_i · X_ij       (intercept-slope vector)
+    #   H_emp_kl[β_j, β_q] = +Σ_i W_kl_i · X_ij·X_iq  (slope-slope matrix)
+    # with sign σ_kl = +1 for k=l, -1 for k≠l applied at assembly.
+    #
+    # Pipeline isomorphic to ord_joint K=2 H_emp (a0b1a65 / 754cfe08):
+    #   (A) W_kl_share = Beaver vecmul(p_k_share, p_l_share) or
+    #       p_k_share · (1 - p_k_share) for k=l. Pure share-space.
+    #   (B) Σ W_kl via k2BeaverSumShareDS + k2-ring63-aggregate ring127.
+    #   (C) X^T W_kl as length-p_shared vector via standard matvec
+    #       pipeline (residual_key = W_kl_share).
+    #   (D) X^T diag(W_kl) X as p_shared×p_shared block, column-by-column
+    #       via .ring127_vecmul(W_kl, X_:j) → matvec pipeline.
+    #
+    # Disclosure (per Venables-Ripley 2002 §7.4 + Aliasgari-Blanton 2013
+    # NDSS §5 + Demmler-ABY 2015 §III.B): all (A) products stay share-
+    # space; (B)(C)(D) reveal aggregates of shape O(p) × O(K) — never
+    # per-patient. Same K=2 audit boundary pattern as ord_joint H_emp,
+    # already vetted at PR #4 merge.
+    one_fp_b64_127 <- dsVert:::.callMpcTool("k2-float-to-fp", list(
+      values = array(1.0, dim = 1L),
+      frac_bits = 50L, ring = "ring127"))$fp_data
+
+    # Build W_kl_share keys: diagonal (k=l) via p_k·(1-p_k), cross via
+    # p_k·p_l (with sign applied at assembly).
+    W_keys <- list()
+    W_signs <- list()
+    for (ki in seq_len(K_minus_1)) {
+      for (li in seq_len(K_minus_1)) {
+        if (ki > li) next  # symmetry: only build upper triangle + diag
+        key <- sprintf("mnl_W_%d_%d_iter%d", ki, li, outer)
+        if (ki == li) {
+          one_minus_p_key <- sprintf("mnl_omp_%d_iter%d", ki, outer)
+          for (srv in server_list) {
+            ci <- which(server_names == srv)
+            is_c <- (srv == coord)
+            .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+              a_key = p_keys[ki], b_key = NULL,
+              sign_a = -1L, sign_b = 0L,
+              public_const_fp = one_fp_b64_127,
+              is_party0 = is_c,
+              output_key = one_minus_p_key,
+              n = as.integer(n_obs), session_id = session_id))
+          }
+          .ring127_vecmul(p_keys[ki], one_minus_p_key, key, n_obs,
+                          datasources, dealer_ci, server_list,
+                          server_names, y_server, nl, transport_pks,
+                          session_id, .dsAgg, .sendBlob)
+          W_signs[[paste(ki, li, sep="_")]] <- +1
+        } else {
+          .ring127_vecmul(p_keys[ki], p_keys[li], key, n_obs,
+                          datasources, dealer_ci, server_list,
+                          server_names, y_server, nl, transport_pks,
+                          session_id, .dsAgg, .sendBlob)
+          W_signs[[paste(ki, li, sep="_")]] <- -1
+        }
+        W_keys[[paste(ki, li, sep="_")]] <- key
+      }
+    }
+
+    # H_emp assembly: per (k, l) build p × p block via:
+    #   - Σ_i W_kl_i scalar (intercept-intercept)
+    #   - X^T W_kl length-p_shared vector (intercept-slope)
+    #   - X^T diag(W_kl) X p_shared×p_shared matrix (slope-slope)
+    H_emp_full <- matrix(0, p * K_minus_1, p * K_minus_1)
+    H_emp_ok <- TRUE
+    int_j <- which(cnames == "(Intercept)")
+    if (length(int_j) != 1L) int_j <- NA_integer_
+
+    col_owner_map <- unlist(lapply(server_list, function(srv) {
+      rep(srv, length(x_vars_per_server[[srv]]))
+    }), use.names = FALSE)
+    col_local_idx <- unlist(lapply(server_list, function(srv) {
+      seq_along(x_vars_per_server[[srv]])
+    }), use.names = FALSE)
+    perm_grad_p <- match(formula_slope_names, server_partition_names)
+
+    for (ki in seq_len(K_minus_1)) {
+      for (li in seq_len(K_minus_1)) {
+        kl_key <- if (ki <= li) paste(ki, li, sep="_") else paste(li, ki, sep="_")
+        W_share_key <- W_keys[[kl_key]]
+        sign_kl <- W_signs[[kl_key]]
+        if (is.null(W_share_key)) { H_emp_ok <- FALSE; next }
+
+        # (B) Σ W_kl scalar — intercept-intercept entry of block.
+        sum_W_shares <- list()
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          rs <- .dsAgg(datasources[ci], call("k2BeaverSumShareDS",
+            source_key = W_share_key, session_id = session_id,
+            frac_bits = 50L))
+          if (is.list(rs) && length(rs) == 1L) rs <- rs[[1L]]
+          sum_W_shares[[srv]] <- rs$sum_share_fp
+        }
+        sum_W_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+          share_a = sum_W_shares[[coord]],
+          share_b = sum_W_shares[[nl]],
+          frac_bits = 50L, ring = "ring127"))
+        sum_W <- as.numeric(sum_W_agg$values)[1L]
+        if (!is.finite(sum_W)) { H_emp_ok <- FALSE; next }
+
+        # (C) X^T W_kl length-p_shared vector — intercept-slope entries.
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          .dsAgg(datasources[ci], call("dsvertPrepareMultinomGradDS",
+            residual_key = W_share_key,
+            is_outcome_server = (srv == coord),
+            n = as.integer(n_obs), session_id = session_id))
+        }
+        grad_t_xw <- .dsAgg(datasources[dealer_ci],
+          call("glmRing63GenGradTriplesDS",
+               dcf0_pk = transport_pks[[coord]],
+               dcf1_pk = transport_pks[[nl]],
+               n = as.integer(n_obs), p = as.integer(p_shared),
+               ring = 127L, session_id = session_id))
+        if (is.list(grad_t_xw) && length(grad_t_xw) == 1L)
+          grad_t_xw <- grad_t_xw[[1L]]
+        gtk_xw <- sprintf("k2_grad_triple_fp_iter%d_xw_%d_%d",
+                           outer, ki, li)
+        .sendBlob(grad_t_xw$grad_blob_0, gtk_xw, y_server_ci)
+        .sendBlob(grad_t_xw$grad_blob_1, gtk_xw, dealer_ci)
+        r1xw <- list()
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          peer <- setdiff(server_list, srv)
+          .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
+            session_id = session_id, grad_triple_key = gtk_xw))
+          rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+            peer_pk = transport_pks[[peer]], session_id = session_id))
+          if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
+          r1xw[[srv]] <- rr
+        }
+        .sendBlob(r1xw[[coord]]$encrypted_r1, "k2_grad_peer_r1", dealer_ci)
+        .sendBlob(r1xw[[nl]]$encrypted_r1, "k2_grad_peer_r1", y_server_ci)
+        r2xw <- list()
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          is_c <- (srv == coord)
+          rr <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+            party_id = if (is_c) 0L else 1L, session_id = session_id))
+          if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
+          r2xw[[srv]] <- rr
+        }
+        agg_xw <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+          share_a = r2xw[[coord]]$gradient_fp,
+          share_b = r2xw[[nl]]$gradient_fp,
+          frac_bits = 50L, ring = "ring127"))
+        XtW_partition <- as.numeric(agg_xw$values)
+        if (length(XtW_partition) != p_shared || any(!is.finite(XtW_partition))) {
+          H_emp_ok <- FALSE; next
+        }
+        # Permute to formula order (slope rows of cnames).
+        XtW_formula <- numeric(length(slope_rows))
+        XtW_formula[] <- XtW_partition[perm_grad_p]
+
+        # (D) X^T diag(W_kl) X p_shared × p_shared via column-by-column
+        # matvec — same pattern as ord_joint H_emp (a0b1a65) but
+        # parameterised on the (k, l) pair.
+        H_slope_part <- matrix(0, p_shared, p_shared)
+        block_ok <- TRUE
+        for (j in seq_len(p_shared)) {
+          Xj_key  <- sprintf("mnl_Xj_iter%d_blk%d_%d_col%d", outer, ki, li, j)
+          DXj_key <- sprintf("mnl_DXj_iter%d_blk%d_%d_col%d", outer, ki, li, j)
+          owner_srv <- col_owner_map[j]
+          local_j   <- as.integer(col_local_idx[j])
+          for (srv in server_list) {
+            ci <- which(server_names == srv)
+            is_owner <- (srv == owner_srv)
+            mat_key <- if (is_owner) "k2_x_share_fp" else "k2_peer_x_share_fp"
+            p_local <- if (is_owner) length(x_vars_per_server[[srv]])
+                       else length(x_vars_per_server[[owner_srv]])
+            .dsAgg(datasources[ci],
+              call("dsvertOrdinalExtractXColumnDS",
+                   matrix_key = mat_key,
+                   n = as.integer(n_obs),
+                   p = as.integer(p_local),
+                   col_idx = local_j,
+                   output_key = Xj_key,
+                   session_id = session_id))
+          }
+          .ring127_vecmul(W_share_key, Xj_key, DXj_key, n_obs,
+            datasources, dealer_ci, server_list, server_names,
+            y_server, nl, transport_pks, session_id, .dsAgg, .sendBlob)
+          for (srv in server_list) {
+            ci <- which(server_names == srv)
+            .dsAgg(datasources[ci],
+              call("dsvertPrepareMultinomGradDS",
+                   residual_key = DXj_key,
+                   is_outcome_server = (srv == coord),
+                   n = as.integer(n_obs), session_id = session_id))
+          }
+          grad_t_H <- .dsAgg(datasources[dealer_ci],
+            call("glmRing63GenGradTriplesDS",
+                 dcf0_pk = transport_pks[[coord]],
+                 dcf1_pk = transport_pks[[nl]],
+                 n = as.integer(n_obs), p = p_shared,
+                 ring = 127L, session_id = session_id))
+          if (is.list(grad_t_H) && length(grad_t_H) == 1L)
+            grad_t_H <- grad_t_H[[1L]]
+          gtk_H <- sprintf("k2_grad_triple_fp_iter%d_Hblk%d_%d_col%d",
+                            outer, ki, li, j)
+          .sendBlob(grad_t_H$grad_blob_0, gtk_H, y_server_ci)
+          .sendBlob(grad_t_H$grad_blob_1, gtk_H, dealer_ci)
+          r1H <- list()
+          for (srv in server_list) {
+            ci <- which(server_names == srv)
+            peer <- setdiff(server_list, srv)
+            .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
+              session_id = session_id, grad_triple_key = gtk_H))
+            rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+              peer_pk = transport_pks[[peer]], session_id = session_id))
+            if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
+            r1H[[srv]] <- rr
+          }
+          .sendBlob(r1H[[coord]]$encrypted_r1, "k2_grad_peer_r1", dealer_ci)
+          .sendBlob(r1H[[nl]]$encrypted_r1, "k2_grad_peer_r1", y_server_ci)
+          r2H <- list()
+          for (srv in server_list) {
+            ci <- which(server_names == srv)
+            is_c <- (srv == coord)
+            rr <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+              party_id = if (is_c) 0L else 1L, session_id = session_id))
+            if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
+            r2H[[srv]] <- rr
+          }
+          agg_H <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+            share_a = r2H[[coord]]$gradient_fp,
+            share_b = r2H[[nl]]$gradient_fp,
+            frac_bits = 50L, ring = "ring127"))
+          col_vals <- as.numeric(agg_H$values)
+          if (length(col_vals) != p_shared || any(!is.finite(col_vals))) {
+            block_ok <- FALSE; break
+          }
+          # Permute revealed column to formula order (slopes only).
+          H_slope_part[, j] <- col_vals
+        }
+        if (!block_ok) { H_emp_ok <- FALSE; next }
+        # Permute rows AND cols to formula slope order.
+        H_slope_formula <- H_slope_part[perm_grad_p, perm_grad_p, drop = FALSE]
+        # Symmetrise per-block diagonal noise.
+        H_slope_formula <- (H_slope_formula + t(H_slope_formula)) / 2
+
+        # Assemble p × p block with intercept row/col + slope-slope.
+        H_block <- matrix(0, p, p, dimnames = list(cnames, cnames))
+        H_block[slope_rows, slope_rows] <- H_slope_formula
+        if (!is.na(int_j)) {
+          H_block[int_j, int_j] <- sum_W
+          H_block[int_j, slope_rows] <- XtW_formula
+          H_block[slope_rows, int_j] <- XtW_formula
+        }
+        # Apply sign σ_kl and average by n_obs.
+        H_block_signed <- (sign_kl * H_block) / n_obs
+        # Place into (K-1)p × (K-1)p stacked H_emp.
+        rows_kl <- ((ki - 1L) * p + 1L):(ki * p)
+        cols_kl <- ((li - 1L) * p + 1L):(li * p)
+        H_emp_full[rows_kl, cols_kl] <- H_block_signed
+      }
+    }
+    # Symmetrise the full assembled H_emp (numerical noise across blocks).
+    if (H_emp_ok) {
+      H_emp_full <- (H_emp_full + t(H_emp_full)) / 2
+      cat(sprintf("[MnlJoint iter %d] H_emp diag=[%s]\n",
+                   outer,
+                   paste(sprintf("%.3e", diag(H_emp_full)), collapse=",")))
+    }
+
+    # Client-side empirical-Hessian Newton step (replaces Bohning B_reg
+    # when H_emp is available; falls back to Bohning for stability when
+    # H_emp construction fails).
     g_stacked <- as.numeric(gradients)
     g_norm <- sqrt(sum(g_stacked^2))
     g_max  <- max(abs(g_stacked))
@@ -452,8 +725,27 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       best_beta <- beta_mat
       best_iter <- outer - 1L  # β_mat is current iterate PRE step
     }
-    step_stacked <- tryCatch(solve(B_reg, g_stacked),
-                              error = function(e) 0.1 * g_stacked)
+    # Newton solve: use empirical H_emp_full if successfully assembled
+    # (Tutz 1990 §3.2 quadratic local convergence per Pratt 1981 +
+    # Burridge 1981); fall back to Bohning B_reg majorant otherwise
+    # (monotone descent guarantee per Bohning 1992 Thm 2). Christensen
+    # 2019 ordinal::clm.fit §A.3 diagonal eigenvalue inflation +
+    # ridge ε·I for numerical stability of the empirical-H solve.
+    H_solve <- if (H_emp_ok) {
+      ridge <- 1e-6 * max(abs(diag(H_emp_full)), 1)
+      H_emp_full + ridge * diag(p * K_minus_1)
+    } else {
+      B_reg
+    }
+    step_stacked <- tryCatch(solve(H_solve, g_stacked),
+                              error = function(e) {
+                                # Empirical solve failed → fall back to
+                                # Bohning B_reg (Loewner upper-bound
+                                # always positive-definite per Bohning
+                                # 1992 Thm 2).
+                                tryCatch(solve(B_reg, g_stacked),
+                                          error = function(e2) 0.1 * g_stacked)
+                              })
     step_mat <- matrix(step_stacked, p, K_minus_1,
                        dimnames = dimnames(gradients))
     # Decreasing step-cap schedule: 0.5 for first 5 iters (broad
