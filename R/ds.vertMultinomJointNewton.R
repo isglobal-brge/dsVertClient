@@ -431,6 +431,24 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       gradients[slope_rows, ki] <- slope_vals[perm_grad] / n_obs
     }
 
+    # H_emp activation gate. Default FALSE per reviewer architectural
+    # call 2026-04-28 (option 2): L3 first-real-Opal sweep against the
+    # H_emp pipeline produced max|Δπ|=1.19e-1 vs the prior Bohning
+    # baseline 4.86e-2 (regression rather than the 16x improvement
+    # claimed in the L2-only commit message), with iter 4 H_emp_full
+    # diagonal containing a single sign-flipped entry of magnitude
+    # ≈10^6 — non-physical for X^T diag(p(1-p)) X which is PSD by
+    # construction. Root cause is a sign-anomaly inside the MPC
+    # W_kl_share Beaver vecmul chain; L2 mock did not surface it.
+    # Per David's hard criterion (TG uid 995154407) "non-disclosive
+    # AND no bugs / accurate" outranks the H_emp accuracy gain. The
+    # H_emp scaffolding (lines below) stays in source so the L3
+    # investigation can re-enable it once the iter-4 sign-anomaly is
+    # root-caused and patched. Tracking issue: dsVert#3 (or successor).
+    use_h_emp <- isTRUE(getOption("dsvert.mnl_joint_h_emp", FALSE))
+    H_emp_ok <- FALSE
+    H_emp_full <- NULL
+    if (use_h_emp) {
     # === Empirical Hessian H_emp_k per class via MPC X^T diag(W_k) X ===
     # Replaces Bohning B_reg's per-class diagonal blocks with the
     # empirical second-derivative form (Tutz 1990 §3.2 closed-form
@@ -712,6 +730,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                    outer,
                    paste(sprintf("%.3e", diag(H_emp_full)), collapse=",")))
     }
+    } # end if (use_h_emp) — H_emp pipeline gated FALSE; B_reg used below
 
     # Client-side empirical-Hessian Newton step (replaces Bohning B_reg
     # when H_emp is available; falls back to Bohning for stability when
