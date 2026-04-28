@@ -80,6 +80,9 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     b64 <- gsub("\n", "", jsonlite::base64_enc(raw), fixed = TRUE)
     chartr("+/", "-_", sub("=+$", "", b64, perl = TRUE))
   }
+  # base64url for already-base64 strings (peer transport PKs). Required
+  # to avoid Opal DSL parser eating "=" / "+" / "/" in the call expr.
+  .to_b64url <- function(x) chartr("+/", "-_", sub("=+$", "", x, perl = TRUE))
   for (srv in server_list) {
     ci <- which(server_names == srv)
     peer_srv <- setdiff(server_list, srv)
@@ -137,7 +140,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   for (srv in server_list) {
     ci <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
-    peer_pk <- transport_pks[[peer]]
+    peer_pk <- .to_b64url(transport_pks[[peer]])
     # Categorical outcome (bp_cls) is not shared via k2ShareInputDS
     # (fails Go float64 unmarshal). Per-class indicator columns are
     # read directly by the label server inside later aggregates (see
@@ -336,8 +339,8 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       # Beaver matvec: X^T (mu - y) → per-class SLOPE gradient (length p_shared)
       grad_t <- .dsAgg(datasources[dealer_ci],
         call("glmRing63GenGradTriplesDS",
-             dcf0_pk = transport_pks[[coord]],
-             dcf1_pk = transport_pks[[nl]],
+             dcf0_pk = .to_b64url(transport_pks[[coord]]),
+             dcf1_pk = .to_b64url(transport_pks[[nl]]),
              n = as.integer(n_obs), p = as.integer(p_shared),
              ring = 127L, session_id = session_id))
       if (is.list(grad_t) && length(grad_t) == 1L) grad_t <- grad_t[[1L]]
@@ -358,7 +361,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           session_id = session_id,
           grad_triple_key = grad_triple_key))
         rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
-          peer_pk = transport_pks[[peer]], session_id = session_id))
+          peer_pk = .to_b64url(transport_pks[[peer]]), session_id = session_id))
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
         r1[[srv]] <- rr
       }
@@ -555,8 +558,8 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         }
         grad_t_xw <- .dsAgg(datasources[dealer_ci],
           call("glmRing63GenGradTriplesDS",
-               dcf0_pk = transport_pks[[coord]],
-               dcf1_pk = transport_pks[[nl]],
+               dcf0_pk = .to_b64url(transport_pks[[coord]]),
+               dcf1_pk = .to_b64url(transport_pks[[nl]]),
                n = as.integer(n_obs), p = as.integer(p_shared),
                ring = 127L, session_id = session_id))
         if (is.list(grad_t_xw) && length(grad_t_xw) == 1L)
@@ -572,7 +575,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
             session_id = session_id, grad_triple_key = gtk_xw))
           rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
-            peer_pk = transport_pks[[peer]], session_id = session_id))
+            peer_pk = .to_b64url(transport_pks[[peer]]), session_id = session_id))
           if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
           r1xw[[srv]] <- rr
         }
@@ -637,8 +640,8 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           }
           grad_t_H <- .dsAgg(datasources[dealer_ci],
             call("glmRing63GenGradTriplesDS",
-                 dcf0_pk = transport_pks[[coord]],
-                 dcf1_pk = transport_pks[[nl]],
+                 dcf0_pk = .to_b64url(transport_pks[[coord]]),
+                 dcf1_pk = .to_b64url(transport_pks[[nl]]),
                  n = as.integer(n_obs), p = p_shared,
                  ring = 127L, session_id = session_id))
           if (is.list(grad_t_H) && length(grad_t_H) == 1L)
@@ -654,7 +657,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
             .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
               session_id = session_id, grad_triple_key = gtk_H))
             rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
-              peer_pk = transport_pks[[peer]], session_id = session_id))
+              peer_pk = .to_b64url(transport_pks[[peer]]), session_id = session_id))
             if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
             r1H[[srv]] <- rr
           }
