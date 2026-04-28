@@ -487,6 +487,11 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     one_fp_b64_127 <- dsVert:::.callMpcTool("k2-float-to-fp", list(
       values = array(1.0, dim = 1L),
       frac_bits = 50L, ring = "ring127"))$fp_data
+    # Strip '=' / '+' / '/' so the Opal DSL parser doesn't reject the
+    # public_const_fp argument inside the `call(...)` expression.
+    # Server-side `.b64_pad` (ring127SplinelessDS.R:51) restores the
+    # padding before decoding.
+    one_fp_b64_127 <- .to_b64url(one_fp_b64_127)
 
     # Build W_kl_share keys: diagonal (k=l) via p_k·(1-p_k), cross via
     # p_k·p_l (with sign applied at assembly).
@@ -721,6 +726,23 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         rows_kl <- ((ki - 1L) * p + 1L):(ki * p)
         cols_kl <- ((li - 1L) * p + 1L):(li * p)
         H_emp_full[rows_kl, cols_kl] <- H_block_signed
+        # Per-block aggregate-only audit diagnostic for the H_emp
+        # cross-block sign-anomaly investigation (dsVert#4). All
+        # quantities printed here are already revealed at the audit
+        # boundary via `k2-ring63-aggregate` (sum_W, XtW_formula) +
+        # column-by-column aggregate matvec (H_slope_formula);
+        # printing summary stats does NOT introduce a new emission
+        # category (D-INV-1/2 preserved). Fields:
+        #   sum_W       — scalar Σᵢ W_kl_i (already revealed)
+        #   |XtW|       — max abs of revealed length-p_shared vector
+        #   H_diag_*    — min/max of revealed slope-slope diagonal
+        #   sign_kl     — client-side ±1 sign factor
+        H_diag_vals <- diag(H_slope_formula)
+        cat(sprintf(
+          "[MnlJoint iter %d block (k=%d,l=%d)] sum_W=% .3e |XtW|_max=%.3e H_diag min=% .3e max=% .3e count_neg=%d sign_kl=%+d\n",
+          outer, ki, li, sum_W, max(abs(XtW_formula)),
+          min(H_diag_vals), max(H_diag_vals),
+          sum(H_diag_vals < 0), sign_kl))
       }
     }
     # Symmetrise the full assembled H_emp (numerical noise across blocks).
