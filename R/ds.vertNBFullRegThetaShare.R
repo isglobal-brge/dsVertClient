@@ -109,33 +109,12 @@
 }
 
 
-# Pick the rescale factor for log argument-reduction. (μ + θ) operating
-# range is approximately [θ, θ + exp(η_max)]. For η ∈ [-23, 23] (clamped)
-# this is wide; in practice the post-Poisson-warm η stays in [-5, 5]
-# giving μ ∈ [0.007, 148]. Conservative scale maps the upper edge to 10
-# (top of Chebyshev core). Lower elements may dip below 1 (Chebyshev
-# core lower bound) where rel error degrades but stays bounded —
-# Trefethen ATAP §8.2 Bernstein ellipse beyond [a, b] grows like ρ^(N+1)
-# rather than ρ^N, but for ρ≈1.94 and degree 40 still yields rel ≲ 1e-8
-# down to ~0.5 (Numerical Recipes 3rd ed §5.8). Higher-order outliers
-# (μ+θ > 250) clip via the eta clamp at upstream.
-.nb_fullreg_nd_log_scale <- function(theta, eta_max = 5.0) {
-  # Conservative eta_max=5 ensures scale·(μ_max + θ) ≤ 10 even for
-  # extreme μ ≈ exp(5) = 148. Empirically: tighter eta_max=3 caused
-  # catastrophic Chebyshev extrapolation failure when scaled lower
-  # bound dipped below ~0.5 (Runge phenomenon outside fit interval).
-  # eta_max=5 keeps all elements in [scale·θ, 10] where scale·θ
-  # for θ ∈ [0.5, 5] lies in [0.0034, 0.034] — far below [1, 10]
-  # core, but in a regime where the Chebyshev polynomial is at least
-  # bounded (not exploding) and rel error is ≲ 3e-3 per element. This
-  # bounds the score noise floor at ~0.6 → |Δθ| ≈ 5e-2, ratio ≈ 10×
-  # MARGINAL. Sub-noise (≥100×) requires multi-core piecewise log
-  # primitives or DCF-based per-element argument reduction (deferred).
-  upper <- as.numeric(theta) + exp(eta_max)
-  scale <- 10 / upper
-  list(scale = scale, log_correction = -log(scale))
-}
-
+# Note: prior `.nb_fullreg_nd_log_scale` plaintext-rescale heuristic was
+# removed when the NR-LOG path landed (commits 2026-04-29). The single-
+# scale [1, 10] core extended-log primitive bottlenecked at MARGINAL
+# 11.6× σ-probe ratio because most NB operating-range elements fell
+# outside [1, 10]. NR-LOG on wide-Chebyshev [0.1, 1000] seed + 5 NR
+# iters drives rel to ULP regardless of operating range.
 
 # Per-Newton-iter share-domain score evaluation. Returns scalar score +
 # deriv built from share-revealed scalar aggregates per Lawless 1987.
@@ -176,20 +155,16 @@
       n = as.integer(n_obs), session_id = session_id))
   }
 
-  # === Step 3: log(μ + θ)_share via plaintext-rescale extended log ===
-  ls <- .nb_fullreg_nd_log_scale(theta)
-  scale_fp_b64 <- .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
-    values = array(ls$scale, dim = 1L),
-    frac_bits = 50L, ring = "ring127"))$fp_data)
-  log_corr_fp_b64 <- .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
-    values = array(ls$log_correction, dim = 1L),
-    frac_bits = 50L, ring = "ring127"))$fp_data)
-  .ring127_log_round_keyed_extended(
+  # === Step 3: log(μ + θ)_share via NR-LOG (Pugh 2004 §3) ===
+  # Wide-Chebyshev seed on [0.1, 1000] degree 60 + 5 NR iters of
+  # y_{n+1} = y_n + x · exp(-y_n) - 1 (quadratic convergence,
+  # Goldschmidt 1964). Drives rel error to ~7.8e-27 ≪ ULP 2^-50,
+  # eliminating the plaintext-rescale single-scale precision floor
+  # that bottlenecked the previous extended-log path at MARGINAL 11.6×.
+  .ring127_log_round_keyed_nr(
     in_key = "k2_nb_mupt_share_fp",
     out_key = "k2_nb_log_mupt_share_fp",
     n = n_obs,
-    scale_fp_b64 = scale_fp_b64,
-    log_scale_correction_fp_b64 = log_corr_fp_b64,
     datasources = datasources, dealer_ci = dealer_ci,
     server_list = server_list, server_names = server_names,
     y_server = y_server, nl = nl,
@@ -282,8 +257,8 @@
 
   if (isTRUE(verbose))
     message(sprintf(
-      "[NBFullRegND] θ=%.4f  score=%+.4e  deriv=%+.4e  n=%d  scale=%.3f  Σlog(μ+θ)=%.3f  Σ1/(θ+μ)=%.3f  Σ(y+θ)/(θ+μ)=%.3f  Σ(y+θ)/(θ+μ)²=%.3f  Σψ=%.3f  Σψ_1=%.3f",
-      theta, score_val, deriv_val, n_ret, ls$scale,
+      "[NBFullRegND] θ=%.4f  score=%+.4e  deriv=%+.4e  n=%d  Σlog(μ+θ)=%.3f  Σ1/(θ+μ)=%.3f  Σ(y+θ)/(θ+μ)=%.3f  Σ(y+θ)/(θ+μ)²=%.3f  Σψ=%.3f  Σψ_1=%.3f",
+      theta, score_val, deriv_val, n_ret,
       sum_log_mupt, sum_inv_tmu, sum_ypt_over_tmu,
       sum_ypt_over_tmu2, sum_psi, sum_tri))
 
@@ -293,6 +268,5 @@
          sum_inv_tmu = sum_inv_tmu,
          sum_ypt_over_tmu = sum_ypt_over_tmu,
          sum_ypt_over_tmu2 = sum_ypt_over_tmu2,
-         sum_psi = sum_psi, sum_tri = sum_tri,
-         scale_used = ls$scale))
+         sum_psi = sum_psi, sum_tri = sum_tri))
 }

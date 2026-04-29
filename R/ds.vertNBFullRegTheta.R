@@ -349,9 +349,8 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
         transport_pks = transport_pks, session_id = session_id,
         .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose),
         error = function(e) {
-          if (isTRUE(verbose))
-            message(sprintf("[NBFullRegND] score eval ERR at θ=%.4f: %s",
-                             th, conditionMessage(e)))
+          message(sprintf("[NBFullRegND] score eval ERR at θ=%.4f: %s",
+                           th, conditionMessage(e)))
           list(score = NA_real_, deriv = NA_real_, n = n_obs)
         })
     }
