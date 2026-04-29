@@ -432,19 +432,50 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     }
 
     # H_emp activation gate. Default FALSE per reviewer architectural
-    # call 2026-04-28 (option 2): L3 first-real-Opal sweep against the
-    # H_emp pipeline produced max|Δπ|=1.19e-1 vs the prior Bohning
-    # baseline 4.86e-2 (regression rather than the 16x improvement
-    # claimed in the L2-only commit message), with iter 4 H_emp_full
-    # diagonal containing a single sign-flipped entry of magnitude
-    # ≈10^6 — non-physical for X^T diag(p(1-p)) X which is PSD by
-    # construction. Root cause is a sign-anomaly inside the MPC
-    # W_kl_share Beaver vecmul chain; L2 mock did not surface it.
-    # Per David's hard criterion (TG uid 995154407) "non-disclosive
-    # AND no bugs / accurate" outranks the H_emp accuracy gain. The
-    # H_emp scaffolding (lines below) stays in source so the L3
-    # investigation can re-enable it once the iter-4 sign-anomaly is
-    # root-caused and patched. Tracking issue: dsVert#3 (or successor).
+    # call 2026-04-29: Bohning B_reg ships as the production Hessian.
+    #
+    # Diagnostic history. The first L3 sweep of the H_emp pipeline at
+    # SHA fe03cf1 produced max|Δπ| = 1.19e-1 (regression vs the prior
+    # Bohning baseline 4.86e-2) with iter-4 H_emp_full containing a
+    # single sign-flipped diagonal entry of magnitude ≈10^6 — non-
+    # physical for X^T diag(p(1-p)) X which is PSD by construction.
+    # Root cause was localised to base64 padding in the
+    # `public_const_fp = one_fp_b64_127` argument passed into the
+    # `k2Ring127AffineCombineDS` call expression: the Opal DSL parser
+    # rejects '=' / '+' / '/' inside expression strings under certain
+    # column-position layouts, silently corrupting the (1-p_k) share
+    # for the iteration where the layout boundary triggered. Patch
+    # at commit 8302028 wraps the constant via .to_b64url before
+    # passing it into the call; server-side `.b64_pad`
+    # (ring127SplinelessDS.R:51) restores the padding before decode,
+    # preserving the round-trip. The path was NOT a Ring127 sign-
+    # extension primitive bug (H1) nor a cross-server aggregation
+    # sign-bit issue (H2) nor an R-side buffer reuse (H3) — it was a
+    # plain base64-encoding mismatch at the orchestrator boundary.
+    #
+    # Post-fix L3 validation (10 iter, K=2, n=132, NHANES bp tertile,
+    # 8302028): all four (k,l) blocks reported count_neg=0 across all
+    # iterations; final max|Δπ| = 4.99e-2 PRACTICAL, matching the
+    # Bohning baseline (4.70e-2) within sampling-noise of the dataset
+    # draw. The ~16x accuracy improvement promised by the L2 mock
+    # (rel = 5.4e-4) does not transfer to L3: the noise floor at
+    # fracBits=50 ring127 with the present Beaver matvec chain depth
+    # is dominated by the gradient-side share-space arithmetic, which
+    # both Bohning and H_emp share equally. Improving the Hessian
+    # alone cannot push below this floor at L3.
+    #
+    # Architectural decision (reviewer 2026-04-29 option 2): ship
+    # Bohning B_reg as default for production runs (~3x fewer MPC
+    # rounds per iter for identical L3 numerical quality). The H_emp
+    # scaffolding remains in source as opt-in via
+    # `options(dsvert.mnl_joint_h_emp = TRUE)` for any future
+    # deployment with a lower gradient-chain noise floor (e.g., longer
+    # Beaver chains, deeper rings, mixed-precision splines) where the
+    # Hessian quality becomes the binding constraint again.
+    #
+    # Non-disclosure invariants (D-INV-1/2/3) preserved by the
+    # parser-fix patch: .to_b64url operates on a base64-encoded public
+    # constant, never on per-patient values; no new emission category.
     use_h_emp <- isTRUE(getOption("dsvert.mnl_joint_h_emp", FALSE))
     H_emp_ok <- FALSE
     H_emp_full <- NULL
