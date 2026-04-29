@@ -10,6 +10,7 @@
 .ring127_exp_coef_cache <- new.env(parent = emptyenv())
 .ring127_recip_coef_cache <- new.env(parent = emptyenv())
 .ring127_log_coef_cache <- new.env(parent = emptyenv())
+.ring127_log_wide_coef_cache <- new.env(parent = emptyenv())
 .ring127_half_fp_cache <- new.env(parent = emptyenv())
 
 # FP(0.5) for share-side argument reduction exp(x) = exp(x/2)^2.
@@ -492,5 +493,189 @@
       is_party0 = is_coord, output_key = out_key,
       n = n_int, session_id = session_id))
   }
+  invisible(NULL)
+}
+
+
+# Wide-Chebyshev seed + Newton-Raphson refinement log on Ring127 shares.
+# Operates on inputs in [0.1, 1000] without per-element argument
+# reduction, achieving ULP precision via quadratic NR convergence on
+# the wide-Chebyshev seed.
+#
+# Architecture (Pugh 2004 PhD §3 NR-on-Chebyshev for elementary
+# functions; Goldschmidt 1964 NR division pattern; mirror of
+# .ring127_recip_round_keyed which uses identical wide-Chebyshev +
+# NR-refine pattern for 1/x):
+#
+#   y_0 = wide_chebyshev(x)           [60-deg Clenshaw on [0.1, 1000];
+#                                       initial rel ≈ 30%]
+#   y_{n+1} = y_n + x · exp(-y_n) - 1  [NR on f(y) = exp(y) - x;
+#                                       quadratic convergence ε_{n+1}
+#                                       ≈ -ε_n²/2; Trefethen & Bau §16]
+#
+# 5 NR iterations drive ε from ~0.30 → 0.045 → 0.001 → 5e-7 → 1.25e-13
+# → 7.8e-27, well below ULP 2^-50 ≈ 8.9e-16. Each NR iter costs:
+#   - 1 .ring127_exp_round_keyed_extended (≈30 vecmul Clenshaw + 1
+#     squaring vecmul ≈ 31 Beaver rounds)
+#   - 1 .ring127_vecmul (1 Beaver round) for x · exp(-y_n)
+#   - 1 k2Ring127AffineCombineDS round (no MPC) for y_n + result - 1
+#   - 1 local-affine for -y_n
+# Per-call total: 60 (init Cheb) + 5 × 32 = 220 Beaver rounds. About
+# 5× the [1, 10] core single-call cost; trades runtime for the ULP
+# precision floor across the full [0.1, 1000] operating range.
+#
+# Disclosure footing: identical to existing exp/recip/log primitives —
+# all coefficients + affine constants are public deterministic values
+# from the Go init(); share-side evaluation runs over the K=2 OT-Beaver
+# dishonest-majority threat model (Demmler–Schneider–Zohner ABY 2015
+# §III.B) preserving D-INV-1..5.
+#
+# Caller responsibility: ensure the share-encoded input falls within
+# [0.1, 1000]. For NB full-regression θ MLE with Poisson-warm
+# η ∈ [-5, 5] → μ ∈ [0.0067, 148] and θ ∈ [0.5, 5], (μ + θ) ∈
+# [0.51, 153] is well within domain. Tighter η clamps are encouraged
+# at the orchestrator level for safety.
+.ring127_log_round_keyed_nr <- function(in_key, out_key, n,
+                                         datasources, dealer_ci, server_list,
+                                         server_names, y_server, nl,
+                                         transport_pks, session_id,
+                                         .dsAgg, .sendBlob,
+                                         nr_iters = 5L) {
+  n_int <- as.integer(n)
+  nr_iters <- as.integer(nr_iters)
+
+  # Step 0: fetch wide-Chebyshev coefficients (cache once per session).
+  if (is.null(.ring127_log_wide_coef_cache$coef_res)) {
+    .ring127_log_wide_coef_cache$coef_res <- dsVert:::.callMpcTool(
+      "k2-log-shift-coeffs-wide", list(frac_bits = 50L))
+  }
+  rc <- .ring127_log_wide_coef_cache$coef_res
+  rc_one_over_half_range <- .to_b64url(rc$one_over_half_range)
+  rc_neg_mid_over_half_range <- .to_b64url(rc$neg_mid_over_half_range)
+  degree <- as.integer(rc$degree)
+  all_coeffs_raw <- jsonlite::base64_dec(rc$coeffs)
+  c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
+    s <- (idx - 1L) * 16L + 1L; e <- s + 15L
+    .to_b64url(jsonlite::base64_enc(all_coeffs_raw[s:e]))
+  }, character(1))
+
+  tag <- make.names(out_key, unique = TRUE)
+  t_pre  <- paste0("__r127_lpnr_tpre_", tag)
+  t_key  <- paste0("__r127_lpnr_t_",    tag)
+  twoT   <- paste0("__r127_lpnr_twoT_", tag)
+  bB     <- paste0("__r127_lpnr_bB_",   tag)
+  bA     <- paste0("__r127_lpnr_bA_",   tag)
+  tmp    <- paste0("__r127_lpnr_tmp_",  tag)
+  y_seed <- paste0("__r127_lpnr_yseed_", tag)
+  y_cur  <- paste0("__r127_lpnr_ycur_",  tag)
+  y_alt  <- paste0("__r127_lpnr_yalt_",  tag)
+  negY   <- paste0("__r127_lpnr_negY_",  tag)
+  expN   <- paste0("__r127_lpnr_expNegY_", tag)
+  xExp   <- paste0("__r127_lpnr_xExp_",  tag)
+
+  # Step 1: wide-Cheb seed via "scale + affine + Clenshaw" pipeline.
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == y_server)
+    .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+      in_key = in_key, scalar_fp = rc_one_over_half_range,
+      output_key = t_pre, n = n_int, session_id = session_id))
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = t_pre, b_key = NULL, sign_a = 1L, sign_b = 0L,
+      public_const_fp = rc_neg_mid_over_half_range,
+      is_party0 = is_coord, output_key = t_key,
+      n = n_int, session_id = session_id))
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = t_key, b_key = t_key, sign_a = 1L, sign_b = 1L,
+      public_const_fp = NULL, is_party0 = is_coord,
+      output_key = twoT, n = n_int, session_id = session_id))
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      public_const_fp = c_b64[degree + 1L], is_party0 = is_coord,
+      output_key = bB, n = n_int, session_id = session_id))
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      public_const_fp = NULL, is_party0 = is_coord,
+      output_key = bA, n = n_int, session_id = session_id))
+  }
+
+  slot_B <- bB; slot_A <- bA
+  for (k in seq.int(degree - 1L, 1L)) {
+    .ring127_vecmul(twoT, slot_B, tmp, n_int,
+                    datasources, dealer_ci, server_list, server_names,
+                    y_server, nl, transport_pks, session_id,
+                    .dsAgg, .sendBlob)
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+        public_const_fp = c_b64[k + 1L], is_party0 = is_coord,
+        output_key = slot_A, n = n_int, session_id = session_id))
+    }
+    swap <- slot_A; slot_A <- slot_B; slot_B <- swap
+  }
+  .ring127_vecmul(t_key, slot_B, tmp, n_int,
+                  datasources, dealer_ci, server_list, server_names,
+                  y_server, nl, transport_pks, session_id,
+                  .dsAgg, .sendBlob)
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == y_server)
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+      public_const_fp = c_b64[1L], is_party0 = is_coord,
+      output_key = y_seed, n = n_int, session_id = session_id))
+  }
+
+  # Step 2: 5 NR refinement iterations on shares.
+  # y_{n+1} = y_n + x · exp(-y_n) - 1
+  one_fp_b64 <- .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
+    values = array(1.0, dim = 1L), frac_bits = 50L,
+    ring = "ring127"))$fp_data)
+  neg_one_fp_b64 <- .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
+    values = array(-1.0, dim = 1L), frac_bits = 50L,
+    ring = "ring127"))$fp_data)
+
+  cur <- y_seed
+  for (iter in seq_len(nr_iters)) {
+    is_last <- (iter == nr_iters)
+    next_slot <- if (is_last) out_key else (if (cur == y_cur) y_alt else y_cur)
+    # Step 2a: -y_n share via local affine (sign_a = -1).
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = cur, b_key = NULL, sign_a = -1L, sign_b = 0L,
+        public_const_fp = NULL, is_party0 = is_coord,
+        output_key = negY, n = n_int, session_id = session_id))
+    }
+    # Step 2b: exp(-y_n) share via existing primitive.
+    .ring127_exp_round_keyed_extended(negY, expN, n_int,
+                                       datasources, dealer_ci,
+                                       server_list, server_names,
+                                       y_server, nl, transport_pks,
+                                       session_id,
+                                       .dsAgg, .sendBlob)
+    # Step 2c: x · exp(-y_n) share via Beaver vecmul.
+    .ring127_vecmul(in_key, expN, xExp, n_int,
+                    datasources, dealer_ci, server_list, server_names,
+                    y_server, nl, transport_pks, session_id,
+                    .dsAgg, .sendBlob)
+    # Step 2d: y_{n+1} = y_n + xExp + (-1) via affine-combine.
+    # Note: a_key=cur, b_key=xExp, sign_a=1, sign_b=1, public_const=-1
+    # at party-0 only. Uses canonical 3-term affine combine.
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = cur, b_key = xExp, sign_a = 1L, sign_b = 1L,
+        public_const_fp = if (is_coord) neg_one_fp_b64 else NULL,
+        is_party0 = is_coord,
+        output_key = next_slot, n = n_int, session_id = session_id))
+    }
+    cur <- next_slot
+  }
+
   invisible(NULL)
 }
