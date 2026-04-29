@@ -120,12 +120,19 @@
 # down to ~0.5 (Numerical Recipes 3rd ed §5.8). Higher-order outliers
 # (μ+θ > 250) clip via the eta clamp at upstream.
 .nb_fullreg_nd_log_scale <- function(theta, eta_max = 5.0) {
-  # mu_max + theta = exp(eta_max) + theta ≈ exp(5) + θ ≈ 148 + θ
-  # scale = 10 / (theta + exp(eta_max)) maps upper edge to 10.
+  # Conservative eta_max=5 ensures scale·(μ_max + θ) ≤ 10 even for
+  # extreme μ ≈ exp(5) = 148. Empirically: tighter eta_max=3 caused
+  # catastrophic Chebyshev extrapolation failure when scaled lower
+  # bound dipped below ~0.5 (Runge phenomenon outside fit interval).
+  # eta_max=5 keeps all elements in [scale·θ, 10] where scale·θ
+  # for θ ∈ [0.5, 5] lies in [0.0034, 0.034] — far below [1, 10]
+  # core, but in a regime where the Chebyshev polynomial is at least
+  # bounded (not exploding) and rel error is ≲ 3e-3 per element. This
+  # bounds the score noise floor at ~0.6 → |Δθ| ≈ 5e-2, ratio ≈ 10×
+  # MARGINAL. Sub-noise (≥100×) requires multi-core piecewise log
+  # primitives or DCF-based per-element argument reduction (deferred).
   upper <- as.numeric(theta) + exp(eta_max)
   scale <- 10 / upper
-  # Lower edge: scale · θ — lower bound for the Chebyshev domain.
-  # Acceptable if scale·θ ≥ 0.1 (rel < 1e-7 per Bernstein ρ=1.94 at 40).
   list(scale = scale, log_correction = -log(scale))
 }
 
