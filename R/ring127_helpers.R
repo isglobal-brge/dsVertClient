@@ -9,6 +9,7 @@
 
 .ring127_exp_coef_cache <- new.env(parent = emptyenv())
 .ring127_recip_coef_cache <- new.env(parent = emptyenv())
+.ring127_log_coef_cache <- new.env(parent = emptyenv())
 .ring127_half_fp_cache <- new.env(parent = emptyenv())
 
 # FP(0.5) for share-side argument reduction exp(x) = exp(x/2)^2.
@@ -324,5 +325,172 @@
                   datasources, dealer_ci, server_list, server_names,
                   y_server, nl, transport_pks, session_id,
                   .dsAgg, .sendBlob)
+  invisible(NULL)
+}
+
+# Clenshaw log-shift Horner on Ring127 shares with keyed IO. Evaluates
+# log(x) for x in the public Chebyshev core domain [Ring127LogShiftMin,
+# Ring127LogShiftMax] = [1, 10] at fracBits=50 (rel ≲ 1e-12 per
+# Trefethen ATAP §8 + Bernstein ellipse ρ≈1.94 at degree 40).
+#
+# Mirrors .ring127_recip_round_keyed exactly through the Clenshaw stage —
+# the affine "scale + offset" maps x ∈ [1, 10] onto t ∈ [-1, 1], then a
+# 41-step Clenshaw recurrence assembles log(x) via Beaver vecmul +
+# AffineCombine. No NR refinement needed: Chebyshev-only evaluation
+# already achieves the Catrina–Saxena 2010 §3.3 ULP floor at fracBits=50.
+#
+# Disclosure note (per K=2 OT-Beaver dishonest-majority threat model):
+# coefficients + affine constants are public deterministic values from
+# the Go init() — distributing them leaks nothing. Beaver vecmul +
+# AffineCombine pipeline is the same threat-model footing as exp/recip.
+#
+# Caller responsibility: ensure share-domain input encodes a value in
+# [1, 10]. For NB full-regression θ MLE, μ+θ may exceed this range and
+# the orchestrator must perform argument reduction first (e.g. divide
+# by a known plaintext rescale factor and add the corresponding
+# log-correction post-hoc, leveraging log(c·x) = log(c) + log(x)).
+.ring127_log_round_keyed <- function(in_key, out_key, n,
+                                     datasources, dealer_ci, server_list,
+                                     server_names, y_server, nl,
+                                     transport_pks, session_id,
+                                     .dsAgg, .sendBlob) {
+  n_int <- as.integer(n)
+  if (is.null(.ring127_log_coef_cache$coef_res)) {
+    .ring127_log_coef_cache$coef_res <- dsVert:::.callMpcTool(
+      "k2-log-shift-coeffs", list(frac_bits = 50L))
+  }
+  rc <- .ring127_log_coef_cache$coef_res
+  rc_one_over_half_range <- .to_b64url(rc$one_over_half_range)
+  rc_neg_mid_over_half_range <- .to_b64url(rc$neg_mid_over_half_range)
+  degree <- as.integer(rc$degree)
+  all_coeffs_raw <- jsonlite::base64_dec(rc$coeffs)
+  c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
+    s <- (idx - 1L) * 16L + 1L; e <- s + 15L
+    .to_b64url(jsonlite::base64_enc(all_coeffs_raw[s:e]))
+  }, character(1))
+
+  tag <- make.names(out_key, unique = TRUE)
+  t_pre <- paste0("__r127_lp_tpre_", tag)
+  t_key <- paste0("__r127_lp_t_",    tag)
+  twoT  <- paste0("__r127_lp_twoT_", tag)
+  bB    <- paste0("__r127_lp_bB_",   tag)
+  bA    <- paste0("__r127_lp_bA_",   tag)
+  tmp   <- paste0("__r127_lp_tmp_",  tag)
+
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == y_server)
+    .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+      in_key = in_key, scalar_fp = rc_one_over_half_range,
+      output_key = t_pre, n = n_int, session_id = session_id))
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = t_pre, b_key = NULL, sign_a = 1L, sign_b = 0L,
+      public_const_fp = rc_neg_mid_over_half_range,
+      is_party0 = is_coord, output_key = t_key,
+      n = n_int, session_id = session_id))
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = t_key, b_key = t_key, sign_a = 1L, sign_b = 1L,
+      public_const_fp = NULL, is_party0 = is_coord,
+      output_key = twoT, n = n_int, session_id = session_id))
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      public_const_fp = c_b64[degree + 1L], is_party0 = is_coord,
+      output_key = bB, n = n_int, session_id = session_id))
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      public_const_fp = NULL, is_party0 = is_coord,
+      output_key = bA, n = n_int, session_id = session_id))
+  }
+
+  slot_B <- bB; slot_A <- bA
+  for (k in seq.int(degree - 1L, 1L)) {
+    .ring127_vecmul(twoT, slot_B, tmp, n_int,
+                    datasources, dealer_ci, server_list, server_names,
+                    y_server, nl, transport_pks, session_id,
+                    .dsAgg, .sendBlob)
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+        public_const_fp = c_b64[k + 1L], is_party0 = is_coord,
+        output_key = slot_A, n = n_int, session_id = session_id))
+    }
+    swap <- slot_A; slot_A <- slot_B; slot_B <- swap
+  }
+  .ring127_vecmul(t_key, slot_B, tmp, n_int,
+                  datasources, dealer_ci, server_list, server_names,
+                  y_server, nl, transport_pks, session_id,
+                  .dsAgg, .sendBlob)
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == y_server)
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+      public_const_fp = c_b64[1L], is_party0 = is_coord,
+      output_key = out_key, n = n_int, session_id = session_id))
+  }
+  invisible(NULL)
+}
+
+# Argument-reduced log for share-space: evaluates log(x) for x in a wider
+# operating range by rescaling the shared input by a public plaintext
+# scale factor that maps x into the [1, 10] Chebyshev core, then
+# correcting via log(c·x) = log(c) + log(x) post-hoc as a public
+# constant added by party-0 in a final AffineCombine.
+#
+# The rescale factor `scale_fp_b64` is supplied by the caller as a public
+# Ring127 FP value; the caller is responsible for selecting it so that
+# scale·x ∈ [1, 10] across the operating range. A common pattern for
+# NB full-regression θ MLE: μ + θ ∈ [θ, ~θ + exp(η_max)]; if θ ≥ 1 and
+# η ∈ [-5, 5] gives μ ≤ ~150, scale = 1/15 maps μ+θ into roughly
+# [θ/15, 10]. The caller computes log_scale_correction = log(1/scale)
+# at plaintext (it is public — `scale` is a public const) and passes
+# its FP encoding via `log_scale_correction_fp_b64` as the additive
+# party-0 const in the final affine step.
+#
+# Disclosure note: scale_fp and log_scale_correction_fp are public
+# plaintext constants; supplying them does not leak share state.
+.ring127_log_round_keyed_extended <- function(in_key, out_key, n,
+                                              scale_fp_b64,
+                                              log_scale_correction_fp_b64,
+                                              datasources, dealer_ci, server_list,
+                                              server_names, y_server, nl,
+                                              transport_pks, session_id,
+                                              .dsAgg, .sendBlob) {
+  n_int <- as.integer(n)
+  scaled_key <- paste0(in_key, "_ext_scaled")
+  log_scaled_key <- paste0(out_key, "_ext_logscaled")
+
+  # Step 1: locally rescale input by `scale` (no MPC round). After this
+  # step, scaled_share encodes scale · x, which the caller has guaranteed
+  # falls in [1, 10].
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+      in_key = in_key, scalar_fp = scale_fp_b64,
+      output_key = scaled_key, n = n_int, session_id = session_id))
+  }
+
+  # Step 2: evaluate log on the rescaled share (Chebyshev core [1, 10]).
+  .ring127_log_round_keyed(scaled_key, log_scaled_key, n,
+                           datasources, dealer_ci, server_list,
+                           server_names, y_server, nl,
+                           transport_pks, session_id,
+                           .dsAgg, .sendBlob)
+
+  # Step 3: add the public log-correction log(1/scale) so that the
+  # final share encodes log(x) = log(scale·x) + log(1/scale). One
+  # AffineCombine round (party-0 absorbs the constant; party-1's
+  # contribution is identity).
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == y_server)
+    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      a_key = log_scaled_key, b_key = NULL, sign_a = 1L, sign_b = 0L,
+      public_const_fp = log_scale_correction_fp_b64,
+      is_party0 = is_coord, output_key = out_key,
+      n = n_int, session_id = session_id))
+  }
   invisible(NULL)
 }
