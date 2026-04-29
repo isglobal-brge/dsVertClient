@@ -54,8 +54,9 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                                   joint = TRUE, theta_max_iter = 5L,
                                   theta_tol = 1e-3, variant = "corrected",
                                   verbose = TRUE, datasources = NULL, ...) {
-  if (!variant %in% c("iid_mu", "corrected", "full_reg")) {
-    stop("variant must be 'iid_mu', 'corrected', or 'full_reg'", call. = FALSE)
+  if (!variant %in% c("iid_mu", "corrected", "full_reg", "full_reg_nd")) {
+    stop("variant must be 'iid_mu', 'corrected', 'full_reg', or 'full_reg_nd'",
+         call. = FALSE)
   }
 
   base_fit <- ds.vertNB(formula = formula, data = data, theta = theta,
@@ -227,6 +228,158 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     out$theta_iid <- theta_iid
     out$variance_correction <- NA_real_
     out$variant <- "full_reg"
+    out$std_errors <- pf$std_errors * var_inflation
+    out$z_values <- pf$coefficients / out$std_errors
+    out$p_values <- 2 * stats::pnorm(-abs(out$z_values))
+    out$covariance <- if (!is.null(pf$covariance))
+      pf$covariance * var_inflation^2 else NULL
+    out$var_inflation <- var_inflation
+    class(out) <- c("ds.vertNBFullRegTheta", class(out))
+    return(out)
+  }
+
+  # ============================================================
+  # Non-disclosive full-regression θ MLE — share-domain pipeline
+  # ============================================================
+  # Closes D-INV-4 (per-patient η^nl reveal at label, present in the
+  # legacy "full_reg" variant). η^nl stays in Ring127 additive secret
+  # shares end-to-end through μ = exp(η)_share, log(μ+θ)_share,
+  # 1/(θ+μ)_share and (y+θ)·1/(θ+μ)_share via Beaver vecmul +
+  # AffineCombine + Chebyshev-Clenshaw primitives. Only the four
+  # scalar aggregates Σlog(μ+θ), Σ1/(θ+μ), Σ(y+θ)/(θ+μ),
+  # Σ(y+θ)/(θ+μ)² (plus label-only Σψ(y+θ), Σψ_1(y+θ)) are revealed
+  # per Newton-θ iter.
+  #
+  # Refs: Lawless 1987 *Can. J. Statist.* 15(3):209–225 (NB profile-MLE
+  # θ score); Venables–Ripley 2002 *MASS* §7.4 (\code{glm.nb} Newton);
+  # Catrina–Saxena 2010 *Financial Cryptography* §3.3 (multiplicative-
+  # depth ULP); Beaver 1991 *CRYPTO* §3 (precomputed multiplication
+  # triples); Demmler–Schneider–Zohner ABY 2015 §III.B (K=2 OT-Beaver
+  # dishonest-majority); Trefethen ATAP §8 (Bernstein-ellipse Cheb).
+  if (identical(variant, "full_reg_nd")) {
+    if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
+    server_names <- names(datasources)
+    y_var_char <- .ds_gee_extract_lhs(formula)
+    y_srv <- .ds_gee_find_server_holding(datasources, server_names, data, y_var_char)
+    if (is.null(y_srv)) stop("outcome server not found", call. = FALSE)
+    nl_srv <- setdiff(server_names, y_srv)
+    if (length(nl_srv) != 1L)
+      stop("full_reg_nd variant requires exactly one non-label server (K=2)",
+           call. = FALSE)
+    y_ci  <- which(server_names == y_srv)
+    nl_ci <- which(server_names == nl_srv)
+
+    # Identify which features live on each server.
+    rhs <- attr(stats::terms(formula), "term.labels")
+    r_y <- DSI::datashield.aggregate(datasources[y_ci],
+      call("dsvertColNamesDS", data_name = data))
+    if (is.list(r_y) && length(r_y) == 1L) r_y <- r_y[[1L]]
+    cols_y <- if (is.list(r_y)) r_y$columns else r_y
+    r_nl <- DSI::datashield.aggregate(datasources[nl_ci],
+      call("dsvertColNamesDS", data_name = data))
+    if (is.list(r_nl) && length(r_nl) == 1L) r_nl <- r_nl[[1L]]
+    cols_nl <- if (is.list(r_nl)) r_nl$columns else r_nl
+    x_label <- intersect(rhs, cols_y)
+    x_nl    <- intersect(rhs, cols_nl)
+
+    # β-slice per server from the Poisson fit's revealed β.
+    beta_all <- base_fit$poisson_fit$coefficients
+    int_val  <- beta_all[["(Intercept)"]]
+    beta_label <- beta_all[x_label]
+    beta_nl    <- beta_all[x_nl]
+
+    session_id <- paste0("nbfullregnd_", as.integer(Sys.time()),
+                          "_", sample.int(.Machine$integer.max, 1L))
+
+    # Closures to abstract the DataSHIELD aggregate / blob-relay calls
+    # so the orchestrator can be invoked under both real-Opal and
+    # local-harness test fixtures (mirrors ord_joint / mnl_joint .dsAgg
+    # / .sendBlob plumbing).
+    .dsAgg <- function(conns, expr) DSI::datashield.aggregate(conns, expr)
+    .sendBlob <- function(blob, key, target_ci) {
+      .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
+        if (n_chunks == 1L) {
+          DSI::datashield.aggregate(datasources[target_ci],
+            call("mpcStoreBlobDS", key = key,
+                 chunk = chunk_str, session_id = session_id))
+        } else {
+          DSI::datashield.aggregate(datasources[target_ci],
+            call("mpcStoreBlobDS", key = key,
+                 chunk = chunk_str, chunk_index = chunk_idx,
+                 n_chunks = n_chunks, session_id = session_id))
+        }
+      })
+    }
+
+    # One-time session setup: NL splits η^nl, label receives + assembles
+    # η_total share (closes D-INV-4 across both parties).
+    setup <- .nb_fullreg_nd_session_setup(
+      formula = formula, data = data, base_fit = base_fit,
+      datasources = datasources, server_names = server_names,
+      y_srv = y_srv, nl_srv = nl_srv, y_ci = y_ci, nl_ci = nl_ci,
+      x_label = x_label, x_nl = x_nl,
+      beta_label = beta_label, beta_nl = beta_nl, int_val = int_val,
+      y_var_char = y_var_char, session_id = session_id,
+      .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose)
+    n_obs        <- setup$n
+    transport_pks <- setup$transport_pks
+
+    # Beaver triple dealer = NL by convention (matches ord_joint /
+    # mnl_joint K=2 K-arity contract — non-label generates triples).
+    dealer_ci <- nl_ci
+    server_list <- c(y_srv, nl_srv)
+
+    # Newton-θ loop on the share-domain score. MoM warm-init from the
+    # Poisson fit's residual moments (Venables–Ripley §7.4 default seed).
+    theta_iid <- base_fit$theta
+    y_mean <- base_fit$y_mean
+    y_var <- base_fit$y_var
+    theta_mom <- if (is.finite(y_var) && y_var > y_mean + 1e-10)
+      max(y_mean^2 / max(y_var - y_mean, 1e-6), 0.1) else NA_real_
+    theta_cur <- if (is.finite(theta_mom)) theta_mom
+                  else max(theta_iid, 1e-3)
+
+    score_eval <- function(th) {
+      tryCatch(.nb_fullreg_nd_score(
+        theta = th, n_obs = n_obs,
+        datasources = datasources, dealer_ci = dealer_ci,
+        server_list = server_list, server_names = server_names,
+        y_server = y_srv, nl = nl_srv,
+        ci_os = y_ci, ci_nl = nl_ci,
+        transport_pks = transport_pks, session_id = session_id,
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose),
+        error = function(e) {
+          message(sprintf("[NBFullRegND] score eval ERR at θ=%.4f: %s",
+                           th, conditionMessage(e)))
+          list(score = NA_real_, deriv = NA_real_, n = n_obs)
+        })
+    }
+
+    for (it in seq_len(25L)) {
+      s <- score_eval(theta_cur)
+      if (anyNA(unlist(s[c("score","deriv")]))) break
+      if (!is.finite(s$deriv) || abs(s$deriv) < 1e-12) break
+      step <- s$score / s$deriv
+      theta_new <- theta_cur - step
+      damp <- 0L
+      while (theta_new <= 1e-6 && damp < 20L) {
+        step <- step / 2; theta_new <- theta_cur - step; damp <- damp + 1L
+      }
+      if (!is.finite(theta_new) || theta_new <= 0) break
+      if (abs(theta_new - theta_cur) < 1e-6 * max(1, abs(theta_cur))) {
+        theta_cur <- theta_new; break
+      }
+      theta_cur <- theta_new
+    }
+
+    var_inflation <- if (is.finite(theta_cur) && theta_cur > 0)
+      sqrt(1 + base_fit$y_mean / theta_cur) else 1
+    pf <- base_fit$poisson_fit
+    out <- base_fit
+    out$theta <- theta_cur
+    out$theta_iid <- theta_iid
+    out$variance_correction <- NA_real_
+    out$variant <- "full_reg_nd"
     out$std_errors <- pf$std_errors * var_inflation
     out$z_values <- pf$coefficients / out$std_errors
     out$p_values <- 2 * stats::pnorm(-abs(out$z_values))
