@@ -1486,6 +1486,63 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
         use_emp_H <- TRUE
         cat(sprintf("[OrdJoint iter %d] β-Newton: empirical H (McCullagh 1980 §2.5) ACTIVE\n", outer))
       }
+      # === Block-diagonal θ-step recovery for joint-mode partial-fail ===
+      # When joint mode was requested (cross_share_emitted=TRUE on OS,
+      # implying θ update deferred at step 6b line 731-733 to avoid
+      # double-stepping), but the full joint solve fell through to the
+      # β-only empirical or Bohning path (use_joint_H=FALSE because
+      # H_emp or H_betatheta unavailable, OR solve(H_joint, g_joint)
+      # errored at line 1438), the deferred θ update is orphaned:
+      # β-step proceeds below but θ would stay frozen this iter unless
+      # we re-apply the strict McCullagh §2.5 θ-step here.
+      #
+      # Strict bound when F saturates: H_θθ McCullagh entries f_k²/P_k²
+      # SELF-REGULATE at saturation (P_k → 0 ⇒ entries grow ⇒ Newton
+      # step shrinks automatically), replacing the loose Bohning
+      # majorant H*_k = n_k/4 whose saturation-uniform looseness was
+      # the root cause of the 2026-04-26 30-min period-2 oscillation
+      # (project_session_2026-04-26_close.md). os_r$H_theta_theta is
+      # always returned by dsvertOrdinalPatientDiffsDS (ordinalJointScoreDS.R
+      # line 609), so this recovery path is unconditional whenever
+      # joint mode was requested but joint solve failed.
+      #
+      # Block-diagonal justification: Bertsekas 1999 §2.7 — for convex
+      # log-lik (Pratt 1981) with β fixed under empirical/Bohning step,
+      # θ-block sub-problem is also convex and per-block Newton with
+      # PSD per-block Hessians retains monotone descent. The cross-block
+      # H_βθ is dropped in this fallback (PSD block-diagonal envelope
+      # of the Tutz 1990 §3.2 joint Hessian), trading some quadratic
+      # convergence rate for robustness when joint solve is unavailable.
+      theta_block_recovery_applied <- FALSE
+      if (!use_joint_H && isTRUE(os_r$cross_share_emitted) &&
+          !is.null(os_r$score_theta) &&
+          !is.null(os_r$H_theta_theta) &&
+          is.matrix(os_r$H_theta_theta) &&
+          nrow(os_r$H_theta_theta) == length(theta)) {
+        st_vec_blk <- as.numeric(os_r$score_theta)
+        H_tt_blk   <- as.matrix(os_r$H_theta_theta)
+        ridge_t_blk <- 1e-6 * max(abs(diag(H_tt_blk)), 1)
+        H_tt_reg_blk <- H_tt_blk + ridge_t_blk * diag(nrow(H_tt_blk))
+        step_theta_blk <- tryCatch(
+          as.numeric(solve(H_tt_reg_blk, st_vec_blk)),
+          error = function(e) {
+            d <- pmax(diag(H_tt_reg_blk), 1e-8)
+            st_vec_blk / d
+          })
+        # theta_cap_safe=0.5 matches step 6b line 714 (empirical θ-Newton
+        # self-regulates via H_θθ; same bound applies in this fallback).
+        theta_cap_safe_blk <- 0.5
+        st_norm_blk <- max(abs(step_theta_blk))
+        if (is.finite(st_norm_blk) && st_norm_blk > theta_cap_safe_blk)
+          step_theta_blk <- step_theta_blk * (theta_cap_safe_blk / st_norm_blk)
+        theta <- setNames(as.numeric(theta) + step_theta_blk, names(theta))
+        theta_block_recovery_applied <- TRUE
+        cat(sprintf("[OrdJoint iter %d] θ BLOCK-RECOVERY (strict McCullagh §2.5; joint solve failed) step=[%s] θ→[%s]\n",
+                     outer,
+                     paste(sprintf("%.4f", step_theta_blk), collapse=","),
+                     paste(sprintf("%.4f", as.numeric(theta)), collapse=",")))
+      }
+
       # Newton step: β_new = β + H^{-1} · g (ascent for log-lik).
       # Joint mode: split joint_step into Δβ (length p) + Δθ (length K-1).
       # ARMIJO step-halving (Nocedal-Wright 2006 §3.5) below adapts α
