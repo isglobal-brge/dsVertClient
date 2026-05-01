@@ -179,7 +179,9 @@ opal1+opal2+opal3, post-merge):
 * **GLM K=3 binomial** (Pima 3-server, n=150 PSI, 7 features): `max|Δβ| = 1.748e-02`, runtime 7.3 min.
 * **GLM K=3 Poisson** (synthetic n=300, 4 covariates, no offset): `max|Δβ| = 1.058e-03`, runtime 26.4 min — sub-noise.
 * **Cox K=3** (Allison-1982 Poisson trick, lung pp-expansion n=131, 14 coefs incl. baseline dummies): `max|Δβ| = 4.71e-02` vs `survival::coxph`, runtime 86.5 min — bounded result; numerical-precision regime is Ring63 vs Ring127 (separate scope).
-* **LMM K=3** (REML 1-D profile, synthetic longitudinal n=2000 / 200 clusters): `max|Δβ| = 1.092e-03` vs `nlme::lme(REML)`, σ-ratio **20.9×**, runtime 15.7 min. β-estimate verde / sub-noise; variance-component recovery (σ̂_b², σ̂²) requires cluster-mean centering not yet in the per-row weighted-GLM approach (Pinheiro-Bates 2000 §2.4.2) — flagged honestly. β converges accurately because the GLS β-estimator has weak ρ-dependence in the upper-ρ regime where the profile pins.
+* **LMM K=3** (REML 1-D profile + within-between ANOVA, synthetic longitudinal n=2000 / 200 clusters): `max|Δβ| = 1.092e-03` vs `nlme::lme(REML)`, σ-ratio **20.9×**, runtime 18.1 min. **β-estimate verde / sub-noise.** Variance-component recovery via the Pinheiro-Bates (2000) §2.4.2 within-between ANOVA estimator on raw y (single new aggregate primitive `dsvertLMMVarianceComponentsDS`, no MPC):
+    * `σ̂_b² = 0.5049` vs nlme `0.4996` → `|Δ| = 5.28e-03` (1% relative error) — **VERDE**.
+    * `σ̂² = 1.2621` vs nlme `0.9766` → `|Δ| = 2.85e-01`, **inflated by Var_within(Xβ̂) ≈ 0.27** as predicted analytically (`β = (5, 0.5, 0.3)`, `x1 ~ N(0,1)`, `x2 ~ Bern(0.5)` iid within cluster). Honest flag — downstream consumers needing pure σ̂² can subtract the analytical `β'·Var_within(X)·β` bias term, OR a follow-up X-correction primitive can be added (next iteration scope). The σ̂_b² recovery is the load-bearing claim and it is exact (1% rel).
 
 # Methods covered
 
