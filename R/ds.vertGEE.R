@@ -131,7 +131,7 @@ ds.vertGEE <- function(formula, data = NULL,
       r2_ok <- tryCatch({
         DSI::datashield.aggregate(
           datasources[which(server_names == y_srv)],
-          call("dsvertPearsonR2ColDS",
+          call(name = "dsvertPearsonR2ColDS",
                data_name = data, y_var = y_var,
                x_names = x_all,
                betahat = as.numeric(fit$coefficients[x_all]),
@@ -192,7 +192,7 @@ ds.vertGEE <- function(formula, data = NULL,
       DSI::datashield.aggregate(
         datasources[which(server_names == .ds_gee_find_server_holding(
           datasources, server_names, data, id_col))],
-        call("dsvertClusterResidualsDS",
+        call(name = "dsvertClusterResidualsDS",
              data_name = data, y_var = y_var,
              x_names = setdiff(names(fit$coefficients), "(Intercept)"),
              intercept = as.numeric(fit$coefficients["(Intercept)"]),
@@ -260,7 +260,7 @@ ds.vertGEE <- function(formula, data = NULL,
     ci <- which(server_names == srv)
     cols <- tryCatch(
       DSI::datashield.aggregate(datasources[ci],
-        call("dsvertColNamesDS", data_name = data_name))[[1]]$columns,
+        call(name = "dsvertColNamesDS", data_name = data_name))[[1]]$columns,
       error = function(e) NULL)
     if (!is.null(cols) && var %in% cols) return(srv)
   }

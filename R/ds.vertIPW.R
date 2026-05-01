@@ -18,6 +18,9 @@
 #'   pipeline for ON-SHARE propensity score computation is a planned
 #'   follow-on; see V2_PROGRESS.md).
 #' @param outcome_family    Family for the outcome model. Default "gaussian".
+#' @param verbose Logical. Print stage-by-stage progress (default TRUE).
+#' @param datasources DataSHIELD connections; if NULL, uses
+#'   \code{DSI::datashield.connections_find()}.
 #' @param ...               Passed through to both underlying
 #'   \code{ds.vertGLM} calls.
 #' @return list of class \code{ds.vertIPW} with \code{propensity} and

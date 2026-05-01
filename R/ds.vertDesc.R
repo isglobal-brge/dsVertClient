@@ -73,7 +73,7 @@ ds.vertDesc <- function(data_name,
   if (is.null(variables) || is.character(variables)) {
     user_vars <- variables
     col_results <- DSI::datashield.aggregate(
-      datasources, call("dsvertColNamesDS", data_name = data_name))
+      datasources, call(name = "dsvertColNamesDS", data_name = data_name))
     var_map <- list()
     for (srv in names(datasources)) {
       feats <- setdiff(col_results[[srv]]$columns, c("id", "patient_id"))
@@ -101,7 +101,7 @@ ds.vertDesc <- function(data_name,
       if (verbose) message("[ds.vertDesc] ", srv, ":", v)
 
       moments <- DSI::datashield.aggregate(datasources[ci],
-        call("dsvertLocalMomentsDS", data_name = data_name,
+        call(name = "dsvertLocalMomentsDS", data_name = data_name,
              variable = v))[[1]]
 
       row <- list(
@@ -121,7 +121,7 @@ ds.vertDesc <- function(data_name,
         pad <- (hi - lo) * 1e-9
         edges <- seq(lo, hi + pad, length.out = n_buckets + 1L)
         hist_res <- DSI::datashield.aggregate(datasources[ci],
-          call("dsvertHistogramDS", data_name = data_name,
+          call(name = "dsvertHistogramDS", data_name = data_name,
                variable = v, edges = edges,
                suppress_small_cells = FALSE))[[1]]
 
@@ -166,8 +166,8 @@ ds.vertDesc <- function(data_name,
 #' @param edges Numeric vector of length K+1 defining the bucket edges.
 #' @param counts Integer vector of length K with per-bucket counts.
 #' @param probs Numeric vector of target probabilities (0, 1).
-#' @param below Count of observations strictly below edges[1] (default 0).
-#' @param above Count of observations strictly above edges[K+1] (default 0).
+#' @param below Count of observations strictly below \code{edges[1]} (default 0).
+#' @param above Count of observations strictly above \code{edges[K+1]} (default 0).
 #' @return Numeric vector of the same length as probs.
 #' @keywords internal
 .dsvert_interp_quantile <- function(edges, counts, probs,

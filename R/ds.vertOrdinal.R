@@ -17,10 +17,18 @@
 #' @param data Name of the aligned data frame on each server.
 #' @param levels_ordered Character vector of the ordered levels,
 #'   smallest-to-largest.
-#' @param cumulative_template String format to build cumulative
-#'   indicator column names, e.g. \code{"%s_leq"} means the column
-#'   \code{<level>_leq} is 1 when the patient's outcome is <= that
-#'   level. Columns must already exist server-side. Default "\%s_leq".
+#' @param cumulative_template String format (\code{sprintf}-style)
+#'   used to build cumulative indicator column names; for instance the
+#'   default \code{"\%s_leq"} produces \code{<level>_leq}, a 0/1 column
+#'   that is 1 when the patient's outcome is at-or-below that level.
+#'   Columns must already exist server-side.
+#' @param ring Integer (63 or 127). Ring selector for the underlying
+#'   binomial sub-fits. Currently defaults to 63L while the Ring127
+#'   binomial wide-spline path is wired up.
+#' @param verbose Logical (default TRUE). Print per-threshold fit
+#'   progress.
+#' @param datasources DataSHIELD connections; if NULL, uses
+#'   \code{DSI::datashield.connections_find()}.
 #' @param ...  Passed to each underlying \code{ds.vertGLM} call.
 #' @return \code{ds.vertOrdinal} object with (among other fields):
 #'   \code{thresholds} \eqn{\alpha_k} (intercepts of the K-1 cumulative

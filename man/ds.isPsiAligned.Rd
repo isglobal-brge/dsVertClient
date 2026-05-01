@@ -6,6 +6,16 @@
 \usage{
 ds.isPsiAligned(newobj = "DA", datasources = NULL)
 }
+\arguments{
+\item{newobj}{Character. Symbol name to test on each server (default \code{"DA"}).}
+
+\item{datasources}{DataSHIELD connections; if NULL, uses
+\code{DSI::datashield.connections_find()}.}
+}
+\value{
+List with \code{aligned} (logical) and \code{n_common}
+(integer or NA_integer_).
+}
 \description{
 Ask each server whether the named symbol has the same
 row count. Used by \code{ds.vertGLM}/LMM/GEE/Cox to SKIP a fresh

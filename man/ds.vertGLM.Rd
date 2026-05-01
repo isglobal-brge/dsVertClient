@@ -16,10 +16,13 @@ ds.vertGLM(
   log_n = 12,
   offset = NULL,
   weights = NULL,
+  ring = 63L,
   verbose = TRUE,
   datasources = NULL,
   eta_privacy = "auto",
   keep_session = FALSE,
+  no_intercept = FALSE,
+  std_mode = "full",
   data_name = NULL,
   y_var = NULL
 )
@@ -52,12 +55,44 @@ Default is 1e-4.}
 \item{log_n}{Integer. Legacy parameter (ignored). Kept for backward
 compatibility.}
 
+\item{offset}{Optional numeric vector or column name on the outcome
+server added to the linear predictor (e.g. \code{log(person_years)}
+for a Poisson rate model).}
+
+\item{weights}{Optional numeric vector or column name of per-row
+weights (e.g. inverse-probability weights for IPW).}
+
+\item{ring}{Integer (63 or 127). Selects the MPC ring / fracBits
+pipeline; Ring127 (fracBits=50) is STRICT-capable per
+Catrina-Saxena. Default 63L for back-compat.}
+
 \item{verbose}{Logical. Print progress messages. Default is TRUE.}
 
 \item{datasources}{DataSHIELD connection object or list of connections.}
 
 \item{eta_privacy}{Character. \code{"auto"} (default) selects
 \code{"k2_beaver"} for K=2 or \code{"secure_agg"} for K>=3.}
+
+\item{keep_session}{Logical. If TRUE, leave the MPC session alive
+on the servers and expose \code{session_id}, \code{transport_pks},
+and \code{server_list} on the returned fit so follow-on helpers
+(LMM cluster residuals, GEE sandwich meat, etc.) can reuse the
+already-aligned shares. Caller must invoke \code{mpcCleanupDS}
+eventually.}
+
+\item{no_intercept}{Logical. Suppress the auto-added intercept.
+Useful when the design matrix already encodes one (e.g. cluster-
+mean-centred GLS fit).}
+
+\item{std_mode}{Character. Standardisation mode: \code{"full"}
+(default) standardises both X and y; alternative modes (e.g.
+\code{"x_only"}) skip y standardisation for offset/weights paths.}
+
+\item{data_name}{Internal alias for \code{data}; if both are supplied,
+\code{data_name} takes precedence (back-compat path).}
+
+\item{y_var}{Internal alias for the LHS of \code{formula}; if both
+are supplied, \code{y_var} takes precedence (back-compat path).}
 }
 \value{
 A list with class "ds.glm" containing:

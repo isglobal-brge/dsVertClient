@@ -25,7 +25,7 @@
   eta_key <- sprintf("eta_ord_arm_%s", arm_tag)
   for (srv in server_list) {
     ci <- which(server_names == srv)
-    .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+    .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
       beta_coord = b_coord_vec, beta_nl = b_nl_vec,
       intercept = 0, is_coordinator = (srv == coord),
       session_id = session_id, output_key = eta_key))
@@ -41,7 +41,7 @@
     for (srv in server_list) {
       ci <- which(server_names == srv)
       is_p0 <- (srv == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = eta_key, b_key = NULL,
         sign_a = 1L, sign_b = 0L,
         public_const_fp = if (is_p0) neg_tk_url else NULL,
@@ -57,7 +57,7 @@
     for (srv in server_list) {
       ci <- which(server_names == srv)
       is_p0 <- (srv == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = exp_key, b_key = NULL,
         sign_a = 1L, sign_b = 0L,
         public_const_fp = if (is_p0) one_fp_url else NULL,
@@ -73,7 +73,7 @@
   }
   blob_slot <- sprintf("ord_peer_F_blob_arm_%s", arm_tag)
   sealed_F <- .dsAgg(datasources[ci_nl],
-    call("dsvertOrdinalSealFkSharesDS",
+    call(name = "dsvertOrdinalSealFkSharesDS",
          F_keys = F_share_keys,
          target_pk = transport_pks[[y_server]],
          session_id = session_id))
@@ -81,7 +81,7 @@
   .sendBlob(sealed_F$sealed, blob_slot, ci_os)
   arm_t_key <- sprintf("ord_T_i_arm_%s", arm_tag)
   os_arm_r <- .dsAgg(datasources[ci_os],
-    call("dsvertOrdinalPatientDiffsDS",
+    call(name = "dsvertOrdinalPatientDiffsDS",
          data_name = data,
          indicator_cols = indicator_cols_vec,
          level_names = levels_ordered,
@@ -221,7 +221,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   for (srv in server_list) {
     ci <- which(server_names == srv)
     r <- DSI::datashield.aggregate(datasources[ci],
-      call("glmRing63TransportInitDS", session_id = session_id))
+      call(name = "glmRing63TransportInitDS", session_id = session_id))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     transport_pks[[srv]] <- r$transport_pk
   }
@@ -235,7 +235,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     peer_srv <- setdiff(server_list, srv)
     peers <- setNames(list(transport_pks[[peer_srv]]), peer_srv)
     DSI::datashield.aggregate(datasources[ci],
-      call("mpcStoreTransportKeysDS",
+      call(name = "mpcStoreTransportKeysDS",
            transport_keys_b64 = .json_to_b64url(peers),
            session_id = session_id))
   }
@@ -245,7 +245,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   for (srv in server_list) {
     ci <- which(server_names == srv)
     r <- tryCatch(DSI::datashield.aggregate(datasources[ci],
-      call("dsvertColNamesDS", data_name = data)),
+      call(name = "dsvertColNamesDS", data_name = data)),
       error = function(e) NULL)
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     cols_here <- if (is.list(r) && !is.null(r$columns)) r$columns
@@ -261,11 +261,11 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
       if (n_chunks == 1L) {
         DSI::datashield.aggregate(conn,
-          call("mpcStoreBlobDS", key = key, chunk = chunk_str,
+          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
                session_id = session_id))
       } else {
         DSI::datashield.aggregate(conn,
-          call("mpcStoreBlobDS", key = key, chunk = chunk_str,
+          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
                chunk_index = chunk_idx, n_chunks = n_chunks,
                session_id = session_id))
       }
@@ -280,7 +280,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     # float64 unmarshal). Cumulative threshold indicators (low_leq,
     # med_leq) are read directly by the label server in downstream
     # F_k / score aggregates.
-    r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
+    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
       data_name = data, x_vars = x_vars_per_server[[srv]],
       y_var = NULL,
       peer_pk = transport_pks[[peer]],
@@ -298,7 +298,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   for (srv in server_list) {
     ci <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
-    .dsAgg(datasources[ci], call("k2ReceiveShareDS",
+    .dsAgg(datasources[ci], call(name = "k2ReceiveShareDS",
       peer_p = as.integer(length(x_vars_per_server[[peer]])),
       session_id = session_id))
   }
@@ -410,7 +410,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     b_nl_vec    <- beta[intersect(names(beta), x_vars_per_server[[nl]])]
     for (srv in server_list) {
       ci <- which(server_names == srv)
-      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+      .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
         beta_coord = b_coord_vec, beta_nl = b_nl_vec,
         intercept = 0, is_coordinator = (srv == coord),
         session_id = session_id, output_key = "eta_ord"))
@@ -537,7 +537,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
         for (srv in server_list) {
           ci <- which(server_names == srv)
           is_p0 <- (srv == y_server)
-          .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+          .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
             a_key = "eta_ord", b_key = NULL,
             sign_a = 1L, sign_b = 0L,
             public_const_fp = if (is_p0) neg_tk_url else NULL,
@@ -559,7 +559,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
         for (srv in server_list) {
           ci <- which(server_names == srv)
           is_p0 <- (srv == y_server)
-          .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+          .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
             a_key = exp_key, b_key = NULL,
             sign_a = 1L, sign_b = 0L,
             public_const_fp = if (is_p0) one_fp_url else NULL,
@@ -579,7 +579,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
 
       # === Step 5: NL seals its F shares to OS for the F-reveal path ===
       sealed_F <- .dsAgg(datasources[ci_nl],
-        call("dsvertOrdinalSealFkSharesDS",
+        call(name = "dsvertOrdinalSealFkSharesDS",
              F_keys = F_share_keys,
              target_pk = transport_pks[[y_server]],
              session_id = session_id))
@@ -600,7 +600,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       cross_share_keys <- sprintf("ord_M_iter%d_k%d", outer,
                                     seq_len(length(theta)))
       os_r <- .dsAgg(datasources[ci_os],
-        call("dsvertOrdinalPatientDiffsDS",
+        call(name = "dsvertOrdinalPatientDiffsDS",
              data_name = data,
              indicator_cols = indicator_cols_vec,
              level_names = levels_ordered,
@@ -622,7 +622,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       if (isTRUE(os_r$W_share_emitted) && !is.null(os_r$W_sealed_blob)) {
         .sendBlob(os_r$W_sealed_blob, "ord_W_blob", ci_nl)
         .dsAgg(datasources[ci_nl],
-          call("dsvertOrdinalReceiveBetaWeightsDS",
+          call(name = "dsvertOrdinalReceiveBetaWeightsDS",
                W_blob_key = "ord_W_blob",
                output_key = W_share_key,
                n = as.integer(n_obs),
@@ -644,7 +644,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
           blob_slot <- sprintf("ord_M_blob_k%d", kk)
           .sendBlob(os_r$cross_sealed_blobs[kk], blob_slot, ci_nl)
           .dsAgg(datasources[ci_nl],
-            call("dsvertOrdinalReceiveBetaWeightsDS",
+            call(name = "dsvertOrdinalReceiveBetaWeightsDS",
                  W_blob_key = blob_slot,
                  output_key = cross_share_keys[kk],
                  n = as.integer(n_obs),
@@ -654,7 +654,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
 
       # === NL stores zero T share (per existing convention) ===
       .dsAgg(datasources[ci_nl],
-        call("dsvertOrdinalPatientDiffsDS",
+        call(name = "dsvertOrdinalPatientDiffsDS",
              output_key = t_key,
              n = as.integer(n_obs),
              is_outcome_server = FALSE,
@@ -736,7 +736,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       # === Step 7: Beaver matvec X^T * T (existing pipeline) ===
       for (srv in server_list) {
         ci <- which(server_names == srv)
-        .dsAgg(datasources[ci], call("dsvertPrepareMultinomGradDS",
+        .dsAgg(datasources[ci], call(name = "dsvertPrepareMultinomGradDS",
           residual_key = t_key,
           is_outcome_server = (srv == y_server),
           n = as.integer(n_obs), session_id = session_id))
@@ -744,7 +744,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       p_shared <- as.integer(sum(vapply(x_vars_per_server, length,
                                          integer(1L))))
       grad_t <- .dsAgg(datasources[dealer_ci],
-        call("glmRing63GenGradTriplesDS",
+        call(name = "glmRing63GenGradTriplesDS",
              dcf0_pk = transport_pks[[y_server]],
              dcf1_pk = transport_pks[[nl]],
              n = as.integer(n_obs), p = p_shared,
@@ -758,10 +758,10 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       for (srv in server_list) {
         ci <- which(server_names == srv)
         peer <- setdiff(server_list, srv)
-        .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
+        .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS",
           session_id = session_id,
           grad_triple_key = grad_triple_key))
-        rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+        rr <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
           peer_pk = transport_pks[[peer]],
           session_id = session_id))
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
@@ -773,7 +773,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       for (srv in server_list) {
         ci <- which(server_names == srv)
         is_c <- (srv == y_server)
-        rr <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+        rr <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
           party_id = if (is_c) 0L else 1L,
           session_id = session_id))
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
@@ -855,7 +855,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
             p_local <- if (is_owner) length(x_vars_per_server[[srv]])
                        else length(x_vars_per_server[[owner_srv]])
             .dsAgg(datasources[ci],
-              call("dsvertOrdinalExtractXColumnDS",
+              call(name = "dsvertOrdinalExtractXColumnDS",
                    matrix_key = mat_key,
                    n = as.integer(n_obs),
                    p = as.integer(p_local),
@@ -871,13 +871,13 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
           for (srv in server_list) {
             ci <- which(server_names == srv)
             .dsAgg(datasources[ci],
-              call("dsvertPrepareMultinomGradDS",
+              call(name = "dsvertPrepareMultinomGradDS",
                    residual_key = DXj_key,
                    is_outcome_server = (srv == y_server),
                    n = as.integer(n_obs), session_id = session_id))
           }
           grad_t_H <- .dsAgg(datasources[dealer_ci],
-            call("glmRing63GenGradTriplesDS",
+            call(name = "glmRing63GenGradTriplesDS",
                  dcf0_pk = transport_pks[[y_server]],
                  dcf1_pk = transport_pks[[nl]],
                  n = as.integer(n_obs), p = p_shared,
@@ -892,10 +892,10 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
           for (srv in server_list) {
             ci <- which(server_names == srv)
             peer <- setdiff(server_list, srv)
-            .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
+            .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS",
               session_id = session_id,
               grad_triple_key = grad_triple_key_H))
-            rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+            rr <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
               peer_pk = transport_pks[[peer]],
               session_id = session_id))
             if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
@@ -909,7 +909,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
           for (srv in server_list) {
             ci <- which(server_names == srv)
             is_c <- (srv == y_server)
-            rr <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+            rr <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
               party_id = if (is_c) 0L else 1L,
               session_id = session_id))
             if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
@@ -961,13 +961,13 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
           for (srv in server_list) {
             ci <- which(server_names == srv)
             .dsAgg(datasources[ci],
-              call("dsvertPrepareMultinomGradDS",
+              call(name = "dsvertPrepareMultinomGradDS",
                    residual_key = cross_share_keys[kk],
                    is_outcome_server = (srv == y_server),
                    n = as.integer(n_obs), session_id = session_id))
           }
           grad_t_M <- .dsAgg(datasources[dealer_ci],
-            call("glmRing63GenGradTriplesDS",
+            call(name = "glmRing63GenGradTriplesDS",
                  dcf0_pk = transport_pks[[y_server]],
                  dcf1_pk = transport_pks[[nl]],
                  n = as.integer(n_obs), p = p_shared,
@@ -981,9 +981,9 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
           for (srv in server_list) {
             ci <- which(server_names == srv)
             peer <- setdiff(server_list, srv)
-            .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
+            .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS",
               session_id = session_id, grad_triple_key = gtk_M))
-            rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+            rr <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
               peer_pk = transport_pks[[peer]],
               session_id = session_id))
             if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
@@ -995,7 +995,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
           for (srv in server_list) {
             ci <- which(server_names == srv)
             is_c <- (srv == y_server)
-            rr <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+            rr <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
               party_id = if (is_c) 0L else 1L,
               session_id = session_id))
             if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
@@ -1080,7 +1080,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       beta_nl_names <- intersect(names(beta), x_vars_per_server[[nl]])
       beta_nl_slice <- as.numeric(beta[beta_nl_names])
       sealed_r <- .dsAgg(datasources[ci_nl],
-        call("dsvertOrdinalSealEtaDS",
+        call(name = "dsvertOrdinalSealEtaDS",
              data_name = data,
              x_vars = beta_nl_names,
              beta_values = beta_nl_slice,
@@ -1101,7 +1101,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       beta_os_names <- intersect(names(beta), x_vars_per_server[[y_server]])
       beta_os_slice <- as.numeric(beta[beta_os_names])
       os_r <- .dsAgg(datasources[ci_os],
-        call("dsvertOrdinalPatientDiffsDS",
+        call(name = "dsvertOrdinalPatientDiffsDS",
              data_name = data,
              indicator_cols = indicator_cols_vec,
              level_names = levels_ordered,
@@ -1117,7 +1117,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       if (is.list(os_r) && length(os_r) == 1L) os_r <- os_r[[1L]]
       # Step D: NL stores its T_i share (zero; contribution is on OS only)
       .dsAgg(datasources[ci_nl],
-        call("dsvertOrdinalPatientDiffsDS",
+        call(name = "dsvertOrdinalPatientDiffsDS",
              output_key = t_key,
              n = as.integer(n_obs),
              is_outcome_server = FALSE,
@@ -1139,14 +1139,14 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       # = -T, so gradient = X^T(mu-y) = X^T(0-(-T)) = X^T * T.
       for (srv in server_list) {
         ci <- which(server_names == srv)
-        .dsAgg(datasources[ci], call("dsvertPrepareMultinomGradDS",
+        .dsAgg(datasources[ci], call(name = "dsvertPrepareMultinomGradDS",
           residual_key = t_key,
           is_outcome_server = (srv == y_server),
           n = as.integer(n_obs), session_id = session_id))
       }
       p_shared <- as.integer(sum(vapply(x_vars_per_server, length, integer(1L))))
       grad_t <- .dsAgg(datasources[dealer_ci],
-        call("glmRing63GenGradTriplesDS",
+        call(name = "glmRing63GenGradTriplesDS",
              dcf0_pk = transport_pks[[y_server]],
              dcf1_pk = transport_pks[[nl]],
              n = as.integer(n_obs), p = p_shared,
@@ -1162,10 +1162,10 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       for (srv in server_list) {
         ci <- which(server_names == srv)
         peer <- setdiff(server_list, srv)
-        .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
+        .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS",
           session_id = session_id,
           grad_triple_key = grad_triple_key))
-        rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+        rr <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
           peer_pk = transport_pks[[peer]], session_id = session_id))
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
         r1[[srv]] <- rr
@@ -1176,7 +1176,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
       for (srv in server_list) {
         ci <- which(server_names == srv)
         is_c <- (srv == y_server)
-        rr <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+        rr <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
           party_id = if (is_c) 0L else 1L, session_id = session_id))
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
         r2[[srv]] <- rr
@@ -1740,7 +1740,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   for (srv in server_list) {
     ci <- which(server_names == srv)
     try(.dsAgg(datasources[ci],
-               call("mpcCleanupDS", session_id = session_id)),
+               call(name = "mpcCleanupDS", session_id = session_id)),
         silent = TRUE)
   }
 

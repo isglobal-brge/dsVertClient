@@ -95,11 +95,11 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     # Identify which features live on each server.
     rhs <- attr(stats::terms(formula), "term.labels")
     r_y <- DSI::datashield.aggregate(datasources[y_ci],
-      call("dsvertColNamesDS", data_name = data))
+      call(name = "dsvertColNamesDS", data_name = data))
     if (is.list(r_y) && length(r_y) == 1L) r_y <- r_y[[1L]]
     cols_y <- if (is.list(r_y)) r_y$columns else r_y
     r_nl <- DSI::datashield.aggregate(datasources[nl_ci],
-      call("dsvertColNamesDS", data_name = data))
+      call(name = "dsvertColNamesDS", data_name = data))
     if (is.list(r_nl) && length(r_nl) == 1L) r_nl <- r_nl[[1L]]
     cols_nl <- if (is.list(r_nl)) r_nl$columns else r_nl
     x_label <- intersect(rhs, cols_y)
@@ -116,13 +116,13 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     # Init transport key on label server (receives eta^nl). Non-label just
     # needs label's PK to encrypt.
     init <- DSI::datashield.aggregate(datasources[y_ci],
-      call("glmRing63TransportInitDS", session_id = session_id))
+      call(name = "glmRing63TransportInitDS", session_id = session_id))
     if (is.list(init) && length(init) == 1L) init <- init[[1L]]
     label_pk <- init$transport_pk
 
     # Non-label seals eta^nl for label.
     sealed_r <- DSI::datashield.aggregate(datasources[nl_ci],
-      call("dsvertNBEtaSealDS",
+      call(name = "dsvertNBEtaSealDS",
            data_name = data, x_vars = x_nl,
            beta_values = as.numeric(beta_nl),
            target_pk = label_pk, session_id = session_id))
@@ -133,11 +133,11 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       function(chunk_str, chunk_idx, n_chunks) {
         if (n_chunks == 1L) {
           DSI::datashield.aggregate(datasources[y_ci],
-            call("mpcStoreBlobDS", key = "nb_peer_eta",
+            call(name = "mpcStoreBlobDS", key = "nb_peer_eta",
                  chunk = chunk_str, session_id = session_id))
         } else {
           DSI::datashield.aggregate(datasources[y_ci],
-            call("mpcStoreBlobDS", key = "nb_peer_eta",
+            call(name = "mpcStoreBlobDS", key = "nb_peer_eta",
                  chunk = chunk_str, chunk_index = chunk_idx,
                  n_chunks = n_chunks, session_id = session_id))
         }
@@ -147,7 +147,7 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     score_fullreg <- function(th) {
       if (!is.finite(th) || th <= 0) return(NA_real_)
       r <- DSI::datashield.aggregate(datasources[y_ci],
-        call("dsvertNBFullScoreDS",
+        call(name = "dsvertNBFullScoreDS",
              data_name = data, y_var = y_var_char,
              x_vars_label = x_label,
              beta_values_label = as.numeric(beta_label),
@@ -209,11 +209,11 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
         function(chunk_str, chunk_idx, n_chunks) {
           if (n_chunks == 1L) {
             DSI::datashield.aggregate(datasources[y_ci],
-              call("mpcStoreBlobDS", key = "nb_peer_eta",
+              call(name = "mpcStoreBlobDS", key = "nb_peer_eta",
                    chunk = chunk_str, session_id = session_id))
           } else {
             DSI::datashield.aggregate(datasources[y_ci],
-              call("mpcStoreBlobDS", key = "nb_peer_eta",
+              call(name = "mpcStoreBlobDS", key = "nb_peer_eta",
                    chunk = chunk_str, chunk_index = chunk_idx,
                    n_chunks = n_chunks, session_id = session_id))
           }
@@ -272,11 +272,11 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     # Identify which features live on each server.
     rhs <- attr(stats::terms(formula), "term.labels")
     r_y <- DSI::datashield.aggregate(datasources[y_ci],
-      call("dsvertColNamesDS", data_name = data))
+      call(name = "dsvertColNamesDS", data_name = data))
     if (is.list(r_y) && length(r_y) == 1L) r_y <- r_y[[1L]]
     cols_y <- if (is.list(r_y)) r_y$columns else r_y
     r_nl <- DSI::datashield.aggregate(datasources[nl_ci],
-      call("dsvertColNamesDS", data_name = data))
+      call(name = "dsvertColNamesDS", data_name = data))
     if (is.list(r_nl) && length(r_nl) == 1L) r_nl <- r_nl[[1L]]
     cols_nl <- if (is.list(r_nl)) r_nl$columns else r_nl
     x_label <- intersect(rhs, cols_y)
@@ -300,11 +300,11 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
         if (n_chunks == 1L) {
           DSI::datashield.aggregate(datasources[target_ci],
-            call("mpcStoreBlobDS", key = key,
+            call(name = "mpcStoreBlobDS", key = key,
                  chunk = chunk_str, session_id = session_id))
         } else {
           DSI::datashield.aggregate(datasources[target_ci],
-            call("mpcStoreBlobDS", key = key,
+            call(name = "mpcStoreBlobDS", key = key,
                  chunk = chunk_str, chunk_index = chunk_idx,
                  n_chunks = n_chunks, session_id = session_id))
         }
@@ -433,7 +433,7 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     sums <- tryCatch({
       r <- DSI::datashield.aggregate(
         conns[conn_idx],
-        call("dsvertNBProfileSumsDS",
+        call(name = "dsvertNBProfileSumsDS",
              data_name = data, variable = y_var_name, theta = th))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r

@@ -13,12 +13,12 @@
 #'
 #'   Protocol per iteration (all pieces already shipped in dsVert):
 #'     1. For each k compute eta_k share via k2ComputeEtaShareDS.
-#'     2. DCF exp wide-spline on each eta_k -> share of \mu_k = e^{\eta_k}.
-#'     3. Sum \mu_k across classes on each party (local, shares linear)
-#'        -> share of the denominator D = 1 + \sum_k \mu_k (party 0 adds
+#'     2. DCF exp wide-spline on each eta_k -> share of mu_k = exp(eta_k).
+#'     3. Sum mu_k across classes on each party (local, shares linear)
+#'        -> share of the denominator D = 1 + sum_k mu_k (party 0 adds
 #'        the constant 1 locally).
 #'     4. DCF reciprocal wide-spline on D -> share of 1/D.
-#'     5. Beaver vecmul (shipped) between \mu_k share and 1/D share
+#'     5. Beaver vecmul (shipped) between mu_k share and 1/D share
 #'        -> share of p_k element-wise for each k.
 #'     6. Residual share r_k = y_k - p_k on each party (y_k is plaintext
 #'        on the outcome server, so share-subtract is local).
@@ -27,7 +27,7 @@
 #'        p(K-1) vector and steps via L-BFGS.
 #'
 #'   Client view: only (K-1)p-dim aggregate gradients. Per-patient
-#'   \mu_k, D, p_k, r_k never leave the DCF parties.
+#'   mu_k, D, p_k, r_k never leave the DCF parties.
 #'
 #' @param formula R formula with the categorical outcome on the LHS.
 #' @param data Aligned data-frame name.
@@ -71,7 +71,7 @@ ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
     lv <- tryCatch({
       r <- DSI::datashield.aggregate(
         datasources[which(server_names == y_srv)],
-        call("dsvertOutcomeLevelsDS", data_name = data, y_var = y_var))
+        call(name = "dsvertOutcomeLevelsDS", data_name = data, y_var = y_var))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r$levels
     }, error = function(e) NULL)

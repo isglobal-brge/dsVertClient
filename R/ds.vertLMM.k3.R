@@ -68,7 +68,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     .ci <- which(server_names == .srv)
     cols <- tryCatch(
       DSI::datashield.aggregate(datasources[.ci],
-        call("dsvertColNamesDS", data_name = data))[[1]]$columns,
+        call(name = "dsvertColNamesDS", data_name = data))[[1]]$columns,
       error = function(e) NULL)
     if (!is.null(cols) && cluster_col %in% cols) {
       cluster_srv <- .srv; break
@@ -82,7 +82,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   if (verbose) message("[ds.vertLMM.k3] Querying cluster sizes ...")
   ci <- which(server_names == cluster_srv)
   ci_info <- DSI::datashield.aggregate(datasources[ci],
-    call("dsvertClusterSizesDS", data_name = data,
+    call(name = "dsvertClusterSizesDS", data_name = data,
          cluster_col = cluster_col))
   if (is.list(ci_info) && length(ci_info) == 1L) ci_info <- ci_info[[1]]
   n_i <- as.integer(ci_info$sizes)
@@ -108,7 +108,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     if (verbose) message(sprintf("[ds.vertLMM.k3] inner fit at rho=%.4f", rho))
     w_per_cluster <- .compute_weights_per_cluster(rho)
     DSI::datashield.aggregate(datasources[ci],
-      call("dsvertExpandClusterWeightsDS",
+      call(name = "dsvertExpandClusterWeightsDS",
            data_name = data, cluster_col = cluster_col,
            weights_per_cluster = as.numeric(w_per_cluster),
            output_column = "__lmm_k3_w"))
@@ -150,7 +150,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   ## Final fit at rho.
   w_final <- .compute_weights_per_cluster(rho_hat)
   DSI::datashield.aggregate(datasources[ci],
-    call("dsvertExpandClusterWeightsDS",
+    call(name = "dsvertExpandClusterWeightsDS",
          data_name = data, cluster_col = cluster_col,
          weights_per_cluster = as.numeric(w_final),
          output_column = "__lmm_k3_w"))

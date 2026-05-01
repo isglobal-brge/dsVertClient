@@ -21,6 +21,9 @@
 #'   class name to construct indicator column names on the server.
 #'   Default "\%s_ind" (e.g., stage_ind_I, stage_ind_II, ...). The
 #'   indicator columns must already exist server-side.
+#' @param verbose Logical (default TRUE). Print per-class fit progress.
+#' @param datasources DataSHIELD connections; if NULL, uses
+#'   \code{DSI::datashield.connections_find()}.
 #' @param ... passed through to each underlying \code{ds.vertGLM} call.
 #'
 #' @return ds.vertMultinom object: a list with per-class \code{ds.glm}
@@ -140,7 +143,7 @@ ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
       tryCatch({
         r <- DSI::datashield.aggregate(
           datasources[which(server_nm == srv)],
-          call("dsvertLocalMomentsDS", data_name = data,
+          call(name = "dsvertLocalMomentsDS", data_name = data,
                variable = sprintf(indicator_template, k)))
         if (is.list(r) && length(r) == 1L) r <- r[[1L]]
         if (is.list(r) && !is.null(r$mean)) as.numeric(r$mean) else NA_real_

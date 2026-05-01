@@ -27,6 +27,18 @@
 #' @param theta_max_iter Outer iterations for the joint update
 #'   (default 5). Each iteration refits the Poisson GLM with the
 #'   current theta-adjusted mean estimate.
+#' @param formula Model formula for the count outcome (LHS) and
+#'   linear predictor (RHS).
+#' @param data Aligned data-frame name on each server.
+#' @param theta Optional fixed dispersion parameter; if supplied, the
+#'   theta refinement step is skipped and only the Poisson beta path
+#'   runs with this theta plugged into the SE rescaling.
+#' @param theta_tol Convergence tolerance on the relative change in
+#'   theta during the Newton refinement.
+#' @param verbose Logical. Print stage-by-stage progress.
+#' @param datasources DataSHIELD connections; if NULL, uses
+#'   \code{DSI::datashield.connections_find()}.
+#' @param ... Extra arguments forwarded to \code{ds.vertGLM}.
 #' @export
 ds.vertNB <- function(formula, data = NULL, theta = NULL,
                       joint = TRUE, theta_max_iter = 5L, theta_tol = 1e-3,
@@ -48,7 +60,7 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
   moments <- tryCatch({
     r <- DSI::datashield.aggregate(
       datasources[which(server_names == y_srv)],
-      call("dsvertLocalMomentsDS", data_name = data, variable = y_var))
+      call(name = "dsvertLocalMomentsDS", data_name = data, variable = y_var))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     r
   }, error = function(e) {
@@ -108,7 +120,7 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
       m2 <- tryCatch({
         r <- DSI::datashield.aggregate(
           datasources[which(server_names == y_srv)],
-          call("dsvertLocalMomentsDS", data_name = data, variable = y_var))
+          call(name = "dsvertLocalMomentsDS", data_name = data, variable = y_var))
         if (is.list(r) && length(r) == 1L) r <- r[[1L]]
         r
       }, error = function(e) NULL)
@@ -187,7 +199,7 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
     sums <- tryCatch({
       r <- DSI::datashield.aggregate(
         datasources[conn_idx],
-        call("dsvertNBProfileSumsDS",
+        call(name = "dsvertNBProfileSumsDS",
              data_name = data, variable = y_var, theta = theta))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r

@@ -71,7 +71,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   for (srv in server_list) {
     ci <- which(server_names == srv)
     r <- DSI::datashield.aggregate(datasources[ci],
-      call("glmRing63TransportInitDS", session_id = session_id))
+      call(name = "glmRing63TransportInitDS", session_id = session_id))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     transport_pks[[srv]] <- r$transport_pk
   }
@@ -88,7 +88,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     peer_srv <- setdiff(server_list, srv)
     peers <- setNames(list(transport_pks[[peer_srv]]), peer_srv)
     DSI::datashield.aggregate(datasources[ci],
-      call("mpcStoreTransportKeysDS",
+      call(name = "mpcStoreTransportKeysDS",
            transport_keys_b64 = .json_to_b64url(peers),
            session_id = session_id))
   }
@@ -106,7 +106,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   for (srv in server_list) {
     ci <- which(server_names == srv)
     r <- tryCatch(DSI::datashield.aggregate(datasources[ci],
-      call("dsvertColNamesDS", data_name = data)),
+      call(name = "dsvertColNamesDS", data_name = data)),
       error = function(e) NULL)
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     cols_here <- if (is.list(r) && !is.null(r$columns)) r$columns
@@ -124,11 +124,11 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
       if (n_chunks == 1L) {
         DSI::datashield.aggregate(conn,
-          call("mpcStoreBlobDS", key = key, chunk = chunk_str,
+          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
                session_id = session_id))
       } else {
         DSI::datashield.aggregate(conn,
-          call("mpcStoreBlobDS", key = key, chunk = chunk_str,
+          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
                chunk_index = chunk_idx, n_chunks = n_chunks,
                session_id = session_id))
       }
@@ -146,7 +146,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     # read directly by the label server inside later aggregates (see
     # indicator_template usage at ~line 240). Pass y_var=NULL for all
     # servers in the multinom joint path.
-    r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
+    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
       data_name = data, x_vars = x_vars_per_server[[srv]],
       y_var = NULL,
       peer_pk = peer_pk, ring = 127L, session_id = session_id))
@@ -163,7 +163,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   for (srv in server_list) {
     ci <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
-    .dsAgg(datasources[ci], call("k2ReceiveShareDS",
+    .dsAgg(datasources[ci], call(name = "k2ReceiveShareDS",
       peer_p = as.integer(length(x_vars_per_server[[peer]])),
       session_id = session_id))
   }
@@ -251,7 +251,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       eta_key <- paste0("eta_class_", ki)
       for (srv in server_list) {
         ci <- which(server_names == srv)
-        .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+        .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
           beta_coord = b_coord_vec, beta_nl = b_nl_vec,
           intercept = if (srv == coord) intercept_k else 0,
           is_coordinator = (srv == coord),
@@ -268,7 +268,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     # Step 3: D = 1 + sum(exp(eta_k))
     for (srv in server_list) {
       ci <- which(server_names == srv)
-      .dsAgg(datasources[ci], call("dsvertSoftmaxDenominatorDS",
+      .dsAgg(datasources[ci], call(name = "dsvertSoftmaxDenominatorDS",
         exp_eta_keys = exp_eta_keys, output_key = "D_share",
         is_party0 = (srv == coord), n = as.integer(n_obs),
         session_id = session_id))
@@ -316,7 +316,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       r_key <- paste0("r_class_", ki)
       for (srv in server_list) {
         ci <- which(server_names == srv)
-        .dsAgg(datasources[ci], call("dsvertComputeResidualShareDS",
+        .dsAgg(datasources[ci], call(name = "dsvertComputeResidualShareDS",
           p_key = p_keys[ki],
           indicator_col = if (srv == coord) sprintf(indicator_template, k) else NULL,
           data_name = if (srv == coord) data else NULL,
@@ -331,14 +331,14 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       # intercept gradient -- same pattern as dsVertGLM.k2.R:309.
       for (srv in server_list) {
         ci <- which(server_names == srv)
-        .dsAgg(datasources[ci], call("dsvertPrepareMultinomGradDS",
+        .dsAgg(datasources[ci], call(name = "dsvertPrepareMultinomGradDS",
           residual_key = r_key,
           is_outcome_server = (srv == coord),
           n = as.integer(n_obs), session_id = session_id))
       }
       # Beaver matvec: X^T (mu - y) -> per-class SLOPE gradient (length p_shared)
       grad_t <- .dsAgg(datasources[dealer_ci],
-        call("glmRing63GenGradTriplesDS",
+        call(name = "glmRing63GenGradTriplesDS",
              dcf0_pk = .to_b64url(transport_pks[[coord]]),
              dcf1_pk = .to_b64url(transport_pks[[nl]]),
              n = as.integer(n_obs), p = as.integer(p_shared),
@@ -357,10 +357,10 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       for (srv in server_list) {
         ci <- which(server_names == srv)
         peer <- setdiff(server_list, srv)
-        .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
+        .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS",
           session_id = session_id,
           grad_triple_key = grad_triple_key))
-        rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+        rr <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
           peer_pk = .to_b64url(transport_pks[[peer]]), session_id = session_id))
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
         r1[[srv]] <- rr
@@ -371,7 +371,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       for (srv in server_list) {
         ci <- which(server_names == srv)
         is_c <- (srv == coord)
-        rr <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+        rr <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
           party_id = if (is_c) 0L else 1L, session_id = session_id))
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
         r2[[srv]] <- rr
@@ -537,7 +537,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           for (srv in server_list) {
             ci <- which(server_names == srv)
             is_c <- (srv == coord)
-            .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+            .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
               a_key = p_keys[ki], b_key = NULL,
               sign_a = -1L, sign_b = 0L,
               public_const_fp = one_fp_b64_127,
@@ -589,7 +589,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         sum_W_shares <- list()
         for (srv in server_list) {
           ci <- which(server_names == srv)
-          rs <- .dsAgg(datasources[ci], call("k2BeaverSumShareDS",
+          rs <- .dsAgg(datasources[ci], call(name = "k2BeaverSumShareDS",
             source_key = W_share_key, session_id = session_id,
             frac_bits = 50L))
           if (is.list(rs) && length(rs) == 1L) rs <- rs[[1L]]
@@ -605,13 +605,13 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         # (C) X^T W_kl length-p_shared vector -- intercept-slope entries.
         for (srv in server_list) {
           ci <- which(server_names == srv)
-          .dsAgg(datasources[ci], call("dsvertPrepareMultinomGradDS",
+          .dsAgg(datasources[ci], call(name = "dsvertPrepareMultinomGradDS",
             residual_key = W_share_key,
             is_outcome_server = (srv == coord),
             n = as.integer(n_obs), session_id = session_id))
         }
         grad_t_xw <- .dsAgg(datasources[dealer_ci],
-          call("glmRing63GenGradTriplesDS",
+          call(name = "glmRing63GenGradTriplesDS",
                dcf0_pk = .to_b64url(transport_pks[[coord]]),
                dcf1_pk = .to_b64url(transport_pks[[nl]]),
                n = as.integer(n_obs), p = as.integer(p_shared),
@@ -626,9 +626,9 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         for (srv in server_list) {
           ci <- which(server_names == srv)
           peer <- setdiff(server_list, srv)
-          .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
+          .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS",
             session_id = session_id, grad_triple_key = gtk_xw))
-          rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+          rr <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
             peer_pk = .to_b64url(transport_pks[[peer]]), session_id = session_id))
           if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
           r1xw[[srv]] <- rr
@@ -639,7 +639,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         for (srv in server_list) {
           ci <- which(server_names == srv)
           is_c <- (srv == coord)
-          rr <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+          rr <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
             party_id = if (is_c) 0L else 1L, session_id = session_id))
           if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
           r2xw[[srv]] <- rr
@@ -673,7 +673,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
             p_local <- if (is_owner) length(x_vars_per_server[[srv]])
                        else length(x_vars_per_server[[owner_srv]])
             .dsAgg(datasources[ci],
-              call("dsvertOrdinalExtractXColumnDS",
+              call(name = "dsvertOrdinalExtractXColumnDS",
                    matrix_key = mat_key,
                    n = as.integer(n_obs),
                    p = as.integer(p_local),
@@ -687,13 +687,13 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           for (srv in server_list) {
             ci <- which(server_names == srv)
             .dsAgg(datasources[ci],
-              call("dsvertPrepareMultinomGradDS",
+              call(name = "dsvertPrepareMultinomGradDS",
                    residual_key = DXj_key,
                    is_outcome_server = (srv == coord),
                    n = as.integer(n_obs), session_id = session_id))
           }
           grad_t_H <- .dsAgg(datasources[dealer_ci],
-            call("glmRing63GenGradTriplesDS",
+            call(name = "glmRing63GenGradTriplesDS",
                  dcf0_pk = .to_b64url(transport_pks[[coord]]),
                  dcf1_pk = .to_b64url(transport_pks[[nl]]),
                  n = as.integer(n_obs), p = p_shared,
@@ -708,9 +708,9 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           for (srv in server_list) {
             ci <- which(server_names == srv)
             peer <- setdiff(server_list, srv)
-            .dsAgg(datasources[ci], call("k2StoreGradTripleDS",
+            .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS",
               session_id = session_id, grad_triple_key = gtk_H))
-            rr <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+            rr <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
               peer_pk = .to_b64url(transport_pks[[peer]]), session_id = session_id))
             if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
             r1H[[srv]] <- rr
@@ -721,7 +721,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           for (srv in server_list) {
             ci <- which(server_names == srv)
             is_c <- (srv == coord)
-            rr <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+            rr <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
               party_id = if (is_c) 0L else 1L, session_id = session_id))
             if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
             r2H[[srv]] <- rr
@@ -857,7 +857,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   for (srv in server_list) {
     ci <- which(server_names == srv)
     try(.dsAgg(datasources[ci],
-               call("mpcCleanupDS", session_id = session_id)),
+               call(name = "mpcCleanupDS", session_id = session_id)),
         silent = TRUE)
   }
 

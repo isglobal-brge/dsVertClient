@@ -27,12 +27,12 @@
   # Initialise Ed25519 transport on label so it can receive NL's eta^nl share
   # blob (and later any blob NL relays during Newton iters).
   init_y <- .dsAgg(datasources[y_ci],
-    call("glmRing63TransportInitDS", session_id = session_id))
+    call(name = "glmRing63TransportInitDS", session_id = session_id))
   if (is.list(init_y) && length(init_y) == 1L) init_y <- init_y[[1L]]
   label_pk <- init_y$transport_pk
 
   init_nl <- .dsAgg(datasources[nl_ci],
-    call("glmRing63TransportInitDS", session_id = session_id))
+    call(name = "glmRing63TransportInitDS", session_id = session_id))
   if (is.list(init_nl) && length(init_nl) == 1L) init_nl <- init_nl[[1L]]
   nl_pk <- init_nl$transport_pk
   transport_pks <- list()
@@ -42,7 +42,7 @@
   # NL splits eta^nl into Ring127 additive shares; transports peer-share
   # blob to label.
   share_r <- .dsAgg(datasources[nl_ci],
-    call("dsvertNBEtaShareDS",
+    call(name = "dsvertNBEtaShareDS",
          data_name = data, x_vars = x_nl,
          beta_values = as.numeric(beta_nl),
          target_pk = label_pk, session_id = session_id))
@@ -56,7 +56,7 @@
   # plaintext, FP-encodes, adds via k2-fp-add -> label's Ring127 share of
   # eta_total. Y is cached at label for later psi(y+theta) computation.
   recv_r <- .dsAgg(datasources[y_ci],
-    call("dsvertNBEtaTotalReceiveDS",
+    call(name = "dsvertNBEtaTotalReceiveDS",
          data_name = data, y_var = y_var_char,
          x_vars_label = x_label,
          beta_values_label = as.numeric(beta_label),
@@ -68,12 +68,12 @@
   # Sanity: NL's k2_nb_eta_share_fp slot is populated by dsvertNBEtaShareDS;
   # confirm via the helper.
   conf_r <- .dsAgg(datasources[nl_ci],
-    call("dsvertNBEtaShareConfirmDS", session_id = session_id))
+    call(name = "dsvertNBEtaShareConfirmDS", session_id = session_id))
   if (is.list(conf_r) && length(conf_r) == 1L) conf_r <- conf_r[[1L]]
   if (!isTRUE(conf_r$stored))
     stop("NL eta_total share confirmation failed", call. = FALSE)
   conf_l <- .dsAgg(datasources[y_ci],
-    call("dsvertNBEtaShareConfirmDS", session_id = session_id))
+    call(name = "dsvertNBEtaShareConfirmDS", session_id = session_id))
   if (is.list(conf_l) && length(conf_l) == 1L) conf_l <- conf_l[[1L]]
   if (!isTRUE(conf_l$stored))
     stop("Label eta_total share confirmation failed", call. = FALSE)
@@ -97,7 +97,7 @@
   for (server in server_list) {
     ci <- which(server_names == server)
     r <- .dsAgg(datasources[ci],
-      call("dsvertNBSumShareDS", input_key = key, session_id = session_id))
+      call(name = "dsvertNBSumShareDS", input_key = key, session_id = session_id))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     per_srv[[server]] <- r
   }
@@ -146,7 +146,7 @@
   for (server in server_list) {
     ci <- which(server_names == server)
     is_p0 <- (server == y_server)
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = "k2_nb_mu_share_fp", b_key = NULL,
       sign_a = 1L, sign_b = 0L,
       public_const_fp = if (is_p0) theta_fp_b64 else NULL,
@@ -184,7 +184,7 @@
 
   # === Step 5: (y + theta) re-share at label, transport mask to NL ===
   yt_share_r <- .dsAgg(datasources[ci_os],
-    call("dsvertNBYThetaShareDS",
+    call(name = "dsvertNBYThetaShareDS",
          theta = as.numeric(theta), target_pk = transport_pks[[nl]],
          session_id = session_id))
   if (is.list(yt_share_r) && length(yt_share_r) == 1L)
@@ -192,7 +192,7 @@
   yt_blob_slot <- "nb_yt_share_blob"
   .sendBlob(yt_share_r$sealed, yt_blob_slot, ci_nl)
   .dsAgg(datasources[ci_nl],
-    call("dsvertNBYThetaShareReceiveDS",
+    call(name = "dsvertNBYThetaShareReceiveDS",
          peer_yt_share_blob_key = yt_blob_slot, session_id = session_id))
 
   # === Step 6: (y + theta) * 1/(theta + mu) share via Beaver vecmul ===
@@ -242,7 +242,7 @@
 
   # === Step 10: Sumpsi(y+theta), Sumpsi_1(y+theta) plaintext at label ===
   psi_r <- .dsAgg(datasources[ci_os],
-    call("dsvertNBPsiAggregateDS", theta = theta, session_id = session_id))
+    call(name = "dsvertNBPsiAggregateDS", theta = theta, session_id = session_id))
   if (is.list(psi_r) && length(psi_r) == 1L) psi_r <- psi_r[[1L]]
   sum_psi <- as.numeric(psi_r$sum_psi)
   sum_tri <- as.numeric(psi_r$sum_tri)
