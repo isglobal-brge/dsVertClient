@@ -298,7 +298,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     stop("K=2 mode requires exactly 2 servers", call. = FALSE)
 
   # Adaptive log_n for large n: max_slots = 2^(log_n-1)
-  # n ≤ 4096 → log_n=13, n ≤ 8192 → log_n=14, n ≤ 16384 → log_n=15
+  # n <= 4096 -> log_n=13, n <= 8192 -> log_n=14, n <= 16384 -> log_n=15
   # Note: this is set here before n_obs is known; adjusted later after getObsCountDS
 
   # ===========================================================================
@@ -335,7 +335,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        n_obs, 2^14))
       new_log_n <- 15L
     }
-    if (verbose) message(sprintf("  [Adaptive] log_n bumped %d→%d for n=%d observations", log_n, new_log_n, n_obs))
+    if (verbose) message(sprintf("  [Adaptive] log_n bumped %d->%d for n=%d observations", log_n, new_log_n, n_obs))
     log_n <- as.integer(new_log_n)
   }
 
@@ -629,14 +629,14 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
   if (standardize_y && !is.null(y_sd)) {
     all_coefs_orig <- all_coefs_std * y_sd / all_x_sds
-    # IPW fix (2026-04-21 PM): under weighted fit, the loop's α_std
-    # absorbs the (ȳ_W − ȳ)/σ_y shift because y is centered by the
+    # IPW fix (2026-04-21 PM): under weighted fit, the loop's alpha_std
+    # absorbs the (ybar_W - ybar)/sigma_y shift because y is centered by the
     # UNWEIGHTED mean but the weighted-score optimum has non-zero
-    # mean residual in standardized space. Add the β_0_from_label ·
-    # σ_y term to unstandardize correctly. Under unweighted fit α_std
-    # converges to ≈ 0 (weighted-by-unity mean of centered y is 0), so
-    # the term is ≈ 0 and back-compat is preserved — verified by the
-    # Ring63 w_unit probe staying at max|Δβ| = 1.12e-4 STRICT.
+    # mean residual in standardized space. Add the beta_0_from_label *
+    # sigma_y term to unstandardize correctly. Under unweighted fit alpha_std
+    # converges to approx 0 (weighted-by-unity mean of centered y is 0), so
+    # the term is approx 0 and back-compat is preserved -- verified by the
+    # Ring63 w_unit probe staying at max|Deltabeta| = 1.12e-4 STRICT.
     intercept <- beta_0_from_label * y_sd + y_mean -
                  sum(all_coefs_orig * all_x_means)
   } else {
@@ -664,7 +664,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
   if (use_secure_agg) {
     # Secure deviance already computed in the Ring63 loop via Beaver dot-product.
-    # No individual η values are revealed. Only the scalar Σ(mu-y)² is returned.
+    # No individual eta values are revealed. Only the scalar Sum(mu-y)^2 is returned.
     if (!is.null(k3_result$deviance)) {
       if (verbose) message(sprintf("\n[Phase 5] Secure deviance (Beaver): %.4f", k3_result$deviance))
     }
@@ -675,18 +675,18 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     }
   }
 
-  # Deviance: from secure Beaver Σr² (available in both K=2 and K≥3)
+  # Deviance: from secure Beaver Sumr^2 (available in both K=2 and K>=3)
   deviance <- NA; null_deviance <- NA
   if (use_secure_agg && exists("k3_result") && !is.null(k3_result$deviance)) {
     deviance <- k3_result$deviance
   } else if (use_k2_beaver && exists("loop_result") && !is.null(loop_result$deviance)) {
     deviance <- loop_result$deviance
   }
-  # Gaussian deviance is computed in standardized space — destandardize
+  # Gaussian deviance is computed in standardized space -- destandardize
   if (family == "gaussian" && !is.null(y_sd) && !is.na(deviance)) {
     deviance <- deviance * y_sd^2
   }
-  # Null deviance: for Gaussian = Σ(y-ȳ)² = (n-1)*var(y). In std space, var(y_std)=1.
+  # Null deviance: for Gaussian = Sum(y-ybar)^2 = (n-1)*var(y). In std space, var(y_std)=1.
   null_deviance <- if (family == "gaussian") (n_obs - 1) * (y_sd %||% 1)^2 else NA
   pseudo_r2 <- if (!is.na(null_deviance) && null_deviance > 0) 1 - (deviance / null_deviance) else NA
   aic <- if (!is.na(deviance)) deviance + 2 * n_vars_total else NA
@@ -710,25 +710,25 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
   if (!is.null(inv_H) && !is.null(attr(inv_H, "raw_hessian"))) {
     H_raw <- attr(inv_H, "raw_hessian")
-    # Fisher = n × (Hessian - λI) where Hessian = X_std^T W X_std / n + λI
+    # Fisher = n x (Hessian - lambdaI) where Hessian = X_std^T W X_std / n + lambdaI
     H_adj <- H_raw - lambda * diag(nrow(H_raw))
     fisher_std <- n_obs * H_adj
     cov_std <- tryCatch(solve(fisher_std), error = function(e) NULL)
 
     if (!is.null(cov_std)) {
-      # Destandardize: construct Jacobian J where θ_orig = J × θ_std + const
+      # Destandardize: construct Jacobian J where theta_orig = J x theta_std + const
       p_feat <- length(all_x_sds)
       J <- diag(p_feat + 1)  # (intercept + features)
 
       if (standardize_y && !is.null(y_sd)) {
-        # Gaussian: β_orig_j = β_std_j × y_sd / x_sd_j
+        # Gaussian: beta_orig_j = beta_std_j x y_sd / x_sd_j
         for (jj in seq_len(p_feat)) {
           J[jj + 1, jj + 1] <- y_sd / all_x_sds[jj]
           J[1, jj + 1] <- -y_sd * all_x_means[jj] / all_x_sds[jj]
         }
         J[1, 1] <- y_sd
       } else {
-        # Binomial/Poisson: β_orig_j = β_std_j / x_sd_j
+        # Binomial/Poisson: beta_orig_j = beta_std_j / x_sd_j
         for (jj in seq_len(p_feat)) {
           J[jj + 1, jj + 1] <- 1.0 / all_x_sds[jj]
           J[1, jj + 1] <- -all_x_means[jj] / all_x_sds[jj]

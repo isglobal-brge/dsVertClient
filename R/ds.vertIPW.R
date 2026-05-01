@@ -52,9 +52,9 @@ ds.vertIPW <- function(outcome_formula, propensity_formula, data = NULL,
 #' @export
 print.ds.vertIPW <- function(x, ...) {
   cat("dsVert IPW estimator\n")
-  cat("\nStage 1 — Propensity (binomial):\n")
+  cat("\nStage 1 -- Propensity (binomial):\n")
   print(x$propensity)
-  cat("\nStage 2 — Outcome (", x$outcome$family, ", weighted):\n", sep = "")
+  cat("\nStage 2 -- Outcome (", x$outcome$family, ", weighted):\n", sep = "")
   print(x$outcome)
   invisible(x)
 }

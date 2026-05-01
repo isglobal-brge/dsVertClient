@@ -108,9 +108,9 @@ NULL
                                  p_coord, p_nl, proc.time()[[3]] - t0_share))
 
   # === PRE-GENERATE DCF KEYS (server-side, not client) ===
-  # K=2: only 1 non-DCF server (non-label) → fixed dealer, no rotation.
+  # K=2: only 1 non-DCF server (non-label) -> fixed dealer, no rotation.
   # Security: analyst needs both servers to extract data.
-  # For K≥3: dealer rotation provides stronger guarantees.
+  # For K>=3: dealer rotation provides stronger guarantees.
   dealer <- nl; dealer_conn <- nl_conn
   if (!is_gaussian) {
     t0_dcf <- proc.time()[[3]]
@@ -469,7 +469,7 @@ NULL
   dcf_parties <- c(coordinator, nl)
   dcf_conns <- c(coordinator_conn, nl_conn)
 
-  # Recompute η from converged β (SE computation may have overwritten shares)
+  # Recompute eta from converged beta (SE computation may have overwritten shares)
   # Guard zero-length peer slice (sleepstudy-style p_nl == 0 case).
   for (s in server_list) {
     ci <- which(server_names == s); is_coord <- (s == coordinator)
@@ -480,7 +480,7 @@ NULL
       is_coordinator = is_coord, session_id = session_id))
   }
 
-  # Helper: run one Beaver dot-product (n×1) and return aggregated scalar
+  # Helper: run one Beaver dot-product (nx1) and return aggregated scalar
   .beaver_dot <- function() {
     dt <- .dsAgg(datasources[dealer_conn],
       call("glmRing63GenGradTriplesDS",
@@ -525,8 +525,8 @@ NULL
     k2_deviance <- .beaver_dot()
 
   } else if (family == "binomial") {
-    # Binomial: D = 2*(Σsoftplus(η) - y^T·η)
-    # Step 1: softplus spline on η
+    # Binomial: D = 2*(Sumsoftplus(eta) - y^T*eta)
+    # Step 1: softplus spline on eta
     sp_dcf <- .dsAgg(datasources[dealer_conn],
       call("glmRing63GenDcfKeysDS",
            dcf0_pk = transport_pks[[coordinator]],
@@ -562,7 +562,7 @@ NULL
         if (is.list(r) && length(r) == 1) r <- r[[1]]; pr[[di]] <- r
       }
       if (ph == 1) {
-        # Send dcf_masked RAW (same as iteration loop — Phase 2 expects raw, not encrypted)
+        # Send dcf_masked RAW (same as iteration loop -- Phase 2 expects raw, not encrypted)
         .sendBlob(pr[[1]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[2])
         .sendBlob(pr[[2]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[1])
       } else if (ph == 2) {
@@ -586,7 +586,7 @@ NULL
         }
       }
     }
-    # Step 2: get Σsoftplus from both parties
+    # Step 2: get Sumsoftplus from both parties
     sums <- list()
     for (s in server_list) {
       ci <- which(server_names == s)
@@ -598,7 +598,7 @@ NULL
       share_a = sums[[coordinator]]$sum_fp, share_b = sums[[nl]]$sum_fp,
       frac_bits = frac_bits, ring = ring_tag))
     sum_softplus <- sum_sp_agg$values[1]
-    # Step 3: Beaver y^T·η
+    # Step 3: Beaver y^T*eta
     for (s in server_list) {
       ci <- which(server_names == s)
       .dsAgg(datasources[ci], call("glmRing63PrepDevianceDS",
@@ -608,7 +608,7 @@ NULL
     k2_deviance <- 2 * (sum_softplus - y_dot_eta)
 
   } else {
-    # Poisson: D = 2*(Σμ - y^T·η + C) where C = Σ(y·log(y) - y)
+    # Poisson: D = 2*(Summu - y^T*eta + C) where C = Sum(y*log(y) - y)
     sums <- list()
     for (s in server_list) {
       ci <- which(server_names == s)
@@ -622,7 +622,7 @@ NULL
     sum_mu <- sum_mu_agg$values[1]
     # Only the label server returns non-zero null_term; sum to pick it up
     null_term <- sum(sapply(sums, function(s) if(!is.null(s$null_term)) s$null_term else 0))
-    # Beaver y^T·η
+    # Beaver y^T*eta
     for (s in server_list) {
       ci <- which(server_names == s)
       .dsAgg(datasources[ci], call("glmRing63PrepDevianceDS",

@@ -37,7 +37,7 @@
                                      standardize = FALSE,
                                      ring = "ring63") {
   # Task #121 LMM Ring127 migration: when ring=="ring127", Beaver
-  # element-wise products use fracBits=50 (Uint128 shares) — a ~2^30
+  # element-wise products use fracBits=50 (Uint128 shares) -- a ~2^30
   # reduction in per-op truncation noise vs Ring63 fracBits=20. All
   # Beaver/gen-triples/aggregate DS ops already dispatch on `ring`.
   ring_tag <- if (is.character(ring)) ring else "ring63"
@@ -59,13 +59,13 @@
   int_col <- "dsvertlmmint"
 
   # SNR-boost: pre-multiply shared columns by `share_scale` before Beaver
-  # cross products, then de-scale the final XtX/Xty by c² client-side.
-  # Because β = solve(c²XtX, c²Xty) = solve(XtX, Xty) the GLS solution is
-  # invariant but the Beaver product entries have c²× larger magnitude
-  # vs the fixed absolute Ring63 FP noise — relative precision improves
-  # by a factor c². For c=8, this turns ~1.8e-4 relative on X4 into
-  # ~3e-6, well below the plan's rel<1e-4 bar for |β|>1.
-  # See docs/acceptance/path_b_targets.md §LMM iterative-refinement
+  # cross products, then de-scale the final XtX/Xty by c^2 client-side.
+  # Because beta = solve(c^2XtX, c^2Xty) = solve(XtX, Xty) the GLS solution is
+  # invariant but the Beaver product entries have c^2x larger magnitude
+  # vs the fixed absolute Ring63 FP noise -- relative precision improves
+  # by a factor c^2. For c=8, this turns ~1.8e-4 relative on X4 into
+  # ~3e-6, well below the plan's rel<1e-4 bar for |beta|>1.
+  # See docs/acceptance/path_b_targets.md Sec.LMM iterative-refinement
   # band-aid for the full rationale and escape hatch if this isn't
   # enough (escalate to task #111 B_full).
   sc <- as.numeric(share_scale)
@@ -78,7 +78,7 @@
   # Post-centering L2 standardization is enabled by default (the
   # Codex-approved structural fix 2026-04-19 for kappa=5.57e5 Gram
   # ill-conditioning). Server computes L2 of each centered column and
-  # divides by it, then returns `l2_scales` so the client can unscale β.
+  # divides by it, then returns `l2_scales` so the client can unscale beta.
   # Default ON; caller can pass `standardize = FALSE` for debugging.
   std_flag <- isTRUE(standardize)
 
@@ -227,7 +227,7 @@
   XtX[seq_len(p_y), seq_len(p_y)] <- as.matrix(local_y$XtX_local)
   # peer block.
   XtX[p_y + seq_len(p_p), p_y + seq_len(p_p)] <- as.matrix(local_p$XtX_local)
-  # Cross block (peer × ysrv).
+  # Cross block (peer x ysrv).
   idx <- 1L
   for (a in peer_cols) {
     for (b in ysrv_cols) {
@@ -261,18 +261,18 @@
   names(beta_hat) <- nm_out
 
   # Un-standardization: server divided each centered column X~_j by its
-  # L2 norm s_j before Gram. Model: y = β_0 + Σ β_j x_j produces a
-  # standardized system where β_std_j = β_raw_j × s_j. Unscale:
-  # β_raw_j = β_std_j / s_j. Same for XtX and Xty to return raw-basis
-  # quantities for downstream σ², SE consumers:
-  #   XtX_raw[i,j] = XtX_std[i,j] / (s_i × s_j)
+  # L2 norm s_j before Gram. Model: y = beta_0 + Sum beta_j x_j produces a
+  # standardized system where beta_std_j = beta_raw_j x s_j. Unscale:
+  # beta_raw_j = beta_std_j / s_j. Same for XtX and Xty to return raw-basis
+  # quantities for downstream sigma^2, SE consumers:
+  #   XtX_raw[i,j] = XtX_std[i,j] / (s_i x s_j)
   #   Xty_raw[j]   = Xty_std[j]   / s_j
   #   yty unchanged (y was not standardized).
   # The server returns l2_scales per column; the intercept column lives
   # on the outcome server only, so its scale is in local_y$l2_scales.
   l2_y <- as.list(local_y$l2_scales %||% list())
   l2_p <- as.list(local_p$l2_scales %||% list())
-  # Build a name → scale map, with "(Intercept)" mapped from int_col.
+  # Build a name -> scale map, with "(Intercept)" mapped from int_col.
   scales_raw <- c(l2_y, l2_p)
   nm_beta <- names(beta_hat)
   scale_per_coef <- setNames(rep(1.0, length(nm_beta)), nm_beta)
@@ -284,7 +284,7 @@
       scale_per_coef[nm] <- as.numeric(sj)
     }
   }
-  # Unscale β.
+  # Unscale beta.
   beta_unscaled <- beta_hat / scale_per_coef[nm_beta]
   # Unscale XtX and Xty to raw basis.
   S_inv <- 1.0 / scale_per_coef
@@ -296,7 +296,7 @@
   XtX_raw <- XtX * outer(S_inv_vec, S_inv_vec)
   Xty_raw <- Xty * S_inv_vec
 
-  # De-scale by 1/c² (SNR-boost legacy path; sc=1.0 default is a no-op).
+  # De-scale by 1/c^2 (SNR-boost legacy path; sc=1.0 default is a no-op).
   inv_sc2 <- 1.0 / (sc * sc)
   list(coefficients = beta_unscaled,
        XtX = XtX_raw * inv_sc2,

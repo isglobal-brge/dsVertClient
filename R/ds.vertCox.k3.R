@@ -1,6 +1,6 @@
 #' @title Federated Cox proportional-hazards via Allison-1982 Poisson trick (K=3)
 #' @description Discrete-time Allison-1982 / Whitehead-1980 / Prentice-Gloeckler
-#'   1978 §2 equivalence: the partial-likelihood Cox estimator is the
+#'   1978 Sec.2 equivalence: the partial-likelihood Cox estimator is the
 #'   maximum-likelihood Poisson regression on person-time-expanded data
 #'   with one row per (subject, at-risk-interval) pair, log-link, and a
 #'   piecewise-constant baseline hazard \eqn{\alpha_t} as a factor
@@ -11,7 +11,7 @@
 #'   \code{\link{ds.vertGLM}} call on the K=3 secure-aggregation path
 #'   with \code{family="poisson"}, \code{offset=log(at_risk * width)},
 #'   and the baseline factor \code{factor(t_bin)} included as design
-#'   columns. No new MPC primitives — full inheritance of the K=3 GLM
+#'   columns. No new MPC primitives -- full inheritance of the K=3 GLM
 #'   threat model (D-INV-1..5 preserved; honest-majority secure-agg
 #'   envelope; OT-Beaver dishonest-majority at the DCF-pair level).
 #'
@@ -23,10 +23,10 @@
 #'   \code{lung_pt_s1/s2/s3} to the test cluster; production
 #'   deployments would do the expansion server-side via a non-
 #'   disclosive helper (see \code{coxDiscreteShareDS.R} for the K=2
-#'   share-mask precedent — the K=3 generalisation is straightforward
+#'   share-mask precedent -- the K=3 generalisation is straightforward
 #'   3-party additive sharing).
 #'
-#' @param formula One-sided formula listing the slope covariates only —
+#' @param formula One-sided formula listing the slope covariates only --
 #'   \emph{not} a Surv(...) formula. Example: \code{~ age + sex_num + bmi}.
 #'   The outcome column is taken to be the user-supplied \code{event_col}.
 #' @param data Aligned data-frame name on each server (e.g. "DA_pt").
@@ -43,7 +43,7 @@
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD K=3 connections.
 #' @return list of class \code{ds.vertCox.k3} with \code{coefficients}
-#'   (slopes only — baseline factor levels dropped), \code{n_pp}
+#'   (slopes only -- baseline factor levels dropped), \code{n_pp}
 #'   (number of person-time rows), and the underlying
 #'   \code{ds.glm} object as \code{$fit}.
 #' @references
@@ -81,7 +81,7 @@ ds.vertCox.k3 <- function(formula, data, event_col,
             paste(rhs, collapse = " + "),
             baseline_col))
 
-  if (verbose) message("[ds.vertCox.k3] Allison-1982 Poisson trick — ",
+  if (verbose) message("[ds.vertCox.k3] Allison-1982 Poisson trick -- ",
                         "K=3 GLM family=poisson on person-time expansion.")
 
   fit <- ds.vertGLM(formula = poisson_formula,
@@ -91,9 +91,9 @@ ds.vertCox.k3 <- function(formula, data, event_col,
                     verbose = verbose,
                     datasources = datasources)
 
-  ## Drop the baseline factor levels from the reported slopes —
+  ## Drop the baseline factor levels from the reported slopes --
   ## they are nuisance parameters representing the piecewise-constant
-  ## log-baseline-hazard and are not part of the Cox β.
+  ## log-baseline-hazard and are not part of the Cox beta.
   bn <- names(fit$coefficients)
   is_baseline <- grepl(sprintf("^factor\\(%s\\)", baseline_col), bn)
   is_intercept <- bn %in% c("(Intercept)")
@@ -113,7 +113,7 @@ ds.vertCox.k3 <- function(formula, data, event_col,
 print.ds.vertCox.k3 <- function(x, ...) {
   cat("dsVert Cox PH (K=3, Allison-1982 Poisson trick)\n")
   cat(sprintf("  Person-time rows: %d\n", x$n_pp))
-  cat("\nSlope coefficients (β):\n")
+  cat("\nSlope coefficients (beta):\n")
   print(round(x$coefficients, 5))
   cat("\nReference: survival::coxph(Surv(time, status) ~ ...). ",
       "Baseline strata factor levels are dropped from the slopes ",

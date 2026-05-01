@@ -9,11 +9,11 @@
 #'   solved exactly by a weighted Gaussian \code{ds.vertGLM} call; the
 #'   profile likelihood at each candidate \eqn{\rho} is
 #'   evaluated from the inner fit's \code{$deviance} plus the
-#'   per-cluster log-determinant closed form (Christensen 2019 §A.3,
-#'   Pinheiro & Bates 2000 §2.4).
+#'   per-cluster log-determinant closed form (Christensen 2019 Sec.A.3,
+#'   Pinheiro & Bates 2000 Sec.2.4).
 #'
 #'   K=3 implementation reuses the secure-aggregation \code{ds.vertGLM}
-#'   pipeline at each profile evaluation — no new MPC primitives. The
+#'   pipeline at each profile evaluation -- no new MPC primitives. The
 #'   per-cluster GLS weights are a public function of \eqn{\rho} and
 #'   the cluster sizes (already disclosed under
 #'   \code{datashield.privacyLevel}), so D-INV-1..5 are preserved
@@ -22,7 +22,7 @@
 #'   Outer optimisation is golden-section search over
 #'   \eqn{\rho \in (\rho_{\min}, \rho_{\max})}; default
 #'   \eqn{(0.001, 0.999)} so the search never enters the boundary
-#'   singularities at \eqn{\rho = 0} (no random effect — degenerate
+#'   singularities at \eqn{\rho = 0} (no random effect -- degenerate
 #'   GLS) or \eqn{\rho = 1} (infinite \eqn{\sigma_b^2}).
 #'
 #' @param formula Fixed-effects formula \code{y ~ X}.
@@ -38,9 +38,9 @@
 #'   \code{n_clusters}, \code{cluster_sizes}, and the inner ds.glm fit.
 #' @references
 #' Christensen, R. H. B. (2019). \emph{Linear Models}. \code{ordinal::clm.fit}
-#'   §A.3 — REML profile likelihood for variance components.
+#'   Sec.A.3 -- REML profile likelihood for variance components.
 #' Pinheiro, J. C. & Bates, D. M. (2000). \emph{Mixed-Effects Models in
-#'   S/S-PLUS}, §2.4.
+#'   S/S-PLUS}, Sec.2.4.
 #' Laird, N. M. & Ware, J. H. (1982). Random-effects models for
 #'   longitudinal data. \emph{Biometrics}, 38(4), 963-974.
 #' Lindstrom, M. J. & Bates, D. M. (1990). Nonlinear mixed effects
@@ -61,7 +61,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     stop("formula must be a y ~ X formula", call. = FALSE)
 
   ## Locate cluster_col on one of the servers (must be the outcome
-  ## server — same constraint as ds.vertGLMM).
+  ## server -- same constraint as ds.vertGLMM).
   server_names <- names(datasources)
   cluster_srv <- NULL
   for (.srv in server_names) {
@@ -78,8 +78,8 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     stop("cluster_col '", cluster_col, "' not found on any server",
          call. = FALSE)
 
-  ## Per-cluster sizes — public under privacy-level threshold.
-  if (verbose) message("[ds.vertLMM.k3] Querying cluster sizes …")
+  ## Per-cluster sizes -- public under privacy-level threshold.
+  if (verbose) message("[ds.vertLMM.k3] Querying cluster sizes ...")
   ci <- which(server_names == cluster_srv)
   ci_info <- DSI::datashield.aggregate(datasources[ci],
     call("dsvertClusterSizesDS", data_name = data,
@@ -91,21 +91,21 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
 
   ## REML profile log-likelihood. For balanced or near-balanced
   ## random-intercept design the per-row GLS weight is
-  ##   w_ij(ρ) = 1 - ρ/(1 + ρ(n_i - 1))
+  ##   w_ij(rho) = 1 - rho/(1 + rho(n_i - 1))
   ## which gives ds.vertGLM the same fixed-effect estimator as the
-  ## REML solution at that ρ. The profile-loglik-up-to-constants is
-  ##   l_p(ρ) = -½ Σ_i (n_i - 1) log(1 - ρ) - ½ Σ_i log(1 + ρ(n_i - 1))
-  ##           - (n - p)/2 · log(RSS_p(ρ) / (n - p))
-  ## with RSS_p(ρ) recovered from the weighted GLM fit's deviance.
-  ## (Pinheiro & Bates 2000 §2.4.1 Eq. 2.20.)
+  ## REML solution at that rho. The profile-loglik-up-to-constants is
+  ##   l_p(rho) = -1/2 Sum_i (n_i - 1) log(1 - rho) - 1/2 Sum_i log(1 + rho(n_i - 1))
+  ##           - (n - p)/2 * log(RSS_p(rho) / (n - p))
+  ## with RSS_p(rho) recovered from the weighted GLM fit's deviance.
+  ## (Pinheiro & Bates 2000 Sec.2.4.1 Eq. 2.20.)
 
   .compute_weights_per_cluster <- function(rho) {
-    ## w_i = 1 - ρ/(1 + ρ(n_i - 1)).
+    ## w_i = 1 - rho/(1 + rho(n_i - 1)).
     1 - rho / (1 + rho * (n_i - 1))
   }
 
   .neg_profile_loglik <- function(rho) {
-    if (verbose) message(sprintf("[ds.vertLMM.k3] inner fit at ρ=%.4f", rho))
+    if (verbose) message(sprintf("[ds.vertLMM.k3] inner fit at rho=%.4f", rho))
     w_per_cluster <- .compute_weights_per_cluster(rho)
     DSI::datashield.aggregate(datasources[ci],
       call("dsvertExpandClusterWeightsDS",
@@ -127,9 +127,9 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     -(- 0.5 * log_det - 0.5 * df_resid * log(sigma2 / df_resid))
   }
 
-  ## Golden-section search over ρ.
-  if (verbose) message("[ds.vertLMM.k3] golden-section over ρ ∈ [",
-                        rho_lo, ", ", rho_hi, "] …")
+  ## Golden-section search over rho.
+  if (verbose) message("[ds.vertLMM.k3] golden-section over rho in [",
+                        rho_lo, ", ", rho_hi, "] ...")
   phi <- (sqrt(5) - 1) / 2
   a <- rho_lo; b_ <- rho_hi
   c_ <- b_ - phi * (b_ - a); d_ <- a + phi * (b_ - a)
@@ -143,11 +143,11 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
       a <- c_; c_ <- d_; fc <- fd
       d_ <- a + phi * (b_ - a); fd <- .neg_profile_loglik(d_)
     }
-    if (verbose) message(sprintf("  it=%d  ρ ∈ [%.4f, %.4f]", it, a, b_))
+    if (verbose) message(sprintf("  it=%d  rho in [%.4f, %.4f]", it, a, b_))
   }
   rho_hat <- (a + b_) / 2
 
-  ## Final fit at ρ̂.
+  ## Final fit at rho.
   w_final <- .compute_weights_per_cluster(rho_hat)
   DSI::datashield.aggregate(datasources[ci],
     call("dsvertExpandClusterWeightsDS",
@@ -166,7 +166,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   p <- length(fit_final$coefficients)
   df_resid <- max(n_total - p, 1L)
   sigma2_hat <- rss / df_resid
-  ## σ_b² = ρ · σ² · (1 / (1 - ρ)) at the balanced-design fix point.
+  ## sigma_b^2 = rho * sigma^2 * (1 / (1 - rho)) at the balanced-design fix point.
   sigma_b2_hat <- rho_hat * sigma2_hat / max(1 - rho_hat, 1e-12)
 
   out <- list(
@@ -188,9 +188,9 @@ print.ds.vertLMM.k3 <- function(x, ...) {
   cat("dsVert LMM (K=3, REML 1-D profile)\n")
   cat(sprintf("  Clusters = %d   Total N = %d\n",
               x$n_clusters, sum(x$cluster_sizes)))
-  cat(sprintf("  ρ̂ = %.4f   σ̂_b² = %.4g   σ̂² = %.4g\n",
+  cat(sprintf("  rho = %.4f   sigma_b^2 = %.4g   sigma^2 = %.4g\n",
               x$rho_hat, x$sigma_b2, x$sigma2))
-  cat("\nFixed effects (β):\n")
+  cat("\nFixed effects (beta):\n")
   print(round(x$coefficients, 5))
   invisible(x)
 }

@@ -39,7 +39,7 @@
   #      mu*G shares on both parties under canonical key names.
   neg_grad_k <- .cox_score_round(beta_std)
 
-  # Helper: one Beaver vecmul of session slot x_key × y_key → output slot.
+  # Helper: one Beaver vecmul of session slot x_key x y_key -> output slot.
   # Returns nothing; output lives in `output_key` on both parties.
   .beaver_mul <- function(x_key, y_key, output_key) {
     tri <- single(.dsAgg(datasources[dealer_ci],
