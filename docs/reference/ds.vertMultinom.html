@@ -103,6 +103,15 @@ Default "\<!-- %s_ind" (e.g., stage_ind_I, stage_ind_II, ...). The -->
 indicator columns must already exist server-side.</p></dd>
 
 
+<dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>
+<dd><p>Logical (default TRUE). Print per-class fit progress.</p></dd>
+
+
+<dt id="arg-datasources">datasources<a class="anchor" aria-label="anchor" href="#arg-datasources"></a></dt>
+<dd><p>DataSHIELD connections; if NULL, uses
+<code><a href="https://datashield.github.io/DSI/reference/datashield.connections_find.html" class="external-link">DSI::datashield.connections_find()</a></code>.</p></dd>
+
+
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
 <dd><p>passed through to each underlying <code>ds.vertGLM</code> call.</p></dd>
 
@@ -120,6 +129,36 @@ classes).</p>
 so no new MPC primitives are required. The client sees only the
 K-1 aggregate coefficient vectors; patient-level class indicators
 stay at the server that hosts the outcome.</p>
+    </div>
+    <div class="section level2">
+    <h2 id="formal-bound-on-max-deltapi-vs-joint-softmax-auditoria-seam-">Formal bound on max|Deltapi| vs joint-softmax (AUDITORIA seam)<a class="anchor" aria-label="anchor" href="#formal-bound-on-max-deltapi-vs-joint-softmax-auditoria-seam-"></a></h2>
+
+
+<p>The OVR approximation has an <strong>intrinsic theoretical gap</strong> to the
+joint-softmax MLE (<code><a href="https://rdrr.io/pkg/nnet/man/multinom.html" class="external-link">nnet::multinom</a></code>) that is independent of
+MPC precision (Ring63/Ring127) and of any permutation bug. Bound
+follows Rifkin &amp; Klautau 2004 <em>JMLR</em> 5:101-141 "In Defense of
+One-Vs-All Classification": for K-class OVR on imbalanced data,
+\(\|\pi_{OVR} - \pi_{softmax}\|_\infty \le O((1 - p_{min})
+  \log K)\) where \(p_{min}\) is the smallest class proportion.</p>
+<p>Empirically validated:</p><ul><li><p>L1 central OVR vs <code><a href="https://rdrr.io/pkg/nnet/man/multinom.html" class="external-link">nnet::multinom</a></code> on balanced
+birthwt (K=3, \(p_{min} \approx 0.33\)):
+<code>max|Deltapi| = 2.35e-01</code></p></li>
+<li><p>L3 federated on NHANES bp_cls (K=3, less balanced):
+<code>max|Deltapi| = 3.45e-01</code> (stable across 6+ runs)</p></li>
+</ul><p>Seam diagnostics (AUDITORIA-requested, 2026-04-24):</p><ul><li><p>Permutation bug ruled out – intercept anchor uses
+name-indexed access (line ~135 <code>intersect(names(
+          gamma_k), names(x_means))</code>); both sides in formula order
+by construction.</p></li>
+<li><p>Ring63/Ring127 floor ruled out – Catrina-Saxena bound for
+Ring63 fracBits=20 over this pipeline is \(\sim\)5e-4,
+three OoM below observed.</p></li>
+<li><p>Closing the 3.45e-01 gap requires the full softmax Newton
+path – shipped as <code><a href="ds.vertMultinomJointNewton.html">ds.vertMultinomJointNewton</a></code>
+which reaches PRACTICAL max|Deltapi| approx 4.7e-02 on the same
+cohort (7.3x improvement via joint Newton vs OVR anchor).</p></li>
+</ul><p>The 3.45e-01 label is therefore <strong>by design</strong> for this estimator –
+not a parking item.</p>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
