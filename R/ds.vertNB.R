@@ -5,7 +5,7 @@
 #'     \item Fit \eqn{\hat\beta} via the dsVert Poisson GLM (identical
 #'           score under canonical log link so the point estimate is
 #'           the same; only the covariance differs).
-#'     \item Estimate \eqn{\hat\theta} by client-side Newton–Raphson on
+#'     \item Estimate \eqn{\hat\theta} by client-side Newton-Raphson on
 #'           the NB profile log-likelihood, evaluated at each candidate
 #'           \eqn{\theta} through \code{dsvertNBProfileSumsDS} which
 #'           returns \eqn{\sum\psi(y_i+\theta)}, \eqn{\sum\psi_1(y_i+\theta)},
@@ -170,10 +170,10 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
 }
 
 # Client-side Newton-Raphson on the NB profile log-likelihood score.
-# Uses scalar aggregates (Σψ(y+θ), Σψ₁(y+θ), n, ȳ) from outcome server.
-# Homogeneous-μ MLE (μ≡ȳ) matches the specialisation used by MASS::theta.ml
+# Uses scalar aggregates (Sumpsi(y+theta), Sumpsi_1(y+theta), n, ybar) from outcome server.
+# Homogeneous-mu MLE (mu==ybar) matches the specialisation used by MASS::theta.ml
 # when covariates are absorbed into a shared offset. For a GLM with
-# non-constant μᵢ this returns the iid-equivalent θ̂ which empirically
+# non-constant mu_i this returns the iid-equivalent theta which empirically
 # tracks MASS::glm.nb theta to < 1% on quine / overdispersed counts.
 # No per-patient disclosure: each server call reveals only 4 scalars.
 .ds_vertNB_profile_mle_theta <- function(datasources, y_srv, server_names,
@@ -212,7 +212,7 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
       damp <- damp + 1L
     }
     if (verbose) {
-      message(sprintf("  [NB θ-MLE] iter %d  theta=%.6g  s=%.3e  sp=%.3e  step=%.3e",
+      message(sprintf("  [NB theta-MLE] iter %d  theta=%.6g  s=%.3e  sp=%.3e  step=%.3e",
                        it, theta_new, s, sp, step))
     }
     if (!is.finite(theta_new) || theta_new <= 0) return(theta)

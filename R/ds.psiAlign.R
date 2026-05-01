@@ -24,7 +24,7 @@ ds.isPsiAligned <- function(newobj = "DA", datasources = NULL) {
 #'   Diffie-Hellman Private Set Intersection (ECDH-PSI) with blind-relay
 #'   transport encryption. Aligns data frames across vertically partitioned
 #'   DataSHIELD servers so that rows correspond to the same individuals.
-#'   The client never sees raw EC points — only opaque encrypted blobs.
+#'   The client never sees raw EC points -- only opaque encrypted blobs.
 #'
 #' @param data_name Character string. Name of the data frame on each server.
 #' @param id_col Character string. Name of the identifier column.
@@ -75,7 +75,7 @@ ds.isPsiAligned <- function(newobj = "DA", datasources = NULL) {
 #'
 #' \subsection{Security (DDH assumption on P-256, malicious-client model)}{
 #' \itemize{
-#'   \item The client sees only opaque encrypted blobs — not EC points.
+#'   \item The client sees only opaque encrypted blobs -- not EC points.
 #'   \item Each server's scalar never leaves the server.
 #'   \item PSI firewall: phase ordering + one-shot semantics prevent OPRF
 #'     oracle attacks.
@@ -241,8 +241,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   # ==================================================================
   # Phase 1: Reference server masks its IDs
   # ==================================================================
-  # The ref server generates a random P-256 scalar α and computes
-  # α·H(id) for each ID. Points are stored server-side (NOT returned).
+  # The ref server generates a random P-256 scalar alpha and computes
+  # alpha*H(id) for each ID. Points are stored server-side (NOT returned).
   if (verbose) message("[Phase 1] Reference server masking IDs...")
   ref_result <- DSI::datashield.aggregate(
     conns = ref_conn,
@@ -265,7 +265,7 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     encrypted_ref_blobs[[target_name]] <- export_result[[1]]$encrypted_blob
   }
 
-  # Deliver blobs to all targets (sequential — different blobs per target)
+  # Deliver blobs to all targets (sequential -- different blobs per target)
   for (target_name in target_names) {
     .storeLargeBlob("ref_encrypted_blob", encrypted_ref_blobs[[target_name]],
                     datasources[target_name])

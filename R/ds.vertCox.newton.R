@@ -83,7 +83,7 @@
   Fisher <- matrix(0, p_total, p_total)
 
   .one_beaver_product <- function(which_vec, weight_key, j, k) {
-    # Returns the scalar of Σ (weight) · (A_j · A_k) where A = X or S.
+    # Returns the scalar of Sum (weight) * (A_j * A_k) where A = X or S.
     # Steps: load pair -> gen triple -> consume -> R1 -> R2 -> scalar.
     for (s in server_list) {
       ci <- which(server_names == s)

@@ -43,11 +43,11 @@
 #' @param full_irls Logical. Retained for API continuity. In the
 #'   current release the "coupling" phase only rescales the per-class
 #'   COVARIANCE blocks by the softmax variance factor; the COEFFICIENTS
-#'   remain at the OVR warm-start and the softmax↔OVR point-estimate
-#'   gap is NOT closed (probe_multinom_central_unit.R: max|Δπ| ≈ 2.4e-1
+#'   remain at the OVR warm-start and the softmax<->OVR point-estimate
+#'   gap is NOT closed (probe_multinom_central_unit.R: max|Deltapi| approx 2.4e-1
 #'   on birthwt, intrinsic to OVR regardless of Ring/MPC precision).
 #'   Full softmax Newton via shared-exp + shared-recip + Beaver-vecmul
-#'   on per-patient η_k / μ_k shares is the v2 Month 3 deliverable
+#'   on per-patient eta_k / mu_k shares is the v2 Month 3 deliverable
 #'   (see docs/error_bounds/multinom_joint_bound.md for the upgrade
 #'   path). Setting full_irls=TRUE emits a warning.
 #' @param coupling_iter Number of covariance-rescaling passes when
@@ -169,12 +169,12 @@ ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
     for (ci in seq_len(coupling_iter)) {
       delta_max <- 0
       for (k in non_ref) {
-        # Re-fit class k vs reference with weight ∝ softmax variance.
+        # Re-fit class k vs reference with weight prop softmax variance.
         # Weight depends on current betas via a scalar shrinkage factor
         # derived from the per-class marginal probability.
         f_k <- warm$fits[[k]]
         if (is.null(f_k)) next
-        # Aggregate softmax weight: p_k(1-p_k) ≈ class_probs[k] *
+        # Aggregate softmax weight: p_k(1-p_k) approx class_probs[k] *
         # (1 - class_probs[k]) when marg is available.
         if (!is.null(marg)) {
           w_bar <- marg[k] * (1 - marg[k])
@@ -186,11 +186,11 @@ ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
         if (!is.null(f_k$covariance)) {
           cov_k <- f_k$covariance
           # Refined beta = old_beta + inflation_factor * (score at old)
-          # Since score at converged point ≈ 0, a single-step update
+          # Since score at converged point approx 0, a single-step update
           # from the OVR point gives the joint-softmax correction:
-          # beta_joint ≈ beta_ovr + (cov_k / w_bar - cov_k) %*% grad_ovr
+          # beta_joint approx beta_ovr + (cov_k / w_bar - cov_k) %*% grad_ovr
           # where grad_ovr at the converged OVR solution is ~0, so
-          # beta_joint ≈ beta_ovr to first order. The coupling
+          # beta_joint approx beta_ovr to first order. The coupling
           # manifests in the VARIANCE (the w_bar factor), not the mean.
           # Update the covariance block to reflect softmax coupling.
           cov_blocks[[k]] <- cov_k / w_bar

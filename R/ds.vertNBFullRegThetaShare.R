@@ -1,17 +1,17 @@
-#' @title Non-disclosive K=2 share-domain NB full-reg θ MLE orchestrator
+#' @title Non-disclosive K=2 share-domain NB full-reg theta MLE orchestrator
 #' @description Internal orchestration helper invoked by
-#'   \code{ds.vertNBFullRegTheta(variant = "full_reg_nd")}. Per Newton-θ
+#'   \code{ds.vertNBFullRegTheta(variant = "full_reg_nd")}. Per Newton-theta
 #'   iter, drives the share-domain pipeline that closes D-INV-4 (no
-#'   per-patient η^nl reveal at label) by keeping η, μ, log(μ+θ),
-#'   1/(θ+μ) and (y+θ)·1/(θ+μ) all in Ring127 additive secret shares
+#'   per-patient eta^nl reveal at label) by keeping eta, mu, log(mu+theta),
+#'   1/(theta+mu) and (y+theta)*1/(theta+mu) all in Ring127 additive secret shares
 #'   end-to-end through Beaver vecmul + AffineCombine + Chebyshev-
 #'   Clenshaw primitives.
 #'
-#'   Refs: Lawless 1987 (NB profile-MLE θ score); Venables–Ripley 2002
-#'   §7.4 (\code{glm.nb} Newton); Catrina–Saxena 2010 §3.3 (multiplicative
+#'   Refs: Lawless 1987 (NB profile-MLE theta score); Venables-Ripley 2002
+#'   Sec.7.4 (\code{glm.nb} Newton); Catrina-Saxena 2010 Sec.3.3 (multiplicative
 #'   depth ULP); Beaver 1991 (precomputed multiplication triples);
-#'   Demmler–Schneider–Zohner ABY 2015 §III.B (K=2 OT-Beaver
-#'   dishonest-majority threat model); Trefethen ATAP §8 (Bernstein-
+#'   Demmler-Schneider-Zohner ABY 2015 Sec.III.B (K=2 OT-Beaver
+#'   dishonest-majority threat model); Trefethen ATAP Sec.8 (Bernstein-
 #'   ellipse Chebyshev rel error).
 #' @keywords internal
 #' @noRd
@@ -24,7 +24,7 @@
                                           beta_label, beta_nl, int_val,
                                           y_var_char, session_id,
                                           .dsAgg, .sendBlob, verbose = FALSE) {
-  # Initialise Ed25519 transport on label so it can receive NL's η^nl share
+  # Initialise Ed25519 transport on label so it can receive NL's eta^nl share
   # blob (and later any blob NL relays during Newton iters).
   init_y <- .dsAgg(datasources[y_ci],
     call("glmRing63TransportInitDS", session_id = session_id))
@@ -39,7 +39,7 @@
   transport_pks[[y_srv]]  <- label_pk
   transport_pks[[nl_srv]] <- nl_pk
 
-  # NL splits η^nl into Ring127 additive shares; transports peer-share
+  # NL splits eta^nl into Ring127 additive shares; transports peer-share
   # blob to label.
   share_r <- .dsAgg(datasources[nl_ci],
     call("dsvertNBEtaShareDS",
@@ -52,9 +52,9 @@
   blob_slot <- "nb_eta_nl_share_blob"
   .sendBlob(share_r$sealed, blob_slot, y_ci)
 
-  # Label receives blob, decrypts NL's share, computes own η_label + β₀
-  # plaintext, FP-encodes, adds via k2-fp-add → label's Ring127 share of
-  # η_total. Y is cached at label for later ψ(y+θ) computation.
+  # Label receives blob, decrypts NL's share, computes own eta_label + beta_0
+  # plaintext, FP-encodes, adds via k2-fp-add -> label's Ring127 share of
+  # eta_total. Y is cached at label for later psi(y+theta) computation.
   recv_r <- .dsAgg(datasources[y_ci],
     call("dsvertNBEtaTotalReceiveDS",
          data_name = data, y_var = y_var_char,
@@ -71,15 +71,15 @@
     call("dsvertNBEtaShareConfirmDS", session_id = session_id))
   if (is.list(conf_r) && length(conf_r) == 1L) conf_r <- conf_r[[1L]]
   if (!isTRUE(conf_r$stored))
-    stop("NL η_total share confirmation failed", call. = FALSE)
+    stop("NL eta_total share confirmation failed", call. = FALSE)
   conf_l <- .dsAgg(datasources[y_ci],
     call("dsvertNBEtaShareConfirmDS", session_id = session_id))
   if (is.list(conf_l) && length(conf_l) == 1L) conf_l <- conf_l[[1L]]
   if (!isTRUE(conf_l$stored))
-    stop("Label η_total share confirmation failed", call. = FALSE)
+    stop("Label eta_total share confirmation failed", call. = FALSE)
 
   if (isTRUE(verbose))
-    message(sprintf("[NBFullRegND] session setup OK n=%d (D-INV-4 closed: η^nl in shares)",
+    message(sprintf("[NBFullRegND] session setup OK n=%d (D-INV-4 closed: eta^nl in shares)",
                      as.integer(recv_r$n)))
 
   list(transport_pks = transport_pks, n = as.integer(recv_r$n),
@@ -112,7 +112,7 @@
 # Note: prior `.nb_fullreg_nd_log_scale` plaintext-rescale heuristic was
 # removed when the NR-LOG path landed (commits 2026-04-29). The single-
 # scale [1, 10] core extended-log primitive bottlenecked at MARGINAL
-# 11.6× σ-probe ratio because most NB operating-range elements fell
+# 11.6x sigma-probe ratio because most NB operating-range elements fell
 # outside [1, 10]. NR-LOG on wide-Chebyshev [0.1, 1000] seed + 5 NR
 # iters drives rel to ULP regardless of operating range.
 
@@ -128,7 +128,7 @@
   if (!is.finite(theta) || theta <= 0)
     return(list(score = NA_real_, deriv = NA_real_, n = n_obs))
 
-  # === Step 1: μ_share via .ring127_exp_round_keyed_extended ===
+  # === Step 1: mu_share via .ring127_exp_round_keyed_extended ===
   .ring127_exp_round_keyed_extended(
     in_key = "k2_nb_eta_share_fp",
     out_key = "k2_nb_mu_share_fp",
@@ -139,7 +139,7 @@
     transport_pks = transport_pks, session_id = session_id,
     .dsAgg = .dsAgg, .sendBlob = .sendBlob)
 
-  # === Step 2: (μ + θ)_share — party-0 (label) absorbs scalar θ ===
+  # === Step 2: (mu + theta)_share -- party-0 (label) absorbs scalar theta ===
   theta_fp_b64 <- .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
     values = array(as.numeric(theta), dim = 1L),
     frac_bits = 50L, ring = "ring127"))$fp_data)
@@ -155,12 +155,12 @@
       n = as.integer(n_obs), session_id = session_id))
   }
 
-  # === Step 3: log(μ + θ)_share via NR-LOG (Pugh 2004 §3) ===
+  # === Step 3: log(mu + theta)_share via NR-LOG (Pugh 2004 Sec.3) ===
   # Wide-Chebyshev seed on [0.1, 1000] degree 60 + 5 NR iters of
-  # y_{n+1} = y_n + x · exp(-y_n) - 1 (quadratic convergence,
-  # Goldschmidt 1964). Drives rel error to ~7.8e-27 ≪ ULP 2^-50,
+  # y_{n+1} = y_n + x * exp(-y_n) - 1 (quadratic convergence,
+  # Goldschmidt 1964). Drives rel error to ~7.8e-27 << ULP 2^-50,
   # eliminating the plaintext-rescale single-scale precision floor
-  # that bottlenecked the previous extended-log path at MARGINAL 11.6×.
+  # that bottlenecked the previous extended-log path at MARGINAL 11.6x.
   .ring127_log_round_keyed_nr(
     in_key = "k2_nb_mupt_share_fp",
     out_key = "k2_nb_log_mupt_share_fp",
@@ -171,7 +171,7 @@
     transport_pks = transport_pks, session_id = session_id,
     .dsAgg = .dsAgg, .sendBlob = .sendBlob)
 
-  # === Step 4: 1/(θ + μ)_share via .ring127_recip_round_keyed ===
+  # === Step 4: 1/(theta + mu)_share via .ring127_recip_round_keyed ===
   .ring127_recip_round_keyed(
     in_key = "k2_nb_mupt_share_fp",
     out_key = "k2_nb_recip_mupt_share_fp",
@@ -182,7 +182,7 @@
     transport_pks = transport_pks, session_id = session_id,
     .dsAgg = .dsAgg, .sendBlob = .sendBlob)
 
-  # === Step 5: (y + θ) re-share at label, transport mask to NL ===
+  # === Step 5: (y + theta) re-share at label, transport mask to NL ===
   yt_share_r <- .dsAgg(datasources[ci_os],
     call("dsvertNBYThetaShareDS",
          theta = as.numeric(theta), target_pk = transport_pks[[nl]],
@@ -195,7 +195,7 @@
     call("dsvertNBYThetaShareReceiveDS",
          peer_yt_share_blob_key = yt_blob_slot, session_id = session_id))
 
-  # === Step 6: (y + θ) · 1/(θ + μ) share via Beaver vecmul ===
+  # === Step 6: (y + theta) * 1/(theta + mu) share via Beaver vecmul ===
   .ring127_vecmul(
     x_key = "k2_nb_yt_share_fp",
     y_key = "k2_nb_recip_mupt_share_fp",
@@ -207,7 +207,7 @@
     transport_pks = transport_pks, session_id = session_id,
     .dsAgg = .dsAgg, .sendBlob = .sendBlob)
 
-  # === Step 7: 1/(θ + μ)² share via Beaver vecmul ===
+  # === Step 7: 1/(theta + mu)^2 share via Beaver vecmul ===
   .ring127_vecmul(
     x_key = "k2_nb_recip_mupt_share_fp",
     y_key = "k2_nb_recip_mupt_share_fp",
@@ -219,7 +219,7 @@
     transport_pks = transport_pks, session_id = session_id,
     .dsAgg = .dsAgg, .sendBlob = .sendBlob)
 
-  # === Step 8: (y + θ) · 1/(θ + μ)² share via Beaver vecmul ===
+  # === Step 8: (y + theta) * 1/(theta + mu)^2 share via Beaver vecmul ===
   .ring127_vecmul(
     x_key = "k2_nb_yt_share_fp",
     y_key = "k2_nb_recip2_mupt_share_fp",
@@ -240,7 +240,7 @@
   sum_ypt_over_tmu  <- rs("k2_nb_ypt_over_tmu_share_fp")
   sum_ypt_over_tmu2 <- rs("k2_nb_ypt_over_tmu2_share_fp")
 
-  # === Step 10: Σψ(y+θ), Σψ_1(y+θ) plaintext at label ===
+  # === Step 10: Sumpsi(y+theta), Sumpsi_1(y+theta) plaintext at label ===
   psi_r <- .dsAgg(datasources[ci_os],
     call("dsvertNBPsiAggregateDS", theta = theta, session_id = session_id))
   if (is.list(psi_r) && length(psi_r) == 1L) psi_r <- psi_r[[1L]]
@@ -257,7 +257,7 @@
 
   if (isTRUE(verbose))
     message(sprintf(
-      "[NBFullRegND] θ=%.4f  score=%+.4e  deriv=%+.4e  n=%d  Σlog(μ+θ)=%.3f  Σ1/(θ+μ)=%.3f  Σ(y+θ)/(θ+μ)=%.3f  Σ(y+θ)/(θ+μ)²=%.3f  Σψ=%.3f  Σψ_1=%.3f",
+      "[NBFullRegND] theta=%.4f  score=%+.4e  deriv=%+.4e  n=%d  Sumlog(mu+theta)=%.3f  Sum1/(theta+mu)=%.3f  Sum(y+theta)/(theta+mu)=%.3f  Sum(y+theta)/(theta+mu)^2=%.3f  Sumpsi=%.3f  Sumpsi_1=%.3f",
       theta, score_val, deriv_val, n_ret,
       sum_log_mupt, sum_inv_tmu, sum_ypt_over_tmu,
       sum_ypt_over_tmu2, sum_psi, sum_tri))

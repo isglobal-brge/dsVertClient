@@ -55,12 +55,12 @@ NULL
     K, family, n_obs, num_intervals, lambda))
 
   # ===========================================================================
-  # Step A: Input sharing — all servers share features with 2 DCF parties
+  # Step A: Input sharing -- all servers share features with 2 DCF parties
   # ===========================================================================
   t0_share <- proc.time()[[3]]
   if (verbose) message("  [Input Sharing] Sharing features+y with DCF parties...")
 
-  # Total features across all servers (EXCLUDING intercept — handled separately)
+  # Total features across all servers (EXCLUDING intercept -- handled separately)
   p_total <- sum(sapply(server_list, function(s) length(x_vars[[s]])))
 
   # Each server: split features into 2 shares, send to DCF parties
@@ -72,7 +72,7 @@ NULL
       dcf_pk <- transport_pks[[dcf_srv]]
 
       if (server == dcf_srv) {
-        # This server IS a DCF party — just call k2ShareInputDS targeting the other DCF party
+        # This server IS a DCF party -- just call k2ShareInputDS targeting the other DCF party
         peer_dcf <- dcf_parties[3 - di]
         peer_pk_safe <- .to_b64url(transport_pks[[peer_dcf]])
         srv_x <- x_vars[[server]]; if (length(srv_x) == 0) srv_x <- NULL
@@ -394,7 +394,7 @@ NULL
     # =================================================================
     # Both DCF parties now have X_full in canonical order [coord|fusion|extras]
     # (fusion was reordered by glmRing63ReorderXFullDS)
-    # Simple Ring63 aggregation — no permutation needed.
+    # Simple Ring63 aggregation -- no permutation needed.
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = grad_results[[1]]$gradient_fp,
       share_b = grad_results[[2]]$gradient_fp,
@@ -435,7 +435,7 @@ NULL
     # Step bound: cap |direction| at 5.0 to prevent first-iter explosion
     # (Cox K=3 Poisson trick with offset + 100 baseline dummies can produce
     # an enormous L-BFGS direction at iter 1, which without damping drove
-    # eta → ∞, exp(eta) → Inf, and a NaN interval-index slice into Go-side
+    # eta -> inf, exp(eta) -> Inf, and a NaN interval-index slice into Go-side
     # k2WideSplinePhase1DS resulting in SIGSEGV addr=0xefffffff90a0).
     d_max <- max(abs(direction))
     if (is.finite(d_max) && d_max > 5.0) direction <- direction * (5.0 / d_max)
@@ -505,8 +505,8 @@ NULL
   hessian <- matrix(0, p_plus1, p_plus1)
 
   for (j in seq_len(p_plus1)) {
-    # Central difference: H_j = (g(θ+δe_j) - g(θ-δe_j)) / (2δ)
-    # More accurate: O(δ²) error instead of O(δ)
+    # Central difference: H_j = (g(theta+deltae_j) - g(theta-deltae_j)) / (2delta)
+    # More accurate: O(delta^2) error instead of O(delta)
     theta_pert <- theta
     theta_pert[j] <- theta[j] + delta
     int_pert <- theta_pert[1]
@@ -640,7 +640,7 @@ NULL
 
     grad_forward <- grad_pert_full
 
-    # Backward perturbation: θ - δe_j (same code, negative delta)
+    # Backward perturbation: theta - deltae_j (same code, negative delta)
     theta_back <- theta
     theta_back[j] <- theta[j] - delta
     int_back <- theta_back[1]; beta_back <- theta_back[-1]
@@ -714,7 +714,7 @@ NULL
     ar2 <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(share_a=br1[[1]]$sum_residual_fp, share_b=br1[[2]]$sum_residual_fp, frac_bits=frac_bits))
     grad_backward <- c(ar2$values[1]/n_obs, gp2/n_obs) + lambda*theta_back
 
-    # Central difference: H_j = (g_forward - g_backward) / (2δ)
+    # Central difference: H_j = (g_forward - g_backward) / (2delta)
     hessian[, j] <- (grad_forward - grad_backward) / (2 * delta)
     if (verbose) message(sprintf("    [SE] Column %d/%d", j, p_plus1))
   }
@@ -730,7 +730,7 @@ NULL
   # ===========================================================================
   if (verbose) message("  [Deviance] Computing canonical deviance...")
 
-  # Recompute η from converged β (SE computation may have overwritten shares)
+  # Recompute eta from converged beta (SE computation may have overwritten shares)
   for (di in seq_along(dcf_parties)) {
     ci <- dcf_conns[di]
     is_coord <- (dcf_parties[di] == coordinator)
@@ -748,7 +748,7 @@ NULL
       session_id = session_id))
   }
 
-  # Helper: Beaver dot-product (n×1) on both DCF parties, returns scalar
+  # Helper: Beaver dot-product (nx1) on both DCF parties, returns scalar
   .k3_beaver_dot <- function() {
     dt <- .dsAgg(datasources[dealer_conn],
       call("glmRing63GenGradTriplesDS",
@@ -789,7 +789,7 @@ NULL
     secure_deviance <- .k3_beaver_dot()
 
   } else if (family == "binomial") {
-    # Canonical binomial: D = 2*(Σsoftplus(η) - y^T·η) — future work
+    # Canonical binomial: D = 2*(Sumsoftplus(eta) - y^T*eta) -- future work
     sp_dcf <- .dsAgg(datasources[dealer_conn],
       call("glmRing63GenDcfKeysDS",
            dcf0_pk = transport_pks[[dcf_parties[1]]],
@@ -841,7 +841,7 @@ NULL
     secure_deviance <- 2 * (sum_softplus - y_dot_eta)
 
   } else {
-    # Poisson: D = 2*(Σμ - y^T·η + C)
+    # Poisson: D = 2*(Summu - y^T*eta + C)
     sums <- list()
     for (di in seq_along(dcf_parties)) {
       r <- .dsAgg(datasources[dcf_conns[di]], call("glmRing63DevianceSumsDS",

@@ -1,36 +1,36 @@
-#' @title NB regression with Method-of-Moments θ-estimator (K=2-safe)
+#' @title NB regression with Method-of-Moments theta-estimator (K=2-safe)
 #' @description Negative-binomial GLM with Anscombe 1950 / Saha-Paul
 #'   2005 Method-of-Moments dispersion estimator. Replaces the digamma-
-#'   based MLE θ-Newton (\code{\link{ds.vertNB}}) with the closed-form
+#'   based MLE theta-Newton (\code{\link{ds.vertNB}}) with the closed-form
 #'   sample-moment estimator
 #'     \deqn{\hat\theta_{\mathrm{MoM}} = \bar y^2 / (s^2 - \bar y)}
 #'   where \eqn{s^2 = (\sum y_i^2 - n\bar y^2)/(n-1)} is the bias-corrected
-#'   sample variance. Under the iid-μ approximation (μ̂ ≡ ȳ) this is the
-#'   reduction of the regression Saha-Paul 2005 §3 moment equation, and is
-#'   ψ-free — so it has ZERO new MPC primitive cost beyond the four
-#'   y-aggregates already in the existing iid-μ disclosure budget.
+#'   sample variance. Under the iid-mu approximation (mu == ybar) this is the
+#'   reduction of the regression Saha-Paul 2005 Sec.3 moment equation, and is
+#'   psi-free -- so it has ZERO new MPC primitive cost beyond the four
+#'   y-aggregates already in the existing iid-mu disclosure budget.
 #'
 #' @details Disclosure-equivalent to \code{\link{ds.vertNB}}: only y
-#'   aggregates (Σy, Σy², n, ȳ) are revealed at the coordinator, which
+#'   aggregates (Sumy, Sumy^2, n, ybar) are revealed at the coordinator, which
 #'   is identical to the \code{dsvertNBProfileSumsDS} cost. No
-#'   per-patient μ̂ disclosure (which would require η-reveal at OS,
+#'   per-patient mu disclosure (which would require eta-reveal at OS,
 #'   currently outside the K=2-safe budget). Trade-off vs MLE: ~5-10%
 #'   asymptotic efficiency loss for moderate overdispersion (Lloyd-Smith
 #'   2007 PLoS ONE 2(2):e180); but consistent under correct model
-#'   specification (Saha-Paul 2005 §3 Theorem 1) and computable in
-#'   closed form (no Newton iteration on θ).
+#'   specification (Saha-Paul 2005 Sec.3 Theorem 1) and computable in
+#'   closed form (no Newton iteration on theta).
 #'
-#'   Honesty note: under the iid-μ approximation, this estimator
-#'   propagates the same heteroscedasticity bias as iid-μ MLE-θ; the
+#'   Honesty note: under the iid-mu approximation, this estimator
+#'   propagates the same heteroscedasticity bias as iid-mu MLE-theta; the
 #'   structural full-regression MoM (Saha-Paul Method 2 with per-patient
-#'   μ̂) requires η at OS plaintext, which is the same disclosure
+#'   mu) requires eta at OS plaintext, which is the same disclosure
 #'   pattern that was disabled in ord_joint K=2-safe. Future work:
-#'   share-space μ̂_i Beaver vecmul to recover the full-regression form
-#'   without η-reveal.
+#'   share-space mu_i Beaver vecmul to recover the full-regression form
+#'   without eta-reveal.
 #'
 #'   References:
 #'   - Anscombe 1950 *Biometrika* 37(3-4):358-382 (NB moment estimators).
-#'   - Saha & Paul 2005 *Biometrics* 61(1):179-185 §3 (bias-corrected
+#'   - Saha & Paul 2005 *Biometrics* 61(1):179-185 Sec.3 (bias-corrected
 #'     regression MoM).
 #'   - Lloyd-Smith 2007 *PLoS ONE* 2(2):e180 (MLE-vs-MoM efficiency
 #'     comparison for overdispersed counts).
@@ -39,7 +39,7 @@
 #' @return Object of class \code{c("ds.vertNBMoMTheta", "ds.vertNB", "ds.glm")}
 #'   compatible with \code{\link{ds.vertNB}} consumers. \code{$theta}
 #'   carries the MoM estimate; \code{$theta_method = "mom"};
-#'   \code{$theta_mom_underdispersed} flags pathological s² ≤ ȳ cases.
+#'   \code{$theta_mom_underdispersed} flags pathological s^2 <= ybar cases.
 #' @export
 #' @seealso \code{\link{ds.vertNB}}, \code{\link{ds.vertNBFullRegTheta}}
 ds.vertNBMoMTheta <- function(formula, data = NULL,
@@ -60,9 +60,9 @@ ds.vertNBMoMTheta <- function(formula, data = NULL,
   }
   conn_idx <- which(server_names == y_srv)
 
-  # Aggregate y-moment sums (Σy, Σy², n, ȳ, s²) via the new
+  # Aggregate y-moment sums (Sumy, Sumy^2, n, ybar, s^2) via the new
   # dsvertNBMomentSumsDS DS function. Disclosure: 4 floats per call
-  # (same magnitude as dsvertNBProfileSumsDS for MLE-θ).
+  # (same magnitude as dsvertNBProfileSumsDS for MLE-theta).
   sums <- tryCatch({
     r <- DSI::datashield.aggregate(
       datasources[conn_idx],
@@ -81,18 +81,18 @@ ds.vertNBMoMTheta <- function(formula, data = NULL,
   yvar <- as.numeric(sums$y_var)
   n_total <- as.integer(sums$n_total)
 
-  # Anscombe 1950 closed-form θ̂_MoM = ȳ² / (s² − ȳ). For under-
-  # dispersed samples (s² ≤ ȳ) the moment equation has no positive
-  # solution; flag with NA + diagnostic and fall back to large θ
-  # (≈Poisson) to keep downstream printing/coercion stable.
+  # Anscombe 1950 closed-form theta_MoM = ybar^2 / (s^2 - ybar). For under-
+  # dispersed samples (s^2 <= ybar) the moment equation has no positive
+  # solution; flag with NA + diagnostic and fall back to large theta
+  # (approxPoisson) to keep downstream printing/coercion stable.
   underdispersed <- (yvar - ybar) <= 0
   theta_mom <- if (!underdispersed) ybar * ybar / (yvar - ybar) else NA_real_
   if (verbose) {
     if (underdispersed)
-      message(sprintf("[ds.vertNBMoMTheta] underdispersed sample: s²=%.4g <= ȳ=%.4g; θ_MoM undefined, using Poisson limit",
+      message(sprintf("[ds.vertNBMoMTheta] underdispersed sample: s^2=%.4g <= ybar=%.4g; theta_MoM undefined, using Poisson limit",
                        yvar, ybar))
     else
-      message(sprintf("[ds.vertNBMoMTheta] θ_MoM = ȳ²/(s²−ȳ) = %.4g²/(%.4g−%.4g) = %.4g (n=%d)",
+      message(sprintf("[ds.vertNBMoMTheta] theta_MoM = ybar^2/(s^2-ybar) = %.4g^2/(%.4g-%.4g) = %.4g (n=%d)",
                        ybar, yvar, ybar, theta_mom, n_total))
   }
 
@@ -113,12 +113,12 @@ ds.vertNBMoMTheta <- function(formula, data = NULL,
 
 #' @export
 print.ds.vertNBMoMTheta <- function(x, ...) {
-  cat("dsVert negative-binomial regression (MoM-θ; Anscombe 1950 / Saha-Paul 2005 §3)\n")
-  cat(sprintf("  theta_MoM = %.4g  (sample n=%d, ȳ=%.4g, s²=%.4g)\n",
+  cat("dsVert negative-binomial regression (MoM-theta; Anscombe 1950 / Saha-Paul 2005 Sec.3)\n")
+  cat(sprintf("  theta_MoM = %.4g  (sample n=%d, ybar=%.4g, s^2=%.4g)\n",
               x$theta_mom %||% NA_real_, x$theta_mom_n %||% NA_integer_,
               x$theta_mom_y_mean %||% NA_real_,
               x$theta_mom_y_var %||% NA_real_))
   if (isTRUE(x$theta_mom_underdispersed))
-    cat("  WARNING: sample under-dispersed (s² <= ȳ); θ_MoM undefined.\n")
+    cat("  WARNING: sample under-dispersed (s^2 <= ybar); theta_MoM undefined.\n")
   invisible(x)
 }

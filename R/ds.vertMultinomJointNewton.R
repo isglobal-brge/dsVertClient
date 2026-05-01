@@ -1,15 +1,15 @@
 #' @title Federated joint-softmax multinomial logistic regression via
 #'   Ring127 MPC-orchestrated Newton iteration
-#' @description Full per-patient softmax Newton: orchestrates K−1 parallel
-#'   exp(η_k) shares, sums to denominator D = 1+Σexp(η_k), computes 1/D
+#' @description Full per-patient softmax Newton: orchestrates K-1 parallel
+#'   exp(eta_k) shares, sums to denominator D = 1+Sumexp(eta_k), computes 1/D
 #'   via Ring127 Chebyshev + Newton-Raphson, multiplies per class to get
-#'   p_k(x_i) share per patient, builds residual y_k − p_k on outcome
-#'   server, and aggregates X^T(y_k − p_k) via existing Beaver matvec
+#'   p_k(x_i) share per patient, builds residual y_k - p_k on outcome
+#'   server, and aggregates X^T(y_k - p_k) via existing Beaver matvec
 #'   pipeline for each class. Client-side Bohning-Hessian-bounded Newton
-#'   step on stacked β.
+#'   step on stacked beta.
 #'
 #'   All per-patient quantities stay as Ring127 additive shares; only the
-#'   final p(K−1)-dim aggregate gradient per iter is revealed — same
+#'   final p(K-1)-dim aggregate gradient per iter is revealed -- same
 #'   privacy class as the single-class gradient of ds.vertGLM. **P3 delta:
 #'   zero new reveal types.**
 #'
@@ -19,7 +19,7 @@
 #' @param indicator_template sprintf template for class-indicator columns
 #'   on the outcome server, e.g. \code{"\%s_ind"}. Must exist server-side.
 #' @param max_outer Outer Newton iterations (default 8).
-#' @param tol Convergence tolerance on max |Δβ| (default 1e-4).
+#' @param tol Convergence tolerance on max |Deltabeta| (default 1e-4).
 #' @param verbose Logical.
 #' @param datasources DataSHIELD connections.
 #' @return \code{ds.vertMultinomJointNewton} object.
@@ -173,7 +173,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
 
   converged <- FALSE
   final_iter <- max_outer
-  # Best-β tracking: retain argmin_k |g(β_k)|_L2. Required because the
+  # Best-beta tracking: retain argmin_k |g(beta_k)|_L2. Required because the
   # MPC-approximated gradient + step-cap interaction induces late-iter
   # oscillation (empirically iter 7 and iter 10 spikes on NHANES
   # Mnl trace 20260423-112816). Returning best-so-far mirrors Cox Path
@@ -182,19 +182,19 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   best_g_norm <- Inf
   best_iter <- 0L
 
-  # Bohning (1992) constant upper-bound Hessian: H* = (1/2)·(I_{K-1} −
-  # (1/K) 1 1^T) ⊗ (X^T X / n). PSD + β-independent → monotone Newton
-  # descent (Bohning 1992 Ann Inst Stat Math 44:197–200, Theorem 2;
+  # Bohning (1992) constant upper-bound Hessian: H* = (1/2)*(I_{K-1} -
+  # (1/K) 1 1^T) (x) (X^T X / n). PSD + beta-independent -> monotone Newton
+  # descent (Bohning 1992 Ann Inst Stat Math 44:197-200, Theorem 2;
   # Krishnapuram et al 2005 IEEE PAMI 27(6)).
   #
   # XtX_over_n must be in FORMULA order to match beta_mat rows. The
   # warm fit's $covariance is in fit-internal (server-partition) order
-  # per the LASSO permutation bug (same class as 4ce55a3 — see
+  # per the LASSO permutation bug (same class as 4ce55a3 -- see
   # dsVertGLM.k2.R theta_conv layout). Reconstruct via hessian_std +
   # x_means + x_sds from the warm fit (those fields ARE in formula
   # order), applying the same Gram-from-hessian formula as LASSO:
-  #   G[j,k] = x̄_j x̄_k + x_sd_j x_sd_k · H_std[perm(j), perm(k)]  (slopes)
-  #   G[0,j] = x̄_j  G[0,0] = 1
+  #   G[j,k] = x_j x_k + x_sd_j x_sd_k * H_std[perm(j), perm(k)]  (slopes)
+  #   G[0,j] = x_j  G[0,0] = 1
   w0 <- warm$fits[[non_ref[1L]]]
   XtX_over_n <- NULL
   if (!is.null(w0$hessian_std) && !is.null(w0$x_means) &&
@@ -218,7 +218,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       else XtX_over_n[jj,kk] <- x_m[jj]*x_m[kk] + x_s[jj]*x_s[kk]*H_std[jj,kk]
     }
   } else {
-    # Fallback for external warm starts without hessian_std — use covariance.
+    # Fallback for external warm starts without hessian_std -- use covariance.
     cov_k0 <- w0$covariance
     sigma2 <- if (!is.null(w0$deviance))
       w0$deviance / max(n_obs - p, 1L) else 1
@@ -294,12 +294,12 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     # Dimension handling: X is shared via k2ShareInputDS with p_shared =
     # sum(lengths(x_vars_per_server)) columns (slopes only, no intercept
     # column). The Beaver matvec therefore returns p_shared-length slope
-    # gradient. The intercept gradient = Σᵢ rᵢ is read off the SAME
+    # gradient. The intercept gradient = Sum_i r_i is read off the SAME
     # Beaver round as a side-product of k2GradientR1DS (its
     # `sum_residual_fp` field; identical pattern to ds.vertGLM K=2
-    # in dsVertGLM.k2.R:309). One Beaver round per (iter × class) with
+    # in dsVertGLM.k2.R:309). One Beaver round per (iter x class) with
     # two k2-ring63-aggregate reveals (slope vector + intercept scalar)
-    # — threat model isomorphic to GLM K=2 audit ✓ non-disclosive.
+    # -- threat model isomorphic to GLM K=2 audit OK non-disclosive.
     # The previous separate k2BeaverSumShareDS round (which consumed an
     # extra Beaver triple per iter per class) was removed per reviewer
     # directive 2026-04-26. Cites: Bohning 1992 Ann Inst Stat Math
@@ -326,9 +326,9 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       }
       # Prep the standard gradient machinery: pipeline computes X^T(mu-y),
       # we set mu=0 and y=-r_k so X^T(mu-y) = X^T r_k. As a side-product
-      # k2GradientR1DS emits Σ(mu-y) = Σᵢ rᵢ (per-server share) in
+      # k2GradientR1DS emits Sum(mu-y) = Sum_i r_i (per-server share) in
       # `sum_residual_fp`, which we will aggregate below for the
-      # intercept gradient — same pattern as dsVertGLM.k2.R:309.
+      # intercept gradient -- same pattern as dsVertGLM.k2.R:309.
       for (srv in server_list) {
         ci <- which(server_names == srv)
         .dsAgg(datasources[ci], call("dsvertPrepareMultinomGradDS",
@@ -336,7 +336,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           is_outcome_server = (srv == coord),
           n = as.integer(n_obs), session_id = session_id))
       }
-      # Beaver matvec: X^T (mu - y) → per-class SLOPE gradient (length p_shared)
+      # Beaver matvec: X^T (mu - y) -> per-class SLOPE gradient (length p_shared)
       grad_t <- .dsAgg(datasources[dealer_ci],
         call("glmRing63GenGradTriplesDS",
              dcf0_pk = .to_b64url(transport_pks[[coord]]),
@@ -344,12 +344,12 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
              n = as.integer(n_obs), p = as.integer(p_shared),
              ring = 127L, session_id = session_id))
       if (is.list(grad_t) && length(grad_t) == 1L) grad_t <- grad_t[[1L]]
-      # Per-class blob-key namespacing (defensive: ABY3 §IV.D pool
+      # Per-class blob-key namespacing (defensive: ABY3 Sec.IV.D pool
       # isolation; MP-SPDZ Multiplications.hpp). Eliminates cross-class
       # blob-key collision under the shared key "k2_grad_triple_fp" that
       # the K-1 classes within this outer iter (and the next iter) all
       # used to share. Hypothesised root cause of intermittent iter-2
-      # NPE on s2 (3/9 ≈ 33% empirical rate, see paper §VIII bullet #4).
+      # NPE on s2 (3/9 approx 33% empirical rate, see paper Sec.VIII bullet #4).
       grad_triple_key <- sprintf("k2_grad_triple_fp_iter%d_class%d", outer, ki)
       .sendBlob(grad_t$grad_blob_0, grad_triple_key, y_server_ci)
       .sendBlob(grad_t$grad_blob_1, grad_triple_key, dealer_ci)
@@ -376,11 +376,11 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
         r2[[srv]] <- rr
       }
-      # Intercept gradient: Σᵢ rᵢ is the side-product of the SAME
+      # Intercept gradient: Sum_i r_i is the side-product of the SAME
       # k2GradientR1DS round that produced the slope share (its
       # `sum_residual_fp` field). Aggregate the two server shares to
-      # plaintext Σ rᵢ; divide by n for the intercept-row gradient.
-      # Same disclosure pattern as dsVertGLM.k2.R:309 (audit ✓).
+      # plaintext Sum r_i; divide by n for the intercept-row gradient.
+      # Same disclosure pattern as dsVertGLM.k2.R:309 (audit OK).
       int_res_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
         share_a = r1[[coord]]$sum_residual_fp,
         share_b = r1[[nl]]$sum_residual_fp,
@@ -411,12 +411,12 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
              call. = FALSE)
       }
       # AUDITORIA root cause of multinom Newton divergence (|g|_L2
-      # INCREASING monotonically at iters 1→10 per grad-trace 9e1e8fc):
+      # INCREASING monotonically at iters 1->10 per grad-trace 9e1e8fc):
       # slope_vals comes back from the Beaver matvec in SERVER-PARTITION
       # order (concatenation of x_vars_per_server[[srv]] over
       # server_list). slope_rows indexes cnames in FORMULA order (from
       # rownames(beta_mat)). Writing slope_vals directly was pairing
-      # gradient of variable A with β of variable B. Exactly the same
+      # gradient of variable A with beta of variable B. Exactly the same
       # class of bug as LASSO 4ce55a3 (federated hessian_std column
       # permutation). Permute to formula order before assigning.
       server_partition_names <- unlist(x_vars_per_server, use.names = FALSE)
@@ -435,9 +435,9 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     # call 2026-04-29: Bohning B_reg ships as the production Hessian.
     #
     # Diagnostic history. The first L3 sweep of the H_emp pipeline at
-    # SHA fe03cf1 produced max|Δπ| = 1.19e-1 (regression vs the prior
+    # SHA fe03cf1 produced max|Deltapi| = 1.19e-1 (regression vs the prior
     # Bohning baseline 4.86e-2) with iter-4 H_emp_full containing a
-    # single sign-flipped diagonal entry of magnitude ≈10^6 — non-
+    # single sign-flipped diagonal entry of magnitude approx10^6 -- non-
     # physical for X^T diag(p(1-p)) X which is PSD by construction.
     # Root cause was localised to base64 padding in the
     # `public_const_fp = one_fp_b64_127` argument passed into the
@@ -450,12 +450,12 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     # (ring127SplinelessDS.R:51) restores the padding before decode,
     # preserving the round-trip. The path was NOT a Ring127 sign-
     # extension primitive bug (H1) nor a cross-server aggregation
-    # sign-bit issue (H2) nor an R-side buffer reuse (H3) — it was a
+    # sign-bit issue (H2) nor an R-side buffer reuse (H3) -- it was a
     # plain base64-encoding mismatch at the orchestrator boundary.
     #
     # Post-fix L3 validation (10 iter, K=2, n=132, NHANES bp tertile,
     # 8302028): all four (k,l) blocks reported count_neg=0 across all
-    # iterations; final max|Δπ| = 4.99e-2 PRACTICAL, matching the
+    # iterations; final max|Deltapi| = 4.99e-2 PRACTICAL, matching the
     # Bohning baseline (4.70e-2) within sampling-noise of the dataset
     # draw. The ~16x accuracy improvement promised by the L2 mock
     # (rel = 5.4e-4) does not transfer to L3: the noise floor at
@@ -482,37 +482,37 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     if (use_h_emp) {
     # === Empirical Hessian H_emp_k per class via MPC X^T diag(W_k) X ===
     # Replaces Bohning B_reg's per-class diagonal blocks with the
-    # empirical second-derivative form (Tutz 1990 §3.2 closed-form
-    # multinomial Hessian; Krishnapuram et al 2005 IEEE PAMI 27(6) §3.2;
-    # Friedman-Hastie-Tibshirani 2010 §3.2; Hosmer-Lemeshow 2013 §3.5).
+    # empirical second-derivative form (Tutz 1990 Sec.3.2 closed-form
+    # multinomial Hessian; Krishnapuram et al 2005 IEEE PAMI 27(6) Sec.3.2;
+    # Friedman-Hastie-Tibshirani 2010 Sec.3.2; Hosmer-Lemeshow 2013 Sec.3.5).
     # Quadratic local convergence (Pratt 1981 + Burridge 1981 strict
-    # concavity → multinomial analog) replaces Bohning's O(1/ε)
+    # concavity -> multinomial analog) replaces Bohning's O(1/epsilon)
     # Loewner-majorant rate (Bohning 1992 Thm 2 superseded as historical
     # context per project_h10_msle_noise_floor 2026-04-27).
     #
-    # Block structure: H_emp ∈ R^{(K-1)p × (K-1)p} stacked block matrix
-    # where H_emp[k, l] is the p×p sub-block.
+    # Block structure: H_emp in R^{(K-1)p x (K-1)p} stacked block matrix
+    # where H_emp[k, l] is the pxp sub-block.
     #   H_emp_kk = +X^T diag(p_k(1-p_k)) X  (positive-definite diagonal)
-    #   H_emp_kl = -X^T diag(p_k p_l) X      (k ≠ l, symmetric off-diag)
+    #   H_emp_kl = -X^T diag(p_k p_l) X      (k != l, symmetric off-diag)
     # Both expressed including the intercept column (full p including
     # intercept):
-    #   H_emp_kl[α, α] = +Σ_i W_kl_i               (scalar intercept-intercept)
-    #   H_emp_kl[α, β_j] = +Σ_i W_kl_i · X_ij       (intercept-slope vector)
-    #   H_emp_kl[β_j, β_q] = +Σ_i W_kl_i · X_ij·X_iq  (slope-slope matrix)
-    # with sign σ_kl = +1 for k=l, -1 for k≠l applied at assembly.
+    #   H_emp_kl[alpha, alpha] = +Sum_i W_kl_i               (scalar intercept-intercept)
+    #   H_emp_kl[alpha, beta_j] = +Sum_i W_kl_i * X_ij       (intercept-slope vector)
+    #   H_emp_kl[beta_j, beta_q] = +Sum_i W_kl_i * X_ij*X_iq  (slope-slope matrix)
+    # with sign sigma_kl = +1 for k=l, -1 for k!=l applied at assembly.
     #
     # Pipeline isomorphic to ord_joint K=2 H_emp (a0b1a65 / 754cfe08):
     #   (A) W_kl_share = Beaver vecmul(p_k_share, p_l_share) or
-    #       p_k_share · (1 - p_k_share) for k=l. Pure share-space.
-    #   (B) Σ W_kl via k2BeaverSumShareDS + k2-ring63-aggregate ring127.
+    #       p_k_share * (1 - p_k_share) for k=l. Pure share-space.
+    #   (B) Sum W_kl via k2BeaverSumShareDS + k2-ring63-aggregate ring127.
     #   (C) X^T W_kl as length-p_shared vector via standard matvec
     #       pipeline (residual_key = W_kl_share).
-    #   (D) X^T diag(W_kl) X as p_shared×p_shared block, column-by-column
-    #       via .ring127_vecmul(W_kl, X_:j) → matvec pipeline.
+    #   (D) X^T diag(W_kl) X as p_sharedxp_shared block, column-by-column
+    #       via .ring127_vecmul(W_kl, X_:j) -> matvec pipeline.
     #
-    # Disclosure (per Venables-Ripley 2002 §7.4 + Aliasgari-Blanton 2013
-    # NDSS §5 + Demmler-ABY 2015 §III.B): all (A) products stay share-
-    # space; (B)(C)(D) reveal aggregates of shape O(p) × O(K) — never
+    # Disclosure (per Venables-Ripley 2002 Sec.7.4 + Aliasgari-Blanton 2013
+    # NDSS Sec.5 + Demmler-ABY 2015 Sec.III.B): all (A) products stay share-
+    # space; (B)(C)(D) reveal aggregates of shape O(p) x O(K) -- never
     # per-patient. Same K=2 audit boundary pattern as ord_joint H_emp,
     # already vetted at PR #4 merge.
     one_fp_b64_127 <- dsVert:::.callMpcTool("k2-float-to-fp", list(
@@ -524,8 +524,8 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     # padding before decoding.
     one_fp_b64_127 <- .to_b64url(one_fp_b64_127)
 
-    # Build W_kl_share keys: diagonal (k=l) via p_k·(1-p_k), cross via
-    # p_k·p_l (with sign applied at assembly).
+    # Build W_kl_share keys: diagonal (k=l) via p_k*(1-p_k), cross via
+    # p_k*p_l (with sign applied at assembly).
     W_keys <- list()
     W_signs <- list()
     for (ki in seq_len(K_minus_1)) {
@@ -561,10 +561,10 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       }
     }
 
-    # H_emp assembly: per (k, l) build p × p block via:
-    #   - Σ_i W_kl_i scalar (intercept-intercept)
+    # H_emp assembly: per (k, l) build p x p block via:
+    #   - Sum_i W_kl_i scalar (intercept-intercept)
     #   - X^T W_kl length-p_shared vector (intercept-slope)
-    #   - X^T diag(W_kl) X p_shared×p_shared matrix (slope-slope)
+    #   - X^T diag(W_kl) X p_sharedxp_shared matrix (slope-slope)
     H_emp_full <- matrix(0, p * K_minus_1, p * K_minus_1)
     H_emp_ok <- TRUE
     int_j <- which(cnames == "(Intercept)")
@@ -585,7 +585,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         sign_kl <- W_signs[[kl_key]]
         if (is.null(W_share_key)) { H_emp_ok <- FALSE; next }
 
-        # (B) Σ W_kl scalar — intercept-intercept entry of block.
+        # (B) Sum W_kl scalar -- intercept-intercept entry of block.
         sum_W_shares <- list()
         for (srv in server_list) {
           ci <- which(server_names == srv)
@@ -602,7 +602,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         sum_W <- as.numeric(sum_W_agg$values)[1L]
         if (!is.finite(sum_W)) { H_emp_ok <- FALSE; next }
 
-        # (C) X^T W_kl length-p_shared vector — intercept-slope entries.
+        # (C) X^T W_kl length-p_shared vector -- intercept-slope entries.
         for (srv in server_list) {
           ci <- which(server_names == srv)
           .dsAgg(datasources[ci], call("dsvertPrepareMultinomGradDS",
@@ -656,8 +656,8 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         XtW_formula <- numeric(length(slope_rows))
         XtW_formula[] <- XtW_partition[perm_grad_p]
 
-        # (D) X^T diag(W_kl) X p_shared × p_shared via column-by-column
-        # matvec — same pattern as ord_joint H_emp (a0b1a65) but
+        # (D) X^T diag(W_kl) X p_shared x p_shared via column-by-column
+        # matvec -- same pattern as ord_joint H_emp (a0b1a65) but
         # parameterised on the (k, l) pair.
         H_slope_part <- matrix(0, p_shared, p_shared)
         block_ok <- TRUE
@@ -743,7 +743,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         # Symmetrise per-block diagonal noise.
         H_slope_formula <- (H_slope_formula + t(H_slope_formula)) / 2
 
-        # Assemble p × p block with intercept row/col + slope-slope.
+        # Assemble p x p block with intercept row/col + slope-slope.
         H_block <- matrix(0, p, p, dimnames = list(cnames, cnames))
         H_block[slope_rows, slope_rows] <- H_slope_formula
         if (!is.na(int_j)) {
@@ -751,9 +751,9 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           H_block[int_j, slope_rows] <- XtW_formula
           H_block[slope_rows, int_j] <- XtW_formula
         }
-        # Apply sign σ_kl and average by n_obs.
+        # Apply sign sigma_kl and average by n_obs.
         H_block_signed <- (sign_kl * H_block) / n_obs
-        # Place into (K-1)p × (K-1)p stacked H_emp.
+        # Place into (K-1)p x (K-1)p stacked H_emp.
         rows_kl <- ((ki - 1L) * p + 1L):(ki * p)
         cols_kl <- ((li - 1L) * p + 1L):(li * p)
         H_emp_full[rows_kl, cols_kl] <- H_block_signed
@@ -764,10 +764,10 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         # column-by-column aggregate matvec (H_slope_formula);
         # printing summary stats does NOT introduce a new emission
         # category (D-INV-1/2 preserved). Fields:
-        #   sum_W       — scalar Σᵢ W_kl_i (already revealed)
-        #   |XtW|       — max abs of revealed length-p_shared vector
-        #   H_diag_*    — min/max of revealed slope-slope diagonal
-        #   sign_kl     — client-side ±1 sign factor
+        #   sum_W       -- scalar Sum_i W_kl_i (already revealed)
+        #   |XtW|       -- max abs of revealed length-p_shared vector
+        #   H_diag_*    -- min/max of revealed slope-slope diagonal
+        #   sign_kl     -- client-side +/-1 sign factor
         H_diag_vals <- diag(H_slope_formula)
         cat(sprintf(
           "[MnlJoint iter %d block (k=%d,l=%d)] sum_W=% .3e |XtW|_max=%.3e H_diag min=% .3e max=% .3e count_neg=%d sign_kl=%+d\n",
@@ -783,7 +783,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                    outer,
                    paste(sprintf("%.3e", diag(H_emp_full)), collapse=",")))
     }
-    } # end if (use_h_emp) — H_emp pipeline gated FALSE; B_reg used below
+    } # end if (use_h_emp) -- H_emp pipeline gated FALSE; B_reg used below
 
     # Client-side empirical-Hessian Newton step (replaces Bohning B_reg
     # when H_emp is available; falls back to Bohning for stability when
@@ -791,21 +791,21 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     g_stacked <- as.numeric(gradients)
     g_norm <- sqrt(sum(g_stacked^2))
     g_max  <- max(abs(g_stacked))
-    # Track best β seen so far (argmin_k |g|_L2). Newton's late-iter
+    # Track best beta seen so far (argmin_k |g|_L2). Newton's late-iter
     # oscillation under MPC step-cap binds the step but may not track
-    # the likelihood maximum monotonically — best-β recovers the best
+    # the likelihood maximum monotonically -- best-beta recovers the best
     # point encountered.
     if (is.finite(g_norm) && g_norm < best_g_norm) {
       best_g_norm <- g_norm
       best_beta <- beta_mat
-      best_iter <- outer - 1L  # β_mat is current iterate PRE step
+      best_iter <- outer - 1L  # beta_mat is current iterate PRE step
     }
     # Newton solve: use empirical H_emp_full if successfully assembled
-    # (Tutz 1990 §3.2 quadratic local convergence per Pratt 1981 +
+    # (Tutz 1990 Sec.3.2 quadratic local convergence per Pratt 1981 +
     # Burridge 1981); fall back to Bohning B_reg majorant otherwise
     # (monotone descent guarantee per Bohning 1992 Thm 2). Christensen
-    # 2019 ordinal::clm.fit §A.3 diagonal eigenvalue inflation +
-    # ridge ε·I for numerical stability of the empirical-H solve.
+    # 2019 ordinal::clm.fit Sec.A.3 diagonal eigenvalue inflation +
+    # ridge epsilon*I for numerical stability of the empirical-H solve.
     H_solve <- if (H_emp_ok) {
       ridge <- 1e-6 * max(abs(diag(H_emp_full)), 1)
       H_emp_full + ridge * diag(p * K_minus_1)
@@ -814,7 +814,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     }
     step_stacked <- tryCatch(solve(H_solve, g_stacked),
                               error = function(e) {
-                                # Empirical solve failed → fall back to
+                                # Empirical solve failed -> fall back to
                                 # Bohning B_reg (Loewner upper-bound
                                 # always positive-definite per Bohning
                                 # 1992 Thm 2).
@@ -827,7 +827,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     # descent), then 0.5 * 0.7^(iter-5) (refine near optimum, reduce
     # oscillation amplitude as |g| shrinks). Bounded below at 0.05 so
     # Newton always makes SOME progress. Same spirit as Nocedal-Wright
-    # §3.5 backtracking but pre-scheduled to save the Armijo MPC round.
+    # Sec.3.5 backtracking but pre-scheduled to save the Armijo MPC round.
     step_cap <- if (outer <= 5L) 0.5 else max(0.5 * 0.7^(outer - 5L), 0.05)
     step_norm_pre <- max(abs(step_mat))
     if (is.finite(step_norm_pre) && step_norm_pre > step_cap) {
@@ -861,9 +861,9 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         silent = TRUE)
   }
 
-  # Return best-β seen (argmin_k |g|_L2), not the final iterate. Under
+  # Return best-beta seen (argmin_k |g|_L2), not the final iterate. Under
   # MPC step-cap oscillation the final iterate may not be the closest
-  # to the MLE; best-β tracks it. Fall back to beta_mat if no iter was
+  # to the MLE; best-beta tracks it. Fall back to beta_mat if no iter was
   # recorded (e.g., max_outer=0 edge case).
   final_beta <- if (!is.null(best_beta)) best_beta else beta_mat
   out <- warm

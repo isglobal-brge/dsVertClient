@@ -100,7 +100,7 @@ NULL
       send_one_chunk(substr(data, 1L, first_end), 1L, as.integer(n_chunks))
       TRUE
     }, error = function(e) {
-      if (first_end < chunk_size %/% 2L) stop(e)  # small payload — error is not size-related
+      if (first_end < chunk_size %/% 2L) stop(e)  # small payload -- error is not size-related
       FALSE
     })
     if (first_ok) {
@@ -113,7 +113,7 @@ NULL
       }
       return(invisible(n_chunks))
     }
-    # Fast path failed — different server with stricter limits. Re-probe.
+    # Fast path failed -- different server with stricter limits. Re-probe.
     .dsvert_chunk_env$probed <- FALSE
     chunk_size <- (chunk_size * 3L) %/% 4L  # reduce by 25%
     message(sprintf("[dsVert] Cached chunk size too large for this server, reducing to %dKB",
@@ -127,7 +127,7 @@ NULL
     return(invisible(1L))
   }
 
-  # Probe path: first large send — discover the working chunk size
+  # Probe path: first large send -- discover the working chunk size
   repeat {
     n_chunks <- max(1L, ceiling(n_chars / chunk_size))
 
@@ -145,7 +145,7 @@ NULL
     })
 
     if (probe_ok) {
-      # Probe succeeded — send remaining chunks
+      # Probe succeeded -- send remaining chunks
       if (n_chunks > 1L) {
         for (ch in 2:n_chunks) {
           start <- (ch - 1L) * chunk_size + 1L
@@ -160,7 +160,7 @@ NULL
       return(invisible(n_chunks))
     }
 
-    # Probe failed — reduce chunk size by 25% and retry
+    # Probe failed -- reduce chunk size by 25% and retry
     chunk_size <- (chunk_size * 3L) %/% 4L
     if (chunk_size < min_chunk_size) {
       stop("DataSHIELD chunk transfer failed even at ", min_chunk_size,

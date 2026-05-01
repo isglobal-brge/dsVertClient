@@ -227,7 +227,7 @@ ds.vertCor <- function(data_name, variables = NULL,
       .dsAgg(datasources[ci], call("glmRing63CorSetColDS",
         from_storage = TRUE, session_id = session_id))
     }
-    # Beaver matvec: X^T × col_j
+    # Beaver matvec: X^T x col_j
     grad_t <- .dsAgg(datasources[dealer_conn],
       call("glmRing63GenGradTriplesDS",
            dcf0_pk = transport_pks[[dcf_parties[1]]],
