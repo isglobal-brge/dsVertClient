@@ -8,6 +8,22 @@ skip_on_cran()
 skip_if_not_installed("DSLite")
 skip_if_not_installed("dsVert")
 skip_if_not(dsVert::mpcAvailable(), "dsvert-mpc binary not available")
+# DSLite full-stack integration: requires the in-process DSLite
+# server to register every DataSHIELD method that ds.psiAlign +
+# ds.vertGLM transitively call (PSI alignment, transport keys,
+# Beaver triples, etc). This setup is currently exercised by the
+# live-Opal probes in /scripts/probe_l3_*.R and the L2 fixture; the
+# DSLite mock is incomplete vs the production registration list.
+# Skip the integration suite on environments where DSLite is missing
+# any required entry-point.
+skip_if_not(
+  tryCatch({
+    s <- DSLite::newDSLiteServer(tables = list(s1 = data.frame(x = 1:3)))
+    s$config(DSLite::defaultDSConfiguration(include = "dsVert"))
+    "psiInitDS" %in% names(s$.__enclos_env__$private$.dsConfig$aggregateMethods)
+  }, error = function(e) FALSE),
+  "DSLite mock missing dsVert PSI methods \u2014 covered by live-Opal probes"
+)
 
 # =============================================================================
 # Helper: setup and run a full DSLite GLM scenario
