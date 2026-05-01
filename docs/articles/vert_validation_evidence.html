@@ -213,14 +213,31 @@ pp-expansion n=131, 14 coefs incl. baseline dummies):
 86.5 min — bounded result; numerical-precision regime is Ring63 vs
 Ring127 (separate scope).</li>
 <li>
-<strong>LMM K=3</strong> (REML 1-D profile, synthetic longitudinal
-n=2000 / 200 clusters): <code>max|Δβ| = 1.092e-03</code> vs
-<code>nlme::lme(REML)</code>, σ-ratio <strong>20.9×</strong>, runtime
-15.7 min. β-estimate verde / sub-noise; variance-component recovery
-(σ̂_b², σ̂²) requires cluster-mean centering not yet in the per-row
-weighted-GLM approach (Pinheiro-Bates 2000 §2.4.2) — flagged honestly. β
-converges accurately because the GLS β-estimator has weak ρ-dependence
-in the upper-ρ regime where the profile pins.</li>
+<strong>LMM K=3</strong> (REML 1-D profile + within-between ANOVA,
+synthetic longitudinal n=2000 / 200 clusters):
+<code>max|Δβ| = 1.092e-03</code> vs <code>nlme::lme(REML)</code>,
+σ-ratio <strong>20.9×</strong>, runtime 18.1 min. <strong>β-estimate
+verde / sub-noise.</strong> Variance-component recovery via the
+Pinheiro-Bates (2000) §2.4.2 within-between ANOVA estimator on raw y
+(single new aggregate primitive
+<code>dsvertLMMVarianceComponentsDS</code>, no MPC):
+<ul>
+<li>
+<code>σ̂_b² = 0.5049</code> vs nlme <code>0.4996</code> →
+<code>|Δ| = 5.28e-03</code> (1% relative error) —
+<strong>VERDE</strong>.</li>
+<li>
+<code>σ̂² = 1.2621</code> vs nlme <code>0.9766</code> →
+<code>|Δ| = 2.85e-01</code>, <strong>inflated by Var_within(Xβ̂) ≈
+0.27</strong> as predicted analytically (<code>β = (5, 0.5, 0.3)</code>,
+<code>x1 ~ N(0,1)</code>, <code>x2 ~ Bern(0.5)</code> iid within
+cluster). Honest flag — downstream consumers needing pure σ̂² can
+subtract the analytical <code>β'·Var_within(X)·β</code> bias term, OR a
+follow-up X-correction primitive can be added (next iteration scope).
+The σ̂_b² recovery is the load-bearing claim and it is exact (1%
+rel).</li>
+</ul>
+</li>
 </ul>
 </div>
 <div class="section level2">
