@@ -5,3 +5,5 @@
 ^docs$
 ^scripts$
 ^LICENSE\.md$
+^CITATION\.cff$
+^CONTRIBUTING\.md$
