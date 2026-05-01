@@ -113,10 +113,14 @@ indicator. Absolute event times are NOT disclosed.</p>
 <span>  max_iter <span class="op">=</span> <span class="fl">30L</span>,</span>
 <span>  tol <span class="op">=</span> <span class="fl">1e-04</span>,</span>
 <span>  lambda <span class="op">=</span> <span class="fl">1e-04</span>,</span>
-<span>  compute_loglik <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  compute_loglik <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  compute_se <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  num_intervals_exp <span class="op">=</span> <span class="fl">75L</span>,</span>
 <span>  num_intervals_recip <span class="op">=</span> <span class="fl">75L</span>,</span>
+<span>  one_step_newton <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  newton_refine_iters <span class="op">=</span> <span class="fl">5L</span>,</span>
+<span>  newton_refine_tol <span class="op">=</span> <span class="fl">1e-05</span>,</span>
+<span>  ring <span class="op">=</span> <span class="fl">127L</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  datasources <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -140,6 +144,17 @@ If the LHS is not a <code>Surv(...)</code> expression, supply
 <dd><p>Column names on the outcome server.</p></dd>
 
 
+<dt id="arg-tstart-col">tstart_col<a class="anchor" aria-label="anchor" href="#arg-tstart-col"></a></dt>
+<dd><p>Optional left-truncation / start-time column for
+counting-process / time-varying covariates. When supplied, the
+data are interpreted as (tstart, time, event) triplets.</p></dd>
+
+
+<dt id="arg-strata-col">strata_col<a class="anchor" aria-label="anchor" href="#arg-strata-col"></a></dt>
+<dd><p>Optional stratifying column name (categorical).
+Each level fits a separate baseline hazard with shared beta.</p></dd>
+
+
 <dt id="arg-max-iter">max_iter<a class="anchor" aria-label="anchor" href="#arg-max-iter"></a></dt>
 <dd><p>Outer L-BFGS iterations (default 30).</p></dd>
 
@@ -150,6 +165,53 @@ If the LHS is not a <code>Surv(...)</code> expression, supply
 
 <dt id="arg-lambda">lambda<a class="anchor" aria-label="anchor" href="#arg-lambda"></a></dt>
 <dd><p>L2 regularisation.</p></dd>
+
+
+<dt id="arg-compute-loglik">compute_loglik<a class="anchor" aria-label="anchor" href="#arg-compute-loglik"></a></dt>
+<dd><p>Logical (default FALSE). If TRUE, run an extra
+DCF pipeline pass at beta_hat to evaluate the partial log-likelihood
+for AIC/BIC / LR tests. Adds ~60s per fit (Opal) or ~6 min (local).</p></dd>
+
+
+<dt id="arg-compute-se">compute_se<a class="anchor" aria-label="anchor" href="#arg-compute-se"></a></dt>
+<dd><p>Logical (default FALSE). If TRUE, evaluate the
+observed information matrix at beta_hat and return covariance /
+standard errors. Adds one full DCF pipeline pass.</p></dd>
+
+
+<dt id="arg-num-intervals-exp">num_intervals_exp<a class="anchor" aria-label="anchor" href="#arg-num-intervals-exp"></a></dt>
+<dd><p>Integer. DCF spline grid size for exp(eta);
+75 is the sweet spot on Ring63 (error &lt; 1e-3 while ~25 percent
+faster than 100). Drop to 50 for small-n speed.</p></dd>
+
+
+<dt id="arg-num-intervals-recip">num_intervals_recip<a class="anchor" aria-label="anchor" href="#arg-num-intervals-recip"></a></dt>
+<dd><p>Integer. DCF spline grid size for the
+reciprocal 1/S(t); same default rationale as
+<code>num_intervals_exp</code>.</p></dd>
+
+
+<dt id="arg-one-step-newton">one_step_newton<a class="anchor" aria-label="anchor" href="#arg-one-step-newton"></a></dt>
+<dd><p>Logical. If TRUE (default), use the bias-free
+one-step Newton at beta=0 followed by fixed-Fisher refinement;
+FALSE falls back to the legacy iterative gradient-descent loop.</p></dd>
+
+
+<dt id="arg-newton-refine-iters">newton_refine_iters<a class="anchor" aria-label="anchor" href="#arg-newton-refine-iters"></a></dt>
+<dd><p>Integer. Number of damped fixed-Fisher
+refinement iterations after the one-step Newton (HARD CAP 5 by
+P3 disclosure budget).</p></dd>
+
+
+<dt id="arg-newton-refine-tol">newton_refine_tol<a class="anchor" aria-label="anchor" href="#arg-newton-refine-tol"></a></dt>
+<dd><p>Numeric. Convergence tolerance on
+max |delta beta| during refinement.</p></dd>
+
+
+<dt id="arg-ring">ring<a class="anchor" aria-label="anchor" href="#arg-ring"></a></dt>
+<dd><p>Integer (63 or 127). Selects the MPC ring / fracBits
+pipeline. Default 127 (Catrina-Saxena fracBits=50, ~1e-15 per-op).
+Pass 63 to force the legacy Ring63 pipeline.</p></dd>
 
 
 <dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>

@@ -90,7 +90,7 @@ s1 <- data.frame(patient_id = pid, age = age, bmi = bmi, ped = ped)
 s2 <- data.frame(patient_id = pid, glu = glu, bp = bp, y = y)
 pooled <- merge(s1, s2, by = "patient_id")
 
-dslite <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
+dslite.server <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
                            config = DSLite::defaultDSConfiguration(
                              include = c("dsBase", "dsVert")))
 b <- newDSLoginBuilder()
@@ -99,7 +99,7 @@ b$append(server = "site1", url = "dslite.server",
 b$append(server = "site2", url = "dslite.server",
          table = "s2", driver = "DSLiteDriver")
 conns <- datashield.login(b$build(), assign = TRUE, symbol = "D",
-                           opts = list(server = dslite))
+                           opts = list(server = dslite.server))
 
 psi <- ds.psiAlign("D", "patient_id", "DA",
                     datasources = conns, verbose = FALSE)
@@ -130,7 +130,7 @@ t3 <- data.frame(patient_id = pid, bp = bp, npreg = npreg, y = y)
 pooled <- Reduce(function(a, b) merge(a, b, by = "patient_id"),
                   list(t1, t2, t3))
 
-dslite <- newDSLiteServer(tables = list(s1 = t1, s2 = t2, s3 = t3),
+dslite.server <- newDSLiteServer(tables = list(s1 = t1, s2 = t2, s3 = t3),
                            config = DSLite::defaultDSConfiguration(
                              include = c("dsBase", "dsVert")))
 b <- newDSLoginBuilder()
@@ -141,7 +141,7 @@ b$append(server = "site2", url = "dslite.server", table = "s2",
 b$append(server = "site3", url = "dslite.server", table = "s3",
          driver = "DSLiteDriver")
 conns <- datashield.login(b$build(), assign = TRUE, symbol = "D",
-                           opts = list(server = dslite))
+                           opts = list(server = dslite.server))
 psi <- ds.psiAlign("D", "patient_id", "DA",
                     datasources = conns, verbose = FALSE)
 
@@ -169,7 +169,7 @@ s1 <- data.frame(patient_id = pid, x1 = x1, x2 = x2)
 s2 <- data.frame(patient_id = pid, y = y)
 pooled <- merge(s1, s2, by = "patient_id")
 
-dslite <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
+dslite.server <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
                            config = DSLite::defaultDSConfiguration(
                              include = c("dsBase", "dsVert")))
 b <- newDSLoginBuilder()
@@ -178,7 +178,7 @@ b$append(server = "site1", url = "dslite.server", table = "s1",
 b$append(server = "site2", url = "dslite.server", table = "s2",
          driver = "DSLiteDriver")
 conns <- datashield.login(b$build(), assign = TRUE, symbol = "D",
-                           opts = list(server = dslite))
+                           opts = list(server = dslite.server))
 psi <- ds.psiAlign("D", "patient_id", "DA",
                     datasources = conns, verbose = FALSE)
 
@@ -206,7 +206,7 @@ s1 <- data.frame(patient_id = pid, x1 = x1)
 s2 <- data.frame(patient_id = pid, cluster_id = cluster_id, x2 = x2, y = y)
 pooled <- merge(s1, s2, by = "patient_id")
 
-dslite <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
+dslite.server <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
                            config = DSLite::defaultDSConfiguration(
                              include = c("dsBase", "dsVert")))
 b <- newDSLoginBuilder()
@@ -215,7 +215,7 @@ b$append(server = "site1", url = "dslite.server", table = "s1",
 b$append(server = "site2", url = "dslite.server", table = "s2",
          driver = "DSLiteDriver")
 conns <- datashield.login(b$build(), assign = TRUE, symbol = "D",
-                           opts = list(server = dslite))
+                           opts = list(server = dslite.server))
 psi <- ds.psiAlign("D", "patient_id", "DA",
                     datasources = conns, verbose = FALSE)
 
@@ -245,7 +245,7 @@ s2 <- data.frame(patient_id = pid, cluster_id = cluster_id,
                   x2 = x2, y = y)
 pooled <- merge(s1, s2, by = "patient_id")
 
-dslite <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
+dslite.server <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
                            config = DSLite::defaultDSConfiguration(
                              include = c("dsBase", "dsVert")))
 b <- newDSLoginBuilder()
@@ -254,7 +254,7 @@ b$append(server = "site1", url = "dslite.server", table = "s1",
 b$append(server = "site2", url = "dslite.server", table = "s2",
          driver = "DSLiteDriver")
 conns <- datashield.login(b$build(), assign = TRUE, symbol = "D",
-                           opts = list(server = dslite))
+                           opts = list(server = dslite.server))
 psi <- ds.psiAlign("D", "patient_id", "DA",
                     datasources = conns, verbose = FALSE)
 
@@ -285,7 +285,7 @@ s2 <- data.frame(patient_id = pid, cluster_id = cluster_id,
                   x2 = x2, y = y)
 pooled <- merge(s1, s2, by = "patient_id")
 
-dslite <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
+dslite.server <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
                            config = DSLite::defaultDSConfiguration(
                              include = c("dsBase", "dsVert")))
 b <- newDSLoginBuilder()
@@ -294,7 +294,7 @@ b$append(server = "site1", url = "dslite.server", table = "s1",
 b$append(server = "site2", url = "dslite.server", table = "s2",
          driver = "DSLiteDriver")
 conns <- datashield.login(b$build(), assign = TRUE, symbol = "D",
-                           opts = list(server = dslite))
+                           opts = list(server = dslite.server))
 psi <- ds.psiAlign("D", "patient_id", "DA",
                     datasources = conns, verbose = FALSE)
 fit_ds <- ds.vertGLMM(y ~ x1 + x2, data = "DA",
@@ -324,7 +324,7 @@ s1 <- data.frame(patient_id = pid, age = age, sex_num = sex_num)
 s2 <- data.frame(patient_id = pid, time = time, status = status)
 pooled <- merge(s1, s2, by = "patient_id")
 
-dslite <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
+dslite.server <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
                            config = DSLite::defaultDSConfiguration(
                              include = c("dsBase", "dsVert")))
 b <- newDSLoginBuilder()
@@ -333,7 +333,7 @@ b$append(server = "site1", url = "dslite.server", table = "s1",
 b$append(server = "site2", url = "dslite.server", table = "s2",
          driver = "DSLiteDriver")
 conns <- datashield.login(b$build(), assign = TRUE, symbol = "D",
-                           opts = list(server = dslite))
+                           opts = list(server = dslite.server))
 psi <- ds.psiAlign("D", "patient_id", "DA",
                     datasources = conns, verbose = FALSE)
 fit_ds <- ds.vertCox(time, status, ~ age + sex_num,
@@ -371,7 +371,7 @@ s2 <- data.frame(patient_id = pid, y = y,
                   low_leq = low_leq, med_leq = med_leq, high_leq = high_leq)
 pooled <- merge(s1, s2, by = "patient_id")
 
-dslite <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
+dslite.server <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
                            config = DSLite::defaultDSConfiguration(
                              include = c("dsBase", "dsVert")))
 b <- newDSLoginBuilder()
@@ -380,7 +380,7 @@ b$append(server = "site1", url = "dslite.server", table = "s1",
 b$append(server = "site2", url = "dslite.server", table = "s2",
          driver = "DSLiteDriver")
 conns <- datashield.login(b$build(), assign = TRUE, symbol = "D",
-                           opts = list(server = dslite))
+                           opts = list(server = dslite.server))
 psi <- ds.psiAlign("D", "patient_id", "DA",
                     datasources = conns, verbose = FALSE)
 fit_ds <- ds.vertOrdinalJointNewton(
@@ -420,7 +420,7 @@ s2 <- data.frame(patient_id = pid, y = y,
                   low_ind = low_ind, med_ind = med_ind, high_ind = high_ind)
 pooled <- merge(s1, s2, by = "patient_id")
 
-dslite <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
+dslite.server <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
                            config = DSLite::defaultDSConfiguration(
                              include = c("dsBase", "dsVert")))
 b <- newDSLoginBuilder()
@@ -429,7 +429,7 @@ b$append(server = "site1", url = "dslite.server", table = "s1",
 b$append(server = "site2", url = "dslite.server", table = "s2",
          driver = "DSLiteDriver")
 conns <- datashield.login(b$build(), assign = TRUE, symbol = "D",
-                           opts = list(server = dslite))
+                           opts = list(server = dslite.server))
 psi <- ds.psiAlign("D", "patient_id", "DA",
                     datasources = conns, verbose = FALSE)
 
@@ -465,7 +465,7 @@ s1 <- data.frame(patient_id = pid, x1 = x1, x2 = x2)
 s2 <- data.frame(patient_id = pid, treat = treat, y = y, ipw = ipw)
 pooled <- merge(s1, s2, by = "patient_id")
 
-dslite <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
+dslite.server <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
                            config = DSLite::defaultDSConfiguration(
                              include = c("dsBase", "dsVert")))
 b <- newDSLoginBuilder()
@@ -474,7 +474,7 @@ b$append(server = "site1", url = "dslite.server", table = "s1",
 b$append(server = "site2", url = "dslite.server", table = "s2",
          driver = "DSLiteDriver")
 conns <- datashield.login(b$build(), assign = TRUE, symbol = "D",
-                           opts = list(server = dslite))
+                           opts = list(server = dslite.server))
 psi <- ds.psiAlign("D", "patient_id", "DA",
                     datasources = conns, verbose = FALSE)
 fit_ds <- ds.vertIPW(
@@ -505,7 +505,7 @@ s2 <- data.frame(patient_id = pid, x3 = X[,3], x4 = X[,4],
                   y = as.numeric(y))
 pooled <- merge(s1, s2, by = "patient_id")
 
-dslite <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
+dslite.server <- newDSLiteServer(tables = list(s1 = s1, s2 = s2),
                            config = DSLite::defaultDSConfiguration(
                              include = c("dsBase", "dsVert")))
 b <- newDSLoginBuilder()
@@ -514,7 +514,7 @@ b$append(server = "site1", url = "dslite.server", table = "s1",
 b$append(server = "site2", url = "dslite.server", table = "s2",
          driver = "DSLiteDriver")
 conns <- datashield.login(b$build(), assign = TRUE, symbol = "D",
-                           opts = list(server = dslite))
+                           opts = list(server = dslite.server))
 psi <- ds.psiAlign("D", "patient_id", "DA",
                     datasources = conns, verbose = FALSE)
 

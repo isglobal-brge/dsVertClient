@@ -26,8 +26,8 @@ The scaffolding here reuses every primitive already shipped in
 dsVert 1.1.0+: the per-cluster residual aggregates, the
 keep_session flag on ds.vertGLM, the Beaver vecmul for inner
 weighted updates, and the DCF sigmoid/exp wide-splines.
-Privacy: client sees only (, _b^2) + per-cluster
- b_i estimates as an aggregate vector (one value per cluster).
+Privacy: client sees only (beta, sigma_b^2) + per-cluster
+b_hat_i estimates as an aggregate vector (one value per cluster).
 No per-patient quantity ever leaves the DCF parties.
 Inter-server leakage: cluster membership (same tier as ds.vertLMM)."><meta property="og:description" content="Fit a binomial generalised linear mixed model with a
 single random intercept on vertically partitioned DataSHIELD data
@@ -56,8 +56,8 @@ The scaffolding here reuses every primitive already shipped in
 dsVert 1.1.0+: the per-cluster residual aggregates, the
 keep_session flag on ds.vertGLM, the Beaver vecmul for inner
 weighted updates, and the DCF sigmoid/exp wide-splines.
-Privacy: client sees only (, _b^2) + per-cluster
- b_i estimates as an aggregate vector (one value per cluster).
+Privacy: client sees only (beta, sigma_b^2) + per-cluster
+b_hat_i estimates as an aggregate vector (one value per cluster).
 No per-patient quantity ever leaves the DCF parties.
 Inter-server leakage: cluster membership (same tier as ds.vertLMM)."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -119,8 +119,8 @@ across clusters (Breslow-Clayton approximation).</p></li>
 dsVert 1.1.0+: the per-cluster residual aggregates, the
 keep_session flag on ds.vertGLM, the Beaver vecmul for inner
 weighted updates, and the DCF sigmoid/exp wide-splines.</p>
-<p>Privacy: client sees only (, _b^2) + per-cluster
- b_i estimates as an aggregate vector (one value per cluster).
+<p>Privacy: client sees only (beta, sigma_b^2) + per-cluster
+b_hat_i estimates as an aggregate vector (one value per cluster).
 No per-patient quantity ever leaves the DCF parties.</p>
 <p>Inter-server leakage: cluster membership (same tier as ds.vertLMM).</p>
     </div>
@@ -156,7 +156,7 @@ No per-patient quantity ever leaves the DCF parties.</p>
 
 
 <dt id="arg-max-outer">max_outer<a class="anchor" aria-label="anchor" href="#arg-max-outer"></a></dt>
-<dd><p>Outer (, _b^2) iterations.</p></dd>
+<dd><p>Outer (beta, sigma_b^2) iterations.</p></dd>
 
 
 <dt id="arg-inner-iter">inner_iter<a class="anchor" aria-label="anchor" href="#arg-inner-iter"></a></dt>

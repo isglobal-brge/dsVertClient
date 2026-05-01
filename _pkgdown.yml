@@ -56,26 +56,33 @@ reference:
       - ds.vertLR
 
   - title: Survival
-    desc: Cox proportional-hazards (K=2 OT-Beaver)
+    desc: Cox proportional-hazards (K=2 OT-Beaver) and K=3 Poisson trick
     contents:
       - ds.vertCox
+      - ds.vertCox.k3
+      - ds.vertCoxDiscreteNonDisclosive
 
   - title: Negative-binomial
-    desc: NB regression with iid-μ MoM and full-reg θ MLE pivots
+    desc: NB regression with iid-mu / MoM / full-reg theta pivots
     contents:
       - ds.vertNB
+      - ds.vertNBMoMTheta
+      - ds.vertNBFullRegTheta
 
   - title: Multinomial / ordinal
     desc: OVR + softmax-anchor (warm) and joint Newton (Tutz / Bohning)
     contents:
       - ds.vertMultinom
       - ds.vertMultinomJoint
+      - ds.vertMultinomJointNewton
       - ds.vertOrdinal
+      - ds.vertOrdinalJointNewton
 
   - title: Mixed models / longitudinal
-    desc: REML LMM, GEE sandwich, binomial Laplace GLMM
+    desc: REML LMM (K=2 / K=3), GEE sandwich, binomial Laplace GLMM
     contents:
       - ds.vertLMM
+      - ds.vertLMM.k3
       - ds.vertGEE
       - ds.vertGLMM
 
@@ -92,6 +99,7 @@ reference:
       - ds.vertLASSO1Step
       - ds.vertLASSOIter
       - ds.vertLASSOCV
+      - ds.vertLASSOProximal
 
   - title: Utility / printers
     desc: Helper and administrative methods
@@ -115,6 +123,7 @@ articles:
       - vert_validation_evidence
       - data-preparation
       - validation
+      - methods-tour
 
 authors:
   David Sarrat González:

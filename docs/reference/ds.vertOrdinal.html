@@ -75,6 +75,7 @@ estimates across threshold levels.</p>
 <span>  data <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  <span class="va">levels_ordered</span>,</span>
 <span>  cumulative_template <span class="op">=</span> <span class="st">"%s_leq"</span>,</span>
+<span>  ring <span class="op">=</span> <span class="fl">63L</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  datasources <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  <span class="va">...</span></span>
@@ -99,14 +100,53 @@ through as a factor level name in the per-threshold formulas).</p></dd>
 smallest-to-largest.</p></dd>
 
 
+<dt id="arg-cumulative-template">cumulative_template<a class="anchor" aria-label="anchor" href="#arg-cumulative-template"></a></dt>
+<dd><p>String format (<code>sprintf</code>-style)
+used to build cumulative indicator column names; for instance the
+default <code>"%s_leq"</code> produces <code>&lt;level&gt;_leq</code>, a 0/1 column
+that is 1 when the patient's outcome is at-or-below that level.
+Columns must already exist server-side.</p></dd>
+
+
+<dt id="arg-ring">ring<a class="anchor" aria-label="anchor" href="#arg-ring"></a></dt>
+<dd><p>Integer (63 or 127). Ring selector for the underlying
+binomial sub-fits. Currently defaults to 63L while the Ring127
+binomial wide-spline path is wired up.</p></dd>
+
+
+<dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>
+<dd><p>Logical (default TRUE). Print per-threshold fit
+progress.</p></dd>
+
+
+<dt id="arg-datasources">datasources<a class="anchor" aria-label="anchor" href="#arg-datasources"></a></dt>
+<dd><p>DataSHIELD connections; if NULL, uses
+<code><a href="https://datashield.github.io/DSI/reference/datashield.connections_find.html" class="external-link">DSI::datashield.connections_find()</a></code>.</p></dd>
+
+
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
 <dd><p>Passed to each underlying <code>ds.vertGLM</code> call.</p></dd>
 
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p><code>ds.vertOrdinal</code> object: per-threshold fits + consolidated
-beta matrix + threshold-parameter vector.</p>
+    <p><code>ds.vertOrdinal</code> object with (among other fields):
+<code>thresholds</code> \(\alpha_k\) (intercepts of the K-1 cumulative
+binomial fits) and <code>beta_po</code> \(\gamma\) (BLUE-pooled slope
+coefficients from the K-1 fits). Both are in the
+CUMULATIVE-BINOMIAL GLM convention, i.e.\ the fit form is</p>
+<p></p><div class="sourceCode"><pre><code><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a>  \eqn{<span class="fu">P</span>(Y \leq k <span class="sc">|</span> X) <span class="ot">=</span> \mathrm{sigmoid}(\alpha_k <span class="sc">+</span> X<span class="sc">^</span>\top \gamma)},</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a>NOT the \code{MASS<span class="sc">::</span>polr} convention</span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a>\eqn{<span class="fu">P</span>(Y \leq k <span class="sc">|</span> X) <span class="ot">=</span> \mathrm{sigmoid}(\theta_k <span class="sc">-</span> X<span class="sc">^</span>\top \beta)}.</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a>The two agree under \eqn{\theta_k <span class="ot">=</span> \alpha_k} and \eqn{\beta <span class="ot">=</span> <span class="sc">-</span>\gamma}.</span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a>Therefore a caller comparing against \code{<span class="fu">coef</span>(polr)} must flip the</span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a>sign of \code{beta_po} (or equivalently evaluate predictions with</span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a>\eqn{\mathrm{sigmoid}(\theta_k <span class="sc">+</span> X<span class="sc">^</span>\top \gamma)} on the \code{ds.vertOrdinal}</span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a>outputs). Empirically the cumulative probabilities agree with polr</span>
+<span id="cb1-10"><a href="#cb1-10" tabindex="-1"></a>to max \eqn{<span class="sc">|</span>\Delta P<span class="sc">|</span> \approx <span class="dv">5</span> \times <span class="dv">10</span><span class="sc">^</span>{<span class="sc">-</span><span class="dv">2</span>}} on the housing</span>
+<span id="cb1-11"><a href="#cb1-11" tabindex="-1"></a>subset once the convention is <span class="fu">honoured</span> (probe_ordinal_harness.R,</span>
+<span id="cb1-12"><a href="#cb1-12" tabindex="-1"></a><span class="dv">2026-04-21</span>).</span></code></pre><p></p></div>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
