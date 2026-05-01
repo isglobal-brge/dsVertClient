@@ -172,6 +172,27 @@ repo</strong>) — re- running the orchestrator simply produces a fresher
 index.</p>
 </div>
 <div class="section level2">
+<h2 id="known-regressions">Known regressions<a class="anchor" aria-label="anchor" href="#known-regressions"></a>
+</h2>
+<p>The K = 3 paths for <code>glm</code>, <code>multinom_warm</code>,
+<code>ordinal_warm</code>, and <code>lasso</code> route through
+<code>k2ShareInputDS</code> (the K=3 implementation designates two of
+three servers as DCF parties and reuses the K=2 input-sharing primitive
+between them — see
+<code>dsVertClient/R/ds.vertGLM.k3ring63.R:75-103</code>). After the LMM
+K=2 defensive hardening (<code>isglobal-brge/dsVert#2</code>) added
+<code>.k2_enforce_K(ss, 2L, "k2ShareInputDS")</code> server-side, the
+guard counts the full session pool — three peer transport public keys —
+and rejects with
+<code>"K mismatch — server refuses cross-K primitive (k2ShareInputDS: expected K=2, got K=3)"</code>.
+The K=3 paths are therefore blocked at present; the four affected probes
+report <code>status = error</code> with the verbatim guard message
+preserved in the verdict line. Closing the regression requires either a
+2-of-3 mode flag in <code>.k2_enforce_K</code> or a bespoke K=3
+input-sharing primitive with its own arity guard. Tracked separately;
+out of scope of this validation cycle.</p>
+</div>
+<div class="section level2">
 <h2 id="methods-covered">Methods covered<a class="anchor" aria-label="anchor" href="#methods-covered"></a>
 </h2>
 <table class="table">
