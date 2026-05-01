@@ -151,6 +151,25 @@ by_method <- setNames(results, vapply(results,
   function(e) e$method %||% NA_character_, character(1)))
 ```
 
+# Known regressions
+
+The K = 3 paths for `glm`, `multinom_warm`, `ordinal_warm`, and
+`lasso` route through `k2ShareInputDS` (the K=3 implementation
+designates two of three servers as DCF parties and reuses the K=2
+input-sharing primitive between them — see
+`dsVertClient/R/ds.vertGLM.k3ring63.R:75-103`). After the LMM K=2
+defensive hardening (`isglobal-brge/dsVert#2`) added
+`.k2_enforce_K(ss, 2L, "k2ShareInputDS")` server-side, the guard
+counts the full session pool — three peer transport public keys —
+and rejects with `"K mismatch — server refuses cross-K primitive
+(k2ShareInputDS: expected K=2, got K=3)"`. The K=3 paths are
+therefore blocked at present; the four affected probes report
+`status = error` with the verbatim guard message preserved in the
+verdict line. Closing the regression requires either a 2-of-3 mode
+flag in `.k2_enforce_K` or a bespoke K=3 input-sharing primitive
+with its own arity guard. Tracked separately; out of scope of this
+validation cycle.
+
 # Methods covered
 
 ```{r methods-table}
