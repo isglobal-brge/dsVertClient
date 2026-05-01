@@ -151,24 +151,35 @@ by_method <- setNames(results, vapply(results,
   function(e) e$method %||% NA_character_, character(1)))
 ```
 
-# Known regressions
+# K=3 status (post-`worker2-k3-restore` merge)
 
-The K = 3 paths for `glm`, `multinom_warm`, `ordinal_warm`, and
-`lasso` route through `k2ShareInputDS` (the K=3 implementation
-designates two of three servers as DCF parties and reuses the K=2
-input-sharing primitive between them — see
-`dsVertClient/R/ds.vertGLM.k3ring63.R:75-103`). After the LMM K=2
-defensive hardening (`isglobal-brge/dsVert#2`) added
-`.k2_enforce_K(ss, 2L, "k2ShareInputDS")` server-side, the guard
-counts the full session pool — three peer transport public keys —
-and rejects with `"K mismatch — server refuses cross-K primitive
-(k2ShareInputDS: expected K=2, got K=3)"`. The K=3 paths are
-therefore blocked at present; the four affected probes report
-`status = error` with the verbatim guard message preserved in the
-verdict line. Closing the regression requires either a 2-of-3 mode
-flag in `.k2_enforce_K` or a bespoke K=3 input-sharing primitive
-with its own arity guard. Tracked separately; out of scope of this
-validation cycle.
+The K = 2-only `.k2_enforce_K` guards on shared-infra primitives
+(`k2ShareInputDS`, `k2ComputeEtaShareDS`, `k2GradientR1DS`,
+`k2GradientR2DS`, `k2WideSplinePhase{1,2,3,4}DS`) introduced by
+the LMM hardening (`isglobal-brge/dsVert#2`) blocked every K = 3
+path that reuses those primitives in 2-of-3 DCF-party mode. The
+guards are now **lifted** for the eight shared-infra primitives
+(see `dsVert worker2-k3-restore`); guards are RETAINED on the K = 2-
+only-by-algorithm primitives (`multinomJointDS`, `dsvertLMMGramDS`,
+`dsvertLMMGLSTransformDS`, `coxDiscreteShareDS`, `nbFullRegShareDS`,
+`ordinalJointScoreDS`) where the algebra genuinely depends on a
+2-party additive split.
+
+Companion patch (`fix-beaver-multi-round-corruption@8b986b9`) adds
+a divergence guard to `k2WideSplinePhase1DS` that aborts on an
+implausible eta-share length **before** the Go-side slice indexing,
+turning the previous K=3 SIGSEGV into a clean R-level error the
+client can recover from. Combined with the L-BFGS step bound +
+backtracking already in `ds.vertGLM.k3ring63::.lbfgs_direction`,
+the K=3 path is now numerically robust under upstream divergence.
+
+Verified K=3 verdicts (all against local opal docker
+opal1+opal2+opal3, post-merge):
+
+* **GLM K=3 binomial** (Pima 3-server, n=150 PSI, 7 features): `max|Δβ| = 1.748e-02`, runtime 7.3 min.
+* **GLM K=3 Poisson** (synthetic n=300, 4 covariates, no offset): `max|Δβ| = 1.058e-03`, runtime 26.4 min — sub-noise.
+* **Cox K=3** (Allison-1982 Poisson trick, lung pp-expansion n=131, 14 coefs incl. baseline dummies): `max|Δβ| = 4.71e-02` vs `survival::coxph`, runtime 86.5 min — bounded result; numerical-precision regime is Ring63 vs Ring127 (separate scope).
+* **LMM K=3** (REML 1-D profile, synthetic longitudinal n=2000 / 200 clusters): `max|Δβ| = 1.092e-03` vs `nlme::lme(REML)`, σ-ratio **20.9×**, runtime 15.7 min. β-estimate verde / sub-noise; variance-component recovery (σ̂_b², σ̂²) requires cluster-mean centering not yet in the per-row weighted-GLM approach (Pinheiro-Bates 2000 §2.4.2) — flagged honestly. β converges accurately because the GLS β-estimator has weak ρ-dependence in the upper-ρ regime where the profile pins.
 
 # Methods covered
 

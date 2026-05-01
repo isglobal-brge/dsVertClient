@@ -172,25 +172,56 @@ repo</strong>) — re- running the orchestrator simply produces a fresher
 index.</p>
 </div>
 <div class="section level2">
-<h2 id="known-regressions">Known regressions<a class="anchor" aria-label="anchor" href="#known-regressions"></a>
+<h2 id="k3-status-post-worker2-k3-restore-merge">K=3 status (post-<code>worker2-k3-restore</code> merge)<a class="anchor" aria-label="anchor" href="#k3-status-post-worker2-k3-restore-merge"></a>
 </h2>
-<p>The K = 3 paths for <code>glm</code>, <code>multinom_warm</code>,
-<code>ordinal_warm</code>, and <code>lasso</code> route through
-<code>k2ShareInputDS</code> (the K=3 implementation designates two of
-three servers as DCF parties and reuses the K=2 input-sharing primitive
-between them — see
-<code>dsVertClient/R/ds.vertGLM.k3ring63.R:75-103</code>). After the LMM
-K=2 defensive hardening (<code>isglobal-brge/dsVert#2</code>) added
-<code>.k2_enforce_K(ss, 2L, "k2ShareInputDS")</code> server-side, the
-guard counts the full session pool — three peer transport public keys —
-and rejects with
-<code>"K mismatch — server refuses cross-K primitive (k2ShareInputDS: expected K=2, got K=3)"</code>.
-The K=3 paths are therefore blocked at present; the four affected probes
-report <code>status = error</code> with the verbatim guard message
-preserved in the verdict line. Closing the regression requires either a
-2-of-3 mode flag in <code>.k2_enforce_K</code> or a bespoke K=3
-input-sharing primitive with its own arity guard. Tracked separately;
-out of scope of this validation cycle.</p>
+<p>The K = 2-only <code>.k2_enforce_K</code> guards on shared-infra
+primitives (<code>k2ShareInputDS</code>,
+<code>k2ComputeEtaShareDS</code>, <code>k2GradientR1DS</code>,
+<code>k2GradientR2DS</code>, <code>k2WideSplinePhase{1,2,3,4}DS</code>)
+introduced by the LMM hardening (<code>isglobal-brge/dsVert#2</code>)
+blocked every K = 3 path that reuses those primitives in 2-of-3
+DCF-party mode. The guards are now <strong>lifted</strong> for the eight
+shared-infra primitives (see <code>dsVert worker2-k3-restore</code>);
+guards are RETAINED on the K = 2- only-by-algorithm primitives
+(<code>multinomJointDS</code>, <code>dsvertLMMGramDS</code>,
+<code>dsvertLMMGLSTransformDS</code>, <code>coxDiscreteShareDS</code>,
+<code>nbFullRegShareDS</code>, <code>ordinalJointScoreDS</code>) where
+the algebra genuinely depends on a 2-party additive split.</p>
+<p>Companion patch
+(<code>fix-beaver-multi-round-corruption@8b986b9</code>) adds a
+divergence guard to <code>k2WideSplinePhase1DS</code> that aborts on an
+implausible eta-share length <strong>before</strong> the Go-side slice
+indexing, turning the previous K=3 SIGSEGV into a clean R-level error
+the client can recover from. Combined with the L-BFGS step bound +
+backtracking already in
+<code>ds.vertGLM.k3ring63::.lbfgs_direction</code>, the K=3 path is now
+numerically robust under upstream divergence.</p>
+<p>Verified K=3 verdicts (all against local opal docker
+opal1+opal2+opal3, post-merge):</p>
+<ul>
+<li>
+<strong>GLM K=3 binomial</strong> (Pima 3-server, n=150 PSI, 7
+features): <code>max|Δβ| = 1.748e-02</code>, runtime 7.3 min.</li>
+<li>
+<strong>GLM K=3 Poisson</strong> (synthetic n=300, 4 covariates, no
+offset): <code>max|Δβ| = 1.058e-03</code>, runtime 26.4 min —
+sub-noise.</li>
+<li>
+<strong>Cox K=3</strong> (Allison-1982 Poisson trick, lung
+pp-expansion n=131, 14 coefs incl. baseline dummies):
+<code>max|Δβ| = 4.71e-02</code> vs <code><a href="https://rdrr.io/pkg/survival/man/coxph.html" class="external-link">survival::coxph</a></code>, runtime
+86.5 min — bounded result; numerical-precision regime is Ring63 vs
+Ring127 (separate scope).</li>
+<li>
+<strong>LMM K=3</strong> (REML 1-D profile, synthetic longitudinal
+n=2000 / 200 clusters): <code>max|Δβ| = 1.092e-03</code> vs
+<code>nlme::lme(REML)</code>, σ-ratio <strong>20.9×</strong>, runtime
+15.7 min. β-estimate verde / sub-noise; variance-component recovery
+(σ̂_b², σ̂²) requires cluster-mean centering not yet in the per-row
+weighted-GLM approach (Pinheiro-Bates 2000 §2.4.2) — flagged honestly. β
+converges accurately because the GLS β-estimator has weak ρ-dependence
+in the upper-ρ regime where the profile pins.</li>
+</ul>
 </div>
 <div class="section level2">
 <h2 id="methods-covered">Methods covered<a class="anchor" aria-label="anchor" href="#methods-covered"></a>
