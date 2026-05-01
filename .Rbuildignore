@@ -1,0 +1,10 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^vignettes/.*_cache$
+^vignettes/.*_files$
+^vignettes/.*\.html$
+^vignettes/data-preparation_cache$
+^vignettes/k2-validation_cache$
+^vignettes/vert_validation_evidence_cache$
+^vignettes/vert_validation_evidence_figures$
+^\.github$
