@@ -11,9 +11,12 @@ footer:
 
 navbar:
   structure:
-    left: [intro, reference, articles]
+    left: [intro, validation, reference, articles]
     right: [search, github]
   components:
+    validation:
+      text: "Validation evidence"
+      href: articles/vert_validation_evidence.html
     github:
       icon: fa-github
       href: https://github.com/isglobal-brge/dsVertClient
@@ -26,34 +29,80 @@ home:
     structure: [links, authors, license]
 
 reference:
-  - title: Record Alignment
+  - title: Record alignment
     desc: Privacy-preserving record alignment using ECDH-PSI
     contents:
       - ds.psiAlign
+      - ds.isPsiAligned
+      - ds.getIdentityPks
 
-  - title: Correlation and PCA
-    desc: Distributed correlation and principal component analysis
+  - title: Correlation, PCA, descriptive
+    desc: Distributed second-order summaries
     contents:
       - ds.vertCor
       - ds.vertPCA
+      - ds.vertDesc
+      - ds.vertChisq
+      - ds.vertChisqCross
+      - ds.vertFisher
 
-  - title: Generalized Linear Models
-    desc: Privacy-preserving GLM fitting via Ring63 Beaver MPC
+  - title: Generalised linear models (GLM)
+    desc: K=2 / K=3 federated GLM fits via Ring63 Beaver MPC
     contents:
       - ds.vertGLM
+      - ds.vertConfint
+      - ds.vertContrast
+      - ds.vertWald
+      - ds.vertLR
+
+  - title: Survival
+    desc: Cox proportional-hazards (K=2 OT-Beaver)
+    contents:
+      - ds.vertCox
+
+  - title: Negative-binomial
+    desc: NB regression with iid-μ MoM and full-reg θ MLE pivots
+    contents:
+      - ds.vertNB
+
+  - title: Multinomial / ordinal
+    desc: OVR + softmax-anchor (warm) and joint Newton (Tutz / Bohning)
+    contents:
+      - ds.vertMultinom
+      - ds.vertMultinomJoint
+      - ds.vertOrdinal
+
+  - title: Mixed models / longitudinal
+    desc: REML LMM, GEE sandwich, binomial Laplace GLMM
+    contents:
+      - ds.vertLMM
+      - ds.vertGEE
+      - ds.vertGLMM
+
+  - title: Causal inference / robustness
+    desc: Inverse-probability-weighting and multiple-imputation pooling
+    contents:
+      - ds.vertIPW
+      - ds.vertMI
+
+  - title: LASSO / penalised regression
+    desc: Proximal-gradient / FISTA on the federated GLM normal-equations
+    contents:
+      - ds.vertLASSO
+      - ds.vertLASSO1Step
+      - ds.vertLASSOIter
+      - ds.vertLASSOCV
+
+  - title: Utility / printers
+    desc: Helper and administrative methods
+    contents:
       - coef.ds.glm
+      - print.ds.cor
+      - print.ds.pca
       - print.ds.glm
       - summary.ds.glm
 
-  - title: Utility Functions
-    desc: Helper and administrative methods
-    contents:
-      - ds.getIdentityPks
-      - print.ds.cor
-      - print.ds.pca
-
-  - title: Internal
-    desc: Internal protocol implementations
+  - title: Internal protocol implementations
     contents:
       - chunk-utils
       - k2-beaver-lbfgs-client
@@ -61,9 +110,11 @@ reference:
 
 articles:
   - title: Validation
+    desc: End-to-end empirical validation against centralised R references
     contents:
-      - validation
+      - vert_validation_evidence
       - data-preparation
+      - validation
 
 authors:
   David Sarrat González:
