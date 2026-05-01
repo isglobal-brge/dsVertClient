@@ -432,8 +432,22 @@ NULL
     prev_theta <- theta; prev_grad <- full_grad
 
     direction <- .lbfgs_direction(full_grad, lbfgs_s, lbfgs_y)
+    # Step bound: cap |direction| at 5.0 to prevent first-iter explosion
+    # (Cox K=3 Poisson trick with offset + 100 baseline dummies can produce
+    # an enormous L-BFGS direction at iter 1, which without damping drove
+    # eta → ∞, exp(eta) → Inf, and a NaN interval-index slice into Go-side
+    # k2WideSplinePhase1DS resulting in SIGSEGV addr=0xefffffff90a0).
+    d_max <- max(abs(direction))
+    if (is.finite(d_max) && d_max > 5.0) direction <- direction * (5.0 / d_max)
+    # Backtracking: halve step until new theta is finite and bounded
     step_size <- if (iter <= 1) 0.3 else 1.0
-    new_theta <- theta + step_size * direction
+    for (bt in 0:6) {
+      new_theta <- theta + step_size * direction
+      if (all(is.finite(new_theta)) && max(abs(new_theta)) < 50) break
+      step_size <- step_size * 0.5
+    }
+    if (!all(is.finite(new_theta)))
+      stop("L-BFGS step produced non-finite theta \u2014 divergence guard", call. = FALSE)
     intercept <- new_theta[1]
     beta <- new_theta[-1]
 
