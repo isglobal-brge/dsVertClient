@@ -5,13 +5,13 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>Data Preparation: Creating the Validation Datasets • dsVertClient</title>
+<title>dsVert validation — data preparation (seed-documented) • dsVertClient</title>
 <script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <link href="../deps/bootstrap-5.3.1/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
-<meta property="og:title" content="Data Preparation: Creating the Validation Datasets">
+<meta property="og:title" content="dsVert validation — data preparation (seed-documented)">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -21,7 +21,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">dsVertClient</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.0.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -30,6 +30,7 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
+<li class="nav-item"><a class="nav-link" href="../articles/vert_validation_evidence.html">Validation evidence</a></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="active nav-item"><a class="nav-link" href="../articles/index.html">Articles</a></li>
       </ul>
@@ -51,102 +52,537 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
 
-      <h1>Data Preparation: Creating the Validation Datasets</h1>
+      <h1>dsVert validation — data preparation (seed-documented)</h1>
+                        <h4 data-toc-skip class="author">David Sarrat
+González, Miron Banjac, Juan R. González</h4>
             
+            <h4 data-toc-skip class="date">2026-05-01</h4>
       
       <small class="dont-index">Source: <a href="https://github.com/isglobal-brge/dsVertClient/blob/HEAD/vignettes/data-preparation.Rmd" class="external-link"><code>vignettes/data-preparation.Rmd</code></a></small>
       <div class="d-none name"><code>data-preparation.Rmd</code></div>
     </div>
 
     
+        <div class="abstract">
+      <p class="abstract">Abstract</p>
+      <p>Reproducible recipe for the vertically-partitioned datasets
+      used by the twelve method-validation probes
+      (<code>vert_validation_evidence</code>). Every split is
+      deterministic — the same <code><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed()</a></code> value rebuilds
+      every server’s table identically. Datasets that produced sub-noise
+      verdicts in PHASE4 are reused unchanged. GLMM / LMM / GEE
+      longitudinal use a synthetic K=10 obs/cluster × 200 clusters
+      generator with σ_b² = 0.5 and p̄ ≈ 0.3 — chosen to avoid the
+      rare-event PQL bias regime that Breslow &amp; Clayton (1993) §3
+      documents for binomial Laplace approximations.</p>
+    </div>
     
-<p>This document shows how the validation datasets on
-<code>opal-demo.obiba.org</code> were created. Both datasets come from
-standard R packages (MASS, survival), so any researcher can reproduce
-the exact same partitions using the seed below.</p>
 <div class="section level2">
-<h2 id="birthwt-k2">birthwt (K=2)<a class="anchor" aria-label="anchor" href="#birthwt-k2"></a>
+<h2 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
 </h2>
-<p>The birthwt dataset (189 observations) is split vertically into two
-hospitals with deliberately non-identical patient populations —
-simulating a realistic scenario where institutions have overlapping but
-not identical patient registries.</p>
+<p>This vignette is the canonical recipe for every dataset the
+<code>vert_validation_evidence</code> probes consume. Each builder is a
+pure function of its <code>seed</code>; running it locally on this
+machine rebuilds the same tables that live on the validation Opal
+cluster (<code>vert_demo</code> project). The provisioning script
+<code>scripts/opal_provision_full.R</code> invokes these builders,
+uploads each split with <code>id.name="id"</code> (a synthetic row
+index) so <code>patient_id</code> / <code>row_id</code> remain queryable
+variables on the server, and grants <code>view</code> permission to the
+runner account.</p>
+<table class="table">
+<colgroup>
+<col width="20%">
+<col width="20%">
+<col width="20%">
+<col width="20%">
+<col width="20%">
+</colgroup>
+<thead><tr class="header">
+<th>Split</th>
+<th>Methods</th>
+<th>Rows</th>
+<th>Servers</th>
+<th>Seed</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>
+<code>bw_hospital_a</code> / <code>bw_hospital_b</code>
+</td>
+<td>glm K=2</td>
+<td>189 → 165 PSI</td>
+<td>s1 / s2</td>
+<td>123</td>
+</tr>
+<tr class="even">
+<td>
+<code>na_data_s1</code> / <code>na_data_s2</code>
+</td>
+<td>nb, ord_joint, mnl_joint, ordinal_warm K=2, multinom_warm K=2, lasso
+K=2</td>
+<td>392 → 170 PSI</td>
+<td>s1 / s2</td>
+<td>123 + 124 (bp tertile)</td>
+</tr>
+<tr class="odd">
+<td>
+<code>lung_s1</code> / <code>lung_s2</code>
+</td>
+<td>cox K=2</td>
+<td>167 → 150 PSI</td>
+<td>s1 / s2</td>
+<td>125</td>
+</tr>
+<tr class="even">
+<td>
+<code>long_glmm_s1</code> / <code>long_glmm_s2</code>
+</td>
+<td>glmm K=2 (synthetic, p̄≈0.3)</td>
+<td>2000 / 27 clusters</td>
+<td>s1 / s2</td>
+<td>200</td>
+</tr>
+<tr class="odd">
+<td>
+<code>long_lmm_s1</code> / <code>long_lmm_s2</code>
+</td>
+<td>lmm K=2, gee K=2 (synthetic Gaussian)</td>
+<td>2000 / 200 clusters</td>
+<td>s1 / s2</td>
+<td>201</td>
+</tr>
+<tr class="even">
+<td>
+<code>cgd_ipw_s1</code> / <code>cgd_ipw_s2</code>
+</td>
+<td>ipw K=2 (CGD enum=1, propensity-weighted)</td>
+<td>128 → 128 PSI</td>
+<td>s1 / s2</td>
+<td>128 + 129</td>
+</tr>
+<tr class="odd">
+<td><code>pima_server1..3</code></td>
+<td>glm K=3, lasso K=3</td>
+<td>768 → 392 PSI</td>
+<td>s1 / s2 / s3</td>
+<td>123</td>
+</tr>
+<tr class="even">
+<td><code>pima_warm_s1..3</code></td>
+<td>multinom_warm K=3, ordinal_warm K=3</td>
+<td>(Pima K=3 + bp tertile)</td>
+<td>s1 / s2 / s3</td>
+<td>123 + 124</td>
+</tr>
+</tbody>
+</table>
+<p>Every public-domain dataset is from R recommended packages
+(<code><a href="https://rdrr.io/pkg/MASS/man/birthwt.html" class="external-link">MASS::birthwt</a></code>, <code><a href="https://rdrr.io/pkg/survival/man/lung.html" class="external-link">survival::lung</a></code>,
+<code><a href="https://rdrr.io/pkg/survival/man/cgd.html" class="external-link">survival::cgd</a></code>, <code><a href="https://rdrr.io/pkg/nlme/man/Orthodont.html" class="external-link">nlme::Orthodont</a></code>,
+<code><a href="https://rdrr.io/pkg/MASS/man/Pima.tr.html" class="external-link">MASS::Pima.tr</a></code> + <code><a href="https://rdrr.io/pkg/MASS/man/Pima.tr.html" class="external-link">MASS::Pima.te</a></code>).</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="http://www.stats.ox.ac.uk/pub/MASS4/" class="external-link">MASS</a></span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/data.html" class="external-link">data</a></span><span class="op">(</span><span class="va">birthwt</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">df</span> <span class="op">&lt;-</span> <span class="va">birthwt</span></span>
-<span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"BW%03d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">123</span><span class="op">)</span></span>
-<span><span class="va">core</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span>, <span class="fl">160</span><span class="op">)</span></span>
-<span><span class="va">remaining</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span>, <span class="va">core</span><span class="op">)</span></span>
-<span><span class="va">ids1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">remaining</span>, <span class="fl">15</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>  <span class="co"># 175 patients</span></span>
-<span><span class="va">ids2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">remaining</span>, <span class="fl">10</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>  <span class="co"># 170 patients</span></span>
-<span></span>
-<span><span class="co"># Hospital A: maternal demographics</span></span>
-<span><span class="va">hospital_a</span> <span class="op">&lt;-</span> <span class="va">df</span><span class="op">[</span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids1</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"age"</span>, <span class="st">"lwt"</span>, <span class="st">"race"</span>, <span class="st">"smoke"</span><span class="op">)</span><span class="op">]</span></span>
-<span></span>
-<span><span class="co"># Hospital B: clinical history + outcomes</span></span>
-<span><span class="va">hospital_b</span> <span class="op">&lt;-</span> <span class="va">df</span><span class="op">[</span><span class="va">df</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids2</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"ptl"</span>, <span class="st">"ht"</span>, <span class="st">"ui"</span>, <span class="st">"ftv"</span>, <span class="st">"bwt"</span>, <span class="st">"low"</span><span class="op">)</span><span class="op">]</span></span>
-<span></span>
-<span><span class="co"># Shuffle row order independently (PSI must handle this)</span></span>
-<span><span class="va">hospital_a</span> <span class="op">&lt;-</span> <span class="va">hospital_a</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">hospital_a</span><span class="op">)</span><span class="op">)</span>, <span class="op">]</span></span>
-<span><span class="va">hospital_b</span> <span class="op">&lt;-</span> <span class="va">hospital_b</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">hospital_b</span><span class="op">)</span><span class="op">)</span>, <span class="op">]</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/message.html" class="external-link">suppressPackageStartupMessages</a></span><span class="op">(</span><span class="op">{</span></span>
+<span>  <span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="http://www.stats.ox.ac.uk/pub/MASS4/" class="external-link">MASS</a></span><span class="op">)</span></span>
+<span>  <span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/therneau/survival" class="external-link">survival</a></span><span class="op">)</span></span>
+<span>  <span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://svn.r-project.org/R-packages/trunk/nlme/" class="external-link">nlme</a></span><span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="cgd-k3">CGD (K=3)<a class="anchor" aria-label="anchor" href="#cgd-k3"></a>
+<h2 id="k-2-splits">K = 2 splits<a class="anchor" aria-label="anchor" href="#k-2-splits"></a>
 </h2>
-<p>The CGD dataset (128 patients from a clinical trial of interferon
-gamma for chronic granulomatous disease) is split vertically across
-three institutions. All 128 patients are present at all three sites, but
-row order is shuffled independently.</p>
+<div class="section level3">
+<h3 id="birthwt-bw_hospital_a-bw_hospital_b">birthwt (<code>bw_hospital_a</code> /
+<code>bw_hospital_b</code>)<a class="anchor" aria-label="anchor" href="#birthwt-bw_hospital_a-bw_hospital_b"></a>
+</h3>
+<p>Used by the GLM K=2 probe. PHASE4 baseline.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/therneau/survival" class="external-link">survival</a></span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/data.html" class="external-link">data</a></span><span class="op">(</span><span class="va">cgd</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">d</span> <span class="op">&lt;-</span> <span class="va">cgd</span><span class="op">[</span><span class="va">cgd</span><span class="op">$</span><span class="va">enum</span> <span class="op">==</span> <span class="fl">1</span>, <span class="op">]</span></span>
-<span><span class="va">d</span><span class="op">$</span><span class="va">n_infections</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/tapply.html" class="external-link">tapply</a></span><span class="op">(</span><span class="va">cgd</span><span class="op">$</span><span class="va">status</span>, <span class="va">cgd</span><span class="op">$</span><span class="va">id</span>, <span class="va">sum</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">id</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
-<span><span class="va">d</span><span class="op">$</span><span class="va">patient_id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"CGD%03d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">d</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">d</span><span class="op">$</span><span class="va">treat_num</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">treat</span> <span class="op">==</span> <span class="st">"rIFN-g"</span><span class="op">)</span></span>
-<span><span class="va">d</span><span class="op">$</span><span class="va">sex_num</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">sex</span> <span class="op">==</span> <span class="st">"male"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Demographics</span></span>
-<span><span class="va">demographics</span> <span class="op">&lt;-</span> <span class="va">d</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"age"</span>, <span class="st">"sex_num"</span>, <span class="st">"height"</span>, <span class="st">"weight"</span><span class="op">)</span><span class="op">]</span></span>
-<span></span>
-<span><span class="co"># Treatment assignment</span></span>
-<span><span class="va">treatment</span> <span class="op">&lt;-</span> <span class="va">d</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"treat_num"</span>, <span class="st">"steroids"</span><span class="op">)</span><span class="op">]</span></span>
-<span></span>
-<span><span class="co"># Outcomes</span></span>
-<span><span class="va">outcomes</span> <span class="op">&lt;-</span> <span class="va">d</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"status"</span>, <span class="st">"n_infections"</span><span class="op">)</span><span class="op">]</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">42</span><span class="op">)</span>; <span class="va">demographics</span> <span class="op">&lt;-</span> <span class="va">demographics</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">demographics</span><span class="op">)</span><span class="op">)</span>, <span class="op">]</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">43</span><span class="op">)</span>; <span class="va">treatment</span>    <span class="op">&lt;-</span> <span class="va">treatment</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">treatment</span><span class="op">)</span><span class="op">)</span>, <span class="op">]</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">44</span><span class="op">)</span>; <span class="va">outcomes</span>     <span class="op">&lt;-</span> <span class="va">outcomes</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">outcomes</span><span class="op">)</span><span class="op">)</span>, <span class="op">]</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="va">build_birthwt_k2</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">seed</span> <span class="op">=</span> <span class="fl">123L</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/utils/data.html" class="external-link">data</a></span><span class="op">(</span><span class="va">birthwt</span>, package <span class="op">=</span> <span class="st">"MASS"</span><span class="op">)</span></span>
+<span>  <span class="va">bdf</span> <span class="op">&lt;-</span> <span class="va">birthwt</span></span>
+<span>  <span class="va">bdf</span><span class="op">$</span><span class="va">patient_id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"BW%03d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">bdf</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">seed</span><span class="op">)</span></span>
+<span>  <span class="va">core</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">bdf</span><span class="op">$</span><span class="va">patient_id</span>, <span class="fl">160</span><span class="op">)</span></span>
+<span>  <span class="va">rem</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="va">bdf</span><span class="op">$</span><span class="va">patient_id</span>, <span class="va">core</span><span class="op">)</span></span>
+<span>  <span class="va">ids1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">rem</span>, <span class="fl">15</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">ids2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">rem</span>, <span class="fl">14</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
+<span>    bw_hospital_a <span class="op">=</span> <span class="va">bdf</span><span class="op">[</span><span class="va">bdf</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids1</span>,</span>
+<span>                        <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"age"</span>, <span class="st">"lwt"</span>, <span class="st">"race"</span>, <span class="st">"smoke"</span><span class="op">)</span><span class="op">]</span>,</span>
+<span>    bw_hospital_b <span class="op">=</span> <span class="va">bdf</span><span class="op">[</span><span class="va">bdf</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids2</span>,</span>
+<span>                        <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"ptl"</span>, <span class="st">"ht"</span>, <span class="st">"ui"</span>, <span class="st">"ftv"</span>,</span>
+<span>                          <span class="st">"bwt"</span>, <span class="st">"low"</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="fu">build_birthwt_k2</span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">## List of 2</span></span>
+<span><span class="co">##  $ bw_hospital_a:'data.frame':   175 obs. of  5 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:175] "BW001" "BW002" "BW003" "BW004" ...</span></span>
+<span><span class="co">##   ..$ age       : int [1:175] 19 33 20 21 18 21 22 17 29 26 ...</span></span>
+<span><span class="co">##   ..$ lwt       : int [1:175] 182 155 105 108 107 124 118 103 123 113 ...</span></span>
+<span><span class="co">##   ..$ race      : int [1:175] 2 3 1 1 1 3 1 3 1 1 ...</span></span>
+<span><span class="co">##   ..$ smoke     : int [1:175] 0 0 1 1 1 0 0 0 1 1 ...</span></span>
+<span><span class="co">##  $ bw_hospital_b:'data.frame':   174 obs. of  7 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:174] "BW001" "BW002" "BW003" "BW004" ...</span></span>
+<span><span class="co">##   ..$ ptl       : int [1:174] 0 0 0 0 0 0 0 0 0 0 ...</span></span>
+<span><span class="co">##   ..$ ht        : int [1:174] 0 0 0 0 0 0 0 0 0 0 ...</span></span>
+<span><span class="co">##   ..$ ui        : int [1:174] 1 0 0 1 1 0 0 0 0 0 ...</span></span>
+<span><span class="co">##   ..$ ftv       : int [1:174] 0 3 1 2 0 0 1 1 1 0 ...</span></span>
+<span><span class="co">##   ..$ bwt       : int [1:174] 2523 2551 2557 2594 2600 2622 2637 2637 2663 2665 ...</span></span>
+<span><span class="co">##   ..$ low       : int [1:174] 0 0 0 0 0 0 0 0 0 0 ...</span></span></code></pre>
+</div>
+<div class="section level3">
+<h3 id="nhanes-pima-k2-na_data_s1-na_data_s2">NHANES Pima K=2 (<code>na_data_s1</code> /
+<code>na_data_s2</code>)<a class="anchor" aria-label="anchor" href="#nhanes-pima-k2-na_data_s1-na_data_s2"></a>
+</h3>
+<p>Used by NB, ord_joint, mnl_joint, ordinal_warm K=2, multinom_warm
+K=2, lasso K=2. The <code>bp_cls</code> tertile factor + one-hot
+indicator triplet + cumulative <code>_leq</code> columns are added to s2
+so the ordinal/multinomial joint Newton paths can read them as
+<code>cumulative_template</code> / <code>indicator_template</code>.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">build_pima_k2</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">seed</span> <span class="op">=</span> <span class="fl">123L</span>, <span class="va">bp_seed</span> <span class="op">=</span> <span class="fl">124L</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">pdf</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span><span class="fu">MASS</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/MASS/man/Pima.tr.html" class="external-link">Pima.tr</a></span>, <span class="fu">MASS</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/MASS/man/Pima.tr.html" class="external-link">Pima.te</a></span><span class="op">)</span></span>
+<span>  <span class="va">pdf</span><span class="op">$</span><span class="va">diabetes</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">pdf</span><span class="op">$</span><span class="va">type</span> <span class="op">==</span> <span class="st">"Yes"</span><span class="op">)</span>  <span class="co"># MASS uses `type` factor</span></span>
+<span>  <span class="va">pdf</span><span class="op">$</span><span class="va">patient_id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"P%03d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">pdf</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">seed</span><span class="op">)</span></span>
+<span>  <span class="va">core</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">pdf</span><span class="op">$</span><span class="va">patient_id</span>, <span class="fl">150</span><span class="op">)</span></span>
+<span>  <span class="va">rem</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="va">pdf</span><span class="op">$</span><span class="va">patient_id</span>, <span class="va">core</span><span class="op">)</span></span>
+<span>  <span class="va">ids1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">rem</span>, <span class="fl">25</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">ids2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">rem</span>, <span class="fl">20</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">s1</span> <span class="op">&lt;-</span> <span class="va">pdf</span><span class="op">[</span><span class="va">pdf</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids1</span>,</span>
+<span>             <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span>, <span class="st">"npreg"</span>, <span class="st">"skin"</span><span class="op">)</span><span class="op">]</span></span>
+<span>  <span class="va">s2_base</span> <span class="op">&lt;-</span> <span class="va">pdf</span><span class="op">[</span><span class="va">pdf</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids2</span>,</span>
+<span>                  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"glu"</span>, <span class="st">"bp"</span>, <span class="st">"diabetes"</span><span class="op">)</span><span class="op">]</span></span>
+<span>  <span class="co">## bp tertile factor + indicators (deterministic seed bp_seed for</span></span>
+<span>  <span class="co">## stable tertile cutpoints across reproducible runs).</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">bp_seed</span><span class="op">)</span></span>
+<span>  <span class="va">brks</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/quantile.html" class="external-link">quantile</a></span><span class="op">(</span><span class="va">s2_base</span><span class="op">$</span><span class="va">bp</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">/</span><span class="fl">3</span>, <span class="fl">2</span><span class="op">/</span><span class="fl">3</span>, <span class="fl">1</span><span class="op">)</span>, na.rm <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span>  <span class="va">s2_base</span><span class="op">$</span><span class="va">bp_cls</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/cut.html" class="external-link">cut</a></span><span class="op">(</span><span class="va">s2_base</span><span class="op">$</span><span class="va">bp</span>, breaks <span class="op">=</span> <span class="va">brks</span>, include.lowest <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>        labels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"low"</span>, <span class="st">"med"</span>, <span class="st">"high"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>    levels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"low"</span>, <span class="st">"med"</span>, <span class="st">"high"</span><span class="op">)</span>, ordered <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span>  <span class="va">s2_base</span><span class="op">$</span><span class="va">low_ind</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">s2_base</span><span class="op">$</span><span class="va">bp_cls</span> <span class="op">==</span> <span class="st">"low"</span><span class="op">)</span></span>
+<span>  <span class="va">s2_base</span><span class="op">$</span><span class="va">med_ind</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">s2_base</span><span class="op">$</span><span class="va">bp_cls</span> <span class="op">==</span> <span class="st">"med"</span><span class="op">)</span></span>
+<span>  <span class="va">s2_base</span><span class="op">$</span><span class="va">high_ind</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">s2_base</span><span class="op">$</span><span class="va">bp_cls</span> <span class="op">==</span> <span class="st">"high"</span><span class="op">)</span></span>
+<span>  <span class="va">s2_base</span><span class="op">$</span><span class="va">low_leq</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">s2_base</span><span class="op">$</span><span class="va">bp_cls</span><span class="op">)</span> <span class="op">&lt;=</span> <span class="fl">1L</span><span class="op">)</span></span>
+<span>  <span class="va">s2_base</span><span class="op">$</span><span class="va">med_leq</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">s2_base</span><span class="op">$</span><span class="va">bp_cls</span><span class="op">)</span> <span class="op">&lt;=</span> <span class="fl">2L</span><span class="op">)</span></span>
+<span>  <span class="va">s2_base</span><span class="op">$</span><span class="va">high_leq</span> <span class="op">&lt;-</span> <span class="fl">1L</span>  <span class="co"># always TRUE for the top tertile</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>na_data_s1 <span class="op">=</span> <span class="va">s1</span>, na_data_s2 <span class="op">=</span> <span class="va">s2_base</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="fu">build_pima_k2</span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">## List of 2</span></span>
+<span><span class="co">##  $ na_data_s1:'data.frame':  175 obs. of  6 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:175] "P004" "P005" "P013" "P014" ...</span></span>
+<span><span class="co">##   ..$ age       : int [1:175] 26 23 59 44 29 21 34 24 32 24 ...</span></span>
+<span><span class="co">##   ..$ bmi       : num [1:175] 47.9 26.4 30.1 27.6 41.3 23.2 29.3 37.6 30.8 42.6 ...</span></span>
+<span><span class="co">##   ..$ ped       : num [1:175] 0.259 0.133 0.398 0.926 0.917 0.223 0.317 0.401 0.831 0.431 ...</span></span>
+<span><span class="co">##   ..$ npreg     : int [1:175] 0 0 1 12 1 4 4 1 9 0 ...</span></span>
+<span><span class="co">##   ..$ skin      : int [1:175] 43 25 23 7 52 15 19 34 21 26 ...</span></span>
+<span><span class="co">##  $ na_data_s2:'data.frame':  170 obs. of  11 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:170] "P004" "P005" "P013" "P014" ...</span></span>
+<span><span class="co">##   ..$ glu       : int [1:170] 165 107 189 92 86 99 109 99 83 87 ...</span></span>
+<span><span class="co">##   ..$ bp        : int [1:170] 76 60 60 62 66 76 60 70 86 68 ...</span></span>
+<span><span class="co">##   ..$ diabetes  : int [1:170] 0 0 1 1 0 0 0 0 0 0 ...</span></span>
+<span><span class="co">##   ..$ bp_cls    : Ord.factor w/ 3 levels "low"&lt;"med"&lt;"high": 2 1 1 1 1 2 1 2 3 1 ...</span></span>
+<span><span class="co">##   ..$ low_ind   : int [1:170] 0 1 1 1 1 0 1 0 0 1 ...</span></span>
+<span><span class="co">##   ..$ med_ind   : int [1:170] 1 0 0 0 0 1 0 1 0 0 ...</span></span>
+<span><span class="co">##   ..$ high_ind  : int [1:170] 0 0 0 0 0 0 0 0 1 0 ...</span></span>
+<span><span class="co">##   ..$ low_leq   : int [1:170] 0 1 1 1 1 0 1 0 0 1 ...</span></span>
+<span><span class="co">##   ..$ med_leq   : int [1:170] 1 1 1 1 1 1 1 1 0 1 ...</span></span>
+<span><span class="co">##   ..$ high_leq  : int [1:170] 1 1 1 1 1 1 1 1 1 1 ...</span></span></code></pre>
+</div>
+<div class="section level3">
+<h3 id="survivallung-k2-lung_s1-lung_s2">survival::lung K=2 (<code>lung_s1</code> /
+<code>lung_s2</code>)<a class="anchor" aria-label="anchor" href="#survivallung-k2-lung_s1-lung_s2"></a>
+</h3>
+<p>Used by Cox K=2.</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">build_lung_k2</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">seed</span> <span class="op">=</span> <span class="fl">125L</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/utils/data.html" class="external-link">data</a></span><span class="op">(</span><span class="va">lung</span>, package <span class="op">=</span> <span class="st">"survival"</span><span class="op">)</span></span>
+<span>  <span class="va">lng</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/get.html" class="external-link">get</a></span><span class="op">(</span><span class="st">"lung"</span><span class="op">)</span></span>
+<span>  <span class="va">lng</span><span class="op">$</span><span class="va">patient_id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"LNG%03d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">lng</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">keep</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/complete.cases.html" class="external-link">complete.cases</a></span><span class="op">(</span><span class="va">lng</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"sex"</span>, <span class="st">"ph.ecog"</span>, <span class="st">"ph.karno"</span>,</span>
+<span>                                  <span class="st">"time"</span>, <span class="st">"status"</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
+<span>  <span class="va">lng</span> <span class="op">&lt;-</span> <span class="va">lng</span><span class="op">[</span><span class="va">keep</span>, <span class="op">]</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">seed</span><span class="op">)</span></span>
+<span>  <span class="va">core</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">lng</span><span class="op">$</span><span class="va">patient_id</span>, <span class="fl">150</span><span class="op">)</span></span>
+<span>  <span class="va">rem</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="va">lng</span><span class="op">$</span><span class="va">patient_id</span>, <span class="va">core</span><span class="op">)</span></span>
+<span>  <span class="va">ids1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">rem</span>, <span class="fl">20</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">ids2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">rem</span>, <span class="fl">15</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">s1</span> <span class="op">&lt;-</span> <span class="va">lng</span><span class="op">[</span><span class="va">lng</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids1</span>,</span>
+<span>             <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"age"</span>, <span class="st">"sex"</span>, <span class="st">"ph.ecog"</span>, <span class="st">"ph.karno"</span><span class="op">)</span><span class="op">]</span></span>
+<span>  <span class="va">s2</span> <span class="op">&lt;-</span> <span class="va">lng</span><span class="op">[</span><span class="va">lng</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids2</span>,</span>
+<span>             <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"time"</span>, <span class="st">"status"</span>, <span class="st">"meal.cal"</span>, <span class="st">"wt.loss"</span><span class="op">)</span><span class="op">]</span></span>
+<span>  <span class="va">s2</span><span class="op">$</span><span class="va">status</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">s2</span><span class="op">$</span><span class="va">status</span> <span class="op">==</span> <span class="fl">2</span><span class="op">)</span>  <span class="co"># event = 1, censored = 0</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>lung_s1 <span class="op">=</span> <span class="va">s1</span>, lung_s2 <span class="op">=</span> <span class="va">s2</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="fu">build_lung_k2</span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">## List of 2</span></span>
+<span><span class="co">##  $ lung_s1:'data.frame': 170 obs. of  5 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:170] "LNG001" "LNG002" "LNG004" "LNG005" ...</span></span>
+<span><span class="co">##   ..$ age       : num [1:170] 74 68 57 60 74 68 71 53 61 57 ...</span></span>
+<span><span class="co">##   ..$ sex       : num [1:170] 1 1 1 1 1 2 2 1 1 1 ...</span></span>
+<span><span class="co">##   ..$ ph.ecog   : num [1:170] 1 0 1 0 1 2 2 1 2 1 ...</span></span>
+<span><span class="co">##   ..$ ph.karno  : num [1:170] 90 90 90 100 50 70 60 70 70 80 ...</span></span>
+<span><span class="co">##  $ lung_s2:'data.frame': 165 obs. of  5 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:165] "LNG001" "LNG002" "LNG005" "LNG006" ...</span></span>
+<span><span class="co">##   ..$ time      : num [1:165] 306 455 883 1022 361 ...</span></span>
+<span><span class="co">##   ..$ status    : int [1:165] 1 1 1 0 1 1 1 1 1 1 ...</span></span>
+<span><span class="co">##   ..$ meal.cal  : num [1:165] 1175 1225 NA 513 538 ...</span></span>
+<span><span class="co">##   ..$ wt.loss   : num [1:165] NA 15 0 0 1 16 34 27 23 5 ...</span></span></code></pre>
+</div>
+<div class="section level3">
+<h3 id="cgd-ipw-k2-cgd_ipw_s1-cgd_ipw_s2">CGD IPW K=2 (<code>cgd_ipw_s1</code> / <code>cgd_ipw_s2</code>)<a class="anchor" aria-label="anchor" href="#cgd-ipw-k2-cgd_ipw_s1-cgd_ipw_s2"></a>
+</h3>
+<p>Used by IPW. CGD <code>enum == 1</code> → one row per subject.
+Stage-1 propensity glm fit centrally to pre-compute the <code>ipw</code>
+column on s2 (validation-only re-population convention; production
+pipelines compute weights via federated stage-1 +
+<code>ds.assign</code>).</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">build_cgd_ipw_k2</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">seed_s1</span> <span class="op">=</span> <span class="fl">128L</span>, <span class="va">seed_s2</span> <span class="op">=</span> <span class="fl">129L</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/utils/data.html" class="external-link">data</a></span><span class="op">(</span><span class="va">cgd</span>, package <span class="op">=</span> <span class="st">"survival"</span><span class="op">)</span></span>
+<span>  <span class="va">cg</span> <span class="op">&lt;-</span> <span class="va">cgd</span><span class="op">[</span><span class="va">cgd</span><span class="op">$</span><span class="va">enum</span> <span class="op">==</span> <span class="fl">1L</span>, <span class="op">]</span></span>
+<span>  <span class="va">cg</span><span class="op">$</span><span class="va">patient_id</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"CGD%03d"</span>, <span class="va">cg</span><span class="op">$</span><span class="va">id</span><span class="op">)</span></span>
+<span>  <span class="va">cg</span><span class="op">$</span><span class="va">sex_num</span>      <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">cg</span><span class="op">$</span><span class="va">sex</span> <span class="op">==</span> <span class="st">"male"</span><span class="op">)</span></span>
+<span>  <span class="va">cg</span><span class="op">$</span><span class="va">treat_num</span>    <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">cg</span><span class="op">$</span><span class="va">treat</span> <span class="op">==</span> <span class="st">"rIFN-g"</span><span class="op">)</span></span>
+<span>  <span class="va">n_inf</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tapply.html" class="external-link">tapply</a></span><span class="op">(</span><span class="va">cgd</span><span class="op">$</span><span class="va">status</span>, <span class="va">cgd</span><span class="op">$</span><span class="va">id</span>, <span class="va">sum</span><span class="op">)</span></span>
+<span>  <span class="va">cg</span><span class="op">$</span><span class="va">n_infections</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">n_inf</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">cg</span><span class="op">$</span><span class="va">id</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
+<span>  <span class="va">pooled</span> <span class="op">&lt;-</span> <span class="va">cg</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"age"</span>, <span class="st">"sex_num"</span>, <span class="st">"height"</span>, <span class="st">"weight"</span>,</span>
+<span>                   <span class="st">"treat_num"</span>, <span class="st">"status"</span>, <span class="st">"n_infections"</span><span class="op">)</span><span class="op">]</span></span>
+<span>  <span class="va">pooled</span> <span class="op">&lt;-</span> <span class="va">pooled</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/stats/complete.cases.html" class="external-link">complete.cases</a></span><span class="op">(</span><span class="va">pooled</span><span class="op">)</span>, <span class="op">]</span></span>
+<span>  <span class="va">prop</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/glm.html" class="external-link">glm</a></span><span class="op">(</span><span class="va">treat_num</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">sex_num</span> <span class="op">+</span> <span class="va">height</span> <span class="op">+</span> <span class="va">weight</span>,</span>
+<span>              data <span class="op">=</span> <span class="va">pooled</span>, family <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/family.html" class="external-link">binomial</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">phat</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/fitted.values.html" class="external-link">fitted</a></span><span class="op">(</span><span class="va">prop</span><span class="op">)</span></span>
+<span>  <span class="va">pooled</span><span class="op">$</span><span class="va">ipw</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/ifelse.html" class="external-link">ifelse</a></span><span class="op">(</span><span class="va">pooled</span><span class="op">$</span><span class="va">treat_num</span> <span class="op">==</span> <span class="fl">1L</span>, <span class="fl">1</span><span class="op">/</span><span class="va">phat</span>, <span class="fl">1</span><span class="op">/</span><span class="op">(</span><span class="fl">1</span> <span class="op">-</span> <span class="va">phat</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">seed_s1</span><span class="op">)</span>; <span class="va">ids1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">pooled</span><span class="op">$</span><span class="va">patient_id</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">seed_s2</span><span class="op">)</span>; <span class="va">ids2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">pooled</span><span class="op">$</span><span class="va">patient_id</span><span class="op">)</span></span>
+<span>  <span class="va">s1</span> <span class="op">&lt;-</span> <span class="va">pooled</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/match.html" class="external-link">match</a></span><span class="op">(</span><span class="va">ids1</span>, <span class="va">pooled</span><span class="op">$</span><span class="va">patient_id</span><span class="op">)</span>,</span>
+<span>                <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"age"</span>, <span class="st">"sex_num"</span>, <span class="st">"height"</span>, <span class="st">"weight"</span><span class="op">)</span><span class="op">]</span></span>
+<span>  <span class="va">s2</span> <span class="op">&lt;-</span> <span class="va">pooled</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/match.html" class="external-link">match</a></span><span class="op">(</span><span class="va">ids2</span>, <span class="va">pooled</span><span class="op">$</span><span class="va">patient_id</span><span class="op">)</span>,</span>
+<span>                <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"treat_num"</span>, <span class="st">"status"</span>,</span>
+<span>                  <span class="st">"n_infections"</span>, <span class="st">"ipw"</span><span class="op">)</span><span class="op">]</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>cgd_ipw_s1 <span class="op">=</span> <span class="va">s1</span>, cgd_ipw_s2 <span class="op">=</span> <span class="va">s2</span>,</span>
+<span>       propensity_coef_central <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">prop</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="fu">build_cgd_ipw_k2</span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">## List of 3</span></span>
+<span><span class="co">##  $ cgd_ipw_s1             :'data.frame': 128 obs. of  5 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:128] "CGD004" "CGD018" "CGD113" "CGD082" ...</span></span>
+<span><span class="co">##   ..$ age       : int [1:128] 12 1 17 1 38 23 8 11 24 3 ...</span></span>
+<span><span class="co">##   ..$ sex_num   : int [1:128] 1 1 1 1 0 0 1 1 1 1 ...</span></span>
+<span><span class="co">##   ..$ height    : num [1:128] 142 79 157 81 152 ...</span></span>
+<span><span class="co">##   ..$ weight    : num [1:128] 34 11.5 36.8 10.4 66.7 31.2 20 40.3 59 13 ...</span></span>
+<span><span class="co">##  $ cgd_ipw_s2             :'data.frame': 128 obs. of  5 variables:</span></span>
+<span><span class="co">##   ..$ patient_id  : chr [1:128] "CGD021" "CGD018" "CGD066" "CGD063" ...</span></span>
+<span><span class="co">##   ..$ treat_num   : int [1:128] 1 0 0 0 1 0 1 0 0 1 ...</span></span>
+<span><span class="co">##   ..$ status      : int [1:128] 0 1 1 1 0 0 1 0 0 0 ...</span></span>
+<span><span class="co">##   ..$ n_infections: int [1:128] 0 1 1 1 0 0 1 0 0 0 ...</span></span>
+<span><span class="co">##   ..$ ipw         : num [1:128] 1.76 1.72 2.2 1.95 1.93 ...</span></span>
+<span><span class="co">##  $ propensity_coef_central: Named num [1:5] -1.5045 0.0181 0.0904 0.0191 -0.038</span></span>
+<span><span class="co">##   ..- attr(*, "names")= chr [1:5] "(Intercept)" "age" "sex_num" "height" ...</span></span></code></pre>
+</div>
 </div>
 <div class="section level2">
-<h2 id="upload-to-opal">Upload to Opal<a class="anchor" aria-label="anchor" href="#upload-to-opal"></a>
+<h2 id="synthetic-longitudinal-long_glmm_-long_lmm_">Synthetic longitudinal (<code>long_glmm_*</code>,
+<code>long_lmm_*</code>)<a class="anchor" aria-label="anchor" href="#synthetic-longitudinal-long_glmm_-long_lmm_"></a>
 </h2>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/obiba/opalr/" class="external-link">opalr</a></span><span class="op">)</span></span>
+<p>GLMM, LMM, and GEE all benefit from a balanced longitudinal design
+where the cluster random effect is identifiable. We generate K=10
+observations per cluster across n_clusters = 200 (n = 2 000 total). The
+intercept is tuned so the binomial outcome stays in the well-identified
+regime p̄ ≈ 0.3 — far from the 0.5-asymptote that the simplified
+Gaussian-style BLUP shrinkage in <code>ds.vertGLMM</code> was
+approximating prior to the offset session-state fix, and equally far
+from the rare-event tail (p ≪ 0.1) where Breslow &amp; Clayton (1993) §3
+documents the PQL Laplace approximation becoming severely biased.</p>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">build_long_glmm_k2</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">seed</span> <span class="op">=</span> <span class="fl">200L</span>,</span>
+<span>                                <span class="va">n_clusters</span> <span class="op">=</span> <span class="fl">200L</span>, <span class="va">n_obs</span> <span class="op">=</span> <span class="fl">10L</span>,</span>
+<span>                                <span class="va">sigma_b</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fl">0.5</span><span class="op">)</span>,</span>
+<span>                                <span class="va">beta</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>intercept <span class="op">=</span> <span class="op">-</span><span class="fl">0.85</span>,</span>
+<span>                                         x1 <span class="op">=</span> <span class="fl">0.5</span>, x2 <span class="op">=</span> <span class="fl">0.3</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">seed</span><span class="op">)</span></span>
+<span>  <span class="va">cluster_id</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"C%04d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">n_clusters</span><span class="op">)</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">n_obs</span><span class="op">)</span></span>
+<span>  <span class="va">obs_id</span>      <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"O%05d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_along</a></span><span class="op">(</span><span class="va">cluster_id</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">b_i</span>         <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n_clusters</span>, <span class="fl">0</span>, <span class="va">sigma_b</span><span class="op">)</span></span>
+<span>  <span class="va">b</span>           <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="va">b_i</span>, each <span class="op">=</span> <span class="va">n_obs</span><span class="op">)</span></span>
+<span>  <span class="va">x1</span>          <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">cluster_id</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">x2</span>          <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">cluster_id</span><span class="op">)</span>, <span class="fl">1</span>, <span class="fl">0.5</span><span class="op">)</span></span>
+<span>  <span class="va">eta</span>         <span class="op">&lt;-</span> <span class="va">beta</span><span class="op">[</span><span class="st">"intercept"</span><span class="op">]</span> <span class="op">+</span> <span class="va">beta</span><span class="op">[</span><span class="st">"x1"</span><span class="op">]</span> <span class="op">*</span> <span class="va">x1</span> <span class="op">+</span> <span class="va">beta</span><span class="op">[</span><span class="st">"x2"</span><span class="op">]</span> <span class="op">*</span> <span class="va">x2</span> <span class="op">+</span> <span class="va">b</span></span>
+<span>  <span class="va">p</span>           <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">eta</span><span class="op">)</span></span>
+<span>  <span class="va">y</span>           <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">cluster_id</span><span class="op">)</span>, <span class="fl">1</span>, <span class="va">p</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>long_glmm_s1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>patient_id <span class="op">=</span> <span class="va">obs_id</span>,</span>
+<span>                                   x1 <span class="op">=</span> <span class="va">x1</span>,</span>
+<span>                                   anchor <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span>,</span>
+<span>       long_glmm_s2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>patient_id <span class="op">=</span> <span class="va">obs_id</span>,</span>
+<span>                                   cluster_id <span class="op">=</span> <span class="va">cluster_id</span>,</span>
+<span>                                   x2 <span class="op">=</span> <span class="va">x2</span>, y <span class="op">=</span> <span class="va">y</span><span class="op">)</span>,</span>
+<span>       diagnostics <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>p_bar <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">p</span><span class="op">)</span>,</span>
+<span>                          y_rate <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">y</span><span class="op">)</span>,</span>
+<span>                          sigma_b2 <span class="op">=</span> <span class="va">sigma_b</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
 <span></span>
-<span><span class="va">o</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.login.html" class="external-link">opal.login</a></span><span class="op">(</span><span class="st">"administrator"</span>, <span class="st">"password"</span>, url <span class="op">=</span> <span class="st">"https://opal-demo.obiba.org"</span><span class="op">)</span></span>
+<span><span class="va">build_long_lmm_k2</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">seed</span> <span class="op">=</span> <span class="fl">201L</span>,</span>
+<span>                               <span class="va">n_clusters</span> <span class="op">=</span> <span class="fl">200L</span>, <span class="va">n_obs</span> <span class="op">=</span> <span class="fl">10L</span>,</span>
+<span>                               <span class="va">sigma_b</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fl">0.5</span><span class="op">)</span>, <span class="va">sigma_e</span> <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>                               <span class="va">beta</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>intercept <span class="op">=</span> <span class="fl">5</span>,</span>
+<span>                                        x1 <span class="op">=</span> <span class="fl">0.5</span>, x2 <span class="op">=</span> <span class="fl">0.3</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">seed</span><span class="op">)</span></span>
+<span>  <span class="va">cluster_id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"C%04d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">n_clusters</span><span class="op">)</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">n_obs</span><span class="op">)</span></span>
+<span>  <span class="va">obs_id</span>     <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"O%05d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_along</a></span><span class="op">(</span><span class="va">cluster_id</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">b</span>          <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n_clusters</span>, <span class="fl">0</span>, <span class="va">sigma_b</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">n_obs</span><span class="op">)</span></span>
+<span>  <span class="va">x1</span>         <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">cluster_id</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">x2</span>         <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">cluster_id</span><span class="op">)</span>, <span class="fl">1</span>, <span class="fl">0.5</span><span class="op">)</span></span>
+<span>  <span class="va">y</span>          <span class="op">&lt;-</span> <span class="va">beta</span><span class="op">[</span><span class="st">"intercept"</span><span class="op">]</span> <span class="op">+</span> <span class="va">beta</span><span class="op">[</span><span class="st">"x1"</span><span class="op">]</span> <span class="op">*</span> <span class="va">x1</span> <span class="op">+</span></span>
+<span>                <span class="va">beta</span><span class="op">[</span><span class="st">"x2"</span><span class="op">]</span> <span class="op">*</span> <span class="va">x2</span> <span class="op">+</span> <span class="va">b</span> <span class="op">+</span></span>
+<span>                <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">cluster_id</span><span class="op">)</span>, <span class="fl">0</span>, <span class="va">sigma_e</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>long_lmm_s1 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>patient_id <span class="op">=</span> <span class="va">obs_id</span>,</span>
+<span>                                  x1 <span class="op">=</span> <span class="va">x1</span>, anchor <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span>,</span>
+<span>       long_lmm_s2 <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>patient_id <span class="op">=</span> <span class="va">obs_id</span>,</span>
+<span>                                  cluster_id <span class="op">=</span> <span class="va">cluster_id</span>,</span>
+<span>                                  x2 <span class="op">=</span> <span class="va">x2</span>, y <span class="op">=</span> <span class="va">y</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
 <span></span>
-<span><span class="co"># birthwt</span></span>
-<span><span class="va">hospital_a</span><span class="op">$</span><span class="va">id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">hospital_a</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">hospital_b</span><span class="op">$</span><span class="va">id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">hospital_b</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.table_save.html" class="external-link">opal.table_save</a></span><span class="op">(</span><span class="va">o</span>, <span class="va">hospital_a</span>, <span class="st">"vert_demo"</span>, <span class="st">"bw_hospital_a"</span>, overwrite <span class="op">=</span> <span class="cn">TRUE</span>, force <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.table_save.html" class="external-link">opal.table_save</a></span><span class="op">(</span><span class="va">o</span>, <span class="va">hospital_b</span>, <span class="st">"vert_demo"</span>, <span class="st">"bw_hospital_b"</span>, overwrite <span class="op">=</span> <span class="cn">TRUE</span>, force <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># CGD</span></span>
-<span><span class="va">demographics</span><span class="op">$</span><span class="va">id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">demographics</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">treatment</span><span class="op">$</span><span class="va">id</span>    <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">treatment</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">outcomes</span><span class="op">$</span><span class="va">id</span>     <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">outcomes</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.table_save.html" class="external-link">opal.table_save</a></span><span class="op">(</span><span class="va">o</span>, <span class="va">demographics</span>, <span class="st">"vert_demo"</span>, <span class="st">"cgd_demographics"</span>, overwrite <span class="op">=</span> <span class="cn">TRUE</span>, force <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.table_save.html" class="external-link">opal.table_save</a></span><span class="op">(</span><span class="va">o</span>, <span class="va">treatment</span>,    <span class="st">"vert_demo"</span>, <span class="st">"cgd_treatment"</span>,    overwrite <span class="op">=</span> <span class="cn">TRUE</span>, force <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.table_save.html" class="external-link">opal.table_save</a></span><span class="op">(</span><span class="va">o</span>, <span class="va">outcomes</span>,     <span class="st">"vert_demo"</span>, <span class="st">"cgd_outcomes"</span>,     overwrite <span class="op">=</span> <span class="cn">TRUE</span>, force <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://www.obiba.org/opalr/reference/opal.logout.html" class="external-link">opal.logout</a></span><span class="op">(</span><span class="va">o</span><span class="op">)</span></span></code></pre></div>
+<span><span class="va">g</span> <span class="op">&lt;-</span> <span class="fu">build_long_glmm_k2</span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"[GLMM synth] p̄=%.3f y_rate=%.3f σ_b²=%.3f n=%d\n"</span>,</span>
+<span>            <span class="va">g</span><span class="op">$</span><span class="va">diagnostics</span><span class="op">$</span><span class="va">p_bar</span>, <span class="va">g</span><span class="op">$</span><span class="va">diagnostics</span><span class="op">$</span><span class="va">y_rate</span>,</span>
+<span>            <span class="va">g</span><span class="op">$</span><span class="va">diagnostics</span><span class="op">$</span><span class="va">sigma_b2</span>,</span>
+<span>            <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">g</span><span class="op">$</span><span class="va">long_glmm_s2</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">## [GLMM synth] p̄=0.351 y_rate=0.359 σ_b²=0.500 n=2000</span></span></code></pre>
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="fu">build_long_lmm_k2</span><span class="op">(</span><span class="op">)</span>, max.level <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">## List of 2</span></span>
+<span><span class="co">##  $ long_lmm_s1:'data.frame': 2000 obs. of  3 variables:</span></span>
+<span><span class="co">##  $ long_lmm_s2:'data.frame': 2000 obs. of  4 variables:</span></span></code></pre>
+</div>
+<div class="section level2">
+<h2 id="k-3-splits">K = 3 splits<a class="anchor" aria-label="anchor" href="#k-3-splits"></a>
+</h2>
+<p>GLM and the warm-path multinomial / ordinal probes have a true K=3
+implementation (<code>ds.vertGLM.k3ring63.R</code> + OVR over GLM
+cells). Cox, GLMM, LMM, GEE, NB full_reg_nd, IPW, and the joint-Newton
+multinomial / ordinal Hessian solvers are K=2-only by construction
+(closed-form sufficient statistics that depend on a 2-party additive
+split). The K=3 probes therefore exercise glm, multinom_warm,
+ordinal_warm, and lasso (proximal-on-GLM-K=3).</p>
+<div class="section level3">
+<h3 id="pima-k3-pima_server1--3">Pima K=3 (<code>pima_server1..3</code>)<a class="anchor" aria-label="anchor" href="#pima-k3-pima_server1--3"></a>
+</h3>
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">build_pima_k3</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">seed</span> <span class="op">=</span> <span class="fl">123L</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">pdf</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span><span class="fu">MASS</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/MASS/man/Pima.tr.html" class="external-link">Pima.tr</a></span>, <span class="fu">MASS</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/MASS/man/Pima.tr.html" class="external-link">Pima.te</a></span><span class="op">)</span></span>
+<span>  <span class="va">pdf</span><span class="op">$</span><span class="va">diabetes</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">pdf</span><span class="op">$</span><span class="va">type</span> <span class="op">==</span> <span class="st">"Yes"</span><span class="op">)</span></span>
+<span>  <span class="va">pdf</span><span class="op">$</span><span class="va">patient_id</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"P%03d"</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">pdf</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">seed</span><span class="op">)</span></span>
+<span>  <span class="va">core</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">pdf</span><span class="op">$</span><span class="va">patient_id</span>, <span class="fl">150</span><span class="op">)</span></span>
+<span>  <span class="va">rem</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="va">pdf</span><span class="op">$</span><span class="va">patient_id</span>, <span class="va">core</span><span class="op">)</span></span>
+<span>  <span class="va">ids1</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">rem</span>, <span class="fl">30</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">ids2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">rem</span>, <span class="fl">25</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">ids3</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">core</span>, <span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">rem</span>, <span class="fl">20</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">s1</span> <span class="op">&lt;-</span> <span class="va">pdf</span><span class="op">[</span><span class="va">pdf</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids1</span>,</span>
+<span>             <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"age"</span>, <span class="st">"bmi"</span><span class="op">)</span><span class="op">]</span></span>
+<span>  <span class="va">s2</span> <span class="op">&lt;-</span> <span class="va">pdf</span><span class="op">[</span><span class="va">pdf</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids2</span>,</span>
+<span>             <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"ped"</span>, <span class="st">"glu"</span><span class="op">)</span><span class="op">]</span></span>
+<span>  <span class="va">s3</span> <span class="op">&lt;-</span> <span class="va">pdf</span><span class="op">[</span><span class="va">pdf</span><span class="op">$</span><span class="va">patient_id</span> <span class="op"><a href="https://rdrr.io/r/base/match.html" class="external-link">%in%</a></span> <span class="va">ids3</span>,</span>
+<span>             <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"bp"</span>, <span class="st">"skin"</span>, <span class="st">"npreg"</span>, <span class="st">"diabetes"</span><span class="op">)</span><span class="op">]</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>pima_server1 <span class="op">=</span> <span class="va">s1</span>, pima_server2 <span class="op">=</span> <span class="va">s2</span>, pima_server3 <span class="op">=</span> <span class="va">s3</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="fu">build_pima_k3</span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">## List of 3</span></span>
+<span><span class="co">##  $ pima_server1:'data.frame':    180 obs. of  3 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:180] "P004" "P005" "P013" "P014" ...</span></span>
+<span><span class="co">##   ..$ age       : int [1:180] 26 23 59 44 29 21 34 24 32 24 ...</span></span>
+<span><span class="co">##   ..$ bmi       : num [1:180] 47.9 26.4 30.1 27.6 41.3 23.2 29.3 37.6 30.8 42.6 ...</span></span>
+<span><span class="co">##  $ pima_server2:'data.frame':    175 obs. of  3 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:175] "P004" "P005" "P012" "P013" ...</span></span>
+<span><span class="co">##   ..$ ped       : num [1:175] 0.259 0.133 0.164 0.398 0.926 0.223 0.947 0.317 0.401 0.831 ...</span></span>
+<span><span class="co">##   ..$ glu       : int [1:175] 165 107 154 189 92 99 109 83 87 164 ...</span></span>
+<span><span class="co">##  $ pima_server3:'data.frame':    170 obs. of  5 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:170] "P004" "P005" "P013" "P014" ...</span></span>
+<span><span class="co">##   ..$ bp        : int [1:170] 76 60 60 62 76 86 68 84 65 64 ...</span></span>
+<span><span class="co">##   ..$ skin      : int [1:170] 43 25 23 7 15 19 34 21 26 13 ...</span></span>
+<span><span class="co">##   ..$ npreg     : int [1:170] 0 0 1 12 4 4 1 9 0 3 ...</span></span>
+<span><span class="co">##   ..$ diabetes  : int [1:170] 0 0 1 1 0 0 0 1 1 0 ...</span></span></code></pre>
+</div>
+<div class="section level3">
+<h3 id="pima-warm-k3-pima_warm_s1--3">Pima warm K=3 (<code>pima_warm_s1..3</code>)<a class="anchor" aria-label="anchor" href="#pima-warm-k3-pima_warm_s1--3"></a>
+</h3>
+<p>For multinom_warm and ordinal_warm K=3 we add the bp-tertile factor +
+indicator/cumulative-leq columns on s3 (the outcome server) using the
+same seed convention as the K=2 split.</p>
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">build_pima_warm_k3</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">seed</span> <span class="op">=</span> <span class="fl">123L</span>, <span class="va">bp_seed</span> <span class="op">=</span> <span class="fl">124L</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">k3</span> <span class="op">&lt;-</span> <span class="fu">build_pima_k3</span><span class="op">(</span><span class="va">seed</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">bp_seed</span><span class="op">)</span></span>
+<span>  <span class="va">brks</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/quantile.html" class="external-link">quantile</a></span><span class="op">(</span><span class="va">k3</span><span class="op">$</span><span class="va">pima_server3</span><span class="op">$</span><span class="va">bp</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">/</span><span class="fl">3</span>, <span class="fl">2</span><span class="op">/</span><span class="fl">3</span>, <span class="fl">1</span><span class="op">)</span>, na.rm <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span>  <span class="va">s3</span> <span class="op">&lt;-</span> <span class="va">k3</span><span class="op">$</span><span class="va">pima_server3</span></span>
+<span>  <span class="va">s3</span><span class="op">$</span><span class="va">bp_cls</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/cut.html" class="external-link">cut</a></span><span class="op">(</span><span class="va">s3</span><span class="op">$</span><span class="va">bp</span>, breaks <span class="op">=</span> <span class="va">brks</span>, include.lowest <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>        labels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"low"</span>, <span class="st">"med"</span>, <span class="st">"high"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>    levels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"low"</span>, <span class="st">"med"</span>, <span class="st">"high"</span><span class="op">)</span>, ordered <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span>  <span class="va">s3</span><span class="op">$</span><span class="va">low_ind</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">s3</span><span class="op">$</span><span class="va">bp_cls</span> <span class="op">==</span> <span class="st">"low"</span><span class="op">)</span></span>
+<span>  <span class="va">s3</span><span class="op">$</span><span class="va">med_ind</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">s3</span><span class="op">$</span><span class="va">bp_cls</span> <span class="op">==</span> <span class="st">"med"</span><span class="op">)</span></span>
+<span>  <span class="va">s3</span><span class="op">$</span><span class="va">high_ind</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">s3</span><span class="op">$</span><span class="va">bp_cls</span> <span class="op">==</span> <span class="st">"high"</span><span class="op">)</span></span>
+<span>  <span class="va">s3</span><span class="op">$</span><span class="va">low_leq</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">s3</span><span class="op">$</span><span class="va">bp_cls</span><span class="op">)</span> <span class="op">&lt;=</span> <span class="fl">1L</span><span class="op">)</span></span>
+<span>  <span class="va">s3</span><span class="op">$</span><span class="va">med_leq</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">s3</span><span class="op">$</span><span class="va">bp_cls</span><span class="op">)</span> <span class="op">&lt;=</span> <span class="fl">2L</span><span class="op">)</span></span>
+<span>  <span class="va">s3</span><span class="op">$</span><span class="va">high_leq</span> <span class="op">&lt;-</span> <span class="fl">1L</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>pima_warm_s1 <span class="op">=</span> <span class="va">k3</span><span class="op">$</span><span class="va">pima_server1</span>,</span>
+<span>       pima_warm_s2 <span class="op">=</span> <span class="va">k3</span><span class="op">$</span><span class="va">pima_server2</span>,</span>
+<span>       pima_warm_s3 <span class="op">=</span> <span class="va">s3</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="fu">build_pima_warm_k3</span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<pre><code><span><span class="co">## List of 3</span></span>
+<span><span class="co">##  $ pima_warm_s1:'data.frame':    180 obs. of  3 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:180] "P004" "P005" "P013" "P014" ...</span></span>
+<span><span class="co">##   ..$ age       : int [1:180] 26 23 59 44 29 21 34 24 32 24 ...</span></span>
+<span><span class="co">##   ..$ bmi       : num [1:180] 47.9 26.4 30.1 27.6 41.3 23.2 29.3 37.6 30.8 42.6 ...</span></span>
+<span><span class="co">##  $ pima_warm_s2:'data.frame':    175 obs. of  3 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:175] "P004" "P005" "P012" "P013" ...</span></span>
+<span><span class="co">##   ..$ ped       : num [1:175] 0.259 0.133 0.164 0.398 0.926 0.223 0.947 0.317 0.401 0.831 ...</span></span>
+<span><span class="co">##   ..$ glu       : int [1:175] 165 107 154 189 92 99 109 83 87 164 ...</span></span>
+<span><span class="co">##  $ pima_warm_s3:'data.frame':    170 obs. of  12 variables:</span></span>
+<span><span class="co">##   ..$ patient_id: chr [1:170] "P004" "P005" "P013" "P014" ...</span></span>
+<span><span class="co">##   ..$ bp        : int [1:170] 76 60 60 62 76 86 68 84 65 64 ...</span></span>
+<span><span class="co">##   ..$ skin      : int [1:170] 43 25 23 7 15 19 34 21 26 13 ...</span></span>
+<span><span class="co">##   ..$ npreg     : int [1:170] 0 0 1 12 4 4 1 9 0 3 ...</span></span>
+<span><span class="co">##   ..$ diabetes  : int [1:170] 0 0 1 1 0 0 0 1 1 0 ...</span></span>
+<span><span class="co">##   ..$ bp_cls    : Ord.factor w/ 3 levels "low"&lt;"med"&lt;"high": 2 1 1 1 2 3 1 3 1 1 ...</span></span>
+<span><span class="co">##   ..$ low_ind   : int [1:170] 0 1 1 1 0 0 1 0 1 1 ...</span></span>
+<span><span class="co">##   ..$ med_ind   : int [1:170] 1 0 0 0 1 0 0 0 0 0 ...</span></span>
+<span><span class="co">##   ..$ high_ind  : int [1:170] 0 0 0 0 0 1 0 1 0 0 ...</span></span>
+<span><span class="co">##   ..$ low_leq   : int [1:170] 0 1 1 1 0 0 1 0 1 1 ...</span></span>
+<span><span class="co">##   ..$ med_leq   : int [1:170] 1 1 1 1 1 0 1 0 1 1 ...</span></span>
+<span><span class="co">##   ..$ high_leq  : int [1:170] 1 1 1 1 1 1 1 1 1 1 ...</span></span></code></pre>
+</div>
+</div>
+<div class="section level2">
+<h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a>
+</h2>
+<ul>
+<li>Catrina O., Saxena A. (2010). <em>Secure Computation with
+Fixed-Point Numbers</em>, Financial Cryptography. §3.3 ULP propagation
+under multiplicative depth — anchors the deterministic fixed-point
+bounds the probes report.</li>
+<li>Demmler D., Schneider T., Zohner M. (2015). <em>ABY: A Framework for
+Efficient Mixed-Protocol Secure Two-Party Computation</em>, NDSS §III.B
+— K=2 OT-Beaver dishonest-majority threat model.</li>
+<li>Breslow N. E., Clayton D. G. (1993). <em>Approximate Inference in
+Generalized Linear Mixed Models</em>, JASA 88(421) §3 — Laplace / PQL
+approximation bias regimes for binomial GLMM, motivates the synthetic p̄
+≈ 0.3 design choice for the GLMM probe.</li>
+<li>McCullagh P. (1980). <em>Regression Models for Ordinal Data</em>,
+JRSS-B 42(2) §2.5 — closed-form Hessian for the proportional-odds joint
+Newton step.</li>
+<li>Krishnapuram B., Carin L., Figueiredo M., Hartemink A. (2005).
+<em>Sparse Multinomial Logistic Regression</em>, IEEE PAMI 27(6) §3.2 —
+the OVR + softmax-anchor warm path.</li>
+<li>Wellek S. (2010), Schuirmann D. J. (1987), Lakens D. (2017) —
+Wald-SE sub-noise comparator framework.</li>
+<li>Pratt J. W. (1981) <em>JASA</em> 76(373); Christensen R. H. B.
+(2019) <code><a href="https://rdrr.io/pkg/ordinal/man/clm.fit.html" class="external-link">ordinal::clm.fit</a></code> §A.3 — finite-sample MLE noise
+floor framework.</li>
+</ul>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>
