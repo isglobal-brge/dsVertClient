@@ -85,7 +85,7 @@
   # Outcome server: transforms y + x_ysrv columns, creates int_col,
   # stores shares under lmm_gram_col_<name>, returns peer blob.
   local_y <- DSI::datashield.aggregate(conns[ysrv_ci],
-    call("dsvertLMMLocalGramDS",
+    call(name = "dsvertLMMLocalGramDS",
          data_name = data,
          columns = as.character(x_ysrv),
          y_var = y_var,
@@ -101,7 +101,7 @@
 
   # Peer server: transforms x_peer columns only.
   local_p <- DSI::datashield.aggregate(conns[peer_ci],
-    call("dsvertLMMLocalGramDS",
+    call(name = "dsvertLMMLocalGramDS",
          data_name = data,
          columns = as.character(x_peer),
          y_var = NULL,
@@ -116,16 +116,16 @@
 
   # Relay peer blobs to the opposite party.
   DSI::datashield.aggregate(conns[peer_ci],
-    call("mpcStoreBlobDS", key = "k2_lmm_gram_peer_shares",
+    call(name = "mpcStoreBlobDS", key = "k2_lmm_gram_peer_shares",
          chunk = local_y$peer_blob, session_id = session_id))
   DSI::datashield.aggregate(conns[ysrv_ci],
-    call("mpcStoreBlobDS", key = "k2_lmm_gram_peer_shares",
+    call(name = "mpcStoreBlobDS", key = "k2_lmm_gram_peer_shares",
          chunk = local_p$peer_blob, session_id = session_id))
   # Each party ingests the other's column shares.
   DSI::datashield.aggregate(conns[peer_ci],
-    call("dsvertLMMReceiveGramSharesDS", session_id = session_id))
+    call(name = "dsvertLMMReceiveGramSharesDS", session_id = session_id))
   DSI::datashield.aggregate(conns[ysrv_ci],
-    call("dsvertLMMReceiveGramSharesDS", session_id = session_id))
+    call(name = "dsvertLMMReceiveGramSharesDS", session_id = session_id))
 
   y_key <- local_y$y_key
   ysrv_cols <- as.character(local_y$column_names)   # int_col + x_ysrv
@@ -155,7 +155,7 @@
     # Dealer: peer server generates a fresh triple encrypted to both
     # parties' transport public keys.
     tri <- DSI::datashield.aggregate(conns[peer_ci],
-      call("k2BeaverVecmulGenTriplesDS",
+      call(name = "k2BeaverVecmulGenTriplesDS",
            dcf0_pk = transport_pks[[y_srv]],
            dcf1_pk = transport_pks[[peer_srv]],
            n = as.integer(n),
@@ -165,23 +165,23 @@
     if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
     # Relay triples to both parties.
     DSI::datashield.aggregate(conns[ysrv_ci],
-      call("mpcStoreBlobDS", key = "k2_beaver_vecmul_triple",
+      call(name = "mpcStoreBlobDS", key = "k2_beaver_vecmul_triple",
            chunk = tri$triple_blob_0, session_id = session_id))
     DSI::datashield.aggregate(conns[peer_ci],
-      call("mpcStoreBlobDS", key = "k2_beaver_vecmul_triple",
+      call(name = "mpcStoreBlobDS", key = "k2_beaver_vecmul_triple",
            chunk = tri$triple_blob_1, session_id = session_id))
     for (ci in c(ysrv_ci, peer_ci))
       DSI::datashield.aggregate(conns[ci],
-        call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+        call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
     # R1 on both parties.
     r1_y <- DSI::datashield.aggregate(conns[ysrv_ci],
-      call("dsvertLMMGramR1DS",
+      call(name = "dsvertLMMGramR1DS",
            peer_pk = transport_pks[[peer_srv]],
            x_col = a_col, y_col = b_col,
            session_id = session_id, frac_bits = fb,
            ring = ring_tag))
     r1_p <- DSI::datashield.aggregate(conns[peer_ci],
-      call("dsvertLMMGramR1DS",
+      call(name = "dsvertLMMGramR1DS",
            peer_pk = transport_pks[[y_srv]],
            x_col = a_col, y_col = b_col,
            session_id = session_id, frac_bits = fb,
@@ -190,20 +190,20 @@
     if (is.list(r1_p) && length(r1_p) == 1L) r1_p <- r1_p[[1L]]
     # Relay masks between parties.
     DSI::datashield.aggregate(conns[peer_ci],
-      call("mpcStoreBlobDS", key = "k2_beaver_vecmul_peer_masked",
+      call(name = "mpcStoreBlobDS", key = "k2_beaver_vecmul_peer_masked",
            chunk = r1_y$peer_blob, session_id = session_id))
     DSI::datashield.aggregate(conns[ysrv_ci],
-      call("mpcStoreBlobDS", key = "k2_beaver_vecmul_peer_masked",
+      call(name = "mpcStoreBlobDS", key = "k2_beaver_vecmul_peer_masked",
            chunk = r1_p$peer_blob, session_id = session_id))
     # R2 on both parties reduces to scalar share.
     r2_y <- DSI::datashield.aggregate(conns[ysrv_ci],
-      call("dsvertLMMGramR2DS",
+      call(name = "dsvertLMMGramR2DS",
            is_party0 = TRUE,
            x_col = a_col, y_col = b_col,
            session_id = session_id, frac_bits = fb,
            ring = ring_tag))
     r2_p <- DSI::datashield.aggregate(conns[peer_ci],
-      call("dsvertLMMGramR2DS",
+      call(name = "dsvertLMMGramR2DS",
            is_party0 = FALSE,
            x_col = a_col, y_col = b_col,
            session_id = session_id, frac_bits = fb,

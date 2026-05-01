@@ -13,9 +13,9 @@
 
 \item{probs}{Numeric vector of target probabilities (0, 1).}
 
-\item{below}{Count of observations strictly below edges\link{1} (default 0).}
+\item{below}{Count of observations strictly below \code{edges[1]} (default 0).}
 
-\item{above}{Count of observations strictly above edges\link{K+1} (default 0).}
+\item{above}{Count of observations strictly above \code{edges[K+1]} (default 0).}
 }
 \value{
 Numeric vector of the same length as probs.

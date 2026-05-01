@@ -15,7 +15,7 @@
 #'   \enumerate{
 #'     \item For each cluster (cluster IDs on outcome server) an
 #'           INNER L-BFGS on \eqn{b_i} is executed server-side
-#'           (using the cached \code{\link{dsvertClusterResidualsDS}}
+#'           (using the cached \code{dsvertClusterResidualsDS}
 #'           aggregates + the cached \eqn{\eta_i} share from
 #'           ds.vertGLM(keep_session=TRUE)).
 #'     \item The outer optimiser on \eqn{(\beta, \sigma_b^2)} is
@@ -31,8 +31,8 @@
 #'   keep_session flag on ds.vertGLM, the Beaver vecmul for inner
 #'   weighted updates, and the DCF sigmoid/exp wide-splines.
 #'
-#'   Privacy: client sees only (\beta, \sigma_b^2) + per-cluster
-#'   \hat b_i estimates as an aggregate vector (one value per cluster).
+#'   Privacy: client sees only (beta, sigma_b^2) + per-cluster
+#'   b_hat_i estimates as an aggregate vector (one value per cluster).
 #'   No per-patient quantity ever leaves the DCF parties.
 #'
 #'   Inter-server leakage: cluster membership (same tier as ds.vertLMM).
@@ -40,7 +40,7 @@
 #' @param formula Fixed-effects formula (binomial outcome on LHS).
 #' @param data Aligned data-frame name.
 #' @param cluster_col Cluster id column on the outcome server.
-#' @param max_outer Outer (\beta, \sigma_b^2) iterations.
+#' @param max_outer Outer (beta, sigma_b^2) iterations.
 #' @param inner_iter Inner PIRLS iterations per cluster per outer step.
 #' @param tol Outer convergence tolerance.
 #' @param verbose Print progress.
@@ -73,7 +73,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
   # Cluster sizes + per-cluster residuals (all aggregates).
   clust_info <- DSI::datashield.aggregate(
     datasources[which(server_names == y_srv)],
-    call("dsvertClusterSizesDS", data_name = data,
+    call(name = "dsvertClusterSizesDS", data_name = data,
          cluster_col = cluster_col))
   if (is.list(clust_info) && length(clust_info) == 1L)
     clust_info <- clust_info[[1L]]
@@ -91,7 +91,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     # Per-cluster residual aggregates at current fit.
     cl <- DSI::datashield.aggregate(
       datasources[which(server_names == y_srv)],
-      call("dsvertClusterResidualsDS",
+      call(name = "dsvertClusterResidualsDS",
            data_name = data, y_var = y_var,
            x_names = setdiff(names(fit$coefficients), "(Intercept)"),
            intercept = as.numeric(fit$coefficients["(Intercept)"]),
@@ -141,7 +141,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     tryCatch(
       DSI::datashield.aggregate(
         datasources[which(server_names == y_srv)],
-        call("dsvertExpandClusterWeightsDS",
+        call(name = "dsvertExpandClusterWeightsDS",
              data_name = data, cluster_col = cluster_col,
              weights_per_cluster = as.numeric(b_hat),
              output_column = "__dsvert_glmm_b")),

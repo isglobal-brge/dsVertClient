@@ -43,7 +43,7 @@
                             session_id, .dsAgg, .sendBlob) {
   n_int <- as.integer(n)
   tri <- .dsAgg(datasources[dealer_ci],
-    call("k2BeaverVecmulGenTriplesDS",
+    call(name = "k2BeaverVecmulGenTriplesDS",
          dcf0_pk = transport_pks[[y_server]],
          dcf1_pk = transport_pks[[nl]],
          n = n_int, session_id = session_id,
@@ -56,12 +56,12 @@
   all_ci <- vapply(server_list, function(s) which(server_names == s),
                     integer(1L))
   .dsAgg(datasources[all_ci],
-         call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+         call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
   r1_b <- list()
   for (server in server_list) {
     ci <- which(server_names == server)
     peer <- setdiff(server_list, server)
-    r <- .dsAgg(datasources[ci], call("k2BeaverVecmulR1DS",
+    r <- .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR1DS",
       peer_pk = transport_pks[[peer]],
       x_key = x_key, y_key = y_key,
       n = n_int, session_id = session_id,
@@ -76,7 +76,7 @@
   for (server in server_list) {
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
-    .dsAgg(datasources[ci], call("k2BeaverVecmulR2DS",
+    .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR2DS",
       is_party0 = is_coord, x_key = x_key, y_key = y_key,
       output_key = output_key,
       n = n_int, session_id = session_id,
@@ -119,18 +119,18 @@
   for (server in server_list) {
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
-    .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
       in_key = in_key, scalar_fp = coef_res_one_over_a,
       output_key = tmp_y, n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = tmp_y, b_key = tmp_y, sign_a = 1L, sign_b = 1L,
       public_const_fp = NULL, is_party0 = is_coord,
       output_key = tmp_twoY, n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
       public_const_fp = c_b64[degree + 1L], is_party0 = is_coord,
       output_key = tmp_bB, n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
       public_const_fp = NULL, is_party0 = is_coord,
       output_key = tmp_bA, n = n_int, session_id = session_id))
@@ -145,7 +145,7 @@
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = tmp_res, b_key = slot_A, sign_a = 1L, sign_b = -1L,
         public_const_fp = c_b64[k + 1L], is_party0 = is_coord,
         output_key = slot_A, n = n_int, session_id = session_id))
@@ -159,7 +159,7 @@
   for (server in server_list) {
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = tmp_res, b_key = slot_A, sign_a = 1L, sign_b = -1L,
       public_const_fp = c_b64[1L], is_party0 = is_coord,
       output_key = out_key, n = n_int, session_id = session_id))
@@ -206,23 +206,23 @@
   for (server in server_list) {
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
-    .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
       in_key = in_key, scalar_fp = rc_one_over_half_range,
       output_key = t_pre, n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = t_pre, b_key = NULL, sign_a = 1L, sign_b = 0L,
       public_const_fp = rc_neg_mid_over_half_range,
       is_party0 = is_coord, output_key = t_key,
       n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = t_key, b_key = t_key, sign_a = 1L, sign_b = 1L,
       public_const_fp = NULL, is_party0 = is_coord,
       output_key = twoT, n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
       public_const_fp = c_b64[degree + 1L], is_party0 = is_coord,
       output_key = bB, n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
       public_const_fp = NULL, is_party0 = is_coord,
       output_key = bA, n = n_int, session_id = session_id))
@@ -237,7 +237,7 @@
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
         public_const_fp = c_b64[k + 1L], is_party0 = is_coord,
         output_key = slot_A, n = n_int, session_id = session_id))
@@ -251,7 +251,7 @@
   for (server in server_list) {
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
       public_const_fp = c_b64[1L], is_party0 = is_coord,
       output_key = y_cur, n = n_int, session_id = session_id))
@@ -265,7 +265,7 @@
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = NULL, b_key = xy, sign_a = 0L, sign_b = -1L,
         public_const_fp = rc_two_fp, is_party0 = is_coord,
         output_key = tmXY, n = n_int, session_id = session_id))
@@ -311,7 +311,7 @@
   # Step 1: scale input by 0.5 locally on each server (linear, no MPC round).
   for (server in server_list) {
     ci <- which(server_names == server)
-    .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
       in_key = in_key, scalar_fp = half_fp_b64,
       output_key = half_key, n = n_int, session_id = session_id))
   }
@@ -381,23 +381,23 @@
   for (server in server_list) {
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
-    .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
       in_key = in_key, scalar_fp = rc_one_over_half_range,
       output_key = t_pre, n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = t_pre, b_key = NULL, sign_a = 1L, sign_b = 0L,
       public_const_fp = rc_neg_mid_over_half_range,
       is_party0 = is_coord, output_key = t_key,
       n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = t_key, b_key = t_key, sign_a = 1L, sign_b = 1L,
       public_const_fp = NULL, is_party0 = is_coord,
       output_key = twoT, n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
       public_const_fp = c_b64[degree + 1L], is_party0 = is_coord,
       output_key = bB, n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
       public_const_fp = NULL, is_party0 = is_coord,
       output_key = bA, n = n_int, session_id = session_id))
@@ -412,7 +412,7 @@
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
         public_const_fp = c_b64[k + 1L], is_party0 = is_coord,
         output_key = slot_A, n = n_int, session_id = session_id))
@@ -426,7 +426,7 @@
   for (server in server_list) {
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
       public_const_fp = c_b64[1L], is_party0 = is_coord,
       output_key = out_key, n = n_int, session_id = session_id))
@@ -468,7 +468,7 @@
   # falls in [1, 10].
   for (server in server_list) {
     ci <- which(server_names == server)
-    .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
       in_key = in_key, scalar_fp = scale_fp_b64,
       output_key = scaled_key, n = n_int, session_id = session_id))
   }
@@ -487,7 +487,7 @@
   for (server in server_list) {
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = log_scaled_key, b_key = NULL, sign_a = 1L, sign_b = 0L,
       public_const_fp = log_scale_correction_fp_b64,
       is_party0 = is_coord, output_key = out_key,
@@ -577,23 +577,23 @@
   for (server in server_list) {
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
-    .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
       in_key = in_key, scalar_fp = rc_one_over_half_range,
       output_key = t_pre, n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = t_pre, b_key = NULL, sign_a = 1L, sign_b = 0L,
       public_const_fp = rc_neg_mid_over_half_range,
       is_party0 = is_coord, output_key = t_key,
       n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = t_key, b_key = t_key, sign_a = 1L, sign_b = 1L,
       public_const_fp = NULL, is_party0 = is_coord,
       output_key = twoT, n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
       public_const_fp = c_b64[degree + 1L], is_party0 = is_coord,
       output_key = bB, n = n_int, session_id = session_id))
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
       public_const_fp = NULL, is_party0 = is_coord,
       output_key = bA, n = n_int, session_id = session_id))
@@ -608,7 +608,7 @@
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
         public_const_fp = c_b64[k + 1L], is_party0 = is_coord,
         output_key = slot_A, n = n_int, session_id = session_id))
@@ -622,7 +622,7 @@
   for (server in server_list) {
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
-    .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
       public_const_fp = c_b64[1L], is_party0 = is_coord,
       output_key = y_seed, n = n_int, session_id = session_id))
@@ -645,7 +645,7 @@
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = cur, b_key = NULL, sign_a = -1L, sign_b = 0L,
         public_const_fp = NULL, is_party0 = is_coord,
         output_key = negY, n = n_int, session_id = session_id))
@@ -668,7 +668,7 @@
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = cur, b_key = xExp, sign_a = 1L, sign_b = 1L,
         public_const_fp = if (is_coord) neg_one_fp_b64 else NULL,
         is_party0 = is_coord,

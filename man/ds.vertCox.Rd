@@ -14,10 +14,14 @@ ds.vertCox(
   max_iter = 30L,
   tol = 1e-04,
   lambda = 1e-04,
-  compute_loglik = TRUE,
+  compute_loglik = FALSE,
   compute_se = FALSE,
   num_intervals_exp = 75L,
   num_intervals_recip = 75L,
+  one_step_newton = TRUE,
+  newton_refine_iters = 5L,
+  newton_refine_tol = 1e-05,
+  ring = 127L,
   verbose = TRUE,
   datasources = NULL
 )
@@ -31,11 +35,49 @@ If the LHS is not a \code{Surv(...)} expression, supply
 
 \item{time_col, event_col}{Column names on the outcome server.}
 
+\item{tstart_col}{Optional left-truncation / start-time column for
+counting-process / time-varying covariates. When supplied, the
+data are interpreted as (tstart, time, event) triplets.}
+
+\item{strata_col}{Optional stratifying column name (categorical).
+Each level fits a separate baseline hazard with shared beta.}
+
 \item{max_iter}{Outer L-BFGS iterations (default 30).}
 
 \item{tol}{Convergence tolerance on max |delta beta|.}
 
 \item{lambda}{L2 regularisation.}
+
+\item{compute_loglik}{Logical (default FALSE). If TRUE, run an extra
+DCF pipeline pass at beta_hat to evaluate the partial log-likelihood
+for AIC/BIC / LR tests. Adds ~60s per fit (Opal) or ~6 min (local).}
+
+\item{compute_se}{Logical (default FALSE). If TRUE, evaluate the
+observed information matrix at beta_hat and return covariance /
+standard errors. Adds one full DCF pipeline pass.}
+
+\item{num_intervals_exp}{Integer. DCF spline grid size for exp(eta);
+75 is the sweet spot on Ring63 (error < 1e-3 while ~25 percent
+faster than 100). Drop to 50 for small-n speed.}
+
+\item{num_intervals_recip}{Integer. DCF spline grid size for the
+reciprocal 1/S(t); same default rationale as
+\code{num_intervals_exp}.}
+
+\item{one_step_newton}{Logical. If TRUE (default), use the bias-free
+one-step Newton at beta=0 followed by fixed-Fisher refinement;
+FALSE falls back to the legacy iterative gradient-descent loop.}
+
+\item{newton_refine_iters}{Integer. Number of damped fixed-Fisher
+refinement iterations after the one-step Newton (HARD CAP 5 by
+P3 disclosure budget).}
+
+\item{newton_refine_tol}{Numeric. Convergence tolerance on
+max |delta beta| during refinement.}
+
+\item{ring}{Integer (63 or 127). Selects the MPC ring / fracBits
+pipeline. Default 127 (Catrina-Saxena fracBits=50, ~1e-15 per-op).
+Pass 63 to force the legacy Ring63 pipeline.}
 
 \item{verbose}{Print progress.}
 

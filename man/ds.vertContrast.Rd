@@ -23,7 +23,7 @@ statistic, df, p_value.
 \description{
 Test H0: K * beta = m against the two-sided alternative
 using the multivariate Wald statistic
-W = (K * beta_hat - m)^T (K * Cov * K^T)^{-1} (K * beta_hat - m),
+W = (K * beta_hat - m)^T inv(K * Cov * K^T) (K * beta_hat - m),
 which under H0 is chi-square distributed with rank(K) degrees of
 freedom. Requires the fit's full covariance matrix (exposed by
 ds.vertGLM as \code{fit$covariance} since commit TBD).

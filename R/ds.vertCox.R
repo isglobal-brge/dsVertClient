@@ -29,9 +29,37 @@
 #'   \code{time_col} / \code{event_col} explicitly.
 #' @param data Aligned data-frame name on each server.
 #' @param time_col,event_col Column names on the outcome server.
+#' @param tstart_col Optional left-truncation / start-time column for
+#'   counting-process / time-varying covariates. When supplied, the
+#'   data are interpreted as (tstart, time, event) triplets.
+#' @param strata_col Optional stratifying column name (categorical).
+#'   Each level fits a separate baseline hazard with shared beta.
 #' @param max_iter Outer L-BFGS iterations (default 30).
 #' @param tol Convergence tolerance on max |delta beta|.
 #' @param lambda L2 regularisation.
+#' @param compute_loglik Logical (default FALSE). If TRUE, run an extra
+#'   DCF pipeline pass at beta_hat to evaluate the partial log-likelihood
+#'   for AIC/BIC / LR tests. Adds ~60s per fit (Opal) or ~6 min (local).
+#' @param compute_se Logical (default FALSE). If TRUE, evaluate the
+#'   observed information matrix at beta_hat and return covariance /
+#'   standard errors. Adds one full DCF pipeline pass.
+#' @param num_intervals_exp Integer. DCF spline grid size for exp(eta);
+#'   75 is the sweet spot on Ring63 (error < 1e-3 while ~25 percent
+#'   faster than 100). Drop to 50 for small-n speed.
+#' @param num_intervals_recip Integer. DCF spline grid size for the
+#'   reciprocal 1/S(t); same default rationale as
+#'   \code{num_intervals_exp}.
+#' @param one_step_newton Logical. If TRUE (default), use the bias-free
+#'   one-step Newton at beta=0 followed by fixed-Fisher refinement;
+#'   FALSE falls back to the legacy iterative gradient-descent loop.
+#' @param newton_refine_iters Integer. Number of damped fixed-Fisher
+#'   refinement iterations after the one-step Newton (HARD CAP 5 by
+#'   P3 disclosure budget).
+#' @param newton_refine_tol Numeric. Convergence tolerance on
+#'   max |delta beta| during refinement.
+#' @param ring Integer (63 or 127). Selects the MPC ring / fracBits
+#'   pipeline. Default 127 (Catrina-Saxena fracBits=50, ~1e-15 per-op).
+#'   Pass 63 to force the legacy Ring63 pipeline.
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD connections.
 #' @return A \code{ds.vertCox} object: \code{coefficients},
@@ -160,7 +188,7 @@ ds.vertCox <- function(formula, data = NULL,
 
   # Locate servers.
   col_results <- DSI::datashield.aggregate(datasources,
-    call("dsvertColNamesDS", data_name = data))
+    call(name = "dsvertColNamesDS", data_name = data))
   y_server <- NULL
   x_vars <- list()
   for (srv in server_names) {
@@ -188,7 +216,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (.srv in server_list) {
       .ci <- which(server_names == .srv)
       tryCatch(DSI::datashield.aggregate(datasources[.ci],
-        call("mpcCleanupDS", session_id = session_id)),
+        call(name = "mpcCleanupDS", session_id = session_id)),
         error = function(e) NULL)
     }
   }, add = TRUE)
@@ -219,7 +247,7 @@ ds.vertCox <- function(formula, data = NULL,
   # pattern at ds.vertGLM.R:290.
   n_obs <- tryCatch({
     r <- .dsAgg(datasources[which(server_names == y_server)],
-                call("getObsCountDS", data_name = data))
+                call(name = "getObsCountDS", data_name = data))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     r$n_obs
   }, error = function(e) NULL)
@@ -237,7 +265,7 @@ ds.vertCox <- function(formula, data = NULL,
     peer <- setdiff(server_list, server)
     peer_pk_safe <- .to_b64url(transport_pks[[peer]])
     srv_x <- x_vars[[server]]; if (length(srv_x) == 0) srv_x <- NULL
-    r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
+    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
       data_name = std_data, x_vars = srv_x,
       y_var = NULL,   # Cox does not share a numeric y_share (time is sorted, not shared)
       peer_pk = peer_pk_safe, ring = ring, session_id = session_id))
@@ -253,7 +281,7 @@ ds.vertCox <- function(formula, data = NULL,
   for (server in server_list) {
     ci <- which(server_names == server)
     peer <- setdiff(server_list, server)
-    .dsAgg(datasources[ci], call("k2ReceiveShareDS",
+    .dsAgg(datasources[ci], call(name = "k2ReceiveShareDS",
       peer_p = as.integer(length(x_vars[[peer]])),
       session_id = session_id))
   }
@@ -285,7 +313,7 @@ ds.vertCox <- function(formula, data = NULL,
     # Ask outcome server to build __dsvert_tv_strata column.
     tryCatch(
       .dsAgg(datasources[which(server_names == y_server)],
-        call("dsvertCoxTVStrataDS", data_name = data,
+        call(name = "dsvertCoxTVStrataDS", data_name = data,
              tstart_column = tstart_col,
              base_strata_column = strata_col,
              output_column = "__dsvert_tv_strata")),
@@ -296,7 +324,7 @@ ds.vertCox <- function(formula, data = NULL,
   }
   cox_times <- .dsAgg(
     datasources[which(server_names == y_server)],
-    call("k2SetCoxTimesDS", data_name = data,
+    call(name = "k2SetCoxTimesDS", data_name = data,
          time_column = time_col, event_column = event_col,
          strata_column = effective_strata,
          peer_pk = transport_pks[[nl]],
@@ -307,12 +335,12 @@ ds.vertCox <- function(formula, data = NULL,
   .sendBlob(cox_times$peer_blob, "k2_peer_cox_meta",
             which(server_names == nl))
   .dsAgg(datasources[which(server_names == nl)],
-    call("k2ReceiveCoxMetaDS", session_id = session_id))
+    call(name = "k2ReceiveCoxMetaDS", session_id = session_id))
   # Permute X shares on both parties.
   for (server in server_list) {
     ci <- which(server_names == server)
     .dsAgg(datasources[ci],
-      call("k2ApplyCoxPermutationDS", session_id = session_id))
+      call(name = "k2ApplyCoxPermutationDS", session_id = session_id))
   }
 
   # (Newton path runs AFTER .cox_score_round is defined, so it can use
@@ -365,7 +393,7 @@ ds.vertCox <- function(formula, data = NULL,
   # preserve C4 regression guarantees.
   .run_beaver_vecmul_ring127 <- function(x_key, y_key, output_key, n) {
     tri <- .dsAgg(datasources[dealer_ci],
-      call("k2BeaverVecmulGenTriplesDS",
+      call(name = "k2BeaverVecmulGenTriplesDS",
            dcf0_pk = transport_pks[[y_server]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n),
@@ -379,12 +407,12 @@ ds.vertCox <- function(formula, data = NULL,
     all_ci <- vapply(server_list, function(s) which(server_names == s),
                       integer(1L))
     .dsAgg(datasources[all_ci],
-      call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+      call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
     r1_b <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      r <- .dsAgg(datasources[ci], call("k2BeaverVecmulR1DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR1DS",
         peer_pk = transport_pks[[peer]],
         x_key = x_key, y_key = y_key,
         n = as.integer(n),
@@ -398,7 +426,7 @@ ds.vertCox <- function(formula, data = NULL,
               which(server_names == y_server))
     for (server in server_list) {
       .dsAgg(datasources[which(server_names == server)],
-        call("k2BeaverVecmulR2DS",
+        call(name = "k2BeaverVecmulR2DS",
              is_party0 = (server == y_server),
              x_key = x_key, y_key = y_key,
              output_key = output_key,
@@ -458,7 +486,7 @@ ds.vertCox <- function(formula, data = NULL,
     # --- Step 2: y = eta * (1/a)  (local scale, both parties).
     for (server in server_list) {
       ci <- which(server_names == server)
-      .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
         in_key = "k2_eta_share_fp",
         scalar_fp = coef_res_one_over_a,
         output_key = "k2_r127_horner_y",
@@ -469,7 +497,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = "k2_r127_horner_y",
         b_key = "k2_r127_horner_y",
         sign_a = 1L, sign_b = 1L,
@@ -485,7 +513,7 @@ ds.vertCox <- function(formula, data = NULL,
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
       # b_N: const=c_N, signs zero.
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = NULL, b_key = NULL,
         sign_a = 0L, sign_b = 0L,
         public_const_fp = c_b64[degree + 1L],
@@ -493,7 +521,7 @@ ds.vertCox <- function(formula, data = NULL,
         output_key = "k2_r127_horner_bB",
         n = n_int, session_id = session_id))
       # b_{N+1}: const=NULL, signs zero -> zero share.
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = NULL, b_key = NULL,
         sign_a = 0L, sign_b = 0L,
         public_const_fp = NULL,
@@ -522,7 +550,7 @@ ds.vertCox <- function(formula, data = NULL,
       for (server in server_list) {
         ci <- which(server_names == server)
         is_coord <- (server == y_server)
-        .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
           a_key = "k2_r127_horner_tmp",
           b_key = slot_A,
           sign_a = 1L, sign_b = -1L,
@@ -545,7 +573,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = "k2_r127_horner_tmp",
         b_key = slot_A,
         sign_a = 1L, sign_b = -1L,
@@ -614,7 +642,7 @@ ds.vertCox <- function(formula, data = NULL,
     # --- Step 2a: t_pre = x * (1/halfRange)  (local scale, both parties).
     for (server in server_list) {
       ci <- which(server_names == server)
-      .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
         in_key = "k2_eta_share_fp",
         scalar_fp = rc_one_over_half_range,
         output_key = "k2_r127_recip_t_pre",
@@ -624,7 +652,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = "k2_r127_recip_t_pre",
         b_key = NULL,
         sign_a = 1L, sign_b = 0L,
@@ -638,7 +666,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = "k2_r127_recip_t",
         b_key = "k2_r127_recip_t",
         sign_a = 1L, sign_b = 1L,
@@ -652,14 +680,14 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = NULL, b_key = NULL,
         sign_a = 0L, sign_b = 0L,
         public_const_fp = c_b64[degree + 1L],
         is_party0 = is_coord,
         output_key = "k2_r127_recip_bB",
         n = n_int, session_id = session_id))
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = NULL, b_key = NULL,
         sign_a = 0L, sign_b = 0L,
         public_const_fp = NULL,
@@ -680,7 +708,7 @@ ds.vertCox <- function(formula, data = NULL,
       for (server in server_list) {
         ci <- which(server_names == server)
         is_coord <- (server == y_server)
-        .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
           a_key = "k2_r127_recip_tmp",
           b_key = slot_A,
           sign_a = 1L, sign_b = -1L,
@@ -702,7 +730,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = "k2_r127_recip_tmp",
         b_key = slot_A,
         sign_a = 1L, sign_b = -1L,
@@ -729,7 +757,7 @@ ds.vertCox <- function(formula, data = NULL,
       for (server in server_list) {
         ci <- which(server_names == server)
         is_coord <- (server == y_server)
-        .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
           a_key = NULL,
           b_key = "k2_r127_recip_xy",
           sign_a = 0L, sign_b = -1L,
@@ -779,7 +807,7 @@ ds.vertCox <- function(formula, data = NULL,
     # output share under its canonical name.
     if (isTRUE(need_dcf_keys)) {
       key_res <- .dsAgg(datasources[dealer_ci],
-        call("glmRing63GenDcfKeysDS",
+        call(name = "glmRing63GenDcfKeysDS",
           dcf0_pk = transport_pks[[y_server]],
           dcf1_pk = transport_pks[[nl]],
           family = family_name,
@@ -795,13 +823,13 @@ ds.vertCox <- function(formula, data = NULL,
       # Batch the StoreDcfKeys call on both parties -- no per-party args.
       .dsAgg(datasources[c(which(server_names == y_server),
                             which(server_names == nl))],
-        call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+        call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
       # Cache the family so iter 2+ skip key gen.
       dcf_keys_cached[[cache_key]] <<- TRUE
     }
     # Generate and distribute spline Beaver triples for this iteration.
     spline_t <- .dsAgg(datasources[dealer_ci],
-      call("glmRing63GenSplineTriplesDS",
+      call(name = "glmRing63GenSplineTriplesDS",
         dcf0_pk = transport_pks[[y_server]],
         dcf1_pk = transport_pks[[nl]],
         n = as.integer(n_target), frac_bits = spline_frac_bits,
@@ -818,7 +846,7 @@ ds.vertCox <- function(formula, data = NULL,
     ph1 <- list()
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == y_server)
-      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase1DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase1DS",
         party_id = if (is_coord) 0L else 1L,
         family = family_name,
         num_intervals = as.integer(num_intervals),
@@ -834,7 +862,7 @@ ds.vertCox <- function(formula, data = NULL,
     ph2 <- list()
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == y_server)
-      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase2DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase2DS",
         party_id = if (is_coord) 0L else 1L,
         family = family_name,
         num_intervals = as.integer(num_intervals),
@@ -858,7 +886,7 @@ ds.vertCox <- function(formula, data = NULL,
     ph3 <- list()
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == y_server)
-      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase3DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase3DS",
         party_id = if (is_coord) 0L else 1L,
         family = family_name,
         num_intervals = as.integer(num_intervals),
@@ -881,7 +909,7 @@ ds.vertCox <- function(formula, data = NULL,
     }
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2WideSplinePhase4DS",
+      .dsAgg(datasources[ci], call(name = "k2WideSplinePhase4DS",
         party_id = if (is_coord) 0L else 1L,
         family = family_name,
         num_intervals = as.integer(num_intervals),
@@ -900,7 +928,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+      .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
         beta_coord = beta_in[coord_idx],
         beta_nl = beta_in[nl_idx],
         intercept = 0, is_coordinator = is_coord,
@@ -914,22 +942,22 @@ ds.vertCox <- function(formula, data = NULL,
     all_ci <- vapply(server_list, function(s) which(server_names == s),
                       integer(1L))
     .dsAgg(datasources[all_ci],
-      call("k2CoxSaveMuDS", session_id = session_id))
+      call(name = "k2CoxSaveMuDS", session_id = session_id))
     .dsAgg(datasources[all_ci],
-      call("k2CoxReverseCumsumSDS", session_id = session_id))
+      call(name = "k2CoxReverseCumsumSDS", session_id = session_id))
     .dsAgg(datasources[all_ci],
-      call("k2CoxPrepareRecipPhaseDS", session_id = session_id))
+      call(name = "k2CoxPrepareRecipPhaseDS", session_id = session_id))
     .wide_spline_round("reciprocal", n_obs, num_intervals = num_intervals_recip)
     .dsAgg(datasources[all_ci],
-      call("k2StoreCoxRecipDS", recip_S_share_fp = NULL,
+      call(name = "k2StoreCoxRecipDS", recip_S_share_fp = NULL,
            session_id = session_id))
     .dsAgg(datasources[all_ci],
-      call("k2CoxForwardCumsumGDS", session_id = session_id))
+      call(name = "k2CoxForwardCumsumGDS", session_id = session_id))
     # Beaver vecmul mu*G. Ring threaded (task #116 step 5c(F)): at ring=127
     # frac_bits=50 and Ring127 handler path through all Beaver + gradient
     # primitives. At ring=63 fracs=20 and the legacy Ring63 path runs.
     tri <- .dsAgg(datasources[dealer_ci],
-      call("k2BeaverVecmulGenTriplesDS",
+      call(name = "k2BeaverVecmulGenTriplesDS",
            dcf0_pk = transport_pks[[y_server]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n_obs),
@@ -941,12 +969,12 @@ ds.vertCox <- function(formula, data = NULL,
     .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple",
               which(server_names == nl))
     .dsAgg(datasources[all_ci],
-      call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+      call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
     r1_b <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      r <- .dsAgg(datasources[ci], call("k2BeaverVecmulR1DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR1DS",
         peer_pk = transport_pks[[peer]],
         x_key = "k2_cox_mu_share_fp",
         y_key = "k2_cox_G_share_fp",
@@ -962,7 +990,7 @@ ds.vertCox <- function(formula, data = NULL,
               which(server_names == y_server))
     for (server in server_list) {
       .dsAgg(datasources[which(server_names == server)],
-        call("k2BeaverVecmulR2DS",
+        call(name = "k2BeaverVecmulR2DS",
              is_party0 = (server == y_server),
              x_key = "k2_cox_mu_share_fp",
              y_key = "k2_cox_G_share_fp",
@@ -973,13 +1001,13 @@ ds.vertCox <- function(formula, data = NULL,
     }
     for (server in server_list) {
       .dsAgg(datasources[which(server_names == server)],
-        call("k2CoxFinaliseResidualDS",
+        call(name = "k2CoxFinaliseResidualDS",
              is_party0 = (server == y_server),
              session_id = session_id, frac_bits = spline_frac_bits,
              ring = ring))
     }
     grad_t <- .dsAgg(datasources[dealer_ci],
-      call("glmRing63GenGradTriplesDS",
+      call(name = "glmRing63GenGradTriplesDS",
         dcf0_pk = transport_pks[[y_server]],
         dcf1_pk = transport_pks[[nl]],
         n = as.integer(n_obs), p = as.integer(p_total),
@@ -993,11 +1021,11 @@ ds.vertCox <- function(formula, data = NULL,
     r1 <- list()
     # Batch the symmetric k2StoreGradTripleDS (no per-party args).
     .dsAgg(datasources[all_ci],
-      call("k2StoreGradTripleDS", session_id = session_id))
+      call(name = "k2StoreGradTripleDS", session_id = session_id))
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
         peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r1[[server]] <- r
@@ -1010,7 +1038,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
         party_id = if (is_coord) 0L else 1L, session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r2[[server]] <- r
@@ -1070,7 +1098,7 @@ ds.vertCox <- function(formula, data = NULL,
         for (srv2 in server_list) {
           ci2 <- which(server_names == srv2)
           .dsAgg(datasources[ci2],
-            call("k2CoxPrepareLogSPhaseDS", session_id = session_id))
+            call(name = "k2CoxPrepareLogSPhaseDS", session_id = session_id))
         }
         .wide_spline_round("log", n_obs, num_intervals = 200L)
         if (.pll_dbg) {
@@ -1082,7 +1110,7 @@ ds.vertCox <- function(formula, data = NULL,
         for (srv2 in server_list) {
           ci2 <- which(server_names == srv2)
           is_coord2 <- (srv2 == y_server)
-          .dsAgg(datasources[ci2], call("k2ComputeEtaShareDS",
+          .dsAgg(datasources[ci2], call(name = "k2ComputeEtaShareDS",
             beta_coord = beta_[seq_len(p_coord)],
             beta_nl = beta_[seq_len(p_nl) + p_coord],
             intercept = 0, is_coordinator = is_coord2,
@@ -1092,7 +1120,7 @@ ds.vertCox <- function(formula, data = NULL,
         for (srv2 in server_list) {
           ci2 <- which(server_names == srv2)
           r2 <- .dsAgg(datasources[ci2],
-            call("k2CoxPartialLogLikAggregateDS", session_id = session_id))
+            call(name = "k2CoxPartialLogLikAggregateDS", session_id = session_id))
           if (is.list(r2) && length(r2) == 1L) r2 <- r2[[1L]]
           ll_res2[[srv2]] <- r2
         }
@@ -1266,7 +1294,7 @@ ds.vertCox <- function(formula, data = NULL,
               per_srv <- list()
               for (srv in server_list) {
                 ci <- which(server_names == srv)
-                r <- .dsAgg(datasources[ci], call("dsvertDebugRevealDS",
+                r <- .dsAgg(datasources[ci], call(name = "dsvertDebugRevealDS",
                   slot_key = slot_key, session_id = session_id))
                 if (is.list(r) && length(r) == 1L) r <- r[[1L]]
                 per_srv[[srv]] <- r
@@ -1518,7 +1546,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+      .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
         beta_coord = beta[coord_idx],
         beta_nl = beta[nl_idx],
         intercept = 0,        # Cox has no intercept (absorbed in baseline hazard)
@@ -1532,13 +1560,13 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       .dsAgg(datasources[ci],
-        call("k2CoxSaveMuDS", session_id = session_id))
+        call(name = "k2CoxSaveMuDS", session_id = session_id))
     }
     # Step 3: reverse cumsum of mu -> S(t_i).
     for (server in server_list) {
       ci <- which(server_names == server)
       .dsAgg(datasources[ci],
-        call("k2CoxReverseCumsumSDS", session_id = session_id))
+        call(name = "k2CoxReverseCumsumSDS", session_id = session_id))
     }
     # Step 4: DCF reciprocal wide spline on S -> 1/S (each server copies
     # k2_cox_S_share_fp into the eta slot, then runs reciprocal phase).
@@ -1546,7 +1574,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       tryCatch(.dsAgg(datasources[ci],
-        call("k2CoxPrepareRecipPhaseDS", session_id = session_id)),
+        call(name = "k2CoxPrepareRecipPhaseDS", session_id = session_id)),
         error = function(e) stop(
           "k2CoxPrepareRecipPhaseDS not available (",
           conditionMessage(e),
@@ -1559,14 +1587,14 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       .dsAgg(datasources[ci],
-        call("k2StoreCoxRecipDS",
+        call(name = "k2StoreCoxRecipDS",
              recip_S_share_fp = NULL, session_id = session_id))
     }
     # Step 5: forward cumsum of delta * (1/S) -> G_j.
     for (server in server_list) {
       ci <- which(server_names == server)
       .dsAgg(datasources[ci],
-        call("k2CoxForwardCumsumGDS", session_id = session_id))
+        call(name = "k2CoxForwardCumsumGDS", session_id = session_id))
     }
     # Step 6: form the Cox residual r_j = delta_j - exp(eta_j) * G_j on
     # shares. This is a 4-step 2-round Beaver protocol that keeps both
@@ -1574,7 +1602,7 @@ ds.vertCox <- function(formula, data = NULL,
     # 6a. Dealer (the non-label party) generates the element-wise
     #     Beaver triple and seals one share per party.
     tri <- .dsAgg(datasources[dealer_ci],
-      call("k2BeaverVecmulGenTriplesDS",
+      call(name = "k2BeaverVecmulGenTriplesDS",
            dcf0_pk = transport_pks[[y_server]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n_obs),
@@ -1587,7 +1615,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       .dsAgg(datasources[ci],
-        call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+        call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
     }
     # 6b. Round 1: each party computes (mu - a, G - b) shares and seals
     #     to the peer.
@@ -1595,7 +1623,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      r <- .dsAgg(datasources[ci], call("k2BeaverVecmulR1DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR1DS",
         peer_pk = transport_pks[[peer]],
         x_key = "k2_cox_mu_share_fp",
         y_key = "k2_cox_G_share_fp",
@@ -1612,7 +1640,7 @@ ds.vertCox <- function(formula, data = NULL,
     #     stores it under k2_cox_mu_g_share_fp.
     for (server in server_list) {
       ci <- which(server_names == server)
-      .dsAgg(datasources[ci], call("k2BeaverVecmulR2DS",
+      .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR2DS",
         is_party0 = (server == y_server),
         x_key = "k2_cox_mu_share_fp",
         y_key = "k2_cox_G_share_fp",
@@ -1625,13 +1653,13 @@ ds.vertCox <- function(formula, data = NULL,
     #     existing X^T r Beaver matvec consumes it unchanged.
     for (server in server_list) {
       ci <- which(server_names == server)
-      .dsAgg(datasources[ci], call("k2CoxFinaliseResidualDS",
+      .dsAgg(datasources[ci], call(name = "k2CoxFinaliseResidualDS",
         is_party0 = (server == y_server),
         session_id = session_id, frac_bits = 20L))
     }
     # Step 7: gradient = X^T r via the existing Beaver matvec.
     grad_t <- .dsAgg(datasources[dealer_ci],
-      call("glmRing63GenGradTriplesDS",
+      call(name = "glmRing63GenGradTriplesDS",
         dcf0_pk = transport_pks[[y_server]],
         dcf1_pk = transport_pks[[nl]],
         n = as.integer(n_obs), p = as.integer(p_total),
@@ -1644,11 +1672,11 @@ ds.vertCox <- function(formula, data = NULL,
     r1 <- list()
     # Batch the symmetric k2StoreGradTripleDS (no per-party args).
     .dsAgg(datasources[all_ci],
-      call("k2StoreGradTripleDS", session_id = session_id))
+      call(name = "k2StoreGradTripleDS", session_id = session_id))
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
         peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r1[[server]] <- r
@@ -1661,7 +1689,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
         party_id = if (is_coord) 0L else 1L, session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r2[[server]] <- r
@@ -1771,7 +1799,7 @@ ds.vertCox <- function(formula, data = NULL,
       for (server in server_list) {
         ci <- which(server_names == server)
         .dsAgg(datasources[ci],
-          call("k2CoxPrepareLogSPhaseDS", session_id = session_id))
+          call(name = "k2CoxPrepareLogSPhaseDS", session_id = session_id))
       }
       .wide_spline_round("log", n_obs, num_intervals = 200L)
       # Both terms: per-party masked sums; client adds the two shares.
@@ -1779,7 +1807,7 @@ ds.vertCox <- function(formula, data = NULL,
       for (server in server_list) {
         ci <- which(server_names == server)
         r <- .dsAgg(datasources[ci],
-          call("k2CoxPartialLogLikAggregateDS",
+          call(name = "k2CoxPartialLogLikAggregateDS",
                session_id = session_id))
         if (is.list(r) && length(r) == 1L) r <- r[[1L]]
         ll_res[[server]] <- r

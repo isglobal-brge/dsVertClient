@@ -176,7 +176,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   for (i in seq_along(datasources)) {
     cn_res <- DSI::datashield.aggregate(
       conns = datasources[i],
-      expr  = call("dsvertColNamesDS", data_name = data))
+      expr  = call(name = "dsvertColNamesDS", data_name = data))
     cn_inner <- if (is.list(cn_res)) cn_res[[1L]] else cn_res
     cn <- if (is.list(cn_inner) && !is.null(cn_inner$columns))
             cn_inner$columns else cn_inner
@@ -205,7 +205,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     ci <- which(server_names == server)
     tk_res <- DSI::datashield.aggregate(
       conns = datasources[ci],
-      expr  = call("glmRing63TransportInitDS", session_id = session_id))
+      expr  = call(name = "glmRing63TransportInitDS", session_id = session_id))
     if (is.list(tk_res) && length(tk_res) == 1L) tk_res <- tk_res[[1L]]
     transport_pks[[server]] <- tk_res$transport_pk
   }
@@ -225,7 +225,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   y_share_key    <- "cox_nd_y_share"
   share_res <- DSI::datashield.aggregate(
     conns = os_conn,
-    expr  = call("dsvertCoxDiscreteShareMaskDS",
+    expr  = call(name = "dsvertCoxDiscreteShareMaskDS",
                   data_name        = data,
                   time_var         = time_var,
                   status_var       = status_var,
@@ -250,13 +250,13 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   blob_key_y <- "cox_nd_y_sealed"
   DSI::datashield.aggregate(
     conns = nl_conn,
-    expr  = call("mpcStoreBlobDS",
+    expr  = call(name = "mpcStoreBlobDS",
                   key        = blob_key_m,
                   chunk      = share_res$sealed_m_blob,
                   session_id = session_id))
   DSI::datashield.aggregate(
     conns = nl_conn,
-    expr  = call("mpcStoreBlobDS",
+    expr  = call(name = "mpcStoreBlobDS",
                   key        = blob_key_y,
                   chunk      = share_res$sealed_y_blob,
                   session_id = session_id))
@@ -265,7 +265,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (verbose) message("[#D' non-disclosive] Phase 2: NL receive shares")
   recv_res <- DSI::datashield.aggregate(
     conns = nl_conn,
-    expr  = call("dsvertCoxDiscreteReceiveSharesDS",
+    expr  = call(name = "dsvertCoxDiscreteReceiveSharesDS",
                   mask_blob_key   = blob_key_m,
                   y_blob_key      = blob_key_y,
                   mask_output_key = mask_share_key,
@@ -285,7 +285,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   # caller's responsibility.
   cn_nl_res <- DSI::datashield.aggregate(
     conns = nl_conn,
-    expr  = call("dsvertColNamesDS", data_name = data))
+    expr  = call(name = "dsvertColNamesDS", data_name = data))
   cn_nl_inner <- if (is.list(cn_nl_res)) cn_nl_res[[1L]] else cn_nl_res
   cn_nl <- if (is.list(cn_nl_inner) && !is.null(cn_nl_inner$columns))
              cn_nl_inner$columns else cn_nl_inner
@@ -294,7 +294,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (length(x_nl) > 0L) {
     expand_res <- DSI::datashield.aggregate(
       conns = nl_conn,
-      expr  = call("dsvertCoxDiscreteExpandXDS",
+      expr  = call(name = "dsvertCoxDiscreteExpandXDS",
                     data_name     = data,
                     new_data_name = expanded_x_name,
                     x_vars        = x_nl,
@@ -378,7 +378,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   # --- Phase 4a: expand X at OS too (mirror of NL Phase 3) ---
   cn_os_res <- DSI::datashield.aggregate(
     conns = os_conn,
-    expr  = call("dsvertColNamesDS", data_name = data))
+    expr  = call(name = "dsvertColNamesDS", data_name = data))
   cn_os_inner <- if (is.list(cn_os_res)) cn_os_res[[1L]] else cn_os_res
   cn_os <- if (is.list(cn_os_inner) && !is.null(cn_os_inner$columns))
               cn_os_inner$columns else cn_os_inner
@@ -389,7 +389,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (length(x_os) > 0L) {
     DSI::datashield.aggregate(
       conns = os_conn,
-      expr  = call("dsvertCoxDiscreteExpandXDS",
+      expr  = call(name = "dsvertCoxDiscreteExpandXDS",
                     data_name     = data,
                     new_data_name = expanded_x_name,
                     x_vars        = x_os,
@@ -400,7 +400,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     # zero x_vars (the primitive still emits bin dummies + patient_id).
     DSI::datashield.aggregate(
       conns = os_conn,
-      expr  = call("dsvertCoxDiscreteExpandXDS",
+      expr  = call(name = "dsvertCoxDiscreteExpandXDS",
                     data_name     = data,
                     new_data_name = expanded_x_name,
                     x_vars        = character(0),
@@ -431,11 +431,11 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
       if (n_chunks == 1L) {
         DSI::datashield.aggregate(conn,
-          call("mpcStoreBlobDS", key = key, chunk = chunk_str,
+          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
                session_id = session_id))
       } else {
         DSI::datashield.aggregate(conn,
-          call("mpcStoreBlobDS", key = key, chunk = chunk_str,
+          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
                chunk_index = chunk_idx, n_chunks = n_chunks,
                session_id = session_id))
       }
@@ -449,7 +449,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   for (srv in server_list) {
     ci  <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
-    r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
+    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
       data_name = expanded_x_name,
       x_vars    = x_vars_per_server[[srv]],
       y_var     = NULL,
@@ -467,7 +467,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   for (srv in server_list) {
     ci   <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
-    .dsAgg(datasources[ci], call("k2ReceiveShareDS",
+    .dsAgg(datasources[ci], call(name = "k2ReceiveShareDS",
       peer_p = as.integer(length(x_vars_per_server[[peer]])),
       session_id = session_id))
   }
@@ -507,7 +507,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     for (srv in server_list) {
       ci   <- which(server_names == srv)
       is_c <- (srv == os_name)
-      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+      .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
         beta_coord     = beta_coord,
         beta_nl        = beta_nl_v,
         intercept      = 0.0,
@@ -519,7 +519,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     # 2. neg_eta = (-1) * eta  (local scale, no MPC round)
     for (srv in server_list) {
       ci <- which(server_names == srv)
-      .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
         in_key     = "cox_nd_eta",
         scalar_fp  = fp_neg1_b64,
         output_key = "cox_nd_neg_eta",
@@ -538,7 +538,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     for (srv in server_list) {
       ci   <- which(server_names == srv)
       is_c <- (srv == os_name)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key           = "cox_nd_exp_neg_eta",
         b_key           = NULL,
         sign_a          = 1L,
@@ -561,7 +561,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     for (srv in server_list) {
       ci   <- which(server_names == srv)
       is_c <- (srv == os_name)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key           = y_share_key,
         b_key           = "cox_nd_p_share",
         sign_a          = 1L,
@@ -584,7 +584,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     for (srv in server_list) {
       ci   <- which(server_names == srv)
       is_c <- (srv == os_name)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key           = NULL,
         b_key           = "cox_nd_p_share",
         sign_a          = 0L,
@@ -616,7 +616,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       x_col_keys[j] <- sprintf("cox_nd_xcol_%d", j)
       for (srv in server_list) {
         ci <- which(server_names == srv)
-        .dsAgg(datasources[ci], call("k2BeaverExtractColumnDS",
+        .dsAgg(datasources[ci], call(name = "k2BeaverExtractColumnDS",
           source_key = "k2_x_full_fp",
           n          = n_pp,
           K          = p_total,
@@ -634,7 +634,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       sum_g <- list()
       for (srv in server_list) {
         ci <- which(server_names == srv)
-        rr <- .dsAgg(datasources[ci], call("k2BeaverSumShareDS",
+        rr <- .dsAgg(datasources[ci], call(name = "k2BeaverSumShareDS",
           source_key = gprod_key,
           session_id = session_id,
           frac_bits  = 50L,
@@ -685,7 +685,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
         sum_h <- list()
         for (srv in server_list) {
           ci <- which(server_names == srv)
-          rr <- .dsAgg(datasources[ci], call("k2BeaverSumShareDS",
+          rr <- .dsAgg(datasources[ci], call(name = "k2BeaverSumShareDS",
             source_key = h_key,
             session_id = session_id,
             frac_bits  = 50L,

@@ -38,7 +38,7 @@ ds.vertChisq <- function(data_name, var1, var2, server = NULL,
 
   if (is.null(server)) {
     col_results <- DSI::datashield.aggregate(datasources,
-      call("dsvertColNamesDS", data_name = data_name))
+      call(name = "dsvertColNamesDS", data_name = data_name))
     candidates <- character(0)
     for (srv in names(datasources)) {
       cols <- col_results[[srv]]$columns
@@ -66,7 +66,7 @@ ds.vertChisq <- function(data_name, var1, var2, server = NULL,
 
   ci <- which(names(datasources) == server)
   tab <- DSI::datashield.aggregate(datasources[ci],
-    call("dsvertContingencyDS", data_name = data_name,
+    call(name = "dsvertContingencyDS", data_name = data_name,
          var1 = var1, var2 = var2,
          suppress_small_cells = TRUE))[[1]]
 
@@ -173,7 +173,7 @@ ds.vertFisher <- function(data_name, var1, var2, server = NULL,
 
   if (is.null(server)) {
     col_results <- DSI::datashield.aggregate(datasources,
-      call("dsvertColNamesDS", data_name = data_name))
+      call(name = "dsvertColNamesDS", data_name = data_name))
     candidates <- character(0)
     for (srv in names(datasources)) {
       cols <- col_results[[srv]]$columns
@@ -192,7 +192,7 @@ ds.vertFisher <- function(data_name, var1, var2, server = NULL,
 
   ci <- which(names(datasources) == server)
   tab <- DSI::datashield.aggregate(datasources[ci],
-    call("dsvertContingencyDS", data_name = data_name,
+    call(name = "dsvertContingencyDS", data_name = data_name,
          var1 = var1, var2 = var2,
          suppress_small_cells = TRUE))[[1]]
 

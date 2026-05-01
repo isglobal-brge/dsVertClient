@@ -66,7 +66,7 @@ ds.vertNBMoMTheta <- function(formula, data = NULL,
   sums <- tryCatch({
     r <- DSI::datashield.aggregate(
       datasources[conn_idx],
-      call("dsvertNBMomentSumsDS", data_name = data, variable = y_var))
+      call(name = "dsvertNBMomentSumsDS", data_name = data, variable = y_var))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     r
   }, error = function(e) {

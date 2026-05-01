@@ -24,6 +24,9 @@
 #'   (default 1e-7).
 #' @param keep_intercept Logical. If TRUE, do NOT penalise the intercept.
 #' @param warm_start Numeric vector. Optional beta_0 (default = beta_OLS).
+#' @param accelerate Logical (default TRUE). Use Beck-Teboulle FISTA
+#'   acceleration on the proximal-gradient inner loop. FALSE falls
+#'   back to plain ISTA.
 #'
 #' @return An object of class \code{ds.vertLASSOProximal} with the proximal-MLE
 #'   coefficients, number of iterations, convergence flag, support, final

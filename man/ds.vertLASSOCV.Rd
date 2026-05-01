@@ -30,7 +30,7 @@ effective only when \code{criterion = "EBIC"}).}
 
 \item{se_threshold}{For \code{lambda.1se}, retain the sparsest lambda
 whose IC is within this fraction of \code{IC_min} (default 0.02,
-i.e. 2\\%).}
+i.e. 2 percent).}
 }
 \value{
 A \code{ds.vertLASSOCV} object: \code{lambda}, \code{ic},

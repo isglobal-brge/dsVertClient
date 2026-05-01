@@ -45,7 +45,7 @@
     ci <- which(server_names == s)
     is_coord <- (s == y_server)
     single(.dsAgg(datasources[ci],
-      call("dsvertCoxNewtonPrepDS", session_id = session_id,
+      call(name = "dsvertCoxNewtonPrepDS", session_id = session_id,
            is_coordinator = is_coord,
            p_coord = as.integer(p_coord),
            p_nl = as.integer(p_nl))))
@@ -60,7 +60,7 @@
   for (s in server_list) {
     ci <- which(server_names == s)
     r <- single(.dsAgg(datasources[ci],
-      call("dsvertCoxNewtonGradDS", session_id = session_id)))
+      call(name = "dsvertCoxNewtonGradDS", session_id = session_id)))
     grad_per_srv[[s]] <- r
   }
   grad_vec <- numeric(p_total)
@@ -87,12 +87,12 @@
     # Steps: load pair -> gen triple -> consume -> R1 -> R2 -> scalar.
     for (s in server_list) {
       ci <- which(server_names == s)
-      .dsAgg(datasources[ci], call("dsvertCoxNewtonLoadPairDS",
+      .dsAgg(datasources[ci], call(name = "dsvertCoxNewtonLoadPairDS",
         j = as.integer(j), k = as.integer(k), which = which_vec,
         session_id = session_id))
     }
     tri <- single(.dsAgg(datasources[dealer_ci],
-      call("k2BeaverVecmulGenTriplesDS",
+      call(name = "k2BeaverVecmulGenTriplesDS",
            dcf0_pk = transport_pks[[y_server]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n_obs),
@@ -105,12 +105,12 @@
     for (s in server_list) {
       ci <- which(server_names == s)
       .dsAgg(datasources[ci],
-        call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+        call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
     }
     r1 <- list()
     for (s in server_list) {
       ci <- which(server_names == s); peer <- setdiff(server_list, s)
-      r <- single(.dsAgg(datasources[ci], call("k2BeaverVecmulR1DS",
+      r <- single(.dsAgg(datasources[ci], call(name = "k2BeaverVecmulR1DS",
         peer_pk = transport_pks[[peer]],
         x_key = "cox_n_Beaver_A_fp",
         y_key = "cox_n_Beaver_B_fp",
@@ -125,7 +125,7 @@
               which(server_names == y_server))
     for (s in server_list) {
       ci <- which(server_names == s)
-      .dsAgg(datasources[ci], call("k2BeaverVecmulR2DS",
+      .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR2DS",
         is_party0 = (s == y_server),
         x_key = "cox_n_Beaver_A_fp",
         y_key = "cox_n_Beaver_B_fp",
@@ -138,7 +138,7 @@
     for (s in server_list) {
       ci <- which(server_names == s)
       r <- single(.dsAgg(datasources[ci],
-        call("dsvertCoxNewtonFisherScalarDS",
+        call(name = "dsvertCoxNewtonFisherScalarDS",
              weight_key = weight_key, session_id = session_id)))
       scalar_per_srv[[s]] <- r
     }

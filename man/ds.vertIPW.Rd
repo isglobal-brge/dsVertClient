@@ -30,6 +30,11 @@ follow-on; see V2_PROGRESS.md).}
 
 \item{outcome_family}{Family for the outcome model. Default "gaussian".}
 
+\item{verbose}{Logical. Print stage-by-stage progress (default TRUE).}
+
+\item{datasources}{DataSHIELD connections; if NULL, uses
+\code{DSI::datashield.connections_find()}.}
+
 \item{...}{Passed through to both underlying
 \code{ds.vertGLM} calls.}
 }

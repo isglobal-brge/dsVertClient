@@ -101,6 +101,30 @@
 #'   y_server = "s2", family = "gaussian")
 #' }
 #'
+#' @param data_name Internal alias for \code{data}; if both are supplied,
+#'   \code{data_name} takes precedence (back-compat path).
+#' @param y_var Internal alias for the LHS of \code{formula}; if both
+#'   are supplied, \code{y_var} takes precedence (back-compat path).
+#' @param offset Optional numeric vector or column name on the outcome
+#'   server added to the linear predictor (e.g. \code{log(person_years)}
+#'   for a Poisson rate model).
+#' @param weights Optional numeric vector or column name of per-row
+#'   weights (e.g. inverse-probability weights for IPW).
+#' @param ring Integer (63 or 127). Selects the MPC ring / fracBits
+#'   pipeline; Ring127 (fracBits=50) is STRICT-capable per
+#'   Catrina-Saxena. Default 63L for back-compat.
+#' @param keep_session Logical. If TRUE, leave the MPC session alive
+#'   on the servers and expose \code{session_id}, \code{transport_pks},
+#'   and \code{server_list} on the returned fit so follow-on helpers
+#'   (LMM cluster residuals, GEE sandwich meat, etc.) can reuse the
+#'   already-aligned shares. Caller must invoke \code{mpcCleanupDS}
+#'   eventually.
+#' @param no_intercept Logical. Suppress the auto-added intercept.
+#'   Useful when the design matrix already encodes one (e.g. cluster-
+#'   mean-centred GLS fit).
+#' @param std_mode Character. Standardisation mode: \code{"full"}
+#'   (default) standardises both X and y; alternative modes (e.g.
+#'   \code{"x_only"}) skip y standardisation for offset/weights paths.
 #' @importFrom DSI datashield.aggregate datashield.connections_find
 #' @export
 ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
@@ -202,7 +226,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     user_x_vars <- x_vars  # NULL = use all available, character = specific vars
     if (verbose) message("[Auto-detect] Querying server columns...")
     col_results <- DSI::datashield.aggregate(datasources,
-      call("dsvertColNamesDS", data_name = data_name))
+      call(name = "dsvertColNamesDS", data_name = data_name))
     server_names <- names(datasources)
 
     # Build column map: which server has which variable (exclude IDs)
@@ -320,7 +344,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   first_conn <- which(server_names == server_list[1])
   count_result <- DSI::datashield.aggregate(
     conns = datasources[first_conn],
-    expr = call("getObsCountDS", data_name)
+    expr = call(name = "getObsCountDS", data_name)
   )
   if (is.list(count_result) && length(count_result) == 1)
     count_result <- count_result[[1]]
@@ -376,11 +400,11 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
         .ci <- which(server_names == .srv)
         tryCatch(
           DSI::datashield.aggregate(conns = datasources[.ci],
-            expr = call("mpcCleanupDS", session_id = session_id)),
+            expr = call(name = "mpcCleanupDS", session_id = session_id)),
           error = function(e) NULL)
         tryCatch(
           DSI::datashield.aggregate(conns = datasources[.ci],
-            expr = call("mpcGcDS")),
+            expr = call(name = "mpcGcDS")),
           error = function(e) NULL)
       }
     }
@@ -438,7 +462,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       .ci <- which(server_names == .srv)
       cols <- tryCatch(
         DSI::datashield.aggregate(datasources[.ci],
-          call("dsvertColNamesDS", data_name = data_name))[[1]]$columns,
+          call(name = "dsvertColNamesDS", data_name = data_name))[[1]]$columns,
         error = function(e) NULL)
       if (!is.null(cols) && offset %in% cols) {
         offset_srv <- .srv
@@ -452,7 +476,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     if (verbose) message(sprintf("Registering offset '%s' on server %s",
                                   offset, offset_srv))
     .ci <- which(server_names == offset_srv)
-    .dsAgg(datasources[.ci], call("k2SetOffsetDS",
+    .dsAgg(datasources[.ci], call(name = "k2SetOffsetDS",
       data_name = data_name,
       offset_column = offset,
       session_id = session_id))
@@ -477,7 +501,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       .ci <- which(server_names == .srv)
       cols <- tryCatch(
         DSI::datashield.aggregate(datasources[.ci],
-          call("dsvertColNamesDS", data_name = data_name))[[1]]$columns,
+          call(name = "dsvertColNamesDS", data_name = data_name))[[1]]$columns,
         error = function(e) NULL)
       if (!is.null(cols) && weights %in% cols) {
         weights_srv <- .srv
@@ -496,7 +520,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     peer_srv <- if (weights_srv == y_server) non_label_servers[1] else y_server
     peer_ci <- which(server_names == peer_srv)
     weights_ci <- which(server_names == weights_srv)
-    setres <- .dsAgg(datasources[weights_ci], call("k2SetWeightsDS",
+    setres <- .dsAgg(datasources[weights_ci], call(name = "k2SetWeightsDS",
       data_name = data_name,
       weights_column = weights,
       peer_pk = transport_pks[[peer_srv]],
@@ -508,7 +532,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     # Relay encrypted blob to peer via adaptive chunked send
     .sendBlob(peer_blob, "k2_peer_weights", peer_ci)
     # Peer decrypts and stores
-    .dsAgg(datasources[peer_ci], call("k2ReceiveWeightsDS",
+    .dsAgg(datasources[peer_ci], call(name = "k2ReceiveWeightsDS",
       session_id = session_id))
     weights_active <- TRUE
   }

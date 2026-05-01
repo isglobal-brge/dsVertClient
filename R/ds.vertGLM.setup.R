@@ -36,11 +36,11 @@
     .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
       if (n_chunks == 1L) {
         .dsAgg(conns = datasources[conn_idx],
-          expr = call("mpcStoreBlobDS", key = key, chunk = chunk_str,
+          expr = call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
                       session_id = session_id))
       } else {
         .dsAgg(conns = datasources[conn_idx],
-          expr = call("mpcStoreBlobDS", key = key, chunk = chunk_str,
+          expr = call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
                       chunk_index = chunk_idx, n_chunks = n_chunks,
                       session_id = session_id))
       }
@@ -60,7 +60,7 @@
     for (server in server_list) {
       conn_idx <- which(server_names == server)
       tk_result <- .dsAgg(conns = datasources[conn_idx],
-        expr = call("glmRing63TransportInitDS", session_id = session_id))
+        expr = call(name = "glmRing63TransportInitDS", session_id = session_id))
       if (is.list(tk_result)) tk_result <- tk_result[[1]]
       transport_pks[[server]] <- tk_result$transport_pk
       if (!is.null(tk_result$identity_pk))
@@ -77,7 +77,7 @@
     for (server in server_list) {
       conn_idx <- which(server_names == server)
       .dsAgg(conns = datasources[conn_idx],
-        expr = call("mpcStoreTransportKeysDS",
+        expr = call(name = "mpcStoreTransportKeysDS",
                     transport_keys_b64 = pk_b64, identity_info_b64 = id_b64,
                     session_id = session_id))
     }
@@ -117,7 +117,7 @@
     srv_x <- x_vars[[server]]
     if (length(srv_x) == 0) srv_x <- NULL
     std_result <- .dsAgg(conns = datasources[conn_idx],
-      expr = call("glmStandardizeDS",
+      expr = call(name = "glmStandardizeDS",
                   data_name = data_name, output_name = std_data,
                   x_vars = srv_x, y_var = y_arg,
                   session_id = session_id,
