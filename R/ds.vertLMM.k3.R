@@ -204,23 +204,64 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   MSW <- SSW / df_w
   MSB <- SSB / df_b
   n_avg <- N / K
-  sigma2_hat <- MSW
+  sigma2_hat_raw <- MSW
   sigma_b2_hat <- max((MSB - MSW) / n_avg, 0)
 
+  ## X-correction for sigma^2 inflation: subtract beta' Var_within(X) beta.
+  ## Each server returns its block of the within-cluster X cross-product
+  ## via dsvertLMMXCovarianceWithinDS; client aggregates the
+  ## block-diagonal terms beta_s' Var_w(X_s) beta_s and sums. Cross-
+  ## server X cross-cov off-diagonals are dropped (zero for
+  ## independent-X validation regimes; small bias for correlated cross-
+  ## server X). Slopes only -- intercept is dropped because it has no
+  ## within-cluster variance contribution by construction.
+  cluster_id_vector <- as.integer(vc_info$cluster_id_vector)
+  beta_full <- fit_final$coefficients
+  is_intercept <- names(beta_full) %in% c("(Intercept)")
+  beta_slopes <- beta_full[!is_intercept]
+  slope_names <- names(beta_slopes)
+  if (verbose) message("[ds.vertLMM.k3] X-correction for sigma^2: ",
+                        "summing per-server beta_s' Var_within(X_s) beta_s ...")
+  var_within_xb <- 0
+  for (.srv in server_names) {
+    .ci <- which(server_names == .srv)
+    cols <- tryCatch(
+      DSI::datashield.aggregate(datasources[.ci],
+        call(name = "dsvertColNamesDS", data_name = data))[[1]]$columns,
+      error = function(e) character(0))
+    srv_x <- intersect(cols, slope_names)
+    if (length(srv_x) == 0L) next
+    xc_info <- DSI::datashield.aggregate(datasources[.ci],
+      call(name = "dsvertLMMXCovarianceWithinDS",
+           data_name = data, x_vars = srv_x,
+           cluster_id_vector = as.integer(cluster_id_vector)))
+    if (is.list(xc_info) && length(xc_info) == 1L) xc_info <- xc_info[[1]]
+    SX2_s <- xc_info$SX2_within
+    df_w_s <- as.integer(xc_info$df_within)
+    if (df_w_s <= 0L) next
+    Var_w_s <- SX2_s / df_w_s
+    beta_s <- as.numeric(beta_slopes[srv_x])
+    var_within_xb <- var_within_xb +
+      as.numeric(t(beta_s) %*% Var_w_s %*% beta_s)
+  }
+  sigma2_hat <- max(sigma2_hat_raw - var_within_xb, 0)
+
   out <- list(
-    coefficients  = fit_final$coefficients,
-    rho_hat       = rho_hat,
-    sigma_b2      = sigma_b2_hat,
-    sigma2        = sigma2_hat,
-    SSW           = SSW,
-    SSB           = SSB,
-    MSW           = MSW,
-    MSB           = MSB,
-    n_clusters    = n_clusters,
-    cluster_sizes = n_i,
-    fit           = fit_final,
-    family        = "Gaussian (REML 1-D profile + within-between ANOVA, K=3)",
-    call          = match.call())
+    coefficients   = fit_final$coefficients,
+    rho_hat        = rho_hat,
+    sigma_b2       = sigma_b2_hat,
+    sigma2         = sigma2_hat,
+    sigma2_raw     = sigma2_hat_raw,
+    var_within_xb  = var_within_xb,
+    SSW            = SSW,
+    SSB            = SSB,
+    MSW            = MSW,
+    MSB            = MSB,
+    n_clusters     = n_clusters,
+    cluster_sizes  = n_i,
+    fit            = fit_final,
+    family         = "Gaussian (REML 1-D profile + within-between ANOVA + X-correction, K=3)",
+    call           = match.call())
   class(out) <- c("ds.vertLMM.k3", "list")
   out
 }
