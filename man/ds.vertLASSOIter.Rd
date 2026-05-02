@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertLASSOIterative.R
 \name{ds.vertLASSOIter}
 \alias{ds.vertLASSOIter}
-\title{Iterative proximal-gradient LASSO over the MPC GLM gradient}
+\title{Federated LASSO path from a non-disclosive GLM fit}
 \usage{
 ds.vertLASSOIter(
   formula,
@@ -10,7 +10,7 @@ ds.vertLASSOIter(
   family = c("gaussian", "binomial", "poisson"),
   lambda = NULL,
   max_outer = 20L,
-  tol = 0.001,
+  tol = 1e-08,
   alpha = 0.5,
   inner_iter = 8L,
   verbose = TRUE,
@@ -26,16 +26,15 @@ ds.vertLASSOIter(
 
 \item{lambda}{L1 penalty scalar or vector (path).}
 
-\item{max_outer}{Outer proximal-gradient iterations (default 20).}
+\item{max_outer}{Retained for backward compatibility; used as a lower
+bound on the Gaussian coordinate-descent iteration budget.}
 
-\item{tol}{Outer tolerance on \eqn{\|\beta_t - \beta_{t-1}\|_\infty}.}
+\item{tol}{Tolerance passed to the LASSO path solver.}
 
-\item{alpha}{Initial step size (default 0.5); a simple halving line
-search is applied.}
+\item{alpha}{Retained for backward compatibility; no longer used.}
 
-\item{inner_iter}{Inner \code{ds.vertGLM} budget per outer step. A
-small value (5-10) is usually sufficient since we're only reading
-the gradient at the warm-start point.}
+\item{inner_iter}{Inner \code{ds.vertGLM} budget for the initial
+unpenalised fit.}
 
 \item{verbose}{Print progress.}
 
@@ -44,28 +43,28 @@ the gradient at the warm-start point.}
 \value{
 A \code{ds.vertLASSOIter} object with components
 \code{lambda}, \code{paths} (per-lambda coefficient vectors),
-\code{n_outer} (outer iterations used per lambda),
-\code{final_fit} (the last inner \code{ds.glm} fit).
+\code{n_outer} (solver iterations used per lambda),
+\code{final_fit} (the unpenalised \code{ds.glm} fit), and
+\code{method} describing the estimator target.
 }
 \description{
-Proper proximal-gradient L1-regularised GLM fitting that
-invokes the full MPC gradient pipeline at each outer step. At
-iteration \eqn{t}:
-\deqn{\nabla_t = \mathrm{ds.vertGLM}(\beta_t)}
-\deqn{\beta_{t+1} = \mathrm{soft}(\beta_t - \alpha \nabla_t, \alpha \lambda)}
-where \eqn{\alpha} is a backtracking step size chosen to guarantee
-descent on the smooth part of the objective, and the soft-threshold
-operator enforces the L1 sparsity pattern. The intercept is not
-penalised.
+Fit an L1-regularised path without revealing row-level
+gradients or residuals. For Gaussian models this is the proper LASSO
+objective solved from the normal equations already exposed by
+\code{\link{ds.vertGLM}}:
 
-Unlike \code{\link{ds.vertLASSO1Step}} (which post-hoc soft-thresholds
-the converged GLM solution via a local quadratic surrogate around
-\eqn{\hat\beta}), this routine re-evaluates the gradient at the
-current sparse iterate \eqn{\beta_t}, so the final estimate is the
-true proximal-gradient L1 solution rather than a one-step
-surrogate. Costs M + 1 MPC GLM gradient invocations for M iter.
+\deqn{\arg\min_\beta \tfrac{1}{2n}\|y-X\beta\|^2 +
+           \lambda\|\beta_{-0}\|_1.}
+
+The solver delegates to \code{\link{ds.vertLASSOProximal}}, which
+reconstructs \eqn{X^T X/n} from aggregate covariance/Hessian output
+and runs coordinate descent client-side. For binomial and Poisson GLMs,
+a true proximal solver would need repeated secure gradient evaluations
+at sparse warm starts, which the current GLM API does not expose. Those
+families therefore return the documented \code{\link{ds.vertLASSO1Step}}
+quadratic-surrogate path instead of pretending to be exact.
 
 Non-disclosure: the inner ds.vertGLM call already hides everything
-at the p-aggregate level; this outer loop only manipulates the
-returned \eqn{p}-vector of coefficients.
+at the p-aggregate level; this wrapper only manipulates returned
+aggregate coefficients and covariance/Hessian matrices.
 }

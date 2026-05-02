@@ -1,110 +1,111 @@
-#' @title Iterative proximal-gradient LASSO over the MPC GLM gradient
-#' @description Proper proximal-gradient L1-regularised GLM fitting that
-#'   invokes the full MPC gradient pipeline at each outer step. At
-#'   iteration \eqn{t}:
-#'     \deqn{\nabla_t = \mathrm{ds.vertGLM}(\beta_t)}
-#'     \deqn{\beta_{t+1} = \mathrm{soft}(\beta_t - \alpha \nabla_t, \alpha \lambda)}
-#'   where \eqn{\alpha} is a backtracking step size chosen to guarantee
-#'   descent on the smooth part of the objective, and the soft-threshold
-#'   operator enforces the L1 sparsity pattern. The intercept is not
-#'   penalised.
+#' @title Federated LASSO path from a non-disclosive GLM fit
+#' @description Fit an L1-regularised path without revealing row-level
+#'   gradients or residuals. For Gaussian models this is the proper LASSO
+#'   objective solved from the normal equations already exposed by
+#'   \code{\link{ds.vertGLM}}:
 #'
-#'   Unlike \code{\link{ds.vertLASSO1Step}} (which post-hoc soft-thresholds
-#'   the converged GLM solution via a local quadratic surrogate around
-#'   \eqn{\hat\beta}), this routine re-evaluates the gradient at the
-#'   current sparse iterate \eqn{\beta_t}, so the final estimate is the
-#'   true proximal-gradient L1 solution rather than a one-step
-#'   surrogate. Costs M + 1 MPC GLM gradient invocations for M iter.
+#'     \deqn{\arg\min_\beta \tfrac{1}{2n}\|y-X\beta\|^2 +
+#'            \lambda\|\beta_{-0}\|_1.}
+#'
+#'   The solver delegates to \code{\link{ds.vertLASSOProximal}}, which
+#'   reconstructs \eqn{X^T X/n} from aggregate covariance/Hessian output
+#'   and runs coordinate descent client-side. For binomial and Poisson GLMs,
+#'   a true proximal solver would need repeated secure gradient evaluations
+#'   at sparse warm starts, which the current GLM API does not expose. Those
+#'   families therefore return the documented \code{\link{ds.vertLASSO1Step}}
+#'   quadratic-surrogate path instead of pretending to be exact.
 #'
 #'   Non-disclosure: the inner ds.vertGLM call already hides everything
-#'   at the p-aggregate level; this outer loop only manipulates the
-#'   returned \eqn{p}-vector of coefficients.
+#'   at the p-aggregate level; this wrapper only manipulates returned
+#'   aggregate coefficients and covariance/Hessian matrices.
 #'
 #' @param formula Model formula.
 #' @param data Aligned data-frame name.
 #' @param family GLM family.
 #' @param lambda L1 penalty scalar or vector (path).
-#' @param max_outer Outer proximal-gradient iterations (default 20).
-#' @param tol Outer tolerance on \eqn{\|\beta_t - \beta_{t-1}\|_\infty}.
-#' @param alpha Initial step size (default 0.5); a simple halving line
-#'   search is applied.
-#' @param inner_iter Inner \code{ds.vertGLM} budget per outer step. A
-#'   small value (5-10) is usually sufficient since we're only reading
-#'   the gradient at the warm-start point.
+#' @param max_outer Retained for backward compatibility; used as a lower
+#'   bound on the Gaussian coordinate-descent iteration budget.
+#' @param tol Tolerance passed to the LASSO path solver.
+#' @param alpha Retained for backward compatibility; no longer used.
+#' @param inner_iter Inner \code{ds.vertGLM} budget for the initial
+#'   unpenalised fit.
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD connections.
 #' @return A \code{ds.vertLASSOIter} object with components
 #'   \code{lambda}, \code{paths} (per-lambda coefficient vectors),
-#'   \code{n_outer} (outer iterations used per lambda),
-#'   \code{final_fit} (the last inner \code{ds.glm} fit).
+#'   \code{n_outer} (solver iterations used per lambda),
+#'   \code{final_fit} (the unpenalised \code{ds.glm} fit), and
+#'   \code{method} describing the estimator target.
 #' @export
 ds.vertLASSOIter <- function(formula, data = NULL,
                               family = c("gaussian", "binomial", "poisson"),
                               lambda = NULL,
-                              max_outer = 20L, tol = 1e-3,
+                              max_outer = 20L, tol = 1e-8,
                               alpha = 0.5, inner_iter = 8L,
                               verbose = TRUE, datasources = NULL) {
   family <- match.arg(family)
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   if (is.null(lambda)) lambda <- c(1e-3, 1e-2, 0.1, 0.5, 1.0)
   lambda <- sort(as.numeric(lambda), decreasing = TRUE)
-  soft <- function(x, t) sign(x) * pmax(abs(x) - t, 0)
+  if (any(!is.finite(lambda)) || any(lambda < 0)) {
+    stop("lambda must contain non-negative finite values", call. = FALSE)
+  }
 
   # Prime the warm start with an unpenalised fit.
   if (verbose) message("[LASSOIter] priming with unpenalised ds.vertGLM")
   fit0 <- ds.vertGLM(formula, data = data, family = family,
-                     max_iter = max(inner_iter, 20L),
+                     max_iter = max(inner_iter, 20L), tol = tol,
+                     lambda = 0,
                      verbose = FALSE, datasources = datasources)
-  beta <- as.numeric(fit0$coefficients)
-  names(beta) <- names(fit0$coefficients)
-  int_idx <- which(names(beta) == "(Intercept)")
-  pen_idx <- setdiff(seq_along(beta), int_idx)
 
   paths <- list()
   n_outer_used <- integer(length(lambda))
-  last_fit <- fit0
+  objectives <- numeric(length(lambda))
+  solver_objects <- list()
+  method <- if (identical(family, "gaussian")) {
+    "gaussian_normal_equations"
+  } else {
+    "quadratic_surrogate"
+  }
 
   for (li in seq_along(lambda)) {
     lam <- lambda[li]
     if (verbose) message(sprintf("[LASSOIter] lambda = %.4g", lam))
-    prev <- beta
-    for (t in seq_len(max_outer)) {
-      # Inner call: warm-start ds.vertGLM at current `beta`. We ask it
-      # to run a SINGLE L-BFGS step to read the gradient at the warm
-      # point (max_iter = 1 gives exactly that). An alternative would
-      # be to expose a dedicated "gradient-only" server pass; that's
-      # a simple future optimisation.
-      fit_t <- ds.vertGLM(formula, data = data, family = family,
-                          max_iter = inner_iter, tol = 1e-8,
-                          verbose = FALSE, datasources = datasources)
-      last_fit <- fit_t
-      # Gradient at warm point: approximate by (beta_{t+1} - beta_t) /
-      # step of the inner L-BFGS -- the inner fit returns the next
-      # descent iterate, which we treat as the proximal gradient step.
-      next_beta <- as.numeric(fit_t$coefficients)
-      # Soft-threshold: beta_{t+1} = prox(alpha*lam)(next_beta)
-      new_beta <- next_beta
-      new_beta[pen_idx] <- soft(next_beta[pen_idx], alpha * lam)
-      delta <- max(abs(new_beta - beta))
-      beta <- new_beta
-      if (isTRUE(verbose))
-        message(sprintf("  iter %2d  delta=%.4g  nz=%d", t, delta,
-                         sum(abs(beta[pen_idx]) > 1e-8)))
-      if (delta < tol) break
+    if (identical(family, "gaussian")) {
+      obj <- ds.vertLASSOProximal(
+        fit0, lambda = lam,
+        max_iter = max(2000L, as.integer(max_outer)),
+        tol = tol)
+      paths[[sprintf("%.6g", lam)]] <- obj$coefficients
+      n_outer_used[li] <- obj$iterations
+      objectives[li] <- obj$objective
+      solver_objects[[sprintf("%.6g", lam)]] <- obj
+    } else {
+      if (li == 1L && verbose) {
+        message("[LASSOIter] non-Gaussian family: using one-step ",
+                "quadratic-surrogate LASSO target")
+      }
+      obj <- ds.vertLASSO1Step(
+        fit0, lambda = lam,
+        max_iter = max(500L, as.integer(max_outer)),
+        tol = tol)
+      paths[[sprintf("%.6g", lam)]] <- obj$paths[[1L]]
+      n_outer_used[li] <- NA_integer_
+      objectives[li] <- obj$objective[[1L]]
+      solver_objects[[sprintf("%.6g", lam)]] <- obj
     }
-    n_outer_used[li] <- t
-    names(beta) <- names(fit0$coefficients)
-    paths[[sprintf("%.6g", lam)]] <- beta
-    # Next lambda warm-starts from the current sparse beta (continuation
-    # path, halving lambda).
   }
 
   out <- list(
     lambda      = lambda,
     paths       = paths,
     n_outer     = n_outer_used,
-    final_fit   = last_fit,
+    objective   = objectives,
+    final_fit   = fit0,
     family      = family,
+    method      = method,
+    solver      = solver_objects,
+    alpha       = alpha,
     call        = match.call())
   class(out) <- c("ds.vertLASSOIter", "list")
   out
@@ -112,11 +113,12 @@ ds.vertLASSOIter <- function(formula, data = NULL,
 
 #' @export
 print.ds.vertLASSOIter <- function(x, ...) {
-  cat("dsVert iterative proximal-gradient LASSO\n")
+  cat("dsVert LASSO path\n")
   cat(sprintf("  Family : %s\n", x$family))
+  cat(sprintf("  Method : %s\n", x$method))
   cat(sprintf("  Lambda : %s\n",
               paste(sprintf("%.4g", x$lambda), collapse = " ")))
-  cat(sprintf("  Outer iters : %s\n",
+  cat(sprintf("  Solver iters : %s\n",
               paste(x$n_outer, collapse = " ")))
   m <- do.call(cbind, x$paths)
   cat("\nCoefficient path:\n")
