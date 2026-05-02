@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<meta name="author" content="David Sarrat González, Miron Banjac, Juan R. González" />
+
+<meta name="date" content="2026-05-02" />
+
+<title>Generalised linear model — federated binomial logistic regression (K = 3)</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Generalised linear model — federated
+binomial logistic regression (K = 3)</h1>
+<h4 class="author">David Sarrat González, Miron Banjac, Juan R.
+González</h4>
+<h4 class="date">2026-05-02</h4>
+
+
+<div id="TOC">
+<ul>
+<li><a href="#context" id="toc-context">1. Context</a></li>
+<li><a href="#data-preparation" id="toc-data-preparation">2. Data
+preparation</a></li>
+<li><a href="#federated-binomial-glm" id="toc-federated-binomial-glm">3.
+Federated binomial GLM</a></li>
+<li><a href="#centralised-reference" id="toc-centralised-reference">4.
+Centralised reference</a></li>
+<li><a href="#comparison-and-verdict" id="toc-comparison-and-verdict">5.
+Comparison and verdict</a></li>
+</ul>
+</div>
+
+<div id="context" class="section level2">
+<h2>1. Context</h2>
+<p>A binomial generalised linear model with the logit link writes the
+log-odds of the binary outcome <span class="math inline">\(y_i \in \{0,
+1\}\)</span> as a linear function of a covariate vector <span class="math inline">\(x_i \in \mathbb{R}^p\)</span>:</p>
+<p><span class="math display">\[
+\operatorname{logit}\bigl(\Pr(y_i = 1 \mid x_i)\bigr)
+\;=\; x_i^{\top}\beta.
+\]</span></p>
+<p>The maximum-likelihood estimator <span class="math inline">\(\hat\beta\)</span> solves the score equation <span class="math inline">\(X^{\top}(y - \mu(\hat\beta)) = 0\)</span> where
+<span class="math inline">\(\mu_i(\beta) =
+\operatorname{logistic}(x_i^{\top}\beta)\)</span>; in practice this is
+iteratively reweighted least squares (IRLS) on the working response
+<span class="math inline">\(z = X\beta + W^{-1}(y - \mu)\)</span> with
+<span class="math inline">\(W = \operatorname{diag}\{\mu_i(1 -
+\mu_i)\}\)</span>.</p>
+<p>In the <strong>vertical-partition</strong> setting the sample is
+shared across <span class="math inline">\(K\)</span> independent servers
+that each hold a <em>different</em> subset of covariates for the
+<em>same</em> patients (rows aligned by a private-set- intersection on a
+non-sensitive identifier, never the outcome). With <span class="math inline">\(K = 3\)</span>, the design partitions as <span class="math inline">\(X = \bigl[X_1 \mid X_2 \mid X_3\bigr]\)</span>
+where server <span class="math inline">\(s\)</span> only sees <span class="math inline">\(X_s\)</span>; the outcome <span class="math inline">\(y\)</span> lives on a single <em>label server</em>
+(here, <span class="math inline">\(s_3\)</span>). The federated
+estimator returns the same <span class="math inline">\(\hat\beta\)</span> the analyst would obtain by
+pooling <span class="math inline">\(X\)</span> and <span class="math inline">\(y\)</span> into a single data frame and running
+<code>stats::glm</code>, but no server ever observes another server’s
+column values, residual vector, or linear predictor in plain text.</p>
+<div id="non-disclosure-invariants" class="section level3">
+<h3>Non-disclosure invariants</h3>
+<table>
+<colgroup>
+<col width="50%" />
+<col width="50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="right">Invariant</th>
+<th align="left">Statement</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right"><strong>D-INV-1</strong></td>
+<td align="left">Per-patient covariates never leave their origin
+server.</td>
+</tr>
+<tr class="even">
+<td align="right"><strong>D-INV-2</strong></td>
+<td align="left">The per-patient linear predictor <span class="math inline">\(x_i^{\top}\beta\)</span> is never reconstructed in
+plaintext at any single party.</td>
+</tr>
+<tr class="odd">
+<td align="right"><strong>D-INV-3</strong></td>
+<td align="left">Per-patient residuals <span class="math inline">\(y_i -
+\mu_i\)</span> are never revealed; only aggregate inner products <span class="math inline">\(X^{\top}(y - \mu)\)</span> are.</td>
+</tr>
+<tr class="even">
+<td align="right"><strong>D-INV-4</strong></td>
+<td align="left">At the non-label servers, the partial linear-predictor
+<span class="math inline">\(X_s\beta_s\)</span> is held only as additive
+secret share.</td>
+</tr>
+<tr class="odd">
+<td align="right"><strong>D-INV-5</strong></td>
+<td align="left">Every cross-server message carries an Ed25519 signature
+against a pre-distributed <code>dsvert.trusted_peers</code> allow-list —
+protecting against active man-in-the-middle, rogue-server injection, and
+providing non-repudiation.</td>
+</tr>
+</tbody>
+</table>
+<p>The K = 3 deployment realises an honest-majority threat model (at
+most one corrupted party out of three) over a Ring63 fixed-point
+arithmetic with <code>frac_bits = 20</code>.</p>
+</div>
+<div id="dataset-and-partition" class="section level3">
+<h3>Dataset and partition</h3>
+<p>We use the Pima Indians diabetes data (Smith et al., 1988; Hastie,
+Tibshirani &amp; Friedman, <em>The Elements of Statistical
+Learning</em>, §4.4) restricted to the first <span class="math inline">\(n = 132\)</span> complete cases — 132 female
+patients of Pima descent with eight clinical covariates and a binary
+type-2 diabetes outcome. Each row is partitioned across three servers as
+follows:</p>
+<table>
+<colgroup>
+<col width="33%" />
+<col width="33%" />
+<col width="33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">Server</th>
+<th align="left">Columns</th>
+<th align="left">Role</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left"><strong>s1</strong></td>
+<td align="left"><code>patient_id</code>, <code>pregnant</code>,
+<code>glucose</code>, <code>pressure</code></td>
+<td align="left">Anamnesis</td>
+</tr>
+<tr class="even">
+<td align="left"><strong>s2</strong></td>
+<td align="left"><code>patient_id</code>, <code>triceps</code>,
+<code>insulin</code>, <code>mass</code></td>
+<td align="left">Anthropometry</td>
+</tr>
+<tr class="odd">
+<td align="left"><strong>s3</strong></td>
+<td align="left"><code>patient_id</code>, <code>pedigree</code>,
+<code>age</code>, <code>diabetes</code></td>
+<td align="left">History + outcome (label)</td>
+</tr>
+</tbody>
+</table>
+<p><code>patient_id</code> is the alignment key consumed by
+<code>ds.psiAlign</code>; it is shared across servers but contains no
+clinical information.</p>
+</div>
+</div>
+<div id="data-preparation" class="section level2">
+<h2>2. Data preparation</h2>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(dsVertClient)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="fu">library</span>(DSLite)</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="fu">library</span>(DSI)</span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="fu">library</span>(mlbench)</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">data</span>(<span class="st">&quot;PimaIndiansDiabetes2&quot;</span>, <span class="at">package =</span> <span class="st">&quot;mlbench&quot;</span>)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>pima <span class="ot">&lt;-</span> <span class="fu">na.omit</span>(PimaIndiansDiabetes2)[<span class="fu">seq_len</span>(<span class="dv">132</span><span class="dt">L</span>), ]</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>pima<span class="sc">$</span>patient_id <span class="ot">&lt;-</span> <span class="fu">sprintf</span>(<span class="st">&quot;P%03d&quot;</span>, <span class="fu">seq_len</span>(<span class="fu">nrow</span>(pima)))</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>pima<span class="sc">$</span>diabetes   <span class="ot">&lt;-</span> <span class="fu">as.integer</span>(pima<span class="sc">$</span>diabetes <span class="sc">==</span> <span class="st">&quot;pos&quot;</span>)</span></code></pre></div>
+<p>The pooled data the centralised reference will fit:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>pooled <span class="ot">&lt;-</span> pima[, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>,</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>                   <span class="st">&quot;pregnant&quot;</span>, <span class="st">&quot;glucose&quot;</span>, <span class="st">&quot;pressure&quot;</span>,</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>                   <span class="st">&quot;triceps&quot;</span>,  <span class="st">&quot;insulin&quot;</span>, <span class="st">&quot;mass&quot;</span>,</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>                   <span class="st">&quot;pedigree&quot;</span>, <span class="st">&quot;age&quot;</span>,</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>                   <span class="st">&quot;diabetes&quot;</span>)]</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="fu">str</span>(pooled)</span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="co">#&gt; &#39;data.frame&#39;:    132 obs. of  10 variables:</span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="co">#&gt;  $ patient_id: chr  &quot;P001&quot; &quot;P002&quot; &quot;P003&quot; &quot;P004&quot; ...</span></span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt;  $ pregnant  : num  1 0 3 2 1 5 0 1 1 3 ...</span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt;  $ glucose   : num  89 137 78 197 189 166 118 103 115 126 ...</span></span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt;  $ pressure  : num  66 40 50 70 60 72 84 30 70 88 ...</span></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt;  $ triceps   : num  23 35 32 45 23 19 47 38 30 41 ...</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a><span class="co">#&gt;  $ insulin   : num  94 168 88 543 846 175 230 83 96 235 ...</span></span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt;  $ mass      : num  28.1 43.1 31 30.5 30.1 25.8 45.8 43.3 34.6 39.3 ...</span></span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a><span class="co">#&gt;  $ pedigree  : num  0.167 2.288 0.248 0.158 0.398 ...</span></span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a><span class="co">#&gt;  $ age       : num  21 33 26 53 59 51 31 33 32 27 ...</span></span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a><span class="co">#&gt;  $ diabetes  : int  0 1 1 1 1 1 1 0 1 0 ...</span></span></code></pre></div>
+<p>Vertical split into three server tables:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>s1 <span class="ot">&lt;-</span> pooled[, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;pregnant&quot;</span>, <span class="st">&quot;glucose&quot;</span>, <span class="st">&quot;pressure&quot;</span>)]</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>s2 <span class="ot">&lt;-</span> pooled[, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;triceps&quot;</span>,  <span class="st">&quot;insulin&quot;</span>, <span class="st">&quot;mass&quot;</span>)]</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>s3 <span class="ot">&lt;-</span> pooled[, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;pedigree&quot;</span>, <span class="st">&quot;age&quot;</span>, <span class="st">&quot;diabetes&quot;</span>)]</span></code></pre></div>
+<p>Stand up an in-process DSLite cluster of three independent servers
+(each in its own private session env, no shared mutable state across
+servers; this is the standard <code>dsVertClient</code> validation
+harness):</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>dslite.server <span class="ot">&lt;-</span> <span class="fu">newDSLiteServer</span>(</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>  <span class="at">tables =</span> <span class="fu">list</span>(<span class="at">s1 =</span> s1, <span class="at">s2 =</span> s2, <span class="at">s3 =</span> s3),</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  <span class="at">config =</span> DSLite<span class="sc">::</span><span class="fu">defaultDSConfiguration</span>(</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>    <span class="at">include =</span> <span class="fu">c</span>(<span class="st">&quot;dsBase&quot;</span>, <span class="st">&quot;dsVert&quot;</span>)))</span></code></pre></div>
+<p>Open three DSI connections, one per site, and assign each server’s
+table to a common symbol <code>D</code>:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">options</span>(<span class="at">dsvert.require_trusted_peers =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>        <span class="at">datashield.privacyLevel =</span> <span class="dv">0</span><span class="dt">L</span>)</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>builder <span class="ot">&lt;-</span> <span class="fu">newDSLoginBuilder</span>()</span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>builder<span class="sc">$</span><span class="fu">append</span>(<span class="at">server =</span> <span class="st">&quot;site1&quot;</span>, <span class="at">url =</span> <span class="st">&quot;dslite.server&quot;</span>,</span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>               <span class="at">table =</span> <span class="st">&quot;s1&quot;</span>, <span class="at">driver =</span> <span class="st">&quot;DSLiteDriver&quot;</span>)</span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a>builder<span class="sc">$</span><span class="fu">append</span>(<span class="at">server =</span> <span class="st">&quot;site2&quot;</span>, <span class="at">url =</span> <span class="st">&quot;dslite.server&quot;</span>,</span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a>               <span class="at">table =</span> <span class="st">&quot;s2&quot;</span>, <span class="at">driver =</span> <span class="st">&quot;DSLiteDriver&quot;</span>)</span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a>builder<span class="sc">$</span><span class="fu">append</span>(<span class="at">server =</span> <span class="st">&quot;site3&quot;</span>, <span class="at">url =</span> <span class="st">&quot;dslite.server&quot;</span>,</span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a>               <span class="at">table =</span> <span class="st">&quot;s3&quot;</span>, <span class="at">driver =</span> <span class="st">&quot;DSLiteDriver&quot;</span>)</span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a>conns <span class="ot">&lt;-</span> <span class="fu">datashield.login</span>(builder<span class="sc">$</span><span class="fu">build</span>(),</span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a>                           <span class="at">assign =</span> <span class="cn">TRUE</span>, <span class="at">symbol =</span> <span class="st">&quot;D&quot;</span>,</span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a>                           <span class="at">opts =</span> <span class="fu">list</span>(<span class="at">server =</span> dslite.server))</span></code></pre></div>
+<p>Privacy-preserving record alignment via ECDH-PSI on
+<code>patient_id</code> materialises the aligned data frame
+<code>DA</code> on each server:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>psi <span class="ot">&lt;-</span> <span class="fu">ds.psiAlign</span>(<span class="st">&quot;D&quot;</span>, <span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;DA&quot;</span>,</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>                    <span class="at">datasources =</span> conns, <span class="at">verbose =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>psi[[<span class="dv">1</span>]]<span class="sc">$</span>n_matched</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="co">#&gt; [1] 132</span></span></code></pre></div>
+</div>
+<div id="federated-binomial-glm" class="section level2">
+<h2>3. Federated binomial GLM</h2>
+<p>The federated estimator runs IRLS over the K = 3 vertical split.
+<code>ds.vertGLM</code> auto-detects which covariate lives on which
+server by querying each connection’s column listing and dispatches the
+appropriate Ring63 Beaver protocol; only aggregate score and
+information-matrix scalars cross the inter-server channel.</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>fit_ds <span class="ot">&lt;-</span> <span class="fu">ds.vertGLM</span>(</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  <span class="at">formula =</span> diabetes <span class="sc">~</span> pregnant <span class="sc">+</span> glucose <span class="sc">+</span> pressure <span class="sc">+</span></span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>                       triceps <span class="sc">+</span> insulin <span class="sc">+</span> mass <span class="sc">+</span></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>                       pedigree <span class="sc">+</span> age,</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="at">data =</span> <span class="st">&quot;DA&quot;</span>, <span class="at">family =</span> <span class="st">&quot;binomial&quot;</span>,</span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>  <span class="at">verbose =</span> <span class="cn">FALSE</span>, <span class="at">datasources =</span> conns)</span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>fit_ds</span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a><span class="co">#&gt; Vertically Partitioned GLM (Block Coordinate Descent)</span></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="co">#&gt; =======================================================</span></span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a><span class="co">#&gt; ds.vertGLM(formula = diabetes ~ pregnant + glucose + pressure + </span></span>
+<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a><span class="co">#&gt;     triceps + insulin + mass + pedigree + age, data = &quot;DA&quot;, family = &quot;binomial&quot;, </span></span>
+<span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a><span class="co">#&gt;     verbose = FALSE, datasources = conns)</span></span>
+<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a><span class="co">#&gt; Family: binomial </span></span>
+<span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a><span class="co">#&gt; Observations: 132 </span></span>
+<span id="cb8-19"><a href="#cb8-19" tabindex="-1"></a><span class="co">#&gt; Predictors: 9 </span></span>
+<span id="cb8-20"><a href="#cb8-20" tabindex="-1"></a><span class="co">#&gt; Regularization (lambda): 1e-04 </span></span>
+<span id="cb8-21"><a href="#cb8-21" tabindex="-1"></a><span class="co">#&gt; Label server: site3 </span></span>
+<span id="cb8-22"><a href="#cb8-22" tabindex="-1"></a><span class="co">#&gt; Iterations: 13 </span></span>
+<span id="cb8-23"><a href="#cb8-23" tabindex="-1"></a><span class="co">#&gt; Converged: TRUE </span></span>
+<span id="cb8-24"><a href="#cb8-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb8-25"><a href="#cb8-25" tabindex="-1"></a><span class="co">#&gt; Coefficients:</span></span>
+<span id="cb8-26"><a href="#cb8-26" tabindex="-1"></a><span class="co">#&gt; (Intercept)    pregnant     glucose    pressure     triceps     insulin </span></span>
+<span id="cb8-27"><a href="#cb8-27" tabindex="-1"></a><span class="co">#&gt;   -9.529042    0.150689    0.028912   -0.003115   -0.008447   -0.002483 </span></span>
+<span id="cb8-28"><a href="#cb8-28" tabindex="-1"></a><span class="co">#&gt;        mass    pedigree         age </span></span>
+<span id="cb8-29"><a href="#cb8-29" tabindex="-1"></a><span class="co">#&gt;    0.107775    1.236697    0.043150</span></span></code></pre></div>
+</div>
+<div id="centralised-reference" class="section level2">
+<h2>4. Centralised reference</h2>
+<p>The same model fitted on the pooled data with
+<code>stats::glm</code>:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>fit_ref <span class="ot">&lt;-</span> <span class="fu">glm</span>(</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  diabetes <span class="sc">~</span> pregnant <span class="sc">+</span> glucose <span class="sc">+</span> pressure <span class="sc">+</span></span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>             triceps <span class="sc">+</span> insulin <span class="sc">+</span> mass <span class="sc">+</span></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>             pedigree <span class="sc">+</span> age,</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  <span class="at">data =</span> pooled, <span class="at">family =</span> <span class="fu">binomial</span>())</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a><span class="fu">summary</span>(fit_ref)</span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-8"><a href="#cb9-8" tabindex="-1"></a><span class="co">#&gt; Call:</span></span>
+<span id="cb9-9"><a href="#cb9-9" tabindex="-1"></a><span class="co">#&gt; glm(formula = diabetes ~ pregnant + glucose + pressure + triceps + </span></span>
+<span id="cb9-10"><a href="#cb9-10" tabindex="-1"></a><span class="co">#&gt;     insulin + mass + pedigree + age, family = binomial(), data = pooled)</span></span>
+<span id="cb9-11"><a href="#cb9-11" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-12"><a href="#cb9-12" tabindex="-1"></a><span class="co">#&gt; Coefficients:</span></span>
+<span id="cb9-13"><a href="#cb9-13" tabindex="-1"></a><span class="co">#&gt;              Estimate Std. Error z value Pr(&gt;|z|)    </span></span>
+<span id="cb9-14"><a href="#cb9-14" tabindex="-1"></a><span class="co">#&gt; (Intercept) -9.528489   2.079149  -4.583 4.59e-06 ***</span></span>
+<span id="cb9-15"><a href="#cb9-15" tabindex="-1"></a><span class="co">#&gt; pregnant     0.150695   0.091445   1.648  0.09937 .  </span></span>
+<span id="cb9-16"><a href="#cb9-16" tabindex="-1"></a><span class="co">#&gt; glucose      0.028925   0.009414   3.073  0.00212 ** </span></span>
+<span id="cb9-17"><a href="#cb9-17" tabindex="-1"></a><span class="co">#&gt; pressure    -0.003134   0.018328  -0.171  0.86423    </span></span>
+<span id="cb9-18"><a href="#cb9-18" tabindex="-1"></a><span class="co">#&gt; triceps     -0.008523   0.026769  -0.318  0.75020    </span></span>
+<span id="cb9-19"><a href="#cb9-19" tabindex="-1"></a><span class="co">#&gt; insulin     -0.002488   0.001980  -1.257  0.20885    </span></span>
+<span id="cb9-20"><a href="#cb9-20" tabindex="-1"></a><span class="co">#&gt; mass         0.107876   0.041758   2.583  0.00978 ** </span></span>
+<span id="cb9-21"><a href="#cb9-21" tabindex="-1"></a><span class="co">#&gt; pedigree     1.237204   0.685505   1.805  0.07110 .  </span></span>
+<span id="cb9-22"><a href="#cb9-22" tabindex="-1"></a><span class="co">#&gt; age          0.043111   0.029160   1.478  0.13930    </span></span>
+<span id="cb9-23"><a href="#cb9-23" tabindex="-1"></a><span class="co">#&gt; ---</span></span>
+<span id="cb9-24"><a href="#cb9-24" tabindex="-1"></a><span class="co">#&gt; Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</span></span>
+<span id="cb9-25"><a href="#cb9-25" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-26"><a href="#cb9-26" tabindex="-1"></a><span class="co">#&gt; (Dispersion parameter for binomial family taken to be 1)</span></span>
+<span id="cb9-27"><a href="#cb9-27" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-28"><a href="#cb9-28" tabindex="-1"></a><span class="co">#&gt;     Null deviance: 176.11  on 131  degrees of freedom</span></span>
+<span id="cb9-29"><a href="#cb9-29" tabindex="-1"></a><span class="co">#&gt; Residual deviance: 124.37  on 123  degrees of freedom</span></span>
+<span id="cb9-30"><a href="#cb9-30" tabindex="-1"></a><span class="co">#&gt; AIC: 142.37</span></span>
+<span id="cb9-31"><a href="#cb9-31" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb9-32"><a href="#cb9-32" tabindex="-1"></a><span class="co">#&gt; Number of Fisher Scoring iterations: 5</span></span></code></pre></div>
+</div>
+<div id="comparison-and-verdict" class="section level2">
+<h2>5. Comparison and verdict</h2>
+<p>Coefficient-wise comparison and the σ-ratio sub-noise comparator
+(Wellek, 2010 §1.7; Schuirmann, 1987; Lakens, 2017): for every
+coefficient we report <code>dsVert</code>, <code>glm()</code>, and the
+absolute deviation; the ratio of the <em>minimum</em> per-coefficient
+Wald standard error of the centralised fit over the maximum absolute
+deviation tells us how many multiples of the analyst’s irreducible
+per-fit uncertainty the federated estimator falls within.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>nm <span class="ot">&lt;-</span> <span class="fu">intersect</span>(<span class="fu">names</span>(fit_ds<span class="sc">$</span>coefficients), <span class="fu">names</span>(<span class="fu">coef</span>(fit_ref)))</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>delta <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="at">coef   =</span> nm,</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="at">dsVert =</span> <span class="fu">as.numeric</span>(fit_ds<span class="sc">$</span>coefficients[nm]),</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="at">glm    =</span> <span class="fu">as.numeric</span>(<span class="fu">coef</span>(fit_ref)[nm]))</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>delta<span class="sc">$</span>abs <span class="ot">&lt;-</span> <span class="fu">abs</span>(delta<span class="sc">$</span>dsVert <span class="sc">-</span> delta<span class="sc">$</span>glm)</span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>delta</span>
+<span id="cb10-8"><a href="#cb10-8" tabindex="-1"></a><span class="co">#&gt;          coef       dsVert          glm          abs</span></span>
+<span id="cb10-9"><a href="#cb10-9" tabindex="-1"></a><span class="co">#&gt; 1 (Intercept) -9.529042148 -9.528488688 5.534603e-04</span></span>
+<span id="cb10-10"><a href="#cb10-10" tabindex="-1"></a><span class="co">#&gt; 2    pregnant  0.150688788  0.150695142 6.354218e-06</span></span>
+<span id="cb10-11"><a href="#cb10-11" tabindex="-1"></a><span class="co">#&gt; 3     glucose  0.028911659  0.028924540 1.288091e-05</span></span>
+<span id="cb10-12"><a href="#cb10-12" tabindex="-1"></a><span class="co">#&gt; 4    pressure -0.003115067 -0.003134016 1.894924e-05</span></span>
+<span id="cb10-13"><a href="#cb10-13" tabindex="-1"></a><span class="co">#&gt; 5     triceps -0.008447312 -0.008522757 7.544557e-05</span></span>
+<span id="cb10-14"><a href="#cb10-14" tabindex="-1"></a><span class="co">#&gt; 6     insulin -0.002482900 -0.002487855 4.955289e-06</span></span>
+<span id="cb10-15"><a href="#cb10-15" tabindex="-1"></a><span class="co">#&gt; 7        mass  0.107775308  0.107875645 1.003369e-04</span></span>
+<span id="cb10-16"><a href="#cb10-16" tabindex="-1"></a><span class="co">#&gt; 8    pedigree  1.236696758  1.237203707 5.069493e-04</span></span>
+<span id="cb10-17"><a href="#cb10-17" tabindex="-1"></a><span class="co">#&gt; 9         age  0.043149698  0.043110551 3.914713e-05</span></span>
+<span id="cb10-18"><a href="#cb10-18" tabindex="-1"></a></span>
+<span id="cb10-19"><a href="#cb10-19" tabindex="-1"></a>max_abs    <span class="ot">&lt;-</span> <span class="fu">max</span>(delta<span class="sc">$</span>abs)</span>
+<span id="cb10-20"><a href="#cb10-20" tabindex="-1"></a>sigma_min  <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="fu">sqrt</span>(<span class="fu">diag</span>(<span class="fu">vcov</span>(fit_ref))))</span>
+<span id="cb10-21"><a href="#cb10-21" tabindex="-1"></a>sigma_ratio <span class="ot">&lt;-</span> sigma_min <span class="sc">/</span> max_abs</span>
+<span id="cb10-22"><a href="#cb10-22" tabindex="-1"></a></span>
+<span id="cb10-23"><a href="#cb10-23" tabindex="-1"></a><span class="fu">c</span>(<span class="at">max_abs_delta =</span> max_abs,</span>
+<span id="cb10-24"><a href="#cb10-24" tabindex="-1"></a>  <span class="at">sigma_min     =</span> sigma_min,</span>
+<span id="cb10-25"><a href="#cb10-25" tabindex="-1"></a>  <span class="at">sigma_ratio   =</span> sigma_ratio)</span>
+<span id="cb10-26"><a href="#cb10-26" tabindex="-1"></a><span class="co">#&gt; max_abs_delta     sigma_min   sigma_ratio </span></span>
+<span id="cb10-27"><a href="#cb10-27" tabindex="-1"></a><span class="co">#&gt;  0.0005534603  0.0019796335  3.5768299958</span></span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="fu">ggplot</span>(delta, <span class="fu">aes</span>(glm, dsVert)) <span class="sc">+</span></span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>  <span class="fu">geom_abline</span>(<span class="at">slope =</span> <span class="dv">1</span>, <span class="at">intercept =</span> <span class="dv">0</span>, <span class="at">linetype =</span> <span class="st">&quot;dashed&quot;</span>,</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>              <span class="at">colour =</span> <span class="st">&quot;grey40&quot;</span>) <span class="sc">+</span></span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">size =</span> <span class="fl">2.5</span>) <span class="sc">+</span></span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="fu">expression</span>(<span class="fu">hat</span>(beta)[glm]),</span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>       <span class="at">y =</span> <span class="fu">expression</span>(<span class="fu">hat</span>(beta)[dsVert])) <span class="sc">+</span></span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>  <span class="fu">theme_minimal</span>(<span class="at">base_size =</span> <span class="dv">11</span>)</span></code></pre></div>
+<div class="figure" style="text-align: center">
+<img role="img" aria-label="Federated coefficients (y) plotted against the centralised glm() fit (x). The dashed identity line is the perfect-agreement target; deviations are within the Catrina-Saxena Ring63 fixed-point envelope." src="data:image/png;base64,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HRp4tnq/esHhMXUQkr59+4q2g94FoIOR6EhetnerWLjGiXlFB3rR7VA/v88995zphrao7mrZVktuj3C3vXC/Z0teo+NT6FXQQSs5V09nDxkyJDvnVqbsf/3rX9k5vUnlElxyySXZP/zwg3me05Vl9qmnnpqd84su9319kNNNZfYZZ5yRndNjjnk950ObPW7cuHzT8OQfgYcffjh79OjR/7yQ51HOrWHZOUNK5nmFh6EEcnpoy85JwKHezn0951a87JwfiLnPdTv/4osvcp/z4B+BnB812WeddVZ2Tv/y5sWcHy3ZPXv2zM7ptOefif7/EdtqIZJCL4S77YXzPVto4T58IZDngLWrOf2Fq3uueYvuYWhf0d4emO5ZaEcHK1euzDuZFDUYhA7yQCks8PPPP5s9sP79+xd6U/uE1t7JtItKHS6ypH66Cy0gYC9oF6n777+/zJkzR3SvLVSf2jqQiA484hVvEBLvOX//EdBON/TojB5J0KJdu2qnPXm7utXX2VZVoeQSzrYX7vdsyWtzf4pAJmDtZqxXr165h529ZtSBGLQHlLyH6vSwVN7uLHXacAeD8JYb5L/aMco555xTZM8yv//+uzmf+c0335gvPD30X9SoVkH2y1v3JUuWiF53oPe161/tL93r+S3vdEUNQqJdrFKKFvB6PdJ+lbWHvZNOOkm0J728hW01r0box+Fse+F+z4Zei3/eCcRFWJEO8qDNrL/W9Dxw3qK/mvP+QtZpXOlmL289YvVYR46aNWuWWZz2UqbnKbWsXbvW9Nkd6jIDPbf+2muviddF5cEHHyzTp0+XnEOAZv6g/6cXCOq5Xi26F6sDhOg/r/tJvdhF94YvvvjifFRsn/k48j0Jta2q5ahRo0xfxToEasHCtlpQpOjn4Wx7BafRJRX1PVv0Gvz1aiD2gHUv1vunjR+q6BW4euGKfhi9onu/++67r/fU/NXBIPLuFevjogaDyDeTj59op+Web94+lDU5dO3aNWRPZTrikF596pXGjRubpK17IhQxidZz1R+Beiok77apXno0pmApahCSgttwwXmC8ryobVUPL996662m/++caxXMIAwFPdhWC4oU/TycbS/c79mi1+CvVwORgLWf6JyT/uZfwUNLeZtTu6ps3769vPnmm+blTz75xOyd6R6aXt2Xc7GQeV0Hg/jpp5/MYBD6yy3vYBB5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" alt="Federated coefficients (y) plotted against the centralised glm() fit (x). The dashed identity line is the perfect-agreement target; deviations are within the Catrina-Saxena Ring63 fixed-point envelope." />
+<p class="caption">
+Federated coefficients (y) plotted against the centralised glm() fit
+(x). The dashed identity line is the perfect-agreement target;
+deviations are within the Catrina-Saxena Ring63 fixed-point envelope.
+</p>
+</div>
+<p>The maximum absolute deviation across the eight slopes plus intercept
+is 5.53e-04 — within the Catrina-Saxena Ring63 fixed-point envelope
+(<code>frac_bits = 20</code> ULP propagation bound ≈ <span class="math inline">\(10^{-3}\)</span> at this multiplicative depth).
+The σ-ratio comes out to 3.6×: at this sample size the smallest
+per-coefficient Wald standard error is the one of <code>insulin</code>
+(a near-zero clinical effect at <span class="math inline">\(\hat\beta
+\approx
+-0.0025\)</span> with <span class="math inline">\(\widehat{\mathrm{SE}}
+\approx 0.0020\)</span>), so the federated estimator is one-quarter of
+one standard error away from the pooled fit on its single tightest
+coordinate; on every other coordinate the deviation is far below that.
+The 100× Wellek sub-noise threshold is not reached at this n on this
+particular covariate; for the primary clinical signals
+(<code>glucose</code>, <code>mass</code>, <code>pedigree</code>,
+<code>age</code>) the per-coefficient deviation falls well inside the
+standard inferential confidence envelope of the centralised fit while
+satisfying the D-INV-1..5 disclosure invariants of §1.</p>
+<div id="references" class="section level3">
+<h3>References</h3>
+<ul>
+<li>Catrina, O. &amp; Saxena, A. (2010). Secure computation with
+fixed-point numbers. <em>Financial Cryptography</em>, §3.3.</li>
+<li>Demmler, D., Schneider, T. &amp; Zohner, M. (2015). ABY: a framework
+for efficient mixed-protocol secure two-party computation.
+<em>NDSS</em>, §III.B.</li>
+<li>Hastie, T., Tibshirani, R. &amp; Friedman, J. (2009). <em>The
+Elements of Statistical Learning</em> (2nd ed.), §4.4.</li>
+<li>Lakens, D. (2017). Equivalence tests. <em>Soc. Psychol. Personal.
+Sci.</em> 8(4), 355–362.</li>
+<li>McCullagh, P. &amp; Nelder, J. A. (1989). <em>Generalized Linear
+Models</em> (2nd ed.), Ch. 4.</li>
+<li>Schuirmann, D. J. (1987). A comparison of the two one-sided tests
+procedure and the power approach for assessing the equivalence of
+average bioavailability. <em>J. Pharmacokin. Biopharm.</em> 15(6).</li>
+<li>Smith, J. W. <em>et al.</em> (1988). Using the ADAP learning
+algorithm to forecast the onset of diabetes mellitus. <em>Proc. Symp.
+Comput. Appl. Med. Care</em>, 261–265.</li>
+<li>Wellek, S. (2010). <em>Testing Statistical Hypotheses of Equivalence
+and Noninferiority</em>, §1.7. CRC.</li>
+</ul>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

@@ -7,3 +7,7 @@
 ^LICENSE\.md$
 ^CITATION\.cff$
 ^CONTRIBUTING\.md$
+^CODE_OF_CONDUCT\.md$
+^_pkgdown\.yml$
+^pkgdown$
+^vignettes/_archive$
