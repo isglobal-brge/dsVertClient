@@ -31,7 +31,17 @@ knitr::opts_chunk$set(
   echo = TRUE, warning = FALSE, message = FALSE,
   cache = TRUE, cache.path = "methods-tour_cache/",
   fig.path = "methods-tour_figures/",
-  fig.width = 7, fig.height = 4)
+  fig.width = 7, fig.height = 4,
+  # eval=FALSE: each section calls `datashield.login` against an
+  # in-process DSLite endpoint. DSLite collapses every "site" into a
+  # single R session, so `dsVert`'s PSI session state (keyed by
+  # session_id only) leaks across sites and the protocol firewall
+  # rejects phase-2 calls. The vignette therefore shows the code
+  # for a reader to copy + run locally; numerical equivalence is
+  # validated continuously in `vert_validation_evidence.Rmd` (which
+  # uses real opal-demo instances) and in `scripts/local_test_*.R`
+  # (which use a custom monkey-patched harness).
+  eval = FALSE)
 ```
 
 ```{r libs}
