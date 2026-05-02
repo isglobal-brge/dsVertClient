@@ -110,15 +110,28 @@ pooled <- pima[, c("patient_id",
                    "triceps",  "insulin", "mass",
                    "pedigree", "age",
                    "diabetes")]
-str(pooled)
+head(pooled)
 ```
 
-Vertical split into three server tables:
+Vertical split into three server tables — each block below is the
+first six rows of one server's local view:
 
 ```{r split}
 s1 <- pooled[, c("patient_id", "pregnant", "glucose", "pressure")]
 s2 <- pooled[, c("patient_id", "triceps",  "insulin", "mass")]
 s3 <- pooled[, c("patient_id", "pedigree", "age", "diabetes")]
+```
+
+```{r head-s1}
+head(s1)
+```
+
+```{r head-s2}
+head(s2)
+```
+
+```{r head-s3}
+head(s3)
 ```
 
 Stand up an in-process DSLite cluster of three independent servers

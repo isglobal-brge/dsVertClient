@@ -30,9 +30,16 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
-<li class="nav-item"><a class="nav-link" href="../../articles/vert_validation_evidence.html">Validation evidence</a></li>
+<li class="active nav-item dropdown">
+  <button class="nav-link dropdown-toggle" type="button" id="dropdown-method-validation" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Method validation</button>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-method-validation">
+<li><a class="dropdown-item" href="../../articles/index.html">Overview</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Generalised linear models</h6></li>
+    <li><a class="dropdown-item" href="../../articles/methods/glm.html">GLM (binomial, K=3)</a></li>
+  </ul>
+</li>
 <li class="nav-item"><a class="nav-link" href="../../reference/index.html">Reference</a></li>
-<li class="active nav-item"><a class="nav-link" href="../../articles/index.html">Articles</a></li>
       </ul>
 <ul class="navbar-nav">
 <li class="nav-item"><form class="form-inline" role="search">
@@ -239,35 +246,66 @@ clinical information.</p>
 <span>                   <span class="st">"triceps"</span>,  <span class="st">"insulin"</span>, <span class="st">"mass"</span>,</span>
 <span>                   <span class="st">"pedigree"</span>, <span class="st">"age"</span>,</span>
 <span>                   <span class="st">"diabetes"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="va">pooled</span><span class="op">)</span></span>
-<span><span class="co">#&gt; 'data.frame':    132 obs. of  10 variables:</span></span>
-<span><span class="co">#&gt;  $ patient_id: chr  "P001" "P002" "P003" "P004" ...</span></span>
-<span><span class="co">#&gt;  $ pregnant  : num  1 0 3 2 1 5 0 1 1 3 ...</span></span>
-<span><span class="co">#&gt;  $ glucose   : num  89 137 78 197 189 166 118 103 115 126 ...</span></span>
-<span><span class="co">#&gt;  $ pressure  : num  66 40 50 70 60 72 84 30 70 88 ...</span></span>
-<span><span class="co">#&gt;  $ triceps   : num  23 35 32 45 23 19 47 38 30 41 ...</span></span>
-<span><span class="co">#&gt;  $ insulin   : num  94 168 88 543 846 175 230 83 96 235 ...</span></span>
-<span><span class="co">#&gt;  $ mass      : num  28.1 43.1 31 30.5 30.1 25.8 45.8 43.3 34.6 39.3 ...</span></span>
-<span><span class="co">#&gt;  $ pedigree  : num  0.167 2.288 0.248 0.158 0.398 ...</span></span>
-<span><span class="co">#&gt;  $ age       : num  21 33 26 53 59 51 31 33 32 27 ...</span></span>
-<span><span class="co">#&gt;  $ diabetes  : int  0 1 1 1 1 1 1 0 1 0 ...</span></span></code></pre></div>
-<p>Vertical split into three server tables:</p>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">pooled</span><span class="op">)</span></span>
+<span><span class="co">#&gt;    patient_id pregnant glucose pressure triceps insulin mass pedigree age</span></span>
+<span><span class="co">#&gt; 4        P001        1      89       66      23      94 28.1    0.167  21</span></span>
+<span><span class="co">#&gt; 5        P002        0     137       40      35     168 43.1    2.288  33</span></span>
+<span><span class="co">#&gt; 7        P003        3      78       50      32      88 31.0    0.248  26</span></span>
+<span><span class="co">#&gt; 9        P004        2     197       70      45     543 30.5    0.158  53</span></span>
+<span><span class="co">#&gt; 14       P005        1     189       60      23     846 30.1    0.398  59</span></span>
+<span><span class="co">#&gt; 15       P006        5     166       72      19     175 25.8    0.587  51</span></span>
+<span><span class="co">#&gt;    diabetes</span></span>
+<span><span class="co">#&gt; 4         0</span></span>
+<span><span class="co">#&gt; 5         1</span></span>
+<span><span class="co">#&gt; 7         1</span></span>
+<span><span class="co">#&gt; 9         1</span></span>
+<span><span class="co">#&gt; 14        1</span></span>
+<span><span class="co">#&gt; 15        1</span></span></code></pre></div>
+<p>Vertical split into three server tables — each block below is the
+first six rows of one server’s local view:</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">s1</span> <span class="op">&lt;-</span> <span class="va">pooled</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"pregnant"</span>, <span class="st">"glucose"</span>, <span class="st">"pressure"</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="va">s2</span> <span class="op">&lt;-</span> <span class="va">pooled</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"triceps"</span>,  <span class="st">"insulin"</span>, <span class="st">"mass"</span><span class="op">)</span><span class="op">]</span></span>
 <span><span class="va">s3</span> <span class="op">&lt;-</span> <span class="va">pooled</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"pedigree"</span>, <span class="st">"age"</span>, <span class="st">"diabetes"</span><span class="op">)</span><span class="op">]</span></span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">s1</span><span class="op">)</span></span>
+<span><span class="co">#&gt;    patient_id pregnant glucose pressure</span></span>
+<span><span class="co">#&gt; 4        P001        1      89       66</span></span>
+<span><span class="co">#&gt; 5        P002        0     137       40</span></span>
+<span><span class="co">#&gt; 7        P003        3      78       50</span></span>
+<span><span class="co">#&gt; 9        P004        2     197       70</span></span>
+<span><span class="co">#&gt; 14       P005        1     189       60</span></span>
+<span><span class="co">#&gt; 15       P006        5     166       72</span></span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">s2</span><span class="op">)</span></span>
+<span><span class="co">#&gt;    patient_id triceps insulin mass</span></span>
+<span><span class="co">#&gt; 4        P001      23      94 28.1</span></span>
+<span><span class="co">#&gt; 5        P002      35     168 43.1</span></span>
+<span><span class="co">#&gt; 7        P003      32      88 31.0</span></span>
+<span><span class="co">#&gt; 9        P004      45     543 30.5</span></span>
+<span><span class="co">#&gt; 14       P005      23     846 30.1</span></span>
+<span><span class="co">#&gt; 15       P006      19     175 25.8</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">s3</span><span class="op">)</span></span>
+<span><span class="co">#&gt;    patient_id pedigree age diabetes</span></span>
+<span><span class="co">#&gt; 4        P001    0.167  21        0</span></span>
+<span><span class="co">#&gt; 5        P002    2.288  33        1</span></span>
+<span><span class="co">#&gt; 7        P003    0.248  26        1</span></span>
+<span><span class="co">#&gt; 9        P004    0.158  53        1</span></span>
+<span><span class="co">#&gt; 14       P005    0.398  59        1</span></span>
+<span><span class="co">#&gt; 15       P006    0.587  51        1</span></span></code></pre></div>
 <p>Stand up an in-process DSLite cluster of three independent servers
 (each in its own private session env, no shared mutable state across
 servers; this is the standard <code>dsVertClient</code> validation
 harness):</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dslite.server</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://datashield.github.io/DSLite/reference/newDSLiteServer.html" class="external-link">newDSLiteServer</a></span><span class="op">(</span></span>
 <span>  tables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>s1 <span class="op">=</span> <span class="va">s1</span>, s2 <span class="op">=</span> <span class="va">s2</span>, s3 <span class="op">=</span> <span class="va">s3</span><span class="op">)</span>,</span>
 <span>  config <span class="op">=</span> <span class="fu">DSLite</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSLite/reference/defaultDSConfiguration.html" class="external-link">defaultDSConfiguration</a></span><span class="op">(</span></span>
 <span>    include <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"dsBase"</span>, <span class="st">"dsVert"</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 <p>Open three DSI connections, one per site, and assign each server’s
 table to a common symbol <code>D</code>:</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/options.html" class="external-link">options</a></span><span class="op">(</span>dsvert.require_trusted_peers <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>        datashield.privacyLevel <span class="op">=</span> <span class="fl">0L</span><span class="op">)</span></span>
 <span></span>
@@ -284,7 +322,7 @@ table to a common symbol <code>D</code>:</p>
 <p>Privacy-preserving record alignment via ECDH-PSI on
 <code>patient_id</code> materialises the aligned data frame
 <code>DA</code> on each server:</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">psi</span> <span class="op">&lt;-</span> <span class="fu"><a href="../../reference/ds.psiAlign.html">ds.psiAlign</a></span><span class="op">(</span><span class="st">"D"</span>, <span class="st">"patient_id"</span>, <span class="st">"DA"</span>,</span>
 <span>                    datasources <span class="op">=</span> <span class="va">conns</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
 <span><span class="va">psi</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span><span class="op">$</span><span class="va">n_matched</span></span>
@@ -298,7 +336,7 @@ table to a common symbol <code>D</code>:</p>
 server by querying each connection’s column listing and dispatches the
 appropriate Ring63 Beaver protocol; only aggregate score and
 information-matrix scalars cross the inter-server channel.</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_ds</span> <span class="op">&lt;-</span> <span class="fu"><a href="../../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
 <span>  formula <span class="op">=</span> <span class="va">diabetes</span> <span class="op">~</span> <span class="va">pregnant</span> <span class="op">+</span> <span class="va">glucose</span> <span class="op">+</span> <span class="va">pressure</span> <span class="op">+</span></span>
 <span>                       <span class="va">triceps</span> <span class="op">+</span> <span class="va">insulin</span> <span class="op">+</span> <span class="va">mass</span> <span class="op">+</span></span>
@@ -325,16 +363,16 @@ information-matrix scalars cross the inter-server channel.</p>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients:</span></span>
 <span><span class="co">#&gt; (Intercept)    pregnant     glucose    pressure     triceps     insulin </span></span>
-<span><span class="co">#&gt;   -9.529041    0.150688    0.028912   -0.003115   -0.008447   -0.002483 </span></span>
+<span><span class="co">#&gt;   -9.528645    0.150682    0.028911   -0.003117   -0.008450   -0.002483 </span></span>
 <span><span class="co">#&gt;        mass    pedigree         age </span></span>
-<span><span class="co">#&gt;    0.107775    1.236702    0.043150</span></span></code></pre></div>
+<span><span class="co">#&gt;    0.107775    1.236728    0.043146</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="centralised-reference">4. Centralised reference<a class="anchor" aria-label="anchor" href="#centralised-reference"></a>
 </h2>
 <p>The same model fitted on the pooled data with
 <code><a href="https://rdrr.io/r/stats/glm.html" class="external-link">stats::glm</a></code>:</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_ref</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/glm.html" class="external-link">glm</a></span><span class="op">(</span></span>
 <span>  <span class="va">diabetes</span> <span class="op">~</span> <span class="va">pregnant</span> <span class="op">+</span> <span class="va">glucose</span> <span class="op">+</span> <span class="va">pressure</span> <span class="op">+</span></span>
 <span>             <span class="va">triceps</span> <span class="op">+</span> <span class="va">insulin</span> <span class="op">+</span> <span class="va">mass</span> <span class="op">+</span></span>
@@ -378,7 +416,7 @@ absolute deviation; the ratio of the <em>minimum</em> per-coefficient
 Wald standard error of the centralised fit over the maximum absolute
 deviation tells us how many multiples of the analyst’s irreducible
 per-fit uncertainty the federated estimator falls within.</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">nm</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">intersect</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">fit_ds</span><span class="op">$</span><span class="va">coefficients</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_ref</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">delta</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
 <span>  coef   <span class="op">=</span> <span class="va">nm</span>,</span>
@@ -387,15 +425,15 @@ per-fit uncertainty the federated estimator falls within.</p>
 <span><span class="va">delta</span><span class="op">$</span><span class="va">abs</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="va">delta</span><span class="op">$</span><span class="va">dsVert</span> <span class="op">-</span> <span class="va">delta</span><span class="op">$</span><span class="va">glm</span><span class="op">)</span></span>
 <span><span class="va">delta</span></span>
 <span><span class="co">#&gt;          coef       dsVert          glm          abs</span></span>
-<span><span class="co">#&gt; 1 (Intercept) -9.529040525 -9.528488688 5.518368e-04</span></span>
-<span><span class="co">#&gt; 2    pregnant  0.150688356  0.150695142 6.786645e-06</span></span>
-<span><span class="co">#&gt; 3     glucose  0.028911630  0.028924540 1.291009e-05</span></span>
-<span><span class="co">#&gt; 4    pressure -0.003115068 -0.003134016 1.894821e-05</span></span>
-<span><span class="co">#&gt; 5     triceps -0.008447421 -0.008522757 7.533609e-05</span></span>
-<span><span class="co">#&gt; 6     insulin -0.002482880 -0.002487855 4.975676e-06</span></span>
-<span><span class="co">#&gt; 7        mass  0.107775367  0.107875645 1.002782e-04</span></span>
-<span><span class="co">#&gt; 8    pedigree  1.236701699  1.237203707 5.020080e-04</span></span>
-<span><span class="co">#&gt; 9         age  0.043149705  0.043110551 3.915429e-05</span></span>
+<span><span class="co">#&gt; 1 (Intercept) -9.528644889 -9.528488688 1.562013e-04</span></span>
+<span><span class="co">#&gt; 2    pregnant  0.150682459  0.150695142 1.268322e-05</span></span>
+<span><span class="co">#&gt; 3     glucose  0.028910737  0.028924540 1.380253e-05</span></span>
+<span><span class="co">#&gt; 4    pressure -0.003116901 -0.003134016 1.711489e-05</span></span>
+<span><span class="co">#&gt; 5     triceps -0.008449632 -0.008522757 7.312564e-05</span></span>
+<span><span class="co">#&gt; 6     insulin -0.002482662 -0.002487855 5.193678e-06</span></span>
+<span><span class="co">#&gt; 7        mass  0.107775498  0.107875645 1.001473e-04</span></span>
+<span><span class="co">#&gt; 8    pedigree  1.236728483  1.237203707 4.752246e-04</span></span>
+<span><span class="co">#&gt; 9         age  0.043146200  0.043110551 3.564925e-05</span></span>
 <span></span>
 <span><span class="va">max_abs</span>    <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="va">delta</span><span class="op">$</span><span class="va">abs</span><span class="op">)</span></span>
 <span><span class="va">sigma_min</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">min</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/diag.html" class="external-link">diag</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/vcov.html" class="external-link">vcov</a></span><span class="op">(</span><span class="va">fit_ref</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
@@ -405,8 +443,8 @@ per-fit uncertainty the federated estimator falls within.</p>
 <span>  sigma_min     <span class="op">=</span> <span class="va">sigma_min</span>,</span>
 <span>  sigma_ratio   <span class="op">=</span> <span class="va">sigma_ratio</span><span class="op">)</span></span>
 <span><span class="co">#&gt; max_abs_delta     sigma_min   sigma_ratio </span></span>
-<span><span class="co">#&gt;  0.0005518368  0.0019796335  3.5873531781</span></span></code></pre></div>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<span><span class="co">#&gt;  0.0004752246  0.0019796335  4.1656797967</span></span></code></pre></div>
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">delta</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span><span class="va">glm</span>, <span class="va">dsVert</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_abline.html" class="external-link">geom_abline</a></span><span class="op">(</span>slope <span class="op">=</span> <span class="fl">1</span>, intercept <span class="op">=</span> <span class="fl">0</span>, linetype <span class="op">=</span> <span class="st">"dashed"</span>,</span>
 <span>              colour <span class="op">=</span> <span class="st">"grey40"</span><span class="op">)</span> <span class="op">+</span></span>
@@ -422,10 +460,10 @@ deviations are within the Catrina-Saxena Ring63 fixed-point envelope.
 </p>
 </div>
 <p>The maximum absolute deviation across the eight slopes plus intercept
-is 5.52e-04 — within the Catrina-Saxena Ring63 fixed-point envelope
+is 4.75e-04 — within the Catrina-Saxena Ring63 fixed-point envelope
 (<code>frac_bits = 20</code> ULP propagation bound ≈
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>3</mn></mrow></msup><annotation encoding="application/x-tex">10^{-3}</annotation></semantics></math>
-at this multiplicative depth). The σ-ratio comes out to 3.6×: at this
+at this multiplicative depth). The σ-ratio comes out to 4.2×: at this
 sample size the smallest per-coefficient Wald standard error is the one
 of <code>insulin</code> (a near-zero clinical effect at
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>β</mi><mo accent="true">̂</mo></mover><mo>≈</mo><mi>−</mi><mn>0.0025</mn></mrow><annotation encoding="application/x-tex">\hat\beta \approx

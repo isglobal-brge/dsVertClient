@@ -15,9 +15,14 @@
     </button>
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
-      <ul class="navbar-nav me-auto"><li class="nav-item"><a class="nav-link" href="../articles/vert_validation_evidence.html">Validation evidence</a></li>
+      <ul class="navbar-nav me-auto"><li class="active nav-item dropdown">
+  <button class="nav-link dropdown-toggle" type="button" id="dropdown-method-validation" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Method validation</button>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-method-validation"><li><a class="dropdown-item" href="../articles/index.html">Overview</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Generalised linear models</h6></li>
+    <li><a class="dropdown-item" href="../articles/methods/glm.html">GLM (binomial, K=3)</a></li>
+  </ul></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item"><a class="nav-link" href="../articles/index.html">Articles</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
 <li class="nav-item"><a class="external-link nav-link" href="https://github.com/isglobal-brge/dsVertClient" aria-label="GitHub"><span class="fa fa-github"></span></a></li>
@@ -33,16 +38,10 @@
     </div>
 
     <div class="section ">
-      <h3>Validation</h3>
-      <div class="section-desc"><p>End-to-end empirical validation against centralised R references</p></div>
+      <h3>Federated estimators – one vignette per method</h3>
+      <div class="section-desc"><p>Each article exercises a single dsVert estimator end-to-end on a canonical small public dataset, against the analyst’s go-to centralised R reference (<code><a href="https://rdrr.io/r/stats/glm.html" class="external-link">stats::glm</a></code>, <code><a href="https://rdrr.io/pkg/survival/man/coxph.html" class="external-link">survival::coxph</a></code>, <code><a href="https://rdrr.io/pkg/nlme/man/lme.html" class="external-link">nlme::lme</a></code>, <code><a href="https://rdrr.io/pkg/MASS/man/glm.nb.html" class="external-link">MASS::glm.nb</a></code>, <code><a href="https://rdrr.io/pkg/MASS/man/polr.html" class="external-link">MASS::polr</a></code>, <code><a href="https://rdrr.io/pkg/nnet/man/multinom.html" class="external-link">nnet::multinom</a></code>, <code><a href="https://rdrr.io/pkg/lme4/man/glmer.html" class="external-link">lme4::glmer</a></code>, <code><a href="https://rdrr.io/pkg/geepack/man/geeglm.html" class="external-link">geepack::geeglm</a></code>, weighted glm, lm/glmnet), using the in-process DSLite multi-server harness. The five-section template (context + math + non-disclosure + partition table | data preparation + DSLite stand-up + PSI alignment | federated fit | centralised reference | comparison + verdict) is identical across methods so the reader can compare estimators by skimming.</p></div>
 
-      <dl><dt><a href="vert_validation_evidence.html">dsVert validation evidence — twelve methods, K = 2 and K = 3</a></dt>
-        <dd>
-        </dd><dt><a href="data-preparation.html">dsVert validation — data preparation (seed-documented)</a></dt>
-        <dd>
-        </dd><dt><a href="validation.html">dsVert Validation: Federated Vertical vs Centralised</a></dt>
-        <dd>
-        </dd><dt><a href="methods-tour.html">dsVert methods tour — twelve estimators with DSLite demos</a></dt>
+      <dl><dt><a href="methods/glm.html">Generalised linear model — federated binomial logistic regression (K = 3)</a></dt>
         <dd>
       </dd></dl></div>
   </main></div>

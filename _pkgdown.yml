@@ -11,12 +11,18 @@ footer:
 
 navbar:
   structure:
-    left: [intro, validation, reference, articles]
+    left: [intro, articles, reference]
     right: [search, github]
   components:
-    validation:
-      text: "Validation evidence"
-      href: articles/vert_validation_evidence.html
+    articles:
+      text: "Method validation"
+      menu:
+        - text: "Overview"
+          href: articles/index.html
+        - text: "-------"
+        - text: "Generalised linear models"
+        - text: "GLM (binomial, K=3)"
+          href: articles/methods/glm.html
     github:
       icon: fa-github
       href: https://github.com/isglobal-brge/dsVertClient
@@ -117,13 +123,20 @@ reference:
       - k3-ring63-dcf-loop
 
 articles:
-  - title: Validation
-    desc: End-to-end empirical validation against centralised R references
+  - title: Federated estimators -- one vignette per method
+    desc: |
+      Each article exercises a single dsVert estimator end-to-end on a
+      canonical small public dataset, against the analyst's go-to
+      centralised R reference (`stats::glm`, `survival::coxph`,
+      `nlme::lme`, `MASS::glm.nb`, `MASS::polr`, `nnet::multinom`,
+      `lme4::glmer`, `geepack::geeglm`, weighted glm, lm/glmnet),
+      using the in-process DSLite multi-server harness. The five-section
+      template (context + math + non-disclosure + partition table | data
+      preparation + DSLite stand-up + PSI alignment | federated fit |
+      centralised reference | comparison + verdict) is identical across
+      methods so the reader can compare estimators by skimming.
     contents:
-      - vert_validation_evidence
-      - data-preparation
-      - validation
-      - methods-tour
+      - methods/glm
 
 authors:
   David Sarrat González:

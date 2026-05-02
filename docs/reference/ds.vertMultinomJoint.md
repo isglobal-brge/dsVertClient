@@ -1,0 +1,99 @@
+# Federated joint-softmax multinomial logistic regression
+
+Fit a K-category multinomial logistic regression on vertically
+partitioned DataSHIELD data with the CANONICAL joint softmax
+parametrisation. Unlike
+[`ds.vertMultinom`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertMultinom.md),
+which fits K-1 independent one-vs-rest binomial logits, this routine
+couples the K-1 linear predictors through a single softmax normaliser
+and obtains true softmax MLE coefficients.
+
+Gradient of the log-likelihood per class \\k \neq \text{ref}\\:
+\$\$\nabla\_{\beta_k} \ell(\beta) = X^T (y^{(k)} - p_k)\$\$ where
+\\p_k(x) = \exp(x^T \beta_k) / (1 + \sum\_{j \neq \text{ref}} \exp(x^T
+\beta_j))\\ and \\y^{(k)}\\ is the indicator \\1\[Y=k\]\\.
+
+Protocol per iteration (all pieces already shipped in dsVert): 1. For
+each k compute eta_k share via k2ComputeEtaShareDS. 2. DCF exp
+wide-spline on each eta_k -\> share of mu_k = exp(eta_k). 3. Sum mu_k
+across classes on each party (local, shares linear) -\> share of the
+denominator D = 1 + sum_k mu_k (party 0 adds the constant 1 locally). 4.
+DCF reciprocal wide-spline on D -\> share of 1/D. 5. Beaver vecmul
+(shipped) between mu_k share and 1/D share -\> share of p_k element-wise
+for each k. 6. Residual share r_k = y_k - p_k on each party (y_k is
+plaintext on the outcome server, so share-subtract is local). 7.
+Standard X^T r Beaver matvec per class -\> aggregate p-vector gradient
+for class k. Client pools K-1 gradients into one p(K-1) vector and steps
+via L-BFGS.
+
+Client view: only (K-1)p-dim aggregate gradients. Per-patient mu_k, D,
+p_k, r_k never leave the DCF parties.
+
+## Usage
+
+``` r
+ds.vertMultinomJoint(
+  formula,
+  data = NULL,
+  levels = NULL,
+  max_iter = 30L,
+  tol = 1e-04,
+  full_irls = FALSE,
+  coupling_iter = 3L,
+  verbose = TRUE,
+  datasources = NULL
+)
+```
+
+## Arguments
+
+- formula:
+
+  R formula with the categorical outcome on the LHS.
+
+- data:
+
+  Aligned data-frame name.
+
+- levels:
+
+  Optional character vector of outcome levels (first is reference). If
+  NULL, inferred from the outcome server.
+
+- max_iter:
+
+  Outer L-BFGS iterations.
+
+- tol:
+
+  Convergence tolerance on max \|delta beta\|.
+
+- full_irls:
+
+  Logical. Retained for API continuity. In the current release the
+  "coupling" phase only rescales the per-class COVARIANCE blocks by the
+  softmax variance factor; the COEFFICIENTS remain at the OVR warm-start
+  and the softmax\<-\>OVR point-estimate gap is NOT closed
+  (probe_multinom_central_unit.R: max\|Deltapi\| approx 2.4e-1 on
+  birthwt, intrinsic to OVR regardless of Ring/MPC precision). Full
+  softmax Newton via shared-exp + shared-recip + Beaver-vecmul on
+  per-patient eta_k / mu_k shares is the v2 Month 3 deliverable (see
+  docs/error_bounds/multinom_joint_bound.md for the upgrade path).
+  Setting full_irls=TRUE emits a warning.
+
+- coupling_iter:
+
+  Number of covariance-rescaling passes when full_irls=TRUE (default 3).
+
+- verbose:
+
+  Print progress.
+
+- datasources:
+
+  DataSHIELD connections.
+
+## Value
+
+A `ds.vertMultinomJoint` object with a p x (K-1) coefficient matrix,
+per-class covariance blocks, and the per- iteration gradient norms.

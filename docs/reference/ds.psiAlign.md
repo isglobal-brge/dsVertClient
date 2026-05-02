@@ -4,7 +4,7 @@ Privacy-preserving record alignment using Elliptic Curve Diffie-Hellman
 Private Set Intersection (ECDH-PSI) with blind-relay transport
 encryption. Aligns data frames across vertically partitioned DataSHIELD
 servers so that rows correspond to the same individuals. The client
-never sees raw EC points — only opaque encrypted blobs.
+never sees raw EC points – only opaque encrypted blobs.
 
 ## Usage
 
@@ -48,6 +48,12 @@ ds.psiAlign(
 
   DataSHIELD connection object or list of connections. If NULL, uses all
   available connections.
+
+- na.action:
+
+  Character. NA-handling strategy passed to the server-side aligner;
+  default `"na.omit"` drops rows with any NA in the join column or
+  covariates before alignment.
 
 ## Value
 
@@ -96,7 +102,7 @@ blobs.
 
 ### Security (DDH assumption on P-256, malicious-client model)
 
-- The client sees only opaque encrypted blobs — not EC points.
+- The client sees only opaque encrypted blobs – not EC points.
 
 - Each server's scalar never leaves the server.
 
