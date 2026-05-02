@@ -69,6 +69,12 @@ ds.vertChisq <- function(data_name, var1, var2, server = NULL,
     call(name = "dsvertContingencyDS", data_name = data_name,
          var1 = var1, var2 = var2,
          suppress_small_cells = TRUE))[[1]]
+  disclosure_guard <- .dsvert_guard_table_release(
+    tab$counts,
+    row_margins = tab$row_margins,
+    col_margins = tab$col_margins,
+    n = tab$n,
+    what = "same-server contingency table")
 
   stats <- .dsvert_chisq_compute(
     observed = tab$counts,
@@ -88,7 +94,8 @@ ds.vertChisq <- function(data_name, var1, var2, server = NULL,
     n_na = as.integer(tab$n_na),
     server = server,
     var1 = var1,
-    var2 = var2))
+    var2 = var2,
+    disclosure_guard = disclosure_guard))
   class(out) <- c("ds.vertChisq", "list")
   out
 }
@@ -195,6 +202,12 @@ ds.vertFisher <- function(data_name, var1, var2, server = NULL,
     call(name = "dsvertContingencyDS", data_name = data_name,
          var1 = var1, var2 = var2,
          suppress_small_cells = TRUE))[[1]]
+  disclosure_guard <- .dsvert_guard_table_release(
+    tab$counts,
+    row_margins = tab$row_margins,
+    col_margins = tab$col_margins,
+    n = tab$n,
+    what = "same-server Fisher table")
 
   observed <- tab$counts
   rownames(observed) <- tab$row_levels
@@ -222,7 +235,8 @@ ds.vertFisher <- function(data_name, var1, var2, server = NULL,
     n_na = as.integer(tab$n_na),
     server = server,
     var1 = var1,
-    var2 = var2)
+    var2 = var2,
+    disclosure_guard = disclosure_guard)
   class(out) <- c("ds.vertFisher", "list")
   out
 }

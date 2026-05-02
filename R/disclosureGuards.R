@@ -45,3 +45,72 @@
     max_p_over_n = max_p_over_n,
     allow_high_dim = allow_high_dim)
 }
+
+#' Disclosure guard for aggregate contingency-table releases
+#'
+#' @param counts Observed count matrix.
+#' @param row_margins Optional row sums. If \code{NULL}, computed from
+#'   \code{counts}.
+#' @param col_margins Optional column sums. If \code{NULL}, computed from
+#'   \code{counts}.
+#' @param n Optional total count. If \code{NULL}, computed from counts.
+#' @param what Human-readable aggregate name for error messages.
+#' @return A list with guard metadata.
+#' @keywords internal
+#' @noRd
+.dsvert_guard_table_release <- function(counts,
+                                        row_margins = NULL,
+                                        col_margins = NULL,
+                                        n = NULL,
+                                        what = "contingency table") {
+  counts <- as.matrix(counts)
+  storage.mode(counts) <- "numeric"
+  if (any(!is.finite(counts)) || any(counts < 0)) {
+    stop("invalid counts for ", what, " disclosure guard", call. = FALSE)
+  }
+  row_m <- if (is.null(row_margins)) rowSums(counts) else as.numeric(row_margins)
+  col_m <- if (is.null(col_margins)) colSums(counts) else as.numeric(col_margins)
+  total <- if (is.null(n)) sum(counts) else as.numeric(n)
+  if (any(!is.finite(row_m)) || any(row_m < 0) ||
+      any(!is.finite(col_m)) || any(col_m < 0) ||
+      !is.finite(total) || total < 0) {
+    stop("invalid margins for ", what, " disclosure guard", call. = FALSE)
+  }
+
+  privacy_min <- suppressWarnings(as.numeric(getOption(
+    "dsvert.min_cell_count",
+    getOption("datashield.privacyLevel", 5L)))[1L])
+  if (!is.finite(privacy_min)) privacy_min <- 0
+  allow_small_cells <- isTRUE(getOption("dsvert.allow_small_cell_tables",
+                                        FALSE))
+  min_positive <- function(x) {
+    x <- x[x > 0]
+    if (length(x) == 0L) Inf else min(x)
+  }
+  guard <- list(
+    min_cell_count = as.integer(privacy_min),
+    allow_small_cell_tables = allow_small_cells,
+    min_positive_cell = min_positive(counts),
+    min_positive_row_margin = min_positive(row_m),
+    min_positive_col_margin = min_positive(col_m),
+    n = total)
+
+  if (!allow_small_cells && is.finite(privacy_min) && privacy_min > 0L) {
+    small_cell <- any(counts > 0 & counts < privacy_min)
+    small_margin <- any(row_m > 0 & row_m < privacy_min) ||
+      any(col_m > 0 & col_m < privacy_min) ||
+      (total > 0 && total < privacy_min)
+    if (small_cell || small_margin) {
+      stop(sprintf(
+        paste0(
+          "%s release blocked by disclosure guard: positive cells and ",
+          "margins must be either zero or >= %d. Set ",
+          "options(dsvert.allow_small_cell_tables=TRUE) only for controlled ",
+          "diagnostics."
+        ),
+        what, as.integer(privacy_min)),
+        call. = FALSE)
+    }
+  }
+  guard
+}
