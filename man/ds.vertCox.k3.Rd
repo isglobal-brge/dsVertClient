@@ -10,6 +10,9 @@ ds.vertCox.k3(
   event_col,
   offset_col,
   baseline_col,
+  max_iter = 100L,
+  tol = 1e-05,
+  lambda = 0,
   verbose = TRUE,
   datasources = NULL
 )
@@ -33,6 +36,10 @@ weights column is set to 0).}
 \item{baseline_col}{Column name on the outcome server holding the
 discrete-time bin index (e.g. \code{"t_bin"}). Will be included via
 \code{factor(t_bin)} in the design.}
+
+\item{max_iter, tol, lambda}{Passed through to \code{\link{ds.vertGLM}}.
+The default \code{lambda=0} matches the usual unpenalized Poisson/Cox
+reference estimator.}
 
 \item{verbose}{Print progress.}
 

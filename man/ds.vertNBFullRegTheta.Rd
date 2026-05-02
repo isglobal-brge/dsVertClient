@@ -54,7 +54,9 @@ aggregate variance correction described in Details.}
 Object of class \code{c("ds.vertNBFullRegTheta", "ds.vertNB")}.
 Fields as \code{ds.vertNB}, plus \code{$theta_iid} (original
 iid-mu estimate) and \code{$variance_correction} (the \eqn{\hat V_\mu}
-used).
+used). For the non-disclosive full-regression variant, the object also
+contains \code{$theta_trace}, \code{$theta_iter}, and
+\code{$theta_converged}.
 }
 \description{
 Extends \code{ds.vertNB} (which uses the iid-mu profile

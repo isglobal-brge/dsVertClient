@@ -148,11 +148,11 @@
     is_p0 <- (server == y_server)
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
       a_key = "k2_nb_mu_share_fp", b_key = NULL,
-      sign_a = 1L, sign_b = 0L,
+      sign_a = 1, sign_b = 0,
       public_const_fp = if (is_p0) theta_fp_b64 else NULL,
       is_party0 = is_p0,
       output_key = "k2_nb_mupt_share_fp",
-      n = as.integer(n_obs), session_id = session_id))
+      n = as.numeric(n_obs), session_id = session_id))
   }
 
   # === Step 3: log(mu + theta)_share via NR-LOG (Pugh 2004 Sec.3) ===
