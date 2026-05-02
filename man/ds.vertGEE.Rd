@@ -25,10 +25,9 @@ ds.vertGEE(
 \item{family}{One of \code{"gaussian"}, \code{"binomial"},
 \code{"poisson"}.}
 
-\item{id_col}{Optional character; reserved for clustered GEE. In this
-first-pass implementation \code{id_col} is accepted but the
-working-independence sandwich is computed (cluster aggregation is
-the Month-4 follow-on).}
+\item{id_col}{Optional character; recorded for future clustered GEE.
+The current validated implementation computes a working-independence
+HC0 sandwich.}
 
 \item{corstr}{Working correlation structure. Only
 \code{"independence"} is currently supported; \code{"exchangeable"}
@@ -49,19 +48,17 @@ An object of class \code{ds.vertGEE} with components
 Fit a GLM for vertically partitioned DataSHIELD data and
 return sandwich (robust) standard errors alongside the usual
 model-based ones. The point estimate \eqn{\hat{\beta}} is obtained
-by a single call to \code{\link{ds.vertGLM}} (bread =
-\code{fit$covariance}), then the Liang-Zeger meat matrix is
-estimated by a second weighted fit with weights proportional to the
-squared Pearson residuals. This is the working-independence GEE
-estimator; exchangeable / AR1 working correlation structures are a
-planned Month-4 extension that adds a cluster-ID broadcast between
-the DCF parties and per-cluster residual outer products.
+by a single call to \code{\link{ds.vertGLM}}. For Gaussian models the
+working-independence HC0 meat matrix is computed in the share domain:
+residual shares are squared with Beaver multiplication and each
+\eqn{X^\top(r^2 X_j)} column is obtained through the existing aggregate
+matvec path. This is not yet a clustered \code{geeglm} sandwich;
+exchangeable / AR1 working correlation structures require a separate
+per-cluster meat primitive with small-cluster guards.
 
-Because both fits reveal only \eqn{p}-dimensional aggregates
-(gradient and Hessian), the sandwich estimator is obtained without
-ever materialising the \eqn{n}-length residual vector at the
-client. Inter-server leakage is identical to the ordinary
-\code{ds.vertGLM} path (no new channels).
+The client receives only low-dimensional aggregate matrices/vectors.
+It never materialises the \eqn{n}-length residual, squared-residual, or
+weighted-column vectors.
 
 Formula:
 \deqn{V_{sand} = \mathrm{Cov}(\hat\beta) \, A \, \mathrm{Cov}(\hat\beta)}
