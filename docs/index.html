@@ -51,11 +51,12 @@
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header"><h1 id="dsvertclient--datashield-client-for-vertically-partitioned-data">dsVertClient — DataSHIELD Client for Vertically Partitioned Data<a class="anchor" aria-label="anchor" href="#dsvertclient--datashield-client-for-vertically-partitioned-data"></a>
 </h1></div>
-<p><a href="https://opensource.org/licenses/MIT" class="external-link"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a></p>
+<p><a href="https://opensource.org/licenses/MIT" class="external-link"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a> <a href="https://github.com/isglobal-brge/dsVertClient/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/isglobal-brge/dsVertClient/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a> <a href="NEWS.html"><img src="https://img.shields.io/badge/version-1.1.0-blue.svg" alt="Version"></a></p>
 <div class="section level2">
 <h2 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
 </h2>
-<p><strong>dsVertClient</strong> provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols run transparently.</p>
+<p><strong>dsVertClient</strong> provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols (ECDH-PSI, Ring63 / Ring127 Beaver MPC, DCF wide-spline, OT-Beaver dishonest-majority triples, X25519 + AES-256-GCM transport, Ed25519 identity verification) run transparently.</p>
+<p>Pair with the server-side companion package <a href="https://github.com/isglobal-brge/dsVert" class="external-link"><strong>dsVert</strong></a>.</p>
 </div>
 <div class="section level2">
 <h2 id="quick-start">Quick Start<a class="anchor" aria-label="anchor" href="#quick-start"></a>
@@ -70,60 +71,102 @@
 <span><span class="co"># 1. Align records (NAs removed automatically, like glm na.omit)</span></span>
 <span><span class="fu"><a href="reference/ds.psiAlign.html">ds.psiAlign</a></span><span class="op">(</span><span class="st">"D"</span>, <span class="st">"patient_id"</span>, <span class="st">"DA"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 2. Fit GLM using formula (auto-detects which server has each variable)</span></span>
-<span><span class="va">result</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span><span class="va">diabetes</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">glu</span> <span class="op">+</span> <span class="va">bp</span>,</span>
-<span>                     data <span class="op">=</span> <span class="st">"DA"</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
-<span>                     datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="co"># 2. Fit a federated GLM (auto-detects which server has each variable)</span></span>
+<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span><span class="va">diabetes</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">glu</span> <span class="op">+</span> <span class="va">bp</span>,</span>
+<span>                  data <span class="op">=</span> <span class="st">"DA"</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
+<span>                  datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 3. View results (coefficients + SE + p-values + canonical deviance)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">result</span><span class="op">)</span></span>
+<span><span class="co"># 3. Cox PH on K=2 with Ring127 (default; STRICT-grade vs survival::coxph)</span></span>
+<span><span class="va">cox</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertCox.html">ds.vertCox</a></span><span class="op">(</span><span class="fu">survival</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">Surv</a></span><span class="op">(</span><span class="va">time</span>, <span class="va">event</span><span class="op">)</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">bp</span>,</span>
+<span>                  data <span class="op">=</span> <span class="st">"DA"</span>, compute_se <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>                  datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 4. Correlation + PCA (auto-detects variables)</span></span>
+<span><span class="co"># 4. Correlation + PCA</span></span>
 <span><span class="va">cor</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertCor.html">ds.vertCor</a></span><span class="op">(</span><span class="st">"DA"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span><span class="va">pca</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertPCA.html">ds.vertPCA</a></span><span class="op">(</span>cor_result <span class="op">=</span> <span class="va">cor</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.logout.html" class="external-link">datashield.logout</a></span><span class="op">(</span><span class="va">conns</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="functions">Functions<a class="anchor" aria-label="anchor" href="#functions"></a>
+<h2 id="functions-v110">Functions (v1.1.0)<a class="anchor" aria-label="anchor" href="#functions-v110"></a>
 </h2>
 <table class="table">
 <colgroup>
-<col width="32%">
-<col width="41%">
-<col width="25%">
+<col width="50%">
+<col width="50%">
 </colgroup>
 <thead><tr>
-<th>Function</th>
-<th>Description</th>
-<th>Output</th>
+<th>Family</th>
+<th>Functions</th>
 </tr></thead>
 <tbody>
 <tr>
-<td><code><a href="reference/ds.psiAlign.html">ds.psiAlign()</a></code></td>
-<td>Private Set Intersection</td>
-<td>Aligned data frame</td>
+<td><strong>Record alignment</strong></td>
+<td>
+<code><a href="reference/ds.psiAlign.html">ds.psiAlign()</a></code>, <code><a href="reference/ds.isPsiAligned.html">ds.isPsiAligned()</a></code>, <code><a href="reference/ds.getIdentityPks.html">ds.getIdentityPks()</a></code>
+</td>
 </tr>
 <tr>
-<td><code><a href="reference/ds.vertGLM.html">ds.vertGLM()</a></code></td>
-<td>GLM (Gaussian, Binomial, Poisson)</td>
-<td>Coefficients, SE, p-values, deviance</td>
+<td><strong>Descriptive / 2nd-order</strong></td>
+<td>
+<code><a href="reference/ds.vertDesc.html">ds.vertDesc()</a></code>, <code><a href="reference/ds.vertCor.html">ds.vertCor()</a></code>, <code><a href="reference/ds.vertPCA.html">ds.vertPCA()</a></code>, <code><a href="reference/ds.vertChisq.html">ds.vertChisq()</a></code>, <code><a href="reference/ds.vertChisqCross.html">ds.vertChisqCross()</a></code>, <code><a href="reference/ds.vertFisher.html">ds.vertFisher()</a></code>
+</td>
 </tr>
 <tr>
-<td><code><a href="reference/ds.vertCor.html">ds.vertCor()</a></code></td>
-<td>Pearson correlation matrix</td>
-<td>p x p correlation matrix</td>
+<td>
+<strong>GLM</strong> (gaussian / binomial / poisson)</td>
+<td>
+<code><a href="reference/ds.vertGLM.html">ds.vertGLM()</a></code> with <code>offset</code>, <code>weights</code>, <code>ring</code>, <code>keep_session</code>, <code>no_intercept</code>, <code>std_mode</code>
+</td>
 </tr>
 <tr>
-<td><code><a href="reference/ds.vertPCA.html">ds.vertPCA()</a></code></td>
-<td>Principal Component Analysis</td>
-<td>Loadings, eigenvalues, variance %</td>
+<td><strong>Inference helpers</strong></td>
+<td>
+<code><a href="reference/ds.vertConfint.html">ds.vertConfint()</a></code>, <code><a href="reference/ds.vertContrast.html">ds.vertContrast()</a></code>, <code><a href="reference/ds.vertWald.html">ds.vertWald()</a></code>, <code><a href="reference/ds.vertLR.html">ds.vertLR()</a></code>
+</td>
+</tr>
+<tr>
+<td><strong>Survival</strong></td>
+<td>
+<code><a href="reference/ds.vertCox.html">ds.vertCox()</a></code> (Ring63 / Ring127, Newton path A/B), <code><a href="reference/ds.vertCox.k3.html">ds.vertCox.k3()</a></code>, <code><a href="reference/ds.vertCoxDiscreteNonDisclosive.html">ds.vertCoxDiscreteNonDisclosive()</a></code>
+</td>
+</tr>
+<tr>
+<td><strong>Negative binomial</strong></td>
+<td>
+<code><a href="reference/ds.vertNB.html">ds.vertNB()</a></code> (iid-µ Newton), <code><a href="reference/ds.vertNBMoMTheta.html">ds.vertNBMoMTheta()</a></code> (Anscombe / Saha-Paul), <code><a href="reference/ds.vertNBFullRegTheta.html">ds.vertNBFullRegTheta()</a></code> (Ring127 NR-LOG)</td>
+</tr>
+<tr>
+<td><strong>Multinomial</strong></td>
+<td>
+<code><a href="reference/ds.vertMultinom.html">ds.vertMultinom()</a></code> (OVR), <code><a href="reference/ds.vertMultinomJoint.html">ds.vertMultinomJoint()</a></code> (covariance-rescaled), <code><a href="reference/ds.vertMultinomJointNewton.html">ds.vertMultinomJointNewton()</a></code> (full softmax Newton via Beaver)</td>
+</tr>
+<tr>
+<td><strong>Ordinal (proportional odds)</strong></td>
+<td>
+<code><a href="reference/ds.vertOrdinal.html">ds.vertOrdinal()</a></code> (BLUE pool + threshold correction), <code><a href="reference/ds.vertOrdinalJointNewton.html">ds.vertOrdinalJointNewton()</a></code> (Tutz 1990 § 3.2 block-diagonal)</td>
+</tr>
+<tr>
+<td><strong>Mixed models</strong></td>
+<td>
+<code><a href="reference/ds.vertLMM.html">ds.vertLMM()</a></code> (REML closed-form, K=2; random intercept + slopes), <code><a href="reference/ds.vertLMM.k3.html">ds.vertLMM.k3()</a></code> (REML 1-D profile, K=3), <code><a href="reference/ds.vertGEE.html">ds.vertGEE()</a></code> (sandwich SE), <code><a href="reference/ds.vertGLMM.html">ds.vertGLMM()</a></code> (binomial Laplace, stretch)</td>
+</tr>
+<tr>
+<td><strong>Causal / robustness</strong></td>
+<td>
+<code><a href="reference/ds.vertIPW.html">ds.vertIPW()</a></code> (two-stage propensity + weighted GLM), <code><a href="reference/ds.vertMI.html">ds.vertMI()</a></code> (multiple imputation + Rubin pooling)</td>
+</tr>
+<tr>
+<td><strong>Penalised regression</strong></td>
+<td>
+<code><a href="reference/ds.vertLASSO.html">ds.vertLASSO()</a></code>, <code><a href="reference/ds.vertLASSO1Step.html">ds.vertLASSO1Step()</a></code>, <code><a href="reference/ds.vertLASSOIter.html">ds.vertLASSOIter()</a></code>, <code><a href="reference/ds.vertLASSOCV.html">ds.vertLASSOCV()</a></code> (AIC / BIC / EBIC selector), <code><a href="reference/ds.vertLASSOProximal.html">ds.vertLASSOProximal()</a></code> (FISTA-accelerated)</td>
 </tr>
 </tbody>
 </table>
 </div>
 <div class="section level2">
-<h2 id="glm-output">GLM Output<a class="anchor" aria-label="anchor" href="#glm-output"></a>
+<h2 id="output-sample-dsvertglm">Output sample (<code>ds.vertGLM</code>)<a class="anchor" aria-label="anchor" href="#output-sample-dsvertglm"></a>
 </h2>
 <pre><code>Coefficients:
                 Estimate Std.Error z value  Pr(&gt;|z|)
@@ -136,57 +179,131 @@ Converged: TRUE (14 iterations)
 Deviance: 22.09</code></pre>
 </div>
 <div class="section level2">
-<h2 id="supported-configurations">Supported Configurations<a class="anchor" aria-label="anchor" href="#supported-configurations"></a>
+<h2 id="k2-vs-k3-support">K=2 vs K≥3 support<a class="anchor" aria-label="anchor" href="#k2-vs-k3-support"></a>
 </h2>
 <table class="table">
 <colgroup>
-<col width="15%">
-<col width="38%">
-<col width="46%">
+<col width="33%">
+<col width="33%">
+<col width="33%">
 </colgroup>
 <thead><tr>
 <th></th>
 <th>K=2</th>
-<th>K&gt;=3</th>
+<th>K≥3</th>
 </tr></thead>
 <tbody>
 <tr>
-<td>Gaussian</td>
-<td>L-BFGS + identity link</td>
-<td>L-BFGS + identity link</td>
+<td>GLM (gauss / binom / poisson)</td>
+<td>✓ Ring63 / Ring127</td>
+<td>✓ Ring63</td>
 </tr>
 <tr>
-<td>Binomial</td>
-<td>L-BFGS + DCF sigmoid (50 intervals)</td>
-<td>L-BFGS + DCF sigmoid</td>
+<td>Cox PH</td>
+<td>✓ Ring127 (default) — STRICT vs <code>coxph</code>
+</td>
+<td>✓ via <code>ds.vertCox.k3</code> (Allison Poisson trick)</td>
 </tr>
 <tr>
-<td>Poisson</td>
-<td>L-BFGS + DCF exp (100 intervals)</td>
-<td>L-BFGS + DCF exp</td>
+<td>Negative binomial</td>
+<td>✓ iid / MoM / full-reg θ</td>
+<td>✓ iid path</td>
 </tr>
 <tr>
-<td>SE + p-values</td>
-<td>Finite-difference Hessian</td>
-<td>Central-difference Hessian</td>
+<td>Multinomial / ordinal</td>
+<td>✓ OVR + joint</td>
+<td>✓ OVR (joint Newton K=2-only by design)</td>
 </tr>
 <tr>
-<td>Deviance</td>
-<td>Beaver dot-product (1 scalar)</td>
-<td>Beaver dot-product</td>
+<td>LMM</td>
+<td>✓ K=2 closed-form</td>
+<td>✓ <code>ds.vertLMM.k3</code> (REML 1-D profile)</td>
 </tr>
 <tr>
-<td>Correlation</td>
-<td>Ring63 Beaver (p matvec)</td>
-<td>Ring63 Beaver (p matvec)</td>
-</tr>
-<tr>
-<td>PCA</td>
-<td>Eigen of correlation</td>
-<td>Eigen of correlation</td>
+<td>GEE / GLMM / IPW / MI / LASSO / Cor / PCA</td>
+<td>✓</td>
+<td>✓</td>
 </tr>
 </tbody>
 </table>
+</div>
+<div class="section level2">
+<h2 id="validation-evidence">Validation evidence<a class="anchor" aria-label="anchor" href="#validation-evidence"></a>
+</h2>
+<table class="table">
+<colgroup>
+<col width="25%">
+<col width="25%">
+<col width="25%">
+<col width="25%">
+</colgroup>
+<thead><tr>
+<th>Method</th>
+<th>max|Δβ|</th>
+<th>Reference</th>
+<th>Theoretical bound</th>
+</tr></thead>
+<tbody>
+<tr>
+<td>GLM binomial (Pima, K=2)</td>
+<td>3.18 × 10⁻⁴</td>
+<td>
+<code><a href="https://rdrr.io/r/stats/lm.html" class="external-link">lm()</a></code> / <code><a href="https://rdrr.io/r/stats/glm.html" class="external-link">glm()</a></code>
+</td>
+<td>Catrina-Saxena 2010 fp20</td>
+</tr>
+<tr>
+<td>Cox PH (NCCTG, Ring127)</td>
+<td>1.33 × 10⁻⁵</td>
+<td><code><a href="https://rdrr.io/pkg/survival/man/coxph.html" class="external-link">survival::coxph</a></code></td>
+<td>Catrina-Saxena 2010 fp50</td>
+</tr>
+<tr>
+<td>Cox PH (Pima, Ring127)</td>
+<td>8.09 × 10⁻⁵</td>
+<td><code><a href="https://rdrr.io/pkg/survival/man/coxph.html" class="external-link">survival::coxph</a></code></td>
+<td>Catrina-Saxena 2010 fp50</td>
+</tr>
+<tr>
+<td>Cox PH in LMM+Cox harness</td>
+<td>8.32 × 10⁻⁶</td>
+<td><code><a href="https://rdrr.io/pkg/survival/man/coxph.html" class="external-link">survival::coxph</a></code></td>
+<td>Catrina-Saxena 2010 fp50</td>
+</tr>
+<tr>
+<td>NB iid θ</td>
+<td>6.83 × 10⁻¹²</td>
+<td><code><a href="https://rdrr.io/pkg/MASS/man/theta.md.html" class="external-link">MASS::theta.ml</a></code></td>
+<td>Newton precision</td>
+</tr>
+<tr>
+<td>NB full-reg θ</td>
+<td>4.44 × 10⁻³</td>
+<td><code><a href="https://rdrr.io/pkg/MASS/man/glm.nb.html" class="external-link">MASS::glm.nb</a></code></td>
+<td>Catrina-Saxena fp50 + 5-iter NR (Goldschmidt 1964 + Pugh 2004) — σ-ratio 105×, <strong>SUB-NOISE</strong>
+</td>
+</tr>
+<tr>
+<td>Multinomial joint (Bohning)</td>
+<td>4.70 × 10⁻²</td>
+<td><code><a href="https://rdrr.io/pkg/nnet/man/multinom.html" class="external-link">nnet::multinom</a></code></td>
+<td>Catrina-Saxena Ring63 + Bohning</td>
+</tr>
+<tr>
+<td>Ordinal joint PO</td>
+<td>6.12 × 10⁻²</td>
+<td><code><a href="https://rdrr.io/pkg/MASS/man/polr.html" class="external-link">MASS::polr</a></code></td>
+<td>3× McCullagh-Agresti L1 floor</td>
+</tr>
+<tr>
+<td>LASSO proximal</td>
+<td>1-2 × 10⁻³</td>
+<td><code><a href="https://glmnet.stanford.edu/reference/cv.glmnet.html" class="external-link">glmnet::cv.glmnet</a></code></td>
+<td>FHT 2010 + Beck-Teboulle 2009</td>
+</tr>
+</tbody>
+</table>
+<p>All methods inside their theoretical floors (paper §V.A). <strong>Sub-noise margin</strong> (paper §V.B) at ≥ 100× the per-fit Wald SE for all four federated K=2 estimators (ord_joint β/θ, Cox β, NB θ).</p>
 </div>
 <div class="section level2">
 <h2 id="security">Security<a class="anchor" aria-label="anchor" href="#security"></a>
@@ -197,57 +314,14 @@ Deviance: 22.09</code></pre>
 <li>
 <strong>Server-generated Beaver triples</strong>: client never sees cryptographic material</li>
 <li>
-<strong>Dealer rotation</strong>: different server generates triples each iteration (K&gt;=4)</li>
+<strong>Dealer rotation</strong>: different server generates triples each iteration (K ≥ 3); fixed dealer with OT-Beaver for K = 2</li>
 <li>
 <strong>Transport encryption</strong>: X25519 + AES-256-GCM between servers</li>
 <li>
-<strong>Pure Ring63 MPC</strong>: fixed-point additive secret sharing</li>
+<strong>Identity verification</strong>: Ed25519 signed peer transport keys (<code>dsvert.require_trusted_peers</code>)</li>
 <li>
-<strong>Pinned peers (Ed25519)</strong>: servers verify each other’s identity, preventing Sybil attacks</li>
+<strong>Ring</strong>: Ring63 (frac_bits = 20) for legacy; Ring127 (frac_bits = 50) for STRICT closure (Catrina-Saxena 2010)</li>
 </ul>
-</div>
-<div class="section level2">
-<h2 id="performance-pima-diabetes-p6">Performance (Pima diabetes, p=6)<a class="anchor" aria-label="anchor" href="#performance-pima-diabetes-p6"></a>
-</h2>
-<table class="table">
-<thead><tr>
-<th>Analysis</th>
-<th>K=2</th>
-<th>K=3</th>
-</tr></thead>
-<tbody>
-<tr>
-<td>Key setup</td>
-<td>0.3s</td>
-<td>0.5s</td>
-</tr>
-<tr>
-<td>Binomial GLM</td>
-<td>~330s (12 iters + SE)</td>
-<td>~360s (14 iters + SE)</td>
-</tr>
-<tr>
-<td>Gaussian GLM</td>
-<td>~60s (11 iters + SE)</td>
-<td>~60s (11 iters + SE)</td>
-</tr>
-<tr>
-<td>Poisson GLM</td>
-<td>~580s (11 iters + SE)</td>
-<td>~580s (12 iters + SE)</td>
-</tr>
-<tr>
-<td>Correlation</td>
-<td>16s</td>
-<td>18s</td>
-</tr>
-<tr>
-<td>PCA</td>
-<td>&lt;1s (from cor)</td>
-<td>18s</td>
-</tr>
-</tbody>
-</table>
 </div>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
@@ -257,8 +331,28 @@ Deviance: 22.09</code></pre>
 <span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a></span>
 <span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co"># Or from source</span></span>
 <span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>R CMD build <span class="sc">--</span>no<span class="sc">-</span>build<span class="sc">-</span>vignettes .</span>
-<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>R CMD INSTALL dsVertClient_1.<span class="dv">0</span>.<span class="fl">0.</span>tar.gz</span></code></pre></div>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>R CMD INSTALL dsVertClient_1.<span class="dv">1</span>.<span class="fl">0.</span>tar.gz</span></code></pre></div>
 <p>Requires the server-side package <a href="https://github.com/isglobal-brge/dsVert" class="external-link">dsVert</a> installed on all DataSHIELD servers.</p>
+</div>
+<div class="section level2">
+<h2 id="documentation">Documentation<a class="anchor" aria-label="anchor" href="#documentation"></a>
+</h2>
+<ul>
+<li>
+<a href="https://isglobal-brge.github.io/dsVertClient/">Reference index</a> (pkgdown site)</li>
+<li><a href="https://isglobal-brge.github.io/dsVertClient/articles/vert_validation_evidence.html">Method validation evidence</a></li>
+<li><a href="NEWS.html">NEWS</a></li>
+</ul>
+</div>
+<div class="section level2">
+<h2 id="license">License<a class="anchor" aria-label="anchor" href="#license"></a>
+</h2>
+<p>MIT — see <a href="LICENSE.html">LICENSE</a>.</p>
+</div>
+<div class="section level2">
+<h2 id="citation">Citation<a class="anchor" aria-label="anchor" href="#citation"></a>
+</h2>
+<p>See <code>paper/jbhi_dsvert.tex</code> (IEEE J-BHI submission r2.5) for the full validation table, theoretical bounds, and disclosure ledger.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">
