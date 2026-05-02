@@ -23,6 +23,40 @@ navbar:
         - text: "Generalised linear models"
         - text: "GLM (binomial, K=3)"
           href: articles/methods/glm.html
+        - text: "NB (over-dispersed Poisson, K=3)"
+          href: articles/methods/nb.html
+        - text: "-------"
+        - text: "Survival"
+        - text: "Cox PH (K=2 OT-Beaver)"
+          href: articles/methods/cox_k2.html
+        - text: "Cox PH (K=3 Allison-Poisson trick)"
+          href: articles/methods/cox_k3.html
+        - text: "-------"
+        - text: "Mixed models / longitudinal"
+        - text: "LMM (K=2 closed-form REML)"
+          href: articles/methods/lmm_k2.html
+        - text: "LMM (K=3 REML profile + within-between)"
+          href: articles/methods/lmm_k3.html
+        - text: "GEE (K=3 sandwich)"
+          href: articles/methods/gee.html
+        - text: "GLMM (K=3 binomial Laplace)"
+          href: articles/methods/glmm.html
+        - text: "-------"
+        - text: "Categorical"
+        - text: "Ordinal joint Newton (K=2 Tutz)"
+          href: articles/methods/ord_joint.html
+        - text: "Ordinal warm OVR (K=3)"
+          href: articles/methods/ord_warm.html
+        - text: "Multinomial joint Newton (K=2 Bohning)"
+          href: articles/methods/mnl_joint.html
+        - text: "Multinomial warm OVR (K=3)"
+          href: articles/methods/mnl_warm.html
+        - text: "-------"
+        - text: "Causal / penalised"
+        - text: "IPW (K=3 two-stage)"
+          href: articles/methods/ipw.html
+        - text: "LASSO (K=3 proximal handoff)"
+          href: articles/methods/lasso.html
     github:
       icon: fa-github
       href: https://github.com/isglobal-brge/dsVertClient
@@ -137,6 +171,19 @@ articles:
       methods so the reader can compare estimators by skimming.
     contents:
       - methods/glm
+      - methods/nb
+      - methods/cox_k2
+      - methods/cox_k3
+      - methods/lmm_k2
+      - methods/lmm_k3
+      - methods/gee
+      - methods/glmm
+      - methods/ord_joint
+      - methods/ord_warm
+      - methods/mnl_joint
+      - methods/mnl_warm
+      - methods/ipw
+      - methods/lasso
 
 authors:
   David Sarrat González:
