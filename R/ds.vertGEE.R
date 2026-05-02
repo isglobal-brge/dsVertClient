@@ -81,6 +81,10 @@ ds.vertGEE <- function(formula, data = NULL,
   }
   Cov_model <- as.matrix(fit$covariance)
   Cov_model <- (Cov_model + t(Cov_model)) / 2
+  Cov_model_info <- as.matrix(fit$covariance_information %||%
+                                fit$covariance_unscaled %||%
+                                fit$covariance)
+  Cov_model_info <- (Cov_model_info + t(Cov_model_info)) / 2
 
   # Stage 2: weighted fit with weights = r^2 to pick up X^T diag(r^2) X.
   # For Gaussian: r_i = y_i - x_i^T beta. The outcome server holds y
@@ -162,19 +166,23 @@ ds.vertGEE <- function(formula, data = NULL,
           robust_cov <- Cov_model
         } else {
           # A ~ inverse-Fisher of weighted fit (meat). Sandwich:
-          #   V_sand = Cov_model * (Fisher_weighted / Fisher_model) * Cov_model
-          #         ~= Cov_model * solve(Cov_weighted) * Cov_model
-          # where Cov_weighted = vcov of weighted fit.
-          Cov_w <- as.matrix(fit_w$covariance)
-          Cov_w <- (Cov_w + t(Cov_w)) / 2
-          A <- tryCatch(solve(Cov_w), error = function(e) NULL)
+          #   V_sand = Bread * Fisher_weighted * Bread
+          #          ~= Cov_info_model * solve(Cov_info_weighted) *
+          #              Cov_info_model
+          # where Cov_info_* is inverse Fisher, not a Gaussian sigma^2-scaled
+          # model covariance.
+          Cov_w_info <- as.matrix(fit_w$covariance_information %||%
+                                     fit_w$covariance_unscaled %||%
+                                     fit_w$covariance)
+          Cov_w_info <- (Cov_w_info + t(Cov_w_info)) / 2
+          A <- tryCatch(solve(Cov_w_info), error = function(e) NULL)
           if (is.null(A)) {
             warning("meat matrix singular; returning model-based SE.",
                     call. = FALSE)
             robust_se <- fit$std_errors
             robust_cov <- Cov_model
           } else {
-            robust_cov <- Cov_model %*% A %*% Cov_model
+            robust_cov <- Cov_model_info %*% A %*% Cov_model_info
             dimnames(robust_cov) <- list(names(fit$coefficients),
                                           names(fit$coefficients))
             robust_se <- sqrt(pmax(diag(robust_cov), 0))
