@@ -127,8 +127,26 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
   Tmat <- W + (1 + 1 / m) * B
   se <- sqrt(pmax(diag(Tmat), 0))
   nm <- names(fits[[1]]$coefficients)
+  restore_impute_names <- function(x) {
+    for (v in impute_columns) {
+      x <- sub(paste0("^", v, "__mi_[0-9]+$"), v, x)
+    }
+    x
+  }
+  nm <- restore_impute_names(nm)
   names(beta_bar) <- names(se) <- nm
   dimnames(W) <- dimnames(B) <- dimnames(Tmat) <- list(nm, nm)
+  target_order <- c("(Intercept)", attr(stats::terms(formula), "term.labels"))
+  target_order <- target_order[target_order %in% nm]
+  ord <- match(c(target_order, setdiff(nm, target_order)), nm)
+  if (length(ord) == length(nm) && all(!is.na(ord))) {
+    beta_bar <- beta_bar[ord]
+    se <- se[ord]
+    W <- W[ord, ord, drop = FALSE]
+    B <- B[ord, ord, drop = FALSE]
+    Tmat <- Tmat[ord, ord, drop = FALSE]
+    nm <- nm[ord]
+  }
   # Fraction of missing information (per-coefficient).
   lambda_hat <- (1 + 1 / m) * diag(B) / pmax(diag(Tmat), 1e-30)
   r <- (1 + 1 / m) * diag(B) / pmax(diag(W), 1e-30)

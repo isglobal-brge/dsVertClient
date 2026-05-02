@@ -32,6 +32,9 @@
 #'   \itemize{
 #'     \item \code{coefficients}: Named coefficient vector (original scale)
 #'     \item \code{std_errors}: Standard errors (finite-difference Hessian)
+#'     \item \code{covariance}: Model covariance matrix on the original scale
+#'     \item \code{covariance_information}: Inverse Fisher/bread matrix
+#'       without Gaussian residual-variance scaling, for sandwich methods
 #'     \item \code{z_values}: z-statistics (coef / SE)
 #'     \item \code{p_values}: Two-sided p-values
 #'     \item \code{iterations}: Number of iterations
@@ -686,6 +689,10 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   if (use_k2_beaver && exists("k2_loop_intercept")) {
     beta_0_from_label <- k2_loop_intercept
   }
+  if (use_secure_agg && exists("k3_result") &&
+      !is.null(k3_result$intercept)) {
+    beta_0_from_label <- k3_result$intercept
+  }
 
   for (server in server_list) {
     server_beta <- betas[[server]]
@@ -779,9 +786,30 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   z_values <- rep(NA, n_vars_total)
   p_values <- rep(NA, n_vars_total)
   covariance <- NULL
+  covariance_information <- NULL
 
   if (!is.null(inv_H) && !is.null(attr(inv_H, "raw_hessian"))) {
     H_raw <- attr(inv_H, "raw_hessian")
+    # K>=3 finite-difference Hessian is generated in the protocol's beta
+    # order: coordinator features first, then the remaining servers. The
+    # public coefficients are reported in `server_list` order below. Align
+    # the Hessian before covariance/SE and downstream Gram reconstruction.
+    if (is.null(rownames(H_raw)) && isTRUE(use_secure_agg)) {
+      hess_feature_order <- unlist(
+        x_vars[c(coordinator, setdiff(server_list, coordinator))],
+        use.names = FALSE)
+      hess_order <- c("(Intercept)", hess_feature_order)
+      if (length(hess_order) == nrow(H_raw)) {
+        dimnames(H_raw) <- list(hess_order, hess_order)
+      }
+    }
+    if (!is.null(rownames(H_raw))) {
+      target_order <- names(all_coefs)
+      perm <- match(target_order, rownames(H_raw))
+      if (all(!is.na(perm)) && length(perm) == nrow(H_raw)) {
+        H_raw <- H_raw[perm, perm, drop = FALSE]
+      }
+    }
     # Fisher = n x (Hessian - lambdaI) where Hessian = X_std^T W X_std / n + lambdaI
     H_adj <- H_raw - lambda * diag(nrow(H_raw))
     fisher_std <- n_obs * H_adj
@@ -810,6 +838,30 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       # Transform covariance to original space
       cov_orig <- J %*% cov_std %*% t(J)
       dimnames(cov_orig) <- list(names(all_coefs), names(all_coefs))
+
+      # `cov_std` is the inverse Fisher matrix. For Gaussian models with
+      # standardized y, transforming by J adds the y_sd^2 scale, but ordinary
+      # glm() inference uses sigma_hat^2 * (X'WX)^-1. Keep the unscaled bread
+      # available for sandwich users and scale the public covariance by the
+      # residual variance estimate when deviance is available.
+      cov_info_orig <- cov_orig
+      if (family == "gaussian") {
+        y_scale <- if (standardize_y && !is.null(y_sd) &&
+                        is.finite(y_sd) && y_sd > 0) {
+          y_sd^2
+        } else {
+          1
+        }
+        cov_info_orig <- cov_orig / y_scale
+        if (!is.na(deviance) && is.finite(deviance)) {
+          df_resid <- max(n_obs - n_vars_total, 1L)
+          sigma2_hat <- deviance / df_resid
+          cov_orig <- cov_info_orig * sigma2_hat
+          dimnames(cov_orig) <- list(names(all_coefs), names(all_coefs))
+        }
+      }
+      dimnames(cov_info_orig) <- list(names(all_coefs), names(all_coefs))
+
       se_orig <- sqrt(pmax(diag(cov_orig), 0))
       std_errors <- se_orig
       names(std_errors) <- names(all_coefs)
@@ -823,6 +875,9 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     # client-side inference (multi-coef Wald, GEE sandwich, CI on linear
     # contrasts) can reuse it without another MPC round.
     if (exists("cov_orig", inherits = FALSE)) covariance <- cov_orig
+    if (exists("cov_info_orig", inherits = FALSE)) {
+      covariance_information <- cov_info_orig
+    }
 
     if (verbose && any(!is.na(std_errors))) {
       message("\nCoefficients:")
@@ -847,6 +902,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     z_values = z_values,
     p_values = p_values,
     covariance = covariance,
+    covariance_information = covariance_information,
+    covariance_unscaled = covariance_information,
     iterations = final_iter,
     converged = converged,
     family = family,
@@ -863,9 +920,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     x_sds   = setNames(all_x_sds,   all_names),
     y_sd    = if (exists("y_sd", inherits = FALSE)) y_sd else NULL,
     y_mean  = if (exists("y_mean", inherits = FALSE)) y_mean else NULL,
-    hessian_std = if (exists("inv_H", inherits = FALSE) && !is.null(inv_H) &&
-                       !is.null(attr(inv_H, "raw_hessian")))
-      attr(inv_H, "raw_hessian") else NULL,
+    hessian_std = if (exists("H_raw", inherits = FALSE)) H_raw else NULL,
     call = call_matched
   )
 
