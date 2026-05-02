@@ -39,6 +39,8 @@ Invisibly returns a list with alignment statistics for each server:
 \itemize{
 \item \code{n_matched}: Number of records matched
 \item \code{n_total}: Number of records on that server
+\item \code{n_pairwise}: Number of records matched in the pairwise PSI
+stage before the final all-server intersection
 }
 }
 \description{
@@ -75,7 +77,10 @@ encrypts result under target's PK.
 \item The target decrypts, matches double-masked sets, aligns data.
 }
 \item A multi-server intersection ensures only records present on ALL
-servers are retained.
+servers are retained. Matched reference-index vectors are encrypted from
+targets to the reference server; the reference computes the common set and
+encrypts common-index blobs back to targets for filtering, so the client
+does not see row-index vectors.
 }
 }
 
@@ -83,6 +88,8 @@ servers are retained.
 \itemize{
 \item The client sees only opaque encrypted blobs -- not EC points.
 \item Each server's scalar never leaves the server.
+\item Matched row-index vectors are not returned to the client in the
+default protocol.
 \item PSI firewall: phase ordering + one-shot semantics prevent OPRF
 oracle attacks.
 }

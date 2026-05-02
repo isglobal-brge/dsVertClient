@@ -355,7 +355,17 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
         })
     }
 
-    for (it in seq_len(25L)) {
+    theta_max_iter <- max(1L, as.integer(theta_max_iter))
+    theta_tol <- max(as.numeric(theta_tol), .Machine$double.eps)
+    theta_trace <- data.frame(
+      iter = integer(0L),
+      theta = numeric(0L),
+      score = numeric(0L),
+      deriv = numeric(0L),
+      theta_next = numeric(0L),
+      stringsAsFactors = FALSE)
+    theta_converged <- FALSE
+    for (it in seq_len(theta_max_iter)) {
       s <- score_eval(theta_cur)
       if (anyNA(unlist(s[c("score","deriv")]))) break
       if (!is.finite(s$deriv) || abs(s$deriv) < 1e-12) break
@@ -366,8 +376,17 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
         step <- step / 2; theta_new <- theta_cur - step; damp <- damp + 1L
       }
       if (!is.finite(theta_new) || theta_new <= 0) break
-      if (abs(theta_new - theta_cur) < 1e-6 * max(1, abs(theta_cur))) {
-        theta_cur <- theta_new; break
+      theta_trace <- rbind(theta_trace, data.frame(
+        iter = it,
+        theta = theta_cur,
+        score = as.numeric(s$score),
+        deriv = as.numeric(s$deriv),
+        theta_next = theta_new,
+        stringsAsFactors = FALSE))
+      if (abs(theta_new - theta_cur) < theta_tol * max(1, abs(theta_cur))) {
+        theta_cur <- theta_new
+        theta_converged <- TRUE
+        break
       }
       theta_cur <- theta_new
     }
@@ -380,6 +399,9 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     out$theta_iid <- theta_iid
     out$variance_correction <- NA_real_
     out$variant <- "full_reg_nd"
+    out$theta_trace <- theta_trace
+    out$theta_iter <- nrow(theta_trace)
+    out$theta_converged <- theta_converged
     out$std_errors <- pf$std_errors * var_inflation
     out$z_values <- pf$coefficients / out$std_errors
     out$p_values <- 2 * stats::pnorm(-abs(out$z_values))

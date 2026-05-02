@@ -43,6 +43,7 @@
 #' @param max_outer Outer (beta, sigma_b^2) iterations.
 #' @param inner_iter Inner PIRLS iterations per cluster per outer step.
 #' @param tol Outer convergence tolerance.
+#' @param lambda L2 penalty passed to the inner binomial GLM fits.
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD connections.
 #' @return \code{ds.vertGLMM} object: fixed-effect coefficients,
@@ -51,7 +52,8 @@
 #' @export
 ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         max_outer = 10L, inner_iter = 10L,
-                        tol = 1e-3, verbose = TRUE,
+                        tol = 1e-3, lambda = 0,
+                        verbose = TRUE,
                         datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
@@ -63,11 +65,26 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
   if (is.null(y_srv) || clust_srv != y_srv) {
     stop("cluster_col must live on the outcome server", call. = FALSE)
   }
+  f_obj <- if (inherits(formula, "formula")) formula else stats::as.formula(formula)
+  rhs_terms <- attr(stats::terms(f_obj), "term.labels")
+  y_cols <- tryCatch(
+    DSI::datashield.aggregate(datasources[which(server_names == y_srv)],
+      call(name = "dsvertColNamesDS", data_name = data))[[1L]]$columns,
+    error = function(e) character(0))
+  missing_local <- setdiff(rhs_terms, y_cols)
+  if (length(missing_local) > 0L) {
+    stop("ds.vertGLMM currently requires all fixed-effect predictors on ",
+         "the outcome server for the cluster BLUP update. Missing local ",
+         "predictors: ", paste(missing_local, collapse = ", "),
+         ". A true vertical GLMM path needs cross-server binomial residual ",
+         "aggregation.", call. = FALSE)
+  }
 
   # Prime with a straight binomial fit ignoring random effects.
   if (verbose) message("[ds.vertGLMM] prime: binomial ds.vertGLM")
   fit <- ds.vertGLM(formula = formula, data = data, family = "binomial",
-                    max_iter = 60L, verbose = FALSE,
+                    max_iter = inner_iter, tol = tol, lambda = lambda,
+                    verbose = FALSE,
                     datasources = datasources)
 
   # Cluster sizes + per-cluster residuals (all aggregates).
@@ -87,28 +104,33 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
   sigma_b2 <- 1.0
   b_hat <- rep(0, n_clusters)
   converged <- FALSE
+  offset_col <- NULL
   for (outer in seq_len(max_outer)) {
-    # Per-cluster residual aggregates at current fit.
+    # Per-cluster binomial score aggregates at current fixed effects and
+    # current random-intercept offset. Only one scalar per cluster returns.
+    x_coef_names <- setdiff(names(fit$coefficients), "(Intercept)")
     cl <- DSI::datashield.aggregate(
       datasources[which(server_names == y_srv)],
-      call(name = "dsvertClusterResidualsDS",
+      call(name = "dsvertClusterBinomialMomentsDS",
            data_name = data, y_var = y_var,
-           x_names = setdiff(names(fit$coefficients), "(Intercept)"),
+           x_names = x_coef_names,
            intercept = as.numeric(fit$coefficients["(Intercept)"]),
            betahat = as.numeric(fit$coefficients[setdiff(
              names(fit$coefficients), "(Intercept)")]),
-           cluster_col = cluster_col))
+           cluster_col = cluster_col,
+           offset_col = offset_col))
     if (is.list(cl) && length(cl) == 1L) cl <- cl[[1L]]
     rsum <- as.numeric(cl$rsum_per_cluster)
-    rss <- as.numeric(cl$rss_per_cluster)
-    # Laplace inner (client-side closed form for logit random
-    # intercept): \hat b_i approx rsum_i / (n_i * \bar p_i (1 - \bar p_i)
-    #                                    + 1/sigma_b^2)
-    # Use the BINOMIAL VARIANCE at the current intercept. Without per-
-    # cluster p_i we approximate by the global mean residual variance
-    # proxy from the fit's deviance.
-    sigma2_resid <- max(sum(rss) / sum(n_i), 0.25)
-    b_hat_new <- rsum / (n_i * sigma2_resid + 1 / sigma_b2)
+    vsum <- as.numeric(cl$vsum_per_cluster)
+    active <- n_i > 0L & is.finite(rsum) & is.finite(vsum)
+    info <- rep(Inf, n_clusters)
+    info[active] <- pmax(vsum[active], 1e-8) + 1 / sigma_b2
+    score <- rsum - b_hat / sigma_b2
+    step <- score / info
+    step[!is.finite(step)] <- 0
+    step <- pmax(pmin(step, 3), -3)
+    b_hat_new <- b_hat + step
+    b_hat_new[!active] <- 0
     # EM update for sigma_b^2 (task #99 fix 2026-04-21):
     # `var(b_hat)` is biased DOWN because b_hat is a shrunk BLUP:
     # E[b_hat_i^2] = shrinkage_i * sigma_b^2 + shrinkage_i^2 * posterior_var,
@@ -122,22 +144,22 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     # under the current sigma_b^2. It is positive, non-decreasing from
     # var(b_hat), and is the fixed point of the EM iteration that
     # converges to the ML estimator.
-    post_var <- 1 / (n_i * sigma2_resid + 1 / sigma_b2)
-    sigma_b2_new <- max(mean(b_hat_new^2 + post_var), 1e-6)
+    post_var <- 1 / info
+    sigma_b2_new <- max(mean(b_hat_new[active]^2 + post_var[active]), 1e-6)
     if (verbose) {
       message(sprintf(
         "[GLMM] outer %d  sigma_b^2=%.4g  var(b_hat)=%.4g  mean(post_var)=%.4g",
-        outer, sigma_b2_new, stats::var(b_hat_new), mean(post_var)))
+        outer, sigma_b2_new, stats::var(b_hat_new[active]),
+        mean(post_var[active])))
     }
-    if (abs(sigma_b2_new - sigma_b2) < tol * max(1, sigma_b2)) {
-      converged <- TRUE
-      b_hat <- b_hat_new; sigma_b2 <- sigma_b2_new
-      break
-    }
-    b_hat <- b_hat_new; sigma_b2 <- sigma_b2_new
+    b_delta <- max(abs(b_hat_new - b_hat))
+    sigma_delta <- abs(sigma_b2_new - sigma_b2)
+    old_coef <- fit$coefficients
+    b_hat <- b_hat_new
+    sigma_b2 <- sigma_b2_new
 
     # Expand b_i into a per-patient offset column so the next
-    # ds.vertGLM fit subtracts it via the existing offset= plumbing.
+    # ds.vertGLM fit adds it through the existing offset= plumbing.
     tryCatch(
       DSI::datashield.aggregate(
         datasources[which(server_names == y_srv)],
@@ -148,14 +170,24 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
       error = function(e) {
         message("[GLMM] offset expand failed: ", conditionMessage(e))
       })
+    offset_col <- "__dsvert_glmm_b"
     fit <- tryCatch(
       ds.vertGLM(formula = formula, data = data, family = "binomial",
-                 offset = "__dsvert_glmm_b",
-                 max_iter = 60L, verbose = FALSE,
+                 offset = offset_col,
+                 max_iter = inner_iter, tol = tol, lambda = lambda,
+                 verbose = FALSE,
                  datasources = datasources),
       error = function(e) {
         message("[GLMM] inner binomial refit failed: ",
                 conditionMessage(e)); fit })
+    common_coef <- intersect(names(old_coef), names(fit$coefficients))
+    beta_delta <- if (length(common_coef)) {
+      max(abs(old_coef[common_coef] - fit$coefficients[common_coef]))
+    } else Inf
+    if (max(sigma_delta, b_delta, beta_delta) < tol * max(1, sigma_b2)) {
+      converged <- TRUE
+      break
+    }
   }
 
   icc <- sigma_b2 / (sigma_b2 + pi^2 / 3)  # logistic latent-variance
