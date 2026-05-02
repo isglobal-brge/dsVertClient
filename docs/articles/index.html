@@ -21,6 +21,27 @@
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Generalised linear models</h6></li>
     <li><a class="dropdown-item" href="../articles/methods/glm.html">GLM (binomial, K=3)</a></li>
+    <li><a class="dropdown-item" href="../articles/methods/nb.html">NB (over-dispersed Poisson, K=3)</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Survival</h6></li>
+    <li><a class="dropdown-item" href="../articles/methods/cox_k2.html">Cox PH (K=2 OT-Beaver)</a></li>
+    <li><a class="dropdown-item" href="../articles/methods/cox_k3.html">Cox PH (K=3 Allison-Poisson trick)</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Mixed models / longitudinal</h6></li>
+    <li><a class="dropdown-item" href="../articles/methods/lmm_k2.html">LMM (K=2 closed-form REML)</a></li>
+    <li><a class="dropdown-item" href="../articles/methods/lmm_k3.html">LMM (K=3 REML profile + within-between)</a></li>
+    <li><a class="dropdown-item" href="../articles/methods/gee.html">GEE (K=3 sandwich)</a></li>
+    <li><a class="dropdown-item" href="../articles/methods/glmm.html">GLMM (K=3 binomial Laplace)</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Categorical</h6></li>
+    <li><a class="dropdown-item" href="../articles/methods/ord_joint.html">Ordinal joint Newton (K=2 Tutz)</a></li>
+    <li><a class="dropdown-item" href="../articles/methods/ord_warm.html">Ordinal warm OVR (K=3)</a></li>
+    <li><a class="dropdown-item" href="../articles/methods/mnl_joint.html">Multinomial joint Newton (K=2 Bohning)</a></li>
+    <li><a class="dropdown-item" href="../articles/methods/mnl_warm.html">Multinomial warm OVR (K=3)</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Causal / penalised</h6></li>
+    <li><a class="dropdown-item" href="../articles/methods/ipw.html">IPW (K=3 two-stage)</a></li>
+    <li><a class="dropdown-item" href="../articles/methods/lasso.html">LASSO (K=3 proximal handoff)</a></li>
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
@@ -42,6 +63,32 @@
       <div class="section-desc"><p>Each article exercises a single dsVert estimator end-to-end on a canonical small public dataset, against the analyst’s go-to centralised R reference (<code><a href="https://rdrr.io/r/stats/glm.html" class="external-link">stats::glm</a></code>, <code><a href="https://rdrr.io/pkg/survival/man/coxph.html" class="external-link">survival::coxph</a></code>, <code><a href="https://rdrr.io/pkg/nlme/man/lme.html" class="external-link">nlme::lme</a></code>, <code><a href="https://rdrr.io/pkg/MASS/man/glm.nb.html" class="external-link">MASS::glm.nb</a></code>, <code><a href="https://rdrr.io/pkg/MASS/man/polr.html" class="external-link">MASS::polr</a></code>, <code><a href="https://rdrr.io/pkg/nnet/man/multinom.html" class="external-link">nnet::multinom</a></code>, <code><a href="https://rdrr.io/pkg/lme4/man/glmer.html" class="external-link">lme4::glmer</a></code>, <code><a href="https://rdrr.io/pkg/geepack/man/geeglm.html" class="external-link">geepack::geeglm</a></code>, weighted glm, lm/glmnet), using the in-process DSLite multi-server harness. The five-section template (context + math + non-disclosure + partition table | data preparation + DSLite stand-up + PSI alignment | federated fit | centralised reference | comparison + verdict) is identical across methods so the reader can compare estimators by skimming.</p></div>
 
       <dl><dt><a href="methods/glm.html">Generalised linear model — federated binomial logistic regression (K = 3)</a></dt>
+        <dd>
+        </dd><dt><a href="methods/nb.html">Negative-binomial GLM — federated over-dispersed Poisson regression (K = 3)</a></dt>
+        <dd>
+        </dd><dt><a href="methods/cox_k2.html">Cox proportional-hazards — federated K=2 OT-Beaver dishonest-majority</a></dt>
+        <dd>
+        </dd><dt><a href="methods/cox_k3.html">Cox K=3 — federated Allison-1982 Poisson trick over GLM K=3</a></dt>
+        <dd>
+        </dd><dt><a href="methods/lmm_k2.html">Linear mixed model — federated K=2 closed-form REML</a></dt>
+        <dd>
+        </dd><dt><a href="methods/lmm_k3.html">Linear mixed model — federated K=3 REML 1-D profile + within-between ANOVA</a></dt>
+        <dd>
+        </dd><dt><a href="methods/gee.html">GEE — federated Liang–Zeger sandwich estimator (K = 3)</a></dt>
+        <dd>
+        </dd><dt><a href="methods/glmm.html">Binomial GLMM — Laplace-approximated random-intercept logistic (K = 3)</a></dt>
+        <dd>
+        </dd><dt><a href="methods/ord_joint.html">Ordinal proportional-odds — federated Tutz joint Newton (K = 2)</a></dt>
+        <dd>
+        </dd><dt><a href="methods/ord_warm.html">Ordinal warm — federated cumulative-binomial OVR (K = 3)</a></dt>
+        <dd>
+        </dd><dt><a href="methods/mnl_joint.html">Multinomial logistic — federated Bohning-bound joint Newton (K = 2)</a></dt>
+        <dd>
+        </dd><dt><a href="methods/mnl_warm.html">Multinomial warm — federated OVR + softmax-anchor (K = 3)</a></dt>
+        <dd>
+        </dd><dt><a href="methods/ipw.html">Inverse-probability weighting — federated two-stage propensity GLM (K = 3)</a></dt>
+        <dd>
+        </dd><dt><a href="methods/lasso.html">LASSO — federated proximal-gradient handoff over the Gaussian GLM normal-equations (K = 3)</a></dt>
         <dd>
       </dd></dl></div>
   </main></div>

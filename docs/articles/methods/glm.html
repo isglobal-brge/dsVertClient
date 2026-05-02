@@ -37,6 +37,27 @@
     <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Generalised linear models</h6></li>
     <li><a class="dropdown-item" href="../../articles/methods/glm.html">GLM (binomial, K=3)</a></li>
+    <li><a class="dropdown-item" href="../../articles/methods/nb.html">NB (over-dispersed Poisson, K=3)</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Survival</h6></li>
+    <li><a class="dropdown-item" href="../../articles/methods/cox_k2.html">Cox PH (K=2 OT-Beaver)</a></li>
+    <li><a class="dropdown-item" href="../../articles/methods/cox_k3.html">Cox PH (K=3 Allison-Poisson trick)</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Mixed models / longitudinal</h6></li>
+    <li><a class="dropdown-item" href="../../articles/methods/lmm_k2.html">LMM (K=2 closed-form REML)</a></li>
+    <li><a class="dropdown-item" href="../../articles/methods/lmm_k3.html">LMM (K=3 REML profile + within-between)</a></li>
+    <li><a class="dropdown-item" href="../../articles/methods/gee.html">GEE (K=3 sandwich)</a></li>
+    <li><a class="dropdown-item" href="../../articles/methods/glmm.html">GLMM (K=3 binomial Laplace)</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Categorical</h6></li>
+    <li><a class="dropdown-item" href="../../articles/methods/ord_joint.html">Ordinal joint Newton (K=2 Tutz)</a></li>
+    <li><a class="dropdown-item" href="../../articles/methods/ord_warm.html">Ordinal warm OVR (K=3)</a></li>
+    <li><a class="dropdown-item" href="../../articles/methods/mnl_joint.html">Multinomial joint Newton (K=2 Bohning)</a></li>
+    <li><a class="dropdown-item" href="../../articles/methods/mnl_warm.html">Multinomial warm OVR (K=3)</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><h6 class="dropdown-header" data-toc-skip>Causal / penalised</h6></li>
+    <li><a class="dropdown-item" href="../../articles/methods/ipw.html">IPW (K=3 two-stage)</a></li>
+    <li><a class="dropdown-item" href="../../articles/methods/lasso.html">LASSO (K=3 proximal handoff)</a></li>
   </ul>
 </li>
 <li class="nav-item"><a class="nav-link" href="../../reference/index.html">Reference</a></li>
@@ -363,9 +384,9 @@ information-matrix scalars cross the inter-server channel.</p>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; Coefficients:</span></span>
 <span><span class="co">#&gt; (Intercept)    pregnant     glucose    pressure     triceps     insulin </span></span>
-<span><span class="co">#&gt;   -9.528645    0.150682    0.028911   -0.003117   -0.008450   -0.002483 </span></span>
+<span><span class="co">#&gt;   -9.529035    0.150688    0.028912   -0.003115   -0.008447   -0.002483 </span></span>
 <span><span class="co">#&gt;        mass    pedigree         age </span></span>
-<span><span class="co">#&gt;    0.107775    1.236728    0.043146</span></span></code></pre></div>
+<span><span class="co">#&gt;    0.107775    1.236702    0.043150</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="centralised-reference">4. Centralised reference<a class="anchor" aria-label="anchor" href="#centralised-reference"></a>
@@ -425,15 +446,15 @@ per-fit uncertainty the federated estimator falls within.</p>
 <span><span class="va">delta</span><span class="op">$</span><span class="va">abs</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="va">delta</span><span class="op">$</span><span class="va">dsVert</span> <span class="op">-</span> <span class="va">delta</span><span class="op">$</span><span class="va">glm</span><span class="op">)</span></span>
 <span><span class="va">delta</span></span>
 <span><span class="co">#&gt;          coef       dsVert          glm          abs</span></span>
-<span><span class="co">#&gt; 1 (Intercept) -9.528644889 -9.528488688 1.562013e-04</span></span>
-<span><span class="co">#&gt; 2    pregnant  0.150682459  0.150695142 1.268322e-05</span></span>
-<span><span class="co">#&gt; 3     glucose  0.028910737  0.028924540 1.380253e-05</span></span>
-<span><span class="co">#&gt; 4    pressure -0.003116901 -0.003134016 1.711489e-05</span></span>
-<span><span class="co">#&gt; 5     triceps -0.008449632 -0.008522757 7.312564e-05</span></span>
-<span><span class="co">#&gt; 6     insulin -0.002482662 -0.002487855 5.193678e-06</span></span>
-<span><span class="co">#&gt; 7        mass  0.107775498  0.107875645 1.001473e-04</span></span>
-<span><span class="co">#&gt; 8    pedigree  1.236728483  1.237203707 4.752246e-04</span></span>
-<span><span class="co">#&gt; 9         age  0.043146200  0.043110551 3.564925e-05</span></span>
+<span><span class="co">#&gt; 1 (Intercept) -9.529035287 -9.528488688 5.465989e-04</span></span>
+<span><span class="co">#&gt; 2    pregnant  0.150687984  0.150695142 7.158457e-06</span></span>
+<span><span class="co">#&gt; 3     glucose  0.028911714  0.028924540 1.282592e-05</span></span>
+<span><span class="co">#&gt; 4    pressure -0.003115137 -0.003134016 1.887949e-05</span></span>
+<span><span class="co">#&gt; 5     triceps -0.008447130 -0.008522757 7.562687e-05</span></span>
+<span><span class="co">#&gt; 6     insulin -0.002482886 -0.002487855 4.969567e-06</span></span>
+<span><span class="co">#&gt; 7        mass  0.107774910  0.107875645 1.007352e-04</span></span>
+<span><span class="co">#&gt; 8    pedigree  1.236702185  1.237203707 5.015224e-04</span></span>
+<span><span class="co">#&gt; 9         age  0.043149604  0.043110551 3.905310e-05</span></span>
 <span></span>
 <span><span class="va">max_abs</span>    <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="va">delta</span><span class="op">$</span><span class="va">abs</span><span class="op">)</span></span>
 <span><span class="va">sigma_min</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">min</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/diag.html" class="external-link">diag</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/vcov.html" class="external-link">vcov</a></span><span class="op">(</span><span class="va">fit_ref</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
@@ -443,7 +464,7 @@ per-fit uncertainty the federated estimator falls within.</p>
 <span>  sigma_min     <span class="op">=</span> <span class="va">sigma_min</span>,</span>
 <span>  sigma_ratio   <span class="op">=</span> <span class="va">sigma_ratio</span><span class="op">)</span></span>
 <span><span class="co">#&gt; max_abs_delta     sigma_min   sigma_ratio </span></span>
-<span><span class="co">#&gt;  0.0004752246  0.0019796335  4.1656797967</span></span></code></pre></div>
+<span><span class="co">#&gt;  0.0005465989  0.0019796335  3.6217293740</span></span></code></pre></div>
 <div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://ggplot2.tidyverse.org/reference/ggplot.html" class="external-link">ggplot</a></span><span class="op">(</span><span class="va">delta</span>, <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/aes.html" class="external-link">aes</a></span><span class="op">(</span><span class="va">glm</span>, <span class="va">dsVert</span><span class="op">)</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/geom_abline.html" class="external-link">geom_abline</a></span><span class="op">(</span>slope <span class="op">=</span> <span class="fl">1</span>, intercept <span class="op">=</span> <span class="fl">0</span>, linetype <span class="op">=</span> <span class="st">"dashed"</span>,</span>
@@ -460,10 +481,10 @@ deviations are within the Catrina-Saxena Ring63 fixed-point envelope.
 </p>
 </div>
 <p>The maximum absolute deviation across the eight slopes plus intercept
-is 4.75e-04 — within the Catrina-Saxena Ring63 fixed-point envelope
+is 5.47e-04 — within the Catrina-Saxena Ring63 fixed-point envelope
 (<code>frac_bits = 20</code> ULP propagation bound ≈
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>3</mn></mrow></msup><annotation encoding="application/x-tex">10^{-3}</annotation></semantics></math>
-at this multiplicative depth). The σ-ratio comes out to 4.2×: at this
+at this multiplicative depth). The σ-ratio comes out to 3.6×: at this
 sample size the smallest per-coefficient Wald standard error is the one
 of <code>insulin</code> (a near-zero clinical effect at
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>β</mi><mo accent="true">̂</mo></mover><mo>≈</mo><mi>−</mi><mn>0.0025</mn></mrow><annotation encoding="application/x-tex">\hat\beta \approx
