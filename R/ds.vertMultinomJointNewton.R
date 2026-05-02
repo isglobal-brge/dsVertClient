@@ -1,18 +1,120 @@
+#' Build raw design Gram for multinomial Bohning Newton
+#'
+#' Internal helper that reconstructs X'X/n in formula order from scalar
+#' local moments and a low-dimensional correlation matrix.
+#'
+#' @param data_name Aligned data frame name.
+#' @param x_vars_per_server Named list of predictor variables per server.
+#' @param server_list Active K=2 server names.
+#' @param datasources DataSHIELD connections.
+#' @param cnames Coefficient names in formula order.
+#' @param n_obs Number of aligned observations.
+#' @keywords internal
+#' @noRd
+.mnl_joint_xtx_over_n <- function(data_name, x_vars_per_server, server_list,
+                                  datasources, cnames, n_obs) {
+  slope_names <- setdiff(cnames, "(Intercept)")
+  p <- length(cnames)
+  G <- matrix(0, p, p, dimnames = list(cnames, cnames))
+  int_idx <- match("(Intercept)", cnames)
+  if (!is.na(int_idx)) G[int_idx, int_idx] <- 1
+  if (length(slope_names) == 0L) return(G)
+
+  vars_by_server <- lapply(x_vars_per_server[server_list], function(v) {
+    intersect(v, slope_names)
+  })
+  vars_by_server <- vars_by_server[vapply(vars_by_server, length, integer(1L)) > 0L]
+  if (length(vars_by_server) == 0L) {
+    stop("no slope variables available for multinomial Gram", call. = FALSE)
+  }
+  available <- unlist(vars_by_server, use.names = FALSE)
+  missing <- setdiff(slope_names, available)
+  if (length(missing) > 0L) {
+    stop("missing slope variables for multinomial Gram: ",
+         paste(missing, collapse = ", "), call. = FALSE)
+  }
+
+  server_names <- names(datasources)
+  moments <- list()
+  for (srv in names(vars_by_server)) {
+    ci <- which(server_names == srv)
+    for (v in vars_by_server[[srv]]) {
+      r <- DSI::datashield.aggregate(
+        datasources[ci],
+        call(name = "dsvertLocalMomentsDS", data_name = data_name,
+             variable = v))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      if (!is.list(r) || !is.finite(r$mean) || !is.finite(r$sd)) {
+        stop("non-finite moments for variable '", v, "'", call. = FALSE)
+      }
+      if (!is.null(r$n_total) && as.integer(r$n_total) != as.integer(n_obs)) {
+        stop("moment count for variable '", v, "' does not match aligned n",
+             call. = FALSE)
+      }
+      moments[[v]] <- list(mean = as.numeric(r$mean),
+                           sd = as.numeric(r$sd))
+    }
+  }
+  means <- vapply(slope_names, function(v) moments[[v]]$mean, numeric(1L))
+  sds <- vapply(slope_names, function(v) {
+    sd_v <- moments[[v]]$sd
+    if (!is.finite(sd_v) || sd_v < 1e-12) 0 else sd_v
+  }, numeric(1L))
+
+  cor_mat <- diag(length(slope_names))
+  rownames(cor_mat) <- colnames(cor_mat) <- slope_names
+  if (length(slope_names) > 1L) {
+    if (length(vars_by_server) >= 2L) {
+      cor_res <- ds.vertCor(data_name, variables = vars_by_server,
+                            verbose = FALSE, datasources = datasources)
+      cor_mat <- as.matrix(cor_res$correlation[slope_names, slope_names,
+                                                drop = FALSE])
+    } else {
+      srv <- names(vars_by_server)[1L]
+      r <- DSI::datashield.aggregate(
+        datasources[which(server_names == srv)],
+        call(name = "localCorDS", data_name = data_name,
+             variables = vars_by_server[[srv]]))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      cor_mat <- as.matrix(r$correlation[slope_names, slope_names,
+                                          drop = FALSE])
+    }
+  }
+  if (any(!is.finite(cor_mat))) {
+    stop("non-finite correlation entries while building multinomial Gram",
+         call. = FALSE)
+  }
+
+  if (!is.na(int_idx)) {
+    G[int_idx, slope_names] <- means
+    G[slope_names, int_idx] <- means
+  }
+  n <- as.numeric(n_obs)
+  for (j in slope_names) {
+    for (k in slope_names) {
+      sample_cov <- cor_mat[j, k] * sds[[j]] * sds[[k]]
+      G[j, k] <- ((n - 1) / n) * sample_cov + means[[j]] * means[[k]]
+    }
+  }
+  G <- (G + t(G)) / 2
+  if (any(!is.finite(G))) {
+    stop("non-finite multinomial Gram entries", call. = FALSE)
+  }
+  G
+}
+
 #' @title Federated joint-softmax multinomial logistic regression via
 #'   Ring127 MPC-orchestrated Newton iteration
-#' @description Full per-patient softmax Newton: orchestrates K-1 parallel
-#'   exp(eta_k) shares, sums to denominator D = 1+Sumexp(eta_k), computes 1/D
-#'   via Ring127 Chebyshev + Newton-Raphson, multiplies per class to get
-#'   p_k(x_i) share per patient, builds residual y_k - p_k on outcome
-#'   server, and aggregates X^T(y_k - p_k) via existing Beaver matvec
-#'   pipeline for each class. Client-side Bohning-Hessian-bounded Newton
-#'   step on stacked beta.
+#' @description Full per-patient softmax Newton path for K=2 vertical splits:
+#'   orchestrates class-specific exp(eta) shares, shared softmax denominators,
+#'   shared residuals, and Beaver matvec score aggregation. The client performs
+#'   a Bohning-Hessian-bounded Newton step on stacked coefficients using only
+#'   aggregate gradients and low-dimensional Gram/Hessian objects.
 #'
-#'   All per-patient quantities stay as Ring127 additive shares; only the
-#'   final p(K-1)-dim aggregate gradient per iter is revealed -- same
-#'   privacy class as the single-class gradient of ds.vertGLM. **P3 delta:
-#'   zero new reveal types.**
-#'
+#'   All per-patient probabilities and residuals remain Ring127 additive
+#'   shares. The raw design Gram is built from scalar local moments and the
+#'   federated correlation matrix, which is the same aggregate-disclosure tier
+#'   as \code{ds.vertCor}.
 #' @param formula R formula with categorical outcome on LHS.
 #' @param data Aligned data frame name.
 #' @param levels Character vector of outcome levels (first = reference).
@@ -190,44 +292,19 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   # descent (Bohning 1992 Ann Inst Stat Math 44:197-200, Theorem 2;
   # Krishnapuram et al 2005 IEEE PAMI 27(6)).
   #
-  # XtX_over_n must be in FORMULA order to match beta_mat rows. The
-  # warm fit's $covariance is in fit-internal (server-partition) order
-  # per the LASSO permutation bug (same class as 4ce55a3 -- see
-  # dsVertGLM.k2.R theta_conv layout). Reconstruct via hessian_std +
-  # x_means + x_sds from the warm fit (those fields ARE in formula
-  # order), applying the same Gram-from-hessian formula as LASSO:
-  #   G[j,k] = x_j x_k + x_sd_j x_sd_k * H_std[perm(j), perm(k)]  (slopes)
-  #   G[0,j] = x_j  G[0,0] = 1
-  w0 <- warm$fits[[non_ref[1L]]]
-  XtX_over_n <- NULL
-  if (!is.null(w0$hessian_std) && !is.null(w0$x_means) &&
-      !is.null(w0$x_sds) && is.matrix(w0$hessian_std) &&
-      all(dim(w0$hessian_std) == c(p, p))) {
-    lam_ridge <- if (!is.null(w0$lambda) && is.finite(w0$lambda)) w0$lambda else 0
-    H_std <- w0$hessian_std - lam_ridge * diag(p)
-    if (!is.null(dimnames(H_std)) && !is.null(rownames(H_std))) {
-      perm <- match(cnames, rownames(H_std))
-      if (all(!is.na(perm))) H_std <- H_std[perm, perm, drop = FALSE]
-    }
-    x_m <- as.numeric(w0$x_means[cnames]); x_m[is.na(x_m)] <- 0
-    x_s <- as.numeric(w0$x_sds[cnames]);    x_s[is.na(x_s)] <- 0
-    XtX_over_n <- matrix(0, p, p, dimnames = list(cnames, cnames))
-    int_j <- which(cnames == "(Intercept)")
-    if (length(int_j) != 1L) int_j <- NA_integer_
-    for (jj in seq_len(p)) for (kk in seq_len(p)) {
-      if (!is.na(int_j) && jj == int_j && kk == int_j) XtX_over_n[jj,kk] <- 1
-      else if (!is.na(int_j) && jj == int_j) XtX_over_n[jj,kk] <- x_m[kk]
-      else if (!is.na(int_j) && kk == int_j) XtX_over_n[jj,kk] <- x_m[jj]
-      else XtX_over_n[jj,kk] <- x_m[jj]*x_m[kk] + x_s[jj]*x_s[kk]*H_std[jj,kk]
-    }
-  } else {
-    # Fallback for external warm starts without hessian_std -- use covariance.
-    cov_k0 <- w0$covariance
-    sigma2 <- if (!is.null(w0$deviance))
-      w0$deviance / max(n_obs - p, 1L) else 1
-    XtX_over_n <- tryCatch(sigma2 * solve(cov_k0) / n_obs,
-                           error = function(e) diag(p))
-  }
+  # XtX_over_n must be the raw design Gram in FORMULA order. Do not
+  # reconstruct it from a binomial GLM Hessian: that Hessian is X'WX/n,
+  # not X'X/n, and it under-scales the Bohning majorant enough to create
+  # oversized Newton steps. The aggregate Gram below uses only scalar
+  # moments and a federated correlation matrix, the same disclosure tier
+  # as ds.vertCor/PCA.
+  XtX_over_n <- .mnl_joint_xtx_over_n(
+    data_name = data,
+    x_vars_per_server = x_vars_per_server,
+    server_list = server_list,
+    datasources = datasources,
+    cnames = cnames,
+    n_obs = n_obs)
   B <- matrix(0, p * K_minus_1, p * K_minus_1)
   for (i in seq_len(K_minus_1))
     for (j in seq_len(K_minus_1)) {
