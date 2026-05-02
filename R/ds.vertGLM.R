@@ -924,6 +924,18 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     call = call_matched
   )
 
+  if (isTRUE(keep_session)) {
+    result$session_id <- session_id
+    result$transport_pks <- transport_pks
+    result$server_list <- server_list
+    result$x_vars <- x_vars
+    result$y_var <- y_var
+    result$data_name <- data_name
+    result$std_data <- std_data
+    result$standardize_y <- standardize_y
+    result$ring <- ring
+  }
+
   # Cleanup handled by on.exit()
 
   class(result) <- c("ds.glm", "list")
