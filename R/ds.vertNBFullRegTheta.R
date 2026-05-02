@@ -336,8 +336,9 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     y_var <- base_fit$y_var
     theta_mom <- if (is.finite(y_var) && y_var > y_mean + 1e-10)
       max(y_mean^2 / max(y_var - y_mean, 1e-6), 0.1) else NA_real_
-    theta_cur <- if (is.finite(theta_mom)) theta_mom
-                  else max(theta_iid, 1e-3)
+    theta_seed <- max(c(theta_mom, theta_iid, 1e-3), na.rm = TRUE)
+    if (!is.finite(theta_seed) || theta_seed <= 0) theta_seed <- 1e-3
+    theta_cur <- theta_seed
 
     score_eval <- function(th) {
       tryCatch(.nb_fullreg_nd_score(
@@ -369,11 +370,17 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       s <- score_eval(theta_cur)
       if (anyNA(unlist(s[c("score","deriv")]))) break
       if (!is.finite(s$deriv) || abs(s$deriv) < 1e-12) break
-      step <- s$score / s$deriv
-      theta_new <- theta_cur - step
+      # Update on log(theta), not theta. This keeps positivity by
+      # construction and is much better scaled when the fixed-mu theta is
+      # several-fold above the y-only MoM/iid starting values.
+      step <- s$score / (s$deriv * theta_cur)
+      step <- max(min(step, log(4)), -log(4))
+      theta_new <- theta_cur * exp(-step)
       damp <- 0L
       while (theta_new <= 1e-6 && damp < 20L) {
-        step <- step / 2; theta_new <- theta_cur - step; damp <- damp + 1L
+        step <- step / 2
+        theta_new <- theta_cur * exp(-step)
+        damp <- damp + 1L
       }
       if (!is.finite(theta_new) || theta_new <= 0) break
       theta_trace <- rbind(theta_trace, data.frame(
