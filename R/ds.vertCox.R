@@ -486,11 +486,13 @@ ds.vertCox <- function(formula, data = NULL,
     # --- Step 2: y = eta * (1/a)  (local scale, both parties).
     for (server in server_list) {
       ci <- which(server_names == server)
+      is_coord <- (server == y_server)
       .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
         in_key = "k2_eta_share_fp",
         scalar_fp = coef_res_one_over_a,
         output_key = "k2_r127_horner_y",
-        n = n_int, session_id = session_id))
+        n = n_int, session_id = session_id,
+        is_party0 = is_coord))
     }
 
     # --- Step 3: twoY = y + y  (affine combine sign_a=+1, sign_b=+1).
@@ -642,11 +644,13 @@ ds.vertCox <- function(formula, data = NULL,
     # --- Step 2a: t_pre = x * (1/halfRange)  (local scale, both parties).
     for (server in server_list) {
       ci <- which(server_names == server)
+      is_coord <- (server == y_server)
       .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
         in_key = "k2_eta_share_fp",
         scalar_fp = rc_one_over_half_range,
         output_key = "k2_r127_recip_t_pre",
-        n = n_int, session_id = session_id))
+        n = n_int, session_id = session_id,
+        is_party0 = is_coord))
     }
     # --- Step 2b: t = t_pre + (-mid/halfRange) on party 0 (public offset).
     for (server in server_list) {
