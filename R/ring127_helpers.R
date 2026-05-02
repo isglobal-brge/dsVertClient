@@ -18,7 +18,7 @@
 .ring127_get_half_fp <- function() {
   if (is.null(.ring127_half_fp_cache$v)) {
     r <- dsVert:::.callMpcTool("k2-float-to-fp",
-      list(values = array(0.5, dim = 1L), frac_bits = 50L, ring = "ring127"))
+      list(values = array(0.5, dim = 1L), frac_bits = 50, ring = "ring127"))
     .ring127_half_fp_cache$v <- r$fp_data
   }
   .ring127_half_fp_cache$v
@@ -46,8 +46,8 @@
     call(name = "k2BeaverVecmulGenTriplesDS",
          dcf0_pk = transport_pks[[y_server]],
          dcf1_pk = transport_pks[[nl]],
-         n = n_int, session_id = session_id,
-         frac_bits = 50L, ring = 127L))
+         n = as.numeric(n_int), session_id = session_id,
+         frac_bits = 50, ring = 127))
   if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
   .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple",
             which(server_names == y_server))
@@ -64,8 +64,8 @@
     r <- .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR1DS",
       peer_pk = transport_pks[[peer]],
       x_key = x_key, y_key = y_key,
-      n = n_int, session_id = session_id,
-      frac_bits = 50L, ring = 127L))
+      n = as.numeric(n_int), session_id = session_id,
+      frac_bits = 50, ring = 127))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     r1_b[[server]] <- r
   }
@@ -79,8 +79,8 @@
     .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR2DS",
       is_party0 = is_coord, x_key = x_key, y_key = y_key,
       output_key = output_key,
-      n = n_int, session_id = session_id,
-      frac_bits = 50L, ring = 127L))
+      n = as.numeric(n_int), session_id = session_id,
+      frac_bits = 50, ring = 127))
   }
   invisible(NULL)
 }
@@ -96,7 +96,7 @@
   n_int <- as.integer(n)
   if (is.null(.ring127_exp_coef_cache$coef_res)) {
     .ring127_exp_coef_cache$coef_res <- dsVert:::.callMpcTool(
-      "k2-exp127-get-coeffs", list(frac_bits = 50L))
+      "k2-exp127-get-coeffs", list(frac_bits = 50))
   }
   coef_res <- .ring127_exp_coef_cache$coef_res
   # Opal DSL "==" parser fix -- strip base64 padding client-side;
@@ -121,19 +121,20 @@
     is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
       in_key = in_key, scalar_fp = coef_res_one_over_a,
-      output_key = tmp_y, n = n_int, session_id = session_id))
+      output_key = tmp_y, n = as.numeric(n_int), session_id = session_id,
+      is_party0 = is_coord))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = tmp_y, b_key = tmp_y, sign_a = 1L, sign_b = 1L,
+      a_key = tmp_y, b_key = tmp_y, sign_a = 1, sign_b = 1,
       public_const_fp = NULL, is_party0 = is_coord,
-      output_key = tmp_twoY, n = n_int, session_id = session_id))
+      output_key = tmp_twoY, n = as.numeric(n_int), session_id = session_id))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      a_key = NULL, b_key = NULL, sign_a = 0, sign_b = 0,
       public_const_fp = c_b64[degree + 1L], is_party0 = is_coord,
-      output_key = tmp_bB, n = n_int, session_id = session_id))
+      output_key = tmp_bB, n = as.numeric(n_int), session_id = session_id))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      a_key = NULL, b_key = NULL, sign_a = 0, sign_b = 0,
       public_const_fp = NULL, is_party0 = is_coord,
-      output_key = tmp_bA, n = n_int, session_id = session_id))
+      output_key = tmp_bA, n = as.numeric(n_int), session_id = session_id))
   }
 
   slot_B <- tmp_bB; slot_A <- tmp_bA
@@ -146,9 +147,9 @@
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
       .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-        a_key = tmp_res, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+        a_key = tmp_res, b_key = slot_A, sign_a = 1, sign_b = -1,
         public_const_fp = c_b64[k + 1L], is_party0 = is_coord,
-        output_key = slot_A, n = n_int, session_id = session_id))
+        output_key = slot_A, n = as.numeric(n_int), session_id = session_id))
     }
     swap <- slot_A; slot_A <- slot_B; slot_B <- swap
   }
@@ -160,9 +161,9 @@
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = tmp_res, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+      a_key = tmp_res, b_key = slot_A, sign_a = 1, sign_b = -1,
       public_const_fp = c_b64[1L], is_party0 = is_coord,
-      output_key = out_key, n = n_int, session_id = session_id))
+      output_key = out_key, n = as.numeric(n_int), session_id = session_id))
   }
   invisible(NULL)
 }
@@ -177,7 +178,7 @@
   n_int <- as.integer(n)
   if (is.null(.ring127_recip_coef_cache$coef_res)) {
     .ring127_recip_coef_cache$coef_res <- dsVert:::.callMpcTool(
-      "k2-recip127-get-coeffs", list(frac_bits = 50L))
+      "k2-recip127-get-coeffs", list(frac_bits = 50))
   }
   rc <- .ring127_recip_coef_cache$coef_res
   rc_one_over_half_range <- .to_b64url(rc$one_over_half_range)
@@ -208,24 +209,25 @@
     is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
       in_key = in_key, scalar_fp = rc_one_over_half_range,
-      output_key = t_pre, n = n_int, session_id = session_id))
+      output_key = t_pre, n = as.numeric(n_int), session_id = session_id,
+      is_party0 = is_coord))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = t_pre, b_key = NULL, sign_a = 1L, sign_b = 0L,
+      a_key = t_pre, b_key = NULL, sign_a = 1, sign_b = 0,
       public_const_fp = rc_neg_mid_over_half_range,
       is_party0 = is_coord, output_key = t_key,
-      n = n_int, session_id = session_id))
+      n = as.numeric(n_int), session_id = session_id))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = t_key, b_key = t_key, sign_a = 1L, sign_b = 1L,
+      a_key = t_key, b_key = t_key, sign_a = 1, sign_b = 1,
       public_const_fp = NULL, is_party0 = is_coord,
-      output_key = twoT, n = n_int, session_id = session_id))
+      output_key = twoT, n = as.numeric(n_int), session_id = session_id))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      a_key = NULL, b_key = NULL, sign_a = 0, sign_b = 0,
       public_const_fp = c_b64[degree + 1L], is_party0 = is_coord,
-      output_key = bB, n = n_int, session_id = session_id))
+      output_key = bB, n = as.numeric(n_int), session_id = session_id))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      a_key = NULL, b_key = NULL, sign_a = 0, sign_b = 0,
       public_const_fp = NULL, is_party0 = is_coord,
-      output_key = bA, n = n_int, session_id = session_id))
+      output_key = bA, n = as.numeric(n_int), session_id = session_id))
   }
 
   slot_B <- bB; slot_A <- bA
@@ -238,9 +240,9 @@
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
       .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-        a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+        a_key = tmp, b_key = slot_A, sign_a = 1, sign_b = -1,
         public_const_fp = c_b64[k + 1L], is_party0 = is_coord,
-        output_key = slot_A, n = n_int, session_id = session_id))
+        output_key = slot_A, n = as.numeric(n_int), session_id = session_id))
     }
     swap <- slot_A; slot_A <- slot_B; slot_B <- swap
   }
@@ -252,9 +254,9 @@
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+      a_key = tmp, b_key = slot_A, sign_a = 1, sign_b = -1,
       public_const_fp = c_b64[1L], is_party0 = is_coord,
-      output_key = y_cur, n = n_int, session_id = session_id))
+      output_key = y_cur, n = as.numeric(n_int), session_id = session_id))
   }
 
   for (iter in seq_len(nr_steps)) {
@@ -266,9 +268,9 @@
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
       .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-        a_key = NULL, b_key = xy, sign_a = 0L, sign_b = -1L,
+        a_key = NULL, b_key = xy, sign_a = 0, sign_b = -1,
         public_const_fp = rc_two_fp, is_party0 = is_coord,
-        output_key = tmXY, n = n_int, session_id = session_id))
+        output_key = tmXY, n = as.numeric(n_int), session_id = session_id))
     }
     final_slot <- if (iter == nr_steps) out_key else y_alt
     .ring127_vecmul(y_cur, tmXY, final_slot, n_int,
@@ -311,9 +313,11 @@
   # Step 1: scale input by 0.5 locally on each server (linear, no MPC round).
   for (server in server_list) {
     ci <- which(server_names == server)
+    is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
       in_key = in_key, scalar_fp = half_fp_b64,
-      output_key = half_key, n = n_int, session_id = session_id))
+      output_key = half_key, n = as.numeric(n_int), session_id = session_id,
+      is_party0 = is_coord))
   }
   # Step 2: evaluate exp on half-input (interior Chebyshev [-5,5]).
   .ring127_exp_round_keyed(half_key, exp_half_key, n,
@@ -358,7 +362,7 @@
   n_int <- as.integer(n)
   if (is.null(.ring127_log_coef_cache$coef_res)) {
     .ring127_log_coef_cache$coef_res <- dsVert:::.callMpcTool(
-      "k2-log-shift-coeffs", list(frac_bits = 50L))
+      "k2-log-shift-coeffs", list(frac_bits = 50))
   }
   rc <- .ring127_log_coef_cache$coef_res
   rc_one_over_half_range <- .to_b64url(rc$one_over_half_range)
@@ -383,24 +387,25 @@
     is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
       in_key = in_key, scalar_fp = rc_one_over_half_range,
-      output_key = t_pre, n = n_int, session_id = session_id))
+      output_key = t_pre, n = as.numeric(n_int), session_id = session_id,
+      is_party0 = is_coord))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = t_pre, b_key = NULL, sign_a = 1L, sign_b = 0L,
+      a_key = t_pre, b_key = NULL, sign_a = 1, sign_b = 0,
       public_const_fp = rc_neg_mid_over_half_range,
       is_party0 = is_coord, output_key = t_key,
-      n = n_int, session_id = session_id))
+      n = as.numeric(n_int), session_id = session_id))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = t_key, b_key = t_key, sign_a = 1L, sign_b = 1L,
+      a_key = t_key, b_key = t_key, sign_a = 1, sign_b = 1,
       public_const_fp = NULL, is_party0 = is_coord,
-      output_key = twoT, n = n_int, session_id = session_id))
+      output_key = twoT, n = as.numeric(n_int), session_id = session_id))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      a_key = NULL, b_key = NULL, sign_a = 0, sign_b = 0,
       public_const_fp = c_b64[degree + 1L], is_party0 = is_coord,
-      output_key = bB, n = n_int, session_id = session_id))
+      output_key = bB, n = as.numeric(n_int), session_id = session_id))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      a_key = NULL, b_key = NULL, sign_a = 0, sign_b = 0,
       public_const_fp = NULL, is_party0 = is_coord,
-      output_key = bA, n = n_int, session_id = session_id))
+      output_key = bA, n = as.numeric(n_int), session_id = session_id))
   }
 
   slot_B <- bB; slot_A <- bA
@@ -413,9 +418,9 @@
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
       .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-        a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+        a_key = tmp, b_key = slot_A, sign_a = 1, sign_b = -1,
         public_const_fp = c_b64[k + 1L], is_party0 = is_coord,
-        output_key = slot_A, n = n_int, session_id = session_id))
+        output_key = slot_A, n = as.numeric(n_int), session_id = session_id))
     }
     swap <- slot_A; slot_A <- slot_B; slot_B <- swap
   }
@@ -427,9 +432,9 @@
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+      a_key = tmp, b_key = slot_A, sign_a = 1, sign_b = -1,
       public_const_fp = c_b64[1L], is_party0 = is_coord,
-      output_key = out_key, n = n_int, session_id = session_id))
+      output_key = out_key, n = as.numeric(n_int), session_id = session_id))
   }
   invisible(NULL)
 }
@@ -468,9 +473,11 @@
   # falls in [1, 10].
   for (server in server_list) {
     ci <- which(server_names == server)
+    is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
       in_key = in_key, scalar_fp = scale_fp_b64,
-      output_key = scaled_key, n = n_int, session_id = session_id))
+      output_key = scaled_key, n = as.numeric(n_int), session_id = session_id,
+      is_party0 = is_coord))
   }
 
   # Step 2: evaluate log on the rescaled share (Chebyshev core [1, 10]).
@@ -488,10 +495,10 @@
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = log_scaled_key, b_key = NULL, sign_a = 1L, sign_b = 0L,
+      a_key = log_scaled_key, b_key = NULL, sign_a = 1, sign_b = 0,
       public_const_fp = log_scale_correction_fp_b64,
       is_party0 = is_coord, output_key = out_key,
-      n = n_int, session_id = session_id))
+      n = as.numeric(n_int), session_id = session_id))
   }
   invisible(NULL)
 }
@@ -547,7 +554,7 @@
   # Step 0: fetch wide-Chebyshev coefficients (cache once per session).
   if (is.null(.ring127_log_wide_coef_cache$coef_res)) {
     .ring127_log_wide_coef_cache$coef_res <- dsVert:::.callMpcTool(
-      "k2-log-shift-coeffs-wide", list(frac_bits = 50L))
+      "k2-log-shift-coeffs-wide", list(frac_bits = 50))
   }
   rc <- .ring127_log_wide_coef_cache$coef_res
   rc_one_over_half_range <- .to_b64url(rc$one_over_half_range)
@@ -579,24 +586,25 @@
     is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
       in_key = in_key, scalar_fp = rc_one_over_half_range,
-      output_key = t_pre, n = n_int, session_id = session_id))
+      output_key = t_pre, n = as.numeric(n_int), session_id = session_id,
+      is_party0 = is_coord))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = t_pre, b_key = NULL, sign_a = 1L, sign_b = 0L,
+      a_key = t_pre, b_key = NULL, sign_a = 1, sign_b = 0,
       public_const_fp = rc_neg_mid_over_half_range,
       is_party0 = is_coord, output_key = t_key,
-      n = n_int, session_id = session_id))
+      n = as.numeric(n_int), session_id = session_id))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = t_key, b_key = t_key, sign_a = 1L, sign_b = 1L,
+      a_key = t_key, b_key = t_key, sign_a = 1, sign_b = 1,
       public_const_fp = NULL, is_party0 = is_coord,
-      output_key = twoT, n = n_int, session_id = session_id))
+      output_key = twoT, n = as.numeric(n_int), session_id = session_id))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      a_key = NULL, b_key = NULL, sign_a = 0, sign_b = 0,
       public_const_fp = c_b64[degree + 1L], is_party0 = is_coord,
-      output_key = bB, n = n_int, session_id = session_id))
+      output_key = bB, n = as.numeric(n_int), session_id = session_id))
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = NULL, b_key = NULL, sign_a = 0L, sign_b = 0L,
+      a_key = NULL, b_key = NULL, sign_a = 0, sign_b = 0,
       public_const_fp = NULL, is_party0 = is_coord,
-      output_key = bA, n = n_int, session_id = session_id))
+      output_key = bA, n = as.numeric(n_int), session_id = session_id))
   }
 
   slot_B <- bB; slot_A <- bA
@@ -609,9 +617,9 @@
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
       .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-        a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+        a_key = tmp, b_key = slot_A, sign_a = 1, sign_b = -1,
         public_const_fp = c_b64[k + 1L], is_party0 = is_coord,
-        output_key = slot_A, n = n_int, session_id = session_id))
+        output_key = slot_A, n = as.numeric(n_int), session_id = session_id))
     }
     swap <- slot_A; slot_A <- slot_B; slot_B <- swap
   }
@@ -623,18 +631,18 @@
     ci <- which(server_names == server)
     is_coord <- (server == y_server)
     .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = tmp, b_key = slot_A, sign_a = 1L, sign_b = -1L,
+      a_key = tmp, b_key = slot_A, sign_a = 1, sign_b = -1,
       public_const_fp = c_b64[1L], is_party0 = is_coord,
-      output_key = y_seed, n = n_int, session_id = session_id))
+      output_key = y_seed, n = as.numeric(n_int), session_id = session_id))
   }
 
   # Step 2: 5 NR refinement iterations on shares.
   # y_{n+1} = y_n + x * exp(-y_n) - 1
   one_fp_b64 <- .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
-    values = array(1.0, dim = 1L), frac_bits = 50L,
+    values = array(1.0, dim = 1L), frac_bits = 50,
     ring = "ring127"))$fp_data)
   neg_one_fp_b64 <- .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
-    values = array(-1.0, dim = 1L), frac_bits = 50L,
+    values = array(-1.0, dim = 1L), frac_bits = 50,
     ring = "ring127"))$fp_data)
 
   cur <- y_seed
@@ -646,9 +654,9 @@
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
       .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-        a_key = cur, b_key = NULL, sign_a = -1L, sign_b = 0L,
+        a_key = cur, b_key = NULL, sign_a = -1, sign_b = 0,
         public_const_fp = NULL, is_party0 = is_coord,
-        output_key = negY, n = n_int, session_id = session_id))
+        output_key = negY, n = as.numeric(n_int), session_id = session_id))
     }
     # Step 2b: exp(-y_n) share via existing primitive.
     .ring127_exp_round_keyed_extended(negY, expN, n_int,
@@ -669,10 +677,10 @@
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
       .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-        a_key = cur, b_key = xExp, sign_a = 1L, sign_b = 1L,
+        a_key = cur, b_key = xExp, sign_a = 1, sign_b = 1,
         public_const_fp = if (is_coord) neg_one_fp_b64 else NULL,
         is_party0 = is_coord,
-        output_key = next_slot, n = n_int, session_id = session_id))
+        output_key = next_slot, n = as.numeric(n_int), session_id = session_id))
     }
     cur <- next_slot
   }
