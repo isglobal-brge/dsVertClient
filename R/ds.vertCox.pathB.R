@@ -39,11 +39,11 @@
   #      mu*G shares on both parties under canonical key names.
   neg_grad_k <- .cox_score_round(beta_std)
 
-  # Helper: one Beaver vecmul of session slot x_key × y_key → output slot.
+  # Helper: one Beaver vecmul of session slot x_key x y_key -> output slot.
   # Returns nothing; output lives in `output_key` on both parties.
   .beaver_mul <- function(x_key, y_key, output_key) {
     tri <- single(.dsAgg(datasources[dealer_ci],
-      call("k2BeaverVecmulGenTriplesDS",
+      call(name = "k2BeaverVecmulGenTriplesDS",
            dcf0_pk = transport_pks[[y_server]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n_obs),
@@ -56,12 +56,12 @@
     for (s in server_list) {
       ci <- which(server_names == s)
       .dsAgg(datasources[ci],
-        call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+        call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
     }
     r1 <- list()
     for (s in server_list) {
       ci <- which(server_names == s); peer <- setdiff(server_list, s)
-      r <- single(.dsAgg(datasources[ci], call("k2BeaverVecmulR1DS",
+      r <- single(.dsAgg(datasources[ci], call(name = "k2BeaverVecmulR1DS",
         peer_pk = transport_pks[[peer]],
         x_key = x_key, y_key = y_key,
         n = as.integer(n_obs),
@@ -75,7 +75,7 @@
               which(server_names == y_server))
     for (s in server_list) {
       ci <- which(server_names == s)
-      .dsAgg(datasources[ci], call("k2BeaverVecmulR2DS",
+      .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR2DS",
         is_party0 = (s == y_server),
         x_key = x_key, y_key = y_key,
         output_key = output_key,
@@ -92,7 +92,7 @@
     for (s in server_list) {
       ci <- which(server_names == s)
       r <- single(.dsAgg(datasources[ci],
-        call("dsvertCoxPathBScalarDS",
+        call(name = "dsvertCoxPathBScalarDS",
              input_key = input_key,
              weight_key = weight_key,
              session_id = session_id)))
@@ -115,7 +115,7 @@
     .beaver_mul(Xkey, "k2_cox_mu_share_fp", tmp_key)
     for (s in server_list) {
       ci <- which(server_names == s)
-      .dsAgg(datasources[ci], call("dsvertCoxPathBCumsumDS",
+      .dsAgg(datasources[ci], call(name = "dsvertCoxPathBCumsumDS",
         input_key = tmp_key, output_key = Tkey,
         reverse = TRUE, session_id = session_id))
     }

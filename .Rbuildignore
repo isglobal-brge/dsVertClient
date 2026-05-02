@@ -1,0 +1,9 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^vignettes$
+^\.github$
+^docs$
+^scripts$
+^LICENSE\.md$
+^CITATION\.cff$
+^CONTRIBUTING\.md$

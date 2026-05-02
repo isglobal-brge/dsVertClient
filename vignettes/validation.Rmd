@@ -212,7 +212,7 @@ max(abs(dv_bw_cor$correlation - gt_bw_cor))
 ```
 
 ```{r bw-pca, fig.width=6, fig.height=4}
-dv_bw_pca <- ds.vertPCA("DA", bw_vars, datasources = bw_conns)
+dv_bw_pca <- ds.vertPCA(cor_result = dv_bw_cor)
 gt_bw_pca <- eigen(gt_bw_cor)
 
 barplot(rbind(gt_bw_pca$values, dv_bw_pca$eigenvalues), beside = TRUE,
@@ -388,7 +388,7 @@ max(abs(dv_cgd_cor$correlation - gt_cgd_cor))
 ```
 
 ```{r cgd-pca, fig.width=6, fig.height=4}
-dv_cgd_pca <- ds.vertPCA("DA", cgd_vars, datasources = cgd_conns)
+dv_cgd_pca <- ds.vertPCA(cor_result = dv_cgd_cor)
 gt_cgd_pca <- eigen(gt_cgd_cor)
 
 barplot(rbind(gt_cgd_pca$values, dv_cgd_pca$eigenvalues), beside = TRUE,

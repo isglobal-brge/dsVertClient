@@ -14,6 +14,8 @@ ds.vertLMM(
   inner_iter = 50L,
   tol = 1e-04,
   exact_cross_server = TRUE,
+  sigma_b2_override = NULL,
+  ring = c("ring63", "ring127"),
   verbose = TRUE,
   datasources = NULL
 )
@@ -26,6 +28,10 @@ ds.vertLMM(
 \item{cluster_col}{Column holding the cluster id (must be on the
 outcome server).}
 
+\item{random_slopes}{Optional character vector of column names for
+random slopes (in addition to the random intercept). NULL fits an
+intercept-only random-effects structure.}
+
 \item{reml}{Use REML (default TRUE) vs ML.}
 
 \item{max_iter}{Outer variance-component iterations (default 30).}
@@ -33,6 +39,18 @@ outcome server).}
 \item{inner_iter}{Inner \code{ds.vertGLM} iteration budget.}
 
 \item{tol}{Outer tolerance on \eqn{\rho} change.}
+
+\item{exact_cross_server}{Logical (default TRUE). If TRUE, use the
+exact cross-server Beaver vecmul gram pass; FALSE falls back to a
+diagonal-only approximation.}
+
+\item{sigma_b2_override}{Numeric. Optional fixed value of the
+between-cluster variance, bypassing the iterative REML/ML
+variance-component update.}
+
+\item{ring}{Character (\code{"ring63"} or \code{"ring127"}). Selects
+the Beaver vecmul pipeline ring; Ring127 (fracBits=50) is needed
+for STRICT closure on dense Gram matrices.}
 
 \item{verbose}{Print progress.}
 

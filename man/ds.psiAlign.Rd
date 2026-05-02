@@ -29,6 +29,10 @@ If NULL (default), the first connection is used.}
 
 \item{datasources}{DataSHIELD connection object or list of connections.
 If NULL, uses all available connections.}
+
+\item{na.action}{Character. NA-handling strategy passed to the
+server-side aligner; default \code{"na.omit"} drops rows with any
+NA in the join column or covariates before alignment.}
 }
 \value{
 Invisibly returns a list with alignment statistics for each server:
@@ -42,7 +46,7 @@ Privacy-preserving record alignment using Elliptic Curve
 Diffie-Hellman Private Set Intersection (ECDH-PSI) with blind-relay
 transport encryption. Aligns data frames across vertically partitioned
 DataSHIELD servers so that rows correspond to the same individuals.
-The client never sees raw EC points — only opaque encrypted blobs.
+The client never sees raw EC points -- only opaque encrypted blobs.
 }
 \details{
 This function performs privacy-preserving record alignment in a single call,
@@ -77,7 +81,7 @@ servers are retained.
 
 \subsection{Security (DDH assumption on P-256, malicious-client model)}{
 \itemize{
-\item The client sees only opaque encrypted blobs — not EC points.
+\item The client sees only opaque encrypted blobs -- not EC points.
 \item Each server's scalar never leaves the server.
 \item PSI firewall: phase ordering + one-shot semantics prevent OPRF
 oracle attacks.

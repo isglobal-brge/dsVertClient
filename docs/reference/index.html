@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">dsVertClient</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.0.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">1.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -15,7 +15,8 @@
     </button>
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
-      <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
+      <ul class="navbar-nav me-auto"><li class="nav-item"><a class="nav-link" href="../articles/vert_validation_evidence.html">Validation evidence</a></li>
+<li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item"><a class="nav-link" href="../articles/index.html">Articles</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
@@ -32,7 +33,7 @@
     </div>
 
     <div class="section level2">
-      <h2 id="record-alignment">Record Alignment<a class="anchor" aria-label="anchor" href="#record-alignment"></a></h2>
+      <h2 id="record-alignment">Record alignment<a class="anchor" aria-label="anchor" href="#record-alignment"></a></h2>
 
       <div class="section-desc"><p>Privacy-preserving record alignment using ECDH-PSI</p></div>
 
@@ -47,10 +48,24 @@
 
         </dt>
         <dd>ECDH-PSI Record Alignment (Blind Relay)</dd>
-      </dl></div><div class="section level2">
-      <h2 id="correlation-and-pca">Correlation and PCA<a class="anchor" aria-label="anchor" href="#correlation-and-pca"></a></h2>
 
-      <div class="section-desc"><p>Distributed correlation and principal component analysis</p></div>
+        <dt>
+
+          <code><a href="ds.isPsiAligned.html">ds.isPsiAligned()</a></code>
+
+        </dt>
+        <dd>Check whether a data symbol is already PSI-aligned on every server</dd>
+
+        <dt>
+
+          <code><a href="ds.getIdentityPks.html">ds.getIdentityPks()</a></code>
+
+        </dt>
+        <dd>Query Server Identity Public Keys</dd>
+      </dl></div><div class="section level2">
+      <h2 id="correlation-pca-descriptive">Correlation, PCA, descriptive<a class="anchor" aria-label="anchor" href="#correlation-pca-descriptive"></a></h2>
+
+      <div class="section-desc"><p>Distributed second-order summaries</p></div>
 
       <dl></dl></div><div class="section level2">
 
@@ -70,10 +85,38 @@
 
         </dt>
         <dd>Principal Component Analysis for Vertically Partitioned Data</dd>
-      </dl></div><div class="section level2">
-      <h2 id="generalized-linear-models">Generalized Linear Models<a class="anchor" aria-label="anchor" href="#generalized-linear-models"></a></h2>
 
-      <div class="section-desc"><p>Privacy-preserving GLM fitting via Ring63 Beaver MPC</p></div>
+        <dt>
+
+          <code><a href="ds.vertDesc.html">ds.vertDesc()</a></code>
+
+        </dt>
+        <dd>Federated descriptive statistics with approximate quantiles</dd>
+
+        <dt>
+
+          <code><a href="ds.vertChisq.html">ds.vertChisq()</a></code>
+
+        </dt>
+        <dd>Federated chi-square test on a 2-way contingency table</dd>
+
+        <dt>
+
+          <code><a href="ds.vertChisqCross.html">ds.vertChisqCross()</a></code>
+
+        </dt>
+        <dd>Cross-server chi-square (one-hot + Beaver cross-products)</dd>
+
+        <dt>
+
+          <code><a href="ds.vertFisher.html">ds.vertFisher()</a></code>
+
+        </dt>
+        <dd>Federated Fisher exact test (same-server case)</dd>
+      </dl></div><div class="section level2">
+      <h2 id="generalised-linear-models-glm-">Generalised linear models (GLM)<a class="anchor" aria-label="anchor" href="#generalised-linear-models-glm-"></a></h2>
+
+      <div class="section-desc"><p>K=2 / K=3 federated GLM fits via Ring63 Beaver MPC</p></div>
 
       <dl></dl></div><div class="section level2">
 
@@ -89,10 +132,269 @@
 
         <dt>
 
+          <code><a href="ds.vertConfint.html">ds.vertConfint()</a></code>
+
+        </dt>
+        <dd>Wald confidence intervals for ds.vertGLM coefficients</dd>
+
+        <dt>
+
+          <code><a href="ds.vertContrast.html">ds.vertContrast()</a></code>
+
+        </dt>
+        <dd>Multi-coefficient Wald test via linear contrast K*beta</dd>
+
+        <dt>
+
+          <code><a href="ds.vertWald.html">ds.vertWald()</a></code>
+
+        </dt>
+        <dd>Univariate Wald test for a single ds.vertGLM coefficient</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLR.html">ds.vertLR()</a></code>
+
+        </dt>
+        <dd>Likelihood-ratio test on two nested ds.vertGLM fits</dd>
+      </dl></div><div class="section level2">
+      <h2 id="survival">Survival<a class="anchor" aria-label="anchor" href="#survival"></a></h2>
+
+      <div class="section-desc"><p>Cox proportional-hazards (K=2 OT-Beaver) and K=3 Poisson trick</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="ds.vertCox.html">ds.vertCox()</a></code>
+
+        </dt>
+        <dd>Federated Cox proportional-hazards regression</dd>
+
+        <dt>
+
+          <code><a href="ds.vertCox.k3.html">ds.vertCox.k3()</a></code>
+
+        </dt>
+        <dd>Federated Cox proportional-hazards via Allison-1982 Poisson trick (K=3)</dd>
+
+        <dt>
+
+          <code><a href="ds.vertCoxDiscreteNonDisclosive.html">ds.vertCoxDiscreteNonDisclosive()</a></code>
+
+        </dt>
+        <dd>Cox K=2 discrete-time pooled-logistic – non-disclosive option B (#D')</dd>
+      </dl></div><div class="section level2">
+      <h2 id="negative-binomial">Negative-binomial<a class="anchor" aria-label="anchor" href="#negative-binomial"></a></h2>
+
+      <div class="section-desc"><p>NB regression with iid-mu / MoM / full-reg theta pivots</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="ds.vertNB.html">ds.vertNB()</a></code>
+
+        </dt>
+        <dd>Federated negative binomial regression with dispersion estimate</dd>
+
+        <dt>
+
+          <code><a href="ds.vertNBMoMTheta.html">ds.vertNBMoMTheta()</a></code>
+
+        </dt>
+        <dd>NB regression with Method-of-Moments theta-estimator (K=2-safe)</dd>
+
+        <dt>
+
+          <code><a href="ds.vertNBFullRegTheta.html">ds.vertNBFullRegTheta()</a></code>
+
+        </dt>
+        <dd>Federated NB regression with full-regression theta refinement</dd>
+      </dl></div><div class="section level2">
+      <h2 id="multinomial-ordinal">Multinomial / ordinal<a class="anchor" aria-label="anchor" href="#multinomial-ordinal"></a></h2>
+
+      <div class="section-desc"><p>OVR + softmax-anchor (warm) and joint Newton (Tutz / Bohning)</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="ds.vertMultinom.html">ds.vertMultinom()</a></code>
+
+        </dt>
+        <dd>Federated multinomial logistic regression via K-1 one-vs-rest fits</dd>
+
+        <dt>
+
+          <code><a href="ds.vertMultinomJoint.html">ds.vertMultinomJoint()</a></code>
+
+        </dt>
+        <dd>Federated joint-softmax multinomial logistic regression</dd>
+
+        <dt>
+
+          <code><a href="ds.vertMultinomJointNewton.html">ds.vertMultinomJointNewton()</a></code>
+
+        </dt>
+        <dd>Federated joint-softmax multinomial logistic regression via Ring127 MPC-orchestrated Newton iteration</dd>
+
+        <dt>
+
+          <code><a href="ds.vertOrdinal.html">ds.vertOrdinal()</a></code>
+
+        </dt>
+        <dd>Federated ordinal logistic regression (naive cumulative binomials)</dd>
+
+        <dt>
+
+          <code><a href="ds.vertOrdinalJointNewton.html">ds.vertOrdinalJointNewton()</a></code>
+
+        </dt>
+        <dd>Federated joint proportional-odds ordinal regression via Ring127 MPC-orchestrated Newton iteration</dd>
+      </dl></div><div class="section level2">
+      <h2 id="mixed-models-longitudinal">Mixed models / longitudinal<a class="anchor" aria-label="anchor" href="#mixed-models-longitudinal"></a></h2>
+
+      <div class="section-desc"><p>REML LMM (K=2 / K=3), GEE sandwich, binomial Laplace GLMM</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="ds.vertLMM.html">ds.vertLMM()</a></code>
+
+        </dt>
+        <dd>Federated linear mixed model with a single random intercept</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLMM.k3.html">ds.vertLMM.k3()</a></code>
+
+        </dt>
+        <dd>Federated linear mixed model via REML 1-D profile (K=3)</dd>
+
+        <dt>
+
+          <code><a href="ds.vertGEE.html">ds.vertGEE()</a></code>
+
+        </dt>
+        <dd>Federated generalised estimating equations</dd>
+
+        <dt>
+
+          <code><a href="ds.vertGLMM.html">ds.vertGLMM()</a></code>
+
+        </dt>
+        <dd>Federated binomial GLMM via Laplace approximation</dd>
+      </dl></div><div class="section level2">
+      <h2 id="causal-inference-robustness">Causal inference / robustness<a class="anchor" aria-label="anchor" href="#causal-inference-robustness"></a></h2>
+
+      <div class="section-desc"><p>Inverse-probability-weighting and multiple-imputation pooling</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="ds.vertIPW.html">ds.vertIPW()</a></code>
+
+        </dt>
+        <dd>Federated inverse-probability-weighted GLM (two-stage)</dd>
+
+        <dt>
+
+          <code><a href="ds.vertMI.html">ds.vertMI()</a></code>
+
+        </dt>
+        <dd>Federated multiple imputation with Rubin pooling</dd>
+      </dl></div><div class="section level2">
+      <h2 id="lasso-penalised-regression">LASSO / penalised regression<a class="anchor" aria-label="anchor" href="#lasso-penalised-regression"></a></h2>
+
+      <div class="section-desc"><p>Proximal-gradient / FISTA on the federated GLM normal-equations</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="ds.vertLASSO.html">ds.vertLASSO()</a></code>
+
+        </dt>
+        <dd>Post-hoc soft-thresholded GLM coefficients (naive LASSO)</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLASSO1Step.html">ds.vertLASSO1Step()</a></code>
+
+        </dt>
+        <dd>One-step LASSO via quadratic-surrogate proximal gradient</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLASSOIter.html">ds.vertLASSOIter()</a></code>
+
+        </dt>
+        <dd>Iterative proximal-gradient LASSO over the MPC GLM gradient</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLASSOCV.html">ds.vertLASSOCV()</a></code>
+
+        </dt>
+        <dd>Information-criterion lambda selection for one-step LASSO</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLASSOProximal.html">ds.vertLASSOProximal()</a></code>
+
+        </dt>
+        <dd>Proper LASSO via client-side proximal gradient on normal equations</dd>
+      </dl></div><div class="section level2">
+      <h2 id="utility-printers">Utility / printers<a class="anchor" aria-label="anchor" href="#utility-printers"></a></h2>
+
+      <div class="section-desc"><p>Helper and administrative methods</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
           <code><a href="coef.ds.glm.html">coef(<i>&lt;ds.glm&gt;</i>)</a></code>
 
         </dt>
         <dd>Coefficients Method for ds.glm Objects</dd>
+
+        <dt>
+
+          <code><a href="print.ds.cor.html">print(<i>&lt;ds.cor&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Print Method for ds.cor Objects</dd>
+
+        <dt>
+
+          <code><a href="print.ds.pca.html">print(<i>&lt;ds.pca&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Print Method for ds.pca Objects</dd>
 
         <dt>
 
@@ -108,39 +410,9 @@
         </dt>
         <dd>Summary Method for ds.glm Objects</dd>
       </dl></div><div class="section level2">
-      <h2 id="utility-functions">Utility Functions<a class="anchor" aria-label="anchor" href="#utility-functions"></a></h2>
-
-      <div class="section-desc"><p>Helper and administrative methods</p></div>
-
-      <dl></dl></div><div class="section level2">
+      <h2 id="internal-protocol-implementations">Internal protocol implementations<a class="anchor" aria-label="anchor" href="#internal-protocol-implementations"></a></h2>
 
 
-
-
-      <dl><dt>
-
-          <code><a href="ds.getIdentityPks.html">ds.getIdentityPks()</a></code>
-
-        </dt>
-        <dd>Query Server Identity Public Keys</dd>
-
-        <dt>
-
-          <code><a href="print.ds.cor.html">print(<i>&lt;ds.cor&gt;</i>)</a></code>
-
-        </dt>
-        <dd>Print Method for ds.cor Objects</dd>
-
-        <dt>
-
-          <code><a href="print.ds.pca.html">print(<i>&lt;ds.pca&gt;</i>)</a></code>
-
-        </dt>
-        <dd>Print Method for ds.pca Objects</dd>
-      </dl></div><div class="section level2">
-      <h2 id="internal">Internal<a class="anchor" aria-label="anchor" href="#internal"></a></h2>
-
-      <div class="section-desc"><p>Internal protocol implementations</p></div>
 
       <dl></dl></div><div class="section level2">
 

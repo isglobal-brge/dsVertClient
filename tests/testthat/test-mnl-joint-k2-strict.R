@@ -162,7 +162,7 @@ test_that("σ_kl convention matches Tutz 1990 §3.2 multinomial Hessian", {
   # Block at (k=l) must inherit positive sign; (k≠l) negative.
   H_kk <- sigma_kk * matrix(c(1, 0.5, 0.5, 1), 2, 2)
   H_kl <- sigma_kl * matrix(c(0.5, 0.2, 0.2, 0.5), 2, 2)
-  expect_true(eigen(H_kk, only.values = TRUE)$values |> all(\(e) e > 0))
+  expect_true(all(eigen(H_kk, only.values = TRUE)$values > 0))
   expect_true(all(H_kl <= 0))
 })
 
@@ -179,7 +179,11 @@ test_that("Bohning B_reg fallback triggers on H_emp construction failure", {
   # Source-level invariant: the empirical-H Newton solve must include
   # a tryCatch fallback to Bohning B_reg per Bohning 1992 Thm 2
   # (Loewner upper-bound always positive-definite).
-  src <- readLines(file.path(getwd(), "R/ds.vertMultinomJointNewton.R"),
+  # During devtools::test, getwd() is tests/testthat. Resolve the source
+  # file relative to the package root via testthat::test_path's parent.
+  pkg_root <- normalizePath(file.path(testthat::test_path(), "..", ".."),
+                             mustWork = TRUE)
+  src <- readLines(file.path(pkg_root, "R/ds.vertMultinomJointNewton.R"),
                     warn = FALSE)
   joined <- paste(src, collapse = "\n")
   expect_match(joined, "B_reg.*g_stacked")

@@ -1,24 +1,24 @@
-#' @title Federated NB regression with full-regression θ refinement
-#' @description Extends \code{ds.vertNB} (which uses the iid-μ profile
-#'   MLE for θ: assumes μᵢ ≡ ȳ when evaluating the profile score) with
-#'   a variance-corrected refinement that accounts for μᵢ variation
+#' @title Federated NB regression with full-regression theta refinement
+#' @description Extends \code{ds.vertNB} (which uses the iid-mu profile
+#'   MLE for theta: assumes mu_i == ybar when evaluating the profile score) with
+#'   a variance-corrected refinement that accounts for mu_i variation
 #'   across patients without requiring per-patient MPC reveals.
 #'
 #' @details
-#'   The NB(μᵢ, θ) log-likelihood score for θ is
+#'   The NB(mu_i, theta) log-likelihood score for theta is
 #'   \deqn{s(\theta) = \sum_i \psi(y_i + \theta) - n \psi(\theta)
 #'                      + n \log \theta - \sum_i \log(\mu_i + \theta).}
-#'   The iid-μ approximation used in \code{ds.vertNB} replaces the last
+#'   The iid-mu approximation used in \code{ds.vertNB} replaces the last
 #'   term by \eqn{n \log(\bar y + \theta)}. For homogeneous cohorts
 #'   (small \eqn{\text{Var}(\mu)}) this is tight; for regression-rich
-#'   settings the bias on θ̂ can reach ~16% (quine, overdispersed
+#'   settings the bias on theta can reach ~16% (quine, overdispersed
 #'   counts) relative to \code{MASS::glm.nb}.
 #'
 #'   A first-order correction uses the aggregate marginal variance of
 #'   y decomposed via the NB law of total variance:
 #'   \eqn{\text{Var}(y) = E[\mu] + E[\mu^2]/\theta + \text{Var}(\mu)}.
 #'   With \eqn{\bar y} and \eqn{s_y^2} (scalar aggregates from
-#'   \code{dsvertLocalMomentsDS}) and the iid θ̂₀ as seed, we refine
+#'   \code{dsvertLocalMomentsDS}) and the iid theta_0 as seed, we refine
 #'   via Brent root-finding on the corrected score
 #'   \eqn{s_{\text{corr}}(\theta) = s_{\text{iid}}(\theta) - \frac{1}{2}
 #'         \frac{n \, \hat{V}_\mu}{(\bar y + \theta)^2}}
@@ -28,7 +28,7 @@
 #'
 #'   The aggregate \eqn{\hat V_\mu} is computed as
 #'   \eqn{\hat V_\mu = \max(0,\; s_y^2 - \bar y - \bar y^2 / \hat\theta_0)}
-#'   — the portion of total y variance not explained by NB conditional
+#'   -- the portion of total y variance not explained by NB conditional
 #'   variance \eqn{\mu + \mu^2/\theta}. All quantities are scalar
 #'   aggregates; no per-patient disclosure.
 #'
@@ -36,7 +36,7 @@
 #'   using the shipped \code{Ring127LogShiftPlaintext} Chebyshev
 #'   primitive + DCF argument reduction is a stricter variant scheduled
 #'   separately; the first-order correction here closes the bulk of the
-#'   iid-μ bias (on quine: 16% → 4-5%) without any new MPC machinery.
+#'   iid-mu bias (on quine: 16% -> 4-5%) without any new MPC machinery.
 #'
 #' @inheritParams ds.vertNB
 #' @param variant Character. \code{"iid_mu"} returns the unmodified
@@ -45,7 +45,7 @@
 #'
 #' @return Object of class \code{c("ds.vertNBFullRegTheta", "ds.vertNB")}.
 #'   Fields as \code{ds.vertNB}, plus \code{$theta_iid} (original
-#'   iid-μ estimate) and \code{$variance_correction} (the \eqn{\hat V_\mu}
+#'   iid-mu estimate) and \code{$variance_correction} (the \eqn{\hat V_\mu}
 #'   used).
 #'
 #' @seealso \code{\link{ds.vertNB}}
@@ -70,15 +70,15 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
   n <- base_fit$n_obs
 
   # ============================================================
-  # Full-regression θ via per-patient μ (AUDITORIA C fix)
+  # Full-regression theta via per-patient mu (AUDITORIA C fix)
   # ============================================================
-  # Non-label servers compute ηᵢ^nl = Xᵢ^nl · β_nl locally, transport-
+  # Non-label servers compute eta_i^nl = X_i^nl * beta_nl locally, transport-
   # seal the vector to the label server. Label server decrypts,
-  # combines with its own ηᵢ^label, computes μᵢ = exp(ηᵢ_total), and
-  # returns scalar score aggregates for Newton on θ.
-  # Empirical: matches MASS::glm.nb θ at rel err ≤ 1e-3 on the same
+  # combines with its own eta_i^label, computes mu_i = exp(eta_i_total), and
+  # returns scalar score aggregates for Newton on theta.
+  # Empirical: matches MASS::glm.nb theta at rel err <= 1e-3 on the same
   # data where iid_mu gives 24% rel err (AUDITORIA C isolated bug to
-  # iid-μ collapse, not MPC path).
+  # iid-mu collapse, not MPC path).
   if (identical(variant, "full_reg")) {
     if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
     server_names <- names(datasources)
@@ -95,17 +95,17 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     # Identify which features live on each server.
     rhs <- attr(stats::terms(formula), "term.labels")
     r_y <- DSI::datashield.aggregate(datasources[y_ci],
-      call("dsvertColNamesDS", data_name = data))
+      call(name = "dsvertColNamesDS", data_name = data))
     if (is.list(r_y) && length(r_y) == 1L) r_y <- r_y[[1L]]
     cols_y <- if (is.list(r_y)) r_y$columns else r_y
     r_nl <- DSI::datashield.aggregate(datasources[nl_ci],
-      call("dsvertColNamesDS", data_name = data))
+      call(name = "dsvertColNamesDS", data_name = data))
     if (is.list(r_nl) && length(r_nl) == 1L) r_nl <- r_nl[[1L]]
     cols_nl <- if (is.list(r_nl)) r_nl$columns else r_nl
     x_label <- intersect(rhs, cols_y)
     x_nl    <- intersect(rhs, cols_nl)
 
-    # β-slice per server from the Poisson fit's revealed β.
+    # beta-slice per server from the Poisson fit's revealed beta.
     beta_all <- base_fit$poisson_fit$coefficients
     int_val <- beta_all[["(Intercept)"]]
     beta_label <- beta_all[x_label]
@@ -113,16 +113,16 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
 
     session_id <- paste0("nbfullreg_", as.integer(Sys.time()),
                          "_", sample.int(.Machine$integer.max, 1L))
-    # Init transport key on label server (receives η^nl). Non-label just
+    # Init transport key on label server (receives eta^nl). Non-label just
     # needs label's PK to encrypt.
     init <- DSI::datashield.aggregate(datasources[y_ci],
-      call("glmRing63TransportInitDS", session_id = session_id))
+      call(name = "glmRing63TransportInitDS", session_id = session_id))
     if (is.list(init) && length(init) == 1L) init <- init[[1L]]
     label_pk <- init$transport_pk
 
-    # Non-label seals η^nl for label.
+    # Non-label seals eta^nl for label.
     sealed_r <- DSI::datashield.aggregate(datasources[nl_ci],
-      call("dsvertNBEtaSealDS",
+      call(name = "dsvertNBEtaSealDS",
            data_name = data, x_vars = x_nl,
            beta_values = as.numeric(beta_nl),
            target_pk = label_pk, session_id = session_id))
@@ -133,21 +133,21 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       function(chunk_str, chunk_idx, n_chunks) {
         if (n_chunks == 1L) {
           DSI::datashield.aggregate(datasources[y_ci],
-            call("mpcStoreBlobDS", key = "nb_peer_eta",
+            call(name = "mpcStoreBlobDS", key = "nb_peer_eta",
                  chunk = chunk_str, session_id = session_id))
         } else {
           DSI::datashield.aggregate(datasources[y_ci],
-            call("mpcStoreBlobDS", key = "nb_peer_eta",
+            call(name = "mpcStoreBlobDS", key = "nb_peer_eta",
                  chunk = chunk_str, chunk_index = chunk_idx,
                  n_chunks = n_chunks, session_id = session_id))
         }
       })
 
-    # Newton on θ using full-reg score.
+    # Newton on theta using full-reg score.
     score_fullreg <- function(th) {
       if (!is.finite(th) || th <= 0) return(NA_real_)
       r <- DSI::datashield.aggregate(datasources[y_ci],
-        call("dsvertNBFullScoreDS",
+        call(name = "dsvertNBFullScoreDS",
              data_name = data, y_var = y_var_char,
              x_vars_label = x_label,
              beta_values_label = as.numeric(beta_label),
@@ -155,14 +155,14 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
              peer_eta_key = "nb_peer_eta",
              theta = th, session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-      # AUDITORIA correction: prior score omitted +n and −Σ(y+θ)/(θ+μ)
-      # terms (fixed point was biased → 5.87% rel err persistent).
-      # Full NB profile score/deriv per Venables-Ripley 2002 §7.4 +
+      # AUDITORIA correction: prior score omitted +n and -Sum(y+theta)/(theta+mu)
+      # terms (fixed point was biased -> 5.87% rel err persistent).
+      # Full NB profile score/deriv per Venables-Ripley 2002 Sec.7.4 +
       # Lawless 1987:
-      #   ℓ'(θ)  = Σψ(y+θ) − n·ψ(θ) + n·log(θ) − Σlog(θ+μ)
-      #            + n − Σ(y+θ)/(θ+μ)
-      #   ℓ''(θ) = Σψ₁(y+θ) − n·ψ₁(θ) + n/θ − 2·Σ1/(θ+μ)
-      #            + Σ(y+θ)/(θ+μ)²
+      #   ell'(theta)  = Sumpsi(y+theta) - n*psi(theta) + n*log(theta) - Sumlog(theta+mu)
+      #            + n - Sum(y+theta)/(theta+mu)
+      #   ell''(theta) = Sumpsi_1(y+theta) - n*psi_1(theta) + n/theta - 2*Sum1/(theta+mu)
+      #            + Sum(y+theta)/(theta+mu)^2
       score_val <- r$sum_psi - r$n * digamma(th) +
                    r$sum_log_theta_ratio +
                    r$n - r$sum_ypt_over_tmu
@@ -172,19 +172,19 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       list(score = score_val, deriv = deriv_val, n = r$n)
     }
 
-    # Seed from iid θ; ONE blob send covers all θ evaluations because
-    # the label server re-reads ηᵢ = β₀ + ηᵢ^label + ηᵢ^nl from its
+    # Seed from iid theta; ONE blob send covers all theta evaluations because
+    # the label server re-reads eta_i = beta_0 + eta_i^label + eta_i^nl from its
     # session state on every call. But dsvertNBFullScoreDS consumes the
-    # blob on first call — so we must re-store per Newton iter? No:
-    # label server stores decrypted η^nl in session after first
+    # blob on first call -- so we must re-store per Newton iter? No:
+    # label server stores decrypted eta^nl in session after first
     # decryption (see server code: .blob_consume). Let the server
     # cache. For safety, re-send per iter on small blob.
-    # Simpler: let server keep ηᵢ in session after first decrypt —
-    # we'll issue the re-send per θ eval (blob is small < 20KB).
-    # AUDITORIA warm-init: prefer MoM θ₀ = ȳ²/(Var(y) − ȳ) over
-    # theta_iid (which collapses μ → ȳ). MoM is well-conditioned for
-    # overdispersed data and gives Newton-θ a closer seed to glm.nb.
-    # Venables-Ripley 2002 §7.4 uses MoM as glm.nb's initial θ.
+    # Simpler: let server keep eta_i in session after first decrypt --
+    # we'll issue the re-send per theta eval (blob is small < 20KB).
+    # AUDITORIA warm-init: prefer MoM theta_0 = ybar^2/(Var(y) - ybar) over
+    # theta_iid (which collapses mu -> ybar). MoM is well-conditioned for
+    # overdispersed data and gives Newton-theta a closer seed to glm.nb.
+    # Venables-Ripley 2002 Sec.7.4 uses MoM as glm.nb's initial theta.
     theta_mom <- if (is.finite(y_var) && y_var > y_mean + 1e-10)
       max(y_mean^2 / max(y_var - y_mean, 1e-6), 0.1) else NA_real_
     theta_cur <- if (is.finite(theta_mom)) theta_mom
@@ -209,11 +209,11 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
         function(chunk_str, chunk_idx, n_chunks) {
           if (n_chunks == 1L) {
             DSI::datashield.aggregate(datasources[y_ci],
-              call("mpcStoreBlobDS", key = "nb_peer_eta",
+              call(name = "mpcStoreBlobDS", key = "nb_peer_eta",
                    chunk = chunk_str, session_id = session_id))
           } else {
             DSI::datashield.aggregate(datasources[y_ci],
-              call("mpcStoreBlobDS", key = "nb_peer_eta",
+              call(name = "mpcStoreBlobDS", key = "nb_peer_eta",
                    chunk = chunk_str, chunk_index = chunk_idx,
                    n_chunks = n_chunks, session_id = session_id))
           }
@@ -239,23 +239,23 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
   }
 
   # ============================================================
-  # Non-disclosive full-regression θ MLE — share-domain pipeline
+  # Non-disclosive full-regression theta MLE -- share-domain pipeline
   # ============================================================
-  # Closes D-INV-4 (per-patient η^nl reveal at label, present in the
-  # legacy "full_reg" variant). η^nl stays in Ring127 additive secret
-  # shares end-to-end through μ = exp(η)_share, log(μ+θ)_share,
-  # 1/(θ+μ)_share and (y+θ)·1/(θ+μ)_share via Beaver vecmul +
+  # Closes D-INV-4 (per-patient eta^nl reveal at label, present in the
+  # legacy "full_reg" variant). eta^nl stays in Ring127 additive secret
+  # shares end-to-end through mu = exp(eta)_share, log(mu+theta)_share,
+  # 1/(theta+mu)_share and (y+theta)*1/(theta+mu)_share via Beaver vecmul +
   # AffineCombine + Chebyshev-Clenshaw primitives. Only the four
-  # scalar aggregates Σlog(μ+θ), Σ1/(θ+μ), Σ(y+θ)/(θ+μ),
-  # Σ(y+θ)/(θ+μ)² (plus label-only Σψ(y+θ), Σψ_1(y+θ)) are revealed
-  # per Newton-θ iter.
+  # scalar aggregates Sumlog(mu+theta), Sum1/(theta+mu), Sum(y+theta)/(theta+mu),
+  # Sum(y+theta)/(theta+mu)^2 (plus label-only Sumpsi(y+theta), Sumpsi_1(y+theta)) are revealed
+  # per Newton-theta iter.
   #
-  # Refs: Lawless 1987 *Can. J. Statist.* 15(3):209–225 (NB profile-MLE
-  # θ score); Venables–Ripley 2002 *MASS* §7.4 (\code{glm.nb} Newton);
-  # Catrina–Saxena 2010 *Financial Cryptography* §3.3 (multiplicative-
-  # depth ULP); Beaver 1991 *CRYPTO* §3 (precomputed multiplication
-  # triples); Demmler–Schneider–Zohner ABY 2015 §III.B (K=2 OT-Beaver
-  # dishonest-majority); Trefethen ATAP §8 (Bernstein-ellipse Cheb).
+  # Refs: Lawless 1987 *Can. J. Statist.* 15(3):209-225 (NB profile-MLE
+  # theta score); Venables-Ripley 2002 *MASS* Sec.7.4 (\code{glm.nb} Newton);
+  # Catrina-Saxena 2010 *Financial Cryptography* Sec.3.3 (multiplicative-
+  # depth ULP); Beaver 1991 *CRYPTO* Sec.3 (precomputed multiplication
+  # triples); Demmler-Schneider-Zohner ABY 2015 Sec.III.B (K=2 OT-Beaver
+  # dishonest-majority); Trefethen ATAP Sec.8 (Bernstein-ellipse Cheb).
   if (identical(variant, "full_reg_nd")) {
     if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
     server_names <- names(datasources)
@@ -272,17 +272,17 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     # Identify which features live on each server.
     rhs <- attr(stats::terms(formula), "term.labels")
     r_y <- DSI::datashield.aggregate(datasources[y_ci],
-      call("dsvertColNamesDS", data_name = data))
+      call(name = "dsvertColNamesDS", data_name = data))
     if (is.list(r_y) && length(r_y) == 1L) r_y <- r_y[[1L]]
     cols_y <- if (is.list(r_y)) r_y$columns else r_y
     r_nl <- DSI::datashield.aggregate(datasources[nl_ci],
-      call("dsvertColNamesDS", data_name = data))
+      call(name = "dsvertColNamesDS", data_name = data))
     if (is.list(r_nl) && length(r_nl) == 1L) r_nl <- r_nl[[1L]]
     cols_nl <- if (is.list(r_nl)) r_nl$columns else r_nl
     x_label <- intersect(rhs, cols_y)
     x_nl    <- intersect(rhs, cols_nl)
 
-    # β-slice per server from the Poisson fit's revealed β.
+    # beta-slice per server from the Poisson fit's revealed beta.
     beta_all <- base_fit$poisson_fit$coefficients
     int_val  <- beta_all[["(Intercept)"]]
     beta_label <- beta_all[x_label]
@@ -300,19 +300,19 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
         if (n_chunks == 1L) {
           DSI::datashield.aggregate(datasources[target_ci],
-            call("mpcStoreBlobDS", key = key,
+            call(name = "mpcStoreBlobDS", key = key,
                  chunk = chunk_str, session_id = session_id))
         } else {
           DSI::datashield.aggregate(datasources[target_ci],
-            call("mpcStoreBlobDS", key = key,
+            call(name = "mpcStoreBlobDS", key = key,
                  chunk = chunk_str, chunk_index = chunk_idx,
                  n_chunks = n_chunks, session_id = session_id))
         }
       })
     }
 
-    # One-time session setup: NL splits η^nl, label receives + assembles
-    # η_total share (closes D-INV-4 across both parties).
+    # One-time session setup: NL splits eta^nl, label receives + assembles
+    # eta_total share (closes D-INV-4 across both parties).
     setup <- .nb_fullreg_nd_session_setup(
       formula = formula, data = data, base_fit = base_fit,
       datasources = datasources, server_names = server_names,
@@ -325,12 +325,12 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     transport_pks <- setup$transport_pks
 
     # Beaver triple dealer = NL by convention (matches ord_joint /
-    # mnl_joint K=2 K-arity contract — non-label generates triples).
+    # mnl_joint K=2 K-arity contract -- non-label generates triples).
     dealer_ci <- nl_ci
     server_list <- c(y_srv, nl_srv)
 
-    # Newton-θ loop on the share-domain score. MoM warm-init from the
-    # Poisson fit's residual moments (Venables–Ripley §7.4 default seed).
+    # Newton-theta loop on the share-domain score. MoM warm-init from the
+    # Poisson fit's residual moments (Venables-Ripley Sec.7.4 default seed).
     theta_iid <- base_fit$theta
     y_mean <- base_fit$y_mean
     y_var <- base_fit$y_var
@@ -349,7 +349,7 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
         transport_pks = transport_pks, session_id = session_id,
         .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose),
         error = function(e) {
-          message(sprintf("[NBFullRegND] score eval ERR at θ=%.4f: %s",
+          message(sprintf("[NBFullRegND] score eval ERR at theta=%.4f: %s",
                            th, conditionMessage(e)))
           list(score = NA_real_, deriv = NA_real_, n = n_obs)
         })
@@ -399,16 +399,16 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     return(out)
   }
 
-  # Aggregate Var(μ) estimate from law of total variance:
-  #   Var(y) = E[μ] + E[μ²]/θ + Var(μ)  (NB conditional variance)
-  # With iid-μ assumption E[μ²] ≈ ȳ²:
-  #   Var(μ) ≈ s_y² - ȳ - ȳ²/θ_iid
+  # Aggregate Var(mu) estimate from law of total variance:
+  #   Var(y) = E[mu] + E[mu^2]/theta + Var(mu)  (NB conditional variance)
+  # With iid-mu assumption E[mu^2] approx ybar^2:
+  #   Var(mu) approx s_y^2 - ybar - ybar^2/theta_iid
   var_mu_hat <- max(0, y_var - y_mean - y_mean^2 / max(theta_iid, 1e-6))
 
   if (!is.finite(var_mu_hat) || var_mu_hat <= 0 || !is.finite(theta_iid) ||
       theta_iid <= 0) {
     if (isTRUE(verbose)) {
-      message(sprintf("[ds.vertNBFullRegTheta] no correction (Var(μ)=%.3g, θ_iid=%.3g) — returning iid-μ result",
+      message(sprintf("[ds.vertNBFullRegTheta] no correction (Var(mu)=%.3g, theta_iid=%.3g) -- returning iid-mu result",
                       var_mu_hat, theta_iid))
     }
     out <- base_fit
@@ -420,8 +420,8 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
   }
 
   # Variance-corrected profile score: use outcome server's scalar
-  # aggregates (Σψ(y+θ), Σψ₁(y+θ), n, ȳ) via dsvertNBProfileSumsDS,
-  # then add the Taylor correction to Σ log(μ+θ) around ȳ.
+  # aggregates (Sumpsi(y+theta), Sumpsi_1(y+theta), n, ybar) via dsvertNBProfileSumsDS,
+  # then add the Taylor correction to Sum log(mu+theta) around ybar.
   server_names <- names(datasources %||% DSI::datashield.connections_find())
   conns <- datasources %||% DSI::datashield.connections_find()
   y_var_name <- .ds_gee_extract_lhs(formula)
@@ -433,7 +433,7 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     sums <- tryCatch({
       r <- DSI::datashield.aggregate(
         conns[conn_idx],
-        call("dsvertNBProfileSumsDS",
+        call(name = "dsvertNBProfileSumsDS",
              data_name = data, variable = y_var_name, theta = th))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r
@@ -441,11 +441,11 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     if (is.null(sums) || !is.finite(sums$sum_psi)) return(NA_real_)
     s_iid <- sums$sum_psi - n * digamma(th) +
              n * log(th / (y_mean + th))
-    # Taylor correction: d/dθ [-½ n V_μ / (ȳ+θ)²] = n V_μ / (ȳ+θ)³
+    # Taylor correction: d/dtheta [-1/2 n V_mu / (ybar+theta)^2] = n V_mu / (ybar+theta)^3
     s_iid + n * var_mu_hat / (y_mean + th)^3
   }
 
-  # Brent root-find on the corrected score. Bracket around θ_iid.
+  # Brent root-find on the corrected score. Bracket around theta_iid.
   lo <- max(1e-4, theta_iid * 0.25)
   hi <- theta_iid * 4
   s_lo <- score_corrected(lo)
@@ -458,7 +458,7 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
   }
   if (!is.finite(s_lo) || !is.finite(s_hi) || sign(s_lo) == sign(s_hi)) {
     if (isTRUE(verbose)) {
-      message("[ds.vertNBFullRegTheta] could not bracket corrected root — returning iid-μ")
+      message("[ds.vertNBFullRegTheta] could not bracket corrected root -- returning iid-mu")
     }
     out <- base_fit
     out$theta_iid <- theta_iid
@@ -472,7 +472,7 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                     tol = 1e-6, maxiter = 40L)$root,
     error = function(e) theta_iid)
 
-  # Rescale SE using corrected θ.
+  # Rescale SE using corrected theta.
   var_inflation <- if (is.finite(theta_corr) && theta_corr > 0) {
     sqrt(1 + y_mean / theta_corr)
   } else 1
@@ -499,10 +499,10 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
 
 #' @export
 print.ds.vertNBFullRegTheta <- function(x, ...) {
-  cat("dsVert NB regression (full-reg θ: variance-corrected profile MLE)\n")
+  cat("dsVert NB regression (full-reg theta: variance-corrected profile MLE)\n")
   cat(sprintf("  N = %d   theta = %.4g   theta_iid = %.4g   variant = %s\n",
               x$n_obs, x$theta, x$theta_iid, x$variant))
-  cat(sprintf("  Var(μ) estimate = %.4g   var-inflation = %.3f\n",
+  cat(sprintf("  Var(mu) estimate = %.4g   var-inflation = %.3f\n",
               x$variance_correction, x$var_inflation))
   df <- data.frame(
     Estimate = x$coefficients,
@@ -514,6 +514,6 @@ print.ds.vertNBFullRegTheta <- function(x, ...) {
   invisible(x)
 }
 
-# Null-coalescing helper — internal, may already exist elsewhere but
+# Null-coalescing helper -- internal, may already exist elsewhere but
 # redefined here for standalone loading safety.
 `%||%` <- function(a, b) if (is.null(a)) b else a

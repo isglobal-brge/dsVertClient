@@ -15,7 +15,9 @@
   data_name,
   family,
   session_id,
-  verbose
+  verbose,
+  standardize_y_override = NULL,
+  std_mode = "full"
 )
 }
 \value{

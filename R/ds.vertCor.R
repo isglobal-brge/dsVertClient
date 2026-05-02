@@ -16,7 +16,7 @@ ds.vertCor <- function(data_name, variables = NULL,
     user_vars <- variables
     if (verbose) message("[Auto-detect] Querying server columns...")
     col_results <- DSI::datashield.aggregate(datasources,
-      call("dsvertColNamesDS", data_name = data_name))
+      call(name = "dsvertColNamesDS", data_name = data_name))
     variables <- list()
     for (srv in names(datasources)) {
       feats <- setdiff(col_results[[srv]]$columns, c("id", "patient_id"))
@@ -47,7 +47,7 @@ ds.vertCor <- function(data_name, variables = NULL,
     for (.s in server_list) {
       .ci <- which(server_names == .s)
       tryCatch(DSI::datashield.aggregate(datasources[.ci],
-        call("mpcCleanupDS", session_id = session_id)), error = function(e) NULL)
+        call(name = "mpcCleanupDS", session_id = session_id)), error = function(e) NULL)
     }
   })
 
@@ -58,10 +58,10 @@ ds.vertCor <- function(data_name, variables = NULL,
   .sendBlob <- function(blob, key, conn_idx) {
     .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
       if (n_chunks == 1L) {
-        .dsAgg(datasources[conn_idx], call("mpcStoreBlobDS", key = key,
+        .dsAgg(datasources[conn_idx], call(name = "mpcStoreBlobDS", key = key,
           chunk = chunk_str, session_id = session_id))
       } else {
-        .dsAgg(datasources[conn_idx], call("mpcStoreBlobDS", key = key,
+        .dsAgg(datasources[conn_idx], call(name = "mpcStoreBlobDS", key = key,
           chunk = chunk_str, chunk_index = chunk_idx, n_chunks = n_chunks,
           session_id = session_id))
       }
@@ -84,7 +84,7 @@ ds.vertCor <- function(data_name, variables = NULL,
   identity_info <- list()
   for (server in server_list) {
     ci <- which(server_names == server)
-    r <- .dsAgg(datasources[ci], call("glmRing63TransportInitDS", session_id = session_id))
+    r <- .dsAgg(datasources[ci], call(name = "glmRing63TransportInitDS", session_id = session_id))
     if (is.list(r)) r <- r[[1]]
     transport_pks[[server]] <- r$transport_pk
     if (!is.null(r$identity_pk))
@@ -99,7 +99,7 @@ ds.vertCor <- function(data_name, variables = NULL,
   id_b64 <- if (!is.null(id_sorted)) .json_to_b64url(id_sorted) else ""
   for (server in server_list) {
     ci <- which(server_names == server)
-    .dsAgg(datasources[ci], call("mpcStoreTransportKeysDS",
+    .dsAgg(datasources[ci], call(name = "mpcStoreTransportKeysDS",
       transport_keys_b64 = pk_b64, identity_info_b64 = id_b64,
       session_id = session_id))
   }
@@ -108,13 +108,13 @@ ds.vertCor <- function(data_name, variables = NULL,
   if (verbose) message("[Phase 1] Standardizing...")
   # Get n_obs
   r_count <- .dsAgg(datasources[which(server_names == server_list[1])],
-    call("getObsCountDS", data_name = data_name))
+    call(name = "getObsCountDS", data_name = data_name))
   if (is.list(r_count)) r_count <- r_count[[1]]
   n_obs <- as.integer(r_count$n_obs)
 
   for (server in server_list) {
     ci <- which(server_names == server)
-    .dsAgg(datasources[ci], call("glmStandardizeDS",
+    .dsAgg(datasources[ci], call(name = "glmStandardizeDS",
       data_name = data_name, output_name = "dsvert_cor_std",
       x_vars = variables[[server]], y_var = NULL, session_id = session_id))
   }
@@ -124,7 +124,7 @@ ds.vertCor <- function(data_name, variables = NULL,
   local_cors <- list()
   for (server in server_list) {
     ci <- which(server_names == server)
-    r <- .dsAgg(datasources[ci], call("localCorDS",
+    r <- .dsAgg(datasources[ci], call(name = "localCorDS",
       data_name = data_name, variables = variables[[server]],
       session_id = session_id))
     if (is.list(r) && length(r) == 1) r <- r[[1]]
@@ -143,7 +143,7 @@ ds.vertCor <- function(data_name, variables = NULL,
     ci <- which(server_names == server)
     peer <- dcf_parties[dcf_parties != server]
     peer_pk <- .to_b64url(transport_pks[[peer]])
-    r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
+    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
       data_name = "dsvert_cor_std", x_vars = variables[[server]],
       y_var = NULL, peer_pk = peer_pk, session_id = session_id))
     if (is.list(r) && length(r) == 1) r <- r[[1]]
@@ -154,27 +154,27 @@ ds.vertCor <- function(data_name, variables = NULL,
   for (di in seq_along(dcf_parties)) {
     ci <- dcf_conns[di]
     peer_p <- length(variables[[dcf_parties[3 - di]]])
-    .dsAgg(datasources[ci], call("k2ReceiveShareDS",
+    .dsAgg(datasources[ci], call(name = "k2ReceiveShareDS",
       peer_p = as.integer(peer_p), session_id = session_id))
   }
   # Non-DCF servers share with both DCF parties
   for (server in non_dcf) {
     ci <- which(server_names == server)
     fusion_pk <- .to_b64url(transport_pks[[fusion]])
-    r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
+    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
       data_name = "dsvert_cor_std", x_vars = variables[[server]],
       y_var = NULL, peer_pk = fusion_pk, session_id = session_id))
     if (is.list(r) && length(r) == 1) r <- r[[1]]
     .sendBlob(r$encrypted_x_share, paste0("k2_extra_x_share_", server), dcf_conns[1])
     coord_pk <- .to_b64url(transport_pks[[coord]])
-    r2 <- .dsAgg(datasources[ci], call("glmRing63ExportOwnShareDS",
+    r2 <- .dsAgg(datasources[ci], call(name = "glmRing63ExportOwnShareDS",
       peer_pk = coord_pk, session_id = session_id))
     if (is.list(r2) && length(r2) == 1) r2 <- r2[[1]]
     .sendBlob(r2$encrypted_own_share, paste0("k2_extra_x_share_", server), dcf_conns[2])
   }
   for (server in non_dcf) {
     for (di in seq_along(dcf_parties)) {
-      .dsAgg(datasources[dcf_conns[di]], call("glmRing63ReceiveExtraShareDS",
+      .dsAgg(datasources[dcf_conns[di]], call(name = "glmRing63ReceiveExtraShareDS",
         extra_key = paste0("k2_extra_x_share_", server),
         extra_p = as.integer(length(variables[[server]])),
         session_id = session_id))
@@ -195,12 +195,12 @@ ds.vertCor <- function(data_name, variables = NULL,
     } else {
       b_nl <- c(rep(0, p_extras), rep(0, p_fusion))
     }
-    .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+    .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
       beta_coord = b_coord, beta_nl = b_nl,
       intercept = 0, is_coordinator = is_coord, session_id = session_id))
     # Reorder fusion's X_full to canonical order
     if (!is_coord && p_extras > 0) {
-      .dsAgg(datasources[ci], call("glmRing63ReorderXFullDS",
+      .dsAgg(datasources[ci], call(name = "glmRing63ReorderXFullDS",
         p_coord = as.integer(p_coord), p_fusion = as.integer(p_fusion),
         p_extras = as.integer(p_extras), session_id = session_id))
     }
@@ -209,7 +209,7 @@ ds.vertCor <- function(data_name, variables = NULL,
   # Set y_share = zeros (no response for correlation)
   for (di in seq_along(dcf_parties)) {
     ci <- dcf_conns[di]
-    .dsAgg(datasources[ci], call("glmRing63CorSetZeroYDS", session_id = session_id))
+    .dsAgg(datasources[ci], call(name = "glmRing63CorSetZeroYDS", session_id = session_id))
   }
 
   # Phase 4: Cross-server correlations via Beaver
@@ -224,12 +224,12 @@ ds.vertCor <- function(data_name, variables = NULL,
     for (di in seq_along(dcf_parties)) {
       ci <- dcf_conns[di]
       .sendBlob(paste0(j - 1L, ",", p_total), "cor_col_params", ci)
-      .dsAgg(datasources[ci], call("glmRing63CorSetColDS",
+      .dsAgg(datasources[ci], call(name = "glmRing63CorSetColDS",
         from_storage = TRUE, session_id = session_id))
     }
-    # Beaver matvec: X^T × col_j
+    # Beaver matvec: X^T x col_j
     grad_t <- .dsAgg(datasources[dealer_conn],
-      call("glmRing63GenGradTriplesDS",
+      call(name = "glmRing63GenGradTriplesDS",
            dcf0_pk = transport_pks[[dcf_parties[1]]],
            dcf1_pk = transport_pks[[dcf_parties[2]]],
            n = as.integer(n_obs), p = as.integer(p_total),
@@ -242,8 +242,8 @@ ds.vertCor <- function(data_name, variables = NULL,
     for (di in seq_along(dcf_parties)) {
       ci <- dcf_conns[di]
       peer <- dcf_parties[3 - di]
-      .dsAgg(datasources[ci], call("k2StoreGradTripleDS", session_id = session_id))
-      r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+      .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS", session_id = session_id))
+      r <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
         peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       r1[[di]] <- r
@@ -254,7 +254,7 @@ ds.vertCor <- function(data_name, variables = NULL,
     r2 <- list()
     for (di in seq_along(dcf_parties)) {
       ci <- dcf_conns[di]
-      r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
         party_id = as.integer(di - 1), session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       r2[[di]] <- r

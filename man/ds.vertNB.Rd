@@ -17,6 +17,15 @@ ds.vertNB(
 )
 }
 \arguments{
+\item{formula}{Model formula for the count outcome (LHS) and
+linear predictor (RHS).}
+
+\item{data}{Aligned data-frame name on each server.}
+
+\item{theta}{Optional fixed dispersion parameter; if supplied, the
+theta refinement step is skipped and only the Poisson beta path
+runs with this theta plugged into the SE rescaling.}
+
 \item{joint}{Logical. If TRUE (default), iterate between the Poisson
 \eqn{\hat\beta} update and a \eqn{\hat\theta} update until both
 converge. If FALSE, return the Poisson \eqn{\hat\beta} with a single
@@ -25,6 +34,16 @@ one-shot MoM \eqn{\hat\theta}.}
 \item{theta_max_iter}{Outer iterations for the joint update
 (default 5). Each iteration refits the Poisson GLM with the
 current theta-adjusted mean estimate.}
+
+\item{theta_tol}{Convergence tolerance on the relative change in
+theta during the Newton refinement.}
+
+\item{verbose}{Logical. Print stage-by-stage progress.}
+
+\item{datasources}{DataSHIELD connections; if NULL, uses
+\code{DSI::datashield.connections_find()}.}
+
+\item{...}{Extra arguments forwarded to \code{ds.vertGLM}.}
 }
 \description{
 Fit a negative binomial GLM on vertically partitioned
@@ -33,13 +52,19 @@ DataSHIELD data. Two-stage:
 \item Fit \eqn{\hat\beta} via the dsVert Poisson GLM (identical
 score under canonical log link so the point estimate is
 the same; only the covariance differs).
-\item Estimate \eqn{\hat\theta} server-side via method-of-moments
-on the outcome variable: \eqn{\hat\theta = \bar y^2 /
-          (s_y^2 - \bar y)} when \eqn{s_y^2 > \bar y}, else
-\eqn{+\infty} (Poisson limit).
+\item Estimate \eqn{\hat\theta} by client-side Newton-Raphson on
+the NB profile log-likelihood, evaluated at each candidate
+\eqn{\theta} through \code{dsvertNBProfileSumsDS} which
+returns \eqn{\sum\psi(y_i+\theta)}, \eqn{\sum\psi_1(y_i+\theta)},
+\eqn{n}, and \eqn{\bar y} as scalar aggregates on the outcome
+server. The Anscombe/Lawless score
+\eqn{s(\theta)=\sum\psi(y_i+\theta)-n\psi(\theta)+n\log(\theta/(\bar y+\theta))}
+is zero at the MLE; derivative
+\eqn{s'(\theta)=\sum\psi_1(y_i+\theta)-n\psi_1(\theta)+n[1/\theta-1/(\bar y+\theta)]}
+supplies the Newton step. Initial value comes from
+method-of-moments \eqn{\hat\theta_0=\bar y^2/(s_y^2-\bar y)}.
 \item Rescale the Poisson SE by \eqn{\sqrt{1 + \bar y / \hat\theta}}
 so the reported z-stats reflect NB variance inflation.
 }
-\eqn{\bar y} and \eqn{s_y^2} are already-aggregated moments (via
-the shipped \code{dsvertLocalMomentsDS}); no per-patient disclosure.
+All aggregates are scalar sums over y; no per-patient disclosure.
 }

@@ -1,4 +1,4 @@
-#' @title Cox K=2 discrete-time pooled-logistic — non-disclosive option B (#D')
+#' @title Cox K=2 discrete-time pooled-logistic -- non-disclosive option B (#D')
 #' @description K=2 OT-Beaver discrete-time Cox via pooled-logistic with
 #'   the per-patient ending-bin index J_i hidden from the covariate
 #'   (non-label) server. Closes the disclosure gap of the leaky variant
@@ -7,52 +7,52 @@
 #'
 #'   Architecture (selected by David 2026-04-27 ~10:00, option B in the
 #'   project_k2_strict_unified_plan_2026-04-27.md "Option B FEASIBILITY
-#'   ANALYSIS" §):
+#'   ANALYSIS" Sec.):
 #'
-#'   1. Outcome (label) server holds (time, status) → computes J_i +
-#'      m_ij = I(j ≤ J_i) + y_ij = I(j == J_i AND status_i = 1) plaintext.
+#'   1. Outcome (label) server holds (time, status) -> computes J_i +
+#'      m_ij = I(j <= J_i) + y_ij = I(j == J_i AND status_i = 1) plaintext.
 #'   2. m and y are split into Ring127 additive shares (frac=50) between
-#'      OS and the covariate server. NL never sees J_i directly — only
-#'      uniform-random-looking length-(J·n) shares whose mod-2^127 sum
+#'      OS and the covariate server. NL never sees J_i directly -- only
+#'      uniform-random-looking length-(J*n) shares whose mod-2^127 sum
 #'      with OS shares reconstructs the masks.
-#'   3. Covariate server replicates X_i to a uniform J×n person-period
+#'   3. Covariate server replicates X_i to a uniform Jxn person-period
 #'      frame (every patient contributes exactly J rows, regardless of
 #'      true J_i). Zero row-count signal leaks per Aliasgari-Blanton 2013
 #'      NDSS share-mask gating folklore.
-#'   4. Newton inner loop (next session): mask-gated residual (y - p)·m
+#'   4. Newton inner loop (next session): mask-gated residual (y - p)*m
 #'      via .ring127_vecmul Beaver round per bin + mask-gated Hessian
-#'      X^T diag(W·m) X share-space + ridge ε·I (~1e-8) on Hessian
-#'      diagonal to handle all-zero-mask α_j strata per Christensen 2019
-#'      §A.3.
+#'      X^T diag(W*m) X share-space + ridge epsilon*I (~1e-8) on Hessian
+#'      diagonal to handle all-zero-mask alpha_j strata per Christensen 2019
+#'      Sec.A.3.
 #'
 #'   This first increment ships the orchestration that exercises the
 #'   three dormant server-side primitives shipped in dsVert eee40f6
 #'   (\code{dsvertCoxDiscreteShareMaskDS} +
 #'   \code{dsvertCoxDiscreteReceiveSharesDS} +
 #'   \code{dsvertCoxDiscreteExpandXDS}) end-to-end and validates the
-#'   share-pipeline. The masked-Newton inner loop (§4 above) is staged
-#'   for the next session — the scaffold returns the resolved share-
+#'   share-pipeline. The masked-Newton inner loop (Sec.4 above) is staged
+#'   for the next session -- the scaffold returns the resolved share-
 #'   slot keys + uniform-expanded data frame name so the caller can
 #'   wire the Newton when it lands.
 #'
 #'   Citations:
 #'   \itemize{
-#'     \item Aliasgari & Blanton 2013 NDSS (eprint 2012/405) — share-mask
+#'     \item Aliasgari & Blanton 2013 NDSS (eprint 2012/405) -- share-mask
 #'       gating for FP branch elimination, the underlying primitive.
-#'     \item De Cock et al. 2016 (eprint 2016/736) — oblivious selection
+#'     \item De Cock et al. 2016 (eprint 2016/736) -- oblivious selection
 #'       under additive secret sharing.
-#'     \item Mohassel & Zhang 2017 IEEE S&P (eprint 2017/396) SecureML —
+#'     \item Mohassel & Zhang 2017 IEEE S&P (eprint 2017/396) SecureML --
 #'       probabilistic-truncation noise model that bounds the Ring127
 #'       per-mult error budget.
-#'     \item Catrina & Saxena 2010 FC §3.3 — fixed-point representation
-#'       statistical-security analysis (κ = ring_bits − 2·frac).
-#'     \item Andreux et al. 2020 arXiv:2006.08997 — discrete-time Cox via
+#'     \item Catrina & Saxena 2010 FC Sec.3.3 -- fixed-point representation
+#'       statistical-security analysis (kappa = ring_bits - 2*frac).
+#'     \item Andreux et al. 2020 arXiv:2006.08997 -- discrete-time Cox via
 #'       pooled-logistic; the algorithmic substrate.
-#'     \item Allison 1982 *Sociological Methodology* 13:61-98 — canonical
+#'     \item Allison 1982 *Sociological Methodology* 13:61-98 -- canonical
 #'       pooled-logistic equivalence to discrete Cox.
-#'     \item Prentice & Gloeckler 1978 *Biometrics* 34:57-67 — discrete
+#'     \item Prentice & Gloeckler 1978 *Biometrics* 34:57-67 -- discrete
 #'       Cox MLE properties.
-#'     \item Christensen 2019 CRAN ordinal vignette §A.3 — Newton
+#'     \item Christensen 2019 CRAN ordinal vignette Sec.A.3 -- Newton
 #'       diagonal eigenvalue inflation for handling singular H.
 #'   }
 #'
@@ -61,32 +61,32 @@
 #'   reformulation). The LHS \code{Surv(time_var, status_var)} is parsed
 #'   to extract the time / status column names; OS must hold both.
 #' @param data Character. Server-side data frame symbol.
-#' @param J Integer. Number of time bins (default 5L). Larger J → finer
+#' @param J Integer. Number of time bins (default 5L). Larger J -> finer
 #'   discretisation, lower bias to continuous Cox, higher MPC cost.
 #' @param bin_breaks Numeric vector of length J+1 (sorted, increasing,
 #'   first = 0). If \code{NULL}, the caller must precompute and pass
-#'   them — they are public metadata that must be reproducible across
+#'   them -- they are public metadata that must be reproducible across
 #'   servers (typically equal-quantile breaks of observed event times,
 #'   computed at the coordinator from non-disclosive aggregates).
 #' @param max_iter Integer. Newton outer iterations (default 20L). Used
 #'   by the masked-Newton inner loop.
 #' @param tol Numeric. Convergence tolerance on max(|score|) (default
-#'   1e-6). STRICT 1e-4 on β_hat vs glm pooled-logistic reachable per the
-#'   Catrina-Saxena 2010 §3.3 noise-floor analysis (frac=50 Ring127 per-
-#'   mult ulp ≈ 8.9e-16; depth-50 chain → relative error ≈ 4.4e-14, ~10
+#'   1e-6). STRICT 1e-4 on beta_hat vs glm pooled-logistic reachable per the
+#'   Catrina-Saxena 2010 Sec.3.3 noise-floor analysis (frac=50 Ring127 per-
+#'   mult ulp approx 8.9e-16; depth-50 chain -> relative error approx 4.4e-14, ~10
 #'   orders of margin to STRICT 1e-4 on coefficients).
 #' @param newton Logical. If TRUE (default), run the masked-Newton inner
 #'   loop after the share-pipeline scaffold to produce coefficient
 #'   estimates. If FALSE, return the scaffold result with
 #'   coefficients=NULL (diagnostic mode for primitive validation).
 #' @param ridge_eps Numeric. Diagonal eigenvalue inflation added to the
-#'   Hessian before \code{solve()} to handle all-zero-mask α_j strata
-#'   per Christensen 2019 CRAN ordinal vignette §A.3, plus to suppress
+#'   Hessian before \code{solve()} to handle all-zero-mask alpha_j strata
+#'   per Christensen 2019 CRAN ordinal vignette Sec.A.3, plus to suppress
 #'   the spurious near-singular eigenvalues introduced by the masked-W
 #'   noise (Catrina-Saxena 2010 frac=50 truncation accumulating across
-#'   the mask·W·X^T·X chain). Default 1e-6 — empirically drops the
-#'   L2 fixture rel from 4.4e-2 (ε=1e-8) to 4.1e-4 by suppressing the
-#'   |step|→noise oscillation around the iter-4 attractor.
+#'   the mask*W*X^T*X chain). Default 1e-6 -- empirically drops the
+#'   L2 fixture rel from 4.4e-2 (epsilon=1e-8) to 4.1e-4 by suppressing the
+#'   |step|->noise oscillation around the iter-4 attractor.
 #' @param verbose Logical.
 #' @param datasources DSI connections (length-2 K=2 split: label server
 #'   holding (time, status) + a subset of X; covariate server holding
@@ -99,14 +99,14 @@
 #'     \item{coefficients}{NULL in this scaffold; populated by Newton.}
 #'     \item{n_obs}{Number of patients.}
 #'     \item{J}{Number of bins.}
-#'     \item{n_pp}{Person-period rows = J · n_obs (uniform — no leak).}
+#'     \item{n_pp}{Person-period rows = J * n_obs (uniform -- no leak).}
 #'     \item{mask_share_key, y_share_key}{Session slot names where the
 #'       Ring127 (m, y) shares are stored on both servers, ready for the
 #'       Newton.}
-#'     \item{expanded_x_name}{Symbol of the uniform J×n covariate frame
+#'     \item{expanded_x_name}{Symbol of the uniform Jxn covariate frame
 #'       at the covariate server.}
 #'     \item{disclosure_audit}{List of per-step disclosure validation
-#'       (n_pp at NL = J·n with no per-patient row-count variation).}
+#'       (n_pp at NL = J*n with no per-patient row-count variation).}
 #'   }
 #' @export
 ds.vertCoxDiscreteNonDisclosive <- function(formula,
@@ -131,7 +131,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (!inherits(formula, "formula"))
     stop("`formula` must be a formula", call. = FALSE)
   lhs <- formula[[2L]]
-  # Accept both bare `Surv(...)` and `survival::Surv(...)` — the latter
+  # Accept both bare `Surv(...)` and `survival::Surv(...)` -- the latter
   # has lhs[[1L]] as a `::` call yielding c("::","survival","Surv").
   lhs_fn <- if (is.call(lhs)) deparse(lhs[[1L]]) else ""
   if (!is.call(lhs) || !lhs_fn %in% c("Surv", "survival::Surv"))
@@ -164,7 +164,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   server_names <- names(datasources)
   if (any(!nzchar(server_names)))
     stop("datasources must be a named list", call. = FALSE)
-  # Character vector (NOT list) so setdiff/[[ work uniformly — list-form
+  # Character vector (NOT list) so setdiff/[[ work uniformly -- list-form
   # produces list-typed peer that breaks transport_pks[[peer]] subscript.
   server_list <- server_names
 
@@ -176,7 +176,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   for (i in seq_along(datasources)) {
     cn_res <- DSI::datashield.aggregate(
       conns = datasources[i],
-      expr  = call("dsvertColNamesDS", data_name = data))
+      expr  = call(name = "dsvertColNamesDS", data_name = data))
     cn_inner <- if (is.list(cn_res)) cn_res[[1L]] else cn_res
     cn <- if (is.list(cn_inner) && !is.null(cn_inner$columns))
             cn_inner$columns else cn_inner
@@ -185,7 +185,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     }
   }
   if (is.na(os_idx))
-    stop(sprintf("Could not locate outcome server holding (%s, %s) — ",
+    stop(sprintf("Could not locate outcome server holding (%s, %s) -- ",
                   time_var, status_var),
          "neither datasource's '", data, "' has both columns.",
          call. = FALSE)
@@ -205,7 +205,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     ci <- which(server_names == server)
     tk_res <- DSI::datashield.aggregate(
       conns = datasources[ci],
-      expr  = call("glmRing63TransportInitDS", session_id = session_id))
+      expr  = call(name = "glmRing63TransportInitDS", session_id = session_id))
     if (is.list(tk_res) && length(tk_res) == 1L) tk_res <- tk_res[[1L]]
     transport_pks[[server]] <- tk_res$transport_pk
   }
@@ -225,7 +225,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   y_share_key    <- "cox_nd_y_share"
   share_res <- DSI::datashield.aggregate(
     conns = os_conn,
-    expr  = call("dsvertCoxDiscreteShareMaskDS",
+    expr  = call(name = "dsvertCoxDiscreteShareMaskDS",
                   data_name        = data,
                   time_var         = time_var,
                   status_var       = status_var,
@@ -240,23 +240,23 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   n_obs <- as.integer(share_res$n_obs)
   n_pp  <- as.integer(share_res$n_pp)
   if (n_pp != n_obs * J)
-    stop(sprintf("share-mask returned n_pp=%d != J·n=%d (sanity)",
+    stop(sprintf("share-mask returned n_pp=%d != J*n=%d (sanity)",
                   n_pp, n_obs * J), call. = FALSE)
 
   # Relay sealed (m, y) blobs to NL. We piggyback on the standard
-  # mpcStoreBlobDS chunking — for J=5..50 + n=200..1000, the sealed
-  # length-(J·n) Ring127 share fits in one chunk comfortably.
+  # mpcStoreBlobDS chunking -- for J=5..50 + n=200..1000, the sealed
+  # length-(J*n) Ring127 share fits in one chunk comfortably.
   blob_key_m <- "cox_nd_mask_sealed"
   blob_key_y <- "cox_nd_y_sealed"
   DSI::datashield.aggregate(
     conns = nl_conn,
-    expr  = call("mpcStoreBlobDS",
+    expr  = call(name = "mpcStoreBlobDS",
                   key        = blob_key_m,
                   chunk      = share_res$sealed_m_blob,
                   session_id = session_id))
   DSI::datashield.aggregate(
     conns = nl_conn,
-    expr  = call("mpcStoreBlobDS",
+    expr  = call(name = "mpcStoreBlobDS",
                   key        = blob_key_y,
                   chunk      = share_res$sealed_y_blob,
                   session_id = session_id))
@@ -265,7 +265,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (verbose) message("[#D' non-disclosive] Phase 2: NL receive shares")
   recv_res <- DSI::datashield.aggregate(
     conns = nl_conn,
-    expr  = call("dsvertCoxDiscreteReceiveSharesDS",
+    expr  = call(name = "dsvertCoxDiscreteReceiveSharesDS",
                   mask_blob_key   = blob_key_m,
                   y_blob_key      = blob_key_y,
                   mask_output_key = mask_share_key,
@@ -277,15 +277,15 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (!isTRUE(recv_res$stored))
     stop("NL share receive failed", call. = FALSE)
 
-  # ---- Phase 3: NL expands its X to uniform J×n person-period frame ----
+  # ---- Phase 3: NL expands its X to uniform Jxn person-period frame ----
   if (verbose) message("[#D' non-disclosive] Phase 3: NL uniform expansion")
   # Identify the X columns NL holds. We don't pre-split x_vars at the
-  # client (the formula's RHS may include columns from either server) —
+  # client (the formula's RHS may include columns from either server) --
   # NL skips columns it doesn't have. The K=2 split convention is the
   # caller's responsibility.
   cn_nl_res <- DSI::datashield.aggregate(
     conns = nl_conn,
-    expr  = call("dsvertColNamesDS", data_name = data))
+    expr  = call(name = "dsvertColNamesDS", data_name = data))
   cn_nl_inner <- if (is.list(cn_nl_res)) cn_nl_res[[1L]] else cn_nl_res
   cn_nl <- if (is.list(cn_nl_inner) && !is.null(cn_nl_inner$columns))
              cn_nl_inner$columns else cn_nl_inner
@@ -294,7 +294,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (length(x_nl) > 0L) {
     expand_res <- DSI::datashield.aggregate(
       conns = nl_conn,
-      expr  = call("dsvertCoxDiscreteExpandXDS",
+      expr  = call(name = "dsvertCoxDiscreteExpandXDS",
                     data_name     = data,
                     new_data_name = expanded_x_name,
                     x_vars        = x_nl,
@@ -307,16 +307,16 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                     as.character(expand_res$n_pp), n_pp), call. = FALSE)
   } else {
     # NL has no covariate columns (degenerate but allowed). The Newton
-    # would still need a uniform J×n frame to host bin-dummy α_j cols
-    # — we leave that to the masked-Newton inner loop next session.
+    # would still need a uniform Jxn frame to host bin-dummy alpha_j cols
+    # -- we leave that to the masked-Newton inner loop next session.
     expand_res <- list(stored = TRUE, n_pp = n_pp, p = 0L)
   }
 
-  # ---- Disclosure audit: NL row count is uniform J·n, NOT n_obs · J_i ----
-  # The primitive contract guarantees n_pp = J · n_obs at NL with every
+  # ---- Disclosure audit: NL row count is uniform J*n, NOT n_obs * J_i ----
+  # The primitive contract guarantees n_pp = J * n_obs at NL with every
   # patient contributing exactly J rows. We return the audit metadata
   # so the caller (or test fixture) can assert no row-count signal
-  # leaked. No extra round-trip needed — n_pp is already returned.
+  # leaked. No extra round-trip needed -- n_pp is already returned.
   audit <- list(
     nl_rows_uniform           = TRUE,
     nl_rows_per_patient       = J,
@@ -324,9 +324,9 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     expected_uniform_n_pp     = J * n_obs,
     j_i_leak_path_eliminated  = TRUE,
     note = paste0(
-      "NL receives length-(J·n) Ring127 shares (uniform random under",
+      "NL receives length-(J*n) Ring127 shares (uniform random under",
       " mod-2^127) for both m and y; X is replicated J times per patient",
-      " regardless of true J_i. Per Aliasgari-Blanton 2013 NDSS §3,",
+      " regardless of true J_i. Per Aliasgari-Blanton 2013 NDSS Sec.3,",
       " the share representation provides perfect privacy for J_i."))
 
   # ---- Phase 4: masked-Newton inner loop ----
@@ -337,20 +337,20 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   # with mask-gated gradient and Hessian to keep J_i hidden from the
   # covariate server.
   #
-  # Score:    g_β = Σ_{i,j} m_ij · (y_ij − p_ij) · x_ij
-  # Hessian:  H_β = Σ_{i,j} m_ij · p_ij(1−p_ij) · x_ij x_ij^T
+  # Score:    g_beta = Sum_{i,j} m_ij * (y_ij - p_ij) * x_ij
+  # Hessian:  H_beta = Sum_{i,j} m_ij * p_ij(1-p_ij) * x_ij x_ij^T
   #            (observed information; positive definite under design
   #             rank + at least one event in each non-trivial bin)
-  # Step:     β ← β + (H_β + ε·I)^{−1} g_β  (ε per Christensen 2019 §A.3)
+  # Step:     beta <- beta + (H_beta + epsilon*I)^{-1} g_beta  (epsilon per Christensen 2019 Sec.A.3)
   #
   # All quantities live in Ring127 frac=50 additive shares between OS+NL
-  # until length-p reveal of g_β and length-p² reveal of H_β at the
+  # until length-p reveal of g_beta and length-p^2 reveal of H_beta at the
   # coordinator each iter. The mask m_ij is share-secret so the
   # covariate server never learns J_i (Aliasgari & Blanton 2013 NDSS
   # eprint 2012/405 share-mask gating; De Cock et al. 2016 eprint
   # 2016/736 oblivious selection). Per-mult truncation noise floor is
   # bounded by Mohassel-Zhang 2017 SecureML eprint 2017/396 +
-  # Catrina-Saxena 2010 FC §3.3, leaving ~10 orders of margin to the
+  # Catrina-Saxena 2010 FC Sec.3.3, leaving ~10 orders of margin to the
   # STRICT-1e-4 coefficient target.
   if (!isTRUE(newton)) {
     return(list(
@@ -378,7 +378,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   # --- Phase 4a: expand X at OS too (mirror of NL Phase 3) ---
   cn_os_res <- DSI::datashield.aggregate(
     conns = os_conn,
-    expr  = call("dsvertColNamesDS", data_name = data))
+    expr  = call(name = "dsvertColNamesDS", data_name = data))
   cn_os_inner <- if (is.list(cn_os_res)) cn_os_res[[1L]] else cn_os_res
   cn_os <- if (is.list(cn_os_inner) && !is.null(cn_os_inner$columns))
               cn_os_inner$columns else cn_os_inner
@@ -389,18 +389,18 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (length(x_os) > 0L) {
     DSI::datashield.aggregate(
       conns = os_conn,
-      expr  = call("dsvertCoxDiscreteExpandXDS",
+      expr  = call(name = "dsvertCoxDiscreteExpandXDS",
                     data_name     = data,
                     new_data_name = expanded_x_name,
                     x_vars        = x_os,
                     J             = J,
                     session_id    = session_id))
   } else {
-    # OS still needs the bin-dummy frame to share — call expansion with
+    # OS still needs the bin-dummy frame to share -- call expansion with
     # zero x_vars (the primitive still emits bin dummies + patient_id).
     DSI::datashield.aggregate(
       conns = os_conn,
-      expr  = call("dsvertCoxDiscreteExpandXDS",
+      expr  = call(name = "dsvertCoxDiscreteExpandXDS",
                     data_name     = data,
                     new_data_name = expanded_x_name,
                     x_vars        = character(0),
@@ -408,7 +408,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                     session_id    = session_id))
   }
 
-  # OS share variables = bin dummies (baseline-hazard intercepts α_j) +
+  # OS share variables = bin dummies (baseline-hazard intercepts alpha_j) +
   # OS's own covariates. Bin dummies are public coefficients but we share
   # them via Ring127 to keep the protocol uniform (the disclosure boundary
   # is preserved either way; sharing public values is harmless).
@@ -420,7 +420,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   p_total <- p_os + p_nl
   beta_names <- c(x_share_os, x_share_nl)
   if (p_total < 1L)
-    stop("p_total < 1 after expansion — degenerate design.", call. = FALSE)
+    stop("p_total < 1 after expansion -- degenerate design.", call. = FALSE)
 
   # --- Phase 4b: Ring127 X-share via k2ShareInputDS at both servers ---
   .dsAgg <- function(conns, expr, ...)
@@ -431,11 +431,11 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
       if (n_chunks == 1L) {
         DSI::datashield.aggregate(conn,
-          call("mpcStoreBlobDS", key = key, chunk = chunk_str,
+          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
                session_id = session_id))
       } else {
         DSI::datashield.aggregate(conn,
-          call("mpcStoreBlobDS", key = key, chunk = chunk_str,
+          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
                chunk_index = chunk_idx, n_chunks = n_chunks,
                session_id = session_id))
       }
@@ -449,7 +449,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   for (srv in server_list) {
     ci  <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
-    r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
+    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
       data_name = expanded_x_name,
       x_vars    = x_vars_per_server[[srv]],
       y_var     = NULL,
@@ -467,7 +467,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   for (srv in server_list) {
     ci   <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
-    .dsAgg(datasources[ci], call("k2ReceiveShareDS",
+    .dsAgg(datasources[ci], call(name = "k2ReceiveShareDS",
       peer_p = as.integer(length(x_vars_per_server[[peer]])),
       session_id = session_id))
   }
@@ -503,11 +503,11 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     beta_nl_v  <- if (p_nl > 0L) as.numeric(beta[(p_os + 1L):p_total])
                   else numeric(0)
 
-    # 1. eta_share = X·β  (k2ComputeEtaShareDS also writes k2_x_full_fp)
+    # 1. eta_share = X*beta  (k2ComputeEtaShareDS also writes k2_x_full_fp)
     for (srv in server_list) {
       ci   <- which(server_names == srv)
       is_c <- (srv == os_name)
-      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+      .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
         beta_coord     = beta_coord,
         beta_nl        = beta_nl_v,
         intercept      = 0.0,
@@ -516,10 +516,10 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
         output_key     = "cox_nd_eta"))
     }
 
-    # 2. neg_eta = (-1) · eta  (local scale, no MPC round)
+    # 2. neg_eta = (-1) * eta  (local scale, no MPC round)
     for (srv in server_list) {
       ci <- which(server_names == srv)
-      .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
         in_key     = "cox_nd_eta",
         scalar_fp  = fp_neg1_b64,
         output_key = "cox_nd_neg_eta",
@@ -527,7 +527,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
         session_id = session_id))
     }
 
-    # 3. exp(-eta)  (Chebyshev-Horner extended for |x|≤10)
+    # 3. exp(-eta)  (Chebyshev-Horner extended for |x|<=10)
     .ring127_exp_round_keyed_extended(
       "cox_nd_neg_eta", "cox_nd_exp_neg_eta", n_pp,
       datasources, dealer_ci, server_list, server_names,
@@ -538,7 +538,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     for (srv in server_list) {
       ci   <- which(server_names == srv)
       is_c <- (srv == os_name)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key           = "cox_nd_exp_neg_eta",
         b_key           = NULL,
         sign_a          = 1L,
@@ -561,7 +561,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     for (srv in server_list) {
       ci   <- which(server_names == srv)
       is_c <- (srv == os_name)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key           = y_share_key,
         b_key           = "cox_nd_p_share",
         sign_a          = 1L,
@@ -573,18 +573,18 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
         session_id      = session_id))
     }
 
-    # 7. mr = mask · r  (Beaver vecmul; gates invalid (i,j) to 0)
+    # 7. mr = mask * r  (Beaver vecmul; gates invalid (i,j) to 0)
     .ring127_vecmul(mask_share_key, "cox_nd_r_share", "cox_nd_mr_share",
       n_pp,
       datasources, dealer_ci, server_list, server_names,
       os_name, nl_name, transport_pks, session_id,
       .dsAgg, .sendBlob)
 
-    # 8. W = p·(1-p):  (1-p) via affine, then p × (1-p) via vecmul
+    # 8. W = p*(1-p):  (1-p) via affine, then p x (1-p) via vecmul
     for (srv in server_list) {
       ci   <- which(server_names == srv)
       is_c <- (srv == os_name)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key           = NULL,
         b_key           = "cox_nd_p_share",
         sign_a          = 0L,
@@ -601,22 +601,22 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       os_name, nl_name, transport_pks, session_id,
       .dsAgg, .sendBlob)
 
-    # 9. mw = mask · W
+    # 9. mw = mask * W
     .ring127_vecmul(mask_share_key, "cox_nd_w_share", "cox_nd_mw_share",
       n_pp,
       datasources, dealer_ci, server_list, server_names,
       os_name, nl_name, transport_pks, session_id,
       .dsAgg, .sendBlob)
 
-    # 10. Per-column gradient g[j] = X[:,j]^T · mr  (cache X col shares
-    #     for the Hessian double-loop below — they don't change in iter).
+    # 10. Per-column gradient g[j] = X[:,j]^T * mr  (cache X col shares
+    #     for the Hessian double-loop below -- they don't change in iter).
     grad <- numeric(p_total)
     x_col_keys <- character(p_total)
     for (j in seq_len(p_total)) {
       x_col_keys[j] <- sprintf("cox_nd_xcol_%d", j)
       for (srv in server_list) {
         ci <- which(server_names == srv)
-        .dsAgg(datasources[ci], call("k2BeaverExtractColumnDS",
+        .dsAgg(datasources[ci], call(name = "k2BeaverExtractColumnDS",
           source_key = "k2_x_full_fp",
           n          = n_pp,
           K          = p_total,
@@ -634,7 +634,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       sum_g <- list()
       for (srv in server_list) {
         ci <- which(server_names == srv)
-        rr <- .dsAgg(datasources[ci], call("k2BeaverSumShareDS",
+        rr <- .dsAgg(datasources[ci], call(name = "k2BeaverSumShareDS",
           source_key = gprod_key,
           session_id = session_id,
           frac_bits  = 50L,
@@ -664,7 +664,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       converged <- TRUE; final_iter <- iter; break
     }
 
-    # 11. Per-pair Hessian H[j,k] = X[:,j]^T diag(mw) X[:,k] — symmetric,
+    # 11. Per-pair Hessian H[j,k] = X[:,j]^T diag(mw) X[:,k] -- symmetric,
     #     so we compute upper triangle only.
     H <- matrix(0, p_total, p_total,
                 dimnames = list(beta_names, beta_names))
@@ -672,12 +672,12 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       for (k in j:p_total) {
         z_key <- sprintf("cox_nd_z_%d_%d", j, k)
         h_key <- sprintf("cox_nd_h_%d_%d", j, k)
-        # z_jk = X[:,j] · X[:,k]
+        # z_jk = X[:,j] * X[:,k]
         .ring127_vecmul(x_col_keys[j], x_col_keys[k], z_key, n_pp,
           datasources, dealer_ci, server_list, server_names,
           os_name, nl_name, transport_pks, session_id,
           .dsAgg, .sendBlob)
-        # h_jk_per_row = z_jk · mw_share
+        # h_jk_per_row = z_jk * mw_share
         .ring127_vecmul(z_key, "cox_nd_mw_share", h_key, n_pp,
           datasources, dealer_ci, server_list, server_names,
           os_name, nl_name, transport_pks, session_id,
@@ -685,7 +685,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
         sum_h <- list()
         for (srv in server_list) {
           ci <- which(server_names == srv)
-          rr <- .dsAgg(datasources[ci], call("k2BeaverSumShareDS",
+          rr <- .dsAgg(datasources[ci], call(name = "k2BeaverSumShareDS",
             source_key = h_key,
             session_id = session_id,
             frac_bits  = 50L,
@@ -702,17 +702,17 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       }
     }
 
-    # 12. Ridge ε·I + Newton solve  (Christensen 2019 §A.3 diagonal
-    #     eigenvalue inflation handles all-zero-mask α_j strata where
-    #     no patient was at risk in bin j → singular block).  Step
-    #     magnitude cap to 1.0 per coefficient prevents the iter-4 →
+    # 12. Ridge epsilon*I + Newton solve  (Christensen 2019 Sec.A.3 diagonal
+    #     eigenvalue inflation handles all-zero-mask alpha_j strata where
+    #     no patient was at risk in bin j -> singular block).  Step
+    #     magnitude cap to 1.0 per coefficient prevents the iter-4 ->
     #     iter-5 overshoot observed empirically when bin2 sits near
-    #     zero (Nocedal-Wright 2006 §4.1 trust-region radius cap).
+    #     zero (Nocedal-Wright 2006 Sec.4.1 trust-region radius cap).
     H_ridged <- H + ridge_eps * diag(p_total)
     step <- tryCatch(solve(H_ridged, grad),
       error = function(e) {
         if (verbose) message(sprintf(
-          "[#D' Newton iter %d] solve failed: %s — ridge bumped to 1e-4",
+          "[#D' Newton iter %d] solve failed: %s -- ridge bumped to 1e-4",
           iter, conditionMessage(e)))
         solve(H + 1e-4 * diag(p_total), grad)
       })
@@ -725,11 +725,11 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     step_norm_hist <- c(step_norm_hist, step_max)
     beta <- beta + step_eff
     if (verbose) message(sprintf(
-      "[#D' Newton iter %d] |step|_max=%.3e |β|_max=%.3e cap=%.3f",
+      "[#D' Newton iter %d] |step|_max=%.3e |beta|_max=%.3e cap=%.3f",
       iter, step_max, max(abs(beta)), cap_factor))
   }
 
-  # If Newton diverged, fall back to best β seen.
+  # If Newton diverged, fall back to best beta seen.
   if (!converged && is.finite(best_score) && best_score < score_norm)
     beta <- best_beta
 
@@ -771,6 +771,6 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       "Discrete-time Cox via pooled-logistic (Andreux 2020 + Allison 1982",
       " + Prentice-Gloeckler 1978) under masked Newton (Aliasgari-Blanton",
       " 2013 + De Cock 2016 share-mask gating; Mohassel-Zhang 2017 +",
-      " Catrina-Saxena 2010 frac=50 noise floor; Christensen 2019 §A.3",
-      " diagonal ridge for singular α_j strata)."))
+      " Catrina-Saxena 2010 frac=50 noise floor; Christensen 2019 Sec.A.3",
+      " diagonal ridge for singular alpha_j strata)."))
 }

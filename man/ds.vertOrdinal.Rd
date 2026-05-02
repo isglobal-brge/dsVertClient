@@ -9,6 +9,7 @@ ds.vertOrdinal(
   data = NULL,
   levels_ordered,
   cumulative_template = "\%s_leq",
+  ring = 63L,
   verbose = TRUE,
   datasources = NULL,
   ...
@@ -23,11 +24,44 @@ through as a factor level name in the per-threshold formulas).}
 \item{levels_ordered}{Character vector of the ordered levels,
 smallest-to-largest.}
 
+\item{cumulative_template}{String format (\code{sprintf}-style)
+used to build cumulative indicator column names; for instance the
+default \code{"\%s_leq"} produces \code{<level>_leq}, a 0/1 column
+that is 1 when the patient's outcome is at-or-below that level.
+Columns must already exist server-side.}
+
+\item{ring}{Integer (63 or 127). Ring selector for the underlying
+binomial sub-fits. Currently defaults to 63L while the Ring127
+binomial wide-spline path is wired up.}
+
+\item{verbose}{Logical (default TRUE). Print per-threshold fit
+progress.}
+
+\item{datasources}{DataSHIELD connections; if NULL, uses
+\code{DSI::datashield.connections_find()}.}
+
 \item{...}{Passed to each underlying \code{ds.vertGLM} call.}
 }
 \value{
-\code{ds.vertOrdinal} object: per-threshold fits + consolidated
-beta matrix + threshold-parameter vector.
+\code{ds.vertOrdinal} object with (among other fields):
+\code{thresholds} \eqn{\alpha_k} (intercepts of the K-1 cumulative
+binomial fits) and \code{beta_po} \eqn{\gamma} (BLUE-pooled slope
+coefficients from the K-1 fits). Both are in the
+CUMULATIVE-BINOMIAL GLM convention, i.e.\ the fit form is
+
+\if{html}{\out{<div class="sourceCode">}}\preformatted{  \eqn{P(Y \leq k | X) = \mathrm{sigmoid}(\alpha_k + X^\top \gamma)},
+
+NOT the \code{MASS::polr} convention
+\eqn{P(Y \leq k | X) = \mathrm{sigmoid}(\theta_k - X^\top \beta)}.
+The two agree under \eqn{\theta_k = \alpha_k} and \eqn{\beta = -\gamma}.
+Therefore a caller comparing against \code{coef(polr)} must flip the
+sign of \code{beta_po} (or equivalently evaluate predictions with
+\eqn{\mathrm{sigmoid}(\theta_k + X^\top \gamma)} on the \code{ds.vertOrdinal}
+outputs). Empirically the cumulative probabilities agree with polr
+to max \eqn{|\Delta P| \approx 5 \times 10^{-2}} on the housing
+subset once the convention is honoured (probe_ordinal_harness.R,
+2026-04-21).
+}\if{html}{\out{</div>}}
 }
 \description{
 Fit a K-category ordinal logistic regression by training

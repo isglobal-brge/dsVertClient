@@ -1,10 +1,14 @@
 # dsVertClient — DataSHIELD Client for Vertically Partitioned Data
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![R-CMD-check](https://github.com/isglobal-brge/dsVertClient/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/isglobal-brge/dsVertClient/actions/workflows/R-CMD-check.yaml)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](NEWS.md)
 
 ## Overview
 
-**dsVertClient** provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols run transparently.
+**dsVertClient** provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols (ECDH-PSI, Ring63 / Ring127 Beaver MPC, DCF wide-spline, OT-Beaver dishonest-majority triples, X25519 + AES-256-GCM transport, Ed25519 identity verification) run transparently.
+
+Pair with the server-side companion package [**dsVert**](https://github.com/isglobal-brge/dsVert).
 
 ## Quick Start
 
@@ -18,31 +22,41 @@ DSI::datashield.assign.table(conns, "D", "project.data")
 # 1. Align records (NAs removed automatically, like glm na.omit)
 ds.psiAlign("D", "patient_id", "DA", datasources = conns)
 
-# 2. Fit GLM using formula (auto-detects which server has each variable)
-result <- ds.vertGLM(diabetes ~ age + bmi + glu + bp,
-                     data = "DA", family = "binomial",
-                     datasources = conns)
+# 2. Fit a federated GLM (auto-detects which server has each variable)
+fit <- ds.vertGLM(diabetes ~ age + bmi + glu + bp,
+                  data = "DA", family = "binomial",
+                  datasources = conns)
+print(fit)
 
-# 3. View results (coefficients + SE + p-values + canonical deviance)
-print(result)
+# 3. Cox PH on K=2 with Ring127 (default; STRICT-grade vs survival::coxph)
+cox <- ds.vertCox(survival::Surv(time, event) ~ age + bmi + bp,
+                  data = "DA", compute_se = TRUE,
+                  datasources = conns)
 
-# 4. Correlation + PCA (auto-detects variables)
+# 4. Correlation + PCA
 cor <- ds.vertCor("DA", datasources = conns)
 pca <- ds.vertPCA(cor_result = cor)
 
 DSI::datashield.logout(conns)
 ```
 
-## Functions
+## Functions (v1.1.0)
 
-| Function | Description | Output |
-|----------|-------------|--------|
-| `ds.psiAlign()` | Private Set Intersection | Aligned data frame |
-| `ds.vertGLM()` | GLM (Gaussian, Binomial, Poisson) | Coefficients, SE, p-values, deviance |
-| `ds.vertCor()` | Pearson correlation matrix | p x p correlation matrix |
-| `ds.vertPCA()` | Principal Component Analysis | Loadings, eigenvalues, variance % |
+| Family | Functions |
+|---|---|
+| **Record alignment** | `ds.psiAlign()`, `ds.isPsiAligned()`, `ds.getIdentityPks()` |
+| **Descriptive / 2nd-order** | `ds.vertDesc()`, `ds.vertCor()`, `ds.vertPCA()`, `ds.vertChisq()`, `ds.vertChisqCross()`, `ds.vertFisher()` |
+| **GLM** (gaussian / binomial / poisson) | `ds.vertGLM()` with `offset`, `weights`, `ring`, `keep_session`, `no_intercept`, `std_mode` |
+| **Inference helpers** | `ds.vertConfint()`, `ds.vertContrast()`, `ds.vertWald()`, `ds.vertLR()` |
+| **Survival** | `ds.vertCox()` (Ring63 / Ring127, Newton path A/B), `ds.vertCox.k3()`, `ds.vertCoxDiscreteNonDisclosive()` |
+| **Negative binomial** | `ds.vertNB()` (iid-µ Newton), `ds.vertNBMoMTheta()` (Anscombe / Saha-Paul), `ds.vertNBFullRegTheta()` (Ring127 NR-LOG) |
+| **Multinomial** | `ds.vertMultinom()` (OVR), `ds.vertMultinomJoint()` (covariance-rescaled), `ds.vertMultinomJointNewton()` (full softmax Newton via Beaver) |
+| **Ordinal (proportional odds)** | `ds.vertOrdinal()` (BLUE pool + threshold correction), `ds.vertOrdinalJointNewton()` (Tutz 1990 § 3.2 block-diagonal) |
+| **Mixed models** | `ds.vertLMM()` (REML closed-form, K=2; random intercept + slopes), `ds.vertLMM.k3()` (REML 1-D profile, K=3), `ds.vertGEE()` (sandwich SE), `ds.vertGLMM()` (binomial Laplace, stretch) |
+| **Causal / robustness** | `ds.vertIPW()` (two-stage propensity + weighted GLM), `ds.vertMI()` (multiple imputation + Rubin pooling) |
+| **Penalised regression** | `ds.vertLASSO()`, `ds.vertLASSO1Step()`, `ds.vertLASSOIter()`, `ds.vertLASSOCV()` (AIC / BIC / EBIC selector), `ds.vertLASSOProximal()` (FISTA-accelerated) |
 
-## GLM Output
+## Output sample (`ds.vertGLM`)
 
 ```
 Coefficients:
@@ -56,37 +70,41 @@ Converged: TRUE (14 iterations)
 Deviance: 22.09
 ```
 
-## Supported Configurations
+## K=2 vs K≥3 support
 
-| | K=2 | K>=3 |
-|--|-----|------|
-| Gaussian | L-BFGS + identity link | L-BFGS + identity link |
-| Binomial | L-BFGS + DCF sigmoid (50 intervals) | L-BFGS + DCF sigmoid |
-| Poisson | L-BFGS + DCF exp (100 intervals) | L-BFGS + DCF exp |
-| SE + p-values | Finite-difference Hessian | Central-difference Hessian |
-| Deviance | Beaver dot-product (1 scalar) | Beaver dot-product |
-| Correlation | Ring63 Beaver (p matvec) | Ring63 Beaver (p matvec) |
-| PCA | Eigen of correlation | Eigen of correlation |
+| | K=2 | K≥3 |
+|---|---|---|
+| GLM (gauss / binom / poisson) | ✓ Ring63 / Ring127 | ✓ Ring63 |
+| Cox PH | ✓ Ring127 (default) — STRICT vs `coxph` | ✓ via `ds.vertCox.k3` (Allison Poisson trick) |
+| Negative binomial | ✓ iid / MoM / full-reg θ | ✓ iid path |
+| Multinomial / ordinal | ✓ OVR + joint | ✓ OVR (joint Newton K=2-only by design) |
+| LMM | ✓ K=2 closed-form | ✓ `ds.vertLMM.k3` (REML 1-D profile) |
+| GEE / GLMM / IPW / MI / LASSO / Cor / PCA | ✓ | ✓ |
+
+## Validation evidence
+
+| Method | max\|Δβ\| | Reference | Theoretical bound |
+|---|---|---|---|
+| GLM binomial (Pima, K=2) | 3.18 × 10⁻⁴ | `lm()` / `glm()` | Catrina-Saxena 2010 fp20 |
+| Cox PH (NCCTG, Ring127) | 1.33 × 10⁻⁵ | `survival::coxph` | Catrina-Saxena 2010 fp50 |
+| Cox PH (Pima, Ring127) | 8.09 × 10⁻⁵ | `survival::coxph` | Catrina-Saxena 2010 fp50 |
+| Cox PH in LMM+Cox harness | 8.32 × 10⁻⁶ | `survival::coxph` | Catrina-Saxena 2010 fp50 |
+| NB iid θ | 6.83 × 10⁻¹² | `MASS::theta.ml` | Newton precision |
+| NB full-reg θ | 4.44 × 10⁻³ | `MASS::glm.nb` | Catrina-Saxena fp50 + 5-iter NR (Goldschmidt 1964 + Pugh 2004) — σ-ratio 105×, **SUB-NOISE** |
+| Multinomial joint (Bohning) | 4.70 × 10⁻² | `nnet::multinom` | Catrina-Saxena Ring63 + Bohning |
+| Ordinal joint PO | 6.12 × 10⁻² | `MASS::polr` | 3× McCullagh-Agresti L1 floor |
+| LASSO proximal | 1-2 × 10⁻³ | `glmnet::cv.glmnet` | FHT 2010 + Beck-Teboulle 2009 |
+
+All methods inside their theoretical floors (paper §V.A). **Sub-noise margin** (paper §V.B) at ≥ 100× the per-fit Wald SE for all four federated K=2 estimators (ord_joint β/θ, Cox β, NB θ).
 
 ## Security
 
 - **Zero observation-level disclosure**: client sees only p-dimensional aggregates
 - **Server-generated Beaver triples**: client never sees cryptographic material
-- **Dealer rotation**: different server generates triples each iteration (K>=4)
+- **Dealer rotation**: different server generates triples each iteration (K ≥ 3); fixed dealer with OT-Beaver for K = 2
 - **Transport encryption**: X25519 + AES-256-GCM between servers
-- **Pure Ring63 MPC**: fixed-point additive secret sharing
-- **Pinned peers (Ed25519)**: servers verify each other's identity, preventing Sybil attacks
-
-## Performance (Pima diabetes, p=6)
-
-| Analysis | K=2 | K=3 |
-|----------|-----|-----|
-| Key setup | 0.3s | 0.5s |
-| Binomial GLM | ~330s (12 iters + SE) | ~360s (14 iters + SE) |
-| Gaussian GLM | ~60s (11 iters + SE) | ~60s (11 iters + SE) |
-| Poisson GLM | ~580s (11 iters + SE) | ~580s (12 iters + SE) |
-| Correlation | 16s | 18s |
-| PCA | <1s (from cor) | 18s |
+- **Identity verification**: Ed25519 signed peer transport keys (`dsvert.require_trusted_peers`)
+- **Ring**: Ring63 (frac_bits = 20) for legacy; Ring127 (frac_bits = 50) for STRICT closure (Catrina-Saxena 2010)
 
 ## Installation
 
@@ -96,7 +114,21 @@ devtools::install_github("isglobal-brge/dsVertClient")
 
 # Or from source
 R CMD build --no-build-vignettes .
-R CMD INSTALL dsVertClient_1.0.0.tar.gz
+R CMD INSTALL dsVertClient_1.1.0.tar.gz
 ```
 
 Requires the server-side package [dsVert](https://github.com/isglobal-brge/dsVert) installed on all DataSHIELD servers.
+
+## Documentation
+
+- [Reference index](https://isglobal-brge.github.io/dsVertClient/) (pkgdown site)
+- [Method validation evidence](https://isglobal-brge.github.io/dsVertClient/articles/vert_validation_evidence.html)
+- [NEWS](NEWS.md)
+
+## License
+
+MIT — see [LICENSE](LICENSE.md).
+
+## Citation
+
+See `paper/jbhi_dsvert.tex` (IEEE J-BHI submission r2.5) for the full validation table, theoretical bounds, and disclosure ledger.
