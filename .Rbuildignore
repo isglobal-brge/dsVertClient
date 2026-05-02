@@ -10,4 +10,4 @@
 ^CODE_OF_CONDUCT\.md$
 ^_pkgdown\.yml$
 ^pkgdown$
-^vignettes/_archive$
+^_archive_vignettes$

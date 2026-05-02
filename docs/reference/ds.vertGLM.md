@@ -19,9 +19,15 @@ ds.vertGLM(
   tol = 1e-04,
   lambda = 1e-04,
   log_n = 12,
+  offset = NULL,
+  weights = NULL,
+  ring = 63L,
   verbose = TRUE,
   datasources = NULL,
   eta_privacy = "auto",
+  keep_session = FALSE,
+  no_intercept = FALSE,
+  std_mode = "full",
   data_name = NULL,
   y_var = NULL
 )
@@ -71,6 +77,23 @@ ds.vertGLM(
 
   Integer. Legacy parameter (ignored). Kept for backward compatibility.
 
+- offset:
+
+  Optional numeric vector or column name on the outcome server added to
+  the linear predictor (e.g. `log(person_years)` for a Poisson rate
+  model).
+
+- weights:
+
+  Optional numeric vector or column name of per-row weights (e.g.
+  inverse-probability weights for IPW).
+
+- ring:
+
+  Integer (63 or 127). Selects the MPC ring / fracBits pipeline; Ring127
+  (fracBits=50) is STRICT-capable per Catrina-Saxena. Default 63L for
+  back-compat.
+
 - verbose:
 
   Logical. Print progress messages. Default is TRUE.
@@ -83,6 +106,35 @@ ds.vertGLM(
 
   Character. `"auto"` (default) selects `"k2_beaver"` for K=2 or
   `"secure_agg"` for K\>=3.
+
+- keep_session:
+
+  Logical. If TRUE, leave the MPC session alive on the servers and
+  expose `session_id`, `transport_pks`, and `server_list` on the
+  returned fit so follow-on helpers (LMM cluster residuals, GEE sandwich
+  meat, etc.) can reuse the already-aligned shares. Caller must invoke
+  `mpcCleanupDS` eventually.
+
+- no_intercept:
+
+  Logical. Suppress the auto-added intercept. Useful when the design
+  matrix already encodes one (e.g. cluster- mean-centred GLS fit).
+
+- std_mode:
+
+  Character. Standardisation mode: `"full"` (default) standardises both
+  X and y; alternative modes (e.g. `"x_only"`) skip y standardisation
+  for offset/weights paths.
+
+- data_name:
+
+  Internal alias for `data`; if both are supplied, `data_name` takes
+  precedence (back-compat path).
+
+- y_var:
+
+  Internal alias for the LHS of `formula`; if both are supplied, `y_var`
+  takes precedence (back-compat path).
 
 ## Value
 
