@@ -181,6 +181,9 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   best_beta <- NULL
   best_g_norm <- Inf
   best_iter <- 0L
+  best_step_beta <- NULL
+  best_step_norm <- Inf
+  best_step_iter <- 0L
 
   # Bohning (1992) constant upper-bound Hessian: H* = (1/2)*(I_{K-1} -
   # (1/K) 1 1^T) (x) (X^T X / n). PSD + beta-independent -> monotone Newton
@@ -823,13 +826,23 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                               })
     step_mat <- matrix(step_stacked, p, K_minus_1,
                        dimnames = dimnames(gradients))
+    step_norm_pre <- max(abs(step_mat))
+    # Raw gradient norms can keep shrinking after the MPC approximation floor
+    # is reached even when a further Newton step moves away from the central
+    # softmax MLE. The aggregate Newton step norm |H^{-1}g| is a stronger
+    # stationarity proxy under the Bohning majorant because it includes the
+    # current curvature scaling and costs no additional disclosure.
+    if (is.finite(step_norm_pre) && step_norm_pre < best_step_norm) {
+      best_step_norm <- step_norm_pre
+      best_step_beta <- beta_mat
+      best_step_iter <- outer - 1L
+    }
     # Decreasing step-cap schedule: 0.5 for first 5 iters (broad
     # descent), then 0.5 * 0.7^(iter-5) (refine near optimum, reduce
     # oscillation amplitude as |g| shrinks). Bounded below at 0.05 so
     # Newton always makes SOME progress. Same spirit as Nocedal-Wright
     # Sec.3.5 backtracking but pre-scheduled to save the Armijo MPC round.
     step_cap <- if (outer <= 5L) 0.5 else max(0.5 * 0.7^(outer - 5L), 0.05)
-    step_norm_pre <- max(abs(step_mat))
     if (is.finite(step_norm_pre) && step_norm_pre > step_cap) {
       step_mat <- step_mat * (step_cap / step_norm_pre)
     }
@@ -861,17 +874,25 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         silent = TRUE)
   }
 
-  # Return best-beta seen (argmin_k |g|_L2), not the final iterate. Under
-  # MPC step-cap oscillation the final iterate may not be the closest
-  # to the MLE; best-beta tracks it. Fall back to beta_mat if no iter was
-  # recorded (e.g., max_outer=0 edge case).
-  final_beta <- if (!is.null(best_beta)) best_beta else beta_mat
+  # Return the best stationarity iterate, not necessarily the final iterate.
+  # Raw |g| and final beta can both be poor selectors after the Ring127
+  # softmax approximation floor is reached. The minimum aggregate Newton
+  # step norm is the default selector; the minimum raw-gradient beta is
+  # retained for diagnostics.
+  gradient_beta <- if (!is.null(best_beta)) best_beta else beta_mat
+  final_beta <- if (!is.null(best_step_beta)) best_step_beta else gradient_beta
   out <- warm
   out$coefficients_anchored <- warm$coefficients
   out$coefficients <- final_beta
+  out$coefficients_best_gradient <- gradient_beta
   out$coefficients_final_iter <- beta_mat  # last iterate for diagnostics
   out$best_g_norm <- best_g_norm
   out$best_iter <- best_iter
+  out$best_step_norm <- best_step_norm
+  out$best_step_iter <- best_step_iter
+  out$returned_selection <- if (!is.null(best_step_beta)) "best_step"
+                            else if (!is.null(best_beta)) "best_gradient"
+                            else "final"
   out$outer_iter <- final_iter
   out$converged <- converged
   out$family <- "multinomial_joint_softmax_ring127"
