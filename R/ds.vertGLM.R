@@ -485,11 +485,12 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   # ===========================================================================
   # Per-patient weights registration (for IPW / survey-weighted regression).
   # ===========================================================================
-  # Weights live plaintext on the server that holds the weights column,
-  # typically the outcome holder. They are encrypted to the DCF peer so
-  # both DCF parties can scale their mu/y shares element-wise each
-  # iteration (local scaling, no Beaver round). The client never sees
-  # patient-level weights.
+  # Weights live plaintext only on the server that holds the weights column.
+  # The holder splits w and sqrt(w) into additive shares for the two DCF
+  # parties; weighted gradients are then computed by share-domain Beaver
+  # multiplication of w_share * residual_share. This avoids transferring
+  # patient-level weights to a peer that could combine them with local
+  # covariates to reconstruct hidden treatment/outcome information.
   weights_active <- FALSE
   if (!is.null(weights)) {
     if (!is.character(weights) || length(weights) != 1L) {
@@ -514,26 +515,72 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     }
     if (verbose) message(sprintf("Registering weights '%s' on server %s",
                                   weights, weights_srv))
-    # Identify peer DCF party (the other DCF server). Prefer the
-    # coordinator-vs-nl assignment established below; at this point we
-    # only have y_server and non_label_servers, so derive it.
-    peer_srv <- if (weights_srv == y_server) non_label_servers[1] else y_server
-    peer_ci <- which(server_names == peer_srv)
     weights_ci <- which(server_names == weights_srv)
-    setres <- .dsAgg(datasources[weights_ci], call(name = "k2SetWeightsDS",
-      data_name = data_name,
-      weights_column = weights,
-      peer_pk = transport_pks[[peer_srv]],
-      ring = ring,
-      session_id = session_id))
-    # setres is a list keyed by server; extract blob
-    if (is.list(setres) && length(setres) == 1L) setres <- setres[[1]]
-    peer_blob <- setres$peer_blob
-    # Relay encrypted blob to peer via adaptive chunked send
-    .sendBlob(peer_blob, "k2_peer_weights", peer_ci)
-    # Peer decrypts and stores
-    .dsAgg(datasources[peer_ci], call(name = "k2ReceiveWeightsDS",
-      session_id = session_id))
+    weights_ring <- if (use_secure_agg) 63L else ring
+    if (use_secure_agg) {
+      # K>=3 uses two DCF parties: fusion server plus coordinator.
+      fusion_srv <- .k3_select_fusion_server(server_list, y_server, x_vars)
+      dcf_weight_parties <- c(fusion_srv, y_server)
+      dcf_role <- if (weights_srv == dcf_weight_parties[1L]) {
+        "dcf0"
+      } else if (weights_srv == dcf_weight_parties[2L]) {
+        "dcf1"
+      } else {
+        "dealer"
+      }
+
+      setres <- .dsAgg(datasources[weights_ci], call(name = "k2ShareWeightsDS",
+        data_name = data_name,
+        weights_column = weights,
+        dcf0_pk = transport_pks[[dcf_weight_parties[1L]]],
+        dcf1_pk = transport_pks[[dcf_weight_parties[2L]]],
+        dcf_role = dcf_role,
+        ring = weights_ring,
+        session_id = session_id))
+      if (is.list(setres) && length(setres) == 1L) setres <- setres[[1]]
+
+      if (dcf_role == "dealer") {
+        .sendBlob(setres$dcf0_blob, "k2_peer_weight_share",
+                  which(server_names == dcf_weight_parties[1L]))
+        .sendBlob(setres$dcf1_blob, "k2_peer_weight_share",
+                  which(server_names == dcf_weight_parties[2L]))
+        .sendBlob(setres$dcf0_sqrt_blob, "k2_peer_sqrt_weight_share",
+                  which(server_names == dcf_weight_parties[1L]))
+        .sendBlob(setres$dcf1_sqrt_blob, "k2_peer_sqrt_weight_share",
+                  which(server_names == dcf_weight_parties[2L]))
+        for (srv in dcf_weight_parties) {
+          .dsAgg(datasources[which(server_names == srv)],
+            call(name = "k2ReceiveWeightSharesDS", session_id = session_id))
+        }
+      } else {
+        peer_srv <- if (dcf_role == "dcf0") dcf_weight_parties[2L] else dcf_weight_parties[1L]
+        peer_ci <- which(server_names == peer_srv)
+        .sendBlob(setres$peer_blob, "k2_peer_weight_share", peer_ci)
+        .sendBlob(setres$peer_sqrt_blob, "k2_peer_sqrt_weight_share", peer_ci)
+        .dsAgg(datasources[peer_ci], call(name = "k2ReceiveWeightSharesDS",
+          session_id = session_id))
+      }
+    } else {
+      # K=2 DCF party is the other label/non-label server.
+      peer_srv <- if (weights_srv == y_server) non_label_servers[1] else y_server
+      peer_ci <- which(server_names == peer_srv)
+      dcf0_srv <- y_server
+      dcf1_srv <- non_label_servers[1]
+      dcf_role <- if (weights_srv == dcf0_srv) "dcf0" else "dcf1"
+      setres <- .dsAgg(datasources[weights_ci], call(name = "k2ShareWeightsDS",
+        data_name = data_name,
+        weights_column = weights,
+        dcf0_pk = transport_pks[[dcf0_srv]],
+        dcf1_pk = transport_pks[[dcf1_srv]],
+        dcf_role = dcf_role,
+        ring = weights_ring,
+        session_id = session_id))
+      if (is.list(setres) && length(setres) == 1L) setres <- setres[[1]]
+      .sendBlob(setres$peer_blob, "k2_peer_weight_share", peer_ci)
+      .sendBlob(setres$peer_sqrt_blob, "k2_peer_sqrt_weight_share", peer_ci)
+      .dsAgg(datasources[peer_ci], call(name = "k2ReceiveWeightSharesDS",
+        session_id = session_id))
+    }
     weights_active <- TRUE
   }
 
@@ -618,7 +665,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       session_id = session_id,
       max_iter = max_iter, tol = tol, verbose = verbose,
       label_intercept = label_intercept,
-      .dsAgg = .dsAgg, .sendBlob = .sendBlob)
+      .dsAgg = .dsAgg, .sendBlob = .sendBlob,
+      weights_active = isTRUE(weights_active))
     betas <- k3_result$betas
     converged <- k3_result$converged
     final_iter <- k3_result$final_iter

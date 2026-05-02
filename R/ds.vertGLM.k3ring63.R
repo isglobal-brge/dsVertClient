@@ -20,19 +20,26 @@
 NULL
 
 #' @keywords internal
+.k3_select_fusion_server <- function(server_list, coordinator, x_vars) {
+  non_coord <- setdiff(server_list, coordinator)
+  non_coord[which.max(sapply(non_coord, function(s) length(x_vars[[s]])))]
+}
+
+#' @keywords internal
 .k3_ring63_gradient_loop <- function(
     datasources, server_list, server_names, x_vars,
     coordinator, coordinator_conn, non_label_servers,
     transport_pks, std_data, y_var, family,
     betas, n_obs, lambda,
     session_id, max_iter, tol, verbose,
-    label_intercept, .dsAgg, .sendBlob) {
+    label_intercept, .dsAgg, .sendBlob,
+    weights_active = FALSE) {
 
   K <- length(server_list)
   # DCF parties: fusion (party 0) must differ from coordinator (party 1)
   # Pick the first non-coordinator server with the most features as fusion
   non_coord <- setdiff(server_list, coordinator)
-  fusion_server <- non_coord[which.max(sapply(non_coord, function(s) length(x_vars[[s]])))]
+  fusion_server <- .k3_select_fusion_server(server_list, coordinator, x_vars)
   fusion_conn <- which(server_names == fusion_server)
   dcf_parties <- c(fusion_server, coordinator)
   dcf_conns <- sapply(dcf_parties, function(s) which(server_names == s))
@@ -350,6 +357,22 @@ NULL
       }
     }
 
+    # Optional weighted GLM/IPW path. The weights vector is shared between the
+    # two DCF parties; Beaver computes shares of w * (mu - y).
+    if (isTRUE(weights_active)) {
+      .glm_apply_shared_weight_residual(
+        datasources = datasources,
+        dcf_parties = dcf_parties,
+        dcf_conns = dcf_conns,
+        dealer_conn = dealer_conn,
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n_obs = n_obs,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob,
+        ring = 63L)
+    }
+
     # =================================================================
     # Step 3: Beaver gradient (Ring63)
     # =================================================================
@@ -594,6 +617,20 @@ NULL
       }
     }
 
+    if (isTRUE(weights_active)) {
+      .glm_apply_shared_weight_residual(
+        datasources = datasources,
+        dcf_parties = dcf_parties,
+        dcf_conns = dcf_conns,
+        dealer_conn = dealer_conn,
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n_obs = n_obs,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob,
+        ring = 63L)
+    }
+
     # Beaver gradient with perturbed beta
     grad_t <- .dsAgg(datasources[dealer_conn],
       call(name = "glmRing63GenGradTriplesDS",
@@ -686,6 +723,19 @@ NULL
         else if (ph==3) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[di]]$had2_xma,had2_ymb=pr[[di]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_had2_r1",dcf_conns[pi2])} }
       }
     }
+    if (isTRUE(weights_active)) {
+      .glm_apply_shared_weight_residual(
+        datasources = datasources,
+        dcf_parties = dcf_parties,
+        dcf_conns = dcf_conns,
+        dealer_conn = dealer_conn_b,
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n_obs = n_obs,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob,
+        ring = 63L)
+    }
     gt2 <- .dsAgg(datasources[dealer_conn_b], call(name = "glmRing63GenGradTriplesDS",
       dcf0_pk=transport_pks[[dcf_parties[1]]], dcf1_pk=transport_pks[[dcf_parties[2]]],
       n=as.integer(n_obs), p=as.integer(p_total), session_id=session_id))
@@ -724,6 +774,17 @@ NULL
   # Pass raw hessian for proper Fisher matrix computation in outer code
   inv_hessian <- list()
   attr(inv_hessian, "raw_hessian") <- hessian
+
+  if (isTRUE(weights_active) && family != "gaussian") {
+    if (verbose) {
+      message("  [Deviance] Skipped for weighted non-Gaussian K>=3 fit; canonical weighted deviance is not implemented yet.")
+    }
+    result <- list(betas = betas_out, converged = converged,
+                   final_iter = final_iter, deviance = NA_real_,
+                   inv_hessian = inv_hessian)
+    if (!label_intercept) result$intercept <- intercept
+    return(result)
+  }
 
   # ===========================================================================
   # Secure canonical deviance
@@ -782,7 +843,23 @@ NULL
   }
 
   if (family == "gaussian") {
-    # Gaussian: RSS = canonical deviance
+    # Gaussian: RSS = canonical deviance. For weighted Gaussian fits,
+    # compute shares of sqrt(w) * residual before the RSS Beaver dot.
+    if (isTRUE(weights_active)) {
+      .glm_apply_shared_weight_residual(
+        datasources = datasources,
+        dcf_parties = dcf_parties,
+        dcf_conns = dcf_conns,
+        dealer_conn = dealer_conn,
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n_obs = n_obs,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob,
+        weight_key = "k2_sqrt_weights_share_fp",
+        output_key = "k2_sqrt_weighted_residual_share_fp",
+        ring = 63L)
+    }
     for (i in seq_along(dcf_parties))
       .dsAgg(datasources[dcf_conns[i]], call(name = "glmRing63PrepDevianceDS",
         mode = "rss", session_id = session_id))
