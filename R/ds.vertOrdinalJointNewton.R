@@ -1,3 +1,14 @@
+# Internal helper: allow the legacy ordinal joint path only for controlled
+# diagnostics. The current implementation reconstructs per-patient ordinal
+# probabilities/weights on the outcome server, so it is not an acceptable
+# production path under the strict non-disclosure policy.
+.ord_joint_legacy_allowed <- function() {
+  if (isTRUE(getOption("dsvert.allow_patient_level_ordinal_joint", FALSE)))
+    return(TRUE)
+  env <- tolower(Sys.getenv("DSVERT_ALLOW_PATIENT_LEVEL_ORDINAL_JOINT", ""))
+  env %in% c("1", "true", "yes")
+}
+
 # Internal helper: evaluate PO log-likelihood at proposed (beta_test,
 # theta_test) iterate via fresh F-pipeline (k2ComputeEtaShareDS + K-1
 # share-space exp/recip + NL F-seal + OS aggregate + log-lik). Used
@@ -102,7 +113,13 @@
 
 #' @title Federated joint proportional-odds ordinal regression via
 #'   Ring127 MPC-orchestrated Newton iteration
-#' @description Full per-patient PO Newton. For a K-level ordered outcome
+#' @description Diagnostic-only full per-patient PO Newton. The current
+#'   implementation is disabled by default because it reconstructs
+#'   observation-level cumulative probabilities and weights on the outcome
+#'   server. Use \code{ds.vertOrdinal} for the non-disclosive warm
+#'   approximation until the share-domain ordinal joint design is implemented.
+#'
+#'   For a K-level ordered outcome
 #'   the PO log-likelihood is
 #'     \deqn{\ell(\beta, \theta) = \sum_i \log[F(\theta_{y_i} - \eta_i)
 #'                                            - F(\theta_{y_i-1} - \eta_i)],}
@@ -147,6 +164,17 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
                                        max_outer = 8L, tol = 1e-4,
                                        verbose = TRUE, datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
+  if (!.ord_joint_legacy_allowed()) {
+    stop(
+      "ds.vertOrdinalJointNewton is disabled under strict non-disclosure: ",
+      "the current K=2 joint path reconstructs per-patient cumulative ",
+      "probabilities/weights on the outcome server. Use ds.vertOrdinal for ",
+      "the non-disclosive warm approximation, or enable ",
+      "options(dsvert.allow_patient_level_ordinal_joint = TRUE) only for ",
+      "controlled diagnostic legacy runs with the matching server-side ",
+      "diagnostic option.",
+      call. = FALSE)
+  }
   if (!is.character(levels_ordered) || length(levels_ordered) < 3L)
     stop("levels_ordered must have >= 3 levels", call. = FALSE)
   thresh_levels <- head(levels_ordered, -1L)
