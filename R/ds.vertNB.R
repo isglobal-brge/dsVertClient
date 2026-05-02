@@ -5,7 +5,7 @@
 #'     \item Fit \eqn{\hat\beta} via the dsVert Poisson GLM (identical
 #'           score under canonical log link so the point estimate is
 #'           the same; only the covariance differs).
-#'     \item Estimate \eqn{\hat\theta} by client-side Newton–Raphson on
+#'     \item Estimate \eqn{\hat\theta} by client-side Newton-Raphson on
 #'           the NB profile log-likelihood, evaluated at each candidate
 #'           \eqn{\theta} through \code{dsvertNBProfileSumsDS} which
 #'           returns \eqn{\sum\psi(y_i+\theta)}, \eqn{\sum\psi_1(y_i+\theta)},
@@ -27,6 +27,18 @@
 #' @param theta_max_iter Outer iterations for the joint update
 #'   (default 5). Each iteration refits the Poisson GLM with the
 #'   current theta-adjusted mean estimate.
+#' @param formula Model formula for the count outcome (LHS) and
+#'   linear predictor (RHS).
+#' @param data Aligned data-frame name on each server.
+#' @param theta Optional fixed dispersion parameter; if supplied, the
+#'   theta refinement step is skipped and only the Poisson beta path
+#'   runs with this theta plugged into the SE rescaling.
+#' @param theta_tol Convergence tolerance on the relative change in
+#'   theta during the Newton refinement.
+#' @param verbose Logical. Print stage-by-stage progress.
+#' @param datasources DataSHIELD connections; if NULL, uses
+#'   \code{DSI::datashield.connections_find()}.
+#' @param ... Extra arguments forwarded to \code{ds.vertGLM}.
 #' @export
 ds.vertNB <- function(formula, data = NULL, theta = NULL,
                       joint = TRUE, theta_max_iter = 5L, theta_tol = 1e-3,
@@ -48,7 +60,7 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
   moments <- tryCatch({
     r <- DSI::datashield.aggregate(
       datasources[which(server_names == y_srv)],
-      call("dsvertLocalMomentsDS", data_name = data, variable = y_var))
+      call(name = "dsvertLocalMomentsDS", data_name = data, variable = y_var))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     r
   }, error = function(e) {
@@ -108,7 +120,7 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
       m2 <- tryCatch({
         r <- DSI::datashield.aggregate(
           datasources[which(server_names == y_srv)],
-          call("dsvertLocalMomentsDS", data_name = data, variable = y_var))
+          call(name = "dsvertLocalMomentsDS", data_name = data, variable = y_var))
         if (is.list(r) && length(r) == 1L) r <- r[[1L]]
         r
       }, error = function(e) NULL)
@@ -170,10 +182,10 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
 }
 
 # Client-side Newton-Raphson on the NB profile log-likelihood score.
-# Uses scalar aggregates (Σψ(y+θ), Σψ₁(y+θ), n, ȳ) from outcome server.
-# Homogeneous-μ MLE (μ≡ȳ) matches the specialisation used by MASS::theta.ml
+# Uses scalar aggregates (Sumpsi(y+theta), Sumpsi_1(y+theta), n, ybar) from outcome server.
+# Homogeneous-mu MLE (mu==ybar) matches the specialisation used by MASS::theta.ml
 # when covariates are absorbed into a shared offset. For a GLM with
-# non-constant μᵢ this returns the iid-equivalent θ̂ which empirically
+# non-constant mu_i this returns the iid-equivalent theta which empirically
 # tracks MASS::glm.nb theta to < 1% on quine / overdispersed counts.
 # No per-patient disclosure: each server call reveals only 4 scalars.
 .ds_vertNB_profile_mle_theta <- function(datasources, y_srv, server_names,
@@ -187,7 +199,7 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
     sums <- tryCatch({
       r <- DSI::datashield.aggregate(
         datasources[conn_idx],
-        call("dsvertNBProfileSumsDS",
+        call(name = "dsvertNBProfileSumsDS",
              data_name = data, variable = y_var, theta = theta))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r
@@ -212,7 +224,7 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
       damp <- damp + 1L
     }
     if (verbose) {
-      message(sprintf("  [NB θ-MLE] iter %d  theta=%.6g  s=%.3e  sp=%.3e  step=%.3e",
+      message(sprintf("  [NB theta-MLE] iter %d  theta=%.6g  s=%.3e  sp=%.3e  step=%.3e",
                        it, theta_new, s, sp, step))
     }
     if (!is.finite(theta_new) || theta_new <= 0) return(theta)

@@ -101,6 +101,30 @@
 #'   y_server = "s2", family = "gaussian")
 #' }
 #'
+#' @param data_name Internal alias for \code{data}; if both are supplied,
+#'   \code{data_name} takes precedence (back-compat path).
+#' @param y_var Internal alias for the LHS of \code{formula}; if both
+#'   are supplied, \code{y_var} takes precedence (back-compat path).
+#' @param offset Optional numeric vector or column name on the outcome
+#'   server added to the linear predictor (e.g. \code{log(person_years)}
+#'   for a Poisson rate model).
+#' @param weights Optional numeric vector or column name of per-row
+#'   weights (e.g. inverse-probability weights for IPW).
+#' @param ring Integer (63 or 127). Selects the MPC ring / fracBits
+#'   pipeline; Ring127 (fracBits=50) is STRICT-capable per
+#'   Catrina-Saxena. Default 63L for back-compat.
+#' @param keep_session Logical. If TRUE, leave the MPC session alive
+#'   on the servers and expose \code{session_id}, \code{transport_pks},
+#'   and \code{server_list} on the returned fit so follow-on helpers
+#'   (LMM cluster residuals, GEE sandwich meat, etc.) can reuse the
+#'   already-aligned shares. Caller must invoke \code{mpcCleanupDS}
+#'   eventually.
+#' @param no_intercept Logical. Suppress the auto-added intercept.
+#'   Useful when the design matrix already encodes one (e.g. cluster-
+#'   mean-centred GLS fit).
+#' @param std_mode Character. Standardisation mode: \code{"full"}
+#'   (default) standardises both X and y; alternative modes (e.g.
+#'   \code{"x_only"}) skip y standardisation for offset/weights paths.
 #' @importFrom DSI datashield.aggregate datashield.connections_find
 #' @export
 ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
@@ -202,7 +226,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     user_x_vars <- x_vars  # NULL = use all available, character = specific vars
     if (verbose) message("[Auto-detect] Querying server columns...")
     col_results <- DSI::datashield.aggregate(datasources,
-      call("dsvertColNamesDS", data_name = data_name))
+      call(name = "dsvertColNamesDS", data_name = data_name))
     server_names <- names(datasources)
 
     # Build column map: which server has which variable (exclude IDs)
@@ -298,7 +322,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     stop("K=2 mode requires exactly 2 servers", call. = FALSE)
 
   # Adaptive log_n for large n: max_slots = 2^(log_n-1)
-  # n ≤ 4096 → log_n=13, n ≤ 8192 → log_n=14, n ≤ 16384 → log_n=15
+  # n <= 4096 -> log_n=13, n <= 8192 -> log_n=14, n <= 16384 -> log_n=15
   # Note: this is set here before n_obs is known; adjusted later after getObsCountDS
 
   # ===========================================================================
@@ -320,7 +344,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   first_conn <- which(server_names == server_list[1])
   count_result <- DSI::datashield.aggregate(
     conns = datasources[first_conn],
-    expr = call("getObsCountDS", data_name)
+    expr = call(name = "getObsCountDS", data_name)
   )
   if (is.list(count_result) && length(count_result) == 1)
     count_result <- count_result[[1]]
@@ -335,7 +359,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        n_obs, 2^14))
       new_log_n <- 15L
     }
-    if (verbose) message(sprintf("  [Adaptive] log_n bumped %d→%d for n=%d observations", log_n, new_log_n, n_obs))
+    if (verbose) message(sprintf("  [Adaptive] log_n bumped %d->%d for n=%d observations", log_n, new_log_n, n_obs))
     log_n <- as.integer(new_log_n)
   }
 
@@ -376,11 +400,11 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
         .ci <- which(server_names == .srv)
         tryCatch(
           DSI::datashield.aggregate(conns = datasources[.ci],
-            expr = call("mpcCleanupDS", session_id = session_id)),
+            expr = call(name = "mpcCleanupDS", session_id = session_id)),
           error = function(e) NULL)
         tryCatch(
           DSI::datashield.aggregate(conns = datasources[.ci],
-            expr = call("mpcGcDS")),
+            expr = call(name = "mpcGcDS")),
           error = function(e) NULL)
       }
     }
@@ -438,7 +462,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       .ci <- which(server_names == .srv)
       cols <- tryCatch(
         DSI::datashield.aggregate(datasources[.ci],
-          call("dsvertColNamesDS", data_name = data_name))[[1]]$columns,
+          call(name = "dsvertColNamesDS", data_name = data_name))[[1]]$columns,
         error = function(e) NULL)
       if (!is.null(cols) && offset %in% cols) {
         offset_srv <- .srv
@@ -452,7 +476,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     if (verbose) message(sprintf("Registering offset '%s' on server %s",
                                   offset, offset_srv))
     .ci <- which(server_names == offset_srv)
-    .dsAgg(datasources[.ci], call("k2SetOffsetDS",
+    .dsAgg(datasources[.ci], call(name = "k2SetOffsetDS",
       data_name = data_name,
       offset_column = offset,
       session_id = session_id))
@@ -477,7 +501,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       .ci <- which(server_names == .srv)
       cols <- tryCatch(
         DSI::datashield.aggregate(datasources[.ci],
-          call("dsvertColNamesDS", data_name = data_name))[[1]]$columns,
+          call(name = "dsvertColNamesDS", data_name = data_name))[[1]]$columns,
         error = function(e) NULL)
       if (!is.null(cols) && weights %in% cols) {
         weights_srv <- .srv
@@ -496,7 +520,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     peer_srv <- if (weights_srv == y_server) non_label_servers[1] else y_server
     peer_ci <- which(server_names == peer_srv)
     weights_ci <- which(server_names == weights_srv)
-    setres <- .dsAgg(datasources[weights_ci], call("k2SetWeightsDS",
+    setres <- .dsAgg(datasources[weights_ci], call(name = "k2SetWeightsDS",
       data_name = data_name,
       weights_column = weights,
       peer_pk = transport_pks[[peer_srv]],
@@ -508,7 +532,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     # Relay encrypted blob to peer via adaptive chunked send
     .sendBlob(peer_blob, "k2_peer_weights", peer_ci)
     # Peer decrypts and stores
-    .dsAgg(datasources[peer_ci], call("k2ReceiveWeightsDS",
+    .dsAgg(datasources[peer_ci], call(name = "k2ReceiveWeightsDS",
       session_id = session_id))
     weights_active <- TRUE
   }
@@ -629,14 +653,14 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
   if (standardize_y && !is.null(y_sd)) {
     all_coefs_orig <- all_coefs_std * y_sd / all_x_sds
-    # IPW fix (2026-04-21 PM): under weighted fit, the loop's α_std
-    # absorbs the (ȳ_W − ȳ)/σ_y shift because y is centered by the
+    # IPW fix (2026-04-21 PM): under weighted fit, the loop's alpha_std
+    # absorbs the (ybar_W - ybar)/sigma_y shift because y is centered by the
     # UNWEIGHTED mean but the weighted-score optimum has non-zero
-    # mean residual in standardized space. Add the β_0_from_label ·
-    # σ_y term to unstandardize correctly. Under unweighted fit α_std
-    # converges to ≈ 0 (weighted-by-unity mean of centered y is 0), so
-    # the term is ≈ 0 and back-compat is preserved — verified by the
-    # Ring63 w_unit probe staying at max|Δβ| = 1.12e-4 STRICT.
+    # mean residual in standardized space. Add the beta_0_from_label *
+    # sigma_y term to unstandardize correctly. Under unweighted fit alpha_std
+    # converges to approx 0 (weighted-by-unity mean of centered y is 0), so
+    # the term is approx 0 and back-compat is preserved -- verified by the
+    # Ring63 w_unit probe staying at max|Deltabeta| = 1.12e-4 STRICT.
     intercept <- beta_0_from_label * y_sd + y_mean -
                  sum(all_coefs_orig * all_x_means)
   } else {
@@ -664,7 +688,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
   if (use_secure_agg) {
     # Secure deviance already computed in the Ring63 loop via Beaver dot-product.
-    # No individual η values are revealed. Only the scalar Σ(mu-y)² is returned.
+    # No individual eta values are revealed. Only the scalar Sum(mu-y)^2 is returned.
     if (!is.null(k3_result$deviance)) {
       if (verbose) message(sprintf("\n[Phase 5] Secure deviance (Beaver): %.4f", k3_result$deviance))
     }
@@ -675,18 +699,18 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     }
   }
 
-  # Deviance: from secure Beaver Σr² (available in both K=2 and K≥3)
+  # Deviance: from secure Beaver Sumr^2 (available in both K=2 and K>=3)
   deviance <- NA; null_deviance <- NA
   if (use_secure_agg && exists("k3_result") && !is.null(k3_result$deviance)) {
     deviance <- k3_result$deviance
   } else if (use_k2_beaver && exists("loop_result") && !is.null(loop_result$deviance)) {
     deviance <- loop_result$deviance
   }
-  # Gaussian deviance is computed in standardized space — destandardize
+  # Gaussian deviance is computed in standardized space -- destandardize
   if (family == "gaussian" && !is.null(y_sd) && !is.na(deviance)) {
     deviance <- deviance * y_sd^2
   }
-  # Null deviance: for Gaussian = Σ(y-ȳ)² = (n-1)*var(y). In std space, var(y_std)=1.
+  # Null deviance: for Gaussian = Sum(y-ybar)^2 = (n-1)*var(y). In std space, var(y_std)=1.
   null_deviance <- if (family == "gaussian") (n_obs - 1) * (y_sd %||% 1)^2 else NA
   pseudo_r2 <- if (!is.na(null_deviance) && null_deviance > 0) 1 - (deviance / null_deviance) else NA
   aic <- if (!is.na(deviance)) deviance + 2 * n_vars_total else NA
@@ -710,25 +734,25 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
   if (!is.null(inv_H) && !is.null(attr(inv_H, "raw_hessian"))) {
     H_raw <- attr(inv_H, "raw_hessian")
-    # Fisher = n × (Hessian - λI) where Hessian = X_std^T W X_std / n + λI
+    # Fisher = n x (Hessian - lambdaI) where Hessian = X_std^T W X_std / n + lambdaI
     H_adj <- H_raw - lambda * diag(nrow(H_raw))
     fisher_std <- n_obs * H_adj
     cov_std <- tryCatch(solve(fisher_std), error = function(e) NULL)
 
     if (!is.null(cov_std)) {
-      # Destandardize: construct Jacobian J where θ_orig = J × θ_std + const
+      # Destandardize: construct Jacobian J where theta_orig = J x theta_std + const
       p_feat <- length(all_x_sds)
       J <- diag(p_feat + 1)  # (intercept + features)
 
       if (standardize_y && !is.null(y_sd)) {
-        # Gaussian: β_orig_j = β_std_j × y_sd / x_sd_j
+        # Gaussian: beta_orig_j = beta_std_j x y_sd / x_sd_j
         for (jj in seq_len(p_feat)) {
           J[jj + 1, jj + 1] <- y_sd / all_x_sds[jj]
           J[1, jj + 1] <- -y_sd * all_x_means[jj] / all_x_sds[jj]
         }
         J[1, 1] <- y_sd
       } else {
-        # Binomial/Poisson: β_orig_j = β_std_j / x_sd_j
+        # Binomial/Poisson: beta_orig_j = beta_std_j / x_sd_j
         for (jj in seq_len(p_feat)) {
           J[jj + 1, jj + 1] <- 1.0 / all_x_sds[jj]
           J[1, jj + 1] <- -all_x_means[jj] / all_x_sds[jj]

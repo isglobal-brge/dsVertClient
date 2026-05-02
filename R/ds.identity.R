@@ -20,7 +20,7 @@ ds.getIdentityPks <- function(datasources = NULL) {
     datasources <- DSI::datashield.connections_find()
   results <- DSI::datashield.aggregate(
     conns = datasources,
-    expr = call("dsvertIdentityPkDS")
+    expr = call(name = "dsvertIdentityPkDS")
   )
   pks <- list()
   for (name in names(results))

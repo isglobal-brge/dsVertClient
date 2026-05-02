@@ -62,7 +62,7 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
     ci <- which(server_names == srv)
     cols <- tryCatch(
       DSI::datashield.aggregate(datasources[ci],
-        call("dsvertColNamesDS", data_name = data))[[1]]$columns,
+        call(name = "dsvertColNamesDS", data_name = data))[[1]]$columns,
       error = function(e) character(0))
     for (v in intersect(impute_columns, cols)) col_locs[[v]] <- srv
   }
@@ -86,7 +86,7 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
       ci <- which(server_names == srv)
       tryCatch(
         DSI::datashield.aggregate(datasources[ci],
-          call("dsvertImputeColumnDS",
+          call(name = "dsvertImputeColumnDS",
                data_name = data,
                impute_column = v,
                output_column = paste0(v, round_tag),

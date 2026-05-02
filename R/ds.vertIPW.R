@@ -18,6 +18,9 @@
 #'   pipeline for ON-SHARE propensity score computation is a planned
 #'   follow-on; see V2_PROGRESS.md).
 #' @param outcome_family    Family for the outcome model. Default "gaussian".
+#' @param verbose Logical. Print stage-by-stage progress (default TRUE).
+#' @param datasources DataSHIELD connections; if NULL, uses
+#'   \code{DSI::datashield.connections_find()}.
 #' @param ...               Passed through to both underlying
 #'   \code{ds.vertGLM} calls.
 #' @return list of class \code{ds.vertIPW} with \code{propensity} and
@@ -52,9 +55,9 @@ ds.vertIPW <- function(outcome_formula, propensity_formula, data = NULL,
 #' @export
 print.ds.vertIPW <- function(x, ...) {
   cat("dsVert IPW estimator\n")
-  cat("\nStage 1 — Propensity (binomial):\n")
+  cat("\nStage 1 -- Propensity (binomial):\n")
   print(x$propensity)
-  cat("\nStage 2 — Outcome (", x$outcome$family, ", weighted):\n", sep = "")
+  cat("\nStage 2 -- Outcome (", x$outcome$family, ", weighted):\n", sep = "")
   print(x$outcome)
   invisible(x)
 }

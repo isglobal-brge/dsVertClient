@@ -35,7 +35,7 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
     ci <- which(server_names == srv)
     cols <- tryCatch(
       DSI::datashield.aggregate(datasources[ci],
-        call("dsvertColNamesDS", data_name = data))[[1]]$columns,
+        call(name = "dsvertColNamesDS", data_name = data))[[1]]$columns,
       error = function(e) character(0))
     if (var1 %in% cols) var1_srv <- srv
     if (var2 %in% cols) var2_srv <- srv
@@ -54,7 +54,7 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
     for (.srv in unique(c(var1_srv, var2_srv))) {
       .ci <- which(server_names == .srv)
       tryCatch(DSI::datashield.aggregate(datasources[.ci],
-        call("mpcCleanupDS", session_id = session_id)),
+        call(name = "mpcCleanupDS", session_id = session_id)),
         error = function(e) NULL)
     }
   }, add = TRUE)
@@ -68,7 +68,7 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
   for (srv in c(var1_srv, var2_srv)) {
     ci <- which(server_names == srv)
     r <- DSI::datashield.aggregate(datasources[ci],
-      call("glmRing63TransportInitDS", session_id = session_id))
+      call(name = "glmRing63TransportInitDS", session_id = session_id))
     if (is.list(r) && length(r) == 1L) r <- r[[1]]
     pks[[srv]] <- r$transport_pk
   }
@@ -76,12 +76,12 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
   # Build one-hot indicators on each server (session-stored).
   oh1 <- DSI::datashield.aggregate(
     datasources[which(server_names == var1_srv)],
-    call("dsvertOneHotDS", data_name = data, var = var1,
+    call(name = "dsvertOneHotDS", data_name = data, var = var1,
          session_id = session_id))
   if (is.list(oh1) && length(oh1) == 1L) oh1 <- oh1[[1]]
   oh2 <- DSI::datashield.aggregate(
     datasources[which(server_names == var2_srv)],
-    call("dsvertOneHotDS", data_name = data, var = var2,
+    call(name = "dsvertOneHotDS", data_name = data, var = var2,
          session_id = session_id))
   if (is.list(oh2) && length(oh2) == 1L) oh2 <- oh2[[1]]
 
@@ -178,7 +178,7 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
   }
   sendBlob <- function(blob, key, conn_idx) {
     DSI::datashield.aggregate(datasources[conn_idx],
-      call("mpcStoreBlobDS", key = key, chunk = blob,
+      call(name = "mpcStoreBlobDS", key = key, chunk = blob,
            session_id = session_id))
   }
 
@@ -192,27 +192,27 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
   var2_peer <- paste0("k2_onehot_peer_", var2, "_fp")
 
   share1 <- DSI::datashield.aggregate(datasources[v1_ci],
-    call("k2BeaverShareVectorDS",
+    call(name = "k2BeaverShareVectorDS",
          source_key = var1_src,
          peer_pk = pks[[var2_srv]],
          session_id = session_id))
   if (is.list(share1) && length(share1) == 1L) share1 <- share1[[1L]]
   sendBlob(share1$peer_blob, paste0("bshr_", var1), v2_ci)
   DSI::datashield.aggregate(datasources[v2_ci],
-    call("k2BeaverReceiveVectorDS",
+    call(name = "k2BeaverReceiveVectorDS",
          blob_key = paste0("bshr_", var1),
          output_key = var1_peer,
          session_id = session_id))
 
   share2 <- DSI::datashield.aggregate(datasources[v2_ci],
-    call("k2BeaverShareVectorDS",
+    call(name = "k2BeaverShareVectorDS",
          source_key = var2_src,
          peer_pk = pks[[var1_srv]],
          session_id = session_id))
   if (is.list(share2) && length(share2) == 1L) share2 <- share2[[1L]]
   sendBlob(share2$peer_blob, paste0("bshr_", var2), v1_ci)
   DSI::datashield.aggregate(datasources[v1_ci],
-    call("k2BeaverReceiveVectorDS",
+    call(name = "k2BeaverReceiveVectorDS",
          blob_key = paste0("bshr_", var2),
          output_key = var2_peer,
          session_id = session_id))
@@ -246,29 +246,29 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
     for (ll in seq_len(L)) {
       # Extract column kk on each party (into canonical beaver X slot).
       DSI::datashield.aggregate(datasources[v1_ci],
-        call("k2BeaverExtractColumnDS",
+        call(name = "k2BeaverExtractColumnDS",
              source_key = var1_src, n = as.integer(n), K = as.integer(K),
              col_index = as.integer(kk), output_key = "k2_beaver_x",
              session_id = session_id))
       DSI::datashield.aggregate(datasources[v2_ci],
-        call("k2BeaverExtractColumnDS",
+        call(name = "k2BeaverExtractColumnDS",
              source_key = var1_peer, n = as.integer(n), K = as.integer(K),
              col_index = as.integer(kk), output_key = "k2_beaver_x",
              session_id = session_id))
       # Extract column ll on each party (into canonical beaver Y slot).
       DSI::datashield.aggregate(datasources[v1_ci],
-        call("k2BeaverExtractColumnDS",
+        call(name = "k2BeaverExtractColumnDS",
              source_key = var2_peer, n = as.integer(n), K = as.integer(L),
              col_index = as.integer(ll), output_key = "k2_beaver_y",
              session_id = session_id))
       DSI::datashield.aggregate(datasources[v2_ci],
-        call("k2BeaverExtractColumnDS",
+        call(name = "k2BeaverExtractColumnDS",
              source_key = var2_src, n = as.integer(n), K = as.integer(L),
              col_index = as.integer(ll), output_key = "k2_beaver_y",
              session_id = session_id))
       # Beaver vecmul: dealer -> consume -> r1 (relay) -> r2.
       tri <- DSI::datashield.aggregate(datasources[dealer_ci],
-        call("k2BeaverVecmulGenTriplesDS",
+        call(name = "k2BeaverVecmulGenTriplesDS",
              dcf0_pk = pks[[var1_srv]], dcf1_pk = pks[[var2_srv]],
              n = as.integer(n),
              session_id = session_id, frac_bits = 20L))
@@ -276,17 +276,17 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
       sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple", v1_ci)
       sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple", v2_ci)
       DSI::datashield.aggregate(datasources[v1_ci],
-        call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+        call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
       DSI::datashield.aggregate(datasources[v2_ci],
-        call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+        call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
       r1a <- DSI::datashield.aggregate(datasources[v1_ci],
-        call("k2BeaverVecmulR1DS",
+        call(name = "k2BeaverVecmulR1DS",
              peer_pk = pks[[var2_srv]],
              x_key = "k2_beaver_x", y_key = "k2_beaver_y",
              n = as.integer(n),
              session_id = session_id, frac_bits = 20L))
       r1b <- DSI::datashield.aggregate(datasources[v2_ci],
-        call("k2BeaverVecmulR1DS",
+        call(name = "k2BeaverVecmulR1DS",
              peer_pk = pks[[var1_srv]],
              x_key = "k2_beaver_x", y_key = "k2_beaver_y",
              n = as.integer(n),
@@ -296,23 +296,23 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
       sendBlob(r1a$peer_blob, "k2_beaver_vecmul_peer_masked", v2_ci)
       sendBlob(r1b$peer_blob, "k2_beaver_vecmul_peer_masked", v1_ci)
       DSI::datashield.aggregate(datasources[v1_ci],
-        call("k2BeaverVecmulR2DS",
+        call(name = "k2BeaverVecmulR2DS",
              is_party0 = TRUE,
              x_key = "k2_beaver_x", y_key = "k2_beaver_y",
              output_key = "k2_beaver_z", n = as.integer(n),
              session_id = session_id, frac_bits = 20L))
       DSI::datashield.aggregate(datasources[v2_ci],
-        call("k2BeaverVecmulR2DS",
+        call(name = "k2BeaverVecmulR2DS",
              is_party0 = FALSE,
              x_key = "k2_beaver_x", y_key = "k2_beaver_y",
              output_key = "k2_beaver_z", n = as.integer(n),
              session_id = session_id, frac_bits = 20L))
       # Sum shares per party -> aggregate.
       s1 <- DSI::datashield.aggregate(datasources[v1_ci],
-        call("k2BeaverSumShareDS", source_key = "k2_beaver_z",
+        call(name = "k2BeaverSumShareDS", source_key = "k2_beaver_z",
              session_id = session_id, frac_bits = 20L))
       s2 <- DSI::datashield.aggregate(datasources[v2_ci],
-        call("k2BeaverSumShareDS", source_key = "k2_beaver_z",
+        call(name = "k2BeaverSumShareDS", source_key = "k2_beaver_z",
              session_id = session_id, frac_bits = 20L))
       if (is.list(s1) && length(s1) == 1L) s1 <- s1[[1L]]
       if (is.list(s2) && length(s2) == 1L) s2 <- s2[[1L]]

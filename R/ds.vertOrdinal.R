@@ -17,10 +17,18 @@
 #' @param data Name of the aligned data frame on each server.
 #' @param levels_ordered Character vector of the ordered levels,
 #'   smallest-to-largest.
-#' @param cumulative_template String format to build cumulative
-#'   indicator column names, e.g. \code{"%s_leq"} means the column
-#'   \code{<level>_leq} is 1 when the patient's outcome is <= that
-#'   level. Columns must already exist server-side. Default "\%s_leq".
+#' @param cumulative_template String format (\code{sprintf}-style)
+#'   used to build cumulative indicator column names; for instance the
+#'   default \code{"\%s_leq"} produces \code{<level>_leq}, a 0/1 column
+#'   that is 1 when the patient's outcome is at-or-below that level.
+#'   Columns must already exist server-side.
+#' @param ring Integer (63 or 127). Ring selector for the underlying
+#'   binomial sub-fits. Currently defaults to 63L while the Ring127
+#'   binomial wide-spline path is wired up.
+#' @param verbose Logical (default TRUE). Print per-threshold fit
+#'   progress.
+#' @param datasources DataSHIELD connections; if NULL, uses
+#'   \code{DSI::datashield.connections_find()}.
 #' @param ...  Passed to each underlying \code{ds.vertGLM} call.
 #' @return \code{ds.vertOrdinal} object with (among other fields):
 #'   \code{thresholds} \eqn{\alpha_k} (intercepts of the K-1 cumulative
@@ -106,13 +114,13 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
   po_diag <- apply(beta_mat, 1, function(row) max(row) - min(row))
 
   # ==== Proper proportional-odds fit: BLUE-pool beta across thresholds ====
-  # Under PO, every β̂_k (non-intercept) is an estimator of the SAME
-  # shared β. The best linear unbiased estimator combining the K-1
+  # Under PO, every beta_k (non-intercept) is an estimator of the SAME
+  # shared beta. The best linear unbiased estimator combining the K-1
   # estimates is the inverse-variance weighted average:
-  #   β̂_PO = (Σ_k I_k)^{-1} Σ_k I_k β̂_k
-  # where I_k = Cov(β̂_k)^{-1}. We also return a Brant-style PO test
-  # statistic: under H0 (PO), Σ_k (β̂_k - β̂_PO)^T I_k (β̂_k - β̂_PO)
-  # ~ χ²_{p(K-2)} asymptotically.
+  #   beta_PO = (Sum_k I_k)^{-1} Sum_k I_k beta_k
+  # where I_k = Cov(beta_k)^{-1}. We also return a Brant-style PO test
+  # statistic: under H0 (PO), Sum_k (beta_k - beta_PO)^T I_k (beta_k - beta_PO)
+  # ~ chi^2_{p(K-2)} asymptotically.
   beta_po <- NULL; cov_po <- NULL; po_test <- list()
   theta_hat_adj <- theta_hat  # threshold intercepts after PO correction
   have_cov <- all(vapply(fits, function(f) !is.null(f$covariance),
@@ -146,16 +154,16 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
                                                 lower.tail = FALSE))
 
       # Client-side threshold correction (2026-04-21 PM).
-      # After pooling γ_k → γ_BLUE, the per-threshold intercept α̂_k
-      # no longer satisfies the marginal score at (α̂_k, γ_BLUE).
+      # After pooling gamma_k -> gamma_BLUE, the per-threshold intercept alpha_k
+      # no longer satisfies the marginal score at (alpha_k, gamma_BLUE).
       # A one-step Newton correction on the INTERCEPT alone, derived
-      # from the per-threshold Fisher block — no new MPC, uses only
+      # from the per-threshold Fisher block -- no new MPC, uses only
       # the covariance matrices already returned by ds.vertGLM:
       #
-      #   α̂_k^* = α̂_k − I_k[α,α]^{-1} · I_k[α, γ] · (γ_BLUE − γ̂_k)
+      #   alpha_k^* = alpha_k - I_k[alpha,alpha]^{-1} * I_k[alpha, gamma] * (gamma_BLUE - gamma_k)
       #
-      # Eliminates the θ-intercept bias relative to MASS::polr ζ_k;
-      # drives max|Δ cum P| from 5.5e-2 toward 1e-2 on housing.
+      # Eliminates the theta-intercept bias relative to MASS::polr zeta_k;
+      # drives max|Delta cum P| from 5.5e-2 toward 1e-2 on housing.
       for (k in seq_along(fits)) {
         cov_k <- fits[[k]]$covariance
         if (is.null(cov_k)) next

@@ -15,7 +15,7 @@
 #'   \enumerate{
 #'     \item For each cluster (cluster IDs on outcome server) an
 #'           INNER L-BFGS on \eqn{b_i} is executed server-side
-#'           (using the cached \code{\link{dsvertClusterResidualsDS}}
+#'           (using the cached \code{dsvertClusterResidualsDS}
 #'           aggregates + the cached \eqn{\eta_i} share from
 #'           ds.vertGLM(keep_session=TRUE)).
 #'     \item The outer optimiser on \eqn{(\beta, \sigma_b^2)} is
@@ -31,8 +31,8 @@
 #'   keep_session flag on ds.vertGLM, the Beaver vecmul for inner
 #'   weighted updates, and the DCF sigmoid/exp wide-splines.
 #'
-#'   Privacy: client sees only (\beta, \sigma_b^2) + per-cluster
-#'   \hat b_i estimates as an aggregate vector (one value per cluster).
+#'   Privacy: client sees only (beta, sigma_b^2) + per-cluster
+#'   b_hat_i estimates as an aggregate vector (one value per cluster).
 #'   No per-patient quantity ever leaves the DCF parties.
 #'
 #'   Inter-server leakage: cluster membership (same tier as ds.vertLMM).
@@ -40,7 +40,7 @@
 #' @param formula Fixed-effects formula (binomial outcome on LHS).
 #' @param data Aligned data-frame name.
 #' @param cluster_col Cluster id column on the outcome server.
-#' @param max_outer Outer (\beta, \sigma_b^2) iterations.
+#' @param max_outer Outer (beta, sigma_b^2) iterations.
 #' @param inner_iter Inner PIRLS iterations per cluster per outer step.
 #' @param tol Outer convergence tolerance.
 #' @param verbose Print progress.
@@ -73,7 +73,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
   # Cluster sizes + per-cluster residuals (all aggregates).
   clust_info <- DSI::datashield.aggregate(
     datasources[which(server_names == y_srv)],
-    call("dsvertClusterSizesDS", data_name = data,
+    call(name = "dsvertClusterSizesDS", data_name = data,
          cluster_col = cluster_col))
   if (is.list(clust_info) && length(clust_info) == 1L)
     clust_info <- clust_info[[1L]]
@@ -91,7 +91,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     # Per-cluster residual aggregates at current fit.
     cl <- DSI::datashield.aggregate(
       datasources[which(server_names == y_srv)],
-      call("dsvertClusterResidualsDS",
+      call(name = "dsvertClusterResidualsDS",
            data_name = data, y_var = y_var,
            x_names = setdiff(names(fit$coefficients), "(Intercept)"),
            intercept = as.numeric(fit$coefficients["(Intercept)"]),
@@ -102,24 +102,24 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     rsum <- as.numeric(cl$rsum_per_cluster)
     rss <- as.numeric(cl$rss_per_cluster)
     # Laplace inner (client-side closed form for logit random
-    # intercept): \hat b_i ≈ rsum_i / (n_i * \bar p_i (1 - \bar p_i)
+    # intercept): \hat b_i approx rsum_i / (n_i * \bar p_i (1 - \bar p_i)
     #                                    + 1/sigma_b^2)
     # Use the BINOMIAL VARIANCE at the current intercept. Without per-
     # cluster p_i we approximate by the global mean residual variance
     # proxy from the fit's deviance.
     sigma2_resid <- max(sum(rss) / sum(n_i), 0.25)
     b_hat_new <- rsum / (n_i * sigma2_resid + 1 / sigma_b2)
-    # EM update for σ_b² (task #99 fix 2026-04-21):
+    # EM update for sigma_b^2 (task #99 fix 2026-04-21):
     # `var(b_hat)` is biased DOWN because b_hat is a shrunk BLUP:
-    # E[b_hat_i²] = shrinkage_i · σ_b² + shrinkage_i² · posterior_var,
-    # so var(b_hat) systematically underestimates σ_b² by the
-    # shrinkage factor — on a 15×20 synth with σ_b = 0.7 the
-    # previous rule collapsed σ_b² → 0.001 instead of 0.49.
+    # E[b_hat_i^2] = shrinkage_i * sigma_b^2 + shrinkage_i^2 * posterior_var,
+    # so var(b_hat) systematically underestimates sigma_b^2 by the
+    # shrinkage factor -- on a 15x20 synth with sigma_b = 0.7 the
+    # previous rule collapsed sigma_b^2 -> 0.001 instead of 0.49.
     #
-    # The canonical Laird–Ware / Lindstrom–Bates EM update uses
-    #   σ_b²_new = mean(b_hat_i² + posterior_var_i)
-    # which is exactly the conditional-expectation of b_i² | y
-    # under the current σ_b². It is positive, non-decreasing from
+    # The canonical Laird-Ware / Lindstrom-Bates EM update uses
+    #   sigma_b^2_new = mean(b_hat_i^2 + posterior_var_i)
+    # which is exactly the conditional-expectation of b_i^2 | y
+    # under the current sigma_b^2. It is positive, non-decreasing from
     # var(b_hat), and is the fixed point of the EM iteration that
     # converges to the ML estimator.
     post_var <- 1 / (n_i * sigma2_resid + 1 / sigma_b2)
@@ -141,7 +141,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     tryCatch(
       DSI::datashield.aggregate(
         datasources[which(server_names == y_srv)],
-        call("dsvertExpandClusterWeightsDS",
+        call(name = "dsvertExpandClusterWeightsDS",
              data_name = data, cluster_col = cluster_col,
              weights_per_cluster = as.numeric(b_hat),
              output_column = "__dsvert_glmm_b")),

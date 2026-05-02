@@ -32,7 +32,7 @@
 #' @param keep_intercept Never penalise the intercept.
 #' @param se_threshold For \code{lambda.1se}, retain the sparsest lambda
 #'   whose IC is within this fraction of \code{IC_min} (default 0.02,
-#'   i.e. 2\%).
+#'   i.e. 2 percent).
 #' @return A \code{ds.vertLASSOCV} object: \code{lambda}, \code{ic},
 #'   \code{df}, \code{lambda.min}, \code{lambda.1se}, \code{beta.min},
 #'   \code{beta.1se}, the original fit.

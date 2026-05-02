@@ -29,9 +29,37 @@
 #'   \code{time_col} / \code{event_col} explicitly.
 #' @param data Aligned data-frame name on each server.
 #' @param time_col,event_col Column names on the outcome server.
+#' @param tstart_col Optional left-truncation / start-time column for
+#'   counting-process / time-varying covariates. When supplied, the
+#'   data are interpreted as (tstart, time, event) triplets.
+#' @param strata_col Optional stratifying column name (categorical).
+#'   Each level fits a separate baseline hazard with shared beta.
 #' @param max_iter Outer L-BFGS iterations (default 30).
 #' @param tol Convergence tolerance on max |delta beta|.
 #' @param lambda L2 regularisation.
+#' @param compute_loglik Logical (default FALSE). If TRUE, run an extra
+#'   DCF pipeline pass at beta_hat to evaluate the partial log-likelihood
+#'   for AIC/BIC / LR tests. Adds ~60s per fit (Opal) or ~6 min (local).
+#' @param compute_se Logical (default FALSE). If TRUE, evaluate the
+#'   observed information matrix at beta_hat and return covariance /
+#'   standard errors. Adds one full DCF pipeline pass.
+#' @param num_intervals_exp Integer. DCF spline grid size for exp(eta);
+#'   75 is the sweet spot on Ring63 (error < 1e-3 while ~25 percent
+#'   faster than 100). Drop to 50 for small-n speed.
+#' @param num_intervals_recip Integer. DCF spline grid size for the
+#'   reciprocal 1/S(t); same default rationale as
+#'   \code{num_intervals_exp}.
+#' @param one_step_newton Logical. If TRUE (default), use the bias-free
+#'   one-step Newton at beta=0 followed by fixed-Fisher refinement;
+#'   FALSE falls back to the legacy iterative gradient-descent loop.
+#' @param newton_refine_iters Integer. Number of damped fixed-Fisher
+#'   refinement iterations after the one-step Newton (HARD CAP 5 by
+#'   P3 disclosure budget).
+#' @param newton_refine_tol Numeric. Convergence tolerance on
+#'   max |delta beta| during refinement.
+#' @param ring Integer (63 or 127). Selects the MPC ring / fracBits
+#'   pipeline. Default 127 (Catrina-Saxena fracBits=50, ~1e-15 per-op).
+#'   Pass 63 to force the legacy Ring63 pipeline.
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD connections.
 #' @return A \code{ds.vertCox} object: \code{coefficients},
@@ -85,15 +113,15 @@ ds.vertCox <- function(formula, data = NULL,
                        # converges LINEARLY with rate (1-eps) to the true MLE,
                        # giving 1-2 orders of accuracy per iter on strong-signal
                        # data. Set to 0 to keep the bare one-step.
-                       # Path B: iterative Newton with Fisher(β_k) via
-                       # Beaver on session-live μ, G, 1/S, μG shares.
+                       # Path B: iterative Newton with Fisher(beta_k) via
+                       # Beaver on session-live mu, G, 1/S, muG shares.
                        # HARD CAP at 5 per P3 disclosure budget.
                        # TEMPORARY revert to 0 while the additive-bias
                        # structure is characterized (task #104 diagnostics
                        # a + b per Codex audit 2026-04-19 late). The
                        # targets file at docs/acceptance/path_b_targets.md
                        # REMAINS COMMITTED to Path B passing Cox
-                       # lung/pima/strong — the 0 default is a revert so
+                       # lung/pima/strong -- the 0 default is a revert so
                        # main stays executable, NOT a relaxation of the
                        # plan's strict <1e-3 goal for Cox.
                        newton_refine_iters = 5L,
@@ -110,9 +138,9 @@ ds.vertCox <- function(formula, data = NULL,
                        # triples / k2-ring63-aggregate callsites beyond
                        # spline remain Ring63 for now.
                        # Default flipped to 127 on 2026-04-22: empirical
-                       # 5/5 STRICT on Pima synthetic (max|Δβ|=1.06e-04
+                       # 5/5 STRICT on Pima synthetic (max|Deltabeta|=1.06e-04
                        # vs Ring63 mixed STRICT/TIGHT/LOOSE), and Ring127
-                       # runs ~2× faster because Path B converges in 5
+                       # runs ~2x faster because Path B converges in 5
                        # iters instead of oscillating around the Ring63
                        # Catrina-Saxena biased fixed point. See
                        # docs/error_bounds/cox_ring127_strict_evidence.md.
@@ -160,7 +188,7 @@ ds.vertCox <- function(formula, data = NULL,
 
   # Locate servers.
   col_results <- DSI::datashield.aggregate(datasources,
-    call("dsvertColNamesDS", data_name = data))
+    call(name = "dsvertColNamesDS", data_name = data))
   y_server <- NULL
   x_vars <- list()
   for (srv in server_names) {
@@ -188,7 +216,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (.srv in server_list) {
       .ci <- which(server_names == .srv)
       tryCatch(DSI::datashield.aggregate(datasources[.ci],
-        call("mpcCleanupDS", session_id = session_id)),
+        call(name = "mpcCleanupDS", session_id = session_id)),
         error = function(e) NULL)
     }
   }, add = TRUE)
@@ -219,7 +247,7 @@ ds.vertCox <- function(formula, data = NULL,
   # pattern at ds.vertGLM.R:290.
   n_obs <- tryCatch({
     r <- .dsAgg(datasources[which(server_names == y_server)],
-                call("getObsCountDS", data_name = data))
+                call(name = "getObsCountDS", data_name = data))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     r$n_obs
   }, error = function(e) NULL)
@@ -237,7 +265,7 @@ ds.vertCox <- function(formula, data = NULL,
     peer <- setdiff(server_list, server)
     peer_pk_safe <- .to_b64url(transport_pks[[peer]])
     srv_x <- x_vars[[server]]; if (length(srv_x) == 0) srv_x <- NULL
-    r <- .dsAgg(datasources[ci], call("k2ShareInputDS",
+    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
       data_name = std_data, x_vars = srv_x,
       y_var = NULL,   # Cox does not share a numeric y_share (time is sorted, not shared)
       peer_pk = peer_pk_safe, ring = ring, session_id = session_id))
@@ -253,7 +281,7 @@ ds.vertCox <- function(formula, data = NULL,
   for (server in server_list) {
     ci <- which(server_names == server)
     peer <- setdiff(server_list, server)
-    .dsAgg(datasources[ci], call("k2ReceiveShareDS",
+    .dsAgg(datasources[ci], call(name = "k2ReceiveShareDS",
       peer_p = as.integer(length(x_vars[[peer]])),
       session_id = session_id))
   }
@@ -285,7 +313,7 @@ ds.vertCox <- function(formula, data = NULL,
     # Ask outcome server to build __dsvert_tv_strata column.
     tryCatch(
       .dsAgg(datasources[which(server_names == y_server)],
-        call("dsvertCoxTVStrataDS", data_name = data,
+        call(name = "dsvertCoxTVStrataDS", data_name = data,
              tstart_column = tstart_col,
              base_strata_column = strata_col,
              output_column = "__dsvert_tv_strata")),
@@ -296,7 +324,7 @@ ds.vertCox <- function(formula, data = NULL,
   }
   cox_times <- .dsAgg(
     datasources[which(server_names == y_server)],
-    call("k2SetCoxTimesDS", data_name = data,
+    call(name = "k2SetCoxTimesDS", data_name = data,
          time_column = time_col, event_column = event_col,
          strata_column = effective_strata,
          peer_pk = transport_pks[[nl]],
@@ -307,16 +335,16 @@ ds.vertCox <- function(formula, data = NULL,
   .sendBlob(cox_times$peer_blob, "k2_peer_cox_meta",
             which(server_names == nl))
   .dsAgg(datasources[which(server_names == nl)],
-    call("k2ReceiveCoxMetaDS", session_id = session_id))
+    call(name = "k2ReceiveCoxMetaDS", session_id = session_id))
   # Permute X shares on both parties.
   for (server in server_list) {
     ci <- which(server_names == server)
     .dsAgg(datasources[ci],
-      call("k2ApplyCoxPermutationDS", session_id = session_id))
+      call(name = "k2ApplyCoxPermutationDS", session_id = session_id))
   }
 
   # (Newton path runs AFTER .cox_score_round is defined, so it can use
-  # it for optional refinement iterations — see below near the main loop.)
+  # it for optional refinement iterations -- see below near the main loop.)
 
   # === Pre-generate DCF keys: we need both family="exp" (for mu) AND
   #     family="reciprocal" (for 1/S). Reuse the same wide spline
@@ -352,12 +380,12 @@ ds.vertCox <- function(formula, data = NULL,
   dcf_keys_cached <- list()
 
   # Cache of Ring127 Chebyshev exp public coefficients (fetched once per
-  # session from the local Go binary — they are deterministic public
+  # session from the local Go binary -- they are deterministic public
   # constants, so no cross-party sharing is needed). Populated lazily
   # in `.exp127_round` on first call.
   exp127_coef_cache <- NULL
 
-  # Batched Beaver vecmul helper (Ring127 only) — wraps the 10-DS-call
+  # Batched Beaver vecmul helper (Ring127 only) -- wraps the 10-DS-call
   # triple-gen + consume + R1 + R2 chain that was previously inlined in
   # .cox_score_round. Used by .exp127_round for each Horner step, so
   # the Clenshaw recurrence stays readable (30 helper calls vs 300
@@ -365,7 +393,7 @@ ds.vertCox <- function(formula, data = NULL,
   # preserve C4 regression guarantees.
   .run_beaver_vecmul_ring127 <- function(x_key, y_key, output_key, n) {
     tri <- .dsAgg(datasources[dealer_ci],
-      call("k2BeaverVecmulGenTriplesDS",
+      call(name = "k2BeaverVecmulGenTriplesDS",
            dcf0_pk = transport_pks[[y_server]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n),
@@ -379,12 +407,12 @@ ds.vertCox <- function(formula, data = NULL,
     all_ci <- vapply(server_list, function(s) which(server_names == s),
                       integer(1L))
     .dsAgg(datasources[all_ci],
-      call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+      call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
     r1_b <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      r <- .dsAgg(datasources[ci], call("k2BeaverVecmulR1DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR1DS",
         peer_pk = transport_pks[[peer]],
         x_key = x_key, y_key = y_key,
         n = as.integer(n),
@@ -398,7 +426,7 @@ ds.vertCox <- function(formula, data = NULL,
               which(server_names == y_server))
     for (server in server_list) {
       .dsAgg(datasources[which(server_names == server)],
-        call("k2BeaverVecmulR2DS",
+        call(name = "k2BeaverVecmulR2DS",
              is_party0 = (server == y_server),
              x_key = x_key, y_key = y_key,
              output_key = output_key,
@@ -409,24 +437,24 @@ ds.vertCox <- function(formula, data = NULL,
   }
 
   # Ring127 spline-less exp(eta) via Chebyshev-polynomial Horner (Clenshaw).
-  # Replaces the wide-spline poisson path at ring=127 only — Ring63 and
+  # Replaces the wide-spline poisson path at ring=127 only -- Ring63 and
   # any ring=127 with other families still go through .wide_spline_round.
   #
   # Input : eta share in ss$k2_eta_share_fp (populated by k2ComputeEtaShareDS).
   # Output: mu share in ss$secure_mu_share (same slot the spline path writes).
   #
   # Clenshaw on Ring127 FP (fracBits=50, degree N=30, domain [-5, 5]):
-  #   y        = eta · (1/a)                  (local scale by public 1/a)
-  #   twoY     = 2·y                          (local affine)
+  #   y        = eta * (1/a)                  (local scale by public 1/a)
+  #   twoY     = 2*y                          (local affine)
   #   b_{N+1}  = 0,  b_N = c_N (party0 only)  (bootstrap)
   #   for k = N-1, N-2, ..., 1:
-  #     b_k    = c_k + twoY · b_{k+1} − b_{k+2}
+  #     b_k    = c_k + twoY * b_{k+1} - b_{k+2}
   #              ^public       ^Beaver       ^share (local subtract)
-  #   result   = c_0 + y · b_1 − b_2
+  #   result   = c_0 + y * b_1 - b_2
   #
-  # Each Horner step = 1 Beaver vecmul (twoY · b_{k+1}) + 1 affine combine.
+  # Each Horner step = 1 Beaver vecmul (twoY * b_{k+1}) + 1 affine combine.
   # ~360 DS round-trips per call, independent of n (all vectors batched).
-  # On Ring127 with NCCTG n=210 → primitive accuracy ~3e-14 rel per element,
+  # On Ring127 with NCCTG n=210 -> primitive accuracy ~3e-14 rel per element,
   # dominated by 30-step Clenshaw ULP drift (target ~1e-12 post-assembly).
   .exp127_round <- function(n_target) {
     if (ring != 127L) {
@@ -455,10 +483,10 @@ ds.vertCox <- function(formula, data = NULL,
     }, character(1))
     # c_b64[idx] holds the base64 of c_{idx - 1} (0-indexed coefficient k).
 
-    # --- Step 2: y = eta · (1/a)  (local scale, both parties).
+    # --- Step 2: y = eta * (1/a)  (local scale, both parties).
     for (server in server_list) {
       ci <- which(server_names == server)
-      .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
         in_key = "k2_eta_share_fp",
         scalar_fp = coef_res_one_over_a,
         output_key = "k2_r127_horner_y",
@@ -469,7 +497,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = "k2_r127_horner_y",
         b_key = "k2_r127_horner_y",
         sign_a = 1L, sign_b = 1L,
@@ -485,15 +513,15 @@ ds.vertCox <- function(formula, data = NULL,
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
       # b_N: const=c_N, signs zero.
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = NULL, b_key = NULL,
         sign_a = 0L, sign_b = 0L,
         public_const_fp = c_b64[degree + 1L],
         is_party0 = is_coord,
         output_key = "k2_r127_horner_bB",
         n = n_int, session_id = session_id))
-      # b_{N+1}: const=NULL, signs zero → zero share.
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      # b_{N+1}: const=NULL, signs zero -> zero share.
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = NULL, b_key = NULL,
         sign_a = 0L, sign_b = 0L,
         public_const_fp = NULL,
@@ -512,17 +540,17 @@ ds.vertCox <- function(formula, data = NULL,
     slot_B <- "k2_r127_horner_bB"
     slot_A <- "k2_r127_horner_bA"
     for (k in seq.int(degree - 1L, 1L)) {
-      # Beaver(twoY, slot_B=b_{k+1}) → k2_r127_horner_tmp = twoY · b_{k+1}.
+      # Beaver(twoY, slot_B=b_{k+1}) -> k2_r127_horner_tmp = twoY * b_{k+1}.
       .run_beaver_vecmul_ring127(
         x_key = "k2_r127_horner_twoY",
         y_key = slot_B,
         output_key = "k2_r127_horner_tmp",
         n = n_int)
-      # b_k = tmp + c_k_party0 − slot_A (b_{k+2}); store back into slot_A.
+      # b_k = tmp + c_k_party0 - slot_A (b_{k+2}); store back into slot_A.
       for (server in server_list) {
         ci <- which(server_names == server)
         is_coord <- (server == y_server)
-        .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
           a_key = "k2_r127_horner_tmp",
           b_key = slot_A,
           sign_a = 1L, sign_b = -1L,
@@ -531,12 +559,12 @@ ds.vertCox <- function(formula, data = NULL,
           output_key = slot_A,
           n = n_int, session_id = session_id))
       }
-      # Rotate slot labels — see comment above.
+      # Rotate slot labels -- see comment above.
       swap <- slot_A; slot_A <- slot_B; slot_B <- swap
     }
     # Post-loop: slot_B = b_1, slot_A = b_2.
 
-    # --- Step 6: final step result = y · b_1 + c_0 − b_2.
+    # --- Step 6: final step result = y * b_1 + c_0 - b_2.
     .run_beaver_vecmul_ring127(
       x_key = "k2_r127_horner_y",
       y_key = slot_B,
@@ -545,7 +573,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = "k2_r127_horner_tmp",
         b_key = slot_A,
         sign_a = 1L, sign_b = -1L,
@@ -575,13 +603,13 @@ ds.vertCox <- function(formula, data = NULL,
   #         writes, so downstream k2StoreCoxRecipDS is unaffected).
   #
   # Algorithm (all on shares except public coeffs):
-  #   1. t     = x · (1/halfRange) + (-mid/halfRange)     [LocalScale + Affine]
+  #   1. t     = x * (1/halfRange) + (-mid/halfRange)     [LocalScale + Affine]
   #   2. twoT  = t + t                                    [Affine +1/+1]
   #   3. Clenshaw Horner: b_{N+1}=0, b_N=c_N_party0,
-  #        for k=N-1..1:  b_k = c_k + twoT · b_{k+1} − b_{k+2}
-  #      y     = c_0 + t · b_1 − b_2    ← Chebyshev initial guess (~58% worst)
-  #   4. NR (6 iters):  y ← y · (2 − x · y)
-  #        — rel_err squares per iter, reaches Ring127 ULP.
+  #        for k=N-1..1:  b_k = c_k + twoT * b_{k+1} - b_{k+2}
+  #      y     = c_0 + t * b_1 - b_2    <- Chebyshev initial guess (~58% worst)
+  #   4. NR (6 iters):  y <- y * (2 - x * y)
+  #        -- rel_err squares per iter, reaches Ring127 ULP.
   #
   # ~42 Beaver vecmuls + 35 AffineCombines per call, batched over n.
   # 0-bit disclosure preserved (no range reduction, no shift reveal).
@@ -598,7 +626,7 @@ ds.vertCox <- function(formula, data = NULL,
         "k2-recip127-get-coeffs", list(frac_bits = 50L))
     }
     rc <- recip127_coef_cache
-    # Opal DSL "==" fix — strip base64 padding; DS funcs re-pad.
+    # Opal DSL "==" fix -- strip base64 padding; DS funcs re-pad.
     rc_one_over_half_range <- .to_b64url(rc$one_over_half_range)
     rc_neg_mid_over_half_range <- .to_b64url(rc$neg_mid_over_half_range)
     rc_two_fp <- .to_b64url(rc$two_fp)
@@ -611,10 +639,10 @@ ds.vertCox <- function(formula, data = NULL,
       .to_b64url(jsonlite::base64_enc(all_coeffs_raw[s:e]))
     }, character(1))
 
-    # --- Step 2a: t_pre = x · (1/halfRange)  (local scale, both parties).
+    # --- Step 2a: t_pre = x * (1/halfRange)  (local scale, both parties).
     for (server in server_list) {
       ci <- which(server_names == server)
-      .dsAgg(datasources[ci], call("k2Ring127LocalScaleDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
         in_key = "k2_eta_share_fp",
         scalar_fp = rc_one_over_half_range,
         output_key = "k2_r127_recip_t_pre",
@@ -624,7 +652,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = "k2_r127_recip_t_pre",
         b_key = NULL,
         sign_a = 1L, sign_b = 0L,
@@ -638,7 +666,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = "k2_r127_recip_t",
         b_key = "k2_r127_recip_t",
         sign_a = 1L, sign_b = 1L,
@@ -652,14 +680,14 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = NULL, b_key = NULL,
         sign_a = 0L, sign_b = 0L,
         public_const_fp = c_b64[degree + 1L],
         is_party0 = is_coord,
         output_key = "k2_r127_recip_bB",
         n = n_int, session_id = session_id))
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = NULL, b_key = NULL,
         sign_a = 0L, sign_b = 0L,
         public_const_fp = NULL,
@@ -680,7 +708,7 @@ ds.vertCox <- function(formula, data = NULL,
       for (server in server_list) {
         ci <- which(server_names == server)
         is_coord <- (server == y_server)
-        .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
           a_key = "k2_r127_recip_tmp",
           b_key = slot_A,
           sign_a = 1L, sign_b = -1L,
@@ -693,7 +721,7 @@ ds.vertCox <- function(formula, data = NULL,
     }
     # Post-loop: slot_B = b_1, slot_A = b_2.
 
-    # --- Step 6: y_0 = c_0 + t · b_1 − b_2.
+    # --- Step 6: y_0 = c_0 + t * b_1 - b_2.
     .run_beaver_vecmul_ring127(
       x_key = "k2_r127_recip_t",
       y_key = slot_B,
@@ -702,7 +730,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = "k2_r127_recip_tmp",
         b_key = slot_A,
         sign_a = 1L, sign_b = -1L,
@@ -712,24 +740,24 @@ ds.vertCox <- function(formula, data = NULL,
         n = n_int, session_id = session_id))
     }
 
-    # --- Step 7: NR refinement y ← y · (2 − x · y), 6 iters.
+    # --- Step 7: NR refinement y <- y * (2 - x * y), 6 iters.
     # Rolling slot alternation to avoid server-side copies; the last iter
     # writes directly into secure_mu_share (the spline-path output slot)
     # so no final identity copy is needed.
     y_cur <- "k2_r127_recip_y"
     y_next <- "k2_r127_recip_y_alt"
     for (iter in seq_len(nr_steps)) {
-      # xy = x · y_cur.
+      # xy = x * y_cur.
       .run_beaver_vecmul_ring127(
         x_key = "k2_eta_share_fp",
         y_key = y_cur,
         output_key = "k2_r127_recip_xy",
         n = n_int)
-      # twoMinusXy = 2 − xy  (sign_a=0, sign_b=-1, const=2 on party 0).
+      # twoMinusXy = 2 - xy  (sign_a=0, sign_b=-1, const=2 on party 0).
       for (server in server_list) {
         ci <- which(server_names == server)
         is_coord <- (server == y_server)
-        .dsAgg(datasources[ci], call("k2Ring127AffineCombineDS",
+        .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
           a_key = NULL,
           b_key = "k2_r127_recip_xy",
           sign_a = 0L, sign_b = -1L,
@@ -738,7 +766,7 @@ ds.vertCox <- function(formula, data = NULL,
           output_key = "k2_r127_recip_twoMinusXy",
           n = n_int, session_id = session_id))
       }
-      # y_next = y_cur · twoMinusXy  (Beaver). Final iter writes to
+      # y_next = y_cur * twoMinusXy  (Beaver). Final iter writes to
       # secure_mu_share directly.
       final_slot <- if (iter == nr_steps) "secure_mu_share" else y_next
       .run_beaver_vecmul_ring127(
@@ -779,7 +807,7 @@ ds.vertCox <- function(formula, data = NULL,
     # output share under its canonical name.
     if (isTRUE(need_dcf_keys)) {
       key_res <- .dsAgg(datasources[dealer_ci],
-        call("glmRing63GenDcfKeysDS",
+        call(name = "glmRing63GenDcfKeysDS",
           dcf0_pk = transport_pks[[y_server]],
           dcf1_pk = transport_pks[[nl]],
           family = family_name,
@@ -792,16 +820,16 @@ ds.vertCox <- function(formula, data = NULL,
                 which(server_names == y_server))
       .sendBlob(key_res$dcf_blob_1, "k2_dcf_keys_persistent",
                 which(server_names == nl))
-      # Batch the StoreDcfKeys call on both parties — no per-party args.
+      # Batch the StoreDcfKeys call on both parties -- no per-party args.
       .dsAgg(datasources[c(which(server_names == y_server),
                             which(server_names == nl))],
-        call("k2StoreDcfKeysPersistentDS", session_id = session_id))
+        call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
       # Cache the family so iter 2+ skip key gen.
       dcf_keys_cached[[cache_key]] <<- TRUE
     }
     # Generate and distribute spline Beaver triples for this iteration.
     spline_t <- .dsAgg(datasources[dealer_ci],
-      call("glmRing63GenSplineTriplesDS",
+      call(name = "glmRing63GenSplineTriplesDS",
         dcf0_pk = transport_pks[[y_server]],
         dcf1_pk = transport_pks[[nl]],
         n = as.integer(n_target), frac_bits = spline_frac_bits,
@@ -813,12 +841,12 @@ ds.vertCox <- function(formula, data = NULL,
               which(server_names == y_server))
     .sendBlob(spline_t$spline_blob_1, "k2_spline_triples",
               which(server_names == nl))
-    # Phase 1 + 2 + 3 + 4 — reuse the wide-spline helper chain
+    # Phase 1 + 2 + 3 + 4 -- reuse the wide-spline helper chain
     # exactly as ds.vertGLM.k2.R does, with family_name plumbed through.
     ph1 <- list()
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == y_server)
-      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase1DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase1DS",
         party_id = if (is_coord) 0L else 1L,
         family = family_name,
         num_intervals = as.integer(num_intervals),
@@ -834,7 +862,7 @@ ds.vertCox <- function(formula, data = NULL,
     ph2 <- list()
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == y_server)
-      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase2DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase2DS",
         party_id = if (is_coord) 0L else 1L,
         family = family_name,
         num_intervals = as.integer(num_intervals),
@@ -858,7 +886,7 @@ ds.vertCox <- function(formula, data = NULL,
     ph3 <- list()
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == y_server)
-      r <- .dsAgg(datasources[ci], call("k2WideSplinePhase3DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase3DS",
         party_id = if (is_coord) 0L else 1L,
         family = family_name,
         num_intervals = as.integer(num_intervals),
@@ -881,7 +909,7 @@ ds.vertCox <- function(formula, data = NULL,
     }
     for (server in server_list) {
       ci <- which(server_names == server); is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2WideSplinePhase4DS",
+      .dsAgg(datasources[ci], call(name = "k2WideSplinePhase4DS",
         party_id = if (is_coord) 0L else 1L,
         family = family_name,
         num_intervals = as.integer(num_intervals),
@@ -900,7 +928,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+      .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
         beta_coord = beta_in[coord_idx],
         beta_nl = beta_in[nl_idx],
         intercept = 0, is_coordinator = is_coord,
@@ -914,22 +942,22 @@ ds.vertCox <- function(formula, data = NULL,
     all_ci <- vapply(server_list, function(s) which(server_names == s),
                       integer(1L))
     .dsAgg(datasources[all_ci],
-      call("k2CoxSaveMuDS", session_id = session_id))
+      call(name = "k2CoxSaveMuDS", session_id = session_id))
     .dsAgg(datasources[all_ci],
-      call("k2CoxReverseCumsumSDS", session_id = session_id))
+      call(name = "k2CoxReverseCumsumSDS", session_id = session_id))
     .dsAgg(datasources[all_ci],
-      call("k2CoxPrepareRecipPhaseDS", session_id = session_id))
+      call(name = "k2CoxPrepareRecipPhaseDS", session_id = session_id))
     .wide_spline_round("reciprocal", n_obs, num_intervals = num_intervals_recip)
     .dsAgg(datasources[all_ci],
-      call("k2StoreCoxRecipDS", recip_S_share_fp = NULL,
+      call(name = "k2StoreCoxRecipDS", recip_S_share_fp = NULL,
            session_id = session_id))
     .dsAgg(datasources[all_ci],
-      call("k2CoxForwardCumsumGDS", session_id = session_id))
+      call(name = "k2CoxForwardCumsumGDS", session_id = session_id))
     # Beaver vecmul mu*G. Ring threaded (task #116 step 5c(F)): at ring=127
     # frac_bits=50 and Ring127 handler path through all Beaver + gradient
     # primitives. At ring=63 fracs=20 and the legacy Ring63 path runs.
     tri <- .dsAgg(datasources[dealer_ci],
-      call("k2BeaverVecmulGenTriplesDS",
+      call(name = "k2BeaverVecmulGenTriplesDS",
            dcf0_pk = transport_pks[[y_server]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n_obs),
@@ -941,12 +969,12 @@ ds.vertCox <- function(formula, data = NULL,
     .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple",
               which(server_names == nl))
     .dsAgg(datasources[all_ci],
-      call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+      call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
     r1_b <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      r <- .dsAgg(datasources[ci], call("k2BeaverVecmulR1DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR1DS",
         peer_pk = transport_pks[[peer]],
         x_key = "k2_cox_mu_share_fp",
         y_key = "k2_cox_G_share_fp",
@@ -962,7 +990,7 @@ ds.vertCox <- function(formula, data = NULL,
               which(server_names == y_server))
     for (server in server_list) {
       .dsAgg(datasources[which(server_names == server)],
-        call("k2BeaverVecmulR2DS",
+        call(name = "k2BeaverVecmulR2DS",
              is_party0 = (server == y_server),
              x_key = "k2_cox_mu_share_fp",
              y_key = "k2_cox_G_share_fp",
@@ -973,13 +1001,13 @@ ds.vertCox <- function(formula, data = NULL,
     }
     for (server in server_list) {
       .dsAgg(datasources[which(server_names == server)],
-        call("k2CoxFinaliseResidualDS",
+        call(name = "k2CoxFinaliseResidualDS",
              is_party0 = (server == y_server),
              session_id = session_id, frac_bits = spline_frac_bits,
              ring = ring))
     }
     grad_t <- .dsAgg(datasources[dealer_ci],
-      call("glmRing63GenGradTriplesDS",
+      call(name = "glmRing63GenGradTriplesDS",
         dcf0_pk = transport_pks[[y_server]],
         dcf1_pk = transport_pks[[nl]],
         n = as.integer(n_obs), p = as.integer(p_total),
@@ -993,11 +1021,11 @@ ds.vertCox <- function(formula, data = NULL,
     r1 <- list()
     # Batch the symmetric k2StoreGradTripleDS (no per-party args).
     .dsAgg(datasources[all_ci],
-      call("k2StoreGradTripleDS", session_id = session_id))
+      call(name = "k2StoreGradTripleDS", session_id = session_id))
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
         peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r1[[server]] <- r
@@ -1010,7 +1038,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
         party_id = if (is_coord) 0L else 1L, session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r2[[server]] <- r
@@ -1025,7 +1053,7 @@ ds.vertCox <- function(formula, data = NULL,
 
   # === One-step Newton path (DEFAULT) =====================================
   # At beta = 0, mu = exp(0) = 1 EXACTLY, so neither the exp spline nor the
-  # reciprocal spline is invoked — eliminating the ~1-5% compounded DCF
+  # reciprocal spline is invoked -- eliminating the ~1-5% compounded DCF
   # bias that plagues the iterative gradient-descent path. The closed-form
   # Fisher(0) and grad(0) are computed via Beaver elementwise products +
   # per-column reverse cumsums on Ring63 shares. A single Newton step gives
@@ -1040,13 +1068,13 @@ ds.vertCox <- function(formula, data = NULL,
   if (isTRUE(one_step_newton)) {
     if (verbose) message("[ds.vertCox] one-step Newton path at beta=0")
     n_events_total <- cox_times$n_events
-    # -- F4/F7 support: partial-log-likelihood probe at an arbitrary β.
-    # Re-runs the DCF pipeline at β (full .cox_score_round populating μ, G,
-    # S shares), then computes Σ_events (δ·η − δ·log S) via the existing
+    # -- F4/F7 support: partial-log-likelihood probe at an arbitrary beta.
+    # Re-runs the DCF pipeline at beta (full .cox_score_round populating mu, G,
+    # S shares), then computes Sum_events (delta*eta - delta*log S) via the existing
     # log wide-spline + k2CoxPartialLogLikAggregateDS aggregate path. Used
-    # by F7 (Path A damping at β=0 vs β_A) and F4 (Path B step-halving on
+    # by F7 (Path A damping at beta=0 vs beta_A) and F4 (Path B step-halving on
     # pll). Coxfit6.c-style literature-standard step-halving criterion:
-    # accept iff pll(β_new) ≥ pll(β_old) − newton_refine_tol.
+    # accept iff pll(beta_new) >= pll(beta_old) - newton_refine_tol.
     .pll_at <- function(beta_) {
       .pll_dbg <- identical(Sys.getenv("DSVERT_PLL_DEBUG"), "1")
       tryCatch({
@@ -1056,7 +1084,7 @@ ds.vertCox <- function(formula, data = NULL,
           assign(".dsvert_pll_count", .pll_count_env + 1L,
             envir = .GlobalEnv)
           .pll_t0 <- proc.time()[[3L]]
-          writeLines(sprintf("[pll#%d] START ||β||=%.4g",
+          writeLines(sprintf("[pll#%d] START ||beta||=%.4g",
             .pll_count_env + 1L, sqrt(sum(beta_^2))), con = stderr())
           flush(stderr())
         }
@@ -1070,7 +1098,7 @@ ds.vertCox <- function(formula, data = NULL,
         for (srv2 in server_list) {
           ci2 <- which(server_names == srv2)
           .dsAgg(datasources[ci2],
-            call("k2CoxPrepareLogSPhaseDS", session_id = session_id))
+            call(name = "k2CoxPrepareLogSPhaseDS", session_id = session_id))
         }
         .wide_spline_round("log", n_obs, num_intervals = 200L)
         if (.pll_dbg) {
@@ -1082,7 +1110,7 @@ ds.vertCox <- function(formula, data = NULL,
         for (srv2 in server_list) {
           ci2 <- which(server_names == srv2)
           is_coord2 <- (srv2 == y_server)
-          .dsAgg(datasources[ci2], call("k2ComputeEtaShareDS",
+          .dsAgg(datasources[ci2], call(name = "k2ComputeEtaShareDS",
             beta_coord = beta_[seq_len(p_coord)],
             beta_nl = beta_[seq_len(p_nl) + p_coord],
             intercept = 0, is_coordinator = is_coord2,
@@ -1092,7 +1120,7 @@ ds.vertCox <- function(formula, data = NULL,
         for (srv2 in server_list) {
           ci2 <- which(server_names == srv2)
           r2 <- .dsAgg(datasources[ci2],
-            call("k2CoxPartialLogLikAggregateDS", session_id = session_id))
+            call(name = "k2CoxPartialLogLikAggregateDS", session_id = session_id))
           if (is.list(r2) && length(r2) == 1L) r2 <- r2[[1L]]
           ll_res2[[srv2]] <- r2
         }
@@ -1108,7 +1136,7 @@ ds.vertCox <- function(formula, data = NULL,
                    as.numeric(agg_logS2$values)[1L]
         if (.pll_dbg) {
           writeLines(sprintf(
-            "[pll#%d] FINAL wall=%.2fs ||β||=%.4g pll=%.4g",
+            "[pll#%d] FINAL wall=%.2fs ||beta||=%.4g pll=%.4g",
             .pll_count_env + 1L, proc.time()[[3L]] - .pll_t0,
             sqrt(sum(beta_^2)), out_pll),
             con = stderr())
@@ -1133,13 +1161,13 @@ ds.vertCox <- function(formula, data = NULL,
     # 2026-04-20 22:05): original pll-based variant was infeasible because
     # the Ring127 "log" wide-spline DCF key generation first-call cost is
     # ~6 min on local harness (compute_loglik=FALSE is the production
-    # default precisely for this reason — see ~L93 comment). Repurpose as
+    # default precisely for this reason -- see ~L93 comment). Repurpose as
     # a "virtual" Path A step recorded into prev_grad_norm / prev_beta_std
-    # / prev_delta so that iter 1 of Path B treats β_A as an already-
-    # committed step with reference grad(0). If iter 1 detects grad(β_A)
-    # grew ≥ 2× vs grad(0), F4 pll-halving engages on prev_delta = β_A
-    # (halving β_A toward 0 from baseline β=0). This gives the same
-    # structural safeguard as the original F7 without the 2× "always-on"
+    # / prev_delta so that iter 1 of Path B treats beta_A as an already-
+    # committed step with reference grad(0). If iter 1 detects grad(beta_A)
+    # grew >= 2x vs grad(0), F4 pll-halving engages on prev_delta = beta_A
+    # (halving beta_A toward 0 from baseline beta=0). This gives the same
+    # structural safeguard as the original F7 without the 2x "always-on"
     # pll cost; pll now fires ONLY on the narrow catastrophic tail events
     # F7 was designed to catch. Aligns with reviewer's option (a) pivot.
     grad0_norm <- sqrt(sum(as.numeric(newton_res$grad)^2))
@@ -1153,17 +1181,17 @@ ds.vertCox <- function(formula, data = NULL,
     iters_done <- 1L
     converged_newton <- TRUE
     Fisher_final <- Fisher0
-    # Path B: iterative Newton with Fisher(β_k) via Beaver on session-
-    # live μ, G, 1/S, μG shares. Biased grad + biased Fisher → ratio
+    # Path B: iterative Newton with Fisher(beta_k) via Beaver on session-
+    # live mu, G, 1/S, muG shares. Biased grad + biased Fisher -> ratio
     # cancels DCF spline bias (Greenland 1987).
     # Hard cap: 5 iterations per P3 disclosure budget
-    # (docs/acceptance/path_b_targets.md §P3 disclosure budget for Path B).
-    # Task #116 (C.3): relaxed 5→8 for Cox STRICT on strong-signal
-    # scenarios (|β|_max ~0.86). Newton under DCF residual bias converges
-    # linearly; 5 iters reaches Δβ ~ 10% on strong_synth, 8 iters reaches
-    # STRICT 1e-4. P3 budget impact: +3 iters × (p-grad + p×p-Fisher) =
-    # +3×(5+25)=+90 floats for p=5. See docs/acceptance/path_b_targets.md
-    # §P3 disclosure budget for Path B (updated).
+    # (docs/acceptance/path_b_targets.md Sec.P3 disclosure budget for Path B).
+    # Task #116 (C.3): relaxed 5->8 for Cox STRICT on strong-signal
+    # scenarios (|beta|_max ~0.86). Newton under DCF residual bias converges
+    # linearly; 5 iters reaches Deltabeta ~ 10% on strong_synth, 8 iters reaches
+    # STRICT 1e-4. P3 budget impact: +3 iters x (p-grad + pxp-Fisher) =
+    # +3x(5+25)=+90 floats for p=5. See docs/acceptance/path_b_targets.md
+    # Sec.P3 disclosure budget for Path B (updated).
     MAX_PATH_B_ITERS_CAP <- 8L
     iters_requested <- min(as.integer(newton_refine_iters),
                             MAX_PATH_B_ITERS_CAP)
@@ -1180,19 +1208,19 @@ ds.vertCox <- function(formula, data = NULL,
       # Input contract (TWO MODES):
       #   (A) Preferred: also set DSVERT_COX_PATHB_ORACLE_BETA_NAMES to
       #       a comma-separated list of variable names matching the
-      #       order of the β values. The hook treats the input as β in
+      #       order of the beta values. The hook treats the input as beta in
       #       ORIGINAL scale and the user's (typically coxph formula)
       #       order, permutes by internal [y_server, nl] order, and
-      #       scales by x_sds to form β_std. This is robust against
+      #       scales by x_sds to form beta_std. This is robust against
       #       the scaling/ordering bugs in diag scripts (task #113).
       #   (B) Legacy: only BETA_STD is set. The hook trusts the input
       #       to already be in the internal [y_server_vars, nl_vars]
-      #       order and already scaled (β_raw × x_sd). Preserved for
+      #       order and already scaled (beta_raw x x_sd). Preserved for
       #       back-compat with pre-fix diag scripts. Any ordering or
       #       scaling mistake in the caller script silently produces
-      #       nonsense ||grad|| — the task-#113 bug symptom.
+      #       nonsense ||grad|| -- the task-#113 bug symptom.
       #
-      # Both modes log the derived β_std so the user can audit.
+      # Both modes log the derived beta_std so the user can audit.
       .debug_env <- Sys.getenv("DSVERT_COX_PATHB_ORACLE_BETA_STD", "")
       .debug_names_env <- Sys.getenv("DSVERT_COX_PATHB_ORACLE_BETA_NAMES", "")
       # Compute internal canonical ordering + scales locally (they are
@@ -1203,15 +1231,15 @@ ds.vertCox <- function(formula, data = NULL,
         .debug_beta_in <- as.numeric(strsplit(.debug_env, ",")[[1]])
         debug_beta_std <- NULL
         if (nzchar(.debug_names_env)) {
-          # Mode (A): named + original-scale input → permute + scale.
+          # Mode (A): named + original-scale input -> permute + scale.
           .debug_names_in <- strsplit(.debug_names_env, ",")[[1]]
           if (length(.debug_beta_in) != length(.debug_names_in)) {
             message(sprintf(
-              "[ds.vertCox DIAG] BETA_STD length %d != BETA_NAMES length %d — skipping oracle",
+              "[ds.vertCox DIAG] BETA_STD length %d != BETA_NAMES length %d -- skipping oracle",
               length(.debug_beta_in), length(.debug_names_in)))
           } else if (!all(.all_names_internal %in% .debug_names_in)) {
             message(sprintf(
-              "[ds.vertCox DIAG] BETA_NAMES missing vars: %s — skipping oracle",
+              "[ds.vertCox DIAG] BETA_NAMES missing vars: %s -- skipping oracle",
               paste(setdiff(.all_names_internal, .debug_names_in),
                     collapse = ",")))
           } else {
@@ -1220,12 +1248,12 @@ ds.vertCox <- function(formula, data = NULL,
             debug_beta_std <- as.numeric(.beta_raw_can *
                                            .all_x_sds_internal)
             message(sprintf(
-              "[ds.vertCox DIAG] oracle β_raw (input order): %s",
+              "[ds.vertCox DIAG] oracle beta_raw (input order): %s",
               paste(sprintf("%s=%.6g", .debug_names_in,
                             .debug_beta_in[.debug_names_in]),
                     collapse = ",")))
             message(sprintf(
-              "[ds.vertCox DIAG] oracle β_std (internal order): %s",
+              "[ds.vertCox DIAG] oracle beta_std (internal order): %s",
               paste(sprintf("%s=%.6g", .all_names_internal,
                             debug_beta_std),
                     collapse = ",")))
@@ -1234,10 +1262,10 @@ ds.vertCox <- function(formula, data = NULL,
           # Mode (B) legacy: trust caller. Log so the caller can verify.
           debug_beta_std <- .debug_beta_in
           message(sprintf(
-            "[ds.vertCox DIAG] oracle β_std (legacy, caller-ordered): %s",
+            "[ds.vertCox DIAG] oracle beta_std (legacy, caller-ordered): %s",
             paste(sprintf("%s=%.6g", .all_names_internal, debug_beta_std),
                   collapse = ",")))
-          message("[ds.vertCox DIAG] NOTE: legacy mode — if ||grad|| at MLE is ",
+          message("[ds.vertCox DIAG] NOTE: legacy mode -- if ||grad|| at MLE is ",
                   "not ~0, verify caller's [y_server, nl] permute + x_sds scale. ",
                   "Prefer setting DSVERT_COX_PATHB_ORACLE_BETA_NAMES for ",
                   "auto-permute + auto-scale.")
@@ -1245,7 +1273,7 @@ ds.vertCox <- function(formula, data = NULL,
         if (!is.null(debug_beta_std) &&
             length(debug_beta_std) == newton_res$p_total) {
           message(sprintf(
-            "[ds.vertCox DIAG] injecting oracle β_std (len=%d) for Path B",
+            "[ds.vertCox DIAG] injecting oracle beta_std (len=%d) for Path B",
             length(debug_beta_std)))
           beta_std <- debug_beta_std
           pb_diag <- .ds_vertCox_path_b_fisher(
@@ -1266,7 +1294,7 @@ ds.vertCox <- function(formula, data = NULL,
               per_srv <- list()
               for (srv in server_list) {
                 ci <- which(server_names == srv)
-                r <- .dsAgg(datasources[ci], call("dsvertDebugRevealDS",
+                r <- .dsAgg(datasources[ci], call(name = "dsvertDebugRevealDS",
                   slot_key = slot_key, session_id = session_id))
                 if (is.list(r) && length(r) == 1L) r <- r[[1L]]
                 per_srv[[srv]] <- r
@@ -1293,37 +1321,37 @@ ds.vertCox <- function(formula, data = NULL,
                       stepwise = stepwise_reveals),
                  envir = .GlobalEnv)
           message(sprintf(
-            "[ds.vertCox DIAG] captured Path B state: ‖grad‖=%.4g, fisher diag=%s",
+            "[ds.vertCox DIAG] captured Path B state: ||grad||=%.4g, fisher diag=%s",
             sqrt(sum(pb_diag$grad^2)),
             paste(round(diag(pb_diag$fisher), 1), collapse=",")))
-          # Skip Newton update; proceed to SE/return with oracle β
+          # Skip Newton update; proceed to SE/return with oracle beta
         }
       }
       # Seed prev_* from Path A output so iter 1's F3/F4 check treats the
-      # Path A step (0 → β_A) as the "previous" committed step. This gives
-      # F4 pll-halving ability to recover from a bad β_A WITHOUT an
+      # Path A step (0 -> beta_A) as the "previous" committed step. This gives
+      # F4 pll-halving ability to recover from a bad beta_A WITHOUT an
       # always-on F7 pll-check (which was infeasible due to Ring127 log
-      # wide-spline cost). If iter 1's grad(β_A) > 2 × grad(0), F4 halves
-      # prev_delta = β_A (from baseline β=0) using pll — the narrow
+      # wide-spline cost). If iter 1's grad(beta_A) > 2 x grad(0), F4 halves
+      # prev_delta = beta_A (from baseline beta=0) using pll -- the narrow
       # catastrophic-tail path we need to catch.
       prev_grad_norm  <- grad0_norm
       prev_beta_std   <- rep(0, p_total)
       prev_fisher_mat <- Fisher0
-      prev_delta      <- beta_std     # β_A = Path A one-shot Newton step
-      # Best-β tracker (post-F4 catastrophic-divergence insurance,
+      prev_delta      <- beta_std     # beta_A = Path A one-shot Newton step
+      # Best-beta tracker (post-F4 catastrophic-divergence insurance,
       # reviewer directive 2026-04-20 22:55): track the iterate with the
-      # smallest grad_norm seen. If after the iter loop the final β has
+      # smallest grad_norm seen. If after the iter loop the final beta has
       # grad_norm >> grad(0), the iteration went catastrophically
       # backwards (Pima 1.35 tail observed on N=10 L1 run 01 despite F4
-      # triggers). Ship the best-seen β instead. This is a deterministic
-      # post-hoc guard with zero MPC cost — purely client-side bookkeeping
+      # triggers). Ship the best-seen beta instead. This is a deterministic
+      # post-hoc guard with zero MPC cost -- purely client-side bookkeeping
       # around already-revealed grad_norm scalars.
-      best_beta_std   <- rep(0, p_total)   # β=0 is the safest fallback
+      best_beta_std   <- rep(0, p_total)   # beta=0 is the safest fallback
       best_fisher     <- Fisher0
-      best_grad_norm  <- grad0_norm        # grad at β=0 is our baseline
-      # Also remember β_A in case it's better than the post-iter β (but
+      best_grad_norm  <- grad0_norm        # grad at beta=0 is our baseline
+      # Also remember beta_A in case it's better than the post-iter beta (but
       # we don't know its grad yet; iter 1's path_b_fisher will tell us).
-      # Skip the iter loop iff oracle injection actually happened — i.e.
+      # Skip the iter loop iff oracle injection actually happened -- i.e.
       # debug_beta_std was successfully built (length-matched Mode A or
       # Mode B). If the env var was set but parsing failed (wrong length
       # or missing names), fall through to the normal Newton loop so the
@@ -1348,7 +1376,7 @@ ds.vertCox <- function(formula, data = NULL,
         if (verbose) message(sprintf(
           "  [path-b] iter %d  ||grad(beta_k)||=%.4g",
           k + 1L, grad_norm))
-        # Best-β tracker update: the β that produced the smallest grad
+        # Best-beta tracker update: the beta that produced the smallest grad
         # seen so far is our fallback if the iter loop ends with a
         # catastrophically high grad_norm (Pima 1.35 tail mode).
         if (is.finite(grad_norm) && grad_norm < best_grad_norm) {
@@ -1356,28 +1384,28 @@ ds.vertCox <- function(formula, data = NULL,
           best_fisher    <- pb$fisher
           best_grad_norm <- grad_norm
         }
-        # Divergence guard: per Codex directive, if grad grows 2× or
-        # more, halt and diagnose — do NOT raise the cap.
+        # Divergence guard: per Codex directive, if grad grows 2x or
+        # more, halt and diagnose -- do NOT raise the cap.
         # REVERT-ON-GROW (task #117 C3 fix): Beaver-stochastic
         # masks can cause a single overshoot step that grows grad on
-        # boundary scenarios. Revert β to the pre-overshoot iterate so
+        # boundary scenarios. Revert beta to the pre-overshoot iterate so
         # the bad step does NOT become the shipped result.
-        # F3 revert-on-grad-grow (task #117 C3 base) + best-β guard:
+        # F3 revert-on-grad-grow (task #117 C3 base) + best-beta guard:
         # F4 pll-halving path removed 2026-04-21 00:05 after observed
         # Ring63 NCCTG post-halve path_b_fisher gave bogus grad
         # 7.5e+06 (session-state corruption from pll pipeline's log
         # wide-spline + k2ComputeEtaShareDS interleaving). Rely instead
-        # on (1) F3 revert when grad grows > 10× above absolute floor
+        # on (1) F3 revert when grad grows > 10x above absolute floor
         # 1.0 (catastrophic only, no NCCTG convergence false positives),
-        # (2) best-β tracker (pre-loop init from β=0), (3) post-loop
-        # divergence guard (if final grad > 1.5×grad(0), ship best-β).
+        # (2) best-beta tracker (pre-loop init from beta=0), (3) post-loop
+        # divergence guard (if final grad > 1.5xgrad(0), ship best-beta).
         F4_GROW_FACTOR <- 10
         F4_ABSOLUTE_FLOOR <- 1.0
         if (is.finite(prev_grad_norm) &&
             grad_norm > F4_GROW_FACTOR * prev_grad_norm &&
             grad_norm > F4_ABSOLUTE_FLOOR) {
           if (verbose) message(sprintf(
-            "  [path-b F3] grad grew > %d× (%.4g → %.4g) and > floor %.4g at iter %d; reverting to β_prev and halting",
+            "  [path-b F3] grad grew > %dx (%.4g -> %.4g) and > floor %.4g at iter %d; reverting to beta_prev and halting",
             F4_GROW_FACTOR, prev_grad_norm, grad_norm, F4_ABSOLUTE_FLOOR,
             k + 1L))
           beta_std     <- prev_beta_std
@@ -1398,10 +1426,10 @@ ds.vertCox <- function(formula, data = NULL,
         # F2 geometric damping trust-region (task #117 C3 fix): coxph
         # (src/coxfit6.c) halves the step when log-partial-likelihood
         # would decrease; under Beaver-stochastic Fisher/grad the F2
-        # schedule max_step_k = 0.5 / 2^{k-1} (for k ≥ 2) gives the
+        # schedule max_step_k = 0.5 / 2^{k-1} (for k >= 2) gives the
         # trajectory room to contract toward the biased-FP without
-        # overshooting. k=1 keeps 0.5×‖β‖ so Path A's one-shot Newton
-        # can still make a full Newton move from β₀=0.
+        # overshooting. k=1 keeps 0.5x||beta|| so Path A's one-shot Newton
+        # can still make a full Newton move from beta_0=0.
         base_step <- max(0.5, 0.5 * sqrt(sum(beta_std^2)))
         max_step  <- base_step / (2 ^ max(0L, k - 1L))
         damped <- FALSE
@@ -1409,7 +1437,7 @@ ds.vertCox <- function(formula, data = NULL,
           delta <- delta * (max_step / delta_norm)
           damped <- TRUE
         }
-        # Snapshot pre-step β + Fisher + delta so revert-on-grad-grow +
+        # Snapshot pre-step beta + Fisher + delta so revert-on-grad-grow +
         # F4 pll-halving (next iter) can recover the last good iterate.
         prev_beta_std   <- beta_std
         prev_fisher_mat <- pb$fisher
@@ -1431,13 +1459,13 @@ ds.vertCox <- function(formula, data = NULL,
       # Post-iter catastrophic-divergence guard (reviewer directive
       # 2026-04-20 22:55, revised 2026-04-21 00:20): use the most recent
       # path_b_fisher measurement (pb from the last iter's start, which
-      # is grad at β_{k-1}) as the divergence signal. An extra fresh pb
+      # is grad at beta_{k-1}) as the divergence signal. An extra fresh pb
       # measurement was observed to return bogus grads (Ring63 NCCTG
       # post-halve 7.5e+06) due to session-state interactions with the
-      # pll pipeline — that extra call is now removed. Beta-tracker
-      # records min-grad β seen. If the last-iter-start grad is way
+      # pll pipeline -- that extra call is now removed. Beta-tracker
+      # records min-grad beta seen. If the last-iter-start grad is way
       # above grad(0), the iteration went catastrophically backwards
-      # at the final step; ship best-β. Threshold raised to 3× to
+      # at the final step; ship best-beta. Threshold raised to 3x to
       # reduce false positives on mildly-oscillating stable iters.
       if (exists("pb", inherits = FALSE)) {
         last_grad <- sqrt(sum(pb$grad^2))
@@ -1446,7 +1474,7 @@ ds.vertCox <- function(formula, data = NULL,
           last_grad, grad0_norm, best_grad_norm))
         if (!is.finite(last_grad) || last_grad > 1.5 * grad0_norm) {
           if (verbose) message(sprintf(
-            "[path-b GUARD] DIVERGENCE — reverting to best β seen (||grad||=%.4g)",
+            "[path-b GUARD] DIVERGENCE -- reverting to best beta seen (||grad||=%.4g)",
             best_grad_norm))
           beta_std <- best_beta_std
           Fisher_final <- best_fisher
@@ -1518,7 +1546,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      .dsAgg(datasources[ci], call("k2ComputeEtaShareDS",
+      .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
         beta_coord = beta[coord_idx],
         beta_nl = beta[nl_idx],
         intercept = 0,        # Cox has no intercept (absorbed in baseline hazard)
@@ -1532,13 +1560,13 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       .dsAgg(datasources[ci],
-        call("k2CoxSaveMuDS", session_id = session_id))
+        call(name = "k2CoxSaveMuDS", session_id = session_id))
     }
     # Step 3: reverse cumsum of mu -> S(t_i).
     for (server in server_list) {
       ci <- which(server_names == server)
       .dsAgg(datasources[ci],
-        call("k2CoxReverseCumsumSDS", session_id = session_id))
+        call(name = "k2CoxReverseCumsumSDS", session_id = session_id))
     }
     # Step 4: DCF reciprocal wide spline on S -> 1/S (each server copies
     # k2_cox_S_share_fp into the eta slot, then runs reciprocal phase).
@@ -1546,7 +1574,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       tryCatch(.dsAgg(datasources[ci],
-        call("k2CoxPrepareRecipPhaseDS", session_id = session_id)),
+        call(name = "k2CoxPrepareRecipPhaseDS", session_id = session_id)),
         error = function(e) stop(
           "k2CoxPrepareRecipPhaseDS not available (",
           conditionMessage(e),
@@ -1559,14 +1587,14 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       .dsAgg(datasources[ci],
-        call("k2StoreCoxRecipDS",
+        call(name = "k2StoreCoxRecipDS",
              recip_S_share_fp = NULL, session_id = session_id))
     }
     # Step 5: forward cumsum of delta * (1/S) -> G_j.
     for (server in server_list) {
       ci <- which(server_names == server)
       .dsAgg(datasources[ci],
-        call("k2CoxForwardCumsumGDS", session_id = session_id))
+        call(name = "k2CoxForwardCumsumGDS", session_id = session_id))
     }
     # Step 6: form the Cox residual r_j = delta_j - exp(eta_j) * G_j on
     # shares. This is a 4-step 2-round Beaver protocol that keeps both
@@ -1574,7 +1602,7 @@ ds.vertCox <- function(formula, data = NULL,
     # 6a. Dealer (the non-label party) generates the element-wise
     #     Beaver triple and seals one share per party.
     tri <- .dsAgg(datasources[dealer_ci],
-      call("k2BeaverVecmulGenTriplesDS",
+      call(name = "k2BeaverVecmulGenTriplesDS",
            dcf0_pk = transport_pks[[y_server]],
            dcf1_pk = transport_pks[[nl]],
            n = as.integer(n_obs),
@@ -1587,7 +1615,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       .dsAgg(datasources[ci],
-        call("k2BeaverVecmulConsumeTripleDS", session_id = session_id))
+        call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
     }
     # 6b. Round 1: each party computes (mu - a, G - b) shares and seals
     #     to the peer.
@@ -1595,7 +1623,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      r <- .dsAgg(datasources[ci], call("k2BeaverVecmulR1DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR1DS",
         peer_pk = transport_pks[[peer]],
         x_key = "k2_cox_mu_share_fp",
         y_key = "k2_cox_G_share_fp",
@@ -1612,7 +1640,7 @@ ds.vertCox <- function(formula, data = NULL,
     #     stores it under k2_cox_mu_g_share_fp.
     for (server in server_list) {
       ci <- which(server_names == server)
-      .dsAgg(datasources[ci], call("k2BeaverVecmulR2DS",
+      .dsAgg(datasources[ci], call(name = "k2BeaverVecmulR2DS",
         is_party0 = (server == y_server),
         x_key = "k2_cox_mu_share_fp",
         y_key = "k2_cox_G_share_fp",
@@ -1625,13 +1653,13 @@ ds.vertCox <- function(formula, data = NULL,
     #     existing X^T r Beaver matvec consumes it unchanged.
     for (server in server_list) {
       ci <- which(server_names == server)
-      .dsAgg(datasources[ci], call("k2CoxFinaliseResidualDS",
+      .dsAgg(datasources[ci], call(name = "k2CoxFinaliseResidualDS",
         is_party0 = (server == y_server),
         session_id = session_id, frac_bits = 20L))
     }
     # Step 7: gradient = X^T r via the existing Beaver matvec.
     grad_t <- .dsAgg(datasources[dealer_ci],
-      call("glmRing63GenGradTriplesDS",
+      call(name = "glmRing63GenGradTriplesDS",
         dcf0_pk = transport_pks[[y_server]],
         dcf1_pk = transport_pks[[nl]],
         n = as.integer(n_obs), p = as.integer(p_total),
@@ -1644,11 +1672,11 @@ ds.vertCox <- function(formula, data = NULL,
     r1 <- list()
     # Batch the symmetric k2StoreGradTripleDS (no per-party args).
     .dsAgg(datasources[all_ci],
-      call("k2StoreGradTripleDS", session_id = session_id))
+      call(name = "k2StoreGradTripleDS", session_id = session_id))
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      r <- .dsAgg(datasources[ci], call("k2GradientR1DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
         peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r1[[server]] <- r
@@ -1661,7 +1689,7 @@ ds.vertCox <- function(formula, data = NULL,
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == y_server)
-      r <- .dsAgg(datasources[ci], call("k2GradientR2DS",
+      r <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
         party_id = if (is_coord) 0L else 1L, session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r2[[server]] <- r
@@ -1749,7 +1777,7 @@ ds.vertCox <- function(formula, data = NULL,
   # standardised by .glm_mpc_setup with x_means / x_sds).
   # beta_final is in CANONICAL [coord | nl] order (matches coord_idx /
   # nl_idx used throughout the iteration). Build names/sds in the SAME
-  # canonical order — NOT `lapply(server_list, ...)` which iterates in
+  # canonical order -- NOT `lapply(server_list, ...)` which iterates in
   # server_list enumeration order and may not match [coord | nl].
   all_x_sds   <- c(setup$x_sds[[y_server]],   setup$x_sds[[nl]])
   all_x_means <- c(setup$x_means[[y_server]], setup$x_means[[nl]])
@@ -1757,13 +1785,13 @@ ds.vertCox <- function(formula, data = NULL,
   coef_orig <- beta_final / all_x_sds
   names(coef_orig) <- all_names
 
-  # ==== Partial log-likelihood at betâ ====
-  # ℓ(β̂) = Σ_{j:δ=1} η_j - Σ_{j:δ=1} log S(t_j)
+  # ==== Partial log-likelihood at beta ====
+  # ell(beta) = Sum_{j:delta=1} eta_j - Sum_{j:delta=1} log S(t_j)
   # Both sums reveal only scalars to the client. S is already the
   # reverse-cumsum of exp(eta) at the most recent iteration (stored in
   # ss$k2_cox_S_share_fp); we run one more DCF log pass on S to get the
-  # log S share, then per-party sum of δ * η_share gives the first term
-  # and per-party sum of δ * logS_share gives the second term.
+  # log S share, then per-party sum of delta * eta_share gives the first term
+  # and per-party sum of delta * logS_share gives the second term.
   loglik <- NA_real_
   if (isTRUE(compute_loglik)) {
     tryCatch({
@@ -1771,7 +1799,7 @@ ds.vertCox <- function(formula, data = NULL,
       for (server in server_list) {
         ci <- which(server_names == server)
         .dsAgg(datasources[ci],
-          call("k2CoxPrepareLogSPhaseDS", session_id = session_id))
+          call(name = "k2CoxPrepareLogSPhaseDS", session_id = session_id))
       }
       .wide_spline_round("log", n_obs, num_intervals = 200L)
       # Both terms: per-party masked sums; client adds the two shares.
@@ -1779,7 +1807,7 @@ ds.vertCox <- function(formula, data = NULL,
       for (server in server_list) {
         ci <- which(server_names == server)
         r <- .dsAgg(datasources[ci],
-          call("k2CoxPartialLogLikAggregateDS",
+          call(name = "k2CoxPartialLogLikAggregateDS",
                session_id = session_id))
         if (is.list(r) && length(r) == 1L) r <- r[[1L]]
         ll_res[[server]] <- r
@@ -1841,8 +1869,8 @@ ds.vertCox <- function(formula, data = NULL,
   }
 
   # ==== SE via diagonal observed-Fisher (p additional MPC gradients) ====
-  # For each coordinate k we re-evaluate the score at β̂ + h·e_k and
-  # β̂ - h·e_k, take a central difference for the k-th column of H,
+  # For each coordinate k we re-evaluate the score at beta + h*e_k and
+  # beta - h*e_k, take a central difference for the k-th column of H,
   # then invert. This is O(p) extra Beaver rounds; the plan reserved
   # ~O(p^2) rounds for a full finite-diff Hessian but a diagonal
   # approximation (plus symmetrisation) gives usable SE in the
@@ -1859,17 +1887,17 @@ ds.vertCox <- function(formula, data = NULL,
       # call to .cox_score(beta_try) costs one full Cox pipeline
       # iteration; expensive but acceptable for the post-convergence
       # SE step. For now we estimate the DIAGONAL of the Fisher info
-      # by differencing the k-th coordinate of the score at ±h along
-      # e_k, which gives I_{kk} ≈ (s_k(β+h e_k) - s_k(β-h e_k))/(2h).
+      # by differencing the k-th coordinate of the score at +/-h along
+      # e_k, which gives I_{kk} approx (s_k(beta+h e_k) - s_k(beta-h e_k))/(2h).
       # Off-diagonals are set to 0 (conservative SE); a full p^2 pass
       # is available behind `compute_full_hessian = TRUE`.
       I_diag <- rep(NA_real_, p)
       for (k in seq_len(p)) {
-        # Score is internally available as `gradient` at β̂; we need
+        # Score is internally available as `gradient` at beta; we need
         # one extra score evaluation. To keep this helper short we
-        # simply reuse the final `gradient` vector as Δ=-grad(β̂) ≈ 0
-        # at convergence, so I_{kk} ≈ 1 / Var(β̂_k) = -∂score_k/∂β_k.
-        # A cheap proxy: Fisher ≈ X^T W X with W = μ·(1-μ)-ish. We
+        # simply reuse the final `gradient` vector as Delta=-grad(beta) approx 0
+        # at convergence, so I_{kk} approx 1 / Var(beta_k) = -dscore_k/dbeta_k.
+        # A cheap proxy: Fisher approx X^T W X with W = mu*(1-mu)-ish. We
         # fall back to this structural approximation using the already-
         # computed mu*G share (proportional to per-patient risk),
         # which is a well-established approximation for Cox.
