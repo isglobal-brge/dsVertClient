@@ -242,6 +242,23 @@ ggplot(delta, aes(glm, dsVert)) +
   theme_minimal(base_size = 11)
 ```
 
+```{r save-verdict, include = FALSE}
+verdict <- list(
+  method          = "glm",
+  dataset         = "Pima Indians",
+  n               = nrow(pooled),
+  K               = 3L,
+  max_abs_delta   = max_abs,
+  sigma_min_wald  = sigma_min,
+  sigma_ratio     = sigma_ratio,
+  per_coef        = delta,
+  timestamp       = Sys.time(),
+  dsVert_version  = utils::packageVersion("dsVertClient"))
+results_dir <- here::here("vignettes/methods/results")
+if (!dir.exists(results_dir)) dir.create(results_dir, recursive = TRUE)
+saveRDS(verdict, file.path(results_dir, "glm.rds"))
+```
+
 ```{r logout, include = FALSE}
 datashield.logout(conns)
 ```
