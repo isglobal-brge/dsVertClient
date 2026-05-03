@@ -12,6 +12,8 @@ ds.vertGLMM(
   inner_iter = 10L,
   tol = 0.001,
   lambda = 0,
+  use_pearson_cap = getOption("dsvert.glmm_use_pearson_cap", TRUE),
+  compute_se = TRUE,
   verbose = TRUE,
   datasources = NULL
 )
@@ -30,6 +32,15 @@ ds.vertGLMM(
 \item{tol}{Outer convergence tolerance.}
 
 \item{lambda}{L2 penalty passed to the inner binomial GLM fits.}
+
+\item{use_pearson_cap}{Logical. If TRUE, cap the EM variance-component
+update by the first marginal Pearson cluster-moment estimate. This
+prevents BLUP posterior-variance inflation when the random-effect signal
+is weak or singular, using only the same guarded cluster aggregates as
+the default GLMM loop.}
+
+\item{compute_se}{Logical. Compute GLM finite-difference standard errors
+for the inner fits. Set FALSE for coefficient/variance validation runs.}
 
 \item{verbose}{Print progress.}
 

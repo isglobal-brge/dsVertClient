@@ -46,6 +46,13 @@
 #' @param inner_iter Inner PIRLS iterations per cluster per outer step.
 #' @param tol Outer convergence tolerance.
 #' @param lambda L2 penalty passed to the inner binomial GLM fits.
+#' @param use_pearson_cap Logical. If TRUE, cap the EM variance-component
+#'   update by the first marginal Pearson cluster-moment estimate. This
+#'   prevents BLUP posterior-variance inflation when the random-effect signal
+#'   is weak or singular, using only the same guarded cluster aggregates as
+#'   the default GLMM loop.
+#' @param compute_se Logical. Compute GLM finite-difference standard errors
+#'   for the inner fits. Set FALSE for coefficient/variance validation runs.
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD connections.
 #' @return \code{ds.vertGLMM} object: fixed-effect coefficients,
@@ -55,6 +62,9 @@
 ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         max_outer = 10L, inner_iter = 10L,
                         tol = 1e-3, lambda = 0,
+                        use_pearson_cap = getOption(
+                          "dsvert.glmm_use_pearson_cap", TRUE),
+                        compute_se = TRUE,
                         verbose = TRUE,
                         datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
@@ -72,6 +82,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
   if (verbose) message("[ds.vertGLMM] prime: binomial ds.vertGLM")
   fit <- ds.vertGLM(formula = formula, data = data, family = "binomial",
                     max_iter = inner_iter, tol = tol, lambda = lambda,
+                    compute_se = isTRUE(compute_se),
                     verbose = FALSE,
                     datasources = datasources,
                     keep_session = TRUE)
@@ -92,6 +103,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
   # b_i. Moment-match \sigma_b^2 = var(\hat b_i).
   sigma_b2 <- 1.0
   sigma_b2_anchor <- NA_real_
+  sigma_b2_pearson_cap <- NA_real_
   b_hat <- rep(0, n_clusters)
   converged <- FALSE
   offset_col <- NULL
@@ -109,6 +121,14 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
       n_i <- as.integer(cl$n_per_cluster)
     }
     active <- n_i > 0L & is.finite(rsum) & is.finite(vsum)
+    if (isTRUE(use_pearson_cap) && !is.finite(sigma_b2_pearson_cap) &&
+        sum(active) >= 2L) {
+      inv_v <- 1 / pmax(vsum[active], 1e-8)
+      pearson_cluster <- rsum[active] * inv_v
+      sigma_b2_pearson_cap <- max(
+        stats::var(pearson_cluster) - mean(inv_v),
+        1e-6)
+    }
     score_mom_num <- sum(rsum[active]^2 - vsum[active])
     score_mom_den <- sum(vsum[active]^2)
     sigma_b2_score <- if (is.finite(score_mom_den) && score_mom_den > 0) {
@@ -162,12 +182,16 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     }
     sigma_b2_floor <- if (is.finite(sigma_b2_anchor)) sigma_b2_anchor else 1e-6
     sigma_b2_new <- max(sigma_b2_em, sigma_b2_floor)
+    if (isTRUE(use_pearson_cap) && is.finite(sigma_b2_pearson_cap)) {
+      sigma_b2_new <- max(sigma_b2_floor,
+                          min(sigma_b2_new, sigma_b2_pearson_cap))
+    }
     if (verbose) {
       message(sprintf(
         paste0("[GLMM] outer %d  sigma_b^2=%.4g  var(b_hat)=%.4g  ",
-               "mean(post_var)=%.4g  score_anchor=%.4g"),
+               "mean(post_var)=%.4g  score_anchor=%.4g  pearson_cap=%.4g"),
         outer, sigma_b2_new, stats::var(b_hat_new[active]),
-        mean(post_var[active]), sigma_b2_anchor))
+        mean(post_var[active]), sigma_b2_anchor, sigma_b2_pearson_cap))
     }
     b_delta <- max(abs(b_hat_new - b_hat))
     sigma_delta <- abs(sigma_b2_new - sigma_b2)
@@ -193,6 +217,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
       ds.vertGLM(formula = formula, data = data, family = "binomial",
                  offset = offset_col,
                  max_iter = inner_iter, tol = tol, lambda = lambda,
+                 compute_se = isTRUE(compute_se),
                  verbose = FALSE,
                  datasources = datasources,
                  keep_session = TRUE),
@@ -218,6 +243,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     std_errors   = fit$std_errors,
     sigma_b2     = sigma_b2,
     sigma_b2_anchor = sigma_b2_anchor,
+    sigma_b2_pearson_cap = sigma_b2_pearson_cap,
     b_hat        = b_hat,
     icc          = icc,
     n_clusters   = n_clusters,
