@@ -12,6 +12,9 @@ ds.vertNBFullRegTheta(
   theta_max_iter = 5L,
   theta_tol = 0.001,
   variant = "corrected",
+  beta_max_iter = 2L,
+  beta_tol = 1e-04,
+  compute_covariance = TRUE,
   verbose = TRUE,
   datasources = NULL,
   allow_disclosive_legacy = FALSE,
@@ -47,6 +50,15 @@ aggregate variance correction described in Details.
 theta refinement. Legacy \code{"full_reg"} is disclosive and is
 redirected to \code{"full_reg_nd"} unless
 \code{allow_disclosive_legacy = TRUE}.}
+
+\item{beta_max_iter}{Integer. Maximum beta refinements for the
+non-disclosive full-regression theta variant.}
+
+\item{beta_tol}{Numeric. Relative convergence tolerance for beta refinements
+in the non-disclosive full-regression theta variant.}
+
+\item{compute_covariance}{Logical. If \code{TRUE}, request covariance and
+standard-error diagnostics where the selected beta path supports them.}
 
 \item{verbose}{Logical. Print stage-by-stage progress.}
 

@@ -46,6 +46,12 @@
 #'   theta refinement. Legacy \code{"full_reg"} is disclosive and is
 #'   redirected to \code{"full_reg_nd"} unless
 #'   \code{allow_disclosive_legacy = TRUE}.
+#' @param beta_max_iter Integer. Maximum beta refinements for the
+#'   non-disclosive full-regression theta variant.
+#' @param beta_tol Numeric. Relative convergence tolerance for beta refinements
+#'   in the non-disclosive full-regression theta variant.
+#' @param compute_covariance Logical. If \code{TRUE}, request covariance and
+#'   standard-error diagnostics where the selected beta path supports them.
 #' @param allow_disclosive_legacy Logical. If \code{TRUE}, permit the archived
 #'   \code{variant = "full_reg"} path that transports per-patient
 #'   \eqn{\eta^{nl}} to the outcome server. Intended only for historical

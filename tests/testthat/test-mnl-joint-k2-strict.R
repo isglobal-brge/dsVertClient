@@ -14,6 +14,23 @@
 
 library(testthat)
 
+.read_dsvertclient_source <- function(filename) {
+  pkg_root <- normalizePath(file.path(testthat::test_path(), "..", ".."),
+                            mustWork = FALSE)
+  candidates <- c(
+    system.file("R", filename, package = "dsVertClient"),
+    file.path(getwd(), "R", filename),
+    file.path(pkg_root, "R", filename),
+    file.path(pkg_root, "00_pkg_src", "dsVertClient", "R", filename)
+  )
+  candidates <- candidates[nzchar(candidates)]
+  existing <- candidates[file.exists(candidates)]
+  if (!length(existing)) {
+    stop("Cannot locate package source file: ", filename, call. = FALSE)
+  }
+  readLines(existing[[1L]], warn = FALSE)
+}
+
 # ---- Test 1-3: API contract of the H_emp pipeline ---------------------
 
 test_that("ds.vertMultinomJointNewton signature includes max_outer + tol", {
@@ -48,13 +65,7 @@ test_that("multinom_joint H_emp pipeline file references the W_kl block scheme",
   # Source-level invariant: the empirical-Hessian assembly must
   # reference Tutz/Krishnapuram and produce W_kl_share via the
   # documented Beaver vecmul + AffineCombine pattern.
-  src <- readLines(system.file("R", "ds.vertMultinomJointNewton.R",
-                                package = "dsVertClient"),
-                    warn = FALSE)
-  if (length(src) == 0L) {
-    src <- readLines(file.path(getwd(), "R/ds.vertMultinomJointNewton.R"),
-                      warn = FALSE)
-  }
+  src <- .read_dsvertclient_source("ds.vertMultinomJointNewton.R")
   joined <- paste(src, collapse = "\n")
   expect_match(joined, "Tutz 1990")
   expect_match(joined, "Krishnapuram")
@@ -179,12 +190,7 @@ test_that("Bohning B_reg fallback triggers on H_emp construction failure", {
   # Source-level invariant: the empirical-H Newton solve must include
   # a tryCatch fallback to Bohning B_reg per Bohning 1992 Thm 2
   # (Loewner upper-bound always positive-definite).
-  # During devtools::test, getwd() is tests/testthat. Resolve the source
-  # file relative to the package root via testthat::test_path's parent.
-  pkg_root <- normalizePath(file.path(testthat::test_path(), "..", ".."),
-                             mustWork = TRUE)
-  src <- readLines(file.path(pkg_root, "R/ds.vertMultinomJointNewton.R"),
-                    warn = FALSE)
+  src <- .read_dsvertclient_source("ds.vertMultinomJointNewton.R")
   joined <- paste(src, collapse = "\n")
   expect_match(joined, "B_reg.*g_stacked")
   expect_match(joined, "H_emp_ok")
