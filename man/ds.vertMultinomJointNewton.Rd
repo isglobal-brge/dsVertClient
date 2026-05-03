@@ -38,16 +38,16 @@ on the outcome server, e.g. \code{"\%s_ind"}. Must exist server-side.}
 \code{ds.vertMultinomJointNewton} object.
 }
 \description{
-Full per-patient softmax Newton: orchestrates K-1 parallel
-exp(eta_k) shares, sums to denominator D = 1+Sumexp(eta_k), computes 1/D
-via Ring127 Chebyshev + Newton-Raphson, multiplies per class to get
-p_k(x_i) share per patient, builds residual y_k - p_k on outcome
-server, and aggregates X^T(y_k - p_k) via existing Beaver matvec
-pipeline for each class. Client-side Bohning-Hessian-bounded Newton
-step on stacked beta.
+Full softmax Newton path for vertical splits: orchestrates
+class-specific exp(eta) shares, shared softmax denominators, shared
+residuals, and Beaver matvec score aggregation. K=2 uses both servers as
+DCF parties; K>=3 selects the outcome server plus one fusion DCF party
+and has the other servers contribute encrypted additive shares. The client
+performs a Bohning-Hessian-bounded Newton step on stacked coefficients
+using only aggregate gradients and low-dimensional Gram/Hessian objects.
 
-All per-patient quantities stay as Ring127 additive shares; only the
-final p(K-1)-dim aggregate gradient per iter is revealed -- same
-privacy class as the single-class gradient of ds.vertGLM. \strong{P3 delta:
-zero new reveal types.}
+All per-patient probabilities and residuals remain Ring127 additive
+shares. The raw design Gram is built from scalar local moments and the
+federated correlation matrix, which is the same aggregate-disclosure tier
+as \code{ds.vertCor}.
 }
