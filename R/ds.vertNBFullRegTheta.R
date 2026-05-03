@@ -63,6 +63,8 @@
 ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                                   joint = TRUE, theta_max_iter = 5L,
                                   theta_tol = 1e-3, variant = "corrected",
+                                  beta_max_iter = 2L, beta_tol = 1e-4,
+                                  compute_covariance = TRUE,
                                   verbose = TRUE, datasources = NULL,
                                   allow_disclosive_legacy = FALSE, ...) {
   if (!variant %in% c("iid_mu", "corrected", "full_reg", "full_reg_nd")) {
@@ -333,46 +335,33 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       })
     }
 
-    if (length(non_y_srv) == 1L) {
-      nl_srv <- non_y_srv[[1L]]
-      nl_ci <- which(server_names == nl_srv)
-      x_nl <- x_vars_full[[nl_srv]]
-      beta_nl <- beta_all[x_nl]
-      setup <- .nb_fullreg_nd_session_setup(
-        formula = formula, data = data, base_fit = base_fit,
-        datasources = datasources, server_names = server_names,
-        y_srv = y_srv, nl_srv = nl_srv, y_ci = y_ci, nl_ci = nl_ci,
-        x_label = x_label, x_nl = x_nl,
-        beta_label = beta_label, beta_nl = beta_nl, int_val = int_val,
-        y_var_char = y_var_char, session_id = session_id,
-        .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose)
-      score_server_list <- c(y_srv, nl_srv)
-      score_nl_srv <- nl_srv
-      score_nl_ci <- nl_ci
-      dealer_ci <- nl_ci
-      yt_from_y_share <- FALSE
-    } else {
-      setup <- .nb_fullreg_nd_session_setup_k3(
-        data = data,
-        x_vars = x_vars_full,
-        beta_all = beta_all,
-        y_var_char = y_var_char,
-        y_srv = y_srv,
-        datasources = datasources,
-        server_names = server_names,
-        server_list = server_names,
-        session_id = session_id,
-        .dsAgg = .dsAgg,
-        .sendBlob = .sendBlob,
-        verbose = verbose)
-      score_server_list <- setup$dcf_parties
-      score_nl_srv <- setup$fusion_server
-      score_nl_ci <- which(server_names == score_nl_srv)
-      dealer_ci <- which(server_names == setup$dealer_servers[[1L]])
-      yt_from_y_share <- TRUE
-    }
+    # Use the generic Ring127 input-sharing setup for K=2 and K>=3. The
+    # older K=2-only eta-share setup was non-disclosive for theta, but it did
+    # not keep X/y shares needed for the NB beta score.
+    setup <- .nb_fullreg_nd_session_setup_k3(
+      data = data,
+      x_vars = x_vars_full,
+      beta_all = beta_all,
+      y_var_char = y_var_char,
+      y_srv = y_srv,
+      datasources = datasources,
+      server_names = server_names,
+      server_list = server_names,
+      session_id = session_id,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob,
+      verbose = verbose)
+    score_server_list <- setup$dcf_parties
+    score_nl_srv <- setup$fusion_server
+    score_nl_ci <- which(server_names == score_nl_srv)
+    dealer_ci <- which(server_names == setup$dealer_servers[[1L]])
+    yt_from_y_share <- TRUE
     n_obs        <- setup$n
     transport_pks <- setup$transport_pks
+    p_total <- setup$p_total
+    coef_order <- c("(Intercept)", setup$feature_order)
+    beta_current <- base_fit$poisson_fit$coefficients
+    beta_current <- beta_current[names(base_fit$poisson_fit$coefficients)]
 
     # Beaver triple dealer is a non-DCF server when available under K>=3;
     # otherwise the non-label/fusion DCF party follows the legacy K=2
@@ -408,50 +397,131 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
 
     theta_max_iter <- max(1L, as.integer(theta_max_iter))
     theta_tol <- max(as.numeric(theta_tol), .Machine$double.eps)
+    beta_max_iter <- max(0L, as.integer(beta_max_iter))
+    beta_tol <- max(as.numeric(beta_tol), .Machine$double.eps)
     theta_trace <- data.frame(
+      beta_iter = integer(0L),
       iter = integer(0L),
       theta = numeric(0L),
       score = numeric(0L),
       deriv = numeric(0L),
       theta_next = numeric(0L),
       stringsAsFactors = FALSE)
+    beta_trace <- data.frame(
+      iter = integer(0L),
+      theta = numeric(0L),
+      max_abs_score = numeric(0L),
+      max_abs_step = numeric(0L),
+      stringsAsFactors = FALSE)
     theta_converged <- FALSE
-    for (it in seq_len(theta_max_iter)) {
-      s <- score_eval(theta_cur)
-      if (anyNA(unlist(s[c("score","deriv")]))) break
-      if (!is.finite(s$deriv) || abs(s$deriv) < 1e-12) break
-      # Update on log(theta), not theta. This keeps positivity by
-      # construction and is much better scaled when the fixed-mu theta is
-      # several-fold above the y-only MoM/iid starting values.
-      step <- s$score / (s$deriv * theta_cur)
-      step <- max(min(step, log(4)), -log(4))
-      theta_new <- theta_cur * exp(-step)
-      damp <- 0L
-      while (theta_new <= 1e-6 && damp < 20L) {
-        step <- step / 2
-        theta_new <- theta_cur * exp(-step)
-        damp <- damp + 1L
+    beta_converged <- beta_max_iter == 0L
+    beta_stats <- NULL
+
+    for (b_it in seq.int(0L, beta_max_iter)) {
+      if (b_it > 0L) {
+        .nb_fullreg_nd_recompute_eta(
+          beta_all = beta_current, setup = setup, y_srv = y_srv,
+          datasources = datasources, server_names = server_names,
+          session_id = session_id, .dsAgg = .dsAgg)
       }
-      if (!is.finite(theta_new) || theta_new <= 0) break
-      theta_trace <- rbind(theta_trace, data.frame(
-        iter = it,
-        theta = theta_cur,
-        score = as.numeric(s$score),
-        deriv = as.numeric(s$deriv),
-        theta_next = theta_new,
-        stringsAsFactors = FALSE))
-      if (abs(theta_new - theta_cur) < theta_tol * max(1, abs(theta_cur))) {
+
+      theta_converged_iter <- FALSE
+      for (it in seq_len(theta_max_iter)) {
+        s <- score_eval(theta_cur)
+        if (anyNA(unlist(s[c("score","deriv")]))) break
+        if (!is.finite(s$deriv) || abs(s$deriv) < 1e-12) break
+        # Update on log(theta), not theta. This keeps positivity by
+        # construction and is much better scaled when the fixed-mu theta is
+        # several-fold above the y-only MoM/iid starting values.
+        step <- s$score / (s$deriv * theta_cur)
+        step <- max(min(step, log(4)), -log(4))
+        theta_new <- theta_cur * exp(-step)
+        damp <- 0L
+        while (theta_new <= 1e-6 && damp < 20L) {
+          step <- step / 2
+          theta_new <- theta_cur * exp(-step)
+          damp <- damp + 1L
+        }
+        if (!is.finite(theta_new) || theta_new <= 0) break
+        theta_trace <- rbind(theta_trace, data.frame(
+          beta_iter = b_it,
+          iter = it,
+          theta = theta_cur,
+          score = as.numeric(s$score),
+          deriv = as.numeric(s$deriv),
+          theta_next = theta_new,
+          stringsAsFactors = FALSE))
+        if (abs(theta_new - theta_cur) < theta_tol * max(1, abs(theta_cur))) {
+          theta_cur <- theta_new
+          theta_converged <- TRUE
+          theta_converged_iter <- TRUE
+          break
+        }
         theta_cur <- theta_new
-        theta_converged <- TRUE
+      }
+      if (!theta_converged_iter && nrow(theta_trace) == 0L) break
+
+      if (b_it >= beta_max_iter && !isTRUE(compute_covariance)) break
+
+      # Refresh mu and reciprocal at the final theta for this beta. The theta
+      # loop evaluates the score before proposing theta_next, so the final
+      # accepted value needs one explicit pass before beta score/covariance.
+      s_final <- score_eval(theta_cur)
+      if (anyNA(unlist(s_final[c("score","deriv")]))) break
+
+      beta_stats <- .nb_fullreg_nd_beta_score_fisher(
+        theta = theta_cur, n_obs = n_obs, p_total = p_total,
+        datasources = datasources, dealer_ci = dealer_ci,
+        server_list = score_server_list, server_names = server_names,
+        y_server = y_srv, nl = score_nl_srv,
+        transport_pks = transport_pks, session_id = session_id,
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose)
+      names(beta_stats$score) <- coef_order
+      dimnames(beta_stats$fisher) <- list(coef_order, coef_order)
+
+      if (b_it >= beta_max_iter) break
+
+      fisher <- beta_stats$fisher
+      ridge <- max(1e-10, 1e-8 * mean(abs(diag(fisher))))
+      step <- tryCatch(
+        solve(fisher + diag(ridge, nrow(fisher)), beta_stats$score),
+        error = function(e) qr.solve(fisher + diag(ridge, nrow(fisher)),
+                                     beta_stats$score))
+      if (any(!is.finite(step))) break
+      max_step <- max(abs(step))
+      if (max_step > 1) {
+        step <- step / max_step
+        max_step <- 1
+      }
+      beta_vec <- beta_current[coef_order] + step
+      beta_current[coef_order] <- beta_vec
+      beta_trace <- rbind(beta_trace, data.frame(
+        iter = b_it + 1L,
+        theta = theta_cur,
+        max_abs_score = max(abs(beta_stats$score)),
+        max_abs_step = max_step,
+        stringsAsFactors = FALSE))
+      if (max_step < beta_tol) {
+        beta_converged <- TRUE
         break
       }
-      theta_cur <- theta_new
     }
 
     var_inflation <- if (is.finite(theta_cur) && theta_cur > 0)
       sqrt(1 + base_fit$y_mean / theta_cur) else 1
     pf <- base_fit$poisson_fit
+    coef_names <- names(pf$coefficients)
+    cov_beta <- NULL
+    nb_se <- pf$std_errors * var_inflation
+    if (isTRUE(compute_covariance) &&
+        !is.null(beta_stats) && !is.null(beta_stats$fisher)) {
+      cov_beta <- tryCatch(solve(beta_stats$fisher),
+                           error = function(e) qr.solve(beta_stats$fisher))
+      cov_beta <- cov_beta[coef_names, coef_names, drop = FALSE]
+      nb_se <- sqrt(pmax(diag(cov_beta), 0))
+    }
     out <- base_fit
+    out$coefficients <- beta_current[coef_names]
     out$theta <- theta_cur
     out$theta_iid <- theta_iid
     out$variance_correction <- NA_real_
@@ -459,11 +529,13 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     out$theta_trace <- theta_trace
     out$theta_iter <- nrow(theta_trace)
     out$theta_converged <- theta_converged
-    out$std_errors <- pf$std_errors * var_inflation
-    out$z_values <- pf$coefficients / out$std_errors
+    out$beta_trace <- beta_trace
+    out$beta_iter <- nrow(beta_trace)
+    out$beta_converged <- beta_converged
+    out$std_errors <- nb_se
+    out$z_values <- out$coefficients / out$std_errors
     out$p_values <- 2 * stats::pnorm(-abs(out$z_values))
-    out$covariance <- if (!is.null(pf$covariance))
-      pf$covariance * var_inflation^2 else NULL
+    out$covariance <- cov_beta
     out$var_inflation <- var_inflation
     class(out) <- c("ds.vertNBFullRegTheta", class(out))
     return(out)
