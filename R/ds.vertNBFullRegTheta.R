@@ -42,21 +42,42 @@
 #' @param variant Character. \code{"iid_mu"} returns the unmodified
 #'   \code{ds.vertNB} result. \code{"corrected"} (default) applies the
 #'   aggregate variance correction described in Details.
+#'   \code{"full_reg_nd"} runs the non-disclosive share-domain full-regression
+#'   theta refinement. Legacy \code{"full_reg"} is disclosive and is
+#'   redirected to \code{"full_reg_nd"} unless
+#'   \code{allow_disclosive_legacy = TRUE}.
+#' @param allow_disclosive_legacy Logical. If \code{TRUE}, permit the archived
+#'   \code{variant = "full_reg"} path that transports per-patient
+#'   \eqn{\eta^{nl}} to the outcome server. Intended only for historical
+#'   reproducibility audits; the paper-safe path is \code{"full_reg_nd"}.
 #'
 #' @return Object of class \code{c("ds.vertNBFullRegTheta", "ds.vertNB")}.
 #'   Fields as \code{ds.vertNB}, plus \code{$theta_iid} (original
 #'   iid-mu estimate) and \code{$variance_correction} (the \eqn{\hat V_\mu}
-#'   used).
+#'   used). For the non-disclosive full-regression variant, the object also
+#'   contains \code{$theta_trace}, \code{$theta_iter}, and
+#'   \code{$theta_converged}.
 #'
 #' @seealso \code{\link{ds.vertNB}}
 #' @export
 ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                                   joint = TRUE, theta_max_iter = 5L,
                                   theta_tol = 1e-3, variant = "corrected",
-                                  verbose = TRUE, datasources = NULL, ...) {
+                                  verbose = TRUE, datasources = NULL,
+                                  allow_disclosive_legacy = FALSE, ...) {
   if (!variant %in% c("iid_mu", "corrected", "full_reg", "full_reg_nd")) {
     stop("variant must be 'iid_mu', 'corrected', 'full_reg', or 'full_reg_nd'",
          call. = FALSE)
+  }
+  if (identical(variant, "full_reg") &&
+      !isTRUE(allow_disclosive_legacy)) {
+    warning("variant = 'full_reg' is deprecated because it transports ",
+            "per-patient non-label eta to the outcome server; dispatching ",
+            "to non-disclosive variant = 'full_reg_nd'. Set ",
+            "allow_disclosive_legacy = TRUE only for archived ",
+            "reproducibility audits.",
+            call. = FALSE)
+    variant <- "full_reg_nd"
   }
 
   base_fit <- ds.vertNB(formula = formula, data = data, theta = theta,
@@ -125,7 +146,8 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       call(name = "dsvertNBEtaSealDS",
            data_name = data, x_vars = x_nl,
            beta_values = as.numeric(beta_nl),
-           target_pk = label_pk, session_id = session_id))
+           target_pk = label_pk, session_id = session_id,
+           allow_disclosive_legacy = TRUE))
     if (is.list(sealed_r) && length(sealed_r) == 1L) sealed_r <- sealed_r[[1L]]
 
     # Relay blob to label server (chunked via existing adaptive helper).
@@ -153,7 +175,8 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
              beta_values_label = as.numeric(beta_label),
              beta_intercept = as.numeric(int_val),
              peer_eta_key = "nb_peer_eta",
-             theta = th, session_id = session_id))
+             theta = th, session_id = session_id,
+             allow_disclosive_legacy = TRUE))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       # AUDITORIA correction: prior score omitted +n and -Sum(y+theta)/(theta+mu)
       # terms (fixed point was biased -> 5.87% rel err persistent).
