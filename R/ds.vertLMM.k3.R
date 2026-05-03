@@ -17,7 +17,10 @@
 #'   per-cluster GLS weights are a public function of \eqn{\rho} and
 #'   the cluster sizes (already disclosed under
 #'   \code{datashield.privacyLevel}), so D-INV-1..5 are preserved
-#'   identically to the K=2 \code{ds.vertLMM} path.
+#'   identically to the K=2 \code{ds.vertLMM} path. The X-correction
+#'   receives cluster membership through encrypted server-to-server
+#'   blobs; the analyst client does not receive a row-level cluster
+#'   vector.
 #'
 #'   Outer optimisation is golden-section search over
 #'   \eqn{\rho \in (\rho_{\min}, \rho_{\max})}; default
@@ -208,14 +211,54 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   sigma_b2_hat <- max((MSB - MSW) / n_avg, 0)
 
   ## X-correction for sigma^2 inflation: subtract beta' Var_within(X) beta.
+  ## Cluster membership is needed by non-label servers to center X within
+  ## cluster. Do not relay the row-level cluster vector through the client:
+  ## the outcome server transport-encrypts integer cluster IDs directly to
+  ## peers, and each server reads them from its MPC session.
+  cluster_session <- .mpc_session_id()
+  cluster_pks <- list()
+  for (.srv in server_names) {
+    .ci <- which(server_names == .srv)
+    pk_info <- DSI::datashield.aggregate(datasources[.ci],
+      call(name = "glmRing63TransportInitDS", session_id = cluster_session))
+    if (is.list(pk_info) && length(pk_info) == 1L) pk_info <- pk_info[[1L]]
+    cluster_pks[[.srv]] <- pk_info$transport_pk
+  }
+  .send_cluster_blob <- function(blob, target_ci) {
+    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
+      if (n_chunks == 1L) {
+        DSI::datashield.aggregate(datasources[target_ci],
+          call(name = "mpcStoreBlobDS", key = "dsvert_cluster_ids_blob",
+               chunk = chunk_str, session_id = cluster_session))
+      } else {
+        DSI::datashield.aggregate(datasources[target_ci],
+          call(name = "mpcStoreBlobDS", key = "dsvert_cluster_ids_blob",
+               chunk = chunk_str, chunk_index = chunk_idx,
+               n_chunks = n_chunks, session_id = cluster_session))
+      }
+    })
+  }
+  for (.srv in setdiff(server_names, cluster_srv)) {
+    .peer_ci <- which(server_names == .srv)
+    cb <- DSI::datashield.aggregate(datasources[ci_vc],
+      call(name = "dsvertClusterIDsBroadcastDS",
+           data_name = data, cluster_col = cluster_col,
+           peer_pk = cluster_pks[[.srv]],
+           session_id = cluster_session))
+    if (is.list(cb) && length(cb) == 1L) cb <- cb[[1L]]
+    .send_cluster_blob(cb$peer_blob, .peer_ci)
+    DSI::datashield.aggregate(datasources[.peer_ci],
+      call(name = "dsvertClusterIDsReceiveDS",
+           session_id = cluster_session))
+  }
+
   ## Each server returns its block of the within-cluster X cross-product
-  ## via dsvertLMMXCovarianceWithinDS; client aggregates the
+  ## via dsvertLMMXCovarianceWithinStoredDS; client aggregates the
   ## block-diagonal terms beta_s' Var_w(X_s) beta_s and sums. Cross-
   ## server X cross-cov off-diagonals are dropped (zero for
   ## independent-X validation regimes; small bias for correlated cross-
   ## server X). Slopes only -- intercept is dropped because it has no
   ## within-cluster variance contribution by construction.
-  cluster_id_vector <- as.integer(vc_info$cluster_id_vector)
   beta_full <- fit_final$coefficients
   is_intercept <- names(beta_full) %in% c("(Intercept)")
   beta_slopes <- beta_full[!is_intercept]
@@ -232,9 +275,9 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     srv_x <- intersect(cols, slope_names)
     if (length(srv_x) == 0L) next
     xc_info <- DSI::datashield.aggregate(datasources[.ci],
-      call(name = "dsvertLMMXCovarianceWithinDS",
+      call(name = "dsvertLMMXCovarianceWithinStoredDS",
            data_name = data, x_vars = srv_x,
-           cluster_id_vector = as.integer(cluster_id_vector)))
+           session_id = cluster_session))
     if (is.list(xc_info) && length(xc_info) == 1L) xc_info <- xc_info[[1]]
     SX2_s <- xc_info$SX2_within
     df_w_s <- as.integer(xc_info$df_within)
@@ -243,6 +286,13 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     beta_s <- as.numeric(beta_slopes[srv_x])
     var_within_xb <- var_within_xb +
       as.numeric(t(beta_s) %*% Var_w_s %*% beta_s)
+  }
+  for (.srv in server_names) {
+    .ci <- which(server_names == .srv)
+    try(DSI::datashield.aggregate(datasources[.ci],
+      call(name = "mpcCleanupDS", session_id = cluster_session)), silent = TRUE)
+    try(DSI::datashield.aggregate(datasources[.ci],
+      call(name = "mpcGcDS")), silent = TRUE)
   }
   sigma2_hat <- max(sigma2_hat_raw - var_within_xb, 0)
 
