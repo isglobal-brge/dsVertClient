@@ -47,14 +47,23 @@ NULL
                              n_obs, verbose, .dsAgg, .sendBlob,
                              weights_active = FALSE,
                              no_intercept  = FALSE,
-                             ring = 63L) {
+                             ring = 63L,
+                             compute_se = TRUE) {
 
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
   ring_tag <- if (ring == 127L) "ring127" else "ring63"
   frac_bits <- if (ring == 127L) 50L else 20L
   is_gaussian <- (family == "gaussian")
-  num_intervals <- if (family == "poisson") 100L else 50L
+  default_intervals <- if (family == "poisson") 100L else 50L
+  opt_name <- paste0("dsvert.glm_num_intervals_", family)
+  num_intervals <- suppressWarnings(as.integer(
+    getOption(opt_name, getOption("dsvert.glm_num_intervals",
+                                  default_intervals))[[1L]]
+  ))
+  if (!is.finite(num_intervals) || num_intervals < 10L) {
+    num_intervals <- default_intervals
+  }
   if (is.null(lambda)) lambda <- 1e-4
   if (verbose) {
     if (is_gaussian) {
@@ -389,6 +398,8 @@ NULL
   if (!converged && verbose)
     warning(sprintf("Did not converge after %d iterations (diff = %.2e)", max_iter, max_diff))
 
+  inv_hessian <- list()
+  if (isTRUE(compute_se)) {
   # === Standard errors via finite-difference Hessian (K=2) ===
   if (verbose) message("  [SE] Computing Hessian (central differences)...")
   p_plus1 <- p_total + 1
@@ -489,8 +500,8 @@ NULL
                   x_vars[[coordinator]],
                   if (p_nl > 0L) x_vars[[nl]] else character(0))
   dimnames(hessian_k2) <- list(hess_names, hess_names)
-  inv_hessian <- list()
   attr(inv_hessian, "raw_hessian") <- hessian_k2
+  }
 
   if (isTRUE(weights_active) && family != "gaussian") {
     if (verbose) {

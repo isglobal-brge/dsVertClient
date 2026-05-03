@@ -660,7 +660,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       .sendBlob = .sendBlob,
       weights_active = isTRUE(weights_active),
       no_intercept  = isTRUE(no_intercept),
-      ring = ring
+      ring = ring,
+      compute_se = isTRUE(compute_se)
     )
 
     betas <- loop_result$betas

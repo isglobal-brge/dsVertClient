@@ -49,7 +49,15 @@ NULL
 
   frac_bits <- 20L
   is_gaussian <- (family == "gaussian")
-  num_intervals <- if (family == "poisson") 100L else 50L
+  default_intervals <- if (family == "poisson") 100L else 50L
+  opt_name <- paste0("dsvert.glm_num_intervals_", family)
+  num_intervals <- suppressWarnings(as.integer(
+    getOption(opt_name, getOption("dsvert.glm_num_intervals",
+                                  default_intervals))[[1L]]
+  ))
+  if (!is.finite(num_intervals) || num_intervals < 10L) {
+    num_intervals <- default_intervals
+  }
   dcf_family <- if (family == "poisson") "poisson" else "sigmoid"
 
   .to_b64url <- function(x) gsub("+","-",gsub("/","_",gsub("=+$","",x,perl=TRUE),fixed=TRUE),fixed=TRUE)
