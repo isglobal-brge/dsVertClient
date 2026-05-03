@@ -54,9 +54,12 @@ Hessian before \code{solve()} to handle all-zero-mask alpha_j strata
 per Christensen 2019 CRAN ordinal vignette Sec.A.3, plus to suppress
 the spurious near-singular eigenvalues introduced by the masked-W
 noise (Catrina-Saxena 2010 frac=50 truncation accumulating across
-the mask\emph{W}X^T*X chain). Default 1e-6 -- empirically drops the
+the \code{mask * W * X^T * X} chain). Default 1e-6 -- empirically drops the
 L2 fixture rel from 4.4e-2 (epsilon=1e-8) to 4.1e-4 by suppressing the
 |step|->noise oscillation around the iter-4 attractor.}
+
+\item{debug_trace}{Logical. If \code{TRUE}, retain per-iteration beta and
+gradient traces for local debugging. Defaults to \code{FALSE}.}
 
 \item{verbose}{Logical.}
 
@@ -109,10 +112,10 @@ J_i). K>=3 non-DCF servers export only encrypted additive shares of
 this uniform frame. Zero row-count signal leaks per Aliasgari-Blanton
 2013 NDSS share-mask gating folklore.
 \item Newton inner loop: mask-gated residual \code{(y - p) * m}
-via .ring127_vecmul Beaver round per bin + mask-gated Hessian
-\code{X^T diag(W * m) X} share-space + ridge epsilon*I (~1e-8) on Hessian
-diagonal to handle all-zero-mask alpha_j strata per Christensen 2019
-Sec.A.3.
+via \code{.ring127_vecmul} Beaver round per bin + mask-gated Hessian
+\code{X^T diag(W * m) X} share-space + ridge epsilon*I (~1e-8) on
+Hessian diagonal to handle all-zero-mask alpha_j strata per Christensen
+2019 Sec.A.3.
 }
 
 The masked-Newton loop runs over exactly two DCF parties. For K=2 those

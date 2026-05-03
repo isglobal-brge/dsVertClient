@@ -37,7 +37,15 @@ ds.vertOrdinalJointNewton(
 \code{ds.vertOrdinalJointNewton} object.
 }
 \description{
-Full per-patient PO Newton. For a K-level ordered outcome
+Strict K=2 share-domain proportional-odds Newton route by
+default. Patient-level linear predictors, class probabilities,
+reciprocals, and score terms remain Ring127 shares; the client receives
+only guarded class counts, aggregate score/Hessian probes, and final
+model parameters. The older per-patient reconstruction route is retained
+only as opt-in diagnostics via
+\code{options(dsvert.allow_patient_level_ordinal_joint = TRUE)}.
+
+For a K-level ordered outcome
 the PO log-likelihood is
 \deqn{\ell(\beta, \theta) = \sum_i \log[F(\theta_{y_i} - \eta_i)
                                            - F(\theta_{y_i-1} - \eta_i)],}
@@ -63,7 +71,7 @@ since it holds \eqn{y_i} plaintext).
 \item \code{.ring127_recip_round_keyed} on the F-difference share.
 \item Beaver vecmul (f-diff) * (1/F-diff) -> \eqn{T_i} share.
 \item Beaver matvec \eqn{X^\top T} -> aggregate score for \eqn{\beta}.
-\item Client Newton on stacked \eqn{(\beta, \theta)} using the
-already-available \code{$joint_mle$covariance} Fisher block.
+\item Client Newton on stacked \eqn{(\beta, \theta)} using an
+aggregate finite-difference Hessian over share-domain scores.
 }
 }

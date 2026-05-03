@@ -9,6 +9,9 @@ ds.vertDesc(
   variables = NULL,
   probs = c(0.25, 0.5, 0.75),
   n_buckets = 100L,
+  range_sd = getOption("dsvert.desc_range_sd", 4),
+  exact_extrema = getOption("dsvert.allow_exact_extrema", FALSE),
+  open_ended = getOption("dsvert.desc_open_ended", TRUE),
   verbose = TRUE,
   datasources = NULL
 )
@@ -26,8 +29,22 @@ Defaults to the usual tertiles (0.25, 0.5, 0.75).}
 
 \item{n_buckets}{Integer. Number of uniform histogram buckets used for
 quantile interpolation. Higher values give tighter quantile resolution
-at the cost of one extra aggregate call per variable; 100 is a
-reasonable default for clinical cohort descriptives.}
+at the cost of one extra aggregate call per variable; when
+\code{datashield.privacyLevel > 0}, the effective bucket count is capped
+by the cohort size and privacy threshold.}
+
+\item{range_sd}{Numeric. When exact extrema are not released, histogram
+edges are built over \code{mean +/- range_sd * sd}. Values outside that
+range are retained as under/overflow aggregate counts.}
+
+\item{exact_extrema}{Logical. Return exact min/max and use them for the
+histogram range. Defaults to
+\code{getOption("dsvert.allow_exact_extrema", FALSE)}.}
+
+\item{open_ended}{Logical. When exact extrema are suppressed, use
+open-ended first/last histogram buckets so outliers are absorbed into
+coarse tail aggregates rather than disclosed as separate under/overflow
+counts.}
 
 \item{verbose}{Logical. Print per-variable progress when TRUE.}
 
@@ -40,27 +57,33 @@ A data frame with one row per variable containing columns:
 \item \code{variable}: column name
 \item \code{n}: number of non-missing observations
 \item \code{n_na}: number of missing observations
-\item \code{mean}, \code{sd}, \code{min}, \code{max}: local moments
+\item \code{mean}, \code{sd}: local moments
+\item \code{min}, \code{max}: exact extrema only when
+\code{exact_extrema = TRUE}; otherwise \code{NA}
+\item \code{range_low}, \code{range_high}: histogram range used for
+approximate quantiles
+\item \code{quantile_status}: \code{"ran"} or the suppression reason
 \item one column per requested quantile (named \code{q25}, \code{q50},
 \code{q75} etc. by default)
 }
 }
 \description{
 Compute a federated \code{summary()}-style table of numeric
-variables held across vertically partitioned servers. Exact means,
-standard deviations, minimums, and maximums are obtained from each
-server's local moments; quantiles are interpolated from histogram
-bucket counts (user-controlled granularity). No observation-level
-quantity is reconstructed at the client.
+variables held across vertically partitioned servers. Exact means and
+standard deviations are obtained from each server's local moments;
+exact extrema are suppressed by default because they can disclose
+outliers. Quantiles are interpolated from disclosure-checked histogram
+bucket counts. No observation-level quantity is reconstructed at the
+client.
 }
 \details{
 Per-variable flow:
 \enumerate{
-\item \code{dsvertLocalMomentsDS} returns the scalar moments in a single
-aggregate call.
-\item Edges for \code{dsvertHistogramDS} are derived from the moments as
-\code{seq(min, max, length.out = n_buckets + 1)}; a tiny padding is
-added to guarantee \code{max} itself falls in the last bucket.
+\item \code{dsvertLocalMomentsDS} returns scalar moments in a single
+aggregate call; exact extrema are omitted unless explicitly enabled.
+\item Edges for \code{dsvertHistogramDS} are derived from either exact
+extrema (opt-in) or a moment-bounded range
+\code{mean +/- range_sd * sd}.
 \item Client-side linear interpolation within the target bucket converts
 the cumulative count to the requested quantile.
 }

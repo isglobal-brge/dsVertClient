@@ -110,6 +110,9 @@ A list with class "ds.glm" containing:
 \itemize{
 \item \code{coefficients}: Named coefficient vector (original scale)
 \item \code{std_errors}: Standard errors (finite-difference Hessian)
+\item \code{covariance}: Model covariance matrix on the original scale
+\item \code{covariance_information}: Inverse Fisher/bread matrix
+without Gaussian residual-variance scaling, for sandwich methods
 \item \code{z_values}: z-statistics (coef / SE)
 \item \code{p_values}: Two-sided p-values
 \item \code{iterations}: Number of iterations

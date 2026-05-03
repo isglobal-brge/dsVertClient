@@ -53,8 +53,9 @@ gradients or residuals. For Gaussian models this is the proper LASSO
 objective solved from the normal equations already exposed by
 \code{\link{ds.vertGLM}}:
 
-\deqn{\arg\min_\beta \tfrac{1}{2n}\|y-X\beta\|^2 +
+\if{html}{\out{<div class="sourceCode">}}\preformatted{\deqn{\arg\min_\beta \tfrac{1}{2n}\|y-X\beta\|^2 +
            \lambda\|\beta_{-0}\|_1.}
+}\if{html}{\out{</div>}}
 
 The solver delegates to \code{\link{ds.vertLASSOProximal}}, which
 reconstructs \eqn{X^T X/n} from aggregate covariance/Hessian output

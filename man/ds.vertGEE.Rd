@@ -26,8 +26,8 @@ ds.vertGEE(
 \code{"poisson"}.}
 
 \item{id_col}{Optional character. For Gaussian/binomial/Poisson models this
-enables the cluster-robust sandwich meat; the cluster column must live with the
-outcome and all clusters must pass \code{datashield.privacyLevel}.}
+enables the cluster-robust sandwich meat; the cluster column must live with
+the outcome and all clusters must pass \code{datashield.privacyLevel}.}
 
 \item{corstr}{Working correlation label. The current coefficient
 estimator is the vertical GLM working-independence estimator; when
