@@ -57,8 +57,9 @@ for the inner fits. Set FALSE for coefficient/variance validation runs.}
 }
 \value{
 \code{ds.vertGLMM} object: fixed-effect coefficients,
-cluster-level BLUPs \eqn{\hat b_i}, random-effect variance
-\eqn{\hat\sigma_b^2}, and the converged binomial \code{fit}.
+random-effect variance \eqn{\hat\sigma_b^2}, scalar fit diagnostics, and
+the converged binomial \code{fit}. Per-cluster BLUP vectors are internal
+working quantities and are not returned.
 }
 \description{
 Fit a binomial generalised linear mixed model with a
@@ -93,11 +94,13 @@ dsVert 1.1.0+: the keep_session flag on ds.vertGLM, cluster
 membership broadcast, per-cluster share sums, Beaver vecmul, and the
 DCF sigmoid wide-spline.
 
-Privacy: client sees only (beta, sigma_b^2) + per-cluster
-b_hat_i estimates as an aggregate vector (one value per cluster).
-No per-patient quantity ever leaves the DCF parties. Original cluster
-labels are not returned and clusters below datashield.privacyLevel
-fail closed.
+Privacy: the returned object contains fixed effects, variance-component
+estimates, scalar diagnostics, and the final inner \code{ds.vertGLM} fit.
+Per-patient quantities never leave the DCF parties. Guarded per-cluster
+sufficient statistics are used internally for the random-intercept update,
+but per-cluster BLUPs and cluster-size vectors are not returned. Original
+cluster labels are not returned and clusters below
+\code{datashield.privacyLevel} fail closed.
 
 Inter-server leakage: cluster membership (same tier as ds.vertLMM).
 }
