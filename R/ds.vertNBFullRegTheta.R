@@ -262,31 +262,30 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     y_var_char <- .ds_gee_extract_lhs(formula)
     y_srv <- .ds_gee_find_server_holding(datasources, server_names, data, y_var_char)
     if (is.null(y_srv)) stop("outcome server not found", call. = FALSE)
-    nl_srv <- setdiff(server_names, y_srv)
-    if (length(nl_srv) != 1L)
-      stop("full_reg_nd variant requires exactly one non-label server (K=2)",
-           call. = FALSE)
+    non_y_srv <- setdiff(server_names, y_srv)
+    if (length(non_y_srv) < 1L)
+      stop("full_reg_nd variant requires at least two servers", call. = FALSE)
     y_ci  <- which(server_names == y_srv)
-    nl_ci <- which(server_names == nl_srv)
 
     # Identify which features live on each server.
     rhs <- attr(stats::terms(formula), "term.labels")
-    r_y <- DSI::datashield.aggregate(datasources[y_ci],
-      call(name = "dsvertColNamesDS", data_name = data))
-    if (is.list(r_y) && length(r_y) == 1L) r_y <- r_y[[1L]]
-    cols_y <- if (is.list(r_y)) r_y$columns else r_y
-    r_nl <- DSI::datashield.aggregate(datasources[nl_ci],
-      call(name = "dsvertColNamesDS", data_name = data))
-    if (is.list(r_nl) && length(r_nl) == 1L) r_nl <- r_nl[[1L]]
-    cols_nl <- if (is.list(r_nl)) r_nl$columns else r_nl
-    x_label <- intersect(rhs, cols_y)
-    x_nl    <- intersect(rhs, cols_nl)
+    cols_by_server <- list()
+    for (srv in server_names) {
+      ci <- which(server_names == srv)
+      r <- DSI::datashield.aggregate(datasources[ci],
+        call(name = "dsvertColNamesDS", data_name = data))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      cols_by_server[[srv]] <- if (is.list(r)) r$columns else r
+    }
+    x_vars_full <- lapply(server_names, function(srv)
+      intersect(rhs, cols_by_server[[srv]]))
+    names(x_vars_full) <- server_names
+    x_label <- x_vars_full[[y_srv]]
 
     # beta-slice per server from the Poisson fit's revealed beta.
     beta_all <- base_fit$poisson_fit$coefficients
     int_val  <- beta_all[["(Intercept)"]]
     beta_label <- beta_all[x_label]
-    beta_nl    <- beta_all[x_nl]
 
     session_id <- paste0("nbfullregnd_", as.integer(Sys.time()),
                           "_", sample.int(.Machine$integer.max, 1L))
@@ -311,23 +310,50 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       })
     }
 
-    # One-time session setup: NL splits eta^nl, label receives + assembles
-    # eta_total share (closes D-INV-4 across both parties).
-    setup <- .nb_fullreg_nd_session_setup(
-      formula = formula, data = data, base_fit = base_fit,
-      datasources = datasources, server_names = server_names,
-      y_srv = y_srv, nl_srv = nl_srv, y_ci = y_ci, nl_ci = nl_ci,
-      x_label = x_label, x_nl = x_nl,
-      beta_label = beta_label, beta_nl = beta_nl, int_val = int_val,
-      y_var_char = y_var_char, session_id = session_id,
-      .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose)
+    if (length(non_y_srv) == 1L) {
+      nl_srv <- non_y_srv[[1L]]
+      nl_ci <- which(server_names == nl_srv)
+      x_nl <- x_vars_full[[nl_srv]]
+      beta_nl <- beta_all[x_nl]
+      setup <- .nb_fullreg_nd_session_setup(
+        formula = formula, data = data, base_fit = base_fit,
+        datasources = datasources, server_names = server_names,
+        y_srv = y_srv, nl_srv = nl_srv, y_ci = y_ci, nl_ci = nl_ci,
+        x_label = x_label, x_nl = x_nl,
+        beta_label = beta_label, beta_nl = beta_nl, int_val = int_val,
+        y_var_char = y_var_char, session_id = session_id,
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose)
+      score_server_list <- c(y_srv, nl_srv)
+      score_nl_srv <- nl_srv
+      score_nl_ci <- nl_ci
+      dealer_ci <- nl_ci
+      yt_from_y_share <- FALSE
+    } else {
+      setup <- .nb_fullreg_nd_session_setup_k3(
+        data = data,
+        x_vars = x_vars_full,
+        beta_all = beta_all,
+        y_var_char = y_var_char,
+        y_srv = y_srv,
+        datasources = datasources,
+        server_names = server_names,
+        server_list = server_names,
+        session_id = session_id,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob,
+        verbose = verbose)
+      score_server_list <- setup$dcf_parties
+      score_nl_srv <- setup$fusion_server
+      score_nl_ci <- which(server_names == score_nl_srv)
+      dealer_ci <- which(server_names == setup$dealer_servers[[1L]])
+      yt_from_y_share <- TRUE
+    }
     n_obs        <- setup$n
     transport_pks <- setup$transport_pks
 
-    # Beaver triple dealer = NL by convention (matches ord_joint /
-    # mnl_joint K=2 K-arity contract -- non-label generates triples).
-    dealer_ci <- nl_ci
-    server_list <- c(y_srv, nl_srv)
+    # Beaver triple dealer is a non-DCF server when available under K>=3;
+    # otherwise the non-label/fusion DCF party follows the legacy K=2
+    # convention.
 
     # Newton-theta loop on the share-domain score. MoM warm-init from the
     # Poisson fit's residual moments (Venables-Ripley Sec.7.4 default seed).
@@ -344,11 +370,12 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       tryCatch(.nb_fullreg_nd_score(
         theta = th, n_obs = n_obs,
         datasources = datasources, dealer_ci = dealer_ci,
-        server_list = server_list, server_names = server_names,
-        y_server = y_srv, nl = nl_srv,
-        ci_os = y_ci, ci_nl = nl_ci,
+        server_list = score_server_list, server_names = server_names,
+        y_server = y_srv, nl = score_nl_srv,
+        ci_os = y_ci, ci_nl = score_nl_ci,
         transport_pks = transport_pks, session_id = session_id,
-        .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose),
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose,
+        yt_from_y_share = yt_from_y_share),
         error = function(e) {
           message(sprintf("[NBFullRegND] score eval ERR at theta=%.4f: %s",
                            th, conditionMessage(e)))
