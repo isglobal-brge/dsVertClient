@@ -31,11 +31,13 @@
 #'   membership broadcast, per-cluster share sums, Beaver vecmul, and the
 #'   DCF sigmoid wide-spline.
 #'
-#'   Privacy: client sees only (beta, sigma_b^2) + per-cluster
-#'   b_hat_i estimates as an aggregate vector (one value per cluster).
-#'   No per-patient quantity ever leaves the DCF parties. Original cluster
-#'   labels are not returned and clusters below datashield.privacyLevel
-#'   fail closed.
+#'   Privacy: the returned object contains fixed effects, variance-component
+#'   estimates, scalar diagnostics, and the final inner \code{ds.vertGLM} fit.
+#'   Per-patient quantities never leave the DCF parties. Guarded per-cluster
+#'   sufficient statistics are used internally for the random-intercept update,
+#'   but per-cluster BLUPs and cluster-size vectors are not returned. Original
+#'   cluster labels are not returned and clusters below
+#'   \code{datashield.privacyLevel} fail closed.
 #'
 #'   Inter-server leakage: cluster membership (same tier as ds.vertLMM).
 #'
@@ -61,8 +63,9 @@
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD connections.
 #' @return \code{ds.vertGLMM} object: fixed-effect coefficients,
-#'   cluster-level BLUPs \eqn{\hat b_i}, random-effect variance
-#'   \eqn{\hat\sigma_b^2}, and the converged binomial \code{fit}.
+#'   random-effect variance \eqn{\hat\sigma_b^2}, scalar fit diagnostics, and
+#'   the converged binomial \code{fit}. Per-cluster BLUP vectors are internal
+#'   working quantities and are not returned.
 #' @export
 ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         max_outer = 10L, inner_iter = 10L,
@@ -269,10 +272,9 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     sigma_b2     = sigma_b2,
     sigma_b2_anchor = sigma_b2_anchor,
     sigma_b2_pearson_cap = sigma_b2_pearson_cap,
-    b_hat        = b_hat,
     icc          = icc,
     n_clusters   = n_clusters,
-    cluster_sizes = n_i,
+    n_obs        = sum(n_i),
     converged    = converged,
     iterations   = outer,
     fit          = fit,
@@ -285,8 +287,9 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
 #' @export
 print.ds.vertGLMM <- function(x, ...) {
   cat("dsVert binomial GLMM (Laplace approximation)\n")
+  n_obs <- if (!is.null(x$n_obs)) x$n_obs else sum(x$cluster_sizes %||% 0L)
   cat(sprintf("  Clusters = %d    N = %d\n",
-              x$n_clusters, sum(x$cluster_sizes)))
+              x$n_clusters, n_obs))
   cat(sprintf("  sigma_b^2 = %.4g    ICC (latent) = %.3f\n",
               x$sigma_b2, x$icc))
   cat(sprintf("  Converged: %s (%d outer iters)\n",
@@ -519,10 +522,9 @@ print.ds.vertGLMM <- function(x, ...) {
     sigma_b2_pearson_cap = NA_real_,
     phi = phi,
     tau = tau,
-    b_hat = b_hat,
     icc = icc,
     n_clusters = n_clusters,
-    cluster_sizes = n_i,
+    n_obs = sum(n_i),
     converged = converged,
     iterations = outer,
     trace = trace,
