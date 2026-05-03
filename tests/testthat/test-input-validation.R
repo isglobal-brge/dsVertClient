@@ -91,3 +91,22 @@ test_that("ds.psiAlign rejects non-character newobj", {
   expect_error(ds.psiAlign("D", "id", newobj = 123),
                "newobj must be a single character string")
 })
+
+test_that("ds.vertCox is gated under strict non-disclosure", {
+  old_opt <- getOption("dsvert.allow_patient_level_cox_rank_metadata", FALSE)
+  old_env <- Sys.getenv("DSVERT_ALLOW_PATIENT_LEVEL_COX_RANK_METADATA",
+                        unset = NA_character_)
+  options(dsvert.allow_patient_level_cox_rank_metadata = FALSE)
+  Sys.unsetenv("DSVERT_ALLOW_PATIENT_LEVEL_COX_RANK_METADATA")
+  on.exit({
+    options(dsvert.allow_patient_level_cox_rank_metadata = old_opt)
+    if (is.na(old_env)) {
+      Sys.unsetenv("DSVERT_ALLOW_PATIENT_LEVEL_COX_RANK_METADATA")
+    } else {
+      Sys.setenv(DSVERT_ALLOW_PATIENT_LEVEL_COX_RANK_METADATA = old_env)
+    }
+  }, add = TRUE)
+  expect_error(
+    ds.vertCox(Surv(time, event) ~ x1, data = "D", datasources = list()),
+    "disabled under strict non-disclosure")
+})
