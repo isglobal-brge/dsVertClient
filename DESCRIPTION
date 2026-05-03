@@ -21,6 +21,7 @@ License: MIT + file LICENSE
 URL: https://github.com/isglobal-brge/dsVertClient,
     https://isglobal-brge.github.io/dsVertClient/
 BugReports: https://github.com/isglobal-brge/dsVertClient/issues
+Remotes: isglobal-brge/dsVert
 Encoding: UTF-8
 Depends: R (>= 4.0.0)
 Imports:
