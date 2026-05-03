@@ -145,18 +145,23 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     # converges to the ML estimator.
     post_var <- 1 / info
     sigma_b2_em <- max(mean(b_hat_new[active]^2 + post_var[active]), 1e-6)
-    if (!is.finite(sigma_b2_anchor)) {
+    use_score_anchor <- isTRUE(
+      getOption("dsvert.glmm_use_score_anchor", FALSE)
+    )
+    if (use_score_anchor && !is.finite(sigma_b2_anchor)) {
       # The first marginal score moment prevents the EM/PQL variance update
       # from collapsing after BLUP offsets absorb cluster signal. Cap it
       # conservatively because fixed-point score moments are noisy in very
-      # small clustered fixtures.
+      # small clustered fixtures. It is opt-in until validated on a broader
+      # grid because low-variance fixtures can otherwise be over-inflated.
       anchor_cap <- getOption("dsvert.glmm_sigma_anchor_cap",
-                              max(1, 2 * sigma_b2_em))
+                              2 * sigma_b2_em)
       anchor_cap <- suppressWarnings(as.numeric(anchor_cap)[1L])
       if (!is.finite(anchor_cap) || anchor_cap <= 0) anchor_cap <- Inf
       sigma_b2_anchor <- min(sigma_b2_score, anchor_cap)
     }
-    sigma_b2_new <- max(sigma_b2_em, sigma_b2_anchor)
+    sigma_b2_floor <- if (is.finite(sigma_b2_anchor)) sigma_b2_anchor else 1e-6
+    sigma_b2_new <- max(sigma_b2_em, sigma_b2_floor)
     if (verbose) {
       message(sprintf(
         paste0("[GLMM] outer %d  sigma_b^2=%.4g  var(b_hat)=%.4g  ",
