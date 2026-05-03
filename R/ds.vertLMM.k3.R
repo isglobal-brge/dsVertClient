@@ -495,12 +495,40 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
       n_eff <- (N_res^2 - sum(n_res^2)) /
         (max(K_ok - 1L, 1L) * max(N_res, 1))
       if (!is.finite(n_eff) || n_eff <= 0) n_eff <- mean(n_res)
+      sigma2_mom <- max(MSW_res, 0)
+      sigma_b2_mom <- max((MSB_res - MSW_res) / n_eff, 0)
+      neg2_reml <- function(sb2, s2) {
+        if (!is.finite(sb2) || sb2 < 0) sb2 <- 1e-12
+        s2v <- max(s2, 1e-12)
+        alpha <- s2v + n_res * sb2
+        w_c <- 1 / alpha
+        denom <- sum(n_res * w_c)
+        mu_hat <- if (denom > 0)
+          sum(n_res * bar_r * w_c) / denom else grand
+        logdet <- sum((n_res - 1) * log(s2v)) + sum(log(alpha))
+        rVr <- sum((rss - 2 * mu_hat * rsum + mu_hat^2 * n_res) / s2v) -
+          sum((sb2 / (s2v * alpha)) * (rsum - n_res * mu_hat)^2)
+        logdet + rVr + log(denom)
+      }
+      opt_joint <- tryCatch(
+        stats::optim(c(log(max(sigma2_mom, 1e-10)),
+                       log(max(sigma_b2_mom, 1e-10))),
+                     function(par) neg2_reml(exp(par[2L]), exp(par[1L])),
+                     method = "Nelder-Mead",
+                     control = list(reltol = 1e-12, maxit = 2000)),
+        error = function(e) NULL)
+      sigma_b2_reml <- if (!is.null(opt_joint) &&
+                            is.finite(opt_joint$par[2L])) {
+        exp(opt_joint$par[2L])
+      } else {
+        sigma_b2_mom
+      }
       list(sigma2 = max(MSW_res, 0),
-           sigma_b2 = max((MSB_res - MSW_res) / n_eff, 0),
+           sigma_b2 = max(sigma_b2_reml, 0),
            SSW = SSW_res, SSB = SSB_res, MSW = MSW_res, MSB = MSB_res,
            rsum_per_cluster = rsum, rss_per_cluster = rss,
            n_per_cluster = n_res,
-           method = "share_domain_residual_anova")
+           method = "share_domain_residual_reml")
     }, error = function(e) {
       if (verbose) {
         message("[ds.vertLMM.k3] residual variance moments failed: ",
@@ -659,7 +687,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     cluster_sizes  = n_i,
     fit            = fit_final,
     fit_profile    = fit_profile,
-    family         = "Gaussian (REML profile + cluster-mean GLS transform + within-between ANOVA + X-correction, K=3)",
+    family         = "Gaussian (share-domain residual REML + cluster-mean GLS transform, K>=3)",
     call           = match.call())
   class(out) <- c("ds.vertLMM.k3", "list")
   out
