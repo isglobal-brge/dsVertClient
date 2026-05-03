@@ -13,7 +13,8 @@ ds.vertMultinomJoint(
   full_irls = FALSE,
   coupling_iter = 3L,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  allow_legacy_ovr = FALSE
 )
 }
 \arguments{
@@ -45,6 +46,11 @@ full_irls=TRUE (default 3).}
 \item{verbose}{Print progress.}
 
 \item{datasources}{DataSHIELD connections.}
+
+\item{allow_legacy_ovr}{Logical. If \code{TRUE}, run the archived
+one-vs-rest/covariance-rescale implementation. This is retained only for
+reproducing historical validation artifacts; the paper-safe default is
+\code{\link{ds.vertMultinomJointNewton}}.}
 }
 \value{
 A \code{ds.vertMultinomJoint} object with a p x (K-1)
@@ -52,12 +58,12 @@ coefficient matrix, per-class covariance blocks, and the per-
 iteration gradient norms.
 }
 \description{
-Fit a K-category multinomial logistic regression on
-vertically partitioned DataSHIELD data with the CANONICAL joint
-softmax parametrisation. Unlike \code{\link{ds.vertMultinom}},
-which fits K-1 independent one-vs-rest binomial logits, this
-routine couples the K-1 linear predictors through a single
-softmax normaliser and obtains true softmax MLE coefficients.
+Superseded compatibility wrapper for
+\code{\link{ds.vertMultinomJointNewton}}. The archived implementation in
+this function kept coefficients at the one-vs-rest warm start and only
+rescaled covariance blocks, so it did not close the softmax MLE accuracy
+gap. By default, calls now dispatch to the non-disclosive joint Newton
+implementation for K >= 3 classes.
 
 Gradient of the log-likelihood per class \eqn{k \neq \text{ref}}:
 \deqn{\nabla_{\beta_k} \ell(\beta) = X^T (y^{(k)} - p_k)}

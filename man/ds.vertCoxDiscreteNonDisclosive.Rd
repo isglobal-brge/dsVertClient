@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertCoxDiscreteNonDisclosive.R
 \name{ds.vertCoxDiscreteNonDisclosive}
 \alias{ds.vertCoxDiscreteNonDisclosive}
-\title{Cox K=2 discrete-time pooled-logistic -- non-disclosive option B (#D')}
+\title{Cox discrete-time pooled-logistic -- non-disclosive option B (#D')}
 \usage{
 ds.vertCoxDiscreteNonDisclosive(
   formula,
@@ -13,6 +13,7 @@ ds.vertCoxDiscreteNonDisclosive(
   tol = 1e-06,
   newton = TRUE,
   ridge_eps = 1e-06,
+  debug_trace = FALSE,
   verbose = FALSE,
   datasources = NULL
 )
@@ -44,8 +45,8 @@ mult ulp approx 8.9e-16; depth-50 chain -> relative error approx 4.4e-14, ~10
 orders of margin to STRICT 1e-4 on coefficients).}
 
 \item{newton}{Logical. If TRUE (default), run the masked-Newton inner
-loop after the share-pipeline scaffold to produce coefficient
-estimates. If FALSE, return the scaffold result with
+loop after the share-domain setup to produce coefficient
+estimates. If FALSE, return primitive/setup audit metadata with
 coefficients=NULL (diagnostic mode for primitive validation).}
 
 \item{ridge_eps}{Numeric. Diagonal eigenvalue inflation added to the
@@ -53,37 +54,43 @@ Hessian before \code{solve()} to handle all-zero-mask alpha_j strata
 per Christensen 2019 CRAN ordinal vignette Sec.A.3, plus to suppress
 the spurious near-singular eigenvalues introduced by the masked-W
 noise (Catrina-Saxena 2010 frac=50 truncation accumulating across
-the mask\emph{W}X^T*X chain). Default 1e-6 -- empirically drops the
+the \code{mask * W * X^T * X} chain). Default 1e-6 -- empirically drops the
 L2 fixture rel from 4.4e-2 (epsilon=1e-8) to 4.1e-4 by suppressing the
 |step|->noise oscillation around the iter-4 attractor.}
 
+\item{debug_trace}{Logical. If \code{TRUE}, retain per-iteration beta and
+gradient traces for local debugging. Defaults to \code{FALSE}.}
+
 \item{verbose}{Logical.}
 
-\item{datasources}{DSI connections (length-2 K=2 split: label server
-holding (time, status) + a subset of X; covariate server holding
-the remaining X columns).}
+\item{datasources}{DSI connections. The outcome server holds
+\code{time_var/status_var}. For K>=3, the outcome server and one selected
+fusion server are the DCF parties; other servers contribute encrypted
+additive shares of their uniform person-period covariate frames.}
 }
 \value{
 List with class \code{"ds.vertCoxDiscreteNonDisclosive"}:
 \describe{
-\item{stage}{Character: \code{"primitives_validated"} for this
-scaffold release. Will become \code{"converged"} /
-\code{"max_iter"} once the masked-Newton lands.}
-\item{coefficients}{NULL in this scaffold; populated by Newton.}
+\item{stage}{Character: \code{"converged"} or \code{"max_iter"} when
+\code{newton=TRUE}; \code{"primitives_validated"} in diagnostic
+\code{newton=FALSE} mode.}
+\item{coefficients}{Named pooled-logistic coefficients when
+\code{newton=TRUE}; otherwise \code{NULL}.}
 \item{n_obs}{Number of patients.}
 \item{J}{Number of bins.}
 \item{n_pp}{Person-period rows = J * n_obs (uniform -- no leak).}
 \item{mask_share_key, y_share_key}{Session slot names where the
-Ring127 (m, y) shares are stored on both servers, ready for the
-Newton.}
-\item{expanded_x_name}{Symbol of the uniform Jxn covariate frame
-at the covariate server.}
+Ring127 (m, y) shares are stored on both DCF parties.}
+\item{expanded_x_name}{Symbol of the uniform Jxn covariate frame at
+each participating feature server.}
+\item{os_name, nl_name, non_dcf_servers}{Outcome server, selected
+fusion/DCF peer, and any K>=3 non-DCF feature servers.}
 \item{disclosure_audit}{List of per-step disclosure validation
-(n_pp at NL = J*n with no per-patient row-count variation).}
+(uniform J*n expansion and no per-patient row-count variation).}
 }
 }
 \description{
-K=2 OT-Beaver discrete-time Cox via pooled-logistic with
+K=2 and K>=3 OT-Beaver discrete-time Cox via pooled-logistic with
 the per-patient ending-bin index J_i hidden from the covariate
 (non-label) server. Closes the disclosure gap of the leaky variant
 \code{run_cox_discrete} (where the person-period frame leaked
@@ -96,29 +103,25 @@ ANALYSIS" Sec.):
 \item Outcome (label) server holds (time, status) -> computes J_i +
 m_ij = I(j <= J_i) + y_ij = I(j == J_i AND status_i = 1) plaintext.
 \item m and y are split into Ring127 additive shares (frac=50) between
-OS and the covariate server. NL never sees J_i directly -- only
-uniform-random-looking length-(J*n) shares whose mod-2^127 sum
-with OS shares reconstructs the masks.
-\item Covariate server replicates X_i to a uniform Jxn person-period
-frame (every patient contributes exactly J rows, regardless of
-true J_i). Zero row-count signal leaks per Aliasgari-Blanton 2013
-NDSS share-mask gating folklore.
-\item Newton inner loop (next session): mask-gated residual (y - p)\emph{m
-via .ring127_vecmul Beaver round per bin + mask-gated Hessian
-X^T diag(W}m) X share-space + ridge epsilon*I (~1e-8) on Hessian
-diagonal to handle all-zero-mask alpha_j strata per Christensen 2019
-Sec.A.3.
+OS and the selected fusion/NL DCF party. The fusion party never sees
+J_i directly -- only uniform-random-looking length-(J*n) shares whose
+mod-2^127 sum with OS shares reconstructs the masks.
+\item Each feature server replicates X_i to a uniform Jxn person-period
+frame (every patient contributes exactly J rows, regardless of true
+J_i). K>=3 non-DCF servers export only encrypted additive shares of
+this uniform frame. Zero row-count signal leaks per Aliasgari-Blanton
+2013 NDSS share-mask gating folklore.
+\item Newton inner loop: mask-gated residual \code{(y - p) * m}
+via \code{.ring127_vecmul} Beaver round per bin + mask-gated Hessian
+\code{X^T diag(W * m) X} share-space + ridge epsilon*I (~1e-8) on
+Hessian diagonal to handle all-zero-mask alpha_j strata per Christensen
+2019 Sec.A.3.
 }
 
-This first increment ships the orchestration that exercises the
-three dormant server-side primitives shipped in dsVert eee40f6
-(\code{dsvertCoxDiscreteShareMaskDS} +
-\code{dsvertCoxDiscreteReceiveSharesDS} +
-\code{dsvertCoxDiscreteExpandXDS}) end-to-end and validates the
-share-pipeline. The masked-Newton inner loop (Sec.4 above) is staged
-for the next session -- the scaffold returns the resolved share-
-slot keys + uniform-expanded data frame name so the caller can
-wire the Newton when it lands.
+The masked-Newton loop runs over exactly two DCF parties. For K=2 those
+parties are the two servers. For K>=3 the outcome server and one selected
+fusion server hold the DCF state; additional feature servers only export
+encrypted additive shares of their uniform person-period covariate frame.
 
 Citations:
 \itemize{

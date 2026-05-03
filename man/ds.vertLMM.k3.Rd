@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertLMM.k3.R
 \name{ds.vertLMM.k3}
 \alias{ds.vertLMM.k3}
-\title{Federated linear mixed model via REML 1-D profile (K=3)}
+\title{Federated linear mixed model via share-domain residual GLS (K>=3)}
 \usage{
 ds.vertLMM.k3(
   formula,
@@ -12,6 +12,7 @@ ds.vertLMM.k3(
   rho_hi = 0.999,
   tol = 0.001,
   max_outer = 30L,
+  ring = c("ring127", "ring63"),
   verbose = TRUE,
   datasources = NULL
 )
@@ -29,6 +30,11 @@ ds.vertLMM.k3(
 
 \item{max_outer}{Maximum golden-section iterations.}
 
+\item{ring}{Character (\code{"ring127"} or \code{"ring63"}). MPC ring
+used for the K>=3 Gaussian GLM, residual squared sums, and GLS refits.
+Ring127 is the default because variance components are sensitive to
+fixed-point noise in the secure \eqn{r^2} pass.}
+
 \item{verbose}{Print progress.}
 
 \item{datasources}{DataSHIELD K=3 connections.}
@@ -43,21 +49,20 @@ Random-intercept LMM
 \deqn{y_{ij} = X_{ij} \beta + b_i + \varepsilon_{ij},
         \quad b_i \sim \mathcal{N}(0, \sigma_b^2),\;
         \varepsilon_{ij} \sim \mathcal{N}(0, \sigma^2)}
-estimated by REML 1-D profile over the intra-cluster
-correlation \eqn{\rho = \sigma_b^2 / (\sigma_b^2 + \sigma^2/n_i)}.
-For balanced designs the GLS-transformed score equations are
-solved exactly by a weighted Gaussian \code{ds.vertGLM} call; the
-profile likelihood at each candidate \eqn{\rho} is
-evaluated from the inner fit's \code{$deviance} plus the
-per-cluster log-determinant closed form (Christensen 2019 Sec.A.3,
-Pinheiro & Bates 2000 Sec.2.4).
+estimated by an initial REML 1-D profile followed by share-domain
+residual sufficient statistics and the closed-form cluster-mean GLS
+transform. The final fixed-effect step applies
+\eqn{\tilde v_{ij} = v_{ij} - \lambda_i \bar v_i} locally on each
+server and fits the transformed Gaussian system with an explicit
+transformed intercept \eqn{1-\lambda_i}.
 
-K=3 implementation reuses the secure-aggregation \code{ds.vertGLM}
-pipeline at each profile evaluation -- no new MPC primitives. The
-per-cluster GLS weights are a public function of \eqn{\rho} and
-the cluster sizes (already disclosed under
-\code{datashield.privacyLevel}), so D-INV-1..5 are preserved
-identically to the K=2 \code{ds.vertLMM} path.
+K>=3 implementation reuses the secure-aggregation \code{ds.vertGLM}
+pipeline. Residual sums and squared-residual sums are evaluated at
+a supplied beta inside the DCF share domain; the analyst client never
+receives row-level residuals, fitted values, eta, or transformed
+columns. Cluster membership is sent as encrypted server-to-server
+integer metadata, with original labels withheld and small clusters
+blocked by \code{datashield.privacyLevel}.
 
 Outer optimisation is golden-section search over
 \eqn{\rho \in (\rho_{\min}, \rho_{\max})}; default

@@ -1,3 +1,12 @@
+# Internal helper: allow the continuous-time Cox PH path only when the caller
+# explicitly accepts event-rank metadata disclosure to the DCF peer.
+.cox_rank_metadata_allowed <- function() {
+  if (isTRUE(getOption("dsvert.allow_patient_level_cox_rank_metadata", FALSE)))
+    return(TRUE)
+  env <- tolower(Sys.getenv("DSVERT_ALLOW_PATIENT_LEVEL_COX_RANK_METADATA", ""))
+  env %in% c("1", "true", "yes")
+}
+
 #' @title Federated Cox proportional-hazards regression
 #' @description Fit a Cox PH model on vertically partitioned DataSHIELD
 #'   data using the reverse-cumsum reformulation of the partial-
@@ -22,7 +31,11 @@
 #'
 #'   Inter-server disclosure: the DCF peer learns the ascending-time
 #'   sort permutation (ranking of event times) and the binary event
-#'   indicator. Absolute event times are NOT disclosed.
+#'   indicator. Absolute event times are NOT disclosed. Under strict
+#'   non-disclosure this path is disabled by default; use
+#'   \code{\link{ds.vertCoxDiscreteNonDisclosive}} for the non-disclosive
+#'   discrete-time pooled-logistic Cox alternative, or explicitly opt in to
+#'   rank/event metadata disclosure for controlled diagnostics.
 #'
 #' @param formula Formula of the form \code{Surv(time, event) ~ x1 + ...}.
 #'   If the LHS is not a \code{Surv(...)} expression, supply
@@ -154,6 +167,17 @@ ds.vertCox <- function(formula, data = NULL,
   ring_tag <- if (ring == 127L) "ring127" else "ring63"
 
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
+  if (!.cox_rank_metadata_allowed()) {
+    stop(
+      "ds.vertCox is disabled under strict non-disclosure: the continuous ",
+      "K=2 Cox PH path reveals patient-level event-rank metadata and the ",
+      "event indicator to the DCF peer. Use ",
+      "ds.vertCoxDiscreteNonDisclosive for the non-disclosive discrete-time ",
+      "pooled-logistic Cox target, or enable ",
+      "options(dsvert.allow_patient_level_cox_rank_metadata = TRUE) only ",
+      "for controlled diagnostic legacy runs.",
+      call. = FALSE)
+  }
   server_names <- names(datasources)
   if (!inherits(formula, "formula")) {
     stop("formula must be an R formula", call. = FALSE)
@@ -486,11 +510,13 @@ ds.vertCox <- function(formula, data = NULL,
     # --- Step 2: y = eta * (1/a)  (local scale, both parties).
     for (server in server_list) {
       ci <- which(server_names == server)
+      is_coord <- (server == y_server)
       .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
         in_key = "k2_eta_share_fp",
         scalar_fp = coef_res_one_over_a,
         output_key = "k2_r127_horner_y",
-        n = n_int, session_id = session_id))
+        n = n_int, session_id = session_id,
+        is_party0 = is_coord))
     }
 
     # --- Step 3: twoY = y + y  (affine combine sign_a=+1, sign_b=+1).
@@ -642,11 +668,13 @@ ds.vertCox <- function(formula, data = NULL,
     # --- Step 2a: t_pre = x * (1/halfRange)  (local scale, both parties).
     for (server in server_list) {
       ci <- which(server_names == server)
+      is_coord <- (server == y_server)
       .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
         in_key = "k2_eta_share_fp",
         scalar_fp = rc_one_over_half_range,
         output_key = "k2_r127_recip_t_pre",
-        n = n_int, session_id = session_id))
+        n = n_int, session_id = session_id,
+        is_party0 = is_coord))
     }
     # --- Step 2b: t = t_pre + (-mid/halfRange) on party 0 (public offset).
     for (server in server_list) {

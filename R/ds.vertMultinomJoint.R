@@ -1,10 +1,10 @@
 #' @title Federated joint-softmax multinomial logistic regression
-#' @description Fit a K-category multinomial logistic regression on
-#'   vertically partitioned DataSHIELD data with the CANONICAL joint
-#'   softmax parametrisation. Unlike \code{\link{ds.vertMultinom}},
-#'   which fits K-1 independent one-vs-rest binomial logits, this
-#'   routine couples the K-1 linear predictors through a single
-#'   softmax normaliser and obtains true softmax MLE coefficients.
+#' @description Superseded compatibility wrapper for
+#'   \code{\link{ds.vertMultinomJointNewton}}. The archived implementation in
+#'   this function kept coefficients at the one-vs-rest warm start and only
+#'   rescaled covariance blocks, so it did not close the softmax MLE accuracy
+#'   gap. By default, calls now dispatch to the non-disclosive joint Newton
+#'   implementation for K >= 3 classes.
 #'
 #'   Gradient of the log-likelihood per class \eqn{k \neq \text{ref}}:
 #'     \deqn{\nabla_{\beta_k} \ell(\beta) = X^T (y^{(k)} - p_k)}
@@ -52,11 +52,16 @@
 #'   path). Setting full_irls=TRUE emits a warning.
 #' @param coupling_iter Number of covariance-rescaling passes when
 #'   full_irls=TRUE (default 3).
+#' @param allow_legacy_ovr Logical. If \code{TRUE}, run the archived
+#'   one-vs-rest/covariance-rescale implementation. This is retained only for
+#'   reproducing historical validation artifacts; the paper-safe default is
+#'   \code{\link{ds.vertMultinomJointNewton}}.
 #' @export
 ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
                                    max_iter = 30L, tol = 1e-4,
                                    full_irls = FALSE, coupling_iter = 3L,
-                                   verbose = TRUE, datasources = NULL) {
+                                   verbose = TRUE, datasources = NULL,
+                                   allow_legacy_ovr = FALSE) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   y_var <- .ds_gee_extract_lhs(formula)
   rhs <- attr(terms(formula), "term.labels")
@@ -89,6 +94,21 @@ ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
                             classes = levels, reference = levels[1L],
                             verbose = verbose, datasources = datasources))
   }
+  if (!isTRUE(allow_legacy_ovr)) {
+    if (verbose) {
+      message("[ds.vertMultinomJoint] superseded; dispatching to ",
+              "ds.vertMultinomJointNewton for non-disclosive joint softmax")
+    }
+    return(ds.vertMultinomJointNewton(
+      formula = formula, data = data, levels = levels,
+      max_outer = max_iter, tol = tol, verbose = verbose,
+      datasources = datasources))
+  }
+  warning("ds.vertMultinomJoint legacy OVR/covariance-rescale path is ",
+          "superseded because it does not fit the strict joint-softmax MLE; ",
+          "use ds.vertMultinomJointNewton. allow_legacy_ovr = TRUE should be ",
+          "used only for archived reproducibility.",
+          call. = FALSE)
   # For the joint softmax we fit K-1 non-reference classes versus
   # the first level. To keep the orchestration light we delegate each
   # inner per-class linear-predictor evaluation to ds.vertGLM (which

@@ -12,8 +12,12 @@ ds.vertNBFullRegTheta(
   theta_max_iter = 5L,
   theta_tol = 0.001,
   variant = "corrected",
+  beta_max_iter = 2L,
+  beta_tol = 1e-04,
+  compute_covariance = TRUE,
   verbose = TRUE,
   datasources = NULL,
+  allow_disclosive_legacy = FALSE,
   ...
 )
 }
@@ -41,12 +45,30 @@ theta during the Newton refinement.}
 
 \item{variant}{Character. \code{"iid_mu"} returns the unmodified
 \code{ds.vertNB} result. \code{"corrected"} (default) applies the
-aggregate variance correction described in Details.}
+aggregate variance correction described in Details.
+\code{"full_reg_nd"} runs the non-disclosive share-domain full-regression
+theta refinement. Legacy \code{"full_reg"} is disclosive and is
+redirected to \code{"full_reg_nd"} unless
+\code{allow_disclosive_legacy = TRUE}.}
+
+\item{beta_max_iter}{Integer. Maximum beta refinements for the
+non-disclosive full-regression theta variant.}
+
+\item{beta_tol}{Numeric. Relative convergence tolerance for beta refinements
+in the non-disclosive full-regression theta variant.}
+
+\item{compute_covariance}{Logical. If \code{TRUE}, request covariance and
+standard-error diagnostics where the selected beta path supports them.}
 
 \item{verbose}{Logical. Print stage-by-stage progress.}
 
 \item{datasources}{DataSHIELD connections; if NULL, uses
 \code{DSI::datashield.connections_find()}.}
+
+\item{allow_disclosive_legacy}{Logical. If \code{TRUE}, permit the archived
+\code{variant = "full_reg"} path that transports per-patient
+\eqn{\eta^{nl}} to the outcome server. Intended only for historical
+reproducibility audits; the paper-safe path is \code{"full_reg_nd"}.}
 
 \item{...}{Extra arguments forwarded to \code{ds.vertGLM}.}
 }
@@ -54,7 +76,9 @@ aggregate variance correction described in Details.}
 Object of class \code{c("ds.vertNBFullRegTheta", "ds.vertNB")}.
 Fields as \code{ds.vertNB}, plus \code{$theta_iid} (original
 iid-mu estimate) and \code{$variance_correction} (the \eqn{\hat V_\mu}
-used).
+used). For the non-disclosive full-regression variant, the object also
+contains \code{$theta_trace}, \code{$theta_iter}, and
+\code{$theta_converged}.
 }
 \description{
 Extends \code{ds.vertNB} (which uses the iid-mu profile

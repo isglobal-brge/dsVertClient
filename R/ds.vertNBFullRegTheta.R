@@ -42,21 +42,50 @@
 #' @param variant Character. \code{"iid_mu"} returns the unmodified
 #'   \code{ds.vertNB} result. \code{"corrected"} (default) applies the
 #'   aggregate variance correction described in Details.
+#'   \code{"full_reg_nd"} runs the non-disclosive share-domain full-regression
+#'   theta refinement. Legacy \code{"full_reg"} is disclosive and is
+#'   redirected to \code{"full_reg_nd"} unless
+#'   \code{allow_disclosive_legacy = TRUE}.
+#' @param beta_max_iter Integer. Maximum beta refinements for the
+#'   non-disclosive full-regression theta variant.
+#' @param beta_tol Numeric. Relative convergence tolerance for beta refinements
+#'   in the non-disclosive full-regression theta variant.
+#' @param compute_covariance Logical. If \code{TRUE}, request covariance and
+#'   standard-error diagnostics where the selected beta path supports them.
+#' @param allow_disclosive_legacy Logical. If \code{TRUE}, permit the archived
+#'   \code{variant = "full_reg"} path that transports per-patient
+#'   \eqn{\eta^{nl}} to the outcome server. Intended only for historical
+#'   reproducibility audits; the paper-safe path is \code{"full_reg_nd"}.
 #'
 #' @return Object of class \code{c("ds.vertNBFullRegTheta", "ds.vertNB")}.
 #'   Fields as \code{ds.vertNB}, plus \code{$theta_iid} (original
 #'   iid-mu estimate) and \code{$variance_correction} (the \eqn{\hat V_\mu}
-#'   used).
+#'   used). For the non-disclosive full-regression variant, the object also
+#'   contains \code{$theta_trace}, \code{$theta_iter}, and
+#'   \code{$theta_converged}.
 #'
 #' @seealso \code{\link{ds.vertNB}}
 #' @export
 ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                                   joint = TRUE, theta_max_iter = 5L,
                                   theta_tol = 1e-3, variant = "corrected",
-                                  verbose = TRUE, datasources = NULL, ...) {
+                                  beta_max_iter = 2L, beta_tol = 1e-4,
+                                  compute_covariance = TRUE,
+                                  verbose = TRUE, datasources = NULL,
+                                  allow_disclosive_legacy = FALSE, ...) {
   if (!variant %in% c("iid_mu", "corrected", "full_reg", "full_reg_nd")) {
     stop("variant must be 'iid_mu', 'corrected', 'full_reg', or 'full_reg_nd'",
          call. = FALSE)
+  }
+  if (identical(variant, "full_reg") &&
+      !isTRUE(allow_disclosive_legacy)) {
+    warning("variant = 'full_reg' is deprecated because it transports ",
+            "per-patient non-label eta to the outcome server; dispatching ",
+            "to non-disclosive variant = 'full_reg_nd'. Set ",
+            "allow_disclosive_legacy = TRUE only for archived ",
+            "reproducibility audits.",
+            call. = FALSE)
+    variant <- "full_reg_nd"
   }
 
   base_fit <- ds.vertNB(formula = formula, data = data, theta = theta,
@@ -125,7 +154,8 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       call(name = "dsvertNBEtaSealDS",
            data_name = data, x_vars = x_nl,
            beta_values = as.numeric(beta_nl),
-           target_pk = label_pk, session_id = session_id))
+           target_pk = label_pk, session_id = session_id,
+           allow_disclosive_legacy = TRUE))
     if (is.list(sealed_r) && length(sealed_r) == 1L) sealed_r <- sealed_r[[1L]]
 
     # Relay blob to label server (chunked via existing adaptive helper).
@@ -153,7 +183,8 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
              beta_values_label = as.numeric(beta_label),
              beta_intercept = as.numeric(int_val),
              peer_eta_key = "nb_peer_eta",
-             theta = th, session_id = session_id))
+             theta = th, session_id = session_id,
+             allow_disclosive_legacy = TRUE))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       # AUDITORIA correction: prior score omitted +n and -Sum(y+theta)/(theta+mu)
       # terms (fixed point was biased -> 5.87% rel err persistent).
@@ -262,31 +293,30 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     y_var_char <- .ds_gee_extract_lhs(formula)
     y_srv <- .ds_gee_find_server_holding(datasources, server_names, data, y_var_char)
     if (is.null(y_srv)) stop("outcome server not found", call. = FALSE)
-    nl_srv <- setdiff(server_names, y_srv)
-    if (length(nl_srv) != 1L)
-      stop("full_reg_nd variant requires exactly one non-label server (K=2)",
-           call. = FALSE)
+    non_y_srv <- setdiff(server_names, y_srv)
+    if (length(non_y_srv) < 1L)
+      stop("full_reg_nd variant requires at least two servers", call. = FALSE)
     y_ci  <- which(server_names == y_srv)
-    nl_ci <- which(server_names == nl_srv)
 
     # Identify which features live on each server.
     rhs <- attr(stats::terms(formula), "term.labels")
-    r_y <- DSI::datashield.aggregate(datasources[y_ci],
-      call(name = "dsvertColNamesDS", data_name = data))
-    if (is.list(r_y) && length(r_y) == 1L) r_y <- r_y[[1L]]
-    cols_y <- if (is.list(r_y)) r_y$columns else r_y
-    r_nl <- DSI::datashield.aggregate(datasources[nl_ci],
-      call(name = "dsvertColNamesDS", data_name = data))
-    if (is.list(r_nl) && length(r_nl) == 1L) r_nl <- r_nl[[1L]]
-    cols_nl <- if (is.list(r_nl)) r_nl$columns else r_nl
-    x_label <- intersect(rhs, cols_y)
-    x_nl    <- intersect(rhs, cols_nl)
+    cols_by_server <- list()
+    for (srv in server_names) {
+      ci <- which(server_names == srv)
+      r <- DSI::datashield.aggregate(datasources[ci],
+        call(name = "dsvertColNamesDS", data_name = data))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      cols_by_server[[srv]] <- if (is.list(r)) r$columns else r
+    }
+    x_vars_full <- lapply(server_names, function(srv)
+      intersect(rhs, cols_by_server[[srv]]))
+    names(x_vars_full) <- server_names
+    x_label <- x_vars_full[[y_srv]]
 
     # beta-slice per server from the Poisson fit's revealed beta.
     beta_all <- base_fit$poisson_fit$coefficients
     int_val  <- beta_all[["(Intercept)"]]
     beta_label <- beta_all[x_label]
-    beta_nl    <- beta_all[x_nl]
 
     session_id <- paste0("nbfullregnd_", as.integer(Sys.time()),
                           "_", sample.int(.Machine$integer.max, 1L))
@@ -311,23 +341,37 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       })
     }
 
-    # One-time session setup: NL splits eta^nl, label receives + assembles
-    # eta_total share (closes D-INV-4 across both parties).
-    setup <- .nb_fullreg_nd_session_setup(
-      formula = formula, data = data, base_fit = base_fit,
-      datasources = datasources, server_names = server_names,
-      y_srv = y_srv, nl_srv = nl_srv, y_ci = y_ci, nl_ci = nl_ci,
-      x_label = x_label, x_nl = x_nl,
-      beta_label = beta_label, beta_nl = beta_nl, int_val = int_val,
-      y_var_char = y_var_char, session_id = session_id,
-      .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose)
+    # Use the generic Ring127 input-sharing setup for K=2 and K>=3. The
+    # older K=2-only eta-share setup was non-disclosive for theta, but it did
+    # not keep X/y shares needed for the NB beta score.
+    setup <- .nb_fullreg_nd_session_setup_k3(
+      data = data,
+      x_vars = x_vars_full,
+      beta_all = beta_all,
+      y_var_char = y_var_char,
+      y_srv = y_srv,
+      datasources = datasources,
+      server_names = server_names,
+      server_list = server_names,
+      session_id = session_id,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob,
+      verbose = verbose)
+    score_server_list <- setup$dcf_parties
+    score_nl_srv <- setup$fusion_server
+    score_nl_ci <- which(server_names == score_nl_srv)
+    dealer_ci <- which(server_names == setup$dealer_servers[[1L]])
+    yt_from_y_share <- TRUE
     n_obs        <- setup$n
     transport_pks <- setup$transport_pks
+    p_total <- setup$p_total
+    coef_order <- c("(Intercept)", setup$feature_order)
+    beta_current <- base_fit$poisson_fit$coefficients
+    beta_current <- beta_current[names(base_fit$poisson_fit$coefficients)]
 
-    # Beaver triple dealer = NL by convention (matches ord_joint /
-    # mnl_joint K=2 K-arity contract -- non-label generates triples).
-    dealer_ci <- nl_ci
-    server_list <- c(y_srv, nl_srv)
+    # Beaver triple dealer is a non-DCF server when available under K>=3;
+    # otherwise the non-label/fusion DCF party follows the legacy K=2
+    # convention.
 
     # Newton-theta loop on the share-domain score. MoM warm-init from the
     # Poisson fit's residual moments (Venables-Ripley Sec.7.4 default seed).
@@ -336,18 +380,27 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     y_var <- base_fit$y_var
     theta_mom <- if (is.finite(y_var) && y_var > y_mean + 1e-10)
       max(y_mean^2 / max(y_var - y_mean, 1e-6), 0.1) else NA_real_
-    theta_cur <- if (is.finite(theta_mom)) theta_mom
-                  else max(theta_iid, 1e-3)
+    # The y-only iid profile systematically under-seeds regression-rich NB
+    # fixtures because it collapses mu_i variation into ybar. A doubled iid
+    # seed stays aggregate-only and cuts the Ring127 full-score evaluations
+    # from ~5 to ~3 on the current validation fixtures.
+    theta_regression_seed <- if (is.finite(theta_iid) && theta_iid > 0)
+      2 * theta_iid else NA_real_
+    theta_seed <- max(c(theta_mom, theta_iid, theta_regression_seed, 1e-3),
+                      na.rm = TRUE)
+    if (!is.finite(theta_seed) || theta_seed <= 0) theta_seed <- 1e-3
+    theta_cur <- theta_seed
 
     score_eval <- function(th) {
       tryCatch(.nb_fullreg_nd_score(
         theta = th, n_obs = n_obs,
         datasources = datasources, dealer_ci = dealer_ci,
-        server_list = server_list, server_names = server_names,
-        y_server = y_srv, nl = nl_srv,
-        ci_os = y_ci, ci_nl = nl_ci,
+        server_list = score_server_list, server_names = server_names,
+        y_server = y_srv, nl = score_nl_srv,
+        ci_os = y_ci, ci_nl = score_nl_ci,
         transport_pks = transport_pks, session_id = session_id,
-        .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose),
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose,
+        yt_from_y_share = yt_from_y_share),
         error = function(e) {
           message(sprintf("[NBFullRegND] score eval ERR at theta=%.4f: %s",
                            th, conditionMessage(e)))
@@ -355,36 +408,147 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
         })
     }
 
-    for (it in seq_len(25L)) {
-      s <- score_eval(theta_cur)
-      if (anyNA(unlist(s[c("score","deriv")]))) break
-      if (!is.finite(s$deriv) || abs(s$deriv) < 1e-12) break
-      step <- s$score / s$deriv
-      theta_new <- theta_cur - step
-      damp <- 0L
-      while (theta_new <= 1e-6 && damp < 20L) {
-        step <- step / 2; theta_new <- theta_cur - step; damp <- damp + 1L
+    theta_max_iter <- max(1L, as.integer(theta_max_iter))
+    theta_tol <- max(as.numeric(theta_tol), .Machine$double.eps)
+    beta_max_iter <- max(0L, as.integer(beta_max_iter))
+    beta_tol <- max(as.numeric(beta_tol), .Machine$double.eps)
+    theta_trace <- data.frame(
+      beta_iter = integer(0L),
+      iter = integer(0L),
+      theta = numeric(0L),
+      score = numeric(0L),
+      deriv = numeric(0L),
+      theta_next = numeric(0L),
+      stringsAsFactors = FALSE)
+    beta_trace <- data.frame(
+      iter = integer(0L),
+      theta = numeric(0L),
+      max_abs_score = numeric(0L),
+      max_abs_step = numeric(0L),
+      stringsAsFactors = FALSE)
+    theta_converged <- FALSE
+    beta_converged <- beta_max_iter == 0L
+    beta_stats <- NULL
+
+    for (b_it in seq.int(0L, beta_max_iter)) {
+      if (b_it > 0L) {
+        .nb_fullreg_nd_recompute_eta(
+          beta_all = beta_current, setup = setup, y_srv = y_srv,
+          datasources = datasources, server_names = server_names,
+          session_id = session_id, .dsAgg = .dsAgg)
       }
-      if (!is.finite(theta_new) || theta_new <= 0) break
-      if (abs(theta_new - theta_cur) < 1e-6 * max(1, abs(theta_cur))) {
-        theta_cur <- theta_new; break
+
+      theta_converged_iter <- FALSE
+      for (it in seq_len(theta_max_iter)) {
+        s <- score_eval(theta_cur)
+        if (anyNA(unlist(s[c("score","deriv")]))) break
+        if (!is.finite(s$deriv) || abs(s$deriv) < 1e-12) break
+        # Update on log(theta), not theta. This keeps positivity by
+        # construction and is much better scaled when the fixed-mu theta is
+        # several-fold above the y-only MoM/iid starting values.
+        step <- s$score / (s$deriv * theta_cur)
+        step <- max(min(step, log(4)), -log(4))
+        theta_new <- theta_cur * exp(-step)
+        damp <- 0L
+        while (theta_new <= 1e-6 && damp < 20L) {
+          step <- step / 2
+          theta_new <- theta_cur * exp(-step)
+          damp <- damp + 1L
+        }
+        if (!is.finite(theta_new) || theta_new <= 0) break
+        theta_trace <- rbind(theta_trace, data.frame(
+          beta_iter = b_it,
+          iter = it,
+          theta = theta_cur,
+          score = as.numeric(s$score),
+          deriv = as.numeric(s$deriv),
+          theta_next = theta_new,
+          stringsAsFactors = FALSE))
+        if (abs(theta_new - theta_cur) < theta_tol * max(1, abs(theta_cur))) {
+          theta_cur <- theta_new
+          theta_converged <- TRUE
+          theta_converged_iter <- TRUE
+          break
+        }
+        theta_cur <- theta_new
       }
-      theta_cur <- theta_new
+      if (!theta_converged_iter && nrow(theta_trace) == 0L) break
+
+      if (b_it >= beta_max_iter && !isTRUE(compute_covariance)) break
+
+      # Refresh mu and reciprocal at the final theta for this beta. The theta
+      # loop evaluates the score before proposing theta_next, so the final
+      # accepted value needs one explicit pass before beta score/covariance.
+      s_final <- score_eval(theta_cur)
+      if (anyNA(unlist(s_final[c("score","deriv")]))) break
+
+      beta_stats <- .nb_fullreg_nd_beta_score_fisher(
+        theta = theta_cur, n_obs = n_obs, p_total = p_total,
+        datasources = datasources, dealer_ci = dealer_ci,
+        server_list = score_server_list, server_names = server_names,
+        y_server = y_srv, nl = score_nl_srv,
+        transport_pks = transport_pks, session_id = session_id,
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob, verbose = verbose)
+      names(beta_stats$score) <- coef_order
+      dimnames(beta_stats$fisher) <- list(coef_order, coef_order)
+
+      if (b_it >= beta_max_iter) break
+
+      fisher <- beta_stats$fisher
+      ridge <- max(1e-10, 1e-8 * mean(abs(diag(fisher))))
+      step <- tryCatch(
+        solve(fisher + diag(ridge, nrow(fisher)), beta_stats$score),
+        error = function(e) qr.solve(fisher + diag(ridge, nrow(fisher)),
+                                     beta_stats$score))
+      if (any(!is.finite(step))) break
+      max_step <- max(abs(step))
+      if (max_step > 1) {
+        step <- step / max_step
+        max_step <- 1
+      }
+      beta_vec <- beta_current[coef_order] + step
+      beta_current[coef_order] <- beta_vec
+      beta_trace <- rbind(beta_trace, data.frame(
+        iter = b_it + 1L,
+        theta = theta_cur,
+        max_abs_score = max(abs(beta_stats$score)),
+        max_abs_step = max_step,
+        stringsAsFactors = FALSE))
+      if (max_step < beta_tol) {
+        beta_converged <- TRUE
+        break
+      }
     }
 
     var_inflation <- if (is.finite(theta_cur) && theta_cur > 0)
       sqrt(1 + base_fit$y_mean / theta_cur) else 1
     pf <- base_fit$poisson_fit
+    coef_names <- names(pf$coefficients)
+    cov_beta <- NULL
+    nb_se <- pf$std_errors * var_inflation
+    if (isTRUE(compute_covariance) &&
+        !is.null(beta_stats) && !is.null(beta_stats$fisher)) {
+      cov_beta <- tryCatch(solve(beta_stats$fisher),
+                           error = function(e) qr.solve(beta_stats$fisher))
+      cov_beta <- cov_beta[coef_names, coef_names, drop = FALSE]
+      nb_se <- sqrt(pmax(diag(cov_beta), 0))
+    }
     out <- base_fit
+    out$coefficients <- beta_current[coef_names]
     out$theta <- theta_cur
     out$theta_iid <- theta_iid
     out$variance_correction <- NA_real_
     out$variant <- "full_reg_nd"
-    out$std_errors <- pf$std_errors * var_inflation
-    out$z_values <- pf$coefficients / out$std_errors
+    out$theta_trace <- theta_trace
+    out$theta_iter <- nrow(theta_trace)
+    out$theta_converged <- theta_converged
+    out$beta_trace <- beta_trace
+    out$beta_iter <- nrow(beta_trace)
+    out$beta_converged <- beta_converged
+    out$std_errors <- nb_se
+    out$z_values <- out$coefficients / out$std_errors
     out$p_values <- 2 * stats::pnorm(-abs(out$z_values))
-    out$covariance <- if (!is.null(pf$covariance))
-      pf$covariance * var_inflation^2 else NULL
+    out$covariance <- cov_beta
     out$var_inflation <- var_inflation
     class(out) <- c("ds.vertNBFullRegTheta", class(out))
     return(out)

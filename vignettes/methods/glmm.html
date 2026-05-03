@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<meta name="author" content="David Sarrat Gonzalez, Miron Banjac, Juan R. Gonzalez" />
+
+<meta name="date" content="2026-05-03" />
+
+<title>Binomial GLMM – aggregate PQL validation (K = 2 and K &gt;= 3)</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Binomial GLMM – aggregate PQL validation (K
+= 2 and K &gt;= 3)</h1>
+<h4 class="author">David Sarrat Gonzalez, Miron Banjac, Juan R.
+Gonzalez</h4>
+<h4 class="date">2026-05-03</h4>
+
+
+<div id="TOC">
+<ul>
+<li><a href="#context" id="toc-context">1. Context</a></li>
+<li><a href="#data-preparation" id="toc-data-preparation">2. Data
+Preparation</a></li>
+<li><a href="#central-reference" id="toc-central-reference">3. Central
+Reference</a></li>
+<li><a href="#federated-pql-fits" id="toc-federated-pql-fits">4.
+Federated PQL Fits</a></li>
+<li><a href="#comparison-and-verdict" id="toc-comparison-and-verdict">5.
+Comparison And Verdict</a></li>
+</ul>
+</div>
+
+<div id="context" class="section level2">
+<h2>1. Context</h2>
+<p>A random-intercept binomial GLMM models a binary outcome <span class="math inline">\(y_{ij} \in \{0,1\}\)</span> clustered within group
+<span class="math inline">\(i\)</span>:</p>
+<p><span class="math display">\[
+\operatorname{logit}\{\Pr(y_{ij}=1 \mid b_i)\} =
+x_{ij}^{\top}\beta + b_i,\qquad b_i \sim N(0,\sigma_b^2).
+\]</span></p>
+<p><code>ds.vertGLMM(method = &quot;pql_aggregate&quot;)</code> uses a PQL
+working-response update and solves the random-intercept weighted LMM
+from aggregate sufficient statistics. The route is deliberately
+Ring127-only because the working statistics require repeated
+share-domain products and reciprocals.</p>
+<p>The validation below runs the same deterministic dataset as a central
+<code>lme4::glmer</code> reference and as two DSLite vertical
+partitions:</p>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Mode</th>
+<th align="left">Split</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">K = 2</td>
+<td align="left"><code>s1</code>: <code>x1</code>, <code>x2</code>;
+<code>s2</code>: <code>cluster_id</code>, <code>x3</code>,
+<code>y_bin</code></td>
+</tr>
+<tr class="even">
+<td align="left">K = 3</td>
+<td align="left"><code>s1</code>: <code>x1</code>; <code>s2</code>:
+<code>x2</code>; <code>s3</code>: <code>cluster_id</code>,
+<code>x3</code>, <code>y_bin</code></td>
+</tr>
+</tbody>
+</table>
+<div id="non-disclosure-invariants" class="section level3">
+<h3>Non-disclosure invariants</h3>
+<table>
+<colgroup>
+<col width="50%" />
+<col width="50%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="right">Invariant</th>
+<th align="left">Statement</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right"><strong>D-INV-1</strong></td>
+<td align="left">Per-patient covariates never leave their origin
+server.</td>
+</tr>
+<tr class="even">
+<td align="right"><strong>D-INV-2</strong></td>
+<td align="left">Fitted probabilities, working responses, PQL weights,
+residuals and row scores remain server-side or in Ring127 additive
+shares.</td>
+</tr>
+<tr class="odd">
+<td align="right"><strong>D-INV-3</strong></td>
+<td align="left">The client receives low-dimensional coefficients,
+variance components, guarded cluster-level PQL sufficient statistics and
+cluster-level BLUPs, not patient-level vectors.</td>
+</tr>
+<tr class="even">
+<td align="right"><strong>D-INV-4</strong></td>
+<td align="left">Original cluster labels are not returned; clusters
+below <code>datashield.privacyLevel</code> fail closed.</td>
+</tr>
+<tr class="odd">
+<td align="right"><strong>D-INV-5</strong></td>
+<td align="left">The returned-object audit flags any atomic vector of
+length <span class="math inline">\(n\)</span>; only cluster-length
+<code>b_hat</code> and <code>cluster_sizes</code> are accepted.</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div id="data-preparation" class="section level2">
+<h2>2. Data Preparation</h2>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(dsVertClient)</span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="fu">library</span>(DSLite)</span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="fu">library</span>(DSI)</span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="fu">library</span>(lme4)</span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span></code></pre></div>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>build_pooled <span class="ot">&lt;-</span> <span class="cf">function</span>() {</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>  <span class="fu">set.seed</span>(<span class="dv">20260502</span><span class="dt">L</span>)</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>  n_cluster <span class="ot">&lt;-</span> <span class="dv">10</span><span class="dt">L</span></span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>  cluster_size <span class="ot">&lt;-</span> <span class="dv">5</span><span class="dt">L</span></span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>  n <span class="ot">&lt;-</span> n_cluster <span class="sc">*</span> cluster_size</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>  cluster_id <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="fu">seq_len</span>(n_cluster), <span class="at">each =</span> cluster_size)</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a>  x1 <span class="ot">&lt;-</span> stats<span class="sc">::</span><span class="fu">rnorm</span>(n)</span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>  x2 <span class="ot">&lt;-</span> stats<span class="sc">::</span><span class="fu">rnorm</span>(n)</span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a>  x3 <span class="ot">&lt;-</span> stats<span class="sc">::</span><span class="fu">rnorm</span>(n)</span>
+<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a>  b_i <span class="ot">&lt;-</span> stats<span class="sc">::</span><span class="fu">rnorm</span>(n_cluster, <span class="at">sd =</span> <span class="fl">0.65</span>)</span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a>  eta <span class="ot">&lt;-</span> <span class="sc">-</span><span class="fl">0.35</span> <span class="sc">+</span> <span class="fl">0.55</span> <span class="sc">*</span> x1 <span class="sc">-</span> <span class="fl">0.45</span> <span class="sc">*</span> x2 <span class="sc">+</span> <span class="fl">0.35</span> <span class="sc">*</span> x3 <span class="sc">+</span> b_i[cluster_id]</span>
+<span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a>  p <span class="ot">&lt;-</span> stats<span class="sc">::</span><span class="fu">plogis</span>(eta)</span>
+<span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a>  y_bin <span class="ot">&lt;-</span> stats<span class="sc">::</span><span class="fu">rbinom</span>(n, <span class="dv">1</span><span class="dt">L</span>, p)</span>
+<span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a>  <span class="fu">data.frame</span>(</span>
+<span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a>    <span class="at">patient_id =</span> <span class="fu">sprintf</span>(<span class="st">&quot;GLMM%04d&quot;</span>, <span class="fu">seq_len</span>(n)),</span>
+<span id="cb2-16"><a href="#cb2-16" tabindex="-1"></a>    <span class="at">cluster_id =</span> cluster_id,</span>
+<span id="cb2-17"><a href="#cb2-17" tabindex="-1"></a>    <span class="at">x1 =</span> x1,</span>
+<span id="cb2-18"><a href="#cb2-18" tabindex="-1"></a>    <span class="at">x2 =</span> x2,</span>
+<span id="cb2-19"><a href="#cb2-19" tabindex="-1"></a>    <span class="at">x3 =</span> x3,</span>
+<span id="cb2-20"><a href="#cb2-20" tabindex="-1"></a>    <span class="at">y_bin =</span> y_bin)</span>
+<span id="cb2-21"><a href="#cb2-21" tabindex="-1"></a>}</span>
+<span id="cb2-22"><a href="#cb2-22" tabindex="-1"></a></span>
+<span id="cb2-23"><a href="#cb2-23" tabindex="-1"></a>pooled <span class="ot">&lt;-</span> <span class="fu">build_pooled</span>()</span>
+<span id="cb2-24"><a href="#cb2-24" tabindex="-1"></a><span class="fu">head</span>(pooled)</span>
+<span id="cb2-25"><a href="#cb2-25" tabindex="-1"></a><span class="co">#&gt;   patient_id cluster_id         x1         x2          x3 y_bin</span></span>
+<span id="cb2-26"><a href="#cb2-26" tabindex="-1"></a><span class="co">#&gt; 1   GLMM0001          1  0.8327854  1.1129951  0.04757191     0</span></span>
+<span id="cb2-27"><a href="#cb2-27" tabindex="-1"></a><span class="co">#&gt; 2   GLMM0002          1  2.3593059  0.3878976  0.36679360     1</span></span>
+<span id="cb2-28"><a href="#cb2-28" tabindex="-1"></a><span class="co">#&gt; 3   GLMM0003          1  0.3747982 -1.2372367  0.25009677     1</span></span>
+<span id="cb2-29"><a href="#cb2-29" tabindex="-1"></a><span class="co">#&gt; 4   GLMM0004          1 -0.1970173  0.7897517  2.25363439     0</span></span>
+<span id="cb2-30"><a href="#cb2-30" tabindex="-1"></a><span class="co">#&gt; 5   GLMM0005          1  0.9314810  0.5542680  0.66124266     0</span></span>
+<span id="cb2-31"><a href="#cb2-31" tabindex="-1"></a><span class="co">#&gt; 6   GLMM0006          2 -0.5721195 -0.0471832 -0.80021554     1</span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>split_tables <span class="ot">&lt;-</span> <span class="cf">function</span>(pooled, K) {</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="cf">if</span> (K <span class="sc">==</span> <span class="dv">2</span><span class="dt">L</span>) {</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>    <span class="fu">list</span>(</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>      <span class="at">s1 =</span> pooled[, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;x1&quot;</span>, <span class="st">&quot;x2&quot;</span>)],</span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>      <span class="at">s2 =</span> pooled[, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;cluster_id&quot;</span>, <span class="st">&quot;x3&quot;</span>, <span class="st">&quot;y_bin&quot;</span>)]</span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>    )</span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>  } <span class="cf">else</span> <span class="cf">if</span> (K <span class="sc">==</span> <span class="dv">3</span><span class="dt">L</span>) {</span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>    <span class="fu">list</span>(</span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>      <span class="at">s1 =</span> pooled[, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;x1&quot;</span>)],</span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>      <span class="at">s2 =</span> pooled[, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;x2&quot;</span>)],</span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>      <span class="at">s3 =</span> pooled[, <span class="fu">c</span>(<span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;cluster_id&quot;</span>, <span class="st">&quot;x3&quot;</span>, <span class="st">&quot;y_bin&quot;</span>)]</span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>    )</span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>    <span class="fu">stop</span>(<span class="st">&quot;This vignette validates K = 2 and K = 3 only.&quot;</span>)</span>
+<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a>  }</span>
+<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a>}</span>
+<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a></span>
+<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a>connect_dslite <span class="ot">&lt;-</span> <span class="cf">function</span>(tables, <span class="at">symbol =</span> <span class="st">&quot;D&quot;</span>) {</span>
+<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a>  server <span class="ot">&lt;-</span> DSLite<span class="sc">::</span><span class="fu">newDSLiteServer</span>(</span>
+<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a>    <span class="at">tables =</span> tables,</span>
+<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a>    <span class="at">config =</span> DSLite<span class="sc">::</span><span class="fu">defaultDSConfiguration</span>(<span class="at">include =</span> <span class="fu">c</span>(<span class="st">&quot;dsBase&quot;</span>, <span class="st">&quot;dsVert&quot;</span>)))</span>
+<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a>  dslite.server <span class="ot">&lt;&lt;-</span> server</span>
+<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a>  builder <span class="ot">&lt;-</span> DSI<span class="sc">::</span><span class="fu">newDSLoginBuilder</span>()</span>
+<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a>  <span class="cf">for</span> (nm <span class="cf">in</span> <span class="fu">names</span>(tables)) {</span>
+<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a>    builder<span class="sc">$</span><span class="fu">append</span>(<span class="at">server =</span> nm, <span class="at">url =</span> <span class="st">&quot;dslite.server&quot;</span>,</span>
+<span id="cb3-26"><a href="#cb3-26" tabindex="-1"></a>                   <span class="at">table =</span> nm, <span class="at">driver =</span> <span class="st">&quot;DSLiteDriver&quot;</span>)</span>
+<span id="cb3-27"><a href="#cb3-27" tabindex="-1"></a>  }</span>
+<span id="cb3-28"><a href="#cb3-28" tabindex="-1"></a>  DSI<span class="sc">::</span><span class="fu">datashield.login</span>(builder<span class="sc">$</span><span class="fu">build</span>(), <span class="at">assign =</span> <span class="cn">TRUE</span>,</span>
+<span id="cb3-29"><a href="#cb3-29" tabindex="-1"></a>                         <span class="at">symbol =</span> symbol, <span class="at">opts =</span> <span class="fu">list</span>(<span class="at">server =</span> server))</span>
+<span id="cb3-30"><a href="#cb3-30" tabindex="-1"></a>}</span></code></pre></div>
+</div>
+<div id="central-reference" class="section level2">
+<h2>3. Central Reference</h2>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>formula <span class="ot">&lt;-</span> y_bin <span class="sc">~</span> x1 <span class="sc">+</span> x2 <span class="sc">+</span> x3</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>fit_ref <span class="ot">&lt;-</span> <span class="fu">suppressWarnings</span>(lme4<span class="sc">::</span><span class="fu">glmer</span>(</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>  <span class="fu">update</span>(formula, . <span class="sc">~</span> . <span class="sc">+</span> (<span class="dv">1</span> <span class="sc">|</span> cluster_id)),</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a>  <span class="at">data =</span> pooled,</span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a>  <span class="at">family =</span> stats<span class="sc">::</span><span class="fu">binomial</span>(),</span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a>  <span class="at">control =</span> lme4<span class="sc">::</span><span class="fu">glmerControl</span>(<span class="at">optimizer =</span> <span class="st">&quot;bobyqa&quot;</span>,</span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a>                               <span class="at">optCtrl =</span> <span class="fu">list</span>(<span class="at">maxfun =</span> <span class="fl">2e5</span>))))</span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a>ref_beta <span class="ot">&lt;-</span> lme4<span class="sc">::</span><span class="fu">fixef</span>(fit_ref)</span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a>ref_sigma_b2 <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(lme4<span class="sc">::</span><span class="fu">VarCorr</span>(fit_ref)<span class="sc">$</span>cluster_id)[<span class="dv">1</span><span class="dt">L</span>]</span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a>ref_beta</span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt; (Intercept)          x1          x2          x3 </span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt;  -0.2802662   0.4412990  -0.4250571  -0.1240380</span></span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a>ref_sigma_b2</span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co">#&gt; [1] 0</span></span></code></pre></div>
+</div>
+<div id="federated-pql-fits" class="section level2">
+<h2>4. Federated PQL Fits</h2>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>compare_named <span class="ot">&lt;-</span> <span class="cf">function</span>(a, b) {</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>  nm <span class="ot">&lt;-</span> <span class="fu">intersect</span>(<span class="fu">names</span>(a), <span class="fu">names</span>(b))</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  delta <span class="ot">&lt;-</span> <span class="fu">as.numeric</span>(a[nm]) <span class="sc">-</span> <span class="fu">as.numeric</span>(b[nm])</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  <span class="fu">data.frame</span>(</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>    <span class="at">coef =</span> nm,</span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>    <span class="at">dsVert =</span> <span class="fu">as.numeric</span>(a[nm]),</span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>    <span class="at">glmer =</span> <span class="fu">as.numeric</span>(b[nm]),</span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a>    <span class="at">delta =</span> delta,</span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a>    <span class="at">abs_delta =</span> <span class="fu">abs</span>(delta),</span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a>    <span class="at">row.names =</span> <span class="cn">NULL</span>)</span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a>}</span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a>audit_returned_object <span class="ot">&lt;-</span> <span class="cf">function</span>(x, n, n_clusters) {</span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a>  bad <span class="ot">&lt;-</span> <span class="fu">character</span>()</span>
+<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a>  cluster_level <span class="ot">&lt;-</span> <span class="fu">character</span>()</span>
+<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a>  walk <span class="ot">&lt;-</span> <span class="cf">function</span>(obj, path) {</span>
+<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">is.null</span>(obj) <span class="sc">||</span> <span class="fu">is.environment</span>(obj) <span class="sc">||</span> <span class="fu">is.function</span>(obj) <span class="sc">||</span></span>
+<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a>        <span class="fu">inherits</span>(obj, <span class="st">&quot;formula&quot;</span>) <span class="sc">||</span> <span class="fu">inherits</span>(obj, <span class="st">&quot;call&quot;</span>)) {</span>
+<span id="cb5-19"><a href="#cb5-19" tabindex="-1"></a>      <span class="fu">return</span>(<span class="fu">invisible</span>(<span class="cn">NULL</span>))</span>
+<span id="cb5-20"><a href="#cb5-20" tabindex="-1"></a>    }</span>
+<span id="cb5-21"><a href="#cb5-21" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">is.atomic</span>(obj)) {</span>
+<span id="cb5-22"><a href="#cb5-22" tabindex="-1"></a>      len <span class="ot">&lt;-</span> <span class="fu">length</span>(obj)</span>
+<span id="cb5-23"><a href="#cb5-23" tabindex="-1"></a>      <span class="cf">if</span> (len <span class="sc">==</span> n) bad <span class="ot">&lt;&lt;-</span> <span class="fu">c</span>(bad, path)</span>
+<span id="cb5-24"><a href="#cb5-24" tabindex="-1"></a>      <span class="cf">if</span> (len <span class="sc">==</span> n_clusters <span class="sc">&amp;&amp;</span> len <span class="sc">!=</span> n) {</span>
+<span id="cb5-25"><a href="#cb5-25" tabindex="-1"></a>        cluster_level <span class="ot">&lt;&lt;-</span> <span class="fu">c</span>(cluster_level, path)</span>
+<span id="cb5-26"><a href="#cb5-26" tabindex="-1"></a>      }</span>
+<span id="cb5-27"><a href="#cb5-27" tabindex="-1"></a>      <span class="fu">return</span>(<span class="fu">invisible</span>(<span class="cn">NULL</span>))</span>
+<span id="cb5-28"><a href="#cb5-28" tabindex="-1"></a>    }</span>
+<span id="cb5-29"><a href="#cb5-29" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">is.matrix</span>(obj) <span class="sc">||</span> <span class="fu">is.data.frame</span>(obj)) {</span>
+<span id="cb5-30"><a href="#cb5-30" tabindex="-1"></a>      d <span class="ot">&lt;-</span> <span class="fu">dim</span>(obj)</span>
+<span id="cb5-31"><a href="#cb5-31" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">length</span>(d) <span class="sc">==</span> <span class="dv">2</span><span class="dt">L</span> <span class="sc">&amp;&amp;</span> <span class="fu">any</span>(d <span class="sc">==</span> n)) bad <span class="ot">&lt;&lt;-</span> <span class="fu">c</span>(bad, path)</span>
+<span id="cb5-32"><a href="#cb5-32" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">length</span>(d) <span class="sc">==</span> <span class="dv">2</span><span class="dt">L</span> <span class="sc">&amp;&amp;</span> <span class="fu">any</span>(d <span class="sc">==</span> n_clusters) <span class="sc">&amp;&amp;</span> <span class="sc">!</span><span class="fu">any</span>(d <span class="sc">==</span> n)) {</span>
+<span id="cb5-33"><a href="#cb5-33" tabindex="-1"></a>        cluster_level <span class="ot">&lt;&lt;-</span> <span class="fu">c</span>(cluster_level, path)</span>
+<span id="cb5-34"><a href="#cb5-34" tabindex="-1"></a>      }</span>
+<span id="cb5-35"><a href="#cb5-35" tabindex="-1"></a>    }</span>
+<span id="cb5-36"><a href="#cb5-36" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">is.list</span>(obj)) {</span>
+<span id="cb5-37"><a href="#cb5-37" tabindex="-1"></a>      nm <span class="ot">&lt;-</span> <span class="fu">names</span>(obj)</span>
+<span id="cb5-38"><a href="#cb5-38" tabindex="-1"></a>      <span class="cf">if</span> (<span class="fu">is.null</span>(nm)) nm <span class="ot">&lt;-</span> <span class="fu">as.character</span>(<span class="fu">seq_along</span>(obj))</span>
+<span id="cb5-39"><a href="#cb5-39" tabindex="-1"></a>      <span class="cf">for</span> (i <span class="cf">in</span> <span class="fu">seq_along</span>(obj)) <span class="fu">walk</span>(obj[[i]], <span class="fu">paste0</span>(path, <span class="st">&quot;$&quot;</span>, nm[[i]]))</span>
+<span id="cb5-40"><a href="#cb5-40" tabindex="-1"></a>    }</span>
+<span id="cb5-41"><a href="#cb5-41" tabindex="-1"></a>    <span class="fu">invisible</span>(<span class="cn">NULL</span>)</span>
+<span id="cb5-42"><a href="#cb5-42" tabindex="-1"></a>  }</span>
+<span id="cb5-43"><a href="#cb5-43" tabindex="-1"></a>  <span class="fu">walk</span>(x, <span class="st">&quot;fit_ds&quot;</span>)</span>
+<span id="cb5-44"><a href="#cb5-44" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">pass =</span> <span class="fu">length</span>(<span class="fu">unique</span>(bad)) <span class="sc">==</span> <span class="dv">0</span><span class="dt">L</span>,</span>
+<span id="cb5-45"><a href="#cb5-45" tabindex="-1"></a>       <span class="at">disallowed_length_n_paths =</span> <span class="fu">unique</span>(bad),</span>
+<span id="cb5-46"><a href="#cb5-46" tabindex="-1"></a>       <span class="at">cluster_level_paths =</span> <span class="fu">unique</span>(cluster_level),</span>
+<span id="cb5-47"><a href="#cb5-47" tabindex="-1"></a>       <span class="at">n =</span> n,</span>
+<span id="cb5-48"><a href="#cb5-48" tabindex="-1"></a>       <span class="at">n_clusters =</span> n_clusters)</span>
+<span id="cb5-49"><a href="#cb5-49" tabindex="-1"></a>}</span>
+<span id="cb5-50"><a href="#cb5-50" tabindex="-1"></a></span>
+<span id="cb5-51"><a href="#cb5-51" tabindex="-1"></a>fit_one <span class="ot">&lt;-</span> <span class="cf">function</span>(K) {</span>
+<span id="cb5-52"><a href="#cb5-52" tabindex="-1"></a>  <span class="fu">options</span>(<span class="at">dsvert.require_trusted_peers =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb5-53"><a href="#cb5-53" tabindex="-1"></a>          <span class="at">datashield.privacyLevel =</span> <span class="dv">5</span><span class="dt">L</span>,</span>
+<span id="cb5-54"><a href="#cb5-54" tabindex="-1"></a>          <span class="at">datashield.errors.print =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb5-55"><a href="#cb5-55" tabindex="-1"></a>  conns <span class="ot">&lt;-</span> <span class="fu">connect_dslite</span>(<span class="fu">split_tables</span>(pooled, K))</span>
+<span id="cb5-56"><a href="#cb5-56" tabindex="-1"></a>  <span class="fu">on.exit</span>(<span class="fu">try</span>(DSI<span class="sc">::</span><span class="fu">datashield.logout</span>(conns), <span class="at">silent =</span> <span class="cn">TRUE</span>), <span class="at">add =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb5-57"><a href="#cb5-57" tabindex="-1"></a>  psi <span class="ot">&lt;-</span> <span class="fu">ds.psiAlign</span>(<span class="st">&quot;D&quot;</span>, <span class="st">&quot;patient_id&quot;</span>, <span class="st">&quot;DA&quot;</span>,</span>
+<span id="cb5-58"><a href="#cb5-58" tabindex="-1"></a>                      <span class="at">datasources =</span> conns, <span class="at">verbose =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb5-59"><a href="#cb5-59" tabindex="-1"></a>  t0 <span class="ot">&lt;-</span> <span class="fu">proc.time</span>()[<span class="dv">3</span>]</span>
+<span id="cb5-60"><a href="#cb5-60" tabindex="-1"></a>  fit_ds <span class="ot">&lt;-</span> <span class="fu">ds.vertGLMM</span>(</span>
+<span id="cb5-61"><a href="#cb5-61" tabindex="-1"></a>    <span class="at">formula =</span> formula,</span>
+<span id="cb5-62"><a href="#cb5-62" tabindex="-1"></a>    <span class="at">data =</span> <span class="st">&quot;DA&quot;</span>,</span>
+<span id="cb5-63"><a href="#cb5-63" tabindex="-1"></a>    <span class="at">cluster_col =</span> <span class="st">&quot;cluster_id&quot;</span>,</span>
+<span id="cb5-64"><a href="#cb5-64" tabindex="-1"></a>    <span class="at">max_outer =</span> <span class="dv">1</span><span class="dt">L</span>,</span>
+<span id="cb5-65"><a href="#cb5-65" tabindex="-1"></a>    <span class="at">inner_iter =</span> <span class="dv">2</span><span class="dt">L</span>,</span>
+<span id="cb5-66"><a href="#cb5-66" tabindex="-1"></a>    <span class="at">tol =</span> <span class="fl">1e-2</span>,</span>
+<span id="cb5-67"><a href="#cb5-67" tabindex="-1"></a>    <span class="at">method =</span> <span class="st">&quot;pql_aggregate&quot;</span>,</span>
+<span id="cb5-68"><a href="#cb5-68" tabindex="-1"></a>    <span class="at">ring =</span> <span class="dv">127</span><span class="dt">L</span>,</span>
+<span id="cb5-69"><a href="#cb5-69" tabindex="-1"></a>    <span class="at">compute_se =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb5-70"><a href="#cb5-70" tabindex="-1"></a>    <span class="at">verbose =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb5-71"><a href="#cb5-71" tabindex="-1"></a>    <span class="at">datasources =</span> conns)</span>
+<span id="cb5-72"><a href="#cb5-72" tabindex="-1"></a>  runtime_s <span class="ot">&lt;-</span> <span class="fu">unname</span>(<span class="fu">proc.time</span>()[<span class="dv">3</span>] <span class="sc">-</span> t0)</span>
+<span id="cb5-73"><a href="#cb5-73" tabindex="-1"></a>  cmp <span class="ot">&lt;-</span> <span class="fu">compare_named</span>(fit_ds<span class="sc">$</span>coefficients, ref_beta)</span>
+<span id="cb5-74"><a href="#cb5-74" tabindex="-1"></a>  <span class="fu">list</span>(</span>
+<span id="cb5-75"><a href="#cb5-75" tabindex="-1"></a>    <span class="at">K =</span> K,</span>
+<span id="cb5-76"><a href="#cb5-76" tabindex="-1"></a>    <span class="at">n =</span> <span class="fu">nrow</span>(pooled),</span>
+<span id="cb5-77"><a href="#cb5-77" tabindex="-1"></a>    <span class="at">n_matched =</span> psi[[<span class="dv">1</span>]]<span class="sc">$</span>n_matched,</span>
+<span id="cb5-78"><a href="#cb5-78" tabindex="-1"></a>    <span class="at">runtime_s =</span> runtime_s,</span>
+<span id="cb5-79"><a href="#cb5-79" tabindex="-1"></a>    <span class="at">coefficients =</span> cmp,</span>
+<span id="cb5-80"><a href="#cb5-80" tabindex="-1"></a>    <span class="at">max_abs_delta =</span> <span class="fu">max</span>(cmp<span class="sc">$</span>abs_delta),</span>
+<span id="cb5-81"><a href="#cb5-81" tabindex="-1"></a>    <span class="at">sigma_b2_ds =</span> fit_ds<span class="sc">$</span>sigma_b2,</span>
+<span id="cb5-82"><a href="#cb5-82" tabindex="-1"></a>    <span class="at">sigma_b2_ref =</span> ref_sigma_b2,</span>
+<span id="cb5-83"><a href="#cb5-83" tabindex="-1"></a>    <span class="at">sigma_b2_abs_delta =</span> <span class="fu">abs</span>(fit_ds<span class="sc">$</span>sigma_b2 <span class="sc">-</span> ref_sigma_b2),</span>
+<span id="cb5-84"><a href="#cb5-84" tabindex="-1"></a>    <span class="at">audit =</span> <span class="fu">audit_returned_object</span>(fit_ds, <span class="fu">nrow</span>(pooled),</span>
+<span id="cb5-85"><a href="#cb5-85" tabindex="-1"></a>                                  <span class="fu">length</span>(<span class="fu">unique</span>(pooled<span class="sc">$</span>cluster_id))),</span>
+<span id="cb5-86"><a href="#cb5-86" tabindex="-1"></a>    <span class="at">diagnostics =</span> <span class="fu">list</span>(<span class="at">iterations =</span> fit_ds<span class="sc">$</span>iterations,</span>
+<span id="cb5-87"><a href="#cb5-87" tabindex="-1"></a>                       <span class="at">phi =</span> fit_ds<span class="sc">$</span>phi,</span>
+<span id="cb5-88"><a href="#cb5-88" tabindex="-1"></a>                       <span class="at">tau =</span> fit_ds<span class="sc">$</span>tau,</span>
+<span id="cb5-89"><a href="#cb5-89" tabindex="-1"></a>                       <span class="at">trace =</span> fit_ds<span class="sc">$</span>trace))</span>
+<span id="cb5-90"><a href="#cb5-90" tabindex="-1"></a>}</span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>res_k2 <span class="ot">&lt;-</span> <span class="fu">fit_one</span>(<span class="dv">2</span><span class="dt">L</span>)</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>res_k2[<span class="fu">c</span>(<span class="st">&quot;K&quot;</span>, <span class="st">&quot;n_matched&quot;</span>, <span class="st">&quot;runtime_s&quot;</span>, <span class="st">&quot;max_abs_delta&quot;</span>,</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>         <span class="st">&quot;sigma_b2_abs_delta&quot;</span>)]</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="co">#&gt; $K</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="co">#&gt; [1] 2</span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt; $n_matched</span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt; [1] 50</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt; $runtime_s</span></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt; [1] 152.745</span></span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="co">#&gt; $max_abs_delta</span></span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="co">#&gt; [1] 0.0003756325</span></span>
+<span id="cb6-15"><a href="#cb6-15" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-16"><a href="#cb6-16" tabindex="-1"></a><span class="co">#&gt; $sigma_b2_abs_delta</span></span>
+<span id="cb6-17"><a href="#cb6-17" tabindex="-1"></a><span class="co">#&gt; [1] 1.008053e-12</span></span>
+<span id="cb6-18"><a href="#cb6-18" tabindex="-1"></a>res_k2<span class="sc">$</span>audit</span>
+<span id="cb6-19"><a href="#cb6-19" tabindex="-1"></a><span class="co">#&gt; $pass</span></span>
+<span id="cb6-20"><a href="#cb6-20" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span>
+<span id="cb6-21"><a href="#cb6-21" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-22"><a href="#cb6-22" tabindex="-1"></a><span class="co">#&gt; $disallowed_length_n_paths</span></span>
+<span id="cb6-23"><a href="#cb6-23" tabindex="-1"></a><span class="co">#&gt; character(0)</span></span>
+<span id="cb6-24"><a href="#cb6-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-25"><a href="#cb6-25" tabindex="-1"></a><span class="co">#&gt; $cluster_level_paths</span></span>
+<span id="cb6-26"><a href="#cb6-26" tabindex="-1"></a><span class="co">#&gt; [1] &quot;fit_ds$b_hat&quot;         &quot;fit_ds$cluster_sizes&quot;</span></span>
+<span id="cb6-27"><a href="#cb6-27" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-28"><a href="#cb6-28" tabindex="-1"></a><span class="co">#&gt; $n</span></span>
+<span id="cb6-29"><a href="#cb6-29" tabindex="-1"></a><span class="co">#&gt; [1] 50</span></span>
+<span id="cb6-30"><a href="#cb6-30" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-31"><a href="#cb6-31" tabindex="-1"></a><span class="co">#&gt; $n_clusters</span></span>
+<span id="cb6-32"><a href="#cb6-32" tabindex="-1"></a><span class="co">#&gt; [1] 10</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>res_k3 <span class="ot">&lt;-</span> <span class="fu">fit_one</span>(<span class="dv">3</span><span class="dt">L</span>)</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>res_k3[<span class="fu">c</span>(<span class="st">&quot;K&quot;</span>, <span class="st">&quot;n_matched&quot;</span>, <span class="st">&quot;runtime_s&quot;</span>, <span class="st">&quot;max_abs_delta&quot;</span>,</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>         <span class="st">&quot;sigma_b2_abs_delta&quot;</span>)]</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a><span class="co">#&gt; $K</span></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="co">#&gt; [1] 3</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt; $n_matched</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt; [1] 50</span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt; $runtime_s</span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt; [1] 153.549</span></span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt; $max_abs_delta</span></span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a><span class="co">#&gt; [1] 0.0003756325</span></span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co">#&gt; $sigma_b2_abs_delta</span></span>
+<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="co">#&gt; [1] 1.006321e-12</span></span>
+<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a>res_k3<span class="sc">$</span>audit</span>
+<span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a><span class="co">#&gt; $pass</span></span>
+<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span>
+<span id="cb7-21"><a href="#cb7-21" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-22"><a href="#cb7-22" tabindex="-1"></a><span class="co">#&gt; $disallowed_length_n_paths</span></span>
+<span id="cb7-23"><a href="#cb7-23" tabindex="-1"></a><span class="co">#&gt; character(0)</span></span>
+<span id="cb7-24"><a href="#cb7-24" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-25"><a href="#cb7-25" tabindex="-1"></a><span class="co">#&gt; $cluster_level_paths</span></span>
+<span id="cb7-26"><a href="#cb7-26" tabindex="-1"></a><span class="co">#&gt; [1] &quot;fit_ds$b_hat&quot;         &quot;fit_ds$cluster_sizes&quot;</span></span>
+<span id="cb7-27"><a href="#cb7-27" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-28"><a href="#cb7-28" tabindex="-1"></a><span class="co">#&gt; $n</span></span>
+<span id="cb7-29"><a href="#cb7-29" tabindex="-1"></a><span class="co">#&gt; [1] 50</span></span>
+<span id="cb7-30"><a href="#cb7-30" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-31"><a href="#cb7-31" tabindex="-1"></a><span class="co">#&gt; $n_clusters</span></span>
+<span id="cb7-32"><a href="#cb7-32" tabindex="-1"></a><span class="co">#&gt; [1] 10</span></span></code></pre></div>
+</div>
+<div id="comparison-and-verdict" class="section level2">
+<h2>5. Comparison And Verdict</h2>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>coef_table <span class="ot">&lt;-</span> <span class="fu">rbind</span>(</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  <span class="fu">cbind</span>(<span class="at">K =</span> <span class="st">&quot;2&quot;</span>, res_k2<span class="sc">$</span>coefficients),</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="fu">cbind</span>(<span class="at">K =</span> <span class="st">&quot;3&quot;</span>, res_k3<span class="sc">$</span>coefficients)</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>)</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>coef_table</span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">#&gt;   K        coef     dsVert      glmer         delta    abs_delta</span></span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a><span class="co">#&gt; 1 2 (Intercept) -0.2801705 -0.2802662  9.571974e-05 9.571974e-05</span></span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a><span class="co">#&gt; 2 2          x3 -0.1243347 -0.1240380 -2.967505e-04 2.967505e-04</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a><span class="co">#&gt; 3 2          x1  0.4409234  0.4412990 -3.756325e-04 3.756325e-04</span></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="co">#&gt; 4 2          x2 -0.4247172 -0.4250571  3.399078e-04 3.399078e-04</span></span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a><span class="co">#&gt; 5 3 (Intercept) -0.2801705 -0.2802662  9.571974e-05 9.571974e-05</span></span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a><span class="co">#&gt; 6 3          x3 -0.1243347 -0.1240380 -2.967505e-04 2.967505e-04</span></span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a><span class="co">#&gt; 7 3          x1  0.4409234  0.4412990 -3.756325e-04 3.756325e-04</span></span>
+<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a><span class="co">#&gt; 8 3          x2 -0.4247172 -0.4250571  3.399078e-04 3.399078e-04</span></span>
+<span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a></span>
+<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a>summary_table <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a>  <span class="at">K =</span> <span class="fu">c</span>(<span class="dv">2</span><span class="dt">L</span>, <span class="dv">3</span><span class="dt">L</span>),</span>
+<span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a>  <span class="at">n =</span> <span class="fu">c</span>(res_k2<span class="sc">$</span>n, res_k3<span class="sc">$</span>n),</span>
+<span id="cb8-19"><a href="#cb8-19" tabindex="-1"></a>  <span class="at">n_matched =</span> <span class="fu">c</span>(res_k2<span class="sc">$</span>n_matched, res_k3<span class="sc">$</span>n_matched),</span>
+<span id="cb8-20"><a href="#cb8-20" tabindex="-1"></a>  <span class="at">max_abs_beta_delta =</span> <span class="fu">c</span>(res_k2<span class="sc">$</span>max_abs_delta, res_k3<span class="sc">$</span>max_abs_delta),</span>
+<span id="cb8-21"><a href="#cb8-21" tabindex="-1"></a>  <span class="at">sigma_b2_ds =</span> <span class="fu">c</span>(res_k2<span class="sc">$</span>sigma_b2_ds, res_k3<span class="sc">$</span>sigma_b2_ds),</span>
+<span id="cb8-22"><a href="#cb8-22" tabindex="-1"></a>  <span class="at">sigma_b2_ref =</span> <span class="fu">c</span>(res_k2<span class="sc">$</span>sigma_b2_ref, res_k3<span class="sc">$</span>sigma_b2_ref),</span>
+<span id="cb8-23"><a href="#cb8-23" tabindex="-1"></a>  <span class="at">sigma_b2_abs_delta =</span> <span class="fu">c</span>(res_k2<span class="sc">$</span>sigma_b2_abs_delta,</span>
+<span id="cb8-24"><a href="#cb8-24" tabindex="-1"></a>                         res_k3<span class="sc">$</span>sigma_b2_abs_delta),</span>
+<span id="cb8-25"><a href="#cb8-25" tabindex="-1"></a>  <span class="at">returned_object_audit =</span> <span class="fu">c</span>(res_k2<span class="sc">$</span>audit<span class="sc">$</span>pass, res_k3<span class="sc">$</span>audit<span class="sc">$</span>pass),</span>
+<span id="cb8-26"><a href="#cb8-26" tabindex="-1"></a>  <span class="at">runtime_s =</span> <span class="fu">c</span>(res_k2<span class="sc">$</span>runtime_s, res_k3<span class="sc">$</span>runtime_s)</span>
+<span id="cb8-27"><a href="#cb8-27" tabindex="-1"></a>)</span>
+<span id="cb8-28"><a href="#cb8-28" tabindex="-1"></a>summary_table</span>
+<span id="cb8-29"><a href="#cb8-29" tabindex="-1"></a><span class="co">#&gt;   K  n n_matched max_abs_beta_delta  sigma_b2_ds sigma_b2_ref</span></span>
+<span id="cb8-30"><a href="#cb8-30" tabindex="-1"></a><span class="co">#&gt; 1 2 50        50       0.0003756325 1.008053e-12            0</span></span>
+<span id="cb8-31"><a href="#cb8-31" tabindex="-1"></a><span class="co">#&gt; 2 3 50        50       0.0003756325 1.006321e-12            0</span></span>
+<span id="cb8-32"><a href="#cb8-32" tabindex="-1"></a><span class="co">#&gt;   sigma_b2_abs_delta returned_object_audit runtime_s</span></span>
+<span id="cb8-33"><a href="#cb8-33" tabindex="-1"></a><span class="co">#&gt; 1       1.008053e-12                  TRUE   152.745</span></span>
+<span id="cb8-34"><a href="#cb8-34" tabindex="-1"></a><span class="co">#&gt; 2       1.006321e-12                  TRUE   153.549</span></span></code></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="fu">ggplot</span>(coef_table, <span class="fu">aes</span>(glmer, dsVert, <span class="at">shape =</span> K)) <span class="sc">+</span></span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="fu">geom_abline</span>(<span class="at">slope =</span> <span class="dv">1</span>, <span class="at">intercept =</span> <span class="dv">0</span>, <span class="at">linetype =</span> <span class="st">&quot;dashed&quot;</span>,</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>              <span class="at">colour =</span> <span class="st">&quot;grey40&quot;</span>) <span class="sc">+</span></span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">size =</span> <span class="fl">2.5</span>) <span class="sc">+</span></span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="fu">expression</span>(<span class="fu">hat</span>(beta)[glmer]),</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>       <span class="at">y =</span> <span class="fu">expression</span>(<span class="fu">hat</span>(beta)[dsVert])) <span class="sc">+</span></span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a>  <span class="fu">theme_minimal</span>(<span class="at">base_size =</span> <span class="dv">11</span>)</span></code></pre></div>
+<div class="figure" style="text-align: center">
+<img role="img" aria-label="Federated GLMM fixed-effect coefficients vs centralised lme4::glmer fit. Dashed identity line." src="data:image/png;base64,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" alt="Federated GLMM fixed-effect coefficients vs centralised lme4::glmer fit. Dashed identity line." />
+<p class="caption">
+Federated GLMM fixed-effect coefficients vs centralised lme4::glmer fit.
+Dashed identity line.
+</p>
+</div>
+<p>The audited aggregate-PQL route matches the centralized
+<code>glmer</code> singular fixture with maximum fixed-effect gaps of
+3.756e-04 and random-effect variance gaps of 1.008e-12 for both K modes.
+The returned-object audit passes in K = 2 and K = 3; no patient-length
+atomic vector is visible to the analyst.</p>
+<div id="references" class="section level3">
+<h3>References</h3>
+<ul>
+<li>Breslow, N. E. &amp; Clayton, D. G. (1993). Approximate inference in
+generalized linear mixed models. <em>JASA</em> 88(421), 9-25.</li>
+<li>Catrina, O. &amp; Saxena, A. (2010). <em>Financial Cryptography</em>
+section 3.3.</li>
+<li>Pinheiro, J. C. &amp; Bates, D. M. (2000). <em>Mixed-Effects Models
+in S/S-PLUS</em>, section 7.4.</li>
+</ul>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

@@ -47,14 +47,23 @@ NULL
                              n_obs, verbose, .dsAgg, .sendBlob,
                              weights_active = FALSE,
                              no_intercept  = FALSE,
-                             ring = 63L) {
+                             ring = 63L,
+                             compute_se = TRUE) {
 
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
   ring_tag <- if (ring == 127L) "ring127" else "ring63"
   frac_bits <- if (ring == 127L) 50L else 20L
   is_gaussian <- (family == "gaussian")
-  num_intervals <- if (family == "poisson") 100L else 50L
+  default_intervals <- if (family == "poisson") 100L else 50L
+  opt_name <- paste0("dsvert.glm_num_intervals_", family)
+  num_intervals <- suppressWarnings(as.integer(
+    getOption(opt_name, getOption("dsvert.glm_num_intervals",
+                                  default_intervals))[[1L]]
+  ))
+  if (!is.finite(num_intervals) || num_intervals < 10L) {
+    num_intervals <- default_intervals
+  }
   if (is.null(lambda)) lambda <- 1e-4
   if (verbose) {
     if (is_gaussian) {
@@ -256,17 +265,21 @@ NULL
     }  # close else (non-Gaussian wide spline)
 
     # === Optional: apply per-patient weights before gradient ===
-    # When weights were registered via ds.vertGLM(weights="col"), both
-    # DCF parties locally scale their mu / y shares element-wise. The
-    # downstream X^T r Beaver gradient then becomes X^T (W r) = weighted
-    # gradient. No Beaver round is introduced; scaling of additive
-    # shares by a publicly-known vector is a local operation.
+    # Weights are secret-shared between the two DCF parties. One Beaver
+    # vecmul round computes shares of w * (mu - y), which are then fed to
+    # the existing X^T r Beaver gradient path.
     if (isTRUE(weights_active)) {
-      for (server in c(coordinator, nl)) {
-        ci <- which(server_names == server)
-        .dsAgg(datasources[ci], call(name = "k2ApplyWeightsDS",
-                                      session_id = session_id))
-      }
+      .glm_apply_shared_weight_residual(
+        datasources = datasources,
+        dcf_parties = c(coordinator, nl),
+        dcf_conns = c(coordinator_conn, nl_conn),
+        dealer_conn = dealer_conn,
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n_obs = n_obs,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob,
+        ring = ring)
     }
 
     # === Step 3: Gradient (Beaver matvec) ===
@@ -385,6 +398,8 @@ NULL
   if (!converged && verbose)
     warning(sprintf("Did not converge after %d iterations (diff = %.2e)", max_iter, max_diff))
 
+  inv_hessian <- list()
+  if (isTRUE(compute_se)) {
   # === Standard errors via finite-difference Hessian (K=2) ===
   if (verbose) message("  [SE] Computing Hessian (central differences)...")
   p_plus1 <- p_total + 1
@@ -417,6 +432,19 @@ NULL
       .sendBlob(st$spline_blob_1,"k2_spline_triples",nl_conn)
       for(ph in 1:4){pr<-list(); for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(paste0("k2WideSplinePhase",ph,"DS"),party_id=if(is_coord)0L else 1L,family=family,num_intervals=num_intervals,frac_bits=frac_bits,ring=ring,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];pr[[server]]<-r};if(ph==1){.sendBlob(pr[[coordinator]]$dcf_masked,"k2_peer_dcf_masked",nl_conn);.sendBlob(pr[[nl]]$dcf_masked,"k2_peer_dcf_masked",coordinator_conn)}else if(ph==2){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[server]]$and_xma,and_ymb=pr[[server]]$and_ymb,had1_xma=pr[[server]]$had1_xma,had1_ymb=pr[[server]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_beaver_r1",peer_ci)}}else if(ph==3){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[server]]$had2_xma,had2_ymb=pr[[server]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_had2_r1",peer_ci)}}}
     }
+    if (isTRUE(weights_active)) {
+      .glm_apply_shared_weight_residual(
+        datasources = datasources,
+        dcf_parties = c(coordinator, nl),
+        dcf_conns = c(coordinator_conn, nl_conn),
+        dealer_conn = dealer_conn,
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n_obs = n_obs,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob,
+        ring = ring)
+    }
     gt <- .dsAgg(datasources[dealer_conn], call(name = "glmRing63GenGradTriplesDS",
       dcf0_pk=transport_pks[[coordinator]], dcf1_pk=transport_pks[[nl]],
       n=as.integer(n_obs), p=as.integer(p_total), ring=ring, session_id=session_id))
@@ -438,6 +466,19 @@ NULL
     bet_m_nl <- if (p_total > p_coord) bet_m[(p_coord + 1L):p_total] else numeric(0)
     for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);.dsAgg(datasources[ci],call(name = "k2ComputeEtaShareDS",beta_coord=bet_m_coord,beta_nl=bet_m_nl,intercept=if(is_coord)int_m else 0,is_coordinator=is_coord,session_id=session_id))}
     if(is_gaussian){for(server in server_list).dsAgg(datasources[which(server_names==server)],call(name = "k2IdentityLinkDS",session_id=session_id))}else{stb<-.dsAgg(datasources[dealer_conn],call(name = "glmRing63GenSplineTriplesDS",dcf0_pk=transport_pks[[coordinator]],dcf1_pk=transport_pks[[nl]],n=as.integer(n_obs),frac_bits=frac_bits,ring=ring,session_id=session_id));if(is.list(stb))stb<-stb[[1]];.sendBlob(stb$spline_blob_0,"k2_spline_triples",coordinator_conn);.sendBlob(stb$spline_blob_1,"k2_spline_triples",nl_conn);for(ph in 1:4){pr<-list();for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(paste0("k2WideSplinePhase",ph,"DS"),party_id=if(is_coord)0L else 1L,family=family,num_intervals=num_intervals,frac_bits=frac_bits,ring=ring,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];pr[[server]]<-r};if(ph==1){.sendBlob(pr[[coordinator]]$dcf_masked,"k2_peer_dcf_masked",nl_conn);.sendBlob(pr[[nl]]$dcf_masked,"k2_peer_dcf_masked",coordinator_conn)}else if(ph==2){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[server]]$and_xma,and_ymb=pr[[server]]$and_ymb,had1_xma=pr[[server]]$had1_xma,had1_ymb=pr[[server]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_beaver_r1",peer_ci)}}else if(ph==3){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[server]]$had2_xma,had2_ymb=pr[[server]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_had2_r1",peer_ci)}}}}
+    if (isTRUE(weights_active)) {
+      .glm_apply_shared_weight_residual(
+        datasources = datasources,
+        dcf_parties = c(coordinator, nl),
+        dcf_conns = c(coordinator_conn, nl_conn),
+        dealer_conn = dealer_conn,
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n_obs = n_obs,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob,
+        ring = ring)
+    }
     gtb<-.dsAgg(datasources[dealer_conn],call(name = "glmRing63GenGradTriplesDS",dcf0_pk=transport_pks[[coordinator]],dcf1_pk=transport_pks[[nl]],n=as.integer(n_obs),p=as.integer(p_total),ring=ring,session_id=session_id));if(is.list(gtb))gtb<-gtb[[1]];.sendBlob(gtb$grad_blob_0,"k2_grad_triple_fp",coordinator_conn);.sendBlob(gtb$grad_blob_1,"k2_grad_triple_fp",nl_conn)
     r1b<-list();for(server in server_list){ci<-which(server_names==server);peer<-setdiff(server_list,server);.dsAgg(datasources[ci],call(name = "k2StoreGradTripleDS",session_id=session_id));r<-.dsAgg(datasources[ci],call(name = "k2GradientR1DS",peer_pk=transport_pks[[peer]],session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r1b[[server]]<-r}
     .sendBlob(r1b[[coordinator]]$encrypted_r1,"k2_grad_peer_r1",nl_conn);.sendBlob(r1b[[nl]]$encrypted_r1,"k2_grad_peer_r1",coordinator_conn)
@@ -459,8 +500,20 @@ NULL
                   x_vars[[coordinator]],
                   if (p_nl > 0L) x_vars[[nl]] else character(0))
   dimnames(hessian_k2) <- list(hess_names, hess_names)
-  inv_hessian <- list()
   attr(inv_hessian, "raw_hessian") <- hessian_k2
+  }
+
+  if (isTRUE(weights_active) && family != "gaussian") {
+    if (verbose) {
+      message("  [Deviance] Skipped for weighted non-Gaussian K=2 fit; canonical weighted deviance is not implemented yet.")
+    }
+    betas <- list()
+    betas[[coordinator]] <- if (p_coord > 0L) beta[seq_len(p_coord)] else numeric(0)
+    betas[[nl]] <- if (p_total > p_coord) beta[(p_coord + 1L):p_total] else numeric(0)
+    return(list(betas=betas, intercept=intercept, converged=converged,
+                iterations=final_iter, max_diff=max_diff, deviance=NA_real_,
+                inv_hessian=inv_hessian))
+  }
 
   # === Secure canonical deviance ===
   if (verbose) message("  [Deviance] Computing canonical deviance...")
@@ -516,7 +569,23 @@ NULL
   }
 
   if (family == "gaussian") {
-    # Gaussian: RSS = canonical deviance. Binomial: RSS approximation.
+    # Gaussian: RSS = canonical deviance. For weighted Gaussian fits,
+    # compute shares of sqrt(w) * residual before the RSS Beaver dot.
+    if (isTRUE(weights_active)) {
+      .glm_apply_shared_weight_residual(
+        datasources = datasources,
+        dcf_parties = c(coordinator, nl),
+        dcf_conns = c(coordinator_conn, nl_conn),
+        dealer_conn = dealer_conn,
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n_obs = n_obs,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob,
+        weight_key = "k2_sqrt_weights_share_fp",
+        output_key = "k2_sqrt_weighted_residual_share_fp",
+        ring = ring)
+    }
     for (s in server_list) {
       ci <- which(server_names == s)
       .dsAgg(datasources[ci], call(name = "glmRing63PrepDevianceDS",

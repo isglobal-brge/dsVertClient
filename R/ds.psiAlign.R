@@ -336,32 +336,63 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
   # ==================================================================
   # Phase 8: Multi-server intersection
   # ==================================================================
-  # Integer indices are safe aggregate statistics (no EC points).
-  if (verbose) message("[Phase 8] Computing multi-server intersection...")
-  all_indices <- list()
-  # Collect matched indices from all servers in parallel
-  idx_results <- DSI::datashield.aggregate(
-    conns = datasources,
-    expr = call(name = "psiGetMatchedIndicesDS", session_id = session_id)
-  )
-  for (name in server_names) all_indices[[name]] <- idx_results[[name]]
-
-  # Intersect all index sets
-  common_indices <- Reduce(intersect, all_indices)
-  common_indices <- sort(as.integer(common_indices))
-
-  if (verbose) message(sprintf("  Common records: %d", length(common_indices)))
-
-  # Broadcast common indices to all servers via blob storage
-  indices_blob <- paste(common_indices, collapse = ",")
-  for (name in server_names) {
-    .storeLargeBlob("common_indices", indices_blob, datasources[name])
+  # Matched reference indices are patient-level metadata. Target servers export
+  # them encrypted to the reference server; the client relays opaque blobs only.
+  if (verbose) message("[Phase 8] Computing encrypted multi-server intersection...")
+  matched_exports <- list()
+  if (length(target_names) > 0L) {
+    matched_exports <- DSI::datashield.aggregate(
+      conns = datasources[target_names],
+      expr = call(name = "psiExportMatchedIndicesDS",
+                  recipient_name = ref_server,
+                  session_id = session_id)
+    )
+    for (target_name in target_names) {
+      .storeLargeBlob(
+        paste0("matched_indices_", target_name),
+        matched_exports[[target_name]]$encrypted_blob,
+        ref_conn
+      )
+    }
   }
-  # Filter in parallel
+
+  common_result <- DSI::datashield.aggregate(
+    conns = ref_conn,
+    expr = call(name = "psiComputeCommonIndicesDS",
+                target_names = target_names,
+                session_id = session_id)
+  )[[1L]]
+  n_common <- as.integer(common_result$n_common)
+
+  if (verbose) message(sprintf("  Common records: %d", n_common))
+
+  # Export the common reference-index set encrypted to each target. The
+  # reference server filters from its stored common set and receives no blob.
+  for (target_name in target_names) {
+    common_export <- DSI::datashield.aggregate(
+      conns = ref_conn,
+      expr = call(name = "psiExportCommonIndicesDS",
+                  target_name = target_name,
+                  session_id = session_id)
+    )[[1L]]
+    .storeLargeBlob("common_indices_encrypted",
+                    common_export$encrypted_blob,
+                    datasources[target_name])
+  }
+
+  if (length(target_names) > 0L) {
+    DSI::datashield.assign(
+      conns = datasources[target_names],
+      symbol = newobj,
+      value = call(name = "psiFilterCommonDS", newobj,
+                   from_storage = TRUE, encrypted = TRUE,
+                   session_id = session_id)
+    )
+  }
   DSI::datashield.assign(
-    conns = datasources,
+    conns = ref_conn,
     symbol = newobj,
-    value = call(name = "psiFilterCommonDS", newobj, from_storage = TRUE,
+    value = call(name = "psiFilterCommonDS", newobj,
                    session_id = session_id)
   )
 
@@ -371,22 +402,32 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
     expr = call(name = "getObsCountDS", newobj)
   )
   stats <- list()
+  input_n <- list()
+  input_n[[ref_server]] <- ref_result$n
+  for (target_name in target_names) {
+    input_n[[target_name]] <- target_results[[target_name]]$n
+  }
   for (name in server_names) {
     count <- count_results[[name]]
-    n_server <- all_indices[[name]]
+    pairwise_n <- if (identical(name, ref_server)) {
+      input_n[[name]]
+    } else {
+      matched_exports[[name]]$n_matched
+    }
     stats[[name]] <- list(
       n_matched = count$n_obs,
-      n_total = length(n_server)
+      n_total = input_n[[name]],
+      n_pairwise = pairwise_n
     )
     if (verbose) message(sprintf(
       "Server '%s': %d of %d records matched (%.1f%%)",
-      name, count$n_obs, length(n_server),
-      100 * count$n_obs / max(length(n_server), 1)
+      name, count$n_obs, input_n[[name]],
+      100 * count$n_obs / max(input_n[[name]], 1)
     ))
   }
 
   if (verbose) message("PSI alignment complete.")
 
-  stats$n_common <- length(common_indices)
+  stats$n_common <- n_common
   invisible(stats)
 }

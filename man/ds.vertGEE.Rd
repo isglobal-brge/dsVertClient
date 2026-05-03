@@ -25,14 +25,14 @@ ds.vertGEE(
 \item{family}{One of \code{"gaussian"}, \code{"binomial"},
 \code{"poisson"}.}
 
-\item{id_col}{Optional character; reserved for clustered GEE. In this
-first-pass implementation \code{id_col} is accepted but the
-working-independence sandwich is computed (cluster aggregation is
-the Month-4 follow-on).}
+\item{id_col}{Optional character. For Gaussian/binomial/Poisson models this
+enables the cluster-robust sandwich meat; the cluster column must live with
+the outcome and all clusters must pass \code{datashield.privacyLevel}.}
 
-\item{corstr}{Working correlation structure. Only
-\code{"independence"} is currently supported; \code{"exchangeable"}
-and \code{"ar1"} raise a targeted message.}
+\item{corstr}{Working correlation label. The current coefficient
+estimator is the vertical GLM working-independence estimator; when
+\code{id_col} is supplied, robust covariance uses cluster-level score
+sums.}
 
 \item{max_iter, tol, lambda, verbose}{Passed to \code{ds.vertGLM}.}
 
@@ -49,21 +49,23 @@ An object of class \code{ds.vertGEE} with components
 Fit a GLM for vertically partitioned DataSHIELD data and
 return sandwich (robust) standard errors alongside the usual
 model-based ones. The point estimate \eqn{\hat{\beta}} is obtained
-by a single call to \code{\link{ds.vertGLM}} (bread =
-\code{fit$covariance}), then the Liang-Zeger meat matrix is
-estimated by a second weighted fit with weights proportional to the
-squared Pearson residuals. This is the working-independence GEE
-estimator; exchangeable / AR1 working correlation structures are a
-planned Month-4 extension that adds a cluster-ID broadcast between
-the DCF parties and per-cluster residual outer products.
+by a single call to \code{\link{ds.vertGLM}}. For Gaussian, binomial, and
+Poisson models the sandwich meat is computed in the share domain. If
+\code{id_col} is supplied, dsVert computes the clustered meat
+\eqn{\sum_c S_c S_c^\top}, where
+\eqn{S_c=\sum_{i\in c} X_i r_i}; otherwise it computes the row-level
+HC0 meat \eqn{X^\top \mathrm{diag}(r^2) X}. Cluster membership is
+transport-encrypted between DCF parties and clusters below
+\code{datashield.privacyLevel} fail closed.
 
-Because both fits reveal only \eqn{p}-dimensional aggregates
-(gradient and Hessian), the sandwich estimator is obtained without
-ever materialising the \eqn{n}-length residual vector at the
-client. Inter-server leakage is identical to the ordinary
-\code{ds.vertGLM} path (no new channels).
+The client receives only low-dimensional aggregate matrices/vectors.
+It never materialises the \eqn{n}-length residual, squared-residual, or
+weighted-column vectors.
 
 Formula:
 \deqn{V_{sand} = \mathrm{Cov}(\hat\beta) \, A \, \mathrm{Cov}(\hat\beta)}
-\deqn{A = X^T \, \mathrm{diag}(r^2) \, X \, / \, n}
+\deqn{A = \sum_c S_c S_c^\top}
+for clustered Gaussian/binomial/Poisson fits, or
+\deqn{A = X^T \, \mathrm{diag}(r^2) \, X}
+for row-level HC0 when no \code{id_col} is supplied.
 }
