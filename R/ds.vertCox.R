@@ -1,3 +1,12 @@
+# Internal helper: allow the continuous-time Cox PH path only when the caller
+# explicitly accepts event-rank metadata disclosure to the DCF peer.
+.cox_rank_metadata_allowed <- function() {
+  if (isTRUE(getOption("dsvert.allow_patient_level_cox_rank_metadata", FALSE)))
+    return(TRUE)
+  env <- tolower(Sys.getenv("DSVERT_ALLOW_PATIENT_LEVEL_COX_RANK_METADATA", ""))
+  env %in% c("1", "true", "yes")
+}
+
 #' @title Federated Cox proportional-hazards regression
 #' @description Fit a Cox PH model on vertically partitioned DataSHIELD
 #'   data using the reverse-cumsum reformulation of the partial-
@@ -22,7 +31,11 @@
 #'
 #'   Inter-server disclosure: the DCF peer learns the ascending-time
 #'   sort permutation (ranking of event times) and the binary event
-#'   indicator. Absolute event times are NOT disclosed.
+#'   indicator. Absolute event times are NOT disclosed. Under strict
+#'   non-disclosure this path is disabled by default; use
+#'   \code{\link{ds.vertCoxDiscreteNonDisclosive}} for the non-disclosive
+#'   discrete-time pooled-logistic Cox alternative, or explicitly opt in to
+#'   rank/event metadata disclosure for controlled diagnostics.
 #'
 #' @param formula Formula of the form \code{Surv(time, event) ~ x1 + ...}.
 #'   If the LHS is not a \code{Surv(...)} expression, supply
@@ -154,6 +167,17 @@ ds.vertCox <- function(formula, data = NULL,
   ring_tag <- if (ring == 127L) "ring127" else "ring63"
 
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
+  if (!.cox_rank_metadata_allowed()) {
+    stop(
+      "ds.vertCox is disabled under strict non-disclosure: the continuous ",
+      "K=2 Cox PH path reveals patient-level event-rank metadata and the ",
+      "event indicator to the DCF peer. Use ",
+      "ds.vertCoxDiscreteNonDisclosive for the non-disclosive discrete-time ",
+      "pooled-logistic Cox target, or enable ",
+      "options(dsvert.allow_patient_level_cox_rank_metadata = TRUE) only ",
+      "for controlled diagnostic legacy runs.",
+      call. = FALSE)
+  }
   server_names <- names(datasources)
   if (!inherits(formula, "formula")) {
     stop("formula must be an R formula", call. = FALSE)
