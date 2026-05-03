@@ -115,9 +115,8 @@
                                   max_outer = 8L, tol = 1e-4,
                                   verbose = TRUE, datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
-  if (length(datasources) != 2L) {
-    stop("Strict non-disclosive ordinal joint currently supports K=2 only; ",
-         "K>=3 needs the share-domain fusion-party port.",
+  if (length(datasources) < 2L) {
+    stop("Strict non-disclosive ordinal joint requires at least two servers.",
          call. = FALSE)
   }
   if (!is.character(levels_ordered) || length(levels_ordered) < 3L)
@@ -151,11 +150,6 @@
                                           data, y_var_char)
   if (is.null(y_server))
     stop("outcome server for ", y_var_char, " not found", call. = FALSE)
-  nl <- setdiff(server_names, y_server)[1L]
-  server_list <- c(y_server, nl)
-  ci_os <- which(server_names == y_server)
-  ci_nl <- which(server_names == nl)
-  dealer_ci <- ci_nl
 
   session_id <- paste0("ordinalStrict_", as.integer(Sys.time()),
                        "_", sample.int(.Machine$integer.max, 1L))
@@ -166,6 +160,7 @@
     b64 <- gsub("\n", "", jsonlite::base64_enc(raw), fixed = TRUE)
     chartr("+/", "-_", sub("=+$", "", b64, perl = TRUE))
   }
+  .to_b64url <- function(x) chartr("+/", "-_", sub("=+$", "", x, perl = TRUE))
   .sendBlob <- function(blob, key, conn_idx) {
     if (is.null(blob) || !nzchar(blob)) return(invisible())
     conn <- datasources[conn_idx]
@@ -182,6 +177,48 @@
       }
     })
   }
+
+  x_vars_by_server <- list()
+  for (srv in server_names) {
+    ci <- which(server_names == srv)
+    cols <- tryCatch(.unwrap(.dsAgg(datasources[ci],
+      call(name = "dsvertColNamesDS", data_name = data))),
+      error = function(e) NULL)
+    cols_here <- if (is.list(cols) && !is.null(cols$columns)) cols$columns
+                 else if (is.character(cols)) cols else character(0)
+    x_vars_by_server[[srv]] <- intersect(rhs, cols_here)
+  }
+  if (length(server_names) == 2L) {
+    nl <- setdiff(server_names, y_server)[1L]
+  } else {
+    if (!exists(".k3_select_fusion_server", mode = "function")) {
+      stop("K>=3 strict ordinal joint requires the K>=3 DCF helper selection code",
+           call. = FALSE)
+    }
+    nl <- .k3_select_fusion_server(server_names, y_server, x_vars_by_server)
+  }
+  if (is.na(nl) || is.null(nl))
+    stop("non-label/fusion server not found", call. = FALSE)
+
+  server_list <- c(y_server, nl)
+  non_dcf_servers <- setdiff(server_names, server_list)
+  feature_server_order <- c(y_server, nl, non_dcf_servers)
+  x_vars_per_server <- x_vars_by_server[feature_server_order]
+  p_coord <- length(x_vars_per_server[[y_server]])
+  p_fusion <- length(x_vars_per_server[[nl]])
+  p_extras <- sum(vapply(x_vars_per_server[non_dcf_servers],
+                         length, integer(1L)))
+  ci_os <- which(server_names == y_server)
+  ci_nl <- which(server_names == nl)
+  dealer_srv <- if (length(non_dcf_servers) > 0L) non_dcf_servers[[1L]] else nl
+  dealer_ci <- which(server_names == dealer_srv)
+
+  if (!setequal(unlist(x_vars_per_server, use.names = FALSE), names(beta0))) {
+    stop("Strict ordinal joint requires numeric RHS variables present as ",
+         "explicit columns across the participating servers.",
+         call. = FALSE)
+  }
+
   .fp_const <- function(x) {
     .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
       values = array(as.numeric(x), dim = 1L),
@@ -192,36 +229,28 @@
   neg_log_scale_fp <- .fp_const(-log(1000))
 
   transport_pks <- list()
-  for (srv in server_list) {
+  identity_info <- list()
+  for (srv in server_names) {
     ci <- which(server_names == srv)
     r <- .unwrap(.dsAgg(datasources[ci],
       call(name = "glmRing63TransportInitDS", session_id = session_id)))
     transport_pks[[srv]] <- r$transport_pk
+    if (!is.null(r$identity_pk)) {
+      identity_info[[srv]] <- list(identity_pk = r$identity_pk,
+                                   signature = r$signature)
+    }
   }
-  for (srv in server_list) {
+  pk_b64 <- .json_to_b64url(transport_pks[sort(names(transport_pks))])
+  id_b64 <- if (length(identity_info) > 0L) {
+    .json_to_b64url(identity_info[sort(names(identity_info))])
+  } else ""
+  for (srv in server_names) {
     ci <- which(server_names == srv)
-    peer_srv <- setdiff(server_list, srv)
-    peers <- setNames(list(transport_pks[[peer_srv]]), peer_srv)
     .dsAgg(datasources[ci],
       call(name = "mpcStoreTransportKeysDS",
-           transport_keys_b64 = .json_to_b64url(peers),
+           transport_keys_b64 = pk_b64,
+           identity_info_b64 = id_b64,
            session_id = session_id))
-  }
-
-  x_vars_per_server <- list()
-  for (srv in server_list) {
-    ci <- which(server_names == srv)
-    cols <- tryCatch(.unwrap(.dsAgg(datasources[ci],
-      call(name = "dsvertColNamesDS", data_name = data))),
-      error = function(e) NULL)
-    cols_here <- if (is.list(cols) && !is.null(cols$columns)) cols$columns
-                 else if (is.character(cols)) cols else character(0)
-    x_vars_per_server[[srv]] <- intersect(rhs, cols_here)
-  }
-  if (!setequal(unlist(x_vars_per_server, use.names = FALSE), names(beta0))) {
-    stop("Strict ordinal joint currently requires numeric RHS variables ",
-         "present as explicit columns across the two servers.",
-         call. = FALSE)
   }
 
   share_results <- list()
@@ -230,7 +259,7 @@
     peer <- setdiff(server_list, srv)
     r <- .unwrap(.dsAgg(datasources[ci], call(name = "k2ShareInputDS",
       data_name = data, x_vars = x_vars_per_server[[srv]],
-      y_var = NULL, peer_pk = transport_pks[[peer]],
+      y_var = NULL, peer_pk = .to_b64url(transport_pks[[peer]]),
       ring = 127L, session_id = session_id)))
     share_results[[srv]] <- r
   }
@@ -247,6 +276,33 @@
       peer_p = as.integer(length(x_vars_per_server[[peer]])),
       session_id = session_id))
   }
+  for (srv in non_dcf_servers) {
+    if (length(x_vars_per_server[[srv]]) == 0L) next
+    ci <- which(server_names == srv)
+    r <- .unwrap(.dsAgg(datasources[ci], call(name = "k2ShareInputDS",
+      data_name = data, x_vars = x_vars_per_server[[srv]],
+      y_var = NULL,
+      peer_pk = .to_b64url(transport_pks[[nl]]),
+      ring = 127L, session_id = session_id)))
+    .sendBlob(r$encrypted_x_share, paste0("k2_extra_x_share_", srv), ci_nl)
+
+    r2 <- .unwrap(.dsAgg(datasources[ci],
+      call(name = "glmRing63ExportOwnShareDS",
+           peer_pk = .to_b64url(transport_pks[[y_server]]),
+           session_id = session_id)))
+    .sendBlob(r2$encrypted_own_share, paste0("k2_extra_x_share_", srv), ci_os)
+  }
+  for (srv in non_dcf_servers) {
+    extra_p <- length(x_vars_per_server[[srv]])
+    if (extra_p == 0L) next
+    for (dcf_srv in server_list) {
+      .dsAgg(datasources[which(server_names == dcf_srv)],
+        call(name = "glmRing63ReceiveExtraShareDS",
+             extra_key = paste0("k2_extra_x_share_", srv),
+             extra_p = as.integer(extra_p),
+             session_id = session_id))
+    }
+  }
   n_obs <- as.integer(share_results[[y_server]]$n)
 
   indicator_cols_vec <- sprintf(cumulative_template, thresh_levels)
@@ -257,7 +313,7 @@
          indicator_cols = indicator_cols_vec,
          level_names = levels_ordered,
          output_prefix = mask_prefix,
-         peer_pk = transport_pks[[nl]],
+         peer_pk = .to_b64url(transport_pks[[nl]]),
          session_id = session_id)))
   mask_keys <- as.character(mask_r$mask_keys)
   for (kk in seq_along(mask_keys)) {
@@ -331,8 +387,8 @@
     p_shared <- as.integer(sum(vapply(x_vars_per_server, length, integer(1L))))
     gt <- .unwrap(.dsAgg(datasources[dealer_ci],
       call(name = "glmRing63GenGradTriplesDS",
-           dcf0_pk = transport_pks[[y_server]],
-           dcf1_pk = transport_pks[[nl]],
+           dcf0_pk = .to_b64url(transport_pks[[y_server]]),
+           dcf1_pk = .to_b64url(transport_pks[[nl]]),
            n = as.integer(n_obs), p = p_shared,
            ring = 127L, session_id = session_id)))
     gtk <- paste0("ord_strict_grad_", tag)
@@ -345,7 +401,7 @@
       .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS",
         session_id = session_id, grad_triple_key = gtk))
       rr <- .unwrap(.dsAgg(datasources[ci], call(name = "k2GradientR1DS",
-        peer_pk = transport_pks[[peer]], session_id = session_id)))
+        peer_pk = .to_b64url(transport_pks[[peer]]), session_id = session_id)))
       r1[[srv]] <- rr
     }
     .sendBlob(r1[[y_server]]$encrypted_r1, "k2_grad_peer_r1", ci_nl)
@@ -405,18 +461,43 @@
     pt <- par_from_q(q)
     beta <- pt$beta
     theta <- pt$theta
-    beta_coord <- beta[intersect(names(beta), x_vars_per_server[[y_server]])]
-    beta_nl <- beta[intersect(names(beta), x_vars_per_server[[nl]])]
+    beta_slice <- function(srv) {
+      vars <- x_vars_per_server[[srv]]
+      if (is.null(vars) || length(vars) == 0L) NULL
+      else unname(as.numeric(beta[vars]))
+    }
     eta_key <- paste0("ord_strict_eta_", tag)
     for (srv in server_list) {
       ci <- which(server_names == srv)
+      is_coord <- (srv == y_server)
+      if (is_coord) {
+        beta_coord <- beta_slice(y_server)
+        beta_nl <- c(beta_slice(nl))
+        for (extra_srv in non_dcf_servers) {
+          beta_nl <- c(beta_nl, beta_slice(extra_srv))
+        }
+      } else {
+        beta_coord <- beta_slice(y_server)
+        beta_nl <- c()
+        for (extra_srv in non_dcf_servers) {
+          beta_nl <- c(beta_nl, beta_slice(extra_srv))
+        }
+        beta_nl <- c(beta_nl, beta_slice(nl))
+      }
       .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
         beta_coord = beta_coord,
         beta_nl = beta_nl,
         intercept = 0,
-        is_coordinator = (srv == y_server),
+        is_coordinator = is_coord,
         session_id = session_id,
         output_key = eta_key))
+      if (!is_coord && p_extras > 0L) {
+        .dsAgg(datasources[ci], call(name = "glmRing63ReorderXFullDS",
+          p_coord = as.integer(p_coord),
+          p_fusion = as.integer(p_fusion),
+          p_extras = as.integer(p_extras),
+          session_id = session_id))
+      }
     }
 
     F_keys <- f_keys <- character(K_minus_1)
@@ -490,8 +571,7 @@
       y_server, nl, transport_pks, session_id, .dsAgg, .sendBlob)
 
     g_beta_part <- .grad_matvec(T_key, tag)
-    server_partition_names <- unlist(x_vars_per_server[server_list],
-                                     use.names = FALSE)
+    server_partition_names <- unlist(x_vars_per_server, use.names = FALSE)
     g_beta <- numeric(p_beta)
     names(g_beta) <- names(beta0)
     perm <- match(names(beta0), server_partition_names)
