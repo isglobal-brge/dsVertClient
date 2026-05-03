@@ -3,12 +3,13 @@
 #'   return sandwich (robust) standard errors alongside the usual
 #'   model-based ones. The point estimate \eqn{\hat{\beta}} is obtained
 #'   by a single call to \code{\link{ds.vertGLM}}. For Gaussian models the
-#'   working-independence HC0 meat matrix is computed in the share domain:
-#'   residual shares are squared with Beaver multiplication and each
-#'   \eqn{X^\top(r^2 X_j)} column is obtained through the existing aggregate
-#'   matvec path. This is not yet a clustered \code{geeglm} sandwich;
-#'   exchangeable / AR1 working correlation structures require a separate
-#'   per-cluster meat primitive with small-cluster guards.
+#'   sandwich meat is computed in the share domain. If \code{id_col} is
+#'   supplied, dsVert computes the clustered meat
+#'   \eqn{\sum_c S_c S_c^\top}, where
+#'   \eqn{S_c=\sum_{i\in c} X_i r_i}; otherwise it computes the row-level
+#'   HC0 meat \eqn{X^\top \mathrm{diag}(r^2) X}. Cluster membership is
+#'   transport-encrypted between DCF parties and clusters below
+#'   \code{datashield.privacyLevel} fail closed.
 #'
 #'   The client receives only low-dimensional aggregate matrices/vectors.
 #'   It never materialises the \eqn{n}-length residual, squared-residual, or
@@ -16,18 +17,22 @@
 #'
 #'   Formula:
 #'     \deqn{V_{sand} = \mathrm{Cov}(\hat\beta) \, A \, \mathrm{Cov}(\hat\beta)}
-#'     \deqn{A = X^T \, \mathrm{diag}(r^2) \, X \, / \, n}
+#'     \deqn{A = \sum_c S_c S_c^\top}
+#'   for clustered Gaussian fits, or
+#'     \deqn{A = X^T \, \mathrm{diag}(r^2) \, X}
+#'   for row-level HC0 when no \code{id_col} is supplied.
 #'
 #' @param formula A model formula passed through to \code{ds.vertGLM}.
 #' @param data Character. Aligned data-frame name on each server.
 #' @param family One of \code{"gaussian"}, \code{"binomial"},
 #'   \code{"poisson"}.
-#' @param id_col Optional character; recorded for future clustered GEE.
-#'   The current validated implementation computes a working-independence
-#'   HC0 sandwich.
-#' @param corstr Working correlation structure. Only
-#'   \code{"independence"} is currently supported; \code{"exchangeable"}
-#'   and \code{"ar1"} raise a targeted message.
+#' @param id_col Optional character. For Gaussian models this enables the
+#'   cluster-robust sandwich meat; the cluster column must live with the
+#'   outcome and all clusters must pass \code{datashield.privacyLevel}.
+#' @param corstr Working correlation label. The current coefficient
+#'   estimator is the vertical GLM working-independence estimator; when
+#'   \code{id_col} is supplied, robust covariance uses cluster-level score
+#'   sums.
 #' @param max_iter,tol,lambda,verbose Passed to \code{ds.vertGLM}.
 #' @param datasources DataSHIELD connection object.
 #' @return An object of class \code{ds.vertGEE} with components
@@ -46,25 +51,27 @@ ds.vertGEE <- function(formula, data = NULL,
   corstr <- match.arg(corstr)
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
-  # Cluster-ID broadcast: for exchangeable / AR1 working correlation we
-  # need per-cluster residual outer products. The outcome server holds
-  # cluster IDs plaintext and we extend the peer's view by shipping
-  # cluster membership as a Ring63-permutation blob (same tier as
-  # Cox event-time ordering -- permutation is revealed, absolute IDs
-  # are not). Enabled only when id_col is provided.
-  cluster_ids <- NULL
+  # Cluster-ID broadcast is used only inside the share-domain Gaussian
+  # sandwich path below. The analyst client relays opaque encrypted blobs
+  # and does not receive row-level cluster membership.
   if (corstr %in% c("exchangeable", "ar1")) {
     if (is.null(id_col)) {
       stop("corstr='", corstr, "' requires id_col", call. = FALSE)
     }
     if (verbose) {
       message("[ds.vertGEE] corstr='", corstr,
-              "' - using cluster-ID broadcast path")
+              "' - using cluster-robust sandwich path")
     }
   }
   if (verbose && !is.null(id_col)) {
-    message("[ds.vertGEE] id_col='", id_col, "' recorded but unused under ",
-            "corstr='independence'. Cluster-aware sandwich is Month 4.")
+    if (family == "gaussian") {
+      message("[ds.vertGEE] id_col='", id_col,
+              "' enables share-domain cluster sandwich")
+    } else {
+      message("[ds.vertGEE] id_col='", id_col,
+              "' recorded; cluster sandwich currently implemented for ",
+              "Gaussian models only")
+    }
   }
 
   # Stage 1: ordinary fit -> betahat, Cov_model (bread).
@@ -100,30 +107,9 @@ ds.vertGEE <- function(formula, data = NULL,
                                 fit$covariance)
   Cov_model_info <- (Cov_model_info + t(Cov_model_info)) / 2
 
-  # Stage 2: weighted fit with weights = r^2 to pick up X^T diag(r^2) X.
-  # For Gaussian: r_i = y_i - x_i^T beta. The outcome server holds y
-  # plaintext; it can materialise r^2 server-side after receiving the
-  # plaintext betahat from the client. We expose r^2 as a weights
-  # column via the existing ds.vertGLM(weights=) infrastructure, which
-  # scales mu/y shares element-wise (no Beaver round) and lets the
-  # second fit's Fisher info equal X^T diag(r^2) X up to a known scale.
-  #
-  # Privacy: the weights themselves never cross the client -- r^2 is
-  # computed on the outcome server and encrypted to the DCF peer via
-  # k2SetWeightsDS. The client only sees the final sandwich matrix.
-  #
-  # For Binomial / Poisson: the Pearson residual is
-  #   r_i = (y_i - mu_i) / sqrt(Var(mu_i))
-  # which requires mu_i server-side; under DCF this is available on
-  # the outcome server via the stored eta+mu shares once they have
-  # been reconstructed internally. A server helper
-  # `k2ComputePearsonR2ColDS(betahat, family)` is the cleanest way
-  # to wire this; its design is documented below.
-  #
-  # Until that helper is merged, we degrade gracefully: the Gaussian
-  # case can reuse the `resid = y - Xbeta` plaintext path on the
-  # outcome server via dsvertPearsonRColumnDS (below); Binomial and
-  # Poisson currently fall back to model-based SE with a warning.
+  # Stage 2: share-domain sandwich meat. Gaussian models use the retained
+  # GLM session so residuals and X columns remain additive shares. A legacy
+  # weighted-r2 fallback is kept for older servers only.
   {
     if (verbose) message("[ds.vertGEE] Stage 2: weighted fit for sandwich meat (family=",
                           family, ")")
@@ -136,6 +122,7 @@ ds.vertGEE <- function(formula, data = NULL,
     y_var <- .ds_gee_extract_lhs(formula)
     y_srv <- .ds_gee_find_server_holding(datasources, server_names,
                                           data, y_var)
+    robust_method <- "model_based"
     if (is.null(y_srv)) {
       warning("ds.vertGEE: could not locate outcome server for y='",
               y_var, "'. Returning model-based SE.", call. = FALSE)
@@ -143,15 +130,18 @@ ds.vertGEE <- function(formula, data = NULL,
       robust_cov <- Cov_model
     } else {
       secure_hc0 <- NULL
+      secure_error <- NULL
       if (family == "gaussian") {
         secure_hc0 <- tryCatch(
           .ds_gee_secure_hc0(
             fit = fit, datasources = datasources,
             server_names = server_names, lambda = lambda,
+            data = data, id_col = id_col,
             verbose = verbose),
           error = function(e) {
+            secure_error <<- e
             if (verbose) {
-              message("[ds.vertGEE] secure HC0 path unavailable: ",
+              message("[ds.vertGEE] secure sandwich path unavailable: ",
                       conditionMessage(e))
             }
             NULL
@@ -160,7 +150,17 @@ ds.vertGEE <- function(formula, data = NULL,
       if (!is.null(secure_hc0)) {
         robust_cov <- secure_hc0$robust_covariance
         robust_se <- secure_hc0$robust_se
+        robust_method <- secure_hc0$method
       } else {
+        if (family == "gaussian" && !is.null(id_col) &&
+            is.character(id_col) && length(id_col) == 1L && nzchar(id_col)) {
+          msg <- if (is.null(secure_error)) {
+            "unknown error"
+          } else {
+            conditionMessage(secure_error)
+          }
+          stop("clustered GEE sandwich unavailable: ", msg, call. = FALSE)
+        }
         x_all <- names(fit$coefficients)
         x_all <- setdiff(x_all, "(Intercept)")
         r2_ok <- tryCatch({
@@ -218,53 +218,10 @@ ds.vertGEE <- function(formula, data = NULL,
                                           names(fit$coefficients))
             robust_se <- sqrt(pmax(diag(robust_cov), 0))
             names(robust_se) <- names(fit$coefficients)
+            robust_method <- "weighted_r2_fallback"
           }
         }
         }
-      }
-    }
-  }
-
-  # Exchangeable / AR1 refinement on the sandwich cov.
-  if (corstr %in% c("exchangeable", "ar1") && !is.null(id_col)) {
-    # Request per-cluster residual aggregates from the outcome server.
-    clust_info <- tryCatch(
-      DSI::datashield.aggregate(
-        datasources[which(server_names == .ds_gee_find_server_holding(
-          datasources, server_names, data, id_col))],
-        call(name = "dsvertClusterResidualsDS",
-             data_name = data, y_var = y_var,
-             x_names = setdiff(names(fit$coefficients), "(Intercept)"),
-             intercept = as.numeric(fit$coefficients["(Intercept)"]),
-             betahat = as.numeric(
-               fit$coefficients[setdiff(names(fit$coefficients),
-                                         "(Intercept)")]),
-             cluster_col = id_col)),
-      error = function(e) NULL)
-    if (!is.null(clust_info)) {
-      if (is.list(clust_info) && length(clust_info) == 1L)
-        clust_info <- clust_info[[1L]]
-      rss <- as.numeric(clust_info$rss_per_cluster)
-      rsum <- as.numeric(clust_info$rsum_per_cluster)
-      n_i <- as.integer(clust_info$n_per_cluster)
-      # Exchangeable: estimate within-cluster correlation alpha as
-      #   alpha = sum_{i: n_i>1} [sum_j<k r_ij r_ik] / sum_i n_i(n_i-1)/2
-      # Use sum(r)^2 - sum(r^2) = 2 sum_{j<k} r_ij r_ik.
-      offdiag_sums <- (rsum^2 - rss) / 2
-      total_pairs <- sum(n_i * (n_i - 1) / 2)
-      sigma2_hat <- sum(rss) / max(sum(n_i), 1L)
-      if (total_pairs > 0 && sigma2_hat > 0) {
-        alpha_hat <- sum(offdiag_sums) / (total_pairs * sigma2_hat)
-        alpha_hat <- max(min(alpha_hat, 0.99), -0.5)
-        # Inflate sandwich SE by sqrt(1 + (n_bar - 1) * alpha) for
-        # exchangeable; for AR1 the correction is a decaying series
-        # that we approximate with the same factor at mean cluster size.
-        n_bar <- mean(n_i)
-        inflation <- sqrt(max(1 + (n_bar - 1) * alpha_hat, 1e-4))
-        robust_se <- robust_se * inflation
-        robust_cov <- robust_cov * inflation^2
-        attr(robust_cov, "corstr_alpha") <- alpha_hat
-        attr(robust_cov, "corstr_inflation") <- inflation
       }
     }
   }
@@ -274,6 +231,7 @@ ds.vertGEE <- function(formula, data = NULL,
     model_se           = fit$std_errors,
     robust_se          = robust_se,
     robust_covariance  = robust_cov,
+    robust_method      = robust_method,
     corstr             = corstr,
     family             = family,
     id_col             = id_col,
@@ -356,7 +314,8 @@ ds.vertGEE <- function(formula, data = NULL,
 
 #' @keywords internal
 .ds_gee_secure_hc0 <- function(fit, datasources, server_names,
-                               lambda = 0, verbose = FALSE) {
+                               lambda = 0, data = NULL, id_col = NULL,
+                               verbose = FALSE) {
   if (!identical(fit$family, "gaussian")) return(NULL)
   required <- c("session_id", "transport_pks", "server_list", "x_vars",
                 "y_server", "hessian_std", "x_sds", "x_means")
@@ -406,6 +365,9 @@ ds.vertGEE <- function(formula, data = NULL,
   target_features <- unlist(x_vars[server_list], use.names = FALSE)
   target_order <- c("(Intercept)", target_features)
   std <- .ds_gee_standardized_parameters(fit, target_features)
+  cluster_enabled <- !is.null(id_col) && length(id_col) == 1L &&
+    is.character(id_col) && nzchar(id_col)
+  cluster_sizes <- NULL
 
   if (fit$eta_privacy == "k2_beaver") {
     nl <- setdiff(server_list, coordinator)
@@ -489,6 +451,34 @@ ds.vertGEE <- function(formula, data = NULL,
   } else {
     stop("unsupported eta_privacy for secure GEE HC0: ", fit$eta_privacy,
          call. = FALSE)
+  }
+
+  if (cluster_enabled) {
+    if (is.null(data) || !is.character(data) || length(data) != 1L ||
+        !nzchar(data)) {
+      stop("data name is required for clustered GEE sandwich",
+           call. = FALSE)
+    }
+    cluster_srv <- .ds_gee_find_server_holding(datasources, server_names,
+                                               data, id_col)
+    if (is.null(cluster_srv)) {
+      stop("id_col '", id_col, "' not found on any server", call. = FALSE)
+    }
+    if (!identical(cluster_srv, coordinator)) {
+      stop("clustered GEE sandwich requires id_col to live on the ",
+           "outcome server; found on '", cluster_srv, "'", call. = FALSE)
+    }
+    coord_i <- match(coordinator, dcf_parties)
+    peer_i <- setdiff(seq_along(dcf_parties), coord_i)
+    cb <- .dsAgg(datasources[dcf_conns[[coord_i]]],
+      call(name = "dsvertClusterIDsBroadcastDS",
+           data_name = data, cluster_col = id_col,
+           peer_pk = transport_pks[[dcf_parties[[peer_i]]]],
+           session_id = session_id))
+    if (is.list(cb) && length(cb) == 1L) cb <- cb[[1L]]
+    .sendBlob(cb$peer_blob, "dsvert_cluster_ids_blob", dcf_conns[[peer_i]])
+    .dsAgg(datasources[dcf_conns[[peer_i]]],
+      call(name = "dsvertClusterIDsReceiveDS", session_id = session_id))
   }
 
   p_total <- length(canonical_features)
@@ -586,9 +576,11 @@ ds.vertGEE <- function(formula, data = NULL,
       call(name = "k2PrepareWeightedResidualShareDS",
            session_id = session_id))
   }
-  .vecmul("k2_weight_residual_share_fp",
-          "k2_weight_residual_share_fp",
-          "gee_r2_share")
+  if (!cluster_enabled) {
+    .vecmul("k2_weight_residual_share_fp",
+            "k2_weight_residual_share_fp",
+            "gee_r2_share")
+  }
 
   for (i in seq_along(dcf_parties)) {
     .dsAgg(datasources[dcf_conns[[i]]],
@@ -612,23 +604,61 @@ ds.vertGEE <- function(formula, data = NULL,
     }
   }
 
-  A_canonical <- matrix(0, nrow = p_total + 1L, ncol = p_total + 1L)
-  for (j in 0:p_total) {
-    x_key <- paste0("gee_x_col_", j)
-    wx_key <- paste0("gee_r2_x_col_", j)
-    .vecmul("gee_r2_share", x_key, wx_key)
-    for (ci in dcf_conns) {
-      .dsAgg(datasources[ci],
-        call(name = "k2FinalizeWeightedResidualShareDS",
-             input_key = wx_key, session_id = session_id))
+  meat_method <- "share_domain_hc0"
+  if (cluster_enabled) {
+    S_canonical <- NULL
+    for (j in 0:p_total) {
+      x_key <- paste0("gee_x_col_", j)
+      rx_key <- paste0("gee_r_x_col_", j)
+      .vecmul("k2_weight_residual_share_fp", x_key, rx_key)
+      parts <- vector("list", length(dcf_parties))
+      for (i in seq_along(dcf_parties)) {
+        part <- .dsAgg(datasources[dcf_conns[[i]]],
+          call(name = "dsvertPerClusterSumShareDS",
+               share_key = rx_key, session_id = session_id,
+               frac_bits = frac_bits, ring = ring))
+        if (is.list(part) && length(part) == 1L) part <- part[[1L]]
+        parts[[i]] <- part
+      }
+      n_clusters <- length(parts[[1L]]$per_cluster_fp)
+      if (is.null(S_canonical)) {
+        S_canonical <- matrix(0, nrow = n_clusters, ncol = p_total + 1L)
+      }
+      for (ck in seq_len(n_clusters)) {
+        agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+          share_a = parts[[1L]]$per_cluster_fp[[ck]],
+          share_b = parts[[2L]]$per_cluster_fp[[ck]],
+          frac_bits = frac_bits, ring = ring_tag))
+        S_canonical[ck, j + 1L] <- as.numeric(agg$values[1L])
+      }
+      coord_i <- match(coordinator, dcf_parties)
+      cluster_sizes <- as.integer(parts[[coord_i]]$cluster_sizes)
+      if (verbose) {
+        message(sprintf("[ds.vertGEE] secure cluster meat column %d/%d",
+                        j + 1L, p_total + 1L))
+      }
     }
-    A_canonical[, j + 1L] <- .gradient()
-    if (verbose) {
-      message(sprintf("[ds.vertGEE] secure HC0 meat column %d/%d",
-                      j + 1L, p_total + 1L))
+    A_canonical <- crossprod(S_canonical)
+    meat_method <- "share_domain_cluster"
+  } else {
+    A_canonical <- matrix(0, nrow = p_total + 1L, ncol = p_total + 1L)
+    for (j in 0:p_total) {
+      x_key <- paste0("gee_x_col_", j)
+      wx_key <- paste0("gee_r2_x_col_", j)
+      .vecmul("gee_r2_share", x_key, wx_key)
+      for (ci in dcf_conns) {
+        .dsAgg(datasources[ci],
+          call(name = "k2FinalizeWeightedResidualShareDS",
+               input_key = wx_key, session_id = session_id))
+      }
+      A_canonical[, j + 1L] <- .gradient()
+      if (verbose) {
+        message(sprintf("[ds.vertGEE] secure HC0 meat column %d/%d",
+                        j + 1L, p_total + 1L))
+      }
     }
+    A_canonical <- (A_canonical + t(A_canonical)) / 2
   }
-  A_canonical <- (A_canonical + t(A_canonical)) / 2
   dimnames(A_canonical) <- list(canonical_order, canonical_order)
 
   perm <- match(target_order, canonical_order)
@@ -659,7 +689,8 @@ ds.vertGEE <- function(formula, data = NULL,
   list(robust_covariance = robust_cov,
        robust_se = robust_se,
        meat_std = A_std,
-       method = "share_domain_hc0")
+       cluster_sizes = cluster_sizes,
+       method = meat_method)
 }
 
 #' @export
