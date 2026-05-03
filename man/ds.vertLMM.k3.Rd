@@ -57,7 +57,10 @@ pipeline at each profile evaluation -- no new MPC primitives. The
 per-cluster GLS weights are a public function of \eqn{\rho} and
 the cluster sizes (already disclosed under
 \code{datashield.privacyLevel}), so D-INV-1..5 are preserved
-identically to the K=2 \code{ds.vertLMM} path.
+identically to the K=2 \code{ds.vertLMM} path. The X-correction
+receives cluster membership through encrypted server-to-server
+blobs; the analyst client does not receive a row-level cluster
+vector.
 
 Outer optimisation is golden-section search over
 \eqn{\rho \in (\rho_{\min}, \rho_{\max})}; default

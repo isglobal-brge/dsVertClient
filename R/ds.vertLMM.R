@@ -22,9 +22,10 @@
 #'   server as a single aggregate vector (one scalar per cluster) under
 #'   the already-documented cluster-ID inter-server leakage tier.
 #'
-#'   Inter-server disclosure: the DCF peer learns the cluster
-#'   membership (same class as Cox event-time ordering). Absolute
-#'   cluster sizes are revealed; individual observations are not.
+#'   Inter-server disclosure: the DCF peer learns integer cluster
+#'   membership (same class as Cox event-time ordering). Original cluster
+#'   labels are not returned, clusters below datashield.privacyLevel fail
+#'   closed, and individual observations are not revealed to the client.
 #'
 #' @param formula Fixed-effects formula.
 #' @param data Aligned data-frame name.
