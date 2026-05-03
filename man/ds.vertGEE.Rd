@@ -25,8 +25,8 @@ ds.vertGEE(
 \item{family}{One of \code{"gaussian"}, \code{"binomial"},
 \code{"poisson"}.}
 
-\item{id_col}{Optional character. For Gaussian models this enables the
-cluster-robust sandwich meat; the cluster column must live with the
+\item{id_col}{Optional character. For Gaussian/binomial models this enables
+the cluster-robust sandwich meat; the cluster column must live with the
 outcome and all clusters must pass \code{datashield.privacyLevel}.}
 
 \item{corstr}{Working correlation label. The current coefficient
@@ -49,9 +49,9 @@ An object of class \code{ds.vertGEE} with components
 Fit a GLM for vertically partitioned DataSHIELD data and
 return sandwich (robust) standard errors alongside the usual
 model-based ones. The point estimate \eqn{\hat{\beta}} is obtained
-by a single call to \code{\link{ds.vertGLM}}. For Gaussian models the
-sandwich meat is computed in the share domain. If \code{id_col} is
-supplied, dsVert computes the clustered meat
+by a single call to \code{\link{ds.vertGLM}}. For Gaussian and binomial
+models the sandwich meat is computed in the share domain. If
+\code{id_col} is supplied, dsVert computes the clustered meat
 \eqn{\sum_c S_c S_c^\top}, where
 \eqn{S_c=\sum_{i\in c} X_i r_i}; otherwise it computes the row-level
 HC0 meat \eqn{X^\top \mathrm{diag}(r^2) X}. Cluster membership is
@@ -65,7 +65,7 @@ weighted-column vectors.
 Formula:
 \deqn{V_{sand} = \mathrm{Cov}(\hat\beta) \, A \, \mathrm{Cov}(\hat\beta)}
 \deqn{A = \sum_c S_c S_c^\top}
-for clustered Gaussian fits, or
+for clustered Gaussian/binomial fits, or
 \deqn{A = X^T \, \mathrm{diag}(r^2) \, X}
 for row-level HC0 when no \code{id_col} is supplied.
 }

@@ -2,9 +2,9 @@
 #' @description Fit a GLM for vertically partitioned DataSHIELD data and
 #'   return sandwich (robust) standard errors alongside the usual
 #'   model-based ones. The point estimate \eqn{\hat{\beta}} is obtained
-#'   by a single call to \code{\link{ds.vertGLM}}. For Gaussian models the
-#'   sandwich meat is computed in the share domain. If \code{id_col} is
-#'   supplied, dsVert computes the clustered meat
+#'   by a single call to \code{\link{ds.vertGLM}}. For Gaussian and binomial
+#'   models the sandwich meat is computed in the share domain. If
+#'   \code{id_col} is supplied, dsVert computes the clustered meat
 #'   \eqn{\sum_c S_c S_c^\top}, where
 #'   \eqn{S_c=\sum_{i\in c} X_i r_i}; otherwise it computes the row-level
 #'   HC0 meat \eqn{X^\top \mathrm{diag}(r^2) X}. Cluster membership is
@@ -18,7 +18,7 @@
 #'   Formula:
 #'     \deqn{V_{sand} = \mathrm{Cov}(\hat\beta) \, A \, \mathrm{Cov}(\hat\beta)}
 #'     \deqn{A = \sum_c S_c S_c^\top}
-#'   for clustered Gaussian fits, or
+#'   for clustered Gaussian/binomial fits, or
 #'     \deqn{A = X^T \, \mathrm{diag}(r^2) \, X}
 #'   for row-level HC0 when no \code{id_col} is supplied.
 #'
@@ -26,8 +26,8 @@
 #' @param data Character. Aligned data-frame name on each server.
 #' @param family One of \code{"gaussian"}, \code{"binomial"},
 #'   \code{"poisson"}.
-#' @param id_col Optional character. For Gaussian models this enables the
-#'   cluster-robust sandwich meat; the cluster column must live with the
+#' @param id_col Optional character. For Gaussian/binomial models this enables
+#'   the cluster-robust sandwich meat; the cluster column must live with the
 #'   outcome and all clusters must pass \code{datashield.privacyLevel}.
 #' @param corstr Working correlation label. The current coefficient
 #'   estimator is the vertical GLM working-independence estimator; when
@@ -51,7 +51,7 @@ ds.vertGEE <- function(formula, data = NULL,
   corstr <- match.arg(corstr)
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
-  # Cluster-ID broadcast is used only inside the share-domain Gaussian
+  # Cluster-ID broadcast is used only inside the share-domain
   # sandwich path below. The analyst client relays opaque encrypted blobs
   # and does not receive row-level cluster membership.
   if (corstr %in% c("exchangeable", "ar1")) {
@@ -64,13 +64,13 @@ ds.vertGEE <- function(formula, data = NULL,
     }
   }
   if (verbose && !is.null(id_col)) {
-    if (family == "gaussian") {
+    if (family %in% c("gaussian", "binomial")) {
       message("[ds.vertGEE] id_col='", id_col,
               "' enables share-domain cluster sandwich")
     } else {
       message("[ds.vertGEE] id_col='", id_col,
               "' recorded; cluster sandwich currently implemented for ",
-              "Gaussian models only")
+              "Gaussian/binomial models only")
     }
   }
 
@@ -107,9 +107,9 @@ ds.vertGEE <- function(formula, data = NULL,
                                 fit$covariance)
   Cov_model_info <- (Cov_model_info + t(Cov_model_info)) / 2
 
-  # Stage 2: share-domain sandwich meat. Gaussian models use the retained
-  # GLM session so residuals and X columns remain additive shares. A legacy
-  # weighted-r2 fallback is kept for older servers only.
+  # Stage 2: share-domain sandwich meat. Gaussian/binomial models use the
+  # retained GLM session so residuals and X columns remain additive shares.
+  # A legacy weighted-r2 fallback is kept for older servers only.
   {
     if (verbose) message("[ds.vertGEE] Stage 2: weighted fit for sandwich meat (family=",
                           family, ")")
@@ -131,7 +131,7 @@ ds.vertGEE <- function(formula, data = NULL,
     } else {
       secure_hc0 <- NULL
       secure_error <- NULL
-      if (family == "gaussian") {
+      if (family %in% c("gaussian", "binomial")) {
         secure_hc0 <- tryCatch(
           .ds_gee_secure_hc0(
             fit = fit, datasources = datasources,
@@ -152,7 +152,7 @@ ds.vertGEE <- function(formula, data = NULL,
         robust_se <- secure_hc0$robust_se
         robust_method <- secure_hc0$method
       } else {
-        if (family == "gaussian" && !is.null(id_col) &&
+        if (family %in% c("gaussian", "binomial") && !is.null(id_col) &&
             is.character(id_col) && length(id_col) == 1L && nzchar(id_col)) {
           msg <- if (is.null(secure_error)) {
             "unknown error"
@@ -316,7 +316,7 @@ ds.vertGEE <- function(formula, data = NULL,
 .ds_gee_secure_hc0 <- function(fit, datasources, server_names,
                                lambda = 0, data = NULL, id_col = NULL,
                                verbose = FALSE) {
-  if (!identical(fit$family, "gaussian")) return(NULL)
+  if (!fit$family %in% c("gaussian", "binomial")) return(NULL)
   required <- c("session_id", "transport_pks", "server_list", "x_vars",
                 "y_server", "hessian_std", "x_sds", "x_means")
   missing_req <- required[vapply(required, function(nm) is.null(fit[[nm]]),
@@ -337,6 +337,15 @@ ds.vertGEE <- function(formula, data = NULL,
   ring_tag <- if (ring == 127L) "ring127" else "ring63"
   transport_pks <- fit$transport_pks
 
+  .to_b64url <- function(x) gsub("+", "-", gsub("/", "_",
+    gsub("=+$", "", x, perl = TRUE), fixed = TRUE), fixed = TRUE)
+  .b64url_to_b64 <- function(x) {
+    x <- gsub("-", "+", gsub("_", "/", x, fixed = TRUE), fixed = TRUE)
+    pad <- nchar(x) %% 4
+    if (pad == 2) x <- paste0(x, "==")
+    if (pad == 3) x <- paste0(x, "=")
+    x
+  }
   .dsAgg <- function(conns, expr, ...) {
     tryCatch(
       DSI::datashield.aggregate(conns = conns, expr = expr, ...),
@@ -396,8 +405,6 @@ ds.vertGEE <- function(formula, data = NULL,
              intercept = if (srv == coordinator) std$intercept else 0,
              is_coordinator = (srv == coordinator),
              session_id = session_id))
-      .dsAgg(datasources[dcf_conns[[i]]],
-        call(name = "k2IdentityLinkDS", session_id = session_id))
     }
   } else if (fit$eta_privacy == "secure_agg") {
     fusion <- .k3_select_fusion_server(server_list, coordinator, x_vars)
@@ -445,12 +452,93 @@ ds.vertGEE <- function(formula, data = NULL,
                p_extras = as.integer(p_extras),
                session_id = session_id))
       }
-      .dsAgg(datasources[dcf_conns[[i]]],
-        call(name = "k2IdentityLinkDS", session_id = session_id))
     }
   } else {
     stop("unsupported eta_privacy for secure GEE HC0: ", fit$eta_privacy,
          call. = FALSE)
+  }
+
+  if (identical(fit$family, "gaussian")) {
+    for (ci in dcf_conns) {
+      .dsAgg(datasources[ci],
+        call(name = "k2IdentityLinkDS", session_id = session_id))
+    }
+  } else if (identical(fit$family, "binomial")) {
+    dcf <- .dsAgg(datasources[dealer_conn],
+      call(name = "glmRing63GenDcfKeysDS",
+           dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
+           dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
+           family = "sigmoid", n = as.integer(n_obs),
+           frac_bits = frac_bits, num_intervals = 50L,
+           ring = ring, session_id = session_id))
+    if (is.list(dcf) && length(dcf) == 1L) dcf <- dcf[[1L]]
+    .sendBlob(dcf$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[[1L]])
+    .sendBlob(dcf$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[[2L]])
+    for (ci in dcf_conns) {
+      .dsAgg(datasources[ci],
+        call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
+    }
+
+    spline_t <- .dsAgg(datasources[dealer_conn],
+      call(name = "glmRing63GenSplineTriplesDS",
+           dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
+           dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
+           n = as.integer(n_obs), frac_bits = frac_bits,
+           ring = ring, session_id = session_id))
+    if (is.list(spline_t) && length(spline_t) == 1L) {
+      spline_t <- spline_t[[1L]]
+    }
+    .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", dcf_conns[[1L]])
+    .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", dcf_conns[[2L]])
+    for (ph in 1:4) {
+      pr <- vector("list", 2L)
+      for (i in seq_along(dcf_parties)) {
+        r <- .dsAgg(datasources[dcf_conns[[i]]],
+          call(paste0("k2WideSplinePhase", ph, "DS"),
+               party_id = as.integer(i - 1L),
+               family = "binomial",
+               num_intervals = 50L,
+               frac_bits = frac_bits,
+               ring = ring,
+               session_id = session_id))
+        if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+        pr[[i]] <- r
+      }
+      if (ph == 1L) {
+        .sendBlob(pr[[1L]]$dcf_masked, "k2_peer_dcf_masked",
+                  dcf_conns[[2L]])
+        .sendBlob(pr[[2L]]$dcf_masked, "k2_peer_dcf_masked",
+                  dcf_conns[[1L]])
+      } else if (ph == 2L) {
+        for (i in 1:2) {
+          peer_i <- 3L - i
+          pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
+          payload <- jsonlite::toJSON(list(
+            and_xma = pr[[i]]$and_xma, and_ymb = pr[[i]]$and_ymb,
+            had1_xma = pr[[i]]$had1_xma, had1_ymb = pr[[i]]$had1_ymb),
+            auto_unbox = TRUE)
+          sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
+            data = jsonlite::base64_enc(charToRaw(payload)),
+            recipient_pk = pk_b64))
+          .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1",
+                    dcf_conns[[peer_i]])
+        }
+      } else if (ph == 3L) {
+        for (i in 1:2) {
+          peer_i <- 3L - i
+          pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
+          payload <- jsonlite::toJSON(list(
+            had2_xma = pr[[i]]$had2_xma,
+            had2_ymb = pr[[i]]$had2_ymb),
+            auto_unbox = TRUE)
+          sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
+            data = jsonlite::base64_enc(charToRaw(payload)),
+            recipient_pk = pk_b64))
+          .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1",
+                    dcf_conns[[peer_i]])
+        }
+      }
+    }
   }
 
   if (cluster_enabled) {
