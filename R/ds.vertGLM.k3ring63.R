@@ -33,7 +33,10 @@ NULL
     betas, n_obs, lambda,
     session_id, max_iter, tol, verbose,
     label_intercept, .dsAgg, .sendBlob,
-    weights_active = FALSE) {
+    weights_active = FALSE,
+    no_intercept = FALSE,
+    start = NULL,
+    compute_se = TRUE) {
 
   K <- length(server_list)
   # DCF parties: fusion (party 0) must differ from coordinator (party 1)
@@ -186,9 +189,38 @@ NULL
   # ===========================================================================
   beta <- rep(0, p_total)
   intercept <- 0.0
+  feature_order <- c(x_vars[[coordinator]])
+  for (srv in server_list) {
+    if (srv == coordinator) next
+    feature_order <- c(feature_order, x_vars[[srv]])
+  }
+  if (!is.null(start)) {
+    start_vec <- as.numeric(start)
+    names(start_vec) <- names(start)
+    if (!is.null(names(start_vec)) && "(Intercept)" %in% names(start_vec)) {
+      intercept <- as.numeric(start_vec["(Intercept)"])
+    }
+    if (!is.null(names(start_vec))) {
+      miss <- setdiff(feature_order, names(start_vec))
+      if (length(miss) > 0L) {
+        stop("start is missing coefficient(s): ",
+             paste(miss, collapse = ", "), call. = FALSE)
+      }
+      beta <- as.numeric(start_vec[feature_order])
+    } else if (length(start_vec) == p_total + 1L) {
+      intercept <- start_vec[1L]
+      beta <- start_vec[-1L]
+    } else if (length(start_vec) == p_total) {
+      beta <- start_vec
+    } else {
+      stop("start length must be p or p+1", call. = FALSE)
+    }
+    if (isTRUE(no_intercept)) intercept <- 0
+  }
   lbfgs_s <- list(); lbfgs_y <- list()
   prev_theta <- NULL; prev_grad <- NULL
   converged <- FALSE; final_iter <- 0
+  max_diff <- Inf
 
   # Feature counts for beta splitting (EXCLUDING intercept)
   p_coord <- length(x_vars[[coordinator]])
@@ -197,6 +229,12 @@ NULL
   p_nl <- p_total - p_coord
 
   t0_loop <- proc.time()[[3]]
+
+  if (max_iter < 1L) {
+    converged <- TRUE
+    final_iter <- 0L
+    max_diff <- 0
+  }
 
   for (iter in seq_len(max_iter)) {
     t0_iter <- proc.time()[[3]]
@@ -444,6 +482,9 @@ NULL
 
     theta <- c(intercept, beta)
     full_grad <- c(sum_residual / n_obs, gradient / n_obs) + lambda * theta
+    if (isTRUE(no_intercept)) {
+      full_grad[1] <- 0
+    }
 
     if (!is.null(prev_theta)) {
       sk <- theta - prev_theta; yk <- full_grad - prev_grad
@@ -462,6 +503,9 @@ NULL
     # k2WideSplinePhase1DS resulting in SIGSEGV addr=0xefffffff90a0).
     d_max <- max(abs(direction))
     if (is.finite(d_max) && d_max > 5.0) direction <- direction * (5.0 / d_max)
+    if (isTRUE(no_intercept)) {
+      direction[1] <- 0
+    }
     # Backtracking: halve step until new theta is finite and bounded
     step_size <- if (iter <= 1) 0.3 else 1.0
     for (bt in 0:6) {
@@ -471,7 +515,7 @@ NULL
     }
     if (!all(is.finite(new_theta)))
       stop("L-BFGS step produced non-finite theta \u2014 divergence guard", call. = FALSE)
-    intercept <- new_theta[1]
+    intercept <- if (isTRUE(no_intercept)) 0 else new_theta[1]
     beta <- new_theta[-1]
 
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
@@ -522,10 +566,13 @@ NULL
   # Each gives one column of the Hessian. Exact, uses existing Beaver.
   # Disclosure: only aggregate gradients (same as iterations). SAFE.
   # ===========================================================================
+  inv_hessian <- list()
+  if (isTRUE(compute_se)) {
   if (verbose) message("  [SE] Computing exact Hessian (central differences)...")
   p_plus1 <- p_total + 1
   delta <- 0.01  # larger delta for better signal vs Ring63 noise
   hessian <- matrix(0, p_plus1, p_plus1)
+  theta <- c(intercept, beta)
 
   for (j in seq_len(p_plus1)) {
     # Central difference: H_j = (g(theta+deltae_j) - g(theta-deltae_j)) / (2delta)
@@ -772,8 +819,8 @@ NULL
   # Symmetrize (numerical noise)
   hessian <- (hessian + t(hessian)) / 2
   # Pass raw hessian for proper Fisher matrix computation in outer code
-  inv_hessian <- list()
   attr(inv_hessian, "raw_hessian") <- hessian
+  }
 
   if (isTRUE(weights_active) && family != "gaussian") {
     if (verbose) {
@@ -807,6 +854,12 @@ NULL
       beta_coord = b_coord, beta_nl = b_nl,
       intercept = intercept, is_coordinator = is_coord,
       session_id = session_id))
+  }
+  if (family == "gaussian") {
+    for (di in seq_along(dcf_parties)) {
+      .dsAgg(datasources[dcf_conns[di]], call(name = "k2IdentityLinkDS",
+        session_id = session_id))
+    }
   }
 
   # Helper: Beaver dot-product (nx1) on both DCF parties, returns scalar
