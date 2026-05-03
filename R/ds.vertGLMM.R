@@ -46,6 +46,10 @@
 #' @param inner_iter Inner PIRLS iterations per cluster per outer step.
 #' @param tol Outer convergence tolerance.
 #' @param lambda L2 penalty passed to the inner binomial GLM fits.
+#' @param method Character. \code{"em"} keeps the current offset-GLM plus
+#'   BLUP/EM approximation. \code{"pql_aggregate"} runs the experimental
+#'   aggregate PQL weighted-LMM update using Ring127 share-domain working
+#'   statistics.
 #' @param use_pearson_cap Logical. If TRUE, cap the EM variance-component
 #'   update by the first marginal Pearson cluster-moment estimate. This
 #'   prevents BLUP posterior-variance inflation when the random-effect signal
@@ -53,6 +57,7 @@
 #'   the default GLMM loop.
 #' @param compute_se Logical. Compute GLM finite-difference standard errors
 #'   for the inner fits. Set FALSE for coefficient/variance validation runs.
+#' @param ring Integer 63 or 127. The PQL aggregate route requires Ring127.
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD connections.
 #' @return \code{ds.vertGLMM} object: fixed-effect coefficients,
@@ -62,11 +67,20 @@
 ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         max_outer = 10L, inner_iter = 10L,
                         tol = 1e-3, lambda = 0,
+                        method = c("em", "pql_aggregate"),
                         use_pearson_cap = getOption(
                           "dsvert.glmm_use_pearson_cap", TRUE),
                         compute_se = TRUE,
+                        ring = NULL,
                         verbose = TRUE,
                         datasources = NULL) {
+  method <- match.arg(method)
+  if (is.null(ring)) ring <- if (method == "pql_aggregate") 127L else 63L
+  ring <- as.integer(ring)
+  if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
+  if (method == "pql_aggregate" && ring != 127L) {
+    stop("method='pql_aggregate' currently requires ring=127", call. = FALSE)
+  }
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
   y_var <- .ds_gee_extract_lhs(formula)
@@ -82,6 +96,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
   if (verbose) message("[ds.vertGLMM] prime: binomial ds.vertGLM")
   fit <- ds.vertGLM(formula = formula, data = data, family = "binomial",
                     max_iter = inner_iter, tol = tol, lambda = lambda,
+                    ring = ring,
                     compute_se = isTRUE(compute_se),
                     verbose = FALSE,
                     datasources = datasources,
@@ -96,6 +111,15 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     clust_info <- clust_info[[1L]]
   n_i <- as.integer(clust_info$sizes)
   n_clusters <- length(n_i)
+
+  if (method == "pql_aggregate") {
+    return(.ds_glmm_pql_aggregate_loop(
+      fit = fit, data = data, cluster_col = cluster_col,
+      n_i = n_i, n_clusters = n_clusters, max_outer = max_outer,
+      tol = tol, compute_se = compute_se,
+      datasources = datasources, server_names = server_names,
+      y_srv = y_srv, verbose = verbose, call = match.call()))
+  }
 
   # Outer optimiser: alternate (i) compute cluster BLUPs \hat b_i via
   # Laplace-approximated inner PIRLS on y vs. binomial likelihood, and
@@ -217,6 +241,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
       ds.vertGLM(formula = formula, data = data, family = "binomial",
                  offset = offset_col,
                  max_iter = inner_iter, tol = tol, lambda = lambda,
+                 ring = ring,
                  compute_se = isTRUE(compute_se),
                  verbose = FALSE,
                  datasources = datasources,
@@ -292,9 +317,229 @@ print.ds.vertGLMM <- function(x, ...) {
 }
 
 #' @keywords internal
+.ds_glmm_feature_order <- function(fit) {
+  x_vars <- fit$x_vars
+  server_list <- fit$server_list
+  coordinator <- fit$y_server
+  if (identical(fit$eta_privacy, "secure_agg")) {
+    fusion <- .k3_select_fusion_server(server_list, coordinator, x_vars)
+    non_dcf <- setdiff(server_list, c(coordinator, fusion))
+    c(x_vars[[coordinator]], x_vars[[fusion]],
+      unlist(x_vars[non_dcf], use.names = FALSE))
+  } else {
+    nl <- setdiff(server_list, coordinator)
+    c(x_vars[[coordinator]], unlist(x_vars[nl], use.names = FALSE))
+  }
+}
+
+#' @keywords internal
+.ds_glmm_unstandardize_beta <- function(beta_std, fit, features) {
+  beta_std <- as.numeric(beta_std)
+  names(beta_std) <- c("(Intercept)", features)
+  x_sds <- as.numeric(fit$x_sds[features])
+  x_means <- as.numeric(fit$x_means[features])
+  names(x_sds) <- names(x_means) <- features
+  beta_feat <- beta_std[features] / x_sds
+  intercept <- beta_std["(Intercept)"] - sum(beta_feat * x_means)
+  out <- c("(Intercept)" = as.numeric(intercept), beta_feat)
+  names(out) <- c("(Intercept)", features)
+  out
+}
+
+#' @keywords internal
+.ds_glmm_safe_solve <- function(a, b) {
+  out <- tryCatch(
+    solve(a, b),
+    error = function(e) qr.solve(a + diag(1e-10, nrow(a)), b))
+  as.numeric(out)
+}
+
+#' @keywords internal
+.ds_glmm_pql_solve_components <- function(comp,
+                                          tau_bounds = c(1e-12, 1e6)) {
+  cols <- comp$columns
+  xwx <- as.matrix(comp$xwx)
+  xwz <- as.numeric(comp$xwz)
+  q <- as.matrix(comp$q_by_cluster)
+  zsum <- as.numeric(comp$zsum_by_cluster)
+  wz2 <- as.numeric(comp$wz2_by_cluster)
+  s <- as.numeric(comp$s_by_cluster)
+  sizes <- as.integer(comp$cluster_sizes)
+  active <- sizes > 0L & is.finite(s) & s > 1e-10 &
+    is.finite(zsum) & is.finite(wz2)
+  if (sum(active) < 2L) {
+    stop("PQL aggregate solve needs at least two active clusters",
+         call. = FALSE)
+  }
+  q <- q[active, , drop = FALSE]
+  zsum <- zsum[active]
+  wz2 <- wz2[active]
+  s <- s[active]
+  n <- sum(sizes[active])
+  p <- length(cols)
+
+  stats_for_tau <- function(tau) {
+    denom <- 1 / tau + s
+    a <- xwx
+    rhs <- xwz
+    for (ii in seq_along(denom)) {
+      qi <- q[ii, ]
+      a <- a - tcrossprod(qi) / denom[ii]
+      rhs <- rhs - qi * zsum[ii] / denom[ii]
+    }
+    beta <- .ds_glmm_safe_solve(a, rhs)
+    quad <- as.numeric(crossprod(beta, xwx %*% beta))
+    r_v0_r <- sum(wz2) - 2 * sum(beta * xwz) + quad
+    adj <- numeric(length(denom))
+    for (ii in seq_along(denom)) {
+      zi <- zsum[ii] - sum(q[ii, ] * beta)
+      adj[ii] <- zi^2 / denom[ii]
+    }
+    r_v0_r <- max(r_v0_r - sum(adj), 1e-12)
+    phi <- max(r_v0_r / n, 1e-12)
+    nll <- n * log(phi) + sum(log1p(tau * s)) + r_v0_r / phi
+    list(beta = beta, phi = phi, r_v0_r = r_v0_r, nll = nll)
+  }
+
+  objective <- function(log_tau) stats_for_tau(exp(log_tau))$nll
+  opt <- optimize(objective, interval = log(tau_bounds))
+  tau <- exp(opt$minimum)
+  fit <- stats_for_tau(tau)
+  beta <- fit$beta
+  names(beta) <- cols
+  b_hat <- numeric(length(sizes))
+  denom <- 1 / tau + s
+  b_active <- numeric(length(s))
+  for (ii in seq_along(s)) {
+    b_active[ii] <- (zsum[ii] - sum(q[ii, ] * beta)) / denom[ii]
+  }
+  b_hat[active] <- b_active
+  list(beta_std = beta,
+       b_hat = b_hat,
+       sigma_b2 = fit$phi * tau,
+       phi = fit$phi,
+       tau = tau,
+       nll = fit$nll,
+       active = active,
+       optimizer = opt)
+}
+
+#' @keywords internal
+.ds_glmm_pql_aggregate_loop <- function(fit, data, cluster_col,
+                                        n_i, n_clusters, max_outer,
+                                        tol, compute_se,
+                                        datasources, server_names,
+                                        y_srv, verbose, call) {
+  if (as.integer(fit$ring %||% 63L) != 127L) {
+    stop("aggregate PQL GLMM requires a Ring127 GLM session", call. = FALSE)
+  }
+  feature_order <- .ds_glmm_feature_order(fit)
+  beta_orig <- fit$coefficients[c("(Intercept)", feature_order)]
+  b_hat <- rep(0, n_clusters)
+  sigma_b2 <- 1
+  phi <- 1
+  tau <- sigma_b2 / phi
+  converged <- FALSE
+  trace <- data.frame()
+  offset_col <- "__dsvert_glmm_pql_b"
+  on.exit(.ds_glmm_cleanup_fit_session(fit, datasources), add = TRUE)
+
+  for (outer in seq_len(max_outer)) {
+    tryCatch(
+      DSI::datashield.aggregate(
+        datasources[which(server_names == y_srv)],
+        call(name = "dsvertExpandClusterWeightsDS",
+             data_name = data, cluster_col = cluster_col,
+             weights_per_cluster = as.numeric(b_hat),
+             output_column = offset_col)),
+      error = function(e) {
+        stop("[GLMM PQL] offset expand failed: ",
+             conditionMessage(e), call. = FALSE)
+      })
+    tryCatch(
+      DSI::datashield.aggregate(
+        datasources[which(server_names == y_srv)],
+        call(name = "k2SetOffsetDS", data_name = data,
+             offset_column = offset_col, session_id = fit$session_id)),
+      error = function(e) {
+        stop("[GLMM PQL] offset registration failed: ",
+             conditionMessage(e), call. = FALSE)
+      })
+
+    fit$coefficients <- beta_orig
+    cl <- .ds_glmm_share_domain_moments(
+      fit = fit, data = data, cluster_col = cluster_col,
+      datasources = datasources, server_names = server_names,
+      verbose = verbose, pql_components = TRUE,
+      pql_feature_order = feature_order)
+    if (length(cl$n_per_cluster) == length(n_i)) {
+      n_i <- as.integer(cl$n_per_cluster)
+    }
+    step <- .ds_glmm_pql_solve_components(cl$pql_components)
+    beta_new <- .ds_glmm_unstandardize_beta(step$beta_std, fit,
+                                            feature_order)
+    common <- intersect(names(beta_orig), names(beta_new))
+    beta_delta <- max(abs(beta_new[common] - beta_orig[common]))
+    b_delta <- max(abs(step$b_hat - b_hat))
+    sigma_delta <- abs(step$sigma_b2 - sigma_b2)
+
+    beta_orig <- beta_new
+    b_hat <- step$b_hat
+    sigma_b2 <- step$sigma_b2
+    phi <- step$phi
+    tau <- step$tau
+    trace <- rbind(trace, data.frame(
+      outer = outer, beta_delta = beta_delta, b_delta = b_delta,
+      sigma_delta = sigma_delta, sigma_b2 = sigma_b2, phi = phi,
+      tau = tau, nll = step$nll))
+    if (verbose) {
+      message(sprintf(
+        "[GLMM PQL] outer %d  sigma_b^2=%.4g  phi=%.4g  tau=%.4g  beta_delta=%.3e",
+        outer, sigma_b2, phi, tau, beta_delta))
+    }
+    if (max(beta_delta, b_delta, sigma_delta) < tol) {
+      converged <- TRUE
+      break
+    }
+  }
+
+  se <- if (isTRUE(compute_se)) {
+    stats::setNames(rep(NA_real_, length(beta_orig)), names(beta_orig))
+  } else {
+    stats::setNames(rep(NA_real_, length(beta_orig)), names(beta_orig))
+  }
+  fit$coefficients <- beta_orig
+  fit$std_errors <- se
+  icc <- sigma_b2 / (sigma_b2 + pi^2 / 3)
+  out <- list(
+    coefficients = beta_orig,
+    std_errors = se,
+    sigma_b2 = sigma_b2,
+    sigma_b2_anchor = NA_real_,
+    sigma_b2_pearson_cap = NA_real_,
+    phi = phi,
+    tau = tau,
+    b_hat = b_hat,
+    icc = icc,
+    n_clusters = n_clusters,
+    cluster_sizes = n_i,
+    converged = converged,
+    iterations = outer,
+    trace = trace,
+    fit = fit,
+    method = "pql_aggregate",
+    family = "binomial (aggregate PQL weighted-LMM)",
+    call = call)
+  class(out) <- c("ds.vertGLMM", "list")
+  out
+}
+
+#' @keywords internal
 .ds_glmm_share_domain_moments <- function(fit, data, cluster_col,
                                           datasources, server_names,
-                                          verbose = FALSE) {
+                                          verbose = FALSE,
+                                          pql_components = FALSE,
+                                          pql_feature_order = NULL) {
   if (!identical(fit$family, "binomial")) {
     stop("GLMM share-domain moments require a binomial ds.vertGLM fit",
          call. = FALSE)
@@ -604,7 +849,188 @@ print.ds.vertGLMM <- function(x, ...) {
     message(sprintf("[GLMM] share-domain cluster moments: K=%d",
                     length(rsum)))
   }
+
+  pql <- NULL
+  if (isTRUE(pql_components)) {
+    if (ring != 127L) {
+      stop("GLMM aggregate PQL components require ring=127", call. = FALSE)
+    }
+    feature_order <- pql_feature_order
+    if (is.null(feature_order)) feature_order <- .ds_glmm_feature_order(fit)
+    feature_order <- as.character(feature_order)
+    p_feat <- length(feature_order)
+    p_full <- p_feat + 1L
+    col_names <- c("(Intercept)", feature_order)
+    n_int <- as.integer(n_obs)
+    ring_parties <- c(coordinator, setdiff(dcf_parties, coordinator)[1L])
+    ring_nl <- ring_parties[[2L]]
+
+    .ring_vecmul <- function(x_key, y_key, output_key) {
+      .ring127_vecmul(
+        x_key = x_key, y_key = y_key, output_key = output_key,
+        n = n_int, datasources = datasources, dealer_ci = dealer_conn,
+        server_list = ring_parties, server_names = server_names,
+        y_server = coordinator, nl = ring_nl,
+        transport_pks = transport_pks, session_id = session_id,
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob)
+      invisible(output_key)
+    }
+    .ring_affine <- function(a_key = NULL, b_key = NULL,
+                             sign_a = 0L, sign_b = 0L,
+                             output_key, public_const_fp = NULL) {
+      for (srv in ring_parties) {
+        .dsAgg(datasources[which(server_names == srv)],
+          call(name = "k2Ring127AffineCombineDS",
+               a_key = a_key, b_key = b_key,
+               sign_a = as.numeric(sign_a), sign_b = as.numeric(sign_b),
+               public_const_fp = public_const_fp,
+               is_party0 = identical(srv, coordinator),
+               output_key = output_key, n = as.numeric(n_int),
+               session_id = session_id))
+      }
+      invisible(output_key)
+    }
+    .ring_scale <- function(in_key, scalar, output_key) {
+      scalar_fp <- dsVert:::.callMpcTool("k2-float-to-fp", list(
+        values = array(as.numeric(scalar), dim = 1L),
+        frac_bits = 50L, ring = "ring127"))$fp_data
+      scalar_fp <- .to_b64url(scalar_fp)
+      for (srv in ring_parties) {
+        .dsAgg(datasources[which(server_names == srv)],
+          call(name = "k2Ring127LocalScaleDS",
+               in_key = in_key, scalar_fp = scalar_fp,
+               output_key = output_key, n = as.numeric(n_int),
+               session_id = session_id,
+               is_party0 = identical(srv, coordinator)))
+      }
+      invisible(output_key)
+    }
+    .sum_share <- function(share_key) {
+      parts <- vector("list", 2L)
+      for (i in seq_along(dcf_parties)) {
+        r <- .dsAgg(datasources[dcf_conns[[i]]],
+          call(name = "k2BeaverSumShareDS",
+               source_key = share_key,
+               session_id = session_id,
+               frac_bits = as.numeric(frac_bits), ring = ring_tag))
+        if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+        parts[[i]] <- r
+      }
+      agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+        share_a = parts[[1L]]$sum_share_fp,
+        share_b = parts[[2L]]$sum_share_fp,
+        frac_bits = frac_bits, ring = ring_tag))
+      as.numeric(agg$values[1L])
+    }
+
+    for (i in seq_along(ring_parties)) {
+      .dsAgg(datasources[which(server_names == ring_parties[[i]])],
+        call(name = "dsvertGEEInterceptShareDS",
+             output_key = "glmm_pql_x_col_0",
+             n = as.numeric(n_int),
+             is_party0 = identical(ring_parties[[i]], coordinator),
+             session_id = session_id,
+             frac_bits = as.numeric(frac_bits), ring = as.numeric(ring)))
+    }
+    x_keys <- stats::setNames(
+      c("glmm_pql_x_col_0", paste0("glmm_pql_x_col_", seq_len(p_feat))),
+      col_names)
+    if (p_feat > 0L) {
+      for (jj in seq_len(p_feat)) {
+        for (srv in ring_parties) {
+          .dsAgg(datasources[which(server_names == srv)],
+            call(name = "k2BeaverExtractColumnDS",
+                 source_key = "k2_x_full_fp",
+                 n = as.numeric(n_int), K = as.numeric(p_feat),
+                 col_index = as.numeric(jj),
+                 output_key = x_keys[[jj + 1L]],
+                 session_id = session_id,
+                 frac_bits = as.numeric(frac_bits), ring = ring_tag))
+        }
+      }
+    }
+
+    .ring_vecmul("glmm_v_share", "k2_eta_share_fp",
+                 "glmm_pql_weta_share")
+    .ring_affine(a_key = "glmm_pql_weta_share",
+                 b_key = "k2_weight_residual_share_fp",
+                 sign_a = 1L, sign_b = -1L,
+                 output_key = "glmm_pql_h_share")
+    .ring_vecmul("glmm_pql_h_share", "glmm_pql_h_share",
+                 "glmm_pql_h2_share")
+    # w lies in (0, 0.25]. Scaling by 4096 maps ordinary GLMM working
+    # weights into the Ring127 reciprocal core [1, 3000] without revealing
+    # any patient-level range information. The final local scale restores
+    # 1 / w = 4096 * (1 / (4096 * w)).
+    .ring_scale("glmm_v_share", 4096, "glmm_pql_w_scaled_share")
+    .ring127_recip_round_keyed(
+      in_key = "glmm_pql_w_scaled_share",
+      out_key = "glmm_pql_inv_w_scaled_share",
+      n = n_int, datasources = datasources, dealer_ci = dealer_conn,
+      server_list = ring_parties, server_names = server_names,
+      y_server = coordinator, nl = ring_nl,
+      transport_pks = transport_pks, session_id = session_id,
+      .dsAgg = .dsAgg, .sendBlob = .sendBlob)
+    .ring_scale("glmm_pql_inv_w_scaled_share", 4096,
+                "glmm_pql_inv_w_share")
+    .ring_vecmul("glmm_pql_h2_share", "glmm_pql_inv_w_share",
+                 "glmm_pql_wz2_share")
+
+    zsum <- .cluster_sum("glmm_pql_h_share")$values
+    wz2 <- .cluster_sum("glmm_pql_wz2_share")$values
+    q_by_cluster <- matrix(0, nrow = length(vs$values), ncol = p_full,
+                           dimnames = list(NULL, col_names))
+    q_by_cluster[, 1L] <- vs$values
+    xw_keys <- stats::setNames(rep(NA_character_, p_full), col_names)
+    xw_keys[1L] <- "glmm_v_share"
+    xwz <- stats::setNames(numeric(p_full), col_names)
+    xwz[1L] <- sum(zsum)
+    if (p_feat > 0L) {
+      for (jj in seq_len(p_feat)) {
+        col_j <- col_names[[jj + 1L]]
+        xw_key <- paste0("glmm_pql_xw_", jj)
+        xw_keys[[jj + 1L]] <- xw_key
+        .ring_vecmul(x_keys[[col_j]], "glmm_v_share", xw_key)
+        q_by_cluster[, jj + 1L] <- .cluster_sum(xw_key)$values
+        xh_key <- paste0("glmm_pql_xh_", jj)
+        .ring_vecmul(x_keys[[col_j]], "glmm_pql_h_share", xh_key)
+        xwz[[jj + 1L]] <- .sum_share(xh_key)
+      }
+    }
+
+    xwx <- matrix(0, nrow = p_full, ncol = p_full,
+                  dimnames = list(col_names, col_names))
+    xwx[1L, 1L] <- sum(vs$values)
+    if (p_feat > 0L) {
+      for (jj in seq_len(p_feat)) {
+        xwx[1L, jj + 1L] <- sum(q_by_cluster[, jj + 1L])
+        xwx[jj + 1L, 1L] <- xwx[1L, jj + 1L]
+      }
+      for (jj in seq_len(p_feat)) {
+        for (kk in jj:p_feat) {
+          key <- paste0("glmm_pql_xwx_", jj, "_", kk)
+          .ring_vecmul(xw_keys[[jj + 1L]], x_keys[[kk + 1L]], key)
+          val <- .sum_share(key)
+          xwx[jj + 1L, kk + 1L] <- val
+          xwx[kk + 1L, jj + 1L] <- val
+        }
+      }
+    }
+    pql <- list(
+      columns = col_names,
+      feature_names = feature_order,
+      xwx = xwx,
+      xwz = xwz,
+      q_by_cluster = q_by_cluster,
+      zsum_by_cluster = zsum,
+      wz2_by_cluster = wz2,
+      s_by_cluster = vs$values,
+      cluster_sizes = py$sizes,
+      n = sum(py$sizes))
+  }
+
   list(rsum_per_cluster = rsum,
        vsum_per_cluster = vs$values,
-       n_per_cluster = py$sizes)
+       n_per_cluster = py$sizes,
+       pql_components = pql)
 }
