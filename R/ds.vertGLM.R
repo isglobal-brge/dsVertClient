@@ -534,7 +534,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     if (verbose) message(sprintf("Registering weights '%s' on server %s",
                                   weights, weights_srv))
     weights_ci <- which(server_names == weights_srv)
-    weights_ring <- if (use_secure_agg) 63L else ring
+    weights_ring <- ring
     if (use_secure_agg) {
       # K>=3 uses two DCF parties: fusion server plus coordinator.
       fusion_srv <- .k3_select_fusion_server(server_list, y_server, x_vars)
@@ -672,7 +672,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
   } else if (use_secure_agg) {
     # ALL families: Ring63 Beaver gradient (Gaussian=identity link, others=DCF wide spline)
-    if (verbose) message("\n[Phase 3] Ring63 Beaver Gradient (K=",
+    if (verbose) message("\n[Phase 3] Ring", ring, " Beaver Gradient (K=",
                          length(server_list), " servers, family=", family, ")...")
     k3_result <- .k3_ring63_gradient_loop(
       datasources = datasources, server_list = server_list,
@@ -688,7 +688,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       weights_active = isTRUE(weights_active),
       no_intercept = isTRUE(no_intercept),
       start = start,
-      compute_se = isTRUE(compute_se))
+      compute_se = isTRUE(compute_se),
+      ring = ring)
     betas <- k3_result$betas
     converged <- k3_result$converged
     final_iter <- k3_result$final_iter

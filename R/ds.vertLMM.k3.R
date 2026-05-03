@@ -30,6 +30,10 @@
 #' @param rho_lo,rho_hi Profile search interval (default 0.001, 0.999).
 #' @param tol Profile convergence tolerance on \eqn{\rho} (default 1e-3).
 #' @param max_outer Maximum golden-section iterations.
+#' @param ring Character (\code{"ring127"} or \code{"ring63"}). MPC ring
+#'   used for the K>=3 Gaussian GLM, residual squared sums, and GLS refits.
+#'   Ring127 is the default because variance components are sensitive to
+#'   fixed-point noise in the secure \eqn{r^2} pass.
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD K=3 connections.
 #' @return list of class \code{ds.vertLMM.k3} with
@@ -51,7 +55,12 @@
 ds.vertLMM.k3 <- function(formula, data, cluster_col,
                            rho_lo = 0.001, rho_hi = 0.999,
                            tol = 1e-3, max_outer = 30L,
+                           ring = c("ring127", "ring63"),
                            verbose = TRUE, datasources = NULL) {
+  ring <- match.arg(ring)
+  ring_int <- if (identical(ring, "ring127")) 127L else 63L
+  ring_tag <- if (ring_int == 127L) "ring127" else "ring63"
+  ring_frac_bits <- if (ring_int == 127L) 50L else 20L
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   if (length(datasources) < 3L)
     stop("ds.vertLMM.k3 requires K=3 connections (got ",
@@ -114,7 +123,9 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     fit <- ds.vertGLM(formula = formula, data = data,
                       family = "gaussian",
                       weights = "__lmm_k3_w",
+                      ring = ring_int,
                       max_iter = 30L, tol = 1e-6,
+                      compute_se = FALSE,
                       verbose = FALSE,
                       datasources = datasources)
     rss <- as.numeric(fit$deviance)
@@ -156,7 +167,9 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   fit_profile <- ds.vertGLM(formula = formula, data = data,
                             family = "gaussian",
                             weights = "__lmm_k3_w",
+                            ring = ring_int,
                             max_iter = 60L, tol = 1e-7,
+                            compute_se = FALSE,
                             verbose = FALSE,
                             datasources = datasources)
 
@@ -342,7 +355,8 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
 
   .aggregate_fp_scalar <- function(share_a, share_b) {
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-      share_a = share_a, share_b = share_b, frac_bits = 20L))
+      share_a = share_a, share_b = share_b,
+      frac_bits = ring_frac_bits, ring = ring_tag))
     as.numeric(agg$values[1L])
   }
 
@@ -352,6 +366,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
                              x_vars = x_vars_orig,
                              y_server = cluster_srv,
                              family = "gaussian",
+                             ring = ring_int,
                              max_iter = 0L, tol = 1e-7,
                              lambda = 0,
                              verbose = FALSE,
@@ -403,7 +418,9 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
         r <- DSI::datashield.aggregate(datasources[.ci],
           call(name = "dsvertPerClusterSumShareDS",
                share_key = "k2_x_full_fp",
-               session_id = eval_session))
+               session_id = eval_session,
+               frac_bits = ring_frac_bits,
+               ring = ring_int))
         if (is.list(r) && length(r) == 1L) r <- r[[1L]]
         r
       })
@@ -420,8 +437,8 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
              dcf1_pk = fit_eval$transport_pks[[dcf_parties[2L]]],
              n = n_eval,
              session_id = eval_session,
-             frac_bits = 20L,
-             ring = 63L))
+             frac_bits = ring_frac_bits,
+             ring = ring_int))
       if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
       .send_session_blob(tri$triple_blob_0, "k2_beaver_vecmul_triple",
                          dcf_conns[1L], eval_session)
@@ -442,8 +459,8 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
                y_key = "k2_x_full_fp",
                n = n_eval,
                session_id = eval_session,
-               frac_bits = 20L,
-               ring = 63L))
+               frac_bits = ring_frac_bits,
+               ring = ring_int))
         if (is.list(r1[[.ii]]) && length(r1[[.ii]]) == 1L)
           r1[[.ii]] <- r1[[.ii]][[1L]]
       }
@@ -460,14 +477,16 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
                output_key = "lmm_k3_r2_share",
                n = n_eval,
                session_id = eval_session,
-               frac_bits = 20L,
-               ring = 63L))
+               frac_bits = ring_frac_bits,
+               ring = ring_int))
       }
       r2s <- lapply(dcf_conns, function(.ci) {
         r <- DSI::datashield.aggregate(datasources[.ci],
           call(name = "dsvertPerClusterSumShareDS",
                share_key = "lmm_k3_r2_share",
-               session_id = eval_session))
+               session_id = eval_session,
+               frac_bits = ring_frac_bits,
+               ring = ring_int))
         if (is.list(r) && length(r) == 1L) r <- r[[1L]]
         r
       })
@@ -594,8 +613,10 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
                           x_vars = x_vars_gls,
                           y_server = cluster_srv,
                           family = "gaussian",
+                          ring = ring_int,
                           max_iter = 100L, tol = 1e-7,
                           lambda = 0,
+                          compute_se = FALSE,
                           verbose = FALSE,
                           datasources = datasources,
                           no_intercept = TRUE,
@@ -642,19 +663,21 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
       if (!is.null(resid_vc_new)) {
         sigma2_hat_new <- resid_vc_new$sigma2
         sigma_b2_hat_new <- resid_vc_new$sigma_b2
-        SSW <<- resid_vc_new$SSW
-        SSB <<- resid_vc_new$SSB
-        MSW <<- resid_vc_new$MSW
-        MSB <<- resid_vc_new$MSB
-        variance_method <<- resid_vc_new$method
+        # Keep these local. Superassignment would skip the LMM frame and
+        # leave the returned variance components at the pre-GLS moments.
+        SSW <- resid_vc_new$SSW
+        SSB <- resid_vc_new$SSB
+        MSW <- resid_vc_new$MSW
+        MSB <- resid_vc_new$MSB
+        variance_method <- resid_vc_new$method
       } else {
         var_within_xb_new <- .var_within_xb_for(fit_gls$coefficients)
         sigma2_hat_new <- max(sigma2_hat_raw - var_within_xb_new, 0)
       }
     }
-    var_within_xb <<- var_within_xb_new
-    sigma2_hat <<- sigma2_hat_new
-    sigma_b2_hat <<- sigma_b2_hat_new
+    var_within_xb <- var_within_xb_new
+    sigma2_hat <- sigma2_hat_new
+    sigma_b2_hat <- sigma_b2_hat_new
     fit_gls
   }, error = function(e) {
     gls_error <<- conditionMessage(e)
@@ -677,6 +700,9 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     var_within_xb  = var_within_xb,
     coefficient_method = coef_method,
     variance_method = variance_method,
+    ring           = ring,
+    converged      = !is.null(gls_attempt),
+    iterations     = gls_passes,
     gls_passes     = gls_passes,
     gls_error      = gls_error,
     SSW            = SSW,
