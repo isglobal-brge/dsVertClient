@@ -12,6 +12,7 @@ ds.vertLMM.k3(
   rho_hi = 0.999,
   tol = 0.001,
   max_outer = 30L,
+  ring = c("ring127", "ring63"),
   verbose = TRUE,
   datasources = NULL
 )
@@ -28,6 +29,11 @@ ds.vertLMM.k3(
 \item{tol}{Profile convergence tolerance on \eqn{\rho} (default 1e-3).}
 
 \item{max_outer}{Maximum golden-section iterations.}
+
+\item{ring}{Character (\code{"ring127"} or \code{"ring63"}). MPC ring
+used for the K>=3 Gaussian GLM, residual squared sums, and GLS refits.
+Ring127 is the default because variance components are sensitive to
+fixed-point noise in the secure \eqn{r^2} pass.}
 
 \item{verbose}{Print progress.}
 

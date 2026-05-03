@@ -36,9 +36,14 @@ NULL
     weights_active = FALSE,
     no_intercept = FALSE,
     start = NULL,
-    compute_se = TRUE) {
+    compute_se = TRUE,
+    ring = 63L) {
 
   K <- length(server_list)
+  ring <- as.integer(ring)
+  if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
+  ring_tag <- if (ring == 127L) "ring127" else "ring63"
+  frac_bits <- if (ring == 127L) 50L else 20L
   # DCF parties: fusion (party 0) must differ from coordinator (party 1)
   # Pick the first non-coordinator server with the most features as fusion
   non_coord <- setdiff(server_list, coordinator)
@@ -47,7 +52,6 @@ NULL
   dcf_parties <- c(fusion_server, coordinator)
   dcf_conns <- sapply(dcf_parties, function(s) which(server_names == s))
 
-  frac_bits <- 20L
   is_gaussian <- (family == "gaussian")
   default_intervals <- if (family == "poisson") 100L else 50L
   opt_name <- paste0("dsvert.glm_num_intervals_", family)
@@ -69,8 +73,8 @@ NULL
   }
 
   if (verbose) message(sprintf(
-    "\n[Phase 3] K>=%d Ring63 DCF + Beaver L-BFGS (family=%s, n=%d, intervals=%d, lambda=%.1e)",
-    K, family, n_obs, num_intervals, lambda))
+    "\n[Phase 3] K>=%d %s DCF + Beaver L-BFGS (family=%s, n=%d, intervals=%d, lambda=%.1e)",
+    K, ring_tag, family, n_obs, num_intervals, lambda))
 
   # ===========================================================================
   # Step A: Input sharing -- all servers share features with 2 DCF parties
@@ -97,7 +101,7 @@ NULL
         r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
           data_name = std_data, x_vars = srv_x,
           y_var = if (server == coordinator) y_var else NULL,
-          peer_pk = peer_pk_safe, session_id = session_id))
+          peer_pk = peer_pk_safe, ring = ring, session_id = session_id))
         if (is.list(r) && length(r) == 1) r <- r[[1]]
         # Send encrypted shares to the other DCF party
         peer_ci <- dcf_conns[3 - di]
@@ -121,7 +125,7 @@ NULL
     r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
       data_name = std_data, x_vars = srv_x,
       y_var = NULL,
-      peer_pk = fusion_pk_safe, session_id = session_id))
+      peer_pk = fusion_pk_safe, ring = ring, session_id = session_id))
     if (is.list(r) && length(r) == 1) r <- r[[1]]
     # Send peer_share to fusion
     .sendBlob(r$encrypted_x_share, paste0("k2_extra_x_share_", server), fusion_conn)
@@ -181,6 +185,7 @@ NULL
            dcf1_pk = transport_pks[[dcf_parties[2]]],
            family = dcf_family, n = as.integer(n_obs),
            frac_bits = frac_bits, num_intervals = num_intervals,
+           ring = ring,
            session_id = session_id))
     if (is.list(dcf_result)) dcf_result <- dcf_result[[1]]
 
@@ -335,7 +340,7 @@ NULL
              dcf0_pk = transport_pks[[dcf_parties[1]]],
              dcf1_pk = transport_pks[[dcf_parties[2]]],
              n = as.integer(n_obs), frac_bits = frac_bits,
-             session_id = session_id))
+             ring = ring, session_id = session_id))
       if (is.list(spline_t)) spline_t <- spline_t[[1]]
       .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", dcf_conns[1])
       .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", dcf_conns[2])
@@ -347,7 +352,7 @@ NULL
         r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase1DS",
           party_id = as.integer(i - 1), family = family,
           num_intervals = num_intervals, frac_bits = frac_bits,
-          session_id = session_id))
+          ring = ring, session_id = session_id))
         if (is.list(r) && length(r) == 1) r <- r[[1]]; ph1[[i]] <- r
       }
       .sendBlob(ph1[[1]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[2])
@@ -359,7 +364,7 @@ NULL
         r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase2DS",
           party_id = as.integer(i - 1), family = family,
           num_intervals = num_intervals, frac_bits = frac_bits,
-          session_id = session_id))
+          ring = ring, session_id = session_id))
         if (is.list(r) && length(r) == 1) r <- r[[1]]; ph2[[i]] <- r
       }
       for (i in seq_along(dcf_parties)) {
@@ -380,7 +385,7 @@ NULL
         r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase3DS",
           party_id = as.integer(i - 1), family = family,
           num_intervals = num_intervals, frac_bits = frac_bits,
-          session_id = session_id))
+          ring = ring, session_id = session_id))
         if (is.list(r) && length(r) == 1) r <- r[[1]]; ph3[[i]] <- r
       }
       for (i in seq_along(dcf_parties)) {
@@ -399,7 +404,7 @@ NULL
         .dsAgg(datasources[ci], call(name = "k2WideSplinePhase4DS",
           party_id = as.integer(i - 1), family = family,
           num_intervals = num_intervals, frac_bits = frac_bits,
-          session_id = session_id))
+          ring = ring, session_id = session_id))
       }
     }
 
@@ -416,7 +421,7 @@ NULL
         n_obs = n_obs,
         .dsAgg = .dsAgg,
         .sendBlob = .sendBlob,
-        ring = 63L)
+        ring = ring)
     }
 
     # =================================================================
@@ -430,7 +435,7 @@ NULL
            dcf0_pk = transport_pks[[dcf_parties[1]]],
            dcf1_pk = transport_pks[[dcf_parties[2]]],
            n = as.integer(n_obs), p = as.integer(p_total),
-           session_id = session_id))
+           ring = ring, session_id = session_id))
     if (is.list(grad_t)) grad_t <- grad_t[[1]]
     # Relay opaque blobs (client can't read)
     .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", dcf_conns[1])
@@ -467,13 +472,13 @@ NULL
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = grad_results[[1]]$gradient_fp,
       share_b = grad_results[[2]]$gradient_fp,
-      frac_bits = frac_bits))
+      frac_bits = frac_bits, ring = ring_tag))
     gradient_canonical <- agg$values  # in canonical order [coord|fusion|extras]
 
     agg_res <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = r1_results[[1]]$sum_residual_fp,
       share_b = r1_results[[2]]$sum_residual_fp,
-      frac_bits = frac_bits))
+      frac_bits = frac_bits, ring = ring_tag))
     sum_residual <- agg_res$values[1]
 
     # Remap from canonical [coord | fusion | extras] to beta order [coord | non-coord-by-server-list]
@@ -632,7 +637,7 @@ NULL
              dcf0_pk = transport_pks[[dcf_parties[1]]],
              dcf1_pk = transport_pks[[dcf_parties[2]]],
              n = as.integer(n_obs), frac_bits = frac_bits,
-             session_id = session_id))
+             ring = ring, session_id = session_id))
       if (is.list(spline_t)) spline_t <- spline_t[[1]]
       .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", dcf_conns[1])
       .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", dcf_conns[2])
@@ -643,7 +648,7 @@ NULL
           r <- .dsAgg(datasources[dcf_conns[di]], call(fn,
             party_id = as.integer(di - 1), family = family,
             num_intervals = num_intervals, frac_bits = frac_bits,
-            session_id = session_id))
+            ring = ring, session_id = session_id))
           if (is.list(r) && length(r) == 1) r <- r[[1]]; ph_r[[di]] <- r
         }
         if (ph == 1) {
@@ -683,7 +688,7 @@ NULL
         n_obs = n_obs,
         .dsAgg = .dsAgg,
         .sendBlob = .sendBlob,
-        ring = 63L)
+        ring = ring)
     }
 
     # Beaver gradient with perturbed beta
@@ -692,7 +697,7 @@ NULL
            dcf0_pk = transport_pks[[dcf_parties[1]]],
            dcf1_pk = transport_pks[[dcf_parties[2]]],
            n = as.integer(n_obs), p = as.integer(p_total),
-           session_id = session_id))
+           ring = ring, session_id = session_id))
     if (is.list(grad_t)) grad_t <- grad_t[[1]]
     .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", dcf_conns[1])
     .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp", dcf_conns[2])
@@ -715,7 +720,7 @@ NULL
     }
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = se_r2[[1]]$gradient_fp, share_b = se_r2[[2]]$gradient_fp,
-      frac_bits = frac_bits))
+      frac_bits = frac_bits, ring = ring_tag))
     gradient_pert <- numeric(p_total)
     gi <- 1
     if (p_coord > 0) { gradient_pert[beta_map[[coordinator]]] <- agg$values[gi:(gi+p_coord-1)]; gi <- gi + p_coord }
@@ -727,7 +732,7 @@ NULL
     }
     agg_res <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = se_r1[[1]]$sum_residual_fp, share_b = se_r1[[2]]$sum_residual_fp,
-      frac_bits = frac_bits))
+      frac_bits = frac_bits, ring = ring_tag))
     grad_pert_full <- c(agg_res$values[1] / n_obs, gradient_pert / n_obs) + lambda * theta_pert
 
     grad_forward <- grad_pert_full
@@ -761,7 +766,7 @@ NULL
     } else {
       st2 <- .dsAgg(datasources[dealer_conn_b], call(name = "glmRing63GenSplineTriplesDS",
         dcf0_pk=transport_pks[[dcf_parties[1]]], dcf1_pk=transport_pks[[dcf_parties[2]]],
-        n=as.integer(n_obs), frac_bits=frac_bits, session_id=session_id))
+        n=as.integer(n_obs), frac_bits=frac_bits, ring=ring, session_id=session_id))
       if (is.list(st2)) st2 <- st2[[1]]
       .sendBlob(st2$spline_blob_0, "k2_spline_triples", dcf_conns[1])
       .sendBlob(st2$spline_blob_1, "k2_spline_triples", dcf_conns[2])
@@ -770,7 +775,7 @@ NULL
         for (di in 1:2) {
           r <- .dsAgg(datasources[dcf_conns[di]], call(paste0("k2WideSplinePhase",ph,"DS"),
             party_id=as.integer(di-1), family=family, num_intervals=num_intervals,
-            frac_bits=frac_bits, session_id=session_id))
+            frac_bits=frac_bits, ring=ring, session_id=session_id))
           if (is.list(r)&&length(r)==1) r<-r[[1]]; pr[[di]]<-r
         }
         if (ph==1) { .sendBlob(pr[[1]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[2]); .sendBlob(pr[[2]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[1]) }
@@ -789,11 +794,11 @@ NULL
         n_obs = n_obs,
         .dsAgg = .dsAgg,
         .sendBlob = .sendBlob,
-        ring = 63L)
+        ring = ring)
     }
     gt2 <- .dsAgg(datasources[dealer_conn_b], call(name = "glmRing63GenGradTriplesDS",
       dcf0_pk=transport_pks[[dcf_parties[1]]], dcf1_pk=transport_pks[[dcf_parties[2]]],
-      n=as.integer(n_obs), p=as.integer(p_total), session_id=session_id))
+      n=as.integer(n_obs), p=as.integer(p_total), ring=ring, session_id=session_id))
     if (is.list(gt2)) gt2 <- gt2[[1]]
     .sendBlob(gt2$grad_blob_0,"k2_grad_triple_fp",dcf_conns[1])
     .sendBlob(gt2$grad_blob_1,"k2_grad_triple_fp",dcf_conns[2])
@@ -811,12 +816,12 @@ NULL
       r<-.dsAgg(datasources[dcf_conns[di]], call(name = "k2GradientR2DS", party_id=as.integer(di-1), session_id=session_id))
       if(is.list(r)&&length(r)==1) r<-r[[1]]; br2[[di]]<-r
     }
-    ba <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(share_a=br2[[1]]$gradient_fp, share_b=br2[[2]]$gradient_fp, frac_bits=frac_bits))
+    ba <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(share_a=br2[[1]]$gradient_fp, share_b=br2[[2]]$gradient_fp, frac_bits=frac_bits, ring=ring_tag))
     gp2 <- numeric(p_total); gii <- 1
     if(p_coord>0){gp2[beta_map[[coordinator]]]<-ba$values[gii:(gii+p_coord-1)];gii<-gii+p_coord}
     if(p_fusion>0){gp2[beta_map[[fusion_server]]]<-ba$values[gii:(gii+p_fusion-1)];gii<-gii+p_fusion}
     for(ns in non_dcf_servers){pn<-length(x_vars[[ns]]);if(pn==0)next;gp2[beta_map[[ns]]]<-ba$values[gii:(gii+pn-1)];gii<-gii+pn}
-    ar2 <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(share_a=br1[[1]]$sum_residual_fp, share_b=br1[[2]]$sum_residual_fp, frac_bits=frac_bits))
+    ar2 <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(share_a=br1[[1]]$sum_residual_fp, share_b=br1[[2]]$sum_residual_fp, frac_bits=frac_bits, ring=ring_tag))
     grad_backward <- c(ar2$values[1]/n_obs, gp2/n_obs) + lambda*theta_back
 
     # Central difference: H_j = (g_forward - g_backward) / (2delta)
@@ -876,7 +881,8 @@ NULL
       call(name = "glmRing63GenGradTriplesDS",
            dcf0_pk = transport_pks[[dcf_parties[1]]],
            dcf1_pk = transport_pks[[dcf_parties[2]]],
-           n = as.integer(n_obs), p = 1L, session_id = session_id))
+           n = as.integer(n_obs), p = 1L,
+           ring = ring, session_id = session_id))
     if (is.list(dt)) dt <- dt[[1]]
     .sendBlob(dt$grad_blob_0, "k2_grad_triple_fp", dcf_conns[1])
     .sendBlob(dt$grad_blob_1, "k2_grad_triple_fp", dcf_conns[2])
@@ -899,7 +905,7 @@ NULL
     }
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = dr2[[1]]$gradient_fp, share_b = dr2[[2]]$gradient_fp,
-      frac_bits = frac_bits))
+      frac_bits = frac_bits, ring = ring_tag))
     agg$values[1]
   }
 
@@ -919,7 +925,7 @@ NULL
         .sendBlob = .sendBlob,
         weight_key = "k2_sqrt_weights_share_fp",
         output_key = "k2_sqrt_weighted_residual_share_fp",
-        ring = 63L)
+        ring = ring)
     }
     for (i in seq_along(dcf_parties))
       .dsAgg(datasources[dcf_conns[i]], call(name = "glmRing63PrepDevianceDS",
@@ -934,7 +940,7 @@ NULL
            dcf1_pk = transport_pks[[dcf_parties[2]]],
            family = "softplus", n = as.integer(n_obs),
            frac_bits = as.integer(frac_bits),
-           num_intervals = 80L, session_id = session_id))
+           num_intervals = 80L, ring = ring, session_id = session_id))
     if (is.list(sp_dcf)) sp_dcf <- sp_dcf[[1]]
     .sendBlob(sp_dcf$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[1])
     .sendBlob(sp_dcf$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[2])
@@ -945,7 +951,7 @@ NULL
            dcf0_pk = transport_pks[[dcf_parties[1]]],
            dcf1_pk = transport_pks[[dcf_parties[2]]],
            n = as.integer(n_obs), frac_bits = as.integer(frac_bits),
-           session_id = session_id))
+           ring = ring, session_id = session_id))
     if (is.list(sp_t)) sp_t <- sp_t[[1]]
     .sendBlob(sp_t$spline_blob_0, "k2_spline_triples", dcf_conns[1])
     .sendBlob(sp_t$spline_blob_1, "k2_spline_triples", dcf_conns[2])
@@ -956,7 +962,7 @@ NULL
         r <- .dsAgg(datasources[ci], call(paste0("k2WideSplinePhase",ph,"DS"),
           party_id = as.integer(di-1), family = "softplus",
           num_intervals = 80L, frac_bits = as.integer(frac_bits),
-          session_id = session_id))
+          ring = ring, session_id = session_id))
         if (is.list(r) && length(r) == 1) r <- r[[1]]; pr[[di]] <- r
       }
       if (ph==1) { .sendBlob(pr[[1]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[2]);.sendBlob(pr[[2]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[1]) }
@@ -970,7 +976,8 @@ NULL
       if (is.list(r) && length(r) == 1) r <- r[[1]]; sums[[di]] <- r
     }
     sp_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-      share_a = sums[[1]]$sum_fp, share_b = sums[[2]]$sum_fp, frac_bits = frac_bits))
+      share_a = sums[[1]]$sum_fp, share_b = sums[[2]]$sum_fp,
+      frac_bits = frac_bits, ring = ring_tag))
     sum_softplus <- sp_agg$values[1]
     for (i in seq_along(dcf_parties))
       .dsAgg(datasources[dcf_conns[i]], call(name = "glmRing63PrepDevianceDS",
@@ -987,7 +994,8 @@ NULL
       if (is.list(r) && length(r) == 1) r <- r[[1]]; sums[[di]] <- r
     }
     mu_agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-      share_a = sums[[1]]$sum_fp, share_b = sums[[2]]$sum_fp, frac_bits = frac_bits))
+      share_a = sums[[1]]$sum_fp, share_b = sums[[2]]$sum_fp,
+      frac_bits = frac_bits, ring = ring_tag))
     sum_mu <- mu_agg$values[1]
     # Only the label server returns a non-zero null_term; sum to pick it up
     null_term <- sum(sapply(sums, function(s) if(!is.null(s$null_term)) s$null_term else 0))
