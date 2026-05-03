@@ -2,8 +2,8 @@
 #' @description Fit a GLM for vertically partitioned DataSHIELD data and
 #'   return sandwich (robust) standard errors alongside the usual
 #'   model-based ones. The point estimate \eqn{\hat{\beta}} is obtained
-#'   by a single call to \code{\link{ds.vertGLM}}. For Gaussian and binomial
-#'   models the sandwich meat is computed in the share domain. If
+#'   by a single call to \code{\link{ds.vertGLM}}. For Gaussian, binomial, and
+#'   Poisson models the sandwich meat is computed in the share domain. If
 #'   \code{id_col} is supplied, dsVert computes the clustered meat
 #'   \eqn{\sum_c S_c S_c^\top}, where
 #'   \eqn{S_c=\sum_{i\in c} X_i r_i}; otherwise it computes the row-level
@@ -18,7 +18,7 @@
 #'   Formula:
 #'     \deqn{V_{sand} = \mathrm{Cov}(\hat\beta) \, A \, \mathrm{Cov}(\hat\beta)}
 #'     \deqn{A = \sum_c S_c S_c^\top}
-#'   for clustered Gaussian/binomial fits, or
+#'   for clustered Gaussian/binomial/Poisson fits, or
 #'     \deqn{A = X^T \, \mathrm{diag}(r^2) \, X}
 #'   for row-level HC0 when no \code{id_col} is supplied.
 #'
@@ -26,9 +26,9 @@
 #' @param data Character. Aligned data-frame name on each server.
 #' @param family One of \code{"gaussian"}, \code{"binomial"},
 #'   \code{"poisson"}.
-#' @param id_col Optional character. For Gaussian/binomial models this enables
-#'   the cluster-robust sandwich meat; the cluster column must live with the
-#'   outcome and all clusters must pass \code{datashield.privacyLevel}.
+#' @param id_col Optional character. For Gaussian/binomial/Poisson models this
+#'   enables the cluster-robust sandwich meat; the cluster column must live with
+#'   the outcome and all clusters must pass \code{datashield.privacyLevel}.
 #' @param corstr Working correlation label. The current coefficient
 #'   estimator is the vertical GLM working-independence estimator; when
 #'   \code{id_col} is supplied, robust covariance uses cluster-level score
@@ -64,13 +64,13 @@ ds.vertGEE <- function(formula, data = NULL,
     }
   }
   if (verbose && !is.null(id_col)) {
-    if (family %in% c("gaussian", "binomial")) {
+    if (family %in% c("gaussian", "binomial", "poisson")) {
       message("[ds.vertGEE] id_col='", id_col,
               "' enables share-domain cluster sandwich")
     } else {
       message("[ds.vertGEE] id_col='", id_col,
               "' recorded; cluster sandwich currently implemented for ",
-              "Gaussian/binomial models only")
+              "Gaussian/binomial/Poisson models only")
     }
   }
 
@@ -107,8 +107,8 @@ ds.vertGEE <- function(formula, data = NULL,
                                 fit$covariance)
   Cov_model_info <- (Cov_model_info + t(Cov_model_info)) / 2
 
-  # Stage 2: share-domain sandwich meat. Gaussian/binomial models use the
-  # retained GLM session so residuals and X columns remain additive shares.
+  # Stage 2: share-domain sandwich meat. Gaussian/binomial/Poisson models use
+  # the retained GLM session so residuals and X columns remain additive shares.
   # A legacy weighted-r2 fallback is kept for older servers only.
   {
     if (verbose) message("[ds.vertGEE] Stage 2: weighted fit for sandwich meat (family=",
@@ -131,7 +131,7 @@ ds.vertGEE <- function(formula, data = NULL,
     } else {
       secure_hc0 <- NULL
       secure_error <- NULL
-      if (family %in% c("gaussian", "binomial")) {
+      if (family %in% c("gaussian", "binomial", "poisson")) {
         secure_hc0 <- tryCatch(
           .ds_gee_secure_hc0(
             fit = fit, datasources = datasources,
@@ -152,7 +152,8 @@ ds.vertGEE <- function(formula, data = NULL,
         robust_se <- secure_hc0$robust_se
         robust_method <- secure_hc0$method
       } else {
-        if (family %in% c("gaussian", "binomial") && !is.null(id_col) &&
+        if (family %in% c("gaussian", "binomial", "poisson") &&
+            !is.null(id_col) &&
             is.character(id_col) && length(id_col) == 1L && nzchar(id_col)) {
           msg <- if (is.null(secure_error)) {
             "unknown error"
@@ -316,7 +317,7 @@ ds.vertGEE <- function(formula, data = NULL,
 .ds_gee_secure_hc0 <- function(fit, datasources, server_names,
                                lambda = 0, data = NULL, id_col = NULL,
                                verbose = FALSE) {
-  if (!fit$family %in% c("gaussian", "binomial")) return(NULL)
+  if (!fit$family %in% c("gaussian", "binomial", "poisson")) return(NULL)
   required <- c("session_id", "transport_pks", "server_list", "x_vars",
                 "y_server", "hessian_std", "x_sds", "x_means")
   missing_req <- required[vapply(required, function(nm) is.null(fit[[nm]]),
@@ -463,13 +464,16 @@ ds.vertGEE <- function(formula, data = NULL,
       .dsAgg(datasources[ci],
         call(name = "k2IdentityLinkDS", session_id = session_id))
     }
-  } else if (identical(fit$family, "binomial")) {
+  } else if (fit$family %in% c("binomial", "poisson")) {
+    spline_family <- fit$family
+    dcf_family <- if (identical(fit$family, "poisson")) "poisson" else "sigmoid"
+    num_intervals <- if (identical(fit$family, "poisson")) 100L else 50L
     dcf <- .dsAgg(datasources[dealer_conn],
       call(name = "glmRing63GenDcfKeysDS",
            dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
            dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
-           family = "sigmoid", n = as.integer(n_obs),
-           frac_bits = frac_bits, num_intervals = 50L,
+           family = dcf_family, n = as.integer(n_obs),
+           frac_bits = frac_bits, num_intervals = num_intervals,
            ring = ring, session_id = session_id))
     if (is.list(dcf) && length(dcf) == 1L) dcf <- dcf[[1L]]
     .sendBlob(dcf$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[[1L]])
@@ -496,8 +500,8 @@ ds.vertGEE <- function(formula, data = NULL,
         r <- .dsAgg(datasources[dcf_conns[[i]]],
           call(paste0("k2WideSplinePhase", ph, "DS"),
                party_id = as.integer(i - 1L),
-               family = "binomial",
-               num_intervals = 50L,
+               family = spline_family,
+               num_intervals = num_intervals,
                frac_bits = frac_bits,
                ring = ring,
                session_id = session_id))
