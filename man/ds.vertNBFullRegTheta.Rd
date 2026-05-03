@@ -14,6 +14,7 @@ ds.vertNBFullRegTheta(
   variant = "corrected",
   verbose = TRUE,
   datasources = NULL,
+  allow_disclosive_legacy = FALSE,
   ...
 )
 }
@@ -41,12 +42,21 @@ theta during the Newton refinement.}
 
 \item{variant}{Character. \code{"iid_mu"} returns the unmodified
 \code{ds.vertNB} result. \code{"corrected"} (default) applies the
-aggregate variance correction described in Details.}
+aggregate variance correction described in Details.
+\code{"full_reg_nd"} runs the non-disclosive share-domain full-regression
+theta refinement. Legacy \code{"full_reg"} is disclosive and is
+redirected to \code{"full_reg_nd"} unless
+\code{allow_disclosive_legacy = TRUE}.}
 
 \item{verbose}{Logical. Print stage-by-stage progress.}
 
 \item{datasources}{DataSHIELD connections; if NULL, uses
 \code{DSI::datashield.connections_find()}.}
+
+\item{allow_disclosive_legacy}{Logical. If \code{TRUE}, permit the archived
+\code{variant = "full_reg"} path that transports per-patient
+\eqn{\eta^{nl}} to the outcome server. Intended only for historical
+reproducibility audits; the paper-safe path is \code{"full_reg_nd"}.}
 
 \item{...}{Extra arguments forwarded to \code{ds.vertGLM}.}
 }
