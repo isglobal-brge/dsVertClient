@@ -374,7 +374,14 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     y_var <- base_fit$y_var
     theta_mom <- if (is.finite(y_var) && y_var > y_mean + 1e-10)
       max(y_mean^2 / max(y_var - y_mean, 1e-6), 0.1) else NA_real_
-    theta_seed <- max(c(theta_mom, theta_iid, 1e-3), na.rm = TRUE)
+    # The y-only iid profile systematically under-seeds regression-rich NB
+    # fixtures because it collapses mu_i variation into ybar. A doubled iid
+    # seed stays aggregate-only and cuts the Ring127 full-score evaluations
+    # from ~5 to ~3 on the current validation fixtures.
+    theta_regression_seed <- if (is.finite(theta_iid) && theta_iid > 0)
+      2 * theta_iid else NA_real_
+    theta_seed <- max(c(theta_mom, theta_iid, theta_regression_seed, 1e-3),
+                      na.rm = TRUE)
     if (!is.finite(theta_seed) || theta_seed <= 0) theta_seed <- 1e-3
     theta_cur <- theta_seed
 
