@@ -53,29 +53,31 @@ log-likelihood \eqn{\ell_i(\beta, b) = \sum_j \log f(y_{ij}|
   x_{ij}^T \beta + b) - b^2/(2\sigma_b^2)} and \eqn{H_i} is its
 Hessian at the mode.
 
-Current architecture:
+Architecture:
 \enumerate{
-\item Prime the fixed effects with a binomial \code{\link{ds.vertGLM}} fit.
-\item On the outcome server, compute per-cluster binomial score and
-information aggregates \eqn{\sum_i (y_i-p_i)} and
-\eqn{\sum_i p_i(1-p_i)} for the current fixed effects and random-intercept
-offset.
-\item Update cluster-level random intercepts and \eqn{\sigma_b^2}, expand
-the current random intercepts into a server-local offset column, and refit
-the fixed effects.
+\item For each cluster (cluster IDs on outcome server), binomial
+score and information terms \eqn{\sum(y-p)} and
+\eqn{\sum p(1-p)} are computed from DCF shares. The outcome
+server broadcasts cluster membership only to the DCF peer; the
+client receives aggregate cluster sums only.
+\item The outer optimiser on \eqn{(\beta, \sigma_b^2)} is
+client-side, re-calling ds.vertGLM with the shrinkage-
+weight column derived from the current \eqn{b_i^*}.
+\item Variance-component update uses the moment-matching
+estimate \eqn{\hat\sigma_b^2 = \mathrm{var}(\hat b_i)}
+across clusters (Breslow-Clayton approximation).
 }
 
 The scaffolding here reuses every primitive already shipped in
-dsVert 1.1.0+: the per-cluster residual aggregates, the
-keep_session flag on ds.vertGLM, the Beaver vecmul for inner
-weighted updates, and the DCF sigmoid/exp wide-splines.
+dsVert 1.1.0+: the keep_session flag on ds.vertGLM, cluster
+membership broadcast, per-cluster share sums, Beaver vecmul, and the
+DCF sigmoid wide-spline.
 
-Privacy: client sees only (beta, sigma_b^2) plus per-cluster
+Privacy: client sees only (beta, sigma_b^2) + per-cluster
 b_hat_i estimates as an aggregate vector (one value per cluster).
-No per-patient quantity is returned. The current implementation requires
-the fixed-effect predictors to be colocated with the outcome server for the
-cluster update; true vertical GLMM needs a cross-server binomial-moment
-primitive before it can be claimed as a strict vertical method.
+No per-patient quantity ever leaves the DCF parties. Original cluster
+labels are not returned and clusters below datashield.privacyLevel
+fail closed.
 
 Inter-server leakage: cluster membership (same tier as ds.vertLMM).
 }
