@@ -562,19 +562,105 @@
     d0[!is.finite(d0) | d0 <= 0] <- 1
     Hinv <- diag(pmin(pmax(d0, 1e-3), 10), length(q0))
   }
+  Hinv0 <- Hinv
   cur <- secure_eval(q, compute_loglik = FALSE)
   best <- cur
   best_q <- q
   best_norm <- max(abs(cur$grad_q))
-  for (iter in seq_len(as.integer(max_outer))) {
+
+  update_best <- function(val, q_val) {
+    nrm <- max(abs(val$grad_q))
+    if (is.finite(nrm) && nrm < best_norm) {
+      best <<- val
+      best_q <<- q_val
+      best_norm <<- nrm
+    }
+    nrm
+  }
+  try_score_step <- function(q_cur, cur_val, step, cap, max_halves = 6L) {
+    if (any(!is.finite(step))) return(list(accepted = FALSE))
+    st <- max(abs(step))
+    if (is.finite(st) && st > cap) step <- step * (cap / st)
+    g_norm <- max(abs(cur_val$grad_q))
+    for (half in 0:max_halves) {
+      alpha <- 0.5^half
+      q_try <- q_cur + alpha * step
+      trial <- secure_eval(q_try, compute_loglik = FALSE)
+      trial_norm <- update_best(trial, q_try)
+      if (is.finite(trial_norm) &&
+          trial_norm <= g_norm * (1 + 1e-3)) {
+        return(list(accepted = TRUE, q = q_try, cur = trial,
+                    norm = trial_norm))
+      }
+    }
+    list(accepted = FALSE)
+  }
+  fd_newton_used <- FALSE
+  fd_iters_done <- 0L
+  use_fd_newton <- isTRUE(getOption("dsvert.ord_strict_fd_newton", TRUE)) &&
+    length(q0) <= as.integer(getOption("dsvert.ord_strict_fd_max_dim", 8L))
+  if (use_fd_newton) {
+    fd_newton_used <- TRUE
+    fd_iters <- min(as.integer(max_outer),
+                    as.integer(getOption("dsvert.ord_strict_fd_iters", 2L)))
+    fd_eps <- as.numeric(getOption("dsvert.ord_strict_fd_eps", 1e-2))
+    fd_cap <- as.numeric(getOption("dsvert.ord_strict_fd_step_cap", 0.25))
+    fd_ridge <- as.numeric(getOption("dsvert.ord_strict_fd_ridge", 1e-6))
+    for (fd_iter in seq_len(fd_iters)) {
+      fd_iters_done <- fd_iter
+      g <- cur$grad_q
+      g_norm <- update_best(cur, q)
+      opt_trace[[length(opt_trace) + 1L]] <-
+        list(grad_inf = g_norm, q = q, optimizer = "fd_newton")
+      if (is.finite(g_norm) && g_norm < tol) {
+        converged <- TRUE
+        break
+      }
+      p_dim <- length(q)
+      H <- matrix(0, p_dim, p_dim)
+      for (jj in seq_len(p_dim)) {
+        h <- fd_eps * max(1, abs(q[jj]))
+        qp <- q
+        qm <- q
+        qp[jj] <- qp[jj] + h
+        qm[jj] <- qm[jj] - h
+        ep <- secure_eval(qp, compute_loglik = FALSE)
+        em <- secure_eval(qm, compute_loglik = FALSE)
+        H[, jj] <- (ep$grad_q - em$grad_q) / (2 * h)
+      }
+      H <- (H + t(H)) / 2
+      step <- tryCatch({
+        ee <- eigen(H, symmetric = TRUE)
+        vals <- -pmax(abs(ee$values), fd_ridge)
+        -as.numeric(ee$vectors %*%
+          (as.numeric(crossprod(ee$vectors, g)) / vals))
+      }, error = function(e) {
+        tryCatch(-as.numeric(solve(H - fd_ridge * diag(p_dim), g)),
+                 error = function(e2) rep(NA_real_, p_dim))
+      })
+      fd_trial <- try_score_step(q, cur, step, fd_cap, max_halves = 8L)
+      if (!isTRUE(fd_trial$accepted)) {
+        q <- best_q
+        cur <- best
+        break
+      }
+      q <- fd_trial$q
+      cur <- fd_trial$cur
+      if (is.finite(fd_trial$norm) && fd_trial$norm < tol) {
+        converged <- TRUE
+        break
+      }
+    }
+    Hinv <- Hinv0
+  }
+
+  remaining_outer <- max(0L, as.integer(max_outer) - length(opt_trace))
+  for (iter in seq_len(remaining_outer)) {
     g <- cur$grad_q
     g_norm <- max(abs(g))
-    opt_trace[[iter]] <- list(grad_inf = g_norm, q = q)
-    if (is.finite(g_norm) && g_norm < best_norm) {
-      best <- cur
-      best_q <- q
-      best_norm <- g_norm
-    }
+    opt_trace[[length(opt_trace) + 1L]] <-
+      list(grad_inf = g_norm, q = q, optimizer = "bfgs_score")
+    update_best(cur, q)
     if (is.finite(g_norm) && g_norm < tol) {
       converged <- TRUE
       break
@@ -590,12 +676,7 @@
       alpha <- 0.5^half
       q_try <- q + alpha * step
       trial <- secure_eval(q_try, compute_loglik = FALSE)
-      trial_norm <- max(abs(trial$grad_q))
-      if (is.finite(trial_norm) && trial_norm < best_norm) {
-        best <- trial
-        best_q <- q_try
-        best_norm <- trial_norm
-      }
+      trial_norm <- update_best(trial, q_try)
       if (is.finite(trial_norm) &&
           trial_norm <= g_norm * (1 + 1e-3)) {
         accepted <- TRUE
@@ -647,7 +728,9 @@
   out$thresholds_joint <- final$theta
   out$strict_non_disclosive <- TRUE
   out$strict_optimizer <- list(trace = opt_trace, evals = eval_counter,
-                               converged = converged)
+                               converged = converged,
+                               fd_newton = fd_newton_used,
+                               fd_iters = fd_iters_done)
   out$strict_avg_loglik <- final$loglik
   out$strict_grad_beta <- final$grad_beta
   out$strict_grad_theta <- final$grad_theta
@@ -662,11 +745,13 @@
 
 #' @title Federated joint proportional-odds ordinal regression via
 #'   Ring127 MPC-orchestrated Newton iteration
-#' @description Diagnostic-only full per-patient PO Newton. The current
-#'   implementation is disabled by default because it reconstructs
-#'   observation-level cumulative probabilities and weights on the outcome
-#'   server. Use \code{ds.vertOrdinal} for the non-disclosive warm
-#'   approximation until the share-domain ordinal joint design is implemented.
+#' @description Strict K=2 share-domain proportional-odds Newton route by
+#'   default. Patient-level linear predictors, class probabilities,
+#'   reciprocals, and score terms remain Ring127 shares; the client receives
+#'   only guarded class counts, aggregate score/Hessian probes, and final
+#'   model parameters. The older per-patient reconstruction route is retained
+#'   only as opt-in diagnostics via
+#'   \code{options(dsvert.allow_patient_level_ordinal_joint = TRUE)}.
 #'
 #'   For a K-level ordered outcome
 #'   the PO log-likelihood is
@@ -694,8 +779,8 @@
 #'     \item \code{.ring127_recip_round_keyed} on the F-difference share.
 #'     \item Beaver vecmul (f-diff) * (1/F-diff) -> \eqn{T_i} share.
 #'     \item Beaver matvec \eqn{X^\top T} -> aggregate score for \eqn{\beta}.
-#'     \item Client Newton on stacked \eqn{(\beta, \theta)} using the
-#'           already-available \code{$joint_mle$covariance} Fisher block.
+#'     \item Client Newton on stacked \eqn{(\beta, \theta)} using an
+#'           aggregate finite-difference Hessian over share-domain scores.
 #'   }
 #'
 #' @param formula Ordered outcome on LHS.
