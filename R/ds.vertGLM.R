@@ -128,6 +128,13 @@
 #' @param std_mode Character. Standardisation mode: \code{"full"}
 #'   (default) standardises both X and y; alternative modes (e.g.
 #'   \code{"x_only"}) skip y standardisation for offset/weights paths.
+#' @param start Optional named coefficient vector for internal K>=3 fixed
+#'   evaluation paths. When supplied with \code{max_iter = 0}, the secure
+#'   loop evaluates residual/deviance shares at the supplied coefficients
+#'   without optimisation.
+#' @param compute_se Logical. Compute finite-difference Hessian/standard
+#'   errors. Internal fixed-evaluation callers can set FALSE to avoid
+#'   extra MPC rounds when only residual shares are needed.
 #' @importFrom DSI datashield.aggregate datashield.connections_find
 #' @export
 ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
@@ -166,6 +173,10 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        # ds.vertLMM's closed-form GLS path uses
                        # "scale_only" + no_intercept=TRUE.
                        std_mode = "full",
+                       # Internal fixed-evaluation path for follow-on
+                       # methods such as LMM variance components.
+                       start = NULL,
+                       compute_se = TRUE,
                        # Legacy positional args for backward compatibility
                        data_name = NULL, y_var = NULL) {
   call_matched <- match.call()
@@ -323,6 +334,10 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     stop("secure_agg requires >= 3 servers", call. = FALSE)
   if (use_k2_beaver && non_label_count != 1)
     stop("K=2 mode requires exactly 2 servers", call. = FALSE)
+  if (!is.null(start) && !use_secure_agg) {
+    stop("start is currently supported only for K>=3 secure_agg mode",
+         call. = FALSE)
+  }
 
   # Adaptive log_n for large n: max_slots = 2^(log_n-1)
   # n <= 4096 -> log_n=13, n <= 8192 -> log_n=14, n <= 16384 -> log_n=15
@@ -669,7 +684,10 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       max_iter = max_iter, tol = tol, verbose = verbose,
       label_intercept = label_intercept,
       .dsAgg = .dsAgg, .sendBlob = .sendBlob,
-      weights_active = isTRUE(weights_active))
+      weights_active = isTRUE(weights_active),
+      no_intercept = isTRUE(no_intercept),
+      start = start,
+      compute_se = isTRUE(compute_se))
     betas <- k3_result$betas
     converged <- k3_result$converged
     final_iter <- k3_result$final_iter
@@ -788,7 +806,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   covariance <- NULL
   covariance_information <- NULL
 
-  if (!is.null(inv_H) && !is.null(attr(inv_H, "raw_hessian"))) {
+  if (isTRUE(compute_se) &&
+      !is.null(inv_H) && !is.null(attr(inv_H, "raw_hessian"))) {
     H_raw <- attr(inv_H, "raw_hessian")
     # K>=3 finite-difference Hessian is generated in the protocol's beta
     # order: coordinator features first, then the remaining servers. The
