@@ -91,6 +91,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
   # (ii) refit the fixed effects with the outer-loop intercept offsets
   # b_i. Moment-match \sigma_b^2 = var(\hat b_i).
   sigma_b2 <- 1.0
+  sigma_b2_anchor <- NA_real_
   b_hat <- rep(0, n_clusters)
   converged <- FALSE
   offset_col <- NULL
@@ -108,6 +109,13 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
       n_i <- as.integer(cl$n_per_cluster)
     }
     active <- n_i > 0L & is.finite(rsum) & is.finite(vsum)
+    score_mom_num <- sum(rsum[active]^2 - vsum[active])
+    score_mom_den <- sum(vsum[active]^2)
+    sigma_b2_score <- if (is.finite(score_mom_den) && score_mom_den > 0) {
+      max(score_mom_num / score_mom_den, 1e-6)
+    } else {
+      1e-6
+    }
     info <- rep(Inf, n_clusters)
     info[active] <- pmax(vsum[active], 1e-8) + 1 / sigma_b2
     score <- rsum - b_hat / sigma_b2
@@ -136,12 +144,25 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     # var(b_hat), and is the fixed point of the EM iteration that
     # converges to the ML estimator.
     post_var <- 1 / info
-    sigma_b2_new <- max(mean(b_hat_new[active]^2 + post_var[active]), 1e-6)
+    sigma_b2_em <- max(mean(b_hat_new[active]^2 + post_var[active]), 1e-6)
+    if (!is.finite(sigma_b2_anchor)) {
+      # The first marginal score moment prevents the EM/PQL variance update
+      # from collapsing after BLUP offsets absorb cluster signal. Cap it
+      # conservatively because fixed-point score moments are noisy in very
+      # small clustered fixtures.
+      anchor_cap <- getOption("dsvert.glmm_sigma_anchor_cap",
+                              max(1, 2 * sigma_b2_em))
+      anchor_cap <- suppressWarnings(as.numeric(anchor_cap)[1L])
+      if (!is.finite(anchor_cap) || anchor_cap <= 0) anchor_cap <- Inf
+      sigma_b2_anchor <- min(sigma_b2_score, anchor_cap)
+    }
+    sigma_b2_new <- max(sigma_b2_em, sigma_b2_anchor)
     if (verbose) {
       message(sprintf(
-        "[GLMM] outer %d  sigma_b^2=%.4g  var(b_hat)=%.4g  mean(post_var)=%.4g",
+        paste0("[GLMM] outer %d  sigma_b^2=%.4g  var(b_hat)=%.4g  ",
+               "mean(post_var)=%.4g  score_anchor=%.4g"),
         outer, sigma_b2_new, stats::var(b_hat_new[active]),
-        mean(post_var[active])))
+        mean(post_var[active]), sigma_b2_anchor))
     }
     b_delta <- max(abs(b_hat_new - b_hat))
     sigma_delta <- abs(sigma_b2_new - sigma_b2)
@@ -191,6 +212,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     coefficients = fit$coefficients,
     std_errors   = fit$std_errors,
     sigma_b2     = sigma_b2,
+    sigma_b2_anchor = sigma_b2_anchor,
     b_hat        = b_hat,
     icc          = icc,
     n_clusters   = n_clusters,
