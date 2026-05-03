@@ -126,6 +126,9 @@ ds.vertPCA <- function(data_name = NULL, variables = NULL, n_components = NULL,
     var_names <- cor_result$var_names
   }
 
+  disclosure_guard <- .dsvert_guard_matrix_release(
+    n_obs = n_obs, p = length(var_names), what = "PCA loading matrix")
+
   # Step 2: Eigen decomposition of the correlation matrix.
   # PCA on standardized data = eigen decomposition of correlation matrix R.
   # symmetric = TRUE tells eigen() that R is real symmetric, enabling a more
@@ -171,7 +174,8 @@ ds.vertPCA <- function(data_name = NULL, variables = NULL, n_components = NULL,
     cumulative_pct = cumulative_pct[seq_len(n_components)],
     var_names = var_names,
     n_obs = n_obs,
-    correlation = R
+    correlation = R,
+    disclosure_guard = disclosure_guard
   )
 
   class(result) <- c("ds.pca", "list")

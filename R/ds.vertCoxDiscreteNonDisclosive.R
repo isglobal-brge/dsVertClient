@@ -1,5 +1,5 @@
-#' @title Cox K=2 discrete-time pooled-logistic -- non-disclosive option B (#D')
-#' @description K=2 OT-Beaver discrete-time Cox via pooled-logistic with
+#' @title Cox discrete-time pooled-logistic -- non-disclosive option B (#D')
+#' @description K=2 and K>=3 OT-Beaver discrete-time Cox via pooled-logistic with
 #'   the per-patient ending-bin index J_i hidden from the covariate
 #'   (non-label) server. Closes the disclosure gap of the leaky variant
 #'   \code{run_cox_discrete} (where the person-period frame leaked
@@ -12,28 +12,24 @@
 #'   1. Outcome (label) server holds (time, status) -> computes J_i +
 #'      m_ij = I(j <= J_i) + y_ij = I(j == J_i AND status_i = 1) plaintext.
 #'   2. m and y are split into Ring127 additive shares (frac=50) between
-#'      OS and the covariate server. NL never sees J_i directly -- only
-#'      uniform-random-looking length-(J*n) shares whose mod-2^127 sum
-#'      with OS shares reconstructs the masks.
-#'   3. Covariate server replicates X_i to a uniform Jxn person-period
-#'      frame (every patient contributes exactly J rows, regardless of
-#'      true J_i). Zero row-count signal leaks per Aliasgari-Blanton 2013
-#'      NDSS share-mask gating folklore.
-#'   4. Newton inner loop (next session): mask-gated residual (y - p)*m
-#'      via .ring127_vecmul Beaver round per bin + mask-gated Hessian
-#'      X^T diag(W*m) X share-space + ridge epsilon*I (~1e-8) on Hessian
-#'      diagonal to handle all-zero-mask alpha_j strata per Christensen 2019
-#'      Sec.A.3.
+#'      OS and the selected fusion/NL DCF party. The fusion party never sees
+#'      J_i directly -- only uniform-random-looking length-(J*n) shares whose
+#'      mod-2^127 sum with OS shares reconstructs the masks.
+#'   3. Each feature server replicates X_i to a uniform Jxn person-period
+#'      frame (every patient contributes exactly J rows, regardless of true
+#'      J_i). K>=3 non-DCF servers export only encrypted additive shares of
+#'      this uniform frame. Zero row-count signal leaks per Aliasgari-Blanton
+#'      2013 NDSS share-mask gating folklore.
+#'   4. Newton inner loop: mask-gated residual \code{(y - p) * m}
+#'      via \code{.ring127_vecmul} Beaver round per bin + mask-gated Hessian
+#'      \code{X^T diag(W * m) X} share-space + ridge epsilon*I (~1e-8) on
+#'      Hessian diagonal to handle all-zero-mask alpha_j strata per Christensen
+#'      2019 Sec.A.3.
 #'
-#'   This first increment ships the orchestration that exercises the
-#'   three dormant server-side primitives shipped in dsVert eee40f6
-#'   (\code{dsvertCoxDiscreteShareMaskDS} +
-#'   \code{dsvertCoxDiscreteReceiveSharesDS} +
-#'   \code{dsvertCoxDiscreteExpandXDS}) end-to-end and validates the
-#'   share-pipeline. The masked-Newton inner loop (Sec.4 above) is staged
-#'   for the next session -- the scaffold returns the resolved share-
-#'   slot keys + uniform-expanded data frame name so the caller can
-#'   wire the Newton when it lands.
+#'   The masked-Newton loop runs over exactly two DCF parties. For K=2 those
+#'   parties are the two servers. For K>=3 the outcome server and one selected
+#'   fusion server hold the DCF state; additional feature servers only export
+#'   encrypted additive shares of their uniform person-period covariate frame.
 #'
 #'   Citations:
 #'   \itemize{
@@ -76,37 +72,42 @@
 #'   mult ulp approx 8.9e-16; depth-50 chain -> relative error approx 4.4e-14, ~10
 #'   orders of margin to STRICT 1e-4 on coefficients).
 #' @param newton Logical. If TRUE (default), run the masked-Newton inner
-#'   loop after the share-pipeline scaffold to produce coefficient
-#'   estimates. If FALSE, return the scaffold result with
+#'   loop after the share-domain setup to produce coefficient
+#'   estimates. If FALSE, return primitive/setup audit metadata with
 #'   coefficients=NULL (diagnostic mode for primitive validation).
 #' @param ridge_eps Numeric. Diagonal eigenvalue inflation added to the
 #'   Hessian before \code{solve()} to handle all-zero-mask alpha_j strata
 #'   per Christensen 2019 CRAN ordinal vignette Sec.A.3, plus to suppress
 #'   the spurious near-singular eigenvalues introduced by the masked-W
 #'   noise (Catrina-Saxena 2010 frac=50 truncation accumulating across
-#'   the mask*W*X^T*X chain). Default 1e-6 -- empirically drops the
+#'   the \code{mask * W * X^T * X} chain). Default 1e-6 -- empirically drops the
 #'   L2 fixture rel from 4.4e-2 (epsilon=1e-8) to 4.1e-4 by suppressing the
 #'   |step|->noise oscillation around the iter-4 attractor.
+#' @param debug_trace Logical. If \code{TRUE}, retain per-iteration beta and
+#'   gradient traces for local debugging. Defaults to \code{FALSE}.
 #' @param verbose Logical.
-#' @param datasources DSI connections (length-2 K=2 split: label server
-#'   holding (time, status) + a subset of X; covariate server holding
-#'   the remaining X columns).
+#' @param datasources DSI connections. The outcome server holds
+#'   \code{time_var/status_var}. For K>=3, the outcome server and one selected
+#'   fusion server are the DCF parties; other servers contribute encrypted
+#'   additive shares of their uniform person-period covariate frames.
 #' @return List with class \code{"ds.vertCoxDiscreteNonDisclosive"}:
 #'   \describe{
-#'     \item{stage}{Character: \code{"primitives_validated"} for this
-#'       scaffold release. Will become \code{"converged"} /
-#'       \code{"max_iter"} once the masked-Newton lands.}
-#'     \item{coefficients}{NULL in this scaffold; populated by Newton.}
+#'     \item{stage}{Character: \code{"converged"} or \code{"max_iter"} when
+#'       \code{newton=TRUE}; \code{"primitives_validated"} in diagnostic
+#'       \code{newton=FALSE} mode.}
+#'     \item{coefficients}{Named pooled-logistic coefficients when
+#'       \code{newton=TRUE}; otherwise \code{NULL}.}
 #'     \item{n_obs}{Number of patients.}
 #'     \item{J}{Number of bins.}
 #'     \item{n_pp}{Person-period rows = J * n_obs (uniform -- no leak).}
 #'     \item{mask_share_key, y_share_key}{Session slot names where the
-#'       Ring127 (m, y) shares are stored on both servers, ready for the
-#'       Newton.}
-#'     \item{expanded_x_name}{Symbol of the uniform Jxn covariate frame
-#'       at the covariate server.}
+#'       Ring127 (m, y) shares are stored on both DCF parties.}
+#'     \item{expanded_x_name}{Symbol of the uniform Jxn covariate frame at
+#'       each participating feature server.}
+#'     \item{os_name, nl_name, non_dcf_servers}{Outcome server, selected
+#'       fusion/DCF peer, and any K>=3 non-DCF feature servers.}
 #'     \item{disclosure_audit}{List of per-step disclosure validation
-#'       (n_pp at NL = J*n with no per-patient row-count variation).}
+#'       (uniform J*n expansion and no per-patient row-count variation).}
 #'   }
 #' @export
 ds.vertCoxDiscreteNonDisclosive <- function(formula,
@@ -117,12 +118,13 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                                              tol        = 1e-6,
                                              newton     = TRUE,
                                              ridge_eps  = 1e-6,
+                                             debug_trace = FALSE,
                                              verbose    = FALSE,
                                              datasources = NULL) {
   if (is.null(datasources))
     datasources <- DSI::datashield.connections_find()
-  if (length(datasources) != 2L)
-    stop("ds.vertCoxDiscreteNonDisclosive requires exactly K=2 servers.",
+  if (length(datasources) < 2L)
+    stop("ds.vertCoxDiscreteNonDisclosive requires at least two servers.",
          call. = FALSE)
 
   # Parse Surv(time, status) ~ x1 + x2 + ... LHS for the discrete-time
@@ -157,6 +159,19 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                   length(bin_breaks), J + 1L), call. = FALSE)
   if (any(diff(bin_breaks) <= 0))
     stop("bin_breaks must be strictly increasing", call. = FALSE)
+  # `cut(..., right = TRUE)` assigns values exactly equal to an interior
+  # break to the lower bin. DataSHIELD serialisation can move a break a few
+  # ulps downward, incorrectly pushing boundary observations into the next
+  # bin. Nudge right endpoints upward by a tiny relative tolerance so the
+  # intended right-closed binning is stable across R/DSL transport.
+  if (length(bin_breaks) > 1L) {
+    eps <- max(1e-12, 128 * .Machine$double.eps *
+                 max(1, max(abs(bin_breaks), na.rm = TRUE)))
+    bin_breaks[-1L] <- bin_breaks[-1L] + eps
+    if (any(diff(bin_breaks) <= 0))
+      stop("bin_breaks too close after numeric stabilisation",
+           call. = FALSE)
+  }
 
   session_id <- paste0("cox_nd_",
                         format(Sys.time(), "%Y%m%d%H%M%S"),
@@ -164,15 +179,13 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   server_names <- names(datasources)
   if (any(!nzchar(server_names)))
     stop("datasources must be a named list", call. = FALSE)
-  # Character vector (NOT list) so setdiff/[[ work uniformly -- list-form
-  # produces list-typed peer that breaks transport_pks[[peer]] subscript.
-  server_list <- server_names
 
   # Identify the outcome (label) server: the one whose data frame
   # holds the (time_var, status_var) columns. We verify via a colnames
   # query rather than positional convention so the caller can pass
   # datasources in any order.
   os_idx <- NA_integer_
+  cols_by_server <- list()
   for (i in seq_along(datasources)) {
     cn_res <- DSI::datashield.aggregate(
       conns = datasources[i],
@@ -180,8 +193,9 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     cn_inner <- if (is.list(cn_res)) cn_res[[1L]] else cn_res
     cn <- if (is.list(cn_inner) && !is.null(cn_inner$columns))
             cn_inner$columns else cn_inner
-    if (all(c(time_var, status_var) %in% cn)) {
-      os_idx <- i; break
+    cols_by_server[[server_names[i]]] <- cn
+    if (is.na(os_idx) && all(c(time_var, status_var) %in% cn)) {
+      os_idx <- i
     }
   }
   if (is.na(os_idx))
@@ -189,30 +203,71 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                   time_var, status_var),
          "neither datasource's '", data, "' has both columns.",
          call. = FALSE)
-  nl_idx     <- setdiff(seq_along(datasources), os_idx)
-  os_name    <- server_names[os_idx]
-  nl_name    <- server_names[nl_idx]
-  os_conn    <- datasources[os_idx]
-  nl_conn    <- datasources[nl_idx]
+  os_name <- server_names[os_idx]
+  x_vars_by_server <- lapply(server_names, function(srv) {
+    cols <- cols_by_server[[srv]]
+    if (is.null(cols)) cols <- character(0)
+    intersect(x_vars, cols)
+  })
+  names(x_vars_by_server) <- server_names
+  if (length(datasources) == 2L) {
+    nl_name <- setdiff(server_names, os_name)[1L]
+  } else {
+    if (!exists(".k3_select_fusion_server", mode = "function")) {
+      stop("K>=3 discrete Cox requires the K>=3 DCF helper selection code",
+           call. = FALSE)
+    }
+    nl_name <- .k3_select_fusion_server(server_names, os_name,
+                                        x_vars_by_server)
+  }
+  if (is.na(nl_name) || is.null(nl_name) || !nzchar(nl_name))
+    stop("non-label/fusion server not found", call. = FALSE)
+  nl_idx <- which(server_names == nl_name)
+  os_conn <- datasources[os_idx]
+  nl_conn <- datasources[nl_idx]
+  non_dcf_servers <- setdiff(server_names, c(os_name, nl_name))
+  # Character vector (NOT list) so setdiff/[[ work uniformly -- list-form
+  # produces list-typed peer that breaks transport_pks[[peer]] subscript.
+  server_list <- c(os_name, nl_name)
+  feature_server_order <- c(os_name, nl_name, non_dcf_servers)
 
   if (verbose) message(sprintf(
-    "[#D' non-disclosive] OS=%s NL=%s session=%s J=%d",
-    os_name, nl_name, session_id, J))
+    "[#D' non-disclosive] K=%d OS=%s fusion/NL=%s session=%s J=%d",
+    length(datasources), os_name, nl_name, session_id, J))
 
   # ---- Phase 0: transport keys (mirror .glm_mpc_setup minimal subset) ----
   transport_pks <- list()
-  for (server in server_list) {
+  identity_info <- list()
+  for (server in server_names) {
     ci <- which(server_names == server)
     tk_res <- DSI::datashield.aggregate(
       conns = datasources[ci],
       expr  = call(name = "glmRing63TransportInitDS", session_id = session_id))
     if (is.list(tk_res) && length(tk_res) == 1L) tk_res <- tk_res[[1L]]
     transport_pks[[server]] <- tk_res$transport_pk
+    if (!is.null(tk_res$identity_pk)) {
+      identity_info[[server]] <- list(
+        identity_pk = tk_res$identity_pk,
+        signature = tk_res$signature)
+    }
   }
-  # Note: we skip the cross-server identity verification preamble since
-  # the discrete-Cox primitives only use the two transport pks for the
-  # one-shot mask + y blobs. Identity verification would be a no-op
-  # round-trip here.
+  .json_to_b64url <- function(x) {
+    raw <- charToRaw(jsonlite::toJSON(x, auto_unbox = TRUE))
+    b64 <- gsub("\n", "", jsonlite::base64_enc(raw), fixed = TRUE)
+    chartr("+/", "-_", sub("=+$", "", b64, perl = TRUE))
+  }
+  pk_b64 <- .json_to_b64url(transport_pks[sort(names(transport_pks))])
+  id_b64 <- if (length(identity_info) > 0L) {
+    .json_to_b64url(identity_info[sort(names(identity_info))])
+  } else ""
+  for (server in server_names) {
+    ci <- which(server_names == server)
+    DSI::datashield.aggregate(datasources[ci],
+      call(name = "mpcStoreTransportKeysDS",
+           transport_keys_b64 = pk_b64,
+           identity_info_b64 = id_b64,
+           session_id = session_id))
+  }
 
   .to_b64url <- function(x) {
     if (is.null(x) || !nzchar(x)) return(x)
@@ -227,13 +282,14 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     conns = os_conn,
     expr  = call(name = "dsvertCoxDiscreteShareMaskDS",
                   data_name        = data,
-                  time_var         = time_var,
-                  status_var       = status_var,
-                  J                = J,
-                  bin_breaks       = bin_breaks,
+                    time_var         = time_var,
+                    status_var       = status_var,
+                    J                = as.numeric(J),
+                    bin_breaks       = bin_breaks,
                   mask_output_key  = mask_share_key,
                   y_output_key     = y_share_key,
                   target_pk        = .to_b64url(transport_pks[[nl_name]]),
+                  debug            = isTRUE(debug_trace),
                   session_id       = session_id))
   if (is.list(share_res) && length(share_res) == 1L)
     share_res <- share_res[[1L]]
@@ -266,51 +322,34 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   recv_res <- DSI::datashield.aggregate(
     conns = nl_conn,
     expr  = call(name = "dsvertCoxDiscreteReceiveSharesDS",
-                  mask_blob_key   = blob_key_m,
-                  y_blob_key      = blob_key_y,
-                  mask_output_key = mask_share_key,
-                  y_output_key    = y_share_key,
-                  n_pp            = n_pp,
-                  session_id      = session_id))
+                    mask_blob_key   = blob_key_m,
+                    y_blob_key      = blob_key_y,
+                    mask_output_key = mask_share_key,
+                    y_output_key    = y_share_key,
+                    n_pp            = as.numeric(n_pp),
+                    session_id      = session_id))
   if (is.list(recv_res) && length(recv_res) == 1L)
     recv_res <- recv_res[[1L]]
   if (!isTRUE(recv_res$stored))
     stop("NL share receive failed", call. = FALSE)
 
-  # ---- Phase 3: NL expands its X to uniform Jxn person-period frame ----
-  if (verbose) message("[#D' non-disclosive] Phase 3: NL uniform expansion")
-  # Identify the X columns NL holds. We don't pre-split x_vars at the
-  # client (the formula's RHS may include columns from either server) --
-  # NL skips columns it doesn't have. The K=2 split convention is the
-  # caller's responsibility.
-  cn_nl_res <- DSI::datashield.aggregate(
-    conns = nl_conn,
-    expr  = call(name = "dsvertColNamesDS", data_name = data))
-  cn_nl_inner <- if (is.list(cn_nl_res)) cn_nl_res[[1L]] else cn_nl_res
-  cn_nl <- if (is.list(cn_nl_inner) && !is.null(cn_nl_inner$columns))
-             cn_nl_inner$columns else cn_nl_inner
-  x_nl  <- intersect(x_vars, cn_nl)
+  # ---- Phase 3: fusion/NL expands its X to uniform Jxn person-period frame ----
+  if (verbose) message("[#D' non-disclosive] Phase 3: fusion uniform expansion")
+  x_nl <- x_vars_by_server[[nl_name]]
   expanded_x_name <- sprintf("cox_nd_pp_%s", substr(session_id, 1L, 12L))
-  if (length(x_nl) > 0L) {
-    expand_res <- DSI::datashield.aggregate(
-      conns = nl_conn,
-      expr  = call(name = "dsvertCoxDiscreteExpandXDS",
-                    data_name     = data,
-                    new_data_name = expanded_x_name,
-                    x_vars        = x_nl,
-                    J             = J,
-                    session_id    = session_id))
-    if (is.list(expand_res) && length(expand_res) == 1L)
-      expand_res <- expand_res[[1L]]
-    if (!isTRUE(expand_res$stored) || expand_res$n_pp != n_pp)
-      stop(sprintf("NL expansion sanity fail: n_pp returned %s vs %d",
-                    as.character(expand_res$n_pp), n_pp), call. = FALSE)
-  } else {
-    # NL has no covariate columns (degenerate but allowed). The Newton
-    # would still need a uniform Jxn frame to host bin-dummy alpha_j cols
-    # -- we leave that to the masked-Newton inner loop next session.
-    expand_res <- list(stored = TRUE, n_pp = n_pp, p = 0L)
-  }
+  expand_res <- DSI::datashield.aggregate(
+    conns = nl_conn,
+    expr  = call(name = "dsvertCoxDiscreteExpandXDS",
+                  data_name     = data,
+                  new_data_name = expanded_x_name,
+                  x_vars        = x_nl,
+                  J             = as.numeric(J),
+                  session_id    = session_id))
+  if (is.list(expand_res) && length(expand_res) == 1L)
+    expand_res <- expand_res[[1L]]
+  if (!isTRUE(expand_res$stored) || expand_res$n_pp != n_pp)
+    stop(sprintf("NL expansion sanity fail: n_pp returned %s vs %d",
+                  as.character(expand_res$n_pp), n_pp), call. = FALSE)
 
   # ---- Disclosure audit: NL row count is uniform J*n, NOT n_obs * J_i ----
   # The primitive contract guarantees n_pp = J * n_obs at NL with every
@@ -368,33 +407,31 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       server_names      = server_names,
       os_name           = os_name,
       nl_name           = nl_name,
+      non_dcf_servers   = non_dcf_servers,
+      feature_server_order = feature_server_order,
       bin_breaks        = bin_breaks,
       max_iter          = as.integer(max_iter),
       tol               = as.numeric(tol),
       disclosure_audit  = audit,
-      note = "newton=FALSE diagnostic mode: scaffold + audit only."))
+      note = "newton=FALSE diagnostic mode: primitive setup + audit only."))
   }
 
-  # --- Phase 4a: expand X at OS too (mirror of NL Phase 3) ---
-  cn_os_res <- DSI::datashield.aggregate(
-    conns = os_conn,
-    expr  = call(name = "dsvertColNamesDS", data_name = data))
-  cn_os_inner <- if (is.list(cn_os_res)) cn_os_res[[1L]] else cn_os_res
-  cn_os <- if (is.list(cn_os_inner) && !is.null(cn_os_inner$columns))
-              cn_os_inner$columns else cn_os_inner
-  x_os <- intersect(x_vars, cn_os)
-  if (length(x_os) == 0L && length(x_nl) == 0L)
-    stop("No covariates found at either server (RHS empty after intersection).",
+  # --- Phase 4a: expand X at OS and non-DCF servers too ---
+  x_os <- x_vars_by_server[[os_name]]
+  p_extra <- sum(vapply(non_dcf_servers, function(srv)
+    length(x_vars_by_server[[srv]]), integer(1L)))
+  if (length(x_os) == 0L && length(x_nl) == 0L && p_extra == 0L)
+    stop("No covariates found at any server (RHS empty after intersection).",
          call. = FALSE)
   if (length(x_os) > 0L) {
     DSI::datashield.aggregate(
       conns = os_conn,
       expr  = call(name = "dsvertCoxDiscreteExpandXDS",
                     data_name     = data,
-                    new_data_name = expanded_x_name,
-                    x_vars        = x_os,
-                    J             = J,
-                    session_id    = session_id))
+                      new_data_name = expanded_x_name,
+                      x_vars        = x_os,
+                      J             = as.numeric(J),
+                      session_id    = session_id))
   } else {
     # OS still needs the bin-dummy frame to share -- call expansion with
     # zero x_vars (the primitive still emits bin dummies + patient_id).
@@ -402,9 +439,22 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       conns = os_conn,
       expr  = call(name = "dsvertCoxDiscreteExpandXDS",
                     data_name     = data,
+                      new_data_name = expanded_x_name,
+                      x_vars        = character(0),
+                      J             = as.numeric(J),
+                      session_id    = session_id))
+  }
+  for (srv in non_dcf_servers) {
+    x_extra <- x_vars_by_server[[srv]]
+    if (length(x_extra) == 0L) next
+    ci <- which(server_names == srv)
+    DSI::datashield.aggregate(
+      conns = datasources[ci],
+      expr  = call(name = "dsvertCoxDiscreteExpandXDS",
+                    data_name     = data,
                     new_data_name = expanded_x_name,
-                    x_vars        = character(0),
-                    J             = J,
+                    x_vars        = x_extra,
+                    J             = as.numeric(J),
                     session_id    = session_id))
   }
 
@@ -415,10 +465,13 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   bin_dummy_names <- sprintf("bin%d", seq_len(J))
   x_share_os <- c(bin_dummy_names, x_os)
   x_share_nl <- x_nl
-  p_os    <- length(x_share_os)
-  p_nl    <- length(x_share_nl)
-  p_total <- p_os + p_nl
-  beta_names <- c(x_share_os, x_share_nl)
+  x_share_extras <- unlist(x_vars_by_server[non_dcf_servers],
+                           use.names = FALSE)
+  p_os     <- length(x_share_os)
+  p_nl     <- length(x_share_nl)
+  p_extras <- length(x_share_extras)
+  p_total  <- p_os + p_nl + p_extras
+  beta_names <- c(x_share_os, x_share_nl, x_share_extras)
   if (p_total < 1L)
     stop("p_total < 1 after expansion -- degenerate design.", call. = FALSE)
 
@@ -446,16 +499,19 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   x_vars_per_server <- list()
   x_vars_per_server[[os_name]] <- x_share_os
   x_vars_per_server[[nl_name]] <- x_share_nl
+  for (srv in non_dcf_servers) {
+    x_vars_per_server[[srv]] <- x_vars_by_server[[srv]]
+  }
   for (srv in server_list) {
     ci  <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
     r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
-      data_name = expanded_x_name,
-      x_vars    = x_vars_per_server[[srv]],
-      y_var     = NULL,
-      peer_pk   = transport_pks[[peer]],
-      ring      = 127L,
-      session_id = session_id))
+        data_name = expanded_x_name,
+        x_vars    = x_vars_per_server[[srv]],
+        y_var     = NULL,
+        peer_pk   = .to_b64url(transport_pks[[peer]]),
+        ring      = 127,
+        session_id = session_id))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     share_results[[srv]] <- r
   }
@@ -468,15 +524,49 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     ci   <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
     .dsAgg(datasources[ci], call(name = "k2ReceiveShareDS",
-      peer_p = as.integer(length(x_vars_per_server[[peer]])),
+      peer_p = as.numeric(length(x_vars_per_server[[peer]])),
       session_id = session_id))
   }
+  for (srv in non_dcf_servers) {
+    extra_p <- length(x_vars_per_server[[srv]])
+    if (extra_p == 0L) next
+    ci <- which(server_names == srv)
+    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
+      data_name = expanded_x_name,
+      x_vars = x_vars_per_server[[srv]],
+      y_var = NULL,
+      peer_pk = .to_b64url(transport_pks[[nl_name]]),
+      ring = 127,
+      session_id = session_id))
+    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+    .sendBlob(r$encrypted_x_share, paste0("k2_extra_x_share_", srv), nl_idx)
 
-  # OS = coordinator (= y_server). NL = peer. Dealer for Beaver vecmul
-  # triples is NL (mirrors ord_joint convention).
+    r2 <- .dsAgg(datasources[ci], call(name = "glmRing63ExportOwnShareDS",
+      peer_pk = .to_b64url(transport_pks[[os_name]]),
+      session_id = session_id))
+    if (is.list(r2) && length(r2) == 1L) r2 <- r2[[1L]]
+    .sendBlob(r2$encrypted_own_share, paste0("k2_extra_x_share_", srv),
+              os_idx)
+  }
+  for (srv in non_dcf_servers) {
+    extra_p <- length(x_vars_per_server[[srv]])
+    if (extra_p == 0L) next
+    for (dcf_srv in server_list) {
+      .dsAgg(datasources[which(server_names == dcf_srv)],
+        call(name = "glmRing63ReceiveExtraShareDS",
+             extra_key = paste0("k2_extra_x_share_", srv),
+             extra_p = as.integer(extra_p),
+             session_id = session_id))
+    }
+  }
+
+  # OS = coordinator (= y_server). NL/fusion = DCF peer. If K>=3 has a
+  # non-DCF server, use it as the Beaver dealer so neither DCF party deals
+  # triples; K=2 falls back to NL/fusion.
   ci_os     <- which(server_names == os_name)
   ci_nl     <- which(server_names == nl_name)
-  dealer_ci <- ci_nl
+  dealer_srv <- if (length(non_dcf_servers) > 0L) non_dcf_servers[[1L]] else nl_name
+  dealer_ci <- which(server_names == dealer_srv)
 
   # Public-FP scalars (FP(1), FP(-1)) used by affine combines below.
   fp_one  <- dsVert:::.callMpcTool("k2-float-to-fp",
@@ -497,16 +587,27 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   best_beta       <- beta
   best_score      <- Inf
   iter_audit      <- vector("list", as.integer(max_iter))
+  debug_trace     <- isTRUE(debug_trace)
+  beta_history    <- if (debug_trace) vector("list", as.integer(max_iter)) else NULL
+  grad_history    <- if (debug_trace) vector("list", as.integer(max_iter)) else NULL
+  debug_bin_summary <- NULL
 
   for (iter in seq_len(as.integer(max_iter))) {
+    if (debug_trace) beta_history[[iter]] <- beta
     beta_coord <- as.numeric(beta[seq_len(p_os)])
-    beta_nl_v  <- if (p_nl > 0L) as.numeric(beta[(p_os + 1L):p_total])
-                  else numeric(0)
+    beta_fusion <- if (p_nl > 0L) {
+      as.numeric(beta[(p_os + 1L):(p_os + p_nl)])
+    } else numeric(0)
+    beta_extra <- if (p_extras > 0L) {
+      as.numeric(beta[(p_os + p_nl + 1L):p_total])
+    } else numeric(0)
 
     # 1. eta_share = X*beta  (k2ComputeEtaShareDS also writes k2_x_full_fp)
     for (srv in server_list) {
       ci   <- which(server_names == srv)
       is_c <- (srv == os_name)
+      beta_nl_v <- if (is_c) c(beta_fusion, beta_extra)
+                   else c(beta_extra, beta_fusion)
       .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
         beta_coord     = beta_coord,
         beta_nl        = beta_nl_v,
@@ -514,18 +615,27 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
         is_coordinator = is_c,
         session_id     = session_id,
         output_key     = "cox_nd_eta"))
+      if (!is_c && p_extras > 0L) {
+        .dsAgg(datasources[ci], call(name = "glmRing63ReorderXFullDS",
+          p_coord = as.integer(p_os),
+          p_fusion = as.integer(p_nl),
+          p_extras = as.integer(p_extras),
+          session_id = session_id))
+      }
     }
 
     # 2. neg_eta = (-1) * eta  (local scale, no MPC round)
-    for (srv in server_list) {
-      ci <- which(server_names == srv)
-      .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
-        in_key     = "cox_nd_eta",
-        scalar_fp  = fp_neg1_b64,
-        output_key = "cox_nd_neg_eta",
-        n          = n_pp,
-        session_id = session_id))
-    }
+      for (srv in server_list) {
+        ci <- which(server_names == srv)
+        is_c <- (srv == os_name)
+        .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
+          in_key     = "cox_nd_eta",
+          scalar_fp  = fp_neg1_b64,
+          output_key = "cox_nd_neg_eta",
+          n          = as.numeric(n_pp),
+          is_party0  = is_c,
+          session_id = session_id))
+      }
 
     # 3. exp(-eta)  (Chebyshev-Horner extended for |x|<=10)
     .ring127_exp_round_keyed_extended(
@@ -538,17 +648,17 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     for (srv in server_list) {
       ci   <- which(server_names == srv)
       is_c <- (srv == os_name)
-      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-        a_key           = "cox_nd_exp_neg_eta",
-        b_key           = NULL,
-        sign_a          = 1L,
-        sign_b          = 0L,
-        public_const_fp = fp_one_b64,
-        is_party0       = is_c,
-        output_key      = "cox_nd_one_plus_exp",
-        n               = n_pp,
-        session_id      = session_id))
-    }
+        .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
+          a_key           = "cox_nd_exp_neg_eta",
+          b_key           = NULL,
+          sign_a          = 1,
+          sign_b          = 0,
+          public_const_fp = fp_one_b64,
+          is_party0       = is_c,
+          output_key      = "cox_nd_one_plus_exp",
+          n               = as.numeric(n_pp),
+          session_id      = session_id))
+      }
 
     # 5. p = 1 / (1 + exp(-eta))  (Newton-Raphson reciprocal)
     .ring127_recip_round_keyed(
@@ -561,17 +671,17 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     for (srv in server_list) {
       ci   <- which(server_names == srv)
       is_c <- (srv == os_name)
-      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-        a_key           = y_share_key,
-        b_key           = "cox_nd_p_share",
-        sign_a          = 1L,
-        sign_b          = -1L,
-        public_const_fp = NULL,
-        is_party0       = is_c,
-        output_key      = "cox_nd_r_share",
-        n               = n_pp,
-        session_id      = session_id))
-    }
+        .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
+          a_key           = y_share_key,
+          b_key           = "cox_nd_p_share",
+          sign_a          = 1,
+          sign_b          = -1,
+          public_const_fp = NULL,
+          is_party0       = is_c,
+          output_key      = "cox_nd_r_share",
+          n               = as.numeric(n_pp),
+          session_id      = session_id))
+      }
 
     # 7. mr = mask * r  (Beaver vecmul; gates invalid (i,j) to 0)
     .ring127_vecmul(mask_share_key, "cox_nd_r_share", "cox_nd_mr_share",
@@ -584,17 +694,17 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     for (srv in server_list) {
       ci   <- which(server_names == srv)
       is_c <- (srv == os_name)
-      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-        a_key           = NULL,
-        b_key           = "cox_nd_p_share",
-        sign_a          = 0L,
-        sign_b          = -1L,
-        public_const_fp = fp_one_b64,
-        is_party0       = is_c,
-        output_key      = "cox_nd_one_minus_p",
-        n               = n_pp,
-        session_id      = session_id))
-    }
+        .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
+          a_key           = NULL,
+          b_key           = "cox_nd_p_share",
+          sign_a          = 0,
+          sign_b          = -1,
+          public_const_fp = fp_one_b64,
+          is_party0       = is_c,
+          output_key      = "cox_nd_one_minus_p",
+          n               = as.numeric(n_pp),
+          session_id      = session_id))
+      }
     .ring127_vecmul("cox_nd_p_share", "cox_nd_one_minus_p",
       "cox_nd_w_share", n_pp,
       datasources, dealer_ci, server_list, server_names,
@@ -616,16 +726,16 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       x_col_keys[j] <- sprintf("cox_nd_xcol_%d", j)
       for (srv in server_list) {
         ci <- which(server_names == srv)
-        .dsAgg(datasources[ci], call(name = "k2BeaverExtractColumnDS",
-          source_key = "k2_x_full_fp",
-          n          = n_pp,
-          K          = p_total,
-          col_index  = j,
-          output_key = x_col_keys[j],
-          session_id = session_id,
-          frac_bits  = 50L,
-          ring       = "ring127"))
-      }
+          .dsAgg(datasources[ci], call(name = "k2BeaverExtractColumnDS",
+            source_key = "k2_x_full_fp",
+            n          = as.numeric(n_pp),
+            K          = as.numeric(p_total),
+            col_index  = as.numeric(j),
+            output_key = x_col_keys[j],
+            session_id = session_id,
+            frac_bits  = 50,
+            ring       = "ring127"))
+        }
       gprod_key <- sprintf("cox_nd_gprod_%d", j)
       .ring127_vecmul(x_col_keys[j], "cox_nd_mr_share", gprod_key, n_pp,
         datasources, dealer_ci, server_list, server_names,
@@ -635,19 +745,23 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       for (srv in server_list) {
         ci <- which(server_names == srv)
         rr <- .dsAgg(datasources[ci], call(name = "k2BeaverSumShareDS",
-          source_key = gprod_key,
-          session_id = session_id,
-          frac_bits  = 50L,
-          ring       = "ring127"))
+            source_key = gprod_key,
+            session_id = session_id,
+            frac_bits  = 50,
+            ring       = "ring127"))
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
         sum_g[[srv]] <- rr
       }
       agg_g <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-        share_a   = sum_g[[os_name]]$sum_share_fp,
-        share_b   = sum_g[[nl_name]]$sum_share_fp,
-        frac_bits = 50L,
-        ring      = "ring127"))
+          share_a   = sum_g[[os_name]]$sum_share_fp,
+          share_b   = sum_g[[nl_name]]$sum_share_fp,
+          frac_bits = 50,
+          ring      = "ring127"))
       grad[j] <- as.numeric(agg_g$values)
+    }
+    if (debug_trace) {
+      names(grad) <- beta_names
+      grad_history[[iter]] <- grad
     }
     score_norm <- max(abs(grad))
     score_l2   <- sqrt(sum(grad^2))
@@ -659,9 +773,58 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       best_score <- score_norm; best_beta <- beta
     }
     iter_audit[[iter]] <- list(score_max = score_norm,
-                                score_l2 = score_l2)
+                               score_l2 = score_l2)
     if (score_norm < tol) {
       converged <- TRUE; final_iter <- iter; break
+    }
+
+    if (debug_trace && iter == 1L) {
+      y_by_bin <- numeric(J)
+      m_by_bin <- numeric(J)
+      names(y_by_bin) <- names(m_by_bin) <- bin_dummy_names
+      for (j in seq_len(J)) {
+        yprod_key <- sprintf("cox_nd_debug_ybin_%d", j)
+        mprod_key <- sprintf("cox_nd_debug_mbin_%d", j)
+        .ring127_vecmul(x_col_keys[j], y_share_key, yprod_key, n_pp,
+          datasources, dealer_ci, server_list, server_names,
+          os_name, nl_name, transport_pks, session_id,
+          .dsAgg, .sendBlob)
+        .ring127_vecmul(x_col_keys[j], mask_share_key, mprod_key, n_pp,
+          datasources, dealer_ci, server_list, server_names,
+          os_name, nl_name, transport_pks, session_id,
+          .dsAgg, .sendBlob)
+        for (target in c("y", "m")) {
+          source_key <- if (identical(target, "y")) yprod_key else mprod_key
+          sums <- list()
+          for (srv in server_list) {
+            ci <- which(server_names == srv)
+            rr <- .dsAgg(datasources[ci], call(name = "k2BeaverSumShareDS",
+              source_key = source_key,
+              session_id = session_id,
+              frac_bits  = 50,
+              ring       = "ring127"))
+            if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
+            sums[[srv]] <- rr
+          }
+          agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+            share_a   = sums[[os_name]]$sum_share_fp,
+            share_b   = sums[[nl_name]]$sum_share_fp,
+            frac_bits = 50,
+            ring      = "ring127"))
+          if (identical(target, "y")) {
+            y_by_bin[j] <- as.numeric(agg$values)
+          } else {
+            m_by_bin[j] <- as.numeric(agg$values)
+          }
+        }
+      }
+      debug_bin_summary <- list(y_by_bin = y_by_bin, m_by_bin = m_by_bin,
+                                share_mask_debug = share_res$debug)
+    }
+
+    if (iter >= as.integer(max_iter)) {
+      final_iter <- iter
+      break
     }
 
     # 11. Per-pair Hessian H[j,k] = X[:,j]^T diag(mw) X[:,k] -- symmetric,
@@ -686,18 +849,18 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
         for (srv in server_list) {
           ci <- which(server_names == srv)
           rr <- .dsAgg(datasources[ci], call(name = "k2BeaverSumShareDS",
-            source_key = h_key,
-            session_id = session_id,
-            frac_bits  = 50L,
-            ring       = "ring127"))
+              source_key = h_key,
+              session_id = session_id,
+              frac_bits  = 50,
+              ring       = "ring127"))
           if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
           sum_h[[srv]] <- rr
         }
         agg_h <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-          share_a   = sum_h[[os_name]]$sum_share_fp,
-          share_b   = sum_h[[nl_name]]$sum_share_fp,
-          frac_bits = 50L,
-          ring      = "ring127"))
+            share_a   = sum_h[[os_name]]$sum_share_fp,
+            share_b   = sum_h[[nl_name]]$sum_share_fp,
+            frac_bits = 50,
+            ring      = "ring127"))
         H[j, k] <- H[k, j] <- as.numeric(agg_h$values)
       }
     }
@@ -729,9 +892,14 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       iter, step_max, max(abs(beta)), cap_factor))
   }
 
-  # If Newton diverged, fall back to best beta seen.
-  if (!converged && is.finite(best_score) && best_score < score_norm)
-    beta <- best_beta
+    # If Newton does not converge, return the best scored iterate. The
+    # beta after the final max_iter update has not been scored yet, so
+    # returning it can report a small pre-step score for a different beta.
+    returned_best_beta <- FALSE
+    if (!converged && is.finite(best_score)) {
+      beta <- best_beta
+      returned_best_beta <- TRUE
+    }
 
   list(
     stage             = if (converged) "converged" else "max_iter",
@@ -742,14 +910,17 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     p_total           = p_total,
     p_os              = p_os,
     p_nl              = p_nl,
+    p_extras          = p_extras,
     beta_names        = beta_names,
     bin_dummy_names   = bin_dummy_names,
-    n_iter            = final_iter,
-    converged         = converged,
-    score_history     = score_history,
-    step_norm_history = step_norm_hist,
-    final_score_norm  = if (length(score_history)) tail(score_history, 1L)
-                        else NA_real_,
+      n_iter            = final_iter,
+      converged         = converged,
+      returned_best_beta = returned_best_beta,
+      score_history     = score_history,
+      step_norm_history = step_norm_hist,
+      final_score_norm  = if (returned_best_beta) best_score
+                          else if (length(score_history)) tail(score_history, 1L)
+                          else NA_real_,
     best_score_norm   = best_score,
     iter_audit        = iter_audit,
     mask_share_key    = mask_share_key,
@@ -757,16 +928,26 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     expanded_x_name   = expanded_x_name,
     nl_x_vars         = x_nl,
     os_x_vars         = x_os,
+    extra_x_vars      = x_vars_by_server[non_dcf_servers],
     session_id        = session_id,
     transport_pks     = transport_pks,
     server_names      = server_names,
     os_name           = os_name,
     nl_name           = nl_name,
+    non_dcf_servers   = non_dcf_servers,
+    feature_server_order = feature_server_order,
+    dealer_server     = dealer_srv,
     bin_breaks        = bin_breaks,
     max_iter          = as.integer(max_iter),
     tol               = as.numeric(tol),
     ridge_eps         = as.numeric(ridge_eps),
     disclosure_audit  = audit,
+    debug_trace       = if (debug_trace) {
+      keep <- seq_len(length(score_history))
+      list(beta_history = beta_history[keep],
+           grad_history = grad_history[keep],
+           bin_summary = debug_bin_summary)
+    } else NULL,
     note = paste0(
       "Discrete-time Cox via pooled-logistic (Andreux 2020 + Allison 1982",
       " + Prentice-Gloeckler 1978) under masked Newton (Aliasgari-Blanton",

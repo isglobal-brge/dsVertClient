@@ -23,6 +23,8 @@ ds.vertGLM(
   keep_session = FALSE,
   no_intercept = FALSE,
   std_mode = "full",
+  start = NULL,
+  compute_se = TRUE,
   data_name = NULL,
   y_var = NULL
 )
@@ -88,6 +90,15 @@ mean-centred GLS fit).}
 (default) standardises both X and y; alternative modes (e.g.
 \code{"x_only"}) skip y standardisation for offset/weights paths.}
 
+\item{start}{Optional named coefficient vector for internal K>=3 fixed
+evaluation paths. When supplied with \code{max_iter = 0}, the secure
+loop evaluates residual/deviance shares at the supplied coefficients
+without optimisation.}
+
+\item{compute_se}{Logical. Compute finite-difference Hessian/standard
+errors. Internal fixed-evaluation callers can set FALSE to avoid
+extra MPC rounds when only residual shares are needed.}
+
 \item{data_name}{Internal alias for \code{data}; if both are supplied,
 \code{data_name} takes precedence (back-compat path).}
 
@@ -99,6 +110,9 @@ A list with class "ds.glm" containing:
 \itemize{
 \item \code{coefficients}: Named coefficient vector (original scale)
 \item \code{std_errors}: Standard errors (finite-difference Hessian)
+\item \code{covariance}: Model covariance matrix on the original scale
+\item \code{covariance_information}: Inverse Fisher/bread matrix
+without Gaussian residual-variance scaling, for sandwich methods
 \item \code{z_values}: z-statistics (coef / SE)
 \item \code{p_values}: Two-sided p-values
 \item \code{iterations}: Number of iterations

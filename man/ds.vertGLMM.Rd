@@ -11,6 +11,11 @@ ds.vertGLMM(
   max_outer = 10L,
   inner_iter = 10L,
   tol = 0.001,
+  lambda = 0,
+  method = c("em", "pql_aggregate"),
+  use_pearson_cap = getOption("dsvert.glmm_use_pearson_cap", TRUE),
+  compute_se = TRUE,
+  ring = NULL,
   verbose = TRUE,
   datasources = NULL
 )
@@ -27,6 +32,24 @@ ds.vertGLMM(
 \item{inner_iter}{Inner PIRLS iterations per cluster per outer step.}
 
 \item{tol}{Outer convergence tolerance.}
+
+\item{lambda}{L2 penalty passed to the inner binomial GLM fits.}
+
+\item{method}{Character. \code{"em"} keeps the current offset-GLM plus
+BLUP/EM approximation. \code{"pql_aggregate"} runs the experimental
+aggregate PQL weighted-LMM update using Ring127 share-domain working
+statistics.}
+
+\item{use_pearson_cap}{Logical. If TRUE, cap the EM variance-component
+update by the first marginal Pearson cluster-moment estimate. This
+prevents BLUP posterior-variance inflation when the random-effect signal
+is weak or singular, using only the same guarded cluster aggregates as
+the default GLMM loop.}
+
+\item{compute_se}{Logical. Compute GLM finite-difference standard errors
+for the inner fits. Set FALSE for coefficient/variance validation runs.}
+
+\item{ring}{Integer 63 or 127. The PQL aggregate route requires Ring127.}
 
 \item{verbose}{Print progress.}
 
@@ -52,11 +75,11 @@ Hessian at the mode.
 
 Architecture:
 \enumerate{
-\item For each cluster (cluster IDs on outcome server) an
-INNER L-BFGS on \eqn{b_i} is executed server-side
-(using the cached \code{dsvertClusterResidualsDS}
-aggregates + the cached \eqn{\eta_i} share from
-ds.vertGLM(keep_session=TRUE)).
+\item For each cluster (cluster IDs on outcome server), binomial
+score and information terms \eqn{\sum(y-p)} and
+\eqn{\sum p(1-p)} are computed from DCF shares. The outcome
+server broadcasts cluster membership only to the DCF peer; the
+client receives aggregate cluster sums only.
 \item The outer optimiser on \eqn{(\beta, \sigma_b^2)} is
 client-side, re-calling ds.vertGLM with the shrinkage-
 weight column derived from the current \eqn{b_i^*}.
@@ -66,13 +89,15 @@ across clusters (Breslow-Clayton approximation).
 }
 
 The scaffolding here reuses every primitive already shipped in
-dsVert 1.1.0+: the per-cluster residual aggregates, the
-keep_session flag on ds.vertGLM, the Beaver vecmul for inner
-weighted updates, and the DCF sigmoid/exp wide-splines.
+dsVert 1.1.0+: the keep_session flag on ds.vertGLM, cluster
+membership broadcast, per-cluster share sums, Beaver vecmul, and the
+DCF sigmoid wide-spline.
 
 Privacy: client sees only (beta, sigma_b^2) + per-cluster
 b_hat_i estimates as an aggregate vector (one value per cluster).
-No per-patient quantity ever leaves the DCF parties.
+No per-patient quantity ever leaves the DCF parties. Original cluster
+labels are not returned and clusters below datashield.privacyLevel
+fail closed.
 
 Inter-server leakage: cluster membership (same tier as ds.vertLMM).
 }

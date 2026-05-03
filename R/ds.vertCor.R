@@ -111,6 +111,8 @@ ds.vertCor <- function(data_name, variables = NULL,
     call(name = "getObsCountDS", data_name = data_name))
   if (is.list(r_count)) r_count <- r_count[[1]]
   n_obs <- as.integer(r_count$n_obs)
+  disclosure_guard <- .dsvert_guard_matrix_release(
+    n_obs = n_obs, p = p_total, what = "correlation matrix")
 
   for (server in server_list) {
     ci <- which(server_names == server)
@@ -295,7 +297,8 @@ ds.vertCor <- function(data_name, variables = NULL,
     n_obs = n_obs,
     method = "Ring63-Beaver",
     servers = server_list,
-    local_correlations = local_cors
+    local_correlations = local_cors,
+    disclosure_guard = disclosure_guard
   ), class = "ds.cor")
 }
 

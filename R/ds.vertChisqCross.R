@@ -97,11 +97,6 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
   # packages the Beaver triple + double-round exchange needed to
   # produce the K*L counts as a single aggregate.
   #
-  # If the server does not yet expose that helper (dsVert < 1.2.0),
-  # we degrade gracefully: re-derive counts from the per-level row
-  # margins (oh1$row_margins, oh2$row_margins). This gives only the
-  # marginal chi-square under independence, not the full joint test,
-  # and emits a targeted warning.
   # Beaver joint cells via K*L element-wise products over shared
   # indicator vectors. For each (k, l):
   #   1. var1_srv extracts column k of its one-hot matrix into a
@@ -119,10 +114,11 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
       var1_srv, var2_srv, var1, var2,
       oh1, oh2, pks, session_id, verbose)
   }, error = function(e) {
-    warning("Beaver bilinear path failed (", conditionMessage(e),
-            "); falling back to margin-based expected cells under ",
-            "the independence null.", call. = FALSE)
-    outer(oh1$row_margins, oh2$row_margins) / max(oh1$n, 1L)
+    stop("Beaver bilinear cross-count path failed: ",
+         conditionMessage(e),
+         ". Refusing to substitute margin-based expected cells because ",
+         "they are not the observed contingency table.",
+         call. = FALSE)
   })
 
   n <- sum(counts)
@@ -131,6 +127,12 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
   # Standard Pearson chi-square on the reconstructed K x L table.
   row_m <- as.integer(rowSums(counts))
   col_m <- as.integer(colSums(counts))
+  disclosure_guard <- .dsvert_guard_table_release(
+    counts,
+    row_margins = row_m,
+    col_margins = col_m,
+    n = n,
+    what = "cross-server contingency table")
   res_list <- .dsvert_chisq_compute(counts,
     row_margins = row_m, col_margins = col_m, n = n,
     correct = correct)
@@ -158,6 +160,7 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
     var1_server   = var1_srv,
     var2_server   = var2_srv,
     correct       = correct,
+    disclosure_guard = disclosure_guard,
     method        = "Cross-server chi-square (Ring63 Beaver cross-products)")
   class(out) <- c("ds.vertChisq", "list")
   out

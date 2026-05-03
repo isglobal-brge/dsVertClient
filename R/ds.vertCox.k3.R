@@ -40,6 +40,9 @@
 #' @param baseline_col Column name on the outcome server holding the
 #'   discrete-time bin index (e.g. \code{"t_bin"}). Will be included via
 #'   \code{factor(t_bin)} in the design.
+#' @param max_iter,tol,lambda Passed through to \code{\link{ds.vertGLM}}.
+#'   The default \code{lambda=0} matches the usual unpenalized Poisson/Cox
+#'   reference estimator.
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD K=3 connections.
 #' @return list of class \code{ds.vertCox.k3} with \code{coefficients}
@@ -61,6 +64,7 @@
 #' @export
 ds.vertCox.k3 <- function(formula, data, event_col,
                            offset_col, baseline_col,
+                           max_iter = 100L, tol = 1e-5, lambda = 0,
                            verbose = TRUE, datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   if (length(datasources) < 3L)
@@ -72,14 +76,45 @@ ds.vertCox.k3 <- function(formula, data, event_col,
   if (length(rhs) == 0L)
     stop("formula must list at least one slope covariate", call. = FALSE)
 
-  ## Build the Poisson formula: event ~ x1 + x2 + ... + factor(t_bin)
+  ## Build baseline dummy columns on the server that holds baseline_col.
+  ## ds.vertGLM auto-detects real column names, but it does not expand
+  ## inline formula terms such as factor(t_bin). Materialise the dummies
+  ## server-side and use those explicit columns in the Poisson formula.
+  server_names <- names(datasources)
+  baseline_srv <- NULL
+  for (.srv in server_names) {
+    .ci <- which(server_names == .srv)
+    cols <- tryCatch(
+      DSI::datashield.aggregate(datasources[.ci],
+        call(name = "dsvertColNamesDS", data_name = data))[[1L]]$columns,
+      error = function(e) character(0))
+    if (baseline_col %in% cols) {
+      baseline_srv <- .srv
+      break
+    }
+  }
+  if (is.null(baseline_srv)) {
+    stop("baseline_col '", baseline_col, "' not found on any server",
+         call. = FALSE)
+  }
+  dummy_prefix <- paste0("cox_base_", gsub("[^A-Za-z0-9_]+", "_", baseline_col), "_")
+  dummy_res <- DSI::datashield.aggregate(
+    datasources[which(server_names == baseline_srv)],
+    call(name = "dsvertAddFactorDummiesDS",
+         data_name = data, var = baseline_col,
+         prefix = dummy_prefix, drop_first = TRUE,
+         suppress_small_cells = FALSE))
+  if (is.list(dummy_res) && length(dummy_res) == 1L) dummy_res <- dummy_res[[1L]]
+  baseline_terms <- dummy_res$dummy_columns
+
+  ## Build the Poisson formula: event ~ x1 + x2 + ... + baseline dummies
   ## with offset on the outcome server. ds.vertGLM auto-detects which
   ## server holds each variable.
+  rhs_terms <- c(rhs, baseline_terms)
   poisson_formula <- as.formula(
-    sprintf("%s ~ %s + factor(%s)",
+    sprintf("%s ~ %s",
             event_col,
-            paste(rhs, collapse = " + "),
-            baseline_col))
+            paste(rhs_terms, collapse = " + ")))
 
   if (verbose) message("[ds.vertCox.k3] Allison-1982 Poisson trick -- ",
                         "K=3 GLM family=poisson on person-time expansion.")
@@ -88,6 +123,9 @@ ds.vertCox.k3 <- function(formula, data, event_col,
                     data = data,
                     family = "poisson",
                     offset = offset_col,
+                    max_iter = max_iter,
+                    tol = tol,
+                    lambda = lambda,
                     verbose = verbose,
                     datasources = datasources)
 
@@ -95,7 +133,7 @@ ds.vertCox.k3 <- function(formula, data, event_col,
   ## they are nuisance parameters representing the piecewise-constant
   ## log-baseline-hazard and are not part of the Cox beta.
   bn <- names(fit$coefficients)
-  is_baseline <- grepl(sprintf("^factor\\(%s\\)", baseline_col), bn)
+  is_baseline <- bn %in% baseline_terms
   is_intercept <- bn %in% c("(Intercept)")
   slopes <- fit$coefficients[!is_baseline & !is_intercept]
 

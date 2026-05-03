@@ -113,5 +113,9 @@ Beaver-sum path). The client never sees \eqn{\eta_j}, \eqn{S(t_j)},
 
 Inter-server disclosure: the DCF peer learns the ascending-time
 sort permutation (ranking of event times) and the binary event
-indicator. Absolute event times are NOT disclosed.
+indicator. Absolute event times are NOT disclosed. Under strict
+non-disclosure this path is disabled by default; use
+\code{\link{ds.vertCoxDiscreteNonDisclosive}} for the non-disclosive
+discrete-time pooled-logistic Cox alternative, or explicitly opt in to
+rank/event metadata disclosure for controlled diagnostics.
 }

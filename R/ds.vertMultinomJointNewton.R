@@ -1,18 +1,122 @@
+#' Build raw design Gram for multinomial Bohning Newton
+#'
+#' Internal helper that reconstructs X'X/n in formula order from scalar
+#' local moments and a low-dimensional correlation matrix.
+#'
+#' @param data_name Aligned data frame name.
+#' @param x_vars_per_server Named list of predictor variables per server.
+#' @param server_list Active K=2 server names.
+#' @param datasources DataSHIELD connections.
+#' @param cnames Coefficient names in formula order.
+#' @param n_obs Number of aligned observations.
+#' @keywords internal
+#' @noRd
+.mnl_joint_xtx_over_n <- function(data_name, x_vars_per_server, server_list,
+                                  datasources, cnames, n_obs) {
+  slope_names <- setdiff(cnames, "(Intercept)")
+  p <- length(cnames)
+  G <- matrix(0, p, p, dimnames = list(cnames, cnames))
+  int_idx <- match("(Intercept)", cnames)
+  if (!is.na(int_idx)) G[int_idx, int_idx] <- 1
+  if (length(slope_names) == 0L) return(G)
+
+  vars_by_server <- lapply(x_vars_per_server[server_list], function(v) {
+    intersect(v, slope_names)
+  })
+  vars_by_server <- vars_by_server[vapply(vars_by_server, length, integer(1L)) > 0L]
+  if (length(vars_by_server) == 0L) {
+    stop("no slope variables available for multinomial Gram", call. = FALSE)
+  }
+  available <- unlist(vars_by_server, use.names = FALSE)
+  missing <- setdiff(slope_names, available)
+  if (length(missing) > 0L) {
+    stop("missing slope variables for multinomial Gram: ",
+         paste(missing, collapse = ", "), call. = FALSE)
+  }
+
+  server_names <- names(datasources)
+  moments <- list()
+  for (srv in names(vars_by_server)) {
+    ci <- which(server_names == srv)
+    for (v in vars_by_server[[srv]]) {
+      r <- DSI::datashield.aggregate(
+        datasources[ci],
+        call(name = "dsvertLocalMomentsDS", data_name = data_name,
+             variable = v))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      if (!is.list(r) || !is.finite(r$mean) || !is.finite(r$sd)) {
+        stop("non-finite moments for variable '", v, "'", call. = FALSE)
+      }
+      if (!is.null(r$n_total) && as.integer(r$n_total) != as.integer(n_obs)) {
+        stop("moment count for variable '", v, "' does not match aligned n",
+             call. = FALSE)
+      }
+      moments[[v]] <- list(mean = as.numeric(r$mean),
+                           sd = as.numeric(r$sd))
+    }
+  }
+  means <- vapply(slope_names, function(v) moments[[v]]$mean, numeric(1L))
+  sds <- vapply(slope_names, function(v) {
+    sd_v <- moments[[v]]$sd
+    if (!is.finite(sd_v) || sd_v < 1e-12) 0 else sd_v
+  }, numeric(1L))
+
+  cor_mat <- diag(length(slope_names))
+  rownames(cor_mat) <- colnames(cor_mat) <- slope_names
+  if (length(slope_names) > 1L) {
+    if (length(vars_by_server) >= 2L) {
+      cor_res <- ds.vertCor(data_name, variables = vars_by_server,
+                            verbose = FALSE, datasources = datasources)
+      cor_mat <- as.matrix(cor_res$correlation[slope_names, slope_names,
+                                                drop = FALSE])
+    } else {
+      srv <- names(vars_by_server)[1L]
+      r <- DSI::datashield.aggregate(
+        datasources[which(server_names == srv)],
+        call(name = "localCorDS", data_name = data_name,
+             variables = vars_by_server[[srv]]))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      cor_mat <- as.matrix(r$correlation[slope_names, slope_names,
+                                          drop = FALSE])
+    }
+  }
+  if (any(!is.finite(cor_mat))) {
+    stop("non-finite correlation entries while building multinomial Gram",
+         call. = FALSE)
+  }
+
+  if (!is.na(int_idx)) {
+    G[int_idx, slope_names] <- means
+    G[slope_names, int_idx] <- means
+  }
+  n <- as.numeric(n_obs)
+  for (j in slope_names) {
+    for (k in slope_names) {
+      sample_cov <- cor_mat[j, k] * sds[[j]] * sds[[k]]
+      G[j, k] <- ((n - 1) / n) * sample_cov + means[[j]] * means[[k]]
+    }
+  }
+  G <- (G + t(G)) / 2
+  if (any(!is.finite(G))) {
+    stop("non-finite multinomial Gram entries", call. = FALSE)
+  }
+  G
+}
+
 #' @title Federated joint-softmax multinomial logistic regression via
 #'   Ring127 MPC-orchestrated Newton iteration
-#' @description Full per-patient softmax Newton: orchestrates K-1 parallel
-#'   exp(eta_k) shares, sums to denominator D = 1+Sumexp(eta_k), computes 1/D
-#'   via Ring127 Chebyshev + Newton-Raphson, multiplies per class to get
-#'   p_k(x_i) share per patient, builds residual y_k - p_k on outcome
-#'   server, and aggregates X^T(y_k - p_k) via existing Beaver matvec
-#'   pipeline for each class. Client-side Bohning-Hessian-bounded Newton
-#'   step on stacked beta.
+#' @description Full softmax Newton path for vertical splits: orchestrates
+#'   class-specific exp(eta) shares, shared softmax denominators, shared
+#'   residuals, and Beaver matvec score aggregation. K=2 uses both servers as
+#'   DCF parties; K>=3 selects the outcome server plus one fusion DCF party
+#'   and has the other servers contribute encrypted additive shares. The client
+#'   performs a Bohning-Hessian-bounded Newton step on stacked coefficients
+#'   using only aggregate gradients and low-dimensional Gram/Hessian objects.
 #'
-#'   All per-patient quantities stay as Ring127 additive shares; only the
-#'   final p(K-1)-dim aggregate gradient per iter is revealed -- same
-#'   privacy class as the single-class gradient of ds.vertGLM. **P3 delta:
-#'   zero new reveal types.**
-#'
+#'   All per-patient probabilities and residuals remain Ring127 additive
+#'   shares. The raw design Gram is built from scalar local moments and the
+#'   federated correlation matrix, which is the same aggregate-disclosure tier
+#'   as \code{ds.vertCor}.
 #' @param formula R formula with categorical outcome on LHS.
 #' @param data Aligned data frame name.
 #' @param levels Character vector of outcome levels (first = reference).
@@ -50,30 +154,72 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   p <- length(cnames)
 
   # Setup a fresh Ring127 session compatible with the joint pipeline.
-  # We reuse the internal `.glm_mpc_setup` helper from ds.vertGLM.setup
-  # to get {y_server, nl, server_list, transport_pks, session_id}.
+  # K=2 uses both servers as DCF parties. K>=3 uses the outcome server
+  # plus one fusion DCF party; all other servers contribute encrypted
+  # additive shares and can act as Beaver-triple dealers.
   y_var_char <- .ds_gee_extract_lhs(formula)
   server_names <- names(datasources)
   y_server <- .ds_gee_find_server_holding(datasources, server_names,
                                            data, y_var_char)
   if (is.null(y_server)) stop("outcome server for ", y_var_char,
                                " not found", call. = FALSE)
-  nl <- setdiff(server_names, y_server)[1L]
-  if (is.na(nl) || is.null(nl))
-    stop("non-label server not found", call. = FALSE)
-  server_list <- c(y_server, nl)
   y_server_ci <- which(server_names == y_server)
-  dealer_ci <- which(server_names == nl)
+
+  rhs <- attr(terms(formula), "term.labels")
+  # Partition predictors by home server across the full vertical pool.
+  x_vars_by_server <- list()
+  for (srv in server_names) {
+    ci <- which(server_names == srv)
+    r <- tryCatch(DSI::datashield.aggregate(datasources[ci],
+      call(name = "dsvertColNamesDS", data_name = data)),
+      error = function(e) NULL)
+    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+    cols_here <- if (is.list(r) && !is.null(r$columns)) r$columns
+                 else if (is.character(r)) r else character(0)
+    x_vars_by_server[[srv]] <- intersect(rhs, cols_here)
+  }
+
+  if (length(server_names) == 2L) {
+    nl <- setdiff(server_names, y_server)[1L]
+  } else {
+    if (!exists(".k3_select_fusion_server", mode = "function")) {
+      stop("K>=3 multinomial joint requires the K>=3 DCF helpers",
+           call. = FALSE)
+    }
+    nl <- .k3_select_fusion_server(server_names, y_server, x_vars_by_server)
+  }
+  if (is.na(nl) || is.null(nl))
+    stop("non-label/fusion server not found", call. = FALSE)
+
+  # DCF parties are ordered so the outcome server is party 0, matching
+  # the existing softmax/intercept/residual share conventions.
+  server_list <- c(y_server, nl)
+  nl_ci <- which(server_names == nl)
+  non_dcf_servers <- setdiff(server_names, server_list)
+  feature_server_order <- c(y_server, nl, non_dcf_servers)
+  x_vars_per_server <- x_vars_by_server[feature_server_order]
+  p_coord <- length(x_vars_per_server[[y_server]])
+  p_fusion <- length(x_vars_per_server[[nl]])
+  p_extras <- sum(vapply(x_vars_per_server[non_dcf_servers],
+                         length, integer(1L)))
+  dealer_srv <- if (length(non_dcf_servers) > 0L) non_dcf_servers[[1L]] else nl
+  dealer_ci <- which(server_names == dealer_srv)
 
   session_id <- paste0("multinomJoint_", as.integer(Sys.time()),
                        "_", sample.int(.Machine$integer.max, 1L))
   transport_pks <- list()
-  for (srv in server_list) {
+  identity_info <- list()
+  for (srv in server_names) {
     ci <- which(server_names == srv)
     r <- DSI::datashield.aggregate(datasources[ci],
       call(name = "glmRing63TransportInitDS", session_id = session_id))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     transport_pks[[srv]] <- r$transport_pk
+    if (!is.null(r$identity_pk)) {
+      identity_info[[srv]] <- list(
+        identity_pk = r$identity_pk,
+        signature = r$signature)
+    }
   }
   .json_to_b64url <- function(x) {
     raw <- charToRaw(jsonlite::toJSON(x, auto_unbox = TRUE))
@@ -83,35 +229,17 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   # base64url for already-base64 strings (peer transport PKs). Required
   # to avoid Opal DSL parser eating "=" / "+" / "/" in the call expr.
   .to_b64url <- function(x) chartr("+/", "-_", sub("=+$", "", x, perl = TRUE))
-  for (srv in server_list) {
+  pk_b64 <- .json_to_b64url(transport_pks[sort(names(transport_pks))])
+  id_b64 <- if (length(identity_info) > 0L) {
+    .json_to_b64url(identity_info[sort(names(identity_info))])
+  } else ""
+  for (srv in server_names) {
     ci <- which(server_names == srv)
-    peer_srv <- setdiff(server_list, srv)
-    peers <- setNames(list(transport_pks[[peer_srv]]), peer_srv)
     DSI::datashield.aggregate(datasources[ci],
       call(name = "mpcStoreTransportKeysDS",
-           transport_keys_b64 = .json_to_b64url(peers),
+           transport_keys_b64 = pk_b64,
+           identity_info_b64 = id_b64,
            session_id = session_id))
-  }
-
-  # PSI + share input (uses ds.vertCox-like pattern). For simplicity we
-  # delegate input sharing to a quick pre-pass and REUSE warm$fits state
-  # when the implementation is tested locally. For federated correctness
-  # with K=2 servers, we invoke k2ShareInputDS once per server at
-  # ring = 127L using the SAME X columns as warm.
-  rhs <- attr(terms(formula), "term.labels")
-  x_vars_y <- intersect(rhs, names(warm$fits[[1L]]$x_means))
-  # Partition by which server holds each feature (query each server's
-  # columns)
-  x_vars_per_server <- list()
-  for (srv in server_list) {
-    ci <- which(server_names == srv)
-    r <- tryCatch(DSI::datashield.aggregate(datasources[ci],
-      call(name = "dsvertColNamesDS", data_name = data)),
-      error = function(e) NULL)
-    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-    cols_here <- if (is.list(r) && !is.null(r$columns)) r$columns
-                 else if (is.character(r)) r else character(0)
-    x_vars_per_server[[srv]] <- intersect(rhs, cols_here)
   }
 
   .dsAgg <- function(conns, expr, ...)
@@ -135,7 +263,8 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     })
   }
 
-  # Share input at Ring127
+  # Share input at Ring127. All original columns are split into additive
+  # shares held only by the two DCF parties.
   share_results <- list()
   for (srv in server_list) {
     ci <- which(server_names == srv)
@@ -167,9 +296,41 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       peer_p = as.integer(length(x_vars_per_server[[peer]])),
       session_id = session_id))
   }
+  for (srv in non_dcf_servers) {
+    if (length(x_vars_per_server[[srv]]) == 0L) next
+    ci <- which(server_names == srv)
+    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
+      data_name = data, x_vars = x_vars_per_server[[srv]],
+      y_var = NULL,
+      peer_pk = .to_b64url(transport_pks[[nl]]),
+      ring = 127L, session_id = session_id))
+    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+    .sendBlob(r$encrypted_x_share, paste0("k2_extra_x_share_", srv), nl_ci)
+
+    r2 <- .dsAgg(datasources[ci], call(name = "glmRing63ExportOwnShareDS",
+      peer_pk = .to_b64url(transport_pks[[y_server]]),
+      session_id = session_id))
+    if (is.list(r2) && length(r2) == 1L) r2 <- r2[[1L]]
+    .sendBlob(r2$encrypted_own_share, paste0("k2_extra_x_share_", srv),
+              y_server_ci)
+  }
+  for (srv in non_dcf_servers) {
+    extra_p <- length(x_vars_per_server[[srv]])
+    if (extra_p == 0L) next
+    for (dcf_srv in server_list) {
+      .dsAgg(datasources[which(server_names == dcf_srv)],
+        call(name = "glmRing63ReceiveExtraShareDS",
+             extra_key = paste0("k2_extra_x_share_", srv),
+             extra_p = as.integer(extra_p),
+             session_id = session_id))
+    }
+  }
   n_obs <- share_results[[y_server]]$n
-  if (verbose) message(sprintf("[MultinomJointNewton] session %s  n=%d  K=%d  p=%d",
-                                session_id, n_obs, K_minus_1 + 1L, p))
+  if (verbose) {
+    message(sprintf(
+      "[MultinomJointNewton] session %s  n=%d  classes=%d  DCF=(%s,%s)  p=%d",
+      session_id, n_obs, K_minus_1 + 1L, y_server, nl, p))
+  }
 
   converged <- FALSE
   final_iter <- max_outer
@@ -181,50 +342,28 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   best_beta <- NULL
   best_g_norm <- Inf
   best_iter <- 0L
+  best_step_beta <- NULL
+  best_step_norm <- Inf
+  best_step_iter <- 0L
 
   # Bohning (1992) constant upper-bound Hessian: H* = (1/2)*(I_{K-1} -
   # (1/K) 1 1^T) (x) (X^T X / n). PSD + beta-independent -> monotone Newton
   # descent (Bohning 1992 Ann Inst Stat Math 44:197-200, Theorem 2;
   # Krishnapuram et al 2005 IEEE PAMI 27(6)).
   #
-  # XtX_over_n must be in FORMULA order to match beta_mat rows. The
-  # warm fit's $covariance is in fit-internal (server-partition) order
-  # per the LASSO permutation bug (same class as 4ce55a3 -- see
-  # dsVertGLM.k2.R theta_conv layout). Reconstruct via hessian_std +
-  # x_means + x_sds from the warm fit (those fields ARE in formula
-  # order), applying the same Gram-from-hessian formula as LASSO:
-  #   G[j,k] = x_j x_k + x_sd_j x_sd_k * H_std[perm(j), perm(k)]  (slopes)
-  #   G[0,j] = x_j  G[0,0] = 1
-  w0 <- warm$fits[[non_ref[1L]]]
-  XtX_over_n <- NULL
-  if (!is.null(w0$hessian_std) && !is.null(w0$x_means) &&
-      !is.null(w0$x_sds) && is.matrix(w0$hessian_std) &&
-      all(dim(w0$hessian_std) == c(p, p))) {
-    lam_ridge <- if (!is.null(w0$lambda) && is.finite(w0$lambda)) w0$lambda else 0
-    H_std <- w0$hessian_std - lam_ridge * diag(p)
-    if (!is.null(dimnames(H_std)) && !is.null(rownames(H_std))) {
-      perm <- match(cnames, rownames(H_std))
-      if (all(!is.na(perm))) H_std <- H_std[perm, perm, drop = FALSE]
-    }
-    x_m <- as.numeric(w0$x_means[cnames]); x_m[is.na(x_m)] <- 0
-    x_s <- as.numeric(w0$x_sds[cnames]);    x_s[is.na(x_s)] <- 0
-    XtX_over_n <- matrix(0, p, p, dimnames = list(cnames, cnames))
-    int_j <- which(cnames == "(Intercept)")
-    if (length(int_j) != 1L) int_j <- NA_integer_
-    for (jj in seq_len(p)) for (kk in seq_len(p)) {
-      if (!is.na(int_j) && jj == int_j && kk == int_j) XtX_over_n[jj,kk] <- 1
-      else if (!is.na(int_j) && jj == int_j) XtX_over_n[jj,kk] <- x_m[kk]
-      else if (!is.na(int_j) && kk == int_j) XtX_over_n[jj,kk] <- x_m[jj]
-      else XtX_over_n[jj,kk] <- x_m[jj]*x_m[kk] + x_s[jj]*x_s[kk]*H_std[jj,kk]
-    }
-  } else {
-    # Fallback for external warm starts without hessian_std -- use covariance.
-    cov_k0 <- w0$covariance
-    sigma2 <- if (!is.null(w0$deviance))
-      w0$deviance / max(n_obs - p, 1L) else 1
-    XtX_over_n <- tryCatch(sigma2 * solve(cov_k0) / n_obs,
-                           error = function(e) diag(p))
-  }
+  # XtX_over_n must be the raw design Gram in FORMULA order. Do not
+  # reconstruct it from a binomial GLM Hessian: that Hessian is X'WX/n,
+  # not X'X/n, and it under-scales the Bohning majorant enough to create
+  # oversized Newton steps. The aggregate Gram below uses only scalar
+  # moments and a federated correlation matrix, the same disclosure tier
+  # as ds.vertCor/PCA.
+  XtX_over_n <- .mnl_joint_xtx_over_n(
+    data_name = data,
+    x_vars_per_server = x_vars_per_server,
+    server_list = feature_server_order,
+    datasources = datasources,
+    cnames = cnames,
+    n_obs = n_obs)
   B <- matrix(0, p * K_minus_1, p * K_minus_1)
   for (i in seq_len(K_minus_1))
     for (j in seq_len(K_minus_1)) {
@@ -244,18 +383,47 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     for (ki in seq_along(non_ref)) {
       k <- non_ref[ki]
       b_k <- beta_mat[, k]
-      b_coord_vec <- b_k[intersect(names(b_k), x_vars_per_server[[coord]])]
-      b_nl_vec    <- b_k[intersect(names(b_k), x_vars_per_server[[nl]])]
+      beta_slice <- function(srv) {
+        vars <- x_vars_per_server[[srv]]
+        if (is.null(vars) || length(vars) == 0L) NULL
+        else unname(as.numeric(b_k[vars]))
+      }
       intercept_k <- unname(b_k["(Intercept)"])
       if (is.na(intercept_k)) intercept_k <- 0
       eta_key <- paste0("eta_class_", ki)
       for (srv in server_list) {
         ci <- which(server_names == srv)
+        is_coord <- (srv == coord)
+        if (is_coord) {
+          # Outcome party layout after input sharing:
+          # [own outcome columns | peer fusion columns | non-DCF extras].
+          b_coord_vec <- beta_slice(coord)
+          b_nl_vec <- c(beta_slice(nl))
+          for (extra_srv in non_dcf_servers) {
+            b_nl_vec <- c(b_nl_vec, beta_slice(extra_srv))
+          }
+        } else {
+          # Fusion layout before the post-eta reorder:
+          # [peer outcome columns | non-DCF extras | own fusion columns].
+          b_coord_vec <- beta_slice(coord)
+          b_nl_vec <- c()
+          for (extra_srv in non_dcf_servers) {
+            b_nl_vec <- c(b_nl_vec, beta_slice(extra_srv))
+          }
+          b_nl_vec <- c(b_nl_vec, beta_slice(srv))
+        }
         .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
           beta_coord = b_coord_vec, beta_nl = b_nl_vec,
-          intercept = if (srv == coord) intercept_k else 0,
-          is_coordinator = (srv == coord),
+          intercept = if (is_coord) intercept_k else 0,
+          is_coordinator = is_coord,
           session_id = session_id, output_key = eta_key))
+        if (!is_coord && p_extras > 0L) {
+          .dsAgg(datasources[ci], call(name = "glmRing63ReorderXFullDS",
+            p_coord = as.integer(p_coord),
+            p_fusion = as.integer(p_fusion),
+            p_extras = as.integer(p_extras),
+            session_id = session_id))
+        }
       }
       exp_key <- paste0("exp_eta_class_", ki)
       .ring127_exp_round_keyed_extended(eta_key, exp_key, n_obs,
@@ -352,7 +520,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       # NPE on s2 (3/9 approx 33% empirical rate, see paper Sec.VIII bullet #4).
       grad_triple_key <- sprintf("k2_grad_triple_fp_iter%d_class%d", outer, ki)
       .sendBlob(grad_t$grad_blob_0, grad_triple_key, y_server_ci)
-      .sendBlob(grad_t$grad_blob_1, grad_triple_key, dealer_ci)
+      .sendBlob(grad_t$grad_blob_1, grad_triple_key, nl_ci)
       r1 <- list()
       for (srv in server_list) {
         ci <- which(server_names == srv)
@@ -365,7 +533,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
         r1[[srv]] <- rr
       }
-      .sendBlob(r1[[coord]]$encrypted_r1, "k2_grad_peer_r1", dealer_ci)
+      .sendBlob(r1[[coord]]$encrypted_r1, "k2_grad_peer_r1", nl_ci)
       .sendBlob(r1[[nl]]$encrypted_r1, "k2_grad_peer_r1", y_server_ci)
       r2 <- list()
       for (srv in server_list) {
@@ -476,7 +644,8 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     # Non-disclosure invariants (D-INV-1/2/3) preserved by the
     # parser-fix patch: .to_b64url operates on a base64-encoded public
     # constant, never on per-patient values; no new emission category.
-    use_h_emp <- isTRUE(getOption("dsvert.mnl_joint_h_emp", FALSE))
+    use_h_emp <- isTRUE(getOption("dsvert.mnl_joint_h_emp", FALSE)) &&
+      length(non_dcf_servers) == 0L
     H_emp_ok <- FALSE
     H_emp_full <- NULL
     if (use_h_emp) {
@@ -621,7 +790,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         gtk_xw <- sprintf("k2_grad_triple_fp_iter%d_xw_%d_%d",
                            outer, ki, li)
         .sendBlob(grad_t_xw$grad_blob_0, gtk_xw, y_server_ci)
-        .sendBlob(grad_t_xw$grad_blob_1, gtk_xw, dealer_ci)
+        .sendBlob(grad_t_xw$grad_blob_1, gtk_xw, nl_ci)
         r1xw <- list()
         for (srv in server_list) {
           ci <- which(server_names == srv)
@@ -633,7 +802,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
           r1xw[[srv]] <- rr
         }
-        .sendBlob(r1xw[[coord]]$encrypted_r1, "k2_grad_peer_r1", dealer_ci)
+        .sendBlob(r1xw[[coord]]$encrypted_r1, "k2_grad_peer_r1", nl_ci)
         .sendBlob(r1xw[[nl]]$encrypted_r1, "k2_grad_peer_r1", y_server_ci)
         r2xw <- list()
         for (srv in server_list) {
@@ -703,7 +872,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           gtk_H <- sprintf("k2_grad_triple_fp_iter%d_Hblk%d_%d_col%d",
                             outer, ki, li, j)
           .sendBlob(grad_t_H$grad_blob_0, gtk_H, y_server_ci)
-          .sendBlob(grad_t_H$grad_blob_1, gtk_H, dealer_ci)
+          .sendBlob(grad_t_H$grad_blob_1, gtk_H, nl_ci)
           r1H <- list()
           for (srv in server_list) {
             ci <- which(server_names == srv)
@@ -715,7 +884,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
             if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
             r1H[[srv]] <- rr
           }
-          .sendBlob(r1H[[coord]]$encrypted_r1, "k2_grad_peer_r1", dealer_ci)
+          .sendBlob(r1H[[coord]]$encrypted_r1, "k2_grad_peer_r1", nl_ci)
           .sendBlob(r1H[[nl]]$encrypted_r1, "k2_grad_peer_r1", y_server_ci)
           r2H <- list()
           for (srv in server_list) {
@@ -823,13 +992,23 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                               })
     step_mat <- matrix(step_stacked, p, K_minus_1,
                        dimnames = dimnames(gradients))
+    step_norm_pre <- max(abs(step_mat))
+    # Raw gradient norms can keep shrinking after the MPC approximation floor
+    # is reached even when a further Newton step moves away from the central
+    # softmax MLE. The aggregate Newton step norm |H^{-1}g| is a stronger
+    # stationarity proxy under the Bohning majorant because it includes the
+    # current curvature scaling and costs no additional disclosure.
+    if (is.finite(step_norm_pre) && step_norm_pre < best_step_norm) {
+      best_step_norm <- step_norm_pre
+      best_step_beta <- beta_mat
+      best_step_iter <- outer - 1L
+    }
     # Decreasing step-cap schedule: 0.5 for first 5 iters (broad
     # descent), then 0.5 * 0.7^(iter-5) (refine near optimum, reduce
     # oscillation amplitude as |g| shrinks). Bounded below at 0.05 so
     # Newton always makes SOME progress. Same spirit as Nocedal-Wright
     # Sec.3.5 backtracking but pre-scheduled to save the Armijo MPC round.
     step_cap <- if (outer <= 5L) 0.5 else max(0.5 * 0.7^(outer - 5L), 0.05)
-    step_norm_pre <- max(abs(step_mat))
     if (is.finite(step_norm_pre) && step_norm_pre > step_cap) {
       step_mat <- step_mat * (step_cap / step_norm_pre)
     }
@@ -854,24 +1033,32 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   }
 
   # Cleanup MPC session
-  for (srv in server_list) {
+  for (srv in server_names) {
     ci <- which(server_names == srv)
     try(.dsAgg(datasources[ci],
                call(name = "mpcCleanupDS", session_id = session_id)),
         silent = TRUE)
   }
 
-  # Return best-beta seen (argmin_k |g|_L2), not the final iterate. Under
-  # MPC step-cap oscillation the final iterate may not be the closest
-  # to the MLE; best-beta tracks it. Fall back to beta_mat if no iter was
-  # recorded (e.g., max_outer=0 edge case).
-  final_beta <- if (!is.null(best_beta)) best_beta else beta_mat
+  # Return the best stationarity iterate, not necessarily the final iterate.
+  # Raw |g| and final beta can both be poor selectors after the Ring127
+  # softmax approximation floor is reached. The minimum aggregate Newton
+  # step norm is the default selector; the minimum raw-gradient beta is
+  # retained for diagnostics.
+  gradient_beta <- if (!is.null(best_beta)) best_beta else beta_mat
+  final_beta <- if (!is.null(best_step_beta)) best_step_beta else gradient_beta
   out <- warm
   out$coefficients_anchored <- warm$coefficients
   out$coefficients <- final_beta
+  out$coefficients_best_gradient <- gradient_beta
   out$coefficients_final_iter <- beta_mat  # last iterate for diagnostics
   out$best_g_norm <- best_g_norm
   out$best_iter <- best_iter
+  out$best_step_norm <- best_step_norm
+  out$best_step_iter <- best_step_iter
+  out$returned_selection <- if (!is.null(best_step_beta)) "best_step"
+                            else if (!is.null(best_beta)) "best_gradient"
+                            else "final"
   out$outer_iter <- final_iter
   out$converged <- converged
   out$family <- "multinomial_joint_softmax_ring127"
