@@ -1,4 +1,4 @@
-test_that("ds.vertOrdinalJointNewton strict path is default and K-gated", {
+test_that("ds.vertOrdinalJointNewton strict path is default and server-gated", {
   old_opt <- getOption("dsvert.allow_patient_level_ordinal_joint", NULL)
   old_env <- Sys.getenv("DSVERT_ALLOW_PATIENT_LEVEL_ORDINAL_JOINT", unset = NA)
   on.exit({
@@ -21,5 +21,5 @@ test_that("ds.vertOrdinalJointNewton strict path is default and K-gated", {
       y ~ x,
       levels_ordered = c("low", "mid", "high"),
       datasources = list()),
-    "supports K=2 only")
+    "requires at least two servers")
 })
