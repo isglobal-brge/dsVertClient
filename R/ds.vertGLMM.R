@@ -577,7 +577,8 @@ print.ds.vertGLMM <- function(x, ...) {
                                           datasources, server_names,
                                           verbose = FALSE,
                                           pql_components = FALSE,
-                                          pql_feature_order = NULL) {
+                                          pql_feature_order = NULL,
+                                          laplace_components = FALSE) {
   if (!identical(fit$family, "binomial")) {
     stop("GLMM share-domain moments require a binomial ds.vertGLM fit",
          call. = FALSE)
@@ -870,6 +871,23 @@ print.ds.vertGLMM <- function(x, ...) {
     list(values = vals,
          sizes = as.integer(parts[[coord_i]]$cluster_sizes))
   }
+  .sum_share <- function(share_key) {
+    parts <- vector("list", 2L)
+    for (i in seq_along(dcf_parties)) {
+      r <- .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "k2BeaverSumShareDS",
+             source_key = share_key,
+             session_id = session_id,
+             frac_bits = as.numeric(frac_bits), ring = ring_tag))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      parts[[i]] <- r
+    }
+    agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+      share_a = parts[[1L]]$sum_share_fp,
+      share_b = parts[[2L]]$sum_share_fp,
+      frac_bits = frac_bits, ring = ring_tag))
+    as.numeric(agg$values[1L])
+  }
 
   for (ci in dcf_conns) {
     .dsAgg(datasources[ci],
@@ -892,6 +910,101 @@ print.ds.vertGLMM <- function(x, ...) {
   if (verbose) {
     message(sprintf("[GLMM] share-domain cluster moments: K=%d",
                     length(rsum)))
+  }
+
+  laplace <- NULL
+  if (isTRUE(laplace_components)) {
+    if (ring != 127L) {
+      stop("GLMM Laplace aggregate components require ring=127",
+           call. = FALSE)
+    }
+    softplus_intervals <- as.integer(getOption(
+      "dsvert.glmm_softplus_intervals", 80L))
+    if (!is.finite(softplus_intervals) || softplus_intervals < 10L) {
+      softplus_intervals <- 80L
+    }
+
+    sp_dcf <- .dsAgg(datasources[dealer_conn],
+      call(name = "glmRing63GenDcfKeysDS",
+           dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
+           dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
+           family = "softplus", n = as.integer(n_obs),
+           frac_bits = frac_bits, num_intervals = softplus_intervals,
+           ring = ring, session_id = session_id))
+    if (is.list(sp_dcf) && length(sp_dcf) == 1L) sp_dcf <- sp_dcf[[1L]]
+    .sendBlob(sp_dcf$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[[1L]])
+    .sendBlob(sp_dcf$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[[2L]])
+    for (ci in dcf_conns) {
+      .dsAgg(datasources[ci],
+        call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
+    }
+
+    sp_t <- .dsAgg(datasources[dealer_conn],
+      call(name = "glmRing63GenSplineTriplesDS",
+           dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
+           dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
+           n = as.integer(n_obs), frac_bits = frac_bits,
+           ring = ring, session_id = session_id))
+    if (is.list(sp_t) && length(sp_t) == 1L) sp_t <- sp_t[[1L]]
+    .sendBlob(sp_t$spline_blob_0, "k2_spline_triples", dcf_conns[[1L]])
+    .sendBlob(sp_t$spline_blob_1, "k2_spline_triples", dcf_conns[[2L]])
+    for (ph in 1:4) {
+      pr <- vector("list", 2L)
+      for (i in seq_along(dcf_parties)) {
+        r <- .dsAgg(datasources[dcf_conns[[i]]],
+          call(paste0("k2WideSplinePhase", ph, "DS"),
+               party_id = as.integer(i - 1L),
+               family = "softplus",
+               num_intervals = softplus_intervals,
+               frac_bits = frac_bits,
+               ring = ring,
+               session_id = session_id))
+        if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+        pr[[i]] <- r
+      }
+      if (ph == 1L) {
+        .sendBlob(pr[[1L]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[[2L]])
+        .sendBlob(pr[[2L]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[[1L]])
+      } else if (ph == 2L) {
+        for (i in 1:2) {
+          peer_i <- 3L - i
+          pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
+          payload <- jsonlite::toJSON(list(
+            and_xma = pr[[i]]$and_xma, and_ymb = pr[[i]]$and_ymb,
+            had1_xma = pr[[i]]$had1_xma, had1_ymb = pr[[i]]$had1_ymb),
+            auto_unbox = TRUE)
+          sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
+            data = jsonlite::base64_enc(charToRaw(payload)),
+            recipient_pk = pk_b64))
+          .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1",
+                    dcf_conns[[peer_i]])
+        }
+      } else if (ph == 3L) {
+        for (i in 1:2) {
+          peer_i <- 3L - i
+          pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
+          payload <- jsonlite::toJSON(list(
+            had2_xma = pr[[i]]$had2_xma,
+            had2_ymb = pr[[i]]$had2_ymb),
+            auto_unbox = TRUE)
+          sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
+            data = jsonlite::base64_enc(charToRaw(payload)),
+            recipient_pk = pk_b64))
+          .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1",
+                    dcf_conns[[peer_i]])
+        }
+      }
+    }
+
+    .vecmul("k2_y_share_fp_original", "k2_eta_share_fp",
+            "glmm_laplace_yeta_share")
+    laplace <- list(
+      sum_softplus = .sum_share("softplus_share_fp"),
+      y_dot_eta = .sum_share("glmm_laplace_yeta_share"),
+      s_by_cluster = vs$values,
+      rsum_per_cluster = rsum,
+      cluster_sizes = py$sizes,
+      n = sum(py$sizes))
   }
 
   pql <- NULL
@@ -949,24 +1062,6 @@ print.ds.vertGLMM <- function(x, ...) {
       }
       invisible(output_key)
     }
-    .sum_share <- function(share_key) {
-      parts <- vector("list", 2L)
-      for (i in seq_along(dcf_parties)) {
-        r <- .dsAgg(datasources[dcf_conns[[i]]],
-          call(name = "k2BeaverSumShareDS",
-               source_key = share_key,
-               session_id = session_id,
-               frac_bits = as.numeric(frac_bits), ring = ring_tag))
-        if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-        parts[[i]] <- r
-      }
-      agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-        share_a = parts[[1L]]$sum_share_fp,
-        share_b = parts[[2L]]$sum_share_fp,
-        frac_bits = frac_bits, ring = ring_tag))
-      as.numeric(agg$values[1L])
-    }
-
     for (i in seq_along(ring_parties)) {
       .dsAgg(datasources[which(server_names == ring_parties[[i]])],
         call(name = "dsvertGEEInterceptShareDS",
@@ -1076,5 +1171,6 @@ print.ds.vertGLMM <- function(x, ...) {
   list(rsum_per_cluster = rsum,
        vsum_per_cluster = vs$values,
        n_per_cluster = py$sizes,
-       pql_components = pql)
+       pql_components = pql,
+       laplace_components = laplace)
 }
