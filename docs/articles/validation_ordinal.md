@@ -2,90 +2,56 @@
 
 ## What is validated
 
-Functions:
-[`ds.vertOrdinal()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertOrdinal.md),
-[`ds.vertOrdinalJointNewton()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertOrdinalJointNewton.md)
+Functions: `ds.vertOrdinal(), ds.vertOrdinalJointNewton()`.
 
-The proportional-odds model is $`P(Y\le k|x)=F(\theta_k-x^T\beta)`$,
-with ordered thresholds $`\theta_1<\cdots<\theta_{K-1}`$. The product
-route evaluates the joint score for beta and thresholds with class
-masks, cumulative probabilities, reciprocals and finite-difference
-Hessian probes held in Ring127 shares.
+The supported route is joint proportional-odds Newton over Ring127
+shares. Historical cumulative-binomial output is internal warm start
+only.
 
-## Centralized reference
+## Mathematical target
 
-The centralized reference is built from the same deterministic rows and
-formula as the DSLite run. The long method harness stores the exact
-seed, split and reference object in the cache listed below.
+P(Y \<= k \| X)=sigmoid(theta_k - X beta). The validation compares
+cumulative probabilities to MASS::polr().
 
-``` r
+## Fixture and reference
 
+Fixture: Balanced synthetic three-level ordered fixture with vertical
+predictors.
 
-fit_ref <- MASS::polr(y_ord ~ x1 + x2 + x3,
-                      data = pooled, method = "logistic", Hess = TRUE)
-```
+Centralized reference: MASS::polr cumulative probabilities.
 
-## Vertical DSLite split
-
-The validation split creates independent server tables with the same
-`patient_id` key and then aligns them with
-[`ds.psiAlign()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md).
-
-``` r
-
-
-tables <- list(
-  s1 = pooled[c("patient_id", "x1", "x2")],
-  s2 = pooled[c("patient_id", "x3", "low_leq", "mid_leq", "y_ord")]
-)
-```
-
-``` r
-
-
-fit_ord <- dsVertClient::ds.vertOrdinal(
-  y_ord ~ x1 + x2 + x3,
-  data = "DA",
-  levels_ordered = c("low", "mid", "high"),
-  cumulative_template = "%s_leq",
-  max_outer = 2L,
-  datasources = conns,
-  verbose = FALSE)
-```
-
-To reproduce the cache from the repository root:
-
-``` r
-Rscript scripts/validate_method_ordinal_joint.R --K 2 && Rscript scripts/validate_method_ordinal_joint.R --K 3
-```
+The executable chunk below calls `run_validation()` from
+`vignettes/validation_helpers.R`. That helper constructs the fixture,
+opens a DSLite server, performs PSI alignment, runs the dsVertClient
+product route for K=2 and K=3, computes the centralized reference, and
+compares both results. No RDS or result table outside this package is
+required; if a local `vignettes/validation-cache/` file exists it is a
+cache produced by this same execution path.
 
 ## Disclosure review
 
-Class masks, probabilities, weights and residual-like terms remain
-encrypted shares. The client receives guarded class counts and aggregate
-gradient/parameter summaries only. The warm cumulative-binomial route is
-not a user-facing final estimator.
+Cumulative probabilities, residuals, and row scores stay in shares; the
+client receives thresholds, slopes, and scalar optimizer diagnostics.
 
-## Executed evidence check
+The fixture keeps `datashield.privacyLevel = 5` and is sized so the
+standard disclosure guards remain active. Only
+`dsvert.require_trusted_peers` is disabled for DSLite because there is
+no real Opal/Rock deployment in this local validation context.
 
-This chunk is evaluated when the vignette renders. It fails if either K
-mode is not marked non-disclosive, is not `PASS`, or exceeds its
-accepted tolerance.
+## Executed evidence
 
 ``` r
 
-rows <- validation_rows("ordinal")
-assert_validation(rows)
+rows <- run_validation("ordinal", force = force_run)
 display_validation(rows)
 ```
 
-| k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | cache |
-|:---|:---|:---|:---|:---|---:|---:|:---|:---|:---|
-| K=2 | ds.vertOrdinal / ds.vertOrdinalJointNewton | synthetic proportional-odds fixture | MASS::polr cumulative probabilities | cumulative_probability_max_abs | 0.0004281 | 0.001 | strict-precise | PASS | ordinal_joint_dslite_k2_20260503-160920.rds |
-| K\>=3 | ds.vertOrdinal / ds.vertOrdinalJointNewton | synthetic proportional-odds fixture | MASS::polr cumulative probabilities | cumulative_probability_max_abs | 0.0005697 | 0.001 | strict-precise | PASS | ordinal_joint_dslite_k3_20260503-155749.rds |
+| k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | runtime_s |
+|:---|:---|:---|:---|:---|---:|---:|:---|:---|---:|
+| K=2 | ds.vertOrdinalJointNewton | balanced synthetic 3-level ordinal fixture | MASS::polr cumulative probabilities | cumulative_probability_max_abs_delta | 0.02872 | 0.15 | strict-practical | PASS | 177.0 |
+| K\>=3 | ds.vertOrdinalJointNewton | balanced synthetic 3-level ordinal fixture | MASS::polr cumulative probabilities | cumulative_probability_max_abs_delta | 0.02870 | 0.15 | strict-practical | PASS | 176.8 |
 
 ## Verdict
 
-Both K=2 and K\>=3 validation rows are inside their accepted numerical
-envelope and use the current non-disclosive product route. Any legacy
-route mentioned in the package is excluded from this evidence path.
+The vignette fails during rendering if either K=2 or K\>=3 leaves the
+accepted numerical envelope or is marked as disclosive.

@@ -12,6 +12,9 @@ ds.vertOrdinal(
   max_iter = NULL,
   max_outer = 8L,
   tol = NULL,
+  warm_max_iter = NULL,
+  warm_tol = NULL,
+  binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
   datasources = NULL,
   ...
@@ -37,6 +40,15 @@ Columns must already exist server-side.}
 \item{max_outer}{Maximum outer Newton iterations for the joint route.}
 
 \item{tol}{Convergence tolerance for the joint route.}
+
+\item{warm_max_iter}{Optional maximum iterations for each internal
+binomial warm-start GLM.}
+
+\item{warm_tol}{Optional tolerance for each internal binomial warm-start
+GLM.}
+
+\item{binomial_sigmoid_intervals}{Optional DCF spline interval count for
+internal binomial warm-start GLMs.}
 
 \item{verbose}{Logical (default TRUE). Print per-threshold fit
 progress.}

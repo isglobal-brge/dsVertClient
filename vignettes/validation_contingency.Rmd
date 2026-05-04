@@ -1,111 +1,72 @@
 ---
-title: "Contingency table validation"
-author: "David Sarrat González"
+title: "Contingency tests validation"
+author: "David Sarrat Gonzalez"
 date: "`r format(Sys.Date(), '%Y-%m-%d')`"
 output:
   rmarkdown::html_vignette:
     toc: true
     toc_depth: 2
 vignette: >
-  %\VignetteIndexEntry{Contingency table validation}
+  %\VignetteIndexEntry{Contingency tests validation}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE,
-  collapse = TRUE, comment = "#>")
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = FALSE, collapse = TRUE, comment = "#>")
 helper_candidates <- c("validation_helpers.R",
-                       file.path("..", "validation_helpers.R"),
-                       file.path("vignettes", "validation_helpers.R"))
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
 source(helper_candidates[file.exists(helper_candidates)][1])
+force_run <- identical(tolower(Sys.getenv("DSVERT_VALIDATION_FORCE", "false")), "true")
 ```
 
 ## What is validated
 
-Functions: `ds.vertChisq()`, `ds.vertFisher()`, `ds.vertChisqCross()`
+Functions: `ds.vertChisq(), ds.vertFisher(), ds.vertChisqCross()`.
 
+Same-server categorical tests use guarded local contingency counts. Cross-server tests build one-hot shares and aggregate cell counts with MPC before applying chi-square/Fisher tests.
 
-For an observed table \(O_{ab}\), Pearson's statistic is
-\(\sum_{ab}(O_{ab}-E_{ab})^2/E_{ab}\), where
-\(E_{ab}=O_{a+}O_{+b}/n\). Same-server tables release guarded aggregate
-counts. Cross-server tables construct one-hot indicators and compute
-\(\sum_i 1\{A_i=a\}1\{B_i=b\}\) with Beaver dot products before the exact
-table is opened.
+## Mathematical target
 
+The validation compares O_ab counts and X^2 = sum_ab (O_ab - E_ab)^2 / E_ab with centralized R.
 
-## Centralized reference
+## Fixture and reference
 
-The centralized reference is built from the same deterministic rows and
-formula as the DSLite run. The long method harness stores the exact seed,
-split and reference object in the cache listed below.
+Fixture: Categorised MASS::Pima.tr variables with all margins above disclosure thresholds.
 
-```{r central-reference, eval=FALSE}
+Centralized reference: chisq.test() and fisher.test() on the pooled fixture.
 
-pooled <- MASS::Pima.tr[seq_len(120), ]
-pooled$age_group <- cut(pooled$age, breaks = c(0, 30, Inf))
-pooled$glu_group <- cut(pooled$glu, breaks = c(0, 120, Inf))
-tab <- table(pooled$age_group, pooled$glu_group)
-stats::chisq.test(tab, correct = TRUE)
-stats::fisher.test(tab)
-
-```
-
-## Vertical DSLite split
-
-The validation split creates independent server tables with the same
-`patient_id` key and then aligns them with `ds.psiAlign()`.
-
-```{r vertical-split, eval=FALSE}
-
-tables <- list(
-  s1 = pooled[c("patient_id", "age_group")],
-  s2 = pooled[c("patient_id", "glu_group")]
-)
-
-```
-
-```{r dslite-execution, eval=FALSE}
-
-same <- dsVertClient::ds.vertChisq(
-  "DA", "age_group", "glu_group", server = "s2", datasources = conns)
-exact <- dsVertClient::ds.vertFisher(
-  "DA", "age_group", "glu_group", server = "s2", datasources = conns)
-cross <- dsVertClient::ds.vertChisqCross(
-  "DA", "age_group", "glu_group", fisher = TRUE, datasources = conns)
-
-```
-
-To reproduce the cache from the repository root:
-
-```{r reproduce-cache, eval=FALSE}
-Rscript scripts/validate_method_tables.R
-```
+The executable chunk below calls `run_validation()` from
+`vignettes/validation_helpers.R`. That helper constructs the fixture,
+opens a DSLite server, performs PSI alignment, runs the dsVertClient
+product route for K=2 and K=3, computes the centralized reference, and
+compares both results. No RDS or result table outside this package is
+required; if a local `vignettes/validation-cache/` file exists it is a
+cache produced by this same execution path.
 
 ## Disclosure review
 
+The released object contains guarded table counts and scalar test statistics. Small cells fail closed.
 
-Positive cells, row margins, and column margins below the configured privacy
-threshold block the same-server release. In the cross-server route, DCF
-threshold checks reveal only pass/fail before exact cell counts are released.
-No one-hot patient vector is returned to the analyst.
+The fixture keeps `datashield.privacyLevel = 5` and is sized so the
+standard disclosure guards remain active. Only `dsvert.require_trusted_peers`
+is disabled for DSLite because there is no real Opal/Rock deployment in
+this local validation context.
 
-
-## Executed evidence check
-
-This chunk is evaluated when the vignette renders. It fails if either K mode is
-not marked non-disclosive, is not `PASS`, or exceeds its accepted tolerance.
+## Executed evidence
 
 ```{r evidence}
-rows <- validation_rows("contingency")
-assert_validation(rows)
+rows <- run_validation("contingency", force = force_run)
 display_validation(rows)
+```
+
+```{r assertion, include=FALSE}
+assert_validation(rows)
 ```
 
 ## Verdict
 
-Both K=2 and K>=3 validation rows are inside their accepted numerical envelope
-and use the current non-disclosive product route. Any legacy route mentioned in
-the package is excluded from this evidence path.
-
+The vignette fails during rendering if either K=2 or K>=3 leaves the
+accepted numerical envelope or is marked as disclosive.

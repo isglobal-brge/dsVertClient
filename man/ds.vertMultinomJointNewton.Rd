@@ -12,6 +12,9 @@ ds.vertMultinomJointNewton(
   indicator_template = "\%s_ind",
   max_outer = 8L,
   tol = 1e-04,
+  warm_max_iter = NULL,
+  warm_tol = NULL,
+  binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
   datasources = NULL
 )
@@ -29,6 +32,15 @@ on the outcome server, e.g. \code{"\%s_ind"}. Must exist server-side.}
 \item{max_outer}{Outer Newton iterations (default 8).}
 
 \item{tol}{Convergence tolerance on max |Deltabeta| (default 1e-4).}
+
+\item{warm_max_iter}{Optional maximum iterations for each internal
+binomial warm-start GLM.}
+
+\item{warm_tol}{Optional tolerance for each internal binomial warm-start
+GLM.}
+
+\item{binomial_sigmoid_intervals}{Optional DCF spline interval count for
+internal binomial warm-start GLMs.}
 
 \item{verbose}{Logical.}
 

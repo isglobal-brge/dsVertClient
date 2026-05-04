@@ -6,6 +6,7 @@ texput.log
 demo.html
 vignettes/**/*_cache/
 vignettes/**/*.html
+vignettes/validation-cache/
 
 # Editor + OS
 .DS_Store

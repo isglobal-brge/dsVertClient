@@ -3,92 +3,56 @@
 ## What is validated
 
 Functions:
-[`ds.vertGEE()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGEE.md)
+[`ds.vertGEE()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGEE.md).
 
-GEE solves $`\sum_i D_i^T V_i^{-1}(y_i-\mu_i)=0`$ and reports the
-sandwich variance $`B^{-1}MB^{-1}`$.
-[`ds.vertGEE()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGEE.md)
-supports independence, exchangeable and guarded AR1 working correlations
-for Gaussian, binomial and Poisson outcomes. Cluster and adjacent-pair
-scores are computed as aggregate share-domain sufficient statistics.
+The GEE route computes estimating-equation aggregates and robust
+sandwich summaries for clustered data.
 
-## Centralized reference
+## Mathematical target
 
-The centralized reference is built from the same deterministic rows and
-formula as the DSLite run. The long method harness stores the exact
-seed, split and reference object in the cache listed below.
+For independence working correlation, the estimating equation reduces to
+sum_i D_i^T V_i^{-1}(y_i - mu_i)=0. The validation compares beta to
+geepack.
 
-``` r
+## Fixture and reference
 
+Fixture: MASS::Pima.tr clustered fixture with vertical predictors.
 
-fit_ref <- geepack::geeglm(
-  y ~ x1 + x2 + x3, id = cluster_id, waves = visit,
-  data = pooled, family = binomial(), corstr = "ar1")
-```
+Centralized reference: geepack::geeglm(corstr=‘independence’) on the
+pooled fixture.
 
-## Vertical DSLite split
-
-The validation split creates independent server tables with the same
-`patient_id` key and then aligns them with
-[`ds.psiAlign()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md).
-
-``` r
-
-
-tables <- list(
-  s1 = pooled[c("patient_id", "x1", "x2")],
-  s2 = pooled[c("patient_id", "x3", "cluster_id", "visit", "y")]
-)
-```
-
-``` r
-
-
-fit_gee <- dsVertClient::ds.vertGEE(
-  y ~ x1 + x2 + x3,
-  data = "DA",
-  family = "binomial",
-  id_col = "cluster_id",
-  order_col = "visit",
-  corstr = "ar1",
-  binomial_sigmoid_intervals = 150L,
-  datasources = conns,
-  verbose = FALSE)
-```
-
-To reproduce the cache from the repository root:
-
-``` r
-Rscript scripts/validate_method_gee.R
-```
+The executable chunk below calls `run_validation()` from
+`vignettes/validation_helpers.R`. That helper constructs the fixture,
+opens a DSLite server, performs PSI alignment, runs the dsVertClient
+product route for K=2 and K=3, computes the centralized reference, and
+compares both results. No RDS or result table outside this package is
+required; if a local `vignettes/validation-cache/` file exists it is a
+cache produced by this same execution path.
 
 ## Disclosure review
 
-Residuals, fitted means, probabilities, Pearson residuals, row scores,
-visit labels and adjacent-pair vectors are not returned. AR1 order
-metadata is encrypted server-to-server and only guarded low-dimensional
-sufficient statistics reach the client.
+Returned values are regression and sandwich-level aggregates; row scores
+are not returned.
 
-## Executed evidence check
+The fixture keeps `datashield.privacyLevel = 5` and is sized so the
+standard disclosure guards remain active. Only
+`dsvert.require_trusted_peers` is disabled for DSLite because there is
+no real Opal/Rock deployment in this local validation context.
 
-This chunk is evaluated when the vignette renders. It fails if either K
-mode is not marked non-disclosive, is not `PASS`, or exceeds its
-accepted tolerance.
+## Executed evidence
 
 ``` r
 
-rows <- validation_rows("gee")
-assert_validation(rows)
+rows <- run_validation("gee", force = force_run)
 display_validation(rows)
 ```
 
-| k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | cache |
-|:---|:---|:---|:---|:---|---:|---:|:---|:---|:---|
-| K=2 | ds.vertGEE | synthetic clustered longitudinal | geepack/geepack-compatible protected oracle | worst_coeff_or_se_abs | 0.0033 | 0.005 | strict-practical | PASS | gee_dslite_20260504-160614.rds |
-| K\>=3 | ds.vertGEE | synthetic clustered longitudinal | geepack/geepack-compatible protected oracle | worst_coeff_or_se_abs | 0.0033 | 0.005 | strict-practical | PASS | gee_dslite_20260504-161741.rds |
+| k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | runtime_s |
+|:---|:---|:---|:---|:---|---:|---:|:---|:---|---:|
+| K=2 | ds.vertGEE(corstr=‘independence’) | MASS::Pima.tr clustered fixture | geepack::geeglm | coef_max_abs_delta | 6.32e-05 | 0.01 | strict-practical | PASS | 12.2 |
+| K\>=3 | ds.vertGEE(corstr=‘independence’) | MASS::Pima.tr clustered fixture | geepack::geeglm | coef_max_abs_delta | 6.16e-05 | 0.01 | strict-practical | PASS | 13.3 |
 
 ## Verdict
 
-Both K=2 and K\>=3 validation rows are inside their accepted numerical
-envelope and use the current non-disclosive product route. Any legacy
-route mentioned in the package is excluded from this evidence path.
+The vignette fails during rendering if either K=2 or K\>=3 leaves the
+accepted numerical envelope or is marked as disclosive.

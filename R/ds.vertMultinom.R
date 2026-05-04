@@ -22,6 +22,12 @@
 #' @param max_iter Optional alias for \code{max_outer}.
 #' @param max_outer Maximum outer Newton iterations for the joint route.
 #' @param tol Convergence tolerance for the joint route.
+#' @param warm_max_iter Optional maximum iterations for each internal
+#'   binomial warm-start GLM.
+#' @param warm_tol Optional tolerance for each internal binomial warm-start
+#'   GLM.
+#' @param binomial_sigmoid_intervals Optional DCF spline interval count for
+#'   internal binomial warm-start GLMs.
 #' @param verbose Logical (default TRUE). Print per-class fit progress.
 #' @param datasources DataSHIELD connections; if NULL, uses
 #'   \code{DSI::datashield.connections_find()}.
@@ -36,6 +42,8 @@
 ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
                             reference = NULL, indicator_template = "%s_ind",
                             max_iter = NULL, max_outer = 8L, tol = NULL,
+                            warm_max_iter = NULL, warm_tol = NULL,
+                            binomial_sigmoid_intervals = NULL,
                             verbose = TRUE, datasources = NULL, ...) {
   extra <- list(...)
   if (length(extra) > 0L) {
@@ -78,6 +86,9 @@ ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
     indicator_template = indicator_template,
     max_outer = as.integer(max_iter %||% max_outer),
     tol = as.numeric(tol %||% 1e-4),
+    warm_max_iter = warm_max_iter,
+    warm_tol = warm_tol,
+    binomial_sigmoid_intervals = binomial_sigmoid_intervals,
     verbose = verbose,
     datasources = datasources)
 }

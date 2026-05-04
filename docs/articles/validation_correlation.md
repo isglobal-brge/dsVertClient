@@ -3,87 +3,54 @@
 ## What is validated
 
 Functions:
-[`ds.vertCor()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md)
+[`ds.vertCor()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md).
 
-The Pearson correlation between variables $`x_j`$ and $`x_k`$ is
-$`\mathrm{cov}(x_j,x_k)/(s_j s_k)`$. Local moments handle within-server
-pairs. Cross-server pairs use Beaver cross-products to obtain the
-aggregate $`\sum_i x_{ij}x_{ik}`$ without revealing either column to the
-other site.
+The method releases a low-dimensional correlation matrix from
+server-local moments and MPC cross-products.
 
-## Centralized reference
+## Mathematical target
 
-The centralized reference is built from the same deterministic rows and
-formula as the DSLite run. The long method harness stores the exact
-seed, split and reference object in the cache listed below.
+For variables x_j and x_l, r_jl = cov(x_j, x_l) / (sd(x_j) sd(x_l)). The
+validation compares the full matrix to stats::cor().
 
-``` r
+## Fixture and reference
 
+Fixture: MASS::Pima.tr numeric fixture split vertically.
 
-X <- MASS::Pima.tr[seq_len(120), c("age", "bmi", "ped", "glu", "bp")]
-stats::cor(X)
-```
+Centralized reference: stats::cor() on the pooled fixture.
 
-## Vertical DSLite split
-
-The validation split creates independent server tables with the same
-`patient_id` key and then aligns them with
-[`ds.psiAlign()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md).
-
-``` r
-
-
-tables <- list(
-  s1 = data.frame(patient_id = sprintf("P%03d", seq_len(nrow(X))),
-                  X[c("age", "bmi", "ped")]),
-  s2 = data.frame(patient_id = sprintf("P%03d", seq_len(nrow(X))),
-                  X[c("glu", "bp")])
-)
-```
-
-``` r
-
-
-cor_fit <- dsVertClient::ds.vertCor(
-  "DA",
-  variables = list(s1 = c("age", "bmi", "ped"),
-                   s2 = c("glu", "bp")),
-  datasources = conns)
-```
-
-To reproduce the cache from the repository root:
-
-``` r
-Rscript scripts/validate_method_descriptive.R
-```
+The executable chunk below calls `run_validation()` from
+`vignettes/validation_helpers.R`. That helper constructs the fixture,
+opens a DSLite server, performs PSI alignment, runs the dsVertClient
+product route for K=2 and K=3, computes the centralized reference, and
+compares both results. No RDS or result table outside this package is
+required; if a local `vignettes/validation-cache/` file exists it is a
+cache produced by this same execution path.
 
 ## Disclosure review
 
-The full correlation matrix is a second-order aggregate and can become
-reconstructive when $`p`$ is large relative to $`n`$. The product route
-enforces minimum-n and p/n guards and blocks high-dimensional diagnostic
-fixtures by default.
+The disclosure surface is the guarded p by p correlation matrix, the
+same aggregate tier used by downstream PCA.
 
-## Executed evidence check
+The fixture keeps `datashield.privacyLevel = 5` and is sized so the
+standard disclosure guards remain active. Only
+`dsvert.require_trusted_peers` is disabled for DSLite because there is
+no real Opal/Rock deployment in this local validation context.
 
-This chunk is evaluated when the vignette renders. It fails if either K
-mode is not marked non-disclosive, is not `PASS`, or exceeds its
-accepted tolerance.
+## Executed evidence
 
 ``` r
 
-rows <- validation_rows("correlation")
-assert_validation(rows)
+rows <- run_validation("correlation", force = force_run)
 display_validation(rows)
 ```
 
-| k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | cache |
-|:---|:---|:---|:---|:---|---:|---:|:---|:---|:---|
-| K=2 | ds.vertCor | MASS::Pima.tr | stats::cor | correlation_max_abs | 7.8e-06 | 1e-04 | strict-practical | PASS | descriptive_dslite_20260502-224817.rds |
-| K\>=3 | ds.vertCor | MASS::Pima.tr | stats::cor | correlation_max_abs | 9.3e-06 | 1e-04 | strict-practical | PASS | descriptive_dslite_20260502-224817.rds |
+| k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | runtime_s |
+|:---|:---|:---|:---|:---|---:|---:|:---|:---|---:|
+| K=2 | ds.vertCor | MASS::Pima.tr fixture | stats::cor | correlation_max_abs_delta | 1.24e-05 | 1e-04 | strict-practical | PASS | 2.0 |
+| K\>=3 | ds.vertCor | MASS::Pima.tr fixture | stats::cor | correlation_max_abs_delta | 1.24e-05 | 1e-04 | strict-practical | PASS | 2.8 |
 
 ## Verdict
 
-Both K=2 and K\>=3 validation rows are inside their accepted numerical
-envelope and use the current non-disclosive product route. Any legacy
-route mentioned in the package is excluded from this evidence path.
+The vignette fails during rendering if either K=2 or K\>=3 leaves the
+accepted numerical envelope or is marked as disclosive.

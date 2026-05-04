@@ -8,7 +8,7 @@
   validation](https://isglobal-brge.github.io/dsVertClient/articles/validation_psi.md):
 - [Descriptive statistics
   validation](https://isglobal-brge.github.io/dsVertClient/articles/validation_descriptive.md):
-- [Contingency table
+- [Contingency tests
   validation](https://isglobal-brge.github.io/dsVertClient/articles/validation_contingency.md):
 - [Correlation
   validation](https://isglobal-brge.github.io/dsVertClient/articles/validation_correlation.md):
@@ -16,7 +16,7 @@
   validation](https://isglobal-brge.github.io/dsVertClient/articles/validation_pca.md):
 - [GLM
   validation](https://isglobal-brge.github.io/dsVertClient/articles/validation_glm.md):
-- [GLM inference helper
+- [GLM inference
   validation](https://isglobal-brge.github.io/dsVertClient/articles/validation_inference.md):
 - [LASSO
   validation](https://isglobal-brge.github.io/dsVertClient/articles/validation_lasso.md):
@@ -24,7 +24,7 @@
   validation](https://isglobal-brge.github.io/dsVertClient/articles/validation_negative_binomial.md):
 - [Cox PH
   validation](https://isglobal-brge.github.io/dsVertClient/articles/validation_cox.md):
-- [Linear mixed model
+- [LMM
   validation](https://isglobal-brge.github.io/dsVertClient/articles/validation_lmm.md):
 - [GEE
   validation](https://isglobal-brge.github.io/dsVertClient/articles/validation_gee.md):

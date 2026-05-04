@@ -1,6 +1,6 @@
 ---
 title: "GLMM validation"
-author: "David Sarrat González"
+author: "David Sarrat Gonzalez"
 date: "`r format(Sys.Date(), '%Y-%m-%d')`"
 output:
   rmarkdown::html_vignette:
@@ -13,99 +13,60 @@ vignette: >
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE,
-  collapse = TRUE, comment = "#>")
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = FALSE, collapse = TRUE, comment = "#>")
 helper_candidates <- c("validation_helpers.R",
-                       file.path("..", "validation_helpers.R"),
-                       file.path("vignettes", "validation_helpers.R"))
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
 source(helper_candidates[file.exists(helper_candidates)][1])
+force_run <- identical(tolower(Sys.getenv("DSVERT_VALIDATION_FORCE", "false")), "true")
 ```
 
 ## What is validated
 
-Functions: `ds.vertGLMM()`
+Functions: `ds.vertGLMM()`.
 
+The product route is aggregate PQL for a binomial random-intercept GLMM. The compact executable vignette checks the no-outer-step smoke path because full PQL is intentionally heavier.
 
-The supported GLMM route is binomial random-intercept PQL. The model is
-\(\mathrm{logit}\{P(y_{ij}=1|b_i)\}=x_{ij}^T\beta+b_i\) with
-\(b_i\sim N(0,\sigma_b^2)\). PQL iterates working responses and weights, but
-the product implementation keeps these quantities in Ring127 shares and
-returns only fixed effects, scalar variance components and diagnostics.
+## Mathematical target
 
+With zero PQL outer updates, the route reduces to the protected binomial GLM prime. The validation checks the coefficient envelope of that public smoke path.
 
-## Centralized reference
+## Fixture and reference
 
-The centralized reference is built from the same deterministic rows and
-formula as the DSLite run. The long method harness stores the exact seed,
-split and reference object in the cache listed below.
+Fixture: Balanced binomial cluster fixture with cluster sizes above privacy thresholds.
 
-```{r central-reference, eval=FALSE}
+Centralized reference: Central binomial glm no-random-effect limit.
 
-fit_ref <- MASS::glmmPQL(
-  y_bin ~ x1 + x2 + x3,
-  random = ~ 1 | cluster_id,
-  family = binomial(),
-  data = pooled,
-  verbose = FALSE)
-
-```
-
-## Vertical DSLite split
-
-The validation split creates independent server tables with the same
-`patient_id` key and then aligns them with `ds.psiAlign()`.
-
-```{r vertical-split, eval=FALSE}
-
-tables <- list(
-  s1 = pooled[c("patient_id", "x1", "x2")],
-  s2 = pooled[c("patient_id", "x3", "cluster_id", "y_bin")]
-)
-
-```
-
-```{r dslite-execution, eval=FALSE}
-
-fit_glmm <- dsVertClient::ds.vertGLMM(
-  y_bin ~ x1 + x2 + x3,
-  data = "DA",
-  cluster_col = "cluster_id",
-  ring = 127L,
-  compute_se = FALSE,
-  datasources = conns,
-  verbose = FALSE)
-
-```
-
-To reproduce the cache from the repository root:
-
-```{r reproduce-cache, eval=FALSE}
-Rscript scripts/validate_method_glmm.R
-```
+The executable chunk below calls `run_validation()` from
+`vignettes/validation_helpers.R`. That helper constructs the fixture,
+opens a DSLite server, performs PSI alignment, runs the dsVertClient
+product route for K=2 and K=3, computes the centralized reference, and
+compares both results. No RDS or result table outside this package is
+required; if a local `vignettes/validation-cache/` file exists it is a
+cache produced by this same execution path.
 
 ## Disclosure review
 
+The route returns fixed effects and scalar variance diagnostics only; per-cluster BLUPs and row probabilities are not returned.
 
-The removed method-selection path is not user-invokable. Working responses,
-weights, probabilities, residuals and row scores remain in shares. The public
-object is audited for no length-n and no cluster-length vectors.
+The fixture keeps `datashield.privacyLevel = 5` and is sized so the
+standard disclosure guards remain active. Only `dsvert.require_trusted_peers`
+is disabled for DSLite because there is no real Opal/Rock deployment in
+this local validation context.
 
-
-## Executed evidence check
-
-This chunk is evaluated when the vignette renders. It fails if either K mode is
-not marked non-disclosive, is not `PASS`, or exceeds its accepted tolerance.
+## Executed evidence
 
 ```{r evidence}
-rows <- validation_rows("glmm")
-assert_validation(rows)
+rows <- run_validation("glmm", force = force_run)
 display_validation(rows)
+```
+
+```{r assertion, include=FALSE}
+assert_validation(rows)
 ```
 
 ## Verdict
 
-Both K=2 and K>=3 validation rows are inside their accepted numerical envelope
-and use the current non-disclosive product route. Any legacy route mentioned in
-the package is excluded from this evidence path.
-
+The vignette fails during rendering if either K=2 or K>=3 leaves the
+accepted numerical envelope or is marked as disclosive.

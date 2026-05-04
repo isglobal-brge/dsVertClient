@@ -5,12 +5,12 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-<title>GLM inference helper validation • dsVertClient</title>
+<title>GLM inference validation • dsVertClient</title>
 <script src="../deps/jquery-3.6.0/jquery-3.6.0.min.js"></script><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <link href="../deps/bootstrap-5.3.1/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="GLM inference helper validation">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="GLM inference validation">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -38,15 +38,15 @@
     <li><a class="dropdown-item" href="../articles/vert_validation_evidence.html">dsVert validation evidence</a></li>
     <li><a class="dropdown-item" href="../articles/validation_psi.html">PSI alignment validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_descriptive.html">Descriptive statistics validation</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_contingency.html">Contingency table validation</a></li>
+    <li><a class="dropdown-item" href="../articles/validation_contingency.html">Contingency tests validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_correlation.html">Correlation validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_pca.html">PCA validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_glm.html">GLM validation</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_inference.html">GLM inference helper validation</a></li>
+    <li><a class="dropdown-item" href="../articles/validation_inference.html">GLM inference validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_lasso.html">LASSO validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_negative_binomial.html">Negative binomial validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_cox.html">Cox PH validation</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_lmm.html">Linear mixed model validation</a></li>
+    <li><a class="dropdown-item" href="../articles/validation_lmm.html">LMM validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_gee.html">GEE validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_glmm.html">GLMM validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_ipw.html">IPW validation</a></li>
@@ -75,9 +75,9 @@
 <div class="row">
   <main id="main" class="col-md-9"><div class="page-header">
 
-      <h1>GLM inference helper validation</h1>
+      <h1>GLM inference validation</h1>
                         <h4 data-toc-skip class="author">David Sarrat
-González</h4>
+Gonzalez</h4>
             
             <h4 data-toc-skip class="date">2026-05-04</h4>
       
@@ -90,83 +90,61 @@ González</h4>
 <div class="section level2">
 <h2 id="what-is-validated">What is validated<a class="anchor" aria-label="anchor" href="#what-is-validated"></a>
 </h2>
-<p>Functions: <code><a href="../reference/ds.vertConfint.html">ds.vertConfint()</a></code>, <code><a href="../reference/ds.vertWald.html">ds.vertWald()</a></code>,
-<code><a href="../reference/ds.vertContrast.html">ds.vertContrast()</a></code>, <code><a href="../reference/ds.vertLR.html">ds.vertLR()</a></code></p>
-<p>The helpers are deterministic transformations of a
-<code>ds.glm</code> result: Wald intervals use
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mover><mi>β</mi><mo accent="true">̂</mo></mover><mi>j</mi></msub><mo>±</mo><msub><mi>z</mi><mrow><mi>α</mi><mi>/</mi><mn>2</mn></mrow></msub><msub><mrow><mi mathvariant="normal">S</mi><mi mathvariant="normal">E</mi></mrow><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">\hat\beta_j \pm z_{\alpha/2}\mathrm{SE}_j</annotation></semantics></math>,
-univariate Wald tests use
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">(</mo><msub><mover><mi>β</mi><mo accent="true">̂</mo></mover><mi>j</mi></msub><mo>−</mo><msub><mi>β</mi><mrow><mn>0</mn><mi>j</mi></mrow></msub><mo stretchy="false" form="postfix">)</mo><mi>/</mi><msub><mrow><mi mathvariant="normal">S</mi><mi mathvariant="normal">E</mi></mrow><mi>j</mi></msub></mrow><annotation encoding="application/x-tex">(\hat\beta_j-\beta_{0j})/\mathrm{SE}_j</annotation></semantics></math>,
-contrasts use
-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">(</mo><mi>K</mi><mover><mi>β</mi><mo accent="true">̂</mo></mover><mo>−</mo><mi>m</mi><msup><mo stretchy="false" form="postfix">)</mo><mi>T</mi></msup><mo stretchy="false" form="prefix">(</mo><mi>K</mi><mover><mi mathvariant="normal">Σ</mi><mo accent="true">̂</mo></mover><msup><mi>K</mi><mi>T</mi></msup><msup><mo stretchy="false" form="postfix">)</mo><mrow><mi>−</mi><mn>1</mn></mrow></msup><mo stretchy="false" form="prefix">(</mo><mi>K</mi><mover><mi>β</mi><mo accent="true">̂</mo></mover><mo>−</mo><mi>m</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">(K\hat\beta-m)^T(K\hat\Sigma K^T)^{-1}(K\hat\beta-m)</annotation></semantics></math>,
-and LR tests use the difference in returned deviances.</p>
+<p>Functions:
+<code>ds.vertConfint(), ds.vertWald(), ds.vertContrast(), ds.vertLR()</code>.</p>
+<p>Inference helpers post-process the beta, covariance, deviance, and
+degrees of freedom already returned by ds.vertGLM.</p>
 </div>
 <div class="section level2">
-<h2 id="centralized-reference">Centralized reference<a class="anchor" aria-label="anchor" href="#centralized-reference"></a>
+<h2 id="mathematical-target">Mathematical target<a class="anchor" aria-label="anchor" href="#mathematical-target"></a>
 </h2>
-<p>The centralized reference is built from the same deterministic rows
-and formula as the DSLite run. The long method harness stores the exact
-seed, split and reference object in the cache listed below.</p>
-<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span></span>
-<span><span class="va">fit_full</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/glm.html" class="external-link">glm</a></span><span class="op">(</span><span class="va">glu</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">ped</span> <span class="op">+</span> <span class="va">bp</span> <span class="op">+</span> <span class="va">skin</span> <span class="op">+</span> <span class="va">npreg</span>,</span>
-<span>                data <span class="op">=</span> <span class="fu">MASS</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/MASS/man/Pima.tr.html" class="external-link">Pima.tr</a></span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fl">80</span><span class="op">)</span>, <span class="op">]</span><span class="op">)</span></span>
-<span><span class="va">fit_reduced</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/update.html" class="external-link">update</a></span><span class="op">(</span><span class="va">fit_full</span>, <span class="va">.</span> <span class="op">~</span> <span class="va">.</span> <span class="op">-</span> <span class="va">skin</span><span class="op">)</span></span></code></pre></div>
+<p>Wald tests use z = (K beta - m) / sqrt(K V K^T). LR tests use
+D_reduced - D_full against a chi-square reference.</p>
 </div>
 <div class="section level2">
-<h2 id="vertical-dslite-split">Vertical DSLite split<a class="anchor" aria-label="anchor" href="#vertical-dslite-split"></a>
+<h2 id="fixture-and-reference">Fixture and reference<a class="anchor" aria-label="anchor" href="#fixture-and-reference"></a>
 </h2>
-<p>The validation split creates independent server tables with the same
-<code>patient_id</code> key and then aligns them with
-<code><a href="../reference/ds.psiAlign.html">ds.psiAlign()</a></code>.</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span></span>
-<span><span class="va">tables</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span></span>
-<span>  s1 <span class="op">=</span> <span class="va">pooled</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"ped"</span><span class="op">)</span><span class="op">]</span>,</span>
-<span>  s2 <span class="op">=</span> <span class="va">pooled</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"bp"</span>, <span class="st">"skin"</span>, <span class="st">"npreg"</span>, <span class="st">"glu"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span></span>
-<span><span class="va">fit_full</span> <span class="op">&lt;-</span> <span class="fu">dsVertClient</span><span class="fu">::</span><span class="fu"><a href="../reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span></span>
-<span>  <span class="va">glu</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">ped</span> <span class="op">+</span> <span class="va">bp</span> <span class="op">+</span> <span class="va">skin</span> <span class="op">+</span> <span class="va">npreg</span>,</span>
-<span>  data <span class="op">=</span> <span class="st">"DA"</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, lambda <span class="op">=</span> <span class="fl">0</span>,</span>
-<span>  datasources <span class="op">=</span> <span class="va">conns</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span><span class="va">ci</span> <span class="op">&lt;-</span> <span class="fu">dsVertClient</span><span class="fu">::</span><span class="fu"><a href="../reference/ds.vertConfint.html">ds.vertConfint</a></span><span class="op">(</span><span class="va">fit_full</span><span class="op">)</span></span>
-<span><span class="va">wald</span> <span class="op">&lt;-</span> <span class="fu">dsVertClient</span><span class="fu">::</span><span class="fu"><a href="../reference/ds.vertWald.html">ds.vertWald</a></span><span class="op">(</span><span class="va">fit_full</span>, parm <span class="op">=</span> <span class="st">"age"</span><span class="op">)</span></span>
-<span><span class="va">contrast</span> <span class="op">&lt;-</span> <span class="fu">dsVertClient</span><span class="fu">::</span><span class="fu"><a href="../reference/ds.vertContrast.html">ds.vertContrast</a></span><span class="op">(</span><span class="va">fit_full</span>, K <span class="op">=</span> <span class="st">"age = bmi"</span><span class="op">)</span></span>
-<span><span class="va">lr</span> <span class="op">&lt;-</span> <span class="fu">dsVertClient</span><span class="fu">::</span><span class="fu"><a href="../reference/ds.vertLR.html">ds.vertLR</a></span><span class="op">(</span><span class="va">fit_reduced</span>, <span class="va">fit_full</span><span class="op">)</span></span></code></pre></div>
-<p>To reproduce the cache from the repository root:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>Rscript scripts<span class="sc">/</span>validate_method_glm_wrappers.R</span></code></pre></div>
+<p>Fixture: The same MASS::Pima.tr Gaussian GLM fixture used for GLM
+validation.</p>
+<p>Centralized reference: Manual algebra on ds.vertGLM output.</p>
+<p>The executable chunk below calls <code>run_validation()</code> from
+<code>vignettes/validation_helpers.R</code>. That helper constructs the
+fixture, opens a DSLite server, performs PSI alignment, runs the
+dsVertClient product route for K=2 and K=3, computes the centralized
+reference, and compares both results. No RDS or result table outside
+this package is required; if a local
+<code>vignettes/validation-cache/</code> file exists it is a cache
+produced by this same execution path.</p>
 </div>
 <div class="section level2">
 <h2 id="disclosure-review">Disclosure review<a class="anchor" aria-label="anchor" href="#disclosure-review"></a>
 </h2>
-<p>No server call is made by these helpers. They add no disclosure
-beyond beta, covariance, and deviance already returned by the validated
-GLM route.</p>
+<p>No new server aggregate is required beyond the already accepted
+model-level GLM outputs.</p>
+<p>The fixture keeps <code>datashield.privacyLevel = 5</code> and is
+sized so the standard disclosure guards remain active. Only
+<code>dsvert.require_trusted_peers</code> is disabled for DSLite because
+there is no real Opal/Rock deployment in this local validation
+context.</p>
 </div>
 <div class="section level2">
-<h2 id="executed-evidence-check">Executed evidence check<a class="anchor" aria-label="anchor" href="#executed-evidence-check"></a>
+<h2 id="executed-evidence">Executed evidence<a class="anchor" aria-label="anchor" href="#executed-evidence"></a>
 </h2>
-<p>This chunk is evaluated when the vignette renders. It fails if either
-K mode is not marked non-disclosive, is not <code>PASS</code>, or
-exceeds its accepted tolerance.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">rows</span> <span class="op">&lt;-</span> <span class="fu">validation_rows</span><span class="op">(</span><span class="st">"inference"</span><span class="op">)</span></span>
-<span><span class="fu">assert_validation</span><span class="op">(</span><span class="va">rows</span><span class="op">)</span></span>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">rows</span> <span class="op">&lt;-</span> <span class="fu">run_validation</span><span class="op">(</span><span class="st">"inference"</span>, force <span class="op">=</span> <span class="va">force_run</span><span class="op">)</span></span>
 <span><span class="fu">display_validation</span><span class="op">(</span><span class="va">rows</span><span class="op">)</span></span></code></pre></div>
 <table class="table">
 <colgroup>
 <col width="3%">
 <col width="29%">
-<col width="6%">
-<col width="12%">
-<col width="7%">
+<col width="11%">
+<col width="18%">
+<col width="11%">
 <col width="4%">
-<col width="4%">
+<col width="5%">
 <col width="7%">
 <col width="3%">
-<col width="19%">
+<col width="5%">
 </colgroup>
 <thead><tr class="header">
 <th align="left">k_mode</th>
@@ -178,34 +156,34 @@ exceeds its accepted tolerance.</p>
 <th align="right">tolerance</th>
 <th align="left">tier</th>
 <th align="left">status</th>
-<th align="left">cache</th>
+<th align="right">runtime_s</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
 <td align="left">K=2</td>
 <td align="left">ds.vertConfint / ds.vertWald / ds.vertContrast /
 ds.vertLR</td>
-<td align="left">MASS::Pima.tr</td>
-<td align="left">manual algebra on ds.glm</td>
-<td align="left">algebra_delta</td>
+<td align="left">MASS::Pima.tr fixture</td>
+<td align="left">manual algebra on ds.vertGLM output</td>
+<td align="left">algebra_max_abs_delta</td>
 <td align="right">0</td>
 <td align="right">0</td>
 <td align="left">strict-precise</td>
 <td align="left">PASS</td>
-<td align="left">glm_wrappers_dslite_20260504-091506.rds</td>
+<td align="right">15.3</td>
 </tr>
 <tr class="even">
 <td align="left">K&gt;=3</td>
 <td align="left">ds.vertConfint / ds.vertWald / ds.vertContrast /
 ds.vertLR</td>
-<td align="left">MASS::Pima.tr</td>
-<td align="left">manual algebra on ds.glm</td>
-<td align="left">algebra_delta</td>
+<td align="left">MASS::Pima.tr fixture</td>
+<td align="left">manual algebra on ds.vertGLM output</td>
+<td align="left">algebra_max_abs_delta</td>
 <td align="right">0</td>
 <td align="right">0</td>
 <td align="left">strict-precise</td>
 <td align="left">PASS</td>
-<td align="left">glm_wrappers_dslite_20260504-091506.rds</td>
+<td align="right">16.1</td>
 </tr>
 </tbody>
 </table>
@@ -213,10 +191,8 @@ ds.vertLR</td>
 <div class="section level2">
 <h2 id="verdict">Verdict<a class="anchor" aria-label="anchor" href="#verdict"></a>
 </h2>
-<p>Both K=2 and K&gt;=3 validation rows are inside their accepted
-numerical envelope and use the current non-disclosive product route. Any
-legacy route mentioned in the package is excluded from this evidence
-path.</p>
+<p>The vignette fails during rendering if either K=2 or K&gt;=3 leaves
+the accepted numerical envelope or is marked as disclosive.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

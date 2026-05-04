@@ -24,6 +24,9 @@ ds.vertMultinomJointNewton(
   indicator_template = "%s_ind",
   max_outer = 8L,
   tol = 1e-04,
+  warm_max_iter = NULL,
+  warm_tol = NULL,
+  binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
   datasources = NULL
 )
@@ -55,6 +58,19 @@ ds.vertMultinomJointNewton(
 - tol:
 
   Convergence tolerance on max \|Deltabeta\| (default 1e-4).
+
+- warm_max_iter:
+
+  Optional maximum iterations for each internal binomial warm-start GLM.
+
+- warm_tol:
+
+  Optional tolerance for each internal binomial warm-start GLM.
+
+- binomial_sigmoid_intervals:
+
+  Optional DCF spline interval count for internal binomial warm-start
+  GLMs.
 
 - verbose:
 

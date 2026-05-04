@@ -1,7 +1,0 @@
-"route","product_replacement","reason","expected_state"
-"ds.vertCox.k3","ds.vertCoxProfileNonDisclosive","Person-time/legacy K>=3 Cox path is not the product Cox PH claim.","absent export"
-"ds.vertCox(method=...)","ds.vertCoxProfileNonDisclosive","Rank/permutation metadata route was removed from the user wrapper.","unused argument"
-"ds.vertNBFullRegTheta(variant='full_reg')","ds.vertNBFullRegTheta(variant='full_reg_nd')","Plain non-label eta transport is disclosive; share-domain theta/beta route replaces it.","variant rejected"
-"ds.vertMultinom(method='warm')","ds.vertMultinomJointNewton","Warm OVR is an initializer only and does not target the softmax MLE.","unused argument"
-"ds.vertOrdinal(method='warm')","ds.vertOrdinalJointNewton","Warm cumulative-binomial is an initializer only and does not target the joint PO MLE.","unused argument"
-"ds.vertGLMM(method=...)","ds.vertGLMM aggregate PQL default","Only aggregate PQL is user-facing; method selection to legacy EM is removed.","unused argument"

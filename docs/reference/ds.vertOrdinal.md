@@ -18,6 +18,9 @@ ds.vertOrdinal(
   max_iter = NULL,
   max_outer = 8L,
   tol = NULL,
+  warm_max_iter = NULL,
+  warm_tol = NULL,
+  binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
   datasources = NULL,
   ...
@@ -57,6 +60,19 @@ ds.vertOrdinal(
 - tol:
 
   Convergence tolerance for the joint route.
+
+- warm_max_iter:
+
+  Optional maximum iterations for each internal binomial warm-start GLM.
+
+- warm_tol:
+
+  Optional tolerance for each internal binomial warm-start GLM.
+
+- binomial_sigmoid_intervals:
+
+  Optional DCF spline interval count for internal binomial warm-start
+  GLMs.
 
 - verbose:
 
