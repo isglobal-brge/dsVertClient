@@ -43,15 +43,15 @@ as ds.vertCor."></head><body>
     <li><a class="dropdown-item" href="../articles/vert_validation_evidence.html">dsVert validation evidence</a></li>
     <li><a class="dropdown-item" href="../articles/validation_psi.html">PSI alignment validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_descriptive.html">Descriptive statistics validation</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_contingency.html">Contingency table validation</a></li>
+    <li><a class="dropdown-item" href="../articles/validation_contingency.html">Contingency tests validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_correlation.html">Correlation validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_pca.html">PCA validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_glm.html">GLM validation</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_inference.html">GLM inference helper validation</a></li>
+    <li><a class="dropdown-item" href="../articles/validation_inference.html">GLM inference validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_lasso.html">LASSO validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_negative_binomial.html">Negative binomial validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_cox.html">Cox PH validation</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_lmm.html">Linear mixed model validation</a></li>
+    <li><a class="dropdown-item" href="../articles/validation_lmm.html">LMM validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_gee.html">GEE validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_glmm.html">GLMM validation</a></li>
     <li><a class="dropdown-item" href="../articles/validation_ipw.html">IPW validation</a></li>
@@ -99,6 +99,9 @@ as <code>ds.vertCor</code>.</p>
 <span>  indicator_template <span class="op">=</span> <span class="st">"%s_ind"</span>,</span>
 <span>  max_outer <span class="op">=</span> <span class="fl">8L</span>,</span>
 <span>  tol <span class="op">=</span> <span class="fl">1e-04</span>,</span>
+<span>  warm_max_iter <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  warm_tol <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  binomial_sigmoid_intervals <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  datasources <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -131,6 +134,21 @@ on the outcome server, e.g. <code>"%s_ind"</code>. Must exist server-side.</p></
 
 <dt id="arg-tol">tol<a class="anchor" aria-label="anchor" href="#arg-tol"></a></dt>
 <dd><p>Convergence tolerance on max |Deltabeta| (default 1e-4).</p></dd>
+
+
+<dt id="arg-warm-max-iter">warm_max_iter<a class="anchor" aria-label="anchor" href="#arg-warm-max-iter"></a></dt>
+<dd><p>Optional maximum iterations for each internal
+binomial warm-start GLM.</p></dd>
+
+
+<dt id="arg-warm-tol">warm_tol<a class="anchor" aria-label="anchor" href="#arg-warm-tol"></a></dt>
+<dd><p>Optional tolerance for each internal binomial warm-start
+GLM.</p></dd>
+
+
+<dt id="arg-binomial-sigmoid-intervals">binomial_sigmoid_intervals<a class="anchor" aria-label="anchor" href="#arg-binomial-sigmoid-intervals"></a></dt>
+<dd><p>Optional DCF spline interval count for
+internal binomial warm-start GLMs.</p></dd>
 
 
 <dt id="arg-verbose">verbose<a class="anchor" aria-label="anchor" href="#arg-verbose"></a></dt>

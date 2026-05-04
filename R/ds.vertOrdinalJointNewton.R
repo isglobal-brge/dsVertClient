@@ -1,6 +1,9 @@
 .ord_joint_secure_fit <- function(formula, data = NULL, levels_ordered,
                                   cumulative_template = "%s_leq",
                                   max_outer = 8L, tol = 1e-4,
+                                  warm_max_iter = NULL,
+                                  warm_tol = NULL,
+                                  binomial_sigmoid_intervals = NULL,
                                   verbose = TRUE, datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   if (length(datasources) < 2L) {
@@ -18,6 +21,10 @@
   warm <- .ds_vertOrdinalWarm(formula, data = data,
                               levels_ordered = levels_ordered,
                               cumulative_template = cumulative_template,
+                              max_iter = warm_max_iter,
+                              tol = warm_tol,
+                              binomial_sigmoid_intervals =
+                                binomial_sigmoid_intervals,
                               verbose = FALSE,
                               datasources = datasources)
   if (is.null(warm$beta_po) || is.null(warm$thresholds)) {
@@ -227,7 +234,7 @@
       ci <- which(server_names == srv)
       .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
         a_key = a_key, b_key = b_key,
-        sign_a = as.integer(sign_a), sign_b = as.integer(sign_b),
+        sign_a = as.numeric(sign_a), sign_b = as.numeric(sign_b),
         public_const_fp = const_fp,
         is_party0 = (srv == y_server),
         output_key = output_key, n = as.numeric(n_obs),
@@ -757,6 +764,12 @@
 #' @param cumulative_template e.g. \code{"\%s_leq"} for Y <= k indicator.
 #' @param max_outer Outer Newton iterations.
 #' @param tol Convergence tolerance on \eqn{\|\Delta (\beta, \theta)\|_\infty}.
+#' @param warm_max_iter Optional maximum iterations for each internal
+#'   binomial warm-start GLM.
+#' @param warm_tol Optional tolerance for each internal binomial warm-start
+#'   GLM.
+#' @param binomial_sigmoid_intervals Optional DCF spline interval count for
+#'   internal binomial warm-start GLMs.
 #' @param verbose Logical.
 #' @param datasources DataSHIELD connections.
 #' @return \code{ds.vertOrdinalJointNewton} object.
@@ -764,6 +777,9 @@
 ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
                                       cumulative_template = "%s_leq",
                                       max_outer = 8L, tol = 1e-4,
+                                      warm_max_iter = NULL,
+                                      warm_tol = NULL,
+                                      binomial_sigmoid_intervals = NULL,
                                       verbose = TRUE, datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   .ord_joint_secure_fit(
@@ -771,6 +787,9 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
     levels_ordered = levels_ordered,
     cumulative_template = cumulative_template,
     max_outer = max_outer, tol = tol,
+    warm_max_iter = warm_max_iter,
+    warm_tol = warm_tol,
+    binomial_sigmoid_intervals = binomial_sigmoid_intervals,
     verbose = verbose, datasources = datasources)
 }
 

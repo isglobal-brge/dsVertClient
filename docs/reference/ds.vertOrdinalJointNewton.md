@@ -52,6 +52,9 @@ ds.vertOrdinalJointNewton(
   cumulative_template = "%s_leq",
   max_outer = 8L,
   tol = 1e-04,
+  warm_max_iter = NULL,
+  warm_tol = NULL,
+  binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
   datasources = NULL
 )
@@ -82,6 +85,19 @@ ds.vertOrdinalJointNewton(
 - tol:
 
   Convergence tolerance on \\\\\Delta (\beta, \theta)\\\_\infty\\.
+
+- warm_max_iter:
+
+  Optional maximum iterations for each internal binomial warm-start GLM.
+
+- warm_tol:
+
+  Optional tolerance for each internal binomial warm-start GLM.
+
+- binomial_sigmoid_intervals:
+
+  Optional DCF spline interval count for internal binomial warm-start
+  GLMs.
 
 - verbose:
 

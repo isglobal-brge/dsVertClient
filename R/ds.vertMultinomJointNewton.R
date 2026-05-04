@@ -124,6 +124,12 @@
 #'   on the outcome server, e.g. \code{"\%s_ind"}. Must exist server-side.
 #' @param max_outer Outer Newton iterations (default 8).
 #' @param tol Convergence tolerance on max |Deltabeta| (default 1e-4).
+#' @param warm_max_iter Optional maximum iterations for each internal
+#'   binomial warm-start GLM.
+#' @param warm_tol Optional tolerance for each internal binomial warm-start
+#'   GLM.
+#' @param binomial_sigmoid_intervals Optional DCF spline interval count for
+#'   internal binomial warm-start GLMs.
 #' @param verbose Logical.
 #' @param datasources DataSHIELD connections.
 #' @return \code{ds.vertMultinomJointNewton} object.
@@ -131,6 +137,9 @@
 ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                                         indicator_template = "%s_ind",
                                         max_outer = 8L, tol = 1e-4,
+                                        warm_max_iter = NULL,
+                                        warm_tol = NULL,
+                                        binomial_sigmoid_intervals = NULL,
                                         verbose = TRUE, datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   if (!inherits(formula, "formula"))
@@ -146,6 +155,10 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   warm <- .ds_vertMultinomWarm(formula, data = data, classes = levels,
                                reference = ref,
                                indicator_template = indicator_template,
+                               max_iter = warm_max_iter,
+                               tol = warm_tol,
+                               binomial_sigmoid_intervals =
+                                 binomial_sigmoid_intervals,
                                verbose = verbose,
                                datasources = datasources)
   beta_mat <- warm$coefficients

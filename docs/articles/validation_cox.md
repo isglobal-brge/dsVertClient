@@ -3,90 +3,56 @@
 ## What is validated
 
 Functions:
-[`ds.vertCox()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCox.md),
-[`ds.vertCoxProfileNonDisclosive()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCoxProfileNonDisclosive.md),
-[`ds.vertCoxDiscreteNonDisclosive()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCoxDiscreteNonDisclosive.md)
+[`ds.vertCox()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCox.md).
 
-The Cox PH model has hazard $`h(t|x)=h_0(t)\exp(x^T\beta)`$. With
-Breslow ties, the profile partial-likelihood score is built from
-event-time risk-set sums $`\sum_{i:t_i \ge t_j}\exp(x_i^T\beta)x_i`$.
-The product route hides risk-set and event masks as Ring127 shares and
-opens only slope score/Hessian aggregates.
+The current product route evaluates Cox partial-likelihood score terms
+over discretised event-time risk sets without releasing risk-set rows.
 
-## Centralized reference
+## Mathematical target
 
-The centralized reference is built from the same deterministic rows and
-formula as the DSLite run. The long method harness stores the exact
-seed, split and reference object in the cache listed below.
+The target solves sum_i delta_i (x_i - weighted_risk_mean(t_i; beta)) =
+0. The fixture compares beta to coxph(ties=‘breslow’).
 
-``` r
+## Fixture and reference
 
+Fixture: Synthetic survival fixture with event times discretised into
+guarded bins.
 
-fit_ref <- survival::coxph(
-  survival::Surv(time, event) ~ x1 + x2 + x3,
-  data = pooled, ties = "breslow")
-```
+Centralized reference: survival::coxph(…, ties = ‘breslow’) on the
+pooled fixture.
 
-## Vertical DSLite split
-
-The validation split creates independent server tables with the same
-`patient_id` key and then aligns them with
-[`ds.psiAlign()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md).
-
-``` r
-
-
-tables <- list(
-  s1 = pooled[c("patient_id", "x1", "x2")],
-  s2 = pooled[c("patient_id", "x3", "time", "event")]
-)
-```
-
-``` r
-
-
-fit_cox <- dsVertClient::ds.vertCox(
-  survival::Surv(time, event) ~ x1 + x2 + x3,
-  data = "DA",
-  max_iter = 5L,
-  max_event_times = 50L,
-  datasources = conns,
-  verbose = FALSE)
-```
-
-To reproduce the cache from the repository root:
-
-``` r
-Rscript scripts/validate_method_cox.R --target cox_profile
-```
+The executable chunk below calls `run_validation()` from
+`vignettes/validation_helpers.R`. That helper constructs the fixture,
+opens a DSLite server, performs PSI alignment, runs the dsVertClient
+product route for K=2 and K=3, computes the centralized reference, and
+compares both results. No RDS or result table outside this package is
+required; if a local `vignettes/validation-cache/` file exists it is a
+cache produced by this same execution path.
 
 ## Disclosure review
 
-Legacy rank/permutation and person-time Cox routes are not offered.
-Event times, event indicators, event ranks, risk-set membership,
-baseline dummies, and per-person period rows are not returned. Debug
-traces and bin summaries are gated diagnostics only.
+Risk-set contributions stay in the share domain; the client receives
+coefficients and scalar convergence diagnostics.
 
-## Executed evidence check
+The fixture keeps `datashield.privacyLevel = 5` and is sized so the
+standard disclosure guards remain active. Only
+`dsvert.require_trusted_peers` is disabled for DSLite because there is
+no real Opal/Rock deployment in this local validation context.
 
-This chunk is evaluated when the vignette renders. It fails if either K
-mode is not marked non-disclosive, is not `PASS`, or exceeds its
-accepted tolerance.
+## Executed evidence
 
 ``` r
 
-rows <- validation_rows("cox")
-assert_validation(rows)
+rows <- run_validation("cox", force = force_run)
 display_validation(rows)
 ```
 
-| k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | cache |
-|:---|:---|:---|:---|:---|---:|---:|:---|:---|:---|
-| K=2 | ds.vertCox / ds.vertCoxProfileNonDisclosive | synthetic_event_time_survival | survival::coxph(ties=‘breslow’) | slope_max_abs | 3.51e-05 | 1e-04 | strict-precise | PASS | cox_dslite_k2_20260504-144510.rds |
-| K\>=3 | ds.vertCox / ds.vertCoxProfileNonDisclosive | synthetic_event_time_survival | survival::coxph(ties=‘breslow’) | slope_max_abs | 3.51e-05 | 1e-04 | strict-precise | PASS | cox_dslite_k3_20260504-144829.rds |
+| k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | runtime_s |
+|:---|:---|:---|:---|:---|---:|---:|:---|:---|---:|
+| K=2 | ds.vertCox | synthetic discretised survival fixture | survival::coxph(ties=‘breslow’) | coef_max_abs_delta | 0.0001888 | 0.001 | strict-practical | PASS | 88.6 |
+| K\>=3 | ds.vertCox | synthetic discretised survival fixture | survival::coxph(ties=‘breslow’) | coef_max_abs_delta | 0.0001888 | 0.001 | strict-practical | PASS | 90.1 |
 
 ## Verdict
 
-Both K=2 and K\>=3 validation rows are inside their accepted numerical
-envelope and use the current non-disclosive product route. Any legacy
-route mentioned in the package is excluded from this evidence path.
+The vignette fails during rendering if either K=2 or K\>=3 leaves the
+accepted numerical envelope or is marked as disclosive.

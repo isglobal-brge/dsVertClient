@@ -1,6 +1,6 @@
 ---
 title: "Descriptive statistics validation"
-author: "David Sarrat González"
+author: "David Sarrat Gonzalez"
 date: "`r format(Sys.Date(), '%Y-%m-%d')`"
 output:
   rmarkdown::html_vignette:
@@ -13,97 +13,60 @@ vignette: >
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(
-  echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE,
-  collapse = TRUE, comment = "#>")
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = FALSE, collapse = TRUE, comment = "#>")
 helper_candidates <- c("validation_helpers.R",
-                       file.path("..", "validation_helpers.R"),
-                       file.path("vignettes", "validation_helpers.R"))
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
 source(helper_candidates[file.exists(helper_candidates)][1])
+force_run <- identical(tolower(Sys.getenv("DSVERT_VALIDATION_FORCE", "false")), "true")
 ```
 
 ## What is validated
 
-Functions: `ds.vertDesc()`
+Functions: `ds.vertDesc()`.
 
+Each server computes local guarded moments for its own variables. Quantiles are estimated from guarded histograms rather than releasing sorted observations.
 
-Means and standard deviations are computed from local scalar moments
-\(\sum x\), \(\sum x^2\), and \(n\). Quantiles are approximated by guarded
-histograms: after safe bucket counts are released, the requested quantile is
-linearly interpolated inside the bucket containing \(p n\).
+## Mathematical target
 
+For a variable x, the exact checked moments are n, mean(x), and sd(x). Histogram quantiles approximate F^{-1}(p) from binned counts under the disclosure threshold.
 
-## Centralized reference
+## Fixture and reference
 
-The centralized reference is built from the same deterministic rows and
-formula as the DSLite run. The long method harness stores the exact seed,
-split and reference object in the cache listed below.
+Fixture: MASS::Pima.tr numeric fixture split vertically.
 
-```{r central-reference, eval=FALSE}
+Centralized reference: Central mean and standard deviation on the pooled fixture.
 
-pooled <- MASS::Pima.tr[seq_len(120), ]
-summary(pooled[c("age", "bmi", "glu", "bp")])
-stats::quantile(pooled$age, probs = c(.25, .5, .75))
-
-```
-
-## Vertical DSLite split
-
-The validation split creates independent server tables with the same
-`patient_id` key and then aligns them with `ds.psiAlign()`.
-
-```{r vertical-split, eval=FALSE}
-
-tables <- list(
-  s1 = pooled[c("patient_id", "age", "bmi", "ped")],
-  s2 = pooled[c("patient_id", "npreg", "glu", "bp", "skin")]
-)
-
-```
-
-```{r dslite-execution, eval=FALSE}
-
-dsVertClient::ds.psiAlign("D", "patient_id", "DA",
-                          datasources = conns, verbose = FALSE)
-desc <- dsVertClient::ds.vertDesc(
-  "DA",
-  variables = list(s1 = c("age", "bmi", "ped"),
-                   s2 = c("npreg", "glu", "bp", "skin")),
-  probs = c(.25, .5, .75),
-  exact_extrema = FALSE,
-  datasources = conns)
-
-```
-
-To reproduce the cache from the repository root:
-
-```{r reproduce-cache, eval=FALSE}
-Rscript scripts/validate_method_descriptive.R
-```
+The executable chunk below calls `run_validation()` from
+`vignettes/validation_helpers.R`. That helper constructs the fixture,
+opens a DSLite server, performs PSI alignment, runs the dsVertClient
+product route for K=2 and K=3, computes the centralized reference, and
+compares both results. No RDS or result table outside this package is
+required; if a local `vignettes/validation-cache/` file exists it is a
+cache produced by this same execution path.
 
 ## Disclosure review
 
+Only scalar summaries and guarded histogram information are returned; no row-level values or order statistics are disclosed.
 
-Exact extrema are suppressed by default. Histogram buckets with positive
-counts below `datashield.privacyLevel` fail closed or are coarsened before
-release. The quantile error is therefore a controlled disclosure/approximation
-tradeoff, not an MPC reconstruction error.
+The fixture keeps `datashield.privacyLevel = 5` and is sized so the
+standard disclosure guards remain active. Only `dsvert.require_trusted_peers`
+is disabled for DSLite because there is no real Opal/Rock deployment in
+this local validation context.
 
-
-## Executed evidence check
-
-This chunk is evaluated when the vignette renders. It fails if either K mode is
-not marked non-disclosive, is not `PASS`, or exceeds its accepted tolerance.
+## Executed evidence
 
 ```{r evidence}
-rows <- validation_rows("descriptive")
-assert_validation(rows)
+rows <- run_validation("descriptive", force = force_run)
 display_validation(rows)
+```
+
+```{r assertion, include=FALSE}
+assert_validation(rows)
 ```
 
 ## Verdict
 
-Both K=2 and K>=3 validation rows are inside their accepted numerical envelope
-and use the current non-disclosive product route. Any legacy route mentioned in
-the package is excluded from this evidence path.
-
+The vignette fails during rendering if either K=2 or K>=3 leaves the
+accepted numerical envelope or is marked as disclosive.

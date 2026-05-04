@@ -1,91 +1,57 @@
-# Linear mixed model validation
+# LMM validation
 
 ## What is validated
 
-Functions:
-[`ds.vertLMM()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertLMM.md),
-[`ds.vertLMM.k3()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertLMM.k3.md)
+Functions: `ds.vertLMM(), ds.vertLMM.k3()`.
 
-The random-intercept LMM is $`y_{ij}=x_{ij}^T\beta+b_i+\epsilon_{ij}`$,
-with $`b_i\sim N(0,\sigma_b^2)`$ and
-$`\epsilon_{ij}\sim N(0,\sigma^2)`$. The estimator profiles variance
-components and solves GLS normal equations. K=2 uses the closed-form
-route; K\>=3 uses share-domain residual REML and exact cluster-mean GLS
-transforms.
+Random-intercept LMM uses guarded cluster metadata and MPC
+cross-products to fit fixed effects and variance components.
 
-## Centralized reference
+## Mathematical target
 
-The centralized reference is built from the same deterministic rows and
-formula as the DSLite run. The long method harness stores the exact
-seed, split and reference object in the cache listed below.
+The model is y = X beta + b_cluster + epsilon with b ~ N(0, sigma_b^2).
+The validation compares fixed effects to lme4::lmer().
 
-``` r
+## Fixture and reference
 
+Fixture: Synthetic balanced random-intercept fixture, with cluster sizes
+above privacy thresholds.
 
-fit_ref <- nlme::lme(y ~ x1 + x2 + x3,
-                     random = ~ 1 | cluster_id,
-                     data = pooled, method = "REML")
-```
+Centralized reference: lme4::lmer(… + (1 \| cluster)) on the pooled
+fixture.
 
-## Vertical DSLite split
-
-The validation split creates independent server tables with the same
-`patient_id` key and then aligns them with
-[`ds.psiAlign()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.psiAlign.md).
-
-``` r
-
-
-tables <- list(
-  s1 = pooled[c("patient_id", "x1", "x2")],
-  s2 = pooled[c("patient_id", "x3", "cluster_id", "y")]
-)
-```
-
-``` r
-
-
-fit_lmm_k2 <- dsVertClient::ds.vertLMM(
-  y ~ x1 + x2 + x3, data = "DA", cluster_col = "cluster_id",
-  datasources = conns, verbose = FALSE)
-fit_lmm_k3 <- dsVertClient::ds.vertLMM.k3(
-  y ~ x1 + x2 + x3, data = "DA", cluster_col = "cluster_id",
-  datasources = conns, verbose = FALSE)
-```
-
-To reproduce the cache from the repository root:
-
-``` r
-Rscript scripts/validate_method_lmm.R
-```
+The executable chunk below calls `run_validation()` from
+`vignettes/validation_helpers.R`. That helper constructs the fixture,
+opens a DSLite server, performs PSI alignment, runs the dsVertClient
+product route for K=2 and K=3, computes the centralized reference, and
+compares both results. No RDS or result table outside this package is
+required; if a local `vignettes/validation-cache/` file exists it is a
+cache produced by this same execution path.
 
 ## Disclosure review
 
-Cluster membership is method-level metadata and is sent only through
-encrypted server-to-server channels. Original cluster labels are not
-returned, small clusters fail closed, and patient-level residuals or
-BLUPs are not returned.
+Cluster membership is used internally at the accepted LMM tier.
+Per-cluster residuals and BLUP vectors are not returned.
 
-## Executed evidence check
+The fixture keeps `datashield.privacyLevel = 5` and is sized so the
+standard disclosure guards remain active. Only
+`dsvert.require_trusted_peers` is disabled for DSLite because there is
+no real Opal/Rock deployment in this local validation context.
 
-This chunk is evaluated when the vignette renders. It fails if either K
-mode is not marked non-disclosive, is not `PASS`, or exceeds its
-accepted tolerance.
+## Executed evidence
 
 ``` r
 
-rows <- validation_rows("lmm")
-assert_validation(rows)
+rows <- run_validation("lmm", force = force_run)
 display_validation(rows)
 ```
 
-| k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | cache |
-|:---|:---|:---|:---|:---|---:|---:|:---|:---|:---|
-| K=2 | ds.vertLMM | synthetic_balanced_random_intercept | nlme::lme / lme4::lmer | max(fixed_effect_abs, variance_abs) | 0.0007200 | 0.001 | strict-practical | PASS | lmm_dslite_20260503-030040.rds |
-| K\>=3 | ds.vertLMM.k3 | synthetic_balanced_random_intercept | nlme::lme / lme4::lmer | max(fixed_effect_abs, variance_abs) | 0.0002815 | 0.001 | strict-practical | PASS | lmm_dslite_20260503-214223.rds |
+| k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | runtime_s |
+|:---|:---|:---|:---|:---|---:|---:|:---|:---|---:|
+| K=2 | ds.vertLMM | synthetic random-intercept fixture | lme4::lmer | fixed_effect_max_abs_delta | 0.0006365 | 0.02 | strict-practical | PASS | 26.7 |
+| K\>=3 | ds.vertLMM.k3 | synthetic random-intercept fixture | lme4::lmer | fixed_effect_max_abs_delta | 0.0001614 | 0.02 | strict-practical | PASS | 169.5 |
 
 ## Verdict
 
-Both K=2 and K\>=3 validation rows are inside their accepted numerical
-envelope and use the current non-disclosive product route. Any legacy
-route mentioned in the package is excluded from this evidence path.
+The vignette fails during rendering if either K=2 or K\>=3 leaves the
+accepted numerical envelope or is marked as disclosive.
