@@ -53,7 +53,7 @@ NULL
   dcf_conns <- sapply(dcf_parties, function(s) which(server_names == s))
 
   is_gaussian <- (family == "gaussian")
-  default_intervals <- if (family == "poisson") 100L else 50L
+  default_intervals <- if (family == "poisson") 100L else if (family == "binomial") 100L else 50L
   opt_name <- paste0("dsvert.glm_num_intervals_", family)
   num_intervals <- suppressWarnings(as.integer(
     getOption(opt_name, getOption("dsvert.glm_num_intervals",
