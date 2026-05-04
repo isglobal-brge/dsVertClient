@@ -1403,7 +1403,7 @@ ds.vertGEE <- function(formula, data = NULL,
       var_key <- "gee_px_mu"
     } else {
       .wide_spline("gee_poisson_eta", "gee_px_mu",
-                   spline_family = "sigmoid", num_intervals = 50L)
+                   spline_family = "sigmoid", num_intervals = 100L)
       .ring_scale("gee_poisson_eta", 0.5, "gee_px_eta_half")
       .wide_spline("gee_px_eta_half", "gee_px_h",
                    spline_family = "poisson", num_intervals = 100L)
