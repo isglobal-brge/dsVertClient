@@ -130,6 +130,7 @@
   warm <- ds.vertOrdinal(formula, data = data,
                          levels_ordered = levels_ordered,
                          cumulative_template = cumulative_template,
+                         method = "warm",
                          verbose = FALSE, datasources = datasources)
   if (is.null(warm$beta_po) || is.null(warm$thresholds)) {
     stop("Warm ordinal start did not return beta_po/thresholds",
@@ -896,6 +897,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
   warm <- ds.vertOrdinal(formula, data = data,
                           levels_ordered = levels_ordered,
                           cumulative_template = cumulative_template,
+                          method = "warm",
                           verbose = verbose, datasources = datasources)
   if (is.null(warm$beta_po) || is.null(warm$thresholds)) {
     if (verbose) message("[OrdinalJointNewton] warm start incomplete -- returning warm")

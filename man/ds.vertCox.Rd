@@ -9,6 +9,7 @@ ds.vertCox(
   data = NULL,
   time_col = NULL,
   event_col = NULL,
+  method = c("profile_nd", "legacy_rank"),
   tstart_col = NULL,
   strata_col = NULL,
   max_iter = 30L,
@@ -21,6 +22,10 @@ ds.vertCox(
   one_step_newton = TRUE,
   newton_refine_iters = 5L,
   newton_refine_tol = 1e-05,
+  max_event_times = NULL,
+  newton = TRUE,
+  ridge_eps = 1e-06,
+  debug_trace = FALSE,
   ring = 127L,
   verbose = TRUE,
   datasources = NULL
@@ -35,12 +40,19 @@ If the LHS is not a \code{Surv(...)} expression, supply
 
 \item{time_col, event_col}{Column names on the outcome server.}
 
+\item{method}{Character. \code{"profile_nd"} (default) uses the
+non-disclosive Breslow profile route. \code{"legacy_rank"} runs the
+old rank/permutation route only when the explicit diagnostic disclosure
+gate is enabled.}
+
 \item{tstart_col}{Optional left-truncation / start-time column for
 counting-process / time-varying covariates. When supplied, the
-data are interpreted as (tstart, time, event) triplets.}
+data are interpreted as (tstart, time, event) triplets. This is supported
+only by \code{method = "legacy_rank"}.}
 
 \item{strata_col}{Optional stratifying column name (categorical).
-Each level fits a separate baseline hazard with shared beta.}
+Each level fits a separate baseline hazard with shared beta. This is
+supported only by \code{method = "legacy_rank"}.}
 
 \item{max_iter}{Outer L-BFGS iterations (default 30).}
 
@@ -75,6 +87,13 @@ P3 disclosure budget).}
 \item{newton_refine_tol}{Numeric. Convergence tolerance on
 max |delta beta| during refinement.}
 
+\item{max_event_times}{Integer runtime guard passed to
+\code{\link{ds.vertCoxProfileNonDisclosive}}.}
+
+\item{newton, ridge_eps, debug_trace}{Parameters passed to
+\code{\link{ds.vertCoxProfileNonDisclosive}} when
+\code{method = "profile_nd"}.}
+
 \item{ring}{Integer (63 or 127). Selects the MPC ring / fracBits
 pipeline. Default 127 (Catrina-Saxena fracBits=50, ~1e-15 per-op).
 Pass 63 to force the legacy Ring63 pipeline.}
@@ -90,8 +109,14 @@ A \code{ds.vertCox} object: \code{coefficients},
 \code{iterations}, \code{converged}.
 }
 \description{
-Fit a Cox PH model on vertically partitioned DataSHIELD
-data using the reverse-cumsum reformulation of the partial-
+User-facing Cox PH wrapper. By default it dispatches to
+\code{\link{ds.vertCoxProfileNonDisclosive}}, the non-disclosive
+Breslow profile route validated for K=2 and K>=3.
+
+The historical K=2 rank/permutation implementation is retained only
+under \code{method = "legacy_rank"} for controlled diagnostics. It fits
+a Cox PH model on vertically partitioned DataSHIELD data using the
+reverse-cumsum reformulation of the partial-
 likelihood score. The client runs an L-BFGS outer loop; each step
 obtains the aggregate gradient
 \deqn{\nabla \ell(\beta) = \sum_j x_j (\delta_j - e^{\eta_j} G_j)}

@@ -36,6 +36,13 @@
 #'   share-mask precedent -- the K=3 generalisation is straightforward
 #'   3-party additive sharing).
 #'
+#'   Under strict non-disclosure this archived wrapper is disabled by default
+#'   because it expects person-time-expanded data and can expose event-time
+#'   baseline metadata. Use \code{\link{ds.vertCoxProfileNonDisclosive}} for
+#'   the strict K>=3 Cox PH route. Enable
+#'   \code{options(dsvert.allow_legacy_cox_k3_poisson = TRUE)} only for
+#'   controlled diagnostic legacy runs.
+#'
 #' @param formula One-sided formula listing the slope covariates only --
 #'   \emph{not} a Surv(...) formula. Example: \code{~ age + sex_num + bmi}.
 #'   The outcome column is taken to be the user-supplied \code{event_col}.
@@ -71,7 +78,7 @@
 #'   discrete-time Cox models. arXiv:2006.08997.
 #' @seealso \code{\link{ds.vertGLM}},
 #'   \code{\link{ds.vertCoxProfileNonDisclosive}}.
-#' @export
+#' @keywords internal
 ds.vertCox.k3 <- function(formula, data, event_col,
                            offset_col, baseline_col,
                            max_iter = 100L, tol = 1e-5, lambda = 0,

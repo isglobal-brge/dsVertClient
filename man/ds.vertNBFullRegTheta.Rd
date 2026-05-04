@@ -11,7 +11,7 @@ ds.vertNBFullRegTheta(
   joint = TRUE,
   theta_max_iter = 5L,
   theta_tol = 0.001,
-  variant = "corrected",
+  variant = "full_reg_nd",
   beta_max_iter = 2L,
   beta_tol = 1e-04,
   compute_covariance = TRUE,
@@ -43,13 +43,12 @@ current theta-adjusted mean estimate.}
 \item{theta_tol}{Convergence tolerance on the relative change in
 theta during the Newton refinement.}
 
-\item{variant}{Character. \code{"iid_mu"} returns the unmodified
-\code{ds.vertNB} result. \code{"corrected"} (default) applies the
-aggregate variance correction described in Details.
-\code{"full_reg_nd"} runs the non-disclosive share-domain full-regression
-theta refinement. Legacy \code{"full_reg"} is disclosive and is
-redirected to \code{"full_reg_nd"} unless
-\code{allow_disclosive_legacy = TRUE}.}
+\item{variant}{Character. \code{"full_reg_nd"} (default) runs the
+non-disclosive share-domain full-regression theta refinement.
+\code{"iid_mu"} returns the unmodified \code{ds.vertNB} result.
+\code{"corrected"} applies the aggregate variance correction described
+in Details. Legacy \code{"full_reg"} is disclosive and is redirected to
+\code{"full_reg_nd"} unless \code{allow_disclosive_legacy = TRUE}.}
 
 \item{beta_max_iter}{Integer. Maximum beta refinements for the
 non-disclosive full-regression theta variant.}

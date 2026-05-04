@@ -28,9 +28,9 @@ fit <- ds.vertGLM(diabetes ~ age + bmi + glu + bp,
                   datasources = conns)
 print(fit)
 
-# 3. Cox PH on K=2 with Ring127 (default; STRICT-grade vs survival::coxph)
+# 3. Cox PH via the non-disclosive Breslow profile route
 cox <- ds.vertCox(survival::Surv(time, event) ~ age + bmi + bp,
-                  data = "DA", compute_se = TRUE,
+                  data = "DA",
                   datasources = conns)
 
 # 4. Correlation + PCA
@@ -48,10 +48,10 @@ DSI::datashield.logout(conns)
 | **Descriptive / 2nd-order** | `ds.vertDesc()`, `ds.vertCor()`, `ds.vertPCA()`, `ds.vertChisq()`, `ds.vertChisqCross()`, `ds.vertFisher()` |
 | **GLM** (gaussian / binomial / poisson) | `ds.vertGLM()` with `offset`, `weights`, `ring`, `keep_session`, `no_intercept`, `std_mode` |
 | **Inference helpers** | `ds.vertConfint()`, `ds.vertContrast()`, `ds.vertWald()`, `ds.vertLR()` |
-| **Survival** | `ds.vertCox()` (Ring63 / Ring127, Newton path A/B), `ds.vertCox.k3()`, `ds.vertCoxDiscreteNonDisclosive()` |
-| **Negative binomial** | `ds.vertNB()` (iid-µ Newton), `ds.vertNBMoMTheta()` (Anscombe / Saha-Paul), `ds.vertNBFullRegTheta()` (Ring127 NR-LOG) |
-| **Multinomial** | `ds.vertMultinom()` (OVR), `ds.vertMultinomJoint()` (covariance-rescaled), `ds.vertMultinomJointNewton()` (full softmax Newton via Beaver) |
-| **Ordinal (proportional odds)** | `ds.vertOrdinal()` (BLUE pool + threshold correction), `ds.vertOrdinalJointNewton()` (Tutz 1990 § 3.2 block-diagonal) |
+| **Survival** | `ds.vertCox()` / `ds.vertCoxProfileNonDisclosive()` (non-disclosive Breslow Cox PH), `ds.vertCoxDiscreteNonDisclosive()` (pooled-logistic discrete survival) |
+| **Negative binomial** | `ds.vertNBFullRegTheta(variant = "full_reg_nd")` (default share-domain full-reg θ), `ds.vertNB()` / `ds.vertNBMoMTheta()` for lighter scalar-theta variants |
+| **Multinomial** | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` (default joint softmax Newton); warm OVR is diagnostic via `method = "warm"` |
+| **Ordinal (proportional odds)** | `ds.vertOrdinal()` / `ds.vertOrdinalJointNewton()` (default joint proportional-odds Newton); warm cumulative-binomial is diagnostic via `method = "warm"` |
 | **Mixed models** | `ds.vertLMM()` (REML closed-form, K=2; random intercept + slopes), `ds.vertLMM.k3()` (REML 1-D profile, K=3), `ds.vertGEE()` (sandwich SE), `ds.vertGLMM()` (binomial Laplace, stretch) |
 | **Causal / robustness** | `ds.vertIPW()` (two-stage propensity + weighted GLM), `ds.vertMI()` (multiple imputation + Rubin pooling) |
 | **Penalised regression** | `ds.vertLASSO()`, `ds.vertLASSO1Step()`, `ds.vertLASSOIter()`, `ds.vertLASSOCV()` (AIC / BIC / EBIC selector), `ds.vertLASSOProximal()` (FISTA-accelerated) |
@@ -75,9 +75,9 @@ Deviance: 22.09
 | | K=2 | K≥3 |
 |---|---|---|
 | GLM (gauss / binom / poisson) | ✓ Ring63 / Ring127 | ✓ Ring63 |
-| Cox PH | ✓ Ring127 (default) — STRICT vs `coxph` | ✓ via `ds.vertCox.k3` (Allison Poisson trick) |
-| Negative binomial | ✓ iid / MoM / full-reg θ | ✓ iid path |
-| Multinomial / ordinal | ✓ OVR + joint | ✓ OVR (joint Newton K=2-only by design) |
+| Cox PH | ✓ profile ND — STRICT vs `coxph` | ✓ profile ND |
+| Negative binomial | ✓ iid / MoM / full-reg ND θ | ✓ iid / MoM / full-reg ND θ |
+| Multinomial / ordinal | ✓ joint Newton | ✓ joint Newton |
 | LMM | ✓ K=2 closed-form | ✓ `ds.vertLMM.k3` (REML 1-D profile) |
 | GEE / GLMM / IPW / MI / LASSO / Cor / PCA | ✓ | ✓ |
 
