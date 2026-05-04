@@ -25,6 +25,8 @@ ds.vertGLM(
   std_mode = "full",
   start = NULL,
   compute_se = TRUE,
+  compute_deviance = TRUE,
+  gradient_only = FALSE,
   data_name = NULL,
   y_var = NULL
 )
@@ -98,6 +100,14 @@ without optimisation.}
 \item{compute_se}{Logical. Compute finite-difference Hessian/standard
 errors. Internal fixed-evaluation callers can set FALSE to avoid
 extra MPC rounds when only residual shares are needed.}
+
+\item{compute_deviance}{Logical. Compute the secure aggregate deviance.
+Internal score-only callers can set FALSE to avoid the extra MPC pass.}
+
+\item{gradient_only}{Logical. Internal diagnostic/optimizer path. If TRUE,
+evaluate and return the aggregate score at \code{start} without taking
+an optimizer step. The returned score is p-dimensional only; no
+observation-level eta/probability/residual vector is opened.}
 
 \item{data_name}{Internal alias for \code{data}; if both are supplied,
 \code{data_name} takes precedence (back-compat path).}

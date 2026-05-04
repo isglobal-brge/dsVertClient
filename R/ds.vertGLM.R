@@ -135,6 +135,12 @@
 #' @param compute_se Logical. Compute finite-difference Hessian/standard
 #'   errors. Internal fixed-evaluation callers can set FALSE to avoid
 #'   extra MPC rounds when only residual shares are needed.
+#' @param compute_deviance Logical. Compute the secure aggregate deviance.
+#'   Internal score-only callers can set FALSE to avoid the extra MPC pass.
+#' @param gradient_only Logical. Internal diagnostic/optimizer path. If TRUE,
+#'   evaluate and return the aggregate score at \code{start} without taking
+#'   an optimizer step. The returned score is p-dimensional only; no
+#'   observation-level eta/probability/residual vector is opened.
 #' @importFrom DSI datashield.aggregate datashield.connections_find
 #' @export
 ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
@@ -177,6 +183,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        # methods such as LMM variance components.
                        start = NULL,
                        compute_se = TRUE,
+                       compute_deviance = TRUE,
+                       gradient_only = FALSE,
                        # Legacy positional args for backward compatibility
                        data_name = NULL, y_var = NULL) {
   call_matched <- match.call()
@@ -334,9 +342,14 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     stop("secure_agg requires >= 3 servers", call. = FALSE)
   if (use_k2_beaver && non_label_count != 1)
     stop("K=2 mode requires exactly 2 servers", call. = FALSE)
-  if (!is.null(start) && !use_secure_agg) {
-    stop("start is currently supported only for K>=3 secure_agg mode",
-         call. = FALSE)
+  if (isTRUE(gradient_only)) {
+    if (is.null(start)) {
+      stop("gradient_only requires a standardized `start` vector",
+           call. = FALSE)
+    }
+    compute_se <- FALSE
+    compute_deviance <- FALSE
+    max_iter <- max(1L, as.integer(max_iter))
   }
 
   # Adaptive log_n for large n: max_slots = 2^(log_n-1)
@@ -460,6 +473,46 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   standardize_y <- setup$standardize_y
   .dsAgg        <- setup$.dsAgg
   .sendBlob     <- setup$.sendBlob
+
+  if (max_iter < 1L && !isTRUE(compute_se) &&
+      !isTRUE(compute_deviance) && !isTRUE(gradient_only) &&
+      is.null(start) && is.null(offset) && is.null(weights)) {
+    all_names <- unlist(x_vars[server_list], use.names = FALSE)
+    all_x_means <- unlist(x_means[server_list], use.names = FALSE)
+    all_x_sds <- unlist(x_sds[server_list], use.names = FALSE)
+    all_coefs <- c("(Intercept)" = 0, setNames(rep(0, length(all_names)),
+                                               all_names))
+    result <- list(
+      coefficients = all_coefs,
+      std_errors = rep(NA_real_, length(all_coefs)),
+      z_values = rep(NA_real_, length(all_coefs)),
+      p_values = rep(NA_real_, length(all_coefs)),
+      covariance = NULL,
+      covariance_information = NULL,
+      covariance_unscaled = NULL,
+      iterations = 0L,
+      converged = TRUE,
+      family = family,
+      n_obs = n_obs,
+      n_vars = length(all_coefs),
+      lambda = lambda,
+      deviance = NA_real_,
+      null_deviance = if (family == "gaussian") (n_obs - 1) * (y_sd %||% 1)^2 else NA,
+      pseudo_r2 = NA_real_,
+      aic = NA_real_,
+      y_server = y_server,
+      eta_privacy = eta_privacy,
+      x_means = setNames(all_x_means, all_names),
+      x_sds = setNames(all_x_sds, all_names),
+      y_sd = if (exists("y_sd", inherits = FALSE)) y_sd else NULL,
+      y_mean = if (exists("y_mean", inherits = FALSE)) y_mean else NULL,
+      hessian_std = NULL,
+      gradient_std = NULL,
+      gradient = NULL,
+      call = call_matched)
+    class(result) <- c("ds.glm", "list")
+    return(result)
+  }
 
   # ===========================================================================
   # Offset registration (Poisson / NB rate regression).
@@ -661,7 +714,10 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       weights_active = isTRUE(weights_active),
       no_intercept  = isTRUE(no_intercept),
       ring = ring,
-      compute_se = isTRUE(compute_se)
+      compute_se = isTRUE(compute_se),
+      compute_deviance = isTRUE(compute_deviance),
+      gradient_only = isTRUE(gradient_only),
+      start = start
     )
 
     betas <- loop_result$betas
@@ -689,6 +745,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       no_intercept = isTRUE(no_intercept),
       start = start,
       compute_se = isTRUE(compute_se),
+      compute_deviance = isTRUE(compute_deviance),
+      gradient_only = isTRUE(gradient_only),
       ring = ring)
     betas <- k3_result$betas
     converged <- k3_result$converged
@@ -914,6 +972,37 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     }
   }
 
+  gradient_std <- NULL
+  if (use_secure_agg && exists("k3_result") &&
+      !is.null(k3_result$gradient_std)) {
+    gradient_std <- k3_result$gradient_std
+  }
+  if (use_k2_beaver && exists("loop_result") &&
+      !is.null(loop_result$gradient_std)) {
+    gradient_std <- loop_result$gradient_std
+  }
+  gradient_original <- NULL
+  if (!is.null(gradient_std)) {
+    target_order <- names(all_coefs)
+    if (!is.null(names(gradient_std))) {
+      perm <- match(target_order, names(gradient_std))
+      if (all(!is.na(perm))) gradient_std <- gradient_std[perm]
+    }
+    names(gradient_std) <- target_order
+    if (!standardize_y) {
+      gradient_original <- gradient_std
+      slope_names <- setdiff(target_order, "(Intercept)")
+      if ("(Intercept)" %in% target_order && length(slope_names) > 0L) {
+        g0 <- gradient_std["(Intercept)"]
+        for (nm in slope_names) {
+          gradient_original[nm] <- all_x_means[match(nm, all_names)] * g0 +
+            all_x_sds[match(nm, all_names)] * gradient_std[nm]
+        }
+      }
+      names(gradient_original) <- target_order
+    }
+  }
+
   # ===========================================================================
   # Assemble Result
   # ===========================================================================
@@ -942,6 +1031,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     y_sd    = if (exists("y_sd", inherits = FALSE)) y_sd else NULL,
     y_mean  = if (exists("y_mean", inherits = FALSE)) y_mean else NULL,
     hessian_std = if (exists("H_raw", inherits = FALSE)) H_raw else NULL,
+    gradient_std = gradient_std,
+    gradient = gradient_original,
     call = call_matched
   )
 
