@@ -55,7 +55,7 @@ NULL
   ring_tag <- if (ring == 127L) "ring127" else "ring63"
   frac_bits <- if (ring == 127L) 50L else 20L
   is_gaussian <- (family == "gaussian")
-  default_intervals <- if (family == "poisson") 100L else 50L
+  default_intervals <- if (family == "poisson") 100L else if (family == "binomial") 100L else 50L
   opt_name <- paste0("dsvert.glm_num_intervals_", family)
   num_intervals <- suppressWarnings(as.integer(
     getOption(opt_name, getOption("dsvert.glm_num_intervals",
