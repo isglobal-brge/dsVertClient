@@ -16,6 +16,7 @@ ds.vertGEE(
   lambda = 1e-04,
   working_max_iter = NULL,
   ring = 63L,
+  binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
   datasources = NULL
 )
@@ -51,6 +52,13 @@ exchangeable/AR1 working-correlation updates. Defaults to \code{max_iter}.}
 \item{ring}{Integer 63 or 127. Binomial/Poisson exchangeable and all AR1
 routes are automatically run in Ring127 because protected nonlinear link
 operations and adjacent-product statistics need high precision.}
+
+\item{binomial_sigmoid_intervals}{Optional integer. Number of DCF spline
+intervals for protected binomial sigmoid evaluations used by the
+underlying GLM fit and GEE sandwich/working-correlation updates. When
+\code{NULL}, \code{dsvert.gee_binomial_sigmoid_intervals},
+\code{dsvert.glm_num_intervals_binomial}, or the 100-interval default is
+used.}
 
 \item{datasources}{DataSHIELD connection object.}
 }

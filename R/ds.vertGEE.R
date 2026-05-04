@@ -53,6 +53,12 @@
 #' @param ring Integer 63 or 127. Binomial/Poisson exchangeable and all AR1
 #'   routes are automatically run in Ring127 because protected nonlinear link
 #'   operations and adjacent-product statistics need high precision.
+#' @param binomial_sigmoid_intervals Optional integer. Number of DCF spline
+#'   intervals for protected binomial sigmoid evaluations used by the
+#'   underlying GLM fit and GEE sandwich/working-correlation updates. When
+#'   \code{NULL}, \code{dsvert.gee_binomial_sigmoid_intervals},
+#'   \code{dsvert.glm_num_intervals_binomial}, or the 100-interval default is
+#'   used.
 #' @param datasources DataSHIELD connection object.
 #' @return An object of class \code{ds.vertGEE} with components
 #'   \code{coefficients}, \code{model_se} (sqrt of
@@ -68,9 +74,36 @@ ds.vertGEE <- function(formula, data = NULL,
                        max_iter = 100L, tol = 1e-4, lambda = 1e-4,
                        working_max_iter = NULL,
                        ring = 63L,
+                       binomial_sigmoid_intervals = NULL,
                        verbose = TRUE, datasources = NULL) {
   family <- match.arg(family)
   corstr <- match.arg(corstr)
+  if (!is.null(binomial_sigmoid_intervals)) {
+    binomial_sigmoid_intervals <- as.integer(binomial_sigmoid_intervals)
+    if (length(binomial_sigmoid_intervals) != 1L ||
+        !is.finite(binomial_sigmoid_intervals) ||
+        binomial_sigmoid_intervals < 10L) {
+      stop("binomial_sigmoid_intervals must be NULL or an integer >= 10",
+           call. = FALSE)
+    }
+  }
+  effective_binomial_sigmoid_intervals <- if (identical(family, "binomial")) {
+    if (!is.null(binomial_sigmoid_intervals)) {
+      binomial_sigmoid_intervals
+    } else {
+      suppressWarnings(as.integer(getOption(
+        "dsvert.gee_binomial_sigmoid_intervals",
+        getOption("dsvert.glm_num_intervals_binomial",
+                  getOption("dsvert.glm_num_intervals", 100L)))[[1L]]))
+    }
+  } else {
+    NA_integer_
+  }
+  if (identical(family, "binomial") &&
+      (!is.finite(effective_binomial_sigmoid_intervals) ||
+       effective_binomial_sigmoid_intervals < 10L)) {
+    effective_binomial_sigmoid_intervals <- 100L
+  }
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
   if (identical(corstr, "exchangeable") &&
@@ -138,6 +171,12 @@ ds.vertGEE <- function(formula, data = NULL,
                     family = family, max_iter = max_iter, tol = tol,
                     lambda = lambda, ring = ring_use, verbose = verbose,
                     datasources = datasources,
+                    binomial_sigmoid_intervals =
+                      if (identical(family, "binomial")) {
+                        effective_binomial_sigmoid_intervals
+                      } else {
+                        NULL
+                      },
                     keep_session = TRUE)
   if (!is.null(fit$session_id)) {
     on.exit({
@@ -208,7 +247,9 @@ ds.vertGEE <- function(formula, data = NULL,
               server_names = server_names, lambda = lambda,
               data = data, id_col = id_col,
               max_iter = working_max_iter_use,
-              tol = tol, verbose = verbose)
+              tol = tol, verbose = verbose,
+              binomial_sigmoid_intervals =
+                effective_binomial_sigmoid_intervals)
           } else {
             stop("unsupported exchangeable GEE family: ", family,
                  call. = FALSE)
@@ -242,7 +283,9 @@ ds.vertGEE <- function(formula, data = NULL,
               server_names = server_names, lambda = lambda,
               data = data, id_col = id_col, order_col = order_col,
               corstr = "ar1", max_iter = working_max_iter_use,
-              tol = tol, verbose = verbose)
+              tol = tol, verbose = verbose,
+              binomial_sigmoid_intervals =
+                effective_binomial_sigmoid_intervals)
           } else {
             stop("unsupported AR1 GEE family: ", family, call. = FALSE)
           },
@@ -288,7 +331,9 @@ ds.vertGEE <- function(formula, data = NULL,
               fit = fit, datasources = datasources,
               server_names = server_names, lambda = lambda,
               data = data, id_col = id_col,
-              verbose = verbose),
+              verbose = verbose,
+              binomial_sigmoid_intervals =
+                effective_binomial_sigmoid_intervals),
             error = function(e) {
               secure_error <<- e
               if (verbose) {
@@ -388,6 +433,12 @@ ds.vertGEE <- function(formula, data = NULL,
     corstr             = corstr,
     working_correlation = working_correlation,
     family             = family,
+    binomial_sigmoid_intervals =
+      if (identical(family, "binomial")) {
+        effective_binomial_sigmoid_intervals
+      } else {
+        NA_integer_
+      },
     id_col             = id_col,
     order_col          = if (identical(corstr, "ar1")) order_col else NULL,
     n_obs              = fit$n_obs,
@@ -1688,7 +1739,8 @@ ds.vertGEE <- function(formula, data = NULL,
 .ds_gee_secure_poisson_exchangeable <- function(
     fit, datasources, server_names, lambda = 0, data = NULL, id_col = NULL,
     order_col = NULL, corstr = c("exchangeable", "ar1"),
-    max_iter = 100L, tol = 1e-6, verbose = FALSE) {
+    max_iter = 100L, tol = 1e-6, verbose = FALSE,
+    binomial_sigmoid_intervals = NULL) {
   corstr <- match.arg(corstr)
   if (!(fit$family %in% c("binomial", "poisson"))) return(NULL)
   gee_family <- fit$family
@@ -1727,6 +1779,20 @@ ds.vertGEE <- function(formula, data = NULL,
   frac_bits <- 50L
   ring_tag <- "ring127"
   transport_pks <- fit$transport_pks
+  sigmoid_intervals <- if (identical(gee_family, "binomial")) {
+    suppressWarnings(as.integer(
+      (binomial_sigmoid_intervals %||%
+         getOption("dsvert.gee_binomial_sigmoid_intervals",
+                   getOption("dsvert.glm_num_intervals_binomial",
+                             getOption("dsvert.glm_num_intervals", 100L))))[[1L]]
+    ))
+  } else {
+    NA_integer_
+  }
+  if (identical(gee_family, "binomial") &&
+      (!is.finite(sigmoid_intervals) || sigmoid_intervals < 10L)) {
+    sigmoid_intervals <- 100L
+  }
 
   .to_b64url <- function(x) gsub("+", "-", gsub("/", "_",
     gsub("=+$", "", x, perl = TRUE), fixed = TRUE), fixed = TRUE)
@@ -2261,7 +2327,8 @@ ds.vertGEE <- function(formula, data = NULL,
         sqrt_var_key <- "gee_px_sqrt_var"
       } else {
         .wide_spline("gee_poisson_eta", "gee_px_mu",
-                     spline_family = "sigmoid", num_intervals = 100L)
+                     spline_family = "sigmoid",
+                     num_intervals = sigmoid_intervals)
         .ring_scale("gee_poisson_eta", 0.5, "gee_px_eta_half")
         .wide_spline("gee_px_eta_half", "gee_px_h",
                      spline_family = "poisson", num_intervals = 100L)
@@ -2526,7 +2593,8 @@ ds.vertGEE <- function(formula, data = NULL,
       var_key <- "gee_px_mu"
     } else {
       .wide_spline("gee_poisson_eta", "gee_px_mu",
-                   spline_family = "sigmoid", num_intervals = 100L)
+                   spline_family = "sigmoid",
+                   num_intervals = sigmoid_intervals)
       .ring_scale("gee_poisson_eta", 0.5, "gee_px_eta_half")
       .wide_spline("gee_px_eta_half", "gee_px_h",
                    spline_family = "poisson", num_intervals = 100L)
@@ -2713,7 +2781,8 @@ ds.vertGEE <- function(formula, data = NULL,
 #' @keywords internal
 .ds_gee_secure_hc0 <- function(fit, datasources, server_names,
                                lambda = 0, data = NULL, id_col = NULL,
-                               verbose = FALSE) {
+                               verbose = FALSE,
+                               binomial_sigmoid_intervals = NULL) {
   if (!fit$family %in% c("gaussian", "binomial", "poisson")) return(NULL)
   required <- c("session_id", "transport_pks", "server_list", "x_vars",
                 "y_server", "hessian_std", "x_sds", "x_means")
@@ -2734,6 +2803,20 @@ ds.vertGEE <- function(formula, data = NULL,
   frac_bits <- if (ring == 127L) 50L else 20L
   ring_tag <- if (ring == 127L) "ring127" else "ring63"
   transport_pks <- fit$transport_pks
+  sigmoid_intervals <- if (identical(fit$family, "binomial")) {
+    suppressWarnings(as.integer(
+      (binomial_sigmoid_intervals %||%
+         getOption("dsvert.gee_binomial_sigmoid_intervals",
+                   getOption("dsvert.glm_num_intervals_binomial",
+                             getOption("dsvert.glm_num_intervals", 100L))))[[1L]]
+    ))
+  } else {
+    NA_integer_
+  }
+  if (identical(fit$family, "binomial") &&
+      (!is.finite(sigmoid_intervals) || sigmoid_intervals < 10L)) {
+    sigmoid_intervals <- 100L
+  }
 
   .to_b64url <- function(x) gsub("+", "-", gsub("/", "_",
     gsub("=+$", "", x, perl = TRUE), fixed = TRUE), fixed = TRUE)
@@ -2864,7 +2947,7 @@ ds.vertGEE <- function(formula, data = NULL,
   } else if (fit$family %in% c("binomial", "poisson")) {
     spline_family <- fit$family
     dcf_family <- if (identical(fit$family, "poisson")) "poisson" else "sigmoid"
-    num_intervals <- if (identical(fit$family, "poisson")) 100L else 50L
+    num_intervals <- if (identical(fit$family, "poisson")) 100L else sigmoid_intervals
     dcf <- .dsAgg(datasources[dealer_conn],
       call(name = "glmRing63GenDcfKeysDS",
            dcf0_pk = transport_pks[[dcf_parties[[1L]]]],

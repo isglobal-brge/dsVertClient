@@ -52,7 +52,7 @@ DSI::datashield.logout(conns)
 | **Negative binomial** | `ds.vertNBFullRegTheta(variant = "full_reg_nd")` (default share-domain full-reg θ), `ds.vertNB()` / `ds.vertNBMoMTheta()` for lighter scalar-theta variants |
 | **Multinomial** | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` (default joint softmax Newton); warm OVR is diagnostic via `method = "warm"` |
 | **Ordinal (proportional odds)** | `ds.vertOrdinal()` / `ds.vertOrdinalJointNewton()` (default joint proportional-odds Newton); warm cumulative-binomial is diagnostic via `method = "warm"` |
-| **Mixed models** | `ds.vertLMM()` (REML closed-form, K=2; random intercept + slopes), `ds.vertLMM.k3()` (REML 1-D profile, K=3), `ds.vertGEE()` (sandwich SE), `ds.vertGLMM()` (binomial GLMM-PQL) |
+| **Mixed models** | `ds.vertLMM()` (REML closed-form, K=2; random intercept + slopes), `ds.vertLMM.k3()` (REML 1-D profile, K=3), `ds.vertGEE()` (sandwich SE, `binomial_sigmoid_intervals`), `ds.vertGLMM()` (binomial GLMM-PQL) |
 | **Causal / robustness** | `ds.vertIPW()` (two-stage propensity + weighted GLM), `ds.vertMI()` (multiple imputation + Rubin pooling) |
 | **Penalised regression** | `ds.vertLASSO()`, `ds.vertLASSO1Step()`, `ds.vertLASSOIter()` (Gaussian/binomial/Poisson standardized L1), `ds.vertLASSOCV()` (AIC / BIC / EBIC selector), `ds.vertLASSOProximal()` |
 
