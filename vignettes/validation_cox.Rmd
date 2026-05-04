@@ -1,0 +1,108 @@
+---
+title: "Cox PH validation"
+author: "David Sarrat González"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Cox PH validation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE,
+  collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+                       file.path("..", "validation_helpers.R"),
+                       file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+```
+
+## What is validated
+
+Functions: `ds.vertCox()`, `ds.vertCoxProfileNonDisclosive()`, `ds.vertCoxDiscreteNonDisclosive()`
+
+
+The Cox PH model has hazard \(h(t|x)=h_0(t)\exp(x^T\beta)\). With Breslow
+ties, the profile partial-likelihood score is built from event-time risk-set
+sums \(\sum_{i:t_i \ge t_j}\exp(x_i^T\beta)x_i\). The product route hides
+risk-set and event masks as Ring127 shares and opens only slope
+score/Hessian aggregates.
+
+
+## Centralized reference
+
+The centralized reference is built from the same deterministic rows and
+formula as the DSLite run. The long method harness stores the exact seed,
+split and reference object in the cache listed below.
+
+```{r central-reference, eval=FALSE}
+
+fit_ref <- survival::coxph(
+  survival::Surv(time, event) ~ x1 + x2 + x3,
+  data = pooled, ties = "breslow")
+
+```
+
+## Vertical DSLite split
+
+The validation split creates independent server tables with the same
+`patient_id` key and then aligns them with `ds.psiAlign()`.
+
+```{r vertical-split, eval=FALSE}
+
+tables <- list(
+  s1 = pooled[c("patient_id", "x1", "x2")],
+  s2 = pooled[c("patient_id", "x3", "time", "event")]
+)
+
+```
+
+```{r dslite-execution, eval=FALSE}
+
+fit_cox <- dsVertClient::ds.vertCox(
+  survival::Surv(time, event) ~ x1 + x2 + x3,
+  data = "DA",
+  max_iter = 5L,
+  max_event_times = 50L,
+  datasources = conns,
+  verbose = FALSE)
+
+```
+
+To reproduce the cache from the repository root:
+
+```{r reproduce-cache, eval=FALSE}
+Rscript scripts/validate_method_cox.R --target cox_profile
+```
+
+## Disclosure review
+
+
+Legacy rank/permutation and person-time Cox routes are not offered. Event
+times, event indicators, event ranks, risk-set membership, baseline dummies,
+and per-person period rows are not returned. Debug traces and bin summaries
+are gated diagnostics only.
+
+
+## Executed evidence check
+
+This chunk is evaluated when the vignette renders. It fails if either K mode is
+not marked non-disclosive, is not `PASS`, or exceeds its accepted tolerance.
+
+```{r evidence}
+rows <- validation_rows("cox")
+assert_validation(rows)
+display_validation(rows)
+```
+
+## Verdict
+
+Both K=2 and K>=3 validation rows are inside their accepted numerical envelope
+and use the current non-disclosive product route. Any legacy route mentioned in
+the package is excluded from this evidence path.
+

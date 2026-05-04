@@ -1,0 +1,110 @@
+---
+title: "Multiple imputation validation"
+author: "David Sarrat González"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Multiple imputation validation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE,
+  collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+                       file.path("..", "validation_helpers.R"),
+                       file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+```
+
+## What is validated
+
+Functions: `ds.vertMI()`
+
+
+For \(m=1,\ldots,M\), missing values are imputed server-side, the analysis GLM
+returns \(\hat\beta_m\) and \(\hat\Sigma_m\), and Rubin's rules compute
+\(\bar\beta=M^{-1}\sum_m\hat\beta_m\) and
+\(T=W+(1+M^{-1})B\), where \(W\) is the mean within-imputation covariance and
+\(B\) is the between-imputation covariance.
+
+
+## Centralized reference
+
+The centralized reference is built from the same deterministic rows and
+formula as the DSLite run. The long method harness stores the exact seed,
+split and reference object in the cache listed below.
+
+```{r central-reference, eval=FALSE}
+
+fits <- lapply(seq_len(3), function(m) {
+  imputed <- same_server_imputer(pooled, seed = 100 + m)
+  glm(y ~ x1 + x2 + x3, data = imputed)
+})
+rubin_pool(fits)
+
+```
+
+## Vertical DSLite split
+
+The validation split creates independent server tables with the same
+`patient_id` key and then aligns them with `ds.psiAlign()`.
+
+```{r vertical-split, eval=FALSE}
+
+tables <- list(
+  s1 = pooled[c("patient_id", "x1")],
+  s2 = pooled[c("patient_id", "x2", "x3", "y")]
+)
+
+```
+
+```{r dslite-execution, eval=FALSE}
+
+fit_mi <- dsVertClient::ds.vertMI(
+  y ~ x1 + x2 + x3,
+  data = "DA",
+  impute_columns = "x1",
+  m = 3L,
+  family = "gaussian",
+  datasources = conns,
+  verbose = FALSE)
+
+```
+
+To reproduce the cache from the repository root:
+
+```{r reproduce-cache, eval=FALSE}
+Rscript scripts/validate_method_mi.R
+```
+
+## Disclosure review
+
+
+Imputed values never leave the server that owns the column. The client receives
+only per-imputation model-scale coefficient/covariance summaries and Rubin
+pooled summaries. Exact extrema in imputation diagnostics are suppressed.
+
+
+## Executed evidence check
+
+This chunk is evaluated when the vignette renders. It fails if either K mode is
+not marked non-disclosive, is not `PASS`, or exceeds its accepted tolerance.
+
+```{r evidence}
+rows <- validation_rows("mi")
+assert_validation(rows)
+display_validation(rows)
+```
+
+## Verdict
+
+Both K=2 and K>=3 validation rows are inside their accepted numerical envelope
+and use the current non-disclosive product route. Any legacy route mentioned in
+the package is excluded from this evidence path.
+

@@ -1,0 +1,110 @@
+---
+title: "IPW validation"
+author: "David Sarrat González"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{IPW validation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE,
+  collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+                       file.path("..", "validation_helpers.R"),
+                       file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+```
+
+## What is validated
+
+Functions: `ds.vertIPW()`
+
+
+IPW fits a propensity model \(e(x)=P(T=1|X=x)\), then an outcome model with
+weights \(w_i=T_i/e(x_i)+(1-T_i)/(1-e(x_i))\). The product route validates the
+two-stage propensity plus weighted GLM workflow while keeping weights and
+sqrt-weights server-side or in additive shares.
+
+
+## Centralized reference
+
+The centralized reference is built from the same deterministic rows and
+formula as the DSLite run. The long method harness stores the exact seed,
+split and reference object in the cache listed below.
+
+```{r central-reference, eval=FALSE}
+
+prop_ref <- glm(treat ~ x1 + x2, data = pooled, family = binomial())
+pooled$ipw <- with(pooled, ifelse(treat == 1, 1 / fitted(prop_ref),
+                                  1 / (1 - fitted(prop_ref))))
+out_ref <- glm(y ~ treat + x1 + x2, data = pooled,
+               family = binomial(), weights = ipw)
+
+```
+
+## Vertical DSLite split
+
+The validation split creates independent server tables with the same
+`patient_id` key and then aligns them with `ds.psiAlign()`.
+
+```{r vertical-split, eval=FALSE}
+
+tables <- list(
+  s1 = pooled[c("patient_id", "x1", "x2")],
+  s2 = pooled[c("patient_id", "treat", "ipw", "y")]
+)
+
+```
+
+```{r dslite-execution, eval=FALSE}
+
+fit_ipw <- dsVertClient::ds.vertIPW(
+  outcome_formula = y ~ treat + x1 + x2,
+  propensity_formula = treat ~ x1 + x2,
+  data = "DA",
+  weights_column = "ipw",
+  outcome_family = "binomial",
+  datasources = conns,
+  verbose = FALSE)
+
+```
+
+To reproduce the cache from the repository root:
+
+```{r reproduce-cache, eval=FALSE}
+Rscript scripts/validate_method_ipw.R
+```
+
+## Disclosure review
+
+
+Patient weights are not transported plaintext to DCF peers. Weighted
+gradients/deviance use Beaver products of weight shares and residual shares.
+The widened secure sigmoid fixed the previous stress accuracy gap without
+changing disclosure.
+
+
+## Executed evidence check
+
+This chunk is evaluated when the vignette renders. It fails if either K mode is
+not marked non-disclosive, is not `PASS`, or exceeds its accepted tolerance.
+
+```{r evidence}
+rows <- validation_rows("ipw")
+assert_validation(rows)
+display_validation(rows)
+```
+
+## Verdict
+
+Both K=2 and K>=3 validation rows are inside their accepted numerical envelope
+and use the current non-disclosive product route. Any legacy route mentioned in
+the package is excluded from this evidence path.
+

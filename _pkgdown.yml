@@ -1,0 +1,37 @@
+url: https://isglobal-brge.github.io/dsVertClient/
+template:
+  bootstrap: 5
+
+footer:
+  structure:
+    left: package
+    right: built_with
+
+navbar:
+  structure:
+    left: [reference, articles, news]
+    right: [search, github]
+
+articles:
+- title: Validation evidence
+  navbar: Validation
+  contents:
+  - vert_validation_evidence
+  - validation_psi
+  - validation_descriptive
+  - validation_contingency
+  - validation_correlation
+  - validation_pca
+  - validation_glm
+  - validation_inference
+  - validation_lasso
+  - validation_negative_binomial
+  - validation_cox
+  - validation_lmm
+  - validation_gee
+  - validation_glmm
+  - validation_ipw
+  - validation_mi
+  - validation_multinomial
+  - validation_ordinal
+

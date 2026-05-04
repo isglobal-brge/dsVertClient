@@ -1,0 +1,108 @@
+---
+title: "Ordinal validation"
+author: "David Sarrat González"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Ordinal validation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE,
+  collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+                       file.path("..", "validation_helpers.R"),
+                       file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+```
+
+## What is validated
+
+Functions: `ds.vertOrdinal()`, `ds.vertOrdinalJointNewton()`
+
+
+The proportional-odds model is
+\(P(Y\le k|x)=F(\theta_k-x^T\beta)\), with ordered thresholds
+\(\theta_1<\cdots<\theta_{K-1}\). The product route evaluates the joint
+score for beta and thresholds with class masks, cumulative probabilities,
+reciprocals and finite-difference Hessian probes held in Ring127 shares.
+
+
+## Centralized reference
+
+The centralized reference is built from the same deterministic rows and
+formula as the DSLite run. The long method harness stores the exact seed,
+split and reference object in the cache listed below.
+
+```{r central-reference, eval=FALSE}
+
+fit_ref <- MASS::polr(y_ord ~ x1 + x2 + x3,
+                      data = pooled, method = "logistic", Hess = TRUE)
+
+```
+
+## Vertical DSLite split
+
+The validation split creates independent server tables with the same
+`patient_id` key and then aligns them with `ds.psiAlign()`.
+
+```{r vertical-split, eval=FALSE}
+
+tables <- list(
+  s1 = pooled[c("patient_id", "x1", "x2")],
+  s2 = pooled[c("patient_id", "x3", "low_leq", "mid_leq", "y_ord")]
+)
+
+```
+
+```{r dslite-execution, eval=FALSE}
+
+fit_ord <- dsVertClient::ds.vertOrdinal(
+  y_ord ~ x1 + x2 + x3,
+  data = "DA",
+  levels_ordered = c("low", "mid", "high"),
+  cumulative_template = "%s_leq",
+  max_outer = 2L,
+  datasources = conns,
+  verbose = FALSE)
+
+```
+
+To reproduce the cache from the repository root:
+
+```{r reproduce-cache, eval=FALSE}
+Rscript scripts/validate_method_ordinal_joint.R --K 2 && Rscript scripts/validate_method_ordinal_joint.R --K 3
+```
+
+## Disclosure review
+
+
+Class masks, probabilities, weights and residual-like terms remain encrypted
+shares. The client receives guarded class counts and aggregate
+gradient/parameter summaries only. The warm cumulative-binomial route is not a
+user-facing final estimator.
+
+
+## Executed evidence check
+
+This chunk is evaluated when the vignette renders. It fails if either K mode is
+not marked non-disclosive, is not `PASS`, or exceeds its accepted tolerance.
+
+```{r evidence}
+rows <- validation_rows("ordinal")
+assert_validation(rows)
+display_validation(rows)
+```
+
+## Verdict
+
+Both K=2 and K>=3 validation rows are inside their accepted numerical envelope
+and use the current non-disclosive product route. Any legacy route mentioned in
+the package is excluded from this evidence path.
+
