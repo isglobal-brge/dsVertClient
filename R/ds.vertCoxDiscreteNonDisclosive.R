@@ -1,3 +1,9 @@
+.cox_nd_debug_trace_allowed <- function() {
+  opt <- isTRUE(getOption("dsvert.allow_cox_debug_trace", FALSE))
+  env <- tolower(Sys.getenv("DSVERT_ALLOW_COX_DEBUG_TRACE", ""))
+  opt || env %in% c("1", "true", "yes")
+}
+
 #' @title Cox discrete-time pooled-logistic -- non-disclosive option B (#D')
 #' @description K=2 and K>=3 OT-Beaver discrete-time Cox via pooled-logistic with
 #'   the per-patient ending-bin index J_i hidden from the covariate
@@ -90,7 +96,10 @@
 #'   L2 fixture rel from 4.4e-2 (epsilon=1e-8) to 4.1e-4 by suppressing the
 #'   |step|->noise oscillation around the iter-4 attractor.
 #' @param debug_trace Logical. If \code{TRUE}, retain per-iteration beta and
-#'   gradient traces for local debugging. Defaults to \code{FALSE}.
+#'   gradient traces plus diagnostic bin summaries for local debugging.
+#'   Defaults to \code{FALSE}; setting it to \code{TRUE} requires
+#'   \code{options(dsvert.allow_cox_debug_trace = TRUE)} or the
+#'   \code{DSVERT_ALLOW_COX_DEBUG_TRACE=true} environment variable.
 #' @param verbose Logical.
 #' @param datasources DSI connections. The outcome server holds
 #'   \code{time_var/status_var}. For K>=3, the outcome server and one selected
@@ -136,6 +145,13 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     stop("ds.vertCoxDiscreteNonDisclosive requires at least two servers.",
          call. = FALSE)
   target <- match.arg(target)
+  if (isTRUE(debug_trace) && !.cox_nd_debug_trace_allowed()) {
+    stop("Cox debug_trace is disabled by default because it returns ",
+         "diagnostic traces/bin summaries outside the paper disclosure ",
+         "surface. Set options(dsvert.allow_cox_debug_trace=TRUE) only ",
+         "for controlled diagnostics.",
+         call. = FALSE)
+  }
 
   # Parse Surv(time, status) ~ x1 + x2 + ... LHS for the discrete-time
   # reformulation. Cox formulas use survival::Surv on the LHS; we just
