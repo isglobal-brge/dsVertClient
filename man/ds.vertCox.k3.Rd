@@ -101,3 +101,4 @@ discrete-time Cox models. arXiv:2006.08997.
 \code{\link{ds.vertGLM}},
 \code{\link{ds.vertCoxProfileNonDisclosive}}.
 }
+\keyword{internal}

@@ -1,16 +1,10 @@
-#' @title Federated ordinal logistic regression (naive cumulative binomials)
-#' @description Fit a K-category ordinal logistic regression by training
-#'   K-1 cumulative binomial logistics of the form
-#'   \eqn{P(Y \leq k | X) = \sigma(\theta_k - X^\top \beta)}, one for
-#'   each threshold level. This is the NAIVE approach: each cumulative
-#'   binomial is fit independently, giving per-level beta estimates that
-#'   may differ across thresholds. Proper proportional-odds fitting with
-#'   a single shared beta and K-1 threshold parameters jointly optimised
-#'   requires a dedicated joint L-BFGS objective (Month 2 follow-on).
-#'
-#'   The naive version is useful for exploratory analyses and for
-#'   testing the proportional-odds assumption by comparing the beta
-#'   estimates across threshold levels.
+#' @title Federated ordinal logistic regression
+#' @description User-facing ordinal wrapper. By default,
+#'   \code{method = "joint"} dispatches to
+#'   \code{\link{ds.vertOrdinalJointNewton}}, the paper-safe joint
+#'   proportional-odds route for K=2 and K>=3. \code{method = "warm"}
+#'   retains the historical cumulative-binomial approximation for diagnostics
+#'   and warm starts.
 #'
 #' @param formula R formula with the ORDERED outcome on the LHS (passed
 #'   through as a factor level name in the per-threshold formulas).
@@ -22,6 +16,14 @@
 #'   default \code{"\%s_leq"} produces \code{<level>_leq}, a 0/1 column
 #'   that is 1 when the patient's outcome is at-or-below that level.
 #'   Columns must already exist server-side.
+#' @param method Character. \code{"joint"} (default) fits the joint
+#'   proportional-odds route. \code{"warm"} fits the historical
+#'   cumulative-binomial approximation.
+#' @param max_iter Optional alias for \code{max_outer} in the joint route;
+#'   forwarded to \code{ds.vertGLM} in the warm route.
+#' @param max_outer Maximum outer Newton iterations for the joint route.
+#' @param tol Convergence tolerance for the joint route; forwarded to
+#'   \code{ds.vertGLM} in the warm route when supplied.
 #' @param ring Integer (63 or 127). Ring selector for the underlying
 #'   binomial sub-fits. Currently defaults to 63L while the Ring127
 #'   binomial wide-spline path is wired up.
@@ -51,6 +53,8 @@
 #' @export
 ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
                            cumulative_template = "%s_leq",
+                           method = c("joint", "warm"),
+                           max_iter = NULL, max_outer = 8L, tol = NULL,
                            # ring=127L target per DIRECTIVA-2 Phase A but
                            # reverted to 63L 2026-04-25: the Ring127 wide-
                            # spline binomial GLM path panics in
@@ -63,12 +67,33 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
                            # docs/paper_method_ledger.md M8 row).
                            ring = 63L,
                            verbose = TRUE, datasources = NULL, ...) {
+  method <- match.arg(method)
   if (!inherits(formula, "formula")) {
     stop("`formula` must be an R formula", call. = FALSE)
   }
   if (!is.character(levels_ordered) || length(levels_ordered) < 2L) {
     stop("levels_ordered must be a character vector with >= 2 entries",
          call. = FALSE)
+  }
+  if (identical(method, "joint")) {
+    if (length(levels_ordered) < 3L) {
+      stop("method = 'joint' requires >=3 ordered levels; use ds.vertGLM ",
+           "for binary logistic models.",
+           call. = FALSE)
+    }
+    if (verbose) {
+      message("[ds.vertOrdinal] dispatching to ",
+              "ds.vertOrdinalJointNewton (paper-safe proportional odds)")
+    }
+    return(ds.vertOrdinalJointNewton(
+      formula = formula,
+      data = data,
+      levels_ordered = levels_ordered,
+      cumulative_template = cumulative_template,
+      max_outer = as.integer(max_iter %||% max_outer),
+      tol = as.numeric(tol %||% 1e-4),
+      verbose = verbose,
+      datasources = datasources))
   }
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) {
@@ -86,6 +111,9 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
 
   fits <- list()
+  dots <- list(...)
+  if (!is.null(max_iter)) dots$max_iter <- max_iter
+  if (!is.null(tol)) dots$tol <- tol
   for (k in thresholds) {
     ind_col <- sprintf(cumulative_template, k)
     if (verbose) {
@@ -93,10 +121,10 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
                        k, ind_col))
     }
     fm <- as.formula(paste(ind_col, "~", paste(rhs, collapse = " + ")))
-    fits[[k]] <- ds.vertGLM(fm, data = data, family = "binomial",
-                             ring = ring,
-                             verbose = verbose,
-                             datasources = datasources, ...)
+    fits[[k]] <- do.call(ds.vertGLM, c(list(
+      formula = fm, data = data, family = "binomial",
+      ring = ring, verbose = verbose,
+      datasources = datasources), dots))
   }
 
   # Extract intercepts as threshold parameters and non-intercept betas
