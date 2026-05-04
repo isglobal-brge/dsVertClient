@@ -15,6 +15,7 @@ ds.vertLASSOIter(
   inner_iter = 8L,
   exact_non_gaussian = TRUE,
   ring = NULL,
+  lipschitz = c("auto", "gram", "safe"),
   verbose = TRUE,
   datasources = NULL
 )
@@ -47,6 +48,12 @@ no global Lipschitz constant without an eta bound.}
 \item{ring}{Integer (63 or 127). MPC ring for the GLM score evaluations.
 Defaults to Ring63. Ring127 can be requested explicitly after fixture
 validation for the target deployment.}
+
+\item{lipschitz}{Character. Step-size rule for binomial proximal-gradient:
+\code{"auto"} (default) tries a guarded aggregate Gram/correlation
+bound and falls back to the conservative \code{0.25 * (p + 1)} bound;
+\code{"gram"} requires the aggregate Gram bound; \code{"safe"} always
+uses the conservative bound.}
 
 \item{verbose}{Print progress.}
 

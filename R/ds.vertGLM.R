@@ -139,8 +139,10 @@
 #'   Internal score-only callers can set FALSE to avoid the extra MPC pass.
 #' @param gradient_only Logical. Internal diagnostic/optimizer path. If TRUE,
 #'   evaluate and return the aggregate score at \code{start} without taking
-#'   an optimizer step. The returned score is p-dimensional only; no
-#'   observation-level eta/probability/residual vector is opened.
+#'   an optimizer step. If \code{compute_se = TRUE}, the aggregate finite-
+#'   difference Hessian is also returned. The returned score/Hessian are
+#'   low-dimensional aggregates only; no observation-level eta/probability/
+#'   residual vector is opened.
 #' @importFrom DSI datashield.aggregate datashield.connections_find
 #' @export
 ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
@@ -347,7 +349,6 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       stop("gradient_only requires a standardized `start` vector",
            call. = FALSE)
     }
-    compute_se <- FALSE
     compute_deviance <- FALSE
     max_iter <- max(1L, as.integer(max_iter))
   }

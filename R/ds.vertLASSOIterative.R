@@ -40,6 +40,11 @@
 #' @param ring Integer (63 or 127). MPC ring for the GLM score evaluations.
 #'   Defaults to Ring63. Ring127 can be requested explicitly after fixture
 #'   validation for the target deployment.
+#' @param lipschitz Character. Step-size rule for binomial proximal-gradient:
+#'   \code{"auto"} (default) tries a guarded aggregate Gram/correlation
+#'   bound and falls back to the conservative \code{0.25 * (p + 1)} bound;
+#'   \code{"gram"} requires the aggregate Gram bound; \code{"safe"} always
+#'   uses the conservative bound.
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD connections.
 #' @return A \code{ds.vertLASSOIter} object with components
@@ -55,8 +60,10 @@ ds.vertLASSOIter <- function(formula, data = NULL,
                               alpha = 0.5, inner_iter = 8L,
                               exact_non_gaussian = TRUE,
                               ring = NULL,
+                              lipschitz = c("auto", "gram", "safe"),
                               verbose = TRUE, datasources = NULL) {
   family <- match.arg(family)
+  lipschitz <- match.arg(lipschitz)
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   if (is.null(lambda)) lambda <- c(1e-3, 1e-2, 0.1, 0.5, 1.0)
   lambda <- sort(as.numeric(lambda), decreasing = TRUE)
@@ -118,16 +125,62 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     g
   }
 
-  .binomial_pg <- function(fit0, lam, warm_std) {
+  .safe_lipschitz <- function(theta_names) {
+    0.25 * length(theta_names)
+  }
+
+  .gram_lipschitz <- function(fit) {
+    slope_names <- setdiff(names(fit$coefficients), "(Intercept)")
+    if (length(slope_names) == 0L) return(0.25)
+    cor_fit <- ds.vertCor(data, variables = slope_names,
+                          verbose = FALSE, datasources = datasources)
+    corr <- as.matrix(cor_fit$correlation)
+    corr <- corr[slope_names, slope_names, drop = FALSE]
+    corr <- (corr + t(corr)) / 2
+    # glmStandardizeDS uses sample sd, so crossprod(X_std) / n equals
+    # ((n - 1) / n) * cor(X), while the intercept block is orthogonal to
+    # centred predictors and has Gram value 1.
+    n_obs <- as.numeric(fit$n_obs)
+    slope_gram <- corr * ((n_obs - 1) / n_obs)
+    gram <- diag(length(slope_names) + 1L)
+    gram[-1L, -1L] <- slope_gram
+    ev <- eigen((gram + t(gram)) / 2, symmetric = TRUE,
+                only.values = TRUE)$values
+    L <- 0.25 * max(ev, na.rm = TRUE)
+    if (!is.finite(L) || L <= 0) {
+      stop("non-finite aggregate Gram Lipschitz bound", call. = FALSE)
+    }
+    as.numeric(L)
+  }
+
+  .choose_lipschitz <- function(fit, theta_names) {
+    if (identical(lipschitz, "safe")) {
+      return(list(L = .safe_lipschitz(theta_names), source = "safe"))
+    }
+    gram_try <- tryCatch(.gram_lipschitz(fit), error = function(e) e)
+    if (inherits(gram_try, "error")) {
+      if (identical(lipschitz, "gram")) {
+        stop("aggregate Gram Lipschitz bound failed: ",
+             conditionMessage(gram_try), call. = FALSE)
+      }
+      if (verbose) {
+        message("[LASSOIter] aggregate Gram Lipschitz unavailable; ",
+                "using conservative bound: ",
+                conditionMessage(gram_try))
+      }
+      return(list(L = .safe_lipschitz(theta_names), source = "safe_fallback"))
+    }
+    list(L = gram_try, source = "aggregate_gram")
+  }
+
+  .binomial_pg <- function(fit0, lam, warm_std, step_bound) {
     theta <- warm_std
     yk <- theta
     tk <- 1
     int_idx <- match("(Intercept)", names(theta))
     penalized <- seq_along(theta)
     if (!is.na(int_idx)) penalized <- setdiff(penalized, int_idx)
-    # For standardized columns, lambda_max([1, Xs]'[1, Xs]/n) <= p+1.
-    # Logistic Hessian is bounded by 0.25 * X'X/n.
-    L <- 0.25 * length(theta)
+    L <- step_bound$L
     if (!is.finite(L) || L <= 0) L <- 1
     converged <- FALSE
     used <- as.integer(max_outer)
@@ -182,6 +235,15 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     "quadratic_surrogate"
   }
   warm_std <- if (exact_binomial) .orig_to_std(fit0$coefficients, fit0) else NULL
+  step_bound <- if (exact_binomial) {
+    .choose_lipschitz(fit0, names(warm_std))
+  } else {
+    NULL
+  }
+  if (exact_binomial && verbose) {
+    message(sprintf("[LASSOIter] binomial step bound L=%.6g (%s)",
+                    step_bound$L, step_bound$source))
+  }
 
   for (li in seq_along(lambda)) {
     lam <- lambda[li]
@@ -196,7 +258,8 @@ ds.vertLASSOIter <- function(formula, data = NULL,
       objectives[li] <- obj$objective
       solver_objects[[sprintf("%.6g", lam)]] <- obj
     } else if (exact_binomial) {
-      obj <- .binomial_pg(fit0, lam, warm_std)
+      obj <- .binomial_pg(fit0, lam, warm_std, step_bound)
+      obj$lipschitz_source <- step_bound$source
       paths[[sprintf("%.6g", lam)]] <- obj$coefficients
       n_outer_used[li] <- obj$iterations
       objectives[li] <- obj$objective
@@ -230,6 +293,7 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     alpha       = alpha,
     exact_non_gaussian = exact_binomial,
     ring        = ring,
+    lipschitz   = if (is.null(step_bound)) NA_character_ else step_bound$source,
     call        = match.call())
   class(out) <- c("ds.vertLASSOIter", "list")
   out
