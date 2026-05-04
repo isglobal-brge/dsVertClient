@@ -1,3 +1,12 @@
+# Internal helper: archived NB full_reg transports per-patient eta and must
+# require an explicit diagnostic gate in addition to the function argument.
+.nb_fullreg_disclosive_legacy_allowed <- function() {
+  if (isTRUE(getOption("dsvert.allow_disclosive_nb_full_reg", FALSE)))
+    return(TRUE)
+  env <- tolower(Sys.getenv("DSVERT_ALLOW_DISCLOSIVE_NB_FULL_REG", ""))
+  env %in% c("1", "true", "yes")
+}
+
 #' @title Federated NB regression with full-regression theta refinement
 #' @description Extends \code{ds.vertNB} (which uses the iid-mu profile
 #'   MLE for theta: assumes mu_i == ybar when evaluating the profile score) with
@@ -55,7 +64,10 @@
 #' @param allow_disclosive_legacy Logical. If \code{TRUE}, permit the archived
 #'   \code{variant = "full_reg"} path that transports per-patient
 #'   \eqn{\eta^{nl}} to the outcome server. Intended only for historical
-#'   reproducibility audits; the paper-safe path is \code{"full_reg_nd"}.
+#'   reproducibility audits and requires
+#'   \code{options(dsvert.allow_disclosive_nb_full_reg = TRUE)} or
+#'   \code{DSVERT_ALLOW_DISCLOSIVE_NB_FULL_REG=true}; the paper-safe path is
+#'   \code{"full_reg_nd"}.
 #'
 #' @return Object of class \code{c("ds.vertNBFullRegTheta", "ds.vertNB")}.
 #'   Fields as \code{ds.vertNB}, plus \code{$theta_iid} (original
@@ -86,6 +98,16 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
             "reproducibility audits.",
             call. = FALSE)
     variant <- "full_reg_nd"
+  }
+  if (identical(variant, "full_reg") &&
+      isTRUE(allow_disclosive_legacy) &&
+      !.nb_fullreg_disclosive_legacy_allowed()) {
+    stop("variant = 'full_reg' is disabled under strict non-disclosure ",
+         "because it transports per-patient non-label eta to the outcome ",
+         "server. Use variant = 'full_reg_nd', or set ",
+         "options(dsvert.allow_disclosive_nb_full_reg = TRUE) only for ",
+         "controlled diagnostic legacy runs.",
+         call. = FALSE)
   }
 
   base_fit <- ds.vertNB(formula = formula, data = data, theta = theta,
