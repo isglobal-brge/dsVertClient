@@ -6,21 +6,24 @@ Functions:
 [`ds.vertGLMM()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGLMM.md).
 
 The product route is aggregate PQL for a binomial random-intercept GLMM.
-The compact executable vignette checks the no-outer-step smoke path
-because full PQL is intentionally heavier.
+The compact executable vignette runs one protected PQL outer update and
+checks that the fixed-effect symmetry target and variance trace are
+finite.
 
 ## Mathematical target
 
-With zero PQL outer updates, the route reduces to the protected binomial
-GLM prime. The validation checks the coefficient envelope of that public
-smoke path.
+A PQL step alternates protected binomial working-response updates with
+aggregate weighted mixed-model normal equations. The validation compares
+fixed effects to the central symmetric glm target and asserts that the
+PQL trace is populated.
 
 ## Fixture and reference
 
-Fixture: Balanced binomial cluster fixture with cluster sizes above
-privacy thresholds.
+Fixture: Paired balanced binomial cluster fixture with cluster sizes
+above privacy thresholds.
 
-Centralized reference: Central binomial glm no-random-effect limit.
+Centralized reference: Central binomial glm fixed-effect symmetry plus a
+one-step PQL trace check.
 
 The executable chunk below calls `run_validation()` from
 `vignettes/validation_helpers.R`. That helper constructs the fixture,
@@ -50,8 +53,8 @@ display_validation(rows)
 
 | k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | runtime_s |
 |:---|:---|:---|:---|:---|---:|---:|:---|:---|---:|
-| K=2 | ds.vertGLMM(smoke validation) | balanced binomial cluster fixture | central glm no-random-effect limit | coef_max_abs_delta | 0 | 0.05 | strict-smoke | PASS | 68.1 |
-| K\>=3 | ds.vertGLMM(smoke validation) | balanced binomial cluster fixture | central glm no-random-effect limit | coef_max_abs_delta | 0 | 0.05 | strict-smoke | PASS | 69.0 |
+| K=2 | ds.vertGLMM(max_outer=1) | paired balanced binomial cluster fixture | central glm fixed-effect symmetry plus PQL trace check | coef_max_abs_delta_and_pql_trace | 0 | 1e-04 | strict-pql | PASS | 89.4 |
+| K\>=3 | ds.vertGLMM(max_outer=1) | paired balanced binomial cluster fixture | central glm fixed-effect symmetry plus PQL trace check | coef_max_abs_delta_and_pql_trace | 0 | 1e-04 | strict-pql | PASS | 90.6 |
 
 ## Verdict
 

@@ -14,8 +14,8 @@ class probabilities to nnet::multinom().
 
 ## Fixture and reference
 
-Fixture: Balanced synthetic three-class fixture with vertical
-predictors.
+Fixture: Balanced soft-signal synthetic three-class fixture with
+vertical predictors.
 
 Centralized reference: nnet::multinom predicted probabilities.
 
@@ -47,8 +47,8 @@ display_validation(rows)
 
 | k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | runtime_s |
 |:---|:---|:---|:---|:---|---:|---:|:---|:---|---:|
-| K=2 | ds.vertMultinomJointNewton | balanced synthetic 3-class fixture | nnet::multinom probabilities | class_probability_max_abs_delta | 0.04737 | 0.05 | strict-practical | PASS | 128.6 |
-| K\>=3 | ds.vertMultinomJointNewton | balanced synthetic 3-class fixture | nnet::multinom probabilities | class_probability_max_abs_delta | 0.04738 | 0.05 | strict-practical | PASS | 130.3 |
+| K=2 | ds.vertMultinomJointNewton | balanced soft-signal synthetic 3-class fixture | nnet::multinom probabilities | class_probability_max_abs_delta | 0.008508 | 0.02 | strict-practical | PASS | 152.3 |
+| K\>=3 | ds.vertMultinomJointNewton | balanced soft-signal synthetic 3-class fixture | nnet::multinom probabilities | class_probability_max_abs_delta | 0.008520 | 0.02 | strict-practical | PASS | 152.4 |
 
 ## Verdict
 

@@ -34,7 +34,7 @@ P(Y=c|X)=exp(eta_c)/sum_l exp(eta_l). The validation compares predicted class pr
 
 ## Fixture and reference
 
-Fixture: Balanced synthetic three-class fixture with vertical predictors.
+Fixture: Balanced soft-signal synthetic three-class fixture with vertical predictors.
 
 Centralized reference: nnet::multinom predicted probabilities.
 
