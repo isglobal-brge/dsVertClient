@@ -8,8 +8,14 @@
 }
 
 #' @title Federated Cox proportional-hazards regression
-#' @description Fit a Cox PH model on vertically partitioned DataSHIELD
-#'   data using the reverse-cumsum reformulation of the partial-
+#' @description User-facing Cox PH wrapper. By default it dispatches to
+#'   \code{\link{ds.vertCoxProfileNonDisclosive}}, the non-disclosive
+#'   Breslow profile route validated for K=2 and K>=3.
+#'
+#'   The historical K=2 rank/permutation implementation is retained only
+#'   under \code{method = "legacy_rank"} for controlled diagnostics. It fits
+#'   a Cox PH model on vertically partitioned DataSHIELD data using the
+#'   reverse-cumsum reformulation of the partial-
 #'   likelihood score. The client runs an L-BFGS outer loop; each step
 #'   obtains the aggregate gradient
 #'     \deqn{\nabla \ell(\beta) = \sum_j x_j (\delta_j - e^{\eta_j} G_j)}
@@ -42,11 +48,17 @@
 #'   \code{time_col} / \code{event_col} explicitly.
 #' @param data Aligned data-frame name on each server.
 #' @param time_col,event_col Column names on the outcome server.
+#' @param method Character. \code{"profile_nd"} (default) uses the
+#'   non-disclosive Breslow profile route. \code{"legacy_rank"} runs the
+#'   old rank/permutation route only when the explicit diagnostic disclosure
+#'   gate is enabled.
 #' @param tstart_col Optional left-truncation / start-time column for
 #'   counting-process / time-varying covariates. When supplied, the
-#'   data are interpreted as (tstart, time, event) triplets.
+#'   data are interpreted as (tstart, time, event) triplets. This is supported
+#'   only by \code{method = "legacy_rank"}.
 #' @param strata_col Optional stratifying column name (categorical).
-#'   Each level fits a separate baseline hazard with shared beta.
+#'   Each level fits a separate baseline hazard with shared beta. This is
+#'   supported only by \code{method = "legacy_rank"}.
 #' @param max_iter Outer L-BFGS iterations (default 30).
 #' @param tol Convergence tolerance on max |delta beta|.
 #' @param lambda L2 regularisation.
@@ -70,6 +82,11 @@
 #'   P3 disclosure budget).
 #' @param newton_refine_tol Numeric. Convergence tolerance on
 #'   max |delta beta| during refinement.
+#' @param max_event_times Integer runtime guard passed to
+#'   \code{\link{ds.vertCoxProfileNonDisclosive}}.
+#' @param newton,ridge_eps,debug_trace Parameters passed to
+#'   \code{\link{ds.vertCoxProfileNonDisclosive}} when
+#'   \code{method = "profile_nd"}.
 #' @param ring Integer (63 or 127). Selects the MPC ring / fracBits
 #'   pipeline. Default 127 (Catrina-Saxena fracBits=50, ~1e-15 per-op).
 #'   Pass 63 to force the legacy Ring63 pipeline.
@@ -82,6 +99,7 @@
 #' @export
 ds.vertCox <- function(formula, data = NULL,
                        time_col = NULL, event_col = NULL,
+                       method = c("profile_nd", "legacy_rank"),
                        tstart_col = NULL,
                        strata_col = NULL,
                        max_iter = 30L, tol = 1e-4, lambda = 1e-4,
@@ -139,6 +157,10 @@ ds.vertCox <- function(formula, data = NULL,
                        # plan's strict <1e-3 goal for Cox.
                        newton_refine_iters = 5L,
                        newton_refine_tol = 1e-5,
+                       max_event_times = NULL,
+                       newton = TRUE,
+                       ridge_eps = 1e-6,
+                       debug_trace = FALSE,
                        # Ring selector (task #116 Cox STRICT closure):
                        # 63 (default) uses the current Ring63 uint64 pipeline
                        # at fracBits=20. 127 routes the input sharing, DCF
@@ -161,6 +183,70 @@ ds.vertCox <- function(formula, data = NULL,
                        # pass ring = 63L explicitly.
                        ring = 127L,
                        verbose = TRUE, datasources = NULL) {
+  method <- match.arg(method)
+  if (identical(method, "profile_nd")) {
+    if (!is.null(tstart_col) || !is.null(strata_col)) {
+      stop("ds.vertCox(method = 'profile_nd') does not currently support ",
+           "tstart_col or strata_col. These arguments belong to the legacy ",
+           "rank/permutation diagnostic route, which is not user-facing under ",
+           "strict non-disclosure.",
+           call. = FALSE)
+    }
+    if (isTRUE(compute_loglik) || isTRUE(compute_se)) {
+      warning("compute_loglik/compute_se are legacy-rank options and are ",
+              "ignored by ds.vertCox(method = 'profile_nd').",
+              call. = FALSE)
+    }
+    fit <- ds.vertCoxProfileNonDisclosive(
+      formula = formula,
+      data = data,
+      max_event_times = max_event_times,
+      max_iter = max_iter,
+      tol = tol,
+      newton = newton,
+      ridge_eps = ridge_eps,
+      debug_trace = debug_trace,
+      verbose = verbose,
+      datasources = datasources)
+    fit$method <- "profile_nd"
+    fit$iterations <- fit$n_iter %||% fit$iterations %||% NA_integer_
+    fit$std_errors <- fit$std_errors %||%
+      stats::setNames(rep(NA_real_, length(fit$coefficients)),
+                      names(fit$coefficients))
+    fit$covariance <- fit$covariance %||% NULL
+    fit$loglik <- fit$loglik %||% NA_real_
+    fit$call <- match.call()
+    class(fit) <- unique(c("ds.vertCox", class(fit), "list"))
+    return(fit)
+  }
+
+  .ds.vertCoxLegacyRank(
+    formula = formula, data = data,
+    time_col = time_col, event_col = event_col,
+    tstart_col = tstart_col, strata_col = strata_col,
+    max_iter = max_iter, tol = tol, lambda = lambda,
+    compute_loglik = compute_loglik, compute_se = compute_se,
+    num_intervals_exp = num_intervals_exp,
+    num_intervals_recip = num_intervals_recip,
+    one_step_newton = one_step_newton,
+    newton_refine_iters = newton_refine_iters,
+    newton_refine_tol = newton_refine_tol,
+    ring = ring, verbose = verbose, datasources = datasources)
+}
+
+.ds.vertCoxLegacyRank <- function(formula, data = NULL,
+                       time_col = NULL, event_col = NULL,
+                       tstart_col = NULL,
+                       strata_col = NULL,
+                       max_iter = 30L, tol = 1e-4, lambda = 1e-4,
+                       compute_loglik = FALSE, compute_se = FALSE,
+                       num_intervals_exp = 75L,
+                       num_intervals_recip = 75L,
+                       one_step_newton = TRUE,
+                       newton_refine_iters = 5L,
+                       newton_refine_tol = 1e-5,
+                       ring = 127L,
+                       verbose = TRUE, datasources = NULL) {
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
   spline_frac_bits <- if (ring == 127L) 50L else 20L
@@ -172,8 +258,9 @@ ds.vertCox <- function(formula, data = NULL,
       "ds.vertCox is disabled under strict non-disclosure: the continuous ",
       "K=2 Cox PH path reveals patient-level event-rank metadata and the ",
       "event indicator to the DCF peer. Use ",
-      "ds.vertCoxDiscreteNonDisclosive for the non-disclosive discrete-time ",
-      "pooled-logistic Cox target, or enable ",
+      "ds.vertCox(method = 'profile_nd') or ",
+      "ds.vertCoxProfileNonDisclosive for the non-disclosive Breslow Cox ",
+      "profile target, or enable ",
       "options(dsvert.allow_patient_level_cox_rank_metadata = TRUE) only ",
       "for controlled diagnostic legacy runs.",
       call. = FALSE)

@@ -2,13 +2,17 @@
 % Please edit documentation in R/ds.vertOrdinal.R
 \name{ds.vertOrdinal}
 \alias{ds.vertOrdinal}
-\title{Federated ordinal logistic regression (naive cumulative binomials)}
+\title{Federated ordinal logistic regression}
 \usage{
 ds.vertOrdinal(
   formula,
   data = NULL,
   levels_ordered,
   cumulative_template = "\%s_leq",
+  method = c("joint", "warm"),
+  max_iter = NULL,
+  max_outer = 8L,
+  tol = NULL,
   ring = 63L,
   verbose = TRUE,
   datasources = NULL,
@@ -29,6 +33,18 @@ used to build cumulative indicator column names; for instance the
 default \code{"\%s_leq"} produces \code{<level>_leq}, a 0/1 column
 that is 1 when the patient's outcome is at-or-below that level.
 Columns must already exist server-side.}
+
+\item{method}{Character. \code{"joint"} (default) fits the joint
+proportional-odds route. \code{"warm"} fits the historical
+cumulative-binomial approximation.}
+
+\item{max_iter}{Optional alias for \code{max_outer} in the joint route;
+forwarded to \code{ds.vertGLM} in the warm route.}
+
+\item{max_outer}{Maximum outer Newton iterations for the joint route.}
+
+\item{tol}{Convergence tolerance for the joint route; forwarded to
+\code{ds.vertGLM} in the warm route when supplied.}
 
 \item{ring}{Integer (63 or 127). Ring selector for the underlying
 binomial sub-fits. Currently defaults to 63L while the Ring127
@@ -64,16 +80,10 @@ subset once the convention is honoured (probe_ordinal_harness.R,
 }\if{html}{\out{</div>}}
 }
 \description{
-Fit a K-category ordinal logistic regression by training
-K-1 cumulative binomial logistics of the form
-\eqn{P(Y \leq k | X) = \sigma(\theta_k - X^\top \beta)}, one for
-each threshold level. This is the NAIVE approach: each cumulative
-binomial is fit independently, giving per-level beta estimates that
-may differ across thresholds. Proper proportional-odds fitting with
-a single shared beta and K-1 threshold parameters jointly optimised
-requires a dedicated joint L-BFGS objective (Month 2 follow-on).
-
-The naive version is useful for exploratory analyses and for
-testing the proportional-odds assumption by comparing the beta
-estimates across threshold levels.
+User-facing ordinal wrapper. By default,
+\code{method = "joint"} dispatches to
+\code{\link{ds.vertOrdinalJointNewton}}, the paper-safe joint
+proportional-odds route for K=2 and K>=3. \code{method = "warm"}
+retains the historical cumulative-binomial approximation for diagnostics
+and warm starts.
 }
