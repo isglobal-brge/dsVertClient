@@ -1,3 +1,12 @@
+#' @keywords internal
+.mnl_joint_legacy_ovr_allowed <- function() {
+  if (isTRUE(getOption("dsvert.allow_multinom_legacy_ovr", FALSE))) {
+    return(TRUE)
+  }
+  env <- tolower(Sys.getenv("DSVERT_ALLOW_MULTINOM_LEGACY_OVR", ""))
+  env %in% c("1", "true", "yes")
+}
+
 #' @title Federated joint-softmax multinomial logistic regression
 #' @description Superseded compatibility wrapper for
 #'   \code{\link{ds.vertMultinomJointNewton}}. The archived implementation in
@@ -52,9 +61,11 @@
 #'   path). Setting full_irls=TRUE emits a warning.
 #' @param coupling_iter Number of covariance-rescaling passes when
 #'   full_irls=TRUE (default 3).
-#' @param allow_legacy_ovr Logical. If \code{TRUE}, run the archived
-#'   one-vs-rest/covariance-rescale implementation. This is retained only for
-#'   reproducing historical validation artifacts; the paper-safe default is
+#' @param allow_legacy_ovr Logical. If \code{TRUE}, request the archived
+#'   one-vs-rest/covariance-rescale implementation. This route is disabled
+#'   unless \code{options(dsvert.allow_multinom_legacy_ovr = TRUE)} or
+#'   \code{DSVERT_ALLOW_MULTINOM_LEGACY_OVR=true} is set, and is retained only
+#'   for reproducing historical validation artifacts. The paper-safe default is
 #'   \code{\link{ds.vertMultinomJointNewton}}.
 #' @export
 ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
@@ -63,6 +74,15 @@ ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
                                    verbose = TRUE, datasources = NULL,
                                    allow_legacy_ovr = FALSE) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
+  if (isTRUE(allow_legacy_ovr) && !.mnl_joint_legacy_ovr_allowed()) {
+    stop("ds.vertMultinomJoint allow_legacy_ovr=TRUE is disabled by ",
+         "default because the archived OVR/covariance-rescale route does ",
+         "not fit the strict joint-softmax MLE. Use ",
+         "ds.vertMultinomJointNewton, or set ",
+         "options(dsvert.allow_multinom_legacy_ovr = TRUE) only for ",
+         "controlled diagnostic legacy reproduction.",
+         call. = FALSE)
+  }
   y_var <- .ds_gee_extract_lhs(formula)
   rhs <- attr(terms(formula), "term.labels")
 

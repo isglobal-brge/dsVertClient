@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertGLMM.R
 \name{ds.vertGLMM}
 \alias{ds.vertGLMM}
-\title{Federated binomial GLMM via Laplace approximation}
+\title{Federated binomial GLMM-PQL}
 \usage{
 ds.vertGLMM(
   formula,
@@ -37,8 +37,10 @@ ds.vertGLMM(
 
 \item{method}{Character. \code{"pql_aggregate"} is the default accuracy
 route and runs the aggregate PQL weighted-LMM update using Ring127
-share-domain working statistics. \code{"em"} keeps the legacy
-offset-GLM plus BLUP/EM approximation.}
+share-domain working statistics. \code{"em"} requests the legacy
+offset-GLM plus BLUP/EM approximation and requires
+\code{options(dsvert.allow_glmm_legacy_em = TRUE)} or
+\code{DSVERT_ALLOW_GLMM_LEGACY_EM=true}.}
 
 \item{use_pearson_cap}{Logical. If TRUE, cap the EM variance-component
 update by the first marginal Pearson cluster-moment estimate. This
@@ -63,8 +65,18 @@ working quantities and are not returned.
 }
 \description{
 Fit a binomial generalised linear mixed model with a
-single random intercept on vertically partitioned DataSHIELD data
-via the Laplace-approximated marginal likelihood:
+single random intercept on vertically partitioned DataSHIELD data.
+The default and paper-supported route is aggregate PQL: working
+responses, weights, probabilities, residuals, and row scores remain in
+Ring127 share-domain statistics and the client receives fixed effects,
+scalar variance components, and guarded diagnostics only.
+
+A historical EM/offset route based on a Laplace-style inner
+approximation is still present for archived reproducibility, but it is
+disabled by default because it is a weaker approximation than the
+supported PQL route.
+
+Historical EM target:
 
 \deqn{\ell_L(\beta, \sigma_b^2) = \sum_i \left[\ell_i(\beta, b_i^*)
         - \tfrac{1}{2} \log |H_i(b_i^*)| \right]}
