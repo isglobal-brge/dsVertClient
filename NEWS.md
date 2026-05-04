@@ -71,6 +71,7 @@ state.
 ### API changes to `ds.vertGLM`
 
 * New args: `offset`, `weights` (column-name based), `ring = 63 | 127`,
+  `binomial_sigmoid_intervals` (per-call binomial secure-sigmoid precision),
   `keep_session = TRUE` (session reuse for downstream LMM / GEE / Cox),
   `no_intercept`, `std_mode = "full" | "x_only"`, `data_name`, `y_var`
   (back-compat aliases).
