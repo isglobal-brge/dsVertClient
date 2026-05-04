@@ -5,8 +5,9 @@
 #'   \eqn{\hat{\beta}} is obtained by a single call to
 #'   \code{\link{ds.vertGLM}}. For Gaussian \code{corstr = "exchangeable"},
 #'   dsVert promotes the point estimate to a protected cluster-level
-#'   exchangeable GLS/GEE update. For Poisson \code{corstr = "exchangeable"},
-#'   dsVert uses a Ring127 protected Pearson-score exchangeable GEE update.
+#'   exchangeable GLS/GEE update. For binomial and Poisson
+#'   \code{corstr = "exchangeable"}, dsVert uses a Ring127 protected
+#'   Pearson-score exchangeable GEE update.
 #'   For Gaussian, binomial, and Poisson independence models the sandwich meat
 #'   is computed in the share domain. If
 #'   \code{id_col} is supplied, dsVert computes the clustered meat
@@ -36,13 +37,13 @@
 #'   the outcome and all clusters must pass \code{datashield.privacyLevel}.
 #' @param corstr Working correlation. \code{"independence"} is available for
 #'   Gaussian/binomial/Poisson. \code{"exchangeable"} currently fits true
-#'   exchangeable Gaussian and Poisson GEE coefficients from guarded
-#'   cluster-level sufficient statistics; binomial exchangeable and AR1 fail
-#'   closed rather than returning an independence estimate under a stronger
-#'   label.
+#'   exchangeable Gaussian, binomial, and Poisson GEE coefficients from guarded
+#'   cluster-level sufficient statistics; AR1 fails closed rather than
+#'   returning an independence estimate under a stronger label.
 #' @param max_iter,tol,lambda,verbose Passed to \code{ds.vertGLM}.
-#' @param ring Integer 63 or 127. Poisson exchangeable is automatically run in
-#'   Ring127 because its protected half-link exponentials need high precision.
+#' @param ring Integer 63 or 127. Binomial/Poisson exchangeable is
+#'   automatically run in Ring127 because protected nonlinear link operations
+#'   need high precision.
 #' @param datasources DataSHIELD connection object.
 #' @return An object of class \code{ds.vertGEE} with components
 #'   \code{coefficients}, \code{model_se} (sqrt of
@@ -67,9 +68,9 @@ ds.vertGEE <- function(formula, data = NULL,
          "corstr='exchangeable'.", call. = FALSE)
   }
   if (identical(corstr, "exchangeable") &&
-      !(family %in% c("gaussian", "poisson"))) {
+      !(family %in% c("gaussian", "binomial", "poisson"))) {
     stop("ds.vertGEE corstr='exchangeable' is currently implemented only ",
-         "for family='gaussian' and family='poisson'. Use ",
+         "for family='gaussian', family='binomial', and family='poisson'. Use ",
          "corstr='independence' for ",
          family, " until the non-Gaussian estimating equations are added.",
          call. = FALSE)
@@ -101,10 +102,11 @@ ds.vertGEE <- function(formula, data = NULL,
   if (!(ring_use %in% c(63L, 127L))) {
     stop("ring must be 63 or 127", call. = FALSE)
   }
-  if (identical(corstr, "exchangeable") && identical(family, "poisson") &&
+  if (identical(corstr, "exchangeable") &&
+      family %in% c("binomial", "poisson") &&
       ring_use != 127L) {
     if (verbose) {
-      message("[ds.vertGEE] poisson exchangeable promoted to Ring127")
+      message("[ds.vertGEE] ", family, " exchangeable promoted to Ring127")
     }
     ring_use <- 127L
   }
@@ -178,7 +180,7 @@ ds.vertGEE <- function(formula, data = NULL,
               server_names = server_names, lambda = lambda,
               data = data, id_col = id_col, max_iter = max_iter,
               tol = tol, verbose = verbose)
-          } else if (identical(family, "poisson")) {
+          } else if (family %in% c("binomial", "poisson")) {
             .ds_gee_secure_poisson_exchangeable(
               fit = fit, datasources = datasources,
               server_names = server_names, lambda = lambda,
@@ -902,10 +904,13 @@ ds.vertGEE <- function(formula, data = NULL,
 .ds_gee_secure_poisson_exchangeable <- function(
     fit, datasources, server_names, lambda = 0, data = NULL, id_col = NULL,
     max_iter = 100L, tol = 1e-6, verbose = FALSE) {
-  if (!identical(fit$family, "poisson")) return(NULL)
+  if (!(fit$family %in% c("binomial", "poisson"))) return(NULL)
+  gee_family <- fit$family
+  family_title <- paste0(toupper(substr(gee_family, 1L, 1L)),
+                         substr(gee_family, 2L, nchar(gee_family)))
   if (is.null(id_col) || length(id_col) != 1L ||
       !is.character(id_col) || !nzchar(id_col)) {
-    stop("Poisson exchangeable GEE requires id_col", call. = FALSE)
+    stop(family_title, " exchangeable GEE requires id_col", call. = FALSE)
   }
   required <- c("session_id", "transport_pks", "server_list", "x_vars",
                 "y_server", "x_sds", "x_means")
@@ -923,7 +928,7 @@ ds.vertGEE <- function(formula, data = NULL,
   n_obs <- as.integer(fit$n_obs)
   ring <- as.integer(fit$ring %||% 63L)
   if (ring != 127L) {
-    stop("Poisson exchangeable GEE requires Ring127", call. = FALSE)
+    stop(family_title, " exchangeable GEE requires Ring127", call. = FALSE)
   }
   frac_bits <- 50L
   ring_tag <- "ring127"
@@ -971,7 +976,7 @@ ds.vertGEE <- function(formula, data = NULL,
   if (fit$eta_privacy == "k2_beaver") {
     nl <- setdiff(server_list, coordinator)
     if (length(nl) != 1L) {
-      stop("K=2 Poisson exchangeable GEE requires exactly one non-outcome ",
+      stop("K=2 ", gee_family, " exchangeable GEE requires exactly one non-outcome ",
            "server", call. = FALSE)
     }
     nl <- nl[[1L]]
@@ -993,7 +998,7 @@ ds.vertGEE <- function(formula, data = NULL,
       canonical_features <- c(canonical_features, x_vars[[srv]])
     }
   } else {
-    stop("unsupported eta_privacy for Poisson exchangeable GEE: ",
+    stop("unsupported eta_privacy for ", gee_family, " exchangeable GEE: ",
          fit$eta_privacy, call. = FALSE)
   }
 
@@ -1003,7 +1008,7 @@ ds.vertGEE <- function(formula, data = NULL,
     stop("id_col '", id_col, "' not found on any server", call. = FALSE)
   }
   if (!identical(cluster_srv, coordinator)) {
-    stop("Poisson exchangeable GEE requires id_col to live on the ",
+    stop(family_title, " exchangeable GEE requires id_col to live on the ",
          "outcome server; found on '", cluster_srv, "'", call. = FALSE)
   }
 
@@ -1189,7 +1194,37 @@ ds.vertGEE <- function(formula, data = NULL,
     list(values = out,
          cluster_sizes = as.integer(parts[[coord_i]]$cluster_sizes))
   }
-  .wide_exp <- function(input_key, output_key, num_intervals = 100L) {
+  dcf_cache_key <- NULL
+  dcf_blob_cache <- new.env(parent = emptyenv())
+  .ensure_dcf_keys <- function(spline_family, num_intervals) {
+    key <- paste(spline_family, as.integer(num_intervals), sep = ":")
+    if (identical(dcf_cache_key, key)) return(invisible(TRUE))
+    dcf <- dcf_blob_cache[[key]]
+    if (is.null(dcf)) {
+      dcf <- .dsAgg(datasources[dealer_conn],
+        call(name = "glmRing63GenDcfKeysDS",
+             dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
+             dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
+             family = spline_family, n = as.integer(n_obs),
+             frac_bits = frac_bits,
+             num_intervals = as.integer(num_intervals),
+             ring = ring, session_id = session_id))
+      if (is.list(dcf) && length(dcf) == 1L) dcf <- dcf[[1L]]
+      dcf <- list(blob0 = dcf$dcf_blob_0, blob1 = dcf$dcf_blob_1)
+      dcf_blob_cache[[key]] <- dcf
+    }
+    .sendBlob(dcf$blob0, "k2_dcf_keys_persistent", dcf_conns[[1L]])
+    .sendBlob(dcf$blob1, "k2_dcf_keys_persistent", dcf_conns[[2L]])
+    for (ci in dcf_conns) {
+      .dsAgg(datasources[ci],
+        call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
+    }
+    dcf_cache_key <<- key
+    invisible(TRUE)
+  }
+  .wide_spline <- function(input_key, output_key, spline_family,
+                           num_intervals = 100L) {
+    .ensure_dcf_keys(spline_family, num_intervals)
     .copy_key(input_key, "k2_eta_share_fp")
     spline_t <- .dsAgg(datasources[dealer_conn],
       call(name = "glmRing63GenSplineTriplesDS",
@@ -1206,7 +1241,7 @@ ds.vertGEE <- function(formula, data = NULL,
         r <- .dsAgg(datasources[dcf_conns[[i]]],
           call(paste0("k2WideSplinePhase", ph, "DS"),
                party_id = as.integer(i - 1L),
-               family = "poisson",
+               family = spline_family,
                num_intervals = as.integer(num_intervals),
                frac_bits = frac_bits,
                ring = ring,
@@ -1253,21 +1288,6 @@ ds.vertGEE <- function(formula, data = NULL,
     invisible(output_key)
   }
 
-  dcf <- .dsAgg(datasources[dealer_conn],
-    call(name = "glmRing63GenDcfKeysDS",
-         dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
-         dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
-         family = "poisson", n = as.integer(n_obs),
-         frac_bits = frac_bits, num_intervals = 100L,
-         ring = ring, session_id = session_id))
-  if (is.list(dcf) && length(dcf) == 1L) dcf <- dcf[[1L]]
-  .sendBlob(dcf$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[[1L]])
-  .sendBlob(dcf$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[[2L]])
-  for (ci in dcf_conns) {
-    .dsAgg(datasources[ci],
-      call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-  }
-
   coord_i <- match(coordinator, dcf_parties)
   peer_i <- setdiff(seq_along(dcf_parties), coord_i)
   cb <- .dsAgg(datasources[dcf_conns[[coord_i]]],
@@ -1284,7 +1304,8 @@ ds.vertGEE <- function(formula, data = NULL,
   names(beta) <- target_order
   perm <- match(target_order, canonical_order)
   if (anyNA(perm)) {
-    stop("could not align Poisson exchangeable GEE order", call. = FALSE)
+    stop("could not align ", gee_family, " exchangeable GEE order",
+         call. = FALSE)
   }
   beta <- beta[canonical_order]
   beta[is.na(beta)] <- 0
@@ -1338,7 +1359,7 @@ ds.vertGEE <- function(formula, data = NULL,
     tryCatch(if (is.null(b)) solve(A + diag(ridge, nrow(A)))
              else solve(A + diag(ridge, nrow(A)), b),
              error = function(e) {
-               stop("Poisson exchangeable GEE system is singular",
+               stop(family_title, " exchangeable GEE system is singular",
                     call. = FALSE)
              })
   }
@@ -1354,26 +1375,69 @@ ds.vertGEE <- function(formula, data = NULL,
     beta_named <- beta_current
     names(beta_named) <- canonical_order
     .restore_eta_shape(beta_named)
-    .wide_exp("gee_poisson_eta", "gee_px_mu")
-    .ring_scale("gee_poisson_eta", 0.5, "gee_px_eta_half")
-    .wide_exp("gee_px_eta_half", "gee_px_sqrt_mu")
-    .ring_scale("gee_poisson_eta", -0.5, "gee_px_eta_neghalf")
-    .wide_exp("gee_px_eta_neghalf", "gee_px_inv_sqrt_mu")
 
-    .copy_key("gee_px_mu", "secure_mu_share")
-    for (ci in dcf_conns) {
-      .dsAgg(datasources[ci],
-        call(name = "k2PrepareWeightedResidualShareDS",
-             session_id = session_id))
+    if (identical(gee_family, "poisson")) {
+      .wide_spline("gee_poisson_eta", "gee_px_mu",
+                   spline_family = "poisson", num_intervals = 100L)
+      .ring_scale("gee_poisson_eta", 0.5, "gee_px_eta_half")
+      .wide_spline("gee_px_eta_half", "gee_px_sqrt_var",
+                   spline_family = "poisson", num_intervals = 100L)
+      .ring_scale("gee_poisson_eta", -0.5, "gee_px_eta_neghalf")
+      .wide_spline("gee_px_eta_neghalf", "gee_px_inv_sqrt_var",
+                   spline_family = "poisson", num_intervals = 100L)
+      .copy_key("gee_px_mu", "secure_mu_share")
+      for (ci in dcf_conns) {
+        .dsAgg(datasources[ci],
+          call(name = "k2PrepareWeightedResidualShareDS",
+               session_id = session_id))
+      }
+      .ring_affine(a_key = "k2_weight_residual_share_fp",
+                   sign_a = -1L, output_key = "gee_px_y_minus_mu")
+      .vecmul("k2_y_share_fp_original", "gee_px_inv_sqrt_var",
+              "gee_px_y_inv_sqrt_var")
+      .ring_affine(a_key = "gee_px_y_inv_sqrt_var",
+                   b_key = "gee_px_sqrt_var",
+                   sign_a = 1L, sign_b = -1L,
+                   output_key = "gee_px_pearson")
+      var_key <- "gee_px_mu"
+    } else {
+      .wide_spline("gee_poisson_eta", "gee_px_mu",
+                   spline_family = "sigmoid", num_intervals = 50L)
+      .ring_scale("gee_poisson_eta", 0.5, "gee_px_eta_half")
+      .wide_spline("gee_px_eta_half", "gee_px_h",
+                   spline_family = "poisson", num_intervals = 100L)
+      .ring_scale("gee_poisson_eta", -0.5, "gee_px_eta_neghalf")
+      .wide_spline("gee_px_eta_neghalf", "gee_px_inv_h",
+                   spline_family = "poisson", num_intervals = 100L)
+      .copy_key("gee_px_mu", "secure_mu_share")
+      for (ci in dcf_conns) {
+        .dsAgg(datasources[ci],
+          call(name = "k2PrepareWeightedResidualShareDS",
+               session_id = session_id))
+      }
+      .ring_affine(a_key = "k2_weight_residual_share_fp",
+                   sign_a = -1L, output_key = "gee_px_y_minus_mu")
+      for (i in seq_along(dcf_parties)) {
+        .dsAgg(datasources[dcf_conns[[i]]],
+          call(name = "dsvertGLMMOneMinusMuDS",
+               output_key = "gee_px_one_minus_mu",
+               is_party0 = (i == 1L),
+               session_id = session_id,
+               frac_bits = frac_bits, ring = ring))
+      }
+      .vecmul("gee_px_mu", "gee_px_one_minus_mu", "gee_px_var")
+      .vecmul("gee_px_mu", "gee_px_inv_h", "gee_px_sqrt_var")
+      .ring_affine(a_key = "gee_px_h", b_key = "gee_px_inv_h",
+                   sign_a = 1L, sign_b = 1L,
+                   output_key = "gee_px_inv_sqrt_var")
+      .vecmul("k2_y_share_fp_original", "gee_px_inv_sqrt_var",
+              "gee_px_y_inv_sqrt_var")
+      .ring_affine(a_key = "gee_px_y_inv_sqrt_var",
+                   b_key = "gee_px_h",
+                   sign_a = 1L, sign_b = -1L,
+                   output_key = "gee_px_pearson")
+      var_key <- "gee_px_var"
     }
-    .ring_affine(a_key = "k2_weight_residual_share_fp",
-                 sign_a = -1L, output_key = "gee_px_y_minus_mu")
-    .vecmul("k2_y_share_fp_original", "gee_px_inv_sqrt_mu",
-            "gee_px_y_inv_sqrt_mu")
-    .ring_affine(a_key = "gee_px_y_inv_sqrt_mu",
-                 b_key = "gee_px_sqrt_mu",
-                 sign_a = 1L, sign_b = -1L,
-                 output_key = "gee_px_pearson")
     .vecmul("gee_px_pearson", "gee_px_pearson", "gee_px_pearson2")
 
     s1 <- sxv <- matrix(0, nrow = 1L, ncol = q)
@@ -1388,21 +1452,21 @@ ds.vertGEE <- function(formula, data = NULL,
       }
       s1[, j] <- cs1$values
       key_sxv <- paste0("gee_px_sxv_", j)
-      .vecmul(x_keys[[j]], "gee_px_sqrt_mu", key_sxv)
+      .vecmul(x_keys[[j]], "gee_px_sqrt_var", key_sxv)
       sxv[, j] <- .cluster_sum(key_sxv)$values
     }
     se <- .cluster_sum("gee_px_pearson")$values
     e2 <- .cluster_sum("gee_px_pearson2")$values
-    mu_sum <- .cluster_sum("gee_px_mu")$values
+    var_sum <- .cluster_sum(var_key)$values
 
     vxx <- array(0, dim = c(nrow(s1), q, q))
     for (j in seq_len(q)) {
       for (k in j:q) {
         if (j == 1L && k == 1L) {
-          vals <- mu_sum
+          vals <- var_sum
         } else {
           key <- paste0("gee_px_vxx_", j, "_", k)
-          .vecmul(xx_base_keys[j, k], "gee_px_mu", key)
+          .vecmul(xx_base_keys[j, k], var_key, key)
           vals <- .cluster_sum(key)$values
         }
         vxx[, j, k] <- vals
@@ -1456,15 +1520,16 @@ ds.vertGEE <- function(formula, data = NULL,
     sys <- build_system(last_stats, alpha)
     step <- as.numeric(safe_solve(sys$A, sys$U))
     if (any(!is.finite(step))) {
-      stop("non-finite Poisson exchangeable Newton step", call. = FALSE)
+      stop("non-finite ", gee_family, " exchangeable Newton step",
+           call. = FALSE)
     }
     step_norm <- max(abs(step))
     if (step_norm > 1) step <- step / step_norm
     beta <- beta + step
     if (verbose) {
       message(sprintf(
-        "[ds.vertGEE] Poisson exchangeable iter %d alpha=%.5g step=%.3e",
-        iter, alpha, max(abs(step))))
+        "[ds.vertGEE] %s exchangeable iter %d alpha=%.5g step=%.3e",
+        family_title, iter, alpha, max(abs(step))))
     }
     if (max(abs(beta - beta_old), abs(alpha - alpha_old)) <= tol) {
       converged <- TRUE
@@ -1506,14 +1571,15 @@ ds.vertGEE <- function(formula, data = NULL,
        robust_se = robust_se,
        model_covariance = model_cov,
        robust_covariance = robust_cov,
-       method = "share_domain_exchangeable_poisson",
+       method = paste0("share_domain_exchangeable_", gee_family),
        working_correlation = list(
          corstr = "exchangeable",
          alpha = as.numeric(alpha),
          phi = as.numeric(scale),
          iterations = as.integer(iter),
          converged = isTRUE(converged),
-         estimator = "poisson_exchangeable_pearson_cluster_stats",
+         estimator = paste0(gee_family,
+                            "_exchangeable_pearson_cluster_stats"),
          disclosure = paste0(
            "guarded cluster-level Pearson score sufficient statistics only; ",
            "no row-level mu, residuals, scores, or cluster labels returned")),
