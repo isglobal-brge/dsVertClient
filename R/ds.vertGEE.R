@@ -7,9 +7,10 @@
 #'   dsVert promotes the point estimate to a protected cluster-level
 #'   exchangeable GLS/GEE update. For binomial and Poisson
 #'   \code{corstr = "exchangeable"}, dsVert uses a Ring127 protected
-#'   Pearson-score exchangeable GEE update. For Gaussian
-#'   \code{corstr = "ar1"}, dsVert uses guarded within-cluster order metadata
-#'   on the DCF parties and returns only low-dimensional AR1 aggregates.
+#'   Pearson-score exchangeable GEE update. For Gaussian, binomial, and
+#'   Poisson \code{corstr = "ar1"}, dsVert uses guarded within-cluster order
+#'   metadata on the DCF parties and returns only low-dimensional AR1
+#'   aggregates.
 #'   For Gaussian, binomial, and Poisson independence models the sandwich meat
 #'   is computed in the share domain. If
 #'   \code{id_col} is supplied, dsVert computes the clustered meat
@@ -37,18 +38,21 @@
 #' @param id_col Optional character. For Gaussian/binomial/Poisson models this
 #'   enables the cluster-robust sandwich meat; the cluster column must live with
 #'   the outcome and all clusters must pass \code{datashield.privacyLevel}.
-#' @param order_col Optional character. Required for Gaussian
-#'   \code{corstr = "ar1"}. The order column must live with the outcome and is
-#'   used only server-to-server to derive guarded adjacent records.
+#' @param order_col Optional character. Required for \code{corstr = "ar1"}.
+#'   The order column must live with the outcome and is used only
+#'   server-to-server to derive guarded adjacent records.
 #' @param corstr Working correlation. \code{"independence"} is available for
 #'   Gaussian/binomial/Poisson. \code{"exchangeable"} currently fits true
 #'   exchangeable Gaussian, binomial, and Poisson GEE coefficients from guarded
-#'   cluster-level sufficient statistics. \code{"ar1"} currently fits Gaussian
-#'   GEE from guarded adjacent-pair sufficient statistics.
+#'   cluster-level sufficient statistics. \code{"ar1"} fits Gaussian,
+#'   binomial, and Poisson GEE from guarded adjacent-pair sufficient
+#'   statistics.
 #' @param max_iter,tol,lambda,verbose Passed to \code{ds.vertGLM}.
-#' @param ring Integer 63 or 127. Binomial/Poisson exchangeable is
-#'   automatically run in Ring127 because protected nonlinear link operations
-#'   need high precision.
+#' @param working_max_iter Optional integer. Maximum iterations for
+#'   exchangeable/AR1 working-correlation updates. Defaults to \code{max_iter}.
+#' @param ring Integer 63 or 127. Binomial/Poisson exchangeable and all AR1
+#'   routes are automatically run in Ring127 because protected nonlinear link
+#'   operations and adjacent-product statistics need high precision.
 #' @param datasources DataSHIELD connection object.
 #' @return An object of class \code{ds.vertGEE} with components
 #'   \code{coefficients}, \code{model_se} (sqrt of
@@ -62,18 +66,13 @@ ds.vertGEE <- function(formula, data = NULL,
                        order_col = NULL,
                        corstr = c("independence", "exchangeable", "ar1"),
                        max_iter = 100L, tol = 1e-4, lambda = 1e-4,
+                       working_max_iter = NULL,
                        ring = 63L,
                        verbose = TRUE, datasources = NULL) {
   family <- match.arg(family)
   corstr <- match.arg(corstr)
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
-  if (identical(corstr, "ar1") && !identical(family, "gaussian")) {
-    stop("ds.vertGEE corstr='ar1' is currently implemented only for ",
-         "family='gaussian'. Use corstr='independence' or ",
-         "corstr='exchangeable' for binomial/Poisson fits.",
-         call. = FALSE)
-  }
   if (identical(corstr, "exchangeable") &&
       !(family %in% c("gaussian", "binomial", "poisson"))) {
     stop("ds.vertGEE corstr='exchangeable' is currently implemented only ",
@@ -114,6 +113,10 @@ ds.vertGEE <- function(formula, data = NULL,
   if (!(ring_use %in% c(63L, 127L))) {
     stop("ring must be 63 or 127", call. = FALSE)
   }
+  working_max_iter_use <- as.integer(working_max_iter %||% max_iter)
+  if (!is.finite(working_max_iter_use) || working_max_iter_use < 1L) {
+    stop("working_max_iter must be a positive integer", call. = FALSE)
+  }
   if (identical(corstr, "exchangeable") &&
       family %in% c("binomial", "poisson") &&
       ring_use != 127L) {
@@ -124,7 +127,7 @@ ds.vertGEE <- function(formula, data = NULL,
   }
   if (identical(corstr, "ar1") && ring_use != 127L) {
     if (verbose) {
-      message("[ds.vertGEE] Gaussian AR1 promoted to Ring127")
+      message("[ds.vertGEE] AR1 promoted to Ring127")
     }
     ring_use <- 127L
   }
@@ -196,13 +199,15 @@ ds.vertGEE <- function(formula, data = NULL,
             .ds_gee_secure_gaussian_exchangeable(
               fit = fit, datasources = datasources,
               server_names = server_names, lambda = lambda,
-              data = data, id_col = id_col, max_iter = max_iter,
+              data = data, id_col = id_col,
+              max_iter = working_max_iter_use,
               tol = tol, verbose = verbose)
           } else if (family %in% c("binomial", "poisson")) {
             .ds_gee_secure_poisson_exchangeable(
               fit = fit, datasources = datasources,
               server_names = server_names, lambda = lambda,
-              data = data, id_col = id_col, max_iter = max_iter,
+              data = data, id_col = id_col,
+              max_iter = working_max_iter_use,
               tol = tol, verbose = verbose)
           } else {
             stop("unsupported exchangeable GEE family: ", family,
@@ -225,11 +230,22 @@ ds.vertGEE <- function(formula, data = NULL,
       ar1_error <- NULL
       if (identical(corstr, "ar1")) {
         working_fit <- tryCatch(
-          .ds_gee_secure_gaussian_ar1(
-            fit = fit, datasources = datasources,
-            server_names = server_names, lambda = lambda,
-            data = data, id_col = id_col, order_col = order_col,
-            max_iter = max_iter, tol = tol, verbose = verbose),
+          if (identical(family, "gaussian")) {
+            .ds_gee_secure_gaussian_ar1(
+              fit = fit, datasources = datasources,
+              server_names = server_names, lambda = lambda,
+              data = data, id_col = id_col, order_col = order_col,
+              max_iter = working_max_iter_use, tol = tol, verbose = verbose)
+          } else if (family %in% c("binomial", "poisson")) {
+            .ds_gee_secure_poisson_exchangeable(
+              fit = fit, datasources = datasources,
+              server_names = server_names, lambda = lambda,
+              data = data, id_col = id_col, order_col = order_col,
+              corstr = "ar1", max_iter = working_max_iter_use,
+              tol = tol, verbose = verbose)
+          } else {
+            stop("unsupported AR1 GEE family: ", family, call. = FALSE)
+          },
           error = function(e) {
             ar1_error <<- e
             if (verbose) {
@@ -1671,14 +1687,23 @@ ds.vertGEE <- function(formula, data = NULL,
 #' @keywords internal
 .ds_gee_secure_poisson_exchangeable <- function(
     fit, datasources, server_names, lambda = 0, data = NULL, id_col = NULL,
+    order_col = NULL, corstr = c("exchangeable", "ar1"),
     max_iter = 100L, tol = 1e-6, verbose = FALSE) {
+  corstr <- match.arg(corstr)
   if (!(fit$family %in% c("binomial", "poisson"))) return(NULL)
   gee_family <- fit$family
+  cor_label <- if (identical(corstr, "ar1")) "AR1" else "exchangeable"
   family_title <- paste0(toupper(substr(gee_family, 1L, 1L)),
                          substr(gee_family, 2L, nchar(gee_family)))
   if (is.null(id_col) || length(id_col) != 1L ||
       !is.character(id_col) || !nzchar(id_col)) {
-    stop(family_title, " exchangeable GEE requires id_col", call. = FALSE)
+    stop(family_title, " ", cor_label, " GEE requires id_col",
+         call. = FALSE)
+  }
+  if (identical(corstr, "ar1") &&
+      (is.null(order_col) || length(order_col) != 1L ||
+       !is.character(order_col) || !nzchar(order_col))) {
+    stop(family_title, " AR1 GEE requires order_col", call. = FALSE)
   }
   required <- c("session_id", "transport_pks", "server_list", "x_vars",
                 "y_server", "x_sds", "x_means")
@@ -1696,7 +1721,8 @@ ds.vertGEE <- function(formula, data = NULL,
   n_obs <- as.integer(fit$n_obs)
   ring <- as.integer(fit$ring %||% 63L)
   if (ring != 127L) {
-    stop(family_title, " exchangeable GEE requires Ring127", call. = FALSE)
+    stop(family_title, " ", cor_label, " GEE requires Ring127",
+         call. = FALSE)
   }
   frac_bits <- 50L
   ring_tag <- "ring127"
@@ -1766,7 +1792,8 @@ ds.vertGEE <- function(formula, data = NULL,
       canonical_features <- c(canonical_features, x_vars[[srv]])
     }
   } else {
-    stop("unsupported eta_privacy for ", gee_family, " exchangeable GEE: ",
+    stop("unsupported eta_privacy for ", gee_family, " ", cor_label,
+         " GEE: ",
          fit$eta_privacy, call. = FALSE)
   }
 
@@ -1776,8 +1803,21 @@ ds.vertGEE <- function(formula, data = NULL,
     stop("id_col '", id_col, "' not found on any server", call. = FALSE)
   }
   if (!identical(cluster_srv, coordinator)) {
-    stop(family_title, " exchangeable GEE requires id_col to live on the ",
+    stop(family_title, " ", cor_label,
+         " GEE requires id_col to live on the ",
          "outcome server; found on '", cluster_srv, "'", call. = FALSE)
+  }
+  if (identical(corstr, "ar1")) {
+    order_srv <- .ds_gee_find_server_holding(datasources, server_names,
+                                             data, order_col)
+    if (is.null(order_srv)) {
+      stop("order_col '", order_col, "' not found on any server",
+           call. = FALSE)
+    }
+    if (!identical(order_srv, coordinator)) {
+      stop(family_title, " AR1 GEE requires order_col to live on the ",
+           "outcome server; found on '", order_srv, "'", call. = FALSE)
+    }
   }
 
   target_features <- unlist(x_vars[server_list], use.names = FALSE)
@@ -1860,10 +1900,15 @@ ds.vertGEE <- function(formula, data = NULL,
   }
 
   .copy_key <- function(source_key, target_key) {
-    for (ci in dcf_conns) {
-      .dsAgg(datasources[ci],
-        call(name = "dsvertCoxPathBCopyDS",
-             source_key = source_key, target_key = target_key,
+    for (i in seq_along(dcf_parties)) {
+      srv <- dcf_parties[[i]]
+      .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "k2Ring127AffineCombineDS",
+             a_key = source_key, b_key = NULL,
+             sign_a = 1L, sign_b = 0L,
+             public_const_fp = NULL,
+             is_party0 = identical(srv, coordinator),
+             output_key = target_key, n = as.numeric(n_obs),
              session_id = session_id))
     }
     invisible(target_key)
@@ -1938,6 +1983,36 @@ ds.vertGEE <- function(formula, data = NULL,
              frac_bits = frac_bits, ring = ring))
     }
     invisible(output_key)
+  }
+  .transform <- function(source_key, output_key, transform) {
+    for (ci in dcf_conns) {
+      .dsAgg(datasources[ci],
+        call(name = "dsvertGEEAR1TransformShareDS",
+             source_key = source_key, output_key = output_key,
+             transform = transform, session_id = session_id,
+             frac_bits = frac_bits, ring = ring))
+    }
+    invisible(output_key)
+  }
+  .sum_scalar <- function(key) {
+    parts <- vector("list", length(dcf_parties))
+    for (i in seq_along(dcf_parties)) {
+      part <- .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "k2BeaverSumShareDS",
+             source_key = key, session_id = session_id,
+             frac_bits = frac_bits, ring = ring_tag))
+      if (is.list(part) && length(part) == 1L) part <- part[[1L]]
+      parts[[i]] <- part
+    }
+    agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+      share_a = parts[[1L]]$sum_share_fp,
+      share_b = parts[[2L]]$sum_share_fp,
+      frac_bits = frac_bits, ring = ring_tag))
+    as.numeric(agg$values[1L])
+  }
+  .prod_sum <- function(x_key, y_key, output_key) {
+    .vecmul(x_key, y_key, output_key)
+    .sum_scalar(output_key)
   }
   .cluster_sum <- function(key) {
     parts <- vector("list", length(dcf_parties))
@@ -2058,6 +2133,21 @@ ds.vertGEE <- function(formula, data = NULL,
 
   coord_i <- match(coordinator, dcf_parties)
   peer_i <- setdiff(seq_along(dcf_parties), coord_i)
+  order_meta <- NULL
+  if (identical(corstr, "ar1")) {
+    order_meta <- .dsAgg(datasources[dcf_conns[[coord_i]]],
+      call(name = "dsvertGEEAR1OrderBroadcastDS",
+           data_name = data, cluster_col = id_col, order_col = order_col,
+           peer_pk = transport_pks[[dcf_parties[[peer_i]]]],
+           session_id = session_id))
+    if (is.list(order_meta) && length(order_meta) == 1L) {
+      order_meta <- order_meta[[1L]]
+    }
+    .sendBlob(order_meta$peer_blob, "dsvert_gee_ar1_order_blob",
+              dcf_conns[[peer_i]])
+    .dsAgg(datasources[dcf_conns[[peer_i]]],
+      call(name = "dsvertGEEAR1OrderReceiveDS", session_id = session_id))
+  }
   cb <- .dsAgg(datasources[dcf_conns[[coord_i]]],
     call(name = "dsvertClusterIDsBroadcastDS",
          data_name = data, cluster_col = id_col,
@@ -2072,7 +2162,7 @@ ds.vertGEE <- function(formula, data = NULL,
   names(beta) <- target_order
   perm <- match(target_order, canonical_order)
   if (anyNA(perm)) {
-    stop("could not align ", gee_family, " exchangeable GEE order",
+    stop("could not align ", gee_family, " ", cor_label, " GEE order",
          call. = FALSE)
   }
   beta <- beta[canonical_order]
@@ -2127,9 +2217,275 @@ ds.vertGEE <- function(formula, data = NULL,
     tryCatch(if (is.null(b)) solve(A + diag(ridge, nrow(A)))
              else solve(A + diag(ridge, nrow(A)), b),
              error = function(e) {
-               stop(family_title, " exchangeable GEE system is singular",
+               stop(family_title, " ", cor_label, " GEE system is singular",
                     call. = FALSE)
              })
+  }
+
+  if (identical(corstr, "ar1")) {
+    rho <- 0
+    converged <- FALSE
+    cluster_sizes <- NULL
+    last_stats <- NULL
+    lower_rho <- -0.95
+    upper_rho <- 0.95
+
+    prepare_family_shares <- function(beta_current) {
+      beta_named <- beta_current
+      names(beta_named) <- canonical_order
+      .restore_eta_shape(beta_named)
+
+      if (identical(gee_family, "poisson")) {
+        .wide_spline("gee_poisson_eta", "gee_px_mu",
+                     spline_family = "poisson", num_intervals = 100L)
+        .ring_scale("gee_poisson_eta", 0.5, "gee_px_eta_half")
+        .wide_spline("gee_px_eta_half", "gee_px_sqrt_var",
+                     spline_family = "poisson", num_intervals = 100L)
+        .ring_scale("gee_poisson_eta", -0.5, "gee_px_eta_neghalf")
+        .wide_spline("gee_px_eta_neghalf", "gee_px_inv_sqrt_var",
+                     spline_family = "poisson", num_intervals = 100L)
+        .copy_key("gee_px_mu", "secure_mu_share")
+        for (ci in dcf_conns) {
+          .dsAgg(datasources[ci],
+            call(name = "k2PrepareWeightedResidualShareDS",
+                 session_id = session_id))
+        }
+        .ring_affine(a_key = "k2_weight_residual_share_fp",
+                     sign_a = -1L, output_key = "gee_px_y_minus_mu")
+        .vecmul("k2_y_share_fp_original", "gee_px_inv_sqrt_var",
+                "gee_px_y_inv_sqrt_var")
+        .ring_affine(a_key = "gee_px_y_inv_sqrt_var",
+                     b_key = "gee_px_sqrt_var",
+                     sign_a = 1L, sign_b = -1L,
+                     output_key = "gee_px_pearson")
+        sqrt_var_key <- "gee_px_sqrt_var"
+      } else {
+        .wide_spline("gee_poisson_eta", "gee_px_mu",
+                     spline_family = "sigmoid", num_intervals = 100L)
+        .ring_scale("gee_poisson_eta", 0.5, "gee_px_eta_half")
+        .wide_spline("gee_px_eta_half", "gee_px_h",
+                     spline_family = "poisson", num_intervals = 100L)
+        .ring_scale("gee_poisson_eta", -0.5, "gee_px_eta_neghalf")
+        .wide_spline("gee_px_eta_neghalf", "gee_px_inv_h",
+                     spline_family = "poisson", num_intervals = 100L)
+        .copy_key("gee_px_mu", "secure_mu_share")
+        for (ci in dcf_conns) {
+          .dsAgg(datasources[ci],
+            call(name = "k2PrepareWeightedResidualShareDS",
+                 session_id = session_id))
+        }
+        .ring_affine(a_key = "k2_weight_residual_share_fp",
+                     sign_a = -1L, output_key = "gee_px_y_minus_mu")
+        for (i in seq_along(dcf_parties)) {
+          .dsAgg(datasources[dcf_conns[[i]]],
+            call(name = "dsvertGLMMOneMinusMuDS",
+                 output_key = "gee_px_one_minus_mu",
+                 is_party0 = (i == 1L),
+                 session_id = session_id,
+                 frac_bits = frac_bits, ring = ring))
+        }
+        .vecmul("gee_px_mu", "gee_px_one_minus_mu", "gee_px_var")
+        .vecmul("gee_px_mu", "gee_px_inv_h", "gee_px_sqrt_var")
+        .ring_affine(a_key = "gee_px_h", b_key = "gee_px_inv_h",
+                     sign_a = 1L, sign_b = 1L,
+                     output_key = "gee_px_inv_sqrt_var")
+        .vecmul("k2_y_share_fp_original", "gee_px_inv_sqrt_var",
+                "gee_px_y_inv_sqrt_var")
+        .ring_affine(a_key = "gee_px_y_inv_sqrt_var",
+                     b_key = "gee_px_h",
+                     sign_a = 1L, sign_b = -1L,
+                     output_key = "gee_px_pearson")
+        sqrt_var_key <- "gee_px_sqrt_var"
+      }
+      sqrt_var_key
+    }
+
+    compute_ar1_stats <- function(beta_current, rho_current) {
+      sqrt_var_key <- prepare_family_shares(beta_current)
+      .transform("gee_px_pearson", "gee_ar1_px_pearson_lead", "lead")
+      .transform("gee_px_pearson", "gee_ar1_px_pearson_lag", "lag")
+      .transform("gee_px_pearson", "gee_ar1_px_pearson_interior",
+                 "interior")
+      .transform("gee_px_pearson", "gee_ar1_px_pearson_nonlast",
+                 "nonlast")
+
+      e2 <- .prod_sum("gee_px_pearson", "gee_px_pearson",
+                      "gee_ar1_px_e2")
+      enonlast2 <- .prod_sum("gee_ar1_px_pearson_nonlast",
+                             "gee_px_pearson",
+                             "gee_ar1_px_enonlast2")
+      eadj <- .prod_sum("gee_px_pearson", "gee_ar1_px_pearson_lead",
+                        "gee_ar1_px_eadj")
+
+      wx_keys <- paste0("gee_ar1_px_wx_", seq_len(q) - 1L)
+      wx_lead_keys <- paste0("gee_ar1_px_wx_lead_", seq_len(q) - 1L)
+      wx_interior_keys <- paste0("gee_ar1_px_wx_interior_", seq_len(q) - 1L)
+      .copy_key(sqrt_var_key, wx_keys[[1L]])
+      if (q > 1L) {
+        for (j in 2:q) {
+          .vecmul(x_keys[[j]], sqrt_var_key, wx_keys[[j]])
+        }
+      }
+      for (j in seq_len(q)) {
+        .transform(wx_keys[[j]], wx_lead_keys[[j]], "lead")
+        .transform(wx_keys[[j]], wx_interior_keys[[j]], "interior")
+      }
+
+      total <- interior <- adj <- matrix(0, q, q)
+      for (j in seq_len(q)) {
+        for (k in j:q) {
+          total[j, k] <- .prod_sum(wx_keys[[j]], wx_keys[[k]],
+                                   paste0("gee_ar1_px_total_", j, "_", k))
+          interior[j, k] <- .prod_sum(
+            wx_interior_keys[[j]], wx_keys[[k]],
+            paste0("gee_ar1_px_interior_", j, "_", k))
+          total[k, j] <- total[j, k]
+          interior[k, j] <- interior[j, k]
+        }
+        for (k in seq_len(q)) {
+          adj[j, k] <- .prod_sum(wx_keys[[j]], wx_lead_keys[[k]],
+                                 paste0("gee_ar1_px_adj_", j, "_", k))
+        }
+        if (verbose) {
+          message(sprintf("[ds.vertGEE] %s AR1 bread column %d/%d",
+                          family_title, j, q))
+        }
+      }
+      cfac <- 1 / (1 - rho_current^2)
+      A <- cfac * (total + rho_current^2 * interior -
+                     rho_current * (adj + t(adj)))
+      A <- (A + t(A)) / 2
+
+      .ring_scale("gee_px_pearson", cfac, "gee_ar1_px_z_base")
+      .ring_scale("gee_ar1_px_pearson_interior", cfac * rho_current^2,
+                  "gee_ar1_px_z_interior")
+      .ring_scale("gee_ar1_px_pearson_lead", -cfac * rho_current,
+                  "gee_ar1_px_z_lead")
+      .ring_scale("gee_ar1_px_pearson_lag", -cfac * rho_current,
+                  "gee_ar1_px_z_lag")
+      .ring_affine(a_key = "gee_ar1_px_z_base",
+                   b_key = "gee_ar1_px_z_interior",
+                   sign_a = 1L, sign_b = 1L,
+                   output_key = "gee_ar1_px_z_tmp1")
+      .ring_affine(a_key = "gee_ar1_px_z_tmp1",
+                   b_key = "gee_ar1_px_z_lead",
+                   sign_a = 1L, sign_b = 1L,
+                   output_key = "gee_ar1_px_z_tmp2")
+      .ring_affine(a_key = "gee_ar1_px_z_tmp2",
+                   b_key = "gee_ar1_px_z_lag",
+                   sign_a = 1L, sign_b = 1L,
+                   output_key = "gee_ar1_px_rinv_pearson")
+      .vecmul(sqrt_var_key, "gee_ar1_px_rinv_pearson",
+              "gee_ar1_px_score_z")
+
+      scores <- NULL
+      for (j in seq_len(q)) {
+        score_key <- if (j == 1L) {
+          "gee_ar1_px_score_z"
+        } else {
+          key <- paste0("gee_ar1_px_score_x_", j)
+          .vecmul(x_keys[[j]], "gee_ar1_px_score_z", key)
+          key
+        }
+        cs <- .cluster_sum(score_key)
+        if (is.null(scores)) {
+          scores <- matrix(0, nrow = length(cs$values), ncol = q)
+          cluster_sizes <<- cs$cluster_sizes
+        }
+        scores[, j] <- cs$values
+        if (verbose) {
+          message(sprintf("[ds.vertGEE] %s AR1 score column %d/%d",
+                          family_title, j, q))
+        }
+      }
+      list(A = A, U = colSums(scores), scores = scores,
+           e2 = e2, enonlast2 = enonlast2, eadj = eadj,
+           scale = e2 / max(n_obs, 1),
+           cluster_sizes = cluster_sizes)
+    }
+
+    max_iter <- as.integer(max_iter)
+    iter <- 0L
+    for (iter in seq_len(max_iter)) {
+      beta_old <- beta
+      rho_old <- rho
+      last_stats <- compute_ar1_stats(beta, rho)
+      rho <- if (is.finite(last_stats$enonlast2) &&
+                 last_stats$enonlast2 > 0) {
+        last_stats$eadj / last_stats$enonlast2
+      } else {
+        0
+      }
+      rho <- min(max(rho, lower_rho), upper_rho)
+      step <- as.numeric(safe_solve(last_stats$A, last_stats$U))
+      if (any(!is.finite(step))) {
+        stop("non-finite ", gee_family, " AR1 Newton step",
+             call. = FALSE)
+      }
+      step_norm <- max(abs(step))
+      if (step_norm > 1) step <- step / step_norm
+      beta <- beta + step
+      if (verbose) {
+        message(sprintf(
+          "[ds.vertGEE] %s AR1 iter %d rho=%.5g step=%.3e",
+          family_title, iter, rho, max(abs(step))))
+      }
+      if (max(abs(beta - beta_old), abs(rho - rho_old)) <= tol) {
+        converged <- TRUE
+        break
+      }
+    }
+    if (is.null(last_stats)) last_stats <- compute_ar1_stats(beta, rho)
+    final_stats <- compute_ar1_stats(beta, rho)
+    bread <- safe_solve(final_stats$A)
+    scale <- final_stats$scale
+    if (!is.finite(scale) || scale <= 0) scale <- 1
+    model_cov_std <- as.numeric(scale) * bread
+    robust_cov_std <- bread %*% crossprod(final_stats$scores) %*% bread
+    model_cov_std <- (model_cov_std + t(model_cov_std)) / 2
+    robust_cov_std <- (robust_cov_std + t(robust_cov_std)) / 2
+
+    beta_target <- beta[perm]
+    names(beta_target) <- target_order
+    dimnames(model_cov_std) <- list(canonical_order, canonical_order)
+    dimnames(robust_cov_std) <- list(canonical_order, canonical_order)
+    model_cov_std <- model_cov_std[perm, perm, drop = FALSE]
+    robust_cov_std <- robust_cov_std[perm, perm, drop = FALSE]
+
+    J <- .ds_gee_standardization_jacobian(fit, target_features)
+    model_cov <- J %*% model_cov_std %*% t(J)
+    robust_cov <- J %*% robust_cov_std %*% t(J)
+    model_cov <- (model_cov + t(model_cov)) / 2
+    robust_cov <- (robust_cov + t(robust_cov)) / 2
+    dimnames(model_cov) <- list(target_order, target_order)
+    dimnames(robust_cov) <- list(target_order, target_order)
+
+    coefficients <- .ds_gee_unstandardized_parameters(
+      fit, beta_target, target_features)
+    model_se <- sqrt(pmax(diag(model_cov), 0))
+    robust_se <- sqrt(pmax(diag(robust_cov), 0))
+    names(model_se) <- names(robust_se) <- target_order
+
+    return(list(
+      coefficients = coefficients,
+      model_se = model_se,
+      robust_se = robust_se,
+      model_covariance = model_cov,
+      robust_covariance = robust_cov,
+      method = paste0("share_domain_ar1_", gee_family),
+      working_correlation = list(
+        corstr = "ar1",
+        alpha = as.numeric(rho),
+        phi = as.numeric(scale),
+        iterations = as.integer(iter),
+        converged = isTRUE(converged),
+        estimator = paste0(gee_family,
+                           "_ar1_guarded_adjacent_pearson_stats"),
+        disclosure = paste0(
+          "guarded adjacent-pair Pearson score sufficient statistics only; ",
+          "no row-level mu, residuals, scores, visit labels, order vectors, ",
+          "or cluster labels returned")),
+      cluster_sizes = cluster_sizes))
   }
 
   alpha <- 0

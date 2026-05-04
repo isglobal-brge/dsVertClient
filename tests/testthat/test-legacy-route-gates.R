@@ -71,7 +71,7 @@ test_that("user-facing Cox and categorical wrappers default to paper-safe routes
                         fixed = TRUE)))
 })
 
-test_that("GEE AR1 requires guarded order metadata and Gaussian family", {
+test_that("GEE AR1 requires guarded order metadata", {
   expect_error(
     ds.vertGEE(y ~ x, data = "D", family = "gaussian", corstr = "ar1",
                datasources = list()),
@@ -82,6 +82,17 @@ test_that("GEE AR1 requires guarded order metadata and Gaussian family", {
     "requires order_col")
   expect_error(
     ds.vertGEE(y ~ x, data = "D", family = "poisson", corstr = "ar1",
-               id_col = "id", order_col = "visit", datasources = list()),
-    "currently implemented only for family='gaussian'")
+               datasources = list()),
+    "requires id_col")
+  expect_error(
+    ds.vertGEE(y ~ x, data = "D", family = "binomial", corstr = "ar1",
+               id_col = "id", datasources = list()),
+    "requires order_col")
+
+  src <- paste(deparse(body(ds.vertGEE)), collapse = "\n")
+  expect_true(any(grepl("corstr = \"ar1\"", src, fixed = TRUE)))
+  expect_true(any(grepl(".ds_gee_secure_poisson_exchangeable", src,
+                        fixed = TRUE)))
+  expect_false(any(grepl("currently implemented only for family='gaussian'",
+                         src, fixed = TRUE)))
 })
