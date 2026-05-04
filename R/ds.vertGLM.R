@@ -116,6 +116,11 @@
 #' @param ring Integer (63 or 127). Selects the MPC ring / fracBits
 #'   pipeline; Ring127 (fracBits=50) is STRICT-capable per
 #'   Catrina-Saxena. Default 63L for back-compat.
+#' @param binomial_sigmoid_intervals Optional integer. Number of DCF
+#'   spline intervals for the binomial secure sigmoid in this call. When
+#'   \code{NULL}, the existing \code{dsvert.glm_num_intervals_binomial}
+#'   option/default is used. Precision validation can set this to 150 or
+#'   higher without changing the disclosure surface.
 #' @param keep_session Logical. If TRUE, leave the MPC session alive
 #'   on the servers and expose \code{session_id}, \code{transport_pks},
 #'   and \code{server_list} on the returned fit so follow-on helpers
@@ -157,6 +162,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        # IPW/#98 for STRICT closure; other families may
                        # opt in as the Ring127 regression suite expands.
                        ring = 63L,
+                       binomial_sigmoid_intervals = NULL,
                        verbose = TRUE, datasources = NULL,
                        eta_privacy = "auto",
                        # Keep the MPC session alive on the servers after
@@ -239,6 +245,36 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   if (!family %in% c("gaussian", "binomial", "poisson"))
     stop("family must be 'gaussian', 'binomial', or 'poisson'",
          call. = FALSE)
+  if (!is.null(binomial_sigmoid_intervals)) {
+    binomial_sigmoid_intervals <- as.integer(binomial_sigmoid_intervals)
+    if (length(binomial_sigmoid_intervals) != 1L ||
+        !is.finite(binomial_sigmoid_intervals) ||
+        binomial_sigmoid_intervals < 10L) {
+      stop("binomial_sigmoid_intervals must be NULL or an integer >= 10",
+           call. = FALSE)
+    }
+    if (identical(family, "binomial")) {
+      old_binomial_intervals <- getOption(
+        "dsvert.glm_num_intervals_binomial", NULL)
+      on.exit(options(
+        dsvert.glm_num_intervals_binomial = old_binomial_intervals),
+        add = TRUE)
+      options(dsvert.glm_num_intervals_binomial =
+                binomial_sigmoid_intervals)
+    }
+  }
+  effective_binomial_sigmoid_intervals <- if (identical(family, "binomial")) {
+    suppressWarnings(as.integer(getOption(
+      "dsvert.glm_num_intervals_binomial",
+      getOption("dsvert.glm_num_intervals", 100L))[[1L]]))
+  } else {
+    NA_integer_
+  }
+  if (identical(family, "binomial") &&
+      (!is.finite(effective_binomial_sigmoid_intervals) ||
+       effective_binomial_sigmoid_intervals < 10L)) {
+    effective_binomial_sigmoid_intervals <- 100L
+  }
 
   if (is.null(datasources))
     datasources <- DSI::datashield.connections_find()
@@ -1018,6 +1054,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     iterations = final_iter,
     converged = converged,
     family = family,
+    binomial_sigmoid_intervals = effective_binomial_sigmoid_intervals,
     n_obs = n_obs,
     n_vars = n_vars_total,
     lambda = lambda,

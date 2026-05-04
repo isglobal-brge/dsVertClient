@@ -17,6 +17,7 @@ ds.vertGLM(
   offset = NULL,
   weights = NULL,
   ring = 63L,
+  binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
   datasources = NULL,
   eta_privacy = "auto",
@@ -69,6 +70,12 @@ weights (e.g. inverse-probability weights for IPW).}
 \item{ring}{Integer (63 or 127). Selects the MPC ring / fracBits
 pipeline; Ring127 (fracBits=50) is STRICT-capable per
 Catrina-Saxena. Default 63L for back-compat.}
+
+\item{binomial_sigmoid_intervals}{Optional integer. Number of DCF
+spline intervals for the binomial secure sigmoid in this call. When
+\code{NULL}, the existing \code{dsvert.glm_num_intervals_binomial}
+option/default is used. Precision validation can set this to 150 or
+higher without changing the disclosure surface.}
 
 \item{verbose}{Logical. Print progress messages. Default is TRUE.}
 
