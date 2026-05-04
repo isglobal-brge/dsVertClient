@@ -64,8 +64,9 @@ ds.vertGEE <- function(formula, data = NULL,
   server_names <- names(datasources)
   if (identical(corstr, "ar1")) {
     stop("ds.vertGEE corstr='ar1' is not implemented as a true working-",
-         "correlation estimator yet. Use corstr='independence' or Gaussian ",
-         "corstr='exchangeable'.", call. = FALSE)
+         "correlation estimator yet. Use corstr='independence' or ",
+         "corstr='exchangeable' for Gaussian/binomial/Poisson fits.",
+         call. = FALSE)
   }
   if (identical(corstr, "exchangeable") &&
       !(family %in% c("gaussian", "binomial", "poisson"))) {
