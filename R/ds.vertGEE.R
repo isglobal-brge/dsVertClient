@@ -5,8 +5,10 @@
 #'   \eqn{\hat{\beta}} is obtained by a single call to
 #'   \code{\link{ds.vertGLM}}. For Gaussian \code{corstr = "exchangeable"},
 #'   dsVert promotes the point estimate to a protected cluster-level
-#'   exchangeable GLS/GEE update. For Gaussian, binomial, and Poisson
-#'   independence models the sandwich meat is computed in the share domain. If
+#'   exchangeable GLS/GEE update. For Poisson \code{corstr = "exchangeable"},
+#'   dsVert uses a Ring127 protected Pearson-score exchangeable GEE update.
+#'   For Gaussian, binomial, and Poisson independence models the sandwich meat
+#'   is computed in the share domain. If
 #'   \code{id_col} is supplied, dsVert computes the clustered meat
 #'   \eqn{\sum_c S_c S_c^\top}, where
 #'   \eqn{S_c=\sum_{i\in c} X_i r_i}; otherwise it computes the row-level
@@ -34,10 +36,13 @@
 #'   the outcome and all clusters must pass \code{datashield.privacyLevel}.
 #' @param corstr Working correlation. \code{"independence"} is available for
 #'   Gaussian/binomial/Poisson. \code{"exchangeable"} currently fits true
-#'   exchangeable Gaussian GEE coefficients from guarded cluster-level
-#'   sufficient statistics; non-Gaussian exchangeable and AR1 fail closed
-#'   rather than returning an independence estimate under a stronger label.
+#'   exchangeable Gaussian and Poisson GEE coefficients from guarded
+#'   cluster-level sufficient statistics; binomial exchangeable and AR1 fail
+#'   closed rather than returning an independence estimate under a stronger
+#'   label.
 #' @param max_iter,tol,lambda,verbose Passed to \code{ds.vertGLM}.
+#' @param ring Integer 63 or 127. Poisson exchangeable is automatically run in
+#'   Ring127 because its protected half-link exponentials need high precision.
 #' @param datasources DataSHIELD connection object.
 #' @return An object of class \code{ds.vertGEE} with components
 #'   \code{coefficients}, \code{model_se} (sqrt of
@@ -50,6 +55,7 @@ ds.vertGEE <- function(formula, data = NULL,
                        id_col = NULL,
                        corstr = c("independence", "exchangeable", "ar1"),
                        max_iter = 100L, tol = 1e-4, lambda = 1e-4,
+                       ring = 63L,
                        verbose = TRUE, datasources = NULL) {
   family <- match.arg(family)
   corstr <- match.arg(corstr)
@@ -61,9 +67,10 @@ ds.vertGEE <- function(formula, data = NULL,
          "corstr='exchangeable'.", call. = FALSE)
   }
   if (identical(corstr, "exchangeable") &&
-      !identical(family, "gaussian")) {
+      !(family %in% c("gaussian", "poisson"))) {
     stop("ds.vertGEE corstr='exchangeable' is currently implemented only ",
-         "for family='gaussian'. Use corstr='independence' for ",
+         "for family='gaussian' and family='poisson'. Use ",
+         "corstr='independence' for ",
          family, " until the non-Gaussian estimating equations are added.",
          call. = FALSE)
   }
@@ -90,11 +97,23 @@ ds.vertGEE <- function(formula, data = NULL,
     }
   }
 
+  ring_use <- as.integer(ring %||% 63L)
+  if (!(ring_use %in% c(63L, 127L))) {
+    stop("ring must be 63 or 127", call. = FALSE)
+  }
+  if (identical(corstr, "exchangeable") && identical(family, "poisson") &&
+      ring_use != 127L) {
+    if (verbose) {
+      message("[ds.vertGEE] poisson exchangeable promoted to Ring127")
+    }
+    ring_use <- 127L
+  }
+
   # Stage 1: ordinary fit -> betahat, Cov_model (bread).
   if (verbose) message("[ds.vertGEE] Stage 1: ds.vertGLM point estimate")
   fit <- ds.vertGLM(formula = formula, data = data,
                     family = family, max_iter = max_iter, tol = tol,
-                    lambda = lambda, verbose = verbose,
+                    lambda = lambda, ring = ring_use, verbose = verbose,
                     datasources = datasources,
                     keep_session = TRUE)
   if (!is.null(fit$session_id)) {
@@ -151,18 +170,28 @@ ds.vertGEE <- function(formula, data = NULL,
     } else {
       exchangeable_fit <- NULL
       exchangeable_error <- NULL
-      if (identical(family, "gaussian") &&
-          identical(corstr, "exchangeable")) {
+      if (identical(corstr, "exchangeable")) {
         exchangeable_fit <- tryCatch(
-          .ds_gee_secure_gaussian_exchangeable(
-            fit = fit, datasources = datasources,
-            server_names = server_names, lambda = lambda,
-            data = data, id_col = id_col, max_iter = max_iter,
-            tol = tol, verbose = verbose),
+          if (identical(family, "gaussian")) {
+            .ds_gee_secure_gaussian_exchangeable(
+              fit = fit, datasources = datasources,
+              server_names = server_names, lambda = lambda,
+              data = data, id_col = id_col, max_iter = max_iter,
+              tol = tol, verbose = verbose)
+          } else if (identical(family, "poisson")) {
+            .ds_gee_secure_poisson_exchangeable(
+              fit = fit, datasources = datasources,
+              server_names = server_names, lambda = lambda,
+              data = data, id_col = id_col, max_iter = max_iter,
+              tol = tol, verbose = verbose)
+          } else {
+            stop("unsupported exchangeable GEE family: ", family,
+                 call. = FALSE)
+          },
           error = function(e) {
             exchangeable_error <<- e
             if (verbose) {
-              message("[ds.vertGEE] Gaussian exchangeable path unavailable: ",
+              message("[ds.vertGEE] exchangeable path unavailable: ",
                       conditionMessage(e))
             }
             NULL
@@ -182,7 +211,7 @@ ds.vertGEE <- function(formula, data = NULL,
           } else {
             conditionMessage(exchangeable_error)
           }
-          stop("Gaussian exchangeable GEE unavailable: ", msg,
+          stop("exchangeable GEE unavailable: ", msg,
                call. = FALSE)
         }
         secure_hc0 <- NULL
@@ -866,6 +895,628 @@ ds.vertGEE <- function(formula, data = NULL,
          disclosure = paste0(
            "guarded cluster-level sufficient statistics only; no row-level ",
            "residuals, fitted values, scores, or cluster labels returned")),
+       cluster_sizes = cluster_sizes)
+}
+
+#' @keywords internal
+.ds_gee_secure_poisson_exchangeable <- function(
+    fit, datasources, server_names, lambda = 0, data = NULL, id_col = NULL,
+    max_iter = 100L, tol = 1e-6, verbose = FALSE) {
+  if (!identical(fit$family, "poisson")) return(NULL)
+  if (is.null(id_col) || length(id_col) != 1L ||
+      !is.character(id_col) || !nzchar(id_col)) {
+    stop("Poisson exchangeable GEE requires id_col", call. = FALSE)
+  }
+  required <- c("session_id", "transport_pks", "server_list", "x_vars",
+                "y_server", "x_sds", "x_means")
+  missing_req <- required[vapply(required, function(nm) is.null(fit[[nm]]),
+                                 logical(1L))]
+  if (length(missing_req) > 0L) {
+    stop("GLM session metadata missing: ", paste(missing_req, collapse = ", "),
+         call. = FALSE)
+  }
+
+  session_id <- fit$session_id
+  server_list <- fit$server_list
+  x_vars <- fit$x_vars
+  coordinator <- fit$y_server
+  n_obs <- as.integer(fit$n_obs)
+  ring <- as.integer(fit$ring %||% 63L)
+  if (ring != 127L) {
+    stop("Poisson exchangeable GEE requires Ring127", call. = FALSE)
+  }
+  frac_bits <- 50L
+  ring_tag <- "ring127"
+  transport_pks <- fit$transport_pks
+
+  .to_b64url <- function(x) gsub("+", "-", gsub("/", "_",
+    gsub("=+$", "", x, perl = TRUE), fixed = TRUE), fixed = TRUE)
+  .b64url_to_b64 <- function(x) {
+    x <- gsub("-", "+", gsub("_", "/", x, fixed = TRUE), fixed = TRUE)
+    pad <- nchar(x) %% 4
+    if (pad == 2) x <- paste0(x, "==")
+    if (pad == 3) x <- paste0(x, "=")
+    x
+  }
+  .fp_const <- function(x) {
+    .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
+      values = array(as.numeric(x), dim = 1L),
+      frac_bits = frac_bits, ring = ring_tag))$fp_data)
+  }
+  .dsAgg <- function(conns, expr, ...) {
+    tryCatch(
+      DSI::datashield.aggregate(conns = conns, expr = expr, ...),
+      error = function(e) {
+        fn_name <- if (is.call(expr)) as.character(expr[[1]]) else "?"
+        srv_name <- tryCatch(names(conns)[1], error = function(x) "?")
+        stop(sprintf("%s on %s failed: %s", fn_name, srv_name,
+                     conditionMessage(e)), call. = FALSE)
+      })
+  }
+  .sendBlob <- function(blob, key, conn_idx) {
+    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
+      if (n_chunks == 1L) {
+        .dsAgg(datasources[conn_idx],
+          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
+               session_id = session_id))
+      } else {
+        .dsAgg(datasources[conn_idx],
+          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
+               chunk_index = chunk_idx, n_chunks = n_chunks,
+               session_id = session_id))
+      }
+    })
+  }
+
+  if (fit$eta_privacy == "k2_beaver") {
+    nl <- setdiff(server_list, coordinator)
+    if (length(nl) != 1L) {
+      stop("K=2 Poisson exchangeable GEE requires exactly one non-outcome ",
+           "server", call. = FALSE)
+    }
+    nl <- nl[[1L]]
+    dcf_parties <- c(coordinator, nl)
+    dcf_conns <- vapply(dcf_parties, function(s) which(server_names == s),
+                        integer(1L))
+    dealer_conn <- dcf_conns[[2L]]
+    canonical_features <- c(x_vars[[coordinator]], x_vars[[nl]])
+  } else if (fit$eta_privacy == "secure_agg") {
+    fusion <- .k3_select_fusion_server(server_list, coordinator, x_vars)
+    dcf_parties <- c(fusion, coordinator)
+    dcf_conns <- vapply(dcf_parties, function(s) which(server_names == s),
+                        integer(1L))
+    non_dcf <- setdiff(server_list, dcf_parties)
+    dealer <- if (length(non_dcf) > 0L) non_dcf[[1L]] else fusion
+    dealer_conn <- which(server_names == dealer)
+    canonical_features <- c(x_vars[[coordinator]], x_vars[[fusion]])
+    for (srv in non_dcf) {
+      canonical_features <- c(canonical_features, x_vars[[srv]])
+    }
+  } else {
+    stop("unsupported eta_privacy for Poisson exchangeable GEE: ",
+         fit$eta_privacy, call. = FALSE)
+  }
+
+  cluster_srv <- .ds_gee_find_server_holding(datasources, server_names,
+                                             data, id_col)
+  if (is.null(cluster_srv)) {
+    stop("id_col '", id_col, "' not found on any server", call. = FALSE)
+  }
+  if (!identical(cluster_srv, coordinator)) {
+    stop("Poisson exchangeable GEE requires id_col to live on the ",
+         "outcome server; found on '", cluster_srv, "'", call. = FALSE)
+  }
+
+  target_features <- unlist(x_vars[server_list], use.names = FALSE)
+  target_order <- c("(Intercept)", target_features)
+  canonical_order <- c("(Intercept)", canonical_features)
+  p_total <- length(canonical_features)
+  q <- p_total + 1L
+  std <- .ds_gee_standardized_parameters(fit, target_features)
+
+  .restore_eta_shape <- function(beta_std) {
+    if (fit$eta_privacy == "k2_beaver") {
+      b_coord <- as.numeric(beta_std[x_vars[[coordinator]]])
+      b_nl <- as.numeric(beta_std[x_vars[[dcf_parties[[2L]]]]])
+      for (i in seq_along(dcf_parties)) {
+        srv <- dcf_parties[[i]]
+        .dsAgg(datasources[dcf_conns[[i]]],
+          call(name = "dsvertGEERestoreFeatureShapeDS",
+               p_own = as.integer(length(x_vars[[srv]])),
+               p_peer = as.integer(length(x_vars[[setdiff(dcf_parties, srv)]])),
+               session_id = session_id))
+        .dsAgg(datasources[dcf_conns[[i]]],
+          call(name = "k2ComputeEtaShareDS",
+               beta_coord = b_coord, beta_nl = b_nl,
+               intercept = if (srv == coordinator) {
+                 as.numeric(beta_std["(Intercept)"])
+               } else {
+                 0
+               },
+               is_coordinator = (srv == coordinator),
+               output_key = "gee_poisson_eta",
+               session_id = session_id))
+      }
+    } else {
+      fusion <- dcf_parties[[1L]]
+      non_dcf <- setdiff(server_list, dcf_parties)
+      p_coord <- length(x_vars[[coordinator]])
+      p_fusion <- length(x_vars[[fusion]])
+      p_extras <- sum(vapply(non_dcf, function(s) length(x_vars[[s]]),
+                             integer(1L)))
+      for (i in seq_along(dcf_parties)) {
+        srv <- dcf_parties[[i]]
+        is_coord <- srv == coordinator
+        p_peer <- if (is_coord) p_fusion + p_extras else p_coord + p_extras
+        .dsAgg(datasources[dcf_conns[[i]]],
+          call(name = "dsvertGEERestoreFeatureShapeDS",
+               p_own = as.integer(length(x_vars[[srv]])),
+               p_peer = as.integer(p_peer),
+               session_id = session_id))
+        b_coord <- as.numeric(beta_std[x_vars[[coordinator]]])
+        if (is_coord) {
+          b_nl <- c(as.numeric(beta_std[x_vars[[fusion]]]))
+          for (ns in non_dcf) b_nl <- c(b_nl, as.numeric(beta_std[x_vars[[ns]]]))
+        } else {
+          b_nl <- numeric(0)
+          for (ns in non_dcf) b_nl <- c(b_nl, as.numeric(beta_std[x_vars[[ns]]]))
+          b_nl <- c(b_nl, as.numeric(beta_std[x_vars[[fusion]]]))
+        }
+        .dsAgg(datasources[dcf_conns[[i]]],
+          call(name = "k2ComputeEtaShareDS",
+               beta_coord = b_coord, beta_nl = b_nl,
+               intercept = if (is_coord) {
+                 as.numeric(beta_std["(Intercept)"])
+               } else {
+                 0
+               },
+               is_coordinator = is_coord,
+               output_key = "gee_poisson_eta",
+               session_id = session_id))
+        if (!is_coord && p_extras > 0L) {
+          .dsAgg(datasources[dcf_conns[[i]]],
+            call(name = "glmRing63ReorderXFullDS",
+                 p_coord = as.integer(p_coord),
+                 p_fusion = as.integer(p_fusion),
+                 p_extras = as.integer(p_extras),
+                 session_id = session_id))
+        }
+      }
+    }
+    invisible(TRUE)
+  }
+
+  .copy_key <- function(source_key, target_key) {
+    for (ci in dcf_conns) {
+      .dsAgg(datasources[ci],
+        call(name = "dsvertCoxPathBCopyDS",
+             source_key = source_key, target_key = target_key,
+             session_id = session_id))
+    }
+    invisible(target_key)
+  }
+  .ring_affine <- function(a_key = NULL, b_key = NULL,
+                           sign_a = 0L, sign_b = 0L,
+                           output_key, public_const_fp = NULL) {
+    for (i in seq_along(dcf_parties)) {
+      srv <- dcf_parties[[i]]
+      .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "k2Ring127AffineCombineDS",
+             a_key = a_key, b_key = b_key,
+             sign_a = as.numeric(sign_a), sign_b = as.numeric(sign_b),
+             public_const_fp = public_const_fp,
+             is_party0 = identical(srv, coordinator),
+             output_key = output_key, n = as.numeric(n_obs),
+             session_id = session_id))
+    }
+    invisible(output_key)
+  }
+  .ring_scale <- function(in_key, scalar, output_key) {
+    scalar_fp <- .fp_const(scalar)
+    for (i in seq_along(dcf_parties)) {
+      srv <- dcf_parties[[i]]
+      .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "k2Ring127LocalScaleDS",
+             in_key = in_key, scalar_fp = scalar_fp,
+             output_key = output_key, n = as.numeric(n_obs),
+             session_id = session_id,
+             is_party0 = identical(srv, coordinator)))
+    }
+    invisible(output_key)
+  }
+  .vecmul <- function(x_key, y_key, output_key) {
+    tri <- .dsAgg(datasources[dealer_conn],
+      call(name = "k2BeaverVecmulGenTriplesDS",
+           dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
+           dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
+           n = as.numeric(n_obs), session_id = session_id,
+           frac_bits = frac_bits, ring = ring))
+    if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
+    .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple", dcf_conns[[1L]])
+    .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple", dcf_conns[[2L]])
+    for (ci in dcf_conns) {
+      .dsAgg(datasources[ci],
+        call(name = "k2BeaverVecmulConsumeTripleDS",
+             session_id = session_id))
+    }
+    r1 <- vector("list", 2L)
+    for (i in seq_along(dcf_parties)) {
+      peer <- dcf_parties[[3L - i]]
+      r <- .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "k2BeaverVecmulR1DS",
+             peer_pk = transport_pks[[peer]],
+             x_key = x_key, y_key = y_key,
+             n = as.numeric(n_obs), session_id = session_id,
+             frac_bits = frac_bits, ring = ring))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      r1[[i]] <- r
+    }
+    .sendBlob(r1[[1L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+              dcf_conns[[2L]])
+    .sendBlob(r1[[2L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+              dcf_conns[[1L]])
+    for (i in seq_along(dcf_parties)) {
+      .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "k2BeaverVecmulR2DS",
+             is_party0 = (i == 1L),
+             x_key = x_key, y_key = y_key,
+             output_key = output_key,
+             n = as.numeric(n_obs), session_id = session_id,
+             frac_bits = frac_bits, ring = ring))
+    }
+    invisible(output_key)
+  }
+  .cluster_sum <- function(key) {
+    parts <- vector("list", length(dcf_parties))
+    for (i in seq_along(dcf_parties)) {
+      part <- .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "dsvertPerClusterSumShareDS",
+             share_key = key, session_id = session_id,
+             frac_bits = frac_bits, ring = ring))
+      if (is.list(part) && length(part) == 1L) part <- part[[1L]]
+      parts[[i]] <- part
+    }
+    n_clusters <- length(parts[[1L]]$per_cluster_fp)
+    out <- numeric(n_clusters)
+    for (ck in seq_len(n_clusters)) {
+      agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+        share_a = parts[[1L]]$per_cluster_fp[[ck]],
+        share_b = parts[[2L]]$per_cluster_fp[[ck]],
+        frac_bits = frac_bits, ring = ring_tag))
+      out[ck] <- as.numeric(agg$values[1L])
+    }
+    coord_i <- match(coordinator, dcf_parties)
+    list(values = out,
+         cluster_sizes = as.integer(parts[[coord_i]]$cluster_sizes))
+  }
+  .wide_exp <- function(input_key, output_key, num_intervals = 100L) {
+    .copy_key(input_key, "k2_eta_share_fp")
+    spline_t <- .dsAgg(datasources[dealer_conn],
+      call(name = "glmRing63GenSplineTriplesDS",
+           dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
+           dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
+           n = as.integer(n_obs), frac_bits = frac_bits,
+           ring = ring, session_id = session_id))
+    if (is.list(spline_t) && length(spline_t) == 1L) spline_t <- spline_t[[1L]]
+    .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", dcf_conns[[1L]])
+    .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", dcf_conns[[2L]])
+    for (ph in 1:4) {
+      pr <- vector("list", 2L)
+      for (i in seq_along(dcf_parties)) {
+        r <- .dsAgg(datasources[dcf_conns[[i]]],
+          call(paste0("k2WideSplinePhase", ph, "DS"),
+               party_id = as.integer(i - 1L),
+               family = "poisson",
+               num_intervals = as.integer(num_intervals),
+               frac_bits = frac_bits,
+               ring = ring,
+               session_id = session_id))
+        if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+        pr[[i]] <- r
+      }
+      if (ph == 1L) {
+        .sendBlob(pr[[1L]]$dcf_masked, "k2_peer_dcf_masked",
+                  dcf_conns[[2L]])
+        .sendBlob(pr[[2L]]$dcf_masked, "k2_peer_dcf_masked",
+                  dcf_conns[[1L]])
+      } else if (ph == 2L) {
+        for (i in 1:2) {
+          peer_i <- 3L - i
+          pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
+          payload <- jsonlite::toJSON(list(
+            and_xma = pr[[i]]$and_xma, and_ymb = pr[[i]]$and_ymb,
+            had1_xma = pr[[i]]$had1_xma, had1_ymb = pr[[i]]$had1_ymb),
+            auto_unbox = TRUE)
+          sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
+            data = jsonlite::base64_enc(charToRaw(payload)),
+            recipient_pk = pk_b64))
+          .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1",
+                    dcf_conns[[peer_i]])
+        }
+      } else if (ph == 3L) {
+        for (i in 1:2) {
+          peer_i <- 3L - i
+          pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
+          payload <- jsonlite::toJSON(list(
+            had2_xma = pr[[i]]$had2_xma,
+            had2_ymb = pr[[i]]$had2_ymb),
+            auto_unbox = TRUE)
+          sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
+            data = jsonlite::base64_enc(charToRaw(payload)),
+            recipient_pk = pk_b64))
+          .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1",
+                    dcf_conns[[peer_i]])
+        }
+      }
+    }
+    .copy_key("secure_mu_share", output_key)
+    invisible(output_key)
+  }
+
+  dcf <- .dsAgg(datasources[dealer_conn],
+    call(name = "glmRing63GenDcfKeysDS",
+         dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
+         dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
+         family = "poisson", n = as.integer(n_obs),
+         frac_bits = frac_bits, num_intervals = 100L,
+         ring = ring, session_id = session_id))
+  if (is.list(dcf) && length(dcf) == 1L) dcf <- dcf[[1L]]
+  .sendBlob(dcf$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[[1L]])
+  .sendBlob(dcf$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[[2L]])
+  for (ci in dcf_conns) {
+    .dsAgg(datasources[ci],
+      call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
+  }
+
+  coord_i <- match(coordinator, dcf_parties)
+  peer_i <- setdiff(seq_along(dcf_parties), coord_i)
+  cb <- .dsAgg(datasources[dcf_conns[[coord_i]]],
+    call(name = "dsvertClusterIDsBroadcastDS",
+         data_name = data, cluster_col = id_col,
+         peer_pk = transport_pks[[dcf_parties[[peer_i]]]],
+         session_id = session_id))
+  if (is.list(cb) && length(cb) == 1L) cb <- cb[[1L]]
+  .sendBlob(cb$peer_blob, "dsvert_cluster_ids_blob", dcf_conns[[peer_i]])
+  .dsAgg(datasources[dcf_conns[[peer_i]]],
+    call(name = "dsvertClusterIDsReceiveDS", session_id = session_id))
+
+  beta <- c(std$intercept, as.numeric(std$beta[target_features]))
+  names(beta) <- target_order
+  perm <- match(target_order, canonical_order)
+  if (anyNA(perm)) {
+    stop("could not align Poisson exchangeable GEE order", call. = FALSE)
+  }
+  beta <- beta[canonical_order]
+  beta[is.na(beta)] <- 0
+  .restore_eta_shape(beta)
+
+  for (i in seq_along(dcf_parties)) {
+    .dsAgg(datasources[dcf_conns[[i]]],
+      call(name = "dsvertGEEInterceptShareDS",
+           output_key = "gee_px_col_0",
+           n = as.numeric(n_obs),
+           is_party0 = (i == 1L),
+           session_id = session_id,
+           frac_bits = frac_bits, ring = ring))
+  }
+  for (j in seq_len(p_total)) {
+    for (ci in dcf_conns) {
+      .dsAgg(datasources[ci],
+        call(name = "k2BeaverExtractColumnDS",
+             source_key = "k2_x_full_fp",
+             n = as.numeric(n_obs), K = as.numeric(p_total),
+             col_index = as.numeric(j),
+             output_key = paste0("gee_px_col_", j),
+             session_id = session_id,
+             frac_bits = frac_bits, ring = ring_tag))
+    }
+  }
+  x_keys <- paste0("gee_px_col_", 0:p_total)
+
+  xx_base_keys <- matrix("", nrow = q, ncol = q)
+  for (j in seq_len(q)) {
+    for (k in j:q) {
+      if (j == 1L && k == 1L) {
+        xx_base_keys[j, k] <- ""
+      } else if (j == 1L) {
+        xx_base_keys[j, k] <- x_keys[[k]]
+      } else {
+        key <- paste0("gee_px_xxbase_", j - 1L, "_", k - 1L)
+        .vecmul(x_keys[[j]], x_keys[[k]], key)
+        xx_base_keys[j, k] <- key
+      }
+      xx_base_keys[k, j] <- xx_base_keys[j, k]
+    }
+  }
+
+  safe_solve <- function(A, b = NULL) {
+    A <- (A + t(A)) / 2
+    out <- tryCatch(if (is.null(b)) solve(A) else solve(A, b),
+                    error = function(e) NULL)
+    if (!is.null(out) && all(is.finite(out))) return(out)
+    ridge <- 1e-8 * max(1, mean(abs(diag(A))))
+    tryCatch(if (is.null(b)) solve(A + diag(ridge, nrow(A)))
+             else solve(A + diag(ridge, nrow(A)), b),
+             error = function(e) {
+               stop("Poisson exchangeable GEE system is singular",
+                    call. = FALSE)
+             })
+  }
+
+  alpha <- 0
+  converged <- FALSE
+  cluster_sizes <- NULL
+  last_stats <- NULL
+  lower_alpha <- -Inf
+  upper_alpha <- 0.95
+
+  compute_stats <- function(beta_current) {
+    beta_named <- beta_current
+    names(beta_named) <- canonical_order
+    .restore_eta_shape(beta_named)
+    .wide_exp("gee_poisson_eta", "gee_px_mu")
+    .ring_scale("gee_poisson_eta", 0.5, "gee_px_eta_half")
+    .wide_exp("gee_px_eta_half", "gee_px_sqrt_mu")
+    .ring_scale("gee_poisson_eta", -0.5, "gee_px_eta_neghalf")
+    .wide_exp("gee_px_eta_neghalf", "gee_px_inv_sqrt_mu")
+
+    .copy_key("gee_px_mu", "secure_mu_share")
+    for (ci in dcf_conns) {
+      .dsAgg(datasources[ci],
+        call(name = "k2PrepareWeightedResidualShareDS",
+             session_id = session_id))
+    }
+    .ring_affine(a_key = "k2_weight_residual_share_fp",
+                 sign_a = -1L, output_key = "gee_px_y_minus_mu")
+    .vecmul("k2_y_share_fp_original", "gee_px_inv_sqrt_mu",
+            "gee_px_y_inv_sqrt_mu")
+    .ring_affine(a_key = "gee_px_y_inv_sqrt_mu",
+                 b_key = "gee_px_sqrt_mu",
+                 sign_a = 1L, sign_b = -1L,
+                 output_key = "gee_px_pearson")
+    .vecmul("gee_px_pearson", "gee_px_pearson", "gee_px_pearson2")
+
+    s1 <- sxv <- matrix(0, nrow = 1L, ncol = q)
+    for (j in seq_len(q)) {
+      key_s1 <- paste0("gee_px_s1_", j)
+      .vecmul(x_keys[[j]], "gee_px_y_minus_mu", key_s1)
+      cs1 <- .cluster_sum(key_s1)
+      if (j == 1L) {
+        s1 <- matrix(0, nrow = length(cs1$values), ncol = q)
+        sxv <- matrix(0, nrow = length(cs1$values), ncol = q)
+        cluster_sizes <<- cs1$cluster_sizes
+      }
+      s1[, j] <- cs1$values
+      key_sxv <- paste0("gee_px_sxv_", j)
+      .vecmul(x_keys[[j]], "gee_px_sqrt_mu", key_sxv)
+      sxv[, j] <- .cluster_sum(key_sxv)$values
+    }
+    se <- .cluster_sum("gee_px_pearson")$values
+    e2 <- .cluster_sum("gee_px_pearson2")$values
+    mu_sum <- .cluster_sum("gee_px_mu")$values
+
+    vxx <- array(0, dim = c(nrow(s1), q, q))
+    for (j in seq_len(q)) {
+      for (k in j:q) {
+        if (j == 1L && k == 1L) {
+          vals <- mu_sum
+        } else {
+          key <- paste0("gee_px_vxx_", j, "_", k)
+          .vecmul(xx_base_keys[j, k], "gee_px_mu", key)
+          vals <- .cluster_sum(key)$values
+        }
+        vxx[, j, k] <- vals
+        vxx[, k, j] <- vals
+      }
+    }
+    list(s1 = s1, sxv = sxv, se = se, e2 = e2, vxx = vxx,
+         cluster_sizes = cluster_sizes)
+  }
+
+  build_system <- function(stats, alpha_current) {
+    sizes <- as.numeric(stats$cluster_sizes)
+    U <- numeric(q)
+    A <- matrix(0, q, q)
+    scores <- matrix(0, nrow = nrow(stats$s1), ncol = q)
+    for (cc in seq_len(nrow(stats$s1))) {
+      m <- sizes[cc]
+      a <- 1 / (1 - alpha_current)
+      b <- alpha_current / ((1 - alpha_current) *
+                              (1 + alpha_current * (m - 1)))
+      sc <- a * stats$s1[cc, ] - b * stats$sxv[cc, ] * stats$se[cc]
+      Ac <- a * stats$vxx[cc, , ] - b * tcrossprod(stats$sxv[cc, ])
+      U <- U + sc
+      A <- A + Ac
+      scores[cc, ] <- sc
+    }
+    lam <- as.numeric(lambda %||% 0)
+    if (is.finite(lam) && lam > 0) {
+      U <- U - lam * beta
+      A <- A + lam * diag(q)
+    }
+    list(U = U, A = (A + t(A)) / 2, scores = scores)
+  }
+
+  max_iter <- as.integer(max_iter)
+  for (iter in seq_len(max_iter)) {
+    beta_old <- beta
+    alpha_old <- alpha
+    last_stats <- compute_stats(beta)
+    sizes <- as.numeric(last_stats$cluster_sizes)
+    lower_alpha <- -1 / (max(sizes) - 1) + 1e-6
+    scale <- sum(last_stats$e2) / max(n_obs, 1)
+    pair_num <- sum((last_stats$se^2 - last_stats$e2) / 2)
+    pair_den <- sum(sizes * (sizes - 1) / 2) * scale
+    alpha <- if (is.finite(pair_den) && pair_den > 0) {
+      pair_num / pair_den
+    } else {
+      0
+    }
+    alpha <- min(max(alpha, lower_alpha), upper_alpha)
+    sys <- build_system(last_stats, alpha)
+    step <- as.numeric(safe_solve(sys$A, sys$U))
+    if (any(!is.finite(step))) {
+      stop("non-finite Poisson exchangeable Newton step", call. = FALSE)
+    }
+    step_norm <- max(abs(step))
+    if (step_norm > 1) step <- step / step_norm
+    beta <- beta + step
+    if (verbose) {
+      message(sprintf(
+        "[ds.vertGEE] Poisson exchangeable iter %d alpha=%.5g step=%.3e",
+        iter, alpha, max(abs(step))))
+    }
+    if (max(abs(beta - beta_old), abs(alpha - alpha_old)) <= tol) {
+      converged <- TRUE
+      break
+    }
+  }
+  if (is.null(last_stats)) last_stats <- compute_stats(beta)
+  sys <- build_system(last_stats, alpha)
+  bread <- safe_solve(sys$A)
+  scale <- sum(last_stats$e2) / max(n_obs, 1)
+  model_cov_std <- as.numeric(scale) * bread
+  robust_cov_std <- bread %*% crossprod(sys$scores) %*% bread
+  model_cov_std <- (model_cov_std + t(model_cov_std)) / 2
+  robust_cov_std <- (robust_cov_std + t(robust_cov_std)) / 2
+
+  beta_target <- beta[perm]
+  names(beta_target) <- target_order
+  dimnames(model_cov_std) <- list(canonical_order, canonical_order)
+  dimnames(robust_cov_std) <- list(canonical_order, canonical_order)
+  model_cov_std <- model_cov_std[perm, perm, drop = FALSE]
+  robust_cov_std <- robust_cov_std[perm, perm, drop = FALSE]
+
+  J <- .ds_gee_standardization_jacobian(fit, target_features)
+  model_cov <- J %*% model_cov_std %*% t(J)
+  robust_cov <- J %*% robust_cov_std %*% t(J)
+  model_cov <- (model_cov + t(model_cov)) / 2
+  robust_cov <- (robust_cov + t(robust_cov)) / 2
+  dimnames(model_cov) <- list(target_order, target_order)
+  dimnames(robust_cov) <- list(target_order, target_order)
+
+  coefficients <- .ds_gee_unstandardized_parameters(
+    fit, beta_target, target_features)
+  model_se <- sqrt(pmax(diag(model_cov), 0))
+  robust_se <- sqrt(pmax(diag(robust_cov), 0))
+  names(model_se) <- names(robust_se) <- target_order
+
+  list(coefficients = coefficients,
+       model_se = model_se,
+       robust_se = robust_se,
+       model_covariance = model_cov,
+       robust_covariance = robust_cov,
+       method = "share_domain_exchangeable_poisson",
+       working_correlation = list(
+         corstr = "exchangeable",
+         alpha = as.numeric(alpha),
+         phi = as.numeric(scale),
+         iterations = as.integer(iter),
+         converged = isTRUE(converged),
+         estimator = "poisson_exchangeable_pearson_cluster_stats",
+         disclosure = paste0(
+           "guarded cluster-level Pearson score sufficient statistics only; ",
+           "no row-level mu, residuals, scores, or cluster labels returned")),
        cluster_sizes = cluster_sizes)
 }
 
