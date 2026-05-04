@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertMultinom.R
 \name{ds.vertMultinom}
 \alias{ds.vertMultinom}
-\title{Federated multinomial logistic regression via K-1 one-vs-rest fits}
+\title{Federated multinomial logistic regression}
 \usage{
 ds.vertMultinom(
   formula,
@@ -10,6 +10,10 @@ ds.vertMultinom(
   classes = NULL,
   reference = NULL,
   indicator_template = "\%s_ind",
+  method = c("joint", "warm"),
+  max_iter = NULL,
+  max_outer = 8L,
+  tol = NULL,
   verbose = TRUE,
   datasources = NULL,
   ...
@@ -35,6 +39,17 @@ class name to construct indicator column names on the server.
 Default "\\%s_ind" (e.g., stage_ind_I, stage_ind_II, ...). The
 indicator columns must already exist server-side.}
 
+\item{method}{Character. \code{"joint"} (default) fits the joint softmax
+route. \code{"warm"} fits the historical one-vs-rest approximation.}
+
+\item{max_iter}{Optional alias for \code{max_outer} in the joint route;
+forwarded to \code{ds.vertGLM} in the warm route.}
+
+\item{max_outer}{Maximum outer Newton iterations for the joint route.}
+
+\item{tol}{Convergence tolerance for the joint route; forwarded to
+\code{ds.vertGLM} in the warm route when supplied.}
+
 \item{verbose}{Logical (default TRUE). Print per-class fit progress.}
 
 \item{datasources}{DataSHIELD connections; if NULL, uses
@@ -49,13 +64,11 @@ coefficient matrix (rows = coefficients, columns = non-reference
 classes).
 }
 \description{
-Fit a K-category multinomial logistic model by training
-K-1 binary logistic regressions in parallel, each contrasting one
-class against the pooled rest. This is NOT the full softmax-based
-multinomial (which jointly optimises K-1 coefficient vectors under
-a common denominator); it is the widely-used one-vs-rest
-approximation that delivers very similar coefficients in practice
-and avoids a new server-side softmax MPC protocol.
+User-facing multinomial wrapper. By default,
+\code{method = "joint"} dispatches to
+\code{\link{ds.vertMultinomJointNewton}}, the paper-safe joint softmax
+Newton route for K=2 and K>=3. \code{method = "warm"} retains the
+historical one-vs-rest approximation for diagnostics and fast warm starts.
 }
 \details{
 Each binary fit uses the existing Ring63+Beaver+DCF pipeline,

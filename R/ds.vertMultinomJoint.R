@@ -92,6 +92,7 @@ ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
                           " -> delegating to ds.vertMultinom / ds.vertGLM binomial")
     return(ds.vertMultinom(formula, data = data,
                             classes = levels, reference = levels[1L],
+                            method = "warm",
                             verbose = verbose, datasources = datasources))
   }
   if (!isTRUE(allow_legacy_ovr)) {
@@ -135,6 +136,7 @@ ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
   # the existing ds.vertMultinom one-vs-rest path.
   warm <- ds.vertMultinom(formula, data = data,
                            classes = levels, reference = levels[1L],
+                           method = "warm",
                            verbose = FALSE, datasources = datasources)
   beta_mat <- do.call(cbind, lapply(warm$fits, function(f)
     as.numeric(f$coefficients)))

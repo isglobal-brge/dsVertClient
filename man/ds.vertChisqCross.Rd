@@ -45,6 +45,9 @@ Beaver cross-product infrastructure: one-hot indicator matrices are
 constructed server-side via \code{\link[dsVert]{dsvertOneHotDS}},
 then the \eqn{K \times L} cell counts \eqn{n_{kl} = \sum_i X_{ik}
   Y_{il}} are obtained by Beaver dot products on the shared
-indicator vectors. The client never sees any \eqn{n}-length
-indicator vector; only the \eqn{K \times L} aggregate table.
+indicator vectors. When cell suppression is active, the DCF parties
+first run a pre-release threshold check over the shared cell-count
+vector; the exact \eqn{K \times L} aggregate table is returned to the
+client only if every positive cell passes the configured privacy
+threshold. The client never sees any \eqn{n}-length indicator vector.
 }

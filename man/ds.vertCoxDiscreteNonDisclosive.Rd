@@ -69,7 +69,10 @@ L2 fixture rel from 4.4e-2 (epsilon=1e-8) to 4.1e-4 by suppressing the
 |step|->noise oscillation around the iter-4 attractor.}
 
 \item{debug_trace}{Logical. If \code{TRUE}, retain per-iteration beta and
-gradient traces for local debugging. Defaults to \code{FALSE}.}
+gradient traces plus diagnostic bin summaries for local debugging.
+Defaults to \code{FALSE}; setting it to \code{TRUE} requires
+\code{options(dsvert.allow_cox_debug_trace = TRUE)} or the
+\code{DSVERT_ALLOW_COX_DEBUG_TRACE=true} environment variable.}
 
 \item{verbose}{Logical.}
 

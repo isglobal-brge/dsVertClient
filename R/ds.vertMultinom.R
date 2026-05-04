@@ -1,11 +1,9 @@
-#' @title Federated multinomial logistic regression via K-1 one-vs-rest fits
-#' @description Fit a K-category multinomial logistic model by training
-#'   K-1 binary logistic regressions in parallel, each contrasting one
-#'   class against the pooled rest. This is NOT the full softmax-based
-#'   multinomial (which jointly optimises K-1 coefficient vectors under
-#'   a common denominator); it is the widely-used one-vs-rest
-#'   approximation that delivers very similar coefficients in practice
-#'   and avoids a new server-side softmax MPC protocol.
+#' @title Federated multinomial logistic regression
+#' @description User-facing multinomial wrapper. By default,
+#'   \code{method = "joint"} dispatches to
+#'   \code{\link{ds.vertMultinomJointNewton}}, the paper-safe joint softmax
+#'   Newton route for K=2 and K>=3. \code{method = "warm"} retains the
+#'   historical one-vs-rest approximation for diagnostics and fast warm starts.
 #'
 #' @param formula R formula with the class indicator on the LHS. The
 #'   class column must be a factor with K levels OR a pre-existing set
@@ -21,6 +19,13 @@
 #'   class name to construct indicator column names on the server.
 #'   Default "\%s_ind" (e.g., stage_ind_I, stage_ind_II, ...). The
 #'   indicator columns must already exist server-side.
+#' @param method Character. \code{"joint"} (default) fits the joint softmax
+#'   route. \code{"warm"} fits the historical one-vs-rest approximation.
+#' @param max_iter Optional alias for \code{max_outer} in the joint route;
+#'   forwarded to \code{ds.vertGLM} in the warm route.
+#' @param max_outer Maximum outer Newton iterations for the joint route.
+#' @param tol Convergence tolerance for the joint route; forwarded to
+#'   \code{ds.vertGLM} in the warm route when supplied.
 #' @param verbose Logical (default TRUE). Print per-class fit progress.
 #' @param datasources DataSHIELD connections; if NULL, uses
 #'   \code{DSI::datashield.connections_find()}.
@@ -75,7 +80,10 @@
 #' @export
 ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
                             reference = NULL, indicator_template = "%s_ind",
+                            method = c("joint", "warm"),
+                            max_iter = NULL, max_outer = 8L, tol = NULL,
                             verbose = TRUE, datasources = NULL, ...) {
+  method <- match.arg(method)
   if (!inherits(formula, "formula")) {
     stop("`formula` must be an R formula with class indicator on LHS",
          call. = FALSE)
@@ -90,8 +98,41 @@ ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
     stop("Please pass classes = c('A','B','C') indicating the class
           names whose indicator columns should be used", call. = FALSE)
   }
+  classes_in <- as.character(classes)
+  if (length(classes_in) < 2L) {
+    stop("Need at least 2 non-reference classes for a multinomial fit",
+         call. = FALSE)
+  }
+
+  if (identical(method, "joint")) {
+    levels <- if (!is.null(reference)) {
+      c(as.character(reference), setdiff(classes_in, as.character(reference)))
+    } else {
+      classes_in
+    }
+    if (length(levels) < 3L) {
+      stop("method = 'joint' requires >=3 outcome levels; use ds.vertGLM ",
+           "for binary logistic models.",
+           call. = FALSE)
+    }
+    if (verbose) {
+      message("[ds.vertMultinom] dispatching to ",
+              "ds.vertMultinomJointNewton (paper-safe joint softmax)")
+    }
+    return(ds.vertMultinomJointNewton(
+      formula = formula,
+      data = data,
+      levels = levels,
+      indicator_template = indicator_template,
+      max_outer = as.integer(max_iter %||% max_outer),
+      tol = as.numeric(tol %||% 1e-4),
+      verbose = verbose,
+      datasources = datasources))
+  }
+
+  classes <- classes_in
   if (!is.null(reference)) {
-    classes <- setdiff(classes, reference)
+    classes <- setdiff(classes, as.character(reference))
   }
   if (length(classes) < 2L) {
     stop("Need at least 2 non-reference classes for a multinomial fit",
@@ -101,6 +142,9 @@ ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
 
   fits <- list()
+  dots <- list(...)
+  if (!is.null(max_iter)) dots$max_iter <- max_iter
+  if (!is.null(tol)) dots$tol <- tol
   for (k in classes) {
     ind_col <- sprintf(indicator_template, k)
     if (verbose) {
@@ -108,9 +152,9 @@ ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
                        k, ind_col))
     }
     fm <- as.formula(paste(ind_col, "~", paste(rhs, collapse = " + ")))
-    fit <- ds.vertGLM(fm, data = data, family = "binomial",
-                       verbose = verbose,
-                       datasources = datasources, ...)
+    fit <- do.call(ds.vertGLM, c(list(
+      formula = fm, data = data, family = "binomial",
+      verbose = verbose, datasources = datasources), dots))
     fits[[k]] <- fit
   }
 
