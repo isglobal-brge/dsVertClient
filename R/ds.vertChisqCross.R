@@ -6,8 +6,11 @@
 #'   constructed server-side via \code{\link[dsVert]{dsvertOneHotDS}},
 #'   then the \eqn{K \times L} cell counts \eqn{n_{kl} = \sum_i X_{ik}
 #'   Y_{il}} are obtained by Beaver dot products on the shared
-#'   indicator vectors. The client never sees any \eqn{n}-length
-#'   indicator vector; only the \eqn{K \times L} aggregate table.
+#'   indicator vectors. When cell suppression is active, the DCF parties
+#'   first run a pre-release threshold check over the shared cell-count
+#'   vector; the exact \eqn{K \times L} aggregate table is returned to the
+#'   client only if every positive cell passes the configured privacy
+#'   threshold. The client never sees any \eqn{n}-length indicator vector.
 #'
 #' @param data Aligned data-frame name.
 #' @param var1 Row variable (categorical or numeric treated as factor).
@@ -114,8 +117,12 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
       var1_srv, var2_srv, var1, var2,
       oh1, oh2, pks, session_id, verbose)
   }, error = function(e) {
+    msg <- conditionMessage(e)
+    if (grepl("pre-release disclosure guard|release blocked", msg)) {
+      stop(msg, call. = FALSE)
+    }
     stop("Beaver bilinear cross-count path failed: ",
-         conditionMessage(e),
+         msg,
          ". Refusing to substitute margin-based expected cells because ",
          "they are not the observed contingency table.",
          call. = FALSE)
@@ -123,6 +130,8 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
 
   n <- sum(counts)
   if (n == 0) stop("No observations; cannot compute chi-square", call. = FALSE)
+
+  pre_release_guard <- attr(counts, "pre_release_guard", exact = TRUE)
 
   # Standard Pearson chi-square on the reconstructed K x L table.
   row_m <- as.integer(rowSums(counts))
@@ -133,6 +142,7 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
     col_margins = col_m,
     n = n,
     what = "cross-server contingency table")
+  disclosure_guard$pre_release_guard <- pre_release_guard
   res_list <- .dsvert_chisq_compute(counts,
     row_margins = row_m, col_margins = col_m, n = n,
     correct = correct)
@@ -232,10 +242,8 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
   #   on var2_srv:  X_share = column k of var1_peer; Y_share = col l of var2_src
   # (Both pairs sum to the true X_k, Y_l.)
 
-  counts <- matrix(0, nrow = K, ncol = L,
-                    dimnames = list(oh1$levels, oh2$levels))
-
   dealer_ci <- v2_ci   # non-party-0 acts as dealer for the Beaver triples
+  count_key <- "k2_chisq_cross_count_shares"
 
   # PERFORMANCE NOTE: each (kk, ll) cell gets a FRESH triple (reusing
   # a triple for two products is a security leak: the common masking
@@ -310,29 +318,228 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
              x_key = "k2_beaver_x", y_key = "k2_beaver_y",
              output_key = "k2_beaver_z", n = as.integer(n),
              session_id = session_id, frac_bits = 20L))
-      # Sum shares per party -> aggregate.
-      s1 <- DSI::datashield.aggregate(datasources[v1_ci],
-        call(name = "k2BeaverSumShareDS", source_key = "k2_beaver_z",
-             session_id = session_id, frac_bits = 20L))
-      s2 <- DSI::datashield.aggregate(datasources[v2_ci],
-        call(name = "k2BeaverSumShareDS", source_key = "k2_beaver_z",
-             session_id = session_id, frac_bits = 20L))
-      if (is.list(s1) && length(s1) == 1L) s1 <- s1[[1L]]
-      if (is.list(s2) && length(s2) == 1L) s2 <- s2[[1L]]
-      # Aggregate the two scalar FP shares client-side via the existing
-      # k2-ring63-aggregate op (which is exactly sum-shares-and-decode).
-      agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-        share_a = s1$sum_share_fp, share_b = s2$sum_share_fp,
-        frac_bits = 20L))
-      cell <- as.integer(round(as.numeric(agg$values[1L])))
-      counts[kk, ll] <- max(0L, cell)
-      if (isTRUE(verbose)) {
+      # Sum shares per party, but keep scalar shares server-side until the
+      # pre-release threshold check has passed. Before this point the client
+      # receives only one-time-masked DCF relay values, not reconstructable
+      # count shares.
+      append <- !(kk == 1L && ll == 1L)
+      DSI::datashield.aggregate(datasources[v1_ci],
+        call(name = "k2StoreSumShareDS", source_key = "k2_beaver_z",
+             output_key = count_key, append = append,
+             session_id = session_id, ring = "ring63"))
+      DSI::datashield.aggregate(datasources[v2_ci],
+        call(name = "k2StoreSumShareDS", source_key = "k2_beaver_z",
+             output_key = count_key, append = append,
+             session_id = session_id, ring = "ring63"))
+    }
+  }
+  settings <- .dsvert_table_privacy_settings()
+  pre_release_guard <- list(
+    required = !settings$allow_small_cell_tables &&
+      is.finite(settings$min_cell_count) && settings$min_cell_count > 0L,
+    min_cell_count = settings$min_cell_count,
+    allow_small_cell_tables = settings$allow_small_cell_tables,
+    checked = FALSE,
+    passed = NA)
+  if (isTRUE(pre_release_guard$required)) {
+    pre_release_guard <- .dsvert_chisq_cross_precheck(
+      datasources = datasources,
+      pks = pks,
+      party_conns = c(v1_ci, v2_ci),
+      party_srvs = c(var1_srv, var2_srv),
+      dealer_ci = dealer_ci,
+      sendBlob = sendBlob,
+      source_key = count_key,
+      n_values = as.integer(K * L),
+      privacy_min = as.integer(settings$min_cell_count),
+      session_id = session_id)
+  }
+  counts <- .dsvert_chisq_cross_reconstruct_counts(
+    datasources = datasources,
+    party_conns = c(v1_ci, v2_ci),
+    source_key = count_key,
+    K = K,
+    L = L,
+    row_levels = oh1$levels,
+    col_levels = oh2$levels,
+    session_id = session_id)
+  if (isTRUE(verbose)) {
+    for (kk in seq_len(K)) {
+      for (ll in seq_len(L)) {
         message(sprintf("  n[%s,%s] = %d",
-                         oh1$levels[kk], oh2$levels[ll], counts[kk, ll]))
+                        oh1$levels[kk], oh2$levels[ll], counts[kk, ll]))
       }
     }
   }
+  attr(counts, "pre_release_guard") <- pre_release_guard
   counts
+}
+
+#' @keywords internal
+.dsvert_chisq_cross_cmp <- function(datasources, pks, party_conns,
+                                     party_srvs, dealer_ci, sendBlob,
+                                     source_key, threshold, output_key,
+                                     n_values, session_id, tag,
+                                     return_share = FALSE) {
+  key_blob <- paste0("k2_cmp_keys_", tag)
+  keys_key <- paste0("k2_cmp_keys_", tag)
+  peer_blob <- paste0("k2_cmp_peer_masked_", tag)
+  gen <- DSI::datashield.aggregate(datasources[dealer_ci],
+    call(name = "k2CmpGenKeysDS",
+         dcf0_pk = pks[[party_srvs[[1L]]]],
+         dcf1_pk = pks[[party_srvs[[2L]]]],
+         n = as.integer(n_values),
+         threshold = as.numeric(threshold),
+         session_id = session_id,
+         frac_bits = 20L))
+  if (is.list(gen) && length(gen) == 1L) gen <- gen[[1L]]
+  sendBlob(gen$cmp_blob_0, key_blob, party_conns[[1L]])
+  sendBlob(gen$cmp_blob_1, key_blob, party_conns[[2L]])
+  for (ii in seq_along(party_conns)) {
+    DSI::datashield.aggregate(datasources[party_conns[[ii]]],
+      call(name = "k2CmpStoreKeysDS",
+           blob_key = key_blob,
+           output_key = keys_key,
+           session_id = session_id))
+  }
+
+  r1 <- vector("list", 2L)
+  for (ii in seq_along(party_conns)) {
+    r1[[ii]] <- DSI::datashield.aggregate(datasources[party_conns[[ii]]],
+      call(name = "k2CmpRound1DS",
+           source_key = source_key,
+           party_id = as.integer(ii - 1L),
+           keys_key = keys_key,
+           session_id = session_id,
+           frac_bits = 20L))
+    if (is.list(r1[[ii]]) && length(r1[[ii]]) == 1L) r1[[ii]] <- r1[[ii]][[1L]]
+  }
+  sendBlob(r1[[1L]]$cmp_masked, peer_blob, party_conns[[2L]])
+  sendBlob(r1[[2L]]$cmp_masked, peer_blob, party_conns[[1L]])
+
+  r2 <- vector("list", 2L)
+  for (ii in seq_along(party_conns)) {
+    r2[[ii]] <- DSI::datashield.aggregate(datasources[party_conns[[ii]]],
+      call(name = "k2CmpRound2DS",
+           source_key = source_key,
+           party_id = as.integer(ii - 1L),
+           output_key = output_key,
+           keys_key = keys_key,
+           peer_blob_key = peer_blob,
+           return_share = isTRUE(return_share),
+           session_id = session_id,
+           frac_bits = 20L))
+    if (is.list(r2[[ii]]) && length(r2[[ii]]) == 1L) r2[[ii]] <- r2[[ii]][[1L]]
+  }
+  r2
+}
+
+#' @keywords internal
+.dsvert_chisq_cross_precheck <- function(datasources, pks, party_conns,
+                                          party_srvs, dealer_ci, sendBlob,
+                                          source_key, n_values,
+                                          privacy_min, session_id) {
+  lt_min_key <- "k2_chisq_lt_privacy_min"
+  lt_one_key <- "k2_chisq_lt_one"
+  unsafe_key <- "k2_chisq_unsafe_cell_bits"
+  unsafe_sum_key <- "k2_chisq_unsafe_cell_sum"
+  no_unsafe_key <- "k2_chisq_no_unsafe"
+
+  .dsvert_chisq_cross_cmp(
+    datasources, pks, party_conns, party_srvs, dealer_ci, sendBlob,
+    source_key = source_key,
+    threshold = as.numeric(privacy_min),
+    output_key = lt_min_key,
+    n_values = n_values,
+    session_id = session_id,
+    tag = "lt_privacy_min")
+  .dsvert_chisq_cross_cmp(
+    datasources, pks, party_conns, party_srvs, dealer_ci, sendBlob,
+    source_key = source_key,
+    threshold = 1,
+    output_key = lt_one_key,
+    n_values = n_values,
+    session_id = session_id,
+    tag = "lt_one")
+
+  for (ci in party_conns) {
+    DSI::datashield.aggregate(datasources[ci],
+      call(name = "k2FPSubStoreDS",
+           a_key = lt_min_key,
+           b_key = lt_one_key,
+           output_key = unsafe_key,
+           session_id = session_id,
+           frac_bits = 20L,
+           ring = "ring63"))
+    DSI::datashield.aggregate(datasources[ci],
+      call(name = "k2StoreSumShareDS",
+           source_key = unsafe_key,
+           output_key = unsafe_sum_key,
+           append = FALSE,
+           session_id = session_id,
+           ring = "ring63"))
+  }
+
+  no_unsafe <- .dsvert_chisq_cross_cmp(
+    datasources, pks, party_conns, party_srvs, dealer_ci, sendBlob,
+    source_key = unsafe_sum_key,
+    threshold = 1,
+    output_key = no_unsafe_key,
+    n_values = 1L,
+    session_id = session_id,
+    tag = "no_unsafe",
+    return_share = TRUE)
+  agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+    share_a = no_unsafe[[1L]]$indicator_fp,
+    share_b = no_unsafe[[2L]]$indicator_fp,
+    frac_bits = 20L))
+  passed <- isTRUE(round(as.numeric(agg$values[1L])) == 1L)
+  guard <- list(
+    required = TRUE,
+    checked = TRUE,
+    passed = passed,
+    min_cell_count = as.integer(privacy_min),
+    leaked_to_client = "method-level pass/fail only; exact counts not returned before pass")
+  if (!passed) {
+    stop(sprintf(
+      paste0(
+        "cross-server contingency table release blocked by pre-release ",
+        "disclosure guard: at least one positive cell is below %d. ",
+        "Set options(dsvert.allow_small_cell_tables=TRUE) only for ",
+        "controlled diagnostics."
+      ),
+      as.integer(privacy_min)),
+      call. = FALSE)
+  }
+  guard
+}
+
+#' @keywords internal
+.dsvert_chisq_cross_reconstruct_counts <- function(datasources, party_conns,
+                                                    source_key, K, L,
+                                                    row_levels, col_levels,
+                                                    session_id) {
+  s1 <- DSI::datashield.aggregate(datasources[party_conns[[1L]]],
+    call(name = "k2GetStoredShareDS",
+         source_key = source_key,
+         session_id = session_id))
+  s2 <- DSI::datashield.aggregate(datasources[party_conns[[2L]]],
+    call(name = "k2GetStoredShareDS",
+         source_key = source_key,
+         session_id = session_id))
+  if (is.list(s1) && length(s1) == 1L) s1 <- s1[[1L]]
+  if (is.list(s2) && length(s2) == 1L) s2 <- s2[[1L]]
+  agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+    share_a = s1$share_fp,
+    share_b = s2$share_fp,
+    frac_bits = 20L))
+  vals <- pmax(0L, as.integer(round(as.numeric(agg$values))))
+  if (length(vals) != K * L) {
+    stop("cross-server count vector length mismatch after disclosure precheck",
+         call. = FALSE)
+  }
+  matrix(vals, nrow = K, ncol = L, byrow = TRUE,
+         dimnames = list(row_levels, col_levels))
 }
 
 #' @keywords internal
