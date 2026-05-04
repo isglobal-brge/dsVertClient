@@ -42,6 +42,10 @@
 #'   bound and falls back to the conservative \code{0.25 * (p + 1)} bound;
 #'   \code{"gram"} requires the aggregate Gram bound; \code{"safe"} always
 #'   uses the conservative bound.
+#' @param fista_restart Logical. For binomial proximal-gradient, reset FISTA
+#'   momentum when the client-side gradient-restart criterion triggers. This
+#'   uses only p-dimensional coefficient vectors already held by the client
+#'   and does not require opening objectives or row-level quantities.
 #' @param poisson_damping Numeric in (0, 1]. Fixed damping applied to Poisson
 #'   proximal-Newton proposals. The default 0.5 is intentionally conservative
 #'   and avoids an extra objective/deviance pass.
@@ -61,6 +65,7 @@ ds.vertLASSOIter <- function(formula, data = NULL,
                               exact_non_gaussian = TRUE,
                               ring = NULL,
                               lipschitz = c("auto", "gram", "safe"),
+                              fista_restart = TRUE,
                               poisson_damping = 0.5,
                               verbose = TRUE, datasources = NULL) {
   family <- match.arg(family)
@@ -81,6 +86,7 @@ ds.vertLASSOIter <- function(formula, data = NULL,
       poisson_damping > 1) {
     stop("poisson_damping must be in (0, 1]", call. = FALSE)
   }
+  fista_restart <- isTRUE(fista_restart)
 
   .orig_to_std <- function(beta_orig, fit) {
     beta_orig <- as.numeric(beta_orig)
@@ -216,6 +222,7 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     if (!is.finite(L) || L <= 0) L <- 1
     converged <- FALSE
     used <- as.integer(max_outer)
+    restart_count <- 0L
     for (it in seq_len(as.integer(max_outer))) {
       old <- theta
       grad <- .score_std(yk)
@@ -223,8 +230,17 @@ ds.vertLASSOIter <- function(formula, data = NULL,
       theta_new <- z
       theta_new[penalized] <- soft(z[penalized], lam / L)
       names(theta_new) <- names(theta)
-      tk_new <- (1 + sqrt(1 + 4 * tk^2)) / 2
-      yk <- theta_new + ((tk - 1) / tk_new) * (theta_new - theta)
+      restart_score <- sum((theta_new - theta) * (yk - theta_new))
+      restart <- fista_restart && is.finite(restart_score) &&
+        restart_score > 0
+      if (restart) {
+        tk_new <- 1
+        yk <- theta_new
+        restart_count <- restart_count + 1L
+      } else {
+        tk_new <- (1 + sqrt(1 + 4 * tk^2)) / 2
+        yk <- theta_new + ((tk - 1) / tk_new) * (theta_new - theta)
+      }
       theta <- theta_new
       tk <- tk_new
       if (max(abs(theta - old)) < tol) {
@@ -237,7 +253,8 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     l1 <- lam * sum(abs(theta[penalized]))
     list(coefficients = beta_orig, theta_std = theta,
          iterations = used, converged = converged,
-         objective = NA_real_, l1_penalty = l1, L = L)
+         objective = NA_real_, l1_penalty = l1, L = L,
+         fista_restart = fista_restart, restart_count = restart_count)
   }
 
   .prox_quadratic_cd <- function(theta, grad, H, lam, max_cd = 1000L) {
@@ -397,6 +414,7 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     ring        = ring,
     lipschitz   = if (is.null(step_bound)) NA_character_ else step_bound$source,
     poisson_damping = if (exact_poisson) poisson_damping else NA_real_,
+    fista_restart = if (exact_binomial) fista_restart else NA,
     call        = match.call())
   class(out) <- c("ds.vertLASSOIter", "list")
   out
