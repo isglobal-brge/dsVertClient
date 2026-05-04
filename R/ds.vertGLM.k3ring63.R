@@ -598,7 +598,7 @@ NULL
   # Disclosure: only aggregate gradients (same as iterations). SAFE.
   # ===========================================================================
   inv_hessian <- list()
-  if (isTRUE(compute_se) && !isTRUE(gradient_only)) {
+  if (isTRUE(compute_se)) {
   if (verbose) message("  [SE] Computing exact Hessian (central differences)...")
   p_plus1 <- p_total + 1
   delta <- 0.01  # larger delta for better signal vs Ring63 noise
