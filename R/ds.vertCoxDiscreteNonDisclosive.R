@@ -64,6 +64,12 @@
 #'   them -- they are public metadata that must be reproducible across
 #'   servers (typically equal-quantile breaks of observed event times,
 #'   computed at the coordinator from non-disclosive aggregates).
+#' @param target Character. \code{"discrete_logit"} keeps the existing
+#'   non-disclosive pooled-logistic discrete-time target. \code{"cox_profile"}
+#'   uses event-time risk-set masks and reconstructs only Breslow Cox slope
+#'   score/Hessian aggregates.
+#' @param max_event_times Integer public runtime guard for \code{target =
+#'   "cox_profile"}.
 #' @param max_iter Integer. Newton outer iterations (default 20L). Used
 #'   by the masked-Newton inner loop.
 #' @param tol Numeric. Convergence tolerance on max(|score|) (default
@@ -114,6 +120,9 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                                              data       = NULL,
                                              J          = 5L,
                                              bin_breaks = NULL,
+                                             target     = c("discrete_logit",
+                                                            "cox_profile"),
+                                             max_event_times = NULL,
                                              max_iter   = 20L,
                                              tol        = 1e-6,
                                              newton     = TRUE,
@@ -126,6 +135,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (length(datasources) < 2L)
     stop("ds.vertCoxDiscreteNonDisclosive requires at least two servers.",
          call. = FALSE)
+  target <- match.arg(target)
 
   # Parse Surv(time, status) ~ x1 + x2 + ... LHS for the discrete-time
   # reformulation. Cox formulas use survival::Surv on the LHS; we just
@@ -145,32 +155,41 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
 
   if (is.null(data) || !is.character(data) || !nzchar(data))
     stop("`data` must be a non-empty character symbol name", call. = FALSE)
-  J <- as.integer(J)
-  if (!is.finite(J) || J < 2L)
-    stop("J must be >= 2", call. = FALSE)
-  if (is.null(bin_breaks))
-    stop("bin_breaks must be supplied (length J+1, sorted, increasing, ",
-         "first = 0). Compute at coordinator from public quantiles or ",
-         "equal-width grid; do not rely on per-server quantile leak.",
-         call. = FALSE)
-  bin_breaks <- as.numeric(bin_breaks)
-  if (length(bin_breaks) != J + 1L)
-    stop(sprintf("bin_breaks length %d != J+1 = %d",
-                  length(bin_breaks), J + 1L), call. = FALSE)
-  if (any(diff(bin_breaks) <= 0))
-    stop("bin_breaks must be strictly increasing", call. = FALSE)
-  # `cut(..., right = TRUE)` assigns values exactly equal to an interior
-  # break to the lower bin. DataSHIELD serialisation can move a break a few
-  # ulps downward, incorrectly pushing boundary observations into the next
-  # bin. Nudge right endpoints upward by a tiny relative tolerance so the
-  # intended right-closed binning is stable across R/DSL transport.
-  if (length(bin_breaks) > 1L) {
-    eps <- max(1e-12, 128 * .Machine$double.eps *
-                 max(1, max(abs(bin_breaks), na.rm = TRUE)))
-    bin_breaks[-1L] <- bin_breaks[-1L] + eps
-    if (any(diff(bin_breaks) <= 0))
-      stop("bin_breaks too close after numeric stabilisation",
+  if (identical(target, "discrete_logit")) {
+    J <- as.integer(J)
+    if (!is.finite(J) || J < 2L)
+      stop("J must be >= 2", call. = FALSE)
+    if (is.null(bin_breaks))
+      stop("bin_breaks must be supplied (length J+1, sorted, increasing, ",
+           "first = 0). Compute at coordinator from public quantiles or ",
+           "equal-width grid; do not rely on per-server quantile leak.",
            call. = FALSE)
+    bin_breaks <- as.numeric(bin_breaks)
+    if (length(bin_breaks) != J + 1L)
+      stop(sprintf("bin_breaks length %d != J+1 = %d",
+                    length(bin_breaks), J + 1L), call. = FALSE)
+    if (any(diff(bin_breaks) <= 0))
+      stop("bin_breaks must be strictly increasing", call. = FALSE)
+    # `cut(..., right = TRUE)` assigns values exactly equal to an interior
+    # break to the lower bin. DataSHIELD serialisation can move a break a few
+    # ulps downward, incorrectly pushing boundary observations into the next
+    # bin. Nudge right endpoints upward by a tiny relative tolerance so the
+    # intended right-closed binning is stable across R/DSL transport.
+    if (length(bin_breaks) > 1L) {
+      eps <- max(1e-12, 128 * .Machine$double.eps *
+                   max(1, max(abs(bin_breaks), na.rm = TRUE)))
+      bin_breaks[-1L] <- bin_breaks[-1L] + eps
+      if (any(diff(bin_breaks) <= 0))
+        stop("bin_breaks too close after numeric stabilisation",
+             call. = FALSE)
+    }
+  } else {
+    J <- NA_integer_
+    bin_breaks <- NULL
+    if (is.null(max_event_times)) {
+      max_event_times <- getOption("dsvert.cox_event_time_max", 80L)
+    }
+    max_event_times <- as.integer(max_event_times)
   }
 
   session_id <- paste0("cox_nd_",
@@ -232,8 +251,8 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   feature_server_order <- c(os_name, nl_name, non_dcf_servers)
 
   if (verbose) message(sprintf(
-    "[#D' non-disclosive] K=%d OS=%s fusion/NL=%s session=%s J=%d",
-    length(datasources), os_name, nl_name, session_id, J))
+    "[#D' non-disclosive] K=%d OS=%s fusion/NL=%s session=%s target=%s",
+    length(datasources), os_name, nl_name, session_id, target))
 
   # ---- Phase 0: transport keys (mirror .glm_mpc_setup minimal subset) ----
   transport_pks <- list()
@@ -278,21 +297,37 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (verbose) message("[#D' non-disclosive] Phase 1: OS share-mask")
   mask_share_key <- "cox_nd_mask_share"
   y_share_key    <- "cox_nd_y_share"
-  share_res <- DSI::datashield.aggregate(
-    conns = os_conn,
-    expr  = call(name = "dsvertCoxDiscreteShareMaskDS",
-                  data_name        = data,
+  if (identical(target, "discrete_logit")) {
+    share_res <- DSI::datashield.aggregate(
+      conns = os_conn,
+      expr  = call(name = "dsvertCoxDiscreteShareMaskDS",
+                    data_name        = data,
                     time_var         = time_var,
                     status_var       = status_var,
                     J                = as.numeric(J),
                     bin_breaks       = bin_breaks,
-                  mask_output_key  = mask_share_key,
-                  y_output_key     = y_share_key,
-                  target_pk        = .to_b64url(transport_pks[[nl_name]]),
-                  debug            = isTRUE(debug_trace),
-                  session_id       = session_id))
+                    mask_output_key  = mask_share_key,
+                    y_output_key     = y_share_key,
+                    target_pk        = .to_b64url(transport_pks[[nl_name]]),
+                    debug            = isTRUE(debug_trace),
+                    session_id       = session_id))
+  } else {
+    share_res <- DSI::datashield.aggregate(
+      conns = os_conn,
+      expr  = call(name = "dsvertCoxEventTimeShareMaskDS",
+                    data_name        = data,
+                    time_var         = time_var,
+                    status_var       = status_var,
+                    mask_output_key  = mask_share_key,
+                    y_output_key     = y_share_key,
+                    target_pk        = .to_b64url(transport_pks[[nl_name]]),
+                    max_event_times  = as.numeric(max_event_times),
+                    debug            = isTRUE(debug_trace),
+                    session_id       = session_id))
+  }
   if (is.list(share_res) && length(share_res) == 1L)
     share_res <- share_res[[1L]]
+  J <- as.integer(share_res$J)
   n_obs <- as.integer(share_res$n_obs)
   n_pp  <- as.integer(share_res$n_pp)
   if (n_pp != n_obs * J)
@@ -357,16 +392,26 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   # so the caller (or test fixture) can assert no row-count signal
   # leaked. No extra round-trip needed -- n_pp is already returned.
   audit <- list(
+    target                    = target,
     nl_rows_uniform           = TRUE,
     nl_rows_per_patient       = J,
     nl_n_pp                   = n_pp,
     expected_uniform_n_pp     = J * n_obs,
     j_i_leak_path_eliminated  = TRUE,
+    event_time_metadata_hidden = identical(target, "cox_profile"),
     note = paste0(
       "NL receives length-(J*n) Ring127 shares (uniform random under",
       " mod-2^127) for both m and y; X is replicated J times per patient",
-      " regardless of true J_i. Per Aliasgari-Blanton 2013 NDSS Sec.3,",
-      " the share representation provides perfect privacy for J_i."))
+      if (identical(target, "cox_profile")) {
+        paste0(" for every hidden event-time index. Event times, event ",
+               "indicators, and risk-set membership remain local or in ",
+               "share domain; only slope score/Hessian aggregates are ",
+               "reconstructed.")
+      } else {
+        paste0(" regardless of true J_i. Per Aliasgari-Blanton 2013 ",
+               "NDSS Sec.3, the share representation provides perfect ",
+               "privacy for J_i.")
+      }))
 
   # ---- Phase 4: masked-Newton inner loop ----
   #
@@ -394,10 +439,13 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (!isTRUE(newton)) {
     return(list(
       stage             = "primitives_validated",
+      target            = target,
       coefficients      = NULL,
       n_obs             = n_obs,
       J                 = J,
       n_pp              = n_pp,
+      n_events          = as.integer(share_res$n_events %||% NA_integer_),
+      n_event_times     = as.integer(share_res$n_event_times %||% NA_integer_),
       mask_share_key    = mask_share_key,
       y_share_key       = y_share_key,
       expanded_x_name   = if (length(x_nl) > 0L) expanded_x_name else NA_character_,
@@ -410,6 +458,9 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       non_dcf_servers   = non_dcf_servers,
       feature_server_order = feature_server_order,
       bin_breaks        = bin_breaks,
+      max_event_times   = if (identical(target, "cox_profile")) {
+        as.integer(max_event_times)
+      } else NA_integer_,
       max_iter          = as.integer(max_iter),
       tol               = as.numeric(tol),
       disclosure_audit  = audit,
@@ -458,11 +509,11 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                     session_id    = session_id))
   }
 
-  # OS share variables = bin dummies (baseline-hazard intercepts alpha_j) +
-  # OS's own covariates. Bin dummies are public coefficients but we share
-  # them via Ring127 to keep the protocol uniform (the disclosure boundary
-  # is preserved either way; sharing public values is harmless).
-  bin_dummy_names <- sprintf("bin%d", seq_len(J))
+  # Discrete target estimates bin baseline intercepts. Cox-profile target
+  # profiles the baseline hazard out and estimates slopes only.
+  bin_dummy_names <- if (identical(target, "discrete_logit")) {
+    sprintf("bin%d", seq_len(J))
+  } else character(0)
   x_share_os <- c(bin_dummy_names, x_os)
   x_share_nl <- x_nl
   x_share_extras <- unlist(x_vars_by_server[non_dcf_servers],
@@ -622,6 +673,222 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
           p_extras = as.integer(p_extras),
           session_id = session_id))
       }
+    }
+
+    if (identical(target, "cox_profile")) {
+      .strided_sum <- function(source_key, output_key) {
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          .dsAgg(datasources[ci], call(name = "k2BeaverStridedSumShareDS",
+            source_key = source_key,
+            output_key = output_key,
+            n_obs      = as.numeric(n_obs),
+            J          = as.numeric(J),
+            frac_bits  = 50,
+            ring       = 127,
+            session_id = session_id))
+        }
+        invisible(output_key)
+      }
+      .sum_scalar <- function(source_key) {
+        sums <- list()
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          rr <- .dsAgg(datasources[ci], call(name = "k2BeaverSumShareDS",
+            source_key = source_key,
+            session_id = session_id,
+            frac_bits  = 50,
+            ring       = "ring127"))
+          if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
+          sums[[srv]] <- rr
+        }
+        agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+          share_a   = sums[[os_name]]$sum_share_fp,
+          share_b   = sums[[nl_name]]$sum_share_fp,
+          frac_bits = 50,
+          ring      = "ring127"))
+        as.numeric(agg$values)
+      }
+      .affine_vec <- function(a_key, b_key, sign_a, sign_b, output_key,
+                              n_vec) {
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          is_c <- (srv == os_name)
+          .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
+            a_key           = a_key,
+            b_key           = b_key,
+            sign_a          = as.numeric(sign_a),
+            sign_b          = as.numeric(sign_b),
+            public_const_fp = NULL,
+            is_party0       = is_c,
+            output_key      = output_key,
+            n               = as.numeric(n_vec),
+            session_id      = session_id))
+        }
+        invisible(output_key)
+      }
+
+      # Breslow Cox profile score/Hessian:
+      #   U = Σ_j E1_j - d_j * S1_j / S0_j
+      #   I = Σ_j d_j * (S2_j/S0_j - (S1_j/S0_j)(S1_j/S0_j)')
+      # where all per-event vectors stay share-domain. The client only
+      # reconstructs the final p-vector and p-by-p matrix.
+      .ring127_exp_round_keyed_extended(
+        "cox_nd_eta", "cox_nd_mu_share", n_pp,
+        datasources, dealer_ci, server_list, server_names,
+        os_name, nl_name, transport_pks, session_id,
+        .dsAgg, .sendBlob)
+      .ring127_vecmul(mask_share_key, "cox_nd_mu_share",
+        "cox_nd_risk_mu_share", n_pp,
+        datasources, dealer_ci, server_list, server_names,
+        os_name, nl_name, transport_pks, session_id,
+        .dsAgg, .sendBlob)
+      .strided_sum(y_share_key, "cox_nd_d_event_share")
+      .strided_sum("cox_nd_risk_mu_share", "cox_nd_s0_share")
+      .ring127_recip_round_keyed(
+        "cox_nd_s0_share", "cox_nd_inv_s0_share", J,
+        datasources, dealer_ci, server_list, server_names,
+        os_name, nl_name, transport_pks, session_id,
+        .dsAgg, .sendBlob)
+
+      grad <- numeric(p_total)
+      q1_keys <- character(p_total)
+      x_col_keys <- character(p_total)
+      for (j in seq_len(p_total)) {
+        x_col_keys[j] <- sprintf("cox_nd_xcol_%d", j)
+        for (srv in server_list) {
+          ci <- which(server_names == srv)
+          .dsAgg(datasources[ci], call(name = "k2BeaverExtractColumnDS",
+            source_key = "k2_x_full_fp",
+            n          = as.numeric(n_pp),
+            K          = as.numeric(p_total),
+            col_index  = as.numeric(j),
+            output_key = x_col_keys[j],
+            session_id = session_id,
+            frac_bits  = 50,
+            ring       = "ring127"))
+        }
+        yx_key <- sprintf("cox_nd_cph_yx_%d", j)
+        e1_key <- sprintf("cox_nd_cph_e1_%d", j)
+        mux_key <- sprintf("cox_nd_cph_mux_%d", j)
+        s1_key <- sprintf("cox_nd_cph_s1_%d", j)
+        q1_keys[j] <- sprintf("cox_nd_cph_q1_%d", j)
+        dq_key <- sprintf("cox_nd_cph_dq_%d", j)
+        diff_key <- sprintf("cox_nd_cph_gdiff_%d", j)
+        .ring127_vecmul(x_col_keys[j], y_share_key, yx_key, n_pp,
+          datasources, dealer_ci, server_list, server_names,
+          os_name, nl_name, transport_pks, session_id,
+          .dsAgg, .sendBlob)
+        .strided_sum(yx_key, e1_key)
+        .ring127_vecmul(x_col_keys[j], "cox_nd_risk_mu_share", mux_key,
+          n_pp, datasources, dealer_ci, server_list, server_names,
+          os_name, nl_name, transport_pks, session_id,
+          .dsAgg, .sendBlob)
+        .strided_sum(mux_key, s1_key)
+        .ring127_vecmul(s1_key, "cox_nd_inv_s0_share", q1_keys[j], J,
+          datasources, dealer_ci, server_list, server_names,
+          os_name, nl_name, transport_pks, session_id,
+          .dsAgg, .sendBlob)
+        .ring127_vecmul("cox_nd_d_event_share", q1_keys[j], dq_key, J,
+          datasources, dealer_ci, server_list, server_names,
+          os_name, nl_name, transport_pks, session_id,
+          .dsAgg, .sendBlob)
+        .affine_vec(e1_key, dq_key, 1L, -1L, diff_key, J)
+        grad[j] <- .sum_scalar(diff_key)
+      }
+
+      if (debug_trace) {
+        names(grad) <- beta_names
+        grad_history[[iter]] <- grad
+      }
+      score_norm <- max(abs(grad))
+      score_l2   <- sqrt(sum(grad^2))
+      score_history <- c(score_history, score_norm)
+      if (verbose) message(sprintf(
+        "[#D' Cox-profile iter %d] |g|_max=%.3e |g|_L2=%.3e",
+        iter, score_norm, score_l2))
+      if (is.finite(score_norm) && score_norm < best_score) {
+        best_score <- score_norm; best_beta <- beta
+      }
+      iter_audit[[iter]] <- list(score_max = score_norm,
+                                 score_l2 = score_l2,
+                                 target = "cox_profile")
+      if (score_norm < tol) {
+        converged <- TRUE; final_iter <- iter; break
+      }
+      if (iter >= as.integer(max_iter)) {
+        final_iter <- iter
+        break
+      }
+
+      H <- matrix(0, p_total, p_total,
+                  dimnames = list(beta_names, beta_names))
+      for (j in seq_len(p_total)) {
+        for (k in j:p_total) {
+          xx_key <- sprintf("cox_nd_cph_xx_%d_%d", j, k)
+          muxx_key <- sprintf("cox_nd_cph_muxx_%d_%d", j, k)
+          s2_key <- sprintf("cox_nd_cph_s2_%d_%d", j, k)
+          q2_key <- sprintf("cox_nd_cph_q2_%d_%d", j, k)
+          q1q1_key <- sprintf("cox_nd_cph_q1q1_%d_%d", j, k)
+          var_key <- sprintf("cox_nd_cph_var_%d_%d", j, k)
+          dvar_key <- sprintf("cox_nd_cph_dvar_%d_%d", j, k)
+          .ring127_vecmul(x_col_keys[j], x_col_keys[k], xx_key, n_pp,
+            datasources, dealer_ci, server_list, server_names,
+            os_name, nl_name, transport_pks, session_id,
+            .dsAgg, .sendBlob)
+          .ring127_vecmul(xx_key, "cox_nd_risk_mu_share", muxx_key, n_pp,
+            datasources, dealer_ci, server_list, server_names,
+            os_name, nl_name, transport_pks, session_id,
+            .dsAgg, .sendBlob)
+          .strided_sum(muxx_key, s2_key)
+          .ring127_vecmul(s2_key, "cox_nd_inv_s0_share", q2_key, J,
+            datasources, dealer_ci, server_list, server_names,
+            os_name, nl_name, transport_pks, session_id,
+            .dsAgg, .sendBlob)
+          .ring127_vecmul(q1_keys[j], q1_keys[k], q1q1_key, J,
+            datasources, dealer_ci, server_list, server_names,
+            os_name, nl_name, transport_pks, session_id,
+            .dsAgg, .sendBlob)
+          .affine_vec(q2_key, q1q1_key, 1L, -1L, var_key, J)
+          .ring127_vecmul("cox_nd_d_event_share", var_key, dvar_key, J,
+            datasources, dealer_ci, server_list, server_names,
+            os_name, nl_name, transport_pks, session_id,
+            .dsAgg, .sendBlob)
+          H[j, k] <- H[k, j] <- .sum_scalar(dvar_key)
+        }
+      }
+
+      H_ridged <- H + ridge_eps * diag(p_total)
+      step <- tryCatch(solve(H_ridged, grad),
+        error = function(e) {
+          if (verbose) message(sprintf(
+            "[#D' Cox-profile iter %d] solve failed: %s -- ridge bumped to 1e-4",
+            iter, conditionMessage(e)))
+          solve(H + 1e-4 * diag(p_total), grad)
+        })
+      step_max_raw <- max(abs(step))
+      profile_step_tol <- as.numeric(getOption(
+        "dsvert.cox_profile_step_tol", max(as.numeric(tol), 1e-4)))
+      if (is.finite(step_max_raw) && step_max_raw < profile_step_tol) {
+        step_norm_hist <- c(step_norm_hist, step_max_raw)
+        converged <- TRUE
+        final_iter <- iter
+        if (verbose) message(sprintf(
+          "[#D' Cox-profile iter %d] |step|_max=%.3e < %.3e; stopping",
+          iter, step_max_raw, profile_step_tol))
+        break
+      }
+      cap <- 1.0
+      cap_factor <- if (is.finite(step_max_raw) && step_max_raw > cap)
+                       cap / step_max_raw else 1.0
+      step_eff <- cap_factor * step
+      step_max <- max(abs(step_eff))
+      step_norm_hist <- c(step_norm_hist, step_max)
+      beta <- beta + step_eff
+      if (verbose) message(sprintf(
+        "[#D' Cox-profile iter %d] |step|_max=%.3e |beta|_max=%.3e cap=%.3f",
+        iter, step_max, max(abs(beta)), cap_factor))
+      next
     }
 
     # 2. neg_eta = (-1) * eta  (local scale, no MPC round)
@@ -793,8 +1060,8 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
           datasources, dealer_ci, server_list, server_names,
           os_name, nl_name, transport_pks, session_id,
           .dsAgg, .sendBlob)
-        for (target in c("y", "m")) {
-          source_key <- if (identical(target, "y")) yprod_key else mprod_key
+        for (debug_target in c("y", "m")) {
+          source_key <- if (identical(debug_target, "y")) yprod_key else mprod_key
           sums <- list()
           for (srv in server_list) {
             ci <- which(server_names == srv)
@@ -811,7 +1078,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
             share_b   = sums[[nl_name]]$sum_share_fp,
             frac_bits = 50,
             ring      = "ring127"))
-          if (identical(target, "y")) {
+          if (identical(debug_target, "y")) {
             y_by_bin[j] <- as.numeric(agg$values)
           } else {
             m_by_bin[j] <- as.numeric(agg$values)
@@ -903,10 +1170,13 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
 
   list(
     stage             = if (converged) "converged" else "max_iter",
+    target            = target,
     coefficients      = beta,
     n_obs             = n_obs,
     J                 = J,
     n_pp              = n_pp,
+    n_events          = as.integer(share_res$n_events %||% NA_integer_),
+    n_event_times     = as.integer(share_res$n_event_times %||% NA_integer_),
     p_total           = p_total,
     p_os              = p_os,
     p_nl              = p_nl,
@@ -938,6 +1208,9 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     feature_server_order = feature_server_order,
     dealer_server     = dealer_srv,
     bin_breaks        = bin_breaks,
+    max_event_times   = if (identical(target, "cox_profile")) {
+      as.integer(max_event_times)
+    } else NA_integer_,
     max_iter          = as.integer(max_iter),
     tol               = as.numeric(tol),
     ridge_eps         = as.numeric(ridge_eps),
@@ -948,10 +1221,55 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
            grad_history = grad_history[keep],
            bin_summary = debug_bin_summary)
     } else NULL,
-    note = paste0(
-      "Discrete-time Cox via pooled-logistic (Andreux 2020 + Allison 1982",
-      " + Prentice-Gloeckler 1978) under masked Newton (Aliasgari-Blanton",
-      " 2013 + De Cock 2016 share-mask gating; Mohassel-Zhang 2017 +",
-      " Catrina-Saxena 2010 frac=50 noise floor; Christensen 2019 Sec.A.3",
-      " diagonal ridge for singular alpha_j strata)."))
+    note = if (identical(target, "cox_profile")) {
+      paste0(
+        "Breslow Cox profile Newton with event-time risk-set masks held in ",
+        "Ring127 shares. The client reconstructs only slope score/Hessian ",
+        "aggregates; event times, event indicators, and risk-set membership ",
+        "are not transferred.")
+    } else {
+      paste0(
+        "Discrete-time Cox via pooled-logistic (Andreux 2020 + Allison 1982",
+        " + Prentice-Gloeckler 1978) under masked Newton (Aliasgari-Blanton",
+        " 2013 + De Cock 2016 share-mask gating; Mohassel-Zhang 2017 +",
+        " Catrina-Saxena 2010 frac=50 noise floor; Christensen 2019 Sec.A.3",
+        " diagonal ridge for singular alpha_j strata).")
+    })
+}
+
+#' @title Cox proportional hazards via non-disclosive Breslow profile Newton
+#' @description Convenience wrapper for \code{ds.vertCoxDiscreteNonDisclosive}
+#'   with \code{target = "cox_profile"}. Event times, event indicators, and
+#'   risk-set membership remain local or in Ring127 share domain; the analyst
+#'   receives only the usual slope coefficients and aggregate Newton traces.
+#' @param formula Cox-style \code{Surv(time, status) ~ x1 + ...} formula.
+#' @param data Character server-side data symbol.
+#' @param max_event_times Integer runtime guard for the number of distinct
+#'   observed event times.
+#' @inheritParams ds.vertCoxDiscreteNonDisclosive
+#' @export
+ds.vertCoxProfileNonDisclosive <- function(formula,
+                                           data = NULL,
+                                           max_event_times = NULL,
+                                           max_iter = 20L,
+                                           tol = 1e-6,
+                                           newton = TRUE,
+                                           ridge_eps = 1e-6,
+                                           debug_trace = FALSE,
+                                           verbose = FALSE,
+                                           datasources = NULL) {
+  ds.vertCoxDiscreteNonDisclosive(
+    formula = formula,
+    data = data,
+    J = 2L,
+    bin_breaks = NULL,
+    target = "cox_profile",
+    max_event_times = max_event_times,
+    max_iter = max_iter,
+    tol = tol,
+    newton = newton,
+    ridge_eps = ridge_eps,
+    debug_trace = debug_trace,
+    verbose = verbose,
+    datasources = datasources)
 }
