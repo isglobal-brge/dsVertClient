@@ -1,10 +1,9 @@
 #' @title Federated ordinal logistic regression
-#' @description User-facing ordinal wrapper. By default,
-#'   \code{method = "joint"} dispatches to
+#' @description User-facing ordinal wrapper. Dispatches to
 #'   \code{\link{ds.vertOrdinalJointNewton}}, the paper-safe joint
-#'   proportional-odds route for K=2 and K>=3. \code{method = "warm"}
-#'   retains the historical cumulative-binomial approximation for diagnostics
-#'   and warm starts.
+#'   proportional-odds route for K >= 3. The historical cumulative-binomial
+#'   approximation is no longer exposed as a user-facing estimator; it remains
+#'   only as an internal warm start for the joint route.
 #'
 #' @param formula R formula with the ORDERED outcome on the LHS (passed
 #'   through as a factor level name in the per-threshold formulas).
@@ -16,22 +15,14 @@
 #'   default \code{"\%s_leq"} produces \code{<level>_leq}, a 0/1 column
 #'   that is 1 when the patient's outcome is at-or-below that level.
 #'   Columns must already exist server-side.
-#' @param method Character. \code{"joint"} (default) fits the joint
-#'   proportional-odds route. \code{"warm"} fits the historical
-#'   cumulative-binomial approximation.
-#' @param max_iter Optional alias for \code{max_outer} in the joint route;
-#'   forwarded to \code{ds.vertGLM} in the warm route.
+#' @param max_iter Optional alias for \code{max_outer}.
 #' @param max_outer Maximum outer Newton iterations for the joint route.
-#' @param tol Convergence tolerance for the joint route; forwarded to
-#'   \code{ds.vertGLM} in the warm route when supplied.
-#' @param ring Integer (63 or 127). Ring selector for the underlying
-#'   binomial sub-fits. Currently defaults to 63L while the Ring127
-#'   binomial wide-spline path is wired up.
+#' @param tol Convergence tolerance for the joint route.
 #' @param verbose Logical (default TRUE). Print per-threshold fit
 #'   progress.
 #' @param datasources DataSHIELD connections; if NULL, uses
 #'   \code{DSI::datashield.connections_find()}.
-#' @param ...  Passed to each underlying \code{ds.vertGLM} call.
+#' @param ... Reserved for future extensions.
 #' @return \code{ds.vertOrdinal} object with (among other fields):
 #'   \code{thresholds} \eqn{\alpha_k} (intercepts of the K-1 cumulative
 #'     binomial fits) and \code{beta_po} \eqn{\gamma} (BLUE-pooled slope
@@ -53,21 +44,15 @@
 #' @export
 ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
                            cumulative_template = "%s_leq",
-                           method = c("joint", "warm"),
                            max_iter = NULL, max_outer = 8L, tol = NULL,
-                           # ring=127L target per DIRECTIVA-2 Phase A but
-                           # reverted to 63L 2026-04-25: the Ring127 wide-
-                           # spline binomial GLM path panics in
-                           # k2_spline_protocol.go:288 (Beaver triple length
-                           # mismatch). Cox uses Ring127 without sigmoid
-                           # wide-spline so its STRICT promotion doesn't
-                           # touch this code path. Re-enable once the Go
-                           # binomial Ring127 wide-spline is fully wired
-                           # (separate task; tracked in
-                           # docs/paper_method_ledger.md M8 row).
-                           ring = 63L,
                            verbose = TRUE, datasources = NULL, ...) {
-  method <- match.arg(method)
+  extra <- list(...)
+  if (length(extra) > 0L) {
+    arg_names <- names(extra)
+    arg_names[!nzchar(arg_names)] <- "<unnamed>"
+    stop("unused argument(s): ", paste(arg_names, collapse = ", "),
+         call. = FALSE)
+  }
   if (!inherits(formula, "formula")) {
     stop("`formula` must be an R formula", call. = FALSE)
   }
@@ -75,25 +60,38 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
     stop("levels_ordered must be a character vector with >= 2 entries",
          call. = FALSE)
   }
-  if (identical(method, "joint")) {
-    if (length(levels_ordered) < 3L) {
-      stop("method = 'joint' requires >=3 ordered levels; use ds.vertGLM ",
-           "for binary logistic models.",
-           call. = FALSE)
-    }
-    if (verbose) {
-      message("[ds.vertOrdinal] dispatching to ",
-              "ds.vertOrdinalJointNewton (paper-safe proportional odds)")
-    }
-    return(ds.vertOrdinalJointNewton(
-      formula = formula,
-      data = data,
-      levels_ordered = levels_ordered,
-      cumulative_template = cumulative_template,
-      max_outer = as.integer(max_iter %||% max_outer),
-      tol = as.numeric(tol %||% 1e-4),
-      verbose = verbose,
-      datasources = datasources))
+  if (length(levels_ordered) < 3L) {
+    stop("Ordinal product route requires >=3 ordered levels; use ",
+         "ds.vertGLM for binary logistic models.",
+         call. = FALSE)
+  }
+  if (verbose) {
+    message("[ds.vertOrdinal] dispatching to ",
+            "ds.vertOrdinalJointNewton")
+  }
+  ds.vertOrdinalJointNewton(
+    formula = formula,
+    data = data,
+    levels_ordered = levels_ordered,
+    cumulative_template = cumulative_template,
+    max_outer = as.integer(max_iter %||% max_outer),
+    tol = as.numeric(tol %||% 1e-4),
+    verbose = verbose,
+    datasources = datasources)
+}
+
+#' @keywords internal
+.ds_vertOrdinalWarm <- function(formula, data = NULL, levels_ordered,
+                                cumulative_template = "%s_leq",
+                                max_iter = NULL, tol = NULL,
+                                ring = 63L,
+                                verbose = TRUE, datasources = NULL, ...) {
+  if (!inherits(formula, "formula")) {
+    stop("`formula` must be an R formula", call. = FALSE)
+  }
+  if (!is.character(levels_ordered) || length(levels_ordered) < 2L) {
+    stop("levels_ordered must be a character vector with >= 2 entries",
+         call. = FALSE)
   }
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) {

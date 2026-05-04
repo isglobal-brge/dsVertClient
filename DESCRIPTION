@@ -11,12 +11,12 @@ Authors@R: c(
            role = "aut")
   )
 Description: Client-side DataSHIELD functions for privacy-preserving analysis
-    of vertically partitioned federated data. Provides ECDH-PSI record
-    alignment, GLM (Gaussian, Binomial, Poisson) with standard errors and
-    p-values, Pearson correlation, and PCA. All protocols use Ring63 Beaver
-    MPC with DCF wide spline link functions.
-    Zero observation-level disclosure. Works with the companion dsVert
-    server package.
+    of vertically partitioned federated data. Provides record alignment, GLM,
+    Cox PH, negative binomial, multinomial, ordinal, LMM, GEE, GLMM, IPW,
+    multiple imputation, LASSO, contingency, correlation, PCA, and descriptive
+    workflows over the companion dsVert server package. Exported routes use the
+    non-disclosive product surface; disclosive or materially suboptimal
+    historical routes have been removed from the user API.
 License: MIT + file LICENSE
 URL: https://github.com/isglobal-brge/dsVertClient,
     https://isglobal-brge.github.io/dsVertClient/

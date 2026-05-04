@@ -10,7 +10,6 @@ ds.vertMultinom(
   classes = NULL,
   reference = NULL,
   indicator_template = "\%s_ind",
-  method = c("joint", "warm"),
   max_iter = NULL,
   max_outer = 8L,
   tol = NULL,
@@ -39,23 +38,18 @@ class name to construct indicator column names on the server.
 Default "\\%s_ind" (e.g., stage_ind_I, stage_ind_II, ...). The
 indicator columns must already exist server-side.}
 
-\item{method}{Character. \code{"joint"} (default) fits the joint softmax
-route. \code{"warm"} fits the historical one-vs-rest approximation.}
-
-\item{max_iter}{Optional alias for \code{max_outer} in the joint route;
-forwarded to \code{ds.vertGLM} in the warm route.}
+\item{max_iter}{Optional alias for \code{max_outer}.}
 
 \item{max_outer}{Maximum outer Newton iterations for the joint route.}
 
-\item{tol}{Convergence tolerance for the joint route; forwarded to
-\code{ds.vertGLM} in the warm route when supplied.}
+\item{tol}{Convergence tolerance for the joint route.}
 
 \item{verbose}{Logical (default TRUE). Print per-class fit progress.}
 
 \item{datasources}{DataSHIELD connections; if NULL, uses
 \code{DSI::datashield.connections_find()}.}
 
-\item{...}{passed through to each underlying \code{ds.vertGLM} call.}
+\item{...}{Reserved for future extensions.}
 }
 \value{
 ds.vertMultinom object: a list with per-class \code{ds.glm}
@@ -64,53 +58,9 @@ coefficient matrix (rows = coefficients, columns = non-reference
 classes).
 }
 \description{
-User-facing multinomial wrapper. By default,
-\code{method = "joint"} dispatches to
+User-facing multinomial wrapper. Dispatches to
 \code{\link{ds.vertMultinomJointNewton}}, the paper-safe joint softmax
-Newton route for K=2 and K>=3. \code{method = "warm"} retains the
-historical one-vs-rest approximation for diagnostics and fast warm starts.
+Newton route for K >= 3. The historical one-vs-rest approximation is no
+longer exposed as a user-facing estimator; it remains only as an internal
+warm start for the joint Newton route.
 }
-\details{
-Each binary fit uses the existing Ring63+Beaver+DCF pipeline,
-so no new MPC primitives are required. The client sees only the
-K-1 aggregate coefficient vectors; patient-level class indicators
-stay at the server that hosts the outcome.
-}
-\section{Formal bound on max|Deltapi| vs joint-softmax (AUDITORIA seam)}{
-
-The OVR approximation has an \strong{intrinsic theoretical gap} to the
-joint-softmax MLE (\code{nnet::multinom}) that is independent of
-MPC precision (Ring63/Ring127) and of any permutation bug. Bound
-follows Rifkin & Klautau 2004 \emph{JMLR} 5:101-141 "In Defense of
-One-Vs-All Classification": for K-class OVR on imbalanced data,
-\eqn{\|\pi_{OVR} - \pi_{softmax}\|_\infty \le O((1 - p_{min})
-  \log K)} where \eqn{p_{min}} is the smallest class proportion.
-
-Empirically validated:
-\itemize{
-\item L1 central OVR vs \code{nnet::multinom} on balanced
-birthwt (K=3, \eqn{p_{min} \approx 0.33}):
-\code{max|Deltapi| = 2.35e-01}
-\item L3 federated on NHANES bp_cls (K=3, less balanced):
-\code{max|Deltapi| = 3.45e-01} (stable across 6+ runs)
-}
-
-Seam diagnostics (AUDITORIA-requested, 2026-04-24):
-\itemize{
-\item Permutation bug ruled out -- intercept anchor uses
-name-indexed access (line ~135 \code{intersect(names(
-          gamma_k), names(x_means))}); both sides in formula order
-by construction.
-\item Ring63/Ring127 floor ruled out -- Catrina-Saxena bound for
-Ring63 fracBits=20 over this pipeline is \eqn{\sim}{~}5e-4,
-three OoM below observed.
-\item Closing the 3.45e-01 gap requires the full softmax Newton
-path -- shipped as \code{\link{ds.vertMultinomJointNewton}}
-which reaches PRACTICAL max|Deltapi| approx 4.7e-02 on the same
-cohort (7.3x improvement via joint Newton vs OVR anchor).
-}
-
-The 3.45e-01 label is therefore \strong{by design} for this estimator --
-not a parking item.
-}
-

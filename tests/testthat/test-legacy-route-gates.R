@@ -1,74 +1,90 @@
-test_that("NB full_reg legacy is redirected unless explicitly allowed", {
-  fn <- get("ds.vertNBFullRegTheta", envir = asNamespace("dsVertClient"))
-  expect_true("allow_disclosive_legacy" %in% names(formals(fn)))
+test_that("discarded routes are absent from the exported API", {
+  ns <- asNamespace("dsVertClient")
 
-  src <- paste(deparse(body(fn)), collapse = "\n")
-  expect_true(any(grepl("variant <- \"full_reg_nd\"", src, fixed = TRUE)))
-  expect_true(any(grepl("per-patient non-label eta", src, fixed = TRUE)))
-  expect_true(any(grepl("allow_disclosive_legacy = TRUE", src, fixed = TRUE)))
+  expect_false(exists("ds.vertCox.k3", envir = ns, inherits = FALSE))
+  expect_false("method" %in% names(formals(get("ds.vertCox", ns))))
+  expect_false("allow_disclosive_legacy" %in%
+                 names(formals(get("ds.vertNBFullRegTheta", ns))))
+  expect_false("allow_legacy_ovr" %in%
+                 names(formals(get("ds.vertMultinomJoint", ns))))
+  expect_false("method" %in% names(formals(get("ds.vertGLMM", ns))))
+  expect_false("method" %in% names(formals(get("ds.vertMultinom", ns))))
+  expect_false("method" %in% names(formals(get("ds.vertOrdinal", ns))))
+  expect_false("allow_warm_diagnostic" %in%
+                 names(formals(get("ds.vertMultinom", ns))))
+  expect_false("allow_warm_diagnostic" %in%
+                 names(formals(get("ds.vertOrdinal", ns))))
 })
 
-test_that("multinomial joint legacy wrapper dispatches to JointNewton", {
-  fn <- get("ds.vertMultinomJoint", envir = asNamespace("dsVertClient"))
-  expect_true("allow_legacy_ovr" %in% names(formals(fn)))
+test_that("discarded route arguments fail as removed, not gated", {
+  expect_error(
+    ds.vertCox(as.formula("Surv(time, event) ~ x1"), data = "D",
+               method = "legacy_rank", datasources = list()),
+    "unused argument")
 
-  src <- paste(deparse(body(fn)), collapse = "\n")
-  expect_true(any(grepl("ds.vertMultinomJointNewton", src, fixed = TRUE)))
-  expect_true(any(grepl("allow_legacy_ovr", src, fixed = TRUE)))
-  expect_true(any(grepl("superseded", src, fixed = TRUE)))
-})
-
-test_that("multinomial legacy OVR and GLMM legacy EM fail closed", {
-  old_mn <- getOption("dsvert.allow_multinom_legacy_ovr", NULL)
-  old_glmm <- getOption("dsvert.allow_glmm_legacy_em", NULL)
-  on.exit({
-    if (is.null(old_mn)) {
-      options(dsvert.allow_multinom_legacy_ovr = NULL)
-    } else {
-      options(dsvert.allow_multinom_legacy_ovr = old_mn)
-    }
-    if (is.null(old_glmm)) {
-      options(dsvert.allow_glmm_legacy_em = NULL)
-    } else {
-      options(dsvert.allow_glmm_legacy_em = old_glmm)
-    }
-  }, add = TRUE)
-  options(dsvert.allow_multinom_legacy_ovr = FALSE,
-          dsvert.allow_glmm_legacy_em = FALSE)
+  expect_error(
+    ds.vertNBFullRegTheta(y ~ x, data = "D", variant = "full_reg",
+                          datasources = list()),
+    "variant must")
 
   expect_error(
     ds.vertMultinomJoint(y ~ x, data = "D", levels = c("A", "B", "C"),
                          allow_legacy_ovr = TRUE, datasources = list()),
-    "disabled by default")
+    "unused argument")
 
   expect_error(
     ds.vertGLMM(y ~ x, data = "D", cluster_col = "id", method = "em",
                 datasources = list()),
-    "disabled by default")
+    "unused argument")
+
+  expect_error(
+    ds.vertMultinom(y ~ x, data = "D", classes = c("A", "B", "C"),
+                    method = "warm", datasources = list()),
+    "unused argument")
+
+  expect_error(
+    ds.vertOrdinal(y ~ x, data = "D", levels_ordered = c("low", "mid", "hi"),
+                   method = "warm", datasources = list()),
+    "unused argument")
 })
 
-test_that("user-facing Cox and categorical wrappers default to paper-safe routes", {
-  cox_fn <- get("ds.vertCox", envir = asNamespace("dsVertClient"))
-  expect_true("method" %in% names(formals(cox_fn)))
-  cox_src <- paste(deparse(body(cox_fn)), collapse = "\n")
+test_that("user-facing wrappers dispatch only to product routes", {
+  cox_src <- paste(deparse(body(ds.vertCox)), collapse = "\n")
   expect_true(any(grepl("ds.vertCoxProfileNonDisclosive", cox_src,
                         fixed = TRUE)))
-  expect_true(any(grepl(".ds.vertCoxLegacyRank", cox_src, fixed = TRUE)))
+  expect_false(any(grepl(".ds.vertCoxLegacyRank", cox_src, fixed = TRUE)))
 
-  mn_fn <- get("ds.vertMultinom", envir = asNamespace("dsVertClient"))
-  expect_equal(formals(mn_fn)$method,
-               as.call(list(as.name("c"), "joint", "warm")))
-  mn_src <- paste(deparse(body(mn_fn)), collapse = "\n")
+  mn_src <- paste(deparse(body(ds.vertMultinom)), collapse = "\n")
   expect_true(any(grepl("ds.vertMultinomJointNewton", mn_src, fixed = TRUE)))
-  expect_true(any(grepl("paper-safe joint softmax", mn_src, fixed = TRUE)))
+  expect_false(any(grepl(".ds_vertMultinomWarm", mn_src, fixed = TRUE)))
 
-  ord_fn <- get("ds.vertOrdinal", envir = asNamespace("dsVertClient"))
-  expect_equal(formals(ord_fn)$method,
-               as.call(list(as.name("c"), "joint", "warm")))
-  ord_src <- paste(deparse(body(ord_fn)), collapse = "\n")
-  expect_true(any(grepl("ds.vertOrdinalJointNewton", ord_src, fixed = TRUE)))
-  expect_true(any(grepl("paper-safe proportional odds", ord_src,
+  mnj_src <- paste(deparse(body(ds.vertMultinomJoint)), collapse = "\n")
+  expect_true(any(grepl("ds.vertMultinomJointNewton", mnj_src,
                         fixed = TRUE)))
+  expect_false(any(grepl("allow_legacy_ovr", mnj_src, fixed = TRUE)))
+
+  ord_src <- paste(deparse(body(ds.vertOrdinal)), collapse = "\n")
+  expect_true(any(grepl("ds.vertOrdinalJointNewton", ord_src, fixed = TRUE)))
+  expect_false(any(grepl(".ds_vertOrdinalWarm", ord_src, fixed = TRUE)))
+
+  glmm_src <- paste(deparse(body(ds.vertGLMM)), collapse = "\n")
+  expect_true(any(grepl(".ds_glmm_pql_aggregate_loop", glmm_src,
+                        fixed = TRUE)))
+  expect_false(any(grepl("legacy", glmm_src, fixed = TRUE)))
+})
+
+test_that("internal warm starts remain internal helpers for joint methods", {
+  ns <- asNamespace("dsVertClient")
+  expect_false(".ds_vertMultinomWarm" %in% getNamespaceExports(ns))
+  expect_false(".ds_vertOrdinalWarm" %in% getNamespaceExports(ns))
+
+  mnj_src <- paste(deparse(body(ds.vertMultinomJointNewton)), collapse = "\n")
+  expect_true(any(grepl(".ds_vertMultinomWarm", mnj_src, fixed = TRUE)))
+
+  ordj_src <- paste(deparse(body(ds.vertOrdinalJointNewton)), collapse = "\n")
+  expect_true(any(grepl(".ord_joint_secure_fit", ordj_src, fixed = TRUE)))
+  secure_src <- paste(deparse(get(".ord_joint_secure_fit", ns)), collapse = "\n")
+  expect_true(any(grepl(".ds_vertOrdinalWarm", secure_src, fixed = TRUE)))
 })
 
 test_that("GEE AR1 requires guarded order metadata", {

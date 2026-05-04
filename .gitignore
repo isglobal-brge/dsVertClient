@@ -2,6 +2,10 @@
 *.Rcheck/
 ..Rcheck/
 *.tar.gz
+texput.log
+demo.html
+vignettes/**/*_cache/
+vignettes/**/*.html
 
 # Editor + OS
 .DS_Store

@@ -41,9 +41,8 @@ Strict K=2 share-domain proportional-odds Newton route by
 default. Patient-level linear predictors, class probabilities,
 reciprocals, and score terms remain Ring127 shares; the client receives
 only guarded class counts, aggregate score/Hessian probes, and final
-model parameters. The older per-patient reconstruction route is retained
-only as opt-in diagnostics via
-\code{options(dsvert.allow_patient_level_ordinal_joint = TRUE)}.
+model parameters. The older per-patient reconstruction route has been
+removed from the product package.
 
 For a K-level ordered outcome
 the PO log-likelihood is

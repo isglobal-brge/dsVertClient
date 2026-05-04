@@ -1,5 +1,22 @@
 # dsVertClient (development version)
 
+### Cleanup
+
+* Removed generated package tarballs, vignette HTML, vignette caches,
+  `demo.html`, and TeX logs from version control. Rmd sources remain as the
+  editable validation documentation.
+* Updated README and DESCRIPTION to describe the current product routes and
+  the removed-route policy.
+* Added `inst/docs/product_surface.md`, the K=2 / K>=3 route matrix used to
+  distinguish product estimators from discarded historical paths.
+* Removed disclosive or materially suboptimal user routes: Cox rank/K3
+  prototypes, negative-binomial per-patient eta transport, multinomial OVR
+  final estimator, ordinal patient-level reconstruction, and GLMM EM.
+  Joint multinomial/ordinal routes still use non-exported warm starts
+  internally.
+* Made source installation instructions version-agnostic so they do not point
+  at stale local tarball names.
+
 ## dsVertClient 1.1.0
 
 Companion release to dsVert 1.1.0. Closes the v2 follow-up list (5/5
@@ -13,14 +30,14 @@ state.
   left-truncation (`tstart_col`), stratification (`strata_col`),
   Path B damped fixed-Fisher refinement, and `ring = 63 | 127`. Defaults
   to Ring127 (5/5 STRICT on Pima synthetic; ~2× faster Path B).
-* **`ds.vertCox.k3`** — Cox K=3 via the Allison-1982 Poisson trick
-  with offset + 100 baseline dummies; L-BFGS step-damping + backtracking
-  guard (CGD).
+* Historical K=3 Cox Poisson-trick prototype with offset + baseline dummies
+  was evaluated, then removed from the product API in favour of the
+  non-disclosive profile route.
 * **`ds.vertCoxDiscreteNonDisclosive`** — K=2 discrete-time
   pooled-logistic Cox with Aliasgari-Blanton 2013 share-mask gating.
 * **`ds.vertMultinom`** — K-class one-vs-rest multinomial logistic.
-* **`ds.vertMultinomJoint`** — covariance-rescaled OVR (`full_irls`
-  toggle).
+* **`ds.vertMultinomJoint`** — compatibility wrapper for the joint Newton
+  softmax route.
 * **`ds.vertMultinomJointNewton`** — full softmax Newton via Ring127
   Chebyshev exp + reciprocal + Beaver vecmul on per-patient eta_k /
   mu_k shares (paper §V.A row, Bohning-bounded).

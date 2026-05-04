@@ -9,11 +9,9 @@ ds.vertOrdinal(
   data = NULL,
   levels_ordered,
   cumulative_template = "\%s_leq",
-  method = c("joint", "warm"),
   max_iter = NULL,
   max_outer = 8L,
   tol = NULL,
-  ring = 63L,
   verbose = TRUE,
   datasources = NULL,
   ...
@@ -34,21 +32,11 @@ default \code{"\%s_leq"} produces \code{<level>_leq}, a 0/1 column
 that is 1 when the patient's outcome is at-or-below that level.
 Columns must already exist server-side.}
 
-\item{method}{Character. \code{"joint"} (default) fits the joint
-proportional-odds route. \code{"warm"} fits the historical
-cumulative-binomial approximation.}
-
-\item{max_iter}{Optional alias for \code{max_outer} in the joint route;
-forwarded to \code{ds.vertGLM} in the warm route.}
+\item{max_iter}{Optional alias for \code{max_outer}.}
 
 \item{max_outer}{Maximum outer Newton iterations for the joint route.}
 
-\item{tol}{Convergence tolerance for the joint route; forwarded to
-\code{ds.vertGLM} in the warm route when supplied.}
-
-\item{ring}{Integer (63 or 127). Ring selector for the underlying
-binomial sub-fits. Currently defaults to 63L while the Ring127
-binomial wide-spline path is wired up.}
+\item{tol}{Convergence tolerance for the joint route.}
 
 \item{verbose}{Logical (default TRUE). Print per-threshold fit
 progress.}
@@ -56,7 +44,7 @@ progress.}
 \item{datasources}{DataSHIELD connections; if NULL, uses
 \code{DSI::datashield.connections_find()}.}
 
-\item{...}{Passed to each underlying \code{ds.vertGLM} call.}
+\item{...}{Reserved for future extensions.}
 }
 \value{
 \code{ds.vertOrdinal} object with (among other fields):
@@ -80,10 +68,9 @@ subset once the convention is honoured (probe_ordinal_harness.R,
 }\if{html}{\out{</div>}}
 }
 \description{
-User-facing ordinal wrapper. By default,
-\code{method = "joint"} dispatches to
+User-facing ordinal wrapper. Dispatches to
 \code{\link{ds.vertOrdinalJointNewton}}, the paper-safe joint
-proportional-odds route for K=2 and K>=3. \code{method = "warm"}
-retains the historical cumulative-binomial approximation for diagnostics
-and warm starts.
+proportional-odds route for K >= 3. The historical cumulative-binomial
+approximation is no longer exposed as a user-facing estimator; it remains
+only as an internal warm start for the joint route.
 }

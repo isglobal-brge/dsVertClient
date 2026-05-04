@@ -1,34 +1,10 @@
-#' @keywords internal
-.glmm_legacy_em_allowed <- function() {
-  if (isTRUE(getOption("dsvert.allow_glmm_legacy_em", FALSE))) {
-    return(TRUE)
-  }
-  env <- tolower(Sys.getenv("DSVERT_ALLOW_GLMM_LEGACY_EM", ""))
-  env %in% c("1", "true", "yes")
-}
-
 #' @title Federated binomial GLMM-PQL
 #' @description Fit a binomial generalised linear mixed model with a
 #'   single random intercept on vertically partitioned DataSHIELD data.
-#'   The default and paper-supported route is aggregate PQL: working
-#'   responses, weights, probabilities, residuals, and row scores remain in
+#'   The paper-supported route is aggregate PQL: working responses, weights,
+#'   probabilities, residuals, and row scores remain in
 #'   Ring127 share-domain statistics and the client receives fixed effects,
 #'   scalar variance components, and guarded diagnostics only.
-#'
-#'   A historical EM/offset route based on a Laplace-style inner
-#'   approximation is still present for archived reproducibility, but it is
-#'   disabled by default because it is a weaker approximation than the
-#'   supported PQL route.
-#'
-#'   Historical EM target:
-#'
-#'   \deqn{\ell_L(\beta, \sigma_b^2) = \sum_i \left[\ell_i(\beta, b_i^*)
-#'         - \tfrac{1}{2} \log |H_i(b_i^*)| \right]}
-#'
-#'   where \eqn{b_i^*} is the mode of the per-cluster penalised
-#'   log-likelihood \eqn{\ell_i(\beta, b) = \sum_j \log f(y_{ij}|
-#'   x_{ij}^T \beta + b) - b^2/(2\sigma_b^2)} and \eqn{H_i} is its
-#'   Hessian at the mode.
 #'
 #'   Architecture:
 #'   \enumerate{
@@ -67,17 +43,6 @@
 #' @param inner_iter Inner PIRLS iterations per cluster per outer step.
 #' @param tol Outer convergence tolerance.
 #' @param lambda L2 penalty passed to the inner binomial GLM fits.
-#' @param method Character. \code{"pql_aggregate"} is the default accuracy
-#'   route and runs the aggregate PQL weighted-LMM update using Ring127
-#'   share-domain working statistics. \code{"em"} requests the legacy
-#'   offset-GLM plus BLUP/EM approximation and requires
-#'   \code{options(dsvert.allow_glmm_legacy_em = TRUE)} or
-#'   \code{DSVERT_ALLOW_GLMM_LEGACY_EM=true}.
-#' @param use_pearson_cap Logical. If TRUE, cap the EM variance-component
-#'   update by the first marginal Pearson cluster-moment estimate. This
-#'   prevents BLUP posterior-variance inflation when the random-effect signal
-#'   is weak or singular, using only the same guarded cluster aggregates as
-#'   the default GLMM loop.
 #' @param compute_se Logical. Compute GLM finite-difference standard errors
 #'   for the inner fits. Set FALSE for coefficient/variance validation runs.
 #' @param ring Integer 63 or 127. The PQL aggregate route requires Ring127.
@@ -91,28 +56,16 @@
 ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         max_outer = 10L, inner_iter = 10L,
                         tol = 1e-3, lambda = 0,
-                        method = c("pql_aggregate", "em"),
-                        use_pearson_cap = getOption(
-                          "dsvert.glmm_use_pearson_cap", TRUE),
                         compute_se = TRUE,
                         ring = NULL,
                         verbose = TRUE,
                         datasources = NULL) {
-  method <- match.arg(method)
-  if (identical(method, "em") && !.glmm_legacy_em_allowed()) {
-    stop("ds.vertGLMM(method='em') is disabled by default because the ",
-         "legacy offset-GLM/EM route is an approximate diagnostics route, ",
-         "not the supported GLMM-PQL paper estimator. Use ",
-         "method='pql_aggregate', or set ",
-         "options(dsvert.allow_glmm_legacy_em = TRUE) only for controlled ",
-         "legacy reproduction.",
-         call. = FALSE)
-  }
-  if (is.null(ring)) ring <- if (method == "pql_aggregate") 127L else 63L
+  if (is.null(ring)) ring <- 127L
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
-  if (method == "pql_aggregate" && ring != 127L) {
-    stop("method='pql_aggregate' currently requires ring=127", call. = FALSE)
+  if (ring != 127L) {
+    stop("ds.vertGLMM aggregate PQL currently requires ring=127",
+         call. = FALSE)
   }
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
@@ -145,184 +98,17 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
   n_i <- as.integer(clust_info$sizes)
   n_clusters <- length(n_i)
 
-  if (method == "pql_aggregate") {
-    return(.ds_glmm_pql_aggregate_loop(
-      fit = fit, data = data, cluster_col = cluster_col,
-      n_i = n_i, n_clusters = n_clusters, max_outer = max_outer,
-      tol = tol, compute_se = compute_se,
-      datasources = datasources, server_names = server_names,
-      y_srv = y_srv, verbose = verbose, call = match.call()))
-  }
-
-  # Outer optimiser: alternate (i) compute cluster BLUPs \hat b_i via
-  # Laplace-approximated inner PIRLS on y vs. binomial likelihood, and
-  # (ii) refit the fixed effects with the outer-loop intercept offsets
-  # b_i. Moment-match \sigma_b^2 = var(\hat b_i).
-  sigma_b2 <- 1.0
-  sigma_b2_anchor <- NA_real_
-  sigma_b2_pearson_cap <- NA_real_
-  b_hat <- rep(0, n_clusters)
-  converged <- FALSE
-  offset_col <- NULL
-  for (outer in seq_len(max_outer)) {
-    # Per-cluster binomial score aggregates at current fixed effects and
-    # current random-intercept offset. The vertical path keeps p, y-p and
-    # p(1-p) in the DCF share domain and releases only per-cluster sums.
-    cl <- .ds_glmm_share_domain_moments(
-      fit = fit, data = data, cluster_col = cluster_col,
-      datasources = datasources, server_names = server_names,
-      verbose = verbose)
-    rsum <- as.numeric(cl$rsum_per_cluster)
-    vsum <- as.numeric(cl$vsum_per_cluster)
-    if (length(cl$n_per_cluster) == length(n_i)) {
-      n_i <- as.integer(cl$n_per_cluster)
-    }
-    active <- n_i > 0L & is.finite(rsum) & is.finite(vsum)
-    if (isTRUE(use_pearson_cap) && !is.finite(sigma_b2_pearson_cap) &&
-        sum(active) >= 2L) {
-      inv_v <- 1 / pmax(vsum[active], 1e-8)
-      pearson_cluster <- rsum[active] * inv_v
-      sigma_b2_pearson_cap <- max(
-        stats::var(pearson_cluster) - mean(inv_v),
-        1e-6)
-    }
-    score_mom_num <- sum(rsum[active]^2 - vsum[active])
-    score_mom_den <- sum(vsum[active]^2)
-    sigma_b2_score <- if (is.finite(score_mom_den) && score_mom_den > 0) {
-      max(score_mom_num / score_mom_den, 1e-6)
-    } else {
-      1e-6
-    }
-    info <- rep(Inf, n_clusters)
-    info[active] <- pmax(vsum[active], 1e-8) + 1 / sigma_b2
-    score <- rsum - b_hat / sigma_b2
-    step <- score / info
-    step[!is.finite(step)] <- 0
-    step <- pmax(pmin(step, 3), -3)
-    b_hat_new <- b_hat + step
-    b_hat_new[!active] <- 0
-    if (any(active)) {
-      # Random intercepts are identified with mean zero; otherwise their
-      # common shift is confounded with the fixed intercept and the offset
-      # refit can run away.
-      b_hat_new[active] <- b_hat_new[active] - mean(b_hat_new[active])
-    }
-    # EM update for sigma_b^2 (task #99 fix 2026-04-21):
-    # `var(b_hat)` is biased DOWN because b_hat is a shrunk BLUP:
-    # E[b_hat_i^2] = shrinkage_i * sigma_b^2 + shrinkage_i^2 * posterior_var,
-    # so var(b_hat) systematically underestimates sigma_b^2 by the
-    # shrinkage factor -- on a 15x20 synth with sigma_b = 0.7 the
-    # previous rule collapsed sigma_b^2 -> 0.001 instead of 0.49.
-    #
-    # The canonical Laird-Ware / Lindstrom-Bates EM update uses
-    #   sigma_b^2_new = mean(b_hat_i^2 + posterior_var_i)
-    # which is exactly the conditional-expectation of b_i^2 | y
-    # under the current sigma_b^2. It is positive, non-decreasing from
-    # var(b_hat), and is the fixed point of the EM iteration that
-    # converges to the ML estimator.
-    post_var <- 1 / info
-    sigma_b2_em <- max(mean(b_hat_new[active]^2 + post_var[active]), 1e-6)
-    use_score_anchor <- isTRUE(
-      getOption("dsvert.glmm_use_score_anchor", FALSE)
-    )
-    if (use_score_anchor && !is.finite(sigma_b2_anchor)) {
-      # The first marginal score moment prevents the EM/PQL variance update
-      # from collapsing after BLUP offsets absorb cluster signal. Cap it
-      # conservatively because fixed-point score moments are noisy in very
-      # small clustered fixtures. It is opt-in until validated on a broader
-      # grid because low-variance fixtures can otherwise be over-inflated.
-      anchor_cap <- getOption("dsvert.glmm_sigma_anchor_cap",
-                              2 * sigma_b2_em)
-      anchor_cap <- suppressWarnings(as.numeric(anchor_cap)[1L])
-      if (!is.finite(anchor_cap) || anchor_cap <= 0) anchor_cap <- Inf
-      sigma_b2_anchor <- min(sigma_b2_score, anchor_cap)
-    }
-    sigma_b2_floor <- if (is.finite(sigma_b2_anchor)) sigma_b2_anchor else 1e-6
-    sigma_b2_new <- max(sigma_b2_em, sigma_b2_floor)
-    if (isTRUE(use_pearson_cap) && is.finite(sigma_b2_pearson_cap)) {
-      sigma_b2_new <- max(sigma_b2_floor,
-                          min(sigma_b2_new, sigma_b2_pearson_cap))
-    }
-    if (verbose) {
-      message(sprintf(
-        paste0("[GLMM] outer %d  sigma_b^2=%.4g  var(b_hat)=%.4g  ",
-               "mean(post_var)=%.4g  score_anchor=%.4g  pearson_cap=%.4g"),
-        outer, sigma_b2_new, stats::var(b_hat_new[active]),
-        mean(post_var[active]), sigma_b2_anchor, sigma_b2_pearson_cap))
-    }
-    b_delta <- max(abs(b_hat_new - b_hat))
-    sigma_delta <- abs(sigma_b2_new - sigma_b2)
-    old_coef <- fit$coefficients
-    b_hat <- b_hat_new
-    sigma_b2 <- sigma_b2_new
-
-    # Expand b_i into a per-patient offset column so the next
-    # ds.vertGLM fit adds it through the existing offset= plumbing.
-    tryCatch(
-      DSI::datashield.aggregate(
-        datasources[which(server_names == y_srv)],
-        call(name = "dsvertExpandClusterWeightsDS",
-             data_name = data, cluster_col = cluster_col,
-             weights_per_cluster = as.numeric(b_hat),
-             output_column = "__dsvert_glmm_b")),
-      error = function(e) {
-        message("[GLMM] offset expand failed: ", conditionMessage(e))
-      })
-    offset_col <- "__dsvert_glmm_b"
-    .ds_glmm_cleanup_fit_session(fit, datasources)
-    new_fit <- tryCatch(
-      ds.vertGLM(formula = formula, data = data, family = "binomial",
-                 offset = offset_col,
-                 max_iter = inner_iter, tol = tol, lambda = lambda,
-                 ring = ring,
-                 compute_se = isTRUE(compute_se),
-                 verbose = FALSE,
-                 datasources = datasources,
-                 keep_session = TRUE),
-      error = function(e) {
-        message("[GLMM] inner binomial refit failed: ",
-                conditionMessage(e)); NULL })
-    if (is.null(new_fit)) break
-    fit <- new_fit
-    common_coef <- intersect(names(old_coef), names(fit$coefficients))
-    beta_delta <- if (length(common_coef)) {
-      max(abs(old_coef[common_coef] - fit$coefficients[common_coef]))
-    } else Inf
-    if (max(sigma_delta, b_delta, beta_delta) < tol * max(1, sigma_b2)) {
-      converged <- TRUE
-      break
-    }
-  }
-  .ds_glmm_cleanup_fit_session(fit, datasources)
-
-  icc <- sigma_b2 / (sigma_b2 + pi^2 / 3)  # logistic latent-variance
-  out <- list(
-    coefficients = fit$coefficients,
-    std_errors   = fit$std_errors,
-    sigma_b2     = sigma_b2,
-    sigma_b2_anchor = sigma_b2_anchor,
-    sigma_b2_pearson_cap = sigma_b2_pearson_cap,
-    icc          = icc,
-    n_clusters   = n_clusters,
-    n_obs        = sum(n_i),
-    converged    = converged,
-    iterations   = outer,
-    fit          = fit,
-    method       = "em",
-    family       = "binomial (Laplace-approximated)",
-    call         = match.call())
-  class(out) <- c("ds.vertGLMM", "list")
-  out
+  .ds_glmm_pql_aggregate_loop(
+    fit = fit, data = data, cluster_col = cluster_col,
+    n_i = n_i, n_clusters = n_clusters, max_outer = max_outer,
+    tol = tol, compute_se = compute_se,
+    datasources = datasources, server_names = server_names,
+    y_srv = y_srv, verbose = verbose, call = match.call())
 }
 
 #' @export
 print.ds.vertGLMM <- function(x, ...) {
-  method <- x$method %||% "em"
-  if (identical(method, "pql_aggregate")) {
-    cat("dsVert binomial GLMM-PQL (aggregate weighted LMM)\n")
-  } else {
-    cat("dsVert binomial GLMM legacy EM/Laplace approximation\n")
-  }
+  cat("dsVert binomial GLMM-PQL (aggregate weighted LMM)\n")
   n_obs <- if (!is.null(x$n_obs)) x$n_obs else sum(x$cluster_sizes %||% 0L)
   cat(sprintf("  Clusters = %d    N = %d\n",
               x$n_clusters, n_obs))
