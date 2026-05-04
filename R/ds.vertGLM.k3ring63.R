@@ -37,6 +37,8 @@ NULL
     no_intercept = FALSE,
     start = NULL,
     compute_se = TRUE,
+    compute_deviance = TRUE,
+    gradient_only = FALSE,
     ring = 63L) {
 
   K <- length(server_list)
@@ -230,10 +232,13 @@ NULL
     }
     if (isTRUE(no_intercept)) intercept <- 0
   }
+  beta <- unname(beta)
+  intercept <- unname(intercept)
   lbfgs_s <- list(); lbfgs_y <- list()
   prev_theta <- NULL; prev_grad <- NULL
   converged <- FALSE; final_iter <- 0
   max_diff <- Inf
+  last_gradient <- NULL
 
   # Feature counts for beta splitting (EXCLUDING intercept)
   p_coord <- length(x_vars[[coordinator]])
@@ -495,8 +500,21 @@ NULL
 
     theta <- c(intercept, beta)
     full_grad <- c(sum_residual / n_obs, gradient / n_obs) + lambda * theta
+    names(full_grad) <- c("(Intercept)", feature_order)
     if (isTRUE(no_intercept)) {
       full_grad[1] <- 0
+    }
+    last_gradient <- full_grad
+
+    if (isTRUE(gradient_only)) {
+      converged <- TRUE
+      final_iter <- iter
+      max_diff <- 0
+      if (verbose) {
+        message(sprintf("  [Gradient] returned aggregate score at start (||grad||=%.4f)",
+                        sqrt(sum(full_grad^2))))
+      }
+      break
     }
 
     if (!is.null(prev_theta)) {
@@ -522,14 +540,14 @@ NULL
     # Backtracking: halve step until new theta is finite and bounded
     step_size <- if (iter <= 1) 0.3 else 1.0
     for (bt in 0:6) {
-      new_theta <- theta + step_size * direction
+      new_theta <- unname(theta + step_size * direction)
       if (all(is.finite(new_theta)) && max(abs(new_theta)) < 50) break
       step_size <- step_size * 0.5
     }
     if (!all(is.finite(new_theta)))
       stop("L-BFGS step produced non-finite theta \u2014 divergence guard", call. = FALSE)
-    intercept <- if (isTRUE(no_intercept)) 0 else new_theta[1]
-    beta <- new_theta[-1]
+    intercept <- if (isTRUE(no_intercept)) 0 else unname(new_theta[1])
+    beta <- unname(new_theta[-1])
 
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
     final_iter <- iter
@@ -580,7 +598,7 @@ NULL
   # Disclosure: only aggregate gradients (same as iterations). SAFE.
   # ===========================================================================
   inv_hessian <- list()
-  if (isTRUE(compute_se)) {
+  if (isTRUE(compute_se) && !isTRUE(gradient_only)) {
   if (verbose) message("  [SE] Computing exact Hessian (central differences)...")
   p_plus1 <- p_total + 1
   delta <- 0.01  # larger delta for better signal vs Ring63 noise
@@ -841,7 +859,17 @@ NULL
     }
     result <- list(betas = betas_out, converged = converged,
                    final_iter = final_iter, deviance = NA_real_,
-                   inv_hessian = inv_hessian)
+                   inv_hessian = inv_hessian,
+                   gradient_std = last_gradient)
+    if (!label_intercept) result$intercept <- intercept
+    return(result)
+  }
+
+  if (!isTRUE(compute_deviance)) {
+    result <- list(betas = betas_out, converged = converged,
+                   final_iter = final_iter, deviance = NA_real_,
+                   inv_hessian = inv_hessian,
+                   gradient_std = last_gradient)
     if (!label_intercept) result$intercept <- intercept
     return(result)
   }
@@ -1009,7 +1037,8 @@ NULL
   if (verbose) message(sprintf("  [Deviance] = %.4f", secure_deviance))
 
   result <- list(betas = betas_out, converged = converged, final_iter = final_iter,
-                 deviance = secure_deviance, inv_hessian = inv_hessian)
+                 deviance = secure_deviance, inv_hessian = inv_hessian,
+                 gradient_std = last_gradient)
   if (!label_intercept) result$intercept <- intercept
   result
 }

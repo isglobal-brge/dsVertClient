@@ -13,6 +13,8 @@ ds.vertLASSOIter(
   tol = 1e-08,
   alpha = 0.5,
   inner_iter = 8L,
+  exact_non_gaussian = TRUE,
+  ring = NULL,
   verbose = TRUE,
   datasources = NULL
 )
@@ -35,6 +37,16 @@ bound on the Gaussian coordinate-descent iteration budget.}
 
 \item{inner_iter}{Inner \code{ds.vertGLM} budget for the initial
 unpenalised fit.}
+
+\item{exact_non_gaussian}{Logical. For binomial models, use repeated
+secure aggregate-score evaluations and proximal-gradient updates on
+the standardized L1 objective instead of the one-step surrogate.
+Poisson remains on the documented one-step surrogate because it has
+no global Lipschitz constant without an eta bound.}
+
+\item{ring}{Integer (63 or 127). MPC ring for the GLM score evaluations.
+Defaults to Ring63. Ring127 can be requested explicitly after fixture
+validation for the target deployment.}
 
 \item{verbose}{Print progress.}
 
@@ -61,11 +73,14 @@ The solver delegates to \code{\link{ds.vertLASSOProximal}}, which
 reconstructs \eqn{X^T X/n} from aggregate covariance/Hessian output
 and runs coordinate descent client-side. For binomial and Poisson GLMs,
 a true proximal solver would need repeated secure gradient evaluations
-at sparse warm starts, which the current GLM API does not expose. Those
-families therefore return the documented \code{\link{ds.vertLASSO1Step}}
-quadratic-surrogate path instead of pretending to be exact.
+at sparse warm starts. Binomial models now use the internal aggregate
+score path to run proximal-gradient on the standardized L1 objective.
+Poisson models still return the documented \code{\link{ds.vertLASSO1Step}}
+quadratic-surrogate path because a global Lipschitz bound requires an
+additional eta-bound design.
 
 Non-disclosure: the inner ds.vertGLM call already hides everything
 at the p-aggregate level; this wrapper only manipulates returned
-aggregate coefficients and covariance/Hessian matrices.
+aggregate coefficients, covariance/Hessian matrices, or p-dimensional
+aggregate scores.
 }
