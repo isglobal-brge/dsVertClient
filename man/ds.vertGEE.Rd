@@ -32,14 +32,15 @@ the outcome and all clusters must pass \code{datashield.privacyLevel}.}
 
 \item{corstr}{Working correlation. \code{"independence"} is available for
 Gaussian/binomial/Poisson. \code{"exchangeable"} fits true exchangeable
-Gaussian and Poisson GEE coefficients from guarded cluster-level sufficient
-statistics; binomial exchangeable and AR1 fail closed rather than returning
-an independence estimate under a stronger label.}
+Gaussian, binomial, and Poisson GEE coefficients from guarded cluster-level
+sufficient statistics; AR1 fails closed rather than returning an independence
+estimate under a stronger label.}
 
 \item{max_iter, tol, lambda, verbose}{Passed to \code{ds.vertGLM}.}
 
-\item{ring}{Integer 63 or 127. Poisson exchangeable is automatically run in
-Ring127 because its protected half-link exponentials need high precision.}
+\item{ring}{Integer 63 or 127. Binomial/Poisson exchangeable is
+automatically run in Ring127 because protected nonlinear link operations
+need high precision.}
 
 \item{datasources}{DataSHIELD connection object.}
 }
@@ -56,8 +57,8 @@ return sandwich (robust) standard errors alongside the usual
 model-based ones. The point estimate \eqn{\hat{\beta}} is obtained
 by a single call to \code{\link{ds.vertGLM}}. For Gaussian
 \code{corstr = "exchangeable"}, dsVert promotes the point estimate to a
-protected cluster-level exchangeable GLS/GEE update. For Poisson
-\code{corstr = "exchangeable"}, dsVert uses a Ring127 protected
+protected cluster-level exchangeable GLS/GEE update. For binomial and
+Poisson \code{corstr = "exchangeable"}, dsVert uses a Ring127 protected
 Pearson-score exchangeable GEE update. For Gaussian, binomial, and
 Poisson independence models the sandwich meat is computed in the share
 domain. If
