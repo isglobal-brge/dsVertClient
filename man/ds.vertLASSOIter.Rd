@@ -16,6 +16,7 @@ ds.vertLASSOIter(
   exact_non_gaussian = TRUE,
   ring = NULL,
   lipschitz = c("auto", "gram", "safe"),
+  fista_restart = TRUE,
   poisson_damping = 0.5,
   verbose = TRUE,
   datasources = NULL
@@ -55,6 +56,11 @@ validation for the target deployment.}
 bound and falls back to the conservative \code{0.25 * (p + 1)} bound;
 \code{"gram"} requires the aggregate Gram bound; \code{"safe"} always
 uses the conservative bound.}
+
+\item{fista_restart}{Logical. For binomial proximal-gradient, reset FISTA
+momentum when the client-side gradient-restart criterion triggers. This
+uses only p-dimensional coefficient vectors already held by the client
+and does not require opening objectives or row-level quantities.}
 
 \item{poisson_damping}{Numeric in (0, 1]. Fixed damping applied to Poisson
 proximal-Newton proposals. The default 0.5 is intentionally conservative
