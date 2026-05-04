@@ -41,14 +41,18 @@ state.
   random intercept + slopes via `random_slopes`; `ring = ring127`
   pipeline for STRICT closure on dense Gram matrices.
 * **`ds.vertLMM.k3`** — REML 1-D profile LMM for K=3.
-* **`ds.vertGLMM`** — Laplace-approximated binomial GLMM (single
-  random intercept; stretch deliverable, moment-matching variance
-  recovery).
+* **`ds.vertGLMM`** — aggregate GLMM-PQL binomial mixed model (single
+  random intercept) with guarded share-domain cluster sufficient
+  statistics; the older EM/Laplace-style route is diagnostics-only.
 * **`ds.vertIPW`** — propensity-weighted two-stage GLM wrapper.
 * **`ds.vertLASSOProximal`** — proper LASSO via client-side
   proximal-gradient (FISTA-accelerated by default) on the normal
   equations; 4–10× tighter coefficient agreement vs post-hoc
   soft-threshold.
+* **`ds.vertLASSOIter`** — standardized L1 path for Gaussian, binomial,
+  and Poisson GLMs; binomial uses aggregate-score FISTA with a
+  LASSO-specific 200-interval secure sigmoid, and Poisson uses
+  aggregate score/Hessian prox-Newton.
 * **`ds.vertLASSO1Step`** + **`ds.vertLASSOCV`** — one-step
   quadratic-surrogate LASSO with AIC / BIC / EBIC information-criterion
   λ selector.

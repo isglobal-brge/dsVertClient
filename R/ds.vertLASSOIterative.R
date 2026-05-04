@@ -46,6 +46,13 @@
 #'   momentum when the client-side gradient-restart criterion triggers. This
 #'   uses only p-dimensional coefficient vectors already held by the client
 #'   and does not require opening objectives or row-level quantities.
+#' @param binomial_sigmoid_intervals Integer or NULL. Number of secure
+#'   sigmoid spline intervals used by binomial aggregate-score evaluations.
+#'   The default, \code{getOption("dsvert.lasso_binomial_sigmoid_intervals",
+#'   200L)}, is intentionally finer than the generic GLM default because
+#'   L1 optimisation repeatedly reuses the score oracle and amplifies the
+#'   spline floor. Set NULL to inherit the ambient
+#'   \code{dsvert.glm_num_intervals_binomial} option.
 #' @param poisson_damping Numeric in (0, 1]. Fixed damping applied to Poisson
 #'   proximal-Newton proposals. The default 0.5 is intentionally conservative
 #'   and avoids an extra objective/deviance pass.
@@ -66,6 +73,9 @@ ds.vertLASSOIter <- function(formula, data = NULL,
                               ring = NULL,
                               lipschitz = c("auto", "gram", "safe"),
                               fista_restart = TRUE,
+                              binomial_sigmoid_intervals = getOption(
+                                "dsvert.lasso_binomial_sigmoid_intervals",
+                                200L),
                               poisson_damping = 0.5,
                               verbose = TRUE, datasources = NULL) {
   family <- match.arg(family)
@@ -87,6 +97,25 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     stop("poisson_damping must be in (0, 1]", call. = FALSE)
   }
   fista_restart <- isTRUE(fista_restart)
+  if (!is.null(binomial_sigmoid_intervals)) {
+    binomial_sigmoid_intervals <- as.integer(binomial_sigmoid_intervals)
+    if (length(binomial_sigmoid_intervals) != 1L ||
+        !is.finite(binomial_sigmoid_intervals) ||
+        binomial_sigmoid_intervals < 10L) {
+      stop("binomial_sigmoid_intervals must be NULL or an integer >= 10",
+           call. = FALSE)
+    }
+  }
+
+  .with_binomial_sigmoid_intervals <- function(expr) {
+    if (!exact_binomial || is.null(binomial_sigmoid_intervals)) {
+      return(force(expr))
+    }
+    old <- getOption("dsvert.glm_num_intervals_binomial", NULL)
+    on.exit(options(dsvert.glm_num_intervals_binomial = old), add = TRUE)
+    options(dsvert.glm_num_intervals_binomial = binomial_sigmoid_intervals)
+    force(expr)
+  }
 
   .orig_to_std <- function(beta_orig, fit) {
     beta_orig <- as.numeric(beta_orig)
@@ -121,13 +150,13 @@ ds.vertLASSOIter <- function(formula, data = NULL,
   }
 
   .score_std <- function(theta_std) {
-    fit_g <- ds.vertGLM(
+    fit_g <- .with_binomial_sigmoid_intervals(ds.vertGLM(
       formula, data = data, family = family,
       max_iter = 1L, tol = tol, lambda = 0,
       ring = ring, start = theta_std,
       compute_se = FALSE, compute_deviance = FALSE,
       gradient_only = TRUE,
-      verbose = FALSE, datasources = datasources)
+      verbose = FALSE, datasources = datasources))
     g <- fit_g$gradient_std
     if (is.null(g)) stop("GLM score evaluation returned no gradient",
                          call. = FALSE)
@@ -139,13 +168,13 @@ ds.vertLASSOIter <- function(formula, data = NULL,
   }
 
   .score_hessian_std <- function(theta_std) {
-    fit_g <- ds.vertGLM(
+    fit_g <- .with_binomial_sigmoid_intervals(ds.vertGLM(
       formula, data = data, family = family,
       max_iter = 1L, tol = tol, lambda = 0,
       ring = ring, start = theta_std,
       compute_se = TRUE, compute_deviance = FALSE,
       gradient_only = TRUE,
-      verbose = FALSE, datasources = datasources)
+      verbose = FALSE, datasources = datasources))
     g <- fit_g$gradient_std
     H <- fit_g$hessian_std
     if (is.null(g) || is.null(H)) {
@@ -413,6 +442,11 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     exact_non_gaussian = exact_binomial || exact_poisson,
     ring        = ring,
     lipschitz   = if (is.null(step_bound)) NA_character_ else step_bound$source,
+    binomial_sigmoid_intervals = if (exact_binomial) {
+      binomial_sigmoid_intervals
+    } else {
+      NA_integer_
+    },
     poisson_damping = if (exact_poisson) poisson_damping else NA_real_,
     fista_restart = if (exact_binomial) fista_restart else NA,
     call        = match.call())
