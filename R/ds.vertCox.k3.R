@@ -1,3 +1,13 @@
+# Internal helper: allow the archived K>=3 person-time Poisson Cox wrapper
+# only for controlled diagnostics. The strict paper route is
+# ds.vertCoxProfileNonDisclosive.
+.cox_k3_poisson_legacy_allowed <- function() {
+  if (isTRUE(getOption("dsvert.allow_legacy_cox_k3_poisson", FALSE)))
+    return(TRUE)
+  env <- tolower(Sys.getenv("DSVERT_ALLOW_LEGACY_COX_K3_POISSON", ""))
+  env %in% c("1", "true", "yes")
+}
+
 #' @title Federated Cox proportional-hazards via Allison-1982 Poisson trick (K=3)
 #' @description Discrete-time Allison-1982 / Whitehead-1980 / Prentice-Gloeckler
 #'   1978 Sec.2 equivalence: the partial-likelihood Cox estimator is the
@@ -59,13 +69,23 @@
 #'   data using GLIM. \emph{Applied Statistics}, 29(3), 268-275.
 #' Andreux, M. \emph{et al.} (2020). Federated survival analysis with
 #'   discrete-time Cox models. arXiv:2006.08997.
-#' @seealso \code{\link{ds.vertGLM}}, \code{\link{ds.vertCox}} (K=2
-#'   masked-Newton path).
+#' @seealso \code{\link{ds.vertGLM}},
+#'   \code{\link{ds.vertCoxProfileNonDisclosive}}.
 #' @export
 ds.vertCox.k3 <- function(formula, data, event_col,
                            offset_col, baseline_col,
                            max_iter = 100L, tol = 1e-5, lambda = 0,
                            verbose = TRUE, datasources = NULL) {
+  if (!.cox_k3_poisson_legacy_allowed()) {
+    stop(
+      "ds.vertCox.k3 is disabled under strict non-disclosure: it expects ",
+      "a person-time-expanded dataset and can expose event-time baseline ",
+      "metadata through the legacy Poisson design. Use ",
+      "ds.vertCoxProfileNonDisclosive for the strict K>=3 Cox PH route, ",
+      "or set options(dsvert.allow_legacy_cox_k3_poisson = TRUE) only for ",
+      "controlled diagnostic legacy runs.",
+      call. = FALSE)
+  }
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   if (length(datasources) < 3L)
     stop("ds.vertCox.k3 requires K=3 connections (got ",
@@ -103,7 +123,7 @@ ds.vertCox.k3 <- function(formula, data, event_col,
     call(name = "dsvertAddFactorDummiesDS",
          data_name = data, var = baseline_col,
          prefix = dummy_prefix, drop_first = TRUE,
-         suppress_small_cells = FALSE))
+         suppress_small_cells = TRUE))
   if (is.list(dummy_res) && length(dummy_res) == 1L) dummy_res <- dummy_res[[1L]]
   baseline_terms <- dummy_res$dummy_columns
 
