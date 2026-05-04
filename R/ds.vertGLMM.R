@@ -1,7 +1,26 @@
-#' @title Federated binomial GLMM via Laplace approximation
+#' @keywords internal
+.glmm_legacy_em_allowed <- function() {
+  if (isTRUE(getOption("dsvert.allow_glmm_legacy_em", FALSE))) {
+    return(TRUE)
+  }
+  env <- tolower(Sys.getenv("DSVERT_ALLOW_GLMM_LEGACY_EM", ""))
+  env %in% c("1", "true", "yes")
+}
+
+#' @title Federated binomial GLMM-PQL
 #' @description Fit a binomial generalised linear mixed model with a
-#'   single random intercept on vertically partitioned DataSHIELD data
-#'   via the Laplace-approximated marginal likelihood:
+#'   single random intercept on vertically partitioned DataSHIELD data.
+#'   The default and paper-supported route is aggregate PQL: working
+#'   responses, weights, probabilities, residuals, and row scores remain in
+#'   Ring127 share-domain statistics and the client receives fixed effects,
+#'   scalar variance components, and guarded diagnostics only.
+#'
+#'   A historical EM/offset route based on a Laplace-style inner
+#'   approximation is still present for archived reproducibility, but it is
+#'   disabled by default because it is a weaker approximation than the
+#'   supported PQL route.
+#'
+#'   Historical EM target:
 #'
 #'   \deqn{\ell_L(\beta, \sigma_b^2) = \sum_i \left[\ell_i(\beta, b_i^*)
 #'         - \tfrac{1}{2} \log |H_i(b_i^*)| \right]}
@@ -50,8 +69,10 @@
 #' @param lambda L2 penalty passed to the inner binomial GLM fits.
 #' @param method Character. \code{"pql_aggregate"} is the default accuracy
 #'   route and runs the aggregate PQL weighted-LMM update using Ring127
-#'   share-domain working statistics. \code{"em"} keeps the legacy
-#'   offset-GLM plus BLUP/EM approximation.
+#'   share-domain working statistics. \code{"em"} requests the legacy
+#'   offset-GLM plus BLUP/EM approximation and requires
+#'   \code{options(dsvert.allow_glmm_legacy_em = TRUE)} or
+#'   \code{DSVERT_ALLOW_GLMM_LEGACY_EM=true}.
 #' @param use_pearson_cap Logical. If TRUE, cap the EM variance-component
 #'   update by the first marginal Pearson cluster-moment estimate. This
 #'   prevents BLUP posterior-variance inflation when the random-effect signal
@@ -78,6 +99,15 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         verbose = TRUE,
                         datasources = NULL) {
   method <- match.arg(method)
+  if (identical(method, "em") && !.glmm_legacy_em_allowed()) {
+    stop("ds.vertGLMM(method='em') is disabled by default because the ",
+         "legacy offset-GLM/EM route is an approximate diagnostics route, ",
+         "not the supported GLMM-PQL paper estimator. Use ",
+         "method='pql_aggregate', or set ",
+         "options(dsvert.allow_glmm_legacy_em = TRUE) only for controlled ",
+         "legacy reproduction.",
+         call. = FALSE)
+  }
   if (is.null(ring)) ring <- if (method == "pql_aggregate") 127L else 63L
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
@@ -278,6 +308,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     converged    = converged,
     iterations   = outer,
     fit          = fit,
+    method       = "em",
     family       = "binomial (Laplace-approximated)",
     call         = match.call())
   class(out) <- c("ds.vertGLMM", "list")
@@ -286,7 +317,12 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
 
 #' @export
 print.ds.vertGLMM <- function(x, ...) {
-  cat("dsVert binomial GLMM (Laplace approximation)\n")
+  method <- x$method %||% "em"
+  if (identical(method, "pql_aggregate")) {
+    cat("dsVert binomial GLMM-PQL (aggregate weighted LMM)\n")
+  } else {
+    cat("dsVert binomial GLMM legacy EM/Laplace approximation\n")
+  }
   n_obs <- if (!is.null(x$n_obs)) x$n_obs else sum(x$cluster_sizes %||% 0L)
   cat(sprintf("  Clusters = %d    N = %d\n",
               x$n_clusters, n_obs))
