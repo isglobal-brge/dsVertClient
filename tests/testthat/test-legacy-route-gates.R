@@ -18,6 +18,35 @@ test_that("multinomial joint legacy wrapper dispatches to JointNewton", {
   expect_true(any(grepl("superseded", src, fixed = TRUE)))
 })
 
+test_that("multinomial legacy OVR and GLMM legacy EM fail closed", {
+  old_mn <- getOption("dsvert.allow_multinom_legacy_ovr", NULL)
+  old_glmm <- getOption("dsvert.allow_glmm_legacy_em", NULL)
+  on.exit({
+    if (is.null(old_mn)) {
+      options(dsvert.allow_multinom_legacy_ovr = NULL)
+    } else {
+      options(dsvert.allow_multinom_legacy_ovr = old_mn)
+    }
+    if (is.null(old_glmm)) {
+      options(dsvert.allow_glmm_legacy_em = NULL)
+    } else {
+      options(dsvert.allow_glmm_legacy_em = old_glmm)
+    }
+  }, add = TRUE)
+  options(dsvert.allow_multinom_legacy_ovr = FALSE,
+          dsvert.allow_glmm_legacy_em = FALSE)
+
+  expect_error(
+    ds.vertMultinomJoint(y ~ x, data = "D", levels = c("A", "B", "C"),
+                         allow_legacy_ovr = TRUE, datasources = list()),
+    "disabled by default")
+
+  expect_error(
+    ds.vertGLMM(y ~ x, data = "D", cluster_col = "id", method = "em",
+                datasources = list()),
+    "disabled by default")
+})
+
 test_that("user-facing Cox and categorical wrappers default to paper-safe routes", {
   cox_fn <- get("ds.vertCox", envir = asNamespace("dsVertClient"))
   expect_true("method" %in% names(formals(cox_fn)))
@@ -40,4 +69,11 @@ test_that("user-facing Cox and categorical wrappers default to paper-safe routes
   expect_true(any(grepl("ds.vertOrdinalJointNewton", ord_src, fixed = TRUE)))
   expect_true(any(grepl("paper-safe proportional odds", ord_src,
                         fixed = TRUE)))
+})
+
+test_that("GEE AR1 fails closed instead of falling back to independence", {
+  expect_error(
+    ds.vertGEE(y ~ x, data = "D", family = "gaussian", corstr = "ar1",
+               datasources = list()),
+    "not implemented as a true working-correlation estimator")
 })
