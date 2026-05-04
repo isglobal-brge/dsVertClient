@@ -28,7 +28,7 @@ options(opal.verifyssl = FALSE)
 
 PROJ <- "vert_demo"
 
-## Tarball locations: prefer DSVERT_PROVISION_TARBALLS else repo defaults.
+## Tarball locations: prefer DSVERT_PROVISION_TARBALLS else latest repo builds.
 .repo_root <- function() {
   r <- Sys.getenv("DSVERT_REPO_ROOT", unset = "")
   if (nzchar(r)) return(r)
@@ -41,6 +41,18 @@ PROJ <- "vert_demo"
   }
   "."
 }
+
+.latest_tarball <- function(root, pkg) {
+  hits <- list.files(root, pattern = paste0("^", pkg, "_.*[.]tar[.]gz$"),
+                     full.names = TRUE)
+  if (!length(hits)) {
+    stop("Cannot locate a built ", pkg, " tarball under ", root,
+         ". Run R CMD build first or set DSVERT_PROVISION_TARBALLS.",
+         call. = FALSE)
+  }
+  hits[order(file.info(hits)$mtime, decreasing = TRUE)][1L]
+}
+
 TARBALLS <- local({
   ovr <- Sys.getenv("DSVERT_PROVISION_TARBALLS", unset = "")
   if (nzchar(ovr)) {
@@ -48,8 +60,8 @@ TARBALLS <- local({
     list(dsVert = parts[1], dsVertClient = parts[2])
   } else {
     r <- .repo_root()
-    list(dsVert       = file.path(r, "dsVert_1.1.0.tar.gz"),
-         dsVertClient = file.path(r, "dsVertClient_1.1.0.tar.gz"))
+    list(dsVert       = .latest_tarball(r, "dsVert"),
+         dsVertClient = .latest_tarball(r, "dsVertClient"))
   }
 })
 

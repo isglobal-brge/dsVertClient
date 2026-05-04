@@ -142,12 +142,12 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   non_ref <- levels[-1L]
   K_minus_1 <- length(non_ref)
 
-  # Warm start via ds.vertMultinom (OVR + softmax-anchor).
-  warm <- ds.vertMultinom(formula, data = data, classes = levels,
-                           reference = ref,
-                           method = "warm",
-                           indicator_template = indicator_template,
-                           verbose = verbose, datasources = datasources)
+  # Internal warm start via one-vs-rest fits; not exposed as a user route.
+  warm <- .ds_vertMultinomWarm(formula, data = data, classes = levels,
+                               reference = ref,
+                               indicator_template = indicator_template,
+                               verbose = verbose,
+                               datasources = datasources)
   beta_mat <- warm$coefficients
   if (is.null(beta_mat))
     stop("warm start produced no coefficients", call. = FALSE)

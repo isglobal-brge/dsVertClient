@@ -17,8 +17,7 @@ ds.vertLASSOIter(
   ring = NULL,
   lipschitz = c("auto", "gram", "safe"),
   fista_restart = TRUE,
-  binomial_sigmoid_intervals = getOption("dsvert.lasso_binomial_sigmoid_intervals",
-    200L),
+  binomial_sigmoid_intervals = getOption("dsvert.lasso_binomial_sigmoid_intervals", 200L),
   poisson_damping = 0.5,
   verbose = TRUE,
   datasources = NULL
@@ -67,7 +66,7 @@ and does not require opening objectives or row-level quantities.}
 \item{binomial_sigmoid_intervals}{Integer or NULL. Number of secure
 sigmoid spline intervals used by binomial aggregate-score evaluations.
 The default, \code{getOption("dsvert.lasso_binomial_sigmoid_intervals",
-200L)}, is intentionally finer than the generic GLM default because
+  200L)}, is intentionally finer than the generic GLM default because
 L1 optimisation repeatedly reuses the score oracle and amplifies the
 spline floor. Set NULL to inherit the ambient
 \code{dsvert.glm_num_intervals_binomial} option.}

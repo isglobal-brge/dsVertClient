@@ -1,6 +1,13 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
+^.*\.tar\.gz$
+^.*\.Rcheck$
+^\.Rcheck$
+^texput\.log$
+^demo\.html$
 ^vignettes$
+^vignettes/.*_cache$
+^vignettes/.*\.html$
 ^\.github$
 ^docs$
 ^scripts$

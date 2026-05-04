@@ -1,9 +1,9 @@
 #' @title Federated multinomial logistic regression
-#' @description User-facing multinomial wrapper. By default,
-#'   \code{method = "joint"} dispatches to
+#' @description User-facing multinomial wrapper. Dispatches to
 #'   \code{\link{ds.vertMultinomJointNewton}}, the paper-safe joint softmax
-#'   Newton route for K=2 and K>=3. \code{method = "warm"} retains the
-#'   historical one-vs-rest approximation for diagnostics and fast warm starts.
+#'   Newton route for K >= 3. The historical one-vs-rest approximation is no
+#'   longer exposed as a user-facing estimator; it remains only as an internal
+#'   warm start for the joint Newton route.
 #'
 #' @param formula R formula with the class indicator on the LHS. The
 #'   class column must be a factor with K levels OR a pre-existing set
@@ -19,81 +19,35 @@
 #'   class name to construct indicator column names on the server.
 #'   Default "\%s_ind" (e.g., stage_ind_I, stage_ind_II, ...). The
 #'   indicator columns must already exist server-side.
-#' @param method Character. \code{"joint"} (default) fits the joint softmax
-#'   route. \code{"warm"} fits the historical one-vs-rest approximation.
-#' @param max_iter Optional alias for \code{max_outer} in the joint route;
-#'   forwarded to \code{ds.vertGLM} in the warm route.
+#' @param max_iter Optional alias for \code{max_outer}.
 #' @param max_outer Maximum outer Newton iterations for the joint route.
-#' @param tol Convergence tolerance for the joint route; forwarded to
-#'   \code{ds.vertGLM} in the warm route when supplied.
+#' @param tol Convergence tolerance for the joint route.
 #' @param verbose Logical (default TRUE). Print per-class fit progress.
 #' @param datasources DataSHIELD connections; if NULL, uses
 #'   \code{DSI::datashield.connections_find()}.
-#' @param ... passed through to each underlying \code{ds.vertGLM} call.
+#' @param ... Reserved for future extensions.
 #'
 #' @return ds.vertMultinom object: a list with per-class \code{ds.glm}
 #'   fits, the level vector, the reference, and a consolidated
 #'   coefficient matrix (rows = coefficients, columns = non-reference
 #'   classes).
 #'
-#' @details Each binary fit uses the existing Ring63+Beaver+DCF pipeline,
-#'   so no new MPC primitives are required. The client sees only the
-#'   K-1 aggregate coefficient vectors; patient-level class indicators
-#'   stay at the server that hosts the outcome.
-#'
-#' @section Formal bound on max|Deltapi| vs joint-softmax (AUDITORIA seam):
-#'   The OVR approximation has an **intrinsic theoretical gap** to the
-#'   joint-softmax MLE (\code{nnet::multinom}) that is independent of
-#'   MPC precision (Ring63/Ring127) and of any permutation bug. Bound
-#'   follows Rifkin & Klautau 2004 *JMLR* 5:101-141 "In Defense of
-#'   One-Vs-All Classification": for K-class OVR on imbalanced data,
-#'   \eqn{\|\pi_{OVR} - \pi_{softmax}\|_\infty \le O((1 - p_{min})
-#'   \log K)} where \eqn{p_{min}} is the smallest class proportion.
-#'
-#'   Empirically validated:
-#'   \itemize{
-#'     \item L1 central OVR vs \code{nnet::multinom} on balanced
-#'           birthwt (K=3, \eqn{p_{min} \approx 0.33}):
-#'           \code{max|Deltapi| = 2.35e-01}
-#'     \item L3 federated on NHANES bp_cls (K=3, less balanced):
-#'           \code{max|Deltapi| = 3.45e-01} (stable across 6+ runs)
-#'   }
-#'
-#'   Seam diagnostics (AUDITORIA-requested, 2026-04-24):
-#'   \itemize{
-#'     \item Permutation bug ruled out -- intercept anchor uses
-#'           name-indexed access (line ~135 \code{intersect(names(
-#'           gamma_k), names(x_means))}); both sides in formula order
-#'           by construction.
-#'     \item Ring63/Ring127 floor ruled out -- Catrina-Saxena bound for
-#'           Ring63 fracBits=20 over this pipeline is \eqn{\sim}{~}5e-4,
-#'           three OoM below observed.
-#'     \item Closing the 3.45e-01 gap requires the full softmax Newton
-#'           path -- shipped as \code{\link{ds.vertMultinomJointNewton}}
-#'           which reaches PRACTICAL max|Deltapi| approx 4.7e-02 on the same
-#'           cohort (7.3x improvement via joint Newton vs OVR anchor).
-#'   }
-#'
-#'   The 3.45e-01 label is therefore **by design** for this estimator --
-#'   not a parking item.
-#'
 #' @export
 ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
                             reference = NULL, indicator_template = "%s_ind",
-                            method = c("joint", "warm"),
                             max_iter = NULL, max_outer = 8L, tol = NULL,
                             verbose = TRUE, datasources = NULL, ...) {
-  method <- match.arg(method)
+  extra <- list(...)
+  if (length(extra) > 0L) {
+    arg_names <- names(extra)
+    arg_names[!nzchar(arg_names)] <- "<unnamed>"
+    stop("unused argument(s): ", paste(arg_names, collapse = ", "),
+         call. = FALSE)
+  }
   if (!inherits(formula, "formula")) {
     stop("`formula` must be an R formula with class indicator on LHS",
          call. = FALSE)
   }
-  class_col <- as.character(attr(terms(formula), "variables")[[2]])
-  rhs <- attr(terms(formula), "term.labels")
-
-  # Argument validation FIRST (before any DSI call) so that misuse
-  # fails fast and the test suite can exercise these paths without an
-  # Opal connection.
   if (is.null(classes)) {
     stop("Please pass classes = c('A','B','C') indicating the class
           names whose indicator columns should be used", call. = FALSE)
@@ -103,31 +57,50 @@ ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
     stop("Need at least 2 non-reference classes for a multinomial fit",
          call. = FALSE)
   }
+  levels <- if (!is.null(reference)) {
+    c(as.character(reference), setdiff(classes_in, as.character(reference)))
+  } else {
+    classes_in
+  }
+  if (length(levels) < 3L) {
+    stop("Multinomial product route requires >=3 outcome levels; use ",
+         "ds.vertGLM for binary logistic models.",
+         call. = FALSE)
+  }
+  if (verbose) {
+    message("[ds.vertMultinom] dispatching to ",
+            "ds.vertMultinomJointNewton")
+  }
+  ds.vertMultinomJointNewton(
+    formula = formula,
+    data = data,
+    levels = levels,
+    indicator_template = indicator_template,
+    max_outer = as.integer(max_iter %||% max_outer),
+    tol = as.numeric(tol %||% 1e-4),
+    verbose = verbose,
+    datasources = datasources)
+}
 
-  if (identical(method, "joint")) {
-    levels <- if (!is.null(reference)) {
-      c(as.character(reference), setdiff(classes_in, as.character(reference)))
-    } else {
-      classes_in
-    }
-    if (length(levels) < 3L) {
-      stop("method = 'joint' requires >=3 outcome levels; use ds.vertGLM ",
-           "for binary logistic models.",
-           call. = FALSE)
-    }
-    if (verbose) {
-      message("[ds.vertMultinom] dispatching to ",
-              "ds.vertMultinomJointNewton (paper-safe joint softmax)")
-    }
-    return(ds.vertMultinomJointNewton(
-      formula = formula,
-      data = data,
-      levels = levels,
-      indicator_template = indicator_template,
-      max_outer = as.integer(max_iter %||% max_outer),
-      tol = as.numeric(tol %||% 1e-4),
-      verbose = verbose,
-      datasources = datasources))
+#' @keywords internal
+.ds_vertMultinomWarm <- function(formula, data = NULL, classes = NULL,
+                                 reference = NULL,
+                                 indicator_template = "%s_ind",
+                                 max_iter = NULL, tol = NULL,
+                                 verbose = TRUE, datasources = NULL, ...) {
+  if (!inherits(formula, "formula")) {
+    stop("`formula` must be an R formula with class indicator on LHS",
+         call. = FALSE)
+  }
+  rhs <- attr(terms(formula), "term.labels")
+  if (is.null(classes)) {
+    stop("Please pass classes = c('A','B','C') indicating the class
+          names whose indicator columns should be used", call. = FALSE)
+  }
+  classes_in <- as.character(classes)
+  if (length(classes_in) < 2L) {
+    stop("Need at least 2 non-reference classes for a multinomial fit",
+         call. = FALSE)
   }
 
   classes <- classes_in

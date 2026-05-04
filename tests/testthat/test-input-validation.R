@@ -92,22 +92,10 @@ test_that("ds.psiAlign rejects non-character newobj", {
                "newobj must be a single character string")
 })
 
-test_that("ds.vertCox legacy rank route is gated under strict non-disclosure", {
-  old_opt <- getOption("dsvert.allow_patient_level_cox_rank_metadata", FALSE)
-  old_env <- Sys.getenv("DSVERT_ALLOW_PATIENT_LEVEL_COX_RANK_METADATA",
-                        unset = NA_character_)
-  options(dsvert.allow_patient_level_cox_rank_metadata = FALSE)
-  Sys.unsetenv("DSVERT_ALLOW_PATIENT_LEVEL_COX_RANK_METADATA")
-  on.exit({
-    options(dsvert.allow_patient_level_cox_rank_metadata = old_opt)
-    if (is.na(old_env)) {
-      Sys.unsetenv("DSVERT_ALLOW_PATIENT_LEVEL_COX_RANK_METADATA")
-    } else {
-      Sys.setenv(DSVERT_ALLOW_PATIENT_LEVEL_COX_RANK_METADATA = old_env)
-    }
-  }, add = TRUE)
+test_that("ds.vertCox legacy rank route is removed", {
+  expect_false("method" %in% names(formals(ds.vertCox)))
   expect_error(
-    ds.vertCox(Surv(time, event) ~ x1, data = "D",
+    ds.vertCox(as.formula("Surv(time, event) ~ x1"), data = "D",
                method = "legacy_rank", datasources = list()),
-    "disabled under strict non-disclosure")
+    "unused argument")
 })

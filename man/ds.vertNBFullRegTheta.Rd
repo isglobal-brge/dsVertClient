@@ -17,7 +17,6 @@ ds.vertNBFullRegTheta(
   compute_covariance = TRUE,
   verbose = TRUE,
   datasources = NULL,
-  allow_disclosive_legacy = FALSE,
   ...
 )
 }
@@ -47,8 +46,8 @@ theta during the Newton refinement.}
 non-disclosive share-domain full-regression theta refinement.
 \code{"iid_mu"} returns the unmodified \code{ds.vertNB} result.
 \code{"corrected"} applies the aggregate variance correction described
-in Details. Legacy \code{"full_reg"} is disclosive and is redirected to
-\code{"full_reg_nd"} unless \code{allow_disclosive_legacy = TRUE}.}
+in Details. The legacy disclosive \code{"full_reg"} eta-transport path
+has been removed.}
 
 \item{beta_max_iter}{Integer. Maximum beta refinements for the
 non-disclosive full-regression theta variant.}
@@ -63,14 +62,6 @@ standard-error diagnostics where the selected beta path supports them.}
 
 \item{datasources}{DataSHIELD connections; if NULL, uses
 \code{DSI::datashield.connections_find()}.}
-
-\item{allow_disclosive_legacy}{Logical. If \code{TRUE}, permit the archived
-\code{variant = "full_reg"} path that transports per-patient
-\eqn{\eta^{nl}} to the outcome server. Intended only for historical
-reproducibility audits and requires
-\code{options(dsvert.allow_disclosive_nb_full_reg = TRUE)} or
-\code{DSVERT_ALLOW_DISCLOSIVE_NB_FULL_REG=true}; the paper-safe path is
-\code{"full_reg_nd"}.}
 
 \item{...}{Extra arguments forwarded to \code{ds.vertGLM}.}
 }

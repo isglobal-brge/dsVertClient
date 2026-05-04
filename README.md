@@ -1,7 +1,6 @@
-# dsVertClient — DataSHIELD Client for Vertically Partitioned Data
+# dsVertClient - DataSHIELD Client for Vertically Partitioned Data
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![R-CMD-check](https://github.com/isglobal-brge/dsVertClient/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/isglobal-brge/dsVertClient/actions/workflows/R-CMD-check.yaml)
 [![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](NEWS.md)
 
 ## Overview
@@ -29,9 +28,11 @@ fit <- ds.vertGLM(diabetes ~ age + bmi + glu + bp,
 print(fit)
 
 # 3. Cox PH via the non-disclosive Breslow profile route
-cox <- ds.vertCox(survival::Surv(time, event) ~ age + bmi + bp,
-                  data = "DA",
-                  datasources = conns)
+cox <- ds.vertCoxProfileNonDisclosive(
+  survival::Surv(time, event) ~ age + bmi + bp,
+  data = "DA",
+  datasources = conns
+)
 
 # 4. Correlation + PCA
 cor <- ds.vertCor("DA", datasources = conns)
@@ -48,11 +49,11 @@ DSI::datashield.logout(conns)
 | **Descriptive / 2nd-order** | `ds.vertDesc()`, `ds.vertCor()`, `ds.vertPCA()`, `ds.vertChisq()`, `ds.vertChisqCross()`, `ds.vertFisher()` |
 | **GLM** (gaussian / binomial / poisson) | `ds.vertGLM()` with `offset`, `weights`, `ring`, `binomial_sigmoid_intervals`, `keep_session`, `no_intercept`, `std_mode` |
 | **Inference helpers** | `ds.vertConfint()`, `ds.vertContrast()`, `ds.vertWald()`, `ds.vertLR()` |
-| **Survival** | `ds.vertCox()` / `ds.vertCoxProfileNonDisclosive()` (non-disclosive Breslow Cox PH), `ds.vertCoxDiscreteNonDisclosive()` (pooled-logistic discrete survival) |
+| **Survival** | `ds.vertCox()` / `ds.vertCoxProfileNonDisclosive()` (non-disclosive Breslow Cox PH), `ds.vertCoxDiscreteNonDisclosive()` (pooled-logistic discrete survival); legacy rank/person-time routes removed |
 | **Negative binomial** | `ds.vertNBFullRegTheta(variant = "full_reg_nd")` (default share-domain full-reg θ), `ds.vertNB()` / `ds.vertNBMoMTheta()` for lighter scalar-theta variants |
-| **Multinomial** | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` (default joint softmax Newton); warm OVR is diagnostic via `method = "warm"` |
-| **Ordinal (proportional odds)** | `ds.vertOrdinal()` / `ds.vertOrdinalJointNewton()` (default joint proportional-odds Newton); warm cumulative-binomial is diagnostic via `method = "warm"` |
-| **Mixed models** | `ds.vertLMM()` (REML closed-form, K=2; random intercept + slopes), `ds.vertLMM.k3()` (REML 1-D profile, K=3), `ds.vertGEE()` (sandwich SE, `binomial_sigmoid_intervals`), `ds.vertGLMM()` (binomial GLMM-PQL) |
+| **Multinomial** | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` (joint softmax Newton); warm OVR is internal initialisation only |
+| **Ordinal (proportional odds)** | `ds.vertOrdinal()` / `ds.vertOrdinalJointNewton()` (joint proportional-odds Newton); warm cumulative-binomial is internal initialisation only |
+| **Mixed models** | `ds.vertLMM()` (REML closed-form, K=2; random intercept + slopes), `ds.vertLMM.k3()` (REML 1-D profile, K>=3), `ds.vertGEE()` (sandwich SE, `binomial_sigmoid_intervals`), `ds.vertGLMM()` (binomial GLMM-PQL) |
 | **Causal / robustness** | `ds.vertIPW()` (two-stage propensity + weighted GLM), `ds.vertMI()` (multiple imputation + Rubin pooling) |
 | **Penalised regression** | `ds.vertLASSO()`, `ds.vertLASSO1Step()`, `ds.vertLASSOIter()` (Gaussian/binomial/Poisson standardized L1), `ds.vertLASSOCV()` (AIC / BIC / EBIC selector), `ds.vertLASSOProximal()` |
 
@@ -72,14 +73,20 @@ Deviance: 22.09
 
 ## K=2 vs K≥3 support
 
-| | K=2 | K≥3 |
-|---|---|---|
-| GLM (gauss / binom / poisson) | ✓ Ring63 / Ring127 | ✓ Ring63 |
-| Cox PH | ✓ profile ND — STRICT vs `coxph` | ✓ profile ND |
-| Negative binomial | ✓ iid / MoM / full-reg ND θ | ✓ iid / MoM / full-reg ND θ |
-| Multinomial / ordinal | ✓ joint Newton | ✓ joint Newton |
-| LMM | ✓ K=2 closed-form | ✓ `ds.vertLMM.k3` (REML 1-D profile) |
-| GEE / GLMM / IPW / MI / LASSO / Cor / PCA | ✓ | ✓ |
+| Family | K=2 product route | K≥3 product route | Legacy / not offered |
+|---|---|---|---|
+| GLM (gauss / binom / poisson) | `ds.vertGLM()` K=2 Beaver MPC | `ds.vertGLM()` secure-agg / DCF-pair route | manual mapping aliases only |
+| Cox PH | `ds.vertCox()` / `ds.vertCoxProfileNonDisclosive()`; discrete-time ND route also available | same profile ND route | `legacy_rank`, `ds.vertCox.k3()` removed |
+| Negative binomial | `ds.vertNBFullRegTheta(variant = "full_reg_nd")`; iid/MoM scalar-theta variants | same full-reg ND route; iid/MoM scalar-theta variants | disclosive `variant = "full_reg"` removed |
+| Multinomial | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` | same joint softmax route | warm / OVR final-estimator route removed from the exported API |
+| Ordinal | `ds.vertOrdinal()` / `ds.vertOrdinalJointNewton()` | same proportional-odds route | warm final-estimator and patient-level joint reconstruction routes removed from the exported API |
+| LMM | `ds.vertLMM()` K=2 closed form | `ds.vertLMM.k3()` REML 1-D profile | direct client-supplied cluster-vector helper is not product |
+| GEE | `ds.vertGEE()` exchangeable / guarded AR1 | same route | unguarded order metadata not accepted |
+| GLMM | `ds.vertGLMM()` | same PQL aggregate route | `method = "em"` removed |
+| IPW / MI / LASSO / Cor / PCA / Chisq / Desc | product wrappers | same product wrappers | small-cell / high-dimensional diagnostics gated |
+
+See `inst/docs/product_surface.md` for the disclosure/accuracy status table
+used by the cleanup audit.
 
 ## Validation evidence
 
@@ -99,12 +106,17 @@ All methods inside their theoretical floors (paper §V.A). **Sub-noise margin** 
 
 ## Security
 
-- **Zero observation-level disclosure**: client sees only p-dimensional aggregates
+- **No product observation-level disclosure**: client sees only model-scale
+  aggregates returned by the registered server methods
 - **Server-generated Beaver triples**: client never sees cryptographic material
 - **Dealer rotation**: different server generates triples each iteration (K ≥ 3); fixed dealer with OT-Beaver for K = 2
 - **Transport encryption**: X25519 + AES-256-GCM between servers
 - **Identity verification**: Ed25519 signed peer transport keys (`dsvert.require_trusted_peers`)
-- **Ring**: Ring63 (frac_bits = 20) for legacy; Ring127 (frac_bits = 50) for STRICT closure (Catrina-Saxena 2010)
+- **Ring**: Ring63 (frac_bits = 20) and Ring127 (frac_bits = 50), selected by
+  method precision needs
+- **Discarded estimators removed**: routes that revealed rank metadata,
+  patient-level working vectors, or old approximations are not part of the
+  exported product API
 
 ## Installation
 
@@ -114,7 +126,7 @@ devtools::install_github("isglobal-brge/dsVertClient")
 
 # Or from source
 R CMD build --no-build-vignettes .
-R CMD INSTALL dsVertClient_1.1.0.tar.gz
+R CMD INSTALL "$(ls -t dsVertClient_*.tar.gz | head -1)"
 ```
 
 Requires the server-side package [dsVert](https://github.com/isglobal-brge/dsVert) installed on all DataSHIELD servers.
@@ -123,11 +135,12 @@ Requires the server-side package [dsVert](https://github.com/isglobal-brge/dsVer
 
 - [Reference index](https://isglobal-brge.github.io/dsVertClient/) (pkgdown site)
 - [Method validation evidence](https://isglobal-brge.github.io/dsVertClient/articles/vert_validation_evidence.html)
+- [Product surface audit](inst/docs/product_surface.md)
 - [NEWS](NEWS.md)
 
 ## License
 
-MIT — see [LICENSE](LICENSE.md).
+MIT - see [LICENSE](LICENSE.md).
 
 ## Citation
 
