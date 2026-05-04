@@ -58,6 +58,19 @@
 #' @return A list with guard metadata.
 #' @keywords internal
 #' @noRd
+.dsvert_table_privacy_settings <- function() {
+  privacy_min <- suppressWarnings(as.numeric(getOption(
+    "dsvert.min_cell_count",
+    getOption("datashield.privacyLevel", 5L)))[1L])
+  if (!is.finite(privacy_min)) privacy_min <- 0
+  list(
+    min_cell_count = as.integer(privacy_min),
+    allow_small_cell_tables = isTRUE(getOption(
+      "dsvert.allow_small_cell_tables", FALSE)))
+}
+
+#' @keywords internal
+#' @noRd
 .dsvert_guard_table_release <- function(counts,
                                         row_margins = NULL,
                                         col_margins = NULL,
@@ -77,12 +90,9 @@
     stop("invalid margins for ", what, " disclosure guard", call. = FALSE)
   }
 
-  privacy_min <- suppressWarnings(as.numeric(getOption(
-    "dsvert.min_cell_count",
-    getOption("datashield.privacyLevel", 5L)))[1L])
-  if (!is.finite(privacy_min)) privacy_min <- 0
-  allow_small_cells <- isTRUE(getOption("dsvert.allow_small_cell_tables",
-                                        FALSE))
+  settings <- .dsvert_table_privacy_settings()
+  privacy_min <- settings$min_cell_count
+  allow_small_cells <- settings$allow_small_cell_tables
   min_positive <- function(x) {
     x <- x[x > 0]
     if (length(x) == 0L) Inf else min(x)
