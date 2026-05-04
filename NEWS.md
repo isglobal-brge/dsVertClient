@@ -57,7 +57,9 @@ state.
   quadratic-surrogate LASSO with AIC / BIC / EBIC information-criterion
   λ selector.
 * **`ds.vertGEE`** — generalised estimating equations (working
-  exchangeable / AR1 correlation, sandwich SE).
+  exchangeable / AR1 correlation, sandwich SE) with per-call
+  `binomial_sigmoid_intervals` precision control for protected binomial
+  sigmoid evaluations.
 * **`ds.vertMI`** — multiple-imputation wrapper with Rubin pooling.
 * **`ds.vertChisq`** — two-way contingency χ² via Beaver dot product
   on one-hot shares.
