@@ -445,7 +445,7 @@ NULL
     warning(sprintf("Did not converge after %d iterations (diff = %.2e)", max_iter, max_diff))
 
   inv_hessian <- list()
-  if (isTRUE(compute_se) && !isTRUE(gradient_only)) {
+  if (isTRUE(compute_se)) {
   # === Standard errors via finite-difference Hessian (K=2) ===
   if (verbose) message("  [SE] Computing Hessian (central differences)...")
   p_plus1 <- p_total + 1
