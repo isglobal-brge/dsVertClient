@@ -12,7 +12,7 @@ ds.vertGLMM(
   inner_iter = 10L,
   tol = 0.001,
   lambda = 0,
-  method = c("em", "pql_aggregate"),
+  method = c("pql_aggregate", "em"),
   use_pearson_cap = getOption("dsvert.glmm_use_pearson_cap", TRUE),
   compute_se = TRUE,
   ring = NULL,
@@ -35,10 +35,10 @@ ds.vertGLMM(
 
 \item{lambda}{L2 penalty passed to the inner binomial GLM fits.}
 
-\item{method}{Character. \code{"em"} keeps the current offset-GLM plus
-BLUP/EM approximation. \code{"pql_aggregate"} runs the experimental
-aggregate PQL weighted-LMM update using Ring127 share-domain working
-statistics.}
+\item{method}{Character. \code{"pql_aggregate"} is the default accuracy
+route and runs the aggregate PQL weighted-LMM update using Ring127
+share-domain working statistics. \code{"em"} keeps the legacy
+offset-GLM plus BLUP/EM approximation.}
 
 \item{use_pearson_cap}{Logical. If TRUE, cap the EM variance-component
 update by the first marginal Pearson cluster-moment estimate. This

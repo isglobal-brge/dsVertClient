@@ -48,10 +48,10 @@
 #' @param inner_iter Inner PIRLS iterations per cluster per outer step.
 #' @param tol Outer convergence tolerance.
 #' @param lambda L2 penalty passed to the inner binomial GLM fits.
-#' @param method Character. \code{"em"} keeps the current offset-GLM plus
-#'   BLUP/EM approximation. \code{"pql_aggregate"} runs the experimental
-#'   aggregate PQL weighted-LMM update using Ring127 share-domain working
-#'   statistics.
+#' @param method Character. \code{"pql_aggregate"} is the default accuracy
+#'   route and runs the aggregate PQL weighted-LMM update using Ring127
+#'   share-domain working statistics. \code{"em"} keeps the legacy
+#'   offset-GLM plus BLUP/EM approximation.
 #' @param use_pearson_cap Logical. If TRUE, cap the EM variance-component
 #'   update by the first marginal Pearson cluster-moment estimate. This
 #'   prevents BLUP posterior-variance inflation when the random-effect signal
@@ -70,7 +70,7 @@
 ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         max_outer = 10L, inner_iter = 10L,
                         tol = 1e-3, lambda = 0,
-                        method = c("em", "pql_aggregate"),
+                        method = c("pql_aggregate", "em"),
                         use_pearson_cap = getOption(
                           "dsvert.glmm_use_pearson_cap", TRUE),
                         compute_se = TRUE,
