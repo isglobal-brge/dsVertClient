@@ -16,6 +16,7 @@ ds.vertLASSOIter(
   exact_non_gaussian = TRUE,
   ring = NULL,
   lipschitz = c("auto", "gram", "safe"),
+  poisson_damping = 0.5,
   verbose = TRUE,
   datasources = NULL
 )
@@ -41,9 +42,9 @@ unpenalised fit.}
 
 \item{exact_non_gaussian}{Logical. For binomial models, use repeated
 secure aggregate-score evaluations and proximal-gradient updates on
-the standardized L1 objective instead of the one-step surrogate.
-Poisson remains on the documented one-step surrogate because it has
-no global Lipschitz constant without an eta bound.}
+the standardized L1 objective instead of the one-step surrogate. For
+Poisson models, use repeated aggregate score/Hessian probes and a
+damped proximal-Newton update.}
 
 \item{ring}{Integer (63 or 127). MPC ring for the GLM score evaluations.
 Defaults to Ring63. Ring127 can be requested explicitly after fixture
@@ -54,6 +55,10 @@ validation for the target deployment.}
 bound and falls back to the conservative \code{0.25 * (p + 1)} bound;
 \code{"gram"} requires the aggregate Gram bound; \code{"safe"} always
 uses the conservative bound.}
+
+\item{poisson_damping}{Numeric in (0, 1]. Fixed damping applied to Poisson
+proximal-Newton proposals. The default 0.5 is intentionally conservative
+and avoids an extra objective/deviance pass.}
 
 \item{verbose}{Print progress.}
 
@@ -78,13 +83,10 @@ objective solved from the normal equations already exposed by
 
 The solver delegates to \code{\link{ds.vertLASSOProximal}}, which
 reconstructs \eqn{X^T X/n} from aggregate covariance/Hessian output
-and runs coordinate descent client-side. For binomial and Poisson GLMs,
-a true proximal solver would need repeated secure gradient evaluations
-at sparse warm starts. Binomial models now use the internal aggregate
-score path to run proximal-gradient on the standardized L1 objective.
-Poisson models still return the documented \code{\link{ds.vertLASSO1Step}}
-quadratic-surrogate path because a global Lipschitz bound requires an
-additional eta-bound design.
+and runs coordinate descent client-side. Binomial models use the internal
+aggregate score path to run proximal-gradient on the standardized L1
+objective. Poisson models use fixed-start aggregate score/Hessian probes
+and a damped proximal-Newton update on the same standardized L1 objective.
 
 Non-disclosure: the inner ds.vertGLM call already hides everything
 at the p-aggregate level; this wrapper only manipulates returned
