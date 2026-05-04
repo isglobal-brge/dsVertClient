@@ -14,6 +14,7 @@ ds.vertGEE(
   max_iter = 100L,
   tol = 1e-04,
   lambda = 1e-04,
+  working_max_iter = NULL,
   ring = 63L,
   verbose = TRUE,
   datasources = NULL
@@ -31,21 +32,25 @@ ds.vertGEE(
 enables the cluster-robust sandwich meat; the cluster column must live with
 the outcome and all clusters must pass \code{datashield.privacyLevel}.}
 
-\item{order_col}{Optional character. Required for Gaussian
-\code{corstr = "ar1"}. The order column must live with the outcome and is
-used only server-to-server to derive guarded adjacent records.}
+\item{order_col}{Optional character. Required for \code{corstr = "ar1"}.
+The order column must live with the outcome and is used only
+server-to-server to derive guarded adjacent records.}
 
 \item{corstr}{Working correlation. \code{"independence"} is available for
 Gaussian/binomial/Poisson. \code{"exchangeable"} currently fits true
 exchangeable Gaussian, binomial, and Poisson GEE coefficients from guarded
-cluster-level sufficient statistics. \code{"ar1"} currently fits Gaussian
-GEE from guarded adjacent-pair sufficient statistics.}
+cluster-level sufficient statistics. \code{"ar1"} fits Gaussian,
+binomial, and Poisson GEE from guarded adjacent-pair sufficient
+statistics.}
 
 \item{max_iter, tol, lambda, verbose}{Passed to \code{ds.vertGLM}.}
 
-\item{ring}{Integer 63 or 127. Binomial/Poisson exchangeable is
-automatically run in Ring127 because protected nonlinear link operations
-need high precision.}
+\item{working_max_iter}{Optional integer. Maximum iterations for
+exchangeable/AR1 working-correlation updates. Defaults to \code{max_iter}.}
+
+\item{ring}{Integer 63 or 127. Binomial/Poisson exchangeable and all AR1
+routes are automatically run in Ring127 because protected nonlinear link
+operations and adjacent-product statistics need high precision.}
 
 \item{datasources}{DataSHIELD connection object.}
 }
@@ -65,9 +70,10 @@ model-based ones. For \code{corstr = "independence"}, the point estimate
 dsVert promotes the point estimate to a protected cluster-level
 exchangeable GLS/GEE update. For binomial and Poisson
 \code{corstr = "exchangeable"}, dsVert uses a Ring127 protected
-Pearson-score exchangeable GEE update. For Gaussian
-\code{corstr = "ar1"}, dsVert uses guarded within-cluster order metadata
-on the DCF parties and returns only low-dimensional AR1 aggregates.
+Pearson-score exchangeable GEE update. For Gaussian, binomial, and
+Poisson \code{corstr = "ar1"}, dsVert uses guarded within-cluster order
+metadata on the DCF parties and returns only low-dimensional AR1
+aggregates.
 For Gaussian, binomial, and Poisson independence models the sandwich meat
 is computed in the share domain. If
 \code{id_col} is supplied, dsVert computes the clustered meat
