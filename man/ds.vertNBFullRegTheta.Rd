@@ -68,7 +68,10 @@ standard-error diagnostics where the selected beta path supports them.}
 \item{allow_disclosive_legacy}{Logical. If \code{TRUE}, permit the archived
 \code{variant = "full_reg"} path that transports per-patient
 \eqn{\eta^{nl}} to the outcome server. Intended only for historical
-reproducibility audits; the paper-safe path is \code{"full_reg_nd"}.}
+reproducibility audits and requires
+\code{options(dsvert.allow_disclosive_nb_full_reg = TRUE)} or
+\code{DSVERT_ALLOW_DISCLOSIVE_NB_FULL_REG=true}; the paper-safe path is
+\code{"full_reg_nd"}.}
 
 \item{...}{Extra arguments forwarded to \code{ds.vertGLM}.}
 }
