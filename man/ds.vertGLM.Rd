@@ -106,8 +106,10 @@ Internal score-only callers can set FALSE to avoid the extra MPC pass.}
 
 \item{gradient_only}{Logical. Internal diagnostic/optimizer path. If TRUE,
 evaluate and return the aggregate score at \code{start} without taking
-an optimizer step. The returned score is p-dimensional only; no
-observation-level eta/probability/residual vector is opened.}
+an optimizer step. If \code{compute_se = TRUE}, the aggregate finite-
+difference Hessian is also returned. The returned score/Hessian are
+low-dimensional aggregates only; no observation-level eta/probability/
+residual vector is opened.}
 
 \item{data_name}{Internal alias for \code{data}; if both are supplied,
 \code{data_name} takes precedence (back-compat path).}
