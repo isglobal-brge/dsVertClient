@@ -1,0 +1,104 @@
+---
+title: "PCA validation"
+author: "David Sarrat González"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{PCA validation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE,
+  collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+                       file.path("..", "validation_helpers.R"),
+                       file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+```
+
+## What is validated
+
+Functions: `ds.vertPCA()`
+
+
+PCA on standardized variables is the eigendecomposition of the correlation
+matrix \(R = V \Lambda V^T\). `ds.vertPCA()` reuses `ds.vertCor()` and performs
+the eigendecomposition client-side. The validated target is therefore
+`eigen(cor(X))`.
+
+
+## Centralized reference
+
+The centralized reference is built from the same deterministic rows and
+formula as the DSLite run. The long method harness stores the exact seed,
+split and reference object in the cache listed below.
+
+```{r central-reference, eval=FALSE}
+
+X <- MASS::Pima.tr[seq_len(120), c("age", "bmi", "ped", "glu", "bp")]
+ref <- eigen(stats::cor(X), symmetric = TRUE)
+
+```
+
+## Vertical DSLite split
+
+The validation split creates independent server tables with the same
+`patient_id` key and then aligns them with `ds.psiAlign()`.
+
+```{r vertical-split, eval=FALSE}
+
+tables <- list(
+  s1 = data.frame(patient_id = sprintf("P%03d", seq_len(nrow(X))),
+                  X[c("age", "bmi", "ped")]),
+  s2 = data.frame(patient_id = sprintf("P%03d", seq_len(nrow(X))),
+                  X[c("glu", "bp")])
+)
+
+```
+
+```{r dslite-execution, eval=FALSE}
+
+cor_fit <- dsVertClient::ds.vertCor("DA", variables = variables,
+                                    datasources = conns)
+pca_fit <- dsVertClient::ds.vertPCA(cor_result = cor_fit,
+                                    n_components = 3)
+
+```
+
+To reproduce the cache from the repository root:
+
+```{r reproduce-cache, eval=FALSE}
+Rscript scripts/validate_method_descriptive.R
+```
+
+## Disclosure review
+
+
+Loadings and eigenvalues are aggregate outputs derived from the released
+correlation matrix. Individual component scores are not returned because scores
+would be row-level projections.
+
+
+## Executed evidence check
+
+This chunk is evaluated when the vignette renders. It fails if either K mode is
+not marked non-disclosive, is not `PASS`, or exceeds its accepted tolerance.
+
+```{r evidence}
+rows <- validation_rows("pca")
+assert_validation(rows)
+display_validation(rows)
+```
+
+## Verdict
+
+Both K=2 and K>=3 validation rows are inside their accepted numerical envelope
+and use the current non-disclosive product route. Any legacy route mentioned in
+the package is excluded from this evidence path.
+

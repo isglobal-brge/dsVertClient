@@ -1,0 +1,92 @@
+---
+title: "dsVert validation evidence"
+author: "David Sarrat González"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{dsVert validation evidence}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE,
+  collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+                       file.path("..", "validation_helpers.R"),
+                       file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+```
+
+## Scope
+
+This page is the validation index for the current dsVertClient product surface.
+The historical vignettes under `vignettes/methods/` were discarded because they
+mixed product methods with legacy or diagnostic routes. The pages linked here
+document the current supported route for each method family, with K=2 and K>=3
+evidence from deterministic DSLite harnesses.
+
+Each method vignette contains:
+
+- the statistical target and mathematical estimating equation;
+- the centralized reference construction;
+- the vertical DSLite split and product function call;
+- a disclosure review describing what the analyst and peer servers can see;
+- an executed evidence check against the cached DSLite result table.
+
+## Summary table
+
+```{r summary}
+all_rows <- load_validation_summary()
+assert_validation(all_rows)
+knitr::kable(all_rows[, c("method_name", "k_mode", "function_route",
+                          "primary_metric", "observed", "tolerance",
+                          "tier", "status", "cache")])
+```
+
+## Method pages
+
+- [PSI alignment](validation_psi.html)
+- [Descriptive statistics](validation_descriptive.html)
+- [Contingency tests](validation_contingency.html)
+- [Correlation](validation_correlation.html)
+- [PCA](validation_pca.html)
+- [GLM](validation_glm.html)
+- [GLM inference helpers](validation_inference.html)
+- [LASSO](validation_lasso.html)
+- [Negative binomial](validation_negative_binomial.html)
+- [Cox PH](validation_cox.html)
+- [LMM](validation_lmm.html)
+- [GEE](validation_gee.html)
+- [GLMM](validation_glmm.html)
+- [IPW](validation_ipw.html)
+- [Multiple imputation](validation_mi.html)
+- [Multinomial](validation_multinomial.html)
+- [Ordinal](validation_ordinal.html)
+
+## Removed legacy routes
+
+The package should not expose routes that are disclosive or materially less
+accurate than an available product route. This check is executed during
+rendering.
+
+```{r legacy-removed}
+library(dsVertClient)
+legacy <- load_legacy_removed()
+checks <- assert_legacy_routes_removed()
+knitr::kable(merge(legacy, checks, by.x = "route", by.y = "route", all.x = TRUE))
+```
+
+## Interpretation
+
+All rows in the current table are `PASS`, non-disclosive under the project
+standard, and cover both K=2 and K>=3. Some methods are exact to their
+centralized target; others are strict-practical because the remaining gap is a
+documented secure approximation floor, such as histogram quantile bucketization,
+secure sigmoid spline resolution, PQL versus GLMM ML, or penalized optimizer
+depth.
+

@@ -1,0 +1,111 @@
+---
+title: "GEE validation"
+author: "David Sarrat González"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{GEE validation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, eval = TRUE, warning = FALSE, message = FALSE,
+  collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+                       file.path("..", "validation_helpers.R"),
+                       file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+```
+
+## What is validated
+
+Functions: `ds.vertGEE()`
+
+
+GEE solves \(\sum_i D_i^T V_i^{-1}(y_i-\mu_i)=0\) and reports the sandwich
+variance \(B^{-1}MB^{-1}\). `ds.vertGEE()` supports independence,
+exchangeable and guarded AR1 working correlations for Gaussian, binomial and
+Poisson outcomes. Cluster and adjacent-pair scores are computed as aggregate
+share-domain sufficient statistics.
+
+
+## Centralized reference
+
+The centralized reference is built from the same deterministic rows and
+formula as the DSLite run. The long method harness stores the exact seed,
+split and reference object in the cache listed below.
+
+```{r central-reference, eval=FALSE}
+
+fit_ref <- geepack::geeglm(
+  y ~ x1 + x2 + x3, id = cluster_id, waves = visit,
+  data = pooled, family = binomial(), corstr = "ar1")
+
+```
+
+## Vertical DSLite split
+
+The validation split creates independent server tables with the same
+`patient_id` key and then aligns them with `ds.psiAlign()`.
+
+```{r vertical-split, eval=FALSE}
+
+tables <- list(
+  s1 = pooled[c("patient_id", "x1", "x2")],
+  s2 = pooled[c("patient_id", "x3", "cluster_id", "visit", "y")]
+)
+
+```
+
+```{r dslite-execution, eval=FALSE}
+
+fit_gee <- dsVertClient::ds.vertGEE(
+  y ~ x1 + x2 + x3,
+  data = "DA",
+  family = "binomial",
+  id_col = "cluster_id",
+  order_col = "visit",
+  corstr = "ar1",
+  binomial_sigmoid_intervals = 150L,
+  datasources = conns,
+  verbose = FALSE)
+
+```
+
+To reproduce the cache from the repository root:
+
+```{r reproduce-cache, eval=FALSE}
+Rscript scripts/validate_method_gee.R
+```
+
+## Disclosure review
+
+
+Residuals, fitted means, probabilities, Pearson residuals, row scores, visit
+labels and adjacent-pair vectors are not returned. AR1 order metadata is
+encrypted server-to-server and only guarded low-dimensional sufficient
+statistics reach the client.
+
+
+## Executed evidence check
+
+This chunk is evaluated when the vignette renders. It fails if either K mode is
+not marked non-disclosive, is not `PASS`, or exceeds its accepted tolerance.
+
+```{r evidence}
+rows <- validation_rows("gee")
+assert_validation(rows)
+display_validation(rows)
+```
+
+## Verdict
+
+Both K=2 and K>=3 validation rows are inside their accepted numerical envelope
+and use the current non-disclosive product route. Any legacy route mentioned in
+the package is excluded from this evidence path.
+

@@ -1,0 +1,26 @@
+pandoc: 3.8.3
+pkgdown: 2.2.0
+pkgdown_sha: ~
+articles:
+  validation_contingency: validation_contingency.html
+  validation_correlation: validation_correlation.html
+  validation_cox: validation_cox.html
+  validation_descriptive: validation_descriptive.html
+  validation_gee: validation_gee.html
+  validation_glm: validation_glm.html
+  validation_glmm: validation_glmm.html
+  validation_inference: validation_inference.html
+  validation_ipw: validation_ipw.html
+  validation_lasso: validation_lasso.html
+  validation_lmm: validation_lmm.html
+  validation_mi: validation_mi.html
+  validation_multinomial: validation_multinomial.html
+  validation_negative_binomial: validation_negative_binomial.html
+  validation_ordinal: validation_ordinal.html
+  validation_pca: validation_pca.html
+  validation_psi: validation_psi.html
+  vert_validation_evidence: vert_validation_evidence.html
+last_built: 2026-05-04T19:11Z
+urls:
+  reference: https://isglobal-brge.github.io/dsVertClient/reference
+  article: https://isglobal-brge.github.io/dsVertClient/articles
