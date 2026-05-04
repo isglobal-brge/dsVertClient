@@ -9,13 +9,10 @@
 #'
 #'   The solver delegates to \code{\link{ds.vertLASSOProximal}}, which
 #'   reconstructs \eqn{X^T X/n} from aggregate covariance/Hessian output
-#'   and runs coordinate descent client-side. For binomial and Poisson GLMs,
-#'   a true proximal solver would need repeated secure gradient evaluations
-#'   at sparse warm starts. Binomial models now use the internal aggregate
-#'   score path to run proximal-gradient on the standardized L1 objective.
-#'   Poisson models still return the documented \code{\link{ds.vertLASSO1Step}}
-#'   quadratic-surrogate path because a global Lipschitz bound requires an
-#'   additional eta-bound design.
+#'   and runs coordinate descent client-side. Binomial models use the internal
+#'   aggregate score path to run proximal-gradient on the standardized L1
+#'   objective. Poisson models use fixed-start aggregate score/Hessian probes
+#'   and a damped proximal-Newton update on the same standardized L1 objective.
 #'
 #'   Non-disclosure: the inner ds.vertGLM call already hides everything
 #'   at the p-aggregate level; this wrapper only manipulates returned
@@ -34,9 +31,9 @@
 #'   unpenalised fit.
 #' @param exact_non_gaussian Logical. For binomial models, use repeated
 #'   secure aggregate-score evaluations and proximal-gradient updates on
-#'   the standardized L1 objective instead of the one-step surrogate.
-#'   Poisson remains on the documented one-step surrogate because it has
-#'   no global Lipschitz constant without an eta bound.
+#'   the standardized L1 objective instead of the one-step surrogate. For
+#'   Poisson models, use repeated aggregate score/Hessian probes and a
+#'   damped proximal-Newton update.
 #' @param ring Integer (63 or 127). MPC ring for the GLM score evaluations.
 #'   Defaults to Ring63. Ring127 can be requested explicitly after fixture
 #'   validation for the target deployment.
@@ -45,6 +42,9 @@
 #'   bound and falls back to the conservative \code{0.25 * (p + 1)} bound;
 #'   \code{"gram"} requires the aggregate Gram bound; \code{"safe"} always
 #'   uses the conservative bound.
+#' @param poisson_damping Numeric in (0, 1]. Fixed damping applied to Poisson
+#'   proximal-Newton proposals. The default 0.5 is intentionally conservative
+#'   and avoids an extra objective/deviance pass.
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD connections.
 #' @return A \code{ds.vertLASSOIter} object with components
@@ -61,6 +61,7 @@ ds.vertLASSOIter <- function(formula, data = NULL,
                               exact_non_gaussian = TRUE,
                               ring = NULL,
                               lipschitz = c("auto", "gram", "safe"),
+                              poisson_damping = 0.5,
                               verbose = TRUE, datasources = NULL) {
   family <- match.arg(family)
   lipschitz <- match.arg(lipschitz)
@@ -72,8 +73,14 @@ ds.vertLASSOIter <- function(formula, data = NULL,
   }
   soft <- function(x, t) sign(x) * pmax(abs(x) - t, 0)
   exact_binomial <- isTRUE(exact_non_gaussian) && identical(family, "binomial")
+  exact_poisson <- isTRUE(exact_non_gaussian) && identical(family, "poisson")
   if (is.null(ring)) ring <- 63L
   ring <- as.integer(ring)
+  poisson_damping <- as.numeric(poisson_damping)
+  if (!is.finite(poisson_damping) || poisson_damping <= 0 ||
+      poisson_damping > 1) {
+    stop("poisson_damping must be in (0, 1]", call. = FALSE)
+  }
 
   .orig_to_std <- function(beta_orig, fit) {
     beta_orig <- as.numeric(beta_orig)
@@ -123,6 +130,31 @@ ds.vertLASSOIter <- function(formula, data = NULL,
       stop("non-finite GLM aggregate score", call. = FALSE)
     }
     g
+  }
+
+  .score_hessian_std <- function(theta_std) {
+    fit_g <- ds.vertGLM(
+      formula, data = data, family = family,
+      max_iter = 1L, tol = tol, lambda = 0,
+      ring = ring, start = theta_std,
+      compute_se = TRUE, compute_deviance = FALSE,
+      gradient_only = TRUE,
+      verbose = FALSE, datasources = datasources)
+    g <- fit_g$gradient_std
+    H <- fit_g$hessian_std
+    if (is.null(g) || is.null(H)) {
+      stop("GLM fixed evaluation returned no score/Hessian", call. = FALSE)
+    }
+    g <- g[names(theta_std)]
+    H <- as.matrix(H)
+    if (!is.null(rownames(H))) {
+      H <- H[names(theta_std), names(theta_std), drop = FALSE]
+    }
+    H <- (H + t(H)) / 2
+    if (any(!is.finite(g)) || any(!is.finite(H))) {
+      stop("non-finite GLM aggregate score/Hessian", call. = FALSE)
+    }
+    list(score = g, hessian = H)
   }
 
   .safe_lipschitz <- function(theta_names) {
@@ -208,10 +240,67 @@ ds.vertLASSOIter <- function(formula, data = NULL,
          objective = NA_real_, l1_penalty = l1, L = L)
   }
 
+  .prox_quadratic_cd <- function(theta, grad, H, lam, max_cd = 1000L) {
+    H <- (H + t(H)) / 2
+    diag(H) <- pmax(diag(H), 1e-8)
+    beta <- theta
+    int_idx <- match("(Intercept)", names(theta))
+    penalized <- seq_along(theta)
+    if (!is.na(int_idx)) penalized <- setdiff(penalized, int_idx)
+    for (cd_iter in seq_len(as.integer(max_cd))) {
+      old <- beta
+      delta <- beta - theta
+      for (j in seq_along(beta)) {
+        delta_no_j <- delta
+        delta_no_j[j] <- 0
+        r_j <- theta[j] - (grad[j] + sum(H[j, ] * delta_no_j)) / H[j, j]
+        beta[j] <- if (j %in% penalized) {
+          soft(r_j, lam / H[j, j])
+        } else {
+          r_j
+        }
+        delta[j] <- beta[j] - theta[j]
+      }
+      if (max(abs(beta - old)) < tol) break
+    }
+    names(beta) <- names(theta)
+    beta
+  }
+
+  .poisson_prox_newton <- function(fit0, lam, warm_std) {
+    theta <- warm_std
+    int_idx <- match("(Intercept)", names(theta))
+    penalized <- seq_along(theta)
+    if (!is.na(int_idx)) penalized <- setdiff(penalized, int_idx)
+    converged <- FALSE
+    used <- as.integer(max_outer)
+    last_step <- NA_real_
+    for (it in seq_len(as.integer(max_outer))) {
+      old <- theta
+      eval <- .score_hessian_std(theta)
+      proposal <- .prox_quadratic_cd(theta, eval$score, eval$hessian, lam)
+      theta <- theta + poisson_damping * (proposal - theta)
+      last_step <- max(abs(theta - old))
+      if (last_step < tol) {
+        converged <- TRUE
+        used <- it
+        break
+      }
+    }
+    beta_orig <- .std_to_orig(theta, fit0)
+    l1 <- lam * sum(abs(theta[penalized]))
+    list(coefficients = beta_orig, theta_std = theta,
+         iterations = used, converged = converged,
+         objective = NA_real_, l1_penalty = l1,
+         damping = poisson_damping, last_step = last_step)
+  }
+
   # Prime the warm start with an unpenalised fit.
   if (verbose) message("[LASSOIter] priming with unpenalised ds.vertGLM")
   prime_iter <- if (exact_binomial) {
     max(as.integer(inner_iter), 0L)
+  } else if (exact_poisson) {
+    max(as.integer(inner_iter), 8L)
   } else {
     max(as.integer(inner_iter), 20L)
   }
@@ -219,8 +308,8 @@ ds.vertLASSOIter <- function(formula, data = NULL,
                      max_iter = prime_iter, tol = tol,
                      lambda = 0,
                      ring = ring,
-                     compute_se = !exact_binomial,
-                     compute_deviance = !exact_binomial,
+                     compute_se = !(exact_binomial || exact_poisson),
+                     compute_deviance = !(exact_binomial || exact_poisson),
                      verbose = FALSE, datasources = datasources)
 
   paths <- list()
@@ -231,10 +320,16 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     "gaussian_normal_equations"
   } else if (exact_binomial) {
     "binomial_standardized_proximal_gradient"
+  } else if (exact_poisson) {
+    "poisson_standardized_proximal_newton"
   } else {
     "quadratic_surrogate"
   }
-  warm_std <- if (exact_binomial) .orig_to_std(fit0$coefficients, fit0) else NULL
+  warm_std <- if (exact_binomial || exact_poisson) {
+    .orig_to_std(fit0$coefficients, fit0)
+  } else {
+    NULL
+  }
   step_bound <- if (exact_binomial) {
     .choose_lipschitz(fit0, names(warm_std))
   } else {
@@ -260,6 +355,13 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     } else if (exact_binomial) {
       obj <- .binomial_pg(fit0, lam, warm_std, step_bound)
       obj$lipschitz_source <- step_bound$source
+      paths[[sprintf("%.6g", lam)]] <- obj$coefficients
+      n_outer_used[li] <- obj$iterations
+      objectives[li] <- obj$objective
+      solver_objects[[sprintf("%.6g", lam)]] <- obj
+      warm_std <- obj$theta_std
+    } else if (exact_poisson) {
+      obj <- .poisson_prox_newton(fit0, lam, warm_std)
       paths[[sprintf("%.6g", lam)]] <- obj$coefficients
       n_outer_used[li] <- obj$iterations
       objectives[li] <- obj$objective
@@ -291,9 +393,10 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     method      = method,
     solver      = solver_objects,
     alpha       = alpha,
-    exact_non_gaussian = exact_binomial,
+    exact_non_gaussian = exact_binomial || exact_poisson,
     ring        = ring,
     lipschitz   = if (is.null(step_bound)) NA_character_ else step_bound$source,
+    poisson_damping = if (exact_poisson) poisson_damping else NA_real_,
     call        = match.call())
   class(out) <- c("ds.vertLASSOIter", "list")
   out
