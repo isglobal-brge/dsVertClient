@@ -678,12 +678,18 @@ print.ds.vertGLMM <- function(x, ...) {
          call. = FALSE)
   }
 
+  sigmoid_intervals <- as.integer(getOption(
+    "dsvert.glm_num_intervals_binomial", 100L))
+  if (!is.finite(sigmoid_intervals) || sigmoid_intervals < 10L) {
+    sigmoid_intervals <- 100L
+  }
+
   dcf <- .dsAgg(datasources[dealer_conn],
     call(name = "glmRing63GenDcfKeysDS",
          dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
          dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
          family = "sigmoid", n = as.integer(n_obs),
-         frac_bits = frac_bits, num_intervals = 50L,
+         frac_bits = frac_bits, num_intervals = sigmoid_intervals,
          ring = ring, session_id = session_id))
   if (is.list(dcf) && length(dcf) == 1L) dcf <- dcf[[1L]]
   .sendBlob(dcf$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[[1L]])
@@ -709,7 +715,7 @@ print.ds.vertGLMM <- function(x, ...) {
         call(paste0("k2WideSplinePhase", ph, "DS"),
              party_id = as.integer(i - 1L),
              family = "binomial",
-             num_intervals = 50L,
+             num_intervals = sigmoid_intervals,
              frac_bits = frac_bits,
              ring = ring,
              session_id = session_id))
