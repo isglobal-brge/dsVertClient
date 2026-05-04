@@ -7,7 +7,9 @@
 #'   dsVert promotes the point estimate to a protected cluster-level
 #'   exchangeable GLS/GEE update. For binomial and Poisson
 #'   \code{corstr = "exchangeable"}, dsVert uses a Ring127 protected
-#'   Pearson-score exchangeable GEE update.
+#'   Pearson-score exchangeable GEE update. For Gaussian
+#'   \code{corstr = "ar1"}, dsVert uses guarded within-cluster order metadata
+#'   on the DCF parties and returns only low-dimensional AR1 aggregates.
 #'   For Gaussian, binomial, and Poisson independence models the sandwich meat
 #'   is computed in the share domain. If
 #'   \code{id_col} is supplied, dsVert computes the clustered meat
@@ -35,11 +37,14 @@
 #' @param id_col Optional character. For Gaussian/binomial/Poisson models this
 #'   enables the cluster-robust sandwich meat; the cluster column must live with
 #'   the outcome and all clusters must pass \code{datashield.privacyLevel}.
+#' @param order_col Optional character. Required for Gaussian
+#'   \code{corstr = "ar1"}. The order column must live with the outcome and is
+#'   used only server-to-server to derive guarded adjacent records.
 #' @param corstr Working correlation. \code{"independence"} is available for
 #'   Gaussian/binomial/Poisson. \code{"exchangeable"} currently fits true
 #'   exchangeable Gaussian, binomial, and Poisson GEE coefficients from guarded
-#'   cluster-level sufficient statistics; AR1 fails closed rather than
-#'   returning an independence estimate under a stronger label.
+#'   cluster-level sufficient statistics. \code{"ar1"} currently fits Gaussian
+#'   GEE from guarded adjacent-pair sufficient statistics.
 #' @param max_iter,tol,lambda,verbose Passed to \code{ds.vertGLM}.
 #' @param ring Integer 63 or 127. Binomial/Poisson exchangeable is
 #'   automatically run in Ring127 because protected nonlinear link operations
@@ -54,6 +59,7 @@
 ds.vertGEE <- function(formula, data = NULL,
                        family = c("gaussian", "binomial", "poisson"),
                        id_col = NULL,
+                       order_col = NULL,
                        corstr = c("independence", "exchangeable", "ar1"),
                        max_iter = 100L, tol = 1e-4, lambda = 1e-4,
                        ring = 63L,
@@ -62,10 +68,10 @@ ds.vertGEE <- function(formula, data = NULL,
   corstr <- match.arg(corstr)
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
-  if (identical(corstr, "ar1")) {
-    stop("ds.vertGEE corstr='ar1' is not implemented as a true working-",
-         "correlation estimator yet. Use corstr='independence' or ",
-         "corstr='exchangeable' for Gaussian/binomial/Poisson fits.",
+  if (identical(corstr, "ar1") && !identical(family, "gaussian")) {
+    stop("ds.vertGEE corstr='ar1' is currently implemented only for ",
+         "family='gaussian'. Use corstr='independence' or ",
+         "corstr='exchangeable' for binomial/Poisson fits.",
          call. = FALSE)
   }
   if (identical(corstr, "exchangeable") &&
@@ -82,6 +88,11 @@ ds.vertGEE <- function(formula, data = NULL,
   if (corstr %in% c("exchangeable", "ar1")) {
     if (is.null(id_col)) {
       stop("corstr='", corstr, "' requires id_col", call. = FALSE)
+    }
+    if (identical(corstr, "ar1") &&
+        (is.null(order_col) || !is.character(order_col) ||
+         length(order_col) != 1L || !nzchar(order_col))) {
+      stop("corstr='ar1' requires order_col", call. = FALSE)
     }
     if (verbose) {
       message("[ds.vertGEE] corstr='", corstr,
@@ -108,6 +119,12 @@ ds.vertGEE <- function(formula, data = NULL,
       ring_use != 127L) {
     if (verbose) {
       message("[ds.vertGEE] ", family, " exchangeable promoted to Ring127")
+    }
+    ring_use <- 127L
+  }
+  if (identical(corstr, "ar1") && ring_use != 127L) {
+    if (verbose) {
+      message("[ds.vertGEE] Gaussian AR1 promoted to Ring127")
     }
     ring_use <- 127L
   }
@@ -201,12 +218,34 @@ ds.vertGEE <- function(formula, data = NULL,
           })
       }
       if (!is.null(exchangeable_fit)) {
-        coef_out <- exchangeable_fit$coefficients
-        model_se_out <- exchangeable_fit$model_se
-        robust_cov <- exchangeable_fit$robust_covariance
-        robust_se <- exchangeable_fit$robust_se
-        robust_method <- exchangeable_fit$method
-        working_correlation <- exchangeable_fit$working_correlation
+        working_fit <- exchangeable_fit
+      } else {
+        working_fit <- NULL
+      }
+      ar1_error <- NULL
+      if (identical(corstr, "ar1")) {
+        working_fit <- tryCatch(
+          .ds_gee_secure_gaussian_ar1(
+            fit = fit, datasources = datasources,
+            server_names = server_names, lambda = lambda,
+            data = data, id_col = id_col, order_col = order_col,
+            max_iter = max_iter, tol = tol, verbose = verbose),
+          error = function(e) {
+            ar1_error <<- e
+            if (verbose) {
+              message("[ds.vertGEE] AR1 path unavailable: ",
+                      conditionMessage(e))
+            }
+            NULL
+          })
+      }
+      if (!is.null(working_fit)) {
+        coef_out <- working_fit$coefficients
+        model_se_out <- working_fit$model_se
+        robust_cov <- working_fit$robust_covariance
+        robust_se <- working_fit$robust_se
+        robust_method <- working_fit$method
+        working_correlation <- working_fit$working_correlation
       } else {
         if (identical(corstr, "exchangeable")) {
           msg <- if (is.null(exchangeable_error)) {
@@ -216,6 +255,14 @@ ds.vertGEE <- function(formula, data = NULL,
           }
           stop("exchangeable GEE unavailable: ", msg,
                call. = FALSE)
+        }
+        if (identical(corstr, "ar1")) {
+          msg <- if (is.null(ar1_error)) {
+            "unknown error"
+          } else {
+            conditionMessage(ar1_error)
+          }
+          stop("AR1 GEE unavailable: ", msg, call. = FALSE)
         }
         secure_hc0 <- NULL
         secure_error <- NULL
@@ -326,6 +373,7 @@ ds.vertGEE <- function(formula, data = NULL,
     working_correlation = working_correlation,
     family             = family,
     id_col             = id_col,
+    order_col          = if (identical(corstr, "ar1")) order_col else NULL,
     n_obs              = fit$n_obs,
     fit                = fit,
     call               = match.call())
@@ -540,6 +588,725 @@ ds.vertGEE <- function(formula, data = NULL,
        model_cov = model_cov, robust_cov = robust_cov,
        iterations = as.integer(iter), converged = converged,
        scores = scores)
+}
+
+#' @keywords internal
+.ds_gee_residual_quad_from_stats <- function(stats, beta) {
+  stats$yy - 2 * sum(beta * stats$xy) +
+    drop(t(beta) %*% stats$xx %*% beta)
+}
+
+#' @keywords internal
+.ds_gee_adjacent_residual_cross <- function(adj, beta) {
+  adj$yy - sum(beta * adj$xy_forward) - sum(beta * adj$xy_backward) +
+    drop(t(beta) %*% adj$xx %*% beta)
+}
+
+#' @keywords internal
+.ds_gee_solve_ar1_from_stats <- function(
+    total, interior, nonlast, adj, beta_start, max_iter = 100L,
+    tol = 1e-6, lag_stats = NULL) {
+  q <- ncol(total$xx)
+  n_obs <- as.numeric(total$xx[1L, 1L])
+  if (q < 1L || !is.finite(n_obs) || n_obs < q + 1L) {
+    stop("invalid AR1 sufficient statistics", call. = FALSE)
+  }
+  beta <- as.numeric(beta_start)
+  if (length(beta) != q || any(!is.finite(beta))) beta <- rep(0, q)
+  rho <- 0
+  lower_rho <- -0.95
+  upper_rho <- 0.95
+
+  safe_solve <- function(A, b = NULL) {
+    A <- (A + t(A)) / 2
+    out <- tryCatch(if (is.null(b)) solve(A) else solve(A, b),
+                    error = function(e) NULL)
+    if (!is.null(out) && all(is.finite(out))) return(out)
+    ridge <- 1e-8 * max(1, mean(abs(diag(A))))
+    tryCatch(if (is.null(b)) solve(A + diag(ridge, nrow(A)))
+             else solve(A + diag(ridge, nrow(A)), b),
+             error = function(e) {
+               stop("AR1 GLS system is singular", call. = FALSE)
+             })
+  }
+
+  if (is.null(lag_stats) || length(lag_stats) == 0L) {
+    lag_stats <- list(adj)
+  }
+
+  update_rho <- function(beta_current) {
+    if (length(lag_stats) == 1L) {
+      num <- .ds_gee_adjacent_residual_cross(adj, beta_current)
+      den <- .ds_gee_residual_quad_from_stats(nonlast, beta_current)
+      if (!is.finite(num) || !is.finite(den) || den <= 0) return(0)
+      return(min(max(num / den, lower_rho), upper_rho))
+    }
+    phi <- .ds_gee_residual_quad_from_stats(total, beta_current) /
+      max(n_obs - q, 1)
+    if (!is.finite(phi) || phi <= 0) return(0)
+    counts <- vapply(lag_stats, function(x) as.numeric(x$count %||%
+                                                        x$xx[1L, 1L]),
+                     numeric(1L))
+    rho_targets <- vapply(lag_stats, function(x) {
+      .ds_gee_adjacent_residual_cross(x, beta_current) /
+        max(as.numeric(x$count %||% x$xx[1L, 1L]) * phi, .Machine$double.eps)
+    }, numeric(1L))
+    keep <- is.finite(counts) & counts > 0 & is.finite(rho_targets)
+    if (!any(keep)) return(0)
+    counts <- counts[keep]
+    rho_targets <- rho_targets[keep]
+    lags <- seq_along(lag_stats)[keep]
+    objective <- function(rho_current) {
+      sum(counts * (rho_targets - rho_current^lags)^2)
+    }
+    out <- tryCatch(stats::optimize(objective,
+                                    interval = c(lower_rho, upper_rho))$minimum,
+                    error = function(e) 0)
+    if (!is.finite(out)) out <- 0
+    min(max(out, lower_rho), upper_rho)
+  }
+
+  fixed_rho_fit <- function(rho_current) {
+    cfac <- 1 / (1 - rho_current^2)
+    A <- cfac * (total$xx + rho_current^2 * interior$xx -
+                   rho_current * (adj$xx + t(adj$xx)))
+    rhs <- cfac * (total$xy + rho_current^2 * interior$xy -
+                     rho_current * (adj$xy_forward + adj$xy_backward))
+    list(beta = as.numeric(safe_solve(A, rhs)), A = A)
+  }
+
+  converged <- FALSE
+  iter <- 0L
+  for (iter in seq_len(as.integer(max_iter))) {
+    beta_old <- beta
+    rho_old <- rho
+    rho <- update_rho(beta)
+    fr <- fixed_rho_fit(rho)
+    beta <- fr$beta
+    if (max(abs(beta - beta_old), abs(rho - rho_old)) <= tol) {
+      converged <- TRUE
+      break
+    }
+  }
+  fr <- fixed_rho_fit(rho)
+  beta <- fr$beta
+  A <- (fr$A + t(fr$A)) / 2
+  bread <- safe_solve(A)
+
+  rss_total <- .ds_gee_residual_quad_from_stats(total, beta)
+  phi <- rss_total / max(n_obs - q, 1)
+  if (!is.finite(phi) || phi <= 0) phi <- 1
+  model_cov <- as.numeric(phi) * bread
+  model_cov <- (model_cov + t(model_cov)) / 2
+  list(beta = beta, rho = rho, phi = as.numeric(phi), A = A,
+       bread = bread, model_cov = model_cov,
+       iterations = as.integer(iter), converged = converged)
+}
+
+#' @keywords internal
+.ds_gee_secure_gaussian_ar1 <- function(
+    fit, datasources, server_names, lambda = 0, data = NULL, id_col = NULL,
+    order_col = NULL, max_iter = 100L, tol = 1e-6, verbose = FALSE) {
+  if (!identical(fit$family, "gaussian")) return(NULL)
+  if (is.null(id_col) || length(id_col) != 1L ||
+      !is.character(id_col) || !nzchar(id_col)) {
+    stop("Gaussian AR1 GEE requires id_col", call. = FALSE)
+  }
+  if (is.null(order_col) || length(order_col) != 1L ||
+      !is.character(order_col) || !nzchar(order_col)) {
+    stop("Gaussian AR1 GEE requires order_col", call. = FALSE)
+  }
+  required <- c("session_id", "transport_pks", "server_list", "x_vars",
+                "y_server", "x_sds", "x_means")
+  missing_req <- required[vapply(required, function(nm) is.null(fit[[nm]]),
+                                 logical(1L))]
+  if (length(missing_req) > 0L) {
+    stop("GLM session metadata missing: ", paste(missing_req, collapse = ", "),
+         call. = FALSE)
+  }
+
+  session_id <- fit$session_id
+  server_list <- fit$server_list
+  x_vars <- fit$x_vars
+  coordinator <- fit$y_server
+  n_obs <- as.integer(fit$n_obs)
+  ring <- as.integer(fit$ring %||% 127L)
+  if (ring != 127L) {
+    stop("Gaussian AR1 GEE requires Ring127", call. = FALSE)
+  }
+  frac_bits <- 50L
+  ring_tag <- "ring127"
+  transport_pks <- fit$transport_pks
+
+  .to_b64url <- function(x) gsub("+", "-", gsub("/", "_",
+    gsub("=+$", "", x, perl = TRUE), fixed = TRUE), fixed = TRUE)
+  .fp_const <- function(x) {
+    .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
+      values = array(as.numeric(x), dim = 1L),
+      frac_bits = frac_bits, ring = ring_tag))$fp_data)
+  }
+  .dsAgg <- function(conns, expr, ...) {
+    tryCatch(
+      DSI::datashield.aggregate(conns = conns, expr = expr, ...),
+      error = function(e) {
+        fn_name <- if (is.call(expr)) as.character(expr[[1]]) else "?"
+        srv_name <- tryCatch(names(conns)[1], error = function(x) "?")
+        stop(sprintf("%s on %s failed: %s", fn_name, srv_name,
+                     conditionMessage(e)), call. = FALSE)
+      })
+  }
+  .sendBlob <- function(blob, key, conn_idx) {
+    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
+      if (n_chunks == 1L) {
+        .dsAgg(datasources[conn_idx],
+          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
+               session_id = session_id))
+      } else {
+        .dsAgg(datasources[conn_idx],
+          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
+               chunk_index = chunk_idx, n_chunks = n_chunks,
+               session_id = session_id))
+      }
+    })
+  }
+
+  if (fit$eta_privacy == "k2_beaver") {
+    nl <- setdiff(server_list, coordinator)
+    if (length(nl) != 1L) {
+      stop("K=2 Gaussian AR1 GEE requires exactly one non-outcome server",
+           call. = FALSE)
+    }
+    nl <- nl[[1L]]
+    dcf_parties <- c(coordinator, nl)
+    dcf_conns <- vapply(dcf_parties, function(s) which(server_names == s),
+                        integer(1L))
+    dealer_conn <- dcf_conns[[2L]]
+    canonical_features <- c(x_vars[[coordinator]], x_vars[[nl]])
+  } else if (fit$eta_privacy == "secure_agg") {
+    fusion <- .k3_select_fusion_server(server_list, coordinator, x_vars)
+    dcf_parties <- c(fusion, coordinator)
+    dcf_conns <- vapply(dcf_parties, function(s) which(server_names == s),
+                        integer(1L))
+    non_dcf <- setdiff(server_list, dcf_parties)
+    dealer <- if (length(non_dcf) > 0L) non_dcf[[1L]] else fusion
+    dealer_conn <- which(server_names == dealer)
+    canonical_features <- c(x_vars[[coordinator]], x_vars[[fusion]])
+    for (srv in non_dcf) canonical_features <- c(canonical_features, x_vars[[srv]])
+  } else {
+    stop("unsupported eta_privacy for Gaussian AR1 GEE: ",
+         fit$eta_privacy, call. = FALSE)
+  }
+
+  cluster_srv <- .ds_gee_find_server_holding(datasources, server_names,
+                                             data, id_col)
+  if (is.null(cluster_srv)) {
+    stop("id_col '", id_col, "' not found on any server", call. = FALSE)
+  }
+  order_srv <- .ds_gee_find_server_holding(datasources, server_names,
+                                           data, order_col)
+  if (is.null(order_srv)) {
+    stop("order_col '", order_col, "' not found on any server",
+         call. = FALSE)
+  }
+  if (!identical(cluster_srv, coordinator) ||
+      !identical(order_srv, coordinator)) {
+    stop("Gaussian AR1 GEE requires id_col and order_col to live on the ",
+         "outcome server", call. = FALSE)
+  }
+
+  target_features <- unlist(x_vars[server_list], use.names = FALSE)
+  target_order <- c("(Intercept)", target_features)
+  canonical_order <- c("(Intercept)", canonical_features)
+  p_total <- length(canonical_features)
+  q <- p_total + 1L
+  std <- .ds_gee_standardized_parameters(fit, target_features)
+
+  .restore_eta_shape <- function(beta_std) {
+    if (fit$eta_privacy == "k2_beaver") {
+      b_coord <- as.numeric(beta_std[x_vars[[coordinator]]])
+      b_nl <- as.numeric(beta_std[x_vars[[dcf_parties[[2L]]]]])
+      for (i in seq_along(dcf_parties)) {
+        srv <- dcf_parties[[i]]
+        .dsAgg(datasources[dcf_conns[[i]]],
+          call(name = "dsvertGEERestoreFeatureShapeDS",
+               p_own = as.integer(length(x_vars[[srv]])),
+               p_peer = as.integer(length(x_vars[[setdiff(dcf_parties, srv)]])),
+               session_id = session_id))
+        .dsAgg(datasources[dcf_conns[[i]]],
+          call(name = "k2ComputeEtaShareDS",
+               beta_coord = b_coord, beta_nl = b_nl,
+               intercept = if (srv == coordinator) {
+                 as.numeric(beta_std["(Intercept)"])
+               } else {
+                 0
+               },
+               is_coordinator = (srv == coordinator),
+               output_key = "gee_ar1_eta",
+               session_id = session_id))
+      }
+    } else {
+      fusion <- dcf_parties[[1L]]
+      non_dcf <- setdiff(server_list, dcf_parties)
+      p_coord <- length(x_vars[[coordinator]])
+      p_fusion <- length(x_vars[[fusion]])
+      p_extras <- sum(vapply(non_dcf, function(s) length(x_vars[[s]]),
+                             integer(1L)))
+      for (i in seq_along(dcf_parties)) {
+        srv <- dcf_parties[[i]]
+        is_coord <- srv == coordinator
+        p_peer <- if (is_coord) p_fusion + p_extras else p_coord + p_extras
+        .dsAgg(datasources[dcf_conns[[i]]],
+          call(name = "dsvertGEERestoreFeatureShapeDS",
+               p_own = as.integer(length(x_vars[[srv]])),
+               p_peer = as.integer(p_peer),
+               session_id = session_id))
+        b_coord <- as.numeric(beta_std[x_vars[[coordinator]]])
+        if (is_coord) {
+          b_nl <- c(as.numeric(beta_std[x_vars[[fusion]]]))
+          for (ns in non_dcf) b_nl <- c(b_nl, as.numeric(beta_std[x_vars[[ns]]]))
+        } else {
+          b_nl <- numeric(0)
+          for (ns in non_dcf) b_nl <- c(b_nl, as.numeric(beta_std[x_vars[[ns]]]))
+          b_nl <- c(b_nl, as.numeric(beta_std[x_vars[[fusion]]]))
+        }
+        .dsAgg(datasources[dcf_conns[[i]]],
+          call(name = "k2ComputeEtaShareDS",
+               beta_coord = b_coord, beta_nl = b_nl,
+               intercept = if (is_coord) {
+                 as.numeric(beta_std["(Intercept)"])
+               } else {
+                 0
+               },
+               is_coordinator = is_coord,
+               output_key = "gee_ar1_eta",
+               session_id = session_id))
+        if (!is_coord && p_extras > 0L) {
+          .dsAgg(datasources[dcf_conns[[i]]],
+            call(name = "glmRing63ReorderXFullDS",
+                 p_coord = as.integer(p_coord),
+                 p_fusion = as.integer(p_fusion),
+                 p_extras = as.integer(p_extras),
+                 session_id = session_id))
+        }
+      }
+    }
+    invisible(TRUE)
+  }
+
+  .ring_affine <- function(a_key = NULL, b_key = NULL,
+                           sign_a = 0L, sign_b = 0L,
+                           output_key, public_const_fp = NULL) {
+    for (i in seq_along(dcf_parties)) {
+      srv <- dcf_parties[[i]]
+      .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "k2Ring127AffineCombineDS",
+             a_key = a_key, b_key = b_key,
+             sign_a = as.numeric(sign_a), sign_b = as.numeric(sign_b),
+             public_const_fp = public_const_fp,
+             is_party0 = identical(srv, coordinator),
+             output_key = output_key, n = as.numeric(n_obs),
+             session_id = session_id))
+    }
+    invisible(output_key)
+  }
+  .ring_scale <- function(in_key, scalar, output_key) {
+    scalar_fp <- .fp_const(scalar)
+    for (i in seq_along(dcf_parties)) {
+      srv <- dcf_parties[[i]]
+      .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "k2Ring127LocalScaleDS",
+             in_key = in_key, scalar_fp = scalar_fp,
+             output_key = output_key, n = as.numeric(n_obs),
+             session_id = session_id,
+             is_party0 = identical(srv, coordinator)))
+    }
+    invisible(output_key)
+  }
+  .vecmul <- function(x_key, y_key, output_key) {
+    tri <- .dsAgg(datasources[dealer_conn],
+      call(name = "k2BeaverVecmulGenTriplesDS",
+           dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
+           dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
+           n = as.numeric(n_obs), session_id = session_id,
+           frac_bits = frac_bits, ring = ring))
+    if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
+    .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple", dcf_conns[[1L]])
+    .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple", dcf_conns[[2L]])
+    for (ci in dcf_conns) {
+      .dsAgg(datasources[ci],
+        call(name = "k2BeaverVecmulConsumeTripleDS",
+             session_id = session_id))
+    }
+    r1 <- vector("list", 2L)
+    for (i in seq_along(dcf_parties)) {
+      peer <- dcf_parties[[3L - i]]
+      r <- .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "k2BeaverVecmulR1DS",
+             peer_pk = transport_pks[[peer]],
+             x_key = x_key, y_key = y_key,
+             n = as.numeric(n_obs), session_id = session_id,
+             frac_bits = frac_bits, ring = ring))
+      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      r1[[i]] <- r
+    }
+    .sendBlob(r1[[1L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+              dcf_conns[[2L]])
+    .sendBlob(r1[[2L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+              dcf_conns[[1L]])
+    for (i in seq_along(dcf_parties)) {
+      .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "k2BeaverVecmulR2DS",
+             is_party0 = (i == 1L),
+             x_key = x_key, y_key = y_key,
+             output_key = output_key,
+             n = as.numeric(n_obs), session_id = session_id,
+             frac_bits = frac_bits, ring = ring))
+    }
+    invisible(output_key)
+  }
+  .transform <- function(source_key, output_key, transform) {
+    for (ci in dcf_conns) {
+      .dsAgg(datasources[ci],
+        call(name = "dsvertGEEAR1TransformShareDS",
+             source_key = source_key, output_key = output_key,
+             transform = transform, session_id = session_id,
+             frac_bits = frac_bits, ring = ring))
+    }
+    invisible(output_key)
+  }
+  .sum_scalar <- function(key) {
+    parts <- vector("list", length(dcf_parties))
+    for (i in seq_along(dcf_parties)) {
+      part <- .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "k2BeaverSumShareDS",
+             source_key = key, session_id = session_id,
+             frac_bits = frac_bits, ring = ring_tag))
+      if (is.list(part) && length(part) == 1L) part <- part[[1L]]
+      parts[[i]] <- part
+    }
+    agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+      share_a = parts[[1L]]$sum_share_fp,
+      share_b = parts[[2L]]$sum_share_fp,
+      frac_bits = frac_bits, ring = ring_tag))
+    as.numeric(agg$values[1L])
+  }
+  .prod_sum <- function(x_key, y_key, output_key) {
+    .vecmul(x_key, y_key, output_key)
+    .sum_scalar(output_key)
+  }
+  .cluster_sum <- function(key) {
+    parts <- vector("list", length(dcf_parties))
+    for (i in seq_along(dcf_parties)) {
+      part <- .dsAgg(datasources[dcf_conns[[i]]],
+        call(name = "dsvertPerClusterSumShareDS",
+             share_key = key, session_id = session_id,
+             frac_bits = frac_bits, ring = ring))
+      if (is.list(part) && length(part) == 1L) part <- part[[1L]]
+      parts[[i]] <- part
+    }
+    n_clusters <- length(parts[[1L]]$per_cluster_fp)
+    out <- numeric(n_clusters)
+    for (ck in seq_len(n_clusters)) {
+      agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
+        share_a = parts[[1L]]$per_cluster_fp[[ck]],
+        share_b = parts[[2L]]$per_cluster_fp[[ck]],
+        frac_bits = frac_bits, ring = ring_tag))
+      out[ck] <- as.numeric(agg$values[1L])
+    }
+    coord_i <- match(coordinator, dcf_parties)
+    list(values = out,
+         cluster_sizes = as.integer(parts[[coord_i]]$cluster_sizes))
+  }
+
+  beta_start <- c(std$intercept, as.numeric(std$beta[target_features]))
+  names(beta_start) <- target_order
+  .restore_eta_shape(beta_start)
+
+  coord_i <- match(coordinator, dcf_parties)
+  peer_i <- setdiff(seq_along(dcf_parties), coord_i)
+  ob <- .dsAgg(datasources[dcf_conns[[coord_i]]],
+    call(name = "dsvertGEEAR1OrderBroadcastDS",
+         data_name = data, cluster_col = id_col, order_col = order_col,
+         peer_pk = transport_pks[[dcf_parties[[peer_i]]]],
+         session_id = session_id))
+  if (is.list(ob) && length(ob) == 1L) ob <- ob[[1L]]
+  .sendBlob(ob$peer_blob, "dsvert_gee_ar1_order_blob", dcf_conns[[peer_i]])
+  .dsAgg(datasources[dcf_conns[[peer_i]]],
+    call(name = "dsvertGEEAR1OrderReceiveDS", session_id = session_id))
+
+  cb <- .dsAgg(datasources[dcf_conns[[coord_i]]],
+    call(name = "dsvertClusterIDsBroadcastDS",
+         data_name = data, cluster_col = id_col,
+         peer_pk = transport_pks[[dcf_parties[[peer_i]]]],
+         session_id = session_id))
+  if (is.list(cb) && length(cb) == 1L) cb <- cb[[1L]]
+  .sendBlob(cb$peer_blob, "dsvert_cluster_ids_blob", dcf_conns[[peer_i]])
+  .dsAgg(datasources[dcf_conns[[peer_i]]],
+    call(name = "dsvertClusterIDsReceiveDS", session_id = session_id))
+
+  for (i in seq_along(dcf_parties)) {
+    .dsAgg(datasources[dcf_conns[[i]]],
+      call(name = "dsvertGEEInterceptShareDS",
+           output_key = "gee_ar1_x_col_0",
+           n = as.numeric(n_obs),
+           is_party0 = (i == 1L),
+           session_id = session_id,
+           frac_bits = frac_bits, ring = ring))
+  }
+  if (p_total > 0L) {
+    for (j in seq_len(p_total)) {
+      for (ci in dcf_conns) {
+        .dsAgg(datasources[ci],
+          call(name = "k2BeaverExtractColumnDS",
+               source_key = "k2_x_full_fp",
+               n = as.numeric(n_obs), K = as.numeric(p_total),
+               col_index = as.numeric(j),
+               output_key = paste0("gee_ar1_x_col_", j),
+               session_id = session_id,
+               frac_bits = frac_bits, ring = ring_tag))
+      }
+    }
+  }
+
+  x_keys <- paste0("gee_ar1_x_col_", 0:p_total)
+  y_key <- "k2_y_share_fp_original"
+  nonlast_x_keys <- paste0("gee_ar1_nonlast_x_col_", 0:p_total)
+  interior_x_keys <- paste0("gee_ar1_interior_x_col_", 0:p_total)
+  max_lag <- max(1L, as.integer(ob$max_lag %||% 1L))
+  max_lag_cap <- getOption("dsvert.gee_ar1_max_lag", max_lag)
+  max_lag <- min(max_lag, max(1L, as.integer(max_lag_cap)))
+  lead_x_by_lag <- vector("list", max_lag)
+  lead_y_by_lag <- character(max_lag)
+  lead_x_by_lag[[1L]] <- paste0("gee_ar1_lead1_x_col_", 0:p_total)
+  lead_y_by_lag[[1L]] <- "gee_ar1_lead1_y"
+  for (j in seq_len(q)) {
+    .transform(x_keys[[j]], lead_x_by_lag[[1L]][[j]], "lead")
+    .transform(x_keys[[j]], nonlast_x_keys[[j]], "nonlast")
+    .transform(x_keys[[j]], interior_x_keys[[j]], "interior")
+  }
+  .transform(y_key, lead_y_by_lag[[1L]], "lead")
+  .transform(y_key, "gee_ar1_nonlast_y", "nonlast")
+  .transform(y_key, "gee_ar1_interior_y", "interior")
+  if (max_lag > 1L) {
+    for (lag in 2:max_lag) {
+      lead_x_by_lag[[lag]] <- paste0("gee_ar1_lead", lag, "_x_col_",
+                                     0:p_total)
+      lead_y_by_lag[[lag]] <- paste0("gee_ar1_lead", lag, "_y")
+      for (j in seq_len(q)) {
+        .transform(lead_x_by_lag[[lag - 1L]][[j]],
+                   lead_x_by_lag[[lag]][[j]], "lead")
+      }
+      .transform(lead_y_by_lag[[lag - 1L]], lead_y_by_lag[[lag]], "lead")
+    }
+  }
+
+  build_mask_stats <- function(prefix, x_masked_keys, y_masked_key) {
+    xy <- numeric(q)
+    xy[1L] <- .sum_scalar(y_masked_key)
+    if (q > 1L) {
+      for (j in 2:q) {
+        xy[j] <- .prod_sum(x_masked_keys[[j]], y_key,
+                           paste0(prefix, "_xy_", j))
+      }
+    }
+    xx <- matrix(0, q, q)
+    for (j in seq_len(q)) {
+      for (k in j:q) {
+        val <- if (j == 1L && k == 1L) {
+          .sum_scalar(x_masked_keys[[1L]])
+        } else if (j == 1L) {
+          .sum_scalar(x_masked_keys[[k]])
+        } else {
+          .prod_sum(x_masked_keys[[j]], x_keys[[k]],
+                    paste0(prefix, "_xx_", j, "_", k))
+        }
+        xx[j, k] <- val
+        xx[k, j] <- val
+      }
+    }
+    yy <- .prod_sum(y_masked_key, y_key, paste0(prefix, "_yy"))
+    dimnames(xx) <- list(canonical_order, canonical_order)
+    names(xy) <- canonical_order
+    list(xx = xx, xy = xy, yy = yy)
+  }
+
+  if (verbose) {
+    message("[ds.vertGEE] Gaussian AR1: protected adjacent-pair stats")
+  }
+  total <- build_mask_stats("gee_ar1_total", x_keys, y_key)
+  nonlast <- build_mask_stats("gee_ar1_nonlast", nonlast_x_keys,
+                              "gee_ar1_nonlast_y")
+  interior <- build_mask_stats("gee_ar1_interior", interior_x_keys,
+                               "gee_ar1_interior_y")
+
+  build_lag_adj <- function(lag) {
+    lead_x_keys <- lead_x_by_lag[[lag]]
+    lead_y_key <- lead_y_by_lag[[lag]]
+    prefix <- paste0("gee_ar1_adj_lag", lag)
+    adj_xx <- matrix(0, q, q)
+    for (j in seq_len(q)) {
+      for (k in seq_len(q)) {
+        adj_xx[j, k] <- if (j == 1L && k == 1L) {
+          .sum_scalar(lead_x_keys[[1L]])
+        } else if (j == 1L) {
+          .sum_scalar(lead_x_keys[[k]])
+        } else if (k == 1L) {
+          .prod_sum(x_keys[[j]], lead_x_keys[[1L]],
+                    paste0(prefix, "_xx_", j, "_", k))
+        } else {
+          .prod_sum(x_keys[[j]], lead_x_keys[[k]],
+                    paste0(prefix, "_xx_", j, "_", k))
+        }
+      }
+    }
+    adj_xy_forward <- numeric(q)
+    adj_xy_backward <- numeric(q)
+    adj_xy_forward[1L] <- .sum_scalar(lead_y_key)
+    adj_xy_backward[1L] <- .prod_sum(lead_x_keys[[1L]], y_key,
+                                     paste0(prefix, "_xy_b_1"))
+    if (q > 1L) {
+      for (j in 2:q) {
+        adj_xy_forward[j] <- .prod_sum(x_keys[[j]], lead_y_key,
+                                       paste0(prefix, "_xy_f_", j))
+        adj_xy_backward[j] <- .prod_sum(lead_x_keys[[j]], y_key,
+                                        paste0(prefix, "_xy_b_", j))
+      }
+    }
+    adj_yy <- .prod_sum(y_key, lead_y_key, paste0(prefix, "_yy"))
+    dimnames(adj_xx) <- list(canonical_order, canonical_order)
+    names(adj_xy_forward) <- names(adj_xy_backward) <- canonical_order
+    list(xx = adj_xx, xy_forward = adj_xy_forward,
+         xy_backward = adj_xy_backward, yy = adj_yy,
+         count = as.numeric(adj_xx[1L, 1L]), lag = as.integer(lag))
+  }
+  lag_adjs <- lapply(seq_len(max_lag), build_lag_adj)
+  adj <- lag_adjs[[1L]]
+
+  perm <- match(target_order, canonical_order)
+  if (anyNA(perm)) {
+    stop("could not align Gaussian AR1 GEE order", call. = FALSE)
+  }
+  perm_stats <- function(x) {
+    out <- list(xx = x$xx[perm, perm, drop = FALSE],
+                xy = x$xy[perm], yy = x$yy)
+    dimnames(out$xx) <- list(target_order, target_order)
+    names(out$xy) <- target_order
+    out
+  }
+  total_t <- perm_stats(total)
+  nonlast_t <- perm_stats(nonlast)
+  interior_t <- perm_stats(interior)
+  adj_t <- list(
+    xx = adj$xx[perm, perm, drop = FALSE],
+    xy_forward = adj$xy_forward[perm],
+    xy_backward = adj$xy_backward[perm],
+    yy = adj$yy,
+    count = adj$count,
+    lag = adj$lag)
+  dimnames(adj_t$xx) <- list(target_order, target_order)
+  names(adj_t$xy_forward) <- names(adj_t$xy_backward) <- target_order
+  perm_adj <- function(x) {
+    out <- list(
+      xx = x$xx[perm, perm, drop = FALSE],
+      xy_forward = x$xy_forward[perm],
+      xy_backward = x$xy_backward[perm],
+      yy = x$yy,
+      count = x$count,
+      lag = x$lag)
+    dimnames(out$xx) <- list(target_order, target_order)
+    names(out$xy_forward) <- names(out$xy_backward) <- target_order
+    out
+  }
+  lag_adjs_t <- lapply(lag_adjs, perm_adj)
+
+  fit_ar1 <- .ds_gee_solve_ar1_from_stats(
+    total = total_t, interior = interior_t, nonlast = nonlast_t,
+    adj = adj_t, beta_start = beta_start,
+    max_iter = max_iter, tol = tol, lag_stats = lag_adjs_t)
+  names(fit_ar1$beta) <- target_order
+  dimnames(fit_ar1$model_cov) <- list(target_order, target_order)
+  dimnames(fit_ar1$bread) <- list(target_order, target_order)
+
+  .restore_eta_shape(fit_ar1$beta)
+  .ring_affine(a_key = "gee_ar1_eta", sign_a = 1L,
+               output_key = "secure_mu_share")
+  for (ci in dcf_conns) {
+    .dsAgg(datasources[ci],
+      call(name = "k2PrepareWeightedResidualShareDS",
+           session_id = session_id))
+  }
+  .ring_affine(a_key = "k2_weight_residual_share_fp", sign_a = -1L,
+               output_key = "gee_ar1_resid")
+  .transform("gee_ar1_resid", "gee_ar1_resid_lead", "lead")
+  .transform("gee_ar1_resid", "gee_ar1_resid_lag", "lag")
+  .transform("gee_ar1_resid", "gee_ar1_resid_interior", "interior")
+  rho <- as.numeric(fit_ar1$rho)
+  cfac <- 1 / (1 - rho^2)
+  .ring_scale("gee_ar1_resid", cfac, "gee_ar1_z_base")
+  .ring_scale("gee_ar1_resid_interior", cfac * rho^2,
+              "gee_ar1_z_interior")
+  .ring_scale("gee_ar1_resid_lead", -cfac * rho, "gee_ar1_z_lead")
+  .ring_scale("gee_ar1_resid_lag", -cfac * rho, "gee_ar1_z_lag")
+  .ring_affine(a_key = "gee_ar1_z_base", b_key = "gee_ar1_z_interior",
+               sign_a = 1L, sign_b = 1L, output_key = "gee_ar1_z_tmp1")
+  .ring_affine(a_key = "gee_ar1_z_tmp1", b_key = "gee_ar1_z_lead",
+               sign_a = 1L, sign_b = 1L, output_key = "gee_ar1_z_tmp2")
+  .ring_affine(a_key = "gee_ar1_z_tmp2", b_key = "gee_ar1_z_lag",
+               sign_a = 1L, sign_b = 1L, output_key = "gee_ar1_z")
+
+  S_canonical <- NULL
+  cluster_sizes <- NULL
+  for (j in seq_len(q)) {
+    score_key <- paste0("gee_ar1_score_x_", j)
+    .vecmul(x_keys[[j]], "gee_ar1_z", score_key)
+    cs <- .cluster_sum(score_key)
+    if (is.null(S_canonical)) {
+      S_canonical <- matrix(0, nrow = length(cs$values), ncol = q)
+      cluster_sizes <- cs$cluster_sizes
+    }
+    S_canonical[, j] <- cs$values
+    if (verbose) {
+      message(sprintf("[ds.vertGEE] Gaussian AR1 score column %d/%d", j, q))
+    }
+  }
+  S_std <- S_canonical[, perm, drop = FALSE]
+  dimnames(S_std) <- list(NULL, target_order)
+  robust_std <- fit_ar1$bread %*% crossprod(S_std) %*% fit_ar1$bread
+  robust_std <- (robust_std + t(robust_std)) / 2
+  dimnames(robust_std) <- list(target_order, target_order)
+
+  J <- .ds_gee_standardization_jacobian(fit, target_features)
+  model_cov <- J %*% fit_ar1$model_cov %*% t(J)
+  robust_cov <- J %*% robust_std %*% t(J)
+  model_cov <- (model_cov + t(model_cov)) / 2
+  robust_cov <- (robust_cov + t(robust_cov)) / 2
+  dimnames(model_cov) <- list(target_order, target_order)
+  dimnames(robust_cov) <- list(target_order, target_order)
+
+  coefficients <- .ds_gee_unstandardized_parameters(
+    fit, fit_ar1$beta, target_features)
+  model_se <- sqrt(pmax(diag(model_cov), 0))
+  robust_se <- sqrt(pmax(diag(robust_cov), 0))
+  names(model_se) <- names(robust_se) <- target_order
+
+  list(coefficients = coefficients,
+       model_se = model_se,
+       robust_se = robust_se,
+       model_covariance = model_cov,
+       robust_covariance = robust_cov,
+       method = "share_domain_ar1_gaussian",
+       working_correlation = list(
+         corstr = "ar1",
+         alpha = as.numeric(fit_ar1$rho),
+         phi = as.numeric(fit_ar1$phi),
+         iterations = as.integer(fit_ar1$iterations),
+         converged = isTRUE(fit_ar1$converged),
+         estimator = "gaussian_ar1_adjacent_pair_stats",
+         disclosure = paste0(
+           "guarded adjacent-pair sufficient statistics and cluster scores ",
+           "only; no row-level order, residuals, fitted values, or visit ",
+           "labels returned")),
+       cluster_sizes = cluster_sizes)
 }
 
 #' @keywords internal

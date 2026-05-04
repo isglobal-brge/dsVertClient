@@ -71,9 +71,17 @@ test_that("user-facing Cox and categorical wrappers default to paper-safe routes
                         fixed = TRUE)))
 })
 
-test_that("GEE AR1 fails closed instead of falling back to independence", {
+test_that("GEE AR1 requires guarded order metadata and Gaussian family", {
   expect_error(
     ds.vertGEE(y ~ x, data = "D", family = "gaussian", corstr = "ar1",
                datasources = list()),
-    "not implemented as a true working-correlation estimator")
+    "requires id_col")
+  expect_error(
+    ds.vertGEE(y ~ x, data = "D", family = "gaussian", corstr = "ar1",
+               id_col = "id", datasources = list()),
+    "requires order_col")
+  expect_error(
+    ds.vertGEE(y ~ x, data = "D", family = "poisson", corstr = "ar1",
+               id_col = "id", order_col = "visit", datasources = list()),
+    "currently implemented only for family='gaussian'")
 })
