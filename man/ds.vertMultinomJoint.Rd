@@ -47,9 +47,11 @@ full_irls=TRUE (default 3).}
 
 \item{datasources}{DataSHIELD connections.}
 
-\item{allow_legacy_ovr}{Logical. If \code{TRUE}, run the archived
-one-vs-rest/covariance-rescale implementation. This is retained only for
-reproducing historical validation artifacts; the paper-safe default is
+\item{allow_legacy_ovr}{Logical. If \code{TRUE}, request the archived
+one-vs-rest/covariance-rescale implementation. This route is disabled
+unless \code{options(dsvert.allow_multinom_legacy_ovr = TRUE)} or
+\code{DSVERT_ALLOW_MULTINOM_LEGACY_OVR=true} is set, and is retained only
+for reproducing historical validation artifacts. The paper-safe default is
 \code{\link{ds.vertMultinomJointNewton}}.}
 }
 \value{
