@@ -11,13 +11,16 @@
 #'   reconstructs \eqn{X^T X/n} from aggregate covariance/Hessian output
 #'   and runs coordinate descent client-side. For binomial and Poisson GLMs,
 #'   a true proximal solver would need repeated secure gradient evaluations
-#'   at sparse warm starts, which the current GLM API does not expose. Those
-#'   families therefore return the documented \code{\link{ds.vertLASSO1Step}}
-#'   quadratic-surrogate path instead of pretending to be exact.
+#'   at sparse warm starts. Binomial models now use the internal aggregate
+#'   score path to run proximal-gradient on the standardized L1 objective.
+#'   Poisson models still return the documented \code{\link{ds.vertLASSO1Step}}
+#'   quadratic-surrogate path because a global Lipschitz bound requires an
+#'   additional eta-bound design.
 #'
 #'   Non-disclosure: the inner ds.vertGLM call already hides everything
 #'   at the p-aggregate level; this wrapper only manipulates returned
-#'   aggregate coefficients and covariance/Hessian matrices.
+#'   aggregate coefficients, covariance/Hessian matrices, or p-dimensional
+#'   aggregate scores.
 #'
 #' @param formula Model formula.
 #' @param data Aligned data-frame name.
@@ -29,6 +32,14 @@
 #' @param alpha Retained for backward compatibility; no longer used.
 #' @param inner_iter Inner \code{ds.vertGLM} budget for the initial
 #'   unpenalised fit.
+#' @param exact_non_gaussian Logical. For binomial models, use repeated
+#'   secure aggregate-score evaluations and proximal-gradient updates on
+#'   the standardized L1 objective instead of the one-step surrogate.
+#'   Poisson remains on the documented one-step surrogate because it has
+#'   no global Lipschitz constant without an eta bound.
+#' @param ring Integer (63 or 127). MPC ring for the GLM score evaluations.
+#'   Defaults to Ring63. Ring127 can be requested explicitly after fixture
+#'   validation for the target deployment.
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD connections.
 #' @return A \code{ds.vertLASSOIter} object with components
@@ -42,6 +53,8 @@ ds.vertLASSOIter <- function(formula, data = NULL,
                               lambda = NULL,
                               max_outer = 20L, tol = 1e-8,
                               alpha = 0.5, inner_iter = 8L,
+                              exact_non_gaussian = TRUE,
+                              ring = NULL,
                               verbose = TRUE, datasources = NULL) {
   family <- match.arg(family)
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
@@ -50,12 +63,111 @@ ds.vertLASSOIter <- function(formula, data = NULL,
   if (any(!is.finite(lambda)) || any(lambda < 0)) {
     stop("lambda must contain non-negative finite values", call. = FALSE)
   }
+  soft <- function(x, t) sign(x) * pmax(abs(x) - t, 0)
+  exact_binomial <- isTRUE(exact_non_gaussian) && identical(family, "binomial")
+  if (is.null(ring)) ring <- 63L
+  ring <- as.integer(ring)
+
+  .orig_to_std <- function(beta_orig, fit) {
+    beta_orig <- as.numeric(beta_orig)
+    names(beta_orig) <- names(fit$coefficients)
+    out <- beta_orig
+    slope_names <- setdiff(names(beta_orig), "(Intercept)")
+    if (length(slope_names) > 0L) {
+      out[slope_names] <- beta_orig[slope_names] *
+        as.numeric(fit$x_sds[slope_names])
+    }
+    if ("(Intercept)" %in% names(beta_orig)) {
+      out["(Intercept)"] <- beta_orig["(Intercept)"] +
+        sum(beta_orig[slope_names] * as.numeric(fit$x_means[slope_names]))
+    }
+    out
+  }
+
+  .std_to_orig <- function(theta_std, fit) {
+    theta_std <- as.numeric(theta_std)
+    names(theta_std) <- names(fit$coefficients)
+    out <- theta_std
+    slope_names <- setdiff(names(theta_std), "(Intercept)")
+    if (length(slope_names) > 0L) {
+      out[slope_names] <- theta_std[slope_names] /
+        as.numeric(fit$x_sds[slope_names])
+    }
+    if ("(Intercept)" %in% names(theta_std)) {
+      out["(Intercept)"] <- theta_std["(Intercept)"] -
+        sum(out[slope_names] * as.numeric(fit$x_means[slope_names]))
+    }
+    out
+  }
+
+  .score_std <- function(theta_std) {
+    fit_g <- ds.vertGLM(
+      formula, data = data, family = family,
+      max_iter = 1L, tol = tol, lambda = 0,
+      ring = ring, start = theta_std,
+      compute_se = FALSE, compute_deviance = FALSE,
+      gradient_only = TRUE,
+      verbose = FALSE, datasources = datasources)
+    g <- fit_g$gradient_std
+    if (is.null(g)) stop("GLM score evaluation returned no gradient",
+                         call. = FALSE)
+    g <- g[names(theta_std)]
+    if (any(!is.finite(g))) {
+      stop("non-finite GLM aggregate score", call. = FALSE)
+    }
+    g
+  }
+
+  .binomial_pg <- function(fit0, lam, warm_std) {
+    theta <- warm_std
+    yk <- theta
+    tk <- 1
+    int_idx <- match("(Intercept)", names(theta))
+    penalized <- seq_along(theta)
+    if (!is.na(int_idx)) penalized <- setdiff(penalized, int_idx)
+    # For standardized columns, lambda_max([1, Xs]'[1, Xs]/n) <= p+1.
+    # Logistic Hessian is bounded by 0.25 * X'X/n.
+    L <- 0.25 * length(theta)
+    if (!is.finite(L) || L <= 0) L <- 1
+    converged <- FALSE
+    used <- as.integer(max_outer)
+    for (it in seq_len(as.integer(max_outer))) {
+      old <- theta
+      grad <- .score_std(yk)
+      z <- yk - grad / L
+      theta_new <- z
+      theta_new[penalized] <- soft(z[penalized], lam / L)
+      names(theta_new) <- names(theta)
+      tk_new <- (1 + sqrt(1 + 4 * tk^2)) / 2
+      yk <- theta_new + ((tk - 1) / tk_new) * (theta_new - theta)
+      theta <- theta_new
+      tk <- tk_new
+      if (max(abs(theta - old)) < tol) {
+        converged <- TRUE
+        used <- it
+        break
+      }
+    }
+    beta_orig <- .std_to_orig(theta, fit0)
+    l1 <- lam * sum(abs(theta[penalized]))
+    list(coefficients = beta_orig, theta_std = theta,
+         iterations = used, converged = converged,
+         objective = NA_real_, l1_penalty = l1, L = L)
+  }
 
   # Prime the warm start with an unpenalised fit.
   if (verbose) message("[LASSOIter] priming with unpenalised ds.vertGLM")
+  prime_iter <- if (exact_binomial) {
+    max(as.integer(inner_iter), 0L)
+  } else {
+    max(as.integer(inner_iter), 20L)
+  }
   fit0 <- ds.vertGLM(formula, data = data, family = family,
-                     max_iter = max(inner_iter, 20L), tol = tol,
+                     max_iter = prime_iter, tol = tol,
                      lambda = 0,
+                     ring = ring,
+                     compute_se = !exact_binomial,
+                     compute_deviance = !exact_binomial,
                      verbose = FALSE, datasources = datasources)
 
   paths <- list()
@@ -64,9 +176,12 @@ ds.vertLASSOIter <- function(formula, data = NULL,
   solver_objects <- list()
   method <- if (identical(family, "gaussian")) {
     "gaussian_normal_equations"
+  } else if (exact_binomial) {
+    "binomial_standardized_proximal_gradient"
   } else {
     "quadratic_surrogate"
   }
+  warm_std <- if (exact_binomial) .orig_to_std(fit0$coefficients, fit0) else NULL
 
   for (li in seq_along(lambda)) {
     lam <- lambda[li]
@@ -80,6 +195,13 @@ ds.vertLASSOIter <- function(formula, data = NULL,
       n_outer_used[li] <- obj$iterations
       objectives[li] <- obj$objective
       solver_objects[[sprintf("%.6g", lam)]] <- obj
+    } else if (exact_binomial) {
+      obj <- .binomial_pg(fit0, lam, warm_std)
+      paths[[sprintf("%.6g", lam)]] <- obj$coefficients
+      n_outer_used[li] <- obj$iterations
+      objectives[li] <- obj$objective
+      solver_objects[[sprintf("%.6g", lam)]] <- obj
+      warm_std <- obj$theta_std
     } else {
       if (li == 1L && verbose) {
         message("[LASSOIter] non-Gaussian family: using one-step ",
@@ -106,6 +228,8 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     method      = method,
     solver      = solver_objects,
     alpha       = alpha,
+    exact_non_gaussian = exact_binomial,
+    ring        = ring,
     call        = match.call())
   class(out) <- c("ds.vertLASSOIter", "list")
   out

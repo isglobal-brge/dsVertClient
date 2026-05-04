@@ -48,7 +48,10 @@ NULL
                              weights_active = FALSE,
                              no_intercept  = FALSE,
                              ring = 63L,
-                             compute_se = TRUE) {
+                             compute_se = TRUE,
+                             compute_deviance = TRUE,
+                             gradient_only = FALSE,
+                             start = NULL) {
 
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
@@ -144,8 +147,37 @@ NULL
 
   beta <- rep(0, p_total)
   intercept <- 0.0
+  feature_order <- c(x_vars[[coordinator]],
+                     if (p_nl > 0L) x_vars[[nl]] else character(0))
+  if (!is.null(start)) {
+    start_vec <- as.numeric(start)
+    names(start_vec) <- names(start)
+    if (!is.null(names(start_vec)) && "(Intercept)" %in% names(start_vec)) {
+      intercept <- as.numeric(start_vec["(Intercept)"])
+    }
+    if (!is.null(names(start_vec))) {
+      miss <- setdiff(feature_order, names(start_vec))
+      if (length(miss) > 0L) {
+        stop("start is missing coefficient(s): ",
+             paste(miss, collapse = ", "), call. = FALSE)
+      }
+      beta <- as.numeric(start_vec[feature_order])
+    } else if (length(start_vec) == p_total + 1L) {
+      intercept <- start_vec[1L]
+      beta <- start_vec[-1L]
+    } else if (length(start_vec) == p_total) {
+      beta <- start_vec
+    } else {
+      stop("start length must be p or p+1", call. = FALSE)
+    }
+    if (isTRUE(no_intercept)) intercept <- 0
+  }
+  beta <- unname(beta)
+  intercept <- unname(intercept)
   converged <- FALSE
   final_iter <- 0
+  max_diff <- Inf
+  last_gradient <- NULL
 
   # L-BFGS state (client-side only)
   lbfgs_m <- 7L  # number of (s,y) pairs to keep
@@ -167,8 +199,8 @@ NULL
     # `beta[(p_coord+1):p_total]` would produce `beta[2:1]` = reversed
     # 2-elt vector with NAs via R's `:` semantics. Use explicit
     # seq_len-based slicing that is safe for zero-length cases.
-    beta_coord_slice <- if (p_coord > 0L) beta[seq_len(p_coord)] else numeric(0)
-    beta_nl_slice <- if (p_total > p_coord) beta[(p_coord + 1L):p_total] else numeric(0)
+    beta_coord_slice <- if (p_coord > 0L) unname(beta[seq_len(p_coord)]) else numeric(0)
+    beta_nl_slice <- if (p_total > p_coord) unname(beta[(p_coord + 1L):p_total]) else numeric(0)
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
@@ -341,10 +373,24 @@ NULL
     # Full gradient with L2 regularization
     theta <- c(intercept, beta)
     full_grad <- c(sum_residual / n_obs, gradient / n_obs) + lambda * theta
+    names(full_grad) <- c("(Intercept)", feature_order)
+    if (isTRUE(no_intercept)) full_grad[1L] <- 0
+    last_gradient <- full_grad
 
     if (verbose && iter <= 3) {
       message(sprintf("  [L-BFGS] sum_res=%.4f, ||grad||=%.6f, grad_range=[%.4f, %.4f]",
         sum_residual, sqrt(sum(full_grad^2)), min(full_grad), max(full_grad)))
+    }
+
+    if (isTRUE(gradient_only)) {
+      converged <- TRUE
+      final_iter <- iter
+      max_diff <- 0
+      if (verbose) {
+        message(sprintf("  [Gradient] returned aggregate score at start (||grad||=%.4f)",
+                        sqrt(sum(full_grad^2))))
+      }
+      break
     }
 
     # Update L-BFGS history
@@ -373,9 +419,9 @@ NULL
       # freeze the auto-intercept at zero by masking its direction.
       direction[1] <- 0
     }
-    new_theta <- theta + step_size * direction
-    intercept <- if (isTRUE(no_intercept)) 0 else new_theta[1]
-    beta <- new_theta[-1]
+    new_theta <- unname(theta + step_size * direction)
+    intercept <- if (isTRUE(no_intercept)) 0 else unname(new_theta[1])
+    beta <- unname(new_theta[-1])
 
     max_diff <- max(abs(beta - beta_old), abs(intercept - intercept_old))
     final_iter <- iter
@@ -399,7 +445,7 @@ NULL
     warning(sprintf("Did not converge after %d iterations (diff = %.2e)", max_iter, max_diff))
 
   inv_hessian <- list()
-  if (isTRUE(compute_se)) {
+  if (isTRUE(compute_se) && !isTRUE(gradient_only)) {
   # === Standard errors via finite-difference Hessian (K=2) ===
   if (verbose) message("  [SE] Computing Hessian (central differences)...")
   p_plus1 <- p_total + 1
@@ -512,7 +558,18 @@ NULL
     betas[[nl]] <- if (p_total > p_coord) beta[(p_coord + 1L):p_total] else numeric(0)
     return(list(betas=betas, intercept=intercept, converged=converged,
                 iterations=final_iter, max_diff=max_diff, deviance=NA_real_,
-                inv_hessian=inv_hessian))
+                inv_hessian=inv_hessian,
+                gradient_std=last_gradient))
+  }
+
+  if (!isTRUE(compute_deviance)) {
+    betas <- list()
+    betas[[coordinator]] <- if (p_coord > 0L) beta[seq_len(p_coord)] else numeric(0)
+    betas[[nl]] <- if (p_total > p_coord) beta[(p_coord + 1L):p_total] else numeric(0)
+    return(list(betas=betas, intercept=intercept, converged=converged,
+                iterations=final_iter, max_diff=max_diff, deviance=NA_real_,
+                inv_hessian=inv_hessian,
+                gradient_std=last_gradient))
   }
 
   # === Secure canonical deviance ===
@@ -708,5 +765,6 @@ NULL
   betas[[nl]] <- if (p_total > p_coord) beta[(p_coord + 1L):p_total] else numeric(0)
   list(betas=betas, intercept=intercept, converged=converged,
        iterations=final_iter, max_diff=max_diff, deviance=k2_deviance,
-       inv_hessian=inv_hessian)
+       inv_hessian=inv_hessian,
+       gradient_std=last_gradient)
 }

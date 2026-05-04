@@ -9,6 +9,8 @@ ds.vertCoxDiscreteNonDisclosive(
   data = NULL,
   J = 5L,
   bin_breaks = NULL,
+  target = c("discrete_logit", "cox_profile"),
+  max_event_times = NULL,
   max_iter = 20L,
   tol = 1e-06,
   newton = TRUE,
@@ -34,6 +36,14 @@ first = 0). If \code{NULL}, the caller must precompute and pass
 them -- they are public metadata that must be reproducible across
 servers (typically equal-quantile breaks of observed event times,
 computed at the coordinator from non-disclosive aggregates).}
+
+\item{target}{Character. \code{"discrete_logit"} keeps the existing
+non-disclosive pooled-logistic discrete-time target. \code{"cox_profile"}
+uses event-time risk-set masks and reconstructs only Breslow Cox slope
+score/Hessian aggregates.}
+
+\item{max_event_times}{Integer public runtime guard for \code{target =
+"cox_profile"}.}
 
 \item{max_iter}{Integer. Newton outer iterations (default 20L). Used
 by the masked-Newton inner loop.}
