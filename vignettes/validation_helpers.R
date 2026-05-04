@@ -722,17 +722,22 @@ validate_glmm <- function() {
     psi_align(conns)
     run <- elapsed(fit <- dsVertClient::ds.vertGLMM(
       y ~ x1 + x2, data = "DA", cluster_col = "cluster",
-      max_outer = 0L, inner_iter = 1L, compute_se = FALSE,
+      max_outer = 1L, inner_iter = 1L, compute_se = FALSE,
       verbose = FALSE, datasources = conns))
     ref <- coef(stats::glm(y ~ x1 + x2, data = pooled, family = binomial()))
-    observed <- max_named_delta(fit$coefficients, ref)
+    fixed_delta <- max_named_delta(fit$coefficients, ref)
+    pql_ran <- isTRUE(fit$iterations >= 1L) &&
+      is.data.frame(fit$trace) && nrow(fit$trace) >= 1L &&
+      is.finite(fit$sigma_b2)
+    observed <- max(fixed_delta, if (pql_ran) 0 else Inf)
     rows[[as.character(K)]] <- row_result(
-      "glmm", "GLMM", K, "ds.vertGLMM(smoke validation)",
-      "balanced binomial cluster fixture", "central glm no-random-effect limit",
-      "coef_max_abs_delta", observed, 0.05, "strict-smoke",
+      "glmm", "GLMM", K, "ds.vertGLMM(max_outer=1)",
+      "paired balanced binomial cluster fixture",
+      "central glm fixed-effect symmetry plus PQL trace check",
+      "coef_max_abs_delta_and_pql_trace", observed, 1e-4, "strict-pql",
       "PQL route returns fixed effects and scalar variance diagnostics only.",
       run$runtime_s,
-      "Compact vignette uses max_outer=0; full PQL tuning is heavier.")
+      "Compact fixture executes one aggregate PQL outer update; heavier convergence checks can use max_outer > 1.")
     try(DSI::datashield.logout(conns), silent = TRUE)
   }
   do.call(rbind, rows)
@@ -830,10 +835,17 @@ validate_mi <- function() {
 
 build_multinomial <- function(n = 60L) {
   set.seed(44)
-  d <- data.frame(patient_id = sprintf("M%03d", seq_len(n)),
-                  x1 = rnorm(n), x2 = rnorm(n), x3 = rnorm(n))
-  d$y_cls <- factor(rep(c("high", "low", "med"), each = n / 3L),
-                    levels = c("high", "low", "med"))
+  stopifnot(n %% 3L == 0L)
+  base_n <- n / 3L
+  base <- data.frame(x1 = rnorm(base_n), x2 = rnorm(base_n), x3 = rnorm(base_n))
+  shift <- 0.15
+  high <- transform(base, x1 = x1 - shift, x2 = x2 + 0.5 * shift,
+                    y_cls = "high")
+  low <- transform(base, x1 = x1 + shift, y_cls = "low")
+  med <- transform(base, x2 = x2 - shift, y_cls = "med")
+  d <- rbind(high, low, med)
+  d <- cbind(patient_id = sprintf("M%03d", seq_len(n)), d)
+  d$y_cls <- factor(d$y_cls, levels = c("high", "low", "med"))
   for (k in levels(d$y_cls)) d[[paste0(k, "_ind")]] <- as.integer(d$y_cls == k)
   d
 }
@@ -870,16 +882,16 @@ validate_multinomial <- function() {
     run <- elapsed(fit <- dsVertClient::ds.vertMultinomJointNewton(
       y_cls ~ x1 + x2 + x3, data = "DA",
       levels = c("high", "low", "med"),
-      indicator_template = "%s_ind", max_outer = 2L,
-      warm_max_iter = 8L, binomial_sigmoid_intervals = 10L,
+      indicator_template = "%s_ind", max_outer = 3L,
+      warm_max_iter = 10L, binomial_sigmoid_intervals = 10L,
       tol = 1e-3, verbose = FALSE, datasources = conns))
     ds_prob <- softmax_prob(fit$coefficients, pooled)
     ds_prob <- ds_prob[, colnames(ref_prob), drop = FALSE]
     observed <- max(abs(ds_prob - ref_prob))
     rows[[as.character(K)]] <- row_result(
       "multinomial", "Multinomial", K, "ds.vertMultinomJointNewton",
-      "balanced synthetic 3-class fixture", "nnet::multinom probabilities",
-      "class_probability_max_abs_delta", observed, 0.05,
+      "balanced soft-signal synthetic 3-class fixture", "nnet::multinom probabilities",
+      "class_probability_max_abs_delta", observed, 0.02,
       "strict-practical",
       "Softmax probabilities and residuals remain Ring127 shares; no row probabilities are returned.",
       run$runtime_s)

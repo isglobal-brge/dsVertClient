@@ -952,19 +952,23 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         #   H_diag_*    -- min/max of revealed slope-slope diagonal
         #   sign_kl     -- client-side +/-1 sign factor
         H_diag_vals <- diag(H_slope_formula)
-        cat(sprintf(
-          "[MnlJoint iter %d block (k=%d,l=%d)] sum_W=% .3e |XtW|_max=%.3e H_diag min=% .3e max=% .3e count_neg=%d sign_kl=%+d\n",
-          outer, ki, li, sum_W, max(abs(XtW_formula)),
-          min(H_diag_vals), max(H_diag_vals),
-          sum(H_diag_vals < 0), sign_kl))
+        if (verbose) {
+          message(sprintf(
+            "[MnlJoint iter %d block (k=%d,l=%d)] sum_W=% .3e |XtW|_max=%.3e H_diag min=% .3e max=% .3e count_neg=%d sign_kl=%+d",
+            outer, ki, li, sum_W, max(abs(XtW_formula)),
+            min(H_diag_vals), max(H_diag_vals),
+            sum(H_diag_vals < 0), sign_kl))
+        }
       }
     }
     # Symmetrise the full assembled H_emp (numerical noise across blocks).
     if (H_emp_ok) {
       H_emp_full <- (H_emp_full + t(H_emp_full)) / 2
-      cat(sprintf("[MnlJoint iter %d] H_emp diag=[%s]\n",
-                   outer,
-                   paste(sprintf("%.3e", diag(H_emp_full)), collapse=",")))
+      if (verbose) {
+        message(sprintf("[MnlJoint iter %d] H_emp diag=[%s]",
+                        outer,
+                        paste(sprintf("%.3e", diag(H_emp_full)), collapse=",")))
+      }
     }
     } # end if (use_h_emp) -- H_emp pipeline gated FALSE; B_reg used below
 
@@ -1029,15 +1033,12 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     beta_new <- beta_mat
     beta_new[, non_ref] <- beta_new[, non_ref] + step_mat
     max_step <- max(abs(step_mat))
-    # AUDITORIA instrumentation: gradient-norm trace per iter. Always
-    # emit (not gated on verbose) so CV full logs capture convergence
-    # trajectory for FAIL diagnosis.
-    cat(sprintf("[MnlJoint] iter %d  |g|_L2=%.3e  |g|_max=%.3e  |step|_pre=%.3e  |step|_post=%.3e  beta_max=%.3e  dt=%.1fs\n",
-                outer, g_norm, g_max, step_norm_pre, max_step,
-                max(abs(beta_new)), proc.time()[[3L]] - t_iter))
-    if (verbose)
-      message(sprintf("[MultinomJointNewton] iter %d |step|_max=%.3e (%.1fs)",
-                       outer, max_step, proc.time()[[3L]] - t_iter))
+    if (verbose) {
+      message(sprintf(
+        "[MnlJoint] iter %d |g|_L2=%.3e |g|_max=%.3e |step|_pre=%.3e |step|_post=%.3e beta_max=%.3e dt=%.1fs",
+        outer, g_norm, g_max, step_norm_pre, max_step,
+        max(abs(beta_new)), proc.time()[[3L]] - t_iter))
+    }
     beta_mat <- beta_new
     if (max_step < tol) {
       converged <- TRUE

@@ -50,14 +50,14 @@ knitr::kable(all_rows[, c("method_name", "k_mode", "function_route",
 | LMM | K\>=3 | ds.vertLMM.k3 | fixed_effect_max_abs_delta | 0.0001614 | 0.0200 | strict-practical | PASS | 169.478 |
 | GEE | K=2 | ds.vertGEE(corstr=‘independence’) | coef_max_abs_delta | 0.0000631 | 0.0100 | strict-practical | PASS | 12.191 |
 | GEE | K\>=3 | ds.vertGEE(corstr=‘independence’) | coef_max_abs_delta | 0.0000616 | 0.0100 | strict-practical | PASS | 13.345 |
-| GLMM | K=2 | ds.vertGLMM(smoke validation) | coef_max_abs_delta | 0.0000000 | 0.0500 | strict-smoke | PASS | 68.095 |
-| GLMM | K\>=3 | ds.vertGLMM(smoke validation) | coef_max_abs_delta | 0.0000000 | 0.0500 | strict-smoke | PASS | 69.011 |
+| GLMM | K=2 | ds.vertGLMM(max_outer=1) | coef_max_abs_delta_and_pql_trace | 0.0000000 | 0.0001 | strict-pql | PASS | 89.359 |
+| GLMM | K\>=3 | ds.vertGLMM(max_outer=1) | coef_max_abs_delta_and_pql_trace | 0.0000000 | 0.0001 | strict-pql | PASS | 90.576 |
 | IPW | K=2 | ds.vertIPW | weighted_outcome_coef_abs_delta | 0.0001155 | 0.0010 | strict-practical | PASS | 10.659 |
 | IPW | K\>=3 | ds.vertIPW | weighted_outcome_coef_abs_delta | 0.0001152 | 0.0010 | strict-practical | PASS | 11.635 |
 | Multiple imputation | K=2 | ds.vertMI | pooled_coef_abs_delta | 0.0098837 | 0.0200 | strict-practical | PASS | 8.412 |
 | Multiple imputation | K\>=3 | ds.vertMI | pooled_coef_abs_delta | 0.0098838 | 0.0200 | strict-practical | PASS | 9.634 |
-| Multinomial | K=2 | ds.vertMultinomJointNewton | class_probability_max_abs_delta | 0.0473727 | 0.0500 | strict-practical | PASS | 128.579 |
-| Multinomial | K\>=3 | ds.vertMultinomJointNewton | class_probability_max_abs_delta | 0.0473830 | 0.0500 | strict-practical | PASS | 130.266 |
+| Multinomial | K=2 | ds.vertMultinomJointNewton | class_probability_max_abs_delta | 0.0085084 | 0.0200 | strict-practical | PASS | 152.326 |
+| Multinomial | K\>=3 | ds.vertMultinomJointNewton | class_probability_max_abs_delta | 0.0085197 | 0.0200 | strict-practical | PASS | 152.432 |
 | Ordinal | K=2 | ds.vertOrdinalJointNewton | cumulative_probability_max_abs_delta | 0.0287246 | 0.1500 | strict-practical | PASS | 177.014 |
 | Ordinal | K\>=3 | ds.vertOrdinalJointNewton | cumulative_probability_max_abs_delta | 0.0286956 | 0.1500 | strict-practical | PASS | 176.840 |
 

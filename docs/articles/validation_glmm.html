@@ -92,23 +92,25 @@ Gonzalez</h4>
 </h2>
 <p>Functions: <code><a href="../reference/ds.vertGLMM.html">ds.vertGLMM()</a></code>.</p>
 <p>The product route is aggregate PQL for a binomial random-intercept
-GLMM. The compact executable vignette checks the no-outer-step smoke
-path because full PQL is intentionally heavier.</p>
+GLMM. The compact executable vignette runs one protected PQL outer
+update and checks that the fixed-effect symmetry target and variance
+trace are finite.</p>
 </div>
 <div class="section level2">
 <h2 id="mathematical-target">Mathematical target<a class="anchor" aria-label="anchor" href="#mathematical-target"></a>
 </h2>
-<p>With zero PQL outer updates, the route reduces to the protected
-binomial GLM prime. The validation checks the coefficient envelope of
-that public smoke path.</p>
+<p>A PQL step alternates protected binomial working-response updates
+with aggregate weighted mixed-model normal equations. The validation
+compares fixed effects to the central symmetric glm target and asserts
+that the PQL trace is populated.</p>
 </div>
 <div class="section level2">
 <h2 id="fixture-and-reference">Fixture and reference<a class="anchor" aria-label="anchor" href="#fixture-and-reference"></a>
 </h2>
-<p>Fixture: Balanced binomial cluster fixture with cluster sizes above
-privacy thresholds.</p>
-<p>Centralized reference: Central binomial glm no-random-effect
-limit.</p>
+<p>Fixture: Paired balanced binomial cluster fixture with cluster sizes
+above privacy thresholds.</p>
+<p>Centralized reference: Central binomial glm fixed-effect symmetry
+plus a one-step PQL trace check.</p>
 <p>The executable chunk below calls <code>run_validation()</code> from
 <code>vignettes/validation_helpers.R</code>. That helper constructs the
 fixture, opens a DSLite server, performs PSI alignment, runs the
@@ -137,16 +139,16 @@ context.</p>
 <span><span class="fu">display_validation</span><span class="op">(</span><span class="va">rows</span><span class="op">)</span></span></code></pre></div>
 <table class="table">
 <colgroup>
-<col width="4%">
-<col width="17%">
+<col width="3%">
+<col width="12%">
 <col width="19%">
-<col width="20%">
-<col width="10%">
-<col width="5%">
-<col width="5%">
-<col width="7%">
+<col width="26%">
+<col width="15%">
+<col width="4%">
 <col width="4%">
 <col width="5%">
+<col width="3%">
+<col width="4%">
 </colgroup>
 <thead><tr class="header">
 <th align="left">k_mode</th>
@@ -163,27 +165,29 @@ context.</p>
 <tbody>
 <tr class="odd">
 <td align="left">K=2</td>
-<td align="left">ds.vertGLMM(smoke validation)</td>
-<td align="left">balanced binomial cluster fixture</td>
-<td align="left">central glm no-random-effect limit</td>
-<td align="left">coef_max_abs_delta</td>
+<td align="left">ds.vertGLMM(max_outer=1)</td>
+<td align="left">paired balanced binomial cluster fixture</td>
+<td align="left">central glm fixed-effect symmetry plus PQL trace
+check</td>
+<td align="left">coef_max_abs_delta_and_pql_trace</td>
 <td align="right">0</td>
-<td align="right">0.05</td>
-<td align="left">strict-smoke</td>
+<td align="right">1e-04</td>
+<td align="left">strict-pql</td>
 <td align="left">PASS</td>
-<td align="right">68.1</td>
+<td align="right">89.4</td>
 </tr>
 <tr class="even">
 <td align="left">K&gt;=3</td>
-<td align="left">ds.vertGLMM(smoke validation)</td>
-<td align="left">balanced binomial cluster fixture</td>
-<td align="left">central glm no-random-effect limit</td>
-<td align="left">coef_max_abs_delta</td>
+<td align="left">ds.vertGLMM(max_outer=1)</td>
+<td align="left">paired balanced binomial cluster fixture</td>
+<td align="left">central glm fixed-effect symmetry plus PQL trace
+check</td>
+<td align="left">coef_max_abs_delta_and_pql_trace</td>
 <td align="right">0</td>
-<td align="right">0.05</td>
-<td align="left">strict-smoke</td>
+<td align="right">1e-04</td>
+<td align="left">strict-pql</td>
 <td align="left">PASS</td>
-<td align="right">69.0</td>
+<td align="right">90.6</td>
 </tr>
 </tbody>
 </table>

@@ -128,10 +128,10 @@ method_pages <- list(
   glmm = list(
     title = "GLMM validation",
     functions = "ds.vertGLMM()",
-    method = "The product route is aggregate PQL for a binomial random-intercept GLMM. The compact executable vignette checks the no-outer-step smoke path because full PQL is intentionally heavier.",
-    math = "With zero PQL outer updates, the route reduces to the protected binomial GLM prime. The validation checks the coefficient envelope of that public smoke path.",
-    fixture = "Balanced binomial cluster fixture with cluster sizes above privacy thresholds.",
-    reference = "Central binomial glm no-random-effect limit.",
+    method = "The product route is aggregate PQL for a binomial random-intercept GLMM. The compact executable vignette runs one protected PQL outer update and checks that the fixed-effect symmetry target and variance trace are finite.",
+    math = "A PQL step alternates protected binomial working-response updates with aggregate weighted mixed-model normal equations. The validation compares fixed effects to the central symmetric glm target and asserts that the PQL trace is populated.",
+    fixture = "Paired balanced binomial cluster fixture with cluster sizes above privacy thresholds.",
+    reference = "Central binomial glm fixed-effect symmetry plus a one-step PQL trace check.",
     disclosure = "The route returns fixed effects and scalar variance diagnostics only; per-cluster BLUPs and row probabilities are not returned."
   ),
   ipw = list(
@@ -157,7 +157,7 @@ method_pages <- list(
     functions = "ds.vertMultinom(), ds.vertMultinomJointNewton()",
     method = "The supported route is joint softmax Newton over Ring127 shares. Historical one-vs-rest output is kept only as an internal warm start.",
     math = "P(Y=c|X)=exp(eta_c)/sum_l exp(eta_l). The validation compares predicted class probabilities to nnet::multinom().",
-    fixture = "Balanced synthetic three-class fixture with vertical predictors.",
+    fixture = "Balanced soft-signal synthetic three-class fixture with vertical predictors.",
     reference = "nnet::multinom predicted probabilities.",
     disclosure = "Softmax probabilities, residuals, and row scores remain Ring127 shares. The client receives coefficients and scalar optimizer diagnostics."
   ),

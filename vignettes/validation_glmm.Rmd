@@ -26,17 +26,17 @@ force_run <- identical(tolower(Sys.getenv("DSVERT_VALIDATION_FORCE", "false")), 
 
 Functions: `ds.vertGLMM()`.
 
-The product route is aggregate PQL for a binomial random-intercept GLMM. The compact executable vignette checks the no-outer-step smoke path because full PQL is intentionally heavier.
+The product route is aggregate PQL for a binomial random-intercept GLMM. The compact executable vignette runs one protected PQL outer update and checks that the fixed-effect symmetry target and variance trace are finite.
 
 ## Mathematical target
 
-With zero PQL outer updates, the route reduces to the protected binomial GLM prime. The validation checks the coefficient envelope of that public smoke path.
+A PQL step alternates protected binomial working-response updates with aggregate weighted mixed-model normal equations. The validation compares fixed effects to the central symmetric glm target and asserts that the PQL trace is populated.
 
 ## Fixture and reference
 
-Fixture: Balanced binomial cluster fixture with cluster sizes above privacy thresholds.
+Fixture: Paired balanced binomial cluster fixture with cluster sizes above privacy thresholds.
 
-Centralized reference: Central binomial glm no-random-effect limit.
+Centralized reference: Central binomial glm fixed-effect symmetry plus a one-step PQL trace check.
 
 The executable chunk below calls `run_validation()` from
 `vignettes/validation_helpers.R`. That helper constructs the fixture,
