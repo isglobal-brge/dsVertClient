@@ -13,6 +13,7 @@ ds.vertGEE(
   max_iter = 100L,
   tol = 1e-04,
   lambda = 1e-04,
+  ring = 63L,
   verbose = TRUE,
   datasources = NULL
 )
@@ -29,12 +30,16 @@ ds.vertGEE(
 enables the cluster-robust sandwich meat; the cluster column must live with
 the outcome and all clusters must pass \code{datashield.privacyLevel}.}
 
-\item{corstr}{Working correlation label. The current coefficient
-estimator is the vertical GLM working-independence estimator; when
-\code{id_col} is supplied, robust covariance uses cluster-level score
-sums.}
+\item{corstr}{Working correlation. \code{"independence"} is available for
+Gaussian/binomial/Poisson. \code{"exchangeable"} fits true exchangeable
+Gaussian and Poisson GEE coefficients from guarded cluster-level sufficient
+statistics; binomial exchangeable and AR1 fail closed rather than returning
+an independence estimate under a stronger label.}
 
 \item{max_iter, tol, lambda, verbose}{Passed to \code{ds.vertGLM}.}
+
+\item{ring}{Integer 63 or 127. Poisson exchangeable is automatically run in
+Ring127 because its protected half-link exponentials need high precision.}
 
 \item{datasources}{DataSHIELD connection object.}
 }
@@ -49,8 +54,13 @@ An object of class \code{ds.vertGEE} with components
 Fit a GLM for vertically partitioned DataSHIELD data and
 return sandwich (robust) standard errors alongside the usual
 model-based ones. The point estimate \eqn{\hat{\beta}} is obtained
-by a single call to \code{\link{ds.vertGLM}}. For Gaussian, binomial, and
-Poisson models the sandwich meat is computed in the share domain. If
+by a single call to \code{\link{ds.vertGLM}}. For Gaussian
+\code{corstr = "exchangeable"}, dsVert promotes the point estimate to a
+protected cluster-level exchangeable GLS/GEE update. For Poisson
+\code{corstr = "exchangeable"}, dsVert uses a Ring127 protected
+Pearson-score exchangeable GEE update. For Gaussian, binomial, and
+Poisson independence models the sandwich meat is computed in the share
+domain. If
 \code{id_col} is supplied, dsVert computes the clustered meat
 \eqn{\sum_c S_c S_c^\top}, where
 \eqn{S_c=\sum_{i\in c} X_i r_i}; otherwise it computes the row-level
