@@ -78,6 +78,13 @@ deployments would do the expansion server-side via a non-
 disclosive helper (see \code{coxDiscreteShareDS.R} for the K=2
 share-mask precedent -- the K=3 generalisation is straightforward
 3-party additive sharing).
+
+Under strict non-disclosure this archived wrapper is disabled by default
+because it expects person-time-expanded data and can expose event-time
+baseline metadata. Use \code{\link{ds.vertCoxProfileNonDisclosive}} for
+the strict K>=3 Cox PH route. Enable
+\code{options(dsvert.allow_legacy_cox_k3_poisson = TRUE)} only for
+controlled diagnostic legacy runs.
 }
 \references{
 Allison, P. D. (1982). Discrete-time methods for the analysis of event
@@ -91,6 +98,6 @@ Andreux, M. \emph{et al.} (2020). Federated survival analysis with
 discrete-time Cox models. arXiv:2006.08997.
 }
 \seealso{
-\code{\link{ds.vertGLM}}, \code{\link{ds.vertCox}} (K=2
-masked-Newton path).
+\code{\link{ds.vertGLM}},
+\code{\link{ds.vertCoxProfileNonDisclosive}}.
 }
