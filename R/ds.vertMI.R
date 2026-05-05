@@ -171,17 +171,28 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
     data.frame()
   }
   quality_warnings <- character(0)
+  quality_status <- "ok"
   if (nrow(imputation_log) > 0L) {
     if (all((imputation_log$n_imputed %||% 0L) == 0L, na.rm = TRUE)) {
       quality_warnings <- c(quality_warnings,
         "No missing cells were imputed. If missingness existed before alignment, run ds.psiAlign(..., na.action = 'none') before ds.vertMI().")
+      quality_status <- "degraded"
     }
-    if (any(imputation_log$intercept_only %in% TRUE)) {
+    aggregate_fallback <- imputation_log$intercept_only %in% TRUE &
+      imputation_log$method %in% c("mean_intercept", "mode_intercept")
+    unstable_intercept <- imputation_log$intercept_only %in% TRUE &
+      !aggregate_fallback
+    if (any(unstable_intercept)) {
       quality_warnings <- c(quality_warnings,
         "At least one imputation used an intercept-only local model because no complete numeric predictor was available on the imputation server.")
+      quality_status <- "degraded"
+    }
+    if (any(aggregate_fallback)) {
+      quality_warnings <- c(quality_warnings,
+        "At least one imputation used an aggregate-only mean/mode fallback because no complete numeric predictor was available on the imputation server.")
+      if (identical(quality_status, "ok")) quality_status <- "approximate"
     }
   }
-  quality_status <- if (length(quality_warnings)) "degraded" else "ok"
 
   out <- list(
     coefficients = beta_bar,
