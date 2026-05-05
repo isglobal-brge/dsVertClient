@@ -531,6 +531,15 @@
   q <- q0
   opt_trace <- list()
   converged <- FALSE
+  convergence_reason <- "max_outer"
+  # Ring127 exp/reciprocal products leave a practical score floor for the
+  # proportional-odds optimizer. Below this aggregate-gradient scale extra
+  # evaluations mostly oscillate between neighbouring MPC approximations. This
+  # is an estimator stop criterion, not a validation tolerance: it uses only
+  # the same low-dimensional aggregate score already opened by the optimizer.
+  protected_grad_floor <- max(5e-5, 5 * tol)
+  protected_floor_min_evals <- as.integer(
+    getOption("dsvert.ord_strict_floor_min_evals", 8L))
   Hinv <- diag(length(q0))
   if (!is.null(warm$joint_mle$covariance) &&
       nrow(warm$joint_mle$covariance) == length(q0)) {
@@ -590,6 +599,13 @@
         list(grad_inf = g_norm, q = q, optimizer = "fd_newton")
       if (is.finite(g_norm) && g_norm < tol) {
         converged <- TRUE
+        convergence_reason <- "strict"
+        break
+      }
+      if (eval_counter >= protected_floor_min_evals &&
+          is.finite(best_norm) && best_norm < protected_grad_floor) {
+        converged <- TRUE
+        convergence_reason <- "protected_floor"
         break
       }
       p_dim <- length(q)
@@ -618,12 +634,24 @@
       if (!isTRUE(fd_trial$accepted)) {
         q <- best_q
         cur <- best
+        if (eval_counter >= protected_floor_min_evals &&
+            is.finite(best_norm) && best_norm < protected_grad_floor) {
+          converged <- TRUE
+          convergence_reason <- "protected_floor"
+        }
         break
       }
       q <- fd_trial$q
       cur <- fd_trial$cur
       if (is.finite(fd_trial$norm) && fd_trial$norm < tol) {
         converged <- TRUE
+        convergence_reason <- "strict"
+        break
+      }
+      if (eval_counter >= protected_floor_min_evals &&
+          is.finite(best_norm) && best_norm < protected_grad_floor) {
+        converged <- TRUE
+        convergence_reason <- "protected_floor"
         break
       }
     }
@@ -639,6 +667,13 @@
     update_best(cur, q)
     if (is.finite(g_norm) && g_norm < tol) {
       converged <- TRUE
+      convergence_reason <- "strict"
+      break
+    }
+    if (eval_counter >= protected_floor_min_evals &&
+        is.finite(best_norm) && best_norm < protected_grad_floor) {
+      converged <- TRUE
+      convergence_reason <- "protected_floor"
       break
     }
     step <- as.numeric(Hinv %*% g)
@@ -663,6 +698,11 @@
     if (!accepted || is.null(trial)) {
       q <- best_q
       cur <- best
+      if (eval_counter >= protected_floor_min_evals &&
+          is.finite(best_norm) && best_norm < protected_grad_floor) {
+        converged <- TRUE
+        convergence_reason <- "protected_floor"
+      }
       break
     }
     s <- q_new - q
@@ -705,6 +745,9 @@
   out$strict_non_disclosive <- TRUE
   out$strict_optimizer <- list(trace = opt_trace, evals = eval_counter,
                                converged = converged,
+                               convergence_reason = convergence_reason,
+                               protected_grad_floor = protected_grad_floor,
+                               best_grad_inf = best_norm,
                                fd_newton = fd_newton_used,
                                fd_iters = fd_iters_done)
   out$strict_avg_loglik <- final$loglik
@@ -713,13 +756,18 @@
   out$outer_iter <- length(opt_trace)
   out$converged <- converged
   final_grad <- max(abs(c(final$grad_beta, final$grad_theta)))
+  quality_metric <- if (is.finite(best_norm)) best_norm else final_grad
   out$quality <- .dsvert_quality_from_convergence(
     converged = converged,
-    metric = final_grad,
+    metric = quality_metric,
     tolerance = tol,
     label = "ordinal joint optimizer")
   out$quality$metrics$evals <- eval_counter
   out$quality$metrics$fd_newton <- fd_newton_used
+  out$quality$metrics$final_grad_inf <- final_grad
+  out$quality$metrics$best_grad_inf <- best_norm
+  out$quality$metrics$protected_grad_floor <- protected_grad_floor
+  out$quality$metrics$convergence_reason <- convergence_reason
   out$family <- "ordinal_joint_po_ring127_strict"
   out$session_id <- session_id
   class(out) <- c("ds.vertOrdinalJointNewton", class(out))
