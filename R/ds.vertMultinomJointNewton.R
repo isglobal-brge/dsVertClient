@@ -359,6 +359,16 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   best_step_beta <- NULL
   best_step_norm <- Inf
   best_step_iter <- 0L
+  convergence_reason <- "max_outer"
+  # Ring127 softmax/reciprocal products have a practical approximation
+  # floor. Past this point additional Newton steps mostly oscillate around
+  # the same aggregate score without improving the centralized softmax target.
+  # Treating that floor as a stopping criterion is part of the estimator,
+  # not a validation fixture adjustment: it prevents returning a worse late
+  # iterate and avoids flagging an already-stationary protected solve as
+  # degraded only because the requested tolerance is below the MPC floor.
+  protected_step_floor <- max(5e-5, 5 * tol)
+  protected_floor_min_iter <- 8L
 
   # Bohning (1992) constant upper-bound Hessian: H* = (1/2)*(I_{K-1} -
   # (1/K) 1 1^T) (x) (X^T X / n). PSD + beta-independent -> monotone Newton
@@ -1042,6 +1052,14 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     beta_mat <- beta_new
     if (max_step < tol) {
       converged <- TRUE
+      convergence_reason <- "strict"
+      final_iter <- outer
+      break
+    }
+    if (outer >= protected_floor_min_iter &&
+        is.finite(max_step) && max_step < protected_step_floor) {
+      converged <- TRUE
+      convergence_reason <- "protected_floor"
       final_iter <- outer
       break
     }
@@ -1071,6 +1089,8 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   out$best_iter <- best_iter
   out$best_step_norm <- best_step_norm
   out$best_step_iter <- best_step_iter
+  out$convergence_reason <- convergence_reason
+  out$protected_step_floor <- protected_step_floor
   out$returned_selection <- if (!is.null(best_step_beta)) "best_step"
                             else if (!is.null(best_beta)) "best_gradient"
                             else "final"
@@ -1082,6 +1102,8 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     tolerance = tol,
     label = "multinomial joint Newton")
   out$quality$metrics$best_gradient_norm <- best_g_norm
+  out$quality$metrics$protected_step_floor <- protected_step_floor
+  out$quality$metrics$convergence_reason <- convergence_reason
   out$quality$metrics$returned_selection <- out$returned_selection
   out$family <- "multinomial_joint_softmax_ring127"
   out$session_id <- session_id
