@@ -94,9 +94,9 @@ connect_dslite <- function(tables, symbol = "D") {
 }
 
 psi_align <- function(conns, data = "D", id_col = "patient_id",
-                      newobj = "DA") {
+                      newobj = "DA", ...) {
   dsVertClient::ds.vert.align(data, id_col, newobj,
-                              datasources = conns, verbose = FALSE)
+                              datasources = conns, verbose = FALSE, ...)
 }
 
 max_named_delta <- function(ds, ref) {
@@ -548,11 +548,12 @@ validate_lasso <- function() {
   do.call(rbind, rows)
 }
 
-build_nb <- function(n = 60L) {
-  set.seed(303)
+build_nb <- function(n = 60L, seed = 303L, theta = 3,
+                     beta = c(1, 0.2, -0.15, 0.1)) {
+  set.seed(seed)
   x1 <- rnorm(n); x2 <- rnorm(n); x3 <- rnorm(n)
-  mu <- exp(1 + 0.2 * x1 - 0.15 * x2 + 0.1 * x3)
-  y <- stats::rnbinom(n, size = 3, mu = mu)
+  mu <- exp(beta[1] + beta[2] * x1 + beta[3] * x2 + beta[4] * x3)
+  y <- stats::rnbinom(n, size = theta, mu = mu)
   data.frame(patient_id = sprintf("N%03d", seq_len(n)), x1, x2, x3, y)
 }
 
@@ -591,15 +592,16 @@ validate_negative_binomial <- function() {
   do.call(rbind, rows)
 }
 
-build_cox <- function(n = 60L) {
-  set.seed(202)
+build_cox <- function(n = 60L, seed = 202L, beta = c(0.4, -0.3, 0.2),
+                      n_bins = 8L) {
+  set.seed(seed)
   x1 <- rnorm(n); x2 <- rnorm(n); x3 <- rnorm(n)
-  eta <- 0.4 * x1 - 0.3 * x2 + 0.2 * x3
+  eta <- beta[1] * x1 + beta[2] * x2 + beta[3] * x3
   t0 <- stats::rexp(n, rate = exp(eta) / 20)
   cens <- stats::rexp(n, rate = 0.02)
   event <- as.integer(t0 <= cens)
   time <- pmin(t0, cens)
-  br <- unique(stats::quantile(time, probs = seq(0, 1, length.out = 9),
+  br <- unique(stats::quantile(time, probs = seq(0, 1, length.out = n_bins + 1L),
                                names = FALSE))
   time <- as.integer(cut(time, br, include.lowest = TRUE))
   data.frame(patient_id = sprintf("C%03d", seq_len(n)), x1, x2, x3,
@@ -640,13 +642,16 @@ validate_cox <- function() {
   do.call(rbind, rows)
 }
 
-build_lmm <- function(ncl = 12L, m = 5L) {
-  set.seed(101)
+build_lmm <- function(ncl = 12L, m = 5L, seed = 101L, b_sd = 0.8,
+                      eps_sd = 0.4,
+                      beta = c(1, 0.5, -0.3, 0.2)) {
+  set.seed(seed)
   n <- ncl * m
   cluster <- rep(seq_len(ncl), each = m)
   x1 <- rnorm(n); x2 <- rnorm(n); x3 <- rnorm(n)
-  b <- rnorm(ncl, sd = 0.8)[cluster]
-  y <- 1 + 0.5 * x1 - 0.3 * x2 + 0.2 * x3 + b + rnorm(n, sd = 0.4)
+  b <- rnorm(ncl, sd = b_sd)[cluster]
+  y <- beta[1] + beta[2] * x1 + beta[3] * x2 + beta[4] * x3 +
+    b + rnorm(n, sd = eps_sd)
   data.frame(patient_id = sprintf("L%03d", seq_len(n)), cluster,
              x1, x2, x3, y)
 }
@@ -706,16 +711,16 @@ validate_gee <- function() {
   do.call(rbind, rows)
 }
 
-build_balanced_glmm <- function() {
-  set.seed(77)
-  ncl <- 12L
-  m <- 8L
+build_balanced_glmm <- function(seed = 77L, ncl = 12L, m = 8L,
+                                b_sd = 0.5,
+                                beta = c(-0.2, 0.45, -0.3)) {
+  set.seed(seed)
   n <- ncl * m
   cluster <- rep(seq_len(ncl), each = m)
   x1 <- rnorm(n)
   x2 <- rnorm(n)
-  b <- rnorm(ncl, sd = 0.5)[cluster]
-  eta <- -0.2 + 0.45 * x1 - 0.3 * x2 + b
+  b <- rnorm(ncl, sd = b_sd)[cluster]
+  eta <- beta[1] + beta[2] * x1 + beta[3] * x2 + b
   data.frame(
     patient_id = sprintf("G%03d", seq_len(n)),
     cluster = cluster,
@@ -767,13 +772,17 @@ validate_glmm <- function() {
   do.call(rbind, rows)
 }
 
-build_ipw <- function(n = 60L) {
-  set.seed(88)
+build_ipw <- function(n = 60L, seed = 88L,
+                      beta_p = c(-0.2, 0.4, -0.3),
+                      beta_y = c(1, 2, 0.5, -0.2),
+                      noise_sd = 0.2) {
+  set.seed(seed)
   w1 <- rnorm(n); w2 <- rnorm(n)
-  p <- stats::plogis(-0.2 + 0.4 * w1 - 0.3 * w2)
+  p <- stats::plogis(beta_p[1] + beta_p[2] * w1 + beta_p[3] * w2)
   tr <- stats::rbinom(n, 1, p)
   ipw <- ifelse(tr == 1, 1 / p, 1 / (1 - p))
-  y <- 1 + 2 * tr + 0.5 * w1 - 0.2 * w2 + rnorm(n, 0, 0.2)
+  y <- beta_y[1] + beta_y[2] * tr + beta_y[3] * w1 + beta_y[4] * w2 +
+    rnorm(n, 0, noise_sd)
   data.frame(patient_id = sprintf("I%03d", seq_len(n)), w1, w2, tr, ipw, y)
 }
 
@@ -813,12 +822,14 @@ validate_ipw <- function() {
   do.call(rbind, rows)
 }
 
-build_mi <- function(n = 60L) {
-  set.seed(99)
+build_mi <- function(n = 60L, seed = 99L, missing_every = 7L,
+                     beta = c(1, 0.4, -0.2, 0.1), noise_sd = 0.2) {
+  set.seed(seed)
   x1 <- rnorm(n); x2 <- rnorm(n); x3 <- rnorm(n)
-  y <- 1 + 0.4 * x1 - 0.2 * x2 + 0.1 * x3 + rnorm(n, 0, 0.2)
+  y <- beta[1] + beta[2] * x1 + beta[3] * x2 + beta[4] * x3 +
+    rnorm(n, 0, noise_sd)
   d <- data.frame(patient_id = sprintf("MI%03d", seq_len(n)), x1, x2, x3, y)
-  d$x2[seq(5L, n, by = 7L)] <- NA
+  d$x2[seq(5L, n, by = missing_every)] <- NA
   d
 }
 
@@ -836,7 +847,7 @@ validate_mi <- function() {
     }
     conns <- connect_dslite(tables)
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
-    psi_align(conns)
+    psi_align(conns, na.action = "none")
     run <- elapsed(fit <- dsVertClient::ds.vert.mi(
       y ~ x1 + x2 + x3, data = "DA", impute_columns = "x2",
       family = "gaussian",
@@ -857,12 +868,11 @@ validate_mi <- function() {
   do.call(rbind, rows)
 }
 
-build_multinomial <- function(n = 60L) {
-  set.seed(44)
+build_multinomial <- function(n = 60L, seed = 44L, shift = 0.15) {
+  set.seed(seed)
   stopifnot(n %% 3L == 0L)
   base_n <- n / 3L
   base <- data.frame(x1 = rnorm(base_n), x2 = rnorm(base_n), x3 = rnorm(base_n))
-  shift <- 0.15
   high <- transform(base, x1 = x1 - shift, x2 = x2 + 0.5 * shift,
                     y_cls = "high")
   low <- transform(base, x1 = x1 + shift, y_cls = "low")
@@ -923,8 +933,8 @@ validate_multinomial <- function() {
   do.call(rbind, rows)
 }
 
-build_ordinal <- function(n = 60L) {
-  set.seed(55)
+build_ordinal <- function(n = 60L, seed = 55L) {
+  set.seed(seed)
   d <- data.frame(patient_id = sprintf("O%03d", seq_len(n)),
                   x1 = rnorm(n), x2 = rnorm(n), x3 = rnorm(n))
   y <- factor(rep(c("low", "med", "high"), each = n / 3L),
@@ -987,4 +997,508 @@ validate_ordinal <- function() {
     try(DSI::datashield.logout(conns), silent = TRUE)
   }
   do.call(rbind, rows)
+}
+
+generalization_core_methods <- c(
+  "glm", "negative_binomial", "cox", "lmm", "gee", "ipw", "mi")
+
+generalization_heavy_methods <- c("multinomial", "ordinal", "glmm")
+
+generalization_cache_path <- function(method_ids = NULL, seeds = NULL) {
+  key <- "generalization"
+  if (!is.null(method_ids) || !is.null(seeds)) {
+    parts <- c(
+      "generalization",
+      if (!is.null(method_ids)) paste(method_ids, collapse = "-") else NULL,
+      if (!is.null(seeds)) paste(seeds, collapse = "-") else NULL)
+    key <- paste(parts, collapse = "_")
+  }
+  key <- gsub("[^A-Za-z0-9_=-]+", "-", key)
+  validation_cache_path(key)
+}
+
+generalization_parse_methods <- function(include_heavy = FALSE) {
+  env <- trimws(Sys.getenv("DSVERT_GENERALIZATION_METHODS", ""))
+  if (nzchar(env)) {
+    methods <- trimws(strsplit(env, ",", fixed = TRUE)[[1L]])
+    methods[nzchar(methods)]
+  } else {
+    c(generalization_core_methods,
+      if (isTRUE(include_heavy)) generalization_heavy_methods else character())
+  }
+}
+
+generalization_parse_seeds <- function() {
+  env <- trimws(Sys.getenv("DSVERT_GENERALIZATION_SEEDS", ""))
+  if (!nzchar(env)) return(c(711L, 733L))
+  seeds <- suppressWarnings(as.integer(trimws(strsplit(env, ",",
+                                                       fixed = TRUE)[[1L]])))
+  seeds[is.finite(seeds)]
+}
+
+generalization_quality_status <- function(fit) {
+  status <- fit$quality$status %||% "ok"
+  if (!length(status) || is.na(status[1L])) "ok" else as.character(status[1L])
+}
+
+generalization_row <- function(method_id, method_name, scenario, seed, K,
+                               route, dataset, reference, metric, observed,
+                               tolerance, tier, disclosure, runtime_s,
+                               quality_status = "ok",
+                               quality_allowed = c("ok"),
+                               note = "") {
+  quality_ok <- quality_status %in% quality_allowed
+  status <- if (is.finite(observed) && observed <= tolerance && quality_ok) {
+    "PASS"
+  } else {
+    "FAIL"
+  }
+  data.frame(
+    method_id = method_id,
+    method_name = method_name,
+    scenario = scenario,
+    seed = as.integer(seed),
+    k_mode = if (K == 2L) "K=2" else "K>=3",
+    function_route = route,
+    dataset = dataset,
+    reference_target = reference,
+    primary_metric = metric,
+    observed = as.numeric(observed),
+    tolerance = as.numeric(tolerance),
+    tier = tier,
+    non_disclosive = TRUE,
+    disclosure = disclosure,
+    quality_status = quality_status,
+    runtime_s = as.numeric(runtime_s),
+    status = status,
+    note = note,
+    stringsAsFactors = FALSE)
+}
+
+generalization_error_row <- function(method_id, scenario, seed, K, err) {
+  generalization_row(
+    method_id = method_id,
+    method_name = method_id,
+    scenario = scenario,
+    seed = seed,
+    K = K,
+    route = "ds.vert.*",
+    dataset = "generalization scenario",
+    reference = "centralized R",
+    metric = "execution_error",
+    observed = Inf,
+    tolerance = 0,
+    tier = "unclassified",
+    disclosure = "No successful analysis object returned.",
+    runtime_s = NA_real_,
+    quality_status = "error",
+    quality_allowed = "ok",
+    note = conditionMessage(err))
+}
+
+assert_generalization <- function(rows) {
+  bad <- rows[rows$status != "PASS" | !rows$non_disclosive, , drop = FALSE]
+  if (nrow(bad)) {
+    stop("Generalization validation outside accepted envelope:\n",
+         paste(utils::capture.output(print(bad)), collapse = "\n"),
+         call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+display_generalization <- function(rows) {
+  keep <- c("method_id", "scenario", "seed", "k_mode", "function_route",
+            "primary_metric", "observed", "tolerance", "quality_status",
+            "status", "runtime_s")
+  out <- rows[, keep, drop = FALSE]
+  out$observed <- signif(out$observed, 4)
+  out$tolerance <- signif(out$tolerance, 4)
+  out$runtime_s <- round(out$runtime_s, 1)
+  knitr::kable(out)
+}
+
+with_aligned_dslite <- function(tables, FUN, ...) {
+  conns <- connect_dslite(tables)
+  on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
+  psi_align(conns, ...)
+  FUN(conns)
+}
+
+build_gaussian_regression <- function(n = 72L, seed = 711L,
+                                      beta = c(1, 0.35, -0.25, 0.15),
+                                      noise_sd = 0.25) {
+  set.seed(seed)
+  x1 <- rnorm(n); x2 <- rnorm(n); x3 <- rnorm(n)
+  y <- beta[1] + beta[2] * x1 + beta[3] * x2 + beta[4] * x3 +
+    rnorm(n, sd = noise_sd)
+  data.frame(patient_id = sprintf("R%03d", seq_len(n)), x1, x2, x3, y)
+}
+
+split_cox <- function(pooled, K) {
+  if (K == 2L) {
+    list(s1 = pooled[, c("patient_id", "x1", "x2"), drop = FALSE],
+         s2 = pooled[, c("patient_id", "x3", "time", "event"),
+                     drop = FALSE])
+  } else {
+    list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
+         s2 = pooled[, c("patient_id", "x2"), drop = FALSE],
+         s3 = pooled[, c("patient_id", "x3", "time", "event"),
+                     drop = FALSE])
+  }
+}
+
+split_ipw <- function(pooled, K) {
+  if (K == 2L) {
+    list(s1 = pooled[, c("patient_id", "w1", "w2"), drop = FALSE],
+         s2 = pooled[, c("patient_id", "tr", "ipw", "y"), drop = FALSE])
+  } else {
+    list(s1 = pooled[, c("patient_id", "w1"), drop = FALSE],
+         s2 = pooled[, c("patient_id", "w2"), drop = FALSE],
+         s3 = pooled[, c("patient_id", "tr", "ipw", "y"), drop = FALSE])
+  }
+}
+
+split_mi <- function(pooled, K) {
+  if (K == 2L) {
+    list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
+         s2 = pooled[, c("patient_id", "x2", "x3", "y"), drop = FALSE])
+  } else {
+    list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
+         s2 = pooled[, c("patient_id", "x2"), drop = FALSE],
+         s3 = pooled[, c("patient_id", "x3", "y"), drop = FALSE])
+  }
+}
+
+split_glmm <- function(pooled, K) {
+  if (K == 2L) {
+    list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
+         s2 = pooled[, c("patient_id", "x2", "cluster", "y"),
+                     drop = FALSE])
+  } else {
+    list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
+         s2 = pooled[, c("patient_id", "x2"), drop = FALSE],
+         s3 = pooled[, c("patient_id", "cluster", "y"), drop = FALSE])
+  }
+}
+
+split_multinomial <- function(pooled, K) {
+  if (K == 2L) {
+    list(s1 = pooled[, c("patient_id", "x1", "x2"), drop = FALSE],
+         s2 = pooled[, c("patient_id", "x3", "y_cls",
+                         "high_ind", "low_ind", "med_ind"), drop = FALSE])
+  } else {
+    list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
+         s2 = pooled[, c("patient_id", "x2"), drop = FALSE],
+         s3 = pooled[, c("patient_id", "x3", "y_cls",
+                         "high_ind", "low_ind", "med_ind"), drop = FALSE])
+  }
+}
+
+split_ordinal <- function(pooled, K) {
+  if (K == 2L) {
+    list(s1 = pooled[, c("patient_id", "x1", "x2"), drop = FALSE],
+         s2 = pooled[, c("patient_id", "x3", "y_ord",
+                         "low_leq", "med_leq", "high_leq"), drop = FALSE])
+  } else {
+    list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
+         s2 = pooled[, c("patient_id", "x2"), drop = FALSE],
+         s3 = pooled[, c("patient_id", "x3", "y_ord",
+                         "low_leq", "med_leq", "high_leq"), drop = FALSE])
+  }
+}
+
+generalize_glm <- function(seed, K) {
+  pooled <- build_gaussian_regression(seed = seed)
+  with_aligned_dslite(split_x123_y(pooled, K), function(conns) {
+    run <- elapsed(fit <- dsVertClient::ds.vert.glm(
+      y ~ x1 + x2 + x3, data = "DA", verbose = FALSE, datasources = conns))
+    ref <- coef(stats::lm(y ~ x1 + x2 + x3, data = pooled))
+    generalization_row(
+      "glm", "GLM", "gaussian_regression", seed, K, "ds.vert.glm",
+      sprintf("synthetic gaussian n=%d", nrow(pooled)), "stats::lm",
+      "coef_max_abs_delta", max_named_delta(fit$coefficients, ref), 1e-3,
+      "strict-practical",
+      "Secure score aggregates; returns model-level coefficients/covariance.",
+      run$runtime_s, generalization_quality_status(fit),
+      quality_allowed = c("ok"))
+  })
+}
+
+generalize_negative_binomial <- function(seed, K) {
+  validation_require("MASS")
+  pooled <- build_nb(seed = seed)
+  with_aligned_dslite(split_x123_y(pooled, K), function(conns) {
+    run <- elapsed(fit <- dsVertClient::ds.vert.nb(
+      y ~ x1 + x2 + x3, data = "DA", verbose = FALSE, datasources = conns))
+    ref <- coef(MASS::glm.nb(y ~ x1 + x2 + x3, data = pooled))
+    generalization_row(
+      "negative_binomial", "Negative binomial", "nb_loglinear", seed, K,
+      fit$route %||% "ds.vert.nb",
+      sprintf("synthetic NB n=%d", nrow(pooled)), "MASS::glm.nb",
+      "coef_max_abs_delta", max_named_delta(fit$coefficients, ref), 0.02,
+      "strict-practical",
+      "Returns beta and scalar theta diagnostics only; no per-patient mu/eta is returned.",
+      run$runtime_s, generalization_quality_status(fit),
+      quality_allowed = c("ok", "approximate"))
+  })
+}
+
+generalize_cox <- function(seed, K) {
+  validation_require("survival")
+  pooled <- build_cox(seed = seed)
+  with_aligned_dslite(split_cox(pooled, K), function(conns) {
+    run <- elapsed(fit <- dsVertClient::ds.vert.cox(
+      survival::Surv(time, event) ~ x1 + x2 + x3, data = "DA",
+      verbose = FALSE, datasources = conns))
+    ref <- coef(survival::coxph(survival::Surv(time, event) ~ x1 + x2 + x3,
+                                data = pooled, ties = "breslow"))
+    generalization_row(
+      "cox", "Cox PH", "discrete_time_survival", seed, K, "ds.vert.cox",
+      sprintf("synthetic Cox n=%d", nrow(pooled)),
+      "survival::coxph(ties='breslow')", "coef_max_abs_delta",
+      max_named_delta(fit$coefficients, ref), 1e-3, "strict-practical",
+      "Risk-set score terms stay shared; returns beta and scalar diagnostics.",
+      run$runtime_s, generalization_quality_status(fit),
+      quality_allowed = c("ok"))
+  })
+}
+
+generalize_lmm <- function(seed, K) {
+  validation_require("lme4")
+  pooled <- build_lmm(seed = seed)
+  with_aligned_dslite(split_x123_y(pooled, K, extras = "cluster"),
+                      function(conns) {
+    run <- elapsed(fit <- dsVertClient::ds.vert.lmm(
+      y ~ x1 + x2 + x3, data = "DA", cluster_col = "cluster",
+      verbose = FALSE, datasources = conns))
+    ref <- lme4::fixef(lme4::lmer(y ~ x1 + x2 + x3 + (1 | cluster),
+                                  data = pooled, REML = TRUE))
+    generalization_row(
+      "lmm", "LMM", "random_intercept_gaussian", seed, K, "ds.vert.lmm",
+      sprintf("synthetic LMM n=%d clusters=%d", nrow(pooled),
+              length(unique(pooled$cluster))),
+      "lme4::lmer", "fixed_effect_max_abs_delta",
+      max_named_delta(fit$coefficients, ref), 0.02, "strict-practical",
+      "Uses protected mixed-model aggregates; no BLUPs or cluster residuals are returned.",
+      run$runtime_s, generalization_quality_status(fit),
+      quality_allowed = c("ok", "approximate"))
+  })
+}
+
+generalize_gee <- function(seed, K) {
+  validation_require("geepack")
+  pooled <- build_lmm(seed = seed, b_sd = 0.45, eps_sd = 0.45)
+  with_aligned_dslite(split_x123_y(pooled, K, extras = "cluster"),
+                      function(conns) {
+    run <- elapsed(fit <- dsVertClient::ds.vert.gee(
+      y ~ x1 + x2 + x3, data = "DA", family = "gaussian",
+      id_col = "cluster", corstr = "independence",
+      verbose = FALSE, datasources = conns))
+    ref <- coef(geepack::geeglm(y ~ x1 + x2 + x3, data = pooled,
+                                id = cluster, family = gaussian(),
+                                corstr = "independence"))
+    generalization_row(
+      "gee", "GEE", "clustered_gaussian_independence", seed, K,
+      "ds.vert.gee",
+      sprintf("synthetic GEE n=%d clusters=%d", nrow(pooled),
+              length(unique(pooled$cluster))),
+      "geepack::geeglm", "coef_max_abs_delta",
+      max_named_delta(fit$coefficients, ref), 0.01, "strict-practical",
+      "Returns regression and sandwich-level aggregates, not row scores.",
+      run$runtime_s, generalization_quality_status(fit),
+      quality_allowed = c("ok", "approximate"))
+  })
+}
+
+generalize_ipw <- function(seed, K) {
+  pooled <- build_ipw(seed = seed)
+  with_aligned_dslite(split_ipw(pooled, K), function(conns) {
+    run <- elapsed(fit <- dsVertClient::ds.vert.ipw(
+      y ~ tr + w1 + w2, tr ~ w1 + w2, data = "DA",
+      outcome_family = "gaussian", verbose = FALSE, datasources = conns))
+    ref <- coef(stats::lm(y ~ tr + w1 + w2, data = pooled,
+                          weights = ipw))
+    generalization_row(
+      "ipw", "IPW", "known_weight_ipw", seed, K, "ds.vert.ipw",
+      sprintf("synthetic IPW n=%d", nrow(pooled)),
+      "central weighted lm using same weights",
+      "weighted_outcome_coef_abs_delta",
+      max_named_delta(fit$outcome$coefficients, ref), 1e-3,
+      "strict-practical",
+      "Uses protected propensity/outcome GLM aggregates; only model-level fits are returned.",
+      run$runtime_s, generalization_quality_status(fit$outcome),
+      quality_allowed = c("ok"))
+  })
+}
+
+generalize_mi <- function(seed, K) {
+  pooled <- build_mi(seed = seed)
+  with_aligned_dslite(split_mi(pooled, K), function(conns) {
+    run <- elapsed(fit <- dsVertClient::ds.vert.mi(
+      y ~ x1 + x2 + x3, data = "DA", impute_columns = "x2",
+      family = "gaussian", verbose = FALSE, datasources = conns, seed = 12L))
+    ref_data <- pooled
+    ref_data$x2[is.na(ref_data$x2)] <- mean(ref_data$x2, na.rm = TRUE)
+    ref <- coef(stats::lm(y ~ x1 + x2 + x3, data = ref_data))
+    generalization_row(
+      "mi", "Multiple imputation", "missing_covariate_mean", seed, K,
+      "ds.vert.mi",
+      sprintf("synthetic MI n=%d missing_every=7", nrow(pooled)),
+      "central mean-imputation reference", "pooled_coef_abs_delta",
+      max_named_delta(fit$coefficients, ref), 0.02, "strict-practical",
+      "Imputed columns stay server-side; client pools beta/covariance only.",
+      run$runtime_s, generalization_quality_status(fit),
+      quality_allowed = c("ok", "approximate"))
+  }, na.action = "none")
+}
+
+generalize_multinomial <- function(seed, K) {
+  validation_require("nnet")
+  pooled <- build_multinomial(seed = seed)
+  with_aligned_dslite(split_multinomial(pooled, K), function(conns) {
+    ref <- nnet::multinom(y_cls ~ x1 + x2 + x3, data = pooled,
+                          trace = FALSE, maxit = 200L)
+    ref_prob <- stats::predict(ref, pooled, type = "probs")
+    run <- elapsed(fit <- dsVertClient::ds.vert.multinom(
+      y_cls ~ x1 + x2 + x3, data = "DA",
+      classes = c("high", "low", "med"),
+      indicator_template = "%s_ind",
+      verbose = FALSE, datasources = conns))
+    ds_prob <- softmax_prob(fit$coefficients, pooled)
+    ds_prob <- ds_prob[, colnames(ref_prob), drop = FALSE]
+    generalization_row(
+      "multinomial", "Multinomial", "balanced_soft_signal", seed, K,
+      "ds.vert.multinom",
+      sprintf("synthetic multinomial n=%d", nrow(pooled)),
+      "nnet::multinom probabilities",
+      "class_probability_max_abs_delta", max(abs(ds_prob - ref_prob)), 0.005,
+      "strict-practical",
+      "Softmax probabilities/residuals stay Ring127 shares; no row probabilities are returned.",
+      run$runtime_s, generalization_quality_status(fit),
+      quality_allowed = c("ok"))
+  })
+}
+
+generalize_ordinal <- function(seed, K) {
+  validation_require("MASS")
+  old_fd <- getOption("dsvert.ord_strict_fd_max_dim", NULL)
+  options(dsvert.ord_strict_fd_max_dim = 0L)
+  on.exit(options(dsvert.ord_strict_fd_max_dim = old_fd), add = TRUE)
+  pooled <- build_ordinal(seed = seed)
+  with_aligned_dslite(split_ordinal(pooled, K), function(conns) {
+    ref <- MASS::polr(y_ord ~ x1 + x2 + x3, data = pooled, Hess = TRUE)
+    ref_cum <- sapply(ref$zeta, function(th) {
+      stats::plogis(th - as.numeric(as.matrix(pooled[, names(coef(ref))]) %*%
+                                      coef(ref)))
+    })
+    run <- elapsed(fit <- dsVertClient::ds.vert.ordinal(
+      y_ord ~ x1 + x2 + x3, data = "DA",
+      levels_ordered = c("low", "med", "high"),
+      cumulative_template = "%s_leq",
+      verbose = FALSE, datasources = conns))
+    ds_cum <- ordinal_cumprob(fit, pooled)
+    colnames(ds_cum) <- colnames(ref_cum)
+    generalization_row(
+      "ordinal", "Ordinal", "balanced_ordered_levels", seed, K,
+      "ds.vert.ordinal",
+      sprintf("synthetic ordinal n=%d", nrow(pooled)),
+      "MASS::polr cumulative probabilities",
+      "cumulative_probability_max_abs_delta", max(abs(ds_cum - ref_cum)),
+      0.001, "strict-practical",
+      "Class probabilities/residuals stay Ring127 shares; no row probabilities are returned.",
+      run$runtime_s, generalization_quality_status(fit),
+      quality_allowed = c("ok"))
+  })
+}
+
+generalize_glmm <- function(seed, K) {
+  validation_require(c("MASS", "nlme"))
+  pooled <- build_balanced_glmm(seed = seed)
+  with_aligned_dslite(split_glmm(pooled, K), function(conns) {
+    run <- elapsed(fit <- dsVertClient::ds.vert.glmm(
+      y ~ x1 + x2, data = "DA", cluster_col = "cluster",
+      verbose = FALSE, datasources = conns))
+    pooled_ref <- pooled
+    pooled_ref$cluster <- factor(pooled_ref$cluster)
+    ref_fit <- suppressWarnings(MASS::glmmPQL(
+      y ~ x1 + x2, random = ~1 | cluster, family = binomial(),
+      data = pooled_ref, verbose = FALSE))
+    ref <- nlme::fixef(ref_fit)
+    fixed_delta <- max_named_delta(fit$coefficients, ref)
+    pql_ran <- isTRUE(fit$iterations >= 1L) &&
+      is.data.frame(fit$trace) && nrow(fit$trace) >= 1L &&
+      is.finite(fit$sigma_b2)
+    observed <- max(fixed_delta, if (pql_ran) 0 else Inf)
+    generalization_row(
+      "glmm", "GLMM", "balanced_binomial_random_intercept", seed, K,
+      "ds.vert.glmm",
+      sprintf("synthetic GLMM n=%d clusters=%d", nrow(pooled),
+              length(unique(pooled$cluster))),
+      "MASS::glmmPQL", "fixed_effect_max_abs_delta_and_pql_quality",
+      observed, 0.005, "strict-pql",
+      "PQL route returns fixed effects and scalar variance diagnostics only.",
+      run$runtime_s, generalization_quality_status(fit),
+      quality_allowed = c("ok"))
+  })
+}
+
+run_generalization_case <- function(method_id, seed, K) {
+  switch(method_id,
+    glm = generalize_glm(seed, K),
+    negative_binomial = generalize_negative_binomial(seed, K),
+    cox = generalize_cox(seed, K),
+    lmm = generalize_lmm(seed, K),
+    gee = generalize_gee(seed, K),
+    ipw = generalize_ipw(seed, K),
+    mi = generalize_mi(seed, K),
+    multinomial = generalize_multinomial(seed, K),
+    ordinal = generalize_ordinal(seed, K),
+    glmm = generalize_glmm(seed, K),
+    stop("Unknown generalization method: ", method_id, call. = FALSE))
+}
+
+run_generalization_validation <- function(
+    method_ids = NULL,
+    seeds = NULL,
+    include_heavy = identical(Sys.getenv("DSVERT_GENERALIZATION_INCLUDE_HEAVY"),
+                              "true"),
+    force = getOption("dsvert.validation.force", FALSE),
+    assert = TRUE,
+    trace = TRUE) {
+  validation_load_packages()
+  if (is.null(method_ids)) {
+    method_ids <- generalization_parse_methods(include_heavy = include_heavy)
+  }
+  if (is.null(seeds)) seeds <- generalization_parse_seeds()
+  method_ids <- unique(method_ids)
+  seeds <- unique(as.integer(seeds))
+  path <- generalization_cache_path(method_ids, seeds)
+  if (!isTRUE(force) && file.exists(path)) {
+    rows <- readRDS(path)
+    rows <- rows[rows$method_id %in% method_ids & rows$seed %in% seeds,
+                 , drop = FALSE]
+  } else {
+    rows <- list()
+    i <- 0L
+    for (method_id in method_ids) {
+      for (seed in seeds) {
+        for (K in c(2L, 3L)) {
+          i <- i + 1L
+          if (isTRUE(trace)) {
+            cat(sprintf("Generalization: %s seed=%d K=%s\n",
+                        method_id, seed, if (K == 2L) "2" else ">=3"))
+          }
+          rows[[i]] <- tryCatch(
+            run_generalization_case(method_id, seed, K),
+            error = function(e) generalization_error_row(
+              method_id, "default", seed, K, e))
+        }
+      }
+    }
+    rows <- do.call(rbind, rows)
+    rownames(rows) <- NULL
+    saveRDS(rows, path)
+  }
+  if (isTRUE(assert)) assert_generalization(rows)
+  rows
 }
