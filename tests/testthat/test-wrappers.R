@@ -80,10 +80,39 @@ test_that("lowercase ds.vert aliases are exported", {
 })
 
 test_that("GLMM frontdoor exposes explicit estimator methods", {
-  expect_identical(formals(ds.vert.glmm)$method, quote(c("laplace", "pql")))
+  expect_identical(formals(ds.vert.glmm)$method,
+                   quote(c("auto", "laplace", "pql")))
   expect_true(exists("ds.vertGLMMLaplace",
                      envir = asNamespace("dsVertClient"),
                      inherits = FALSE))
+})
+
+test_that("frontdoors expose adaptive precision and method selectors", {
+  expect_identical(formals(ds.vert.nb)$method,
+                   quote(c("auto", "accurate", "fast", "mom", "profile")))
+  expect_identical(formals(ds.vert.cox)$method,
+                   quote(c("profile", "discrete")))
+  expect_identical(formals(ds.vert.lasso_iter)$method,
+                   quote(c("auto", "accurate", "fast")))
+  expect_identical(formals(ds.vert.glm)$precision,
+                   quote(c("auto", "high", "fast")))
+  expect_identical(formals(ds.vert.gee)$precision,
+                   quote(c("auto", "high", "fast")))
+  expect_identical(formals(ds.vert.ipw)$precision,
+                   quote(c("auto", "high", "fast")))
+})
+
+test_that("frontdoor precision helper only raises binomial precision safely", {
+  ns <- asNamespace("dsVertClient")
+  f <- get(".dsvert_apply_binomial_precision", envir = ns)
+  expect_equal(f(list(family = "binomial"), precision = "auto")$
+                 binomial_sigmoid_intervals, 150L)
+  expect_null(f(list(family = "binomial"), precision = "fast")$
+                binomial_sigmoid_intervals)
+  expect_null(f(list(family = "gaussian"), precision = "auto")$
+                binomial_sigmoid_intervals)
+  expect_equal(f(list(), precision = "auto", force_binomial = TRUE)$
+                 binomial_sigmoid_intervals, 150L)
 })
 
 test_that("frontdoor route metadata is attached to list outputs", {
