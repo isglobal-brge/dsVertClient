@@ -49,16 +49,28 @@ ds.vert.fisher(data_name, var1, var2, datasources = NULL, ...)
 
 ds.vert.chisq_cross(data, var1, var2, datasources = NULL, ...)
 
-ds.vert.glm(formula, data = NULL, datasources = NULL, ...)
+ds.vert.glm(
+  formula,
+  data = NULL,
+  precision = c("auto", "high", "fast"),
+  datasources = NULL,
+  ...
+)
 
-ds.vert.cox(formula, data = NULL, datasources = NULL, ...)
+ds.vert.cox(
+  formula,
+  data = NULL,
+  method = c("profile", "discrete"),
+  datasources = NULL,
+  ...
+)
 
 ds.vert.coxph(formula, data = NULL, ...)
 
 ds.vert.nb(
   formula,
   data = NULL,
-  method = c("auto", "fast", "mom", "profile", "accurate"),
+  method = c("auto", "accurate", "fast", "mom", "profile"),
   datasources = NULL,
   ...
 )
@@ -81,13 +93,19 @@ ds.vert.lmm(
   ...
 )
 
-ds.vert.gee(formula, data = NULL, datasources = NULL, ...)
+ds.vert.gee(
+  formula,
+  data = NULL,
+  precision = c("auto", "high", "fast"),
+  datasources = NULL,
+  ...
+)
 
 ds.vert.glmm(
   formula,
   data = NULL,
   cluster_col,
-  method = c("laplace", "pql"),
+  method = c("auto", "laplace", "pql"),
   datasources = NULL,
   ...
 )
@@ -98,6 +116,7 @@ ds.vert.ipw(
   outcome_formula,
   propensity_formula,
   data = NULL,
+  precision = c("auto", "high", "fast"),
   datasources = NULL,
   ...
 )
@@ -112,7 +131,12 @@ ds.vert.mi(
 
 ds.vert.lasso(fit, lambda_1, ...)
 
-ds.vert.lasso_iter(formula, data = NULL, ...)
+ds.vert.lasso_iter(
+  formula,
+  data = NULL,
+  method = c("auto", "accurate", "fast"),
+  ...
+)
 
 ds.vert.lasso_proximal(fit, lambda, ...)
 
