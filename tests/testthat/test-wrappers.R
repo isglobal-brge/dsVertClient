@@ -70,13 +70,20 @@ test_that("lowercase ds.vert aliases are exported", {
     "ds.vert.chisq", "ds.vert.fisher", "ds.vert.chisq_cross",
     "ds.vert.glm", "ds.vert.cox", "ds.vert.coxph", "ds.vert.nb",
     "ds.vert.multinom", "ds.vert.ordinal", "ds.vert.lmm",
-    "ds.vert.gee", "ds.vert.glmm", "ds.vert.ipw", "ds.vert.mi",
+    "ds.vert.gee", "ds.vert.glmm", "ds.vert.glmer", "ds.vert.ipw", "ds.vert.mi",
     "ds.vert.lasso", "ds.vert.lasso_iter", "ds.vert.lasso_proximal",
     "ds.vert.lasso_1step", "ds.vert.lasso_cv", "ds.vert.lr",
     "ds.vert.confint", "ds.vert.wald", "ds.vert.contrast")
   expect_true(all(vapply(aliases, exists, logical(1),
                          envir = asNamespace("dsVertClient"),
                          inherits = FALSE)))
+})
+
+test_that("GLMM frontdoor exposes explicit estimator methods", {
+  expect_identical(formals(ds.vert.glmm)$method, quote(c("laplace", "pql")))
+  expect_true(exists("ds.vertGLMMLaplace",
+                     envir = asNamespace("dsVertClient"),
+                     inherits = FALSE))
 })
 
 test_that("frontdoor route metadata is attached to list outputs", {
