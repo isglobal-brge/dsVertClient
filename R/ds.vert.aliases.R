@@ -245,11 +245,34 @@ ds.vert.gee <- function(formula, data = NULL, datasources = NULL, ...) {
 #' @rdname ds.vert.aliases
 #' @export
 ds.vert.glmm <- function(formula, data = NULL, cluster_col,
+                         method = c("laplace", "pql"),
                          datasources = NULL, ...) {
+  method <- match.arg(method)
   datasources <- .dsvert_datasources(datasources)
-  out <- ds.vertGLMM(formula = formula, data = data, cluster_col = cluster_col,
-                     datasources = datasources, ...)
-  .dsvert_set_frontdoor(out, "ds.vert.glmm", "ds.vertGLMM",
+  if (identical(method, "laplace")) {
+    out <- ds.vertGLMMLaplace(formula = formula, data = data,
+                              cluster_col = cluster_col,
+                              datasources = datasources, ...)
+    .dsvert_set_frontdoor(out, "ds.vert.glmm", "ds.vertGLMMLaplace",
+                          length(datasources))
+  } else {
+    out <- ds.vertGLMM(formula = formula, data = data,
+                       cluster_col = cluster_col,
+                       datasources = datasources, ...)
+    .dsvert_set_frontdoor(out, "ds.vert.glmm", "ds.vertGLMM",
+                          length(datasources))
+  }
+}
+
+#' @rdname ds.vert.aliases
+#' @export
+ds.vert.glmer <- function(formula, data = NULL, cluster_col,
+                          datasources = NULL, ...) {
+  datasources <- .dsvert_datasources(datasources)
+  out <- ds.vertGLMMLaplace(formula = formula, data = data,
+                            cluster_col = cluster_col,
+                            datasources = datasources, ...)
+  .dsvert_set_frontdoor(out, "ds.vert.glmer", "ds.vertGLMMLaplace",
                         length(datasources))
 }
 
