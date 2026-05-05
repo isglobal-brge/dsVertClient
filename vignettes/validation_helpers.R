@@ -79,6 +79,14 @@ validation_load_packages <- function() {
   invisible(TRUE)
 }
 
+validation_demo_verbose <- function() {
+  env <- trimws(Sys.getenv("DSVERT_VALIDATION_VERBOSE", ""))
+  if (nzchar(env)) {
+    return(tolower(env) %in% c("1", "true", "yes", "y", "on"))
+  }
+  isTRUE(getOption("dsvert.validation.verbose", TRUE))
+}
+
 connect_dslite <- function(tables, symbol = "D") {
   server <- DSLite::newDSLiteServer(
     tables = tables,
@@ -96,7 +104,7 @@ connect_dslite <- function(tables, symbol = "D") {
 psi_align <- function(conns, data = "D", id_col = "patient_id",
                       newobj = "DA", ...) {
   dsVertClient::ds.vert.align(data, id_col, newobj,
-                              datasources = conns, verbose = FALSE, ...)
+                              datasources = conns, verbose = validation_demo_verbose(), ...)
 }
 
 max_named_delta <- function(ds, ref) {
@@ -317,7 +325,7 @@ validate_psi <- function() {
     variables <- stats::setNames(lapply(names(conns), function(.x) "id_num"),
                                  names(conns))
     cor_fit <- dsVertClient::ds.vert.cor("DA", variables = variables,
-                                        datasources = conns, verbose = FALSE)
+                                        datasources = conns, verbose = validation_demo_verbose())
     offdiag <- cor_fit$correlation[upper.tri(cor_fit$correlation)]
     legacy_blocked <- tryCatch({
       DSI::datashield.aggregate(conns[1], call(name = "psiGetMatchedIndicesDS"))
@@ -354,7 +362,7 @@ validate_desc_cor_pca <- function() {
 
     d0 <- elapsed(desc <- dsVertClient::ds.vert.desc(
       "DA", variables = vars, n_buckets = 40L,
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ref_mean <- vapply(pooled[all_vars], mean, numeric(1), na.rm = TRUE)
     ref_sd <- vapply(pooled[all_vars], stats::sd, numeric(1), na.rm = TRUE)
     ds_mean <- stats::setNames(desc$mean, desc$variable)
@@ -363,12 +371,12 @@ validate_desc_cor_pca <- function() {
                       max_named_delta(ds_sd, ref_sd))
 
     c0 <- elapsed(cor_ds <- dsVertClient::ds.vert.cor(
-      "DA", variables = vars, verbose = FALSE, datasources = conns))
+      "DA", variables = vars, verbose = validation_demo_verbose(), datasources = conns))
     cor_ref <- stats::cor(pooled[cor_ds$var_names])
     cor_delta <- max(abs(cor_ds$correlation - cor_ref))
 
     p0 <- elapsed(pca_ds <- dsVertClient::ds.vert.pca(
-      cor_result = cor_ds, verbose = FALSE, datasources = conns))
+      cor_result = cor_ds, verbose = validation_demo_verbose(), datasources = conns))
     eig_ref <- eigen(cor_ref, symmetric = TRUE)
     load_ref <- eig_ref$vectors[, seq_len(ncol(pca_ds$loadings)),
                                 drop = FALSE]
@@ -429,7 +437,7 @@ validate_contingency <- function() {
     psi_align(conns)
     run <- elapsed(cross <- dsVertClient::ds.vert.chisq_cross(
       "DA", "age_grp", "diabetes", correct = FALSE, fisher = TRUE,
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     tab <- table(pooled$age_grp, pooled$diabetes)
     chi_ref <- suppressWarnings(stats::chisq.test(tab, correct = FALSE))
     ref_mat <- unclass(tab)[rownames(cross$observed),
@@ -458,7 +466,7 @@ validate_glm <- function() {
     psi_align(conns)
     run <- elapsed(fit <- dsVertClient::ds.vert.glm(
       fm, data = "DA", family = "gaussian", max_iter = 30L,
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     observed <- max_named_delta(fit$coefficients, coef(stats::lm(fm, pooled)))
     rows[[as.character(K)]] <- row_result(
       "glm", "GLM", K, "ds.vert.glm",
@@ -483,10 +491,10 @@ validate_inference <- function() {
     run <- elapsed({
       full <- dsVertClient::ds.vert.glm(fm, data = "DA", family = "gaussian",
         max_iter = 30L, compute_se = TRUE, compute_deviance = TRUE,
-        verbose = FALSE, datasources = conns)
+        verbose = validation_demo_verbose(), datasources = conns)
       reduced <- dsVertClient::ds.vert.glm(red, data = "DA",
         family = "gaussian", max_iter = 30L, compute_se = TRUE,
-        compute_deviance = TRUE, verbose = FALSE, datasources = conns)
+        compute_deviance = TRUE, verbose = validation_demo_verbose(), datasources = conns)
       ci <- dsVertClient::ds.vert.confint(full)
       wald <- dsVertClient::ds.vert.wald(full, "age")
       Kmat <- matrix(0, nrow = 1, ncol = length(full$coefficients),
@@ -530,7 +538,7 @@ validate_lasso <- function() {
     psi_align(conns)
     run <- elapsed({
       fit <- dsVertClient::ds.vert.glm(fm, data = "DA", family = "gaussian",
-        max_iter = 30L, verbose = FALSE, datasources = conns)
+        max_iter = 30L, verbose = validation_demo_verbose(), datasources = conns)
       prox0 <- dsVertClient::ds.vert.lasso_proximal(
         fit, lambda = 0, max_iter = 1000L, tol = 1e-8)
       list(fit = fit, prox0 = prox0)
@@ -578,7 +586,7 @@ validate_negative_binomial <- function() {
     psi_align(conns)
     run <- elapsed(fit <- dsVertClient::ds.vert.nb(
       y ~ x1 + x2 + x3, data = "DA", max_iter = 25L,
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ref <- coef(MASS::glm.nb(y ~ x1 + x2 + x3, data = pooled))
     observed <- max_named_delta(fit$coefficients, ref)
     rows[[as.character(K)]] <- row_result(
@@ -626,7 +634,7 @@ validate_cox <- function() {
     psi_align(conns)
     run <- elapsed(fit <- dsVertClient::ds.vert.cox(
       survival::Surv(time, event) ~ x1 + x2 + x3, data = "DA",
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ref <- coef(survival::coxph(survival::Surv(time, event) ~ x1 + x2 + x3,
                                 data = pooled, ties = "breslow"))
     observed <- max_named_delta(fit$coefficients, ref)
@@ -666,7 +674,7 @@ validate_lmm <- function() {
     psi_align(conns)
     run <- elapsed(fit <- dsVertClient::ds.vert.lmm(
       y ~ x1 + x2 + x3, data = "DA", cluster_col = "cluster",
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ref <- lme4::fixef(lme4::lmer(y ~ x1 + x2 + x3 + (1 | cluster),
                                   data = pooled, REML = TRUE))
     observed <- max_named_delta(fit$coefficients, ref)
@@ -695,7 +703,7 @@ validate_gee <- function() {
     run <- elapsed(fit <- dsVertClient::ds.vert.gee(
       fm, data = "DA", family = "gaussian", id_col = "cluster",
       corstr = "independence", max_iter = 30L,
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ref <- coef(geepack::geeglm(fm, data = pooled, id = cluster,
                                 family = gaussian(),
                                 corstr = "independence"))
@@ -747,12 +755,12 @@ validate_glmm <- function() {
     psi_align(conns)
     run <- elapsed(fit <- dsVertClient::ds.vert.glmm(
       y ~ x1 + x2, data = "DA", cluster_col = "cluster",
-      verbose = FALSE, datasources = conns))
+      compute_se = FALSE, verbose = validation_demo_verbose(), datasources = conns))
     pooled_ref <- pooled
     pooled_ref$cluster <- factor(pooled_ref$cluster)
     ref_fit <- suppressWarnings(MASS::glmmPQL(
       y ~ x1 + x2, random = ~1 | cluster, family = binomial(),
-      data = pooled_ref, verbose = FALSE))
+      data = pooled_ref, verbose = validation_demo_verbose()))
     ref <- nlme::fixef(ref_fit)
     fixed_delta <- max_named_delta(fit$coefficients, ref)
     pql_ran <- isTRUE(fit$iterations >= 1L) &&
@@ -805,7 +813,7 @@ validate_ipw <- function() {
       y ~ tr + w1 + w2, tr ~ w1 + w2, data = "DA",
       outcome_family = "gaussian",
       compute_se = FALSE, compute_deviance = FALSE,
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ref <- coef(stats::lm(y ~ tr + w1 + w2, data = pooled,
                           weights = ipw))
     observed <- max_named_delta(fit$outcome$coefficients, ref)
@@ -851,7 +859,7 @@ validate_mi <- function() {
     run <- elapsed(fit <- dsVertClient::ds.vert.mi(
       y ~ x1 + x2 + x3, data = "DA", impute_columns = "x2",
       family = "gaussian",
-      verbose = FALSE, datasources = conns, seed = 12L))
+      verbose = validation_demo_verbose(), datasources = conns, seed = 12L))
     ref_data <- pooled
     ref_data$x2[is.na(ref_data$x2)] <- mean(ref_data$x2, na.rm = TRUE)
     ref <- coef(stats::lm(y ~ x1 + x2 + x3, data = ref_data))
@@ -917,7 +925,7 @@ validate_multinomial <- function() {
       y_cls ~ x1 + x2 + x3, data = "DA",
       classes = c("high", "low", "med"),
       indicator_template = "%s_ind",
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ds_prob <- softmax_prob(fit$coefficients, pooled)
     ds_prob <- ds_prob[, colnames(ref_prob), drop = FALSE]
     observed <- max(abs(ds_prob - ref_prob))
@@ -983,7 +991,7 @@ validate_ordinal <- function() {
       y_ord ~ x1 + x2 + x3, data = "DA",
       levels_ordered = c("low", "med", "high"),
       cumulative_template = "%s_leq",
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ds_cum <- ordinal_cumprob(fit, pooled)
     colnames(ds_cum) <- colnames(ref_cum)
     observed <- max(abs(ds_cum - ref_cum))
@@ -1211,7 +1219,7 @@ generalize_glm <- function(seed, K) {
   pooled <- build_gaussian_regression(seed = seed)
   with_aligned_dslite(split_x123_y(pooled, K), function(conns) {
     run <- elapsed(fit <- dsVertClient::ds.vert.glm(
-      y ~ x1 + x2 + x3, data = "DA", verbose = FALSE, datasources = conns))
+      y ~ x1 + x2 + x3, data = "DA", verbose = validation_demo_verbose(), datasources = conns))
     ref <- coef(stats::lm(y ~ x1 + x2 + x3, data = pooled))
     generalization_row(
       "glm", "GLM", "gaussian_regression", seed, K, "ds.vert.glm",
@@ -1229,7 +1237,7 @@ generalize_negative_binomial <- function(seed, K) {
   pooled <- build_nb(seed = seed)
   with_aligned_dslite(split_x123_y(pooled, K), function(conns) {
     run <- elapsed(fit <- dsVertClient::ds.vert.nb(
-      y ~ x1 + x2 + x3, data = "DA", verbose = FALSE, datasources = conns))
+      y ~ x1 + x2 + x3, data = "DA", verbose = validation_demo_verbose(), datasources = conns))
     ref <- coef(MASS::glm.nb(y ~ x1 + x2 + x3, data = pooled))
     generalization_row(
       "negative_binomial", "Negative binomial", "nb_loglinear", seed, K,
@@ -1249,7 +1257,7 @@ generalize_cox <- function(seed, K) {
   with_aligned_dslite(split_cox(pooled, K), function(conns) {
     run <- elapsed(fit <- dsVertClient::ds.vert.cox(
       survival::Surv(time, event) ~ x1 + x2 + x3, data = "DA",
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ref <- coef(survival::coxph(survival::Surv(time, event) ~ x1 + x2 + x3,
                                 data = pooled, ties = "breslow"))
     generalization_row(
@@ -1270,7 +1278,7 @@ generalize_lmm <- function(seed, K) {
                       function(conns) {
     run <- elapsed(fit <- dsVertClient::ds.vert.lmm(
       y ~ x1 + x2 + x3, data = "DA", cluster_col = "cluster",
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ref <- lme4::fixef(lme4::lmer(y ~ x1 + x2 + x3 + (1 | cluster),
                                   data = pooled, REML = TRUE))
     generalization_row(
@@ -1293,7 +1301,7 @@ generalize_gee <- function(seed, K) {
     run <- elapsed(fit <- dsVertClient::ds.vert.gee(
       y ~ x1 + x2 + x3, data = "DA", family = "gaussian",
       id_col = "cluster", corstr = "independence",
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ref <- coef(geepack::geeglm(y ~ x1 + x2 + x3, data = pooled,
                                 id = cluster, family = gaussian(),
                                 corstr = "independence"))
@@ -1315,7 +1323,7 @@ generalize_ipw <- function(seed, K) {
   with_aligned_dslite(split_ipw(pooled, K), function(conns) {
     run <- elapsed(fit <- dsVertClient::ds.vert.ipw(
       y ~ tr + w1 + w2, tr ~ w1 + w2, data = "DA",
-      outcome_family = "gaussian", verbose = FALSE, datasources = conns))
+      outcome_family = "gaussian", verbose = validation_demo_verbose(), datasources = conns))
     ref <- coef(stats::lm(y ~ tr + w1 + w2, data = pooled,
                           weights = ipw))
     generalization_row(
@@ -1336,7 +1344,7 @@ generalize_mi <- function(seed, K) {
   with_aligned_dslite(split_mi(pooled, K), function(conns) {
     run <- elapsed(fit <- dsVertClient::ds.vert.mi(
       y ~ x1 + x2 + x3, data = "DA", impute_columns = "x2",
-      family = "gaussian", verbose = FALSE, datasources = conns, seed = 12L))
+      family = "gaussian", verbose = validation_demo_verbose(), datasources = conns, seed = 12L))
     ref_data <- pooled
     ref_data$x2[is.na(ref_data$x2)] <- mean(ref_data$x2, na.rm = TRUE)
     ref <- coef(stats::lm(y ~ x1 + x2 + x3, data = ref_data))
@@ -1363,7 +1371,7 @@ generalize_multinomial <- function(seed, K) {
       y_cls ~ x1 + x2 + x3, data = "DA",
       classes = c("high", "low", "med"),
       indicator_template = "%s_ind",
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ds_prob <- softmax_prob(fit$coefficients, pooled)
     ds_prob <- ds_prob[, colnames(ref_prob), drop = FALSE]
     generalization_row(
@@ -1395,7 +1403,7 @@ generalize_ordinal <- function(seed, K) {
       y_ord ~ x1 + x2 + x3, data = "DA",
       levels_ordered = c("low", "med", "high"),
       cumulative_template = "%s_leq",
-      verbose = FALSE, datasources = conns))
+      verbose = validation_demo_verbose(), datasources = conns))
     ds_cum <- ordinal_cumprob(fit, pooled)
     colnames(ds_cum) <- colnames(ref_cum)
     generalization_row(
@@ -1417,12 +1425,12 @@ generalize_glmm <- function(seed, K) {
   with_aligned_dslite(split_glmm(pooled, K), function(conns) {
     run <- elapsed(fit <- dsVertClient::ds.vert.glmm(
       y ~ x1 + x2, data = "DA", cluster_col = "cluster",
-      verbose = FALSE, datasources = conns))
+      compute_se = FALSE, verbose = validation_demo_verbose(), datasources = conns))
     pooled_ref <- pooled
     pooled_ref$cluster <- factor(pooled_ref$cluster)
     ref_fit <- suppressWarnings(MASS::glmmPQL(
       y ~ x1 + x2, random = ~1 | cluster, family = binomial(),
-      data = pooled_ref, verbose = FALSE))
+      data = pooled_ref, verbose = validation_demo_verbose()))
     ref <- nlme::fixef(ref_fit)
     fixed_delta <- max_named_delta(fit$coefficients, ref)
     pql_ran <- isTRUE(fit$iterations >= 1L) &&
