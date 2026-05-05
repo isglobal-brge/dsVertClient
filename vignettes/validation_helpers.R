@@ -738,10 +738,11 @@ build_balanced_glmm <- function(seed = 77L, ncl = 12L, m = 8L,
 }
 
 validate_glmm <- function() {
-  validation_require(c("MASS", "nlme"))
+  validation_require(c("MASS", "nlme", "lme4"))
   rows <- list()
   for (K in c(2L, 3L)) {
-    pooled <- build_balanced_glmm()
+    pooled <- build_balanced_glmm(seed = 1L, ncl = 10L, m = 5L,
+                                  b_sd = 0.6)
     tables <- if (K == 2L) {
       list(s1 = pooled[, c("patient_id", "x1")],
            s2 = pooled[, c("patient_id", "x2", "cluster", "y")])
@@ -753,28 +754,60 @@ validate_glmm <- function() {
     conns <- connect_dslite(tables)
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
-    run <- elapsed(fit <- dsVertClient::ds.vert.glmm(
+    run_pql <- elapsed(fit_pql <- dsVertClient::ds.vert.glmm(
       y ~ x1 + x2, data = "DA", cluster_col = "cluster",
-      compute_se = FALSE, verbose = validation_demo_verbose(), datasources = conns))
+      method = "pql", compute_se = FALSE,
+      verbose = validation_demo_verbose(), datasources = conns))
     pooled_ref <- pooled
     pooled_ref$cluster <- factor(pooled_ref$cluster)
-    ref_fit <- suppressWarnings(MASS::glmmPQL(
+    ref_pql <- suppressWarnings(MASS::glmmPQL(
       y ~ x1 + x2, random = ~1 | cluster, family = binomial(),
       data = pooled_ref, verbose = validation_demo_verbose()))
-    ref <- nlme::fixef(ref_fit)
-    fixed_delta <- max_named_delta(fit$coefficients, ref)
-    pql_ran <- isTRUE(fit$iterations >= 1L) &&
-      is.data.frame(fit$trace) && nrow(fit$trace) >= 1L &&
-      is.finite(fit$sigma_b2) && identical(fit$quality$status, "ok")
+    ref <- nlme::fixef(ref_pql)
+    fixed_delta <- max_named_delta(fit_pql$coefficients, ref)
+    pql_ran <- isTRUE(fit_pql$iterations >= 1L) &&
+      is.data.frame(fit_pql$trace) && nrow(fit_pql$trace) >= 1L &&
+      is.finite(fit_pql$sigma_b2) &&
+      identical(fit_pql$quality$status, "ok")
     observed <- max(fixed_delta, if (pql_ran) 0 else Inf)
-    rows[[as.character(K)]] <- row_result(
-      "glmm", "GLMM", K, "ds.vert.glmm",
+    rows[[paste0("pql", K)]] <- row_result(
+      "glmm", "GLMM", K, "ds.vert.glmm(method='pql')",
       "synthetic mixed binomial random-intercept fixture",
       "MASS::glmmPQL",
       "fixed_effect_max_abs_delta_and_pql_quality", observed, 0.005,
       "strict-pql",
       "PQL route returns fixed effects and scalar variance diagnostics only.",
-      run$runtime_s)
+      run_pql$runtime_s)
+
+    run_laplace <- elapsed(fit_laplace <- dsVertClient::ds.vert.glmm(
+      y ~ x1 + x2, data = "DA", cluster_col = "cluster",
+      method = "laplace", max_outer = 1L, mode_max_iter = 1L,
+      prime_iter = 5L, compute_se = FALSE,
+      verbose = validation_demo_verbose(), datasources = conns))
+    ref_laplace <- suppressWarnings(lme4::glmer(
+      y ~ x1 + x2 + (1 | cluster), data = pooled_ref,
+      family = binomial(),
+      control = lme4::glmerControl(
+        optimizer = "bobyqa", optCtrl = list(maxfun = 1e5))))
+    fixed_laplace <- max_named_delta(fit_laplace$coefficients,
+                                     lme4::fixef(ref_laplace))
+    sigma_laplace <- abs(fit_laplace$sigma_b2 -
+                           as.numeric(lme4::VarCorr(ref_laplace)$cluster)[1L])
+    safe_return <- identical(fit_laplace$quality$status, "ok") &&
+      isFALSE(fit_laplace$disclosure$patient_level_returned) &&
+      isFALSE(fit_laplace$disclosure$random_effects_returned) &&
+      isFALSE(fit_laplace$disclosure$cluster_vectors_returned)
+    observed_laplace <- max(fixed_laplace, sigma_laplace,
+                            if (safe_return) 0 else Inf)
+    rows[[paste0("laplace", K)]] <- row_result(
+      "glmm", "GLMM", K, "ds.vert.glmm(method='laplace')",
+      "synthetic mixed binomial random-intercept fixture",
+      "lme4::glmer",
+      "max_fixed_effect_or_sigma_b2_abs_delta", observed_laplace, 0.06,
+      "laplace-practical",
+      paste("Returns fixed effects, scalar variance, and scalar quality only;",
+            "no BLUPs, cluster labels, cluster vectors, or row scores."),
+      run_laplace$runtime_s)
     try(DSI::datashield.logout(conns), silent = TRUE)
   }
   do.call(rbind, rows)
@@ -1425,7 +1458,8 @@ generalize_glmm <- function(seed, K) {
   with_aligned_dslite(split_glmm(pooled, K), function(conns) {
     run <- elapsed(fit <- dsVertClient::ds.vert.glmm(
       y ~ x1 + x2, data = "DA", cluster_col = "cluster",
-      compute_se = FALSE, verbose = validation_demo_verbose(), datasources = conns))
+      method = "pql", compute_se = FALSE,
+      verbose = validation_demo_verbose(), datasources = conns))
     pooled_ref <- pooled
     pooled_ref$cluster <- factor(pooled_ref$cluster)
     ref_fit <- suppressWarnings(MASS::glmmPQL(

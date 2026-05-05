@@ -26,17 +26,28 @@ force_run <- TRUE
 
 Functions: `ds.vert.glmm()`.
 
-The product route is aggregate PQL for a binomial random-intercept GLMM. The executable vignette runs the public default PQL route and checks fixed-effect accuracy plus convergence diagnostics.
+The product route offers two non-disclosive methods for a binomial random-intercept GLMM:
+`method = "pql"` is the lower-cost aggregate PQL approximation, and
+`method = "laplace"` is the higher-accuracy one-step Laplace route comparable
+to `lme4::glmer`.
 
 ## Mathematical target
 
-A PQL step alternates protected binomial working-response updates with aggregate weighted mixed-model normal equations. The validation compares fixed effects to a centralized PQL fit and asserts that the distributed PQL quality flag is ok.
+The PQL route alternates protected binomial working-response updates with
+aggregate weighted mixed-model normal equations. It is compared to centralized
+`MASS::glmmPQL`.
+
+The Laplace route optimizes a protected random-intercept marginal-likelihood
+approximation. For each objective evaluation the servers compute only protected
+sigmoid/softplus shares, scalar likelihood pieces, and guarded per-cluster
+score/curvature sums. It is compared to centralized `lme4::glmer`.
 
 ## Fixture and reference
 
 Fixture: Synthetic mixed binomial random-intercept fixture with cluster sizes above privacy thresholds.
 
-Centralized reference: MASS::glmmPQL on the pooled fixture.
+Centralized references: `MASS::glmmPQL` for `method = "pql"` and
+`lme4::glmer` for `method = "laplace"` on the pooled fixture.
 
 The executable chunk below calls `run_validation()` from
 `vignettes/validation_helpers.R` with `force = TRUE`. That helper
@@ -49,7 +60,9 @@ execution path.
 
 ## Disclosure review
 
-The route returns fixed effects and scalar variance diagnostics only; per-cluster BLUPs and row probabilities are not returned.
+Both routes return fixed effects and scalar variance diagnostics only.
+Per-patient probabilities, row scores, residuals, BLUPs, cluster labels,
+cluster modes, and cluster curvature vectors are not returned.
 
 The fixture keeps `datashield.privacyLevel = 5` and is sized so the
 standard disclosure guards remain active. Only `dsvert.require_trusted_peers`
