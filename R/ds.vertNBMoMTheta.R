@@ -107,6 +107,16 @@ ds.vertNBMoMTheta <- function(formula, data = NULL,
   out$theta_mom_sum_y <- as.numeric(sums$sum_y)
   out$theta_mom_sum_y_sq <- as.numeric(sums$sum_y_sq)
   out$family <- "negative_binomial_mom"
+  out$quality <- .dsvert_quality(
+    status = if (underdispersed) "degraded" else "approximate",
+    warnings = if (underdispersed) {
+      "NB MoM theta is undefined for under-dispersed outcome moments; using the Poisson limit."
+    } else {
+      c("NB MoM route uses outcome-only scalar moments for theta and keeps the Poisson beta point estimate.",
+        "Use ds.vert.nb(method = 'accurate') for the non-disclosive full-regression refinement when runtime permits.")
+    },
+    metrics = list(theta_mom = theta_mom, y_mean = ybar, y_var = yvar,
+                   n = n_total))
   class(out) <- unique(c("ds.vertNBMoMTheta", "ds.vertNB", class(out)))
   out
 }
@@ -120,5 +130,11 @@ print.ds.vertNBMoMTheta <- function(x, ...) {
               x$theta_mom_y_var %||% NA_real_))
   if (isTRUE(x$theta_mom_underdispersed))
     cat("  WARNING: sample under-dispersed (s^2 <= ybar); theta_MoM undefined.\n")
+  if (!is.null(x$quality$status)) {
+    cat(sprintf("  Quality: %s\n", x$quality$status))
+    if (length(x$quality$warnings)) {
+      for (w in x$quality$warnings) cat("  - ", w, "\n", sep = "")
+    }
+  }
   invisible(x)
 }

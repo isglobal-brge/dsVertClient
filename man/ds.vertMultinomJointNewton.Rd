@@ -10,8 +10,8 @@ ds.vertMultinomJointNewton(
   data = NULL,
   levels,
   indicator_template = "\%s_ind",
-  max_outer = 8L,
-  tol = 1e-04,
+  max_outer = 20L,
+  tol = 1e-05,
   warm_max_iter = NULL,
   warm_tol = NULL,
   binomial_sigmoid_intervals = NULL,
@@ -29,9 +29,9 @@ ds.vertMultinomJointNewton(
 \item{indicator_template}{sprintf template for class-indicator columns
 on the outcome server, e.g. \code{"\%s_ind"}. Must exist server-side.}
 
-\item{max_outer}{Outer Newton iterations (default 8).}
+\item{max_outer}{Outer Newton iterations (default 20).}
 
-\item{tol}{Convergence tolerance on max |Deltabeta| (default 1e-4).}
+\item{tol}{Convergence tolerance on max |Deltabeta| (default 1e-5).}
 
 \item{warm_max_iter}{Optional maximum iterations for each internal
 binomial warm-start GLM.}

@@ -54,8 +54,8 @@
 #'   working quantities and are not returned.
 #' @export
 ds.vertGLMM <- function(formula, data = NULL, cluster_col,
-                        max_outer = 10L, inner_iter = 10L,
-                        tol = 1e-3, lambda = 0,
+                        max_outer = 30L, inner_iter = 50L,
+                        tol = 1e-4, lambda = 0,
                         compute_se = TRUE,
                         ring = NULL,
                         verbose = TRUE,
@@ -116,6 +116,12 @@ print.ds.vertGLMM <- function(x, ...) {
               x$sigma_b2, x$icc))
   cat(sprintf("  Converged: %s (%d outer iters)\n",
               x$converged, x$iterations))
+  if (!is.null(x$quality$status)) {
+    cat(sprintf("  Quality: %s\n", x$quality$status))
+    if (length(x$quality$warnings)) {
+      for (w in x$quality$warnings) cat("  - ", w, "\n", sep = "")
+    }
+  }
   cat("\nFixed effects (log-odds):\n")
   z <- x$coefficients / x$std_errors
   print(round(data.frame(
@@ -265,6 +271,7 @@ print.ds.vertGLMM <- function(x, ...) {
   phi <- 1
   tau <- sigma_b2 / phi
   converged <- FALSE
+  step_error <- NULL
   trace <- data.frame()
   offset_col <- "__dsvert_glmm_pql_b"
   on.exit(.ds_glmm_cleanup_fit_session(fit, datasources), add = TRUE)
@@ -300,7 +307,18 @@ print.ds.vertGLMM <- function(x, ...) {
     if (length(cl$n_per_cluster) == length(n_i)) {
       n_i <- as.integer(cl$n_per_cluster)
     }
-    step <- .ds_glmm_pql_solve_components(cl$pql_components)
+    step <- tryCatch(
+      .ds_glmm_pql_solve_components(cl$pql_components),
+      error = function(e) {
+        step_error <<- conditionMessage(e)
+        NULL
+      })
+    if (is.null(step)) {
+      if (verbose) {
+        message("[GLMM PQL] stopping at last stable iterate: ", step_error)
+      }
+      break
+    }
     beta_new <- .ds_glmm_unstandardize_beta(step$beta_std, fit,
                                             feature_order)
     common <- intersect(names(beta_orig), names(beta_new))
@@ -336,6 +354,31 @@ print.ds.vertGLMM <- function(x, ...) {
   fit$coefficients <- beta_orig
   fit$std_errors <- se
   icc <- sigma_b2 / (sigma_b2 + pi^2 / 3)
+  last_metric <- if (nrow(trace)) {
+    tr <- trace[nrow(trace), , drop = FALSE]
+    max(abs(c(tr$beta_delta, tr$b_delta, tr$sigma_delta)))
+  } else Inf
+  quality <- .dsvert_quality_from_convergence(
+    converged, metric = last_metric, tolerance = tol, label = "GLMM PQL")
+  quality$metrics$sigma_b2 <- sigma_b2
+  quality$metrics$icc <- icc
+  quality$metrics$tau <- tau
+  if (!is.finite(sigma_b2) || sigma_b2 < 0) {
+    quality$status <- "failed"
+    quality$warnings <- unique(c(
+      quality$warnings,
+      "GLMM PQL returned a non-finite or negative random-effect variance."))
+  } else if (!is.null(step_error)) {
+    quality$status <- if (nrow(trace)) "degraded" else "failed"
+    quality$warnings <- unique(c(
+      quality$warnings,
+      paste("GLMM PQL stopped at the last stable iterate:", step_error)))
+  } else if (is.finite(tau) && tau > 1e5) {
+    if (identical(quality$status, "ok")) quality$status <- "approximate"
+    quality$warnings <- unique(c(
+      quality$warnings,
+      "GLMM PQL variance component is near the numerical boundary."))
+  }
   out <- list(
     coefficients = beta_orig,
     std_errors = se,
@@ -349,6 +392,7 @@ print.ds.vertGLMM <- function(x, ...) {
     n_obs = sum(n_i),
     converged = converged,
     iterations = outer,
+    quality = quality,
     trace = trace,
     fit = fit,
     method = "pql_aggregate",

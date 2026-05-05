@@ -19,12 +19,12 @@ helper_candidates <- c("validation_helpers.R",
   file.path("..", "validation_helpers.R"),
   file.path("vignettes", "validation_helpers.R"))
 source(helper_candidates[file.exists(helper_candidates)][1])
-force_run <- identical(tolower(Sys.getenv("DSVERT_VALIDATION_FORCE", "false")), "true")
+force_run <- TRUE
 ```
 
 ## What is validated
 
-Functions: `ds.vertMultinom(), ds.vertMultinomJointNewton()`.
+Functions: `ds.vert.multinom()`.
 
 The supported route is joint softmax Newton over Ring127 shares. Historical one-vs-rest output is kept only as an internal warm start.
 
@@ -39,12 +39,13 @@ Fixture: Balanced soft-signal synthetic three-class fixture with vertical predic
 Centralized reference: nnet::multinom predicted probabilities.
 
 The executable chunk below calls `run_validation()` from
-`vignettes/validation_helpers.R`. That helper constructs the fixture,
-opens a DSLite server, performs PSI alignment, runs the dsVertClient
-product route for K=2 and K=3, computes the centralized reference, and
-compares both results. No RDS or result table outside this package is
-required; if a local `vignettes/validation-cache/` file exists it is a
-cache produced by this same execution path.
+`vignettes/validation_helpers.R` with `force = TRUE`. That helper
+constructs the fixture, opens a DSLite server, performs PSI alignment,
+runs the dsVertClient product route for K=2 and K=3, computes the
+centralized reference, and compares both results. No RDS or result table
+outside this package is required or read during vignette execution; any
+local `vignettes/validation-cache/` file is overwritten by this same
+execution path.
 
 ## Disclosure review
 
@@ -58,7 +59,7 @@ this local validation context.
 ## Executed evidence
 
 ```{r evidence}
-rows <- run_validation("multinomial", force = force_run)
+rows <- run_validation("multinomial", force = force_run, trace = TRUE)
 display_validation(rows)
 ```
 

@@ -95,8 +95,8 @@ connect_dslite <- function(tables, symbol = "D") {
 
 psi_align <- function(conns, data = "D", id_col = "patient_id",
                       newobj = "DA") {
-  dsVertClient::ds.psiAlign(data, id_col, newobj,
-                            datasources = conns, verbose = FALSE)
+  dsVertClient::ds.vert.align(data, id_col, newobj,
+                              datasources = conns, verbose = FALSE)
 }
 
 max_named_delta <- function(ds, ref) {
@@ -156,13 +156,30 @@ display_validation <- function(rows) {
 }
 
 run_validation <- function(method_id, force = getOption(
-  "dsvert.validation.force", FALSE)) {
+  "dsvert.validation.force", FALSE), trace = FALSE) {
+  if (isTRUE(trace)) {
+    cat("Validation trace\n")
+    cat("1. Load dsVertClient, dsVert, DSI and DSLite.\n")
+    cat("2. Build the method-specific fixture in R.\n")
+    cat("3. Split the fixture vertically into K=2 and K>=3 server tables.\n")
+    cat("4. Start an in-memory DSLite server with those tables.\n")
+    cat("5. Run ds.vert.align() to create aligned server-side tables.\n")
+    cat("6. Run the dsVert product route on the aligned data.\n")
+    cat("7. Compute the centralized reference on the pooled fixture.\n")
+    cat("8. Compare distributed and centralized outputs against the accepted envelope.\n\n")
+  }
   validation_load_packages()
   bundle <- validation_bundle_id(method_id)
   path <- validation_cache_path(bundle)
   if (!isTRUE(force) && file.exists(path)) {
+    if (isTRUE(trace)) {
+      cat("Cache: reading previous local result from ", path, "\n\n", sep = "")
+    }
     rows <- readRDS(path)
   } else {
+    if (isTRUE(trace)) {
+      cat("Cache: bypassed; executing DSLite validation now.\n\n")
+    }
     rows <- switch(bundle,
       psi = validate_psi(),
       descriptive_correlation_pca = validate_desc_cor_pca(),
@@ -185,6 +202,14 @@ run_validation <- function(method_id, force = getOption(
   out <- rows[rows$method_id == method_id, , drop = FALSE]
   rownames(out) <- NULL
   assert_validation(out)
+  if (isTRUE(trace)) {
+    cat("Executed rows\n")
+    print(out[, c("method_name", "k_mode", "function_route", "dataset",
+                  "reference_target", "primary_metric", "observed",
+                  "tolerance", "tier", "status", "runtime_s", "note"),
+              drop = FALSE], row.names = FALSE)
+    cat("\n")
+  }
   out
 }
 
@@ -291,7 +316,7 @@ validate_psi <- function() {
     n_by_server <- vapply(counts, function(x) as.integer(x$n_obs), integer(1))
     variables <- stats::setNames(lapply(names(conns), function(.x) "id_num"),
                                  names(conns))
-    cor_fit <- dsVertClient::ds.vertCor("DA", variables = variables,
+    cor_fit <- dsVertClient::ds.vert.cor("DA", variables = variables,
                                         datasources = conns, verbose = FALSE)
     offdiag <- cor_fit$correlation[upper.tri(cor_fit$correlation)]
     legacy_blocked <- tryCatch({
@@ -304,7 +329,7 @@ validate_psi <- function() {
                     max(abs(offdiag - 1)))
     audit_ok <- !contains_ids(psi) && isTRUE(legacy_blocked)
     rows[[as.character(K)]] <- row_result(
-      "psi", "PSI alignment", K, "ds.psiAlign",
+      "psi", "PSI alignment", K, "ds.vert.align",
       "synthetic ID intersection", "deterministic set intersection",
       "max(count_delta, correlation_delta)", observed, 1e-8,
       "strict-precise",
@@ -327,7 +352,7 @@ validate_desc_cor_pca <- function() {
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
 
-    d0 <- elapsed(desc <- dsVertClient::ds.vertDesc(
+    d0 <- elapsed(desc <- dsVertClient::ds.vert.desc(
       "DA", variables = vars, n_buckets = 40L,
       verbose = FALSE, datasources = conns))
     ref_mean <- vapply(pooled[all_vars], mean, numeric(1), na.rm = TRUE)
@@ -337,12 +362,12 @@ validate_desc_cor_pca <- function() {
     desc_delta <- max(max_named_delta(ds_mean, ref_mean),
                       max_named_delta(ds_sd, ref_sd))
 
-    c0 <- elapsed(cor_ds <- dsVertClient::ds.vertCor(
+    c0 <- elapsed(cor_ds <- dsVertClient::ds.vert.cor(
       "DA", variables = vars, verbose = FALSE, datasources = conns))
     cor_ref <- stats::cor(pooled[cor_ds$var_names])
     cor_delta <- max(abs(cor_ds$correlation - cor_ref))
 
-    p0 <- elapsed(pca_ds <- dsVertClient::ds.vertPCA(
+    p0 <- elapsed(pca_ds <- dsVertClient::ds.vert.pca(
       cor_result = cor_ds, verbose = FALSE, datasources = conns))
     eig_ref <- eigen(cor_ref, symmetric = TRUE)
     load_ref <- eig_ref$vectors[, seq_len(ncol(pca_ds$loadings)),
@@ -356,19 +381,19 @@ validate_desc_cor_pca <- function() {
                      max(abs(load_ds - load_ref)))
 
     rows[[paste0("desc", K)]] <- row_result(
-      "descriptive", "Descriptive statistics", K, "ds.vertDesc",
+      "descriptive", "Descriptive statistics", K, "ds.vert.desc",
       "MASS::Pima.tr fixture", "central mean/sd",
       "max(mean_sd_abs_delta)", desc_delta, 1e-8, "strict-precise",
       "Returns guarded scalar summaries and histogram-based quantiles, not rows.",
       d0$runtime_s)
     rows[[paste0("cor", K)]] <- row_result(
-      "correlation", "Correlation", K, "ds.vertCor",
+      "correlation", "Correlation", K, "ds.vert.cor",
       "MASS::Pima.tr fixture", "stats::cor",
       "correlation_max_abs_delta", cor_delta, 1e-4, "strict-practical",
       "Releases the low-dimensional correlation matrix only.",
       c0$runtime_s)
     rows[[paste0("pca", K)]] <- row_result(
-      "pca", "PCA", K, "ds.vertPCA",
+      "pca", "PCA", K, "ds.vert.pca",
       "MASS::Pima.tr fixture", "eigen(cor(X))",
       "max(eigen_loading_abs_delta)", pca_delta, 1e-4,
       "strict-practical",
@@ -402,7 +427,7 @@ validate_contingency <- function() {
     conns <- connect_dslite(tables)
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
-    run <- elapsed(cross <- dsVertClient::ds.vertChisqCross(
+    run <- elapsed(cross <- dsVertClient::ds.vert.chisq_cross(
       "DA", "age_grp", "diabetes", correct = FALSE, fisher = TRUE,
       verbose = FALSE, datasources = conns))
     tab <- table(pooled$age_grp, pooled$diabetes)
@@ -413,7 +438,7 @@ validate_contingency <- function() {
                     abs(cross$chisq - unname(chi_ref$statistic)))
     rows[[as.character(K)]] <- row_result(
       "contingency", "Contingency tests", K,
-      "ds.vertChisq / ds.vertFisher / ds.vertChisqCross",
+      "ds.vert.chisq / ds.vert.fisher / ds.vert.chisq_cross",
       "MASS::Pima.tr categorical fixture", "chisq.test / fisher.test",
       "max(count_or_chisq_delta)", observed, 1e-8, "strict-precise",
       "Releases guarded table counts and test statistics; small cells fail closed.",
@@ -431,12 +456,12 @@ validate_glm <- function() {
     conns <- connect_dslite(split_pima(pooled, K, include_y = TRUE))
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
-    run <- elapsed(fit <- dsVertClient::ds.vertGLM(
+    run <- elapsed(fit <- dsVertClient::ds.vert.glm(
       fm, data = "DA", family = "gaussian", max_iter = 30L,
       verbose = FALSE, datasources = conns))
     observed <- max_named_delta(fit$coefficients, coef(stats::lm(fm, pooled)))
     rows[[as.character(K)]] <- row_result(
-      "glm", "GLM", K, "ds.vertGLM",
+      "glm", "GLM", K, "ds.vert.glm",
       "MASS::Pima.tr fixture", "stats::lm",
       "coef_max_abs_delta", observed, 1e-3, "strict-practical",
       "Uses secure score aggregates and returns model-level coefficients/covariance.",
@@ -456,19 +481,19 @@ validate_inference <- function() {
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
     run <- elapsed({
-      full <- dsVertClient::ds.vertGLM(fm, data = "DA", family = "gaussian",
+      full <- dsVertClient::ds.vert.glm(fm, data = "DA", family = "gaussian",
         max_iter = 30L, compute_se = TRUE, compute_deviance = TRUE,
         verbose = FALSE, datasources = conns)
-      reduced <- dsVertClient::ds.vertGLM(red, data = "DA",
+      reduced <- dsVertClient::ds.vert.glm(red, data = "DA",
         family = "gaussian", max_iter = 30L, compute_se = TRUE,
         compute_deviance = TRUE, verbose = FALSE, datasources = conns)
-      ci <- dsVertClient::ds.vertConfint(full)
-      wald <- dsVertClient::ds.vertWald(full, "age")
+      ci <- dsVertClient::ds.vert.confint(full)
+      wald <- dsVertClient::ds.vert.wald(full, "age")
       Kmat <- matrix(0, nrow = 1, ncol = length(full$coefficients),
                      dimnames = list("age", names(full$coefficients)))
       Kmat[1, "age"] <- 1
-      contrast <- dsVertClient::ds.vertContrast(full, Kmat)
-      lr <- dsVertClient::ds.vertLR(reduced, full)
+      contrast <- dsVertClient::ds.vert.contrast(full, Kmat)
+      lr <- dsVertClient::ds.vert.lr(reduced, full)
       list(full = full, ci = ci, wald = wald, contrast = contrast, lr = lr)
     })
     full <- run$value$full
@@ -485,8 +510,8 @@ validate_inference <- function() {
                     abs(run$value$lr$p_value - lr_p_ref))
     rows[[as.character(K)]] <- row_result(
       "inference", "Inference helpers", K,
-      "ds.vertConfint / ds.vertWald / ds.vertContrast / ds.vertLR",
-      "MASS::Pima.tr fixture", "manual algebra on ds.vertGLM output",
+      "ds.vert.confint / ds.vert.wald / ds.vert.contrast / ds.vert.lr",
+      "MASS::Pima.tr fixture", "manual algebra on ds.vert.glm output",
       "algebra_max_abs_delta", observed, 1e-10, "strict-precise",
       "Post-processes released model-level beta/covariance/deviance only.",
       run$runtime_s)
@@ -504,17 +529,17 @@ validate_lasso <- function() {
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
     run <- elapsed({
-      fit <- dsVertClient::ds.vertGLM(fm, data = "DA", family = "gaussian",
+      fit <- dsVertClient::ds.vert.glm(fm, data = "DA", family = "gaussian",
         max_iter = 30L, verbose = FALSE, datasources = conns)
-      prox0 <- dsVertClient::ds.vertLASSOProximal(
+      prox0 <- dsVertClient::ds.vert.lasso_proximal(
         fit, lambda = 0, max_iter = 1000L, tol = 1e-8)
       list(fit = fit, prox0 = prox0)
     })
     observed <- max_named_delta(run$value$prox0$coefficients,
                                 run$value$fit$coefficients)
     rows[[as.character(K)]] <- row_result(
-      "lasso", "LASSO", K, "ds.vertLASSOProximal(lambda=0)",
-      "MASS::Pima.tr fixture", "OLS limit of ds.vertGLM",
+      "lasso", "LASSO", K, "ds.vert.lasso_proximal(lambda=0)",
+      "MASS::Pima.tr fixture", "OLS limit of ds.vert.glm",
       "lambda0_coef_abs_delta", observed, 1e-8, "strict-precise",
       "Consumes only model-level GLM aggregates; no extra patient-level values are returned.",
       run$runtime_s)
@@ -550,13 +575,13 @@ validate_negative_binomial <- function() {
     conns <- connect_dslite(split_x123_y(pooled, K))
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
-    run <- elapsed(fit <- dsVertClient::ds.vertNBMoMTheta(
+    run <- elapsed(fit <- dsVertClient::ds.vert.nb(
       y ~ x1 + x2 + x3, data = "DA", max_iter = 25L,
       verbose = FALSE, datasources = conns))
     ref <- coef(MASS::glm.nb(y ~ x1 + x2 + x3, data = pooled))
     observed <- max_named_delta(fit$coefficients, ref)
     rows[[as.character(K)]] <- row_result(
-      "negative_binomial", "Negative binomial", K, "ds.vertNBMoMTheta",
+      "negative_binomial", "Negative binomial", K, "ds.vert.nb",
       "synthetic NB fixture", "MASS::glm.nb",
       "coef_max_abs_delta", observed, 0.02, "strict-practical",
       "Returns beta and scalar theta only; score components remain aggregate.",
@@ -597,15 +622,14 @@ validate_cox <- function() {
     conns <- connect_dslite(tables)
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
-    run <- elapsed(fit <- dsVertClient::ds.vertCox(
+    run <- elapsed(fit <- dsVertClient::ds.vert.cox(
       survival::Surv(time, event) ~ x1 + x2 + x3, data = "DA",
-      max_iter = 5L, tol = 1e-3, max_event_times = 20L,
       verbose = FALSE, datasources = conns))
     ref <- coef(survival::coxph(survival::Surv(time, event) ~ x1 + x2 + x3,
                                 data = pooled, ties = "breslow"))
     observed <- max_named_delta(fit$coefficients, ref)
     rows[[as.character(K)]] <- row_result(
-      "cox", "Cox PH", K, "ds.vertCox",
+      "cox", "Cox PH", K, "ds.vert.cox",
       "synthetic discretised survival fixture",
       "survival::coxph(ties='breslow')",
       "coef_max_abs_delta", observed, 1e-3, "strict-practical",
@@ -635,20 +659,14 @@ validate_lmm <- function() {
     conns <- connect_dslite(split_x123_y(pooled, K, extras = "cluster"))
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
-    run <- elapsed(fit <- if (K == 2L) {
-      dsVertClient::ds.vertLMM(y ~ x1 + x2 + x3, data = "DA",
-        cluster_col = "cluster", max_iter = 3L, inner_iter = 10L,
-        verbose = FALSE, datasources = conns)
-    } else {
-      dsVertClient::ds.vertLMM.k3(y ~ x1 + x2 + x3, data = "DA",
-        cluster_col = "cluster", max_outer = 3L, tol = 1e-3,
-        verbose = FALSE, datasources = conns)
-    })
+    run <- elapsed(fit <- dsVertClient::ds.vert.lmm(
+      y ~ x1 + x2 + x3, data = "DA", cluster_col = "cluster",
+      verbose = FALSE, datasources = conns))
     ref <- lme4::fixef(lme4::lmer(y ~ x1 + x2 + x3 + (1 | cluster),
                                   data = pooled, REML = TRUE))
     observed <- max_named_delta(fit$coefficients, ref)
     rows[[as.character(K)]] <- row_result(
-      "lmm", "LMM", K, if (K == 2L) "ds.vertLMM" else "ds.vertLMM.k3",
+      "lmm", "LMM", K, "ds.vert.lmm",
       "synthetic random-intercept fixture", "lme4::lmer",
       "fixed_effect_max_abs_delta", observed, 0.02, "strict-practical",
       "Cluster membership is used internally; per-cluster residuals/BLUPs are not returned.",
@@ -669,7 +687,7 @@ validate_gee <- function() {
                                        include_cluster = TRUE))
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
-    run <- elapsed(fit <- dsVertClient::ds.vertGEE(
+    run <- elapsed(fit <- dsVertClient::ds.vert.gee(
       fm, data = "DA", family = "gaussian", id_col = "cluster",
       corstr = "independence", max_iter = 30L,
       verbose = FALSE, datasources = conns))
@@ -678,7 +696,7 @@ validate_gee <- function() {
                                 corstr = "independence"))
     observed <- max_named_delta(fit$coefficients, ref)
     rows[[as.character(K)]] <- row_result(
-      "gee", "GEE", K, "ds.vertGEE(corstr='independence')",
+      "gee", "GEE", K, "ds.vert.gee(corstr='independence')",
       "MASS::Pima.tr clustered fixture", "geepack::geeglm",
       "coef_max_abs_delta", observed, 0.01, "strict-practical",
       "Returns regression and sandwich-level aggregates, not row scores.",
@@ -690,22 +708,24 @@ validate_gee <- function() {
 
 build_balanced_glmm <- function() {
   set.seed(77)
-  n <- 50L
-  cluster <- rep(seq_len(10L), each = 5L)
-  base1 <- rnorm(n / 2L)
-  base2 <- rnorm(n / 2L)
+  ncl <- 12L
+  m <- 8L
+  n <- ncl * m
+  cluster <- rep(seq_len(ncl), each = m)
+  x1 <- rnorm(n)
+  x2 <- rnorm(n)
+  b <- rnorm(ncl, sd = 0.5)[cluster]
+  eta <- -0.2 + 0.45 * x1 - 0.3 * x2 + b
   data.frame(
     patient_id = sprintf("G%03d", seq_len(n)),
     cluster = cluster,
-    x1 = c(base1, base1),
-    x2 = c(base2, base2),
-    y = c(rep(0L, n / 2L), rep(1L, n / 2L)))
+    x1 = x1,
+    x2 = x2,
+    y = stats::rbinom(n, 1L, stats::plogis(eta)))
 }
 
 validate_glmm <- function() {
-  old <- getOption("dsvert.glm_num_intervals_binomial", NULL)
-  options(dsvert.glm_num_intervals_binomial = 10L)
-  on.exit(options(dsvert.glm_num_intervals_binomial = old), add = TRUE)
+  validation_require(c("MASS", "nlme"))
   rows <- list()
   for (K in c(2L, 3L)) {
     pooled <- build_balanced_glmm()
@@ -720,24 +740,28 @@ validate_glmm <- function() {
     conns <- connect_dslite(tables)
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
-    run <- elapsed(fit <- dsVertClient::ds.vertGLMM(
+    run <- elapsed(fit <- dsVertClient::ds.vert.glmm(
       y ~ x1 + x2, data = "DA", cluster_col = "cluster",
-      max_outer = 1L, inner_iter = 1L, compute_se = FALSE,
       verbose = FALSE, datasources = conns))
-    ref <- coef(stats::glm(y ~ x1 + x2, data = pooled, family = binomial()))
+    pooled_ref <- pooled
+    pooled_ref$cluster <- factor(pooled_ref$cluster)
+    ref_fit <- suppressWarnings(MASS::glmmPQL(
+      y ~ x1 + x2, random = ~1 | cluster, family = binomial(),
+      data = pooled_ref, verbose = FALSE))
+    ref <- nlme::fixef(ref_fit)
     fixed_delta <- max_named_delta(fit$coefficients, ref)
     pql_ran <- isTRUE(fit$iterations >= 1L) &&
       is.data.frame(fit$trace) && nrow(fit$trace) >= 1L &&
-      is.finite(fit$sigma_b2)
+      is.finite(fit$sigma_b2) && identical(fit$quality$status, "ok")
     observed <- max(fixed_delta, if (pql_ran) 0 else Inf)
     rows[[as.character(K)]] <- row_result(
-      "glmm", "GLMM", K, "ds.vertGLMM(max_outer=1)",
-      "paired balanced binomial cluster fixture",
-      "central glm fixed-effect symmetry plus PQL trace check",
-      "coef_max_abs_delta_and_pql_trace", observed, 1e-4, "strict-pql",
+      "glmm", "GLMM", K, "ds.vert.glmm",
+      "synthetic mixed binomial random-intercept fixture",
+      "MASS::glmmPQL",
+      "fixed_effect_max_abs_delta_and_pql_quality", observed, 0.005,
+      "strict-pql",
       "PQL route returns fixed effects and scalar variance diagnostics only.",
-      run$runtime_s,
-      "Compact fixture executes one aggregate PQL outer update; heavier convergence checks can use max_outer > 1.")
+      run$runtime_s)
     try(DSI::datashield.logout(conns), silent = TRUE)
   }
   do.call(rbind, rows)
@@ -768,16 +792,16 @@ validate_ipw <- function() {
     conns <- connect_dslite(tables)
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
-    run <- elapsed(fit <- dsVertClient::ds.vertIPW(
+    run <- elapsed(fit <- dsVertClient::ds.vert.ipw(
       y ~ tr + w1 + w2, tr ~ w1 + w2, data = "DA",
-      outcome_family = "gaussian", max_iter = 5L,
-      binomial_sigmoid_intervals = 10L, compute_se = FALSE,
-      compute_deviance = FALSE, verbose = FALSE, datasources = conns))
+      outcome_family = "gaussian",
+      compute_se = FALSE, compute_deviance = FALSE,
+      verbose = FALSE, datasources = conns))
     ref <- coef(stats::lm(y ~ tr + w1 + w2, data = pooled,
                           weights = ipw))
     observed <- max_named_delta(fit$outcome$coefficients, ref)
     rows[[as.character(K)]] <- row_result(
-      "ipw", "IPW", K, "ds.vertIPW",
+      "ipw", "IPW", K, "ds.vert.ipw",
       "synthetic confounded IPW fixture",
       "central weighted lm using same weights",
       "weighted_outcome_coef_abs_delta", observed, 1e-3,
@@ -813,16 +837,16 @@ validate_mi <- function() {
     conns <- connect_dslite(tables)
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
-    run <- elapsed(fit <- dsVertClient::ds.vertMI(
+    run <- elapsed(fit <- dsVertClient::ds.vert.mi(
       y ~ x1 + x2 + x3, data = "DA", impute_columns = "x2",
-      m = 2L, family = "gaussian", max_iter = 15L,
+      family = "gaussian",
       verbose = FALSE, datasources = conns, seed = 12L))
     ref_data <- pooled
     ref_data$x2[is.na(ref_data$x2)] <- mean(ref_data$x2, na.rm = TRUE)
     ref <- coef(stats::lm(y ~ x1 + x2 + x3, data = ref_data))
     observed <- max_named_delta(fit$coefficients, ref)
     rows[[as.character(K)]] <- row_result(
-      "mi", "Multiple imputation", K, "ds.vertMI",
+      "mi", "Multiple imputation", K, "ds.vert.mi",
       "synthetic missing-covariate fixture",
       "central mean-imputation reference",
       "pooled_coef_abs_delta", observed, 0.02, "strict-practical",
@@ -879,19 +903,18 @@ validate_multinomial <- function() {
     ref <- nnet::multinom(y_cls ~ x1 + x2 + x3, data = pooled,
                           trace = FALSE, maxit = 200L)
     ref_prob <- stats::predict(ref, pooled, type = "probs")
-    run <- elapsed(fit <- dsVertClient::ds.vertMultinomJointNewton(
+    run <- elapsed(fit <- dsVertClient::ds.vert.multinom(
       y_cls ~ x1 + x2 + x3, data = "DA",
-      levels = c("high", "low", "med"),
-      indicator_template = "%s_ind", max_outer = 3L,
-      warm_max_iter = 10L, binomial_sigmoid_intervals = 10L,
-      tol = 1e-3, verbose = FALSE, datasources = conns))
+      classes = c("high", "low", "med"),
+      indicator_template = "%s_ind",
+      verbose = FALSE, datasources = conns))
     ds_prob <- softmax_prob(fit$coefficients, pooled)
     ds_prob <- ds_prob[, colnames(ref_prob), drop = FALSE]
     observed <- max(abs(ds_prob - ref_prob))
     rows[[as.character(K)]] <- row_result(
-      "multinomial", "Multinomial", K, "ds.vertMultinomJointNewton",
+      "multinomial", "Multinomial", K, "ds.vert.multinom",
       "balanced soft-signal synthetic 3-class fixture", "nnet::multinom probabilities",
-      "class_probability_max_abs_delta", observed, 0.02,
+      "class_probability_max_abs_delta", observed, 0.005,
       "strict-practical",
       "Softmax probabilities and residuals remain Ring127 shares; no row probabilities are returned.",
       run$runtime_s)
@@ -946,19 +969,18 @@ validate_ordinal <- function() {
       stats::plogis(th - as.numeric(as.matrix(pooled[, names(coef(ref))]) %*%
                                       coef(ref)))
     })
-    run <- elapsed(fit <- dsVertClient::ds.vertOrdinalJointNewton(
+    run <- elapsed(fit <- dsVertClient::ds.vert.ordinal(
       y_ord ~ x1 + x2 + x3, data = "DA",
       levels_ordered = c("low", "med", "high"),
-      cumulative_template = "%s_leq", max_outer = 1L,
-      warm_max_iter = 8L, binomial_sigmoid_intervals = 10L,
-      tol = 1e-3, verbose = FALSE, datasources = conns))
+      cumulative_template = "%s_leq",
+      verbose = FALSE, datasources = conns))
     ds_cum <- ordinal_cumprob(fit, pooled)
     colnames(ds_cum) <- colnames(ref_cum)
     observed <- max(abs(ds_cum - ref_cum))
     rows[[as.character(K)]] <- row_result(
-      "ordinal", "Ordinal", K, "ds.vertOrdinalJointNewton",
+      "ordinal", "Ordinal", K, "ds.vert.ordinal",
       "balanced synthetic 3-level ordinal fixture", "MASS::polr cumulative probabilities",
-      "cumulative_probability_max_abs_delta", observed, 0.15,
+      "cumulative_probability_max_abs_delta", observed, 0.001,
       "strict-practical",
       "Class probabilities/residuals stay Ring127 shares; no row probabilities are returned.",
       run$runtime_s)

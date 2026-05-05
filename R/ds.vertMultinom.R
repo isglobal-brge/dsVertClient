@@ -1,7 +1,7 @@
 #' @title Federated multinomial logistic regression
 #' @description User-facing multinomial wrapper. Dispatches to
 #'   \code{\link{ds.vertMultinomJointNewton}}, the paper-safe joint softmax
-#'   Newton route for K >= 3. The historical one-vs-rest approximation is no
+#'   Newton route for K=2 and K>=3. The historical one-vs-rest approximation is no
 #'   longer exposed as a user-facing estimator; it remains only as an internal
 #'   warm start for the joint Newton route.
 #'
@@ -41,7 +41,7 @@
 #' @export
 ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
                             reference = NULL, indicator_template = "%s_ind",
-                            max_iter = NULL, max_outer = 8L, tol = NULL,
+                            max_iter = NULL, max_outer = 20L, tol = NULL,
                             warm_max_iter = NULL, warm_tol = NULL,
                             binomial_sigmoid_intervals = NULL,
                             verbose = TRUE, datasources = NULL, ...) {
@@ -85,7 +85,7 @@ ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
     levels = levels,
     indicator_template = indicator_template,
     max_outer = as.integer(max_iter %||% max_outer),
-    tol = as.numeric(tol %||% 1e-4),
+    tol = as.numeric(tol %||% 1e-5),
     warm_max_iter = warm_max_iter,
     warm_tol = warm_tol,
     binomial_sigmoid_intervals = binomial_sigmoid_intervals,

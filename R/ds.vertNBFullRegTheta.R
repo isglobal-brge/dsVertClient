@@ -355,25 +355,45 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     out$theta_iter <- nrow(theta_trace)
     out$theta_converged <- theta_converged
     out$beta_trace <- beta_trace
-    out$beta_iter <- nrow(beta_trace)
-    out$beta_converged <- beta_converged
-    out$std_errors <- nb_se
-    out$z_values <- out$coefficients / out$std_errors
-    out$p_values <- 2 * stats::pnorm(-abs(out$z_values))
-    out$covariance <- cov_beta
-    out$var_inflation <- var_inflation
-    class(out) <- c("ds.vertNBFullRegTheta", class(out))
-    return(out)
-  }
+	    out$beta_iter <- nrow(beta_trace)
+	    out$beta_converged <- beta_converged
+	    out$std_errors <- nb_se
+	    out$z_values <- out$coefficients / out$std_errors
+	    out$p_values <- 2 * stats::pnorm(-abs(out$z_values))
+	    out$covariance <- cov_beta
+	    out$var_inflation <- var_inflation
+	    out$quality <- .dsvert_quality_from_convergence(
+	      theta_converged, metric = if (nrow(theta_trace)) {
+	        abs(theta_trace$theta_next[nrow(theta_trace)] -
+	              theta_trace$theta[nrow(theta_trace)])
+	      } else Inf,
+	      tolerance = theta_tol * max(1, abs(theta_cur)),
+	      label = "NB full-regression theta")
+	    if (!isTRUE(beta_converged) && beta_max_iter > 0L) {
+	      out$quality$status <- "degraded"
+	      out$quality$warnings <- unique(c(
+	        out$quality$warnings,
+	        "NB full-regression beta refinement reached beta_max_iter before convergence."))
+	    }
+	    out$quality$metrics$beta_converged <- beta_converged
+	    out$quality$metrics$beta_iter <- nrow(beta_trace)
+	    out$quality$metrics$theta_iter <- nrow(theta_trace)
+	    class(out) <- c("ds.vertNBFullRegTheta", class(out))
+	    return(out)
+	  }
 
   if (identical(variant, "iid_mu")) {
     out <- base_fit
-    out$theta_iid <- theta_iid
-    out$variance_correction <- 0
-    out$variant <- "iid_mu"
-    class(out) <- c("ds.vertNBFullRegTheta", class(out))
-    return(out)
-  }
+	    out$theta_iid <- theta_iid
+	    out$variance_correction <- 0
+	    out$variant <- "iid_mu"
+	    out$quality <- .dsvert_quality(
+	      status = "approximate",
+	      warnings = "NB iid_mu variant keeps the outcome-only theta approximation; use method = 'accurate' for the non-disclosive full-regression route.",
+	      metrics = list(theta = theta_iid, variance_correction = 0))
+	    class(out) <- c("ds.vertNBFullRegTheta", class(out))
+	    return(out)
+	  }
 
   # Aggregate Var(mu) estimate from law of total variance:
   #   Var(y) = E[mu] + E[mu^2]/theta + Var(mu)  (NB conditional variance)
@@ -388,12 +408,16 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                       var_mu_hat, theta_iid))
     }
     out <- base_fit
-    out$theta_iid <- theta_iid
-    out$variance_correction <- var_mu_hat
-    out$variant <- "iid_mu (fallback)"
-    class(out) <- c("ds.vertNBFullRegTheta", class(out))
-    return(out)
-  }
+	    out$theta_iid <- theta_iid
+	    out$variance_correction <- var_mu_hat
+	    out$variant <- "iid_mu (fallback)"
+	    out$quality <- .dsvert_quality(
+	      status = "approximate",
+	      warnings = "NB corrected route could not estimate a positive aggregate Var(mu); returned the iid-mu approximation.",
+	      metrics = list(theta = theta_iid, variance_correction = var_mu_hat))
+	    class(out) <- c("ds.vertNBFullRegTheta", class(out))
+	    return(out)
+	  }
 
   # Variance-corrected profile score: use outcome server's scalar
   # aggregates (Sumpsi(y+theta), Sumpsi_1(y+theta), n, ybar) via dsvertNBProfileSumsDS,
@@ -437,12 +461,17 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       message("[ds.vertNBFullRegTheta] could not bracket corrected root -- returning iid-mu")
     }
     out <- base_fit
-    out$theta_iid <- theta_iid
-    out$variance_correction <- var_mu_hat
-    out$variant <- "iid_mu (no bracket)"
-    class(out) <- c("ds.vertNBFullRegTheta", class(out))
-    return(out)
-  }
+	    out$theta_iid <- theta_iid
+	    out$variance_correction <- var_mu_hat
+	    out$variant <- "iid_mu (no bracket)"
+	    out$quality <- .dsvert_quality(
+	      status = "degraded",
+	      warnings = "NB corrected route could not bracket the corrected theta root; returned the iid-mu approximation.",
+	      metrics = list(theta = theta_iid, variance_correction = var_mu_hat,
+	                     lower_score = s_lo, upper_score = s_hi))
+	    class(out) <- c("ds.vertNBFullRegTheta", class(out))
+	    return(out)
+	  }
   theta_corr <- tryCatch(
     stats::uniroot(score_corrected, lower = lo, upper = hi,
                     tol = 1e-6, maxiter = 40L)$root,
@@ -466,12 +495,17 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
   out$variant <- "corrected"
   out$std_errors <- nb_se
   out$z_values <- nb_z
-  out$p_values <- nb_p
-  out$covariance <- nb_cov
-  out$var_inflation <- var_inflation
-  class(out) <- c("ds.vertNBFullRegTheta", class(out))
-  out
-}
+	  out$p_values <- nb_p
+	  out$covariance <- nb_cov
+	  out$var_inflation <- var_inflation
+	  out$quality <- .dsvert_quality(
+	    status = "approximate",
+	    warnings = "NB corrected route uses an aggregate Taylor correction to the full-regression theta score.",
+	    metrics = list(theta = theta_corr, theta_iid = theta_iid,
+	                   variance_correction = var_mu_hat))
+	  class(out) <- c("ds.vertNBFullRegTheta", class(out))
+	  out
+	}
 
 #' @export
 print.ds.vertNBFullRegTheta <- function(x, ...) {
@@ -480,6 +514,12 @@ print.ds.vertNBFullRegTheta <- function(x, ...) {
               x$n_obs, x$theta, x$theta_iid, x$variant))
   cat(sprintf("  Var(mu) estimate = %.4g   var-inflation = %.3f\n",
               x$variance_correction, x$var_inflation))
+  if (!is.null(x$quality$status)) {
+    cat(sprintf("  Quality: %s\n", x$quality$status))
+    if (length(x$quality$warnings)) {
+      for (w in x$quality$warnings) cat("  - ", w, "\n", sep = "")
+    }
+  }
   df <- data.frame(
     Estimate = x$coefficients,
     SE       = x$std_errors,
