@@ -19,6 +19,7 @@
 \alias{ds.vert.lmm}
 \alias{ds.vert.gee}
 \alias{ds.vert.glmm}
+\alias{ds.vert.glmer}
 \alias{ds.vert.ipw}
 \alias{ds.vert.mi}
 \alias{ds.vert.lasso}
@@ -82,7 +83,16 @@ ds.vert.lmm(
 
 ds.vert.gee(formula, data = NULL, datasources = NULL, ...)
 
-ds.vert.glmm(formula, data = NULL, cluster_col, datasources = NULL, ...)
+ds.vert.glmm(
+  formula,
+  data = NULL,
+  cluster_col,
+  method = c("laplace", "pql"),
+  datasources = NULL,
+  ...
+)
+
+ds.vert.glmer(formula, data = NULL, cluster_col, datasources = NULL, ...)
 
 ds.vert.ipw(
   outcome_formula,
