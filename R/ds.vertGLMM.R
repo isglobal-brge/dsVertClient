@@ -43,8 +43,11 @@
 #' @param inner_iter Inner PIRLS iterations per cluster per outer step.
 #' @param tol Outer convergence tolerance.
 #' @param lambda L2 penalty passed to the inner binomial GLM fits.
-#' @param compute_se Logical. Compute GLM finite-difference standard errors
-#'   for the inner fits. Set FALSE for coefficient/variance validation runs.
+#' @param compute_se Logical. Reserved for future GLMM-PQL standard-error
+#'   support. The aggregate PQL route currently returns \code{NA} standard
+#'   errors, so the default is \code{FALSE}; computing finite-difference SEs
+#'   for the initial GLM would add protected optimisation rounds without
+#'   changing the final GLMM-PQL estimates.
 #' @param ring Integer 63 or 127. The PQL aggregate route requires Ring127.
 #' @param verbose Print progress.
 #' @param datasources DataSHIELD connections.
@@ -56,7 +59,7 @@
 ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         max_outer = 30L, inner_iter = 50L,
                         tol = 1e-4, lambda = 0,
-                        compute_se = TRUE,
+                        compute_se = FALSE,
                         ring = NULL,
                         verbose = TRUE,
                         datasources = NULL) {
@@ -84,7 +87,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                     max_iter = inner_iter, tol = tol, lambda = lambda,
                     ring = ring,
                     compute_se = isTRUE(compute_se),
-                    verbose = FALSE,
+                    verbose = isTRUE(verbose),
                     datasources = datasources,
                     keep_session = TRUE)
 

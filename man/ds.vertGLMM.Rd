@@ -12,7 +12,7 @@ ds.vertGLMM(
   inner_iter = 50L,
   tol = 1e-04,
   lambda = 0,
-  compute_se = TRUE,
+  compute_se = FALSE,
   ring = NULL,
   verbose = TRUE,
   datasources = NULL
@@ -33,8 +33,11 @@ ds.vertGLMM(
 
 \item{lambda}{L2 penalty passed to the inner binomial GLM fits.}
 
-\item{compute_se}{Logical. Compute GLM finite-difference standard errors
-for the inner fits. Set FALSE for coefficient/variance validation runs.}
+\item{compute_se}{Logical. Reserved for future GLMM-PQL standard-error
+support. The aggregate PQL route currently returns \code{NA} standard
+errors, so the default is \code{FALSE}; computing finite-difference SEs
+for the initial GLM would add protected optimisation rounds without
+changing the final GLMM-PQL estimates.}
 
 \item{ring}{Integer 63 or 127. The PQL aggregate route requires Ring127.}
 
