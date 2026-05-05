@@ -122,8 +122,8 @@
 #' @param levels Character vector of outcome levels (first = reference).
 #' @param indicator_template sprintf template for class-indicator columns
 #'   on the outcome server, e.g. \code{"\%s_ind"}. Must exist server-side.
-#' @param max_outer Outer Newton iterations (default 8).
-#' @param tol Convergence tolerance on max |Deltabeta| (default 1e-4).
+#' @param max_outer Outer Newton iterations (default 20).
+#' @param tol Convergence tolerance on max |Deltabeta| (default 1e-5).
 #' @param warm_max_iter Optional maximum iterations for each internal
 #'   binomial warm-start GLM.
 #' @param warm_tol Optional tolerance for each internal binomial warm-start
@@ -136,7 +136,7 @@
 #' @export
 ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                                         indicator_template = "%s_ind",
-                                        max_outer = 8L, tol = 1e-4,
+                                        max_outer = 20L, tol = 1e-5,
                                         warm_max_iter = NULL,
                                         warm_tol = NULL,
                                         binomial_sigmoid_intervals = NULL,
@@ -1076,6 +1076,13 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                             else "final"
   out$outer_iter <- final_iter
   out$converged <- converged
+  out$quality <- .dsvert_quality_from_convergence(
+    converged = converged,
+    metric = best_step_norm,
+    tolerance = tol,
+    label = "multinomial joint Newton")
+  out$quality$metrics$best_gradient_norm <- best_g_norm
+  out$quality$metrics$returned_selection <- out$returned_selection
   out$family <- "multinomial_joint_softmax_ring127"
   out$session_id <- session_id
   class(out) <- c("ds.vertMultinomJointNewton", class(out))
@@ -1088,6 +1095,9 @@ print.ds.vertMultinomJointNewton <- function(x, ...) {
   cat(sprintf("  N = %d  classes = %s  outer_iter = %d  converged = %s\n",
               x$n_obs, paste(x$classes, collapse = ","),
               x$outer_iter, x$converged))
+  if (!is.null(x$quality$status)) {
+    cat(sprintf("  Quality: %s\n", x$quality$status))
+  }
   cat("\nCoefficients (post joint-Newton):\n")
   print(round(x$coefficients, 4))
   invisible(x)

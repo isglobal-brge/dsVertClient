@@ -19,14 +19,14 @@ helper_candidates <- c("validation_helpers.R",
   file.path("..", "validation_helpers.R"),
   file.path("vignettes", "validation_helpers.R"))
 source(helper_candidates[file.exists(helper_candidates)][1])
-force_run <- identical(tolower(Sys.getenv("DSVERT_VALIDATION_FORCE", "false")), "true")
+force_run <- TRUE
 ```
 
 ## What is validated
 
-Functions: `ds.vertConfint(), ds.vertWald(), ds.vertContrast(), ds.vertLR()`.
+Functions: `ds.vert.confint(), ds.vert.wald(), ds.vert.contrast(), ds.vert.lr()`.
 
-Inference helpers post-process the beta, covariance, deviance, and degrees of freedom already returned by ds.vertGLM.
+Inference helpers post-process the beta, covariance, deviance, and degrees of freedom already returned by ds.vert.glm.
 
 ## Mathematical target
 
@@ -36,15 +36,16 @@ Wald tests use z = (K beta - m) / sqrt(K V K^T). LR tests use D_reduced - D_full
 
 Fixture: The same MASS::Pima.tr Gaussian GLM fixture used for GLM validation.
 
-Centralized reference: Manual algebra on ds.vertGLM output.
+Centralized reference: Manual algebra on ds.vert.glm output.
 
 The executable chunk below calls `run_validation()` from
-`vignettes/validation_helpers.R`. That helper constructs the fixture,
-opens a DSLite server, performs PSI alignment, runs the dsVertClient
-product route for K=2 and K=3, computes the centralized reference, and
-compares both results. No RDS or result table outside this package is
-required; if a local `vignettes/validation-cache/` file exists it is a
-cache produced by this same execution path.
+`vignettes/validation_helpers.R` with `force = TRUE`. That helper
+constructs the fixture, opens a DSLite server, performs PSI alignment,
+runs the dsVertClient product route for K=2 and K=3, computes the
+centralized reference, and compares both results. No RDS or result table
+outside this package is required or read during vignette execution; any
+local `vignettes/validation-cache/` file is overwritten by this same
+execution path.
 
 ## Disclosure review
 
@@ -58,7 +59,7 @@ this local validation context.
 ## Executed evidence
 
 ```{r evidence}
-rows <- run_validation("inference", force = force_run)
+rows <- run_validation("inference", force = force_run, trace = TRUE)
 display_validation(rows)
 ```
 

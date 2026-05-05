@@ -78,13 +78,14 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
   }
 
   fits <- vector("list", m)
+  imputation_log <- list()
   for (mi in seq_len(m)) {
     if (verbose) message(sprintf("[ds.vertMI] Imputation round %d/%d", mi, m))
     round_tag <- sprintf("__mi_%d", mi)
     for (v in names(col_locs)) {
       srv <- col_locs[[v]]
       ci <- which(server_names == srv)
-      tryCatch(
+      imp_res <- tryCatch(
         DSI::datashield.aggregate(datasources[ci],
           call(name = "dsvertImputeColumnDS",
                data_name = data,
@@ -97,6 +98,17 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
                "deployed (provides the server-side imputation helper).",
                call. = FALSE)
         })
+      if (is.list(imp_res) && length(imp_res) == 1L) imp_res <- imp_res[[1L]]
+      imputation_log[[length(imputation_log) + 1L]] <- data.frame(
+        round = mi,
+        variable = v,
+        server = srv,
+        n_imputed = as.integer(imp_res$n_imputed %||% NA_integer_),
+        n_observed = as.integer(imp_res$n_observed %||% NA_integer_),
+        method = as.character(imp_res$method %||% NA_character_),
+        n_predictors = as.integer(imp_res$n_predictors %||% NA_integer_),
+        intercept_only = as.logical(imp_res$intercept_only %||% NA),
+        stringsAsFactors = FALSE)
     }
     # Swap each impute_column for its imputed twin in the formula.
     f_txt <- deparse(formula)
@@ -153,6 +165,23 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
   df <- (m - 1) * (1 + 1 / r)^2
   fmi <- (r + 2 / (df + 3)) / (r + 1)
   names(lambda_hat) <- names(fmi) <- nm
+  imputation_log <- if (length(imputation_log)) {
+    do.call(rbind, imputation_log)
+  } else {
+    data.frame()
+  }
+  quality_warnings <- character(0)
+  if (nrow(imputation_log) > 0L) {
+    if (all((imputation_log$n_imputed %||% 0L) == 0L, na.rm = TRUE)) {
+      quality_warnings <- c(quality_warnings,
+        "No missing cells were imputed. If missingness existed before alignment, run ds.psiAlign(..., na.action = 'none') before ds.vertMI().")
+    }
+    if (any(imputation_log$intercept_only %in% TRUE)) {
+      quality_warnings <- c(quality_warnings,
+        "At least one imputation used an intercept-only local model because no complete numeric predictor was available on the imputation server.")
+    }
+  }
+  quality_status <- if (length(quality_warnings)) "degraded" else "ok"
 
   out <- list(
     coefficients = beta_bar,
@@ -165,6 +194,9 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
     m            = m,
     family       = family,
     n_obs        = fits[[1]]$n_obs,
+    imputation_log = imputation_log,
+    quality      = list(status = quality_status,
+                        warnings = quality_warnings),
     fits         = fits,
     call         = match.call())
   class(out) <- c("ds.vertMI", "list")
@@ -176,6 +208,12 @@ print.ds.vertMI <- function(x, ...) {
   cat("dsVert multiple-imputation GLM (Rubin-pooled)\n")
   cat(sprintf("  M = %d imputations   family = %s   N = %d\n",
               x$m, x$family, x$n_obs))
+  if (!is.null(x$quality$status)) {
+    cat(sprintf("  Quality: %s\n", x$quality$status))
+    if (length(x$quality$warnings)) {
+      for (w in x$quality$warnings) cat("  - ", w, "\n", sep = "")
+    }
+  }
   z <- x$coefficients / x$std_errors
   p <- 2 * stats::pnorm(-abs(z))
   df <- data.frame(

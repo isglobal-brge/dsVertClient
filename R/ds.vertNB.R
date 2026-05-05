@@ -159,6 +159,19 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
   nb_z <- fit$coefficients / nb_se
   nb_p <- 2 * stats::pnorm(-abs(nb_z))
   nb_cov <- if (!is.null(fit$covariance)) fit$covariance * var_inflation^2 else NULL
+  quality <- .dsvert_quality(
+    status = "approximate",
+    warnings = c(
+      "NB profile route uses outcome-only scalar aggregates for theta and keeps the Poisson beta point estimate.",
+      "Use ds.vert.nb(method = 'accurate') for the non-disclosive full-regression refinement when runtime permits."),
+    metrics = list(theta = theta_est, y_mean = y_mean, y_var = y_var_val,
+                   joint_iterations = joint_iters))
+  if (!is.finite(theta_est) || theta_est <= 0) {
+    quality$status <- "degraded"
+    quality$warnings <- unique(c(
+      quality$warnings,
+      "NB theta estimate is non-finite or non-positive; inference falls back toward the Poisson limit."))
+  }
 
   out <- list(
     coefficients = fit$coefficients,
@@ -175,6 +188,7 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
     deviance     = fit$deviance,
     iterations   = fit$iterations,
     converged    = fit$converged,
+    quality      = quality,
     poisson_fit  = fit,
     call         = match.call())
   class(out) <- c("ds.vertNB", "ds.glm", "list")
@@ -241,6 +255,12 @@ print.ds.vertNB <- function(x, ...) {
   cat("dsVert negative-binomial regression\n")
   cat(sprintf("  N = %d   theta = %.4g (var inflation = %.3f)\n",
               x$n_obs, x$theta, x$var_inflation))
+  if (!is.null(x$quality$status)) {
+    cat(sprintf("  Quality: %s\n", x$quality$status))
+    if (length(x$quality$warnings)) {
+      for (w in x$quality$warnings) cat("  - ", w, "\n", sep = "")
+    }
+  }
   df <- data.frame(
     Estimate = x$coefficients,
     SE       = x$std_errors,

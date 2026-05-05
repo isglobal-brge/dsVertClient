@@ -64,6 +64,38 @@ test_that("ds.vertNB object inherits from ds.glm", {
   expect_true(inherits(out, "ds.vertNB"))
 })
 
+test_that("lowercase ds.vert aliases are exported", {
+  aliases <- c(
+    "ds.vert.align", "ds.vert.desc", "ds.vert.cor", "ds.vert.pca",
+    "ds.vert.chisq", "ds.vert.fisher", "ds.vert.chisq_cross",
+    "ds.vert.glm", "ds.vert.cox", "ds.vert.coxph", "ds.vert.nb",
+    "ds.vert.multinom", "ds.vert.ordinal", "ds.vert.lmm",
+    "ds.vert.gee", "ds.vert.glmm", "ds.vert.ipw", "ds.vert.mi",
+    "ds.vert.lasso", "ds.vert.lasso_iter", "ds.vert.lasso_proximal",
+    "ds.vert.lasso_1step", "ds.vert.lasso_cv", "ds.vert.lr",
+    "ds.vert.confint", "ds.vert.wald", "ds.vert.contrast")
+  expect_true(all(vapply(aliases, exists, logical(1),
+                         envir = asNamespace("dsVertClient"),
+                         inherits = FALSE)))
+})
+
+test_that("frontdoor route metadata is attached to list outputs", {
+  x <- list(coefficients = c(a = 1))
+  out <- dsVertClient:::.dsvert_set_frontdoor(
+    x, frontdoor = "ds.vert.demo", route = "backend", K = 3L)
+  expect_equal(out$frontdoor, "ds.vert.demo")
+  expect_equal(out$route, "backend")
+  expect_equal(out$k_mode, "K>=3")
+})
+
+test_that("frontdoor aliases preserve backend outputs and route metadata", {
+  fit <- mock_fit()
+  out <- ds.vert.lasso(fit, lambda_1 = 0.3, alpha_grid = 1)
+  expect_s3_class(out, "ds.vertLASSO")
+  expect_equal(out$frontdoor, "ds.vert.lasso")
+  expect_equal(out$route, "ds.vertLASSO")
+})
+
 # =============================================================================
 # ds.vertLASSO1Step — proper quadratic-surrogate LASSO
 # =============================================================================

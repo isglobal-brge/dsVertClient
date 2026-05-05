@@ -1,7 +1,7 @@
 #' @title Federated ordinal logistic regression
 #' @description User-facing ordinal wrapper. Dispatches to
 #'   \code{\link{ds.vertOrdinalJointNewton}}, the paper-safe joint
-#'   proportional-odds route for K >= 3. The historical cumulative-binomial
+#'   proportional-odds route for K=2 and K>=3. The historical cumulative-binomial
 #'   approximation is no longer exposed as a user-facing estimator; it remains
 #'   only as an internal warm start for the joint route.
 #'
@@ -43,14 +43,12 @@
 #'     Therefore a caller comparing against \code{coef(polr)} must flip the
 #'     sign of \code{beta_po} (or equivalently evaluate predictions with
 #'     \eqn{\mathrm{sigmoid}(\theta_k + X^\top \gamma)} on the \code{ds.vertOrdinal}
-#'     outputs). Empirically the cumulative probabilities agree with polr
-#'     to max \eqn{|\Delta P| \approx 5 \times 10^{-2}} on the housing
-#'     subset once the convention is honoured (probe_ordinal_harness.R,
-#'     2026-04-21).
+#'     outputs). The public route now runs the strict joint Newton estimator;
+#'     cumulative-binomial fits are used only as internal warm starts.
 #' @export
 ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
                            cumulative_template = "%s_leq",
-                           max_iter = NULL, max_outer = 8L, tol = NULL,
+                           max_iter = NULL, max_outer = 20L, tol = NULL,
                            warm_max_iter = NULL, warm_tol = NULL,
                            binomial_sigmoid_intervals = NULL,
                            verbose = TRUE, datasources = NULL, ...) {
@@ -83,7 +81,7 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
     levels_ordered = levels_ordered,
     cumulative_template = cumulative_template,
     max_outer = as.integer(max_iter %||% max_outer),
-    tol = as.numeric(tol %||% 1e-4),
+    tol = as.numeric(tol %||% 1e-5),
     warm_max_iter = warm_max_iter,
     warm_tol = warm_tol,
     binomial_sigmoid_intervals = binomial_sigmoid_intervals,

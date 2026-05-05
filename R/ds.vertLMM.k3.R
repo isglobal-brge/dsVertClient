@@ -54,7 +54,7 @@
 #' @export
 ds.vertLMM.k3 <- function(formula, data, cluster_col,
                            rho_lo = 0.001, rho_hi = 0.999,
-                           tol = 1e-3, max_outer = 30L,
+                           tol = 1e-4, max_outer = 30L,
                            ring = c("ring127", "ring63"),
                            verbose = TRUE, datasources = NULL) {
   ring <- match.arg(ring)

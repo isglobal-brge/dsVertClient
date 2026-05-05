@@ -1,6 +1,6 @@
 .ord_joint_secure_fit <- function(formula, data = NULL, levels_ordered,
                                   cumulative_template = "%s_leq",
-                                  max_outer = 8L, tol = 1e-4,
+                                  max_outer = 20L, tol = 1e-5,
                                   warm_max_iter = NULL,
                                   warm_tol = NULL,
                                   binomial_sigmoid_intervals = NULL,
@@ -712,6 +712,14 @@
   out$strict_grad_theta <- final$grad_theta
   out$outer_iter <- length(opt_trace)
   out$converged <- converged
+  final_grad <- max(abs(c(final$grad_beta, final$grad_theta)))
+  out$quality <- .dsvert_quality_from_convergence(
+    converged = converged,
+    metric = final_grad,
+    tolerance = tol,
+    label = "ordinal joint optimizer")
+  out$quality$metrics$evals <- eval_counter
+  out$quality$metrics$fd_newton <- fd_newton_used
   out$family <- "ordinal_joint_po_ring127_strict"
   out$session_id <- session_id
   class(out) <- c("ds.vertOrdinalJointNewton", class(out))
@@ -776,7 +784,7 @@
 #' @export
 ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
                                       cumulative_template = "%s_leq",
-                                      max_outer = 8L, tol = 1e-4,
+                                      max_outer = 20L, tol = 1e-5,
                                       warm_max_iter = NULL,
                                       warm_tol = NULL,
                                       binomial_sigmoid_intervals = NULL,
@@ -799,5 +807,8 @@ print.ds.vertOrdinalJointNewton <- function(x, ...) {
   cat(sprintf("  N = %d  levels = %s  outer_iter = %d  converged = %s\n",
               x$n_obs, paste(x$levels, collapse = ","),
               x$outer_iter, x$converged))
+  if (!is.null(x$quality$status)) {
+    cat(sprintf("  Quality: %s\n", x$quality$status))
+  }
   invisible(x)
 }
