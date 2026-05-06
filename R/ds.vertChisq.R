@@ -100,9 +100,9 @@ ds.vertChisq <- function(data_name, var1, var2, server = NULL,
   out
 }
 
-#' Pure helper: compute chi-square statistics from observed counts + margins.
-#' Exposed as an internal function so unit tests can exercise the math path
-#' without a DataSHIELD round trip.
+#' @title Compute chi-square statistics from observed counts
+#' @description Pure helper exposed internally so unit tests can exercise the
+#'   math path without a DataSHIELD round trip.
 #'
 #' @param observed Integer matrix of cell counts.
 #' @param row_margins Integer vector of row sums.

@@ -14,7 +14,7 @@ ds.vertLASSO1Step(
 }
 \arguments{
 \item{fit}{A \code{ds.glm} object with \code{fit$covariance}
-populated (commits >= 8bb7902).}
+populated.}
 
 \item{lambda}{Numeric vector of L1 penalty values (a regularisation
 path).}
@@ -48,6 +48,6 @@ returned coefficient vector and full covariance matrix.
 Useful for:
 - Regularised post-selection inference.
 - Model compression while preserving the statistical geometry.
-- A baseline for the planned Month 3 proper proximal-gradient
-LASSO that fits from scratch with per-iteration MPC gradients.
+- A fast surrogate baseline for comparison with the product
+proximal / iterative LASSO routes.
 }

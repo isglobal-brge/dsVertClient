@@ -13,9 +13,8 @@ round: it uses only the already- returned coefficient vector and full
 covariance matrix.
 
 Useful for: - Regularised post-selection inference. - Model compression
-while preserving the statistical geometry. - A baseline for the planned
-Month 3 proper proximal-gradient LASSO that fits from scratch with
-per-iteration MPC gradients.
+while preserving the statistical geometry. - A fast surrogate baseline
+for comparison with the product proximal / iterative LASSO routes.
 
 ## Usage
 
@@ -33,8 +32,7 @@ ds.vertLASSO1Step(
 
 - fit:
 
-  A `ds.glm` object with `fit$covariance` populated (commits \>=
-  8bb7902).
+  A `ds.glm` object with `fit$covariance` populated.
 
 - lambda:
 

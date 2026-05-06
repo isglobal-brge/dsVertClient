@@ -4,16 +4,20 @@
 DataSHIELD data.
 Stage 1: fit the propensity model via ds.vertGLM with a binomial
 family on the supplied propensity_formula.
-Stage 2: fit the outcome model via ds.vertGLM with user-supplied
-weights_column (already holding IPW weights on the server
-that owns the treatment / outcome variables)."><meta property="og:description" content="Convenience wrapper implementing the two-stage IPW
+Stage 2: fit the outcome model via ds.vertGLM with a
+server-side weights_column. The current product route assumes
+this column already contains IPW weights on the server that owns the
+treatment / outcome variables; the weights are consumed by the
+protected weighted-GLM path and are not returned to the client."><meta property="og:description" content="Convenience wrapper implementing the two-stage IPW
 (inverse-probability weighting) workflow on vertically partitioned
 DataSHIELD data.
 Stage 1: fit the propensity model via ds.vertGLM with a binomial
 family on the supplied propensity_formula.
-Stage 2: fit the outcome model via ds.vertGLM with user-supplied
-weights_column (already holding IPW weights on the server
-that owns the treatment / outcome variables)."></head><body>
+Stage 2: fit the outcome model via ds.vertGLM with a
+server-side weights_column. The current product route assumes
+this column already contains IPW weights on the server that owns the
+treatment / outcome variables; the weights are consumed by the
+protected weighted-GLM path and are not returned to the client."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -34,6 +38,7 @@ that owns the treatment / outcome variables)."></head><body>
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Validation</h6></li>
+    <li><a class="dropdown-item" href="../articles/validation_summary.html">Validation evidence summary</a></li>
     <li><a class="dropdown-item" href="../articles/validation_psi_k2.html">PSI alignment validation (K=2)</a></li>
     <li><a class="dropdown-item" href="../articles/validation_psi_kge3.html">PSI alignment validation (K&gt;=3)</a></li>
     <li><a class="dropdown-item" href="../articles/validation_descriptive_k2.html">Descriptive statistics validation (K=2)</a></li>
@@ -92,9 +97,11 @@ that owns the treatment / outcome variables)."></head><body>
 DataSHIELD data.</p>
 <p>Stage 1: fit the propensity model via <code>ds.vertGLM</code> with a binomial
 family on the supplied <code>propensity_formula</code>.
-Stage 2: fit the outcome model via <code>ds.vertGLM</code> with user-supplied
-<code>weights_column</code> (already holding IPW weights on the server
-that owns the treatment / outcome variables).</p>
+Stage 2: fit the outcome model via <code>ds.vertGLM</code> with a
+server-side <code>weights_column</code>. The current product route assumes
+this column already contains IPW weights on the server that owns the
+treatment / outcome variables; the weights are consumed by the
+protected weighted-GLM path and are not returned to the client.</p>
     </div>
 
     <div class="section level2">
@@ -130,9 +137,8 @@ that owns the treatment / outcome variables).</p>
 <dt id="arg-weights-column">weights_column<a class="anchor" aria-label="anchor" href="#arg-weights-column"></a></dt>
 <dd><p>Name of the column on the outcome server that
 holds 1/P(T=1|X) for treated units and 1/(1-P(T=1|X)) for controls,
-or the stabilised analogue. Pre-computed server-side (the dsVert
-pipeline for ON-SHARE propensity score computation is a planned
-follow-on; see V2_PROGRESS.md).</p></dd>
+or the stabilised analogue. The column must be created server-side
+before this wrapper is called; it is never returned to the client.</p></dd>
 
 
 <dt id="arg-outcome-family">outcome_family<a class="anchor" aria-label="anchor" href="#arg-outcome-family"></a></dt>

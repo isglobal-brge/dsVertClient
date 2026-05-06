@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertDesc.R
 \name{.dsvert_interp_quantile}
 \alias{.dsvert_interp_quantile}
-\title{Interpolate a quantile from histogram bucket counts.}
+\title{Interpolate a quantile from histogram bucket counts}
 \usage{
 .dsvert_interp_quantile(edges, counts, probs, below = 0L, above = 0L)
 }
@@ -21,8 +21,9 @@
 Numeric vector of the same length as probs.
 }
 \description{
-Pure helper function extracted for unit testing. Given bucket edges, bucket
-counts (optionally with under/overflow), and target probabilities, returns
-the linearly-interpolated quantile within the target bucket.
+Pure helper function extracted for unit testing. Given bucket
+edges, bucket counts (optionally with under/overflow), and target
+probabilities, returns the linearly-interpolated quantile within the target
+bucket.
 }
 \keyword{internal}

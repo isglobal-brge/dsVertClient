@@ -1,7 +1,7 @@
 #' @title Proper LASSO via client-side proximal gradient on normal equations
-#' @description Cierra el gap OLS-soft-threshold -> proper-LASSO usando solo
-#'   cantidades ya expuestas por ds.vertGLM (beta, covariance, n), sin anadir
-#'   ninguna ronda MPC adicional.
+#' @description Solve the Gaussian LASSO objective using only quantities
+#'   already exposed by \code{ds.vertGLM} (beta, covariance / Hessian, n),
+#'   without adding any MPC round beyond the unpenalised fit.
 #'
 #'   Normal equations: para Gaussian \eqn{y = X\beta + \varepsilon} el
 #'   minimizador LASSO es
@@ -34,7 +34,7 @@
 #'   \code{$comparison$coefficients_soft} reports the naive post-hoc
 #'   soft-thresholded OLS for comparison.
 #'
-#' @section P3 disclosure budget:
+#' @section Disclosure budget:
 #'   Zero new MPC rounds beyond the initial \code{ds.vertGLM} call. All
 #'   iteration is client-side on quantities already in the \code{fit}
 #'   object. The optimisation volume argument is therefore moot -- no
