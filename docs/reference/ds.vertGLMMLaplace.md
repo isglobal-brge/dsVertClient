@@ -1,0 +1,130 @@
+# Federated binomial GLMM Laplace estimator
+
+Fit a binomial random-intercept GLMM on vertically partitioned
+DataSHIELD data using a Laplace marginal-likelihood target.
+
+This is the accurate, slower counterpart to
+[`ds.vertGLMM()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGLMM.md),
+which intentionally remains the aggregate PQL route. The likelihood
+target is the random-intercept binomial Laplace approximation used by
+`lme4::glmer(..., family = binomial(), nAGQ = 1)`. The default estimator
+uses one protected Newton mode step per objective evaluation; setting
+`mode_max_iter > 1` trades runtime for more exact cluster mode solving.
+
+\$\$ \ell(\beta,\sigma_b^2) = \sum_i \left\[ y_i^\top \eta_i - \sum_j
+\log(1 + e^{\eta\_{ij}}) - b_i^2/(2\sigma_b^2) -
+\frac12\log(\sigma_b^2) - \frac12\log\\ \sum_j p\_{ij}(1-p\_{ij}) +
+1/\sigma_b^2 \\ \right\], \$\$
+
+where \\\eta\_{ij}=x\_{ij}^\top\beta+b_i\\ and each \\b_i\\ is the
+protected Newton mode for cluster \\i\\.
+
+Privacy: per-patient linear predictors, probabilities, residuals,
+working responses, scores, and BLUPs never leave the share-domain
+servers. The client only orchestrates protected sigmoid, softplus,
+Beaver products, scalar likelihood pieces, and guarded per-cluster
+score/curvature sums. Per-cluster working modes are internal optimiser
+state and are deliberately not returned.
+
+## Usage
+
+``` r
+ds.vertGLMMLaplace(
+  formula,
+  data = NULL,
+  cluster_col,
+  start = NULL,
+  max_outer = NULL,
+  mode_max_iter = 1L,
+  tol = 1e-04,
+  mode_tol = 1e-05,
+  lambda = 0,
+  ring = NULL,
+  sigma_sd_starts = NULL,
+  sigma_sd_bounds = c(1e-04, 20),
+  prime_iter = 50L,
+  compute_se = FALSE,
+  verbose = TRUE,
+  datasources = NULL
+)
+```
+
+## Arguments
+
+- formula:
+
+  Fixed-effects formula (0/1 binomial outcome on LHS).
+
+- data:
+
+  Aligned data-frame name.
+
+- cluster_col:
+
+  Cluster id column on the outcome server.
+
+- start:
+
+  Optional named vector of fixed-effect starting values.
+
+- max_outer:
+
+  Total protected objective-evaluation budget across random-effect
+  standard-deviation starts. `NULL` chooses an adaptive budget from the
+  number of fixed effects and starts.
+
+- mode_max_iter:
+
+  Newton updates for each cluster mode. The default `1` is the adaptive
+  one-step Laplace route: it uses guarded score/curvature sums once per
+  objective evaluation and is the practical high-accuracy default.
+  Larger values move toward exact Laplace cluster modes at substantially
+  higher protected-computation cost.
+
+- tol:
+
+  Relative optimiser tolerance.
+
+- mode_tol:
+
+  Cluster-mode Newton step tolerance.
+
+- lambda:
+
+  L2 penalty for the initial fixed-effect GLM prime.
+
+- ring:
+
+  Ring id. The Laplace route requires Ring127.
+
+- sigma_sd_starts:
+
+  Candidate random-intercept standard-deviation starts. `NULL` estimates
+  one protected moment start from guarded cluster score/curvature sums.
+  Passing a numeric vector enables explicit multi-start optimisation
+  when extra runtime is acceptable.
+
+- sigma_sd_bounds:
+
+  Lower/upper bounds for the random-intercept standard deviation.
+
+- prime_iter:
+
+  PIRLS iterations for the initial ds.vertGLM prime.
+
+- compute_se:
+
+  Reserved for future protected Hessian support.
+
+- verbose:
+
+  Print progress.
+
+- datasources:
+
+  DataSHIELD connections.
+
+## Value
+
+`ds.vertGLMMLaplace` object with fixed effects, scalar variance
+component, protected objective diagnostics, and disclosure metadata.

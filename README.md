@@ -134,7 +134,7 @@ Requires the server-side package [dsVert](https://github.com/isglobal-brge/dsVer
 ## Documentation
 
 - [Reference index](https://isglobal-brge.github.io/dsVertClient/) (pkgdown site)
-- [Method validation evidence](https://isglobal-brge.github.io/dsVertClient/articles/vert_validation_evidence.html)
+- [Method validation evidence](https://isglobal-brge.github.io/dsVertClient/articles/)
 - [Product surface audit](inst/docs/product_surface.md)
 - [NEWS](NEWS.md)
 

@@ -45,11 +45,11 @@ ds.vertGLMM(
   formula,
   data = NULL,
   cluster_col,
-  max_outer = 10L,
-  inner_iter = 10L,
-  tol = 0.001,
+  max_outer = 30L,
+  inner_iter = 50L,
+  tol = 1e-04,
   lambda = 0,
-  compute_se = TRUE,
+  compute_se = FALSE,
   ring = NULL,
   verbose = TRUE,
   datasources = NULL
@@ -88,8 +88,11 @@ ds.vertGLMM(
 
 - compute_se:
 
-  Logical. Compute GLM finite-difference standard errors for the inner
-  fits. Set FALSE for coefficient/variance validation runs.
+  Logical. Reserved for future GLMM-PQL standard-error support. The
+  aggregate PQL route currently returns `NA` standard errors, so the
+  default is `FALSE`; computing finite-difference SEs for the initial
+  GLM would add protected optimisation rounds without changing the final
+  GLMM-PQL estimates.
 
 - ring:
 

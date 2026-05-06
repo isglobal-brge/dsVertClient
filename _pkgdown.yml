@@ -16,22 +16,37 @@ articles:
 - title: Validation evidence
   navbar: Validation
   contents:
-  - vert_validation_evidence
-  - validation_psi
-  - validation_descriptive
-  - validation_contingency
-  - validation_correlation
-  - validation_pca
-  - validation_glm
-  - validation_inference
-  - validation_lasso
-  - validation_negative_binomial
-  - validation_cox
-  - validation_lmm
-  - validation_gee
-  - validation_glmm
-  - validation_ipw
-  - validation_mi
-  - validation_multinomial
-  - validation_ordinal
-
+  - validation_psi_k2
+  - validation_psi_kge3
+  - validation_descriptive_k2
+  - validation_descriptive_kge3
+  - validation_contingency_k2
+  - validation_contingency_kge3
+  - validation_correlation_k2
+  - validation_correlation_kge3
+  - validation_pca_k2
+  - validation_pca_kge3
+  - validation_glm_k2
+  - validation_glm_kge3
+  - validation_inference_k2
+  - validation_inference_kge3
+  - validation_lasso_k2
+  - validation_lasso_kge3
+  - validation_negative_binomial_k2
+  - validation_negative_binomial_kge3
+  - validation_cox_k2
+  - validation_cox_kge3
+  - validation_lmm_k2
+  - validation_lmm_kge3
+  - validation_gee_k2
+  - validation_gee_kge3
+  - validation_glmm_k2
+  - validation_glmm_kge3
+  - validation_ipw_k2
+  - validation_ipw_kge3
+  - validation_mi_k2
+  - validation_mi_kge3
+  - validation_multinomial_k2
+  - validation_multinomial_kge3
+  - validation_ordinal_k2
+  - validation_ordinal_kge3
