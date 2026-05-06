@@ -7,11 +7,10 @@ is the simplest possible approximation to LASSO: it zeros coefficients
 whose magnitude falls below the threshold but does not iteratively
 re-optimise under the sparsity constraint.
 
-Useful for quick variable-selection sketches and for checking whether a
-subsequent proper proximal-gradient implementation would pay off. Proper
-LASSO / elastic net via client-side proximal gradient with per-iteration
-MPC gradient calls is a planned Month 3 deliverable (see
-V2_PROGRESS.md).
+Useful for quick variable-selection sketches and for comparing with the
+current product LASSO solvers. For an estimator that optimises the L1
+objective rather than only thresholding an already-fitted GLM, use
+`ds.vertLASSOProximal` or `ds.vertLASSOIter`.
 
 ## Usage
 

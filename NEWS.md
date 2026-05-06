@@ -60,8 +60,10 @@ state.
 * **`ds.vertLMM.k3`** — REML 1-D profile LMM for K=3.
 * **`ds.vertGLMM`** — aggregate GLMM-PQL binomial mixed model (single
   random intercept) with guarded share-domain cluster sufficient
-  statistics; the older EM/Laplace-style route is diagnostics-only.
-* **`ds.vertIPW`** — propensity-weighted two-stage GLM wrapper.
+  statistics; **`ds.vertGLMMLaplace`** / **`ds.vert.glmer`** provide the
+  supported Laplace route against the `glmer(nAGQ = 1)` target.
+* **`ds.vertIPW`** — propensity fit plus protected weighted outcome GLM
+  using a server-side IPW column that is consumed but not returned.
 * **`ds.vertLASSOProximal`** — proper LASSO via client-side
   proximal-gradient (FISTA-accelerated by default) on the normal
   equations; 4–10× tighter coefficient agreement vs post-hoc

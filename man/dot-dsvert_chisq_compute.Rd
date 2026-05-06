@@ -2,9 +2,7 @@
 % Please edit documentation in R/ds.vertChisq.R
 \name{.dsvert_chisq_compute}
 \alias{.dsvert_chisq_compute}
-\title{Pure helper: compute chi-square statistics from observed counts + margins.
-Exposed as an internal function so unit tests can exercise the math path
-without a DataSHIELD round trip.}
+\title{Compute chi-square statistics from observed counts}
 \usage{
 .dsvert_chisq_compute(observed, row_margins, col_margins, n, correct = TRUE)
 }
@@ -24,8 +22,7 @@ list with statistic, df, p_value, observed, expected,
 residuals, n, correct.
 }
 \description{
-Pure helper: compute chi-square statistics from observed counts + margins.
-Exposed as an internal function so unit tests can exercise the math path
-without a DataSHIELD round trip.
+Pure helper exposed internally so unit tests can exercise the
+math path without a DataSHIELD round trip.
 }
 \keyword{internal}

@@ -7,11 +7,10 @@
 #'   below the threshold but does not iteratively re-optimise under the
 #'   sparsity constraint.
 #'
-#'   Useful for quick variable-selection sketches and for checking
-#'   whether a subsequent proper proximal-gradient implementation would
-#'   pay off. Proper LASSO / elastic net via client-side proximal
-#'   gradient with per-iteration MPC gradient calls is a planned
-#'   Month 3 deliverable (see V2_PROGRESS.md).
+#'   Useful for quick variable-selection sketches and for comparing with
+#'   the current product LASSO solvers. For an estimator that optimises the
+#'   L1 objective rather than only thresholding an already-fitted GLM, use
+#'   \code{\link{ds.vertLASSOProximal}} or \code{\link{ds.vertLASSOIter}}.
 #'
 #' @param fit          A \code{ds.glm} object from \code{ds.vertGLM}.
 #' @param lambda_1     L1 penalty magnitude.
@@ -54,8 +53,8 @@ ds.vertLASSO <- function(fit, lambda_1,
     notes = paste0(
       "Naive post-hoc soft-thresholding: zero coefficients below ",
       "|beta| < alpha*lambda_1 without iterative re-optimisation. ",
-      "Use proper proximal-gradient LASSO (Month 3) for true convex ",
-      "sparsity."))
+      "Use ds.vertLASSOProximal or ds.vertLASSOIter for the current ",
+      "product L1 objective."))
   class(out) <- c("ds.vertLASSO", "list")
   out
 }
@@ -90,11 +89,11 @@ print.ds.vertLASSO <- function(x, ...) {
 #'   Useful for:
 #'     - Regularised post-selection inference.
 #'     - Model compression while preserving the statistical geometry.
-#'     - A baseline for the planned Month 3 proper proximal-gradient
-#'       LASSO that fits from scratch with per-iteration MPC gradients.
+#'     - A fast surrogate baseline for comparison with the product
+#'       proximal / iterative LASSO routes.
 #'
 #' @param fit      A \code{ds.glm} object with \code{fit$covariance}
-#'                 populated (commits >= 8bb7902).
+#'                 populated.
 #' @param lambda   Numeric vector of L1 penalty values (a regularisation
 #'                 path).
 #' @param keep_intercept Never penalise the intercept.

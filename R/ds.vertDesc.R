@@ -263,11 +263,11 @@ ds.vertDesc <- function(data_name,
   out_df
 }
 
-#' Interpolate a quantile from histogram bucket counts.
-#'
-#' Pure helper function extracted for unit testing. Given bucket edges, bucket
-#' counts (optionally with under/overflow), and target probabilities, returns
-#' the linearly-interpolated quantile within the target bucket.
+#' @title Interpolate a quantile from histogram bucket counts
+#' @description Pure helper function extracted for unit testing. Given bucket
+#'   edges, bucket counts (optionally with under/overflow), and target
+#'   probabilities, returns the linearly-interpolated quantile within the target
+#'   bucket.
 #'
 #' @param edges Numeric vector of length K+1 defining the bucket edges.
 #' @param counts Integer vector of length K with per-bucket counts.

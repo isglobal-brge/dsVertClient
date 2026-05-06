@@ -88,7 +88,8 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
   if (clust_srv != y_srv) {
     stop("cluster_col must live on the outcome server (y is on '",
          y_srv, "', cluster_col is on '", clust_srv, "'). ",
-         "Cross-server cluster broadcast is Month 4.",
+         "This LMM frontdoor requires the cluster column on the outcome ",
+         "server.",
          call. = FALSE)
   }
 
@@ -226,7 +227,8 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
     if (length(missing_slopes) > 0L) {
       stop("random_slopes not on outcome server: ",
            paste(missing_slopes, collapse = ","),
-           ". Cross-server slope cols need Beaver (Month 4).",
+           ". Cross-server random-slope columns are not supported by ",
+           "this LMM frontdoor.",
            call. = FALSE)
     }
     Z_info <- tryCatch(

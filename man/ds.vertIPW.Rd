@@ -24,9 +24,8 @@ ds.vertIPW(
 
 \item{weights_column}{Name of the column on the outcome server that
 holds 1/P(T=1|X) for treated units and 1/(1-P(T=1|X)) for controls,
-or the stabilised analogue. Pre-computed server-side (the dsVert
-pipeline for ON-SHARE propensity score computation is a planned
-follow-on; see V2_PROGRESS.md).}
+or the stabilised analogue. The column must be created server-side
+before this wrapper is called; it is never returned to the client.}
 
 \item{outcome_family}{Family for the outcome model. Default "gaussian".}
 
@@ -49,7 +48,9 @@ DataSHIELD data.
 
 Stage 1: fit the propensity model via \code{ds.vertGLM} with a binomial
 family on the supplied \code{propensity_formula}.
-Stage 2: fit the outcome model via \code{ds.vertGLM} with user-supplied
-\code{weights_column} (already holding IPW weights on the server
-that owns the treatment / outcome variables).
+Stage 2: fit the outcome model via \code{ds.vertGLM} with a
+server-side \code{weights_column}. The current product route assumes
+this column already contains IPW weights on the server that owns the
+treatment / outcome variables; the weights are consumed by the
+protected weighted-GLM path and are not returned to the client.
 }

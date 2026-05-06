@@ -191,12 +191,12 @@
 <tr>
 <td><strong>Mixed models</strong></td>
 <td>
-<code><a href="reference/ds.vertLMM.html">ds.vertLMM()</a></code> (REML closed-form, K=2; random intercept + slopes), <code><a href="reference/ds.vertLMM.k3.html">ds.vertLMM.k3()</a></code> (REML 1-D profile, K&gt;=3), <code><a href="reference/ds.vertGEE.html">ds.vertGEE()</a></code> (sandwich SE, <code>binomial_sigmoid_intervals</code>), <code><a href="reference/ds.vertGLMM.html">ds.vertGLMM()</a></code> (binomial GLMM-PQL)</td>
+<code><a href="reference/ds.vertLMM.html">ds.vertLMM()</a></code> (REML closed-form, K=2; random intercept + slopes), <code><a href="reference/ds.vertLMM.k3.html">ds.vertLMM.k3()</a></code> (REML 1-D profile, K&gt;=3), <code><a href="reference/ds.vertGEE.html">ds.vertGEE()</a></code> (sandwich SE, <code>binomial_sigmoid_intervals</code>), <code><a href="reference/ds.vertGLMM.html">ds.vertGLMM()</a></code> (binomial GLMM-PQL), <code><a href="reference/ds.vertGLMMLaplace.html">ds.vertGLMMLaplace()</a></code> / <code><a href="reference/ds.vert.aliases.html">ds.vert.glmer()</a></code> (binomial GLMM Laplace)</td>
 </tr>
 <tr>
 <td><strong>Causal / robustness</strong></td>
 <td>
-<code><a href="reference/ds.vertIPW.html">ds.vertIPW()</a></code> (two-stage propensity + weighted GLM), <code><a href="reference/ds.vertMI.html">ds.vertMI()</a></code> (multiple imputation + Rubin pooling)</td>
+<code><a href="reference/ds.vertIPW.html">ds.vertIPW()</a></code> (propensity fit + protected weighted GLM using a server-side IPW column), <code><a href="reference/ds.vertMI.html">ds.vertMI()</a></code> (multiple imputation + Rubin pooling)</td>
 </tr>
 <tr>
 <td><strong>Penalised regression</strong></td>
@@ -293,10 +293,10 @@ Deviance: 22.09</code></pre>
 </tr>
 <tr>
 <td>GLMM</td>
-<td><code><a href="reference/ds.vertGLMM.html">ds.vertGLMM()</a></code></td>
-<td>same PQL aggregate route</td>
 <td>
-<code>method = "em"</code> removed</td>
+<code><a href="reference/ds.vertGLMM.html">ds.vertGLMM()</a></code> PQL and <code><a href="reference/ds.vertGLMMLaplace.html">ds.vertGLMMLaplace()</a></code> / <code><a href="reference/ds.vert.aliases.html">ds.vert.glmer()</a></code> Laplace</td>
+<td>same PQL and Laplace routes</td>
+<td>legacy EM and patient-level BLUP/probability routes removed</td>
 </tr>
 <tr>
 <td>IPW / MI / LASSO / Cor / PCA / Chisq / Desc</td>

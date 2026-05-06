@@ -6,22 +6,20 @@ re-running the MPC iteration loop. This is the simplest possible
 approximation to LASSO: it zeros coefficients whose magnitude falls
 below the threshold but does not iteratively re-optimise under the
 sparsity constraint.
-Useful for quick variable-selection sketches and for checking
-whether a subsequent proper proximal-gradient implementation would
-pay off. Proper LASSO / elastic net via client-side proximal
-gradient with per-iteration MPC gradient calls is a planned
-Month 3 deliverable (see V2_PROGRESS.md)."><meta property="og:description" content="Apply the LASSO soft-threshold operator
+Useful for quick variable-selection sketches and for comparing with
+the current product LASSO solvers. For an estimator that optimises the
+L1 objective rather than only thresholding an already-fitted GLM, use
+ds.vertLASSOProximal or ds.vertLASSOIter."><meta property="og:description" content="Apply the LASSO soft-threshold operator
 \(\mathrm{sign}(\beta_j) \cdot \max(|\beta_j| - \alpha \lambda_1, 0)\)
 to the coefficient vector of a fitted ds.glm object, without
 re-running the MPC iteration loop. This is the simplest possible
 approximation to LASSO: it zeros coefficients whose magnitude falls
 below the threshold but does not iteratively re-optimise under the
 sparsity constraint.
-Useful for quick variable-selection sketches and for checking
-whether a subsequent proper proximal-gradient implementation would
-pay off. Proper LASSO / elastic net via client-side proximal
-gradient with per-iteration MPC gradient calls is a planned
-Month 3 deliverable (see V2_PROGRESS.md)."></head><body>
+Useful for quick variable-selection sketches and for comparing with
+the current product LASSO solvers. For an estimator that optimises the
+L1 objective rather than only thresholding an already-fitted GLM, use
+ds.vertLASSOProximal or ds.vertLASSOIter."></head><body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
 
 
@@ -42,6 +40,7 @@ Month 3 deliverable (see V2_PROGRESS.md)."></head><body>
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Validation</h6></li>
+    <li><a class="dropdown-item" href="../articles/validation_summary.html">Validation evidence summary</a></li>
     <li><a class="dropdown-item" href="../articles/validation_psi_k2.html">PSI alignment validation (K=2)</a></li>
     <li><a class="dropdown-item" href="../articles/validation_psi_kge3.html">PSI alignment validation (K&gt;=3)</a></li>
     <li><a class="dropdown-item" href="../articles/validation_descriptive_k2.html">Descriptive statistics validation (K=2)</a></li>
@@ -102,11 +101,10 @@ re-running the MPC iteration loop. This is the simplest possible
 approximation to LASSO: it zeros coefficients whose magnitude falls
 below the threshold but does not iteratively re-optimise under the
 sparsity constraint.</p>
-<p>Useful for quick variable-selection sketches and for checking
-whether a subsequent proper proximal-gradient implementation would
-pay off. Proper LASSO / elastic net via client-side proximal
-gradient with per-iteration MPC gradient calls is a planned
-Month 3 deliverable (see V2_PROGRESS.md).</p>
+<p>Useful for quick variable-selection sketches and for comparing with
+the current product LASSO solvers. For an estimator that optimises the
+L1 objective rather than only thresholding an already-fitted GLM, use
+<code><a href="ds.vertLASSOProximal.html">ds.vertLASSOProximal</a></code> or <code><a href="ds.vertLASSOIter.html">ds.vertLASSOIter</a></code>.</p>
     </div>
 
     <div class="section level2">
