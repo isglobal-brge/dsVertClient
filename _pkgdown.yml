@@ -16,6 +16,7 @@ articles:
 - title: Validation evidence
   navbar: Validation
   contents:
+  - validation_summary
   - validation_psi_k2
   - validation_psi_kge3
   - validation_descriptive_k2

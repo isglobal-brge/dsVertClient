@@ -36,7 +36,8 @@ articles:
   validation_pca_kge3: validation_pca_kge3.html
   validation_psi_k2: validation_psi_k2.html
   validation_psi_kge3: validation_psi_kge3.html
-last_built: 2026-05-06T07:54Z
+  validation_summary: validation_summary.html
+last_built: 2026-05-06T11:30Z
 urls:
   reference: https://isglobal-brge.github.io/dsVertClient/reference
   article: https://isglobal-brge.github.io/dsVertClient/articles
