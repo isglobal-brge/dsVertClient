@@ -31,7 +31,7 @@ ds.vertLMM.k3(
   cluster_col,
   rho_lo = 0.001,
   rho_hi = 0.999,
-  tol = 0.001,
+  tol = 1e-04,
   max_outer = 30L,
   ring = c("ring127", "ring63"),
   verbose = TRUE,

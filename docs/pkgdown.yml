@@ -2,25 +2,41 @@ pandoc: 3.8.3
 pkgdown: 2.2.0
 pkgdown_sha: ~
 articles:
-  validation_contingency: validation_contingency.html
-  validation_correlation: validation_correlation.html
-  validation_cox: validation_cox.html
-  validation_descriptive: validation_descriptive.html
-  validation_gee: validation_gee.html
-  validation_glm: validation_glm.html
-  validation_glmm: validation_glmm.html
-  validation_inference: validation_inference.html
-  validation_ipw: validation_ipw.html
-  validation_lasso: validation_lasso.html
-  validation_lmm: validation_lmm.html
-  validation_mi: validation_mi.html
-  validation_multinomial: validation_multinomial.html
-  validation_negative_binomial: validation_negative_binomial.html
-  validation_ordinal: validation_ordinal.html
-  validation_pca: validation_pca.html
-  validation_psi: validation_psi.html
-  vert_validation_evidence: vert_validation_evidence.html
-last_built: 2026-05-04T21:39Z
+  validation_contingency_k2: validation_contingency_k2.html
+  validation_contingency_kge3: validation_contingency_kge3.html
+  validation_correlation_k2: validation_correlation_k2.html
+  validation_correlation_kge3: validation_correlation_kge3.html
+  validation_cox_k2: validation_cox_k2.html
+  validation_cox_kge3: validation_cox_kge3.html
+  validation_descriptive_k2: validation_descriptive_k2.html
+  validation_descriptive_kge3: validation_descriptive_kge3.html
+  validation_gee_k2: validation_gee_k2.html
+  validation_gee_kge3: validation_gee_kge3.html
+  validation_glm_k2: validation_glm_k2.html
+  validation_glm_kge3: validation_glm_kge3.html
+  validation_glmm_k2: validation_glmm_k2.html
+  validation_glmm_kge3: validation_glmm_kge3.html
+  validation_inference_k2: validation_inference_k2.html
+  validation_inference_kge3: validation_inference_kge3.html
+  validation_ipw_k2: validation_ipw_k2.html
+  validation_ipw_kge3: validation_ipw_kge3.html
+  validation_lasso_k2: validation_lasso_k2.html
+  validation_lasso_kge3: validation_lasso_kge3.html
+  validation_lmm_k2: validation_lmm_k2.html
+  validation_lmm_kge3: validation_lmm_kge3.html
+  validation_mi_k2: validation_mi_k2.html
+  validation_mi_kge3: validation_mi_kge3.html
+  validation_multinomial_k2: validation_multinomial_k2.html
+  validation_multinomial_kge3: validation_multinomial_kge3.html
+  validation_negative_binomial_k2: validation_negative_binomial_k2.html
+  validation_negative_binomial_kge3: validation_negative_binomial_kge3.html
+  validation_ordinal_k2: validation_ordinal_k2.html
+  validation_ordinal_kge3: validation_ordinal_kge3.html
+  validation_pca_k2: validation_pca_k2.html
+  validation_pca_kge3: validation_pca_kge3.html
+  validation_psi_k2: validation_psi_k2.html
+  validation_psi_kge3: validation_psi_kge3.html
+last_built: 2026-05-06T07:54Z
 urls:
   reference: https://isglobal-brge.github.io/dsVertClient/reference
   article: https://isglobal-brge.github.io/dsVertClient/articles

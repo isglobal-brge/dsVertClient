@@ -2,10 +2,10 @@
 
 User-facing multinomial wrapper. Dispatches to
 [`ds.vertMultinomJointNewton`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertMultinomJointNewton.md),
-the paper-safe joint softmax Newton route for K \>= 3. The historical
-one-vs-rest approximation is no longer exposed as a user-facing
-estimator; it remains only as an internal warm start for the joint
-Newton route.
+the paper-safe joint softmax Newton route for K=2 and K\>=3. The
+historical one-vs-rest approximation is no longer exposed as a
+user-facing estimator; it remains only as an internal warm start for the
+joint Newton route.
 
 ## Usage
 
@@ -17,7 +17,7 @@ ds.vertMultinom(
   reference = NULL,
   indicator_template = "%s_ind",
   max_iter = NULL,
-  max_outer = 8L,
+  max_outer = 20L,
   tol = NULL,
   warm_max_iter = NULL,
   warm_tol = NULL,

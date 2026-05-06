@@ -22,8 +22,8 @@ ds.vertMultinomJointNewton(
   data = NULL,
   levels,
   indicator_template = "%s_ind",
-  max_outer = 8L,
-  tol = 1e-04,
+  max_outer = 20L,
+  tol = 1e-05,
   warm_max_iter = NULL,
   warm_tol = NULL,
   binomial_sigmoid_intervals = NULL,
@@ -53,11 +53,11 @@ ds.vertMultinomJointNewton(
 
 - max_outer:
 
-  Outer Newton iterations (default 8).
+  Outer Newton iterations (default 20).
 
 - tol:
 
-  Convergence tolerance on max \|Deltabeta\| (default 1e-4).
+  Convergence tolerance on max \|Deltabeta\| (default 1e-5).
 
 - warm_max_iter:
 
