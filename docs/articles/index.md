@@ -2,6 +2,8 @@
 
 ### Validation evidence
 
+- [Validation evidence
+  summary](https://isglobal-brge.github.io/dsVertClient/articles/validation_summary.md):
 - [PSI alignment validation
   (K=2)](https://isglobal-brge.github.io/dsVertClient/articles/validation_psi_k2.md):
 - [PSI alignment validation
