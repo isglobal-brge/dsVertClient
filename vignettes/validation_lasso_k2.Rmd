@@ -1,0 +1,124 @@
+---
+title: "LASSO validation (K=2)"
+author: "David Sarrat Gonzalez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{LASSO validation (K=2)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = TRUE, collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+validation_load_packages()
+partition_summary <- function(tables) {
+  data.frame(
+    server = names(tables),
+    n = vapply(tables, nrow, integer(1)),
+    columns = vapply(tables, function(x) paste(names(x), collapse = ", "), character(1)),
+    stringsAsFactors = FALSE)
+}
+```
+
+## Dataset generator
+
+The fixture is generated inside this vignette run. The helper body used
+to create the pooled local data is printed here before the analysis.
+
+```{r dataset-generator}
+cat(paste(deparse(build_pima), collapse = "\n"))
+```
+
+## Scope
+
+Functions: `ds.vert.lasso_proximal()`.
+
+This vignette validates the `K=2` modality. It creates the local
+pooled fixture, partitions it vertically, starts an in-memory DSLite
+server, aligns records with PSI, runs the distributed dsVert route, runs
+the centralized R reference on the same pooled fixture, and computes the
+numerical delta.
+
+No external RDS, cache, or pre-loaded server table is used. Rendering the
+vignette executes the workflow from dataset generation to assertion.
+
+## Method
+
+The proximal LASSO path consumes the distributed GLM fit. The validation uses lambda = 0, where the penalized solution must equal the prime GLM estimate.
+
+## Mathematical target
+
+At lambda = 0, the proximal quadratic argmin is beta_hat, so the checked target is max |beta_lasso0 - beta_glm|.
+
+## Disclosure review
+
+The proximal step uses only model-level beta/Hessian information and returns coefficients; it does not request row-level data.
+
+The DSLite validation uses `datashield.privacyLevel = 5`. Trusted-peer
+pinning is disabled only because DSLite is an in-memory test backend, not
+an Opal/Rock deployment. That does not weaken the method-level check of
+what the product route returns to the analyst.
+
+## Executed validation
+
+```{r execution}
+K <- 2L
+
+pooled <- build_pima(60L)
+tables <- if (K == 2L) {
+  list(
+    s1 = pooled[, c("patient_id", "age", "bmi", "ped"), drop = FALSE],
+    s2 = pooled[, c("patient_id", "npreg", "glu", "bp", "skin",
+                    "diabetes"), drop = FALSE])
+} else {
+  list(
+    s1 = pooled[, c("patient_id", "age", "bmi"), drop = FALSE],
+    s2 = pooled[, c("patient_id", "ped", "skin"), drop = FALSE],
+    s3 = pooled[, c("patient_id", "npreg", "glu", "bp",
+                    "diabetes"), drop = FALSE])
+}
+fm <- diabetes ~ age + bmi + ped + glu + bp + skin + npreg
+
+knitr::kable(utils::head(pooled))
+knitr::kable(partition_summary(tables))
+
+result <- elapsed({
+  conns <- connect_dslite(tables)
+  tryCatch({
+    psi_align(conns)
+    fit <- dsVertClient::ds.vert.glm(
+      fm, data = "DA", family = "gaussian", max_iter = 30L,
+      verbose = validation_demo_verbose(), datasources = conns)
+    prox0 <- dsVertClient::ds.vert.lasso_proximal(
+      fit, lambda = 0, max_iter = 1000L, tol = 1e-8)
+    list(fit = fit, prox0 = prox0)
+  }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
+})
+
+observed <- max_named_delta(result$value$prox0$coefficients,
+                            result$value$fit$coefficients)
+
+rows <- row_result(
+  "lasso", "LASSO", K, "ds.vert.lasso_proximal(lambda=0)",
+  "MASS::Pima.tr fixture", "OLS limit of ds.vert.glm",
+  "lambda0_coef_abs_delta", observed, 1e-8, "strict-precise",
+  "Consumes only model-level GLM aggregates; no extra patient-level values are returned.",
+  result$runtime_s)
+
+display_validation(rows)
+assert_validation(rows)
+```
+
+## Verdict
+
+Rendering fails if the distributed result leaves the accepted numerical
+envelope or if the method row is marked disclosive.

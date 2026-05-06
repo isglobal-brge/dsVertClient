@@ -1,0 +1,123 @@
+---
+title: "IPW validation (K>=3)"
+author: "David Sarrat Gonzalez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{IPW validation (K>=3)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = TRUE, collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+validation_load_packages()
+partition_summary <- function(tables) {
+  data.frame(
+    server = names(tables),
+    n = vapply(tables, nrow, integer(1)),
+    columns = vapply(tables, function(x) paste(names(x), collapse = ", "), character(1)),
+    stringsAsFactors = FALSE)
+}
+```
+
+## Dataset generator
+
+The fixture is generated inside this vignette run. The helper body used
+to create the pooled local data is printed here before the analysis.
+
+```{r dataset-generator}
+cat(paste(deparse(build_ipw), collapse = "\n"))
+```
+
+## Scope
+
+Functions: `ds.vert.ipw()`.
+
+This vignette validates the `K>=3` modality. It creates the local
+pooled fixture, partitions it vertically, starts an in-memory DSLite
+server, aligns records with PSI, runs the distributed dsVert route, runs
+the centralized R reference on the same pooled fixture, and computes the
+numerical delta.
+
+No external RDS, cache, or pre-loaded server table is used. Rendering the
+vignette executes the workflow from dataset generation to assertion.
+
+## Method
+
+IPW runs a protected propensity GLM and then a protected weighted outcome GLM using a server-side weight column.
+
+## Mathematical target
+
+The checked outcome target solves X'W(y-X beta)=0 with the same IPW weights used by the centralized lm().
+
+## Disclosure review
+
+Weights remain server-side; the analyst receives only propensity and outcome model-level fits.
+
+The DSLite validation uses `datashield.privacyLevel = 5`. Trusted-peer
+pinning is disabled only because DSLite is an in-memory test backend, not
+an Opal/Rock deployment. That does not weaken the method-level check of
+what the product route returns to the analyst.
+
+## Executed validation
+
+```{r execution}
+K <- 3L
+
+pooled <- build_ipw()
+tables <- if (K == 2L) {
+  list(s1 = pooled[, c("patient_id", "w1", "w2"), drop = FALSE],
+       s2 = pooled[, c("patient_id", "tr", "ipw", "y"), drop = FALSE])
+} else {
+  list(s1 = pooled[, c("patient_id", "w1"), drop = FALSE],
+       s2 = pooled[, c("patient_id", "w2"), drop = FALSE],
+       s3 = pooled[, c("patient_id", "tr", "ipw", "y"), drop = FALSE])
+}
+
+knitr::kable(utils::head(pooled))
+knitr::kable(partition_summary(tables))
+
+ref <- coef(stats::lm(y ~ tr + w1 + w2, data = pooled, weights = ipw))
+
+result <- elapsed({
+  conns <- connect_dslite(tables)
+  tryCatch({
+    psi_align(conns)
+    dsVertClient::ds.vert.ipw(
+      y ~ tr + w1 + w2, tr ~ w1 + w2, data = "DA",
+      precision = "high",
+      outcome_family = "gaussian",
+      compute_se = FALSE, compute_deviance = FALSE,
+      verbose = validation_demo_verbose(), datasources = conns)
+  }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
+})
+
+fit <- result$value
+observed <- max_named_delta(fit$outcome$coefficients, ref)
+
+rows <- row_result(
+  "ipw", "IPW", K, "ds.vert.ipw(precision='high')",
+  "synthetic confounded IPW fixture",
+  "central weighted lm using same weights",
+  "weighted_outcome_coef_abs_delta", observed, 1e-3,
+  "strict-practical",
+  "Uses protected propensity/outcome GLM aggregates; only model-level fits are returned.",
+  result$runtime_s)
+
+display_validation(rows)
+assert_validation(rows)
+```
+
+## Verdict
+
+Rendering fails if the distributed result leaves the accepted numerical
+envelope or if the method row is marked disclosive.

@@ -1,0 +1,128 @@
+---
+title: "GEE validation (K>=3)"
+author: "David Sarrat Gonzalez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{GEE validation (K>=3)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = TRUE, collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+validation_load_packages()
+partition_summary <- function(tables) {
+  data.frame(
+    server = names(tables),
+    n = vapply(tables, nrow, integer(1)),
+    columns = vapply(tables, function(x) paste(names(x), collapse = ", "), character(1)),
+    stringsAsFactors = FALSE)
+}
+```
+
+## Dataset generator
+
+The fixture is generated inside this vignette run. The helper body used
+to create the pooled local data is printed here before the analysis.
+
+```{r dataset-generator}
+cat(paste(deparse(build_pima), collapse = "\n"))
+```
+
+## Scope
+
+Functions: `ds.vert.gee()`.
+
+This vignette validates the `K>=3` modality. It creates the local
+pooled fixture, partitions it vertically, starts an in-memory DSLite
+server, aligns records with PSI, runs the distributed dsVert route, runs
+the centralized R reference on the same pooled fixture, and computes the
+numerical delta.
+
+No external RDS, cache, or pre-loaded server table is used. Rendering the
+vignette executes the workflow from dataset generation to assertion.
+
+## Method
+
+The GEE route computes protected estimating-equation aggregates and robust sandwich-level summaries for clustered data.
+
+## Mathematical target
+
+For independence working correlation, sum_i D_i' V_i^{-1}(y_i-mu_i)=0. Validation compares beta to geepack::geeglm().
+
+## Disclosure review
+
+The client receives regression and sandwich-level aggregates, not row scores, fitted values, or residual vectors.
+
+The DSLite validation uses `datashield.privacyLevel = 5`. Trusted-peer
+pinning is disabled only because DSLite is an in-memory test backend, not
+an Opal/Rock deployment. That does not weaken the method-level check of
+what the product route returns to the analyst.
+
+## Executed validation
+
+```{r execution}
+K <- 3L
+
+validation_require("geepack")
+pooled <- build_pima(60L)
+pooled$cluster <- as.integer((seq_len(nrow(pooled)) - 1L) %/% 10L) + 1L
+tables <- if (K == 2L) {
+  list(
+    s1 = pooled[, c("patient_id", "age", "bmi", "ped"), drop = FALSE],
+    s2 = pooled[, c("patient_id", "npreg", "glu", "bp", "skin",
+                    "diabetes", "cluster"), drop = FALSE])
+} else {
+  list(
+    s1 = pooled[, c("patient_id", "age", "bmi"), drop = FALSE],
+    s2 = pooled[, c("patient_id", "ped", "skin"), drop = FALSE],
+    s3 = pooled[, c("patient_id", "npreg", "glu", "bp",
+                    "diabetes", "cluster"), drop = FALSE])
+}
+fm <- diabetes ~ age + bmi + ped + glu + bp + skin + npreg
+
+knitr::kable(utils::head(pooled))
+knitr::kable(partition_summary(tables))
+
+ref <- coef(geepack::geeglm(
+  fm, data = pooled, id = cluster, family = gaussian(),
+  corstr = "independence"))
+
+result <- elapsed({
+  conns <- connect_dslite(tables)
+  tryCatch({
+    psi_align(conns)
+    dsVertClient::ds.vert.gee(
+      fm, data = "DA", family = "gaussian", id_col = "cluster",
+      corstr = "independence", max_iter = 30L,
+      verbose = validation_demo_verbose(), datasources = conns)
+  }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
+})
+
+fit <- result$value
+observed <- max_named_delta(fit$coefficients, ref)
+
+rows <- row_result(
+  "gee", "GEE", K, "ds.vert.gee(corstr='independence')",
+  "MASS::Pima.tr clustered fixture", "geepack::geeglm",
+  "coef_max_abs_delta", observed, 0.01, "strict-practical",
+  "Returns regression and sandwich-level aggregates, not row scores.",
+  result$runtime_s)
+
+display_validation(rows)
+assert_validation(rows)
+```
+
+## Verdict
+
+Rendering fails if the distributed result leaves the accepted numerical
+envelope or if the method row is marked disclosive.

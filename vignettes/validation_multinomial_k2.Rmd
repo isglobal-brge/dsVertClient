@@ -1,0 +1,129 @@
+---
+title: "Multinomial validation (K=2)"
+author: "David Sarrat Gonzalez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Multinomial validation (K=2)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = TRUE, collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+validation_load_packages()
+partition_summary <- function(tables) {
+  data.frame(
+    server = names(tables),
+    n = vapply(tables, nrow, integer(1)),
+    columns = vapply(tables, function(x) paste(names(x), collapse = ", "), character(1)),
+    stringsAsFactors = FALSE)
+}
+```
+
+## Dataset generator
+
+The fixture is generated inside this vignette run. The helper body used
+to create the pooled local data is printed here before the analysis.
+
+```{r dataset-generator}
+cat(paste(deparse(build_multinomial), collapse = "\n"))
+```
+
+## Scope
+
+Functions: `ds.vert.multinom()`.
+
+This vignette validates the `K=2` modality. It creates the local
+pooled fixture, partitions it vertically, starts an in-memory DSLite
+server, aligns records with PSI, runs the distributed dsVert route, runs
+the centralized R reference on the same pooled fixture, and computes the
+numerical delta.
+
+No external RDS, cache, or pre-loaded server table is used. Rendering the
+vignette executes the workflow from dataset generation to assertion.
+
+## Method
+
+The supported route is joint softmax Newton. Historical one-vs-rest approximations are not exposed as the product evidence path.
+
+## Mathematical target
+
+P(Y=c|X)=exp(eta_c)/sum_l exp(eta_l). Validation compares class probabilities with nnet::multinom().
+
+## Disclosure review
+
+Softmax probabilities, residuals, and row scores remain Ring127 shares; no row probabilities are returned.
+
+The DSLite validation uses `datashield.privacyLevel = 5`. Trusted-peer
+pinning is disabled only because DSLite is an in-memory test backend, not
+an Opal/Rock deployment. That does not weaken the method-level check of
+what the product route returns to the analyst.
+
+## Executed validation
+
+```{r execution}
+K <- 2L
+
+validation_require("nnet")
+pooled <- build_multinomial()
+tables <- if (K == 2L) {
+  list(s1 = pooled[, c("patient_id", "x1", "x2"), drop = FALSE],
+       s2 = pooled[, c("patient_id", "x3", "y_cls",
+                       "high_ind", "low_ind", "med_ind"), drop = FALSE])
+} else {
+  list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
+       s2 = pooled[, c("patient_id", "x2"), drop = FALSE],
+       s3 = pooled[, c("patient_id", "x3", "y_cls",
+                       "high_ind", "low_ind", "med_ind"), drop = FALSE])
+}
+
+knitr::kable(utils::head(pooled))
+knitr::kable(partition_summary(tables))
+
+ref <- nnet::multinom(y_cls ~ x1 + x2 + x3, data = pooled,
+                      trace = FALSE, maxit = 200L)
+ref_prob <- stats::predict(ref, pooled, type = "probs")
+
+result <- elapsed({
+  conns <- connect_dslite(tables)
+  tryCatch({
+    psi_align(conns)
+    dsVertClient::ds.vert.multinom(
+      y_cls ~ x1 + x2 + x3, data = "DA",
+      classes = c("high", "low", "med"),
+      indicator_template = "%s_ind",
+      verbose = validation_demo_verbose(), datasources = conns)
+  }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
+})
+
+fit <- result$value
+ds_prob <- softmax_prob(fit$coefficients, pooled)
+ds_prob <- ds_prob[, colnames(ref_prob), drop = FALSE]
+observed <- max(abs(ds_prob - ref_prob))
+
+rows <- row_result(
+  "multinomial", "Multinomial", K, "ds.vert.multinom",
+  "balanced soft-signal synthetic 3-class fixture",
+  "nnet::multinom probabilities",
+  "class_probability_max_abs_delta", observed, 0.005,
+  "strict-practical",
+  "Softmax probabilities and residuals remain Ring127 shares; no row probabilities are returned.",
+  result$runtime_s)
+
+display_validation(rows)
+assert_validation(rows)
+```
+
+## Verdict
+
+Rendering fails if the distributed result leaves the accepted numerical
+envelope or if the method row is marked disclosive.

@@ -1,0 +1,127 @@
+---
+title: "Descriptive statistics validation (K=2)"
+author: "David Sarrat Gonzalez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Descriptive statistics validation (K=2)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = TRUE, collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+validation_load_packages()
+partition_summary <- function(tables) {
+  data.frame(
+    server = names(tables),
+    n = vapply(tables, nrow, integer(1)),
+    columns = vapply(tables, function(x) paste(names(x), collapse = ", "), character(1)),
+    stringsAsFactors = FALSE)
+}
+```
+
+## Dataset generator
+
+The fixture is generated inside this vignette run. The helper body used
+to create the pooled local data is printed here before the analysis.
+
+```{r dataset-generator}
+cat(paste(deparse(build_pima), collapse = "\n"))
+```
+
+## Scope
+
+Functions: `ds.vert.desc()`.
+
+This vignette validates the `K=2` modality. It creates the local
+pooled fixture, partitions it vertically, starts an in-memory DSLite
+server, aligns records with PSI, runs the distributed dsVert route, runs
+the centralized R reference on the same pooled fixture, and computes the
+numerical delta.
+
+No external RDS, cache, or pre-loaded server table is used. Rendering the
+vignette executes the workflow from dataset generation to assertion.
+
+## Method
+
+Each server computes guarded scalar summaries for its own variables. Histogram quantiles are guarded by disclosure thresholds, but this vignette validates the exact mean/sd surface used in the matrix.
+
+## Mathematical target
+
+For each variable x, the checked target is max(|mean_DS - mean_local|, |sd_DS - sd_local|).
+
+## Disclosure review
+
+Only scalar summaries and guarded histogram information are returned; no patient-level values or order statistics are disclosed.
+
+The DSLite validation uses `datashield.privacyLevel = 5`. Trusted-peer
+pinning is disabled only because DSLite is an in-memory test backend, not
+an Opal/Rock deployment. That does not weaken the method-level check of
+what the product route returns to the analyst.
+
+## Executed validation
+
+```{r execution}
+K <- 2L
+
+pooled <- build_pima(60L)
+tables <- if (K == 2L) {
+  list(
+    s1 = pooled[, c("patient_id", "age", "bmi", "ped"), drop = FALSE],
+    s2 = pooled[, c("patient_id", "npreg", "glu", "bp", "skin"),
+                drop = FALSE])
+} else {
+  list(
+    s1 = pooled[, c("patient_id", "age", "bmi"), drop = FALSE],
+    s2 = pooled[, c("patient_id", "ped", "skin"), drop = FALSE],
+    s3 = pooled[, c("patient_id", "npreg", "glu", "bp"), drop = FALSE])
+}
+vars <- lapply(tables, function(x) setdiff(names(x), "patient_id"))
+all_vars <- unlist(vars, use.names = FALSE)
+
+knitr::kable(utils::head(pooled))
+knitr::kable(partition_summary(tables))
+
+ref_mean <- vapply(pooled[all_vars], mean, numeric(1), na.rm = TRUE)
+ref_sd <- vapply(pooled[all_vars], stats::sd, numeric(1), na.rm = TRUE)
+
+result <- elapsed({
+  conns <- connect_dslite(tables)
+  tryCatch({
+    psi_align(conns)
+    dsVertClient::ds.vert.desc(
+      "DA", variables = vars, n_buckets = 40L,
+      verbose = validation_demo_verbose(), datasources = conns)
+  }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
+})
+
+desc <- result$value
+ds_mean <- stats::setNames(desc$mean, desc$variable)
+ds_sd <- stats::setNames(desc$sd, desc$variable)
+observed <- max(max_named_delta(ds_mean, ref_mean),
+                max_named_delta(ds_sd, ref_sd))
+
+rows <- row_result(
+  "descriptive", "Descriptive statistics", K, "ds.vert.desc",
+  "MASS::Pima.tr fixture", "central mean/sd",
+  "max(mean_sd_abs_delta)", observed, 1e-8, "strict-precise",
+  "Returns guarded scalar summaries and histogram-based quantiles, not rows.",
+  result$runtime_s)
+
+display_validation(rows)
+assert_validation(rows)
+```
+
+## Verdict
+
+Rendering fails if the distributed result leaves the accepted numerical
+envelope or if the method row is marked disclosive.

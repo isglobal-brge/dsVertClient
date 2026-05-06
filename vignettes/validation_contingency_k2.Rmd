@@ -1,0 +1,133 @@
+---
+title: "Contingency tests validation (K=2)"
+author: "David Sarrat Gonzalez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Contingency tests validation (K=2)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = TRUE, collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+validation_load_packages()
+partition_summary <- function(tables) {
+  data.frame(
+    server = names(tables),
+    n = vapply(tables, nrow, integer(1)),
+    columns = vapply(tables, function(x) paste(names(x), collapse = ", "), character(1)),
+    stringsAsFactors = FALSE)
+}
+```
+
+## Dataset generator
+
+The fixture is generated inside this vignette run. The helper body used
+to create the pooled local data is printed here before the analysis.
+
+```{r dataset-generator}
+cat(paste(deparse(build_pima), collapse = "\n"))
+```
+
+## Scope
+
+Functions: `ds.vert.chisq_cross()`.
+
+This vignette validates the `K=2` modality. It creates the local
+pooled fixture, partitions it vertically, starts an in-memory DSLite
+server, aligns records with PSI, runs the distributed dsVert route, runs
+the centralized R reference on the same pooled fixture, and computes the
+numerical delta.
+
+No external RDS, cache, or pre-loaded server table is used. Rendering the
+vignette executes the workflow from dataset generation to assertion.
+
+## Method
+
+Cross-server contingency testing builds guarded cell counts across vertically separated categorical variables before applying the usual chi-square/Fisher calculations.
+
+## Mathematical target
+
+The validation compares the released observed table and X^2 statistic with table() and chisq.test() on the pooled fixture.
+
+## Disclosure review
+
+Exact counts are released only after small-cell checks pass. Sparse positive cells fail closed before release.
+
+The DSLite validation uses `datashield.privacyLevel = 5`. Trusted-peer
+pinning is disabled only because DSLite is an in-memory test backend, not
+an Opal/Rock deployment. That does not weaken the method-level check of
+what the product route returns to the analyst.
+
+## Executed validation
+
+```{r execution}
+K <- 2L
+
+pooled <- build_pima(80L)
+pooled$diabetes <- factor(ifelse(pooled$diabetes == 1, "yes", "no"),
+                          levels = c("no", "yes"))
+pooled$age_grp <- factor(ifelse(pooled$age >= median(pooled$age),
+                                "older", "younger"),
+                         levels = c("younger", "older"))
+pooled$bp_grp <- factor(ifelse(pooled$bp >= median(pooled$bp),
+                               "high_bp", "low_bp"),
+                        levels = c("low_bp", "high_bp"))
+
+tables <- if (K == 2L) {
+  list(s1 = pooled[, c("patient_id", "age_grp"), drop = FALSE],
+       s2 = pooled[, c("patient_id", "bp_grp", "diabetes"), drop = FALSE])
+} else {
+  list(s1 = pooled[, c("patient_id", "age_grp"), drop = FALSE],
+       s2 = pooled[, c("patient_id", "bp_grp"), drop = FALSE],
+       s3 = pooled[, c("patient_id", "diabetes"), drop = FALSE])
+}
+
+knitr::kable(utils::head(pooled[, c("patient_id", "age_grp", "bp_grp",
+                                    "diabetes")]))
+knitr::kable(partition_summary(tables))
+
+tab <- table(pooled$age_grp, pooled$diabetes)
+chi_ref <- suppressWarnings(stats::chisq.test(tab, correct = FALSE))
+
+result <- elapsed({
+  conns <- connect_dslite(tables)
+  tryCatch({
+    psi_align(conns)
+    dsVertClient::ds.vert.chisq_cross(
+      "DA", "age_grp", "diabetes", correct = FALSE, fisher = TRUE,
+      verbose = validation_demo_verbose(), datasources = conns)
+  }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
+})
+
+cross <- result$value
+ref_mat <- unclass(tab)[rownames(cross$observed),
+                        colnames(cross$observed), drop = FALSE]
+observed <- max(max(abs(cross$observed - ref_mat)),
+                abs(cross$chisq - unname(chi_ref$statistic)))
+
+rows <- row_result(
+  "contingency", "Contingency tests", K,
+  "ds.vert.chisq / ds.vert.fisher / ds.vert.chisq_cross",
+  "MASS::Pima.tr categorical fixture", "chisq.test / fisher.test",
+  "max(count_or_chisq_delta)", observed, 1e-8, "strict-precise",
+  "Releases guarded table counts and test statistics; small cells fail closed.",
+  result$runtime_s)
+
+display_validation(rows)
+assert_validation(rows)
+```
+
+## Verdict
+
+Rendering fails if the distributed result leaves the accepted numerical
+envelope or if the method row is marked disclosive.
