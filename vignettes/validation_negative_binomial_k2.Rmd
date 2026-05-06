@@ -1,0 +1,152 @@
+---
+title: "Negative binomial validation (K=2)"
+author: "David Sarrat Gonzalez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Negative binomial validation (K=2)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = TRUE, collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+validation_load_packages()
+partition_summary <- function(tables) {
+  data.frame(
+    server = names(tables),
+    n = vapply(tables, nrow, integer(1)),
+    columns = vapply(tables, function(x) paste(names(x), collapse = ", "), character(1)),
+    stringsAsFactors = FALSE)
+}
+```
+
+## Dataset generator
+
+The fixture is generated inside this vignette run. The helper body used
+to create the pooled local data is printed here before the analysis.
+
+```{r dataset-generator}
+cat(paste(deparse(build_nb), collapse = "\n"))
+```
+
+## Scope
+
+Functions: `ds.vert.nb()`.
+
+This vignette validates the `K=2` modality. It creates the local
+pooled fixture, partitions it vertically, starts an in-memory DSLite
+server, aligns records with PSI, runs the distributed dsVert route, runs
+the centralized R reference on the same pooled fixture, and computes the
+numerical delta.
+
+No external RDS, cache, or pre-loaded server table is used. Rendering the
+vignette executes the workflow from dataset generation to assertion.
+
+## Method
+
+This vignette shows the accurate non-disclosive full-regression route and the fast MoM route. The accurate route targets MASS::glm.nb(); the fast route targets a central Poisson beta plus closed-form MoM theta approximation.
+
+## Mathematical target
+
+NB2 uses Var(Y|X)=mu+mu^2/theta and log(mu)=X beta. The accurate route evaluates beta/theta score pieces in shares; the fast route uses theta_MoM = ybar^2/(s_y^2-ybar).
+
+## Disclosure review
+
+The accurate route keeps eta, mu, reciprocal, score, and Fisher pieces in shares and returns beta plus scalar theta. The fast route opens only outcome-level scalar moments and Poisson-model aggregates.
+
+The DSLite validation uses `datashield.privacyLevel = 5`. Trusted-peer
+pinning is disabled only because DSLite is an in-memory test backend, not
+an Opal/Rock deployment. That does not weaken the method-level check of
+what the product route returns to the analyst.
+
+## Executed validation
+
+```{r execution}
+K <- 2L
+
+validation_require("MASS")
+pooled <- build_nb(60L)
+tables <- if (K == 2L) {
+  list(s1 = pooled[, c("patient_id", "x1", "x2"), drop = FALSE],
+       s2 = pooled[, c("patient_id", "x3", "y"), drop = FALSE])
+} else {
+  list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
+       s2 = pooled[, c("patient_id", "x2"), drop = FALSE],
+       s3 = pooled[, c("patient_id", "x3", "y"), drop = FALSE])
+}
+
+knitr::kable(utils::head(pooled))
+knitr::kable(partition_summary(tables))
+
+ref_accurate <- coef(MASS::glm.nb(y ~ x1 + x2 + x3, data = pooled))
+ref_fast_beta <- coef(stats::glm(y ~ x1 + x2 + x3, data = pooled,
+                                 family = poisson()))
+ybar <- mean(pooled$y)
+yvar <- stats::var(pooled$y)
+ref_fast_theta <- if (is.finite(yvar) && yvar > ybar) {
+  ybar * ybar / (yvar - ybar)
+} else {
+  Inf
+}
+
+result <- elapsed({
+  conns <- connect_dslite(tables)
+  tryCatch({
+    psi_align(conns)
+    run_accurate <- elapsed(accurate <- dsVertClient::ds.vert.nb(
+      y ~ x1 + x2 + x3, data = "DA", method = "accurate",
+      max_iter = 25L,
+      verbose = validation_demo_verbose(), datasources = conns))
+    run_fast <- elapsed(fast <- dsVertClient::ds.vert.nb(
+      y ~ x1 + x2 + x3, data = "DA", method = "fast",
+      max_iter = 25L,
+      verbose = validation_demo_verbose(), datasources = conns))
+    list(accurate = accurate, fast = fast,
+         runtime_accurate = run_accurate$runtime_s,
+         runtime_fast = run_fast$runtime_s)
+  }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
+})
+
+accurate_delta <- max_named_delta(result$value$accurate$coefficients,
+                                  ref_accurate)
+fast_beta_delta <- max_named_delta(result$value$fast$coefficients,
+                                   ref_fast_beta)
+fast_theta_delta <- abs(result$value$fast$theta - ref_fast_theta)
+fast_delta <- max(fast_beta_delta, fast_theta_delta)
+
+rows <- rbind(
+  row_result(
+    "negative_binomial", "Negative binomial accurate", K,
+    "ds.vert.nb(method='accurate')",
+    "synthetic NB fixture", "MASS::glm.nb",
+    "coef_max_abs_delta", accurate_delta, 0.02,
+    "strict-practical",
+    "Full-regression beta/theta score components remain aggregate.",
+    result$value$runtime_accurate),
+  row_result(
+    "negative_binomial", "Negative binomial fast", K,
+    "ds.vert.nb(method='fast')",
+    "synthetic NB fixture", "central Poisson beta + MoM theta",
+    "max(beta_delta, theta_delta)", fast_delta, 0.02,
+    "fast-approximation",
+    "Fast path uses outcome-only scalar moments for theta and Poisson beta.",
+    result$value$runtime_fast)
+)
+
+display_validation(rows)
+assert_validation(rows)
+```
+
+## Verdict
+
+Rendering fails if the distributed result leaves the accepted numerical
+envelope or if the method row is marked disclosive.

@@ -1,0 +1,135 @@
+---
+title: "Ordinal validation (K>=3)"
+author: "David Sarrat Gonzalez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Ordinal validation (K>=3)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = TRUE, collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+validation_load_packages()
+partition_summary <- function(tables) {
+  data.frame(
+    server = names(tables),
+    n = vapply(tables, nrow, integer(1)),
+    columns = vapply(tables, function(x) paste(names(x), collapse = ", "), character(1)),
+    stringsAsFactors = FALSE)
+}
+```
+
+## Dataset generator
+
+The fixture is generated inside this vignette run. The helper body used
+to create the pooled local data is printed here before the analysis.
+
+```{r dataset-generator}
+cat(paste(deparse(build_ordinal), collapse = "\n"))
+```
+
+## Scope
+
+Functions: `ds.vert.ordinal()`.
+
+This vignette validates the `K>=3` modality. It creates the local
+pooled fixture, partitions it vertically, starts an in-memory DSLite
+server, aligns records with PSI, runs the distributed dsVert route, runs
+the centralized R reference on the same pooled fixture, and computes the
+numerical delta.
+
+No external RDS, cache, or pre-loaded server table is used. Rendering the
+vignette executes the workflow from dataset generation to assertion.
+
+## Method
+
+The supported route is joint proportional-odds Newton. Historical cumulative-binomial approximations are only warm starts.
+
+## Mathematical target
+
+P(Y<=k|X)=sigmoid(theta_k-X beta). Validation compares cumulative probabilities with MASS::polr().
+
+## Disclosure review
+
+Cumulative probabilities, residuals, and row scores stay in shares; the client receives thresholds, slopes, and scalar optimizer diagnostics.
+
+The DSLite validation uses `datashield.privacyLevel = 5`. Trusted-peer
+pinning is disabled only because DSLite is an in-memory test backend, not
+an Opal/Rock deployment. That does not weaken the method-level check of
+what the product route returns to the analyst.
+
+## Executed validation
+
+```{r execution}
+K <- 3L
+
+validation_require("MASS")
+old_fd <- getOption("dsvert.ord_strict_fd_max_dim", NULL)
+options(dsvert.ord_strict_fd_max_dim = 0L)
+
+pooled <- build_ordinal()
+tables <- if (K == 2L) {
+  list(s1 = pooled[, c("patient_id", "x1", "x2"), drop = FALSE],
+       s2 = pooled[, c("patient_id", "x3", "y_ord",
+                       "low_leq", "med_leq", "high_leq"), drop = FALSE])
+} else {
+  list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
+       s2 = pooled[, c("patient_id", "x2"), drop = FALSE],
+       s3 = pooled[, c("patient_id", "x3", "y_ord",
+                       "low_leq", "med_leq", "high_leq"), drop = FALSE])
+}
+
+knitr::kable(utils::head(pooled))
+knitr::kable(partition_summary(tables))
+
+ref <- MASS::polr(y_ord ~ x1 + x2 + x3, data = pooled, Hess = TRUE)
+ref_cum <- sapply(ref$zeta, function(th) {
+  stats::plogis(th - as.numeric(as.matrix(pooled[, names(coef(ref))]) %*%
+                                  coef(ref)))
+})
+
+result <- elapsed({
+  conns <- connect_dslite(tables)
+  tryCatch({
+    psi_align(conns)
+    dsVertClient::ds.vert.ordinal(
+      y_ord ~ x1 + x2 + x3, data = "DA",
+      levels_ordered = c("low", "med", "high"),
+      cumulative_template = "%s_leq",
+      verbose = validation_demo_verbose(), datasources = conns)
+  }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
+})
+
+fit <- result$value
+ds_cum <- ordinal_cumprob(fit, pooled)
+colnames(ds_cum) <- colnames(ref_cum)
+observed <- max(abs(ds_cum - ref_cum))
+
+rows <- row_result(
+  "ordinal", "Ordinal", K, "ds.vert.ordinal",
+  "balanced synthetic 3-level ordinal fixture",
+  "MASS::polr cumulative probabilities",
+  "cumulative_probability_max_abs_delta", observed, 0.001,
+  "strict-practical",
+  "Class probabilities/residuals stay Ring127 shares; no row probabilities are returned.",
+  result$runtime_s)
+
+display_validation(rows)
+assert_validation(rows)
+options(dsvert.ord_strict_fd_max_dim = old_fd)
+```
+
+## Verdict
+
+Rendering fails if the distributed result leaves the accepted numerical
+envelope or if the method row is marked disclosive.

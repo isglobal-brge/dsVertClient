@@ -1,0 +1,141 @@
+---
+title: "PSI alignment validation (K=2)"
+author: "David Sarrat Gonzalez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{PSI alignment validation (K=2)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = TRUE, collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+validation_load_packages()
+partition_summary <- function(tables) {
+  data.frame(
+    server = names(tables),
+    n = vapply(tables, nrow, integer(1)),
+    columns = vapply(tables, function(x) paste(names(x), collapse = ", "), character(1)),
+    stringsAsFactors = FALSE)
+}
+```
+
+## Scope
+
+Functions: `ds.vert.align()`.
+
+This vignette validates the `K=2` modality. It creates the local
+pooled fixture, partitions it vertically, starts an in-memory DSLite
+server, aligns records with PSI, runs the distributed dsVert route, runs
+the centralized R reference on the same pooled fixture, and computes the
+numerical delta.
+
+No external RDS, cache, or pre-loaded server table is used. Rendering the
+vignette executes the workflow from dataset generation to assertion.
+
+## Method
+
+ECDH-PSI aligns vertically split tables on a shared identifier. Each server masks identifiers, the protocol computes the common set, and the aligned object keeps only matched rows in a common order.
+
+## Mathematical target
+
+The target is the set intersection I = intersection_k I_k. Validation checks matched counts and that deterministic id-derived columns align perfectly after PSI.
+
+## Disclosure review
+
+The analyst receives counts and status fields only. Patient IDs and matched row-index vectors are not returned; the legacy matched-index aggregate is checked as blocked.
+
+The DSLite validation uses `datashield.privacyLevel = 5`. Trusted-peer
+pinning is disabled only because DSLite is an in-memory test backend, not
+an Opal/Rock deployment. That does not weaken the method-level check of
+what the product route returns to the analyst.
+
+## Executed validation
+
+```{r execution}
+K <- 2L
+
+contains_ids <- function(x) {
+  if (is.character(x)) return(any(grepl("^P[0-9]{4}$", x)))
+  if (is.list(x)) return(any(vapply(x, contains_ids, logical(1))))
+  FALSE
+}
+
+make_table <- function(ids, server_index) {
+  id_num <- as.integer(sub("^P", "", ids))
+  ord <- sample(seq_along(ids))
+  data.frame(patient_id = ids[ord], id_num = id_num[ord],
+             value = id_num[ord] + server_index / 10)
+}
+
+set.seed(9100 + K)
+id_sets <- if (K == 2L) {
+  list(s1 = sprintf("P%04d", 1:80),
+       s2 = sprintf("P%04d", 11:90))
+} else {
+  list(s1 = sprintf("P%04d", 1:85),
+       s2 = sprintf("P%04d", 11:95),
+       s3 = sprintf("P%04d", 6:80))
+}
+common_ids <- Reduce(intersect, id_sets)
+tables <- Map(make_table, id_sets, seq_along(id_sets))
+
+knitr::kable(partition_summary(tables))
+
+result <- elapsed({
+  conns <- connect_dslite(tables)
+  tryCatch({
+    psi <- psi_align(conns)
+    counts <- DSI::datashield.aggregate(
+      conns, call(name = "getObsCountDS", data_name = "DA"))
+    n_by_server <- vapply(counts, function(x) as.integer(x$n_obs), integer(1))
+    variables <- stats::setNames(lapply(names(conns), function(.x) "id_num"),
+                                 names(conns))
+    cor_fit <- dsVertClient::ds.vert.cor(
+      "DA", variables = variables,
+      verbose = validation_demo_verbose(), datasources = conns)
+    legacy_blocked <- tryCatch({
+      DSI::datashield.aggregate(conns[1],
+        call(name = "psiGetMatchedIndicesDS"))
+      FALSE
+    }, error = function(e) TRUE)
+    list(psi = psi, n_by_server = n_by_server, cor_fit = cor_fit,
+         legacy_blocked = legacy_blocked)
+  }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
+})
+
+offdiag <- result$value$cor_fit$correlation[
+  upper.tri(result$value$cor_fit$correlation)]
+observed <- max(abs(result$value$n_by_server - length(common_ids)),
+                abs((result$value$psi$n_common %||%
+                       result$value$psi[[1]]$n_matched) - length(common_ids)),
+                max(abs(offdiag - 1)))
+audit_ok <- !contains_ids(result$value$psi) &&
+  isTRUE(result$value$legacy_blocked)
+
+rows <- row_result(
+  "psi", "PSI alignment", K, "ds.vert.align",
+  "synthetic ID intersection", "deterministic set intersection",
+  "max(count_delta, correlation_delta)", observed, 1e-8,
+  "strict-precise",
+  "Returns match counts/status only; matched IDs and row indices are not returned.",
+  result$runtime_s,
+  if (audit_ok) "index reveal blocked" else "audit warning")
+
+display_validation(rows)
+assert_validation(rows)
+```
+
+## Verdict
+
+Rendering fails if the distributed result leaves the accepted numerical
+envelope or if the method row is marked disclosive.
