@@ -53,7 +53,7 @@ DSI::datashield.logout(conns)
 | **Negative binomial** | `ds.vertNBFullRegTheta(variant = "full_reg_nd")` (default share-domain full-reg θ), `ds.vertNB()` / `ds.vertNBMoMTheta()` for lighter scalar-theta variants |
 | **Multinomial** | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` (joint softmax Newton); warm OVR is internal initialisation only |
 | **Ordinal (proportional odds)** | `ds.vertOrdinal()` / `ds.vertOrdinalJointNewton()` (joint proportional-odds Newton); warm cumulative-binomial is internal initialisation only |
-| **Mixed models** | `ds.vertLMM()` (REML closed-form, K=2; random intercept + slopes), `ds.vertLMM.k3()` (REML 1-D profile, K>=3), `ds.vertGEE()` (sandwich SE, `binomial_sigmoid_intervals`), `ds.vertGLMM()` (binomial GLMM-PQL) |
+| **Mixed models** | `ds.vertLMM()` (REML closed-form, K=2; random intercept + slopes), `ds.vertLMM.k3()` (REML 1-D profile, K>=3), `ds.vertGEE()` (sandwich SE, `binomial_sigmoid_intervals`), `ds.vertGLMM()` (binomial GLMM-PQL), `ds.vertGLMMLaplace()` / `ds.vert.glmer()` (binomial GLMM Laplace) |
 | **Causal / robustness** | `ds.vertIPW()` (two-stage propensity + weighted GLM), `ds.vertMI()` (multiple imputation + Rubin pooling) |
 | **Penalised regression** | `ds.vertLASSO()`, `ds.vertLASSO1Step()`, `ds.vertLASSOIter()` (Gaussian/binomial/Poisson standardized L1), `ds.vertLASSOCV()` (AIC / BIC / EBIC selector), `ds.vertLASSOProximal()` |
 
@@ -82,7 +82,7 @@ Deviance: 22.09
 | Ordinal | `ds.vertOrdinal()` / `ds.vertOrdinalJointNewton()` | same proportional-odds route | warm final-estimator and patient-level joint reconstruction routes removed from the exported API |
 | LMM | `ds.vertLMM()` K=2 closed form | `ds.vertLMM.k3()` REML 1-D profile | direct client-supplied cluster-vector helper is not product |
 | GEE | `ds.vertGEE()` exchangeable / guarded AR1 | same route | unguarded order metadata not accepted |
-| GLMM | `ds.vertGLMM()` | same PQL aggregate route | `method = "em"` removed |
+| GLMM | `ds.vertGLMM()` PQL and `ds.vertGLMMLaplace()` / `ds.vert.glmer()` Laplace | same PQL and Laplace routes | legacy EM and patient-level BLUP/probability routes removed |
 | IPW / MI / LASSO / Cor / PCA / Chisq / Desc | product wrappers | same product wrappers | small-cell / high-dimensional diagnostics gated |
 
 See `inst/docs/product_surface.md` for the disclosure/accuracy status table
