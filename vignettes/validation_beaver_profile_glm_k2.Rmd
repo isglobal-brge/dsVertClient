@@ -1,0 +1,94 @@
+---
+title: "Beaver preprocessing profile validation: GLM (K=2)"
+author: "David Sarrat Gonzalez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Beaver preprocessing profile validation: GLM (K=2)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = TRUE, collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+validation_load_packages()
+partition_summary <- function(tables) {
+  data.frame(
+    server = names(tables),
+    n = vapply(tables, nrow, integer(1)),
+    columns = vapply(tables, function(x) paste(names(x), collapse = ", "),
+                     character(1)),
+    stringsAsFactors = FALSE)
+}
+```
+
+## Scope
+
+This validation compares `dealer` and `iknp` Beaver preprocessing on the same
+Gaussian GLM route. The centralized comparator is `stats::lm` on the pooled
+fixture.
+
+## Executed validation
+
+```{r execution}
+K <- 2L
+tolerance <- 1e-3
+
+pooled <- build_pima(60L)
+tables <- list(
+  s1 = pooled[, c("patient_id", "age", "bmi", "ped"), drop = FALSE],
+  s2 = pooled[, c("patient_id", "npreg", "glu", "bp", "skin",
+                  "diabetes"), drop = FALSE]
+)
+fm <- diabetes ~ age + bmi + ped + glu + bp + skin + npreg
+ref <- coef(stats::lm(fm, pooled))
+
+knitr::kable(utils::head(pooled))
+knitr::kable(partition_summary(tables))
+
+run_profile <- function(mode) {
+  options(dsvert.beaver_preprocessing = mode)
+  result <- elapsed({
+    conns <- connect_dslite(tables)
+    tryCatch({
+      psi_align(conns)
+      dsVertClient::ds.vert.glm(
+        fm, data = "DA", family = "gaussian", max_iter = 30L,
+        verbose = validation_demo_verbose(), datasources = conns)
+    }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
+  })
+  observed <- max_named_delta(result$value$coefficients, ref)
+  row_result(
+    "beaver_profile_glm", paste("GLM", mode), K,
+    paste0("ds.vert.glm / ", mode),
+    "MASS::Pima.tr fixture", "stats::lm",
+    "coef_max_abs_delta", observed, tolerance, "strict-practical",
+    "Uses secure score aggregates and returns model-level coefficients/covariance.",
+    result$runtime_s,
+    paste("beaver_preprocessing =", mode))
+}
+
+rows <- rbind(run_profile("dealer"), run_profile("iknp"))
+rows$profile_delta <- abs(rows$observed - rows$observed[1L])
+rows$runtime_ratio_vs_dealer <- rows$runtime_s / rows$runtime_s[1L]
+
+display_validation(rows)
+display_profile_validation(rows)
+
+assert_validation(rows)
+stopifnot(rows$profile_delta[2L] <= tolerance)
+```
+
+## Verdict
+
+Rendering fails if either profile leaves the accepted numerical envelope, if
+the route is marked disclosive, or if the IKNP-vs-dealer numerical difference
+exceeds the route tolerance.

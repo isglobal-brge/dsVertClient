@@ -58,7 +58,7 @@
 #'       \item Compute eta shares (Ring63 matrix-vector)
 #'       \item DCF wide spline for sigmoid/exp (binomial/Poisson) or
 #'         identity link (Gaussian)
-#'       \item Beaver matvec for gradient (server-generated triples)
+#'       \item Beaver matvec for gradient (negotiated dealer or IKNP triple shares)
 #'       \item Client aggregates Ring63 shares -> p gradient scalars
 #'       \item L-BFGS quasi-Newton update
 #'     }
@@ -70,9 +70,10 @@
 #'
 #' \subsection{Security}{
 #' No observation-level data is disclosed. The client sees only p-dimensional
-#' aggregate gradients per iteration. Beaver triples are generated server-side
-#' (never seen by client). Dealer rotation for K>=4 ensures the analyst must
-#' compromise (K-1)/K servers to extract data.
+#' aggregate gradients per iteration. Beaver preprocessing is negotiated from
+#' server policy: dealer mode for governed institutional peers, or IKNP
+#' OT-extension when a strengthened no-trusted-dealer profile is requested or
+#' required. The client never sees triple shares.
 #' }
 #'
 #' @references

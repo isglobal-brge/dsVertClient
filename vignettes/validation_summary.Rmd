@@ -23,6 +23,12 @@ the result.
 
 The current evidence snapshot covers 17 method blocks, both `K=2` and `K>=3`
 modalities, and 38 route-level validation rows. All rendered rows are `PASS`.
+The route-level suite runs with the negotiated `auto` Beaver preprocessing
+policy, which uses the efficient dealer profile when all servers allow it and
+automatically switches to IKNP OT-extension when any server requires that
+stronger profile. Four additional profile-validation articles run selected
+routes twice, once under `dealer` and once under `iknp`, to show that the
+preprocessing backend affects runtime rather than the statistical target.
 
 ## Validation contract
 
@@ -87,6 +93,29 @@ identity. That does not relax the method-level disclosure checks.
 | MI | `ds.vert.mi()` | [K=2](validation_mi_k2.html) | [K>=3](validation_mi_kge3.html) | Practical pooled coefficient route. |
 | Multinomial | `ds.vert.multinom()` | [K=2](validation_multinomial_k2.html) | [K>=3](validation_multinomial_kge3.html) | Joint softmax Newton route. |
 | Ordinal | `ds.vert.ordinal()` | [K=2](validation_ordinal_k2.html) | [K>=3](validation_ordinal_kge3.html) | Proportional-odds cumulative probability route. |
+
+## Beaver preprocessing profile evidence
+
+The product supports two Beaver preprocessing profiles. `dealer` is the
+efficient profile for governed, semi-honest institutional peers. `iknp` uses
+IKNP-style OT-extension so that the two computation parties derive their
+triple shares interactively without one party holding the full unsplit triple.
+The server-side policy determines which profiles are allowed, preferred or
+required; the client negotiates the strictest common profile and fails closed
+if no common profile is available.
+
+The following executable articles compare the same route under both profiles.
+Each article starts DSLite servers, aligns the same vertically partitioned
+fixture, runs the route once with `dealer` and once with `iknp`, compares both
+against the same centralized R reference and asserts both the route tolerance
+and the profile-to-profile difference.
+
+| Route | Article | Dealer observed | IKNP observed | Profile delta | Tolerance | Runtime ratio | Status |
+|---|---|---:|---:|---:|---:|---:|---|
+| Correlation | [validation_beaver_profile_correlation_k2](validation_beaver_profile_correlation_k2.html) | `1.2441795e-05` | `1.2441795e-05` | `0e+00` | `1e-04` | `9.71` | PASS |
+| GLM | [validation_beaver_profile_glm_k2](validation_beaver_profile_glm_k2.html) | `6.2726772e-05` | `6.1290240e-05` | `1.4365328e-06` | `1e-03` | `15.28` | PASS |
+| GEE | [validation_beaver_profile_gee_k2](validation_beaver_profile_gee_k2.html) | `1.7860961e-04` | `6.0821320e-05` | `1.1778829e-04` | `1e-02` | `10.88` | PASS |
+| Cox PH | [validation_beaver_profile_cox_k2](validation_beaver_profile_cox_k2.html) | `4.8702002e-05` | `4.8702002e-05` | `3.3861802e-15` | `1e-03` | `19.31` | PASS |
 
 ## Route-level result snapshot
 

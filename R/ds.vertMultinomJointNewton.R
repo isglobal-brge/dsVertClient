@@ -170,7 +170,8 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   # Setup a fresh Ring127 session compatible with the joint pipeline.
   # K=2 uses both servers as DCF parties. K>=3 uses the outcome server
   # plus one fusion DCF party; all other servers contribute encrypted
-  # additive shares and can act as Beaver-triple dealers.
+  # additive shares. Beaver preprocessing is negotiated through the shared
+  # dealer/IKNP policy helper.
   y_var_char <- .ds_gee_extract_lhs(formula)
   server_names <- names(datasources)
   y_server <- .ds_gee_find_server_holding(datasources, server_names,
