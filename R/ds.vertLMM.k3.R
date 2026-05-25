@@ -96,6 +96,21 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   n_i <- as.integer(ci_info$sizes)
   n_clusters <- length(n_i)
   n_total <- sum(n_i)
+  term_names_profile <- attr(stats::terms(formula), "term.labels")
+  beaver_mode <- tryCatch(
+    .beaver_preprocessing_mode(
+      "grad", n_total, max(1L, length(term_names_profile)), ring_int),
+    error = function(e) getOption("dsvert.beaver_preprocessing", "auto"))
+  profile_mode <- match.arg(tolower(as.character(getOption(
+    "dsvert.lmm_k3.profile_mode", "auto"))[1L]),
+    c("auto", "profile", "moment"))
+  if (identical(profile_mode, "auto")) {
+    profile_mode <- if (beaver_mode %in% c("iknp", "direct_ot", "ot")) {
+      "moment"
+    } else {
+      "profile"
+    }
+  }
 
   ## REML profile log-likelihood. For balanced or near-balanced
   ## random-intercept design the per-row GLS weight is
@@ -137,41 +152,56 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     -(- 0.5 * log_det - 0.5 * df_resid * log(sigma2 / df_resid))
   }
 
-  ## Golden-section search over rho.
-  if (verbose) message("[ds.vertLMM.k3] golden-section over rho in [",
-                        rho_lo, ", ", rho_hi, "] ...")
-  phi <- (sqrt(5) - 1) / 2
-  a <- rho_lo; b_ <- rho_hi
-  c_ <- b_ - phi * (b_ - a); d_ <- a + phi * (b_ - a)
-  fc <- .neg_profile_loglik(c_); fd <- .neg_profile_loglik(d_)
-  for (it in seq_len(max_outer)) {
-    if (abs(b_ - a) < tol) break
-    if (fc < fd) {
-      b_ <- d_; d_ <- c_; fd <- fc
-      c_ <- b_ - phi * (b_ - a); fc <- .neg_profile_loglik(c_)
-    } else {
-      a <- c_; c_ <- d_; fc <- fd
-      d_ <- a + phi * (b_ - a); fd <- .neg_profile_loglik(d_)
+  if (identical(profile_mode, "profile")) {
+    ## Golden-section search over rho.
+    if (verbose) message("[ds.vertLMM.k3] golden-section over rho in [",
+                          rho_lo, ", ", rho_hi, "] ...")
+    phi <- (sqrt(5) - 1) / 2
+    a <- rho_lo; b_ <- rho_hi
+    c_ <- b_ - phi * (b_ - a); d_ <- a + phi * (b_ - a)
+    fc <- .neg_profile_loglik(c_); fd <- .neg_profile_loglik(d_)
+    for (it in seq_len(max_outer)) {
+      if (abs(b_ - a) < tol) break
+      if (fc < fd) {
+        b_ <- d_; d_ <- c_; fd <- fc
+        c_ <- b_ - phi * (b_ - a); fc <- .neg_profile_loglik(c_)
+      } else {
+        a <- c_; c_ <- d_; fc <- fd
+        d_ <- a + phi * (b_ - a); fd <- .neg_profile_loglik(d_)
+      }
+      if (verbose) message(sprintf("  it=%d  rho in [%.4f, %.4f]", it, a, b_))
     }
-    if (verbose) message(sprintf("  it=%d  rho in [%.4f, %.4f]", it, a, b_))
-  }
-  rho_hat <- (a + b_) / 2
+    rho_hat <- (a + b_) / 2
 
-  ## Final fit at rho.
-  w_final <- .compute_weights_per_cluster(rho_hat)
-  DSI::datashield.aggregate(datasources[ci],
-    call(name = "dsvertExpandClusterWeightsDS",
-         data_name = data, cluster_col = cluster_col,
-         weights_per_cluster = as.numeric(w_final),
-         output_column = "__lmm_k3_w"))
-  fit_profile <- ds.vertGLM(formula = formula, data = data,
-                            family = "gaussian",
-                            weights = "__lmm_k3_w",
-                            ring = ring_int,
-                            max_iter = 60L, tol = 1e-7,
-                            compute_se = FALSE,
-                            verbose = FALSE,
-                            datasources = datasources)
+    ## Final fit at rho.
+    w_final <- .compute_weights_per_cluster(rho_hat)
+    DSI::datashield.aggregate(datasources[ci],
+      call(name = "dsvertExpandClusterWeightsDS",
+           data_name = data, cluster_col = cluster_col,
+           weights_per_cluster = as.numeric(w_final),
+           output_column = "__lmm_k3_w"))
+    fit_profile <- ds.vertGLM(formula = formula, data = data,
+                              family = "gaussian",
+                              weights = "__lmm_k3_w",
+                              ring = ring_int,
+                              max_iter = 60L, tol = 1e-7,
+                              compute_se = FALSE,
+                              verbose = FALSE,
+                              datasources = datasources)
+  } else {
+    if (verbose) {
+      message("[ds.vertLMM.k3] OT-aware moment profile: skipping repeated ",
+              "weighted GLS profile fits")
+    }
+    rho_hat <- NA_real_
+    fit_profile <- ds.vertGLM(formula = formula, data = data,
+                              family = "gaussian",
+                              ring = ring_int,
+                              max_iter = 30L, tol = 1e-6,
+                              compute_se = FALSE,
+                              verbose = FALSE,
+                              datasources = datasources)
+  }
 
   ## Variance-component recovery via Pinheiro-Bates 2000 sec.2.4.2
   ## within-between ANOVA on the outcome y. The per-row weighted-GLM
@@ -569,6 +599,17 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     variance_method <- resid_vc$method
   }
 
+  .rho_from_components <- function(sigma2, sigma_b2) {
+    denom <- sigma2 + n_i * sigma_b2
+    rho_i <- ifelse(denom > 0, sigma_b2 / denom, 0)
+    rho_i <- rho_i[is.finite(rho_i)]
+    if (!length(rho_i)) return(0)
+    as.numeric(stats::median(pmin(pmax(rho_i, 0), 1)))
+  }
+  if (!is.finite(rho_hat)) {
+    rho_hat <- .rho_from_components(sigma2_hat, sigma_b2_hat)
+  }
+
   .lambda_from_components <- function(sigma2, sigma_b2) {
     if (!is.finite(sigma2) || sigma2 < 0) sigma2 <- 0
     if (!is.finite(sigma_b2) || sigma_b2 < 0) sigma_b2 <- 0
@@ -610,13 +651,32 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     gls_terms <- unlist(x_vars_gls[server_names], use.names = FALSE)
     gls_formula <- stats::as.formula(paste(
       quote_nm(y_tx), "~ 0 +", paste(quote_nm(gls_terms), collapse = " + ")))
+    start_gls <- stats::setNames(rep(0, length(gls_terms)), gls_terms)
+    if ("(Intercept)" %in% names(fit_profile$coefficients)) {
+      start_gls[intercept_col] <- unname(fit_profile$coefficients["(Intercept)"])
+    }
+    for (.nm in term_names) {
+      src <- unname(fit_profile$coefficients[.nm])
+      if (length(src) && isTRUE(is.finite(src))) {
+        start_gls[tx_name(.nm)] <- src
+      }
+    }
+    gls_max_iter <- suppressWarnings(as.integer(getOption(
+      "dsvert.lmm_k3.gls_max_iter",
+      if (identical(profile_mode, "moment")) 20L else 100L)))
+    if (!is.finite(gls_max_iter) || gls_max_iter < 1L) gls_max_iter <- 20L
+    gls_tol <- suppressWarnings(as.numeric(getOption(
+      "dsvert.lmm_k3.gls_tol",
+      if (identical(profile_mode, "moment")) 1e-5 else 1e-7)))
+    if (!is.finite(gls_tol) || gls_tol <= 0) gls_tol <- 1e-5
     fit_gls <- ds.vertGLM(formula = gls_formula, data = data,
                           x_vars = x_vars_gls,
                           y_server = cluster_srv,
                           family = "gaussian",
                           ring = ring_int,
-                          max_iter = 100L, tol = 1e-7,
+                          max_iter = gls_max_iter, tol = gls_tol,
                           lambda = 0,
+                          start = start_gls,
                           compute_se = FALSE,
                           verbose = FALSE,
                           datasources = datasources,
@@ -639,6 +699,12 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   }
 
   gls_attempt <- tryCatch({
+    max_gls_passes <- suppressWarnings(as.integer(getOption(
+      "dsvert.lmm_k3.gls_passes",
+      if (identical(profile_mode, "moment")) 1L else 2L)))
+    if (!is.finite(max_gls_passes) || max_gls_passes < 1L) {
+      max_gls_passes <- 1L
+    }
     lambda_per_cluster <- .lambda_from_components(sigma2_hat, sigma_b2_hat)
     fit_gls <- .fit_gls_transformed(lambda_per_cluster)
     gls_passes <- 1L
@@ -653,7 +719,8 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
       var_within_xb_new <- .var_within_xb_for(fit_gls$coefficients)
       sigma2_hat_new <- max(sigma2_hat_raw - var_within_xb_new, 0)
     }
-    if (is.finite(sigma2_hat_new) &&
+    if (max_gls_passes >= 2L &&
+        is.finite(sigma2_hat_new) &&
         (abs(sigma2_hat_new - sigma2_hat) > 1e-6 ||
          abs(sigma_b2_hat_new - sigma_b2_hat) > 1e-6)) {
       lambda_per_cluster <- .lambda_from_components(sigma2_hat_new,
@@ -701,6 +768,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     var_within_xb  = var_within_xb,
     coefficient_method = coef_method,
     variance_method = variance_method,
+    profile_mode    = profile_mode,
     ring           = ring,
     converged      = !is.null(gls_attempt),
     iterations     = gls_passes,
