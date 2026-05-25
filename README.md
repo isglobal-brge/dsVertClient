@@ -112,6 +112,14 @@ All methods inside their theoretical floors (paper §V.A). **Sub-noise margin** 
   uses direct OT-Beaver only for tiny correctness checks and IKNP OT extension
   for larger dealer-free workloads; `"dealer"` forces the trusted-dealer
   backend and `"direct_ot"` forces the bounded direct-OT backend.
+- **Domain-separated IKNP reuse**: IKNP base-OT state is reused within a
+  DataSHIELD session per sender/receiver/ring tuple, while every multiplication
+  batch receives a distinct extension transcript key.
+- **OT-aware LMM profile**: K>=3 `ds.vert.lmm()` uses the protected
+  moment + cluster-mean GLS route when the Beaver backend resolves to IKNP/OT,
+  avoiding repeated weighted profile fits. Use
+  `options(dsvert.lmm_k3.profile_mode = "profile")` for the exhaustive
+  profile route.
 - **Server-generated Beaver triples**: client never sees cryptographic material;
   when the dealer is one of the DCF parties, its own share is installed
   server-side and only the peer share is relayed as an encrypted blob.

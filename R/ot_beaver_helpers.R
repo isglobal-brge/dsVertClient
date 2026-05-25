@@ -8,6 +8,8 @@
 #' @keywords internal
 #' @noRd
 
+.iknp_base_cache <- new.env(parent = emptyenv())
+
 .beaver_preprocessing_mode <- function(kind, n, p, ring) {
   mode <- getOption("dsvert.beaver_preprocessing", "auto")
   mode <- match.arg(tolower(as.character(mode)[1L]),
@@ -419,40 +421,51 @@
                                    output_sender_key, output_receiver_key,
                                    iknp_key, n, ring, session_id,
                                    .dsAgg, .sendBlob) {
-  setup <- .dsAgg(datasources[receiver_ci],
-    call(name = "k2IknpBaseReceiverSetupDS",
-         iknp_key = iknp_key,
-         session_id = session_id))
-  if (is.list(setup) && length(setup) == 1L) setup <- setup[[1L]]
+  base_key <- make.names(sprintf("k2_iknp_base_%s_%s_ring%d",
+                                 as.integer(sender_ci),
+                                 as.integer(receiver_ci),
+                                 as.integer(ring)))
+  cache_key <- paste(session_id, sender_ci, receiver_ci, ring, sep = "|")
+  base_cached <- isTRUE(get0(cache_key, envir = .iknp_base_cache,
+                             inherits = FALSE))
+  if (!base_cached) {
+    setup <- .dsAgg(datasources[receiver_ci],
+      call(name = "k2IknpBaseReceiverSetupDS",
+           iknp_key = base_key,
+           session_id = session_id))
+    if (is.list(setup) && length(setup) == 1L) setup <- setup[[1L]]
 
-  choices <- .dsAgg(datasources[sender_ci],
-    call(name = "k2IknpBaseSenderChoicesDS",
-         public_setup = setup$public_setup,
-         iknp_key = iknp_key,
-         session_id = session_id))
-  if (is.list(choices) && length(choices) == 1L) choices <- choices[[1L]]
+    choices <- .dsAgg(datasources[sender_ci],
+      call(name = "k2IknpBaseSenderChoicesDS",
+           public_setup = setup$public_setup,
+           iknp_key = base_key,
+           session_id = session_id))
+    if (is.list(choices) && length(choices) == 1L) choices <- choices[[1L]]
 
-  points_key <- paste0(iknp_key, "_base_points")
-  .sendBlob(choices$points, points_key, receiver_ci)
-  base_ct <- .dsAgg(datasources[receiver_ci],
-    call(name = "k2IknpBaseReceiverEncryptDS",
-         points_blob_key = points_key,
-         iknp_key = iknp_key,
-         session_id = session_id))
-  if (is.list(base_ct) && length(base_ct) == 1L) base_ct <- base_ct[[1L]]
+    points_key <- paste0(base_key, "_base_points")
+    .sendBlob(choices$points, points_key, receiver_ci)
+    base_ct <- .dsAgg(datasources[receiver_ci],
+      call(name = "k2IknpBaseReceiverEncryptDS",
+           points_blob_key = points_key,
+           iknp_key = base_key,
+           session_id = session_id))
+    if (is.list(base_ct) && length(base_ct) == 1L) base_ct <- base_ct[[1L]]
 
-  base_ct_key <- paste0(iknp_key, "_base_ciphertexts")
-  .sendBlob(base_ct$ciphertexts, base_ct_key, sender_ci)
-  .dsAgg(datasources[sender_ci],
-    call(name = "k2IknpBaseSenderFinalizeDS",
-         ciphertexts_blob_key = base_ct_key,
-         iknp_key = iknp_key,
-         session_id = session_id))
+    base_ct_key <- paste0(base_key, "_base_ciphertexts")
+    .sendBlob(base_ct$ciphertexts, base_ct_key, sender_ci)
+    .dsAgg(datasources[sender_ci],
+      call(name = "k2IknpBaseSenderFinalizeDS",
+           ciphertexts_blob_key = base_ct_key,
+           iknp_key = base_key,
+           session_id = session_id))
+    assign(cache_key, TRUE, envir = .iknp_base_cache)
+  }
 
   ext <- .dsAgg(datasources[receiver_ci],
     call(name = "k2IknpReceiverExtendDS",
          y_key = y_key,
          iknp_key = iknp_key,
+         base_key = base_key,
          n = as.integer(n),
          ring = ring,
          session_id = session_id))
@@ -465,6 +478,7 @@
          u_matrix_blob_key = u_key,
          x_key = x_key,
          iknp_key = iknp_key,
+         base_key = base_key,
          output_key = output_sender_key,
          n = as.integer(n),
          ring = ring,

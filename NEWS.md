@@ -7,6 +7,15 @@
   "auto")` now uses direct OT only for tiny correctness checks and IKNP for
   larger dealer-free workloads; `"dealer"` remains an explicit production
   override.
+* Reuse IKNP base-OT state within a DataSHIELD session for each sender,
+  receiver and ring tuple. Each multiplication batch still uses a unique
+  extension transcript key, which the server runtime uses for domain-separated
+  PRG seeds.
+* Added an OT-aware K>=3 LMM profile mode. When Beaver preprocessing resolves
+  to `iknp`/OT, `ds.vert.lmm()` avoids the repeated weighted-GLS
+  golden-section profile and uses the protected moment + cluster-mean GLS
+  route instead; set `options(dsvert.lmm_k3.profile_mode = "profile")` to
+  force the exhaustive profile path.
 * The client now detects when the selected production dealer is also one of
   the two DCF parties and skips the redundant self-relay of Beaver triple
   blobs. The peer still receives an opaque transport-encrypted blob; the
