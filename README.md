@@ -109,8 +109,9 @@ All methods inside their theoretical floors (paper §V.A). **Sub-noise margin** 
 - **No product observation-level disclosure**: client sees only model-scale
   aggregates returned by the registered server methods
 - **Configurable Beaver preprocessing**: `options(dsvert.beaver_preprocessing = "auto")`
-  uses the production dealer path for full workloads and direct OT-Beaver for
-  bounded correctness checks; `"dealer"` and `"ot"` force either backend.
+  uses direct OT-Beaver only for tiny correctness checks and IKNP OT extension
+  for larger dealer-free workloads; `"dealer"` forces the trusted-dealer
+  backend and `"direct_ot"` forces the bounded direct-OT backend.
 - **Server-generated Beaver triples**: client never sees cryptographic material;
   when the dealer is one of the DCF parties, its own share is installed
   server-side and only the peer share is relayed as an encrypted blob.
