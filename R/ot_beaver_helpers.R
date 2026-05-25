@@ -26,6 +26,9 @@
                                    transport_pks, session_id, n, ring,
                                    .dsAgg, .sendBlob, dealer_conn = NULL) {
   if (is.null(dealer_conn)) dealer_conn <- party_conns[[2L]]
+  dealer_party <- match(as.integer(dealer_conn), as.integer(party_conns),
+                        nomatch = NA_integer_) - 1L
+  if (is.na(dealer_party)) dealer_party <- NULL
   ring <- as.integer(ring)
   frac_bits <- if (ring == 127L) 50L else 20L
   tri <- .dsAgg(datasources[dealer_conn],
@@ -33,10 +36,16 @@
          dcf0_pk = transport_pks[[party_names[[1L]]]],
          dcf1_pk = transport_pks[[party_names[[2L]]]],
          n = as.numeric(as.integer(n)), session_id = session_id,
-         frac_bits = frac_bits, ring = ring))
+         frac_bits = frac_bits, ring = ring, dealer_party = dealer_party))
   if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
-  .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple", party_conns[[1L]])
-  .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple", party_conns[[2L]])
+  if (!is.null(tri$triple_blob_0) && nzchar(tri$triple_blob_0)) {
+    .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple",
+              party_conns[[1L]])
+  }
+  if (!is.null(tri$triple_blob_1) && nzchar(tri$triple_blob_1)) {
+    .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple",
+              party_conns[[2L]])
+  }
   invisible(NULL)
 }
 
@@ -45,15 +54,23 @@
                                  .dsAgg, .sendBlob, dealer_conn = NULL,
                                  grad_triple_key = "k2_grad_triple_fp") {
   if (is.null(dealer_conn)) dealer_conn <- party_conns[[2L]]
+  dealer_party <- match(as.integer(dealer_conn), as.integer(party_conns),
+                        nomatch = NA_integer_) - 1L
+  if (is.na(dealer_party)) dealer_party <- NULL
   grad_t <- .dsAgg(datasources[dealer_conn],
     call(name = "glmRing63GenGradTriplesDS",
          dcf0_pk = transport_pks[[party_names[[1L]]]],
          dcf1_pk = transport_pks[[party_names[[2L]]]],
          n = as.integer(n), p = as.integer(p),
-         ring = as.integer(ring), session_id = session_id))
+         ring = as.integer(ring), session_id = session_id,
+         dealer_party = dealer_party))
   if (is.list(grad_t) && length(grad_t) == 1L) grad_t <- grad_t[[1L]]
-  .sendBlob(grad_t$grad_blob_0, grad_triple_key, party_conns[[1L]])
-  .sendBlob(grad_t$grad_blob_1, grad_triple_key, party_conns[[2L]])
+  if (!is.null(grad_t$grad_blob_0) && nzchar(grad_t$grad_blob_0)) {
+    .sendBlob(grad_t$grad_blob_0, grad_triple_key, party_conns[[1L]])
+  }
+  if (!is.null(grad_t$grad_blob_1) && nzchar(grad_t$grad_blob_1)) {
+    .sendBlob(grad_t$grad_blob_1, grad_triple_key, party_conns[[2L]])
+  }
   invisible(NULL)
 }
 
@@ -61,6 +78,9 @@
                                    transport_pks, session_id, n, ring,
                                    .dsAgg, .sendBlob, dealer_conn = NULL) {
   if (is.null(dealer_conn)) dealer_conn <- party_conns[[2L]]
+  dealer_party <- match(as.integer(dealer_conn), as.integer(party_conns),
+                        nomatch = NA_integer_) - 1L
+  if (is.na(dealer_party)) dealer_party <- NULL
   ring <- as.integer(ring)
   frac_bits <- if (ring == 127L) 50L else 20L
   spline_t <- .dsAgg(datasources[dealer_conn],
@@ -68,10 +88,16 @@
          dcf0_pk = transport_pks[[party_names[[1L]]]],
          dcf1_pk = transport_pks[[party_names[[2L]]]],
          n = as.integer(n), frac_bits = frac_bits,
-         ring = ring, session_id = session_id))
+         ring = ring, session_id = session_id, dealer_party = dealer_party))
   if (is.list(spline_t) && length(spline_t) == 1L) spline_t <- spline_t[[1L]]
-  .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", party_conns[[1L]])
-  .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", party_conns[[2L]])
+  if (!is.null(spline_t$spline_blob_0) && nzchar(spline_t$spline_blob_0)) {
+    .sendBlob(spline_t$spline_blob_0, "k2_spline_triples",
+              party_conns[[1L]])
+  }
+  if (!is.null(spline_t$spline_blob_1) && nzchar(spline_t$spline_blob_1)) {
+    .sendBlob(spline_t$spline_blob_1, "k2_spline_triples",
+              party_conns[[2L]])
+  }
   invisible(NULL)
 }
 
