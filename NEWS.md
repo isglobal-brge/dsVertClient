@@ -1,5 +1,12 @@
 # dsVertClient (development version)
 
+### Beaver preprocessing
+
+* The client now detects when the selected production dealer is also one of
+  the two DCF parties and skips the redundant self-relay of Beaver triple
+  blobs. The peer still receives an opaque transport-encrypted blob; the
+  dealer's own share is installed server-side.
+
 ### Cleanup
 
 * Removed generated package tarballs, vignette HTML, vignette caches,

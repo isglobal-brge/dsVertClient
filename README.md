@@ -111,7 +111,9 @@ All methods inside their theoretical floors (paper §V.A). **Sub-noise margin** 
 - **Configurable Beaver preprocessing**: `options(dsvert.beaver_preprocessing = "auto")`
   uses the production dealer path for full workloads and direct OT-Beaver for
   bounded correctness checks; `"dealer"` and `"ot"` force either backend.
-- **Server-generated Beaver triples**: client never sees cryptographic material
+- **Server-generated Beaver triples**: client never sees cryptographic material;
+  when the dealer is one of the DCF parties, its own share is installed
+  server-side and only the peer share is relayed as an encrypted blob.
 - **Dealer rotation**: different server generates triples each iteration when
   the dealer backend is used in K >= 3; K = 2 uses a fixed server-side dealer.
 - **Transport encryption**: X25519 + AES-256-GCM between servers
