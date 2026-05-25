@@ -569,15 +569,16 @@ print.ds.vertGLMM <- function(x, ...) {
       call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
   }
 
-  spline_t <- .dsAgg(datasources[dealer_conn],
-    call(name = "glmRing63GenSplineTriplesDS",
-         dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
-         dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
-         n = as.integer(n_obs), frac_bits = frac_bits,
-         ring = ring, session_id = session_id))
-  if (is.list(spline_t) && length(spline_t) == 1L) spline_t <- spline_t[[1L]]
-  .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", dcf_conns[[1L]])
-  .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", dcf_conns[[2L]])
+  .ot_beaver_prepare_spline(
+    datasources = datasources,
+    party_conns = dcf_conns,
+    party_names = dcf_parties,
+    transport_pks = transport_pks,
+    session_id = session_id,
+    n = n_obs,
+    ring = ring,
+    .dsAgg = .dsAgg,
+    .sendBlob = .sendBlob)
   for (ph in 1:4) {
     pr <- vector("list", 2L)
     for (i in seq_along(dcf_parties)) {
@@ -639,15 +640,16 @@ print.ds.vertGLMM <- function(x, ...) {
     call(name = "dsvertClusterIDsReceiveDS", session_id = session_id))
 
   .vecmul <- function(x_key, y_key, output_key) {
-    tri <- .dsAgg(datasources[dealer_conn],
-      call(name = "k2BeaverVecmulGenTriplesDS",
-           dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
-           dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
-           n = as.numeric(n_obs), session_id = session_id,
-           frac_bits = frac_bits, ring = ring))
-    if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
-    .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple", dcf_conns[[1L]])
-    .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple", dcf_conns[[2L]])
+    .ot_beaver_prepare_vecmul(
+      datasources = datasources,
+      party_conns = dcf_conns,
+      party_names = dcf_parties,
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      ring = ring,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob)
     for (ci in dcf_conns) {
       .dsAgg(datasources[ci],
         call(name = "k2BeaverVecmulConsumeTripleDS",
@@ -772,15 +774,16 @@ print.ds.vertGLMM <- function(x, ...) {
         call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
     }
 
-    sp_t <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenSplineTriplesDS",
-           dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
-           dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
-           n = as.integer(n_obs), frac_bits = frac_bits,
-           ring = ring, session_id = session_id))
-    if (is.list(sp_t) && length(sp_t) == 1L) sp_t <- sp_t[[1L]]
-    .sendBlob(sp_t$spline_blob_0, "k2_spline_triples", dcf_conns[[1L]])
-    .sendBlob(sp_t$spline_blob_1, "k2_spline_triples", dcf_conns[[2L]])
+    .ot_beaver_prepare_spline(
+      datasources = datasources,
+      party_conns = dcf_conns,
+      party_names = dcf_parties,
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      ring = ring,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob)
     for (ph in 1:4) {
       pr <- vector("list", 2L)
       for (i in seq_along(dcf_parties)) {

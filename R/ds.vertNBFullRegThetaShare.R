@@ -408,17 +408,17 @@
     server_list = server_list, server_names = server_names,
     y_server = y_server, session_id = session_id, .dsAgg = .dsAgg)
 
-  grad_t <- .dsAgg(datasources[dealer_ci],
-    call(name = "glmRing63GenGradTriplesDS",
-         dcf0_pk = transport_pks[[y_server]],
-         dcf1_pk = transport_pks[[nl]],
-         n = as.numeric(n_obs), p = as.numeric(p_total),
-         ring = 127, session_id = session_id))
-  if (is.list(grad_t) && length(grad_t) == 1L) grad_t <- grad_t[[1L]]
-  .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp",
-            which(server_names == y_server))
-  .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp",
-            which(server_names == nl))
+  .ot_beaver_prepare_grad(
+    datasources = datasources,
+    party_conns = c(which(server_names == y_server), which(server_names == nl)),
+    party_names = c(y_server, nl),
+    transport_pks = transport_pks,
+    session_id = session_id,
+    n = n_obs,
+    p = p_total,
+    ring = 127L,
+    .dsAgg = .dsAgg,
+    .sendBlob = .sendBlob)
 
   r1 <- list()
   for (server in server_list) {

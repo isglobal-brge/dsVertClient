@@ -218,17 +218,16 @@ NULL
         .dsAgg(datasources[ci], call(name = "k2IdentityLinkDS", session_id = session_id))
       }
     } else {
-      # Spline triples generated on dealer server (not client)
-      spline_t <- .dsAgg(datasources[dealer_conn],
-        call(name = "glmRing63GenSplineTriplesDS",
-             dcf0_pk = transport_pks[[coordinator]],
-             dcf1_pk = transport_pks[[nl]],
-             n = as.integer(n_obs), frac_bits = frac_bits,
-             ring = ring,
-             session_id = session_id))
-      if (is.list(spline_t)) spline_t <- spline_t[[1]]
-      .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", coordinator_conn)
-      .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", nl_conn)
+      .ot_beaver_prepare_spline(
+        datasources = datasources,
+        party_conns = c(coordinator_conn, nl_conn),
+        party_names = c(coordinator, nl),
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n = n_obs,
+        ring = ring,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob)
 
       ph1 <- list()
       for (server in server_list) {
@@ -315,17 +314,17 @@ NULL
     }
 
     # === Step 3: Gradient (Beaver matvec) ===
-    # Gradient triples generated on dealer server (not client)
-    grad_t <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenGradTriplesDS",
-           dcf0_pk = transport_pks[[coordinator]],
-           dcf1_pk = transport_pks[[nl]],
-           n = as.integer(n_obs), p = as.integer(p_total),
-           ring = ring,
-           session_id = session_id))
-    if (is.list(grad_t)) grad_t <- grad_t[[1]]
-    .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", coordinator_conn)
-    .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp", nl_conn)
+    .ot_beaver_prepare_grad(
+      datasources = datasources,
+      party_conns = c(coordinator_conn, nl_conn),
+      party_names = c(coordinator, nl),
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      p = p_total,
+      ring = ring,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob)
     r1_results <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
@@ -470,12 +469,16 @@ NULL
       for (server in server_list) .dsAgg(datasources[which(server_names==server)],
         call(name = "k2IdentityLinkDS", session_id=session_id))
     } else {
-      st <- .dsAgg(datasources[dealer_conn], call(name = "glmRing63GenSplineTriplesDS",
-        dcf0_pk=transport_pks[[coordinator]], dcf1_pk=transport_pks[[nl]],
-        n=as.integer(n_obs), frac_bits=frac_bits, ring=ring, session_id=session_id))
-      if(is.list(st)) st<-st[[1]]
-      .sendBlob(st$spline_blob_0,"k2_spline_triples",coordinator_conn)
-      .sendBlob(st$spline_blob_1,"k2_spline_triples",nl_conn)
+      .ot_beaver_prepare_spline(
+        datasources = datasources,
+        party_conns = c(coordinator_conn, nl_conn),
+        party_names = c(coordinator, nl),
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n = n_obs,
+        ring = ring,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob)
       for(ph in 1:4){pr<-list(); for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(paste0("k2WideSplinePhase",ph,"DS"),party_id=if(is_coord)0L else 1L,family=family,num_intervals=num_intervals,frac_bits=frac_bits,ring=ring,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];pr[[server]]<-r};if(ph==1){.sendBlob(pr[[coordinator]]$dcf_masked,"k2_peer_dcf_masked",nl_conn);.sendBlob(pr[[nl]]$dcf_masked,"k2_peer_dcf_masked",coordinator_conn)}else if(ph==2){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[server]]$and_xma,and_ymb=pr[[server]]$and_ymb,had1_xma=pr[[server]]$had1_xma,had1_ymb=pr[[server]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_beaver_r1",peer_ci)}}else if(ph==3){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[server]]$had2_xma,had2_ymb=pr[[server]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_had2_r1",peer_ci)}}}
     }
     if (isTRUE(weights_active)) {
@@ -491,12 +494,17 @@ NULL
         .sendBlob = .sendBlob,
         ring = ring)
     }
-    gt <- .dsAgg(datasources[dealer_conn], call(name = "glmRing63GenGradTriplesDS",
-      dcf0_pk=transport_pks[[coordinator]], dcf1_pk=transport_pks[[nl]],
-      n=as.integer(n_obs), p=as.integer(p_total), ring=ring, session_id=session_id))
-    if(is.list(gt)) gt<-gt[[1]]
-    .sendBlob(gt$grad_blob_0,"k2_grad_triple_fp",coordinator_conn)
-    .sendBlob(gt$grad_blob_1,"k2_grad_triple_fp",nl_conn)
+    .ot_beaver_prepare_grad(
+      datasources = datasources,
+      party_conns = c(coordinator_conn, nl_conn),
+      party_names = c(coordinator, nl),
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      p = p_total,
+      ring = ring,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob)
     r1p<-list(); for(server in server_list){ci<-which(server_names==server);peer<-setdiff(server_list,server);.dsAgg(datasources[ci],call(name = "k2StoreGradTripleDS",session_id=session_id));r<-.dsAgg(datasources[ci],call(name = "k2GradientR1DS",peer_pk=transport_pks[[peer]],session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r1p[[server]]<-r}
     .sendBlob(r1p[[coordinator]]$encrypted_r1,"k2_grad_peer_r1",nl_conn)
     .sendBlob(r1p[[nl]]$encrypted_r1,"k2_grad_peer_r1",coordinator_conn)
@@ -511,7 +519,7 @@ NULL
     bet_m_coord <- if (p_coord > 0L) bet_m[seq_len(p_coord)] else numeric(0)
     bet_m_nl <- if (p_total > p_coord) bet_m[(p_coord + 1L):p_total] else numeric(0)
     for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);.dsAgg(datasources[ci],call(name = "k2ComputeEtaShareDS",beta_coord=bet_m_coord,beta_nl=bet_m_nl,intercept=if(is_coord)int_m else 0,is_coordinator=is_coord,session_id=session_id))}
-    if(is_gaussian){for(server in server_list).dsAgg(datasources[which(server_names==server)],call(name = "k2IdentityLinkDS",session_id=session_id))}else{stb<-.dsAgg(datasources[dealer_conn],call(name = "glmRing63GenSplineTriplesDS",dcf0_pk=transport_pks[[coordinator]],dcf1_pk=transport_pks[[nl]],n=as.integer(n_obs),frac_bits=frac_bits,ring=ring,session_id=session_id));if(is.list(stb))stb<-stb[[1]];.sendBlob(stb$spline_blob_0,"k2_spline_triples",coordinator_conn);.sendBlob(stb$spline_blob_1,"k2_spline_triples",nl_conn);for(ph in 1:4){pr<-list();for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(paste0("k2WideSplinePhase",ph,"DS"),party_id=if(is_coord)0L else 1L,family=family,num_intervals=num_intervals,frac_bits=frac_bits,ring=ring,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];pr[[server]]<-r};if(ph==1){.sendBlob(pr[[coordinator]]$dcf_masked,"k2_peer_dcf_masked",nl_conn);.sendBlob(pr[[nl]]$dcf_masked,"k2_peer_dcf_masked",coordinator_conn)}else if(ph==2){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[server]]$and_xma,and_ymb=pr[[server]]$and_ymb,had1_xma=pr[[server]]$had1_xma,had1_ymb=pr[[server]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_beaver_r1",peer_ci)}}else if(ph==3){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[server]]$had2_xma,had2_ymb=pr[[server]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_had2_r1",peer_ci)}}}}
+    if(is_gaussian){for(server in server_list).dsAgg(datasources[which(server_names==server)],call(name = "k2IdentityLinkDS",session_id=session_id))}else{.ot_beaver_prepare_spline(datasources=datasources,party_conns=c(coordinator_conn,nl_conn),party_names=c(coordinator,nl),transport_pks=transport_pks,session_id=session_id,n=n_obs,ring=ring,.dsAgg=.dsAgg,.sendBlob=.sendBlob);for(ph in 1:4){pr<-list();for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(paste0("k2WideSplinePhase",ph,"DS"),party_id=if(is_coord)0L else 1L,family=family,num_intervals=num_intervals,frac_bits=frac_bits,ring=ring,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];pr[[server]]<-r};if(ph==1){.sendBlob(pr[[coordinator]]$dcf_masked,"k2_peer_dcf_masked",nl_conn);.sendBlob(pr[[nl]]$dcf_masked,"k2_peer_dcf_masked",coordinator_conn)}else if(ph==2){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[server]]$and_xma,and_ymb=pr[[server]]$and_ymb,had1_xma=pr[[server]]$had1_xma,had1_ymb=pr[[server]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_beaver_r1",peer_ci)}}else if(ph==3){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[server]]$had2_xma,had2_ymb=pr[[server]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_had2_r1",peer_ci)}}}}
     if (isTRUE(weights_active)) {
       .glm_apply_shared_weight_residual(
         datasources = datasources,
@@ -525,7 +533,7 @@ NULL
         .sendBlob = .sendBlob,
         ring = ring)
     }
-    gtb<-.dsAgg(datasources[dealer_conn],call(name = "glmRing63GenGradTriplesDS",dcf0_pk=transport_pks[[coordinator]],dcf1_pk=transport_pks[[nl]],n=as.integer(n_obs),p=as.integer(p_total),ring=ring,session_id=session_id));if(is.list(gtb))gtb<-gtb[[1]];.sendBlob(gtb$grad_blob_0,"k2_grad_triple_fp",coordinator_conn);.sendBlob(gtb$grad_blob_1,"k2_grad_triple_fp",nl_conn)
+    .ot_beaver_prepare_grad(datasources=datasources,party_conns=c(coordinator_conn,nl_conn),party_names=c(coordinator,nl),transport_pks=transport_pks,session_id=session_id,n=n_obs,p=p_total,ring=ring,.dsAgg=.dsAgg,.sendBlob=.sendBlob)
     r1b<-list();for(server in server_list){ci<-which(server_names==server);peer<-setdiff(server_list,server);.dsAgg(datasources[ci],call(name = "k2StoreGradTripleDS",session_id=session_id));r<-.dsAgg(datasources[ci],call(name = "k2GradientR1DS",peer_pk=transport_pks[[peer]],session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r1b[[server]]<-r}
     .sendBlob(r1b[[coordinator]]$encrypted_r1,"k2_grad_peer_r1",nl_conn);.sendBlob(r1b[[nl]]$encrypted_r1,"k2_grad_peer_r1",coordinator_conn)
     r2b<-list();for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(name = "k2GradientR2DS",party_id=if(is_coord)0L else 1L,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r2b[[server]]<-r}
@@ -592,16 +600,17 @@ NULL
 
   # Helper: run one Beaver dot-product (nx1) and return aggregated scalar
   .beaver_dot <- function() {
-    dt <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenGradTriplesDS",
-           dcf0_pk = transport_pks[[coordinator]],
-           dcf1_pk = transport_pks[[nl]],
-           n = as.integer(n_obs), p = 1L,
-           ring = ring,
-           session_id = session_id))
-    if (is.list(dt)) dt <- dt[[1]]
-    .sendBlob(dt$grad_blob_0, "k2_grad_triple_fp", coordinator_conn)
-    .sendBlob(dt$grad_blob_1, "k2_grad_triple_fp", nl_conn)
+    .ot_beaver_prepare_grad(
+      datasources = datasources,
+      party_conns = c(coordinator_conn, nl_conn),
+      party_names = c(coordinator, nl),
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      p = 1L,
+      ring = ring,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob)
     dr1 <- list()
     for (s in server_list) {
       ci <- which(server_names == s); peer <- setdiff(server_list, s)
@@ -667,15 +676,16 @@ NULL
       ci <- which(server_names == s)
       .dsAgg(datasources[ci], call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
     }
-    sp_triples <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenSplineTriplesDS",
-           dcf0_pk = transport_pks[[coordinator]],
-           dcf1_pk = transport_pks[[nl]],
-           n = as.integer(n_obs), frac_bits = as.integer(frac_bits),
-           ring = ring, session_id = session_id))
-    if (is.list(sp_triples)) sp_triples <- sp_triples[[1]]
-    .sendBlob(sp_triples$spline_blob_0, "k2_spline_triples", coordinator_conn)
-    .sendBlob(sp_triples$spline_blob_1, "k2_spline_triples", nl_conn)
+    .ot_beaver_prepare_spline(
+      datasources = datasources,
+      party_conns = c(coordinator_conn, nl_conn),
+      party_names = c(coordinator, nl),
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      ring = ring,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob)
     # Run 4-phase softplus spline (same as sigmoid/exp but family="softplus")
     for (ph in 1:4) {
       pr <- list()

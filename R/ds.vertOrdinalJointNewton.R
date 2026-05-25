@@ -281,15 +281,19 @@
         n = as.integer(n_obs), session_id = session_id))
     }
     p_shared <- as.integer(sum(vapply(x_vars_per_server, length, integer(1L))))
-    gt <- .unwrap(.dsAgg(datasources[dealer_ci],
-      call(name = "glmRing63GenGradTriplesDS",
-           dcf0_pk = .to_b64url(transport_pks[[y_server]]),
-           dcf1_pk = .to_b64url(transport_pks[[nl]]),
-           n = as.integer(n_obs), p = p_shared,
-           ring = 127L, session_id = session_id)))
     gtk <- paste0("ord_strict_grad_", tag)
-    .sendBlob(gt$grad_blob_0, gtk, ci_os)
-    .sendBlob(gt$grad_blob_1, gtk, ci_nl)
+    .ot_beaver_prepare_grad(
+      datasources = datasources,
+      party_conns = c(ci_os, ci_nl),
+      party_names = c(y_server, nl),
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      p = p_shared,
+      ring = 127L,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob,
+      beaver_key = gtk)
     r1 <- list()
     for (srv in server_list) {
       ci <- which(server_names == srv)

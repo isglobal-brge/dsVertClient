@@ -339,16 +339,16 @@ NULL
     } else {
       if (verbose && iter <= 3) message(sprintf("    [%d.2] DCF wide spline...", iter))
 
-      # Generate spline Beaver triples on dealer server (not client)
-      spline_t <- .dsAgg(datasources[dealer_conn],
-        call(name = "glmRing63GenSplineTriplesDS",
-             dcf0_pk = transport_pks[[dcf_parties[1]]],
-             dcf1_pk = transport_pks[[dcf_parties[2]]],
-             n = as.integer(n_obs), frac_bits = frac_bits,
-             ring = ring, session_id = session_id))
-      if (is.list(spline_t)) spline_t <- spline_t[[1]]
-      .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", dcf_conns[1])
-      .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", dcf_conns[2])
+      .ot_beaver_prepare_spline(
+        datasources = datasources,
+        party_conns = dcf_conns,
+        party_names = dcf_parties,
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n = n_obs,
+        ring = ring,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob)
 
       # Phase 1-4
       ph1 <- list()
@@ -434,17 +434,17 @@ NULL
     # =================================================================
     if (verbose && iter <= 3) message(sprintf("    [%d.3] Beaver gradient...", iter))
 
-    # Generate gradient Beaver triples on dealer server (not client)
-    grad_t <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenGradTriplesDS",
-           dcf0_pk = transport_pks[[dcf_parties[1]]],
-           dcf1_pk = transport_pks[[dcf_parties[2]]],
-           n = as.integer(n_obs), p = as.integer(p_total),
-           ring = ring, session_id = session_id))
-    if (is.list(grad_t)) grad_t <- grad_t[[1]]
-    # Relay opaque blobs (client can't read)
-    .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", dcf_conns[1])
-    .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp", dcf_conns[2])
+    .ot_beaver_prepare_grad(
+      datasources = datasources,
+      party_conns = dcf_conns,
+      party_names = dcf_parties,
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      p = p_total,
+      ring = ring,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob)
 
     r1_results <- list()
     for (i in seq_along(dcf_parties)) {
@@ -649,16 +649,16 @@ NULL
         .dsAgg(datasources[dcf_conns[di]], call(name = "k2IdentityLinkDS", session_id = session_id))
       }
     } else {
-      # DCF wide spline
-      spline_t <- .dsAgg(datasources[dealer_conn],
-        call(name = "glmRing63GenSplineTriplesDS",
-             dcf0_pk = transport_pks[[dcf_parties[1]]],
-             dcf1_pk = transport_pks[[dcf_parties[2]]],
-             n = as.integer(n_obs), frac_bits = frac_bits,
-             ring = ring, session_id = session_id))
-      if (is.list(spline_t)) spline_t <- spline_t[[1]]
-      .sendBlob(spline_t$spline_blob_0, "k2_spline_triples", dcf_conns[1])
-      .sendBlob(spline_t$spline_blob_1, "k2_spline_triples", dcf_conns[2])
+      .ot_beaver_prepare_spline(
+        datasources = datasources,
+        party_conns = dcf_conns,
+        party_names = dcf_parties,
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n = n_obs,
+        ring = ring,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob)
       for (ph in 1:4) {
         ph_r <- list()
         for (di in seq_along(dcf_parties)) {
@@ -710,15 +710,17 @@ NULL
     }
 
     # Beaver gradient with perturbed beta
-    grad_t <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenGradTriplesDS",
-           dcf0_pk = transport_pks[[dcf_parties[1]]],
-           dcf1_pk = transport_pks[[dcf_parties[2]]],
-           n = as.integer(n_obs), p = as.integer(p_total),
-           ring = ring, session_id = session_id))
-    if (is.list(grad_t)) grad_t <- grad_t[[1]]
-    .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", dcf_conns[1])
-    .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp", dcf_conns[2])
+    .ot_beaver_prepare_grad(
+      datasources = datasources,
+      party_conns = dcf_conns,
+      party_names = dcf_parties,
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      p = p_total,
+      ring = ring,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob)
     se_r1 <- list()
     for (di in seq_along(dcf_parties)) {
       ci <- dcf_conns[di]; peer <- dcf_parties[3 - di]
@@ -782,12 +784,16 @@ NULL
       for (di in seq_along(dcf_parties))
         .dsAgg(datasources[dcf_conns[di]], call(name = "k2IdentityLinkDS", session_id=session_id))
     } else {
-      st2 <- .dsAgg(datasources[dealer_conn_b], call(name = "glmRing63GenSplineTriplesDS",
-        dcf0_pk=transport_pks[[dcf_parties[1]]], dcf1_pk=transport_pks[[dcf_parties[2]]],
-        n=as.integer(n_obs), frac_bits=frac_bits, ring=ring, session_id=session_id))
-      if (is.list(st2)) st2 <- st2[[1]]
-      .sendBlob(st2$spline_blob_0, "k2_spline_triples", dcf_conns[1])
-      .sendBlob(st2$spline_blob_1, "k2_spline_triples", dcf_conns[2])
+      .ot_beaver_prepare_spline(
+        datasources = datasources,
+        party_conns = dcf_conns,
+        party_names = dcf_parties,
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n = n_obs,
+        ring = ring,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob)
       for (ph in 1:4) {
         pr <- list()
         for (di in 1:2) {
@@ -814,12 +820,17 @@ NULL
         .sendBlob = .sendBlob,
         ring = ring)
     }
-    gt2 <- .dsAgg(datasources[dealer_conn_b], call(name = "glmRing63GenGradTriplesDS",
-      dcf0_pk=transport_pks[[dcf_parties[1]]], dcf1_pk=transport_pks[[dcf_parties[2]]],
-      n=as.integer(n_obs), p=as.integer(p_total), ring=ring, session_id=session_id))
-    if (is.list(gt2)) gt2 <- gt2[[1]]
-    .sendBlob(gt2$grad_blob_0,"k2_grad_triple_fp",dcf_conns[1])
-    .sendBlob(gt2$grad_blob_1,"k2_grad_triple_fp",dcf_conns[2])
+    .ot_beaver_prepare_grad(
+      datasources = datasources,
+      party_conns = dcf_conns,
+      party_names = dcf_parties,
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      p = p_total,
+      ring = ring,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob)
     br1 <- list()
     for (di in 1:2) {
       ci<-dcf_conns[di]; peer<-dcf_parties[3-di]
@@ -905,15 +916,17 @@ NULL
 
   # Helper: Beaver dot-product (nx1) on both DCF parties, returns scalar
   .k3_beaver_dot <- function() {
-    dt <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenGradTriplesDS",
-           dcf0_pk = transport_pks[[dcf_parties[1]]],
-           dcf1_pk = transport_pks[[dcf_parties[2]]],
-           n = as.integer(n_obs), p = 1L,
-           ring = ring, session_id = session_id))
-    if (is.list(dt)) dt <- dt[[1]]
-    .sendBlob(dt$grad_blob_0, "k2_grad_triple_fp", dcf_conns[1])
-    .sendBlob(dt$grad_blob_1, "k2_grad_triple_fp", dcf_conns[2])
+    .ot_beaver_prepare_grad(
+      datasources = datasources,
+      party_conns = dcf_conns,
+      party_names = dcf_parties,
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      p = 1L,
+      ring = ring,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob)
     dr1 <- list()
     for (i in seq_along(dcf_parties)) {
       ci <- dcf_conns[i]; peer <- dcf_parties[3-i]
@@ -974,15 +987,16 @@ NULL
     .sendBlob(sp_dcf$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[2])
     for (i in seq_along(dcf_parties))
       .dsAgg(datasources[dcf_conns[i]], call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-    sp_t <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenSplineTriplesDS",
-           dcf0_pk = transport_pks[[dcf_parties[1]]],
-           dcf1_pk = transport_pks[[dcf_parties[2]]],
-           n = as.integer(n_obs), frac_bits = as.integer(frac_bits),
-           ring = ring, session_id = session_id))
-    if (is.list(sp_t)) sp_t <- sp_t[[1]]
-    .sendBlob(sp_t$spline_blob_0, "k2_spline_triples", dcf_conns[1])
-    .sendBlob(sp_t$spline_blob_1, "k2_spline_triples", dcf_conns[2])
+    .ot_beaver_prepare_spline(
+      datasources = datasources,
+      party_conns = dcf_conns,
+      party_names = dcf_parties,
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      ring = ring,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob)
     for (ph in 1:4) {
       pr <- list()
       for (di in seq_along(dcf_parties)) {

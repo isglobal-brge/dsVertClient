@@ -529,13 +529,6 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           n = as.integer(n_obs), session_id = session_id))
       }
       # Beaver matvec: X^T (mu - y) -> per-class SLOPE gradient (length p_shared)
-      grad_t <- .dsAgg(datasources[dealer_ci],
-        call(name = "glmRing63GenGradTriplesDS",
-             dcf0_pk = .to_b64url(transport_pks[[coord]]),
-             dcf1_pk = .to_b64url(transport_pks[[nl]]),
-             n = as.integer(n_obs), p = as.integer(p_shared),
-             ring = 127L, session_id = session_id))
-      if (is.list(grad_t) && length(grad_t) == 1L) grad_t <- grad_t[[1L]]
       # Per-class blob-key namespacing (defensive: ABY3 Sec.IV.D pool
       # isolation; MP-SPDZ Multiplications.hpp). Eliminates cross-class
       # blob-key collision under the shared key "k2_grad_triple_fp" that
@@ -543,8 +536,18 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       # used to share. Hypothesised root cause of intermittent iter-2
       # NPE on s2 (3/9 approx 33% empirical rate, see paper Sec.VIII bullet #4).
       grad_triple_key <- sprintf("k2_grad_triple_fp_iter%d_class%d", outer, ki)
-      .sendBlob(grad_t$grad_blob_0, grad_triple_key, y_server_ci)
-      .sendBlob(grad_t$grad_blob_1, grad_triple_key, nl_ci)
+      .ot_beaver_prepare_grad(
+        datasources = datasources,
+        party_conns = c(y_server_ci, nl_ci),
+        party_names = c(y_server, nl),
+        transport_pks = transport_pks,
+        session_id = session_id,
+        n = n_obs,
+        p = p_shared,
+        ring = 127L,
+        .dsAgg = .dsAgg,
+        .sendBlob = .sendBlob,
+        beaver_key = grad_triple_key)
       r1 <- list()
       for (srv in server_list) {
         ci <- which(server_names == srv)
@@ -803,18 +806,20 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
             is_outcome_server = (srv == coord),
             n = as.integer(n_obs), session_id = session_id))
         }
-        grad_t_xw <- .dsAgg(datasources[dealer_ci],
-          call(name = "glmRing63GenGradTriplesDS",
-               dcf0_pk = .to_b64url(transport_pks[[coord]]),
-               dcf1_pk = .to_b64url(transport_pks[[nl]]),
-               n = as.integer(n_obs), p = as.integer(p_shared),
-               ring = 127L, session_id = session_id))
-        if (is.list(grad_t_xw) && length(grad_t_xw) == 1L)
-          grad_t_xw <- grad_t_xw[[1L]]
         gtk_xw <- sprintf("k2_grad_triple_fp_iter%d_xw_%d_%d",
                            outer, ki, li)
-        .sendBlob(grad_t_xw$grad_blob_0, gtk_xw, y_server_ci)
-        .sendBlob(grad_t_xw$grad_blob_1, gtk_xw, nl_ci)
+        .ot_beaver_prepare_grad(
+          datasources = datasources,
+          party_conns = c(y_server_ci, nl_ci),
+          party_names = c(y_server, nl),
+          transport_pks = transport_pks,
+          session_id = session_id,
+          n = n_obs,
+          p = p_shared,
+          ring = 127L,
+          .dsAgg = .dsAgg,
+          .sendBlob = .sendBlob,
+          beaver_key = gtk_xw)
         r1xw <- list()
         for (srv in server_list) {
           ci <- which(server_names == srv)
@@ -885,18 +890,20 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                    is_outcome_server = (srv == coord),
                    n = as.integer(n_obs), session_id = session_id))
           }
-          grad_t_H <- .dsAgg(datasources[dealer_ci],
-            call(name = "glmRing63GenGradTriplesDS",
-                 dcf0_pk = .to_b64url(transport_pks[[coord]]),
-                 dcf1_pk = .to_b64url(transport_pks[[nl]]),
-                 n = as.integer(n_obs), p = p_shared,
-                 ring = 127L, session_id = session_id))
-          if (is.list(grad_t_H) && length(grad_t_H) == 1L)
-            grad_t_H <- grad_t_H[[1L]]
           gtk_H <- sprintf("k2_grad_triple_fp_iter%d_Hblk%d_%d_col%d",
                             outer, ki, li, j)
-          .sendBlob(grad_t_H$grad_blob_0, gtk_H, y_server_ci)
-          .sendBlob(grad_t_H$grad_blob_1, gtk_H, nl_ci)
+          .ot_beaver_prepare_grad(
+            datasources = datasources,
+            party_conns = c(y_server_ci, nl_ci),
+            party_names = c(y_server, nl),
+            transport_pks = transport_pks,
+            session_id = session_id,
+            n = n_obs,
+            p = p_shared,
+            ring = 127L,
+            .dsAgg = .dsAgg,
+            .sendBlob = .sendBlob,
+            beaver_key = gtk_H)
           r1H <- list()
           for (srv in server_list) {
             ci <- which(server_names == srv)

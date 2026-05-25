@@ -8,7 +8,7 @@
 #' @keywords internal
 #' @noRd
 .glm_apply_shared_weight_residual <- function(
-    datasources, dcf_parties, dcf_conns, dealer_conn, transport_pks,
+    datasources, dcf_parties, dcf_conns, dealer_conn = NULL, transport_pks,
     session_id, n_obs, .dsAgg, .sendBlob,
     weight_key = "k2_weights_share_fp",
     output_key = "k2_weighted_residual_share_fp",
@@ -23,15 +23,16 @@
                                  session_id = session_id))
   }
 
-  tri <- .dsAgg(datasources[dealer_conn],
-    call(name = "k2BeaverVecmulGenTriplesDS",
-         dcf0_pk = transport_pks[[dcf_parties[1L]]],
-         dcf1_pk = transport_pks[[dcf_parties[2L]]],
-         n = as.numeric(n_int), session_id = session_id,
-         frac_bits = frac_bits, ring = ring))
-  if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
-  .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple", dcf_conns[1L])
-  .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple", dcf_conns[2L])
+  .ot_beaver_prepare_vecmul(
+    datasources = datasources,
+    party_conns = dcf_conns,
+    party_names = dcf_parties,
+    transport_pks = transport_pks,
+    session_id = session_id,
+    n = n_int,
+    ring = ring,
+    .dsAgg = .dsAgg,
+    .sendBlob = .sendBlob)
 
   for (ci in dcf_conns) {
     .dsAgg(datasources[ci], call(name = "k2BeaverVecmulConsumeTripleDS",

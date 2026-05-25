@@ -152,6 +152,34 @@ ds.vert.wald(fit, parm, null = 0)
 
 ds.vert.contrast(fit, K, m = NULL)
 }
+\arguments{
+\item{data_name, data}{Character name of the aligned server-side data frame.}
+\item{id_col}{Record identifier column used by PSI alignment.}
+\item{newobj}{Name of the aligned DataSHIELD object to create or inspect.}
+\item{datasources}{DataSHIELD connection list. Defaults to active
+connections.}
+\item{variables}{Named list mapping server names to variable names.}
+\item{var1, var2}{Variables used by contingency-table wrappers.}
+\item{formula, outcome_formula, propensity_formula}{Model formulas.}
+\item{precision}{User-facing precision preset.}
+\item{method}{Method preset for wrappers with multiple supported backends.}
+\item{cluster_col}{Cluster identifier column for mixed/clustered models.}
+\item{max_iter, inner_iter, max_outer}{Iteration controls passed to the
+backend estimator.}
+\item{tol}{Optional convergence tolerance.}
+\item{ring}{Optional ring selector.}
+\item{verbose}{Logical progress flag.}
+\item{impute_columns}{Columns to impute in the MI wrapper.}
+\item{fit}{Fitted dsVert model object.}
+\item{lambda_1, lambda, lambda_grid}{LASSO penalty values.}
+\item{reduced, full}{Nested fitted models for likelihood-ratio testing.}
+\item{parm}{Coefficient name or index.}
+\item{level}{Confidence level.}
+\item{null}{Null value for Wald testing.}
+\item{K}{Contrast matrix.}
+\item{m}{Optional contrast right-hand side.}
+\item{...}{Additional arguments passed to the compatibility backend.}
+}
 \description{
 These wrappers provide a compact, formula-style public surface while keeping
 the historical CamelCase functions as compatibility backends. Wrappers that

@@ -5,7 +5,7 @@
 
 ## Overview
 
-**dsVertClient** provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols (ECDH-PSI, Ring63 / Ring127 Beaver MPC, DCF wide-spline, OT-Beaver dishonest-majority triples, X25519 + AES-256-GCM transport, Ed25519 identity verification) run transparently.
+**dsVertClient** provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols (ECDH-PSI, Ring63 / Ring127 Beaver MPC, DCF wide-spline, configurable Beaver preprocessing, X25519 + AES-256-GCM transport, Ed25519 identity verification) run transparently.
 
 Pair with the server-side companion package [**dsVert**](https://github.com/isglobal-brge/dsVert).
 
@@ -108,8 +108,12 @@ All methods inside their theoretical floors (paper §V.A). **Sub-noise margin** 
 
 - **No product observation-level disclosure**: client sees only model-scale
   aggregates returned by the registered server methods
+- **Configurable Beaver preprocessing**: `options(dsvert.beaver_preprocessing = "auto")`
+  uses the production dealer path for full workloads and direct OT-Beaver for
+  bounded correctness checks; `"dealer"` and `"ot"` force either backend.
 - **Server-generated Beaver triples**: client never sees cryptographic material
-- **Dealer rotation**: different server generates triples each iteration (K ≥ 3); fixed dealer with OT-Beaver for K = 2
+- **Dealer rotation**: different server generates triples each iteration when
+  the dealer backend is used in K >= 3; K = 2 uses a fixed server-side dealer.
 - **Transport encryption**: X25519 + AES-256-GCM between servers
 - **Identity verification**: Ed25519 signed peer transport keys (`dsvert.require_trusted_peers`)
 - **Ring**: Ring63 (frac_bits = 20) and Ring127 (frac_bits = 50), selected by
