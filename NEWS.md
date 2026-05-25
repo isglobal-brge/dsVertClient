@@ -2,6 +2,11 @@
 
 ### Beaver preprocessing
 
+* Added an `iknp` Beaver preprocessing backend backed by relayable
+  semi-honest IKNP OT extension. `options(dsvert.beaver_preprocessing =
+  "auto")` now uses direct OT only for tiny correctness checks and IKNP for
+  larger dealer-free workloads; `"dealer"` remains an explicit production
+  override.
 * The client now detects when the selected production dealer is also one of
   the two DCF parties and skips the redundant self-relay of Beaver triple
   blobs. The peer still receives an opaque transport-encrypted blob; the
