@@ -242,8 +242,10 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
   #   on var2_srv:  X_share = column k of var1_peer; Y_share = col l of var2_src
   # (Both pairs sum to the true X_k, Y_l.)
 
-  dealer_ci <- v2_ci   # non-party-0 acts as dealer for the Beaver triples
+  dealer_ci <- v2_ci
   count_key <- "k2_chisq_cross_count_shares"
+
+  dsAgg <- function(ds, expr) DSI::datashield.aggregate(ds, expr)
 
   # PERFORMANCE NOTE: each (kk, ll) cell gets a FRESH triple (reusing
   # a triple for two products is a security leak: the common masking
@@ -277,15 +279,17 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
              source_key = var2_src, n = as.integer(n), K = as.integer(L),
              col_index = as.integer(ll), output_key = "k2_beaver_y",
              session_id = session_id))
-      # Beaver vecmul: dealer -> consume -> r1 (relay) -> r2.
-      tri <- DSI::datashield.aggregate(datasources[dealer_ci],
-        call(name = "k2BeaverVecmulGenTriplesDS",
-             dcf0_pk = pks[[var1_srv]], dcf1_pk = pks[[var2_srv]],
-             n = as.integer(n),
-             session_id = session_id, frac_bits = 20L))
-      if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
-      sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple", v1_ci)
-      sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple", v2_ci)
+      # Beaver vecmul: OT preprocessing -> consume -> r1 (relay) -> r2.
+      .ot_beaver_prepare_vecmul(
+        datasources = datasources,
+        party_conns = c(v1_ci, v2_ci),
+        party_names = c(var1_srv, var2_srv),
+        transport_pks = pks,
+        session_id = session_id,
+        n = n,
+        ring = 63L,
+        .dsAgg = dsAgg,
+        .sendBlob = sendBlob)
       DSI::datashield.aggregate(datasources[v1_ci],
         call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
       DSI::datashield.aggregate(datasources[v2_ci],

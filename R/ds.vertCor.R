@@ -230,15 +230,17 @@ ds.vertCor <- function(data_name, variables = NULL,
         from_storage = TRUE, session_id = session_id))
     }
     # Beaver matvec: X^T x col_j
-    grad_t <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenGradTriplesDS",
-           dcf0_pk = transport_pks[[dcf_parties[1]]],
-           dcf1_pk = transport_pks[[dcf_parties[2]]],
-           n = as.integer(n_obs), p = as.integer(p_total),
-           session_id = session_id))
-    if (is.list(grad_t)) grad_t <- grad_t[[1]]
-    .sendBlob(grad_t$grad_blob_0, "k2_grad_triple_fp", dcf_conns[1])
-    .sendBlob(grad_t$grad_blob_1, "k2_grad_triple_fp", dcf_conns[2])
+    .ot_beaver_prepare_grad(
+      datasources = datasources,
+      party_conns = dcf_conns,
+      party_names = dcf_parties,
+      transport_pks = transport_pks,
+      session_id = session_id,
+      n = n_obs,
+      p = p_total,
+      ring = 63L,
+      .dsAgg = .dsAgg,
+      .sendBlob = .sendBlob)
 
     r1 <- list()
     for (di in seq_along(dcf_parties)) {

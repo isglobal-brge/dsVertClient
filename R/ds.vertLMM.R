@@ -365,18 +365,22 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
       rsum_cluster[ck] <- as.numeric(agg$values[1L])
     }
     # 6. Beaver vecmul r x r -> r^2 share.
-    tri <- DSI::datashield.aggregate(datasources[peer_ci],
-      call(name = "k2BeaverVecmulGenTriplesDS",
-           dcf0_pk = pks[[y_srv]], dcf1_pk = pks[[peer_srv]],
-           n = as.integer(n_actual),
-           session_id = sess, frac_bits = 20L))
-    if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
-    DSI::datashield.aggregate(datasources[y_srv_ci],
-      call(name = "mpcStoreBlobDS", key = "k2_beaver_vecmul_triple",
-           chunk = tri$triple_blob_0, session_id = sess))
-    DSI::datashield.aggregate(datasources[peer_ci],
-      call(name = "mpcStoreBlobDS", key = "k2_beaver_vecmul_triple",
-           chunk = tri$triple_blob_1, session_id = sess))
+    send_blob <- function(blob, key, conn_idx) {
+      DSI::datashield.aggregate(datasources[conn_idx],
+        call(name = "mpcStoreBlobDS", key = key, chunk = blob,
+             session_id = sess))
+    }
+    ds_agg <- function(ds, expr) DSI::datashield.aggregate(ds, expr)
+    .ot_beaver_prepare_vecmul(
+      datasources = datasources,
+      party_conns = c(y_srv_ci, peer_ci),
+      party_names = c(y_srv, peer_srv),
+      transport_pks = pks,
+      session_id = sess,
+      n = n_actual,
+      ring = 63L,
+      .dsAgg = ds_agg,
+      .sendBlob = send_blob)
     for (ci in c(y_srv_ci, peer_ci)) DSI::datashield.aggregate(
       datasources[ci], call(name = "k2BeaverVecmulConsumeTripleDS",
                               session_id = sess))

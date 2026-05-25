@@ -42,17 +42,16 @@
                             server_names, y_server, nl, transport_pks,
                             session_id, .dsAgg, .sendBlob) {
   n_int <- as.integer(n)
-  tri <- .dsAgg(datasources[dealer_ci],
-    call(name = "k2BeaverVecmulGenTriplesDS",
-         dcf0_pk = transport_pks[[y_server]],
-         dcf1_pk = transport_pks[[nl]],
-         n = as.numeric(n_int), session_id = session_id,
-         frac_bits = 50, ring = 127))
-  if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
-  .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple",
-            which(server_names == y_server))
-  .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple",
-            which(server_names == nl))
+  .ot_beaver_prepare_vecmul(
+    datasources = datasources,
+    party_conns = c(which(server_names == y_server), which(server_names == nl)),
+    party_names = c(y_server, nl),
+    transport_pks = transport_pks,
+    session_id = session_id,
+    n = n_int,
+    ring = 127L,
+    .dsAgg = .dsAgg,
+    .sendBlob = .sendBlob)
   all_ci <- vapply(server_list, function(s) which(server_names == s),
                     integer(1L))
   .dsAgg(datasources[all_ci],

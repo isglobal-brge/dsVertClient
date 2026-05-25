@@ -431,19 +431,20 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
                                           rs[[2L]]$per_cluster_fp[[.kk]])
       }
 
-      tri <- DSI::datashield.aggregate(datasources[dealer_conn],
-        call(name = "k2BeaverVecmulGenTriplesDS",
-             dcf0_pk = fit_eval$transport_pks[[dcf_parties[1L]]],
-             dcf1_pk = fit_eval$transport_pks[[dcf_parties[2L]]],
-             n = n_eval,
-             session_id = eval_session,
-             frac_bits = ring_frac_bits,
-             ring = ring_int))
-      if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
-      .send_session_blob(tri$triple_blob_0, "k2_beaver_vecmul_triple",
-                         dcf_conns[1L], eval_session)
-      .send_session_blob(tri$triple_blob_1, "k2_beaver_vecmul_triple",
-                         dcf_conns[2L], eval_session)
+      ds_agg <- function(ds, expr) DSI::datashield.aggregate(ds, expr)
+      send_blob <- function(blob, key, conn_idx) {
+        .send_session_blob(blob, key, conn_idx, eval_session)
+      }
+      .ot_beaver_prepare_vecmul(
+        datasources = datasources,
+        party_conns = dcf_conns,
+        party_names = dcf_parties,
+        transport_pks = fit_eval$transport_pks,
+        session_id = eval_session,
+        n = n_eval,
+        ring = ring_int,
+        .dsAgg = ds_agg,
+        .sendBlob = send_blob)
       for (.ci in dcf_conns) {
         DSI::datashield.aggregate(datasources[.ci],
           call(name = "k2BeaverVecmulConsumeTripleDS",
