@@ -11,8 +11,14 @@ root <- normalizePath(file.path(dirname(script_path), ".."), mustWork = TRUE)
 setwd(root)
 
 dir.create("vignettes", showWarnings = FALSE, recursive = TRUE)
-unlink(Sys.glob("vignettes/validation_*.Rmd"), force = TRUE)
-unlink(Sys.glob("vignettes/validation_*.html"), force = TRUE)
+keep_rmd <- c("vignettes/validation_summary.Rmd",
+              Sys.glob("vignettes/validation_beaver_profile_*.Rmd"))
+keep_html <- c("vignettes/validation_summary.html",
+               Sys.glob("vignettes/validation_beaver_profile_*.html"))
+unlink(setdiff(Sys.glob("vignettes/validation_*.Rmd"), keep_rmd),
+       force = TRUE)
+unlink(setdiff(Sys.glob("vignettes/validation_*.html"), keep_html),
+       force = TRUE)
 unlink("vignettes/vert_validation_evidence.Rmd", force = TRUE)
 unlink("vignettes/vert_validation_evidence.html", force = TRUE)
 
@@ -55,6 +61,7 @@ setup_chunk <- function(builder = NULL) {
     "  file.path(\"vignettes\", \"validation_helpers.R\"))",
     "source(helper_candidates[file.exists(helper_candidates)][1])",
     "validation_load_packages()",
+    "options(dsvert.beaver_preprocessing = \"auto\")",
     "partition_summary <- function(tables) {",
     "  data.frame(",
     "    server = names(tables),",

@@ -5,7 +5,7 @@
 
 ## Overview
 
-**dsVertClient** provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols (ECDH-PSI, Ring63 / Ring127 Beaver MPC, DCF wide-spline, configurable Beaver preprocessing, X25519 + AES-256-GCM transport, Ed25519 identity verification) run transparently.
+**dsVertClient** provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols (ECDH-PSI, Ring63 / Ring127 Beaver MPC, DCF wide-spline, negotiated Beaver preprocessing, X25519 + AES-256-GCM transport, Ed25519 identity verification) run transparently.
 
 Pair with the server-side companion package [**dsVert**](https://github.com/isglobal-brge/dsVert).
 
@@ -90,41 +90,56 @@ used by the cleanup audit.
 
 ## Validation evidence
 
-| Method | max\|Δβ\| | Reference | Theoretical bound |
-|---|---|---|---|
-| GLM binomial (Pima, K=2) | 3.18 × 10⁻⁴ | `lm()` / `glm()` | Catrina-Saxena 2010 fp20 |
-| Cox PH (NCCTG, Ring127) | 1.33 × 10⁻⁵ | `survival::coxph` | Catrina-Saxena 2010 fp50 |
-| Cox PH (Pima, Ring127) | 8.09 × 10⁻⁵ | `survival::coxph` | Catrina-Saxena 2010 fp50 |
-| Cox PH in LMM+Cox harness | 8.32 × 10⁻⁶ | `survival::coxph` | Catrina-Saxena 2010 fp50 |
-| NB iid θ | 6.83 × 10⁻¹² | `MASS::theta.ml` | Newton precision |
-| NB full-reg θ | 4.44 × 10⁻³ | `MASS::glm.nb` | Catrina-Saxena fp50 + 5-iter NR (Goldschmidt 1964 + Pugh 2004) — σ-ratio 105×, **SUB-NOISE** |
-| Multinomial joint (Bohning) | 4.70 × 10⁻² | `nnet::multinom` | Catrina-Saxena Ring63 + Bohning |
-| Ordinal joint PO | 6.12 × 10⁻² | `MASS::polr` | 3× McCullagh-Agresti L1 floor |
-| LASSO proximal | 1-2 × 10⁻³ | `glmnet::cv.glmnet` | FHT 2010 + Beck-Teboulle 2009 |
+The validation suite is rendered as executable vignettes. Each method article
+builds its fixture, vertically partitions it across DSLite servers, runs
+`ds.vert.align()`, fits the federated route, computes the centralized R
+reference on the same pooled data, and asserts the numerical tolerance plus the
+route-level disclosure flag.
 
-All methods inside their theoretical floors (paper §V.A). **Sub-noise margin** (paper §V.B) at ≥ 100× the per-fit Wald SE for all four federated K=2 estimators (ord_joint β/θ, Cox β, NB θ).
+Current coverage:
+
+- 17 method blocks.
+- Both K=2 and K>=3 topologies.
+- 38 route-level validation rows.
+- All rendered rows pass the declared numerical and disclosure criteria.
+
+Additional Beaver-profile validation vignettes run selected K=2 routes twice,
+once with `dealer` preprocessing and once with `iknp` preprocessing. The
+current representative profile checks all pass:
+
+| Route | Dealer observed | IKNP observed | Profile delta | Tolerance |
+|---|---:|---:|---:|---:|
+| Correlation | `1.2441795e-05` | `1.2441795e-05` | `0e+00` | `1e-04` |
+| GLM | `6.2726772e-05` | `6.1290240e-05` | `1.4365328e-06` | `1e-03` |
+| GEE | `1.7860961e-04` | `6.0821320e-05` | `1.1778829e-04` | `1e-02` |
+| Cox PH | `4.8702002e-05` | `4.8702002e-05` | `3.3861802e-15` | `1e-03` |
+
+The backend choice changes preprocessing cost; it does not change the
+statistical target of the route.
 
 ## Security
 
 - **No product observation-level disclosure**: client sees only model-scale
   aggregates returned by the registered server methods
-- **Configurable Beaver preprocessing**: `options(dsvert.beaver_preprocessing = "auto")`
-  uses direct OT-Beaver only for tiny correctness checks and IKNP OT extension
-  for larger dealer-free workloads; `"dealer"` forces the trusted-dealer
-  backend and `"direct_ot"` forces the bounded direct-OT backend.
+- **Negotiated Beaver preprocessing**: `options(dsvert.beaver_preprocessing = "auto")`
+  uses the efficient dealer backend when all participating servers allow it.
+  `options(dsvert.beaver_preprocessing = "iknp")` (or `"ot"`) requests the
+  stronger IKNP OT-extension backend. If any server policy requires IKNP,
+  `auto` and explicit `dealer` requests are raised to IKNP; if no common
+  backend is available, the run fails closed.
 - **Domain-separated IKNP reuse**: IKNP base-OT state is reused within a
   DataSHIELD session per sender/receiver/ring tuple, while every multiplication
   batch receives a distinct extension transcript key.
 - **OT-aware LMM profile**: K>=3 `ds.vert.lmm()` uses the protected
-  moment + cluster-mean GLS route when the Beaver backend resolves to IKNP/OT,
-  avoiding repeated weighted profile fits. Use
+  moment + cluster-mean GLS route under IKNP preprocessing, avoiding repeated
+  weighted profile fits. Use
   `options(dsvert.lmm_k3.profile_mode = "profile")` for the exhaustive
   profile route.
-- **Server-generated Beaver triples**: client never sees cryptographic material;
-  when the dealer is one of the DCF parties, its own share is installed
-  server-side and only the peer share is relayed as an encrypted blob.
-- **Dealer rotation**: different server generates triples each iteration when
-  the dealer backend is used in K >= 3; K = 2 uses a fixed server-side dealer.
+- **Threat-model profiles**: dealer mode matches the standard governed
+  DataSHIELD setting with known semi-honest institutional peers and lower
+  runtime cost. IKNP mode removes the privileged preprocessing dealer for
+  deployments that require stronger inter-institutional protection; it changes
+  preprocessing cost, not the online estimator target.
 - **Transport encryption**: X25519 + AES-256-GCM between servers
 - **Identity verification**: Ed25519 signed peer transport keys (`dsvert.require_trusted_peers`)
 - **Ring**: Ring63 (frac_bits = 20) and Ring127 (frac_bits = 50), selected by

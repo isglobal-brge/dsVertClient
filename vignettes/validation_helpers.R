@@ -74,6 +74,7 @@ validation_load_packages <- function() {
     pkgload::load_all(client_root, quiet = TRUE)
   }
   options(dsvert.require_trusted_peers = FALSE,
+          dsvert.beaver_preprocessing = "auto",
           datashield.privacyLevel = 5L,
           datashield.errors.print = TRUE)
   invisible(TRUE)
@@ -160,6 +161,21 @@ display_validation <- function(rows) {
   out$observed <- signif(out$observed, 4)
   out$tolerance <- signif(out$tolerance, 4)
   out$runtime_s <- round(out$runtime_s, 1)
+  knitr::kable(out)
+}
+
+display_profile_validation <- function(rows) {
+  keep <- c("k_mode", "function_route", "observed", "tolerance",
+            "profile_delta", "runtime_s", "runtime_ratio_vs_dealer",
+            "status")
+  out <- rows[, keep, drop = FALSE]
+  out$observed <- format(out$observed, scientific = TRUE, digits = 8)
+  out$tolerance <- format(out$tolerance, scientific = TRUE, digits = 8)
+  out$profile_delta <- format(out$profile_delta, scientific = TRUE,
+                              digits = 8)
+  out$runtime_s <- format(round(out$runtime_s, 3), nsmall = 3)
+  out$runtime_ratio_vs_dealer <- format(
+    round(out$runtime_ratio_vs_dealer, 2), nsmall = 2)
   knitr::kable(out)
 }
 

@@ -120,9 +120,9 @@ NULL
                                  p_coord, p_nl, proc.time()[[3]] - t0_share))
 
   # === PRE-GENERATE DCF KEYS (server-side, not client) ===
-  # K=2: only 1 non-DCF server (non-label) -> fixed dealer, no rotation.
-  # Security: analyst needs both servers to extract data.
-  # For K>=3: dealer rotation provides stronger guarantees.
+  # K=2 uses the non-label peer to prepare DCF keys. Beaver preprocessing is
+  # negotiated separately: dealer for the efficient institutional-peer profile,
+  # or IKNP when requested/required by server policy.
   dealer <- nl; dealer_conn <- nl_conn
   if (!is_gaussian) {
     t0_dcf <- proc.time()[[3]]

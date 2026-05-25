@@ -169,9 +169,8 @@ NULL
   # Step B: Pre-generate DCF keys (on NON-DCF server, not client)
   #   Skipped for Gaussian (identity link, no sigmoid/exp needed)
   # ===========================================================================
-  # Dealer rotation: different non-DCF server generates triples each iteration.
-  # Analyst must compromise ALL dealers + 1 DCF party to extract data.
-  # For K servers: security threshold = (K-1)/K.
+  # DCF key-generation helper selection. Beaver preprocessing is negotiated
+  # separately for each protected product.
   all_dealers <- if (length(non_dcf_servers) > 0) non_dcf_servers else c(fusion_server)
   dealer <- all_dealers[1]  # initial dealer for DCF keys
   dealer_conn <- which(server_names == dealer)
@@ -259,8 +258,8 @@ NULL
     beta_old <- beta
     intercept_old <- intercept
 
-    # Rotate dealer: each non-DCF server takes turns generating triples.
-    # Analyst must control ALL dealers to extract data from ALL iterations.
+    # Rotate the DCF key-generation helper across eligible non-DCF servers.
+    # Beaver preprocessing is negotiated by the shared helper for each product.
     dealer <- all_dealers[((iter - 1L) %% length(all_dealers)) + 1L]
     dealer_conn <- which(server_names == dealer)
 
@@ -613,7 +612,7 @@ NULL
     int_pert <- theta_pert[1]
     beta_pert <- theta_pert[-1]
 
-    # Rotate dealer for this SE evaluation too
+    # Rotate the DCF key-generation helper for this SE evaluation too.
     dealer <- all_dealers[((final_iter + j - 1L) %% length(all_dealers)) + 1L]
     dealer_conn <- which(server_names == dealer)
 

@@ -99,13 +99,15 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   term_names_profile <- attr(stats::terms(formula), "term.labels")
   beaver_mode <- tryCatch(
     .beaver_preprocessing_mode(
-      "grad", n_total, max(1L, length(term_names_profile)), ring_int),
+      "grad", n_total, max(1L, length(term_names_profile)), ring_int,
+      datasources = datasources, party_conns = seq_along(datasources),
+      .dsAgg = DSI::datashield.aggregate),
     error = function(e) getOption("dsvert.beaver_preprocessing", "auto"))
   profile_mode <- match.arg(tolower(as.character(getOption(
     "dsvert.lmm_k3.profile_mode", "auto"))[1L]),
     c("auto", "profile", "moment"))
   if (identical(profile_mode, "auto")) {
-    profile_mode <- if (beaver_mode %in% c("iknp", "direct_ot", "ot")) {
+    profile_mode <- if (identical(beaver_mode, "iknp")) {
       "moment"
     } else {
       "profile"

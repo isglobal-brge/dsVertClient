@@ -99,3 +99,37 @@ test_that("ds.vertCox legacy rank route is removed", {
                method = "legacy_rank", datasources = list()),
     "unused argument")
 })
+
+test_that("Beaver preprocessing selection negotiates server policy", {
+  mode <- getFromNamespace(".beaver_preprocessing_mode", "dsVertClient")
+  old <- getOption("dsvert.beaver_preprocessing")
+  on.exit(options(dsvert.beaver_preprocessing = old), add = TRUE)
+
+  options(dsvert.beaver_preprocessing = "auto")
+  expect_identical(mode("vecmul", 1L, 1L, 63L), "dealer")
+
+  options(dsvert.beaver_preprocessing = "dealer")
+  expect_identical(mode("vecmul", 1L, 1L, 63L), "dealer")
+
+  for (value in c("ot", "iknp")) {
+    options(dsvert.beaver_preprocessing = value)
+    expect_identical(mode("vecmul", 1L, 1L, 63L), "iknp")
+  }
+
+  dsAgg_requires_iknp <- function(conns, expr) {
+    list(list(supported = c("dealer", "iknp"),
+              allowed = "iknp",
+              preferred = "iknp",
+              minimum = "iknp",
+              requires_iknp = TRUE))
+  }
+  options(dsvert.beaver_preprocessing = "auto")
+  expect_identical(
+    mode("vecmul", 1L, 1L, 63L,
+         datasources = list(s1 = NULL, s2 = NULL), party_conns = 1:2,
+         .dsAgg = dsAgg_requires_iknp, session_id = "test"),
+    "iknp")
+
+  options(dsvert.beaver_preprocessing = "direct_ot")
+  expect_error(mode("vecmul", 1L, 1L, 63L), "Invalid")
+})

@@ -181,9 +181,8 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     beta_current <- base_fit$poisson_fit$coefficients
     beta_current <- beta_current[names(base_fit$poisson_fit$coefficients)]
 
-    # Beaver triple dealer is a non-DCF server when available under K>=3;
-    # otherwise the non-label/fusion DCF party follows the legacy K=2
-    # convention.
+    # Keep the existing helper index for DCF/key orchestration. Beaver
+    # preprocessing is negotiated separately by the shared helper.
 
     # Newton-theta loop on the share-domain score. MoM warm-init from the
     # Poisson fit's residual moments (Venables-Ripley Sec.7.4 default seed).

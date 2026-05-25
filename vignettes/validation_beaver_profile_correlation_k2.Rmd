@@ -1,0 +1,104 @@
+---
+title: "Beaver preprocessing profile validation: correlation (K=2)"
+author: "David Sarrat Gonzalez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Beaver preprocessing profile validation: correlation (K=2)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = TRUE, collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+validation_load_packages()
+partition_summary <- function(tables) {
+  data.frame(
+    server = names(tables),
+    n = vapply(tables, nrow, integer(1)),
+    columns = vapply(tables, function(x) paste(names(x), collapse = ", "),
+                     character(1)),
+    stringsAsFactors = FALSE)
+}
+```
+
+## Scope
+
+This validation compares the two product Beaver preprocessing profiles on the
+same vertically partitioned correlation workflow:
+
+- `dealer`: efficient profile for governed semi-honest institutional peers.
+- `iknp`: strengthened OT-extension profile that removes the privileged
+  preprocessing dealer.
+
+Both profiles are compared against the same centralized `stats::cor`
+reference. The estimator and online Beaver multiplication are the same; only
+the triple-preprocessing backend changes.
+
+## Executed validation
+
+```{r execution}
+K <- 2L
+tolerance <- 1e-4
+
+pooled <- build_pima(60L)
+tables <- list(
+  s1 = pooled[, c("patient_id", "age", "bmi", "ped"), drop = FALSE],
+  s2 = pooled[, c("patient_id", "npreg", "glu", "bp", "skin"), drop = FALSE]
+)
+variables <- list(
+  s1 = c("age", "bmi", "ped"),
+  s2 = c("npreg", "glu", "bp", "skin")
+)
+ref <- stats::cor(pooled[, unlist(variables), drop = FALSE])
+
+knitr::kable(utils::head(pooled))
+knitr::kable(partition_summary(tables))
+
+run_profile <- function(mode) {
+  options(dsvert.beaver_preprocessing = mode)
+  result <- elapsed({
+    conns <- connect_dslite(tables)
+    tryCatch({
+      psi_align(conns)
+      dsVertClient::ds.vert.cor(
+        "DA", variables = variables,
+        verbose = validation_demo_verbose(), datasources = conns)
+    }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
+  })
+  observed <- max(abs(result$value$correlation[colnames(ref), colnames(ref)] -
+                        ref))
+  row_result(
+    "beaver_profile_correlation", paste("Correlation", mode), K,
+    paste0("ds.vert.cor / ", mode),
+    "MASS::Pima.tr fixture", "stats::cor",
+    "correlation_max_abs_delta", observed, tolerance, "strict-practical",
+    "Releases the low-dimensional correlation matrix only.",
+    result$runtime_s,
+    paste("beaver_preprocessing =", mode))
+}
+
+rows <- rbind(run_profile("dealer"), run_profile("iknp"))
+rows$profile_delta <- abs(rows$observed - rows$observed[1L])
+rows$runtime_ratio_vs_dealer <- rows$runtime_s / rows$runtime_s[1L]
+
+display_validation(rows)
+display_profile_validation(rows)
+
+assert_validation(rows)
+stopifnot(rows$profile_delta[2L] <= tolerance)
+```
+
+## Verdict
+
+Rendering fails if either profile leaves the accepted numerical envelope, if
+the route is marked disclosive, or if the IKNP-vs-dealer numerical difference
+exceeds the route tolerance.

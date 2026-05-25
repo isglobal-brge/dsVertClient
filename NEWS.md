@@ -2,24 +2,26 @@
 
 ### Beaver preprocessing
 
-* Added an `iknp` Beaver preprocessing backend backed by relayable
-  semi-honest IKNP OT extension. `options(dsvert.beaver_preprocessing =
-  "auto")` now uses direct OT only for tiny correctness checks and IKNP for
-  larger dealer-free workloads; `"dealer"` remains an explicit production
-  override.
+* Added negotiated Beaver preprocessing profiles. `auto` uses the efficient
+  dealer backend when all participating servers allow it, while `iknp`/`ot`
+  request IKNP OT-extension preprocessing. If any server policy requires IKNP,
+  the client raises the effective mode to IKNP; if no common backend is
+  available, the run fails closed.
 * Reuse IKNP base-OT state within a DataSHIELD session for each sender,
   receiver and ring tuple. Each multiplication batch still uses a unique
   extension transcript key, which the server runtime uses for domain-separated
   PRG seeds.
-* Added an OT-aware K>=3 LMM profile mode. When Beaver preprocessing resolves
-  to `iknp`/OT, `ds.vert.lmm()` avoids the repeated weighted-GLS
+* Added an OT-aware K>=3 LMM profile mode. Under IKNP preprocessing,
+  `ds.vert.lmm()` avoids the repeated weighted-GLS
   golden-section profile and uses the protected moment + cluster-mean GLS
   route instead; set `options(dsvert.lmm_k3.profile_mode = "profile")` to
   force the exhaustive profile path.
-* The client now detects when the selected production dealer is also one of
-  the two DCF parties and skips the redundant self-relay of Beaver triple
-  blobs. The peer still receives an opaque transport-encrypted blob; the
-  dealer's own share is installed server-side.
+* Removed the historical direct-OT mode from product selection. The supported
+  product backends are now dealer and IKNP.
+* Added representative Beaver-profile validation vignettes for correlation,
+  GLM, GEE and Cox PH. Each vignette runs the same K=2 route under both dealer
+  and IKNP preprocessing, compares both outputs with the same centralized R
+  reference, and asserts the route tolerance.
 
 ### Cleanup
 
