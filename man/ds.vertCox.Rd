@@ -43,7 +43,7 @@ A \code{ds.vertCox} object: \code{coefficients},
 \code{iterations}, \code{converged}.
 }
 \description{
-User-facing Cox PH wrapper. Dispatches to
+Public Cox PH wrapper. Dispatches to
 \code{\link{ds.vertCoxProfileNonDisclosive}}, the non-disclosive
 Breslow profile route validated for K=2 and K>=3. The historical
 rank/permutation and person-time Poisson Cox routes were removed from the

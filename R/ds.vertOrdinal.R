@@ -1,5 +1,5 @@
 #' @title Federated ordinal logistic regression
-#' @description User-facing ordinal wrapper. Dispatches to
+#' @description Public ordinal wrapper. Dispatches to
 #'   \code{\link{ds.vertOrdinalJointNewton}}, the paper-safe joint
 #'   proportional-odds route for K=2 and K>=3. The historical cumulative-binomial
 #'   approximation is no longer exposed as a user-facing estimator; it remains

@@ -1,4 +1,4 @@
-#' User-facing ds.vert.* API aliases
+#' Public ds.vert.* API aliases
 #'
 #' These wrappers provide a compact, formula-style public surface while keeping
 #' the historical CamelCase functions as compatibility backends. Wrappers that

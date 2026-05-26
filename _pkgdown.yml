@@ -12,6 +12,57 @@ navbar:
     left: [reference, articles, news]
     right: [search, github]
 
+reference:
+- title: Public frontdoor API
+  contents:
+  - ds.vert.aliases
+- title: PSI alignment and identity
+  contents:
+  - ds.psiAlign
+  - ds.isPsiAligned
+  - ds.getIdentityPks
+- title: Compatibility backends
+  contents:
+  - ds.vertDesc
+  - ds.vertCor
+  - ds.vertPCA
+  - ds.vertChisq
+  - ds.vertChisqCross
+  - ds.vertFisher
+  - ds.vertGLM
+  - ds.vertCox
+  - ds.vertCoxProfileNonDisclosive
+  - ds.vertCoxDiscreteNonDisclosive
+  - ds.vertNBFullRegTheta
+  - ds.vertMultinom
+  - ds.vertMultinomJoint
+  - ds.vertMultinomJointNewton
+  - ds.vertOrdinal
+  - ds.vertOrdinalJointNewton
+  - ds.vertLMM
+  - ds.vertLMM.k3
+  - ds.vertGEE
+  - ds.vertGLMM
+  - ds.vertIPW
+  - ds.vertMI
+  - ds.vertLASSO
+  - ds.vertLASSOIter
+  - ds.vertLASSOProximal
+  - ds.vertLASSO1Step
+  - ds.vertLASSOCV
+  - ds.vertLR
+  - ds.vertConfint
+  - ds.vertWald
+  - ds.vertContrast
+- title: Helpers and S3 methods
+  contents:
+  - k2-beaver-lbfgs-client
+  - k3-ring63-dcf-loop
+  - starts_with("chunk")
+  - starts_with("coef.")
+  - starts_with("print.")
+  - starts_with("summary.")
+
 articles:
 - title: Validation evidence
   navbar: Validation

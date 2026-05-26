@@ -1,14 +1,15 @@
 #' @title Federated NB regression with full-regression theta refinement
-#' @description Extends \code{ds.vertNB} (which uses the iid-mu profile
-#'   MLE for theta: assumes mu_i == ybar when evaluating the profile score) with
-#'   a variance-corrected refinement that accounts for mu_i variation
-#'   across patients without requiring per-patient MPC reveals.
+#' @description Backend used by the public \code{ds.vert.nb()} frontdoor for
+#'   the validated full-regression negative-binomial route. It starts from the
+#'   internal iid-mu profile fit and refines theta while accounting for
+#'   \eqn{\mu_i} variation across patients without requiring per-patient MPC
+#'   reveals.
 #'
 #' @details
 #'   The NB(mu_i, theta) log-likelihood score for theta is
 #'   \deqn{s(\theta) = \sum_i \psi(y_i + \theta) - n \psi(\theta)
 #'                      + n \log \theta - \sum_i \log(\mu_i + \theta).}
-#'   The iid-mu approximation used in \code{ds.vertNB} replaces the last
+#'   The internal iid-mu starting fit replaces the last
 #'   term by \eqn{n \log(\bar y + \theta)}. For homogeneous cohorts
 #'   (small \eqn{\text{Var}(\mu)}) this is tight; for regression-rich
 #'   settings the bias on theta can reach ~16% (quine, overdispersed
@@ -38,7 +39,13 @@
 #'   separately; the first-order correction here closes the bulk of the
 #'   iid-mu bias (on quine: 16% -> 4-5%) without any new MPC machinery.
 #'
-#' @inheritParams ds.vertNB
+#' @param formula Model formula for the count outcome and predictors.
+#' @param data Aligned data-frame name on each server.
+#' @param theta Optional fixed dispersion parameter. If supplied, theta
+#'   refinement starts from this value.
+#' @param joint Logical. If \code{TRUE}, iterate beta/theta refinements.
+#' @param theta_max_iter Integer. Maximum theta outer iterations.
+#' @param theta_tol Numeric. Relative convergence tolerance for theta.
 #' @param variant Character. Only \code{"full_reg_nd"} is accepted in the
 #'   validated product route. Historical iid-mu and aggregate-corrected
 #'   variants are retained as internal development code, but are not part of
@@ -50,14 +57,18 @@
 #'   in the non-disclosive full-regression theta variant.
 #' @param compute_covariance Logical. If \code{TRUE}, request covariance and
 #'   standard-error diagnostics where the selected beta path supports them.
+#' @param verbose Logical. Print stage-by-stage progress.
+#' @param datasources DataSHIELD connections; if \code{NULL}, uses
+#'   \code{DSI::datashield.connections_find()}.
+#' @param ... Extra arguments forwarded to the protected GLM route.
 #' @return Object of class \code{c("ds.vertNBFullRegTheta", "ds.vertNB")}.
-#'   Fields as \code{ds.vertNB}, plus \code{$theta_iid} (original
-#'   iid-mu estimate) and \code{$variance_correction} (the \eqn{\hat V_\mu}
-#'   used). For the non-disclosive full-regression variant, the object also
-#'   contains \code{$theta_trace}, \code{$theta_iter}, and
-#'   \code{$theta_converged}.
+#'   The object contains model-scale coefficients, standard errors and
+#'   diagnostics, plus \code{$theta_iid} (the internal starting estimate) and
+#'   \code{$variance_correction} (the \eqn{\hat V_\mu} used). For the
+#'   non-disclosive full-regression variant, the object also contains
+#'   \code{$theta_trace}, \code{$theta_iter}, and \code{$theta_converged}.
 #'
-#' @seealso \code{\link{ds.vertNB}}
+#' @seealso \code{\link{ds.vert.aliases}}
 #' @export
 ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                                   joint = TRUE, theta_max_iter = 5L,

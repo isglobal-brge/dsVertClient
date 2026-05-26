@@ -29,7 +29,6 @@
   [`ds.vert.lmm()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vert.aliases.md)
   [`ds.vert.gee()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vert.aliases.md)
   [`ds.vert.glmm()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vert.aliases.md)
-  [`ds.vert.glmer()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vert.aliases.md)
   [`ds.vert.ipw()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vert.aliases.md)
   [`ds.vert.mi()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vert.aliases.md)
   [`ds.vert.lasso()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vert.aliases.md)
@@ -41,7 +40,7 @@
   [`ds.vert.confint()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vert.aliases.md)
   [`ds.vert.wald()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vert.aliases.md)
   [`ds.vert.contrast()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vert.aliases.md)
-  : User-facing ds.vert.\* API aliases
+  : Public ds.vert.\* API aliases
 - [`ds.vertChisq()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertChisq.md)
   : Federated chi-square test on a 2-way contingency table
 - [`ds.vertChisqCross()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertChisqCross.md)
@@ -69,8 +68,6 @@
   : Generalized Linear Model for Vertically Partitioned Data
 - [`ds.vertGLMM()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGLMM.md)
   : Federated binomial GLMM-PQL
-- [`ds.vertGLMMLaplace()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGLMMLaplace.md)
-  : Federated binomial GLMM Laplace estimator
 - [`ds.vertIPW()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertIPW.md)
   : Federated inverse-probability-weighted GLM (two-stage)
 - [`ds.vertLASSO()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertLASSO.md)
@@ -98,12 +95,8 @@
 - [`ds.vertMultinomJointNewton()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertMultinomJointNewton.md)
   : Federated joint-softmax multinomial logistic regression via Ring127
   MPC-orchestrated Newton iteration
-- [`ds.vertNB()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertNB.md)
-  : Federated negative binomial regression with dispersion estimate
 - [`ds.vertNBFullRegTheta()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertNBFullRegTheta.md)
   : Federated NB regression with full-regression theta refinement
-- [`ds.vertNBMoMTheta()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertNBMoMTheta.md)
-  : NB regression with Method-of-Moments theta-estimator (K=2-safe)
 - [`ds.vertOrdinal()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertOrdinal.md)
   : Federated ordinal logistic regression
 - [`ds.vertOrdinalJointNewton()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertOrdinalJointNewton.md)

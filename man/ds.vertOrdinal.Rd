@@ -78,7 +78,7 @@ cumulative-binomial fits are used only as internal warm starts.
 }\if{html}{\out{</div>}}
 }
 \description{
-User-facing ordinal wrapper. Dispatches to
+Public ordinal wrapper. Dispatches to
 \code{\link{ds.vertOrdinalJointNewton}}, the paper-safe joint
 proportional-odds route for K=2 and K>=3. The historical cumulative-binomial
 approximation is no longer exposed as a user-facing estimator; it remains

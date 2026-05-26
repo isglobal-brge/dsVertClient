@@ -28,6 +28,10 @@ validation_cache_path <- function(bundle_id) {
   file.path(validation_cache_dir(), paste0(bundle_id, ".rds"))
 }
 
+validation_force_refresh <- function() {
+  !isTRUE(getOption("dsvert.validation.use_cache", FALSE))
+}
+
 validation_require <- function(pkgs) {
   missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
   if (length(missing)) {
@@ -180,7 +184,7 @@ display_profile_validation <- function(rows) {
 }
 
 run_validation <- function(method_id, force = getOption(
-  "dsvert.validation.force", FALSE), trace = FALSE) {
+  "dsvert.validation.force", validation_force_refresh()), trace = FALSE) {
   if (isTRUE(trace)) {
     cat("Validation trace\n")
     cat("1. Load dsVertClient, dsVert, DSI and DSLite.\n")
@@ -238,7 +242,7 @@ run_validation <- function(method_id, force = getOption(
 }
 
 run_all_validations <- function(force = getOption(
-  "dsvert.validation.force", FALSE)) {
+  "dsvert.validation.force", validation_force_refresh())) {
   do.call(rbind, lapply(validation_method_ids, run_validation, force = force))
 }
 
@@ -1569,7 +1573,7 @@ run_generalization_validation <- function(
     seeds = NULL,
     include_heavy = identical(Sys.getenv("DSVERT_GENERALIZATION_INCLUDE_HEAVY"),
                               "true"),
-    force = getOption("dsvert.validation.force", FALSE),
+    force = getOption("dsvert.validation.force", validation_force_refresh()),
     assert = TRUE,
     trace = TRUE) {
   validation_load_packages()

@@ -40,6 +40,7 @@
 #'   \code{DSI::datashield.connections_find()}.
 #' @param ... Extra arguments forwarded to \code{ds.vertGLM}.
 #' @keywords internal
+#' @noRd
 ds.vertNB <- function(formula, data = NULL, theta = NULL,
                       joint = TRUE, theta_max_iter = 5L, theta_tol = 1e-3,
                       verbose = TRUE, datasources = NULL, ...) {

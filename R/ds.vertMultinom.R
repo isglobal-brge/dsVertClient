@@ -1,5 +1,5 @@
 #' @title Federated multinomial logistic regression
-#' @description User-facing multinomial wrapper. Dispatches to
+#' @description Public multinomial wrapper. Dispatches to
 #'   \code{\link{ds.vertMultinomJointNewton}}, the paper-safe joint softmax
 #'   Newton route for K=2 and K>=3. The historical one-vs-rest approximation is no
 #'   longer exposed as a user-facing estimator; it remains only as an internal

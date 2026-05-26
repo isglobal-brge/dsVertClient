@@ -1,6 +1,6 @@
 # Federated Cox proportional-hazards regression
 
-User-facing Cox PH wrapper. Dispatches to
+Public Cox PH wrapper. Dispatches to
 [`ds.vertCoxProfileNonDisclosive`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCoxProfileNonDisclosive.md),
 the non-disclosive Breslow profile route validated for K=2 and K\>=3.
 The historical rank/permutation and person-time Poisson Cox routes were
