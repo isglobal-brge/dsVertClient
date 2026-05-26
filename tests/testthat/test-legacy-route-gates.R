@@ -8,6 +8,10 @@ test_that("discarded routes are absent from the exported API", {
   expect_false("allow_legacy_ovr" %in%
                  names(formals(get("ds.vertMultinomJoint", ns))))
   expect_false("method" %in% names(formals(get("ds.vertGLMM", ns))))
+  expect_false("ds.vert.glmer" %in% getNamespaceExports(ns))
+  expect_false("ds.vertGLMMLaplace" %in% getNamespaceExports(ns))
+  expect_false("ds.vertNB" %in% getNamespaceExports(ns))
+  expect_false("ds.vertNBMoMTheta" %in% getNamespaceExports(ns))
   expect_false("method" %in% names(formals(get("ds.vertMultinom", ns))))
   expect_false("method" %in% names(formals(get("ds.vertOrdinal", ns))))
   expect_false("allow_warm_diagnostic" %in%

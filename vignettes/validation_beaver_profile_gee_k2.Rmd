@@ -40,7 +40,7 @@ comparator is `geepack::geeglm`.
 
 ```{r execution}
 K <- 2L
-tolerance <- 1e-2
+tolerance <- 1e-3
 validation_require("geepack")
 
 pooled <- build_pima(60L)

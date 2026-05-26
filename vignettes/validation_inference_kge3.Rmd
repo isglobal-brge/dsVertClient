@@ -133,7 +133,7 @@ rows <- row_result(
   "inference", "Inference helpers", K,
   "ds.vert.confint / ds.vert.wald / ds.vert.contrast / ds.vert.lr",
   "MASS::Pima.tr fixture", "manual algebra on ds.vert.glm output",
-  "algebra_max_abs_delta", observed, 1e-10, "strict-precise",
+  "algebra_max_abs_delta", observed, 0, "strict-precise",
   "Post-processes released model-level beta/covariance/deviance only.",
   result$runtime_s)
 

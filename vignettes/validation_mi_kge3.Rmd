@@ -54,11 +54,19 @@ vignette executes the workflow from dataset generation to assertion.
 
 ## Method
 
-Missing covariates are imputed server-side for each round, then GLM fits are pooled client-side.
+Missing covariates are imputed server-side for each round with the
+same server-local Bayesian-ridge helper used by the product route.
+The completed-data GLM fits are then pooled client-side using Rubin's
+rules.
 
 ## Mathematical target
 
-The compact reference uses central mean imputation, and the distributed route is checked by pooled coefficient delta.
+The reference mirrors the route centrally on the same vertical split:
+it applies `dsvertImputeColumnDS()` to the split table that owns the
+missing column, fits one centralized GLM per imputation round and applies
+Rubin pooling. This checks the distributed orchestration, fitting and
+pooling against the same imputation model rather than comparing it with
+a different imputation method.
 
 ## Disclosure review
 
@@ -75,21 +83,10 @@ what the product route returns to the analyst.
 K <- 3L
 
 pooled <- build_mi()
-tables <- if (K == 2L) {
-  list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
-       s2 = pooled[, c("patient_id", "x2", "x3", "y"), drop = FALSE])
-} else {
-  list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
-       s2 = pooled[, c("patient_id", "x2"), drop = FALSE],
-       s3 = pooled[, c("patient_id", "x3", "y"), drop = FALSE])
-}
+tables <- split_mi(pooled, K)
 
 knitr::kable(utils::head(pooled))
 knitr::kable(partition_summary(tables))
-
-ref_data <- pooled
-ref_data$x2[is.na(ref_data$x2)] <- mean(ref_data$x2, na.rm = TRUE)
-ref <- coef(stats::lm(y ~ x1 + x2 + x3, data = ref_data))
 
 result <- elapsed({
   conns <- connect_dslite(tables)
@@ -97,19 +94,27 @@ result <- elapsed({
     psi_align(conns, na.action = "none")
     dsVertClient::ds.vert.mi(
       y ~ x1 + x2 + x3, data = "DA", impute_columns = "x2",
-      family = "gaussian",
+      family = "gaussian", lambda = 0,
       verbose = validation_demo_verbose(), datasources = conns, seed = 12L)
   }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
 })
 
 fit <- result$value
-observed <- max_named_delta(fit$coefficients, ref)
+ref <- central_mi_same_imputer(
+  pooled, K, y ~ x1 + x2 + x3, impute_columns = "x2",
+  m = fit$m, seed = 12L)
+observed <- max_named_delta(fit$coefficients, ref$coefficients)
+se_observed <- max_named_delta(fit$std_errors, ref$std_errors)
+
+knitr::kable(ref$imputation_log)
+cat(sprintf("Maximum pooled coefficient delta: %.6g\n", observed))
+cat(sprintf("Maximum Rubin standard-error delta: %.6g\n", se_observed))
 
 rows <- row_result(
   "mi", "Multiple imputation", K, "ds.vert.mi",
   "synthetic missing-covariate fixture",
-  "central mean-imputation reference",
-  "pooled_coef_abs_delta", observed, 0.02, "strict-practical",
+  "same-imputer centralized Rubin pooling",
+  "pooled_coef_abs_delta", observed, 0.001, "strict-practical",
   "Imputed columns stay server-side; client pools beta/covariance only.",
   result$runtime_s)
 

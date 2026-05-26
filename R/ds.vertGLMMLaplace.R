@@ -1,10 +1,12 @@
-#' @title Federated binomial GLMM Laplace estimator
+#' @title Internal binomial GLMM Laplace development route
 #' @description Fit a binomial random-intercept GLMM on vertically
 #'   partitioned DataSHIELD data using a Laplace marginal-likelihood target.
 #'
-#'   This is the accurate, slower counterpart to \code{ds.vertGLMM()}, which
-#'   intentionally remains the aggregate PQL route. The likelihood target is
-#'   the random-intercept binomial Laplace approximation used by
+#'   This is an internal development route for an explicit
+#'   \code{glmer}-like likelihood target. The public \code{ds.vert.glmm()}
+#'   frontdoor uses the aggregate PQL route because it is the validated GLMM
+#'   surface. The Laplace target is the random-intercept binomial
+#'   approximation used by
 #'   \code{lme4::glmer(..., family = binomial(), nAGQ = 1)}. The default
 #'   estimator uses one protected Newton mode step per objective evaluation;
 #'   setting \code{mode_max_iter > 1} trades runtime for more exact cluster
@@ -39,7 +41,7 @@
 #' @param mode_max_iter Newton updates for each cluster mode. The default
 #'   \code{1} is the adaptive one-step Laplace route: it uses guarded
 #'   score/curvature sums once per objective evaluation and is the practical
-#'   high-accuracy default. Larger values move toward exact Laplace cluster
+#'   explicit Laplace setting. Larger values move toward exact Laplace cluster
 #'   modes at substantially higher protected-computation cost.
 #' @param tol Relative optimiser tolerance.
 #' @param mode_tol Cluster-mode Newton step tolerance.
@@ -57,7 +59,7 @@
 #' @param datasources DataSHIELD connections.
 #' @return \code{ds.vertGLMMLaplace} object with fixed effects, scalar variance
 #'   component, protected objective diagnostics, and disclosure metadata.
-#' @export
+#' @keywords internal
 ds.vertGLMMLaplace <- function(formula, data = NULL, cluster_col,
                                start = NULL,
                                max_outer = NULL, mode_max_iter = 1L,
@@ -354,7 +356,7 @@ ds.vertGLMMLaplace <- function(formula, data = NULL, cluster_col,
   out
 }
 
-#' @export
+#' @keywords internal
 print.ds.vertGLMMLaplace <- function(x, ...) {
   cat("dsVert binomial GLMM-Laplace (random intercept)\n")
   cat(sprintf("  Clusters = %d    N = %d\n", x$n_clusters, x$n_obs))

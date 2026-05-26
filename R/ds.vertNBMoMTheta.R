@@ -40,8 +40,8 @@
 #'   compatible with \code{\link{ds.vertNB}} consumers. \code{$theta}
 #'   carries the MoM estimate; \code{$theta_method = "mom"};
 #'   \code{$theta_mom_underdispersed} flags pathological s^2 <= ybar cases.
-#' @export
 #' @seealso \code{\link{ds.vertNB}}, \code{\link{ds.vertNBFullRegTheta}}
+#' @keywords internal
 ds.vertNBMoMTheta <- function(formula, data = NULL,
                                verbose = TRUE,
                                datasources = NULL, ...) {
@@ -121,7 +121,7 @@ ds.vertNBMoMTheta <- function(formula, data = NULL,
   out
 }
 
-#' @export
+#' @keywords internal
 print.ds.vertNBMoMTheta <- function(x, ...) {
   cat("dsVert negative-binomial regression (MoM-theta; Anscombe 1950 / Saha-Paul 2005 Sec.3)\n")
   cat(sprintf("  theta_MoM = %.4g  (sample n=%d, ybar=%.4g, s^2=%.4g)\n",

@@ -115,7 +115,7 @@ observed <- max_named_delta(fit$coefficients, ref)
 rows <- row_result(
   "gee", "GEE", K, "ds.vert.gee(corstr='independence')",
   "MASS::Pima.tr clustered fixture", "geepack::geeglm",
-  "coef_max_abs_delta", observed, 0.01, "strict-practical",
+  "coef_max_abs_delta", observed, 0.001, "strict-practical",
   "Returns regression and sandwich-level aggregates, not row scores.",
   result$runtime_s)
 

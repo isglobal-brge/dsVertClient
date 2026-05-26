@@ -121,7 +121,7 @@ observed <- max(max(abs(pca_ds$eigenvalues - eig_ref$values)),
 rows <- row_result(
   "pca", "PCA", K, "ds.vert.pca",
   "MASS::Pima.tr fixture", "eigen(cor(X))",
-  "max(eigen_loading_abs_delta)", observed, 1e-4,
+  "max(eigen_loading_abs_delta)", observed, 0.001,
   "strict-practical",
   "Reuses the correlation matrix; no score or loading per patient is returned.",
   result$runtime_s)

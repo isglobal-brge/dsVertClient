@@ -126,7 +126,7 @@ audit_ok <- !contains_ids(result$value$psi) &&
 rows <- row_result(
   "psi", "PSI alignment", K, "ds.vert.align",
   "synthetic ID intersection", "deterministic set intersection",
-  "max(count_delta, correlation_delta)", observed, 1e-8,
+  "max(count_delta, correlation_delta)", observed, 0,
   "strict-precise",
   "Returns match counts/status only; matched IDs and row indices are not returned.",
   result$runtime_s,

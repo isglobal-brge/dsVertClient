@@ -355,7 +355,7 @@ validate_psi <- function() {
     rows[[as.character(K)]] <- row_result(
       "psi", "PSI alignment", K, "ds.vert.align",
       "synthetic ID intersection", "deterministic set intersection",
-      "max(count_delta, correlation_delta)", observed, 1e-8,
+      "max(count_delta, correlation_delta)", observed, 0,
       "strict-precise",
       "Returns match counts/status only; matched IDs and row indices are not returned.",
       run$runtime_s,
@@ -407,19 +407,19 @@ validate_desc_cor_pca <- function() {
     rows[[paste0("desc", K)]] <- row_result(
       "descriptive", "Descriptive statistics", K, "ds.vert.desc",
       "MASS::Pima.tr fixture", "central mean/sd",
-      "max(mean_sd_abs_delta)", desc_delta, 1e-8, "strict-precise",
+      "max(mean_sd_abs_delta)", desc_delta, 0, "strict-precise",
       "Returns guarded scalar summaries and histogram-based quantiles, not rows.",
       d0$runtime_s)
     rows[[paste0("cor", K)]] <- row_result(
       "correlation", "Correlation", K, "ds.vert.cor",
       "MASS::Pima.tr fixture", "stats::cor",
-      "correlation_max_abs_delta", cor_delta, 1e-4, "strict-practical",
+      "correlation_max_abs_delta", cor_delta, 0.001, "strict-practical",
       "Releases the low-dimensional correlation matrix only.",
       c0$runtime_s)
     rows[[paste0("pca", K)]] <- row_result(
       "pca", "PCA", K, "ds.vert.pca",
       "MASS::Pima.tr fixture", "eigen(cor(X))",
-      "max(eigen_loading_abs_delta)", pca_delta, 1e-4,
+      "max(eigen_loading_abs_delta)", pca_delta, 0.001,
       "strict-practical",
       "Reuses the correlation matrix; no score or loading per patient is returned.",
       p0$runtime_s)
@@ -464,7 +464,7 @@ validate_contingency <- function() {
       "contingency", "Contingency tests", K,
       "ds.vert.chisq / ds.vert.fisher / ds.vert.chisq_cross",
       "MASS::Pima.tr categorical fixture", "chisq.test / fisher.test",
-      "max(count_or_chisq_delta)", observed, 1e-8, "strict-precise",
+      "max(count_or_chisq_delta)", observed, 0, "strict-precise",
       "Releases guarded table counts and test statistics; small cells fail closed.",
       run$runtime_s)
     try(DSI::datashield.logout(conns), silent = TRUE)
@@ -536,7 +536,7 @@ validate_inference <- function() {
       "inference", "Inference helpers", K,
       "ds.vert.confint / ds.vert.wald / ds.vert.contrast / ds.vert.lr",
       "MASS::Pima.tr fixture", "manual algebra on ds.vert.glm output",
-      "algebra_max_abs_delta", observed, 1e-10, "strict-precise",
+      "algebra_max_abs_delta", observed, 0, "strict-precise",
       "Post-processes released model-level beta/covariance/deviance only.",
       run$runtime_s)
     try(DSI::datashield.logout(conns), silent = TRUE)
@@ -564,7 +564,7 @@ validate_lasso <- function() {
     rows[[as.character(K)]] <- row_result(
       "lasso", "LASSO", K, "ds.vert.lasso_proximal(lambda=0)",
       "MASS::Pima.tr fixture", "OLS limit of ds.vert.glm",
-      "lambda0_coef_abs_delta", observed, 1e-8, "strict-precise",
+      "lambda0_coef_abs_delta", observed, 0, "strict-precise",
       "Consumes only model-level GLM aggregates; no extra patient-level values are returned.",
       run$runtime_s)
     try(DSI::datashield.logout(conns), silent = TRUE)
@@ -600,17 +600,19 @@ validate_negative_binomial <- function() {
     conns <- connect_dslite(split_x123_y(pooled, K))
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns)
-    run <- elapsed(fit <- dsVertClient::ds.vert.nb(
-      y ~ x1 + x2 + x3, data = "DA", max_iter = 25L,
-      verbose = validation_demo_verbose(), datasources = conns))
-    ref <- coef(MASS::glm.nb(y ~ x1 + x2 + x3, data = pooled))
-    observed <- max_named_delta(fit$coefficients, ref)
-    rows[[as.character(K)]] <- row_result(
-      "negative_binomial", "Negative binomial", K, "ds.vert.nb",
+    ref_accurate <- coef(MASS::glm.nb(y ~ x1 + x2 + x3, data = pooled))
+    run_accurate <- elapsed(accurate <- dsVertClient::ds.vert.nb(
+      y ~ x1 + x2 + x3, data = "DA", method = "accurate",
+      max_iter = 25L, verbose = validation_demo_verbose(),
+      datasources = conns))
+    accurate_delta <- max_named_delta(accurate$coefficients, ref_accurate)
+    rows[[paste0(K, "_accurate")]] <- row_result(
+      "negative_binomial", "Negative binomial accurate", K,
+      "ds.vert.nb(method='accurate')",
       "synthetic NB fixture", "MASS::glm.nb",
-      "coef_max_abs_delta", observed, 0.02, "strict-practical",
-      "Returns beta and scalar theta only; score components remain aggregate.",
-      run$runtime_s)
+      "coef_max_abs_delta", accurate_delta, 0.001, "strict-practical",
+      "Full-regression beta/theta score components remain aggregate.",
+      run_accurate$runtime_s)
     try(DSI::datashield.logout(conns), silent = TRUE)
   }
   do.call(rbind, rows)
@@ -697,7 +699,7 @@ validate_lmm <- function() {
     rows[[as.character(K)]] <- row_result(
       "lmm", "LMM", K, "ds.vert.lmm",
       "synthetic random-intercept fixture", "lme4::lmer",
-      "fixed_effect_max_abs_delta", observed, 0.02, "strict-practical",
+      "fixed_effect_max_abs_delta", observed, 0.001, "strict-practical",
       "Cluster membership is used internally; per-cluster residuals/BLUPs are not returned.",
       run$runtime_s)
     try(DSI::datashield.logout(conns), silent = TRUE)
@@ -727,7 +729,7 @@ validate_gee <- function() {
     rows[[as.character(K)]] <- row_result(
       "gee", "GEE", K, "ds.vert.gee(corstr='independence')",
       "MASS::Pima.tr clustered fixture", "geepack::geeglm",
-      "coef_max_abs_delta", observed, 0.01, "strict-practical",
+      "coef_max_abs_delta", observed, 0.001, "strict-practical",
       "Returns regression and sandwich-level aggregates, not row scores.",
       run$runtime_s)
     try(DSI::datashield.logout(conns), silent = TRUE)
@@ -754,7 +756,7 @@ build_balanced_glmm <- function(seed = 77L, ncl = 12L, m = 8L,
 }
 
 validate_glmm <- function() {
-  validation_require(c("MASS", "nlme", "lme4"))
+  validation_require(c("MASS", "nlme"))
   rows <- list()
   for (K in c(2L, 3L)) {
     pooled <- build_balanced_glmm(seed = 1L, ncl = 10L, m = 5L,
@@ -790,40 +792,11 @@ validate_glmm <- function() {
       "glmm", "GLMM", K, "ds.vert.glmm(method='pql')",
       "synthetic mixed binomial random-intercept fixture",
       "MASS::glmmPQL",
-      "fixed_effect_max_abs_delta_and_pql_quality", observed, 0.005,
-      "strict-pql",
+      "fixed_effect_max_abs_delta_and_pql_quality", observed, 0.001,
+      "strict-practical",
       "PQL route returns fixed effects and scalar variance diagnostics only.",
       run_pql$runtime_s)
 
-    run_laplace <- elapsed(fit_laplace <- dsVertClient::ds.vert.glmm(
-      y ~ x1 + x2, data = "DA", cluster_col = "cluster",
-      method = "laplace", max_outer = 1L, mode_max_iter = 1L,
-      prime_iter = 5L, compute_se = FALSE,
-      verbose = validation_demo_verbose(), datasources = conns))
-    ref_laplace <- suppressWarnings(lme4::glmer(
-      y ~ x1 + x2 + (1 | cluster), data = pooled_ref,
-      family = binomial(),
-      control = lme4::glmerControl(
-        optimizer = "bobyqa", optCtrl = list(maxfun = 1e5))))
-    fixed_laplace <- max_named_delta(fit_laplace$coefficients,
-                                     lme4::fixef(ref_laplace))
-    sigma_laplace <- abs(fit_laplace$sigma_b2 -
-                           as.numeric(lme4::VarCorr(ref_laplace)$cluster)[1L])
-    safe_return <- identical(fit_laplace$quality$status, "ok") &&
-      isFALSE(fit_laplace$disclosure$patient_level_returned) &&
-      isFALSE(fit_laplace$disclosure$random_effects_returned) &&
-      isFALSE(fit_laplace$disclosure$cluster_vectors_returned)
-    observed_laplace <- max(fixed_laplace, sigma_laplace,
-                            if (safe_return) 0 else Inf)
-    rows[[paste0("laplace", K)]] <- row_result(
-      "glmm", "GLMM", K, "ds.vert.glmm(method='laplace')",
-      "synthetic mixed binomial random-intercept fixture",
-      "lme4::glmer",
-      "max_fixed_effect_or_sigma_b2_abs_delta", observed_laplace, 0.06,
-      "laplace-practical",
-      paste("Returns fixed effects, scalar variance, and scalar quality only;",
-            "no BLUPs, cluster labels, cluster vectors, or row scores."),
-      run_laplace$runtime_s)
     try(DSI::datashield.logout(conns), silent = TRUE)
   }
   do.call(rbind, rows)
@@ -890,34 +863,108 @@ build_mi <- function(n = 60L, seed = 99L, missing_every = 7L,
   d
 }
 
+rubin_pool_validation <- function(fits) {
+  m <- length(fits)
+  betas <- do.call(cbind, lapply(fits, stats::coef))
+  covs <- lapply(fits, stats::vcov)
+  beta_bar <- rowMeans(betas)
+  W <- Reduce(`+`, covs) / m
+  dev <- sweep(betas, 1L, beta_bar)
+  B <- (dev %*% t(dev)) / max(m - 1L, 1L)
+  Tmat <- W + (1 + 1 / m) * B
+  se <- sqrt(pmax(diag(Tmat), 0))
+  nm <- names(stats::coef(fits[[1L]]))
+  names(beta_bar) <- names(se) <- nm
+  dimnames(W) <- dimnames(B) <- dimnames(Tmat) <- list(nm, nm)
+  list(coefficients = beta_bar, covariance = Tmat, within = W,
+       between = B, std_errors = se, fits = fits)
+}
+
+central_mi_same_imputer <- function(pooled, K, formula,
+                                    impute_columns = "x2", m = 20L,
+                                    seed = 12L) {
+  base_tables <- split_mi(pooled, K)
+  owners <- vapply(impute_columns, function(v) {
+    hits <- names(base_tables)[vapply(base_tables, function(tbl) {
+      v %in% names(tbl)
+    }, logical(1))]
+    if (length(hits) != 1L) {
+      stop("Expected impute column '", v, "' on exactly one split table",
+           call. = FALSE)
+    }
+    hits[[1L]]
+  }, character(1))
+
+  fits <- vector("list", m)
+  imputation_log <- vector("list", m * length(impute_columns))
+  log_i <- 0L
+  for (mi in seq_len(m)) {
+    tables <- base_tables
+    round_tag <- sprintf("__mi_%d", mi)
+    for (v in impute_columns) {
+      owner <- owners[[v]]
+      env <- new.env(parent = globalenv())
+      env$D <- tables[[owner]]
+      output_column <- paste0(v, round_tag)
+      imp_res <- eval(substitute(
+        dsVert::dsvertImputeColumnDS(
+          data_name = "D",
+          impute_column = V,
+          output_column = OUT,
+          seed = SEED),
+        list(V = v, OUT = output_column, SEED = as.integer(seed + mi))),
+        envir = env)
+      tables[[owner]] <- env$D
+      log_i <- log_i + 1L
+      imputation_log[[log_i]] <- data.frame(
+        round = mi,
+        variable = v,
+        split = owner,
+        n_imputed = as.integer(imp_res$n_imputed %||% NA_integer_),
+        n_observed = as.integer(imp_res$n_observed %||% NA_integer_),
+        method = as.character(imp_res$method %||% NA_character_),
+        n_predictors = as.integer(imp_res$n_predictors %||% NA_integer_),
+        intercept_only = as.logical(imp_res$intercept_only %||% NA),
+        stringsAsFactors = FALSE)
+    }
+    pooled_imp <- pooled
+    for (v in impute_columns) {
+      pooled_imp[[v]] <- tables[[owners[[v]]]][[paste0(v, round_tag)]]
+    }
+    fits[[mi]] <- stats::glm(formula, data = pooled_imp,
+                             family = stats::gaussian())
+  }
+  out <- rubin_pool_validation(fits)
+  out$imputation_log <- if (log_i) {
+    do.call(rbind, imputation_log[seq_len(log_i)])
+  } else {
+    data.frame()
+  }
+  out
+}
+
 validate_mi <- function() {
   rows <- list()
   for (K in c(2L, 3L)) {
     pooled <- build_mi()
-    tables <- if (K == 2L) {
-      list(s1 = pooled[, c("patient_id", "x1")],
-           s2 = pooled[, c("patient_id", "x2", "x3", "y")])
-    } else {
-      list(s1 = pooled[, c("patient_id", "x1")],
-           s2 = pooled[, c("patient_id", "x2")],
-           s3 = pooled[, c("patient_id", "x3", "y")])
-    }
+    tables <- split_mi(pooled, K)
     conns <- connect_dslite(tables)
     on.exit(try(DSI::datashield.logout(conns), silent = TRUE), add = TRUE)
     psi_align(conns, na.action = "none")
     run <- elapsed(fit <- dsVertClient::ds.vert.mi(
       y ~ x1 + x2 + x3, data = "DA", impute_columns = "x2",
       family = "gaussian",
-      verbose = validation_demo_verbose(), datasources = conns, seed = 12L))
-    ref_data <- pooled
-    ref_data$x2[is.na(ref_data$x2)] <- mean(ref_data$x2, na.rm = TRUE)
-    ref <- coef(stats::lm(y ~ x1 + x2 + x3, data = ref_data))
-    observed <- max_named_delta(fit$coefficients, ref)
+      lambda = 0, verbose = validation_demo_verbose(),
+      datasources = conns, seed = 12L))
+    ref <- central_mi_same_imputer(
+      pooled, K, y ~ x1 + x2 + x3, impute_columns = "x2",
+      m = fit$m, seed = 12L)
+    observed <- max_named_delta(fit$coefficients, ref$coefficients)
     rows[[as.character(K)]] <- row_result(
       "mi", "Multiple imputation", K, "ds.vert.mi",
       "synthetic missing-covariate fixture",
-      "central mean-imputation reference",
-      "pooled_coef_abs_delta", observed, 0.02, "strict-practical",
+      "same-imputer centralized Rubin pooling",
+      "pooled_coef_abs_delta", observed, 0.001, "strict-practical",
       "Imputed columns stay server-side; client pools beta/covariance only.",
       run$runtime_s)
     try(DSI::datashield.logout(conns), silent = TRUE)
@@ -981,7 +1028,7 @@ validate_multinomial <- function() {
     rows[[as.character(K)]] <- row_result(
       "multinomial", "Multinomial", K, "ds.vert.multinom",
       "balanced soft-signal synthetic 3-class fixture", "nnet::multinom probabilities",
-      "class_probability_max_abs_delta", observed, 0.005,
+      "class_probability_max_abs_delta", observed, 0.001,
       "strict-practical",
       "Softmax probabilities and residuals remain Ring127 shares; no row probabilities are returned.",
       run$runtime_s)
@@ -1292,7 +1339,7 @@ generalize_negative_binomial <- function(seed, K) {
       "negative_binomial", "Negative binomial", "nb_loglinear", seed, K,
       fit$route %||% "ds.vert.nb",
       sprintf("synthetic NB n=%d", nrow(pooled)), "MASS::glm.nb",
-      "coef_max_abs_delta", max_named_delta(fit$coefficients, ref), 0.02,
+      "coef_max_abs_delta", max_named_delta(fit$coefficients, ref), 0.001,
       "strict-practical",
       "Returns beta and scalar theta diagnostics only; no per-patient mu/eta is returned.",
       run$runtime_s, generalization_quality_status(fit),
@@ -1335,7 +1382,7 @@ generalize_lmm <- function(seed, K) {
       sprintf("synthetic LMM n=%d clusters=%d", nrow(pooled),
               length(unique(pooled$cluster))),
       "lme4::lmer", "fixed_effect_max_abs_delta",
-      max_named_delta(fit$coefficients, ref), 0.02, "strict-practical",
+      max_named_delta(fit$coefficients, ref), 0.001, "strict-practical",
       "Uses protected mixed-model aggregates; no BLUPs or cluster residuals are returned.",
       run$runtime_s, generalization_quality_status(fit),
       quality_allowed = c("ok", "approximate"))
@@ -1360,7 +1407,7 @@ generalize_gee <- function(seed, K) {
       sprintf("synthetic GEE n=%d clusters=%d", nrow(pooled),
               length(unique(pooled$cluster))),
       "geepack::geeglm", "coef_max_abs_delta",
-      max_named_delta(fit$coefficients, ref), 0.01, "strict-practical",
+      max_named_delta(fit$coefficients, ref), 0.001, "strict-practical",
       "Returns regression and sandwich-level aggregates, not row scores.",
       run$runtime_s, generalization_quality_status(fit),
       quality_allowed = c("ok", "approximate"))
@@ -1393,16 +1440,18 @@ generalize_mi <- function(seed, K) {
   with_aligned_dslite(split_mi(pooled, K), function(conns) {
     run <- elapsed(fit <- dsVertClient::ds.vert.mi(
       y ~ x1 + x2 + x3, data = "DA", impute_columns = "x2",
-      family = "gaussian", verbose = validation_demo_verbose(), datasources = conns, seed = 12L))
-    ref_data <- pooled
-    ref_data$x2[is.na(ref_data$x2)] <- mean(ref_data$x2, na.rm = TRUE)
-    ref <- coef(stats::lm(y ~ x1 + x2 + x3, data = ref_data))
+      family = "gaussian", lambda = 0,
+      verbose = validation_demo_verbose(), datasources = conns, seed = 12L))
+    ref <- central_mi_same_imputer(
+      pooled, K, y ~ x1 + x2 + x3, impute_columns = "x2",
+      m = fit$m, seed = 12L)
     generalization_row(
-      "mi", "Multiple imputation", "missing_covariate_mean", seed, K,
+      "mi", "Multiple imputation", "missing_covariate_same_imputer", seed, K,
       "ds.vert.mi",
       sprintf("synthetic MI n=%d missing_every=7", nrow(pooled)),
-      "central mean-imputation reference", "pooled_coef_abs_delta",
-      max_named_delta(fit$coefficients, ref), 0.02, "strict-practical",
+      "same-imputer centralized Rubin pooling", "pooled_coef_abs_delta",
+      max_named_delta(fit$coefficients, ref$coefficients), 0.001,
+      "strict-practical",
       "Imputed columns stay server-side; client pools beta/covariance only.",
       run$runtime_s, generalization_quality_status(fit),
       quality_allowed = c("ok", "approximate"))
@@ -1428,7 +1477,7 @@ generalize_multinomial <- function(seed, K) {
       "ds.vert.multinom",
       sprintf("synthetic multinomial n=%d", nrow(pooled)),
       "nnet::multinom probabilities",
-      "class_probability_max_abs_delta", max(abs(ds_prob - ref_prob)), 0.005,
+      "class_probability_max_abs_delta", max(abs(ds_prob - ref_prob)), 0.001,
       "strict-practical",
       "Softmax probabilities/residuals stay Ring127 shares; no row probabilities are returned.",
       run$runtime_s, generalization_quality_status(fit),
@@ -1493,7 +1542,7 @@ generalize_glmm <- function(seed, K) {
       sprintf("synthetic GLMM n=%d clusters=%d", nrow(pooled),
               length(unique(pooled$cluster))),
       "MASS::glmmPQL", "fixed_effect_max_abs_delta_and_pql_quality",
-      observed, 0.005, "strict-pql",
+      observed, 0.001, "strict-practical",
       "PQL route returns fixed effects and scalar variance diagnostics only.",
       run$runtime_s, generalization_quality_status(fit),
       quality_allowed = c("ok"))

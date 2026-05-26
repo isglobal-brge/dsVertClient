@@ -39,12 +39,11 @@
 #'   iid-mu bias (on quine: 16% -> 4-5%) without any new MPC machinery.
 #'
 #' @inheritParams ds.vertNB
-#' @param variant Character. \code{"full_reg_nd"} (default) runs the
-#'   non-disclosive share-domain full-regression theta refinement.
-#'   \code{"iid_mu"} returns the unmodified \code{ds.vertNB} result.
-#'   \code{"corrected"} applies the aggregate variance correction described
-#'   in Details. The legacy disclosive \code{"full_reg"} eta-transport path
-#'   has been removed.
+#' @param variant Character. Only \code{"full_reg_nd"} is accepted in the
+#'   validated product route. Historical iid-mu and aggregate-corrected
+#'   variants are retained as internal development code, but are not part of
+#'   the public validation surface. The legacy disclosive \code{"full_reg"}
+#'   eta-transport path has been removed.
 #' @param beta_max_iter Integer. Maximum beta refinements for the
 #'   non-disclosive full-regression theta variant.
 #' @param beta_tol Numeric. Relative convergence tolerance for beta refinements
@@ -66,9 +65,8 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                                   beta_max_iter = 2L, beta_tol = 1e-4,
                                   compute_covariance = TRUE,
                                   verbose = TRUE, datasources = NULL, ...) {
-  if (!variant %in% c("iid_mu", "corrected", "full_reg_nd")) {
-    stop("variant must be 'iid_mu', 'corrected', or 'full_reg_nd'",
-         call. = FALSE)
+  if (!identical(variant, "full_reg_nd")) {
+    stop("variant must be 'full_reg_nd'", call. = FALSE)
   }
 
   base_fit <- ds.vertNB(formula = formula, data = data, theta = theta,

@@ -42,12 +42,11 @@ current theta-adjusted mean estimate.}
 \item{theta_tol}{Convergence tolerance on the relative change in
 theta during the Newton refinement.}
 
-\item{variant}{Character. \code{"full_reg_nd"} (default) runs the
-non-disclosive share-domain full-regression theta refinement.
-\code{"iid_mu"} returns the unmodified \code{ds.vertNB} result.
-\code{"corrected"} applies the aggregate variance correction described
-in Details. The legacy disclosive \code{"full_reg"} eta-transport path
-has been removed.}
+\item{variant}{Character. Only \code{"full_reg_nd"} is accepted in the
+validated product route. Historical iid-mu and aggregate-corrected
+variants are retained as internal development code, but are not part of
+the public validation surface. The legacy disclosive \code{"full_reg"}
+eta-transport path has been removed.}
 
 \item{beta_max_iter}{Integer. Maximum beta refinements for the
 non-disclosive full-regression theta variant.}

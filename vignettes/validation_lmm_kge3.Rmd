@@ -107,7 +107,7 @@ observed <- max_named_delta(fit$coefficients, ref)
 rows <- row_result(
   "lmm", "LMM", K, "ds.vert.lmm",
   "synthetic random-intercept fixture", "lme4::lmer",
-  "fixed_effect_max_abs_delta", observed, 0.02, "strict-practical",
+  "fixed_effect_max_abs_delta", observed, 0.001, "strict-practical",
   "Cluster membership is used internally; per-cluster residuals/BLUPs are not returned.",
   result$runtime_s)
 

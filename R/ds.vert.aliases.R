@@ -205,26 +205,15 @@ ds.vert.coxph <- function(formula, data = NULL, ...) {
 #' @rdname ds.vert.aliases
 #' @export
 ds.vert.nb <- function(formula, data = NULL,
-                       method = c("auto", "accurate", "fast", "mom",
-                                  "profile"),
+                       method = "accurate",
                        datasources = NULL, ...) {
-  method <- match.arg(method)
+  method <- match.arg(method, "accurate")
   datasources <- .dsvert_datasources(datasources)
   K <- length(datasources)
-  route <- switch(method,
-    auto = "ds.vertNBFullRegTheta",
-    accurate = "ds.vertNBFullRegTheta",
-    fast = "ds.vertNBMoMTheta",
-    mom = "ds.vertNBMoMTheta",
-    profile = "ds.vertNB")
-  fit <- switch(route,
-    ds.vertNBMoMTheta = ds.vertNBMoMTheta(
-      formula = formula, data = data, datasources = datasources, ...),
-    ds.vertNB = ds.vertNB(
-      formula = formula, data = data, datasources = datasources, ...),
-    ds.vertNBFullRegTheta = ds.vertNBFullRegTheta(
-      formula = formula, data = data, variant = "full_reg_nd",
-      datasources = datasources, ...))
+  route <- "ds.vertNBFullRegTheta"
+  fit <- ds.vertNBFullRegTheta(
+    formula = formula, data = data, variant = "full_reg_nd",
+    datasources = datasources, ...)
   fit <- .dsvert_set_frontdoor(fit, "ds.vert.nb", route, K)
   .dsvert_add_policy(fit, method = method)
 }
@@ -308,37 +297,16 @@ ds.vert.gee <- function(formula, data = NULL,
 #' @rdname ds.vert.aliases
 #' @export
 ds.vert.glmm <- function(formula, data = NULL, cluster_col,
-                         method = c("auto", "laplace", "pql"),
+                         method = "pql",
                          datasources = NULL, ...) {
-  method <- match.arg(method)
-  route_method <- if (identical(method, "auto")) "laplace" else method
+  method <- match.arg(method, "pql")
   datasources <- .dsvert_datasources(datasources)
-  if (identical(route_method, "laplace")) {
-    out <- ds.vertGLMMLaplace(formula = formula, data = data,
-                              cluster_col = cluster_col,
-                              datasources = datasources, ...)
-    out <- .dsvert_set_frontdoor(out, "ds.vert.glmm", "ds.vertGLMMLaplace",
-                                 length(datasources))
-  } else {
-    out <- ds.vertGLMM(formula = formula, data = data,
-                       cluster_col = cluster_col,
-                       datasources = datasources, ...)
-    out <- .dsvert_set_frontdoor(out, "ds.vert.glmm", "ds.vertGLMM",
-                                 length(datasources))
-  }
+  out <- ds.vertGLMM(formula = formula, data = data,
+                     cluster_col = cluster_col,
+                     datasources = datasources, ...)
+  out <- .dsvert_set_frontdoor(out, "ds.vert.glmm", "ds.vertGLMM",
+                               length(datasources))
   .dsvert_add_policy(out, method = method)
-}
-
-#' @rdname ds.vert.aliases
-#' @export
-ds.vert.glmer <- function(formula, data = NULL, cluster_col,
-                          datasources = NULL, ...) {
-  datasources <- .dsvert_datasources(datasources)
-  out <- ds.vertGLMMLaplace(formula = formula, data = data,
-                            cluster_col = cluster_col,
-                            datasources = datasources, ...)
-  .dsvert_set_frontdoor(out, "ds.vert.glmer", "ds.vertGLMMLaplace",
-                        length(datasources))
 }
 
 #' @rdname ds.vert.aliases

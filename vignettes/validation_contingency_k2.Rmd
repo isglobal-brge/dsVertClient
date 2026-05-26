@@ -120,7 +120,7 @@ rows <- row_result(
   "contingency", "Contingency tests", K,
   "ds.vert.chisq / ds.vert.fisher / ds.vert.chisq_cross",
   "MASS::Pima.tr categorical fixture", "chisq.test / fisher.test",
-  "max(count_or_chisq_delta)", observed, 1e-8, "strict-precise",
+  "max(count_or_chisq_delta)", observed, 0, "strict-precise",
   "Releases guarded table counts and test statistics; small cells fail closed.",
   result$runtime_s)
 

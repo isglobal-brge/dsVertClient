@@ -115,7 +115,7 @@ rows <- row_result(
   "multinomial", "Multinomial", K, "ds.vert.multinom",
   "balanced soft-signal synthetic 3-class fixture",
   "nnet::multinom probabilities",
-  "class_probability_max_abs_delta", observed, 0.005,
+  "class_probability_max_abs_delta", observed, 0.001,
   "strict-practical",
   "Softmax probabilities and residuals remain Ring127 shares; no row probabilities are returned.",
   result$runtime_s)
