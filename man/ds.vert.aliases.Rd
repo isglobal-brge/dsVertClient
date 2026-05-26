@@ -30,7 +30,7 @@
 \alias{ds.vert.confint}
 \alias{ds.vert.wald}
 \alias{ds.vert.contrast}
-\title{User-facing ds.vert.* API aliases}
+\title{Public ds.vert.* API aliases}
 \usage{
 ds.vert.align(data_name, id_col, newobj = "D_aligned", datasources = NULL, ...)
 

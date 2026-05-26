@@ -38,7 +38,7 @@ product route. The common columns are:
 | Column | Meaning |
 |---|---|
 | `k_mode` | Whether the route is validated with two peers (`K=2`) or at least three peers (`K>=3`). |
-| `function_route` | User-facing `ds.vert.*` route or route option being exercised. |
+| `function_route` | Public `ds.vert.*` route or route option being exercised. |
 | `dataset` | The generated fixture used for the comparison. |
 | `reference_target` | The centralized R reference used as the comparator. |
 | `primary_metric` | The numerical error criterion, usually a max absolute coefficient, probability, loading, or algebra delta. |
@@ -74,7 +74,7 @@ identity. That does not relax the method-level disclosure checks.
 
 ## Method coverage
 
-| Method | User-facing route | K=2 evidence | K>=3 evidence | Current product path |
+| Method | Public route | K=2 evidence | K>=3 evidence | Current product path |
 |---|---|---|---|---|
 | PSI alignment | `ds.vert.align()` | [K=2](validation_psi_k2.html) | [K>=3](validation_psi_kge3.html) | Strict exact alignment counts/status only. |
 | Descriptive statistics | `ds.vert.desc()` | [K=2](validation_descriptive_k2.html) | [K>=3](validation_descriptive_kge3.html) | Strict aggregate means and standard deviations. |

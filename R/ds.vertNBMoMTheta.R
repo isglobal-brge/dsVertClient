@@ -42,6 +42,7 @@
 #'   \code{$theta_mom_underdispersed} flags pathological s^2 <= ybar cases.
 #' @seealso \code{\link{ds.vertNB}}, \code{\link{ds.vertNBFullRegTheta}}
 #' @keywords internal
+#' @noRd
 ds.vertNBMoMTheta <- function(formula, data = NULL,
                                verbose = TRUE,
                                datasources = NULL, ...) {

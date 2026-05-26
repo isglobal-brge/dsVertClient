@@ -1,4 +1,4 @@
-# User-facing ds.vert.\* API aliases
+# Public ds.vert.\* API aliases
 
 These wrappers provide a compact, formula-style public surface while
 keeping the historical CamelCase functions as compatibility backends.
@@ -42,13 +42,7 @@ ds.vert.cox(
 
 ds.vert.coxph(formula, data = NULL, ...)
 
-ds.vert.nb(
-  formula,
-  data = NULL,
-  method = c("auto", "accurate", "fast", "mom", "profile"),
-  datasources = NULL,
-  ...
-)
+ds.vert.nb(formula, data = NULL, method = "accurate", datasources = NULL, ...)
 
 ds.vert.multinom(formula, data = NULL, datasources = NULL, ...)
 
@@ -80,12 +74,10 @@ ds.vert.glmm(
   formula,
   data = NULL,
   cluster_col,
-  method = c("auto", "laplace", "pql"),
+  method = "pql",
   datasources = NULL,
   ...
 )
-
-ds.vert.glmer(formula, data = NULL, cluster_col, datasources = NULL, ...)
 
 ds.vert.ipw(
   outcome_formula,

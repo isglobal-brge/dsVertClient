@@ -1,6 +1,6 @@
 # Federated ordinal logistic regression
 
-User-facing ordinal wrapper. Dispatches to
+Public ordinal wrapper. Dispatches to
 [`ds.vertOrdinalJointNewton`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertOrdinalJointNewton.md),
 the paper-safe joint proportional-odds route for K=2 and K\>=3. The
 historical cumulative-binomial approximation is no longer exposed as a

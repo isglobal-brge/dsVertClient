@@ -268,7 +268,7 @@ rows <- row_result(
   "multinomial", "Multinomial", K, "ds.vert.multinom",
   "balanced soft-signal synthetic 3-class fixture",
   "nnet::multinom probabilities",
-  "class_probability_max_abs_delta", observed, 0.005,
+  "class_probability_max_abs_delta", observed, 0.001,
   "strict-practical",
   "Softmax probabilities and residuals remain Ring127 shares; no row probabilities are returned.",
   result$runtime_s)
@@ -278,7 +278,7 @@ display_validation(rows)
 
 | k_mode | function_route | dataset | reference_target | primary_metric | observed | tolerance | tier | status | runtime_s |
 |:---|:---|:---|:---|:---|---:|---:|:---|:---|---:|
-| K=2 | ds.vert.multinom | balanced soft-signal synthetic 3-class fixture | nnet::multinom probabilities | class_probability_max_abs_delta | 3.23e-05 | 0.005 | strict-practical | PASS | 427.4 |
+| K=2 | ds.vert.multinom | balanced soft-signal synthetic 3-class fixture | nnet::multinom probabilities | class_probability_max_abs_delta | 3.23e-05 | 0.001 | strict-practical | PASS | 427.4 |
 
 ``` r
 

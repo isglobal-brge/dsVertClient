@@ -24,6 +24,7 @@ configuring the dsvert.trusted_peers option on each server."></head><body>
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Validation</h6></li>
+    <li><a class="dropdown-item" href="../articles/validation_summary.html">Validation evidence summary</a></li>
     <li><a class="dropdown-item" href="../articles/validation_psi_k2.html">PSI alignment validation (K=2)</a></li>
     <li><a class="dropdown-item" href="../articles/validation_psi_kge3.html">PSI alignment validation (K&gt;=3)</a></li>
     <li><a class="dropdown-item" href="../articles/validation_descriptive_k2.html">Descriptive statistics validation (K=2)</a></li>
@@ -102,12 +103,13 @@ configuring the <code>dsvert.trusted_peers</code> option on each server.</p>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="kw">if</span> <span class="op">(</span><span class="cn">FALSE</span><span class="op">)</span> <span class="op">{</span> <span class="co"># \dontrun{</span></span>
-<span><span class="va">pks</span> <span class="op">&lt;-</span> <span class="fu">ds.getIdentityPks</span><span class="op">(</span>datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
-<span><span class="co"># Set trusted peers on each server via opalr:</span></span>
-<span><span class="co"># dsadmin.set_option(opal, "dsvert.trusted_peers", paste(pks, collapse=","))</span></span>
-<span><span class="op">}</span> <span class="co"># }</span></span>
-<span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="kw">if</span> <span class="op">(</span><span class="cn">FALSE</span><span class="op">)</span> <span class="op">{</span> <span class="co"># \dontrun{</span></span></span>
+<span class="r-in"><span><span class="va">pks</span> <span class="op">&lt;-</span> <span class="fu">ds.getIdentityPks</span><span class="op">(</span>datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="co"># Set trusted peers on each server via opalr:</span></span></span>
+<span class="r-in"><span><span class="co"># dsadmin.set_option(opal, "dsvert.trusted_peers", paste(pks, collapse=","))</span></span></span>
+<span class="r-in"><span><span class="op">}</span> <span class="co"># }</span></span></span>
+<span class="r-in"><span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

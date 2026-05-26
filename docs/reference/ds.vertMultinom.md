@@ -1,6 +1,6 @@
 # Federated multinomial logistic regression
 
-User-facing multinomial wrapper. Dispatches to
+Public multinomial wrapper. Dispatches to
 [`ds.vertMultinomJointNewton`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertMultinomJointNewton.md),
 the paper-safe joint softmax Newton route for K=2 and K\>=3. The
 historical one-vs-rest approximation is no longer exposed as a

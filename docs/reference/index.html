@@ -72,7 +72,7 @@
     </div>
 
     <div class="section level2">
-      <h2 id="all-functions">All functions<a class="anchor" aria-label="anchor" href="#all-functions"></a></h2>
+      <h2 id="public-frontdoor-api">Public frontdoor API<a class="anchor" aria-label="anchor" href="#public-frontdoor-api"></a></h2>
 
 
 
@@ -83,24 +83,26 @@
 
       <dl><dt>
 
-          <code><a href="chunk-utils.html">chunk-utils</a></code>
+          <code><a href="ds.vert.aliases.html">ds.vert.align()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.is_aligned()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.desc()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.cor()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.pca()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.chisq()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.fisher()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.chisq_cross()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.glm()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.cox()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.coxph()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.nb()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.multinom()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.ordinal()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lmm()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.gee()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.glmm()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.ipw()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.mi()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lasso()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lasso_iter()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lasso_proximal()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lasso_1step()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lasso_cv()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lr()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.confint()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.wald()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.contrast()</a></code>
 
         </dt>
-        <dd>Adaptive Chunking for DataSHIELD Transport</dd>
+        <dd>Public ds.vert.* API aliases</dd>
+      </dl></div><div class="section level2">
+      <h2 id="psi-alignment-and-identity">PSI alignment and identity<a class="anchor" aria-label="anchor" href="#psi-alignment-and-identity"></a></h2>
 
-        <dt>
 
-          <code><a href="coef.ds.glm.html">coef(<i>&lt;ds.glm&gt;</i>)</a></code>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="ds.psiAlign.html">ds.psiAlign()</a></code>
 
         </dt>
-        <dd>Coefficients Method for ds.glm Objects</dd>
-
-        <dt>
-
-          <code><a href="ds.getIdentityPks.html">ds.getIdentityPks()</a></code>
-
-        </dt>
-        <dd>Query Server Identity Public Keys</dd>
+        <dd>ECDH-PSI Record Alignment (Blind Relay)</dd>
 
         <dt>
 
@@ -111,17 +113,40 @@
 
         <dt>
 
-          <code><a href="ds.psiAlign.html">ds.psiAlign()</a></code>
+          <code><a href="ds.getIdentityPks.html">ds.getIdentityPks()</a></code>
 
         </dt>
-        <dd>ECDH-PSI Record Alignment (Blind Relay)</dd>
+        <dd>Query Server Identity Public Keys</dd>
+      </dl></div><div class="section level2">
+      <h2 id="compatibility-backends">Compatibility backends<a class="anchor" aria-label="anchor" href="#compatibility-backends"></a></h2>
+
+
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="ds.vertDesc.html">ds.vertDesc()</a></code>
+
+        </dt>
+        <dd>Federated descriptive statistics with approximate quantiles</dd>
 
         <dt>
 
-          <code><a href="ds.vert.aliases.html">ds.vert.align()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.is_aligned()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.desc()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.cor()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.pca()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.chisq()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.fisher()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.chisq_cross()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.glm()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.cox()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.coxph()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.nb()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.multinom()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.ordinal()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lmm()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.gee()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.glmm()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.glmer()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.ipw()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.mi()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lasso()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lasso_iter()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lasso_proximal()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lasso_1step()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lasso_cv()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.lr()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.confint()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.wald()</a></code> <code><a href="ds.vert.aliases.html">ds.vert.contrast()</a></code>
+          <code><a href="ds.vertCor.html">ds.vertCor()</a></code>
 
         </dt>
-        <dd>User-facing ds.vert.* API aliases</dd>
+        <dd>Ring63 Privacy-Preserving Correlation for Vertically Partitioned Data</dd>
+
+        <dt>
+
+          <code><a href="ds.vertPCA.html">ds.vertPCA()</a></code>
+
+        </dt>
+        <dd>Principal Component Analysis for Vertically Partitioned Data</dd>
 
         <dt>
 
@@ -139,66 +164,10 @@
 
         <dt>
 
-          <code><a href="ds.vertConfint.html">ds.vertConfint()</a></code>
-
-        </dt>
-        <dd>Wald confidence intervals for ds.vertGLM coefficients</dd>
-
-        <dt>
-
-          <code><a href="ds.vertContrast.html">ds.vertContrast()</a></code>
-
-        </dt>
-        <dd>Multi-coefficient Wald test via linear contrast K*beta</dd>
-
-        <dt>
-
-          <code><a href="ds.vertCor.html">ds.vertCor()</a></code>
-
-        </dt>
-        <dd>Ring63 Privacy-Preserving Correlation for Vertically Partitioned Data</dd>
-
-        <dt>
-
-          <code><a href="ds.vertCox.html">ds.vertCox()</a></code>
-
-        </dt>
-        <dd>Federated Cox proportional-hazards regression</dd>
-
-        <dt>
-
-          <code><a href="ds.vertCoxDiscreteNonDisclosive.html">ds.vertCoxDiscreteNonDisclosive()</a></code>
-
-        </dt>
-        <dd>Cox discrete-time pooled-logistic – non-disclosive option B (#D')</dd>
-
-        <dt>
-
-          <code><a href="ds.vertCoxProfileNonDisclosive.html">ds.vertCoxProfileNonDisclosive()</a></code>
-
-        </dt>
-        <dd>Cox proportional hazards via non-disclosive Breslow profile Newton</dd>
-
-        <dt>
-
-          <code><a href="ds.vertDesc.html">ds.vertDesc()</a></code>
-
-        </dt>
-        <dd>Federated descriptive statistics with approximate quantiles</dd>
-
-        <dt>
-
           <code><a href="ds.vertFisher.html">ds.vertFisher()</a></code>
 
         </dt>
         <dd>Federated Fisher exact test (same-server case)</dd>
-
-        <dt>
-
-          <code><a href="ds.vertGEE.html">ds.vertGEE()</a></code>
-
-        </dt>
-        <dd>Federated generalised estimating equations</dd>
 
         <dt>
 
@@ -209,87 +178,31 @@
 
         <dt>
 
-          <code><a href="ds.vertGLMM.html">ds.vertGLMM()</a></code>
+          <code><a href="ds.vertCox.html">ds.vertCox()</a></code>
 
         </dt>
-        <dd>Federated binomial GLMM-PQL</dd>
+        <dd>Federated Cox proportional-hazards regression</dd>
 
         <dt>
 
-          <code><a href="ds.vertGLMMLaplace.html">ds.vertGLMMLaplace()</a></code>
+          <code><a href="ds.vertCoxProfileNonDisclosive.html">ds.vertCoxProfileNonDisclosive()</a></code>
 
         </dt>
-        <dd>Federated binomial GLMM Laplace estimator</dd>
+        <dd>Cox proportional hazards via non-disclosive Breslow profile Newton</dd>
 
         <dt>
 
-          <code><a href="ds.vertIPW.html">ds.vertIPW()</a></code>
+          <code><a href="ds.vertCoxDiscreteNonDisclosive.html">ds.vertCoxDiscreteNonDisclosive()</a></code>
 
         </dt>
-        <dd>Federated inverse-probability-weighted GLM (two-stage)</dd>
+        <dd>Cox discrete-time pooled-logistic – non-disclosive option B (#D')</dd>
 
         <dt>
 
-          <code><a href="ds.vertLASSO.html">ds.vertLASSO()</a></code>
+          <code><a href="ds.vertNBFullRegTheta.html">ds.vertNBFullRegTheta()</a></code>
 
         </dt>
-        <dd>Post-hoc soft-thresholded GLM coefficients (naive LASSO)</dd>
-
-        <dt>
-
-          <code><a href="ds.vertLASSO1Step.html">ds.vertLASSO1Step()</a></code>
-
-        </dt>
-        <dd>One-step LASSO via quadratic-surrogate proximal gradient</dd>
-
-        <dt>
-
-          <code><a href="ds.vertLASSOCV.html">ds.vertLASSOCV()</a></code>
-
-        </dt>
-        <dd>Information-criterion lambda selection for one-step LASSO</dd>
-
-        <dt>
-
-          <code><a href="ds.vertLASSOIter.html">ds.vertLASSOIter()</a></code>
-
-        </dt>
-        <dd>Federated LASSO path from a non-disclosive GLM fit</dd>
-
-        <dt>
-
-          <code><a href="ds.vertLASSOProximal.html">ds.vertLASSOProximal()</a></code>
-
-        </dt>
-        <dd>Proper LASSO via client-side proximal gradient on normal equations</dd>
-
-        <dt>
-
-          <code><a href="ds.vertLMM.html">ds.vertLMM()</a></code>
-
-        </dt>
-        <dd>Federated linear mixed model with a single random intercept</dd>
-
-        <dt>
-
-          <code><a href="ds.vertLMM.k3.html">ds.vertLMM.k3()</a></code>
-
-        </dt>
-        <dd>Federated linear mixed model via share-domain residual GLS (K&gt;=3)</dd>
-
-        <dt>
-
-          <code><a href="ds.vertLR.html">ds.vertLR()</a></code>
-
-        </dt>
-        <dd>Likelihood-ratio test on two nested ds.vertGLM fits</dd>
-
-        <dt>
-
-          <code><a href="ds.vertMI.html">ds.vertMI()</a></code>
-
-        </dt>
-        <dd>Federated multiple imputation with Rubin pooling</dd>
+        <dd>Federated NB regression with full-regression theta refinement</dd>
 
         <dt>
 
@@ -314,27 +227,6 @@
 
         <dt>
 
-          <code><a href="ds.vertNB.html">ds.vertNB()</a></code>
-
-        </dt>
-        <dd>Federated negative binomial regression with dispersion estimate</dd>
-
-        <dt>
-
-          <code><a href="ds.vertNBFullRegTheta.html">ds.vertNBFullRegTheta()</a></code>
-
-        </dt>
-        <dd>Federated NB regression with full-regression theta refinement</dd>
-
-        <dt>
-
-          <code><a href="ds.vertNBMoMTheta.html">ds.vertNBMoMTheta()</a></code>
-
-        </dt>
-        <dd>NB regression with Method-of-Moments theta-estimator (K=2-safe)</dd>
-
-        <dt>
-
           <code><a href="ds.vertOrdinal.html">ds.vertOrdinal()</a></code>
 
         </dt>
@@ -349,10 +241,94 @@
 
         <dt>
 
-          <code><a href="ds.vertPCA.html">ds.vertPCA()</a></code>
+          <code><a href="ds.vertLMM.html">ds.vertLMM()</a></code>
 
         </dt>
-        <dd>Principal Component Analysis for Vertically Partitioned Data</dd>
+        <dd>Federated linear mixed model with a single random intercept</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLMM.k3.html">ds.vertLMM.k3()</a></code>
+
+        </dt>
+        <dd>Federated linear mixed model via share-domain residual GLS (K&gt;=3)</dd>
+
+        <dt>
+
+          <code><a href="ds.vertGEE.html">ds.vertGEE()</a></code>
+
+        </dt>
+        <dd>Federated generalised estimating equations</dd>
+
+        <dt>
+
+          <code><a href="ds.vertGLMM.html">ds.vertGLMM()</a></code>
+
+        </dt>
+        <dd>Federated binomial GLMM-PQL</dd>
+
+        <dt>
+
+          <code><a href="ds.vertIPW.html">ds.vertIPW()</a></code>
+
+        </dt>
+        <dd>Federated inverse-probability-weighted GLM (two-stage)</dd>
+
+        <dt>
+
+          <code><a href="ds.vertMI.html">ds.vertMI()</a></code>
+
+        </dt>
+        <dd>Federated multiple imputation with Rubin pooling</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLASSO.html">ds.vertLASSO()</a></code>
+
+        </dt>
+        <dd>Post-hoc soft-thresholded GLM coefficients (naive LASSO)</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLASSOIter.html">ds.vertLASSOIter()</a></code>
+
+        </dt>
+        <dd>Federated LASSO path from a non-disclosive GLM fit</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLASSOProximal.html">ds.vertLASSOProximal()</a></code>
+
+        </dt>
+        <dd>Proper LASSO via client-side proximal gradient on normal equations</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLASSO1Step.html">ds.vertLASSO1Step()</a></code>
+
+        </dt>
+        <dd>One-step LASSO via quadratic-surrogate proximal gradient</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLASSOCV.html">ds.vertLASSOCV()</a></code>
+
+        </dt>
+        <dd>Information-criterion lambda selection for one-step LASSO</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLR.html">ds.vertLR()</a></code>
+
+        </dt>
+        <dd>Likelihood-ratio test on two nested ds.vertGLM fits</dd>
+
+        <dt>
+
+          <code><a href="ds.vertConfint.html">ds.vertConfint()</a></code>
+
+        </dt>
+        <dd>Wald confidence intervals for ds.vertGLM coefficients</dd>
 
         <dt>
 
@@ -362,6 +338,22 @@
         <dd>Univariate Wald test for a single ds.vertGLM coefficient</dd>
 
         <dt>
+
+          <code><a href="ds.vertContrast.html">ds.vertContrast()</a></code>
+
+        </dt>
+        <dd>Multi-coefficient Wald test via linear contrast K*beta</dd>
+      </dl></div><div class="section level2">
+      <h2 id="helpers-and-s-methods">Helpers and S3 methods<a class="anchor" aria-label="anchor" href="#helpers-and-s-methods"></a></h2>
+
+
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
 
           <code><a href="k2-beaver-lbfgs-client.html">k2-beaver-lbfgs-client</a></code>
 
@@ -374,6 +366,20 @@
 
         </dt>
         <dd>K&gt;=3 Ring63 DCF + Beaver Gradient Loop</dd>
+
+        <dt>
+
+          <code><a href="chunk-utils.html">chunk-utils</a></code>
+
+        </dt>
+        <dd>Adaptive Chunking for DataSHIELD Transport</dd>
+
+        <dt>
+
+          <code><a href="coef.ds.glm.html">coef(<i>&lt;ds.glm&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Coefficients Method for ds.glm Objects</dd>
 
         <dt>
 
@@ -403,7 +409,8 @@
         </dt>
         <dd>Summary Method for ds.glm Objects</dd>
       </dl></div>
-  </main></div>
+  </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
+    </nav></aside></div>
 
 
     <footer><div class="pkgdown-footer-left">

@@ -1,9 +1,9 @@
 # Federated NB regression with full-regression theta refinement
 
-Extends `ds.vertNB` (which uses the iid-mu profile MLE for theta:
-assumes mu_i == ybar when evaluating the profile score) with a
-variance-corrected refinement that accounts for mu_i variation across
-patients without requiring per-patient MPC reveals.
+Backend used by the public `ds.vert.nb()` frontdoor for the validated
+full-regression negative-binomial route. It starts from the internal
+iid-mu profile fit and refines theta while accounting for \\\mu_i\\
+variation across patients without requiring per-patient MPC reveals.
 
 ## Usage
 
@@ -60,11 +60,11 @@ ds.vertNBFullRegTheta(
 
 - variant:
 
-  Character. `"full_reg_nd"` (default) runs the non-disclosive
-  share-domain full-regression theta refinement. `"iid_mu"` returns the
-  unmodified `ds.vertNB` result. `"corrected"` applies the aggregate
-  variance correction described in Details. The legacy disclosive
-  `"full_reg"` eta-transport path has been removed.
+  Character. Only `"full_reg_nd"` is accepted in the validated product
+  route. Historical iid-mu and aggregate-corrected variants are retained
+  as internal development code, but are not part of the public validation
+  surface. The legacy disclosive `"full_reg"` eta-transport path has
+  been removed.
 
 - beta_max_iter:
 
@@ -96,17 +96,18 @@ ds.vertNBFullRegTheta(
 
 ## Value
 
-Object of class `c("ds.vertNBFullRegTheta", "ds.vertNB")`. Fields as
-`ds.vertNB`, plus `$theta_iid` (original iid-mu estimate) and
-`$variance_correction` (the \\\hat V\_\mu\\ used). For the
-non-disclosive full-regression variant, the object also contains
-`$theta_trace`, `$theta_iter`, and `$theta_converged`.
+Object of class `c("ds.vertNBFullRegTheta", "ds.vertNB")`. The object
+contains model-scale coefficients, standard errors and diagnostics, plus
+`$theta_iid` (the internal starting estimate) and `$variance_correction`
+(the \\\hat V\_\mu\\ used). For the non-disclosive full-regression
+variant, the object also contains `$theta_trace`, `$theta_iter`, and
+`$theta_converged`.
 
 ## Details
 
 The NB(mu_i, theta) log-likelihood score for theta is \$\$s(\theta) =
 \sum_i \psi(y_i + \theta) - n \psi(\theta) + n \log \theta - \sum_i
-\log(\mu_i + \theta).\$\$ The iid-mu approximation used in `ds.vertNB`
+\log(\mu_i + \theta).\$\$ The internal iid-mu starting fit
 replaces the last term by \\n \log(\bar y + \theta)\\. For homogeneous
 cohorts (small \\\text{Var}(\mu)\\) this is tight; for regression-rich
 settings the bias on theta can reach ~16% (quine, overdispersed counts)
@@ -136,4 +137,4 @@ quine: 16% -\> 4-5%) without any new MPC machinery.
 
 ## See also
 
-[`ds.vertNB`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertNB.md)
+[`ds.vert.aliases`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vert.aliases.md)

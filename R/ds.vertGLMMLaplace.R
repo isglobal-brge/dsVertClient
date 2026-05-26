@@ -60,6 +60,7 @@
 #' @return \code{ds.vertGLMMLaplace} object with fixed effects, scalar variance
 #'   component, protected objective diagnostics, and disclosure metadata.
 #' @keywords internal
+#' @noRd
 ds.vertGLMMLaplace <- function(formula, data = NULL, cluster_col,
                                start = NULL,
                                max_outer = NULL, mode_max_iter = 1L,
