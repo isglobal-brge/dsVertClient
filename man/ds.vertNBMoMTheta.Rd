@@ -74,3 +74,4 @@ comparison for overdispersed counts).
 \seealso{
 \code{\link{ds.vertNB}}, \code{\link{ds.vertNBFullRegTheta}}
 }
+\keyword{internal}

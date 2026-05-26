@@ -22,7 +22,7 @@ reference on the same pooled data, computes the numerical delta, and asserts
 the result.
 
 The current evidence snapshot covers 17 method blocks, both `K=2` and `K>=3`
-modalities, and 38 route-level validation rows. All rendered rows are `PASS`.
+modalities, and 34 route-level validation rows. All rendered rows are `PASS`.
 The route-level suite runs with the negotiated `auto` Beaver preprocessing
 policy, which uses the efficient dealer profile when all servers allow it and
 automatically switches to IKNP OT-extension when any server requires that
@@ -84,11 +84,11 @@ identity. That does not relax the method-level disclosure checks.
 | GLM | `ds.vert.glm()` | [K=2](validation_glm_k2.html) | [K>=3](validation_glm_kge3.html) | Practical strict encrypted-label GLM route. |
 | Inference helpers | `ds.vert.confint()`, `ds.vert.wald()`, `ds.vert.contrast()`, `ds.vert.lr()` | [K=2](validation_inference_k2.html) | [K>=3](validation_inference_kge3.html) | Exact algebra on accepted GLM output. |
 | LASSO | `ds.vert.lasso_proximal()` | [K=2](validation_lasso_k2.html) | [K>=3](validation_lasso_kge3.html) | Strict proximal route; validation checks the lambda=0 OLS limit. |
-| Negative binomial | `ds.vert.nb()` | [K=2](validation_negative_binomial_k2.html) | [K>=3](validation_negative_binomial_kge3.html) | Accurate full-regression route and fast MoM approximation. |
+| Negative binomial | `ds.vert.nb()` | [K=2](validation_negative_binomial_k2.html) | [K>=3](validation_negative_binomial_kge3.html) | Accurate full-regression theta route. |
 | Cox PH | `ds.vert.cox()` | [K=2](validation_cox_k2.html) | [K>=3](validation_cox_kge3.html) | Practical non-disclosive profile/discrete route. |
 | LMM | `ds.vert.lmm()` | [K=2](validation_lmm_k2.html) | [K>=3](validation_lmm_kge3.html) | Practical random-intercept route. |
 | GEE | `ds.vert.gee()` | [K=2](validation_gee_k2.html) | [K>=3](validation_gee_kge3.html) | Practical aggregate estimating-equation route. |
-| GLMM | `ds.vert.glmm()` | [K=2](validation_glmm_k2.html) | [K>=3](validation_glmm_kge3.html) | PQL fast route plus Laplace practical route. |
+| GLMM | `ds.vert.glmm()` | [K=2](validation_glmm_k2.html) | [K>=3](validation_glmm_kge3.html) | PQL product route. |
 | IPW | `ds.vert.ipw()` | [K=2](validation_ipw_k2.html) | [K>=3](validation_ipw_kge3.html) | High-precision weighted outcome route. |
 | MI | `ds.vert.mi()` | [K=2](validation_mi_k2.html) | [K>=3](validation_mi_kge3.html) | Practical pooled coefficient route. |
 | Multinomial | `ds.vert.multinom()` | [K=2](validation_multinomial_k2.html) | [K>=3](validation_multinomial_kge3.html) | Joint softmax Newton route. |
@@ -112,9 +112,9 @@ and the profile-to-profile difference.
 
 | Route | Article | Dealer observed | IKNP observed | Profile delta | Tolerance | Runtime ratio | Status |
 |---|---|---:|---:|---:|---:|---:|---|
-| Correlation | [validation_beaver_profile_correlation_k2](validation_beaver_profile_correlation_k2.html) | `1.2441795e-05` | `1.2441795e-05` | `0e+00` | `1e-04` | `9.71` | PASS |
+| Correlation | [validation_beaver_profile_correlation_k2](validation_beaver_profile_correlation_k2.html) | `1.2441795e-05` | `1.2441795e-05` | `0e+00` | `1e-03` | `9.71` | PASS |
 | GLM | [validation_beaver_profile_glm_k2](validation_beaver_profile_glm_k2.html) | `6.2726772e-05` | `6.1290240e-05` | `1.4365328e-06` | `1e-03` | `15.28` | PASS |
-| GEE | [validation_beaver_profile_gee_k2](validation_beaver_profile_gee_k2.html) | `1.7860961e-04` | `6.0821320e-05` | `1.1778829e-04` | `1e-02` | `10.88` | PASS |
+| GEE | [validation_beaver_profile_gee_k2](validation_beaver_profile_gee_k2.html) | `1.7860961e-04` | `6.0821320e-05` | `1.1778829e-04` | `1e-03` | `10.88` | PASS |
 | Cox PH | [validation_beaver_profile_cox_k2](validation_beaver_profile_cox_k2.html) | `4.8702002e-05` | `4.8702002e-05` | `3.3861802e-15` | `1e-03` | `19.31` | PASS |
 
 ## Route-level result snapshot
@@ -131,35 +131,31 @@ and the rendered DSLite logs.
 | Descriptive | K>=3 | [validation_descriptive_kge3](validation_descriptive_kge3.html) | `ds.vert.desc` | `max(mean_sd_abs_delta)` | 0 | 0 | strict-precise | PASS |
 | Contingency | K=2 | [validation_contingency_k2](validation_contingency_k2.html) | `ds.vert.chisq / ds.vert.fisher / ds.vert.chisq_cross` | `max(count_or_chisq_delta)` | 0 | 0 | strict-precise | PASS |
 | Contingency | K>=3 | [validation_contingency_kge3](validation_contingency_kge3.html) | `ds.vert.chisq / ds.vert.fisher / ds.vert.chisq_cross` | `max(count_or_chisq_delta)` | 0 | 0 | strict-precise | PASS |
-| Correlation | K=2 | [validation_correlation_k2](validation_correlation_k2.html) | `ds.vert.cor` | `correlation_max_abs_delta` | 1.24e-05 | 1e-04 | strict-practical | PASS |
-| Correlation | K>=3 | [validation_correlation_kge3](validation_correlation_kge3.html) | `ds.vert.cor` | `correlation_max_abs_delta` | 1.24e-05 | 1e-04 | strict-practical | PASS |
-| PCA | K=2 | [validation_pca_k2](validation_pca_k2.html) | `ds.vert.pca` | `max(eigen_loading_abs_delta)` | 3.29e-05 | 1e-04 | strict-practical | PASS |
-| PCA | K>=3 | [validation_pca_kge3](validation_pca_kge3.html) | `ds.vert.pca` | `max(eigen_loading_abs_delta)` | 3.09e-05 | 1e-04 | strict-practical | PASS |
+| Correlation | K=2 | [validation_correlation_k2](validation_correlation_k2.html) | `ds.vert.cor` | `correlation_max_abs_delta` | 1.24e-05 | 0.001 | strict-practical | PASS |
+| Correlation | K>=3 | [validation_correlation_kge3](validation_correlation_kge3.html) | `ds.vert.cor` | `correlation_max_abs_delta` | 1.24e-05 | 0.001 | strict-practical | PASS |
+| PCA | K=2 | [validation_pca_k2](validation_pca_k2.html) | `ds.vert.pca` | `max(eigen_loading_abs_delta)` | 3.29e-05 | 0.001 | strict-practical | PASS |
+| PCA | K>=3 | [validation_pca_kge3](validation_pca_kge3.html) | `ds.vert.pca` | `max(eigen_loading_abs_delta)` | 3.09e-05 | 0.001 | strict-practical | PASS |
 | GLM | K=2 | [validation_glm_k2](validation_glm_k2.html) | `ds.vert.glm` | `coef_max_abs_delta` | 6.24e-05 | 0.001 | strict-practical | PASS |
 | GLM | K>=3 | [validation_glm_kge3](validation_glm_kge3.html) | `ds.vert.glm` | `coef_max_abs_delta` | 5.93e-05 | 0.001 | strict-practical | PASS |
 | Inference | K=2 | [validation_inference_k2](validation_inference_k2.html) | `ds.vert.confint / ds.vert.wald / ds.vert.contrast / ds.vert.lr` | `algebra_max_abs_delta` | 0 | 0 | strict-precise | PASS |
 | Inference | K>=3 | [validation_inference_kge3](validation_inference_kge3.html) | `ds.vert.confint / ds.vert.wald / ds.vert.contrast / ds.vert.lr` | `algebra_max_abs_delta` | 0 | 0 | strict-precise | PASS |
 | LASSO | K=2 | [validation_lasso_k2](validation_lasso_k2.html) | `ds.vert.lasso_proximal(lambda=0)` | `lambda0_coef_abs_delta` | 0 | 0 | strict-precise | PASS |
 | LASSO | K>=3 | [validation_lasso_kge3](validation_lasso_kge3.html) | `ds.vert.lasso_proximal(lambda=0)` | `lambda0_coef_abs_delta` | 0 | 0 | strict-precise | PASS |
-| Negative binomial | K=2 | [validation_negative_binomial_k2](validation_negative_binomial_k2.html) | `ds.vert.nb(method='accurate')` | `coef_max_abs_delta` | 0.0000277 | 0.02 | strict-practical | PASS |
-| Negative binomial | K=2 | [validation_negative_binomial_k2](validation_negative_binomial_k2.html) | `ds.vert.nb(method='fast')` | `max(beta_delta, theta_delta)` | 0.0010410 | 0.02 | fast-approximation | PASS |
-| Negative binomial | K>=3 | [validation_negative_binomial_kge3](validation_negative_binomial_kge3.html) | `ds.vert.nb(method='accurate')` | `coef_max_abs_delta` | 0.0000317 | 0.02 | strict-practical | PASS |
-| Negative binomial | K>=3 | [validation_negative_binomial_kge3](validation_negative_binomial_kge3.html) | `ds.vert.nb(method='fast')` | `max(beta_delta, theta_delta)` | 0.0010410 | 0.02 | fast-approximation | PASS |
+| Negative binomial | K=2 | [validation_negative_binomial_k2](validation_negative_binomial_k2.html) | `ds.vert.nb(method='accurate')` | `coef_max_abs_delta` | 0.0000277 | 0.001 | strict-practical | PASS |
+| Negative binomial | K>=3 | [validation_negative_binomial_kge3](validation_negative_binomial_kge3.html) | `ds.vert.nb(method='accurate')` | `coef_max_abs_delta` | 0.0000317 | 0.001 | strict-practical | PASS |
 | Cox | K=2 | [validation_cox_k2](validation_cox_k2.html) | `ds.vert.cox(method='profile')` | `coef_max_abs_delta` | 4.87e-05 | 0.001 | strict-practical | PASS |
 | Cox | K>=3 | [validation_cox_kge3](validation_cox_kge3.html) | `ds.vert.cox(method='profile')` | `coef_max_abs_delta` | 4.87e-05 | 0.001 | strict-practical | PASS |
-| LMM | K=2 | [validation_lmm_k2](validation_lmm_k2.html) | `ds.vert.lmm` | `fixed_effect_max_abs_delta` | 0.0006448 | 0.02 | strict-practical | PASS |
-| LMM | K>=3 | [validation_lmm_kge3](validation_lmm_kge3.html) | `ds.vert.lmm` | `fixed_effect_max_abs_delta` | 0.0001614 | 0.02 | strict-practical | PASS |
-| GEE | K=2 | [validation_gee_k2](validation_gee_k2.html) | `ds.vert.gee(corstr='independence')` | `coef_max_abs_delta` | 6.07e-05 | 0.01 | strict-practical | PASS |
-| GEE | K>=3 | [validation_gee_kge3](validation_gee_kge3.html) | `ds.vert.gee(corstr='independence')` | `coef_max_abs_delta` | 6e-05 | 0.01 | strict-practical | PASS |
-| GLMM | K=2 | [validation_glmm_k2](validation_glmm_k2.html) | `ds.vert.glmm(method='laplace')` | `max_fixed_effect_or_sigma_b2_abs_delta` | 0.0407200 | 0.060 | laplace-practical | PASS |
-| GLMM | K=2 | [validation_glmm_k2](validation_glmm_k2.html) | `ds.vert.glmm(method='pql')` | `fixed_effect_max_abs_delta_and_pql_quality` | 0.0005547 | 0.005 | strict-pql | PASS |
-| GLMM | K>=3 | [validation_glmm_kge3](validation_glmm_kge3.html) | `ds.vert.glmm(method='laplace')` | `max_fixed_effect_or_sigma_b2_abs_delta` | 0.0407200 | 0.060 | laplace-practical | PASS |
-| GLMM | K>=3 | [validation_glmm_kge3](validation_glmm_kge3.html) | `ds.vert.glmm(method='pql')` | `fixed_effect_max_abs_delta_and_pql_quality` | 0.0005547 | 0.005 | strict-pql | PASS |
+| LMM | K=2 | [validation_lmm_k2](validation_lmm_k2.html) | `ds.vert.lmm` | `fixed_effect_max_abs_delta` | 0.0006448 | 0.001 | strict-practical | PASS |
+| LMM | K>=3 | [validation_lmm_kge3](validation_lmm_kge3.html) | `ds.vert.lmm` | `fixed_effect_max_abs_delta` | 0.0001614 | 0.001 | strict-practical | PASS |
+| GEE | K=2 | [validation_gee_k2](validation_gee_k2.html) | `ds.vert.gee(corstr='independence')` | `coef_max_abs_delta` | 6.07e-05 | 0.001 | strict-practical | PASS |
+| GEE | K>=3 | [validation_gee_kge3](validation_gee_kge3.html) | `ds.vert.gee(corstr='independence')` | `coef_max_abs_delta` | 6e-05 | 0.001 | strict-practical | PASS |
+| GLMM | K=2 | [validation_glmm_k2](validation_glmm_k2.html) | `ds.vert.glmm(method='pql')` | `fixed_effect_max_abs_delta_and_pql_quality` | 0.0005547 | 0.001 | strict-practical | PASS |
+| GLMM | K>=3 | [validation_glmm_kge3](validation_glmm_kge3.html) | `ds.vert.glmm(method='pql')` | `fixed_effect_max_abs_delta_and_pql_quality` | 0.0005547 | 0.001 | strict-practical | PASS |
 | IPW | K=2 | [validation_ipw_k2](validation_ipw_k2.html) | `ds.vert.ipw(precision='high')` | `weighted_outcome_coef_abs_delta` | 0.0001785 | 0.001 | strict-practical | PASS |
 | IPW | K>=3 | [validation_ipw_kge3](validation_ipw_kge3.html) | `ds.vert.ipw(precision='high')` | `weighted_outcome_coef_abs_delta` | 0.0001785 | 0.001 | strict-practical | PASS |
-| MI | K=2 | [validation_mi_k2](validation_mi_k2.html) | `ds.vert.mi` | `pooled_coef_abs_delta` | 0.01797 | 0.02 | strict-practical | PASS |
-| MI | K>=3 | [validation_mi_kge3](validation_mi_kge3.html) | `ds.vert.mi` | `pooled_coef_abs_delta` | 5.51e-05 | 0.02 | strict-practical | PASS |
-| Multinomial | K=2 | [validation_multinomial_k2](validation_multinomial_k2.html) | `ds.vert.multinom` | `class_probability_max_abs_delta` | 3.23e-05 | 0.005 | strict-practical | PASS |
-| Multinomial | K>=3 | [validation_multinomial_kge3](validation_multinomial_kge3.html) | `ds.vert.multinom` | `class_probability_max_abs_delta` | 3.28e-05 | 0.005 | strict-practical | PASS |
+| MI | K=2 | [validation_mi_k2](validation_mi_k2.html) | `ds.vert.mi` | `pooled_coef_abs_delta` | 1.69e-05 | 0.001 | strict-practical | PASS |
+| MI | K>=3 | [validation_mi_kge3](validation_mi_kge3.html) | `ds.vert.mi` | `pooled_coef_abs_delta` | 1.66e-05 | 0.001 | strict-practical | PASS |
+| Multinomial | K=2 | [validation_multinomial_k2](validation_multinomial_k2.html) | `ds.vert.multinom` | `class_probability_max_abs_delta` | 3.23e-05 | 0.001 | strict-practical | PASS |
+| Multinomial | K>=3 | [validation_multinomial_kge3](validation_multinomial_kge3.html) | `ds.vert.multinom` | `class_probability_max_abs_delta` | 3.28e-05 | 0.001 | strict-practical | PASS |
 | Ordinal | K=2 | [validation_ordinal_k2](validation_ordinal_k2.html) | `ds.vert.ordinal` | `cumulative_probability_max_abs_delta` | 1.61e-05 | 0.001 | strict-practical | PASS |
 | Ordinal | K>=3 | [validation_ordinal_kge3](validation_ordinal_kge3.html) | `ds.vert.ordinal` | `cumulative_probability_max_abs_delta` | 3.98e-05 | 0.001 | strict-practical | PASS |

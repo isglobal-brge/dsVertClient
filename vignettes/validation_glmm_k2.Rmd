@@ -54,15 +54,15 @@ vignette executes the workflow from dataset generation to assertion.
 
 ## Method
 
-This vignette shows both available product routes: PQL as the lower-cost approximation and Laplace as the more accurate route against lme4::glmer.
+This vignette validates the PQL product route against MASS::glmmPQL.
 
 ## Mathematical target
 
-PQL alternates binomial working responses with aggregate mixed-model equations. Laplace approximates the random-intercept marginal likelihood and checks both fixed effects and scalar random-effect variance.
+PQL alternates binomial working responses with aggregate mixed-model equations and checks fixed effects plus scalar random-effect variance diagnostics.
 
 ## Disclosure review
 
-Both routes return fixed effects and scalar variance/quality diagnostics only. Per-patient probabilities, row scores, BLUPs, cluster labels, and cluster vectors are not returned.
+The route returns fixed effects and scalar variance/quality diagnostics only. Per-patient probabilities, row scores, BLUPs, cluster labels, and cluster vectors are not returned.
 
 The DSLite validation uses `datashield.privacyLevel = 5`. Trusted-peer
 pinning is disabled only because DSLite is an in-memory test backend, not
@@ -74,7 +74,7 @@ what the product route returns to the analyst.
 ```{r execution}
 K <- 2L
 
-validation_require(c("MASS", "nlme", "lme4"))
+validation_require(c("MASS", "nlme"))
 pooled <- build_balanced_glmm(seed = 1L, ncl = 10L, m = 5L, b_sd = 0.6)
 tables <- if (K == 2L) {
   list(s1 = pooled[, c("patient_id", "x1"), drop = FALSE],
@@ -95,11 +95,6 @@ ref_pql <- suppressWarnings(MASS::glmmPQL(
   y ~ x1 + x2, random = ~1 | cluster, family = binomial(),
   data = pooled_ref, verbose = validation_demo_verbose()))
 ref_pql_beta <- nlme::fixef(ref_pql)
-ref_laplace <- suppressWarnings(lme4::glmer(
-  y ~ x1 + x2 + (1 | cluster), data = pooled_ref, family = binomial(),
-  control = lme4::glmerControl(
-    optimizer = "bobyqa", optCtrl = list(maxfun = 1e5))))
-
 result <- elapsed({
   conns <- connect_dslite(tables)
   tryCatch({
@@ -108,19 +103,12 @@ result <- elapsed({
       y ~ x1 + x2, data = "DA", cluster_col = "cluster",
       method = "pql", compute_se = FALSE,
       verbose = validation_demo_verbose(), datasources = conns))
-    run_laplace <- elapsed(fit_laplace <- dsVertClient::ds.vert.glmm(
-      y ~ x1 + x2, data = "DA", cluster_col = "cluster",
-      method = "laplace", max_outer = 1L, mode_max_iter = 1L,
-      prime_iter = 5L, compute_se = FALSE,
-      verbose = validation_demo_verbose(), datasources = conns))
-    list(fit_pql = fit_pql, fit_laplace = fit_laplace,
-         runtime_pql = run_pql$runtime_s,
-         runtime_laplace = run_laplace$runtime_s)
+    list(fit_pql = fit_pql,
+         runtime_pql = run_pql$runtime_s)
   }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
 })
 
 fit_pql <- result$value$fit_pql
-fit_laplace <- result$value$fit_laplace
 fixed_delta <- max_named_delta(fit_pql$coefficients, ref_pql_beta)
 pql_ran <- isTRUE(fit_pql$iterations >= 1L) &&
   is.data.frame(fit_pql$trace) && nrow(fit_pql$trace) >= 1L &&
@@ -128,36 +116,14 @@ pql_ran <- isTRUE(fit_pql$iterations >= 1L) &&
   identical(fit_pql$quality$status, "ok")
 observed_pql <- max(fixed_delta, if (pql_ran) 0 else Inf)
 
-fixed_laplace <- max_named_delta(fit_laplace$coefficients,
-                                 lme4::fixef(ref_laplace))
-sigma_laplace <- abs(fit_laplace$sigma_b2 -
-                       as.numeric(lme4::VarCorr(ref_laplace)$cluster)[1L])
-safe_return <- identical(fit_laplace$quality$status, "ok") &&
-  isFALSE(fit_laplace$disclosure$patient_level_returned) &&
-  isFALSE(fit_laplace$disclosure$random_effects_returned) &&
-  isFALSE(fit_laplace$disclosure$cluster_vectors_returned)
-observed_laplace <- max(fixed_laplace, sigma_laplace,
-                        if (safe_return) 0 else Inf)
-
-rows <- rbind(
-  row_result(
-    "glmm", "GLMM PQL", K, "ds.vert.glmm(method='pql')",
-    "synthetic mixed binomial random-intercept fixture",
-    "MASS::glmmPQL",
-    "fixed_effect_max_abs_delta_and_pql_quality", observed_pql, 0.005,
-    "strict-pql",
-    "PQL route returns fixed effects and scalar variance diagnostics only.",
-    result$value$runtime_pql),
-  row_result(
-    "glmm", "GLMM Laplace", K, "ds.vert.glmm(method='laplace')",
-    "synthetic mixed binomial random-intercept fixture",
-    "lme4::glmer",
-    "max_fixed_effect_or_sigma_b2_abs_delta", observed_laplace, 0.06,
-    "laplace-practical",
-    paste("Returns fixed effects, scalar variance, and scalar quality only;",
-          "no BLUPs, cluster labels, cluster vectors, or row scores."),
-    result$value$runtime_laplace)
-)
+rows <- row_result(
+  "glmm", "GLMM PQL", K, "ds.vert.glmm(method='pql')",
+  "synthetic mixed binomial random-intercept fixture",
+  "MASS::glmmPQL",
+  "fixed_effect_max_abs_delta_and_pql_quality", observed_pql, 0.001,
+  "strict-practical",
+  "PQL route returns fixed effects and scalar variance diagnostics only.",
+  result$value$runtime_pql)
 
 display_validation(rows)
 assert_validation(rows)

@@ -35,6 +35,7 @@
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><hr class="dropdown-divider"></li>
     <li><h6 class="dropdown-header" data-toc-skip>Validation</h6></li>
+    <li><a class="dropdown-item" href="../articles/validation_summary.html">Validation evidence summary</a></li>
     <li><a class="dropdown-item" href="../articles/validation_psi_k2.html">PSI alignment validation (K=2)</a></li>
     <li><a class="dropdown-item" href="../articles/validation_psi_kge3.html">PSI alignment validation (K&gt;=3)</a></li>
     <li><a class="dropdown-item" href="../articles/validation_descriptive_k2.html">Descriptive statistics validation (K=2)</a></li>
@@ -95,7 +96,7 @@
                         <h4 data-toc-skip class="author">David Sarrat
 Gonzalez</h4>
             
-            <h4 data-toc-skip class="date">2026-05-06</h4>
+            <h4 data-toc-skip class="date">2026-05-26</h4>
       
       <small class="dont-index">Source: <a href="https://github.com/isglobal-brge/dsVertClient/blob/HEAD/vignettes/validation_mi_k2.Rmd" class="external-link"><code>vignettes/validation_mi_k2.Rmd</code></a></small>
       <div class="d-none name"><code>validation_mi_k2.Rmd</code></div>
@@ -142,14 +143,20 @@ assertion.</p>
 <div class="section level2">
 <h2 id="method">Method<a class="anchor" aria-label="anchor" href="#method"></a>
 </h2>
-<p>Missing covariates are imputed server-side for each round, then GLM
-fits are pooled client-side.</p>
+<p>Missing covariates are imputed server-side for each round with the
+same server-local Bayesian-ridge helper used by the product route. The
+completed-data GLM fits are then pooled client-side using Rubin’s
+rules.</p>
 </div>
 <div class="section level2">
 <h2 id="mathematical-target">Mathematical target<a class="anchor" aria-label="anchor" href="#mathematical-target"></a>
 </h2>
-<p>The compact reference uses central mean imputation, and the
-distributed route is checked by pooled coefficient delta.</p>
+<p>The reference mirrors the route centrally on the same vertical split:
+it applies <code>dsvertImputeColumnDS()</code> to the split table that
+owns the missing column, fits one centralized GLM per imputation round
+and applies Rubin pooling. This checks the distributed orchestration,
+fitting and pooling against the same imputation model rather than
+comparing it with a different imputation method.</p>
 </div>
 <div class="section level2">
 <h2 id="disclosure-review">Disclosure review<a class="anchor" aria-label="anchor" href="#disclosure-review"></a>
@@ -168,14 +175,7 @@ method-level check of what the product route returns to the analyst.</p>
 <code class="sourceCode R"><span><span class="va">K</span> <span class="op">&lt;-</span> <span class="fl">2L</span></span>
 <span></span>
 <span><span class="va">pooled</span> <span class="op">&lt;-</span> <span class="fu">build_mi</span><span class="op">(</span><span class="op">)</span></span>
-<span><span class="va">tables</span> <span class="op">&lt;-</span> <span class="kw">if</span> <span class="op">(</span><span class="va">K</span> <span class="op">==</span> <span class="fl">2L</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>s1 <span class="op">=</span> <span class="va">pooled</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"x1"</span><span class="op">)</span>, drop <span class="op">=</span> <span class="cn">FALSE</span><span class="op">]</span>,</span>
-<span>       s2 <span class="op">=</span> <span class="va">pooled</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"x2"</span>, <span class="st">"x3"</span>, <span class="st">"y"</span><span class="op">)</span>, drop <span class="op">=</span> <span class="cn">FALSE</span><span class="op">]</span><span class="op">)</span></span>
-<span><span class="op">}</span> <span class="kw">else</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>s1 <span class="op">=</span> <span class="va">pooled</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"x1"</span><span class="op">)</span>, drop <span class="op">=</span> <span class="cn">FALSE</span><span class="op">]</span>,</span>
-<span>       s2 <span class="op">=</span> <span class="va">pooled</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"x2"</span><span class="op">)</span>, drop <span class="op">=</span> <span class="cn">FALSE</span><span class="op">]</span>,</span>
-<span>       s3 <span class="op">=</span> <span class="va">pooled</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"patient_id"</span>, <span class="st">"x3"</span>, <span class="st">"y"</span><span class="op">)</span>, drop <span class="op">=</span> <span class="cn">FALSE</span><span class="op">]</span><span class="op">)</span></span>
-<span><span class="op">}</span></span>
+<span><span class="va">tables</span> <span class="op">&lt;-</span> <span class="fu">split_mi</span><span class="op">(</span><span class="va">pooled</span>, <span class="va">K</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">knitr</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/knitr/man/kable.html" class="external-link">kable</a></span><span class="op">(</span><span class="fu">utils</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">pooled</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 <table class="table">
@@ -257,17 +257,13 @@ method-level check of what the product route returns to the analyst.</p>
 </table>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
-<span><span class="va">ref_data</span> <span class="op">&lt;-</span> <span class="va">pooled</span></span>
-<span><span class="va">ref_data</span><span class="op">$</span><span class="va">x2</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/NA.html" class="external-link">is.na</a></span><span class="op">(</span><span class="va">ref_data</span><span class="op">$</span><span class="va">x2</span><span class="op">)</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">ref_data</span><span class="op">$</span><span class="va">x2</span>, na.rm <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="va">ref</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/lm.html" class="external-link">lm</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x1</span> <span class="op">+</span> <span class="va">x2</span> <span class="op">+</span> <span class="va">x3</span>, data <span class="op">=</span> <span class="va">ref_data</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
 <span><span class="va">result</span> <span class="op">&lt;-</span> <span class="fu">elapsed</span><span class="op">(</span><span class="op">{</span></span>
 <span>  <span class="va">conns</span> <span class="op">&lt;-</span> <span class="fu">connect_dslite</span><span class="op">(</span><span class="va">tables</span><span class="op">)</span></span>
 <span>  <span class="kw"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">tryCatch</a></span><span class="op">(</span><span class="op">{</span></span>
 <span>    <span class="fu">psi_align</span><span class="op">(</span><span class="va">conns</span>, na.action <span class="op">=</span> <span class="st">"none"</span><span class="op">)</span></span>
 <span>    <span class="fu">dsVertClient</span><span class="fu">::</span><span class="fu"><a href="../reference/ds.vert.aliases.html">ds.vert.mi</a></span><span class="op">(</span></span>
 <span>      <span class="va">y</span> <span class="op">~</span> <span class="va">x1</span> <span class="op">+</span> <span class="va">x2</span> <span class="op">+</span> <span class="va">x3</span>, data <span class="op">=</span> <span class="st">"DA"</span>, impute_columns <span class="op">=</span> <span class="st">"x2"</span>,</span>
-<span>      family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
+<span>      family <span class="op">=</span> <span class="st">"gaussian"</span>, lambda <span class="op">=</span> <span class="fl">0</span>,</span>
 <span>      verbose <span class="op">=</span> <span class="fu">validation_demo_verbose</span><span class="op">(</span><span class="op">)</span>, datasources <span class="op">=</span> <span class="va">conns</span>, seed <span class="op">=</span> <span class="fl">12L</span><span class="op">)</span></span>
 <span>  <span class="op">}</span>, finally <span class="op">=</span> <span class="kw"><a href="https://rdrr.io/r/base/try.html" class="external-link">try</a></span><span class="op">(</span><span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.logout.html" class="external-link">datashield.logout</a></span><span class="op">(</span><span class="va">conns</span><span class="op">)</span>, silent <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">}</span><span class="op">)</span></span>
@@ -313,27 +309,262 @@ method-level check of what the product route returns to the analyst.</p>
 <span><span class="co">#&gt; [ds.vertMI] Imputation round 20/20</span></span>
 <span></span>
 <span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="va">result</span><span class="op">$</span><span class="va">value</span></span>
-<span><span class="va">observed</span> <span class="op">&lt;-</span> <span class="fu">max_named_delta</span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">coefficients</span>, <span class="va">ref</span><span class="op">)</span></span>
+<span><span class="va">ref</span> <span class="op">&lt;-</span> <span class="fu">central_mi_same_imputer</span><span class="op">(</span></span>
+<span>  <span class="va">pooled</span>, <span class="va">K</span>, <span class="va">y</span> <span class="op">~</span> <span class="va">x1</span> <span class="op">+</span> <span class="va">x2</span> <span class="op">+</span> <span class="va">x3</span>, impute_columns <span class="op">=</span> <span class="st">"x2"</span>,</span>
+<span>  m <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">m</span>, seed <span class="op">=</span> <span class="fl">12L</span><span class="op">)</span></span>
+<span><span class="va">observed</span> <span class="op">&lt;-</span> <span class="fu">max_named_delta</span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">coefficients</span>, <span class="va">ref</span><span class="op">$</span><span class="va">coefficients</span><span class="op">)</span></span>
+<span><span class="va">se_observed</span> <span class="op">&lt;-</span> <span class="fu">max_named_delta</span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">std_errors</span>, <span class="va">ref</span><span class="op">$</span><span class="va">std_errors</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu">knitr</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/knitr/man/kable.html" class="external-link">kable</a></span><span class="op">(</span><span class="va">ref</span><span class="op">$</span><span class="va">imputation_log</span><span class="op">)</span></span></code></pre></div>
+<table class="table">
+<colgroup>
+<col width="7%">
+<col width="10%">
+<col width="7%">
+<col width="11%">
+<col width="12%">
+<col width="17%">
+<col width="15%">
+<col width="17%">
+</colgroup>
+<thead><tr class="header">
+<th align="right">round</th>
+<th align="left">variable</th>
+<th align="left">split</th>
+<th align="right">n_imputed</th>
+<th align="right">n_observed</th>
+<th align="left">method</th>
+<th align="right">n_predictors</th>
+<th align="left">intercept_only</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td align="right">1</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="even">
+<td align="right">2</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="odd">
+<td align="right">3</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="even">
+<td align="right">4</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="odd">
+<td align="right">5</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="even">
+<td align="right">6</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="odd">
+<td align="right">7</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="even">
+<td align="right">8</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="odd">
+<td align="right">9</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="even">
+<td align="right">10</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="odd">
+<td align="right">11</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="even">
+<td align="right">12</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="odd">
+<td align="right">13</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="even">
+<td align="right">14</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="odd">
+<td align="right">15</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="even">
+<td align="right">16</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="odd">
+<td align="right">17</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="even">
+<td align="right">18</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="odd">
+<td align="right">19</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+<tr class="even">
+<td align="right">20</td>
+<td align="left">x2</td>
+<td align="left">s2</td>
+<td align="right">8</td>
+<td align="right">52</td>
+<td align="left">bayesian_ridge</td>
+<td align="right">2</td>
+<td align="left">FALSE</td>
+</tr>
+</tbody>
+</table>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"Maximum pooled coefficient delta: %.6g\n"</span>, <span class="va">observed</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Maximum pooled coefficient delta: 1.68919e-05</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cat.html" class="external-link">cat</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sprintf.html" class="external-link">sprintf</a></span><span class="op">(</span><span class="st">"Maximum Rubin standard-error delta: %.6g\n"</span>, <span class="va">se_observed</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Maximum Rubin standard-error delta: 1.02262e-05</span></span>
 <span></span>
 <span><span class="va">rows</span> <span class="op">&lt;-</span> <span class="fu">row_result</span><span class="op">(</span></span>
 <span>  <span class="st">"mi"</span>, <span class="st">"Multiple imputation"</span>, <span class="va">K</span>, <span class="st">"ds.vert.mi"</span>,</span>
 <span>  <span class="st">"synthetic missing-covariate fixture"</span>,</span>
-<span>  <span class="st">"central mean-imputation reference"</span>,</span>
-<span>  <span class="st">"pooled_coef_abs_delta"</span>, <span class="va">observed</span>, <span class="fl">0.02</span>, <span class="st">"strict-practical"</span>,</span>
+<span>  <span class="st">"same-imputer centralized Rubin pooling"</span>,</span>
+<span>  <span class="st">"pooled_coef_abs_delta"</span>, <span class="va">observed</span>, <span class="fl">0.001</span>, <span class="st">"strict-practical"</span>,</span>
 <span>  <span class="st">"Imputed columns stay server-side; client pools beta/covariance only."</span>,</span>
 <span>  <span class="va">result</span><span class="op">$</span><span class="va">runtime_s</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">display_validation</span><span class="op">(</span><span class="va">rows</span><span class="op">)</span></span></code></pre></div>
-<table class="table">
+<table style="width:100%;" class="table">
 <colgroup>
 <col width="4%">
 <col width="8%">
-<col width="21%">
 <col width="20%">
-<col width="13%">
+<col width="22%">
+<col width="12%">
 <col width="5%">
 <col width="5%">
-<col width="10%">
+<col width="9%">
 <col width="4%">
 <col width="5%">
 </colgroup>
@@ -353,16 +584,16 @@ method-level check of what the product route returns to the analyst.</p>
 <td align="left">K=2</td>
 <td align="left">ds.vert.mi</td>
 <td align="left">synthetic missing-covariate fixture</td>
-<td align="left">central mean-imputation reference</td>
+<td align="left">same-imputer centralized Rubin pooling</td>
 <td align="left">pooled_coef_abs_delta</td>
-<td align="right">0.01797</td>
-<td align="right">0.02</td>
+<td align="right">1.69e-05</td>
+<td align="right">0.001</td>
 <td align="left">strict-practical</td>
 <td align="left">PASS</td>
-<td align="right">72.7</td>
+<td align="right">70.3</td>
 </tr></tbody>
 </table>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu">assert_validation</span><span class="op">(</span><span class="va">rows</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">

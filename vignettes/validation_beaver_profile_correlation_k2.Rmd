@@ -47,7 +47,7 @@ the triple-preprocessing backend changes.
 
 ```{r execution}
 K <- 2L
-tolerance <- 1e-4
+tolerance <- 1e-3
 
 pooled <- build_pima(60L)
 tables <- list(

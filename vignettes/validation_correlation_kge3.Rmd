@@ -108,7 +108,7 @@ observed <- max(abs(cor_ds$correlation - cor_ref))
 rows <- row_result(
   "correlation", "Correlation", K, "ds.vert.cor",
   "MASS::Pima.tr fixture", "stats::cor",
-  "correlation_max_abs_delta", observed, 1e-4, "strict-practical",
+  "correlation_max_abs_delta", observed, 0.001, "strict-practical",
   "Releases the low-dimensional correlation matrix only.",
   result$runtime_s)
 

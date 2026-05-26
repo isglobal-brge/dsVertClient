@@ -114,8 +114,16 @@ starts an in-memory DSLite deployment, aligns records, runs the dsVert
 route, runs the centralized R reference on the same pooled data,
 computes the numerical delta, and asserts the result.</p>
 <p>The current evidence snapshot covers 17 method blocks, both
-<code>K=2</code> and <code>K&gt;=3</code> modalities, and 38 route-level
-validation rows. All rendered rows are <code>PASS</code>.</p>
+<code>K=2</code> and <code>K&gt;=3</code> modalities, and 34 route-level
+validation rows. All rendered rows are <code>PASS</code>. The
+route-level suite runs with the negotiated <code>auto</code> Beaver
+preprocessing policy, which uses the efficient dealer profile when all
+servers allow it and automatically switches to IKNP OT-extension when
+any server requires that stronger profile. Four additional
+profile-validation articles run selected routes twice, once under
+<code>dealer</code> and once under <code>iknp</code>, to show that the
+preprocessing backend affects runtime rather than the statistical
+target.</p>
 </div>
 <div class="section level2">
 <h2 id="validation-contract">Validation contract<a class="anchor" aria-label="anchor" href="#validation-contract"></a>
@@ -294,7 +302,7 @@ limit.</td>
 <td><code><a href="../reference/ds.vert.aliases.html">ds.vert.nb()</a></code></td>
 <td><a href="validation_negative_binomial_k2.html">K=2</a></td>
 <td><a href="validation_negative_binomial_kge3.html">K&gt;=3</a></td>
-<td>Accurate full-regression route and fast MoM approximation.</td>
+<td>Accurate full-regression theta route.</td>
 </tr>
 <tr class="even">
 <td>Cox PH</td>
@@ -322,7 +330,7 @@ limit.</td>
 <td><code><a href="../reference/ds.vert.aliases.html">ds.vert.glmm()</a></code></td>
 <td><a href="validation_glmm_k2.html">K=2</a></td>
 <td><a href="validation_glmm_kge3.html">K&gt;=3</a></td>
-<td>PQL fast route plus Laplace practical route.</td>
+<td>PQL product route.</td>
 </tr>
 <tr class="even">
 <td>IPW</td>
@@ -351,6 +359,88 @@ limit.</td>
 <td><a href="validation_ordinal_k2.html">K=2</a></td>
 <td><a href="validation_ordinal_kge3.html">K&gt;=3</a></td>
 <td>Proportional-odds cumulative probability route.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="section level2">
+<h2 id="beaver-preprocessing-profile-evidence">Beaver preprocessing profile evidence<a class="anchor" aria-label="anchor" href="#beaver-preprocessing-profile-evidence"></a>
+</h2>
+<p>The product supports two Beaver preprocessing profiles.
+<code>dealer</code> is the efficient profile for governed, semi-honest
+institutional peers. <code>iknp</code> uses IKNP-style OT-extension so
+that the two computation parties derive their triple shares
+interactively without one party holding the full unsplit triple. The
+server-side policy determines which profiles are allowed, preferred or
+required; the client negotiates the strictest common profile and fails
+closed if no common profile is available.</p>
+<p>The following executable articles compare the same route under both
+profiles. Each article starts DSLite servers, aligns the same vertically
+partitioned fixture, runs the route once with <code>dealer</code> and
+once with <code>iknp</code>, compares both against the same centralized
+R reference and asserts both the route tolerance and the
+profile-to-profile difference.</p>
+<table class="table">
+<colgroup>
+<col width="10%">
+<col width="10%">
+<col width="13%">
+<col width="13%">
+<col width="13%">
+<col width="13%">
+<col width="13%">
+<col width="10%">
+</colgroup>
+<thead><tr class="header">
+<th>Route</th>
+<th>Article</th>
+<th align="right">Dealer observed</th>
+<th align="right">IKNP observed</th>
+<th align="right">Profile delta</th>
+<th align="right">Tolerance</th>
+<th align="right">Runtime ratio</th>
+<th>Status</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>Correlation</td>
+<td><a href="validation_beaver_profile_correlation_k2.html">validation_beaver_profile_correlation_k2</a></td>
+<td align="right"><code>1.2441795e-05</code></td>
+<td align="right"><code>1.2441795e-05</code></td>
+<td align="right"><code>0e+00</code></td>
+<td align="right"><code>1e-03</code></td>
+<td align="right"><code>9.71</code></td>
+<td>PASS</td>
+</tr>
+<tr class="even">
+<td>GLM</td>
+<td><a href="validation_beaver_profile_glm_k2.html">validation_beaver_profile_glm_k2</a></td>
+<td align="right"><code>6.2726772e-05</code></td>
+<td align="right"><code>6.1290240e-05</code></td>
+<td align="right"><code>1.4365328e-06</code></td>
+<td align="right"><code>1e-03</code></td>
+<td align="right"><code>15.28</code></td>
+<td>PASS</td>
+</tr>
+<tr class="odd">
+<td>GEE</td>
+<td><a href="validation_beaver_profile_gee_k2.html">validation_beaver_profile_gee_k2</a></td>
+<td align="right"><code>1.7860961e-04</code></td>
+<td align="right"><code>6.0821320e-05</code></td>
+<td align="right"><code>1.1778829e-04</code></td>
+<td align="right"><code>1e-03</code></td>
+<td align="right"><code>10.88</code></td>
+<td>PASS</td>
+</tr>
+<tr class="even">
+<td>Cox PH</td>
+<td><a href="validation_beaver_profile_cox_k2.html">validation_beaver_profile_cox_k2</a></td>
+<td align="right"><code>4.8702002e-05</code></td>
+<td align="right"><code>4.8702002e-05</code></td>
+<td align="right"><code>3.3861802e-15</code></td>
+<td align="right"><code>1e-03</code></td>
+<td align="right"><code>19.31</code></td>
+<td>PASS</td>
 </tr>
 </tbody>
 </table>
@@ -458,7 +548,7 @@ executable code and the rendered DSLite logs.</p>
 <td><code>ds.vert.cor</code></td>
 <td><code>correlation_max_abs_delta</code></td>
 <td align="right">1.24e-05</td>
-<td align="right">1e-04</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>
@@ -469,7 +559,7 @@ executable code and the rendered DSLite logs.</p>
 <td><code>ds.vert.cor</code></td>
 <td><code>correlation_max_abs_delta</code></td>
 <td align="right">1.24e-05</td>
-<td align="right">1e-04</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>
@@ -480,7 +570,7 @@ executable code and the rendered DSLite logs.</p>
 <td><code>ds.vert.pca</code></td>
 <td><code>max(eigen_loading_abs_delta)</code></td>
 <td align="right">3.29e-05</td>
-<td align="right">1e-04</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>
@@ -491,7 +581,7 @@ executable code and the rendered DSLite logs.</p>
 <td><code>ds.vert.pca</code></td>
 <td><code>max(eigen_loading_abs_delta)</code></td>
 <td align="right">3.09e-05</td>
-<td align="right">1e-04</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>
@@ -568,41 +658,19 @@ executable code and the rendered DSLite logs.</p>
 <td><code>ds.vert.nb(method='accurate')</code></td>
 <td><code>coef_max_abs_delta</code></td>
 <td align="right">0.0000277</td>
-<td align="right">0.02</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>
 <tr class="even">
-<td>Negative binomial</td>
-<td>K=2</td>
-<td><a href="validation_negative_binomial_k2.html">validation_negative_binomial_k2</a></td>
-<td><code>ds.vert.nb(method='fast')</code></td>
-<td><code>max(beta_delta, theta_delta)</code></td>
-<td align="right">0.0010410</td>
-<td align="right">0.02</td>
-<td>fast-approximation</td>
-<td>PASS</td>
-</tr>
-<tr class="odd">
 <td>Negative binomial</td>
 <td>K&gt;=3</td>
 <td><a href="validation_negative_binomial_kge3.html">validation_negative_binomial_kge3</a></td>
 <td><code>ds.vert.nb(method='accurate')</code></td>
 <td><code>coef_max_abs_delta</code></td>
 <td align="right">0.0000317</td>
-<td align="right">0.02</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
-<td>PASS</td>
-</tr>
-<tr class="even">
-<td>Negative binomial</td>
-<td>K&gt;=3</td>
-<td><a href="validation_negative_binomial_kge3.html">validation_negative_binomial_kge3</a></td>
-<td><code>ds.vert.nb(method='fast')</code></td>
-<td><code>max(beta_delta, theta_delta)</code></td>
-<td align="right">0.0010410</td>
-<td align="right">0.02</td>
-<td>fast-approximation</td>
 <td>PASS</td>
 </tr>
 <tr class="odd">
@@ -634,7 +702,7 @@ executable code and the rendered DSLite logs.</p>
 <td><code>ds.vert.lmm</code></td>
 <td><code>fixed_effect_max_abs_delta</code></td>
 <td align="right">0.0006448</td>
-<td align="right">0.02</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>
@@ -645,7 +713,7 @@ executable code and the rendered DSLite logs.</p>
 <td><code>ds.vert.lmm</code></td>
 <td><code>fixed_effect_max_abs_delta</code></td>
 <td align="right">0.0001614</td>
-<td align="right">0.02</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>
@@ -656,7 +724,7 @@ executable code and the rendered DSLite logs.</p>
 <td><code>ds.vert.gee(corstr='independence')</code></td>
 <td><code>coef_max_abs_delta</code></td>
 <td align="right">6.07e-05</td>
-<td align="right">0.01</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>
@@ -667,7 +735,7 @@ executable code and the rendered DSLite logs.</p>
 <td><code>ds.vert.gee(corstr='independence')</code></td>
 <td><code>coef_max_abs_delta</code></td>
 <td align="right">6e-05</td>
-<td align="right">0.01</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>
@@ -675,33 +743,11 @@ executable code and the rendered DSLite logs.</p>
 <td>GLMM</td>
 <td>K=2</td>
 <td><a href="validation_glmm_k2.html">validation_glmm_k2</a></td>
-<td><code>ds.vert.glmm(method='laplace')</code></td>
-<td><code>max_fixed_effect_or_sigma_b2_abs_delta</code></td>
-<td align="right">0.0407200</td>
-<td align="right">0.060</td>
-<td>laplace-practical</td>
-<td>PASS</td>
-</tr>
-<tr class="even">
-<td>GLMM</td>
-<td>K=2</td>
-<td><a href="validation_glmm_k2.html">validation_glmm_k2</a></td>
 <td><code>ds.vert.glmm(method='pql')</code></td>
 <td><code>fixed_effect_max_abs_delta_and_pql_quality</code></td>
 <td align="right">0.0005547</td>
-<td align="right">0.005</td>
-<td>strict-pql</td>
-<td>PASS</td>
-</tr>
-<tr class="odd">
-<td>GLMM</td>
-<td>K&gt;=3</td>
-<td><a href="validation_glmm_kge3.html">validation_glmm_kge3</a></td>
-<td><code>ds.vert.glmm(method='laplace')</code></td>
-<td><code>max_fixed_effect_or_sigma_b2_abs_delta</code></td>
-<td align="right">0.0407200</td>
-<td align="right">0.060</td>
-<td>laplace-practical</td>
+<td align="right">0.001</td>
+<td>strict-practical</td>
 <td>PASS</td>
 </tr>
 <tr class="even">
@@ -711,8 +757,8 @@ executable code and the rendered DSLite logs.</p>
 <td><code>ds.vert.glmm(method='pql')</code></td>
 <td><code>fixed_effect_max_abs_delta_and_pql_quality</code></td>
 <td align="right">0.0005547</td>
-<td align="right">0.005</td>
-<td>strict-pql</td>
+<td align="right">0.001</td>
+<td>strict-practical</td>
 <td>PASS</td>
 </tr>
 <tr class="odd">
@@ -743,8 +789,8 @@ executable code and the rendered DSLite logs.</p>
 <td><a href="validation_mi_k2.html">validation_mi_k2</a></td>
 <td><code>ds.vert.mi</code></td>
 <td><code>pooled_coef_abs_delta</code></td>
-<td align="right">0.01797</td>
-<td align="right">0.02</td>
+<td align="right">1.69e-05</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>
@@ -754,8 +800,8 @@ executable code and the rendered DSLite logs.</p>
 <td><a href="validation_mi_kge3.html">validation_mi_kge3</a></td>
 <td><code>ds.vert.mi</code></td>
 <td><code>pooled_coef_abs_delta</code></td>
-<td align="right">5.51e-05</td>
-<td align="right">0.02</td>
+<td align="right">1.66e-05</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>
@@ -766,7 +812,7 @@ executable code and the rendered DSLite logs.</p>
 <td><code>ds.vert.multinom</code></td>
 <td><code>class_probability_max_abs_delta</code></td>
 <td align="right">3.23e-05</td>
-<td align="right">0.005</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>
@@ -777,7 +823,7 @@ executable code and the rendered DSLite logs.</p>
 <td><code>ds.vert.multinom</code></td>
 <td><code>class_probability_max_abs_delta</code></td>
 <td align="right">3.28e-05</td>
-<td align="right">0.005</td>
+<td align="right">0.001</td>
 <td>strict-practical</td>
 <td>PASS</td>
 </tr>

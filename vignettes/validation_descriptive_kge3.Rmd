@@ -114,7 +114,7 @@ observed <- max(max_named_delta(ds_mean, ref_mean),
 rows <- row_result(
   "descriptive", "Descriptive statistics", K, "ds.vert.desc",
   "MASS::Pima.tr fixture", "central mean/sd",
-  "max(mean_sd_abs_delta)", observed, 1e-8, "strict-precise",
+  "max(mean_sd_abs_delta)", observed, 0, "strict-precise",
   "Returns guarded scalar summaries and histogram-based quantiles, not rows.",
   result$runtime_s)
 

@@ -68,3 +68,4 @@ so the reported z-stats reflect NB variance inflation.
 }
 All aggregates are scalar sums over y; no per-patient disclosure.
 }
+\keyword{internal}

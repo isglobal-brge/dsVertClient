@@ -111,7 +111,7 @@ observed <- max_named_delta(result$value$prox0$coefficients,
 rows <- row_result(
   "lasso", "LASSO", K, "ds.vert.lasso_proximal(lambda=0)",
   "MASS::Pima.tr fixture", "OLS limit of ds.vert.glm",
-  "lambda0_coef_abs_delta", observed, 1e-8, "strict-precise",
+  "lambda0_coef_abs_delta", observed, 0, "strict-precise",
   "Consumes only model-level GLM aggregates; no extra patient-level values are returned.",
   result$runtime_s)
 
