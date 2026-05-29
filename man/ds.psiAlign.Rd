@@ -43,10 +43,12 @@ Invisibly returns a list with alignment statistics for each server:
 }
 \description{
 Privacy-preserving record alignment using Elliptic Curve
-Diffie-Hellman Private Set Intersection (ECDH-PSI) with blind-relay
-transport encryption. Aligns data frames across vertically partitioned
-DataSHIELD servers so that rows correspond to the same individuals.
-The client never sees raw EC points -- only opaque encrypted blobs.
+Diffie-Hellman Private Set Intersection (ECDH-PSI), optional server-side
+keyed pseudonymisation, and blind-relay transport encryption. Aligns data
+frames across vertically partitioned DataSHIELD servers so that rows
+correspond to the same individuals. The client never sees identifiers,
+pseudonyms, raw EC points or matched row maps -- only opaque encrypted blobs
+and disclosure-controlled counts.
 }
 \details{
 This function performs privacy-preserving record alignment in a single call,
@@ -57,7 +59,10 @@ ECDH-PSI exploits the commutativity of elliptic curve scalar multiplication:
 \eqn{\alpha \cdot (\beta \cdot H(id)) = \beta \cdot (\alpha \cdot H(id))}.
 
 All EC point exchanges are encrypted server-to-server (X25519 + AES-256-GCM
-ECIES). The client acts as a blind relay, seeing only opaque blobs.
+ECIES). The client acts as a blind relay, seeing only opaque blobs. Servers
+may additionally require a per-study keyed pseudonymisation policy before
+ECDH masking, which prevents non-key-holders from computing linkage tokens
+from low-entropy identifiers.
 
 \enumerate{
 \item \strong{Phase 0}: Each server generates an X25519 transport keypair.
@@ -81,10 +86,13 @@ servers are retained.
 
 \subsection{Security (DDH assumption on P-256, malicious-client model)}{
 \itemize{
-\item The client sees only opaque encrypted blobs -- not EC points.
+\item The client sees only opaque encrypted blobs -- not identifiers,
+pseudonyms, EC points or row maps.
 \item Each server's scalar never leaves the server.
 \item PSI firewall: phase ordering + one-shot semantics prevent OPRF
 oracle attacks.
+\item Server-side policy can require keyed pseudonymisation, input-size
+caps, rate limits and minimum-intersection guards.
 }
 }
 }
