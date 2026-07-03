@@ -175,11 +175,17 @@ NULL
   dealer <- all_dealers[1]  # initial dealer for DCF keys
   dealer_conn <- which(server_names == dealer)
 
-  if (!is_gaussian) {
-    t0_dcf <- proc.time()[[3]]
-    if (verbose) message(sprintf("  [DCF] Server %s generating keys (n=%d, %d intervals)...",
-                                   dealer, n_obs, num_intervals))
-
+  # === DCF KEY GENERATION — FRESH PER LINK EVALUATION (F1 privacy fix) ===
+  # See ds.vertGLM.k2.R for the full rationale. In K>=3 the linear predictor eta
+  # spans ALL servers' columns, so a reused mask lets the client reconstruct every
+  # observation's features across all sites; the SE finite-difference makes it
+  # trivial: X_ij = (m+ - m-)/(2*delta). We regenerate a fresh key-set (fresh r)
+  # per link evaluation; beta is bit-identical (comparison result is mask-invariant).
+  # NOTE (F1b/G1, tracked): keygen runs on the dcf dealer (a computing party) which
+  # knows r; closing the peer-side leak needs dealer-free DCF preprocessing —
+  # see docs/dcf_dealer_finding_2026-07-03.md.
+  .regen_dcf_keys <- function() {
+    if (is_gaussian) return(invisible(NULL))
     dcf_result <- .dsAgg(datasources[dealer_conn],
       call(name = "glmRing63GenDcfKeysDS",
            dcf0_pk = transport_pks[[dcf_parties[1]]],
@@ -189,13 +195,11 @@ NULL
            ring = ring,
            session_id = session_id))
     if (is.list(dcf_result)) dcf_result <- dcf_result[[1]]
-
     .sendBlob(dcf_result$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[1])
     .dsAgg(datasources[dcf_conns[1]], call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
     .sendBlob(dcf_result$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[2])
     .dsAgg(datasources[dcf_conns[2]], call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-
-    if (verbose) message(sprintf("  [DCF] Keys distributed (%.1fs)", proc.time()[[3]] - t0_dcf))
+    invisible(NULL)
   }
 
   # ===========================================================================
@@ -338,6 +342,8 @@ NULL
     } else {
       if (verbose && iter <= 3) message(sprintf("    [%d.2] DCF wide spline...", iter))
 
+      # F1: fresh DCF mask (fresh r) for this iteration's link evaluation.
+      .regen_dcf_keys()
       .ot_beaver_prepare_spline(
         datasources = datasources,
         party_conns = dcf_conns,
@@ -648,6 +654,8 @@ NULL
         .dsAgg(datasources[dcf_conns[di]], call(name = "k2IdentityLinkDS", session_id = session_id))
       }
     } else {
+      # F1: fresh DCF mask (fresh r) for this SE-perturbation link evaluation.
+      .regen_dcf_keys()
       .ot_beaver_prepare_spline(
         datasources = datasources,
         party_conns = dcf_conns,
@@ -783,6 +791,8 @@ NULL
       for (di in seq_along(dcf_parties))
         .dsAgg(datasources[dcf_conns[di]], call(name = "k2IdentityLinkDS", session_id=session_id))
     } else {
+      # F1: fresh DCF mask (fresh r) for this SE-perturbation link evaluation.
+      .regen_dcf_keys()
       .ot_beaver_prepare_spline(
         datasources = datasources,
         party_conns = dcf_conns,
