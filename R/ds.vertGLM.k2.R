@@ -119,15 +119,24 @@ NULL
   if (verbose) message(sprintf("  [Input Sharing] Complete: p_coord=%d, p_nl=%d (%.1fs)",
                                  p_coord, p_nl, proc.time()[[3]] - t0_share))
 
-  # === PRE-GENERATE DCF KEYS (server-side, not client) ===
-  # K=2 uses the non-label peer to prepare DCF keys. Beaver preprocessing is
-  # negotiated separately: dealer for the efficient institutional-peer profile,
-  # or IKNP when requested/required by server policy.
+  # === DCF KEY GENERATION — FRESH PER LINK EVALUATION (F1 privacy fix) ===
+  # SECURITY (F1, docs/security_review_2026-07-03.md): the DCF mask r is baked
+  # into the key (k2_distributed_cmp.go:54-58: alpha = threshold + r). Reusing a
+  # single key-set across IRLS/L-BFGS iterations reuses r, so the client — which
+  # relays the masked eta (`dcf_masked`) and knows every beta^(t) — can difference
+  # across iterations, cancel r, and solve X_i * Delta_beta for EVERY observation
+  # (empirically reconstructed to fixed-point precision; the fresh-mask variant
+  # degrades the attack ~1e8x). We therefore regenerate a FRESH key-set (fresh r)
+  # for every link evaluation. The DCF comparison RESULT is invariant to r, so
+  # beta is bit-identical; only the information-theoretic hiding changes.
+  # NOTE (F1b, tracked): keygen still runs on the `nl` computing party, which
+  # knows r and can recover eta = m - r peer-side. Closing the peer-side leak
+  # requires DEALER-FREE DCF preprocessing (Beaver-Chebyshev link on IKNP/VOLE
+  # triples) — see docs/dcf_dealer_finding_2026-07-03.md. Fresh masks here close
+  # the client/relay reconstruction (the empirically demonstrated attack).
   dealer <- nl; dealer_conn <- nl_conn
-  if (!is_gaussian) {
-    t0_dcf <- proc.time()[[3]]
-    if (verbose) message(sprintf("  [DCF] Server %s generating keys (n=%d, %d intervals)...",
-                                   dealer, n_obs, num_intervals))
+  .regen_dcf_keys <- function() {
+    if (is_gaussian) return(invisible(NULL))
     dcf_result <- .dsAgg(datasources[dealer_conn],
       call(name = "glmRing63GenDcfKeysDS",
            dcf0_pk = transport_pks[[coordinator]],
@@ -142,7 +151,7 @@ NULL
     .dsAgg(datasources[coordinator_conn], call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
     .sendBlob(dcf_result$dcf_blob_1, "k2_dcf_keys_persistent", nl_conn)
     .dsAgg(datasources[nl_conn], call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-    if (verbose) message(sprintf("  [DCF] Keys distributed (%.1fs)", proc.time()[[3]] - t0_dcf))
+    invisible(NULL)
   }
 
   beta <- rep(0, p_total)
@@ -218,6 +227,9 @@ NULL
         .dsAgg(datasources[ci], call(name = "k2IdentityLinkDS", session_id = session_id))
       }
     } else {
+      # F1: fresh DCF mask (fresh r) for this link evaluation — prevents the
+      # client from differencing masked eta across iterations / SE perturbations.
+      .regen_dcf_keys()
       .ot_beaver_prepare_spline(
         datasources = datasources,
         party_conns = c(coordinator_conn, nl_conn),
@@ -469,6 +481,9 @@ NULL
       for (server in server_list) .dsAgg(datasources[which(server_names==server)],
         call(name = "k2IdentityLinkDS", session_id=session_id))
     } else {
+      # F1: fresh DCF mask (fresh r) for this link evaluation — prevents the
+      # client from differencing masked eta across iterations / SE perturbations.
+      .regen_dcf_keys()
       .ot_beaver_prepare_spline(
         datasources = datasources,
         party_conns = c(coordinator_conn, nl_conn),
@@ -519,7 +534,7 @@ NULL
     bet_m_coord <- if (p_coord > 0L) bet_m[seq_len(p_coord)] else numeric(0)
     bet_m_nl <- if (p_total > p_coord) bet_m[(p_coord + 1L):p_total] else numeric(0)
     for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);.dsAgg(datasources[ci],call(name = "k2ComputeEtaShareDS",beta_coord=bet_m_coord,beta_nl=bet_m_nl,intercept=if(is_coord)int_m else 0,is_coordinator=is_coord,session_id=session_id))}
-    if(is_gaussian){for(server in server_list).dsAgg(datasources[which(server_names==server)],call(name = "k2IdentityLinkDS",session_id=session_id))}else{.ot_beaver_prepare_spline(datasources=datasources,party_conns=c(coordinator_conn,nl_conn),party_names=c(coordinator,nl),transport_pks=transport_pks,session_id=session_id,n=n_obs,ring=ring,.dsAgg=.dsAgg,.sendBlob=.sendBlob);for(ph in 1:4){pr<-list();for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(paste0("k2WideSplinePhase",ph,"DS"),party_id=if(is_coord)0L else 1L,family=family,num_intervals=num_intervals,frac_bits=frac_bits,ring=ring,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];pr[[server]]<-r};if(ph==1){.sendBlob(pr[[coordinator]]$dcf_masked,"k2_peer_dcf_masked",nl_conn);.sendBlob(pr[[nl]]$dcf_masked,"k2_peer_dcf_masked",coordinator_conn)}else if(ph==2){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[server]]$and_xma,and_ymb=pr[[server]]$and_ymb,had1_xma=pr[[server]]$had1_xma,had1_ymb=pr[[server]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_beaver_r1",peer_ci)}}else if(ph==3){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[server]]$had2_xma,had2_ymb=pr[[server]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_had2_r1",peer_ci)}}}}
+    if(is_gaussian){for(server in server_list).dsAgg(datasources[which(server_names==server)],call(name = "k2IdentityLinkDS",session_id=session_id))}else{.regen_dcf_keys();.ot_beaver_prepare_spline(datasources=datasources,party_conns=c(coordinator_conn,nl_conn),party_names=c(coordinator,nl),transport_pks=transport_pks,session_id=session_id,n=n_obs,ring=ring,.dsAgg=.dsAgg,.sendBlob=.sendBlob);for(ph in 1:4){pr<-list();for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(paste0("k2WideSplinePhase",ph,"DS"),party_id=if(is_coord)0L else 1L,family=family,num_intervals=num_intervals,frac_bits=frac_bits,ring=ring,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];pr[[server]]<-r};if(ph==1){.sendBlob(pr[[coordinator]]$dcf_masked,"k2_peer_dcf_masked",nl_conn);.sendBlob(pr[[nl]]$dcf_masked,"k2_peer_dcf_masked",coordinator_conn)}else if(ph==2){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[server]]$and_xma,and_ymb=pr[[server]]$and_ymb,had1_xma=pr[[server]]$had1_xma,had1_ymb=pr[[server]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_beaver_r1",peer_ci)}}else if(ph==3){for(server in server_list){peer<-setdiff(server_list,server);peer_ci<-which(server_names==peer);pk_b64<-.b64url_to_b64(transport_pks[[peer]]);sealed<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[server]]$had2_xma,had2_ymb=pr[[server]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk_b64));.sendBlob(.to_b64url(sealed$sealed),"k2_peer_had2_r1",peer_ci)}}}}
     if (isTRUE(weights_active)) {
       .glm_apply_shared_weight_residual(
         datasources = datasources,
