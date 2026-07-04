@@ -2134,70 +2134,27 @@ ds.vertGEE <- function(formula, data = NULL,
     dcf_cache_key <<- key
     invisible(TRUE)
   }
+  # REVEAL-FREE SHARE-DOMAIN LINK (F1/F1b fix). This function runs at ring=127
+  # (line ~800), so the DCF wide-spline (which relayed a masked eta) is replaced
+  # by a dispatch to the ring127 share-domain Chebyshev primitives: sigmoid127
+  # (logistic link), exp127 (Poisson mu + variance sqrt_var/h = exp(input)),
+  # softplus127 (deviance). dcf_masked 0x; dealer-free. party-0=dcf_parties[[1]].
   .wide_spline <- function(input_key, output_key, spline_family,
                            num_intervals = 100L) {
-    .ensure_dcf_keys(spline_family, num_intervals)
-    .copy_key(input_key, "k2_eta_share_fp")
-    .ot_beaver_prepare_spline(
-      datasources = datasources,
-      party_conns = dcf_conns,
-      party_names = dcf_parties,
-      transport_pks = transport_pks,
-      session_id = session_id,
-      n = n_obs,
-      ring = ring,
-      .dsAgg = .dsAgg,
-      .sendBlob = .sendBlob)
-    for (ph in 1:4) {
-      pr <- vector("list", 2L)
-      for (i in seq_along(dcf_parties)) {
-        r <- .dsAgg(datasources[dcf_conns[[i]]],
-          call(paste0("k2WideSplinePhase", ph, "DS"),
-               party_id = as.integer(i - 1L),
-               family = spline_family,
-               num_intervals = as.integer(num_intervals),
-               frac_bits = frac_bits,
-               ring = ring,
-               session_id = session_id))
-        if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-        pr[[i]] <- r
-      }
-      if (ph == 1L) {
-        .sendBlob(pr[[1L]]$dcf_masked, "k2_peer_dcf_masked",
-                  dcf_conns[[2L]])
-        .sendBlob(pr[[2L]]$dcf_masked, "k2_peer_dcf_masked",
-                  dcf_conns[[1L]])
-      } else if (ph == 2L) {
-        for (i in 1:2) {
-          peer_i <- 3L - i
-          pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
-          payload <- jsonlite::toJSON(list(
-            and_xma = pr[[i]]$and_xma, and_ymb = pr[[i]]$and_ymb,
-            had1_xma = pr[[i]]$had1_xma, had1_ymb = pr[[i]]$had1_ymb),
-            auto_unbox = TRUE)
-          sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-            data = jsonlite::base64_enc(charToRaw(payload)),
-            recipient_pk = pk_b64))
-          .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1",
-                    dcf_conns[[peer_i]])
-        }
-      } else if (ph == 3L) {
-        for (i in 1:2) {
-          peer_i <- 3L - i
-          pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
-          payload <- jsonlite::toJSON(list(
-            had2_xma = pr[[i]]$had2_xma,
-            had2_ymb = pr[[i]]$had2_ymb),
-            auto_unbox = TRUE)
-          sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-            data = jsonlite::base64_enc(charToRaw(payload)),
-            recipient_pk = pk_b64))
-          .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1",
-                    dcf_conns[[peer_i]])
-        }
-      }
+    common <- list(n = n_obs, datasources = datasources, dealer_ci = dcf_conns[[2L]],
+                   server_list = dcf_parties, server_names = server_names,
+                   y_server = dcf_parties[[1L]], nl = dcf_parties[[2L]],
+                   transport_pks = transport_pks, session_id = session_id,
+                   .dsAgg = .dsAgg, .sendBlob = .sendBlob)
+    if (spline_family %in% c("sigmoid", "binomial")) {
+      do.call(.ring127_sigmoid_round_keyed, c(list(in_key = input_key, out_key = output_key), common))
+    } else if (identical(spline_family, "softplus")) {
+      do.call(.ring127_softplus_round_keyed, c(list(in_key = input_key, out_key = output_key), common))
+    } else if (spline_family %in% c("poisson", "exp")) {
+      do.call(.ring127_exp_round_keyed_extended, c(list(in_key = input_key, out_key = output_key), common))
+    } else {
+      stop("share-domain wide_spline: unsupported spline_family '", spline_family, "'", call. = FALSE)
     }
-    .copy_key("secure_mu_share", output_key)
     invisible(output_key)
   }
 
@@ -2949,83 +2906,10 @@ ds.vertGEE <- function(formula, data = NULL,
         call(name = "k2IdentityLinkDS", session_id = session_id))
     }
   } else if (fit$family %in% c("binomial", "poisson")) {
-    spline_family <- fit$family
-    dcf_family <- if (identical(fit$family, "poisson")) "poisson" else "sigmoid"
-    num_intervals <- if (identical(fit$family, "poisson")) 100L else sigmoid_intervals
-    dcf <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenDcfKeysDS",
-           dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
-           dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
-           family = dcf_family, n = as.integer(n_obs),
-           frac_bits = frac_bits, num_intervals = num_intervals,
-           ring = ring, session_id = session_id))
-    if (is.list(dcf) && length(dcf) == 1L) dcf <- dcf[[1L]]
-    .sendBlob(dcf$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[[1L]])
-    .sendBlob(dcf$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[[2L]])
-    for (ci in dcf_conns) {
-      .dsAgg(datasources[ci],
-        call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-    }
-
-    .ot_beaver_prepare_spline(
-      datasources = datasources,
-      party_conns = dcf_conns,
-      party_names = dcf_parties,
-      transport_pks = transport_pks,
-      session_id = session_id,
-      n = n_obs,
-      ring = ring,
-      .dsAgg = .dsAgg,
-      .sendBlob = .sendBlob)
-    for (ph in 1:4) {
-      pr <- vector("list", 2L)
-      for (i in seq_along(dcf_parties)) {
-        r <- .dsAgg(datasources[dcf_conns[[i]]],
-          call(paste0("k2WideSplinePhase", ph, "DS"),
-               party_id = as.integer(i - 1L),
-               family = spline_family,
-               num_intervals = num_intervals,
-               frac_bits = frac_bits,
-               ring = ring,
-               session_id = session_id))
-        if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-        pr[[i]] <- r
-      }
-      if (ph == 1L) {
-        .sendBlob(pr[[1L]]$dcf_masked, "k2_peer_dcf_masked",
-                  dcf_conns[[2L]])
-        .sendBlob(pr[[2L]]$dcf_masked, "k2_peer_dcf_masked",
-                  dcf_conns[[1L]])
-      } else if (ph == 2L) {
-        for (i in 1:2) {
-          peer_i <- 3L - i
-          pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
-          payload <- jsonlite::toJSON(list(
-            and_xma = pr[[i]]$and_xma, and_ymb = pr[[i]]$and_ymb,
-            had1_xma = pr[[i]]$had1_xma, had1_ymb = pr[[i]]$had1_ymb),
-            auto_unbox = TRUE)
-          sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-            data = jsonlite::base64_enc(charToRaw(payload)),
-            recipient_pk = pk_b64))
-          .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1",
-                    dcf_conns[[peer_i]])
-        }
-      } else if (ph == 3L) {
-        for (i in 1:2) {
-          peer_i <- 3L - i
-          pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
-          payload <- jsonlite::toJSON(list(
-            had2_xma = pr[[i]]$had2_xma,
-            had2_ymb = pr[[i]]$had2_ymb),
-            auto_unbox = TRUE)
-          sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-            data = jsonlite::base64_enc(charToRaw(payload)),
-            recipient_pk = pk_b64))
-          .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1",
-                    dcf_conns[[peer_i]])
-        }
-      }
-    }
+    # REVEAL-FREE link (F1 fix): eta (k2_eta_share_fp) -> secure_mu_share via the
+    # share-domain .wide_spline dispatch. dcf_masked relayed 0x.
+    .wide_spline("k2_eta_share_fp", "secure_mu_share",
+                 spline_family = if (identical(fit$family, "poisson")) "poisson" else "sigmoid")
   }
 
   if (cluster_enabled) {
