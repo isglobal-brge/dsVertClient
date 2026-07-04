@@ -255,26 +255,19 @@ ds.vert.lmm <- function(formula, data = NULL, cluster_col,
   }
   datasources <- .dsvert_datasources(datasources)
   K <- length(datasources)
-  if (K >= 3L) {
-    fit <- ds.vertLMM.k3(formula = formula, data = data,
-                         cluster_col = cluster_col,
-                         max_outer = max_outer,
-                         tol = tol %||% 1e-4,
-                         ring = ring %||% "ring127",
-                         verbose = verbose,
-                         datasources = datasources)
-    .dsvert_set_frontdoor(fit, "ds.vert.lmm", "ds.vertLMM.k3", K)
-  } else {
-    fit <- ds.vertLMM(formula = formula, data = data,
-                      cluster_col = cluster_col,
-                      max_iter = max_iter,
-                      inner_iter = inner_iter,
-                      tol = tol %||% 1e-4,
-                      ring = ring %||% "ring63",
-                      verbose = verbose,
-                      datasources = datasources)
-    .dsvert_set_frontdoor(fit, "ds.vert.lmm", "ds.vertLMM", K)
-  }
+  # ds.vertLMM now self-dispatches on K (K=2 closed-form, K>=3 profile), so this
+  # alias forwards to it for every K. The K>=3 outer-iteration budget maps onto
+  # ds.vertLMM's max_iter (the shared outer-loop cap).
+  fit <- ds.vertLMM(formula = formula, data = data,
+                    cluster_col = cluster_col,
+                    max_iter = if (K >= 3L) max_outer else max_iter,
+                    inner_iter = inner_iter,
+                    tol = tol %||% 1e-4,
+                    ring = ring %||% (if (K >= 3L) "ring127" else "ring63"),
+                    verbose = verbose,
+                    datasources = datasources)
+  backend <- if (K >= 3L) "ds.vertLMM.k3" else "ds.vertLMM"
+  .dsvert_set_frontdoor(fit, "ds.vert.lmm", backend, K)
 }
 
 #' @rdname ds.vert.aliases
