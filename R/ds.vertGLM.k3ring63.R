@@ -869,42 +869,15 @@ NULL
 
   } else if (family == "binomial") {
     # Canonical binomial: D = 2*(Sumsoftplus(eta) - y^T*eta) -- future work
-    sp_dcf <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenDcfKeysDS",
-           dcf0_pk = transport_pks[[dcf_parties[1]]],
-           dcf1_pk = transport_pks[[dcf_parties[2]]],
-           family = "softplus", n = as.integer(n_obs),
-           frac_bits = as.integer(frac_bits),
-           num_intervals = 80L, ring = ring, session_id = session_id))
-    if (is.list(sp_dcf)) sp_dcf <- sp_dcf[[1]]
-    .sendBlob(sp_dcf$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[1])
-    .sendBlob(sp_dcf$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[2])
-    for (i in seq_along(dcf_parties))
-      .dsAgg(datasources[dcf_conns[i]], call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-    .ot_beaver_prepare_spline(
-      datasources = datasources,
-      party_conns = dcf_conns,
-      party_names = dcf_parties,
-      transport_pks = transport_pks,
-      session_id = session_id,
-      n = n_obs,
-      ring = ring,
-      .dsAgg = .dsAgg,
-      .sendBlob = .sendBlob)
-    for (ph in 1:4) {
-      pr <- list()
-      for (di in seq_along(dcf_parties)) {
-        ci <- dcf_conns[di]
-        r <- .dsAgg(datasources[ci], call(paste0("k2WideSplinePhase",ph,"DS"),
-          party_id = as.integer(di-1), family = "softplus",
-          num_intervals = 80L, frac_bits = as.integer(frac_bits),
-          ring = ring, session_id = session_id))
-        if (is.list(r) && length(r) == 1) r <- r[[1]]; pr[[di]] <- r
-      }
-      if (ph==1) { .sendBlob(pr[[1]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[2]);.sendBlob(pr[[2]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[1]) }
-      else if (ph==2) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[di]]$and_xma,and_ymb=pr[[di]]$and_ymb,had1_xma=pr[[di]]$had1_xma,had1_ymb=pr[[di]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_beaver_r1",dcf_conns[pi2])} }
-      else if (ph==3) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[di]]$had2_xma,had2_ymb=pr[[di]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_had2_r1",dcf_conns[pi2])} }
-    }
+    # Step 1: reveal-free softplus(eta) via direct Chebyshev (no DCF, no reveal).
+    # eta at converged beta (recomputed above); per-obs softplus -> softplus_share_fp
+    # for glmRing63DevianceSumsDS to sum (only the aggregate sum is revealed).
+    .ring127_softplus_round_keyed(
+      in_key = "k2_eta_share_fp", out_key = "softplus_share_fp",
+      n = n_obs, datasources = datasources, dealer_ci = dcf_conns[2],
+      server_list = dcf_parties, server_names = server_names,
+      y_server = fusion_server, nl = coordinator, transport_pks = transport_pks,
+      session_id = session_id, .dsAgg = .dsAgg, .sendBlob = .sendBlob)
     sums <- list()
     for (di in seq_along(dcf_parties)) {
       r <- .dsAgg(datasources[dcf_conns[di]], call(name = "glmRing63DevianceSumsDS",
