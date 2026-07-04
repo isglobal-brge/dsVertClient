@@ -5,7 +5,7 @@
 
 ## Overview
 
-**dsVertClient** provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols (ECDH-PSI, Ring63 / Ring127 Beaver MPC, DCF wide-spline, negotiated Beaver preprocessing, X25519 + AES-256-GCM transport, Ed25519 identity verification) run transparently.
+**dsVertClient** provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols (ECDH-PSI, Ring63 / Ring127 Beaver MPC, DCF threshold comparison for small-cell suppression, negotiated Beaver preprocessing, X25519 + AES-256-GCM transport, Ed25519 identity verification) run transparently.
 
 Pair with the server-side companion package [**dsVert**](https://github.com/isglobal-brge/dsVert).
 
