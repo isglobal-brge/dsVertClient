@@ -267,14 +267,10 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
         call(name = "mpcGcDS")), silent = TRUE)
     }
   }, add = TRUE)
-  cluster_pks <- list()
-  for (.srv in server_names) {
-    .ci <- which(server_names == .srv)
-    pk_info <- DSI::datashield.aggregate(datasources[.ci],
-      call(name = "glmRing63TransportInitDS", session_id = cluster_session))
-    if (is.list(pk_info) && length(pk_info) == 1L) pk_info <- pk_info[[1L]]
-    cluster_pks[[.srv]] <- pk_info$transport_pk
-  }
+  # Establish the identity-verified peer transport set on every cluster server
+  # so the pinned broadcast / Gram seals below seal only to verified recipients.
+  cluster_pks <- .dsvert_setup_peer_transport(datasources, server_names,
+                                              server_names, cluster_session)
   .send_cluster_blob <- function(blob, target_ci) {
     .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
       if (n_chunks == 1L) {

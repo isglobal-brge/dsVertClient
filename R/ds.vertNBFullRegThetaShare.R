@@ -24,20 +24,13 @@
                                           beta_label, beta_nl, int_val,
                                           y_var_char, session_id,
                                           .dsAgg, .sendBlob, verbose = FALSE) {
-  # Initialise Ed25519 transport on label so it can receive NL's eta^nl share
-  # blob (and later any blob NL relays during Newton iters).
-  init_y <- .dsAgg(datasources[y_ci],
-    call(name = "glmRing63TransportInitDS", session_id = session_id))
-  if (is.list(init_y) && length(init_y) == 1L) init_y <- init_y[[1L]]
-  label_pk <- init_y$transport_pk
-
-  init_nl <- .dsAgg(datasources[nl_ci],
-    call(name = "glmRing63TransportInitDS", session_id = session_id))
-  if (is.list(init_nl) && length(init_nl) == 1L) init_nl <- init_nl[[1L]]
-  nl_pk <- init_nl$transport_pk
-  transport_pks <- list()
-  transport_pks[[y_srv]]  <- label_pk
-  transport_pks[[nl_srv]] <- nl_pk
+  # Initialise Ed25519 transport and record the identity-verified peer set on
+  # both servers, so the eta^nl share blob below (and any blob NL relays during
+  # Newton iters) is sealed only to a verified recipient, never an analyst key.
+  transport_pks <- .dsvert_setup_peer_transport(datasources, server_names,
+                                                c(y_srv, nl_srv), session_id)
+  label_pk <- transport_pks[[y_srv]]
+  nl_pk    <- transport_pks[[nl_srv]]
 
   # NL splits eta^nl into Ring127 additive shares; transports peer-share
   # blob to label.
