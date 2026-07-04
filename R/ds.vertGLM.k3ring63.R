@@ -44,6 +44,9 @@ NULL
   K <- length(server_list)
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
+  # Non-Gaussian link is the reveal-free share-domain Chebyshev (Ring127/frac50
+  # only). Force it; the Gaussian identity link stays Ring63.
+  if (family != "gaussian") ring <- 127L
   ring_tag <- if (ring == 127L) "ring127" else "ring63"
   frac_bits <- if (ring == 127L) 50L else 20L
   # DCF parties: fusion (party 0) must differ from coordinator (party 1)
@@ -342,80 +345,16 @@ NULL
     } else {
       if (verbose && iter <= 3) message(sprintf("    [%d.2] DCF wide spline...", iter))
 
-      # F1: fresh DCF mask (fresh r) for this iteration's link evaluation.
-      .regen_dcf_keys()
-      .ot_beaver_prepare_spline(
-        datasources = datasources,
-        party_conns = dcf_conns,
-        party_names = dcf_parties,
-        transport_pks = transport_pks,
-        session_id = session_id,
-        n = n_obs,
-        ring = ring,
-        .dsAgg = .dsAgg,
-        .sendBlob = .sendBlob)
-
-      # Phase 1-4
-      ph1 <- list()
-      for (i in seq_along(dcf_parties)) {
-        ci <- dcf_conns[i]
-        r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase1DS",
-          party_id = as.integer(i - 1), family = family,
-          num_intervals = num_intervals, frac_bits = frac_bits,
-          ring = ring, session_id = session_id))
-        if (is.list(r) && length(r) == 1) r <- r[[1]]; ph1[[i]] <- r
-      }
-      .sendBlob(ph1[[1]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[2])
-      .sendBlob(ph1[[2]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[1])
-
-      ph2 <- list()
-      for (i in seq_along(dcf_parties)) {
-        ci <- dcf_conns[i]
-        r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase2DS",
-          party_id = as.integer(i - 1), family = family,
-          num_intervals = num_intervals, frac_bits = frac_bits,
-          ring = ring, session_id = session_id))
-        if (is.list(r) && length(r) == 1) r <- r[[1]]; ph2[[i]] <- r
-      }
-      for (i in seq_along(dcf_parties)) {
-        peer_idx <- 3 - i; peer_ci <- dcf_conns[peer_idx]
-        pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[peer_idx]]])
-        r1_json <- jsonlite::toJSON(list(
-          and_xma = ph2[[i]]$and_xma, and_ymb = ph2[[i]]$and_ymb,
-          had1_xma = ph2[[i]]$had1_xma, had1_ymb = ph2[[i]]$had1_ymb),
-          auto_unbox = TRUE)
-        sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-          data = jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk = pk_b64))
-        .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1", peer_ci)
-      }
-
-      ph3 <- list()
-      for (i in seq_along(dcf_parties)) {
-        ci <- dcf_conns[i]
-        r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase3DS",
-          party_id = as.integer(i - 1), family = family,
-          num_intervals = num_intervals, frac_bits = frac_bits,
-          ring = ring, session_id = session_id))
-        if (is.list(r) && length(r) == 1) r <- r[[1]]; ph3[[i]] <- r
-      }
-      for (i in seq_along(dcf_parties)) {
-        peer_idx <- 3 - i; peer_ci <- dcf_conns[peer_idx]
-        pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[peer_idx]]])
-        r1_json <- jsonlite::toJSON(list(
-          had2_xma = ph3[[i]]$had2_xma, had2_ymb = ph3[[i]]$had2_ymb),
-          auto_unbox = TRUE)
-        sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-          data = jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk = pk_b64))
-        .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1", peer_ci)
-      }
-
-      for (i in seq_along(dcf_parties)) {
-        ci <- dcf_conns[i]
-        .dsAgg(datasources[ci], call(name = "k2WideSplinePhase4DS",
-          party_id = as.integer(i - 1), family = family,
-          num_intervals = num_intervals, frac_bits = frac_bits,
-          ring = ring, session_id = session_id))
-      }
+      # REVEAL-FREE SHARE-DOMAIN LINK (F1/F1b fix) — K>=3 main loop. The DCF
+      # party-0 is the fusion server; the link is a 2-party op between fusion
+      # (party 0) and coordinator (party 1) over dcf_parties/dcf_conns.
+      .glm_share_link(
+        family = family, n = n_obs,
+        datasources = datasources, dealer_ci = dcf_conns[2],
+        server_list = dcf_parties, server_names = server_names,
+        y_server = fusion_server, nl = coordinator,
+        transport_pks = transport_pks, session_id = session_id,
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob)
     }
 
     # Optional weighted GLM/IPW path. The weights vector is shared between the
