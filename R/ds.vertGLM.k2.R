@@ -74,7 +74,7 @@ NULL
   if (is.null(lambda)) lambda <- 1e-4
   if (verbose) {
     if (is_gaussian) {
-      message("  Gaussian one-shot: X^T X + X^T y via Beaver, direct solve")
+      message("  L-BFGS: gaussian identity link, constant Fisher (2 rounds/iter)")
     } else {
       message(sprintf("  L-BFGS: %s, %d-interval spline (6 rounds/iter, no Fisher)", family, num_intervals))
     }
