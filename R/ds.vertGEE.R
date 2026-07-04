@@ -2113,34 +2113,8 @@ ds.vertGEE <- function(formula, data = NULL,
     list(values = out,
          cluster_sizes = as.integer(parts[[coord_i]]$cluster_sizes))
   }
-  dcf_cache_key <- NULL
-  dcf_blob_cache <- new.env(parent = emptyenv())
-  .ensure_dcf_keys <- function(spline_family, num_intervals) {
-    key <- paste(spline_family, as.integer(num_intervals), sep = ":")
-    if (identical(dcf_cache_key, key)) return(invisible(TRUE))
-    dcf <- dcf_blob_cache[[key]]
-    if (is.null(dcf)) {
-      dcf <- .dsAgg(datasources[dealer_conn],
-        call(name = "glmRing63GenDcfKeysDS",
-             dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
-             dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
-             family = spline_family, n = as.integer(n_obs),
-             frac_bits = frac_bits,
-             num_intervals = as.integer(num_intervals),
-             ring = ring, session_id = session_id))
-      if (is.list(dcf) && length(dcf) == 1L) dcf <- dcf[[1L]]
-      dcf <- list(blob0 = dcf$dcf_blob_0, blob1 = dcf$dcf_blob_1)
-      dcf_blob_cache[[key]] <- dcf
-    }
-    .sendBlob(dcf$blob0, "k2_dcf_keys_persistent", dcf_conns[[1L]])
-    .sendBlob(dcf$blob1, "k2_dcf_keys_persistent", dcf_conns[[2L]])
-    for (ci in dcf_conns) {
-      .dsAgg(datasources[ci],
-        call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-    }
-    dcf_cache_key <<- key
-    invisible(TRUE)
-  }
+  # The reveal-free share-domain link below (`.wide_spline`) evaluates the link
+  # entirely on the additive shares; no DCF key-set is generated.
   # REVEAL-FREE SHARE-DOMAIN LINK (F1/F1b fix). This function runs at ring=127
   # (line ~800), so the DCF wide-spline (which relayed a masked eta) is replaced
   # by a dispatch to the ring127 share-domain Chebyshev primitives: sigmoid127

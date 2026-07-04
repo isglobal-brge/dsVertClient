@@ -433,6 +433,9 @@
 
   u_key <- paste0(iknp_key, "_u_matrix")
   .sendBlob(ext$u_matrix, u_key, sender_ci)
+  # Relay the KOS15 consistency-check opener with the U matrix (no extra round).
+  # Custodian/analyst can disable via options(dsvert.iknp_kos_check = FALSE).
+  use_kos <- isTRUE(getOption("dsvert.iknp_kos_check", TRUE))
   enc <- .dsAgg(datasources[sender_ci],
     call(name = "k2IknpSenderEncryptDS",
          u_matrix_blob_key = u_key,
@@ -442,6 +445,7 @@
          output_key = output_sender_key,
          n = as.integer(n),
          ring = ring,
+         kos_check = if (use_kos) ext$kos_check else NULL,
          session_id = session_id))
   if (is.list(enc) && length(enc) == 1L) enc <- enc[[1L]]
 

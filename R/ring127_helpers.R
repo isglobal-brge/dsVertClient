@@ -171,7 +171,7 @@
 .ring127_sigmoid_coef_cache <- new.env(parent = emptyenv())
 
 # Ring127 direct share-domain sigmoid(x) = 1/(1+exp(-x)) via a single
-# Chebyshev Clenshaw pass on the shares (SPEED primitive, 2026-07-03).
+# Chebyshev Clenshaw pass on the shares.
 # Structural clone of .ring127_exp_round_keyed: reveal-free (relays
 # dcf_masked ZERO times), dealer-free (only .ring127_vecmul = IKNP), and
 # env-agnostic (is_party0 derived per server from `server == y_server`).
