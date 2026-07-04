@@ -604,13 +604,13 @@
       if (is.finite(g_norm) && g_norm < tol) {
         converged <- TRUE
         convergence_reason <- "strict"
-        break
+        if (.dsvert_early_stop()) break
       }
       if (eval_counter >= protected_floor_min_evals &&
           is.finite(best_norm) && best_norm < protected_grad_floor) {
         converged <- TRUE
         convergence_reason <- "protected_floor"
-        break
+        if (.dsvert_early_stop()) break
       }
       p_dim <- length(q)
       H <- matrix(0, p_dim, p_dim)
@@ -650,13 +650,13 @@
       if (is.finite(fd_trial$norm) && fd_trial$norm < tol) {
         converged <- TRUE
         convergence_reason <- "strict"
-        break
+        if (.dsvert_early_stop()) break
       }
       if (eval_counter >= protected_floor_min_evals &&
           is.finite(best_norm) && best_norm < protected_grad_floor) {
         converged <- TRUE
         convergence_reason <- "protected_floor"
-        break
+        if (.dsvert_early_stop()) break
       }
     }
     Hinv <- Hinv0
@@ -672,13 +672,13 @@
     if (is.finite(g_norm) && g_norm < tol) {
       converged <- TRUE
       convergence_reason <- "strict"
-      break
+      if (.dsvert_early_stop()) break
     }
     if (eval_counter >= protected_floor_min_evals &&
         is.finite(best_norm) && best_norm < protected_grad_floor) {
       converged <- TRUE
       convergence_reason <- "protected_floor"
-      break
+      if (.dsvert_early_stop()) break
     }
     step <- as.numeric(Hinv %*% g)
     if (any(!is.finite(step))) step <- g
