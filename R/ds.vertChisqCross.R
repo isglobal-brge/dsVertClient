@@ -401,6 +401,30 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
 }
 
 #' @keywords internal
+# Coordinator-side DCF comparison key generation. Mirrors the dealer step but
+# runs on the non-computing coordinator, so no data server ever holds both
+# comparison mask shares. Each party's keys are transport-sealed to that party,
+# so a party decrypts only its own share; the coordinator holds the full mask
+# but, relaying only the round-one values that are themselves sealed
+# party-to-party, never observes a masked value and so cannot open the counts.
+.dsvert_chisq_cmp_genkeys <- function(dcf0_pk, dcf1_pk, n, threshold,
+                                      frac_bits = 20L) {
+  cmp <- dsVert:::.callMpcTool("k2-cmp-gen", list(
+    n = as.integer(n),
+    threshold = as.numeric(threshold),
+    frac_bits = as.integer(frac_bits)))
+  pk0 <- dsVert:::.base64url_to_base64(dcf0_pk)
+  pk1 <- dsVert:::.base64url_to_base64(dcf1_pk)
+  sealed0 <- dsVert:::.callMpcTool("transport-encrypt", list(
+    data = cmp$party0_keys, recipient_pk = pk0))
+  sealed1 <- dsVert:::.callMpcTool("transport-encrypt", list(
+    data = cmp$party1_keys, recipient_pk = pk1))
+  list(
+    cmp_blob_0 = dsVert:::base64_to_base64url(sealed0$sealed),
+    cmp_blob_1 = dsVert:::base64_to_base64url(sealed1$sealed))
+}
+
+#' @keywords internal
 .dsvert_chisq_cross_cmp <- function(datasources, pks, party_conns,
                                      party_srvs, dealer_ci, sendBlob,
                                      source_key, threshold, output_key,
@@ -409,15 +433,18 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
   key_blob <- paste0("k2_cmp_keys_", tag)
   keys_key <- paste0("k2_cmp_keys_", tag)
   peer_blob <- paste0("k2_cmp_peer_masked_", tag)
-  gen <- DSI::datashield.aggregate(datasources[dealer_ci],
-    call(name = "k2CmpGenKeysDS",
-         dcf0_pk = pks[[party_srvs[[1L]]]],
-         dcf1_pk = pks[[party_srvs[[2L]]]],
-         n = as.integer(n_values),
-         threshold = as.numeric(threshold),
-         session_id = session_id,
-         frac_bits = 20L))
-  if (is.list(gen) && length(gen) == 1L) gen <- gen[[1L]]
+  # Generate the DCF comparison keys on the coordinator, not on a data server.
+  # The dealer draws the comparison mask and learns both mask shares; keeping
+  # that role on the non-computing coordinator -- which only ever relays
+  # round-one values already sealed party-to-party -- means no data server ever
+  # holds both shares and the mask holder never sees a masked value, so the
+  # compared counts stay secret from every party.
+  gen <- .dsvert_chisq_cmp_genkeys(
+    dcf0_pk = pks[[party_srvs[[1L]]]],
+    dcf1_pk = pks[[party_srvs[[2L]]]],
+    n = as.integer(n_values),
+    threshold = as.numeric(threshold),
+    frac_bits = 20L)
   sendBlob(gen$cmp_blob_0, key_blob, party_conns[[1L]])
   sendBlob(gen$cmp_blob_1, key_blob, party_conns[[2L]])
   for (ii in seq_along(party_conns)) {
