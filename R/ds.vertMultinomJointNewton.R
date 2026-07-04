@@ -401,7 +401,10 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   B_reg <- B + 1e-6 * max(abs(diag(B))) * diag(p * K_minus_1)
 
   coord <- y_server   # label server
-  for (outer in seq_len(max_outer)) {
+  # Leak-free fixed outer-iteration count (public); best-iterate tracking below
+  # makes post-convergence iterations harmless.
+  mnl_loop_n <- .dsvert_loop_n("multinom", 20L, max_outer, tol)
+  for (outer in seq_len(mnl_loop_n)) {
     t_iter <- proc.time()[[3L]]
     # Step 1-2: for each class, compute eta_k share + exp(eta_k) share
     exp_eta_keys <- character(K_minus_1)
@@ -1062,14 +1065,14 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       converged <- TRUE
       convergence_reason <- "strict"
       final_iter <- outer
-      break
+      if (.dsvert_early_stop()) break
     }
     if (outer >= protected_floor_min_iter &&
         is.finite(max_step) && max_step < protected_step_floor) {
       converged <- TRUE
       convergence_reason <- "protected_floor"
       final_iter <- outer
-      break
+      if (.dsvert_early_stop()) break
     }
   }
 

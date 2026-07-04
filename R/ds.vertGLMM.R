@@ -279,7 +279,9 @@ print.ds.vertGLMM <- function(x, ...) {
   offset_col <- "__dsvert_glmm_pql_b"
   on.exit(.ds_glmm_cleanup_fit_session(fit, datasources), add = TRUE)
 
-  for (outer in seq_len(max_outer)) {
+  # Leak-free fixed outer-iteration count (public); see fixed_iters.R.
+  glmm_loop_n <- .dsvert_loop_n("glmm", 20L, max_outer, tol)
+  for (outer in seq_len(glmm_loop_n)) {
     tryCatch(
       DSI::datashield.aggregate(
         datasources[which(server_names == y_srv)],
@@ -345,7 +347,7 @@ print.ds.vertGLMM <- function(x, ...) {
     }
     if (max(beta_delta, b_delta, sigma_delta) < tol) {
       converged <- TRUE
-      break
+      if (.dsvert_early_stop()) break
     }
   }
 

@@ -2415,7 +2415,7 @@ ds.vertGEE <- function(formula, data = NULL,
 
     max_iter <- as.integer(max_iter)
     iter <- 0L
-    for (iter in seq_len(max_iter)) {
+    for (iter in seq_len(.dsvert_loop_n("gee", 25L, max_iter, tol))) {
       beta_old <- beta
       rho_old <- rho
       last_stats <- compute_ar1_stats(beta, rho)
@@ -2441,7 +2441,7 @@ ds.vertGEE <- function(formula, data = NULL,
       }
       if (max(abs(beta - beta_old), abs(rho - rho_old)) <= tol) {
         converged <- TRUE
-        break
+        if (.dsvert_early_stop()) break
       }
     }
     if (is.null(last_stats)) last_stats <- compute_ar1_stats(beta, rho)
@@ -2636,7 +2636,7 @@ ds.vertGEE <- function(formula, data = NULL,
   }
 
   max_iter <- as.integer(max_iter)
-  for (iter in seq_len(max_iter)) {
+  for (iter in seq_len(.dsvert_loop_n("gee", 25L, max_iter, tol))) {
     beta_old <- beta
     alpha_old <- alpha
     last_stats <- compute_stats(beta)
@@ -2667,7 +2667,7 @@ ds.vertGEE <- function(formula, data = NULL,
     }
     if (max(abs(beta - beta_old), abs(alpha - alpha_old)) <= tol) {
       converged <- TRUE
-      break
+      if (.dsvert_early_stop()) break
     }
   }
   if (is.null(last_stats)) last_stats <- compute_stats(beta)
