@@ -280,14 +280,8 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
         error = function(e) NULL)
     }, add = TRUE)
     # Transport keys.
-    pks <- list()
-    for (srv in c(y_srv, peer_srv)) {
-      ci <- which(server_names == srv)
-      r <- DSI::datashield.aggregate(datasources[ci],
-        call(name = "glmRing63TransportInitDS", session_id = sess))
-      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-      pks[[srv]] <- r$transport_pk
-    }
+    pks <- .dsvert_setup_peer_transport(datasources, server_names,
+                                        c(y_srv, peer_srv), sess)
     x_remote_vars <- setdiff(names(beta_hat),
                               c(x_local_ysrv, "(Intercept)"))
     b_remote <- as.numeric(beta_hat[x_remote_vars])
@@ -737,15 +731,8 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
       which(server_names == peer_srv2) else integer(0)
     # Dedicated MPC session for the closed-form round.
     sess_gls <- .mpc_session_id()
-    pks_gls <- list()
-    for (srv in c(y_srv, peer_srv2)) {
-      if (is.null(srv)) next
-      ci <- which(server_names == srv)
-      r <- DSI::datashield.aggregate(datasources[ci],
-        call(name = "glmRing63TransportInitDS", session_id = sess_gls))
-      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-      pks_gls[[srv]] <- r$transport_pk
-    }
+    pks_gls <- .dsvert_setup_peer_transport(datasources, server_names,
+                                            c(y_srv, peer_srv2), sess_gls)
     # Broadcast cluster IDs to peer.
     cb_gls <- DSI::datashield.aggregate(datasources[y_srv_ci],
       call(name = "dsvertLMMBroadcastClusterIDsDS",
