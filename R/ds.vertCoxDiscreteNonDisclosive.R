@@ -659,7 +659,9 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   grad_history    <- if (debug_trace) vector("list", as.integer(max_iter)) else NULL
   debug_bin_summary <- NULL
 
-  for (iter in seq_len(as.integer(max_iter))) {
+  # Leak-free fixed iteration count (public); best-iterate return below makes
+  # post-convergence noise-walk harmless.
+  for (iter in seq_len(.dsvert_loop_n("cox", 15L, max_iter, tol))) {
     if (debug_trace) beta_history[[iter]] <- beta
     beta_coord <- as.numeric(beta[seq_len(p_os)])
     beta_fusion <- if (p_nl > 0L) {
@@ -1058,7 +1060,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     iter_audit[[iter]] <- list(score_max = score_norm,
                                score_l2 = score_l2)
     if (score_norm < tol) {
-      converged <- TRUE; final_iter <- iter; break
+      converged <- TRUE; final_iter <- iter; if (.dsvert_early_stop()) break
     }
 
     if (debug_trace && iter == 1L) {
