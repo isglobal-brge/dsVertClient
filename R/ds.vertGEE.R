@@ -2906,10 +2906,22 @@ ds.vertGEE <- function(formula, data = NULL,
         call(name = "k2IdentityLinkDS", session_id = session_id))
     }
   } else if (fit$family %in% c("binomial", "poisson")) {
-    # REVEAL-FREE link (F1 fix): eta (k2_eta_share_fp) -> secure_mu_share via the
-    # share-domain .wide_spline dispatch. dcf_masked relayed 0x.
-    .wide_spline("k2_eta_share_fp", "secure_mu_share",
-                 spline_family = if (identical(fit$family, "poisson")) "poisson" else "sigmoid")
+    # REVEAL-FREE link (F1 fix): eta (k2_eta_share_fp) -> secure_mu_share entirely
+    # on the ring127 shares (sigmoid127 / exp127). dcf_masked relayed 0x; dealer-
+    # free. This scope has no .wide_spline, so dispatch the primitives directly.
+    .gee_sd_common <- list(
+      n = n_obs, datasources = datasources, dealer_ci = dcf_conns[[2L]],
+      server_list = dcf_parties, server_names = server_names,
+      y_server = dcf_parties[[1L]], nl = dcf_parties[[2L]],
+      transport_pks = transport_pks, session_id = session_id,
+      .dsAgg = .dsAgg, .sendBlob = .sendBlob)
+    if (identical(fit$family, "poisson")) {
+      do.call(.ring127_exp_round_keyed_extended,
+              c(list(in_key = "k2_eta_share_fp", out_key = "secure_mu_share"), .gee_sd_common))
+    } else {
+      do.call(.ring127_sigmoid_round_keyed,
+              c(list(in_key = "k2_eta_share_fp", out_key = "secure_mu_share"), .gee_sd_common))
+    }
   }
 
   if (cluster_enabled) {
