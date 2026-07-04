@@ -13,3 +13,4 @@ vignettes/validation-cache/
 .Rhistory
 .RData
 .Rproj.user/
+.claude/

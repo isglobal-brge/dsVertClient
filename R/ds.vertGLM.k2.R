@@ -123,40 +123,14 @@ NULL
   if (verbose) message(sprintf("  [Input Sharing] Complete: p_coord=%d, p_nl=%d (%.1fs)",
                                  p_coord, p_nl, proc.time()[[3]] - t0_share))
 
-  # === DCF KEY GENERATION — FRESH PER LINK EVALUATION (F1 privacy fix) ===
-  # SECURITY (F1, docs/security_review_2026-07-03.md): the DCF mask r is baked
-  # into the key (k2_distributed_cmp.go:54-58: alpha = threshold + r). Reusing a
-  # single key-set across IRLS/L-BFGS iterations reuses r, so the client — which
-  # relays the masked eta (`dcf_masked`) and knows every beta^(t) — can difference
-  # across iterations, cancel r, and solve X_i * Delta_beta for EVERY observation
-  # (empirically reconstructed to fixed-point precision; the fresh-mask variant
-  # degrades the attack ~1e8x). We therefore regenerate a FRESH key-set (fresh r)
-  # for every link evaluation. The DCF comparison RESULT is invariant to r, so
-  # beta is bit-identical; only the information-theoretic hiding changes.
-  # NOTE (F1b, tracked): keygen still runs on the `nl` computing party, which
-  # knows r and can recover eta = m - r peer-side. Closing the peer-side leak
-  # requires DEALER-FREE DCF preprocessing (Beaver-Chebyshev link on IKNP/VOLE
-  # triples) — see docs/dcf_dealer_finding_2026-07-03.md. Fresh masks here close
-  # the client/relay reconstruction (the empirically demonstrated attack).
-  dealer <- nl; dealer_conn <- nl_conn
-  .regen_dcf_keys <- function() {
-    if (is_gaussian) return(invisible(NULL))
-    dcf_result <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenDcfKeysDS",
-           dcf0_pk = transport_pks[[coordinator]],
-           dcf1_pk = transport_pks[[nl]],
-           family = if (family == "poisson") "poisson" else "sigmoid",
-           n = as.integer(n_obs), frac_bits = frac_bits,
-           num_intervals = num_intervals,
-           ring = ring,
-           session_id = session_id))
-    if (is.list(dcf_result)) dcf_result <- dcf_result[[1]]
-    .sendBlob(dcf_result$dcf_blob_0, "k2_dcf_keys_persistent", coordinator_conn)
-    .dsAgg(datasources[coordinator_conn], call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-    .sendBlob(dcf_result$dcf_blob_1, "k2_dcf_keys_persistent", nl_conn)
-    .dsAgg(datasources[nl_conn], call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-    invisible(NULL)
-  }
+  # The non-Gaussian link is reveal-free AND dealer-free: `.glm_share_link`
+  # (in the iteration loop below) derives secure_mu_share entirely on the
+  # additive shares via the Ring127 Chebyshev primitives over IKNP triples —
+  # no masked eta is ever relayed (which would otherwise let the client
+  # difference masked eta across IRLS iterations and reconstruct X) and no DCF
+  # key-set is generated. `dealer_conn` is retained only as the OT/vecmul
+  # coordinator index for the shared-weight residual path.
+  dealer_conn <- nl_conn
 
   beta <- rep(0, p_total)
   intercept <- 0.0
@@ -201,7 +175,18 @@ NULL
 
   if (verbose) message(sprintf("\n[Phase 3] K=2 L-BFGS iterations (p=%d, n=%d, lambda=%.1e)", p_total, n_obs, lambda))
 
-  for (iter in seq_len(max_iter)) {
+  # Leak-free fixed iteration count (public, family-driven). By default the loop
+  # runs a fixed data-independent number of rounds so a peer counting Beaver
+  # rounds cannot learn the iteration-to-convergence; options(dsvert.early_stop
+  # = TRUE) restores the data-dependent early exit. max_iter stays an upper
+  # safety clamp. Post-convergence iterations are harmless (L-BFGS history
+  # freezes via its curvature gate; the step scales with the near-zero gradient).
+  # Per-family base counts calibrated to typical convergence at tol=1e-4
+  # (gaussian ~6, binomial ~8, poisson ~10 iters) plus margin; grown for
+  # stricter tol via the public-tol rule in .dsvert_loop_n.
+  glm_base <- if (is_gaussian) 10L else if (identical(family, "poisson")) 15L else 12L
+  loop_n <- .dsvert_loop_n(family, glm_base, max_iter, tol)
+  for (iter in seq_len(loop_n)) {
     t0_iter <- proc.time()[[3]]
     beta_old <- beta
     intercept_old <- intercept
@@ -386,7 +371,7 @@ NULL
     if (max_diff < tol) {
       converged <- TRUE
       if (verbose) message(sprintf("  Converged after %d iterations (diff = %.2e)", iter, max_diff))
-      break
+      if (.dsvert_early_stop()) break
     }
     if (iter %% 10 == 0) {
       for (server in server_list)

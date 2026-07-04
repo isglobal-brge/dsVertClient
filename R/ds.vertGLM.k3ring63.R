@@ -178,32 +178,12 @@ NULL
   dealer <- all_dealers[1]  # initial dealer for DCF keys
   dealer_conn <- which(server_names == dealer)
 
-  # === DCF KEY GENERATION — FRESH PER LINK EVALUATION (F1 privacy fix) ===
-  # See ds.vertGLM.k2.R for the full rationale. In K>=3 the linear predictor eta
-  # spans ALL servers' columns, so a reused mask lets the client reconstruct every
-  # observation's features across all sites; the SE finite-difference makes it
-  # trivial: X_ij = (m+ - m-)/(2*delta). We regenerate a fresh key-set (fresh r)
-  # per link evaluation; beta is bit-identical (comparison result is mask-invariant).
-  # NOTE (F1b/G1, tracked): keygen runs on the dcf dealer (a computing party) which
-  # knows r; closing the peer-side leak needs dealer-free DCF preprocessing —
-  # see docs/dcf_dealer_finding_2026-07-03.md.
-  .regen_dcf_keys <- function() {
-    if (is_gaussian) return(invisible(NULL))
-    dcf_result <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenDcfKeysDS",
-           dcf0_pk = transport_pks[[dcf_parties[1]]],
-           dcf1_pk = transport_pks[[dcf_parties[2]]],
-           family = dcf_family, n = as.integer(n_obs),
-           frac_bits = frac_bits, num_intervals = num_intervals,
-           ring = ring,
-           session_id = session_id))
-    if (is.list(dcf_result)) dcf_result <- dcf_result[[1]]
-    .sendBlob(dcf_result$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[1])
-    .dsAgg(datasources[dcf_conns[1]], call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-    .sendBlob(dcf_result$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[2])
-    .dsAgg(datasources[dcf_conns[2]], call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-    invisible(NULL)
-  }
+  # The non-Gaussian link is reveal-free AND dealer-free at K>=3 too: the
+  # iteration loop dispatches the Ring127 share-domain Chebyshev primitives
+  # (sigmoid127/exp127/softplus127) over IKNP triples, so no masked eta is
+  # relayed (which would otherwise let the client reconstruct every
+  # observation's features across all sites) and no DCF key-set is generated.
+  # `dealer`/`dealer_conn` remain only as the round-robin OT/vecmul coordinator role.
 
   # ===========================================================================
   # Iteration loop
@@ -260,7 +240,14 @@ NULL
     max_diff <- 0
   }
 
-  for (iter in seq_len(max_iter)) {
+  # Leak-free fixed iteration count (public, family-driven); see fixed_iters.R.
+  # Default runs a fixed data-independent number of rounds so peers cannot learn
+  # iteration-to-convergence; options(dsvert.early_stop=TRUE) restores early exit.
+  # K>=3 couples all servers' columns in eta, so allow a bit more headroom than
+  # K=2; grown for stricter tol via .dsvert_loop_n (public-tol rule).
+  glm3_base <- if (is_gaussian) 12L else 18L
+  loop_n <- .dsvert_loop_n(family, glm3_base, max_iter, tol)
+  for (iter in seq_len(loop_n)) {
     t0_iter <- proc.time()[[3]]
     beta_old <- beta
     intercept_old <- intercept
@@ -504,7 +491,7 @@ NULL
     if (max_diff < tol) {
       converged <- TRUE
       if (verbose) message(sprintf("  Converged after %d iterations (diff = %.2e)", iter, max_diff))
-      break
+      if (.dsvert_early_stop()) break
     }
   }
 

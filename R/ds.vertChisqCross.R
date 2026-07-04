@@ -66,14 +66,35 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
     "[ds.vertChisqCross] %s@%s x %s@%s, session=%s",
     var1, var1_srv, var2, var2_srv, substr(session_id, 1L, 8L)))
 
-  # Setup transport keys on both servers.
+  # Exchange transport keys and establish the identity-verified peer set on both
+  # servers, so a share can only ever be sealed to a verified peer transport key
+  # (not to an analyst-supplied key).
   pks <- list()
-  for (srv in c(var1_srv, var2_srv)) {
+  identity_info <- list()
+  chisq_srvs <- c(var1_srv, var2_srv)
+  for (srv in chisq_srvs) {
     ci <- which(server_names == srv)
     r <- DSI::datashield.aggregate(datasources[ci],
       call(name = "glmRing63TransportInitDS", session_id = session_id))
     if (is.list(r) && length(r) == 1L) r <- r[[1]]
     pks[[srv]] <- r$transport_pk
+    if (!is.null(r$identity_pk)) {
+      identity_info[[srv]] <- list(identity_pk = r$identity_pk,
+                                   signature = r$signature)
+    }
+  }
+  pk_sorted <- pks[sort(names(pks))]
+  id_sorted <- if (length(identity_info) > 0) identity_info[sort(names(identity_info))] else NULL
+  .to_b64url <- function(x) gsub("\\+", "-", gsub("/", "_", gsub("=+$", "", x, perl = TRUE), fixed = TRUE), fixed = TRUE)
+  .json_to_b64url <- function(x) .to_b64url(gsub("\n", "", jsonlite::base64_enc(charToRaw(jsonlite::toJSON(x, auto_unbox = TRUE))), fixed = TRUE))
+  pk_b64 <- .json_to_b64url(pk_sorted)
+  id_b64 <- if (!is.null(id_sorted)) .json_to_b64url(id_sorted) else ""
+  for (srv in chisq_srvs) {
+    ci <- which(server_names == srv)
+    DSI::datashield.aggregate(datasources[ci],
+      call(name = "mpcStoreTransportKeysDS",
+           transport_keys_b64 = pk_b64, identity_info_b64 = id_b64,
+           session_id = session_id))
   }
 
   # Build one-hot indicators on each server (session-stored).
@@ -409,11 +430,15 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
 
   r1 <- vector("list", 2L)
   for (ii in seq_along(party_conns)) {
+    # Seal the one-time-masked value to the transport key of the peer that
+    # consumes it in round 2 (party_srvs[[3-ii]]), so the analyst relays only
+    # an opaque blob (defence-in-depth over the fresh-mask OTP).
     r1[[ii]] <- DSI::datashield.aggregate(datasources[party_conns[[ii]]],
       call(name = "k2CmpRound1DS",
            source_key = source_key,
            party_id = as.integer(ii - 1L),
            keys_key = keys_key,
+           peer_pk = pks[[party_srvs[[3L - ii]]]],
            session_id = session_id,
            frac_bits = 20L))
     if (is.list(r1[[ii]]) && length(r1[[ii]]) == 1L) r1[[ii]] <- r1[[ii]][[1L]]
@@ -430,6 +455,7 @@ ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
            output_key = output_key,
            keys_key = keys_key,
            peer_blob_key = peer_blob,
+           peer_sealed = TRUE,
            return_share = isTRUE(return_share),
            session_id = session_id,
            frac_bits = 20L))
