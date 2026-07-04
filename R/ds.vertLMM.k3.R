@@ -51,8 +51,26 @@
 #'   673-687.
 #' @seealso \code{\link{ds.vertGLM}}, \code{\link{ds.vertLMM}} (K=2
 #'   exact closed-form path).
+#'
+#' \code{ds.vertLMM.k3} is retained as a thin deprecated wrapper: call
+#' \code{ds.vertLMM}, which dispatches to this K>=3 algorithm automatically.
 #' @export
 ds.vertLMM.k3 <- function(formula, data, cluster_col,
+                           rho_lo = 0.001, rho_hi = 0.999,
+                           tol = 1e-4, max_outer = 30L,
+                           ring = c("ring127", "ring63"),
+                           verbose = TRUE, datasources = NULL) {
+  .Deprecated("ds.vertLMM", package = "dsVertClient",
+              msg = paste("ds.vertLMM.k3() is deprecated; call ds.vertLMM(),",
+                          "which dispatches to the K>=3 algorithm automatically."))
+  .ds_vertLMM_k3_impl(formula = formula, data = data, cluster_col = cluster_col,
+                      rho_lo = rho_lo, rho_hi = rho_hi, tol = tol,
+                      max_outer = max_outer, ring = ring, verbose = verbose,
+                      datasources = datasources)
+}
+
+#' @keywords internal
+.ds_vertLMM_k3_impl <- function(formula, data, cluster_col,
                            rho_lo = 0.001, rho_hi = 0.999,
                            tol = 1e-4, max_outer = 30L,
                            ring = c("ring127", "ring63"),

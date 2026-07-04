@@ -155,7 +155,26 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
   # the intercept-absorption approximation. Falls back to the
   # approximate path if any piece is unavailable.
   peer_servers <- setdiff(server_names, y_srv)
-  peer_srv <- if (length(peer_servers) > 0L) peer_servers[1L] else NULL
+  # K-dispatch. This closed-form solver is the K=2 backend (exact GLS via the
+  # Beaver Gram chain). K>=3 fits the same one-way random-intercept estimand
+  # with the variance-ratio profile algorithm; delegate to it so a single
+  # ds.vertLMM entry point serves every K (mirroring ds.vertGLM / ds.vertCox).
+  # K=1 has no peer and cannot fit a cross-server model.
+  if (length(peer_servers) == 0L)
+    stop("ds.vertLMM requires at least one non-outcome (peer) server (K>=2).",
+         call. = FALSE)
+  if (length(peer_servers) >= 2L) {
+    if (!is.null(random_slopes))
+      stop("random_slopes (q>1 random effects) are supported only at K=2; the ",
+           "K>=3 path fits a random-intercept model. Drop random_slopes for ",
+           "K>=3.", call. = FALSE)
+    return(.ds_vertLMM_k3_impl(formula = formula, data = data,
+                               cluster_col = cluster_col,
+                               tol = tol, max_outer = max_iter,
+                               ring = "ring127", verbose = verbose,
+                               datasources = datasources))
+  }
+  peer_srv <- peer_servers[1L]
 
   get_cluster_resids_exact <- function(beta_hat, session_id_active,
                                          transport_pks_active) {
