@@ -593,52 +593,14 @@ NULL
         .dsAgg(datasources[dcf_conns[di]], call(name = "k2IdentityLinkDS", session_id = session_id))
       }
     } else {
-      # F1: fresh DCF mask (fresh r) for this SE-perturbation link evaluation.
-      .regen_dcf_keys()
-      .ot_beaver_prepare_spline(
-        datasources = datasources,
-        party_conns = dcf_conns,
-        party_names = dcf_parties,
-        transport_pks = transport_pks,
-        session_id = session_id,
-        n = n_obs,
-        ring = ring,
-        .dsAgg = .dsAgg,
-        .sendBlob = .sendBlob)
-      for (ph in 1:4) {
-        ph_r <- list()
-        for (di in seq_along(dcf_parties)) {
-          fn <- paste0("k2WideSplinePhase", ph, "DS")
-          r <- .dsAgg(datasources[dcf_conns[di]], call(fn,
-            party_id = as.integer(di - 1), family = family,
-            num_intervals = num_intervals, frac_bits = frac_bits,
-            ring = ring, session_id = session_id))
-          if (is.list(r) && length(r) == 1) r <- r[[1]]; ph_r[[di]] <- r
-        }
-        if (ph == 1) {
-          .sendBlob(ph_r[[1]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[2])
-          .sendBlob(ph_r[[2]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[1])
-        } else if (ph == 2) {
-          for (di in 1:2) {
-            pi2 <- 3 - di; pk <- .b64url_to_b64(transport_pks[[dcf_parties[pi2]]])
-            sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-              data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(
-                list(and_xma=ph_r[[di]]$and_xma, and_ymb=ph_r[[di]]$and_ymb,
-                     had1_xma=ph_r[[di]]$had1_xma, had1_ymb=ph_r[[di]]$had1_ymb),
-                auto_unbox=TRUE))), recipient_pk=pk))
-            .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1", dcf_conns[pi2])
-          }
-        } else if (ph == 3) {
-          for (di in 1:2) {
-            pi2 <- 3 - di; pk <- .b64url_to_b64(transport_pks[[dcf_parties[pi2]]])
-            sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-              data = jsonlite::base64_enc(charToRaw(jsonlite::toJSON(
-                list(had2_xma=ph_r[[di]]$had2_xma, had2_ymb=ph_r[[di]]$had2_ymb),
-                auto_unbox=TRUE))), recipient_pk=pk))
-            .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1", dcf_conns[pi2])
-          }
-        }
-      }
+      # REVEAL-FREE SHARE-DOMAIN LINK (F1/F1b fix) — K>=3 SE perturbation.
+      .glm_share_link(
+        family = family, n = n_obs,
+        datasources = datasources, dealer_ci = dcf_conns[2],
+        server_list = dcf_parties, server_names = server_names,
+        y_server = fusion_server, nl = coordinator,
+        transport_pks = transport_pks, session_id = session_id,
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob)
     }
 
     if (isTRUE(weights_active)) {
@@ -730,30 +692,14 @@ NULL
       for (di in seq_along(dcf_parties))
         .dsAgg(datasources[dcf_conns[di]], call(name = "k2IdentityLinkDS", session_id=session_id))
     } else {
-      # F1: fresh DCF mask (fresh r) for this SE-perturbation link evaluation.
-      .regen_dcf_keys()
-      .ot_beaver_prepare_spline(
-        datasources = datasources,
-        party_conns = dcf_conns,
-        party_names = dcf_parties,
-        transport_pks = transport_pks,
-        session_id = session_id,
-        n = n_obs,
-        ring = ring,
-        .dsAgg = .dsAgg,
-        .sendBlob = .sendBlob)
-      for (ph in 1:4) {
-        pr <- list()
-        for (di in 1:2) {
-          r <- .dsAgg(datasources[dcf_conns[di]], call(paste0("k2WideSplinePhase",ph,"DS"),
-            party_id=as.integer(di-1), family=family, num_intervals=num_intervals,
-            frac_bits=frac_bits, ring=ring, session_id=session_id))
-          if (is.list(r)&&length(r)==1) r<-r[[1]]; pr[[di]]<-r
-        }
-        if (ph==1) { .sendBlob(pr[[1]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[2]); .sendBlob(pr[[2]]$dcf_masked,"k2_peer_dcf_masked",dcf_conns[1]) }
-        else if (ph==2) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(and_xma=pr[[di]]$and_xma,and_ymb=pr[[di]]$and_ymb,had1_xma=pr[[di]]$had1_xma,had1_ymb=pr[[di]]$had1_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_beaver_r1",dcf_conns[pi2])} }
-        else if (ph==3) { for(di in 1:2){pi2<-3-di;pk<-.b64url_to_b64(transport_pks[[dcf_parties[pi2]]]);s<-dsVert:::.callMpcTool("transport-encrypt",list(data=jsonlite::base64_enc(charToRaw(jsonlite::toJSON(list(had2_xma=pr[[di]]$had2_xma,had2_ymb=pr[[di]]$had2_ymb),auto_unbox=TRUE))),recipient_pk=pk));.sendBlob(.to_b64url(s$sealed),"k2_peer_had2_r1",dcf_conns[pi2])} }
-      }
+      # REVEAL-FREE SHARE-DOMAIN LINK (F1/F1b fix) — K>=3 SE perturbation.
+      .glm_share_link(
+        family = family, n = n_obs,
+        datasources = datasources, dealer_ci = dcf_conns[2],
+        server_list = dcf_parties, server_names = server_names,
+        y_server = fusion_server, nl = coordinator,
+        transport_pks = transport_pks, session_id = session_id,
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob)
     }
     if (isTRUE(weights_active)) {
       .glm_apply_shared_weight_residual(
