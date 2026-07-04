@@ -554,78 +554,15 @@ print.ds.vertGLMM <- function(x, ...) {
     sigmoid_intervals <- 100L
   }
 
-  dcf <- .dsAgg(datasources[dealer_conn],
-    call(name = "glmRing63GenDcfKeysDS",
-         dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
-         dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
-         family = "sigmoid", n = as.integer(n_obs),
-         frac_bits = frac_bits, num_intervals = sigmoid_intervals,
-         ring = ring, session_id = session_id))
-  if (is.list(dcf) && length(dcf) == 1L) dcf <- dcf[[1L]]
-  .sendBlob(dcf$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[[1L]])
-  .sendBlob(dcf$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[[2L]])
-  for (ci in dcf_conns) {
-    .dsAgg(datasources[ci],
-      call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-  }
-
-  .ot_beaver_prepare_spline(
-    datasources = datasources,
-    party_conns = dcf_conns,
-    party_names = dcf_parties,
-    transport_pks = transport_pks,
-    session_id = session_id,
-    n = n_obs,
-    ring = ring,
-    .dsAgg = .dsAgg,
-    .sendBlob = .sendBlob)
-  for (ph in 1:4) {
-    pr <- vector("list", 2L)
-    for (i in seq_along(dcf_parties)) {
-      r <- .dsAgg(datasources[dcf_conns[[i]]],
-        call(paste0("k2WideSplinePhase", ph, "DS"),
-             party_id = as.integer(i - 1L),
-             family = "binomial",
-             num_intervals = sigmoid_intervals,
-             frac_bits = frac_bits,
-             ring = ring,
-             session_id = session_id))
-      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-      pr[[i]] <- r
-    }
-    if (ph == 1L) {
-      .sendBlob(pr[[1L]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[[2L]])
-      .sendBlob(pr[[2L]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[[1L]])
-    } else if (ph == 2L) {
-      for (i in 1:2) {
-        peer_i <- 3L - i
-        pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
-        payload <- jsonlite::toJSON(list(
-          and_xma = pr[[i]]$and_xma, and_ymb = pr[[i]]$and_ymb,
-          had1_xma = pr[[i]]$had1_xma, had1_ymb = pr[[i]]$had1_ymb),
-          auto_unbox = TRUE)
-        sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-          data = jsonlite::base64_enc(charToRaw(payload)),
-          recipient_pk = pk_b64))
-        .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1",
-                  dcf_conns[[peer_i]])
-      }
-    } else if (ph == 3L) {
-      for (i in 1:2) {
-        peer_i <- 3L - i
-        pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
-        payload <- jsonlite::toJSON(list(
-          had2_xma = pr[[i]]$had2_xma,
-          had2_ymb = pr[[i]]$had2_ymb),
-          auto_unbox = TRUE)
-        sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-          data = jsonlite::base64_enc(charToRaw(payload)),
-          recipient_pk = pk_b64))
-        .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1",
-                  dcf_conns[[peer_i]])
-      }
-    }
-  }
+  # REVEAL-FREE link (F1 fix): k2_eta_share_fp -> secure_mu_share on ring127 shares
+  # (.ring127_sigmoid_round_keyed). dcf_masked relayed 0x; dealer-free.
+  do.call(.ring127_sigmoid_round_keyed, list(
+    in_key = "k2_eta_share_fp", out_key = "secure_mu_share",
+    n = n_obs, datasources = datasources, dealer_ci = dcf_conns[[2L]],
+    server_list = dcf_parties, server_names = server_names,
+    y_server = dcf_parties[[1L]], nl = dcf_parties[[2L]],
+    transport_pks = transport_pks, session_id = session_id,
+    .dsAgg = .dsAgg, .sendBlob = .sendBlob))
 
   peer_i <- if (dcf_parties[[1L]] == coordinator) 2L else 1L
   coord_i <- if (dcf_parties[[1L]] == coordinator) 1L else 2L
@@ -759,78 +696,15 @@ print.ds.vertGLMM <- function(x, ...) {
       softplus_intervals <- 80L
     }
 
-    sp_dcf <- .dsAgg(datasources[dealer_conn],
-      call(name = "glmRing63GenDcfKeysDS",
-           dcf0_pk = transport_pks[[dcf_parties[[1L]]]],
-           dcf1_pk = transport_pks[[dcf_parties[[2L]]]],
-           family = "softplus", n = as.integer(n_obs),
-           frac_bits = frac_bits, num_intervals = softplus_intervals,
-           ring = ring, session_id = session_id))
-    if (is.list(sp_dcf) && length(sp_dcf) == 1L) sp_dcf <- sp_dcf[[1L]]
-    .sendBlob(sp_dcf$dcf_blob_0, "k2_dcf_keys_persistent", dcf_conns[[1L]])
-    .sendBlob(sp_dcf$dcf_blob_1, "k2_dcf_keys_persistent", dcf_conns[[2L]])
-    for (ci in dcf_conns) {
-      .dsAgg(datasources[ci],
-        call(name = "k2StoreDcfKeysPersistentDS", session_id = session_id))
-    }
-
-    .ot_beaver_prepare_spline(
-      datasources = datasources,
-      party_conns = dcf_conns,
-      party_names = dcf_parties,
-      transport_pks = transport_pks,
-      session_id = session_id,
-      n = n_obs,
-      ring = ring,
-      .dsAgg = .dsAgg,
-      .sendBlob = .sendBlob)
-    for (ph in 1:4) {
-      pr <- vector("list", 2L)
-      for (i in seq_along(dcf_parties)) {
-        r <- .dsAgg(datasources[dcf_conns[[i]]],
-          call(paste0("k2WideSplinePhase", ph, "DS"),
-               party_id = as.integer(i - 1L),
-               family = "softplus",
-               num_intervals = softplus_intervals,
-               frac_bits = frac_bits,
-               ring = ring,
-               session_id = session_id))
-        if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-        pr[[i]] <- r
-      }
-      if (ph == 1L) {
-        .sendBlob(pr[[1L]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[[2L]])
-        .sendBlob(pr[[2L]]$dcf_masked, "k2_peer_dcf_masked", dcf_conns[[1L]])
-      } else if (ph == 2L) {
-        for (i in 1:2) {
-          peer_i <- 3L - i
-          pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
-          payload <- jsonlite::toJSON(list(
-            and_xma = pr[[i]]$and_xma, and_ymb = pr[[i]]$and_ymb,
-            had1_xma = pr[[i]]$had1_xma, had1_ymb = pr[[i]]$had1_ymb),
-            auto_unbox = TRUE)
-          sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-            data = jsonlite::base64_enc(charToRaw(payload)),
-            recipient_pk = pk_b64))
-          .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1",
-                    dcf_conns[[peer_i]])
-        }
-      } else if (ph == 3L) {
-        for (i in 1:2) {
-          peer_i <- 3L - i
-          pk_b64 <- .b64url_to_b64(transport_pks[[dcf_parties[[peer_i]]]])
-          payload <- jsonlite::toJSON(list(
-            had2_xma = pr[[i]]$had2_xma,
-            had2_ymb = pr[[i]]$had2_ymb),
-            auto_unbox = TRUE)
-          sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-            data = jsonlite::base64_enc(charToRaw(payload)),
-            recipient_pk = pk_b64))
-          .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1",
-                    dcf_conns[[peer_i]])
-        }
-      }
-    }
+    # REVEAL-FREE link (F1 fix): k2_eta_share_fp -> softplus_share_fp on ring127 shares
+    # (.ring127_softplus_round_keyed). dcf_masked relayed 0x; dealer-free.
+    do.call(.ring127_softplus_round_keyed, list(
+      in_key = "k2_eta_share_fp", out_key = "softplus_share_fp",
+      n = n_obs, datasources = datasources, dealer_ci = dcf_conns[[2L]],
+      server_list = dcf_parties, server_names = server_names,
+      y_server = dcf_parties[[1L]], nl = dcf_parties[[2L]],
+      transport_pks = transport_pks, session_id = session_id,
+      .dsAgg = .dsAgg, .sendBlob = .sendBlob))
 
     .vecmul("k2_y_share_fp_original", "k2_eta_share_fp",
             "glmm_laplace_yeta_share")
