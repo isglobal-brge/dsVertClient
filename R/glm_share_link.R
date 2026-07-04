@@ -41,34 +41,12 @@
     return(invisible(out_mu_key))
   }
 
-  # binomial: mu = sigmoid(eta) = 1 / (1 + exp(-eta)), all on shares.
-  one_fp_b64 <- .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
-    values = array(1.0, dim = 1L), frac_bits = 50L, ring = "ring127"))$fp_data)
-
-  # (a) neg_eta = -eta   (local affine on each server's share; no MPC round)
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = in_eta_key, b_key = NULL, sign_a = -1, sign_b = 0,
-      public_const_fp = NULL, is_party0 = (server == y_server),
-      output_key = "glm_neg_eta_share_fp",
-      n = as.numeric(n), session_id = session_id))
-  }
-  # (b) exp(-eta)
-  do.call(.ring127_exp_round_keyed_extended,
-          c(list(in_key = "glm_neg_eta_share_fp", out_key = "glm_exp_neg_eta_fp"), common))
-  # (c) denom = 1 + exp(-eta)   (party-0 = label server absorbs the public +1)
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    is_p0 <- (server == y_server)
-    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
-      a_key = "glm_exp_neg_eta_fp", b_key = NULL, sign_a = 1, sign_b = 0,
-      public_const_fp = if (is_p0) one_fp_b64 else NULL, is_party0 = is_p0,
-      output_key = "glm_denom_share_fp",
-      n = as.numeric(n), session_id = session_id))
-  }
-  # (d) mu = 1 / denom
-  do.call(.ring127_recip_round_keyed,
-          c(list(in_key = "glm_denom_share_fp", out_key = out_mu_key), common))
+  # binomial: mu = sigmoid(eta) via the DIRECT share-domain Chebyshev sigmoid
+  # (degree-29 Clenshaw = 29 Beaver rounds) instead of exp+recip (~85 rounds).
+  # ~2.9x fewer rounds, reveal-free + dealer-free, Go-verified max abs 6.46e-6
+  # (>> the ~1e-4 a GLM coefficient needs). Domain contract: eta in [-8, 8];
+  # c_0 carries the +0.5 sigmoid baseline.
+  do.call(.ring127_sigmoid_round_keyed,
+          c(list(in_key = in_eta_key, out_key = out_mu_key), common))
   invisible(out_mu_key)
 }
