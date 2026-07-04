@@ -18,3 +18,5 @@
 ^_pkgdown\.yml$
 ^pkgdown$
 ^_archive_vignettes$
+^\.claude$
+^\.claude/
