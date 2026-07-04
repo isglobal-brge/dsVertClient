@@ -55,9 +55,13 @@ NULL
 
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
+  is_gaussian <- (family == "gaussian")
+  # Non-Gaussian link is now the reveal-free share-domain Chebyshev
+  # (exp127/recip127), which is Ring127/frac50 only. Force it. The Gaussian
+  # identity link stays Ring63 (k2IdentityLinkDS, unchanged).
+  if (!is_gaussian) ring <- 127L
   ring_tag <- if (ring == 127L) "ring127" else "ring63"
   frac_bits <- if (ring == 127L) 50L else 20L
-  is_gaussian <- (family == "gaussian")
   default_intervals <- if (family == "poisson") 100L else if (family == "binomial") 100L else 50L
   opt_name <- paste0("dsvert.glm_num_intervals_", family)
   num_intervals <- suppressWarnings(as.integer(
@@ -229,83 +233,21 @@ NULL
     } else {
       # F1: fresh DCF mask (fresh r) for this link evaluation — prevents the
       # client from differencing masked eta across iterations / SE perturbations.
-      .regen_dcf_keys()
-      .ot_beaver_prepare_spline(
-        datasources = datasources,
-        party_conns = c(coordinator_conn, nl_conn),
-        party_names = c(coordinator, nl),
-        transport_pks = transport_pks,
-        session_id = session_id,
-        n = n_obs,
-        ring = ring,
-        .dsAgg = .dsAgg,
-        .sendBlob = .sendBlob)
-
-      ph1 <- list()
-      for (server in server_list) {
-        ci <- which(server_names == server); is_coord <- (server == coordinator)
-        r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase1DS",
-          party_id = if(is_coord) 0L else 1L, family = family,
-          num_intervals = num_intervals, frac_bits = frac_bits,
-          ring = ring,
-          session_id = session_id))
-        if (is.list(r) && length(r) == 1) r <- r[[1]]; ph1[[server]] <- r
-      }
-      .sendBlob(ph1[[coordinator]]$dcf_masked, "k2_peer_dcf_masked", nl_conn)
-      .sendBlob(ph1[[nl]]$dcf_masked, "k2_peer_dcf_masked", coordinator_conn)
-
-      ph2 <- list()
-      for (server in server_list) {
-        ci <- which(server_names == server); is_coord <- (server == coordinator)
-        r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase2DS",
-          party_id = if(is_coord) 0L else 1L, family = family,
-          num_intervals = num_intervals, frac_bits = frac_bits,
-          ring = ring,
-          session_id = session_id))
-        if (is.list(r) && length(r) == 1) r <- r[[1]]; ph2[[server]] <- r
-      }
-      for (server in server_list) {
-        peer <- setdiff(server_list, server); peer_ci <- which(server_names == peer)
-        pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
-        r1_json <- jsonlite::toJSON(list(
-          and_xma=ph2[[server]]$and_xma, and_ymb=ph2[[server]]$and_ymb,
-          had1_xma=ph2[[server]]$had1_xma, had1_ymb=ph2[[server]]$had1_ymb),
-          auto_unbox=TRUE)
-        sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-          data=jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk=pk_b64))
-        .sendBlob(.to_b64url(sealed$sealed), "k2_peer_beaver_r1", peer_ci)
-      }
-
-      ph3 <- list()
-      for (server in server_list) {
-        ci <- which(server_names == server); is_coord <- (server == coordinator)
-        r <- .dsAgg(datasources[ci], call(name = "k2WideSplinePhase3DS",
-          party_id = if(is_coord) 0L else 1L, family = family,
-          num_intervals = num_intervals, frac_bits = frac_bits,
-          ring = ring,
-          session_id = session_id))
-        if (is.list(r) && length(r) == 1) r <- r[[1]]; ph3[[server]] <- r
-      }
-      for (server in server_list) {
-        peer <- setdiff(server_list, server); peer_ci <- which(server_names == peer)
-        pk_b64 <- .b64url_to_b64(transport_pks[[peer]])
-        r1_json <- jsonlite::toJSON(list(
-          had2_xma=ph3[[server]]$had2_xma, had2_ymb=ph3[[server]]$had2_ymb),
-          auto_unbox=TRUE)
-        sealed <- dsVert:::.callMpcTool("transport-encrypt", list(
-          data=jsonlite::base64_enc(charToRaw(r1_json)), recipient_pk=pk_b64))
-        .sendBlob(.to_b64url(sealed$sealed), "k2_peer_had2_r1", peer_ci)
-      }
-
-      for (server in server_list) {
-        ci <- which(server_names == server); is_coord <- (server == coordinator)
-        .dsAgg(datasources[ci], call(name = "k2WideSplinePhase4DS",
-          party_id = if(is_coord) 0L else 1L, family = family,
-          num_intervals = num_intervals, frac_bits = frac_bits,
-          ring = ring,
-          session_id = session_id))
-      }
-    }  # close else (non-Gaussian wide spline)
+      # === REVEAL-FREE SHARE-DOMAIN LINK (F1/F1b fix) ===
+      # Produce secure_mu_share from k2_eta_share_fp entirely on the additive
+      # shares (exp127 + recip127 Chebyshev, Go-verified to max abs 3.45e-14),
+      # with ZERO reveal of any per-observation value and dealer-free triples
+      # (IKNP). Replaces the DCF wide-spline that relayed masked eta. Requires
+      # Ring127 (forced for non-Gaussian at setup); the label server (coordinator)
+      # is party-0.
+      .glm_share_link(
+        family = family, n = n_obs,
+        datasources = datasources, dealer_ci = nl_conn,
+        server_list = server_list, server_names = server_names,
+        y_server = coordinator, nl = nl,
+        transport_pks = transport_pks, session_id = session_id,
+        .dsAgg = .dsAgg, .sendBlob = .sendBlob)
+    }  # close else (non-Gaussian share-domain link)
 
     # === Optional: apply per-patient weights before gradient ===
     # Weights are secret-shared between the two DCF parties. One Beaver
