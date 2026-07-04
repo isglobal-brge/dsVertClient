@@ -226,13 +226,9 @@
     .dsAgg = .dsAgg,
     .sendBlob = .sendBlob,
     beaver_key = beaver_key)
-  if (identical(mode, "dealer")) {
-    return(.iknp_policy_retry(.dealer_prepare_vecmul(
-      datasources = datasources, party_conns = party_conns,
-      party_names = party_names, transport_pks = transport_pks,
-      session_id = session_id, n = n, ring = ring, .dsAgg = .dsAgg,
-      .sendBlob = .sendBlob, dealer_conn = dealer_conn), iknp))
-  }
+  # DEALER MODE REMOVED (F2/F17): a participating-party dealer reconstructs the
+  # peer's operands from the online openings d=x-a, e=y-b. IKNP OT-extension is
+  # now the SOLE, dealer-free Beaver backend — no party ever holds a full triple.
   iknp()
 }
 
@@ -261,14 +257,8 @@
     .dsAgg = .dsAgg,
     .sendBlob = .sendBlob,
     beaver_key = beaver_key)
-  if (identical(mode, "dealer")) {
-    return(.iknp_policy_retry(.dealer_prepare_grad(
-      datasources = datasources, party_conns = party_conns,
-      party_names = party_names, transport_pks = transport_pks,
-      session_id = session_id, n = n, p = p, ring = ring, .dsAgg = .dsAgg,
-      .sendBlob = .sendBlob, dealer_conn = dealer_conn,
-      grad_triple_key = grad_triple_key), iknp))
-  }
+  # DEALER MODE REMOVED (F2/F17): IKNP OT-extension is the sole dealer-free
+  # Beaver backend — no party ever holds a full triple.
   iknp()
 }
 
@@ -304,13 +294,8 @@
     }
     invisible(beaver_key)
   }
-  if (identical(mode, "dealer")) {
-    return(.iknp_policy_retry(.dealer_prepare_spline(
-      datasources = datasources, party_conns = party_conns,
-      party_names = party_names, transport_pks = transport_pks,
-      session_id = session_id, n = n, ring = ring, .dsAgg = .dsAgg,
-      .sendBlob = .sendBlob, dealer_conn = dealer_conn), iknp))
-  }
+  # DEALER MODE REMOVED (F2/F17): IKNP OT-extension is the sole dealer-free
+  # Beaver backend — no party ever holds a full triple.
   iknp()
 }
 
