@@ -167,6 +167,96 @@
   invisible(NULL)
 }
 
+# Coefficient cache for the direct-sigmoid Chebyshev primitive.
+.ring127_sigmoid_coef_cache <- new.env(parent = emptyenv())
+
+# Ring127 direct share-domain sigmoid(x) = 1/(1+exp(-x)) via a single
+# Chebyshev Clenshaw pass on the shares (SPEED primitive, 2026-07-03).
+# Structural clone of .ring127_exp_round_keyed: reveal-free (relays
+# dcf_masked ZERO times), dealer-free (only .ring127_vecmul = IKNP), and
+# env-agnostic (is_party0 derived per server from `server == y_server`).
+# Replaces exp127+recip127 (~85 Beaver rounds) with `degree` (=29) rounds
+# for the GLM logistic link. Domain contract: eta in [-8, 8]; c_0 carries
+# the +0.5 sigmoid baseline (no extra affine term). Does NOT touch the
+# high-accuracy exp127/recip127 used by the NB/ordinal/multinom/Cox family.
+.ring127_sigmoid_round_keyed <- function(in_key, out_key, n,
+                                         datasources, dealer_ci, server_list,
+                                         server_names, y_server, nl,
+                                         transport_pks, session_id,
+                                         .dsAgg, .sendBlob) {
+  n_int <- as.integer(n)
+  if (is.null(.ring127_sigmoid_coef_cache$coef_res)) {
+    .ring127_sigmoid_coef_cache$coef_res <- dsVert:::.callMpcTool(
+      "k2-sigmoid127-get-coeffs", list(frac_bits = 50))
+  }
+  coef_res <- .ring127_sigmoid_coef_cache$coef_res
+  coef_res_one_over_a <- .to_b64url(coef_res$one_over_a)
+  degree <- as.integer(coef_res$degree)
+  all_coeffs_raw <- jsonlite::base64_dec(coef_res$coeffs)
+  c_b64 <- vapply(seq_len(degree + 1L), function(idx) {
+    s <- (idx - 1L) * 16L + 1L; e <- s + 15L
+    .to_b64url(jsonlite::base64_enc(all_coeffs_raw[s:e]))
+  }, character(1))
+
+  tag <- make.names(out_key, unique = TRUE)
+  tmp_y    <- paste0("__r127_sgy_",    tag)
+  tmp_twoY <- paste0("__r127_sgtwoY_", tag)
+  tmp_bB   <- paste0("__r127_sgbB_",   tag)
+  tmp_bA   <- paste0("__r127_sgbA_",   tag)
+  tmp_res  <- paste0("__r127_sgtmp_",  tag)
+
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == y_server)
+    .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
+      in_key = in_key, scalar_fp = coef_res_one_over_a,
+      output_key = tmp_y, n = as.numeric(n_int), session_id = session_id,
+      is_party0 = is_coord))
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
+      a_key = tmp_y, b_key = tmp_y, sign_a = 1, sign_b = 1,
+      public_const_fp = NULL, is_party0 = is_coord,
+      output_key = tmp_twoY, n = as.numeric(n_int), session_id = session_id))
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
+      a_key = NULL, b_key = NULL, sign_a = 0, sign_b = 0,
+      public_const_fp = c_b64[degree + 1L], is_party0 = is_coord,
+      output_key = tmp_bB, n = as.numeric(n_int), session_id = session_id))
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
+      a_key = NULL, b_key = NULL, sign_a = 0, sign_b = 0,
+      public_const_fp = NULL, is_party0 = is_coord,
+      output_key = tmp_bA, n = as.numeric(n_int), session_id = session_id))
+  }
+
+  slot_B <- tmp_bB; slot_A <- tmp_bA
+  for (k in seq.int(degree - 1L, 1L)) {
+    .ring127_vecmul(tmp_twoY, slot_B, tmp_res, n_int,
+                    datasources, dealer_ci, server_list, server_names,
+                    y_server, nl, transport_pks, session_id,
+                    .dsAgg, .sendBlob)
+    for (server in server_list) {
+      ci <- which(server_names == server)
+      is_coord <- (server == y_server)
+      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
+        a_key = tmp_res, b_key = slot_A, sign_a = 1, sign_b = -1,
+        public_const_fp = c_b64[k + 1L], is_party0 = is_coord,
+        output_key = slot_A, n = as.numeric(n_int), session_id = session_id))
+    }
+    swap <- slot_A; slot_A <- slot_B; slot_B <- swap
+  }
+  .ring127_vecmul(tmp_y, slot_B, tmp_res, n_int,
+                  datasources, dealer_ci, server_list, server_names,
+                  y_server, nl, transport_pks, session_id,
+                  .dsAgg, .sendBlob)
+  for (server in server_list) {
+    ci <- which(server_names == server)
+    is_coord <- (server == y_server)
+    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
+      a_key = tmp_res, b_key = slot_A, sign_a = 1, sign_b = -1,
+      public_const_fp = c_b64[1L], is_party0 = is_coord,
+      output_key = out_key, n = as.numeric(n_int), session_id = session_id))
+  }
+  invisible(NULL)
+}
+
 # Ring127 spline-less 1/x via Chebyshev-Horner initial guess + 6 NR
 # iterations. Mirror of ds.vertCox.R's .recip127_round but keyed I/O.
 .ring127_recip_round_keyed <- function(in_key, out_key, n,
