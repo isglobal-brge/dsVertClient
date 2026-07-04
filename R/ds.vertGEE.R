@@ -146,6 +146,13 @@ ds.vertGEE <- function(formula, data = NULL,
   if (!(ring_use %in% c(63L, 127L))) {
     stop("ring must be 63 or 127", call. = FALSE)
   }
+  # The non-Gaussian link is the reveal-free share-domain Chebyshev (sigmoid127
+  # / exp127), which is Ring127-only. Promote ALL non-Gaussian GEE fits to
+  # Ring127 (was previously only exchangeable/ar1). Gaussian identity stays Ring63.
+  if (family %in% c("binomial", "poisson") && ring_use != 127L) {
+    if (verbose) message("[ds.vertGEE] ", family, " promoted to Ring127 (share-domain link)")
+    ring_use <- 127L
+  }
   working_max_iter_use <- as.integer(working_max_iter %||% max_iter)
   if (!is.finite(working_max_iter_use) || working_max_iter_use < 1L) {
     stop("working_max_iter must be a positive integer", call. = FALSE)
