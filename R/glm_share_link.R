@@ -18,11 +18,12 @@
 #'   families). The Gaussian identity link stays Ring63 and does not use this.
 #'
 #'   Sigmoid domain: for \code{eta in [-8,8]}, \code{denom = 1+exp(-eta)} lies in
-#'   [1.0003, 2982] within the recip domain [1,3000]. Near-separable fits with
-#'   |eta|>8 need a reveal-free share-domain clamp on eta first (TODO: via a
-#'   secure comparison whose result stays shared — NOT a reveal).
+#'   \code{[1.0003, 2982]} within the recip domain \code{[1,3000]}. Near-separable
+#'   fits with |eta|>8 need a reveal-free share-domain clamp on eta first (via a
+#'   secure comparison whose result stays shared, not a reveal).
 #'
 #' @keywords internal
+#' @noRd
 .glm_share_link <- function(family, n, datasources, dealer_ci, server_list,
                             server_names, y_server, nl, transport_pks, session_id,
                             .dsAgg, .sendBlob,
