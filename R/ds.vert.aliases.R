@@ -3,8 +3,24 @@
 #' These wrappers provide a compact, formula-style public surface while keeping
 #' the historical CamelCase functions as compatibility backends. Wrappers that
 #' have distinct K=2 and K>=3 implementations dispatch from the number of active
-#' DataSHIELD connections.
+#' DataSHIELD connections. Every argument is forwarded to the corresponding
+#' \code{ds.vert*} backend, which documents it in full.
 #'
+#' @param data_name,data,formula,datasources Aligned data-frame symbol (or model
+#'   \code{formula}) and the DataSHIELD connections.
+#' @param id_col,newobj Record-identifier column and output symbol for alignment.
+#' @param variables,var1,var2 Column selections for descriptive / bivariate routes.
+#' @param cluster_col Grouping column for the mixed-model routes.
+#' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
+#'   estimator/route selector, fixed-point ring, and progress flag.
+#' @param max_iter,inner_iter,max_outer,tol Iteration caps and convergence
+#'   tolerance for the iterative fits.
+#' @param outcome_formula,propensity_formula Outcome and propensity models (IPW).
+#' @param impute_columns,m Columns to impute and number of imputations (MI).
+#' @param lambda,lambda_1,lambda_grid Penalty or penalty grid for the LASSO routes.
+#' @param fit,reduced,full,parm,level,null,K Inference-helper inputs (fitted
+#'   object, nested models, parameter, confidence level, null value, class count).
+#' @param ... Further arguments forwarded to the backend.
 #' @name ds.vert.aliases
 NULL
 
