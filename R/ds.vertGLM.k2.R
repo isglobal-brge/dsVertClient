@@ -72,12 +72,32 @@ NULL
     num_intervals <- default_intervals
   }
   if (is.null(lambda)) lambda <- 1e-4
+  # A gaussian identity-link fit is a single weighted-least-squares / Gram
+  # solve (beta = (X'X)^-1 X'y), so it needs no iteration. Take the one-shot
+  # path -- reusing the exact LMM closed-form Gram machinery -- unless the fit
+  # needs the iterative loop (weights, an intercept-free model, a warm start,
+  # or a gradient-only call). Escape hatch: options(dsvert.gaussian_oneshot=FALSE).
+  use_oneshot <- is_gaussian && !isTRUE(no_intercept) &&
+    !isTRUE(weights_active) && !isTRUE(gradient_only) && is.null(start) &&
+    isTRUE(getOption("dsvert.gaussian_oneshot", TRUE))
   if (verbose) {
-    if (is_gaussian) {
+    if (use_oneshot) {
+      message("  Gaussian one-shot: X^T X + X^T y via Beaver Gram, direct solve")
+    } else if (is_gaussian) {
       message("  L-BFGS: gaussian identity link, constant Fisher (2 rounds/iter)")
     } else {
       message(sprintf("  L-BFGS: %s, %d-interval spline (6 rounds/iter, no Fisher)", family, num_intervals))
     }
+  }
+  if (use_oneshot) {
+    return(.k2_gaussian_oneshot(
+      datasources = datasources, server_names = server_names,
+      coordinator = coordinator, nl = nl,
+      x_vars = x_vars, y_var = y_var, std_data = std_data,
+      transport_pks = transport_pks, session_id = session_id,
+      lambda = lambda, n_obs = n_obs,
+      compute_se = compute_se, compute_deviance = compute_deviance,
+      verbose = verbose))
   }
 
   p_coord <- length(x_vars[[coordinator]])
@@ -662,4 +682,56 @@ NULL
        iterations=final_iter, max_diff=max_diff, deviance=k2_deviance,
        inv_hessian=inv_hessian,
        gradient_std=last_gradient)
+}
+
+#' @keywords internal
+# One-shot gaussian GLM: assemble the standardized normal equations
+# (X'X, X'y, y'y) with the exact LMM closed-form Gram machinery run at a zero
+# variance-ratio (a single constant cluster), solve beta = (X'X)^-1 X'y on the
+# coordinator, and return the same loop-result contract as the iterative path so
+# ds.vertGLM's standardization / SE / deviance assembly is unchanged. The Fisher
+# information handed back as `raw_hessian` = X'X/n + lambda*I is exactly what the
+# SE step expects (it strips lambda, inverts, and scales by residual variance,
+# reproducing lm() inference). Round count is a public function of the feature
+# partition only -- one deterministic solve, no data-dependent iteration.
+.k2_gaussian_oneshot <- function(datasources, server_names, coordinator, nl,
+                                 x_vars, y_var, std_data, transport_pks,
+                                 session_id, lambda, n_obs,
+                                 compute_se = TRUE, compute_deviance = TRUE,
+                                 verbose = FALSE) {
+  if (is.null(lambda)) lambda <- 1e-4
+  ci_c <- which(server_names == coordinator)
+  ci_n <- which(server_names == nl)
+  # Seed one constant cluster on both parties so the LMM Gram driver's
+  # zero-variance-ratio path degenerates to the ordinary normal equations.
+  for (ci in list(ci_c, ci_n))
+    DSI::datashield.aggregate(datasources[ci],
+      call(name = "k2SeedSingleClusterDS", data_name = std_data,
+           session_id = session_id))
+  cf <- .ds_vertLMM_closed_form(
+    conns = datasources, server_names = server_names,
+    y_srv = coordinator, peer_srv = nl,
+    data = std_data, y_var = y_var,
+    x_ysrv = x_vars[[coordinator]], x_peer = x_vars[[nl]],
+    lambda_i = 0.0, transport_pks = transport_pks,
+    session_id = session_id, verbose = verbose,
+    share_scale = 8.0, standardize = FALSE, ring = "ring63")
+  nm <- names(cf$coefficients)
+  int_std <- as.numeric(cf$coefficients[["(Intercept)"]])
+  betas <- list()
+  betas[[coordinator]] <- as.numeric(cf$coefficients[x_vars[[coordinator]]])
+  betas[[nl]]          <- as.numeric(cf$coefficients[x_vars[[nl]]])
+  dev_std <- if (isTRUE(compute_deviance))
+    as.numeric(cf$yty) - sum(as.numeric(cf$coefficients) *
+                             as.numeric(cf$Xty[nm]))
+  else NA_real_
+  inv_hessian <- list()
+  if (isTRUE(compute_se)) {
+    H_raw <- as.matrix(cf$XtX[nm, nm]) / n_obs + lambda * diag(length(nm))
+    dimnames(H_raw) <- list(nm, nm)
+    attr(inv_hessian, "raw_hessian") <- H_raw
+  }
+  list(betas = betas, intercept = int_std, converged = TRUE,
+       iterations = 1L, max_diff = 0.0, deviance = dev_std,
+       inv_hessian = inv_hessian, gradient_std = NULL)
 }
