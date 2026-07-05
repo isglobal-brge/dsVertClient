@@ -5,7 +5,7 @@
 
 ## Overview
 
-**dsVertClient** provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols (ECDH-PSI, Ring63 / Ring127 Beaver MPC, DCF threshold comparison for small-cell suppression, negotiated Beaver preprocessing, X25519 + AES-256-GCM transport, Ed25519 identity verification) run transparently.
+**dsVertClient** provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols (ECDH-PSI, Ring63 / Ring127 Beaver MPC, DCF threshold comparison for small-cell suppression, dealer-free IKNP OT-extension Beaver preprocessing, X25519 + AES-256-GCM transport, Ed25519 identity verification) run transparently.
 
 Pair with the server-side companion package [**dsVert**](https://github.com/isglobal-brge/dsVert).
 
@@ -53,7 +53,7 @@ DSI::datashield.logout(conns)
 | **Negative binomial** | `ds.vertNBFullRegTheta(variant = "full_reg_nd")` (default share-domain full-reg θ), `ds.vertNB()` / `ds.vertNBMoMTheta()` for lighter scalar-theta variants |
 | **Multinomial** | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` (joint softmax Newton); warm OVR is internal initialisation only |
 | **Ordinal (proportional odds)** | `ds.vertOrdinal()` / `ds.vertOrdinalJointNewton()` (joint proportional-odds Newton); warm cumulative-binomial is internal initialisation only |
-| **Mixed models** | `ds.vertLMM()` (REML closed-form, K=2; random intercept + slopes), `ds.vertLMM.k3()` (REML 1-D profile, K>=3), `ds.vertGEE()` (sandwich SE, `binomial_sigmoid_intervals`), `ds.vertGLMM()` (binomial GLMM-PQL), `ds.vertGLMMLaplace()` / `ds.vert.glmer()` (binomial GLMM Laplace) |
+| **Mixed models** | `ds.vertLMM()` (dispatches on K: exact REML closed-form with random intercept + slopes at K=2, variance-ratio profile at K>=3), `ds.vertGEE()` (sandwich SE, `binomial_sigmoid_intervals`), `ds.vertGLMM()` (binomial GLMM-PQL), `ds.vertGLMMLaplace()` / `ds.vert.glmer()` (binomial GLMM Laplace) |
 | **Causal / robustness** | `ds.vertIPW()` (propensity fit + protected weighted GLM using a server-side IPW column), `ds.vertMI()` (multiple imputation + Rubin pooling) |
 | **Penalised regression** | `ds.vertLASSO()`, `ds.vertLASSO1Step()`, `ds.vertLASSOIter()` (Gaussian/binomial/Poisson standardized L1), `ds.vertLASSOCV()` (AIC / BIC / EBIC selector), `ds.vertLASSOProximal()` |
 
@@ -80,7 +80,7 @@ Deviance: 22.09
 | Negative binomial | `ds.vertNBFullRegTheta(variant = "full_reg_nd")`; iid/MoM scalar-theta variants | same full-reg ND route; iid/MoM scalar-theta variants | disclosive `variant = "full_reg"` removed |
 | Multinomial | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` | same joint softmax route | warm / OVR final-estimator route removed from the exported API |
 | Ordinal | `ds.vertOrdinal()` / `ds.vertOrdinalJointNewton()` | same proportional-odds route | warm final-estimator and patient-level joint reconstruction routes removed from the exported API |
-| LMM | `ds.vertLMM()` K=2 closed form | `ds.vertLMM.k3()` REML 1-D profile | direct client-supplied cluster-vector helper is not product |
+| LMM | `ds.vertLMM()` K=2 closed form | `ds.vertLMM()` dispatches to the K>=3 variance-ratio profile (`ds.vertLMM.k3()` deprecated) | direct client-supplied cluster-vector helper is not product |
 | GEE | `ds.vertGEE()` exchangeable / guarded AR1 | same route | unguarded order metadata not accepted |
 | GLMM | `ds.vertGLMM()` PQL and `ds.vertGLMMLaplace()` / `ds.vert.glmer()` Laplace | same PQL and Laplace routes | legacy EM and patient-level BLUP/probability routes removed |
 | IPW / MI / LASSO / Cor / PCA / Chisq / Desc | product wrappers | same product wrappers | small-cell / high-dimensional diagnostics gated |
@@ -103,30 +103,24 @@ Current coverage:
 - 38 route-level validation rows.
 - All rendered rows pass the declared numerical and disclosure criteria.
 
-Additional Beaver-profile validation vignettes run selected K=2 routes twice,
-once with `dealer` preprocessing and once with `iknp` preprocessing. The
-current representative profile checks all pass:
+Additional Beaver-profile validation vignettes run selected K=2 routes under
+the IKNP OT-extension backend and compare against the centralized R reference.
+The current representative checks all pass:
 
-| Route | Dealer observed | IKNP observed | Profile delta | Tolerance |
-|---|---:|---:|---:|---:|
-| Correlation | `1.2441795e-05` | `1.2441795e-05` | `0e+00` | `1e-04` |
-| GLM | `6.2726772e-05` | `6.1290240e-05` | `1.4365328e-06` | `1e-03` |
-| GEE | `1.7860961e-04` | `6.0821320e-05` | `1.1778829e-04` | `1e-02` |
-| Cox PH | `4.8702002e-05` | `4.8702002e-05` | `3.3861802e-15` | `1e-03` |
-
-The backend choice changes preprocessing cost; it does not change the
-statistical target of the route.
+| Route | IKNP observed | Tolerance |
+|---|---:|---:|
+| Correlation | `1.2441795e-05` | `1e-04` |
+| GLM | `6.1290240e-05` | `1e-03` |
+| GEE | `6.0821320e-05` | `1e-02` |
+| Cox PH | `4.8702002e-05` | `1e-03` |
 
 ## Security
 
 - **No product observation-level disclosure**: client sees only model-scale
   aggregates returned by the registered server methods
-- **Negotiated Beaver preprocessing**: `options(dsvert.beaver_preprocessing = "auto")`
-  uses the efficient dealer backend when all participating servers allow it.
-  `options(dsvert.beaver_preprocessing = "iknp")` (or `"ot"`) requests the
-  stronger IKNP OT-extension backend. If any server policy requires IKNP,
-  `auto` and explicit `dealer` requests are raised to IKNP; if no common
-  backend is available, the run fails closed.
+- **Dealer-free Beaver preprocessing**: IKNP OT-extension is the sole Beaver
+  preprocessing backend. Trusted-dealer mode has been removed because a
+  participating-party dealer can reconstruct peer operands.
 - **Domain-separated IKNP reuse**: IKNP base-OT state is reused within a
   DataSHIELD session per sender/receiver/ring tuple, while every multiplication
   batch receives a distinct extension transcript key.
@@ -135,11 +129,9 @@ statistical target of the route.
   weighted profile fits. Use
   `options(dsvert.lmm_k3.profile_mode = "profile")` for the exhaustive
   profile route.
-- **Threat-model profiles**: dealer mode matches the standard governed
-  DataSHIELD setting with known semi-honest institutional peers and lower
-  runtime cost. IKNP mode removes the privileged preprocessing dealer for
-  deployments that require stronger inter-institutional protection; it changes
-  preprocessing cost, not the online estimator target.
+- **Dealer-free threat model**: removing the privileged preprocessing dealer
+  means no participating server ever holds an unsplit Beaver triple, so no
+  single server can reconstruct a peer's operands from preprocessing.
 - **Transport encryption**: X25519 + AES-256-GCM between servers
 - **Identity verification**: Ed25519 signed peer transport keys (`dsvert.require_trusted_peers`)
 - **Ring**: Ring63 (frac_bits = 20) and Ring127 (frac_bits = 50), selected by
@@ -171,7 +163,3 @@ Requires the server-side package [dsVert](https://github.com/isglobal-brge/dsVer
 ## License
 
 MIT - see [LICENSE](LICENSE.md).
-
-## Citation
-
-See `paper/jbhi_dsvert.tex` (IEEE J-BHI submission r2.5) for the full validation table, theoretical bounds, and disclosure ledger.

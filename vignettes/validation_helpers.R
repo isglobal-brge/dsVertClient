@@ -168,21 +168,6 @@ display_validation <- function(rows) {
   knitr::kable(out)
 }
 
-display_profile_validation <- function(rows) {
-  keep <- c("k_mode", "function_route", "observed", "tolerance",
-            "profile_delta", "runtime_s", "runtime_ratio_vs_dealer",
-            "status")
-  out <- rows[, keep, drop = FALSE]
-  out$observed <- format(out$observed, scientific = TRUE, digits = 8)
-  out$tolerance <- format(out$tolerance, scientific = TRUE, digits = 8)
-  out$profile_delta <- format(out$profile_delta, scientific = TRUE,
-                              digits = 8)
-  out$runtime_s <- format(round(out$runtime_s, 3), nsmall = 3)
-  out$runtime_ratio_vs_dealer <- format(
-    round(out$runtime_ratio_vs_dealer, 2), nsmall = 2)
-  knitr::kable(out)
-}
-
 run_validation <- function(method_id, force = getOption(
   "dsvert.validation.force", validation_force_refresh()), trace = FALSE) {
   if (isTRUE(trace)) {

@@ -172,6 +172,15 @@ ds.vertGEE <- function(formula, data = NULL,
     ring_use <- 127L
   }
 
+  # The Stage 2 secure sandwich reuses this retained session's per-observation
+  # feature shares (k2_x_share_fp) to recompute eta. The gaussian one-shot Gram
+  # fast path returns before input sharing, so those shares would be absent --
+  # force the iterative fit here so the sandwich has the per-observation shares
+  # it needs. (No-op for binomial/poisson, which never take the one-shot path.)
+  .gee_oneshot_prev <- getOption("dsvert.gaussian_oneshot", TRUE)
+  options(dsvert.gaussian_oneshot = FALSE)
+  on.exit(options(dsvert.gaussian_oneshot = .gee_oneshot_prev), add = TRUE)
+
   # Stage 1: ordinary fit -> betahat, Cov_model (bread).
   if (verbose) message("[ds.vertGEE] Stage 1: ds.vertGLM point estimate")
   fit <- ds.vertGLM(formula = formula, data = data,
@@ -905,6 +914,7 @@ ds.vertGEE <- function(formula, data = NULL,
           call(name = "dsvertGEERestoreFeatureShapeDS",
                p_own = as.integer(length(x_vars[[srv]])),
                p_peer = as.integer(length(x_vars[[setdiff(dcf_parties, srv)]])),
+               n = n_obs,
                session_id = session_id))
         .dsAgg(datasources[dcf_conns[[i]]],
           call(name = "k2ComputeEtaShareDS",
@@ -933,6 +943,7 @@ ds.vertGEE <- function(formula, data = NULL,
           call(name = "dsvertGEERestoreFeatureShapeDS",
                p_own = as.integer(length(x_vars[[srv]])),
                p_peer = as.integer(p_peer),
+               n = n_obs,
                session_id = session_id))
         b_coord <- as.numeric(beta_std[x_vars[[coordinator]]])
         if (is_coord) {
@@ -1464,6 +1475,7 @@ ds.vertGEE <- function(formula, data = NULL,
         call(name = "dsvertGEERestoreFeatureShapeDS",
              p_own = as.integer(length(x_vars[[srv]])),
              p_peer = as.integer(length(x_vars[[setdiff(dcf_parties, srv)]])),
+             n = n_obs,
              session_id = session_id))
       .dsAgg(datasources[dcf_conns[[i]]],
         call(name = "k2ComputeEtaShareDS",
@@ -1496,6 +1508,7 @@ ds.vertGEE <- function(formula, data = NULL,
         call(name = "dsvertGEERestoreFeatureShapeDS",
              p_own = as.integer(length(x_vars[[srv]])),
              p_peer = as.integer(p_peer),
+             n = n_obs,
              session_id = session_id))
       b_coord <- as.numeric(std$beta[x_vars[[coordinator]]])
       if (is_coord) {
@@ -1912,6 +1925,7 @@ ds.vertGEE <- function(formula, data = NULL,
           call(name = "dsvertGEERestoreFeatureShapeDS",
                p_own = as.integer(length(x_vars[[srv]])),
                p_peer = as.integer(length(x_vars[[setdiff(dcf_parties, srv)]])),
+               n = n_obs,
                session_id = session_id))
         .dsAgg(datasources[dcf_conns[[i]]],
           call(name = "k2ComputeEtaShareDS",
@@ -1940,6 +1954,7 @@ ds.vertGEE <- function(formula, data = NULL,
           call(name = "dsvertGEERestoreFeatureShapeDS",
                p_own = as.integer(length(x_vars[[srv]])),
                p_peer = as.integer(p_peer),
+               n = n_obs,
                session_id = session_id))
         b_coord <- as.numeric(beta_std[x_vars[[coordinator]]])
         if (is_coord) {
@@ -2821,6 +2836,7 @@ ds.vertGEE <- function(formula, data = NULL,
         call(name = "dsvertGEERestoreFeatureShapeDS",
              p_own = as.integer(length(x_vars[[srv]])),
              p_peer = as.integer(length(x_vars[[setdiff(dcf_parties, srv)]])),
+             n = n_obs,
              session_id = session_id))
       .dsAgg(datasources[dcf_conns[[i]]],
         call(name = "k2ComputeEtaShareDS",
@@ -2851,6 +2867,7 @@ ds.vertGEE <- function(formula, data = NULL,
         call(name = "dsvertGEERestoreFeatureShapeDS",
              p_own = as.integer(length(x_vars[[srv]])),
              p_peer = as.integer(p_peer),
+             n = n_obs,
              session_id = session_id))
       b_coord <- as.numeric(std$beta[x_vars[[coordinator]]])
       if (is_coord) {

@@ -162,7 +162,7 @@ between 2 DCF parties. Non-DCF servers contribute shares.
 \item Compute eta shares (Ring63 matrix-vector)
 \item DCF wide spline for sigmoid/exp (binomial/Poisson) or
 identity link (Gaussian)
-\item Beaver matvec for gradient (negotiated dealer or IKNP triple shares)
+\item Beaver matvec for gradient (IKNP OT-extension triple shares)
 \item Client aggregates Ring63 shares -> p gradient scalars
 \item L-BFGS quasi-Newton update
 }
@@ -174,10 +174,10 @@ identity link (Gaussian)
 
 \subsection{Security}{
 No observation-level data is disclosed. The client sees only p-dimensional
-aggregate gradients per iteration. Beaver preprocessing is negotiated from
-server policy: dealer mode for governed institutional peers, or IKNP
-OT-extension when a strengthened no-trusted-dealer profile is requested or
-required. The client never sees triple shares.
+aggregate gradients per iteration. Beaver preprocessing uses the dealer-free
+IKNP OT-extension backend: the two computation parties derive their triple
+shares interactively, so neither ever holds an unsplit triple. The client
+never sees triple shares.
 }
 }
 \examples{
@@ -203,9 +203,6 @@ model <- ds.vertGLM("DA", "npreg",
 \references{
 van Kesteren, E.J. et al. (2019). Privacy-preserving generalized linear
 models using distributed block coordinate descent. arXiv:1911.03183.
-
-Mouchet, C. et al. (2021). "Multiparty Homomorphic Encryption from
-Ring-Learning-With-Errors". \emph{Proceedings on Privacy Enhancing Technologies}.
 }
 \seealso{
 \code{\link{ds.vertCor}} for correlation analysis,

@@ -102,3 +102,10 @@ articles:
   - validation_multinomial_kge3
   - validation_ordinal_k2
   - validation_ordinal_kge3
+- title: IKNP backend evidence
+  navbar: IKNP backend
+  contents:
+  - validation_beaver_profile_correlation_k2
+  - validation_beaver_profile_glm_k2
+  - validation_beaver_profile_gee_k2
+  - validation_beaver_profile_cox_k2

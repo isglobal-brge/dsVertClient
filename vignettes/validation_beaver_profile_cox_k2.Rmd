@@ -32,10 +32,10 @@ partition_summary <- function(tables) {
 
 ## Scope
 
-This validation compares `dealer` and `iknp` Beaver preprocessing on the same
-non-disclosive Breslow-profile Cox route. Cox is included because it is a
-longer, multiplication-heavy route and therefore makes the performance tradeoff
-visible.
+This validation exercises the dealer-free `iknp` Beaver preprocessing backend
+on the non-disclosive Breslow-profile Cox route. Cox is included because it is a
+longer, multiplication-heavy route that stresses the OT-extension preprocessing
+path.
 
 ## Executed validation
 
@@ -77,19 +77,14 @@ run_profile <- function(mode) {
     paste("beaver_preprocessing =", mode))
 }
 
-rows <- rbind(run_profile("dealer"), run_profile("iknp"))
-rows$profile_delta <- abs(rows$observed - rows$observed[1L])
-rows$runtime_ratio_vs_dealer <- rows$runtime_s / rows$runtime_s[1L]
+rows <- run_profile("iknp")
 
 display_validation(rows)
-display_profile_validation(rows)
 
 assert_validation(rows)
-stopifnot(rows$profile_delta[2L] <= tolerance)
 ```
 
 ## Verdict
 
-Rendering fails if either profile leaves the accepted numerical envelope, if
-the route is marked disclosive, or if the IKNP-vs-dealer numerical difference
-exceeds the route tolerance.
+Rendering fails if the IKNP route leaves the accepted numerical envelope or if
+the route is marked disclosive.
