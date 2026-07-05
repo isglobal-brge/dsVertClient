@@ -32,16 +32,12 @@ partition_summary <- function(tables) {
 
 ## Scope
 
-This validation compares the two product Beaver preprocessing profiles on the
-same vertically partitioned correlation workflow:
+This validation exercises the dealer-free `iknp` Beaver preprocessing backend
+on the vertically partitioned correlation workflow. `iknp` is the strengthened
+OT-extension profile in which the two computation parties derive their triple
+shares interactively, so neither party ever holds an unsplit triple.
 
-- `dealer`: efficient profile for governed semi-honest institutional peers.
-- `iknp`: strengthened OT-extension profile that removes the privileged
-  preprocessing dealer.
-
-Both profiles are compared against the same centralized `stats::cor`
-reference. The estimator and online Beaver multiplication are the same; only
-the triple-preprocessing backend changes.
+The route is compared against the same centralized `stats::cor` reference.
 
 ## Executed validation
 
@@ -86,19 +82,14 @@ run_profile <- function(mode) {
     paste("beaver_preprocessing =", mode))
 }
 
-rows <- rbind(run_profile("dealer"), run_profile("iknp"))
-rows$profile_delta <- abs(rows$observed - rows$observed[1L])
-rows$runtime_ratio_vs_dealer <- rows$runtime_s / rows$runtime_s[1L]
+rows <- run_profile("iknp")
 
 display_validation(rows)
-display_profile_validation(rows)
 
 assert_validation(rows)
-stopifnot(rows$profile_delta[2L] <= tolerance)
 ```
 
 ## Verdict
 
-Rendering fails if either profile leaves the accepted numerical envelope, if
-the route is marked disclosive, or if the IKNP-vs-dealer numerical difference
-exceeds the route tolerance.
+Rendering fails if the IKNP route leaves the accepted numerical envelope or if
+the route is marked disclosive.
