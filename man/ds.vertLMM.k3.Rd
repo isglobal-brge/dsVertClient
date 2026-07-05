@@ -84,4 +84,7 @@ models for repeated measures data. \emph{Biometrics}, 46(3),
 \seealso{
 \code{\link{ds.vertGLM}}, \code{\link{ds.vertLMM}} (K=2
 exact closed-form path).
+
+\code{ds.vertLMM.k3} is retained as a thin deprecated wrapper: call
+\code{ds.vertLMM}, which dispatches to this K>=3 algorithm automatically.
 }
