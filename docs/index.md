@@ -158,11 +158,12 @@ linearizable CAS. The claim is scoped to
 and additionally assumes
 `authenticated_history_retention_assumption=at_least_one_noncolluding_designated_noise_peer_retains_and_uses_complete_authenticated_monotonic_history`
 and
-`privacy_accountant_namespace_enforcement=identity_bound_immutable_receipt_v1`.
-Status v6 exposes the identity-bound `jdpc1_` namespace ID and requires
-every peer to agree on it. The signed biomedical vector and its
-supported post-processors use this complete sequence; reserved artifact
-families still fail before protected payload access.
+`privacy_accountant_namespace_assumption=one_stable_unique_namespace_across_domain_cohort_policy_pinset_and_ledger_reconfiguration_per_protected_privacy_universe`.
+That namespace continuity is currently custodian-managed: neither
+package enforces global uniqueness or automatically migrates
+reservations across reconfiguration. The signed biomedical vector and
+its supported post-processors use this complete sequence; reserved
+artifact families still fail before protected payload access.
 
 Server secrets bootstrap automatically into owner-only persistent
 storage; no analyst receives a root or derived seed. All DP DSI calls
@@ -171,7 +172,7 @@ bounded lifetime claim remains conditional on root secrecy, correct
 pinned-peer operation and authenticated ledger integrity—not protection
 after host/root compromise or simultaneous history rollback outside the
 stated model. Public results expose this boundary as
-`dsvert-capsule-security-claim-v4`.
+`dsvert-capsule-security-claim-v3`.
 
 The biomedical vector ABI is frozen as a pre-release baseline: signed
 PREPARE receipts use v6; signed START, RESULT, RELEASE and ACK receipts
@@ -202,11 +203,12 @@ automatically. Deployment must use empty DP capsule state or a future
 audited offline migration.
 
 [`ds.vertDPStatus()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertDPStatus.md)
-accepts only joint-DP capsule status v6, cross-validates reservation and
-publication counts within the exact consensus `jdpc1_` accountant
-namespace, requires its identity-bound immutable-receipt enforcement,
-and reports remaining distinct-capsule units separately from request
-limits. Exhaustion does not redefine consortium readiness.
+accepts only joint-DP capsule status v5, cross-validates reservation and
+publication counts within the declared stable accountant namespace, and
+reports remaining distinct-capsule units separately from request limits.
+Exhaustion does not redefine consortium readiness; the status handshake
+is not proof that no second namespace exists for the same protected
+privacy universe.
 
 [`ds.vertSecurityStatus()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertSecurityStatus.md)
 consumes security-profile schema v4 and reports readiness per route. Its
