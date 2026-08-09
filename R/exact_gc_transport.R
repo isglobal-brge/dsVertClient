@@ -12,6 +12,8 @@
 .DSVERT_CLIENT_JOINT_DP_VECTOR_MAX_CHUNK <- 128L
 .DSVERT_CLIENT_EXACT_GC_CROSS_CLEANUP_PURPOSE <-
   "dp.cross-owner.exact-session.v1"
+.DSVERT_CLIENT_EXACT_GC_ANALYSIS_BINDING_VERSION <-
+  "dsvert-exact-gc-analysis-binding-v1"
 .DSVERT_CLIENT_EXACT_GC_CLEANUP_CAPABILITY_VERSION <-
   "dsvert-exact-gc-cleanup-capability-v1"
 .DSVERT_CLIENT_EXACT_GC_WIRE_CONTAINER_BITS <-
@@ -44,10 +46,75 @@
   gsub("=+$", "", encoded)
 }
 
+.dsvert_exact_gc_identity_peer_id <- function(identity_pk) {
+  identity_pk <- .dsvert_dp_analysis_client_identity_pk(identity_pk)
+  raw_pk <- tryCatch(
+    jsonlite::base64_dec(chartr("-_", "+/", paste0(identity_pk, "="))),
+    error = function(error) raw(0L))
+  if (!is.raw(raw_pk) || length(raw_pk) != 32L) {
+    stop("Invalid exact MPC analysis identity.", call. = FALSE)
+  }
+  paste0("dsv1_", digest::digest(
+    c(charToRaw("dsVert/peer-capability/v1|"), raw_pk),
+    algo = "sha256", serialize = FALSE))
+}
+
+.dsvert_exact_gc_analysis_binding <- function(contract) {
+  contract <- .dsvert_dp_analysis_contract_validate_v1(contract)
+  semantic <- contract$semantic
+  if (!identical(semantic$analysis$primitive, "joint-dp-laplace-v2") ||
+      !identical(contract$execution$backend$kernel,
+                 "joint-dp-laplace-v2") ||
+      !identical(contract$execution$backend$ring, "ring127")) {
+    stop("The exact MPC analysis contract is not the audited Count shape.",
+         call. = FALSE)
+  }
+  full_pins <- unlist(contract$execution$peer_pins, use.names = TRUE)
+  if (any(!grepl("^[A-Za-z0-9][A-Za-z0-9_.-]*$", names(full_pins))) ||
+      any(nchar(names(full_pins), type = "bytes") > 128L)) {
+    stop("Invalid full K peer names in the exact MPC analysis contract.",
+         call. = FALSE)
+  }
+  full_pins <- full_pins[order(names(full_pins), method = "radix")]
+  authorities <- unlist(
+    semantic$noise_authorities, use.names = FALSE)
+  authority_names <- names(full_pins)[match(authorities, unname(full_pins))]
+  authority_peer_ids <- vapply(
+    authorities, .dsvert_exact_gc_identity_peer_id, character(1L),
+    USE.NAMES = FALSE)
+  authority_order <- order(authority_peer_ids, method = "radix")
+  binding <- .dsvert_dp_analysis_client_canonical_value_v1(list(
+    version = .DSVERT_CLIENT_EXACT_GC_ANALYSIS_BINDING_VERSION,
+    artifact_key = contract$artifact_key,
+    semantic_contract_sha256 = digest::digest(
+      .dsvert_joint_dp_client_json(semantic), algo = "sha256",
+      serialize = FALSE),
+    authority_roles = as.list(stats::setNames(
+      authorities[authority_order], c("garbler", "evaluator")))))
+  list(
+    contract = contract,
+    full_pins = full_pins,
+    authority_names = authority_names,
+    binding = binding,
+    sha256 = digest::digest(
+      .dsvert_joint_dp_client_json(binding), algo = "sha256",
+      serialize = FALSE))
+}
+
 .dsvert_setup_exact_gc_transport <- function(
     datasources, server_names, servers, session_id,
     cleanup_purpose = "",
+    analysis_contract = NULL,
     .aggregate = DSI::datashield.aggregate) {
+  analysis <- if (is.null(analysis_contract)) NULL else
+    .dsvert_exact_gc_analysis_binding(analysis_contract)
+  if (!is.null(analysis) &&
+      (length(server_names) != length(datasources) || anyNA(server_names) ||
+       any(!nzchar(server_names)) || anyDuplicated(server_names) ||
+       !setequal(server_names, names(analysis$full_pins)))) {
+    stop("Exact MPC analysis requires the full K peer names and pins.",
+         call. = FALSE)
+  }
   if (!is.numeric(servers) || length(servers) != 2L || anyNA(servers) ||
       any(!is.finite(servers)) || any(servers != floor(servers)) ||
       anyDuplicated(servers) || any(servers < 1L) ||
@@ -61,6 +128,12 @@
       any(!nzchar(selected_names)) || anyDuplicated(selected_names)) {
     stop("Exact MPC transport requires two unique federation names.",
          call. = FALSE)
+  }
+  if (!is.null(analysis)) {
+    if (!setequal(selected_names, analysis$authority_names)) {
+      stop("Exact MPC compute peers must be the two noise authorities.",
+           call. = FALSE)
+    }
   }
   conns <- datasources[servers]
   names(conns) <- selected_names
@@ -90,18 +163,35 @@
     transport[[server]] <- value$transport_pk
     identities[[server]] <- list(
       identity_pk = value$identity_pk, signature = value$signature)
+    if (!is.null(analysis) &&
+        !identical(
+          .dsvert_dp_analysis_client_identity_pk(value$identity_pk),
+          unname(analysis$full_pins[[server]]))) {
+      stop("An exact MPC peer identity disagrees with the full K pinset.",
+           call. = FALSE)
+    }
   }
   ordered <- sort(selected_names)
   encode_map <- function(value) {
     .dsvert_exact_gc_b64url_encode(charToRaw(as.character(jsonlite::toJSON(
       value[ordered], auto_unbox = TRUE, null = "null", digits = NA))))
   }
-  bound <- .dsvert_aggregate_strict(
-    conns, call(
+  bind_call <- if (is.null(analysis)) {
+    call(
       name = "exactGCBindPeersDS",
       transport_keys_b64 = encode_map(transport),
       identity_info_b64 = encode_map(identities), session_id = session_id,
-      cleanup_purpose = cleanup_purpose),
+      cleanup_purpose = cleanup_purpose)
+  } else {
+    call(
+      name = "exactGCBindPeersDS",
+      transport_keys_b64 = encode_map(transport),
+      identity_info_b64 = encode_map(identities), session_id = session_id,
+      cleanup_purpose = cleanup_purpose,
+      artifact_key = analysis$contract$artifact_key)
+  }
+  bound <- .dsvert_aggregate_strict(
+    conns, bind_call,
     operation = "exact MPC pinned-peer binding",
     .aggregate = .aggregate)
   cleanup_capabilities <- list()
@@ -111,6 +201,12 @@
         !identical(value$capability_id,
                    .DSVERT_CLIENT_EXACT_GC_CAPABILITY)) {
       stop("An exact MPC peer did not commit its pinned peer binding.",
+           call. = FALSE)
+    }
+    if (!is.null(analysis) &&
+        (!identical(value$analysis_binding, analysis$binding) ||
+         !identical(value$analysis_binding_sha256, analysis$sha256))) {
+      stop("An exact MPC peer returned a conflicting analysis binding.",
            call. = FALSE)
     }
     if (nzchar(cleanup_purpose)) {
@@ -159,6 +255,10 @@
     attr(transport, "exact_gc_cleanup_capabilities") <-
       cleanup_capabilities[selected_names]
     attr(transport, "exact_gc_cleanup_purpose") <- cleanup_purpose
+  }
+  if (!is.null(analysis)) {
+    attr(transport, "exact_gc_analysis_binding") <- analysis$binding
+    attr(transport, "exact_gc_analysis_binding_sha256") <- analysis$sha256
   }
   transport
 }
@@ -236,7 +336,36 @@
                                            operation, ring, frac_bits,
                                            vector_len, purpose,
                                            mul_contract = NULL,
-                                           alignment_source_count = NULL) {
+                                           alignment_source_count = NULL,
+                                           analysis_binding = NULL) {
+  analysis <- NULL
+  if (!is.null(analysis_binding)) {
+    if (!is.list(analysis_binding) || is.null(analysis_binding$contract)) {
+      stop("Invalid exact MPC analysis binding.", call. = FALSE)
+    }
+    analysis <- .dsvert_exact_gc_analysis_binding(
+      analysis_binding$contract)
+    if (!identical(analysis_binding$binding, analysis$binding) ||
+        !identical(analysis_binding$sha256, analysis$sha256)) {
+      stop("Invalid exact MPC analysis binding.", call. = FALSE)
+    }
+  }
+  if (identical(operation, "joint-dp-laplace-v2")) {
+    if (is.null(analysis) || ring != 127L || frac_bits != 0L ||
+        vector_len != 1L) {
+      stop("Scalar Count initialization requires its exact analysis binding.",
+           call. = FALSE)
+    }
+  } else if (!is.null(analysis)) {
+    stop("An exact MPC analysis binding is valid only for scalar Count.",
+         call. = FALSE)
+  }
+  if (!is.null(analysis)) {
+    if (!setequal(server_names, analysis$authority_names)) {
+      stop("Scalar Count peers do not match the analysis noise authorities.",
+           call. = FALSE)
+    }
+  }
   if (!is.list(results) || !all(server_names %in% names(results))) {
     stop("Exact MPC peers did not return initialization state.", call. = FALSE)
   }
@@ -246,9 +375,14 @@
     "operation", "output_kind", "purpose", "source_producer", "ring_bits",
     "frac_bits", "vector_len", "threshold", "chunk_bytes", "state",
     "stored", "worker_heartbeat")
+  if (!is.null(analysis)) {
+    required <- c(required, "analysis_binding_sha256")
+  }
   expected_kind <- if (identical(
       operation, "joint-dp-vector-laplace-v3")) {
     "joint-dp-vector-ring128-share-v1"
+  } else if (identical(operation, "joint-dp-laplace-v2")) {
+    "joint-dp-ring-share-v2"
   } else if (identical(operation, "formal-glm-phase19-schedule-v1")) {
     "formal-glm-phase19-ring128-dp-bridge-share-v1"
   } else if (identical(operation, "alignment-mask-ring128")) {
@@ -275,6 +409,11 @@
           vector_len ||
         !identical(value$state, "running") || isTRUE(value$stored)) {
       stop("An exact MPC peer rejected or changed the operation contract.",
+           call. = FALSE)
+    }
+    if (!is.null(analysis) &&
+        !identical(value$analysis_binding_sha256, analysis$sha256)) {
+      stop("An exact MPC peer returned a conflicting analysis binding.",
            call. = FALSE)
     }
     .dsvert_exact_gc_peer_id(value$peer_id)
@@ -332,6 +471,23 @@
       value$worker_heartbeat, "worker heartbeat", 1, 2^53 - 1)
   }, numeric(1L))
   producers <- vapply(states, `[[`, character(1L), "source_producer")
+  if (!is.null(analysis)) {
+    expected_peer_ids <- vapply(
+      analysis$full_pins[server_names],
+      .dsvert_exact_gc_identity_peer_id, character(1L), USE.NAMES = TRUE)
+    expected_roles <- stats::setNames(vapply(
+      unname(analysis$full_pins[server_names]), function(identity_pk) {
+        role <- names(analysis$binding$authority_roles)[match(
+          identity_pk, unlist(
+            analysis$binding$authority_roles, use.names = FALSE))]
+        unname(role)
+      }, character(1L)), server_names)
+    if (!identical(peer_ids, expected_peer_ids) ||
+        !identical(roles, expected_roles)) {
+      stop("Exact MPC peer roles disagree with the analysis binding.",
+           call. = FALSE)
+    }
+  }
   if (anyDuplicated(peer_ids) ||
       !identical(unname(peer_peers), unname(rev(peer_ids))) ||
       !setequal(roles, c("garbler", "evaluator")) ||
@@ -350,11 +506,16 @@
   } else if (!is.null(alignment_source_count)) {
     stop("Unexpected exact MPC alignment source count.", call. = FALSE)
   }
-  list(states = states, peer_ids = peer_ids, context_hash = contexts[[1L]],
+  result <- list(
+       states = states, peer_ids = peer_ids, context_hash = contexts[[1L]],
        threshold = thresholds[[1L]], chunk_bytes = as.integer(chunks[[1L]]),
        ttl_seconds = as.integer(min(ttls)),
        max_runtime_seconds = as.integer(min(max_runtimes)),
        worker_heartbeats = heartbeats)
+  if (!is.null(analysis)) {
+    result$analysis_binding_sha256 <- analysis$sha256
+  }
+  result
 }
 
 .dsvert_exact_gc_validate_exchange <- function(value, expected_peer_id) {
@@ -732,7 +893,10 @@
     timeout_seconds = getOption("dsvert.exact_gc.timeout_seconds", 900),
     initialized = NULL, mul_contract = NULL,
     alignment_source_count = NULL,
+    analysis_contract = NULL,
     .aggregate = DSI::datashield.aggregate) {
+  analysis <- if (is.null(analysis_contract)) NULL else
+    .dsvert_exact_gc_analysis_binding(analysis_contract)
   if (length(servers) != 2L || anyDuplicated(servers) ||
       any(servers < 1L) || any(servers > length(datasources))) {
     stop("Exact MPC requires exactly two distinct peer servers.", call. = FALSE)
@@ -758,11 +922,15 @@
   ring <- suppressWarnings(as.numeric(ring))
   frac_bits <- suppressWarnings(as.numeric(frac_bits))
   vector_len <- suppressWarnings(as.numeric(vector_len))
-  if (!is.character(operation) || length(operation) != 1L ||
-      is.na(operation) || !operation %in% c(
+  allowed_operations <- c(
       "compare-signed", "truncate-floor", "mul-truncate-checked",
       "count-guard", "clamp-count", "joint-dp-vector-laplace-v3",
-      "alignment-mask-ring128", "formal-glm-phase19-schedule-v1") ||
+      "alignment-mask-ring128", "formal-glm-phase19-schedule-v1")
+  if (!is.null(analysis)) {
+    allowed_operations <- c(allowed_operations, "joint-dp-laplace-v2")
+  }
+  if (!is.character(operation) || length(operation) != 1L ||
+      is.na(operation) || !operation %in% allowed_operations ||
       !is.character(purpose) || length(purpose) != 1L || is.na(purpose) ||
       nchar(purpose, type = "bytes") > 128L ||
       !grepl("^[a-z][a-z0-9_.:/-]*$", purpose) ||
@@ -775,6 +943,7 @@
       frac_bits < 0 || frac_bits > ring - 1L ||
       (operation %in% c(
          "compare-signed", "count-guard", "clamp-count",
+         "joint-dp-laplace-v2",
          "joint-dp-vector-laplace-v3", "alignment-mask-ring128",
          "formal-glm-phase19-schedule-v1") &&
        frac_bits != 0L) ||
@@ -786,6 +955,11 @@
   ring <- as.integer(ring)
   frac_bits <- as.integer(frac_bits)
   vector_len <- as.integer(vector_len)
+  if (!is.null(analysis) &&
+      (!identical(operation, "joint-dp-laplace-v2") || ring != 127L ||
+       frac_bits != 0L || vector_len != 1L)) {
+    stop("Invalid analysis-bound exact MPC Count shape.", call. = FALSE)
+  }
   if (identical(operation, "joint-dp-vector-laplace-v3") &&
       (ring != 128L || vector_len >
          .DSVERT_CLIENT_JOINT_DP_VECTOR_MAX_CHUNK)) {
@@ -854,8 +1028,15 @@
     stop("Exact MPC timeout must be positive.", call. = FALSE)
   }
   if (!isTRUE(transport_ready)) {
-    .dsvert_setup_exact_gc_transport(
-      datasources, server_names, servers, session_id, .aggregate = .aggregate)
+    if (is.null(analysis)) {
+      .dsvert_setup_exact_gc_transport(
+        datasources, server_names, servers, session_id,
+        .aggregate = .aggregate)
+    } else {
+      .dsvert_setup_exact_gc_transport(
+        datasources, server_names, servers, session_id,
+        analysis_contract = analysis$contract, .aggregate = .aggregate)
+    }
   }
   committed <- FALSE
   on.exit(if (!committed) {
@@ -870,7 +1051,8 @@
   contract <- .dsvert_exact_gc_validate_init(
     init, names_selected, operation, ring, frac_bits, vector_len, purpose,
     mul_contract = mul_contract,
-    alignment_source_count = alignment_k)
+    alignment_source_count = alignment_k,
+    analysis_binding = analysis)
   timeout_seconds <- min(timeout_seconds, contract$ttl_seconds)
   peer_ids <- contract$peer_ids
   names(peer_ids) <- names_selected
@@ -1036,12 +1218,16 @@
   # remotely callable status probe would add surface without strengthening the
   # commit condition.
   committed <- TRUE
-  invisible(list(
+  result <- list(
     capability_id = .DSVERT_CLIENT_EXACT_GC_CAPABILITY,
     operation_id = operation_id, context_hash = contract$context_hash,
     output_key = output_key, operation = operation, ring_bits = ring,
     frac_bits = frac_bits, vector_len = vector_len,
-    threshold = contract$threshold))
+    threshold = contract$threshold)
+  if (!is.null(analysis)) {
+    result$analysis_binding_sha256 <- analysis$sha256
+  }
+  invisible(result)
 }
 
 .dsvert_exact_gc_capability_contract <- function() {
