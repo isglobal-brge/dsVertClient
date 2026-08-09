@@ -10,13 +10,23 @@ Authors@R: c(
     person("Juan R", "González", email = "juanr.gonzalez@isglobal.org",
            role = "aut")
   )
-Description: Client-side DataSHIELD functions for privacy-preserving analysis
-    of vertically partitioned federated data. Provides record alignment, GLM,
-    Cox PH, negative binomial, multinomial, ordinal, LMM, GEE, GLMM, IPW,
-    multiple imputation, LASSO, contingency, correlation, PCA, and descriptive
-    workflows over the companion dsVert server package. Exported routes use the
-    non-disclosive product surface; disclosive or materially suboptimal
-    historical routes have been removed from the user API.
+Description: Client-side DataSHIELD functions for privacy-aware analysis
+    of vertically partitioned federated data. The audited active surface covers
+    record alignment, reusable differential-privacy capsules, bounded
+    descriptives, categorical tables, epidemiological post-processing,
+    correlation, PCA and selected Gaussian and penalised research workflows
+    over the companion dsVert server package. Public names for Cox PH,
+    negative-binomial, multinomial, ordinal, LMM, GEE, GLMM, IPW, multiple
+    imputation and other historical workflows are retained for discovery and
+    migration, but unavailable routes fail locally before DSI. An audited
+    maturity registry distinguishes conditional promoted methods, provisional
+    research routes, historical compatibility helpers and quarantined
+    estimators. Peer pinning and MPC protect protocol intermediates.
+    Dedicated ds.vertDP* releases use a persistent, memoizing, cross-signed
+    publication ledger with server-owned contribution bounds. Composition
+    history is informational and never an operation or request quota; legacy
+    exact outputs remain outside that DP guarantee and do not support a
+    non-reconstruction claim under unlimited adaptive queries.
 License: MIT + file LICENSE
 URL: https://github.com/isglobal-brge/dsVertClient,
     https://isglobal-brge.github.io/dsVertClient/
@@ -25,15 +35,23 @@ Remotes: isglobal-brge/dsVert
 Encoding: UTF-8
 Depends: R (>= 4.0.0)
 Imports:
-    DSI,
+    DSI (>= 1.8.0),
+    digest,
     jsonlite,
+    methods,
+    openssl,
     stats,
     utils
 Suggests:
+    callr,
+    pkgload,
     testthat (>= 3.0.0),
     dsVert,
+    DSMolgenisArmadillo (>= 3.0.2),
     DSOpal,
     DSLite,
+    httr,
+    httpuv,
     opalr,
     survival,
     lme4,
@@ -44,6 +62,7 @@ Suggests:
     geepack,
     knitr,
     rmarkdown,
-    pkgdown
+    pkgdown,
+    withr
 RoxygenNote: 7.3.3
 Roxygen: list(markdown = TRUE)

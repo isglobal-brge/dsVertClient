@@ -2,52 +2,49 @@
 % Please edit documentation in R/ds.vertChisqCross.R
 \name{ds.vertChisqCross}
 \alias{ds.vertChisqCross}
-\title{Cross-server chi-square (one-hot + Beaver cross-products)}
+\title{DP-aware inference for a signed cross-owner categorical table}
 \usage{
 ds.vertChisqCross(
   data,
-  var1,
-  var2,
+  var1 = NULL,
+  var2 = NULL,
   correct = TRUE,
   fisher = FALSE,
   datasources = NULL,
-  verbose = TRUE
+  verbose = TRUE,
+  simulations = 9999L,
+  mc_confidence = 0.95
 )
 }
 \arguments{
-\item{data}{Aligned data-frame name.}
+\item{data}{One of the two signed dataset names, or an existing
+\code{ds.vertDPContingency} release.}
 
-\item{var1}{Row variable (categorical or numeric treated as factor).}
+\item{var1, var2}{Row and column variables. When \code{data} is an existing
+release these are optional orientation assertions.}
 
-\item{var2}{Column variable.}
+\item{correct}{Apply the DP-aware Yates-style correction for a 2-by-2 table.}
 
-\item{correct}{Apply Yates continuity correction (2x2 only).}
+\item{fisher}{Also compute the DP-aware conditional 2-by-2 calibration from
+the same release. No second DSI request is made.}
 
-\item{fisher}{Also return a Fisher-exact p-value (via R's
-\code{fisher.test} applied to the reconstructed aggregate table).}
+\item{datasources}{DataSHIELD connections. Omit for an existing release.}
 
-\item{datasources}{DataSHIELD connection object.}
+\item{verbose}{Print one non-sensitive progress message.}
 
-\item{verbose}{Print progress.}
+\item{simulations}{Monte Carlo replicates for each requested calibration.}
+
+\item{mc_confidence}{Confidence level for its Monte Carlo interval.}
 }
 \value{
-An object of class \code{ds.vertChisq} (same print method as
-the same-server helper) with components \code{observed},
-\code{expected}, \code{chisq}, \code{df}, \code{p_value},
-\code{fisher_p} (if requested), \code{n}, \code{row_levels},
-\code{col_levels}.
+A \code{ds.vertChisq} result. If \code{fisher=TRUE}, the same object also
+contains \code{fisher}, \code{fisher_p}, and \code{source_dp_release}.
 }
 \description{
-Pearson chi-square and Fisher-exact tests on a two-way
-contingency table where the row variable is held on one server and
-the column variable is held on another. Uses the existing Ring63
-Beaver cross-product infrastructure: one-hot indicator matrices are
-constructed server-side via \code{\link[dsVert]{dsvertOneHotDS}},
-then the \eqn{K \times L} cell counts \eqn{n_{kl} = \sum_i X_{ik}
-  Y_{il}} are obtained by Beaver dot products on the shared
-indicator vectors. When cell suppression is active, the DCF parties
-first run a pre-release threshold check over the shared cell-count
-vector; the exact \eqn{K \times L} aggregate table is returned to the
-client only if every positive cell passes the configured privacy
-threshold. The client never sees any \eqn{n}-length indicator vector.
+This compatibility entry point obtains exactly one fixed-domain joint-DP
+contingency release and performs only local post-processing. It never
+discovers columns, constructs analyst-addressable one-hot objects, opens an
+exact table, or invokes the retired cross-count endpoints. The row/column
+ownership and domains must already be present in the custodian-signed
+capsule \code{vertical_cross_specs} contract.
 }

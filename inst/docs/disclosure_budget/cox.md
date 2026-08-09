@@ -1,43 +1,39 @@
-# P3 disclosure budget - Cox PH
+# Disclosure audit — `ds.vertCox` (quarantined)
 
-Current product route: `ds.vertCox()` dispatches to
-`ds.vertCoxProfileNonDisclosive()`. The historical rank/permutation Cox path
-and K>=3 Poisson-trick prototype are removed from the client API.
+Release status: **quarantined**. No Cox client frontdoor is a promoted
+biomedical release route. `ds.vertCox()`, `ds.vertCoxProfileNonDisclosive()`,
+`ds.vertCoxDiscreteNonDisclosive()`, `ds.vert.cox()` and `ds.vert.coxph()`
+raise a typed migration error before any DSI call. The Cox-specific legacy
+server endpoints are absent from the registered `AggregateMethods` allowlist.
 
-## Summary
+Security-profile schema v4 independently reports
+`route_claims$formal_cox_ready = FALSE` with state
+`sealed_no_recipient_encrypted_r_dsi_lifecycle_or_end_to_end_numeric_certificate`.
+The top-level client `ready` value and server compatibility alias
+`formal_dp_claim_eligible` apply only to the biomedical joint-DP capsule route;
+neither can promote this quarantined Cox frontdoor.
 
-| channel | size | to | content | tier |
-|---|---|---|---|---|
-| client | p-vector | analyst | aggregate score | scalar/model aggregate |
-| client | p x p matrix | analyst | aggregate observed information | scalar/model aggregate |
-| client | scalar | analyst | partial log-likelihood diagnostics | scalar/model aggregate |
-| inter-server | encrypted/share-domain state | selected DCF parties | risk-set/profile working values | no plaintext row vector |
+## Why the legacy route is not releasable
 
-No per-observation time, event, rank, risk-set membership, eta, probability, or
-residual vector is returned to the analyst. Event/risk-set work stays local or
-in Ring127 share-domain arithmetic.
+The retained research implementation used exact score, information and
+likelihood aggregates and, in older variants, row-order risk-set metadata.
+Encryption and pinned peer identities protect transport and peer
+authentication, but they do not turn deliberate exact analyst openings into a
+contribution-bounded DP release. Repeated or adaptive exact model aggregates
+also have no non-reconstruction guarantee.
 
-## Accepted Disclosure
+The discrete-time compatibility implementation targets a pooled-logistic
+hazard estimand, not a Cox partial-likelihood estimand, and therefore cannot be
+presented as an interchangeable fallback.
 
-The product route reveals the same model-scale objects expected from a Cox PH
-fit: coefficients, optional covariance/standard errors, convergence metadata,
-and scalar likelihood diagnostics. These are O(p^2) in the number of model
-parameters and independent of n as returned values.
+## Promotion gate
 
-This is in the same accepted aggregate tier as `ds.vertCor()` and the GLM
-Fisher/Hessian summaries already used by the package. It does not expose the
-rank/permutation metadata that made the older Cox path unsuitable as a product
-route.
+A releasable Cox route needs one purpose-bound, signed and sticky joint-DP
+capsule with explicit clipping and contribution bounds; private risk-set
+evaluation; certified ties, strata and delayed-entry semantics; covariance and
+identifiability certificates; and independent multi-process DSI validation for
+K=2 and K>=3. Internal prototype components are not release evidence until all
+of those gates are closed together.
 
-## Removed Routes
-
-The following routes are not product routes and are no longer reachable through
-the client API:
-
-- Cox rank/permutation orchestration based on `k2SetCoxTimesDS`,
-  `k2ReceiveCoxMetaDS`, `k2ApplyCoxPermutationDS`, and the old Newton/Path-B
-  helpers.
-- The K>=3 Poisson/person-time Cox prototype.
-
-Server-side primitives from those experiments are not listed in dsVert
-`AggregateMethods`; the client no longer calls them.
+This note records the reason for quarantine. It is not authorization to call
+the legacy implementation or register any of its retired server endpoints.

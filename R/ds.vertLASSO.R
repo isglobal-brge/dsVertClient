@@ -120,11 +120,11 @@ ds.vertLASSO1Step <- function(fit, lambda,
 
   cov <- as.matrix(fit$covariance)
   # Fisher = inverse of covariance. Symmetrise for numerical stability.
-  H <- tryCatch(solve((cov + t(cov)) / 2), error = function(e) NULL)
-  if (is.null(H)) {
-    stop("Covariance matrix is singular; cannot form H = Cov^{-1}",
-         call. = FALSE)
-  }
+  H <- .dsvert_solve_identifiable(
+    cov,
+    context = "The LASSO source covariance",
+    reason = "singular_lasso_source_covariance",
+    symmetric = TRUE)
   H <- (H + t(H)) / 2
   diag_H <- diag(H)
   if (any(diag_H <= 0)) {

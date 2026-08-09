@@ -1,24 +1,21 @@
-#' @title Federated joint-softmax multinomial logistic regression
-#' @description Compatibility wrapper for
-#'   \code{\link{ds.vertMultinomJointNewton}}. The historical
-#'   one-vs-rest/covariance-rescale implementation was removed from the
-#'   product package because it did not close the softmax MLE accuracy gap.
-#'   Calls now always dispatch to the non-disclosive joint Newton route for
-#'   K >= 3 classes.
-#'
-#' @param formula R formula with the categorical outcome on the LHS.
-#' @param data Aligned data-frame name.
-#' @param levels Optional character vector of outcome levels (first is
-#'   reference). If NULL, inferred from the outcome server.
-#' @param max_iter Outer Newton iterations.
-#' @param tol Convergence tolerance on max |delta beta|.
-#' @param verbose Print progress.
-#' @param datasources DataSHIELD connections.
-#' @return A \code{ds.vertMultinomJointNewton} object.
+#' @title Quarantined joint-multinomial compatibility frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and returns no joint-softmax fit. Retained code after the gate is
+#'   unreachable through this public frontdoor and carries no disclosure, DP,
+#'   accuracy, or availability claim.
+#' @param formula,data,levels,max_iter,tol,verbose,datasources,design_analysis_id
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
                                  max_iter = 30L, tol = 1e-4,
-                                 verbose = TRUE, datasources = NULL) {
+                                 verbose = TRUE, datasources = NULL,
+                                 design_analysis_id = NULL) {
+  .dsvert_block_retired_remote_route("multinomial")
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   y_var <- .ds_gee_extract_lhs(formula)
   server_names <- names(datasources)
@@ -27,10 +24,10 @@ ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
 
   if (is.null(levels)) {
     lv <- tryCatch({
-      r <- DSI::datashield.aggregate(
+      r <- .dsvert_aggregate_strict(
         datasources[which(server_names == y_srv)],
-        call(name = "dsvertOutcomeLevelsDS", data_name = data, y_var = y_var))
-      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+        call(name = "dsvertOutcomeLevelsDS", data_name = data, y_var = y_var),
+        operation = "multinomial outcome-level discovery")[[1L]]
       r$levels
     }, error = function(e) NULL)
     if (is.null(lv)) {
@@ -54,6 +51,7 @@ ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
     levels = levels,
     max_outer = max_iter,
     tol = tol,
+    design_analysis_id = design_analysis_id,
     verbose = verbose,
     datasources = datasources)
 }

@@ -1,27 +1,40 @@
-# Ring63 Privacy-Preserving Correlation for Vertically Partitioned Data
+# Disclosure-safe compatibility adapter for correlation
 
-Computes Pearson correlation matrix using Ring63 Beaver MPC. Only
-aggregate scalars disclosed.
+This existing name consumes only a signed `gaussian_models` sufficient-
+statistic artifact. A signed `analysis_id` is mandatory. Same-owner and
+cross-owner variables share one secret complete-case mask; there is no
+silent fallback to pairwise moments.
 
 ## Usage
 
 ``` r
-ds.vertCor(data_name, variables = NULL, verbose = TRUE, datasources = NULL)
+ds.vertCor(
+  data_name,
+  variables = NULL,
+  analysis_id = NULL,
+  verbose = TRUE,
+  datasources = NULL
+)
 ```
 
 ## Arguments
 
 - data_name:
 
-  Character. Aligned data frame name.
+  Signed protected dataset name.
 
 - variables:
 
-  Named list: server -\> variable names.
+  Optional character subset, or a named list identifying the signed
+  owner of each requested variable. At least two variables are required.
+
+- analysis_id:
+
+  Mandatory signed Gaussian artifact id.
 
 - verbose:
 
-  Logical. If TRUE (default), print progress messages.
+  Logical progress flag retained for compatibility.
 
 - datasources:
 
@@ -29,4 +42,4 @@ ds.vertCor(data_name, variables = NULL, verbose = TRUE, datasources = NULL)
 
 ## Value
 
-List with correlation matrix, variable names, n_obs.
+A `ds.vertDPCor`/`ds.cor` object.

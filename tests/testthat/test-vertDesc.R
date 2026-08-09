@@ -2,6 +2,215 @@
 
 library(testthat)
 
+.desc_dp_fixture <- function() {
+  variables <- c("age", "bmi")
+  descriptives <- data.frame(
+    variable = variables,
+    status = c("ok", "dp_point_available_count_not_certified_positive"),
+    n_dp = c(101, 99),
+    n_simultaneous_95_lower = c(90, 0),
+    mean = c(52.5, 24.75),
+    variance = c(100, 16),
+    sd = c(10, 4),
+    lower_bound = c(0, 10),
+    upper_bound = c(100, 50),
+    invalid_dp = c(3, 5),
+    stringsAsFactors = FALSE)
+  quantiles <- do.call(rbind, lapply(seq_along(variables), function(index) {
+    data.frame(
+      variable = variables[[index]],
+      probability = c(0.25, 0.5, 0.75),
+      estimate = c(40, 52, 65) + index,
+      dp_grid_lower = c(35, 48, 60) + index,
+      dp_grid_upper = c(45, 57, 70) + index,
+      status = "ok",
+      stringsAsFactors = FALSE)
+  }))
+  list(
+    released = TRUE,
+    analysis_id = "baseline_v1",
+    analysis_version = "1",
+    variables = variables,
+    grid_lengths = c(4L, 5L),
+    descriptives = descriptives,
+    quantiles = quantiles,
+    server = "site_a",
+    capsule_id = "capsule-1",
+    final_vector_root = paste(rep("a", 64L), collapse = ""),
+    coordinate_order_sha256 = paste(rep("b", 64L), collapse = ""),
+    privacy_epoch = "epoch-1",
+    noise_key_id = paste(rep("c", 64L), collapse = ""),
+    epsilon = 1,
+    delta = 1e-6,
+    implementation_delta = 0,
+    adjacency = "add_remove_patient",
+    composition_partitions = 1L,
+    mechanism = "complete_discrete_laplace_two_peer",
+    sampler = "hkdf_chacha20",
+    sticky_noise = "one immutable capsule vector; unlimited replay",
+    uncertainty_scope = "DP mechanism noise only; sampling uncertainty excluded",
+    histogram_semantics = "fixed signed bins plus invalid bin",
+    unit_collapse = "one bounded value per admitted unit",
+    count_definition = "DP-noisy effective units",
+    invalid_unit_rule = "invalid units enter the fixed invalid bin",
+    quantization = "signed fixed lattice",
+    postprocessing = "fixed public clamp",
+    quantile_band_confidence = 0.95,
+    quantile_band_scope = "mechanism noise plus grid; no sampling uncertainty",
+    moment_region_confidence = 0.95,
+    moment_region_method = "simultaneous coordinate-box propagation",
+    moment_region_scope = "mechanism and quantisation; no sampling uncertainty",
+    statistical_inference = "DP points; no sampling intervals or p-values")
+}
+
+test_that("ds.vertDesc is a one-release compatibility adapter", {
+  fixture <- .desc_dp_fixture()
+  calls <- new.env(parent = emptyenv())
+  calls$count <- 0L
+  calls$args <- NULL
+  testthat::local_mocked_bindings(
+    ds.vertDPDescribe = function(data_name, analysis_id, probs,
+                                 datasources = NULL) {
+      calls$count <- calls$count + 1L
+      calls$args <- list(data_name = data_name, analysis_id = analysis_id,
+                         probs = probs, datasources = datasources)
+      fixture$quantiles <- fixture$quantiles[
+        fixture$quantiles$probability %in% probs, , drop = FALSE]
+      fixture
+    },
+    .package = "dsVertClient")
+
+  conns <- list(site_a = structure(list(), class = "mock"))
+  result <- ds.vertDesc(
+    "cohort", variables = "bmi", probs = c(0.5, 0.25),
+    verbose = FALSE, datasources = conns, analysis_id = "baseline_v1")
+
+  expect_s3_class(result, "ds.vertDesc")
+  expect_identical(calls$count, 1L)
+  expect_identical(calls$args$analysis_id, "baseline_v1")
+  expect_identical(calls$args$probs, c(0.25, 0.5))
+  expect_identical(result$server, "site_a")
+  expect_identical(result$variable, "bmi")
+  expect_identical(result$n, 99)
+  expect_identical(result$n_na, 5)
+  expect_true(is.na(result$min) && is.na(result$max))
+  expect_identical(result$range_low, 10)
+  expect_identical(result$range_high, 50)
+  expect_identical(result$range_method, "custodian_signed_fixed_grid")
+  expect_identical(result$histogram_buckets, 5L)
+  expect_identical(result$quantile_status, "ran_dp_fixed_grid")
+  expect_identical(result$q25, 42)
+  expect_identical(result$q50, 54)
+  expect_identical(attr(result, "signed_histogram_buckets"), c(bmi = 5L))
+  expect_true(attr(result, "dp_release")$formal_dp)
+  expect_identical(attr(result, "dp_release")$capsule_id, "capsule-1")
+  expect_match(attr(result, "dp_release")$uncertainty_scope,
+               "sampling uncertainty excluded")
+  expect_identical(attr(result, "dp_release")$selected_variables, "bmi")
+  expect_match(attr(result, "dp_release")$statistical_inference,
+               "no sampling intervals")
+  expect_match(attr(result, "compatibility_semantics")$sd,
+               "not the usual sample standard deviation")
+  expect_equal(nrow(attr(result, "dp_quantile_bands")), 2L)
+})
+
+test_that("legacy knobs cannot alter the signed describe workload", {
+  fixture <- .desc_dp_fixture()
+  calls <- new.env(parent = emptyenv())
+  calls$count <- 0L
+  testthat::local_mocked_bindings(
+    ds.vertDPDescribe = function(...) {
+      calls$count <- calls$count + 1L
+      fixture
+    },
+    .package = "dsVertClient")
+
+  expect_error(
+    ds.vertDesc("cohort", analysis_id = "baseline_v1",
+                exact_extrema = TRUE, verbose = FALSE),
+    "not disclosure-safe")
+  expect_error(
+    ds.vertDesc("cohort", analysis_id = "baseline_v1",
+                range_sd = 4, verbose = FALSE),
+    "cannot redefine")
+  expect_error(
+    ds.vertDesc("cohort", analysis_id = "baseline_v1",
+                open_ended = TRUE, verbose = FALSE),
+    "cannot redefine")
+  expect_identical(calls$count, 0L)
+
+  expect_error(
+    ds.vertDesc("cohort", variables = "bmi", n_buckets = 4L,
+                analysis_id = "baseline_v1", verbose = FALSE),
+    "does not match the signed fixed grid")
+  expect_identical(calls$count, 1L)
+  matched <- ds.vertDesc(
+    "cohort", variables = "bmi", n_buckets = 5L,
+    analysis_id = "baseline_v1", verbose = FALSE)
+  expect_identical(matched$histogram_buckets, 5L)
+  expect_identical(calls$count, 2L)
+})
+
+test_that("analysis and variable selection fail honestly", {
+  fixture <- .desc_dp_fixture()
+  calls <- new.env(parent = emptyenv())
+  calls$count <- 0L
+  testthat::local_mocked_bindings(
+    ds.vertDPDescribe = function(...) {
+      calls$count <- calls$count + 1L
+      fixture
+    },
+    .package = "dsVertClient")
+
+  expect_error(ds.vertDesc("cohort", verbose = FALSE),
+               "analysis_id is required")
+  expect_identical(calls$count, 0L)
+  expect_error(
+    ds.vertDesc("cohort", variables = "glucose",
+                analysis_id = "baseline_v1", verbose = FALSE),
+    "not included in signed describe artifact")
+  expect_error(
+    ds.vertDesc("cohort", variables = list(site_b = "age"),
+                analysis_id = "baseline_v1", verbose = FALSE),
+    "owned by server 'site_a'")
+  expect_identical(calls$count, 2L)
+})
+
+test_that("ds.vertDesc call graph cannot reach exact adaptive endpoints", {
+  namespace <- asNamespace("dsVertClient")
+  reachable <- character()
+  queue <- "ds.vertDesc"
+  while (length(queue)) {
+    name <- queue[[1L]]
+    queue <- queue[-1L]
+    if (name %in% reachable ||
+        !exists(name, namespace, mode = "function", inherits = FALSE)) {
+      next
+    }
+    value <- get(name, namespace, inherits = FALSE)
+    reachable <- c(reachable, name)
+    globals <- tryCatch(
+      unique(unlist(codetools::findGlobals(value, merge = FALSE),
+                    use.names = FALSE)),
+      error = function(error) character())
+    queue <- unique(c(queue, intersect(
+      globals, ls(namespace, all.names = TRUE))))
+  }
+
+  forbidden <- c(
+    "dsvertColNamesDS", "dsvertLocalMomentsDS", "dsvertHistogramDS",
+    "dsvertDPDescribeDS")
+  bodies <- paste(vapply(reachable, function(name) {
+    paste(deparse(body(get(name, namespace, inherits = FALSE))),
+          collapse = "\n")
+  }, character(1L)), collapse = "\n")
+  expect_contains(reachable, "ds.vertDPDescribe")
+  expect_length(intersect(reachable, forbidden), 0L)
+  for (endpoint in forbidden) {
+    expect_false(grepl(endpoint, bodies, fixed = TRUE), info = endpoint)
+  }
+})
+
 test_that("interp_quantile matches known closed-form for uniform buckets", {
   # 100 observations perfectly uniform across [0, 1] in 10 buckets
   edges <- seq(0, 1, length.out = 11L)

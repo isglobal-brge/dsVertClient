@@ -1,52 +1,27 @@
-#' @title Federated multiple imputation with Rubin pooling
-#' @description Fit a GLM on vertically partitioned DataSHIELD data with
-#'   multiple imputation of missing values. Imputations stay on the
-#'   server holding the missing variable (via
-#'   \code{dsvertImputeColumnDS}); the client only ever sees the
-#'   \eqn{M} pooled coefficient vectors and covariance matrices and
-#'   applies Rubin's rules client-side.
-#'
-#'   Protocol for each of \eqn{m = 1..M}:
-#'     1. On every server holding a column with missingness, call
-#'        \code{dsvertImputeColumnDS} with seed \eqn{s_m}. The server
-#'        draws a local imputation using a Bayesian-ridge model
-#'        conditional on the other complete-case columns available on
-#'        that server. The imputed column is written back into the
-#'        aligned data frame under a per-round name (e.g.
-#'        \code{__dsvert_imp_<var>_<m>}).
-#'     2. Run \code{\link{ds.vertGLM}} on the imputed data, collect
-#'        \code{beta_m} and \code{Cov(beta_m)}.
-#'     3. Client accumulates \eqn{(\beta_m, \mathrm{Cov}_m)}.
-#'
-#'   Rubin's pooling rules are applied client-side:
-#'     \deqn{\bar\beta = \frac{1}{M}\sum_m \beta_m}
-#'     \deqn{W = \frac{1}{M}\sum_m \mathrm{Cov}_m}
-#'     \deqn{B = \frac{1}{M-1} \sum_m (\beta_m-\bar\beta)(\beta_m-\bar\beta)^T}
-#'     \deqn{T = W + (1 + 1/M) B}
-#'
-#' @param formula Model formula.
-#' @param data Aligned data-frame name.
-#' @param impute_columns Character vector of column names with
-#'   missingness that should be imputed (on whichever server holds
-#'   them). Per-server column presence is auto-detected.
-#' @param m Number of imputations (default 20).
-#' @param max_iter Inner \code{ds.vertGLM} \code{max_iter}.
-#' @param tol Convergence tolerance for inner fits.
-#' @param family GLM family.
-#' @param lambda L2 regularisation for inner fits.
-#' @param verbose Print progress.
-#' @param datasources DataSHIELD connection object.
-#' @param seed RNG seed (default 1L). Per-round seed = \code{seed + m}.
-#' @return A \code{ds.vertMI} object with fields \code{coefficients},
-#'   \code{covariance} (Rubin total variance T), \code{std_errors},
-#'   \code{within}, \code{between}, \code{fmi} (fraction of missing
-#'   information), \code{m}, \code{family}, \code{fits} (list of the M
-#'   inner \code{ds.glm} fits).
+#' @title Quarantined multiple-imputation compatibility frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and mutates no server data, draws no imputation, and returns no
+#'   coefficients, counts, covariance, or diagnostic. Retained implementation
+#'   code after the gate is unreachable through this public frontdoor and
+#'   carries no disclosure, DP, accuracy, or availability claim.
+#' @details Promotion requires a signed bounded imputation contract,
+#'   non-rerollable cryptographic randomness, no exact per-round count release,
+#'   and validated Rubin-rule inference.
+#' @param formula,data,impute_columns,m,family,max_iter,tol,lambda,intercept_only,verbose,datasources,seed
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
                       m = 20L, family = "gaussian",
-                      max_iter = 50L, tol = 1e-4, lambda = 1e-4,
+                      max_iter = 50L, tol = 1e-4, lambda = 0,
+                      intercept_only = c("error", "aggregate"),
                       verbose = TRUE, datasources = NULL, seed = 1L) {
+  .dsvert_block_retired_remote_route("mi")
+  intercept_only <- match.arg(intercept_only)
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   server_names <- names(datasources)
   if (is.null(impute_columns) || length(impute_columns) == 0L) {
@@ -58,13 +33,20 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
 
   # Auto-detect which server holds each impute_column.
   col_locs <- list()
+  column_results <- .dsvert_aggregate_strict(
+    datasources,
+    call(name = "dsvertColNamesDS", data_name = data),
+    operation = "multiple-imputation column discovery")
   for (srv in server_names) {
-    ci <- which(server_names == srv)
-    cols <- tryCatch(
-      DSI::datashield.aggregate(datasources[ci],
-        call(name = "dsvertColNamesDS", data_name = data))[[1]]$columns,
-      error = function(e) character(0))
-    for (v in intersect(impute_columns, cols)) col_locs[[v]] <- srv
+    cols <- column_results[[srv]]$columns
+    for (v in intersect(impute_columns, cols)) {
+      if (!is.null(col_locs[[v]])) {
+        stop("impute column '", v,
+             "' is present on more than one server; choose an unambiguous vertical partition",
+             call. = FALSE)
+      }
+      col_locs[[v]] <- srv
+    }
   }
   missing_vars <- setdiff(impute_columns, names(col_locs))
   if (length(missing_vars) > 0L) {
@@ -86,19 +68,20 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
       srv <- col_locs[[v]]
       ci <- which(server_names == srv)
       imp_res <- tryCatch(
-        DSI::datashield.aggregate(datasources[ci],
+        .dsvert_aggregate_strict(datasources[ci],
           call(name = "dsvertImputeColumnDS",
                data_name = data,
                impute_column = v,
                output_column = paste0(v, round_tag),
-               seed = as.integer(seed + mi))),
+               seed = as.integer(seed + mi),
+               allow_intercept_only = identical(intercept_only,
+                                                  "aggregate")),
+          operation = "protected multiple-imputation update")[[1L]],
         error = function(e) {
-          stop("dsvertImputeColumnDS failed on server '", srv, "': ",
-               conditionMessage(e), "\nEnsure dsVert >= 1.1.0 is ",
-               "deployed (provides the server-side imputation helper).",
+          stop("The protected multiple-imputation update failed; ",
+               "no partial round was accepted.",
                call. = FALSE)
         })
-      if (is.list(imp_res) && length(imp_res) == 1L) imp_res <- imp_res[[1L]]
       imputation_log[[length(imputation_log) + 1L]] <- data.frame(
         round = mi,
         variable = v,
@@ -106,6 +89,12 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
         n_imputed = as.integer(imp_res$n_imputed %||% NA_integer_),
         n_observed = as.integer(imp_res$n_observed %||% NA_integer_),
         method = as.character(imp_res$method %||% NA_character_),
+        model_regularization = as.character(
+          imp_res$model_regularization %||% NA_character_),
+        regularization_alpha = as.numeric(
+          imp_res$regularization_alpha %||% NA_real_),
+        numerical_stabilization = as.character(
+          imp_res$numerical_stabilization %||% NA_character_),
         n_predictors = as.integer(imp_res$n_predictors %||% NA_integer_),
         intercept_only = as.logical(imp_res$intercept_only %||% NA),
         stringsAsFactors = FALSE)
@@ -172,6 +161,13 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
   }
   quality_warnings <- character(0)
   quality_status <- "ok"
+  if (is.numeric(lambda) && length(lambda) == 1L && is.finite(lambda) &&
+      lambda > 0) {
+    quality_warnings <- c(
+      quality_warnings,
+      "A positive lambda was explicitly requested; pooled coefficients target a ridge-penalized imputation-analysis model, not the unpenalized GLM estimand.")
+    quality_status <- "approximate"
+  }
   if (nrow(imputation_log) > 0L) {
     if (all((imputation_log$n_imputed %||% 0L) == 0L, na.rm = TRUE)) {
       quality_warnings <- c(quality_warnings,
@@ -204,6 +200,13 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
     fmi          = fmi,
     m            = m,
     family       = family,
+    lambda       = as.numeric(lambda),
+    estimand     = if (isTRUE(as.numeric(lambda) > 0)) {
+      "explicit_ridge_penalized_mi_glm"
+    } else {
+      "unpenalized_mi_glm"
+    },
+    intercept_only_policy = intercept_only,
     n_obs        = fits[[1]]$n_obs,
     imputation_log = imputation_log,
     quality      = list(status = quality_status,
@@ -219,6 +222,10 @@ print.ds.vertMI <- function(x, ...) {
   cat("dsVert multiple-imputation GLM (Rubin-pooled)\n")
   cat(sprintf("  M = %d imputations   family = %s   N = %d\n",
               x$m, x$family, x$n_obs))
+  if (!is.null(x$estimand)) {
+    cat(sprintf("  Estimand: %s (lambda = %.4g)\n",
+                x$estimand, x$lambda %||% 0))
+  }
   if (!is.null(x$quality$status)) {
     cat(sprintf("  Quality: %s\n", x$quality$status))
     if (length(x$quality$warnings)) {

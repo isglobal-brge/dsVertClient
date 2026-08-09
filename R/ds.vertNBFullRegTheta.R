@@ -1,74 +1,19 @@
-#' @title Federated NB regression with full-regression theta refinement
-#' @description Backend used by the public \code{ds.vert.nb()} frontdoor for
-#'   the validated full-regression negative-binomial route. It starts from the
-#'   internal iid-mu profile fit and refines theta while accounting for
-#'   \eqn{\mu_i} variation across patients without requiring per-patient MPC
-#'   reveals.
-#'
-#' @details
-#'   The NB(mu_i, theta) log-likelihood score for theta is
-#'   \deqn{s(\theta) = \sum_i \psi(y_i + \theta) - n \psi(\theta)
-#'                      + n \log \theta - \sum_i \log(\mu_i + \theta).}
-#'   The internal iid-mu starting fit replaces the last
-#'   term by \eqn{n \log(\bar y + \theta)}. For homogeneous cohorts
-#'   (small \eqn{\text{Var}(\mu)}) this is tight; for regression-rich
-#'   settings the bias on theta can reach ~16% (quine, overdispersed
-#'   counts) relative to \code{MASS::glm.nb}.
-#'
-#'   A first-order correction uses the aggregate marginal variance of
-#'   y decomposed via the NB law of total variance:
-#'   \eqn{\text{Var}(y) = E[\mu] + E[\mu^2]/\theta + \text{Var}(\mu)}.
-#'   With \eqn{\bar y} and \eqn{s_y^2} (scalar aggregates from
-#'   \code{dsvertLocalMomentsDS}) and the iid theta_0 as seed, we refine
-#'   via Brent root-finding on the corrected score
-#'   \eqn{s_{\text{corr}}(\theta) = s_{\text{iid}}(\theta) - \frac{1}{2}
-#'         \frac{n \, \hat{V}_\mu}{(\bar y + \theta)^2}}
-#'   where \eqn{\hat V_\mu} is the aggregate estimate of \eqn{\text{Var}(\mu)}
-#'   and the second term is the Taylor correction to
-#'   \eqn{\sum_i \log(\mu_i + \theta)} around \eqn{\bar y}.
-#'
-#'   The aggregate \eqn{\hat V_\mu} is computed as
-#'   \eqn{\hat V_\mu = \max(0,\; s_y^2 - \bar y - \bar y^2 / \hat\theta_0)}
-#'   -- the portion of total y variance not explained by NB conditional
-#'   variance \eqn{\mu + \mu^2/\theta}. All quantities are scalar
-#'   aggregates; no per-patient disclosure.
-#'
-#'   Full-share-space Clenshaw evaluation of \eqn{\sum_i \log(\mu_i + \theta)}
-#'   using the shipped \code{Ring127LogShiftPlaintext} Chebyshev
-#'   primitive + DCF argument reduction is a stricter variant scheduled
-#'   separately; the first-order correction here closes the bulk of the
-#'   iid-mu bias (on quine: 16% -> 4-5%) without any new MPC machinery.
-#'
-#' @param formula Model formula for the count outcome and predictors.
-#' @param data Aligned data-frame name on each server.
-#' @param theta Optional fixed dispersion parameter. If supplied, theta
-#'   refinement starts from this value.
-#' @param joint Logical. If \code{TRUE}, iterate beta/theta refinements.
-#' @param theta_max_iter Integer. Maximum theta outer iterations.
-#' @param theta_tol Numeric. Relative convergence tolerance for theta.
-#' @param variant Character. Only \code{"full_reg_nd"} is accepted in the
-#'   validated product route. Historical iid-mu and aggregate-corrected
-#'   variants are retained as internal development code, but are not part of
-#'   the public validation surface. The legacy disclosive \code{"full_reg"}
-#'   eta-transport path has been removed.
-#' @param beta_max_iter Integer. Maximum beta refinements for the
-#'   non-disclosive full-regression theta variant.
-#' @param beta_tol Numeric. Relative convergence tolerance for beta refinements
-#'   in the non-disclosive full-regression theta variant.
-#' @param compute_covariance Logical. If \code{TRUE}, request covariance and
-#'   standard-error diagnostics where the selected beta path supports them.
-#' @param verbose Logical. Print stage-by-stage progress.
-#' @param datasources DataSHIELD connections; if \code{NULL}, uses
-#'   \code{DSI::datashield.connections_find()}.
-#' @param ... Extra arguments forwarded to the protected GLM route.
-#' @return Object of class \code{c("ds.vertNBFullRegTheta", "ds.vertNB")}.
-#'   The object contains model-scale coefficients, standard errors and
-#'   diagnostics, plus \code{$theta_iid} (the internal starting estimate) and
-#'   \code{$variance_correction} (the \eqn{\hat V_\mu} used). For the
-#'   non-disclosive full-regression variant, the object also contains
-#'   \code{$theta_trace}, \code{$theta_iter}, and \code{$theta_converged}.
-#'
-#' @seealso \code{\link{ds.vert.aliases}}
+#' @title Quarantined negative-binomial compatibility frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and computes or returns no fit or dispersion estimate. Retained
+#'   implementation code after the gate is unreachable through this public
+#'   frontdoor and carries no disclosure, DP, accuracy, or availability claim.
+#' @details Promotion requires a bounded NB2 score/information capsule, joint
+#'   beta/theta inference, certified deviance and covariance, and independent
+#'   multi-host validation.
+#' @param formula,data,theta,joint,theta_max_iter,theta_tol,variant,beta_max_iter,beta_tol,compute_covariance,verbose,datasources
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @param ... Retained compatibility arguments; not evaluated.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                                   joint = TRUE, theta_max_iter = 5L,
@@ -76,6 +21,7 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                                   beta_max_iter = 2L, beta_tol = 1e-4,
                                   compute_covariance = TRUE,
                                   verbose = TRUE, datasources = NULL, ...) {
+  .dsvert_block_retired_remote_route("negative_binomial")
   if (!identical(variant, "full_reg_nd")) {
     stop("variant must be 'full_reg_nd'", call. = FALSE)
   }
@@ -121,14 +67,13 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
 
     # Identify which features live on each server.
     rhs <- attr(stats::terms(formula), "term.labels")
-    cols_by_server <- list()
-    for (srv in server_names) {
-      ci <- which(server_names == srv)
-      r <- DSI::datashield.aggregate(datasources[ci],
-        call(name = "dsvertColNamesDS", data_name = data))
-      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-      cols_by_server[[srv]] <- if (is.list(r)) r$columns else r
-    }
+    column_results <- .dsvert_aggregate_strict(
+      datasources,
+      call(name = "dsvertColNamesDS", data_name = data),
+      operation = "negative-binomial column discovery")
+    cols_by_server <- lapply(column_results, function(value) {
+      if (is.list(value)) value$columns else value
+    })
     x_vars_full <- lapply(server_names, function(srv)
       intersect(rhs, cols_by_server[[srv]]))
     names(x_vars_full) <- server_names
@@ -139,27 +84,21 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     int_val  <- beta_all[["(Intercept)"]]
     beta_label <- beta_all[x_label]
 
-    session_id <- paste0("nbfullregnd_", as.integer(Sys.time()),
-                          "_", sample.int(.Machine$integer.max, 1L))
+    session_id <- .dsvert_uuid4()
 
     # Closures to abstract the DataSHIELD aggregate / blob-relay calls
     # so the orchestrator can be invoked under both real-Opal and
     # local-harness test fixtures (mirrors ord_joint / mnl_joint .dsAgg
     # / .sendBlob plumbing).
-    .dsAgg <- function(conns, expr) DSI::datashield.aggregate(conns, expr)
-    .sendBlob <- function(blob, key, target_ci) {
-      .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
-        if (n_chunks == 1L) {
-          DSI::datashield.aggregate(datasources[target_ci],
-            call(name = "mpcStoreBlobDS", key = key,
-                 chunk = chunk_str, session_id = session_id))
-        } else {
-          DSI::datashield.aggregate(datasources[target_ci],
-            call(name = "mpcStoreBlobDS", key = key,
-                 chunk = chunk_str, chunk_index = chunk_idx,
-                 n_chunks = n_chunks, session_id = session_id))
-        }
-      })
+    .dsAgg <- function(conns, expr) {
+      .dsvert_aggregate_strict(
+        conns, expr,
+        operation = "negative-binomial protected MPC phase")
+    }
+    .sendBlob <- function(blob, contract, target_ci) {
+      .dsvert_store_transfer_or_legacy(
+        blob, contract, datasources[target_ci], session_id,
+        producer_conns = datasources)
     }
 
     # Use the generic Ring127 input-sharing setup for K=2 and K>=3. The
@@ -315,11 +254,11 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
       if (b_it >= beta_max_iter) break
 
       fisher <- beta_stats$fisher
-      ridge <- max(1e-10, 1e-8 * mean(abs(diag(fisher))))
-      step <- tryCatch(
-        solve(fisher + diag(ridge, nrow(fisher)), beta_stats$score),
-        error = function(e) qr.solve(fisher + diag(ridge, nrow(fisher)),
-                                     beta_stats$score))
+      step <- .dsvert_solve_identifiable(
+        fisher, beta_stats$score,
+        context = "The protected negative-binomial beta system",
+        reason = "singular_negative_binomial_information",
+        symmetric = TRUE)
       if (any(!is.finite(step))) break
       max_step <- max(abs(step))
       if (max_step > 1) {
@@ -348,8 +287,11 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
     nb_se <- pf$std_errors * var_inflation
     if (isTRUE(compute_covariance) &&
         !is.null(beta_stats) && !is.null(beta_stats$fisher)) {
-      cov_beta <- tryCatch(solve(beta_stats$fisher),
-                           error = function(e) qr.solve(beta_stats$fisher))
+      cov_beta <- .dsvert_solve_identifiable(
+        beta_stats$fisher,
+        context = "The protected negative-binomial covariance system",
+        reason = "singular_negative_binomial_information",
+        symmetric = TRUE)
       cov_beta <- cov_beta[coef_names, coef_names, drop = FALSE]
       nb_se <- sqrt(pmax(diag(cov_beta), 0))
     }
@@ -370,6 +312,8 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
 	    out$p_values <- 2 * stats::pnorm(-abs(out$z_values))
 	    out$covariance <- cov_beta
 	    out$var_inflation <- var_inflation
+	    out$estimand <- "negative_binomial_full_regression_unpenalized"
+	    out$optimizer_regularization <- "none"
 	    out$quality <- .dsvert_quality_from_convergence(
 	      theta_converged, metric = if (nrow(theta_trace)) {
 	        abs(theta_trace$theta_next[nrow(theta_trace)] -
@@ -439,11 +383,11 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
   score_corrected <- function(th) {
     if (!is.finite(th) || th <= 0) return(NA_real_)
     sums <- tryCatch({
-      r <- DSI::datashield.aggregate(
+      r <- .dsvert_aggregate_strict(
         conns[conn_idx],
         call(name = "dsvertNBProfileSumsDS",
-             data_name = data, variable = y_var_name, theta = th))
-      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+             data_name = data, variable = y_var_name, theta = th),
+        operation = "negative-binomial protected profile release")[[1L]]
       r
     }, error = function(e) NULL)
     if (is.null(sums) || !is.finite(sums$sum_psi)) return(NA_real_)

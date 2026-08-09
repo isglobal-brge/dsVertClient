@@ -51,3 +51,37 @@
           c(list(in_key = in_eta_key, out_key = out_mu_key), common))
   invisible(out_mu_key)
 }
+
+# Refresh the link output after the final eta recomputation. SE perturbations
+# overwrite both eta and mu state, so deviance must never consume the previous
+# perturbation's `secure_mu_share`. Binomial deviance is evaluated directly from
+# final eta via softplus and therefore does not require a sigmoid refresh.
+.glm_refresh_final_mean <- function(family, datasources, server_list,
+                                    server_names, session_id, .dsAgg,
+                                    link_args = NULL,
+                                    .share_link = .glm_share_link) {
+  if (!family %in% c("gaussian", "binomial", "poisson")) {
+    stop("Unsupported GLM family for final mean refresh", call. = FALSE)
+  }
+  if (identical(family, "gaussian")) {
+    for (server in server_list) {
+      ci <- match(server, server_names)
+      if (is.na(ci)) stop("Unknown server in final mean refresh", call. = FALSE)
+      .dsAgg(
+        datasources[ci],
+        call(name = "k2IdentityLinkDS", session_id = session_id)
+      )
+    }
+    return("identity")
+  }
+  if (identical(family, "poisson")) {
+    if (!is.list(link_args) || !is.function(.share_link)) {
+      stop("Poisson final mean refresh requires share-link arguments",
+           call. = FALSE)
+    }
+    link_args$family <- NULL
+    do.call(.share_link, c(list(family = "poisson"), link_args))
+    return("exp")
+  }
+  "not_needed"
+}

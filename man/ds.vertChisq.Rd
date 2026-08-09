@@ -2,50 +2,74 @@
 % Please edit documentation in R/ds.vertChisq.R
 \name{ds.vertChisq}
 \alias{ds.vertChisq}
-\title{Federated chi-square test on a 2-way contingency table}
+\title{DP-aware independence test on a 2-way contingency table}
 \usage{
 ds.vertChisq(
   data_name,
-  var1,
-  var2,
+  var1 = NULL,
+  var2 = NULL,
   server = NULL,
   correct = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  simulations = 9999L,
+  mc_confidence = 0.95
 )
 }
 \arguments{
-\item{data_name}{Character. Name of the aligned data frame on each server.}
+\item{data_name}{A released \code{ds.vertDPContingency} object, or the name of
+the protected data frame.}
 
-\item{var1}{Character. Row variable.}
+\item{var1, var2}{Row and column variables when \code{data_name} is a character
+string. They may be omitted for an already released object.}
 
-\item{var2}{Character. Column variable.}
-
-\item{server}{Character. Optional name of the server that holds both
-variables. If \code{NULL} the server is auto-detected via
-\code{dsvertColNamesDS}.}
+\item{server}{Optional owner-peer assertion forwarded to
+\code{ds.vertDPContingency}. No separate column-discovery request is
+performed. It must be omitted for an existing release.}
 
 \item{correct}{Logical. If TRUE (default for 2x2 tables), apply Yates'
-continuity correction.}
+continuity correction to the statistic. Its null law is still obtained
+by the same DP-aware bootstrap rather than a chi-square approximation.}
 
 \item{datasources}{DataSHIELD connections.}
+
+\item{simulations}{Number of parametric-bootstrap replicates. The default
+gives p-value resolution \code{1 / 10000}.}
+
+\item{mc_confidence}{Confidence level for the reported exact binomial
+interval around the Monte Carlo p-value.}
 }
 \value{
 An object of class \code{ds.vertChisq} with elements
 \code{statistic}, \code{df}, \code{p_value}, \code{observed},
-\code{expected}, \code{residuals}, \code{n}, \code{correct}.
+\code{expected}, \code{residuals}, \code{n}, \code{correct}, and the
+bootstrap/mechanism uncertainty contract.
 }
 \description{
-Compute Pearson chi-square (and optional Yates and LR
-variants) on a contingency table of two categorical variables held
-at the same server in a DataSHIELD federation. The server returns
-only aggregate cell counts and margins (with
-datashield.privacyLevel-aware small-cell suppression); chi-square
-statistics are then computed entirely client-side.
+Calibrate a categorical independence statistic against the
+sampling distribution and the privacy mechanism. The input is either an
+already released \code{ds.vertDPContingency} object (zero DSI calls) or the
+original data/variable identifiers, in which case the one immutable
+signed DP capsule is obtained through \code{ds.vertDPContingency}. Ordinary
+chi-square or Fisher reference laws are never applied to the noisy cells.
 }
 \details{
-For the cross-server case (variables vertically partitioned
-across two or more servers) a separate entry point
-\code{ds.vertChisqCross} will reuse the Beaver dot-product infrastructure
-to compute cell counts on secret shares; that is tracked as a follow-on
-in the dsVert v2.0 implementation plan.
+The test follows the Monte Carlo independence-testing principle of
+Gaboardi et al. (2016), adapted to dsVert's signed mechanism. It estimates
+the latent contributing sample size and null margins from the released
+table, simulates multinomial tables under the fitted independence model,
+adds the signed release's one exact-GC draw or two independent peer
+discrete-Laplace draws per cell, applies the same common-lattice clamp,
+and repeats the nuisance fit for every
+replicate. This is a parametric-bootstrap test: it is asymptotically
+calibrated under positive cell probabilities, but is not a finite-sample
+exact conditional test. Tables whose fitted expected count is below five
+return a structured non-tested result rather than an unreliable p-value.
+
+The production sampler is a finite binary-geometric approximation to its
+signed ideal one-draw or two-peer-convolution law. Its signed
+total-variation certificate is propagated into a separate calibration
+interval. Bootstrap randomness
+is deterministically derived from public release commitments solely for
+reproducible post-processing; it is not DP mechanism randomness and adds
+no privacy cost.
 }

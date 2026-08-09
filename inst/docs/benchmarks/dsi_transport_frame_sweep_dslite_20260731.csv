@@ -1,0 +1,5 @@
+"peers","payload_mib_per_peer","unique_raw_mib","chunk_raw_kib","fanout_cycles","replay_cycles","reconnects","wall_seconds","throughput_unique_mib_s","raw_submitted_mib","base64_submitted_mib","expression_submitted_mib","base64_expansion","max_expression_kib","rss_start_mib","rss_peak_mib","rss_delta_mib","spool_peak_mib","source_disk_mib","integrity"
+1,16,16,512,33,1,1,63.619,0.251497194234427,16.5,22.0000104904175,22.009072303772,1.33333396911621,682.94921875,220.9375,312.109375,91.171875,16,16,"sha256_identical"
+1,16,16,1024,NA,NA,NA,3.071,NA,NA,NA,NA,NA,1430,NA,NA,NA,NA,16,"transport_rejected"
+1,16,16,2048,NA,NA,NA,7.256,NA,NA,NA,NA,NA,2795,NA,NA,NA,NA,16,"transport_rejected"
+1,16,16,4096,NA,NA,NA,13.887,NA,NA,NA,NA,NA,5526,NA,NA,NA,NA,16,"transport_rejected"

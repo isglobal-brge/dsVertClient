@@ -1,471 +1,148 @@
-#' @title Check whether a data symbol is already PSI-aligned on every server
-#' @description Ask each server whether the named symbol has the same
-#'   row count. Used by \code{ds.vertGLM}/LMM/GEE/Cox to SKIP a fresh
-#'   PSI run when the caller already aligned the cohort. Security-
-#'   preserving: only queries shape.
-#' @param newobj Character. Symbol name to test on each server (default \code{"DA"}).
-#' @param datasources DataSHIELD connections; if NULL, uses
-#'   \code{DSI::datashield.connections_find()}.
-#' @return List with \code{aligned} (logical) and \code{n_common}
-#'   (integer or NA_integer_).
+#' Check whether a data symbol is pinned-padded-PSI aligned
+#'
+#' Each server validates a persistent, secret-token-authenticated manifest
+#' against the current identifier values and row order. The client accepts the
+#' result only when every named server returns the same fixed-schema public
+#' attestation. No row count, identifier commitment or intersection size is
+#' released.
+#'
+#' @param newobj Character. Symbol to validate on every server.
+#' @param datasources Named DataSHIELD connections. When `NULL`, the current
+#'   connections returned by [DSI::datashield.connections_find()] are used.
+#' @return A list with `aligned` and `n_common`. `n_common` is always
+#'   `NA_integer_`; the alignment-status route never releases cardinality.
 #' @export
 ds.isPsiAligned <- function(newobj = "DA", datasources = NULL) {
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
-  dims <- tryCatch(
-    DSI::datashield.aggregate(datasources,
-      call(name = "getObsCountDS", data_name = newobj)),
-    error = function(e) NULL)
-  if (is.null(dims)) return(list(aligned = FALSE, n_common = NA_integer_))
-  ns <- vapply(dims, function(x) {
-    if (is.list(x) && !is.null(x$n_obs)) as.integer(x$n_obs) else NA_integer_
-  }, integer(1L))
-  if (anyNA(ns)) return(list(aligned = FALSE, n_common = NA_integer_))
-  aligned <- all(ns == ns[1L])
-  list(aligned = aligned, n_common = if (aligned) ns[1L] else NA_integer_)
+  status <- .psi_alignment_status(newobj, datasources)
+  list(aligned = status$aligned, n_common = status$n_common)
 }
 
-#' @title ECDH-PSI Record Alignment (Blind Relay)
-#' @description Privacy-preserving record alignment using Elliptic Curve
-#'   Diffie-Hellman Private Set Intersection (ECDH-PSI), optional server-side
-#'   keyed pseudonymisation, and blind-relay transport encryption. Aligns data
-#'   frames across vertically partitioned DataSHIELD servers so that rows
-#'   correspond to the same individuals. The client never sees identifiers,
-#'   pseudonyms, raw EC points or matched row maps -- only opaque encrypted blobs
-#'   and disclosure-controlled counts.
+.psi_alignment_status <- function(newobj, datasources,
+                                  .aggregate = DSI::datashield.aggregate) {
+  invalid <- function() list(
+    aligned = FALSE, n_common = NA_integer_, manifests = NULL)
+  if (!is.character(newobj) || length(newobj) != 1L || is.na(newobj) ||
+      !nzchar(newobj) || !is.list(datasources) || length(datasources) < 2L ||
+      !is.function(.aggregate)) return(invalid())
+  datasource_names <- names(datasources)
+  if (is.null(datasource_names) || anyNA(datasource_names) ||
+      any(!nzchar(datasource_names)) || anyDuplicated(datasource_names)) {
+    return(invalid())
+  }
+  attestations <- tryCatch(
+    .dsvert_aggregate_strict(
+      conns = datasources,
+      expr = call(
+        name = "psiPaddedAttestationDS", data_name = newobj,
+        session_id = ""),
+      operation = "pinned padded PSI alignment attestation",
+      .aggregate = .aggregate),
+    error = function(e) NULL)
+  if (!is.list(attestations) || length(attestations) != length(datasources) ||
+      is.null(names(attestations)) ||
+      !setequal(names(attestations), datasource_names)) return(invalid())
+  validated <- tryCatch(
+    lapply(attestations, .dsvert_validate_psi_padded_attestation),
+    error = function(e) NULL)
+  if (is.null(validated) ||
+      !all(vapply(validated[-1L], identical, logical(1L), validated[[1L]]))) {
+    return(invalid())
+  }
+  list(aligned = TRUE, n_common = NA_integer_, manifests = validated)
+}
+
+#' Align vertically partitioned records with pinned, fixed-capacity PSI
 #'
-#' @param data_name Character string. Name of the data frame on each server.
-#' @param id_col Character string. Name of the identifier column.
-#' @param newobj Character string. Name for the aligned data frame on servers.
-#'   Default is \code{"D_aligned"}.
-#' @param ref_server Character string or NULL. Name of the reference server.
-#'   If NULL (default), the first connection is used.
-#' @param verbose Logical. If TRUE (default), print progress messages.
-#' @param datasources DataSHIELD connection object or list of connections.
-#'   If NULL, uses all available connections.
-#' @param na.action Character. NA-handling strategy passed to the
-#'   server-side aligner; default \code{"na.omit"} drops rows with any
-#'   NA in the join column or covariates before alignment.
+#' Runs the sole public dsVert alignment protocol. Every participating server
+#' pads its private input to a server-owned power-of-two capacity bucket. The
+#' relay sees only authenticated ciphertexts with fixed shapes for that public
+#' bucket; it never receives identifiers, row maps, membership bits or an exact
+#' cardinality. Peer identities, the complete contract, phase receipts and
+#' every server-to-server envelope are cryptographically bound before use.
 #'
-#' @return Invisibly returns a list with alignment statistics for each server:
-#'   \itemize{
-#'     \item \code{n_matched}: Number of records matched
-#'     \item \code{n_total}: Number of records on that server
-#'   }
+#' @param data_name Character. Source data-frame symbol on every server.
+#' @param id_col Character. Identifier-column name on every server.
+#' @param newobj Character. Destination symbol for the aligned data frames.
+#' @param ref_server Deprecated compatibility argument. It must be `NULL`:
+#'   the reference is selected deterministically from authenticated peer
+#'   identities and cannot be chosen by the relay.
+#' @param verbose Logical. Emit fixed, data-independent progress messages.
+#' @param datasources Named DataSHIELD connections. At least two are required.
+#' @param na.action Compatibility argument. Its value is validated but the
+#'   server-owned `dsvert.psi.padded_missing_policy` determines eligibility;
+#'   the analyst cannot override that disclosure policy.
+#'
+#' @return Invisibly, the common public protocol attestation. It contains the
+#'   public capacity bucket and authenticated contract identifiers, never an
+#'   input count or intersection cardinality.
 #'
 #' @details
-#' This function performs privacy-preserving record alignment in a single call,
-#' using ECDH-PSI with blind-relay transport encryption.
+#' The global all-server membership vector is evaluated with the purpose-bound
+#' exact GC/OT backend between the two contract compute peers. Results are
+#' delivered as authenticated shares to the reference and materialized in one
+#' deterministic order on every server. A malicious relay can delay, drop or
+#' replay traffic and thereby cause denial of service, but cannot forge a peer,
+#' alter a contract or silently substitute a protocol message. As with any
+#' two-party secure computation, collusion of both designated compute peers is
+#' outside the non-collusion confidentiality claim. The public capacity bucket
+#' is an upper bound on local input shape.
 #'
-#' \subsection{Protocol overview}{
-#' ECDH-PSI exploits the commutativity of elliptic curve scalar multiplication:
-#' \eqn{\alpha \cdot (\beta \cdot H(id)) = \beta \cdot (\alpha \cdot H(id))}.
-#'
-#' All EC point exchanges are encrypted server-to-server (X25519 + AES-256-GCM
-#' ECIES). The client acts as a blind relay, seeing only opaque blobs. Servers
-#' may additionally require a per-study keyed pseudonymisation policy before
-#' ECDH masking, which prevents non-key-holders from computing linkage tokens
-#' from low-entropy identifiers.
-#'
-#' \enumerate{
-#'   \item \strong{Phase 0}: Each server generates an X25519 transport keypair.
-#'     Public keys are exchanged via the client.
-#'   \item \strong{Phase 1}: The reference server masks IDs with scalar
-#'     \eqn{\alpha}. Points are stored server-side (not returned to client).
-#'   \item For each target server:
-#'     \itemize{
-#'       \item The reference encrypts masked points under the target's PK.
-#'       \item The target decrypts, generates scalar \eqn{\beta}, double-masks
-#'         ref points (stores locally), masks own IDs, encrypts them under
-#'         the ref's PK.
-#'       \item The reference decrypts, double-masks with \eqn{\alpha},
-#'         encrypts result under target's PK.
-#'       \item The target decrypts, matches double-masked sets, aligns data.
-#'     }
-#'   \item A multi-server intersection ensures only records present on ALL
-#'     servers are retained.
-#' }
-#' }
-#'
-#' \subsection{Security (DDH assumption on P-256, malicious-client model)}{
-#' \itemize{
-#'   \item The client sees only opaque encrypted blobs -- not identifiers,
-#'     pseudonyms, EC points or row maps.
-#'   \item Each server's scalar never leaves the server.
-#'   \item PSI firewall: phase ordering + one-shot semantics prevent OPRF
-#'     oracle attacks.
-#'   \item Server-side policy can require keyed pseudonymisation, input-size
-#'     caps, rate limits and minimum-intersection guards.
-#' }
-#' }
-#'
-#' @seealso \code{\link{ds.vertCor}}, \code{\link{ds.vertGLM}} for analysis
-#'   functions that operate on aligned data.
+#' This function is privacy-preserving preprocessing, not itself a statistical
+#' release and not a differential-privacy mechanism. Subsequent result methods
+#' remain subject to their own disclosure and DP contracts.
 #'
 #' @examples
 #' \dontrun{
-#' # Align records across all servers using PSI
-#' ds.psiAlign("D", "patient_id", "D_aligned", datasources = connections)
-#'
-#' # Now "D_aligned" on all servers has matching, ordered observations
+#' aligned <- ds.psiAlign(
+#'   "D", "patient_id", "D_aligned", datasources = connections)
+#' ds.isPsiAligned("D_aligned", datasources = connections)
 #' }
 #'
-#' @importFrom DSI datashield.aggregate datashield.assign datashield.connections_find
+#' @importFrom DSI datashield.aggregate datashield.assign.expr datashield.connections_find
 #' @export
 ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
-                         ref_server = NULL, verbose = TRUE,
-                         datasources = NULL, na.action = "na.omit") {
-  # Validate inputs
-  if (!is.character(data_name) || length(data_name) != 1) {
-    stop("data_name must be a single character string", call. = FALSE)
+                        ref_server = NULL, verbose = TRUE,
+                        datasources = NULL,
+                        na.action = c("na.omit", "na.fail", "none")) {
+  values <- list(data_name = data_name, id_col = id_col, newobj = newobj)
+  labels <- names(values)
+  for (index in seq_along(values)) {
+    value <- values[[index]]
+    if (!is.character(value) || length(value) != 1L || is.na(value) ||
+        !nzchar(value)) {
+      stop(labels[[index]], " must be a single non-empty character string",
+           call. = FALSE)
+    }
   }
-  if (!is.character(id_col) || length(id_col) != 1) {
-    stop("id_col must be a single character string", call. = FALSE)
+  if (!is.null(ref_server)) {
+    stop(
+      "ref_server must be NULL: pinned padded PSI selects its reference ",
+      "from authenticated peer identities.", call. = FALSE)
   }
-  if (!is.character(newobj) || length(newobj) != 1) {
-    stop("newobj must be a single character string", call. = FALSE)
+  if (!is.logical(verbose) || length(verbose) != 1L || is.na(verbose)) {
+    stop("verbose must be TRUE or FALSE", call. = FALSE)
   }
-
-  # Get datasources
+  tryCatch(match.arg(na.action), error = function(e) stop(
+    "na.action must be one of 'na.omit', 'na.fail' or 'none'",
+    call. = FALSE))
   if (is.null(datasources)) {
     datasources <- DSI::datashield.connections_find()
   }
-  if (length(datasources) == 0) {
-    stop("No DataSHIELD connections found", call. = FALSE)
-  }
-
   server_names <- names(datasources)
-  n_servers <- length(datasources)
-
-  on.exit({
-    .dsvert_reset_chunk_size()
-  }, add = TRUE)
-
-  # NA handling: na.omit per-server BEFORE PSI (non-disclosive, like glm na.action)
-  if (identical(na.action, "na.omit")) {
-    if (verbose) message("[NA handling] Per-server na.omit (before PSI)...")
-    for (srv in server_names) {
-      ci <- which(names(datasources) == srv)
-      r <- tryCatch(
-        DSI::datashield.aggregate(datasources[ci],
-          call(name = "dsvertNaOmitDS", data_name = data_name)),
-        error = function(e) NULL)
-      if (!is.null(r)) {
-        if (is.list(r) && length(r) == 1) r <- r[[1]]
-        if (!is.null(r$n_dropped) && r$n_dropped > 0 && verbose)
-          message(sprintf("  %s: dropped %d rows with NAs (%d -> %d)",
-            srv, r$n_dropped, r$n_before, r$n_after))
-      }
-    }
-  }
-
-  # Determine reference server
-  if (is.null(ref_server)) {
-    ref_server <- server_names[1]
-  }
-  if (!ref_server %in% server_names) {
-    stop("ref_server '", ref_server, "' not found in connections", call. = FALSE)
-  }
-
-  ref_conn <- datasources[ref_server]
-  target_names <- setdiff(server_names, ref_server)
-
-  # Generate session_id for PSI protocol state isolation
-  session_id <- local({
-    hex <- sample(c(0:9, letters[1:6]), 32, replace = TRUE)
-    hex[13] <- "4"  # UUID v4
-    hex[17] <- sample(c("8","9","a","b"), 1)  # variant 1
-    paste0(
-      paste(hex[1:8], collapse = ""), "-",
-      paste(hex[9:12], collapse = ""), "-",
-      paste(hex[13:16], collapse = ""), "-",
-      paste(hex[17:20], collapse = ""), "-",
-      paste(hex[21:32], collapse = "")
-    )
-  })
-
-  # Store a large blob on a server with adaptive chunking and fallback
-  .storeLargeBlob <- function(key, data, conn) {
-    .dsvert_adaptive_send(data, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        DSI::datashield.aggregate(
-          conns = conn,
-          expr = call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-                      session_id = session_id)
-        )
-      } else {
-        DSI::datashield.aggregate(
-          conns = conn,
-          expr = call(name = "mpcStoreBlobDS",
-                      key = key,
-                      chunk = chunk_str,
-                      chunk_index = chunk_idx,
-                      n_chunks = n_chunks,
-                      session_id = session_id)
-        )
-      }
-    })
-  }
-
-  if (verbose) message("=== ECDH-PSI Record Alignment (Blind Relay) ===")
-  if (verbose) message(sprintf("Reference: %s, Targets: %s\n", ref_server,
-              paste(target_names, collapse = ", ")))
-
-  # ==================================================================
-  # Phase 0: PSI Transport Key Exchange
-  # ==================================================================
-  # Each server generates an X25519 transport keypair. The client
-  # collects PKs and distributes them so servers can encrypt messages
-  # for each other. The client never receives the secret keys.
-  if (verbose) message("[Phase 0] Transport key exchange...")
-  # Initialize PSI on all servers in parallel
-  init_results <- DSI::datashield.aggregate(
-    conns = datasources,
-    expr = call(name = "psiInitDS", session_id = session_id)
-  )
-  psi_transport_pks <- list()
-  psi_identity_info <- list()
-  for (name in server_names) {
-    psi_transport_pks[[name]] <- init_results[[name]]$transport_pk
-    if (!is.null(init_results[[name]]$identity_pk))
-      psi_identity_info[[name]] <- list(
-        identity_pk = init_results[[name]]$identity_pk,
-        signature   = init_results[[name]]$signature)
-  }
-  .psi_policy_value <- function(policy, field) {
-    if (is.null(policy) || is.null(policy[[field]])) return("")
-    as.character(policy[[field]][[1L]])
-  }
-  policy_sigs <- vapply(init_results, function(x) {
-    p <- x$psi_policy
-    paste(
-      .psi_policy_value(p, "pseudonym_mode"),
-      .psi_policy_value(p, "key_custody"),
-      .psi_policy_value(p, "study_id_hash"),
-      .psi_policy_value(p, "key_id"),
-      sep = "|"
-    )
-  }, character(1L))
-  if (length(unique(policy_sigs)) != 1L) {
+  if (!is.list(datasources) || length(datasources) < 2L ||
+      is.null(server_names) || anyNA(server_names) ||
+      any(!nzchar(server_names)) || anyDuplicated(server_names)) {
     stop(
-      "PSI policy mismatch across servers. Check dsvert.psi.pseudonym_mode, ",
-      "dsvert.psi.study_id, dsvert.psi.key_custody and shared-key material ",
-      "before running alignment.",
-      call. = FALSE
-    )
+      "Pinned padded PSI requires at least two uniquely named DataSHIELD connections.",
+      call. = FALSE)
   }
-  if (verbose && !is.null(init_results[[1L]]$psi_policy)) {
-    policy <- init_results[[1L]]$psi_policy
-    message(sprintf(
-      "  PSI policy: pseudonym_mode=%s, key_custody=%s",
-      .psi_policy_value(policy, "pseudonym_mode"),
-      .psi_policy_value(policy, "key_custody")
-    ))
-  }
-
-  # Distribute transport PKs + identity info to all servers in parallel
-  keys_for_server <- psi_transport_pks
-  keys_for_server[["ref"]] <- psi_transport_pks[[ref_server]]
-  id_for_server <- if (length(psi_identity_info) > 0) psi_identity_info else NULL
-  if (!is.null(id_for_server))
-    id_for_server[["ref"]] <- psi_identity_info[[ref_server]]
-  # Store transport keys per-server (list args as base64url JSON to avoid Opal parser)
-  .to_b64url <- function(x) gsub("\\+","-",gsub("/","_",gsub("=+$","",x,perl=TRUE),fixed=TRUE),fixed=TRUE)
-  .json_to_b64url <- function(x) .to_b64url(gsub("\n","",jsonlite::base64_enc(charToRaw(jsonlite::toJSON(x, auto_unbox = TRUE))),fixed=TRUE))
-  keys_b64 <- .json_to_b64url(keys_for_server)
-  id_b64 <- if (!is.null(id_for_server)) .json_to_b64url(id_for_server) else ""
-  for (name in server_names) {
-    ci <- which(names(datasources) == name)
-    DSI::datashield.aggregate(
-      conns = datasources[ci],
-      expr = call(name = "psiStoreTransportKeysDS",
-                    transport_keys_b64 = keys_b64,
-                    identity_info_b64 = id_b64,
-                    session_id = session_id))
-  }
-  if (verbose) message("  Transport keys exchanged.")
-
-  # ==================================================================
-  # Phase 1: Reference server masks its IDs
-  # ==================================================================
-  # The ref server generates a random P-256 scalar alpha and computes
-  # alpha*H(id) for each ID. Points are stored server-side (NOT returned).
-  if (verbose) message("[Phase 1] Reference server masking IDs...")
-  ref_result <- DSI::datashield.aggregate(
-    conns = ref_conn,
-    expr = call(name = "psiMaskIdsDS", data_name, id_col,
-                  session_id = session_id)
-  )
-  ref_result <- ref_result[[1]]
-  if (verbose) message(sprintf("  %s: %d IDs masked (stored server-side)",
-              ref_server, ref_result$n))
-
-  # Phase 2: Ref exports encrypted masked points for each target
-  encrypted_ref_blobs <- list()
-  for (target_name in target_names) {
-    if (verbose) message(sprintf("[Phase 2] %s: exporting encrypted points for %s...",
-                ref_server, target_name))
-    export_result <- DSI::datashield.aggregate(
-      conns = ref_conn,
-      expr = call(name = "psiExportMaskedDS", target_name, session_id = session_id)
-    )
-    encrypted_ref_blobs[[target_name]] <- export_result[[1]]$encrypted_blob
-  }
-
-  # Deliver blobs to all targets (sequential -- different blobs per target)
-  for (target_name in target_names) {
-    .storeLargeBlob("ref_encrypted_blob", encrypted_ref_blobs[[target_name]],
-                    datasources[target_name])
-  }
-
-  # Phase 3: ALL targets process in PARALLEL (independent operations)
-  if (verbose) message(sprintf("[Phase 3] %s: processing (parallel)...",
-              paste(target_names, collapse = ", ")))
-  target_results <- DSI::datashield.aggregate(
-    conns = datasources[target_names],
-    expr = call(name = "psiProcessTargetDS", data_name, id_col,
-                from_storage = TRUE, session_id = session_id)
-  )
-  for (target_name in target_names) {
-    tr <- target_results[[target_name]]
-    if (verbose) message(sprintf("  %s: %d IDs masked", target_name, tr$n))
-  }
-
-  # Phases 4-7: Sequential per target (ref must process each individually)
-  for (target_name in target_names) {
-    encrypted_target_blob <- target_results[[target_name]]$encrypted_blob
-
-    # Phase 4-5: Relay target blob to ref for double-masking
-    if (verbose) message(sprintf("[Phase 4-5] %s: double-masking via %s (blind relay)...",
-                target_name, ref_server))
-    .storeLargeBlob("target_encrypted_blob", encrypted_target_blob, ref_conn)
-
-    dm_result <- DSI::datashield.aggregate(
-      conns = ref_conn,
-      expr = call(name = "psiDoubleMaskDS", target_name = target_name,
-                  from_storage = TRUE, session_id = session_id)
-    )
-    encrypted_dm_blob <- dm_result[[1]]$encrypted_blob
-
-    # Phase 6-7: Relay double-masked blob to target for matching
-    if (verbose) message(sprintf("[Phase 6-7] %s: matching and aligning (blind relay)...",
-                target_name))
-    .storeLargeBlob("dm_encrypted_blob", encrypted_dm_blob,
-                    datasources[target_name])
-
-    DSI::datashield.assign(
-      conns = datasources[target_name],
-      symbol = newobj,
-      value = call(name = "psiMatchAndAlignDS", data_name,
-                   from_storage = TRUE, session_id = session_id)
-    )
-  }
-
-  # ==================================================================
-  # Phase 7 for ref: Self-align (identity operation)
-  # ==================================================================
-  if (verbose) message(sprintf("[Phase 7] %s: self-aligning...", ref_server))
-  DSI::datashield.assign(
-    conns = ref_conn,
-    symbol = newobj,
-    value = call(name = "psiSelfAlignDS", data_name,
-                   session_id = session_id)
-  )
-
-  # ==================================================================
-  # Phase 8: Multi-server intersection
-  # ==================================================================
-  # Matched reference indices are patient-level metadata. Target servers export
-  # them encrypted to the reference server; the client relays opaque blobs only.
-  if (verbose) message("[Phase 8] Computing encrypted multi-server intersection...")
-  matched_exports <- list()
-  if (length(target_names) > 0L) {
-    matched_exports <- DSI::datashield.aggregate(
-      conns = datasources[target_names],
-      expr = call(name = "psiExportMatchedIndicesDS",
-                  recipient_name = ref_server,
-                  session_id = session_id)
-    )
-    for (target_name in target_names) {
-      .storeLargeBlob(
-        paste0("matched_indices_", target_name),
-        matched_exports[[target_name]]$encrypted_blob,
-        ref_conn
-      )
-    }
-  }
-
-  common_result <- DSI::datashield.aggregate(
-    conns = ref_conn,
-    expr = call(name = "psiComputeCommonIndicesDS",
-                target_names = target_names,
-                session_id = session_id)
-  )[[1L]]
-  n_common <- as.integer(common_result$n_common)
-
-  if (verbose) message(sprintf("  Common records: %d", n_common))
-
-  # Export the common reference-index set encrypted to each target. The
-  # reference server filters from its stored common set and receives no blob.
-  for (target_name in target_names) {
-    common_export <- DSI::datashield.aggregate(
-      conns = ref_conn,
-      expr = call(name = "psiExportCommonIndicesDS",
-                  target_name = target_name,
-                  session_id = session_id)
-    )[[1L]]
-    .storeLargeBlob("common_indices_encrypted",
-                    common_export$encrypted_blob,
-                    datasources[target_name])
-  }
-
-  if (length(target_names) > 0L) {
-    DSI::datashield.assign(
-      conns = datasources[target_names],
-      symbol = newobj,
-      value = call(name = "psiFilterCommonDS", newobj,
-                   from_storage = TRUE, encrypted = TRUE,
-                   session_id = session_id)
-    )
-  }
-  DSI::datashield.assign(
-    conns = ref_conn,
-    symbol = newobj,
-    value = call(name = "psiFilterCommonDS", newobj,
-                   session_id = session_id)
-  )
-
-  # Verify alignment in parallel
-  count_results <- DSI::datashield.aggregate(
-    conns = datasources,
-    expr = call(name = "getObsCountDS", newobj)
-  )
-  stats <- list()
-  input_n <- list()
-  input_n[[ref_server]] <- ref_result$n
-  for (target_name in target_names) {
-    input_n[[target_name]] <- target_results[[target_name]]$n
-  }
-  for (name in server_names) {
-    count <- count_results[[name]]
-    pairwise_n <- if (identical(name, ref_server)) {
-      input_n[[name]]
-    } else {
-      matched_exports[[name]]$n_matched
-    }
-    stats[[name]] <- list(
-      n_matched = count$n_obs,
-      n_total = input_n[[name]],
-      n_pairwise = pairwise_n
-    )
-    if (verbose) message(sprintf(
-      "Server '%s': %d of %d records matched (%.1f%%)",
-      name, count$n_obs, input_n[[name]],
-      100 * count$n_obs / max(input_n[[name]], 1)
-    ))
-  }
-
-  if (verbose) message("PSI alignment complete.")
-
-  stats$n_common <- n_common
-  invisible(stats)
+  .dsvert_maybe_negotiate_dsi_chunk_size(datasources)
+  on.exit(.dsvert_reset_chunk_size(), add = TRUE)
+  if (verbose) message("Starting pinned, fixed-capacity PSI alignment.")
+  attestation <- .dsvert_psi_padded_align(
+    data_name = data_name, id_col = id_col, newobj = newobj,
+    datasources = datasources)
+  if (verbose) message("Pinned PSI alignment completed and attested.")
+  invisible(attestation)
 }

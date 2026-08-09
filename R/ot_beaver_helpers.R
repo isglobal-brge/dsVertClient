@@ -1,10 +1,8 @@
 #' Client-side Beaver preprocessing orchestration
 #'
-#' These helpers negotiate the effective preprocessing backend allowed by the
-#' participating servers. The efficient dealer backend is used when all servers
-#' allow it; IKNP OT-extension is selected when requested or required by server
-#' policy. Both backends install triple shares into the same server-side slots
-#' consumed by the online Beaver R1/R2 methods.
+#' These helpers negotiate the IKNP OT-extension backend required by every
+#' participating server. Participating-party dealer preprocessing is retired:
+#' it can expose peer operands through the online Beaver openings.
 #'
 #' @keywords internal
 #' @noRd
@@ -16,11 +14,11 @@
   mode <- tolower(as.character(mode)[1L])
   if (!nzchar(mode)) mode <- "auto"
   if (identical(mode, "ot")) mode <- "iknp"
-  valid <- c("dealer", "iknp")
+  valid <- "iknp"
   if (allow_auto) valid <- c("auto", valid)
   if (!mode %in% valid) {
     stop("Invalid dsvert.beaver_preprocessing value: ", mode,
-         ". Supported values are 'auto', 'dealer', 'iknp' and 'ot' ",
+         ". Supported values are 'auto', 'iknp' and 'ot' ",
          "('ot' is an alias for 'iknp').",
          call. = FALSE)
   }
@@ -42,12 +40,12 @@
     out <- tryCatch(
       .dsAgg(datasources[ci], call(name = "dsvertBeaverPolicyDS")),
       error = function(e) {
-        list(supported = c("dealer", "iknp"),
-             allowed = c("dealer", "iknp"),
-             preferred = "dealer",
-             minimum = "dealer",
-             requires_iknp = FALSE,
-             policy_unavailable = conditionMessage(e))
+        if (inherits(e, c("dsvert_peer_not_recognized",
+                          "dsvert_dsi_poisoned_session"))) {
+          stop(e)
+        }
+        stop("Could not verify the server IKNP policy: ",
+             conditionMessage(e), call. = FALSE)
       })
     if (is.list(out) && length(out) == 1L &&
         is.list(out[[1L]]) && !is.null(out[[1L]]$allowed)) {
@@ -55,12 +53,11 @@
     }
     out$allowed <- unique(vapply(out$allowed, .normalise_beaver_mode,
                                  character(1), allow_auto = FALSE))
-    out$preferred <- .normalise_beaver_mode(out$preferred %||% "dealer",
+    out$preferred <- .normalise_beaver_mode(out$preferred %||% "iknp",
                                             allow_auto = FALSE)
-    out$minimum <- .normalise_beaver_mode(out$minimum %||% "dealer",
+    out$minimum <- .normalise_beaver_mode(out$minimum %||% "iknp",
                                           allow_auto = FALSE)
-    out$requires_iknp <- isTRUE(out$requires_iknp) ||
-      !("dealer" %in% out$allowed) || identical(out$minimum, "iknp")
+    out$requires_iknp <- TRUE
     out
   })
   assign(cache_key, policies, envir = .beaver_policy_cache)
@@ -77,11 +74,8 @@
   policies <- .beaver_fetch_policies(datasources, party_conns, .dsAgg,
                                      session_id = session_id)
   if (is.null(policies)) {
-    if (identical(mode, "auto")) {
-      preferred <- getOption("dsvert.beaver_preprocessing.preferred", "dealer")
-      return(.normalise_beaver_mode(preferred, allow_auto = FALSE))
-    }
-    return(mode)
+    if (identical(mode, "auto")) return("iknp")
+    return(.normalise_beaver_mode(mode, allow_auto = FALSE))
   }
 
   allowed_all <- Reduce(intersect, lapply(policies, `[[`, "allowed"))
@@ -89,121 +83,11 @@
     stop("No common Beaver preprocessing backend is allowed by all servers",
          call. = FALSE)
   }
-  any_requires_iknp <- any(vapply(policies, function(x) isTRUE(x$requires_iknp),
-                                  logical(1)))
-  any_prefers_iknp <- any(vapply(policies, function(x) {
-    identical(x$preferred, "iknp")
-  }, logical(1)))
-
-  if (identical(mode, "iknp")) {
-    if ("iknp" %in% allowed_all) return("iknp")
-    stop("IKNP Beaver preprocessing was requested but at least one server ",
-         "does not allow it", call. = FALSE)
-  }
-  if (identical(mode, "dealer")) {
-    if (!any_requires_iknp && "dealer" %in% allowed_all) return("dealer")
-    if ("iknp" %in% allowed_all) return("iknp")
-    stop("Dealer Beaver preprocessing was requested but at least one server ",
-         "requires a stricter mode and IKNP is not commonly available",
+  if (!"iknp" %in% allowed_all) {
+    stop("At least one server does not allow IKNP preprocessing",
          call. = FALSE)
   }
-
-  if ((any_requires_iknp || any_prefers_iknp) && "iknp" %in% allowed_all) {
-    return("iknp")
-  }
-  if ("dealer" %in% allowed_all) return("dealer")
-  if ("iknp" %in% allowed_all) return("iknp")
-  stop("No usable Beaver preprocessing backend after policy negotiation",
-       call. = FALSE)
-}
-
-.dealer_prepare_vecmul <- function(datasources, party_conns, party_names,
-                                   transport_pks, session_id, n, ring,
-                                   .dsAgg, .sendBlob, dealer_conn = NULL) {
-  if (is.null(dealer_conn)) dealer_conn <- party_conns[[2L]]
-  dealer_party <- match(as.integer(dealer_conn), as.integer(party_conns),
-                        nomatch = NA_integer_) - 1L
-  if (is.na(dealer_party)) dealer_party <- NULL
-  ring <- as.integer(ring)
-  frac_bits <- if (ring == 127L) 50L else 20L
-  tri <- .dsAgg(datasources[dealer_conn],
-    call(name = "k2BeaverVecmulGenTriplesDS",
-         dcf0_pk = transport_pks[[party_names[[1L]]]],
-         dcf1_pk = transport_pks[[party_names[[2L]]]],
-         n = as.numeric(as.integer(n)), session_id = session_id,
-         frac_bits = frac_bits, ring = ring, dealer_party = dealer_party))
-  if (is.list(tri) && length(tri) == 1L) tri <- tri[[1L]]
-  if (!is.null(tri$triple_blob_0) && nzchar(tri$triple_blob_0)) {
-    .sendBlob(tri$triple_blob_0, "k2_beaver_vecmul_triple",
-              party_conns[[1L]])
-  }
-  if (!is.null(tri$triple_blob_1) && nzchar(tri$triple_blob_1)) {
-    .sendBlob(tri$triple_blob_1, "k2_beaver_vecmul_triple",
-              party_conns[[2L]])
-  }
-  invisible(NULL)
-}
-
-.dealer_prepare_grad <- function(datasources, party_conns, party_names,
-                                 transport_pks, session_id, n, p, ring,
-                                 .dsAgg, .sendBlob, dealer_conn = NULL,
-                                 grad_triple_key = "k2_grad_triple_fp") {
-  if (is.null(dealer_conn)) dealer_conn <- party_conns[[2L]]
-  dealer_party <- match(as.integer(dealer_conn), as.integer(party_conns),
-                        nomatch = NA_integer_) - 1L
-  if (is.na(dealer_party)) dealer_party <- NULL
-  grad_t <- .dsAgg(datasources[dealer_conn],
-    call(name = "glmRing63GenGradTriplesDS",
-         dcf0_pk = transport_pks[[party_names[[1L]]]],
-         dcf1_pk = transport_pks[[party_names[[2L]]]],
-         n = as.integer(n), p = as.integer(p),
-         ring = as.integer(ring), session_id = session_id,
-         dealer_party = dealer_party))
-  if (is.list(grad_t) && length(grad_t) == 1L) grad_t <- grad_t[[1L]]
-  if (!is.null(grad_t$grad_blob_0) && nzchar(grad_t$grad_blob_0)) {
-    .sendBlob(grad_t$grad_blob_0, grad_triple_key, party_conns[[1L]])
-  }
-  if (!is.null(grad_t$grad_blob_1) && nzchar(grad_t$grad_blob_1)) {
-    .sendBlob(grad_t$grad_blob_1, grad_triple_key, party_conns[[2L]])
-  }
-  invisible(NULL)
-}
-
-.dealer_prepare_spline <- function(datasources, party_conns, party_names,
-                                   transport_pks, session_id, n, ring,
-                                   .dsAgg, .sendBlob, dealer_conn = NULL) {
-  if (is.null(dealer_conn)) dealer_conn <- party_conns[[2L]]
-  dealer_party <- match(as.integer(dealer_conn), as.integer(party_conns),
-                        nomatch = NA_integer_) - 1L
-  if (is.na(dealer_party)) dealer_party <- NULL
-  ring <- as.integer(ring)
-  frac_bits <- if (ring == 127L) 50L else 20L
-  spline_t <- .dsAgg(datasources[dealer_conn],
-    call(name = "glmRing63GenSplineTriplesDS",
-         dcf0_pk = transport_pks[[party_names[[1L]]]],
-         dcf1_pk = transport_pks[[party_names[[2L]]]],
-         n = as.integer(n), frac_bits = frac_bits,
-         ring = ring, session_id = session_id, dealer_party = dealer_party))
-  if (is.list(spline_t) && length(spline_t) == 1L) spline_t <- spline_t[[1L]]
-  if (!is.null(spline_t$spline_blob_0) && nzchar(spline_t$spline_blob_0)) {
-    .sendBlob(spline_t$spline_blob_0, "k2_spline_triples",
-              party_conns[[1L]])
-  }
-  if (!is.null(spline_t$spline_blob_1) && nzchar(spline_t$spline_blob_1)) {
-    .sendBlob(spline_t$spline_blob_1, "k2_spline_triples",
-              party_conns[[2L]])
-  }
-  invisible(NULL)
-}
-
-.iknp_policy_retry <- function(expr, fallback) {
-  tryCatch(expr, error = function(e) {
-    msg <- conditionMessage(e)
-    if (grepl("DSVERT_BEAVER_POLICY_REQUIRES_IKNP", msg, fixed = TRUE)) {
-      return(fallback())
-    }
-    stop(e)
-  })
+  "iknp"
 }
 
 .ot_beaver_prepare_vecmul <- function(datasources, party_conns, party_names,
@@ -271,9 +155,7 @@
     "spline", n, 3L, ring, datasources, party_conns, .dsAgg, session_id)
   iknp <- function() {
     if (is.null(beaver_key)) {
-      beaver_key <- paste0("k2_ot_spline_",
-                           format(Sys.time(), "%Y%m%d%H%M%OS3"),
-                           "_", sample.int(.Machine$integer.max, 1L))
+      beaver_key <- paste0("k2_ot_spline_", .dsvert_uuid4())
     }
     ops <- c(and = "spline_and", had1 = "spline_had1", had2 = "spline_had2")
     for (op in names(ops)) {
@@ -312,9 +194,7 @@
   n <- as.integer(n)
   p <- as.integer(p)
   if (is.null(beaver_key)) {
-    beaver_key <- paste0("k2_iknp_beaver_", kind, "_",
-                         format(Sys.time(), "%Y%m%d%H%M%OS3"),
-                         "_", sample.int(.Machine$integer.max, 1L))
+    beaver_key <- paste0("k2_iknp_beaver_", kind, "_", .dsvert_uuid4())
   }
   beaver_key <- make.names(beaver_key)
   ot_n <- if (identical(kind, "matvec")) n * p else n
@@ -343,6 +223,10 @@
     output_sender_key = cross_send_key,
     output_receiver_key = cross_receive_key,
     iknp_key = paste0(beaver_key, "_dir12"),
+    sender_name = party_names[[1L]],
+    receiver_name = party_names[[2L]],
+    sender_pk = transport_pks[[party_names[[1L]]]],
+    receiver_pk = transport_pks[[party_names[[2L]]]],
     n = ot_n,
     ring = ring,
     session_id = session_id,
@@ -358,6 +242,10 @@
     output_sender_key = cross_send_key,
     output_receiver_key = cross_receive_key,
     iknp_key = paste0(beaver_key, "_dir21"),
+    sender_name = party_names[[2L]],
+    receiver_name = party_names[[1L]],
+    sender_pk = transport_pks[[party_names[[2L]]]],
+    receiver_pk = transport_pks[[party_names[[1L]]]],
     n = ot_n,
     ring = ring,
     session_id = session_id,
@@ -380,12 +268,14 @@
                                    x_key, y_key,
                                    output_sender_key, output_receiver_key,
                                    iknp_key, n, ring, session_id,
+                                   sender_name, receiver_name,
+                                   sender_pk, receiver_pk,
                                    .dsAgg, .sendBlob) {
   base_key <- make.names(sprintf("k2_iknp_base_%s_%s_ring%d",
-                                 as.integer(sender_ci),
-                                 as.integer(receiver_ci),
+                                 sender_name,
+                                 receiver_name,
                                  as.integer(ring)))
-  cache_key <- paste(session_id, sender_ci, receiver_ci, ring, sep = "|")
+  cache_key <- paste(session_id, sender_name, receiver_name, ring, sep = "|")
   base_cached <- isTRUE(get0(cache_key, envir = .iknp_base_cache,
                              inherits = FALSE))
   if (!base_cached) {
@@ -399,24 +289,27 @@
       call(name = "k2IknpBaseSenderChoicesDS",
            public_setup = setup$public_setup,
            iknp_key = base_key,
+           recipient_pk = receiver_pk,
+           ring = ring,
            session_id = session_id))
     if (is.list(choices) && length(choices) == 1L) choices <- choices[[1L]]
 
-    points_key <- paste0(base_key, "_base_points")
-    .sendBlob(choices$points, points_key, receiver_ci)
+    .sendBlob(choices$points, choices$points_transfer, receiver_ci)
     base_ct <- .dsAgg(datasources[receiver_ci],
       call(name = "k2IknpBaseReceiverEncryptDS",
-           points_blob_key = points_key,
            iknp_key = base_key,
+           producer_name = sender_name,
+           recipient_pk = sender_pk,
+           ring = ring,
            session_id = session_id))
     if (is.list(base_ct) && length(base_ct) == 1L) base_ct <- base_ct[[1L]]
 
-    base_ct_key <- paste0(base_key, "_base_ciphertexts")
-    .sendBlob(base_ct$ciphertexts, base_ct_key, sender_ci)
+    .sendBlob(base_ct$ciphertexts, base_ct$ciphertexts_transfer, sender_ci)
     .dsAgg(datasources[sender_ci],
       call(name = "k2IknpBaseSenderFinalizeDS",
-           ciphertexts_blob_key = base_ct_key,
            iknp_key = base_key,
+           producer_name = receiver_name,
+           ring = ring,
            session_id = session_id))
     assign(cache_key, TRUE, envir = .iknp_base_cache)
   }
@@ -426,38 +319,40 @@
          y_key = y_key,
          iknp_key = iknp_key,
          base_key = base_key,
+         recipient_pk = sender_pk,
          n = as.integer(n),
          ring = ring,
          session_id = session_id))
   if (is.list(ext) && length(ext) == 1L) ext <- ext[[1L]]
 
-  u_key <- paste0(iknp_key, "_u_matrix")
-  .sendBlob(ext$u_matrix, u_key, sender_ci)
-  # Relay the KOS15 consistency-check opener with the U matrix (no extra round).
-  # Custodian/analyst can disable via options(dsvert.iknp_kos_check = FALSE).
-  use_kos <- isTRUE(getOption("dsvert.iknp_kos_check", TRUE))
+  .sendBlob(ext$u_matrix, ext$u_matrix_transfer, sender_ci)
+  # Relay the mandatory KOS15 consistency-check opener with the U matrix (no
+  # extra round). There is intentionally no analyst/custodian downgrade knob.
+  if (is.null(ext$kos_check) || !nzchar(ext$kos_check)) {
+    stop("IKNP KOS consistency-check opener missing", call. = FALSE)
+  }
   enc <- .dsAgg(datasources[sender_ci],
     call(name = "k2IknpSenderEncryptDS",
-         u_matrix_blob_key = u_key,
          x_key = x_key,
          iknp_key = iknp_key,
          base_key = base_key,
          output_key = output_sender_key,
          n = as.integer(n),
          ring = ring,
-         kos_check = if (use_kos) ext$kos_check else NULL,
+         producer_name = receiver_name,
+         recipient_pk = receiver_pk,
+         kos_check = ext$kos_check,
          session_id = session_id))
   if (is.list(enc) && length(enc) == 1L) enc <- enc[[1L]]
 
-  cts_key <- paste0(iknp_key, "_ciphertexts")
-  .sendBlob(enc$ciphertexts, cts_key, receiver_ci)
+  .sendBlob(enc$ciphertexts, enc$ciphertexts_transfer, receiver_ci)
   .dsAgg(datasources[receiver_ci],
     call(name = "k2IknpReceiverDecryptDS",
-         ciphertexts_blob_key = cts_key,
          iknp_key = iknp_key,
          output_key = output_receiver_key,
          n = as.integer(n),
          ring = ring,
+         producer_name = sender_name,
          session_id = session_id))
   invisible(NULL)
 }

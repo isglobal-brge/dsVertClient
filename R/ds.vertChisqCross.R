@@ -1,611 +1,84 @@
-#' @title Cross-server chi-square (one-hot + Beaver cross-products)
-#' @description Pearson chi-square and Fisher-exact tests on a two-way
-#'   contingency table where the row variable is held on one server and
-#'   the column variable is held on another. Uses the existing Ring63
-#'   Beaver cross-product infrastructure: one-hot indicator matrices are
-#'   constructed server-side via \code{\link[dsVert]{dsvertOneHotDS}},
-#'   then the \eqn{K \times L} cell counts \eqn{n_{kl} = \sum_i X_{ik}
-#'   Y_{il}} are obtained by Beaver dot products on the shared
-#'   indicator vectors. When cell suppression is active, the DCF parties
-#'   first run a pre-release threshold check over the shared cell-count
-#'   vector; the exact \eqn{K \times L} aggregate table is returned to the
-#'   client only if every positive cell passes the configured privacy
-#'   threshold. The client never sees any \eqn{n}-length indicator vector.
+#' DP-aware inference for a signed cross-owner categorical table
 #'
-#' @param data Aligned data-frame name.
-#' @param var1 Row variable (categorical or numeric treated as factor).
-#' @param var2 Column variable.
-#' @param correct Apply Yates continuity correction (2x2 only).
-#' @param fisher Also return a Fisher-exact p-value (via R's
-#'   \code{fisher.test} applied to the reconstructed aggregate table).
-#' @param datasources DataSHIELD connection object.
-#' @param verbose Print progress.
-#' @return An object of class \code{ds.vertChisq} (same print method as
-#'   the same-server helper) with components \code{observed},
-#'   \code{expected}, \code{chisq}, \code{df}, \code{p_value},
-#'   \code{fisher_p} (if requested), \code{n}, \code{row_levels},
-#'   \code{col_levels}.
+#' This compatibility entry point obtains exactly one fixed-domain joint-DP
+#' contingency release and performs only local post-processing. It never
+#' discovers columns, constructs analyst-addressable one-hot objects, opens an
+#' exact table, or invokes the retired cross-count endpoints. The row/column
+#' ownership and domains must already be present in the custodian-signed
+#' capsule `vertical_cross_specs` contract.
+#'
+#' @param data One of the two signed dataset names, or an existing
+#'   `ds.vertDPContingency` release.
+#' @param var1,var2 Row and column variables. When `data` is an existing
+#'   release these are optional orientation assertions.
+#' @param correct Apply the DP-aware Yates-style correction for a 2-by-2 table.
+#' @param fisher Also compute the DP-aware conditional 2-by-2 calibration from
+#'   the same release. No second DSI request is made.
+#' @param datasources DataSHIELD connections. Omit for an existing release.
+#' @param verbose Print one non-sensitive progress message.
+#' @param simulations Monte Carlo replicates for each requested calibration.
+#' @param mc_confidence Confidence level for its Monte Carlo interval.
+#' @return A `ds.vertChisq` result. If `fisher=TRUE`, the same object also
+#'   contains `fisher`, `fisher_p`, and `source_dp_release`.
 #' @export
-ds.vertChisqCross <- function(data, var1, var2, correct = TRUE,
-                               fisher = FALSE, datasources = NULL,
-                               verbose = TRUE) {
-  if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
-  server_names <- names(datasources)
-
-  # Locate each variable's server.
-  var1_srv <- NULL; var2_srv <- NULL
-  for (srv in server_names) {
-    ci <- which(server_names == srv)
-    cols <- tryCatch(
-      DSI::datashield.aggregate(datasources[ci],
-        call(name = "dsvertColNamesDS", data_name = data))[[1]]$columns,
-      error = function(e) character(0))
-    if (var1 %in% cols) var1_srv <- srv
-    if (var2 %in% cols) var2_srv <- srv
-  }
-  if (is.null(var1_srv)) stop("var1='", var1, "' not found", call. = FALSE)
-  if (is.null(var2_srv)) stop("var2='", var2, "' not found", call. = FALSE)
-  if (var1_srv == var2_srv) {
-    if (verbose) message("Both variables on '", var1_srv,
-                          "': delegating to ds.vertChisq (same-server path)")
-    return(ds.vertChisq(data, var1, var2, correct = correct,
-                         datasources = datasources))
-  }
-
-  session_id <- .mpc_session_id()
-  on.exit({
-    for (.srv in unique(c(var1_srv, var2_srv))) {
-      .ci <- which(server_names == .srv)
-      tryCatch(DSI::datashield.aggregate(datasources[.ci],
-        call(name = "mpcCleanupDS", session_id = session_id)),
-        error = function(e) NULL)
-    }
-  }, add = TRUE)
-
-  if (verbose) message(sprintf(
-    "[ds.vertChisqCross] %s@%s x %s@%s, session=%s",
-    var1, var1_srv, var2, var2_srv, substr(session_id, 1L, 8L)))
-
-  # Exchange transport keys and establish the identity-verified peer set on both
-  # servers, so a share can only ever be sealed to a verified peer transport key
-  # (not to an analyst-supplied key).
-  pks <- list()
-  identity_info <- list()
-  chisq_srvs <- c(var1_srv, var2_srv)
-  for (srv in chisq_srvs) {
-    ci <- which(server_names == srv)
-    r <- DSI::datashield.aggregate(datasources[ci],
-      call(name = "glmRing63TransportInitDS", session_id = session_id))
-    if (is.list(r) && length(r) == 1L) r <- r[[1]]
-    pks[[srv]] <- r$transport_pk
-    if (!is.null(r$identity_pk)) {
-      identity_info[[srv]] <- list(identity_pk = r$identity_pk,
-                                   signature = r$signature)
-    }
-  }
-  pk_sorted <- pks[sort(names(pks))]
-  id_sorted <- if (length(identity_info) > 0) identity_info[sort(names(identity_info))] else NULL
-  .to_b64url <- function(x) gsub("\\+", "-", gsub("/", "_", gsub("=+$", "", x, perl = TRUE), fixed = TRUE), fixed = TRUE)
-  .json_to_b64url <- function(x) .to_b64url(gsub("\n", "", jsonlite::base64_enc(charToRaw(jsonlite::toJSON(x, auto_unbox = TRUE))), fixed = TRUE))
-  pk_b64 <- .json_to_b64url(pk_sorted)
-  id_b64 <- if (!is.null(id_sorted)) .json_to_b64url(id_sorted) else ""
-  for (srv in chisq_srvs) {
-    ci <- which(server_names == srv)
-    DSI::datashield.aggregate(datasources[ci],
-      call(name = "mpcStoreTransportKeysDS",
-           transport_keys_b64 = pk_b64, identity_info_b64 = id_b64,
-           session_id = session_id))
-  }
-
-  # Build one-hot indicators on each server (session-stored).
-  oh1 <- DSI::datashield.aggregate(
-    datasources[which(server_names == var1_srv)],
-    call(name = "dsvertOneHotDS", data_name = data, var = var1,
-         session_id = session_id))
-  if (is.list(oh1) && length(oh1) == 1L) oh1 <- oh1[[1]]
-  oh2 <- DSI::datashield.aggregate(
-    datasources[which(server_names == var2_srv)],
-    call(name = "dsvertOneHotDS", data_name = data, var = var2,
-         session_id = session_id))
-  if (is.list(oh2) && length(oh2) == 1L) oh2 <- oh2[[1]]
-
-  if (length(oh1$levels) < 2L || length(oh2$levels) < 2L) {
-    stop("Each variable must have at least 2 non-missing levels",
+ds.vertChisqCross <- function(
+    data, var1 = NULL, var2 = NULL, correct = TRUE, fisher = FALSE,
+    datasources = NULL, verbose = TRUE, simulations = 9999L,
+    mc_confidence = 0.95) {
+  if (!is.logical(correct) || length(correct) != 1L || is.na(correct) ||
+      !is.logical(fisher) || length(fisher) != 1L || is.na(fisher) ||
+      !is.logical(verbose) || length(verbose) != 1L || is.na(verbose)) {
+    stop("correct, fisher and verbose must be non-missing logical scalars",
          call. = FALSE)
   }
+  .dsvert_dp_chisq_validate_simulation_inputs(
+    simulations, mc_confidence)
 
-  # The server-side Beaver cross-product for a K x L table is:
-  #   n_kl = sum_i X_ik * Y_il
-  # which is a bilinear form on the shared indicator vectors. The
-  # primitive `k2CrossOneHotCountsDS(session_id, var1, var2, peer_pk)`
-  # packages the Beaver triple + double-round exchange needed to
-  # produce the K*L counts as a single aggregate.
-  #
-  # Beaver joint cells via K*L element-wise products over shared
-  # indicator vectors. For each (k, l):
-  #   1. var1_srv extracts column k of its one-hot matrix into a
-  #      per-patient FP share (and shares n-length zeros to the peer).
-  #   2. var2_srv does the symmetric thing with column l.
-  #   3. After the usual input-sharing preamble, both parties hold
-  #      shares of X_k and Y_l; we run the already-shipped 4-step
-  #      Beaver vecmul (GenTriples / Consume / R1 / R2) to obtain
-  #      shares of (X_k .* Y_l); the client sums the two shares of
-  #      sum_i (X_k Y_l)_i to get n_{kl}. No per-patient indicator
-  #      ever leaves the owning server.
-  counts <- tryCatch({
-    .dsvert_chisq_bilinear_counts(
-      datasources, server_names,
-      var1_srv, var2_srv, var1, var2,
-      oh1, oh2, pks, session_id, verbose)
-  }, error = function(e) {
-    msg <- conditionMessage(e)
-    if (grepl("pre-release disclosure guard|release blocked", msg)) {
-      stop(msg, call. = FALSE)
+  if (inherits(data, "ds.vertDPContingency")) {
+    if (!is.null(datasources)) {
+      stop("datasources must be omitted for an existing DP release",
+           call. = FALSE)
     }
-    stop("Beaver bilinear cross-count path failed: ",
-         msg,
-         ". Refusing to substitute margin-based expected cells because ",
-         "they are not the observed contingency table.",
-         call. = FALSE)
-  })
-
-  n <- sum(counts)
-  if (n == 0) stop("No observations; cannot compute chi-square", call. = FALSE)
-
-  pre_release_guard <- attr(counts, "pre_release_guard", exact = TRUE)
-
-  # Standard Pearson chi-square on the reconstructed K x L table.
-  row_m <- as.integer(rowSums(counts))
-  col_m <- as.integer(colSums(counts))
-  disclosure_guard <- .dsvert_guard_table_release(
-    counts,
-    row_margins = row_m,
-    col_margins = col_m,
-    n = n,
-    what = "cross-server contingency table")
-  disclosure_guard$pre_release_guard <- pre_release_guard
-  res_list <- .dsvert_chisq_compute(counts,
-    row_margins = row_m, col_margins = col_m, n = n,
-    correct = correct)
-  names(res_list)[names(res_list) == "statistic"] <- "chisq"
-  fisher_p <- NA_real_
-  if (isTRUE(fisher)) {
-    fisher_p <- tryCatch(
-      stats::fisher.test(counts, simulate.p.value = TRUE,
-                          B = 5000L)$p.value,
-      error = function(e) NA_real_)
-  }
-
-  out <- list(
-    observed      = counts,
-    expected      = res_list$expected,
-    chisq         = res_list$chisq %||% res_list$statistic,
-    df            = res_list$df,
-    p_value       = res_list$p_value,
-    fisher_p      = fisher_p,
-    n             = n,
-    row_levels    = oh1$levels,
-    col_levels    = oh2$levels,
-    var1          = var1,
-    var2          = var2,
-    var1_server   = var1_srv,
-    var2_server   = var2_srv,
-    correct       = correct,
-    disclosure_guard = disclosure_guard,
-    method        = "Cross-server chi-square (Ring63 Beaver cross-products)")
-  class(out) <- c("ds.vertChisq", "list")
-  out
-}
-
-#' @keywords internal
-.dsvert_chisq_bilinear_counts <- function(datasources, server_names,
-                                           var1_srv, var2_srv,
-                                           var1, var2, oh1, oh2, pks,
-                                           session_id, verbose = FALSE) {
-  # Helpers.
-  v1_ci <- which(server_names == var1_srv)
-  v2_ci <- which(server_names == var2_srv)
-  K <- length(oh1$levels); L <- length(oh2$levels); n <- oh1$n
-  if (oh1$n != oh2$n) {
-    stop("one-hot vectors have mismatched length (", oh1$n, " vs ",
-         oh2$n, "); rerun PSI alignment", call. = FALSE)
-  }
-  sendBlob <- function(blob, key, conn_idx) {
-    DSI::datashield.aggregate(datasources[conn_idx],
-      call(name = "mpcStoreBlobDS", key = key, chunk = blob,
-           session_id = session_id))
-  }
-
-  # Step A: mutually share the full one-hot matrices between the two
-  # servers. Each party splits its plaintext matrix into (own_share,
-  # peer_share), keeps own_share overwriting the session slot, and
-  # sends peer_share sealed to the other server.
-  var1_src <- paste0("k2_onehot_", var1, "_fp")
-  var2_src <- paste0("k2_onehot_", var2, "_fp")
-  var1_peer <- paste0("k2_onehot_peer_", var1, "_fp")
-  var2_peer <- paste0("k2_onehot_peer_", var2, "_fp")
-
-  share1 <- DSI::datashield.aggregate(datasources[v1_ci],
-    call(name = "k2BeaverShareVectorDS",
-         source_key = var1_src,
-         peer_pk = pks[[var2_srv]],
-         session_id = session_id))
-  if (is.list(share1) && length(share1) == 1L) share1 <- share1[[1L]]
-  sendBlob(share1$peer_blob, paste0("bshr_", var1), v2_ci)
-  DSI::datashield.aggregate(datasources[v2_ci],
-    call(name = "k2BeaverReceiveVectorDS",
-         blob_key = paste0("bshr_", var1),
-         output_key = var1_peer,
-         session_id = session_id))
-
-  share2 <- DSI::datashield.aggregate(datasources[v2_ci],
-    call(name = "k2BeaverShareVectorDS",
-         source_key = var2_src,
-         peer_pk = pks[[var1_srv]],
-         session_id = session_id))
-  if (is.list(share2) && length(share2) == 1L) share2 <- share2[[1L]]
-  sendBlob(share2$peer_blob, paste0("bshr_", var2), v1_ci)
-  DSI::datashield.aggregate(datasources[v1_ci],
-    call(name = "k2BeaverReceiveVectorDS",
-         blob_key = paste0("bshr_", var2),
-         output_key = var2_peer,
-         session_id = session_id))
-
-  # After this step:
-  #   var1_srv session holds SHARE of both var1 (in var1_src) and
-  #     SHARE of var2 (in var2_peer).
-  #   var2_srv session holds SHARE of var1 (in var1_peer) and SHARE of
-  #     var2 (in var2_src).
-  #
-  # For the Beaver vecmul we need (X, Y) each as shares on BOTH
-  # parties. Convention: party 0 = var1_srv.
-  #   on var1_srv:  X_share = column k of var1_src; Y_share = col l of var2_peer
-  #   on var2_srv:  X_share = column k of var1_peer; Y_share = col l of var2_src
-  # (Both pairs sum to the true X_k, Y_l.)
-
-  dealer_ci <- v2_ci
-  count_key <- "k2_chisq_cross_count_shares"
-
-  dsAgg <- function(ds, expr) DSI::datashield.aggregate(ds, expr)
-
-  # PERFORMANCE NOTE: each (kk, ll) cell gets a FRESH triple (reusing
-  # a triple for two products is a security leak: the common masking
-  # value a would reveal X_k1 - X_k2 when the two (x-a) shares are
-  # compared). A proper batch optimisation generates K*L independent
-  # triples in one Go call (k2-beaver-vecmul-gen-triples supports any
-  # n, so we'd just call with n*K*L). That is a Wave-4 refinement;
-  # current K*L independent triple gens are already amortised across
-  # a single session.
-  for (kk in seq_len(K)) {
-    for (ll in seq_len(L)) {
-      # Extract column kk on each party (into canonical beaver X slot).
-      DSI::datashield.aggregate(datasources[v1_ci],
-        call(name = "k2BeaverExtractColumnDS",
-             source_key = var1_src, n = as.integer(n), K = as.integer(K),
-             col_index = as.integer(kk), output_key = "k2_beaver_x",
-             session_id = session_id))
-      DSI::datashield.aggregate(datasources[v2_ci],
-        call(name = "k2BeaverExtractColumnDS",
-             source_key = var1_peer, n = as.integer(n), K = as.integer(K),
-             col_index = as.integer(kk), output_key = "k2_beaver_x",
-             session_id = session_id))
-      # Extract column ll on each party (into canonical beaver Y slot).
-      DSI::datashield.aggregate(datasources[v1_ci],
-        call(name = "k2BeaverExtractColumnDS",
-             source_key = var2_peer, n = as.integer(n), K = as.integer(L),
-             col_index = as.integer(ll), output_key = "k2_beaver_y",
-             session_id = session_id))
-      DSI::datashield.aggregate(datasources[v2_ci],
-        call(name = "k2BeaverExtractColumnDS",
-             source_key = var2_src, n = as.integer(n), K = as.integer(L),
-             col_index = as.integer(ll), output_key = "k2_beaver_y",
-             session_id = session_id))
-      # Beaver vecmul: OT preprocessing -> consume -> r1 (relay) -> r2.
-      .ot_beaver_prepare_vecmul(
-        datasources = datasources,
-        party_conns = c(v1_ci, v2_ci),
-        party_names = c(var1_srv, var2_srv),
-        transport_pks = pks,
-        session_id = session_id,
-        n = n,
-        ring = 63L,
-        .dsAgg = dsAgg,
-        .sendBlob = sendBlob)
-      DSI::datashield.aggregate(datasources[v1_ci],
-        call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
-      DSI::datashield.aggregate(datasources[v2_ci],
-        call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
-      r1a <- DSI::datashield.aggregate(datasources[v1_ci],
-        call(name = "k2BeaverVecmulR1DS",
-             peer_pk = pks[[var2_srv]],
-             x_key = "k2_beaver_x", y_key = "k2_beaver_y",
-             n = as.integer(n),
-             session_id = session_id, frac_bits = 20L))
-      r1b <- DSI::datashield.aggregate(datasources[v2_ci],
-        call(name = "k2BeaverVecmulR1DS",
-             peer_pk = pks[[var1_srv]],
-             x_key = "k2_beaver_x", y_key = "k2_beaver_y",
-             n = as.integer(n),
-             session_id = session_id, frac_bits = 20L))
-      if (is.list(r1a) && length(r1a) == 1L) r1a <- r1a[[1L]]
-      if (is.list(r1b) && length(r1b) == 1L) r1b <- r1b[[1L]]
-      sendBlob(r1a$peer_blob, "k2_beaver_vecmul_peer_masked", v2_ci)
-      sendBlob(r1b$peer_blob, "k2_beaver_vecmul_peer_masked", v1_ci)
-      DSI::datashield.aggregate(datasources[v1_ci],
-        call(name = "k2BeaverVecmulR2DS",
-             is_party0 = TRUE,
-             x_key = "k2_beaver_x", y_key = "k2_beaver_y",
-             output_key = "k2_beaver_z", n = as.integer(n),
-             session_id = session_id, frac_bits = 20L))
-      DSI::datashield.aggregate(datasources[v2_ci],
-        call(name = "k2BeaverVecmulR2DS",
-             is_party0 = FALSE,
-             x_key = "k2_beaver_x", y_key = "k2_beaver_y",
-             output_key = "k2_beaver_z", n = as.integer(n),
-             session_id = session_id, frac_bits = 20L))
-      # Sum shares per party, but keep scalar shares server-side until the
-      # pre-release threshold check has passed. Before this point the client
-      # receives only one-time-masked DCF relay values, not reconstructable
-      # count shares.
-      append <- !(kk == 1L && ll == 1L)
-      DSI::datashield.aggregate(datasources[v1_ci],
-        call(name = "k2StoreSumShareDS", source_key = "k2_beaver_z",
-             output_key = count_key, append = append,
-             session_id = session_id, ring = "ring63"))
-      DSI::datashield.aggregate(datasources[v2_ci],
-        call(name = "k2StoreSumShareDS", source_key = "k2_beaver_z",
-             output_key = count_key, append = append,
-             session_id = session_id, ring = "ring63"))
-    }
-  }
-  settings <- .dsvert_table_privacy_settings()
-  pre_release_guard <- list(
-    required = !settings$allow_small_cell_tables &&
-      is.finite(settings$min_cell_count) && settings$min_cell_count > 0L,
-    min_cell_count = settings$min_cell_count,
-    allow_small_cell_tables = settings$allow_small_cell_tables,
-    checked = FALSE,
-    passed = NA)
-  if (isTRUE(pre_release_guard$required)) {
-    pre_release_guard <- .dsvert_chisq_cross_precheck(
-      datasources = datasources,
-      pks = pks,
-      party_conns = c(v1_ci, v2_ci),
-      party_srvs = c(var1_srv, var2_srv),
-      dealer_ci = dealer_ci,
-      sendBlob = sendBlob,
-      source_key = count_key,
-      n_values = as.integer(K * L),
-      privacy_min = as.integer(settings$min_cell_count),
-      session_id = session_id)
-  }
-  counts <- .dsvert_chisq_cross_reconstruct_counts(
-    datasources = datasources,
-    party_conns = c(v1_ci, v2_ci),
-    source_key = count_key,
-    K = K,
-    L = L,
-    row_levels = oh1$levels,
-    col_levels = oh2$levels,
-    session_id = session_id)
-  if (isTRUE(verbose)) {
-    for (kk in seq_len(K)) {
-      for (ll in seq_len(L)) {
-        message(sprintf("  n[%s,%s] = %d",
-                        oh1$levels[kk], oh2$levels[ll], counts[kk, ll]))
+    release <- data
+    assertions <- list(row = var1, column = var2)
+    expected <- list(row = release$row_var, column = release$col_var)
+    for (name in names(assertions)) {
+      value <- assertions[[name]]
+      if (!is.null(value) &&
+          (!is.character(value) || length(value) != 1L || is.na(value) ||
+           !identical(value, expected[[name]]))) {
+        stop(name, " variable assertion does not match the DP release",
+             call. = FALSE)
       }
     }
+  } else {
+    for (value in list(data = data, var1 = var1, var2 = var2)) {
+      if (!is.character(value) || length(value) != 1L || is.na(value) ||
+          !nzchar(value)) {
+        stop("data, var1 and var2 must be non-empty strings",
+             call. = FALSE)
+      }
+    }
+    release <- ds.vertDPContingency(
+      data_name = data, row_var = var1, col_var = var2,
+      datasources = datasources)
   }
-  attr(counts, "pre_release_guard") <- pre_release_guard
-  counts
-}
-
-#' @keywords internal
-# Coordinator-side DCF comparison key generation. Mirrors the dealer step but
-# runs on the non-computing coordinator, so no data server ever holds both
-# comparison mask shares. Each party's keys are transport-sealed to that party,
-# so a party decrypts only its own share; the coordinator holds the full mask
-# but, relaying only the round-one values that are themselves sealed
-# party-to-party, never observes a masked value and so cannot open the counts.
-.dsvert_chisq_cmp_genkeys <- function(dcf0_pk, dcf1_pk, n, threshold,
-                                      frac_bits = 20L) {
-  cmp <- dsVert:::.callMpcTool("k2-cmp-gen", list(
-    n = as.integer(n),
-    threshold = as.numeric(threshold),
-    frac_bits = as.integer(frac_bits)))
-  pk0 <- dsVert:::.base64url_to_base64(dcf0_pk)
-  pk1 <- dsVert:::.base64url_to_base64(dcf1_pk)
-  sealed0 <- dsVert:::.callMpcTool("transport-encrypt", list(
-    data = cmp$party0_keys, recipient_pk = pk0))
-  sealed1 <- dsVert:::.callMpcTool("transport-encrypt", list(
-    data = cmp$party1_keys, recipient_pk = pk1))
-  list(
-    cmp_blob_0 = dsVert:::base64_to_base64url(sealed0$sealed),
-    cmp_blob_1 = dsVert:::base64_to_base64url(sealed1$sealed))
-}
-
-#' @keywords internal
-.dsvert_chisq_cross_cmp <- function(datasources, pks, party_conns,
-                                     party_srvs, dealer_ci, sendBlob,
-                                     source_key, threshold, output_key,
-                                     n_values, session_id, tag,
-                                     return_share = FALSE) {
-  key_blob <- paste0("k2_cmp_keys_", tag)
-  keys_key <- paste0("k2_cmp_keys_", tag)
-  peer_blob <- paste0("k2_cmp_peer_masked_", tag)
-  # Generate the DCF comparison keys on the coordinator, not on a data server.
-  # The dealer draws the comparison mask and learns both mask shares; keeping
-  # that role on the non-computing coordinator -- which only ever relays
-  # round-one values already sealed party-to-party -- means no data server ever
-  # holds both shares and the mask holder never sees a masked value, so the
-  # compared counts stay secret from every party.
-  gen <- .dsvert_chisq_cmp_genkeys(
-    dcf0_pk = pks[[party_srvs[[1L]]]],
-    dcf1_pk = pks[[party_srvs[[2L]]]],
-    n = as.integer(n_values),
-    threshold = as.numeric(threshold),
-    frac_bits = 20L)
-  sendBlob(gen$cmp_blob_0, key_blob, party_conns[[1L]])
-  sendBlob(gen$cmp_blob_1, key_blob, party_conns[[2L]])
-  for (ii in seq_along(party_conns)) {
-    DSI::datashield.aggregate(datasources[party_conns[[ii]]],
-      call(name = "k2CmpStoreKeysDS",
-           blob_key = key_blob,
-           output_key = keys_key,
-           session_id = session_id))
+  if (isTRUE(verbose)) {
+    message("[ds.vertChisqCross] DP-aware post-processing of one capsule release")
   }
-
-  r1 <- vector("list", 2L)
-  for (ii in seq_along(party_conns)) {
-    # Seal the one-time-masked value to the transport key of the peer that
-    # consumes it in round 2 (party_srvs[[3-ii]]), so the analyst relays only
-    # an opaque blob (defence-in-depth over the fresh-mask OTP).
-    r1[[ii]] <- DSI::datashield.aggregate(datasources[party_conns[[ii]]],
-      call(name = "k2CmpRound1DS",
-           source_key = source_key,
-           party_id = as.integer(ii - 1L),
-           keys_key = keys_key,
-           peer_pk = pks[[party_srvs[[3L - ii]]]],
-           session_id = session_id,
-           frac_bits = 20L))
-    if (is.list(r1[[ii]]) && length(r1[[ii]]) == 1L) r1[[ii]] <- r1[[ii]][[1L]]
+  chisq <- .dsvert_dp_chisq_from_release(
+    release, correct = correct, simulations = simulations,
+    mc_confidence = mc_confidence)
+  chisq$source_dp_release <- release
+  chisq$cross_owner <- isTRUE(release$cross_owner)
+  chisq$servers <- release$servers
+  if (isTRUE(fisher)) {
+    fisher_result <- .dsvert_dp_fisher_from_release(
+      release, simulations = simulations, mc_confidence = mc_confidence)
+    chisq$fisher <- fisher_result
+    chisq$fisher_p <- fisher_result$p_value
+  } else {
+    chisq$fisher_p <- NULL
   }
-  sendBlob(r1[[1L]]$cmp_masked, peer_blob, party_conns[[2L]])
-  sendBlob(r1[[2L]]$cmp_masked, peer_blob, party_conns[[1L]])
-
-  r2 <- vector("list", 2L)
-  for (ii in seq_along(party_conns)) {
-    r2[[ii]] <- DSI::datashield.aggregate(datasources[party_conns[[ii]]],
-      call(name = "k2CmpRound2DS",
-           source_key = source_key,
-           party_id = as.integer(ii - 1L),
-           output_key = output_key,
-           keys_key = keys_key,
-           peer_blob_key = peer_blob,
-           peer_sealed = TRUE,
-           return_share = isTRUE(return_share),
-           session_id = session_id,
-           frac_bits = 20L))
-    if (is.list(r2[[ii]]) && length(r2[[ii]]) == 1L) r2[[ii]] <- r2[[ii]][[1L]]
-  }
-  r2
-}
-
-#' @keywords internal
-.dsvert_chisq_cross_precheck <- function(datasources, pks, party_conns,
-                                          party_srvs, dealer_ci, sendBlob,
-                                          source_key, n_values,
-                                          privacy_min, session_id) {
-  lt_min_key <- "k2_chisq_lt_privacy_min"
-  lt_one_key <- "k2_chisq_lt_one"
-  unsafe_key <- "k2_chisq_unsafe_cell_bits"
-  unsafe_sum_key <- "k2_chisq_unsafe_cell_sum"
-  no_unsafe_key <- "k2_chisq_no_unsafe"
-
-  .dsvert_chisq_cross_cmp(
-    datasources, pks, party_conns, party_srvs, dealer_ci, sendBlob,
-    source_key = source_key,
-    threshold = as.numeric(privacy_min),
-    output_key = lt_min_key,
-    n_values = n_values,
-    session_id = session_id,
-    tag = "lt_privacy_min")
-  .dsvert_chisq_cross_cmp(
-    datasources, pks, party_conns, party_srvs, dealer_ci, sendBlob,
-    source_key = source_key,
-    threshold = 1,
-    output_key = lt_one_key,
-    n_values = n_values,
-    session_id = session_id,
-    tag = "lt_one")
-
-  for (ci in party_conns) {
-    DSI::datashield.aggregate(datasources[ci],
-      call(name = "k2FPSubStoreDS",
-           a_key = lt_min_key,
-           b_key = lt_one_key,
-           output_key = unsafe_key,
-           session_id = session_id,
-           frac_bits = 20L,
-           ring = "ring63"))
-    DSI::datashield.aggregate(datasources[ci],
-      call(name = "k2StoreSumShareDS",
-           source_key = unsafe_key,
-           output_key = unsafe_sum_key,
-           append = FALSE,
-           session_id = session_id,
-           ring = "ring63"))
-  }
-
-  no_unsafe <- .dsvert_chisq_cross_cmp(
-    datasources, pks, party_conns, party_srvs, dealer_ci, sendBlob,
-    source_key = unsafe_sum_key,
-    threshold = 1,
-    output_key = no_unsafe_key,
-    n_values = 1L,
-    session_id = session_id,
-    tag = "no_unsafe",
-    return_share = TRUE)
-  agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-    share_a = no_unsafe[[1L]]$indicator_fp,
-    share_b = no_unsafe[[2L]]$indicator_fp,
-    frac_bits = 20L))
-  passed <- isTRUE(round(as.numeric(agg$values[1L])) == 1L)
-  guard <- list(
-    required = TRUE,
-    checked = TRUE,
-    passed = passed,
-    min_cell_count = as.integer(privacy_min),
-    leaked_to_client = "method-level pass/fail only; exact counts not returned before pass")
-  if (!passed) {
-    stop(sprintf(
-      paste0(
-        "cross-server contingency table release blocked by pre-release ",
-        "disclosure guard: at least one positive cell is below %d. ",
-        "Set options(dsvert.allow_small_cell_tables=TRUE) only for ",
-        "controlled diagnostics."
-      ),
-      as.integer(privacy_min)),
-      call. = FALSE)
-  }
-  guard
-}
-
-#' @keywords internal
-.dsvert_chisq_cross_reconstruct_counts <- function(datasources, party_conns,
-                                                    source_key, K, L,
-                                                    row_levels, col_levels,
-                                                    session_id) {
-  s1 <- DSI::datashield.aggregate(datasources[party_conns[[1L]]],
-    call(name = "k2GetStoredShareDS",
-         source_key = source_key,
-         session_id = session_id))
-  s2 <- DSI::datashield.aggregate(datasources[party_conns[[2L]]],
-    call(name = "k2GetStoredShareDS",
-         source_key = source_key,
-         session_id = session_id))
-  if (is.list(s1) && length(s1) == 1L) s1 <- s1[[1L]]
-  if (is.list(s2) && length(s2) == 1L) s2 <- s2[[1L]]
-  agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
-    share_a = s1$share_fp,
-    share_b = s2$share_fp,
-    frac_bits = 20L))
-  vals <- pmax(0L, as.integer(round(as.numeric(agg$values))))
-  if (length(vals) != K * L) {
-    stop("cross-server count vector length mismatch after disclosure precheck",
-         call. = FALSE)
-  }
-  matrix(vals, nrow = K, ncol = L, byrow = TRUE,
-         dimnames = list(row_levels, col_levels))
-}
-
-#' @keywords internal
-.mpc_session_id <- function() {
-  hex <- sample(c(0:9, letters[1:6]), 32, replace = TRUE)
-  hex[13] <- "4"; hex[17] <- sample(c("8","9","a","b"), 1)
-  paste0(paste(hex[1:8], collapse = ""),  "-",
-         paste(hex[9:12], collapse = ""), "-",
-         paste(hex[13:16], collapse = ""), "-",
-         paste(hex[17:20], collapse = ""), "-",
-         paste(hex[21:32], collapse = ""))
+  chisq
 }

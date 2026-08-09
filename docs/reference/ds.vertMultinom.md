@@ -1,11 +1,10 @@
-# Federated multinomial logistic regression
+# Quarantined multinomial compatibility frontdoor
 
-Public multinomial wrapper. Dispatches to
-[`ds.vertMultinomJointNewton`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertMultinomJointNewton.md),
-the paper-safe joint softmax Newton route for K=2 and K\>=3. The
-historical one-vs-rest approximation is no longer exposed as a
-user-facing estimator; it remains only as an internal warm start for the
-joint Newton route.
+This exported name is retained for API compatibility. It raises a typed
+`dsvert_route_unavailable` condition before any DSI call and computes or
+returns no multinomial fit. Retained one-vs-rest and joint-softmax code
+after the gate is unreachable through this public frontdoor and carries
+no disclosure, DP, accuracy, or availability claim.
 
 ## Usage
 
@@ -24,80 +23,34 @@ ds.vertMultinom(
   binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
   datasources = NULL,
-  ...
+  ...,
+  design_analysis_id = NULL
 )
 ```
 
 ## Arguments
 
-- formula:
+- formula, data, classes, reference, indicator_template, max_iter,
+  max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals,
+  verbose, datasources, design_analysis_id:
 
-  R formula with the class indicator on the LHS. The class column must
-  be a factor with K levels OR a pre-existing set of binary indicator
-  columns named `paste0(class_col, "_is_", level_name)` (one per
-  non-reference level) on a single server.
-
-- data:
-
-  Name of the aligned data frame on all servers.
-
-- classes:
-
-  Optional character vector specifying which levels to fit (default: all
-  non-reference). The reference level is excluded and its probability is
-  computed as \\1 - \sum p_k\\ client-side for any subsequent
-  prediction.
-
-- reference:
-
-  Optional name of the reference level.
-
-- indicator_template:
-
-  String format with "%s" replaced by each class name to construct
-  indicator column names on the server. Default "\\ indicator columns
-  must already exist server-side.
-
-- max_iter:
-
-  Optional alias for `max_outer`.
-
-- max_outer:
-
-  Maximum outer Newton iterations for the joint route.
-
-- tol:
-
-  Convergence tolerance for the joint route.
-
-- warm_max_iter:
-
-  Optional maximum iterations for each internal binomial warm-start GLM.
-
-- warm_tol:
-
-  Optional tolerance for each internal binomial warm-start GLM.
-
-- binomial_sigmoid_intervals:
-
-  Optional DCF spline interval count for internal binomial warm-start
-  GLMs.
-
-- verbose:
-
-  Logical (default TRUE). Print per-class fit progress.
-
-- datasources:
-
-  DataSHIELD connections; if NULL, uses
-  [`DSI::datashield.connections_find()`](https://datashield.github.io/DSI/reference/datashield.connections_find.html).
+  Retained compatibility arguments. They are not evaluated because the
+  public frontdoor fails locally.
 
 - ...:
 
-  Reserved for future extensions.
+  Retained compatibility arguments; not evaluated.
 
 ## Value
 
-ds.vertMultinom object: a list with per-class `ds.glm` fits, the level
-vector, the reference, and a consolidated coefficient matrix (rows =
-coefficients, columns = non-reference classes).
+No fitted object. The function raises `dsvert_route_unavailable` before
+DSI.
+
+## Details
+
+Promotion requires a signed bounded joint-softmax artifact over the
+exact score design plus validated joint covariance and inference.
+
+## See also
+
+[`ds.vertMethodStatus`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertMethodStatus.md)

@@ -1,8 +1,10 @@
-# Proper LASSO via client-side proximal gradient on normal equations
+# Gaussian LASSO via client-side coordinate descent
 
-Solve the Gaussian LASSO objective using only quantities already exposed
-by `ds.vertGLM` (beta, covariance / Hessian, n), without adding any MPC
-round beyond the unpenalised fit.
+Solve the Gaussian LASSO objective entirely client-side. The preferred
+route accepts a validated `ds.vertDPGaussian` release and optimises its
+signed, projected DP sufficient statistics without another DSI call or
+privacy cost. The historical `ds.glm` route is retained for
+compatibility with already-created fits.
 
 Normal equations: para Gaussian \\y = X\beta + \varepsilon\\ el
 minimizador LASSO es \$\$\beta^\* = \arg\min\_{\beta} \tfrac{1}{2n}
@@ -34,8 +36,9 @@ ds.vertLASSOProximal(
 
 - fit:
 
-  A `ds.glm` object from `ds.vertGLM(family="gaussian")`. Must have
-  `$covariance` and `$n_obs` populated.
+  Preferably a `ds.vertDPGaussian` object. A historical unpenalised
+  Gaussian `ds.glm` object with `$covariance` and `$n_obs` remains
+  accepted for compatibility.
 
 - lambda:
 
@@ -43,12 +46,12 @@ ds.vertLASSOProximal(
 
 - max_iter:
 
-  Integer. Outer proximal-gradient iterations (default 200).
+  Positive integer. Coordinate-descent passes (default 2000).
 
 - tol:
 
   Numeric. Convergence tolerance on \\\\\beta\_{t+1} - \beta_t\\\\
-  (default 1e-7).
+  (default 1e-9).
 
 - keep_intercept:
 
@@ -56,12 +59,14 @@ ds.vertLASSOProximal(
 
 - warm_start:
 
-  Numeric vector. Optional beta_0 (default = beta_OLS).
+  Numeric vector. For a `ds.vertDPGaussian` input this is an optional
+  original-scale coefficient vector containing the intercept and every
+  signed predictor. For a legacy `ds.glm`, it is beta_0.
 
 - accelerate:
 
-  Logical (default TRUE). Use Beck-Teboulle FISTA acceleration on the
-  proximal-gradient inner loop. FALSE falls back to plain ISTA.
+  Compatibility argument retained for historical callers. The current
+  solver is coordinate descent, so this value has no effect.
 
 ## Value
 
@@ -73,10 +78,11 @@ soft-thresholded OLS for comparison.
 
 ## Disclosure budget
 
-Zero new MPC rounds beyond the initial `ds.vertGLM` call. All iteration
-is client-side on quantities already in the `fit` object. The
-optimisation volume argument is therefore moot – no additional reveals
-happen regardless of iteration count.
+Zero new DSI or MPC rounds. For a `ds.vertDPGaussian` input, every
+lambda and iteration is deterministic post-processing of the same sticky
+release and has additional privacy cost `(epsilon, delta) = (0, 0)`. No
+classical sampling inference or coefficient confidence region is implied
+by the projected noisy moments.
 
 ## See also
 

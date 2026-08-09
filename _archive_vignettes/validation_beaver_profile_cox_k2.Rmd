@@ -1,0 +1,96 @@
+---
+title: "Beaver preprocessing profile validation: Cox PH (K=2)"
+author: "David Sarrat Gonzalez"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Beaver preprocessing profile validation: Cox PH (K=2)}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+> **Archived historical fixture — excluded from package and website.** This
+> file may exercise a route that is now quarantined. Its historical numerical
+> output is not evidence of current availability, formal DP, or safety under
+> unlimited adaptive queries. Use `ds.vertMethodStatus()` and the current
+> signed benchmark artifacts for release claims.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning = FALSE,
+  message = TRUE, collapse = TRUE, comment = "#>")
+helper_candidates <- c("validation_helpers.R",
+  file.path("..", "validation_helpers.R"),
+  file.path("vignettes", "validation_helpers.R"))
+source(helper_candidates[file.exists(helper_candidates)][1])
+validation_load_packages()
+partition_summary <- function(tables) {
+  data.frame(
+    server = names(tables),
+    n = vapply(tables, nrow, integer(1)),
+    columns = vapply(tables, function(x) paste(names(x), collapse = ", "),
+                     character(1)),
+    stringsAsFactors = FALSE)
+}
+```
+
+## Scope
+
+This validation exercises the dealer-free `iknp` Beaver preprocessing backend
+on the non-disclosive Breslow-profile Cox route. Cox is included because it is a
+longer, multiplication-heavy route that stresses the OT-extension preprocessing
+path.
+
+## Executed validation
+
+```{r execution}
+K <- 2L
+tolerance <- 1e-3
+validation_require("survival")
+
+pooled <- build_cox(60L)
+tables <- list(
+  s1 = pooled[, c("patient_id", "x1", "x2"), drop = FALSE],
+  s2 = pooled[, c("patient_id", "x3", "time", "event"), drop = FALSE]
+)
+fm <- survival::Surv(time, event) ~ x1 + x2 + x3
+ref <- coef(survival::coxph(fm, data = pooled, ties = "breslow"))
+
+knitr::kable(utils::head(pooled))
+knitr::kable(partition_summary(tables))
+
+run_profile <- function(mode) {
+  options(dsvert.beaver_preprocessing = mode)
+  result <- elapsed({
+    conns <- connect_dslite(tables)
+    tryCatch({
+      psi_align(conns)
+      dsVertClient::ds.vert.cox(
+        fm, data = "DA", method = "profile",
+        verbose = validation_demo_verbose(), datasources = conns)
+    }, finally = try(DSI::datashield.logout(conns), silent = TRUE))
+  })
+  observed <- max_named_delta(result$value$coefficients, ref)
+  row_result(
+    "beaver_profile_cox", paste("Cox PH", mode), K,
+    paste0("ds.vert.cox(method='profile') / ", mode),
+    "synthetic discretised survival fixture", "survival::coxph(ties='breslow')",
+    "coef_max_abs_delta", observed, tolerance, "strict-practical",
+    "Event-time score terms remain shared; client receives beta and scalar diagnostics.",
+    result$runtime_s,
+    paste("beaver_preprocessing =", mode))
+}
+
+rows <- run_profile("iknp")
+
+display_validation(rows)
+
+assert_validation(rows)
+```
+
+## Verdict
+
+Rendering fails if the IKNP route leaves the accepted numerical envelope or if
+the route is marked disclosive.

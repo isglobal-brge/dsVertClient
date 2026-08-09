@@ -1,15 +1,11 @@
-# Federated inverse-probability-weighted GLM (two-stage)
+# Quarantined IPW compatibility frontdoor
 
-Convenience wrapper implementing the two-stage IPW (inverse-probability
-weighting) workflow on vertically partitioned DataSHIELD data.
-
-Stage 1: fit the propensity model via `ds.vertGLM` with a binomial
-family on the supplied `propensity_formula`. Stage 2: fit the outcome
-model via `ds.vertGLM` with a server-side `weights_column`. The current
-product route assumes this column already contains IPW weights on the
-server that owns the treatment / outcome variables; the weights are
-consumed by the protected weighted-GLM path and are not returned to the
-client.
+This exported name is retained for API compatibility. It raises a typed
+`dsvert_route_unavailable` condition before any DSI call and computes or
+returns no propensity model, weights, effect estimate, or diagnostic.
+Retained two-stage code after the gate is unreachable through this
+public frontdoor and carries no disclosure, DP, causal-identification,
+accuracy, or availability claim.
 
 ## Usage
 
@@ -28,43 +24,28 @@ ds.vertIPW(
 
 ## Arguments
 
-- outcome_formula:
+- outcome_formula, propensity_formula, data, weights_column,
+  outcome_family, verbose, datasources:
 
-  Formula for the outcome model.
-
-- propensity_formula:
-
-  Formula for the propensity (binary treatment) model.
-
-- data:
-
-  Name of the aligned data frame on each server.
-
-- weights_column:
-
-  Name of the column on the outcome server that holds 1/P(T=1\|X) for
-  treated units and 1/(1-P(T=1\|X)) for controls, or the stabilised
-  analogue. The column must be created server-side before this wrapper
-  is called; it is never returned to the client.
-
-- outcome_family:
-
-  Family for the outcome model. Default "gaussian".
-
-- verbose:
-
-  Logical. Print stage-by-stage progress (default TRUE).
-
-- datasources:
-
-  DataSHIELD connections; if NULL, uses
-  [`DSI::datashield.connections_find()`](https://datashield.github.io/DSI/reference/datashield.connections_find.html).
+  Retained compatibility arguments. They are not evaluated because the
+  public frontdoor fails locally.
 
 - ...:
 
-  Passed through to both underlying `ds.vertGLM` calls.
+  Retained compatibility arguments; not evaluated.
 
 ## Value
 
-list of class `ds.vertIPW` with `propensity` and `outcome` ds.glm
-objects.
+No fitted object. The function raises `dsvert_route_unavailable` before
+DSI.
+
+## Details
+
+Promotion requires signed treatment/outcome binding, a complete
+propensity and outcome workflow, bounded weights and contributions,
+explicit estimand and identification assumptions, and validated
+uncertainty.
+
+## See also
+
+[`ds.vertMethodStatus`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertMethodStatus.md)

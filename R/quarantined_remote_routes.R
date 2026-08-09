@@ -1,0 +1,83 @@
+# Local fail-closed boundary for public names whose historical server surface
+# is deliberately no longer registered.  The compatibility implementation is
+# retained below the frontdoor for source-level migration tests only; an
+# installed package has no option, environment variable or request flag that
+# can re-enable it.
+
+.dsvert_quarantine_test_mode <- function() FALSE
+
+.DSVERT_RETIRED_REMOTE_ROUTES <- list(
+  legacy_glm = list(
+    method = "ds.vertGLM",
+    state = "legacy_exact_glm_route_removed",
+    replacement = paste0(
+      "For Gaussian models use ds.vertGLM(..., dp_analysis_id=...) or ",
+      "ds.vertDPGaussian(); no released binomial/Poisson replacement exists.")),
+  cox = list(
+    method = "ds.vertCox",
+    state = "legacy_cox_route_quarantined",
+    replacement = paste0(
+      "No Cox-regression drop-in is released; ds.vertDPSurvival() is ",
+      "available only for its documented nonparametric survival estimands.")),
+  negative_binomial = list(
+    method = "ds.vertNBFullRegTheta",
+    state = "legacy_nb2_route_quarantined",
+    replacement = "No disclosure-safe NB2 replacement is released."),
+  multinomial = list(
+    method = "ds.vertMultinomJointNewton",
+    state = "multinomial_design_capsule_unavailable",
+    replacement = "No disclosure-safe multinomial replacement is released."),
+  ordinal = list(
+    method = "ds.vertOrdinalJointNewton",
+    state = "ordinal_score_capsule_unavailable",
+    replacement = "No disclosure-safe ordinal replacement is released."),
+  lmm = list(
+    method = "ds.vertLMM",
+    state = "cluster_granular_lmm_route_quarantined",
+    replacement = "No disclosure-safe mixed-model replacement is released."),
+  gee = list(
+    method = "ds.vertGEE",
+    state = "cluster_granular_gee_route_quarantined",
+    replacement = "No disclosure-safe GEE replacement is released."),
+  glmm = list(
+    method = "ds.vertGLMM",
+    state = "cluster_granular_glmm_route_quarantined",
+    replacement = "No disclosure-safe GLMM replacement is released."),
+  ipw = list(
+    method = "ds.vertIPW",
+    state = "legacy_ipw_route_quarantined",
+    replacement = paste0(
+      "Use ds.vertDPCausalStandardization() only when its saturated public-",
+      "stratum identification contract matches the scientific question.")),
+  mi = list(
+    method = "ds.vertMI",
+    state = "legacy_mutating_imputation_route_quarantined",
+    replacement = "No disclosure-safe multiple-imputation replacement is released."),
+  lasso_iter = list(
+    method = "ds.vertLASSOIter",
+    state = "whole_path_lasso_capsule_unavailable",
+    replacement = paste0(
+      "For post-processing an authorized Gaussian fit, use ",
+      "ds.vertLASSOProximal(); no federated iterative replacement is released."))
+)
+
+.dsvert_block_retired_remote_route <- function(route) {
+  if (isTRUE(.dsvert_quarantine_test_mode())) return(invisible(FALSE))
+  contract <- .DSVERT_RETIRED_REMOTE_ROUTES[[route]]
+  if (!is.list(contract) ||
+      !identical(sort(names(contract)),
+                 c("method", "replacement", "state"))) {
+    stop("Invalid retired-route contract", call. = FALSE)
+  }
+  message <- paste0(
+    "[dsvert_route_unavailable:v1] ", contract$method,
+    " is unavailable before DSI (state=", contract$state, "). ",
+    contract$replacement)
+  stop(structure(
+    list(
+      message = message, call = NULL,
+      code = "dsvert_route_unavailable",
+      method = contract$method, state = contract$state,
+      replacement = contract$replacement),
+    class = c("dsvert_route_unavailable", "error", "condition")))
+}

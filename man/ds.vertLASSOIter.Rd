@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertLASSOIterative.R
 \name{ds.vertLASSOIter}
 \alias{ds.vertLASSOIter}
-\title{Federated LASSO path from a non-disclosive GLM fit}
+\title{Quarantined iterative-LASSO compatibility frontdoor}
 \usage{
 ds.vertLASSOIter(
   formula,
@@ -20,91 +20,31 @@ ds.vertLASSOIter(
   binomial_sigmoid_intervals = getOption("dsvert.lasso_binomial_sigmoid_intervals", 200L),
   poisson_damping = 0.5,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  cor_analysis_id = NULL
 )
 }
 \arguments{
-\item{formula}{Model formula.}
-
-\item{data}{Aligned data-frame name.}
-
-\item{family}{GLM family.}
-
-\item{lambda}{L1 penalty scalar or vector (path).}
-
-\item{max_outer}{Retained for backward compatibility; used as a lower
-bound on the Gaussian coordinate-descent iteration budget.}
-
-\item{tol}{Tolerance passed to the LASSO path solver.}
-
-\item{alpha}{Retained for backward compatibility; no longer used.}
-
-\item{inner_iter}{Inner \code{ds.vertGLM} budget for the initial
-unpenalised fit.}
-
-\item{exact_non_gaussian}{Logical. For binomial models, use repeated
-secure aggregate-score evaluations and proximal-gradient updates on
-the standardized L1 objective instead of the one-step surrogate. For
-Poisson models, use repeated aggregate score/Hessian probes and a
-damped proximal-Newton update.}
-
-\item{ring}{Integer (63 or 127). MPC ring for the GLM score evaluations.
-Defaults to Ring63. Ring127 can be requested explicitly after fixture
-validation for the target deployment.}
-
-\item{lipschitz}{Character. Step-size rule for binomial proximal-gradient:
-\code{"auto"} (default) tries a guarded aggregate Gram/correlation
-bound and falls back to the conservative \code{0.25 * (p + 1)} bound;
-\code{"gram"} requires the aggregate Gram bound; \code{"safe"} always
-uses the conservative bound.}
-
-\item{fista_restart}{Logical. For binomial proximal-gradient, reset FISTA
-momentum when the client-side gradient-restart criterion triggers. This
-uses only p-dimensional coefficient vectors already held by the client
-and does not require opening objectives or row-level quantities.}
-
-\item{binomial_sigmoid_intervals}{Integer or NULL. Number of secure
-sigmoid spline intervals used by binomial aggregate-score evaluations.
-The default, \code{getOption("dsvert.lasso_binomial_sigmoid_intervals",
-  200L)}, is intentionally finer than the generic GLM default because
-L1 optimisation repeatedly reuses the score oracle and amplifies the
-spline floor. Set NULL to inherit the ambient
-\code{dsvert.glm_num_intervals_binomial} option.}
-
-\item{poisson_damping}{Numeric in (0, 1]. Fixed damping applied to Poisson
-proximal-Newton proposals. The default 0.5 is intentionally conservative
-and avoids an extra objective/deviance pass.}
-
-\item{verbose}{Print progress.}
-
-\item{datasources}{DataSHIELD connections.}
+\item{formula, data, family, lambda, max_outer, tol, alpha, inner_iter, exact_non_gaussian, ring, lipschitz, fista_restart, binomial_sigmoid_intervals, poisson_damping, verbose, datasources, cor_analysis_id}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 }
 \value{
-A \code{ds.vertLASSOIter} object with components
-\code{lambda}, \code{paths} (per-lambda coefficient vectors),
-\code{n_outer} (solver iterations used per lambda),
-\code{final_fit} (the unpenalised \code{ds.glm} fit), and
-\code{method} describing the estimator target.
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Fit an L1-regularised path without revealing row-level
-gradients or residuals. For Gaussian models this is the proper LASSO
-objective solved from the normal equations already exposed by
-\code{\link{ds.vertGLM}}:
-
-\if{html}{\out{<div class="sourceCode">}}\preformatted{\deqn{\arg\min_\beta \tfrac{1}{2n}\|y-X\beta\|^2 +
-           \lambda\|\beta_{-0}\|_1.}
-}\if{html}{\out{</div>}}
-
-The solver delegates to \code{\link{ds.vertLASSOProximal}}, which
-reconstructs \eqn{X^T X/n} from aggregate covariance/Hessian output
-and runs coordinate descent client-side. Binomial models use the internal
-aggregate score path to run proximal-gradient on the standardized L1
-objective. Poisson models use fixed-start aggregate score/Hessian probes
-and a damped proximal-Newton update on the same standardized L1 objective.
-
-Non-disclosure: the inner ds.vertGLM call already hides everything
-at the p-aggregate level; this wrapper only manipulates returned
-aggregate coefficients, covariance/Hessian matrices, or p-dimensional
-aggregate scores.
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and computes or returns no coefficient path, score, Hessian,
+selection result, or diagnostic. Retained iterative code after the gate
+is unreachable through this public frontdoor and carries no disclosure,
+DP, accuracy, model-selection, or availability claim.
+}
+\details{
+Promotion requires a signed bounded artifact over the exact score
+design, a whole-path privacy contract, KKT validation and DP-aware
+selection and inference.
+}
+\seealso{
+\code{\link{ds.vertMethodStatus}}
 }

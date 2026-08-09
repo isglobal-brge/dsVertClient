@@ -1,60 +1,18 @@
-#' @title Federated binomial GLMM-PQL
-#' @description Fit a binomial generalised linear mixed model with a
-#'   single random intercept on vertically partitioned DataSHIELD data.
-#'   The paper-supported route is aggregate PQL: working responses, weights,
-#'   probabilities, residuals, and row scores remain in
-#'   Ring127 share-domain statistics and the client receives fixed effects,
-#'   scalar variance components, and guarded diagnostics only.
-#'
-#'   Architecture:
-#'   \enumerate{
-#'     \item For each cluster (cluster IDs on outcome server), binomial
-#'           score and information terms \eqn{\sum(y-p)} and
-#'           \eqn{\sum p(1-p)} are computed from DCF shares. The outcome
-#'           server broadcasts cluster membership only to the DCF peer; the
-#'           client receives aggregate cluster sums only.
-#'     \item The outer optimiser on \eqn{(\beta, \sigma_b^2)} is
-#'           client-side, re-calling ds.vertGLM with the shrinkage-
-#'           weight column derived from the current \eqn{b_i^*}.
-#'     \item Variance-component update uses the moment-matching
-#'           estimate \eqn{\hat\sigma_b^2 = \mathrm{var}(\hat b_i)}
-#'           across clusters (Breslow-Clayton approximation).
-#'   }
-#'
-#'   The scaffolding here reuses every primitive already shipped in
-#'   dsVert 1.1.0+: the keep_session flag on ds.vertGLM, cluster
-#'   membership broadcast, per-cluster share sums, Beaver vecmul, and the
-#'   DCF sigmoid wide-spline.
-#'
-#'   Privacy: the returned object contains fixed effects, variance-component
-#'   estimates, scalar diagnostics, and the final inner \code{ds.vertGLM} fit.
-#'   Per-patient quantities never leave the DCF parties. Guarded per-cluster
-#'   sufficient statistics are used internally for the random-intercept update,
-#'   but per-cluster BLUPs and cluster-size vectors are not returned. Original
-#'   cluster labels are not returned and clusters below
-#'   \code{datashield.privacyLevel} fail closed.
-#'
-#'   Inter-server leakage: cluster membership (same tier as ds.vertLMM).
-#'
-#' @param formula Fixed-effects formula (binomial outcome on LHS).
-#' @param data Aligned data-frame name.
-#' @param cluster_col Cluster id column on the outcome server.
-#' @param max_outer Outer (beta, sigma_b^2) iterations.
-#' @param inner_iter Inner PIRLS iterations per cluster per outer step.
-#' @param tol Outer convergence tolerance.
-#' @param lambda L2 penalty passed to the inner binomial GLM fits.
-#' @param compute_se Logical. Reserved for future GLMM-PQL standard-error
-#'   support. The aggregate PQL route currently returns \code{NA} standard
-#'   errors, so the default is \code{FALSE}; computing finite-difference SEs
-#'   for the initial GLM would add protected optimisation rounds without
-#'   changing the final GLMM-PQL estimates.
-#' @param ring Integer 63 or 127. The PQL aggregate route requires Ring127.
-#' @param verbose Print progress.
-#' @param datasources DataSHIELD connections.
-#' @return \code{ds.vertGLMM} object: fixed-effect coefficients,
-#'   random-effect variance \eqn{\hat\sigma_b^2}, scalar fit diagnostics, and
-#'   the converged binomial \code{fit}. Per-cluster BLUP vectors are internal
-#'   working quantities and are not returned.
+#' @title Quarantined generalized-linear mixed-model frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and computes or returns no GLMM coefficient, random effect, variance
+#'   component, cluster statistic, or diagnostic. Retained implementation code
+#'   after the gate is unreachable through this public frontdoor and carries
+#'   no disclosure, DP, accuracy, or availability claim.
+#' @details Promotion requires bounded cluster contributions, a precisely
+#'   specified target estimator and validated covariance and diagnostics.
+#' @param formula,data,cluster_col,max_outer,inner_iter,tol,lambda,compute_se,ring,verbose,datasources
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         max_outer = 30L, inner_iter = 50L,
@@ -63,6 +21,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         ring = NULL,
                         verbose = TRUE,
                         datasources = NULL) {
+  .dsvert_block_retired_remote_route("glmm")
   if (is.null(ring)) ring <- 127L
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
@@ -92,12 +51,11 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                     keep_session = TRUE)
 
   # Cluster sizes + per-cluster residuals (all aggregates).
-  clust_info <- DSI::datashield.aggregate(
+  clust_info <- .dsvert_aggregate_strict(
     datasources[which(server_names == y_srv)],
     call(name = "dsvertClusterSizesDS", data_name = data,
-         cluster_col = cluster_col))
-  if (is.list(clust_info) && length(clust_info) == 1L)
-    clust_info <- clust_info[[1L]]
+         cluster_col = cluster_col),
+    operation = "GLMM protected cluster-size release")[[1L]]
   n_i <- as.integer(clust_info$sizes)
   n_clusters <- length(n_i)
 
@@ -137,16 +95,12 @@ print.ds.vertGLMM <- function(x, ...) {
 #' @keywords internal
 .ds_glmm_cleanup_fit_session <- function(fit, datasources) {
   if (is.null(fit$session_id) || is.null(fit$server_list)) return(invisible(NULL))
-  for (srv in fit$server_list) {
-    ci <- which(names(datasources) == srv)
-    if (length(ci) == 1L) {
-      tryCatch(DSI::datashield.aggregate(datasources[ci],
-        call(name = "mpcCleanupDS", session_id = fit$session_id)),
-        error = function(e) NULL)
-      tryCatch(DSI::datashield.aggregate(datasources[ci],
-        call(name = "mpcGcDS")), error = function(e) NULL)
-    }
-  }
+  cleanup_sites <- intersect(fit$server_list, names(datasources))
+  cleanup_conns <- datasources[cleanup_sites]
+  .dsvert_cleanup_best_effort(
+    cleanup_conns,
+    call(name = "mpcCleanupDS", session_id = fit$session_id))
+  .dsvert_cleanup_best_effort(cleanup_conns, call(name = "mpcGcDS"))
   invisible(NULL)
 }
 
@@ -182,10 +136,11 @@ print.ds.vertGLMM <- function(x, ...) {
 
 #' @keywords internal
 .ds_glmm_safe_solve <- function(a, b) {
-  out <- tryCatch(
-    solve(a, b),
-    error = function(e) qr.solve(a + diag(1e-10, nrow(a)), b))
-  as.numeric(out)
+  as.numeric(.dsvert_solve_identifiable(
+    a, b,
+    context = "The protected GLMM-PQL fixed-effect system",
+    reason = "singular_glmm_fixed_effect_information",
+    symmetric = TRUE))
 }
 
 #' @keywords internal
@@ -202,8 +157,9 @@ print.ds.vertGLMM <- function(x, ...) {
   active <- sizes > 0L & is.finite(s) & s > 1e-10 &
     is.finite(zsum) & is.finite(wz2)
   if (sum(active) < 2L) {
-    stop("PQL aggregate solve needs at least two active clusters",
-         call. = FALSE)
+    .dsvert_stop_non_identifiable(
+      "The GLMM-PQL variance component needs at least two active clusters.",
+      reason = "insufficient_active_clusters")
   }
   q <- q[active, , drop = FALSE]
   zsum <- zsum[active]
@@ -274,7 +230,6 @@ print.ds.vertGLMM <- function(x, ...) {
   phi <- 1
   tau <- sigma_b2 / phi
   converged <- FALSE
-  step_error <- NULL
   trace <- data.frame()
   offset_col <- "__dsvert_glmm_pql_b"
   on.exit(.ds_glmm_cleanup_fit_session(fit, datasources), add = TRUE)
@@ -283,24 +238,26 @@ print.ds.vertGLMM <- function(x, ...) {
   glmm_loop_n <- .dsvert_loop_n("glmm", 20L, max_outer, tol)
   for (outer in seq_len(glmm_loop_n)) {
     tryCatch(
-      DSI::datashield.aggregate(
+      .dsvert_aggregate_strict(
         datasources[which(server_names == y_srv)],
         call(name = "dsvertExpandClusterWeightsDS",
              data_name = data, cluster_col = cluster_col,
              weights_per_cluster = as.numeric(b_hat),
-             output_column = offset_col)),
+             output_column = offset_col),
+        operation = "GLMM protected offset expansion"),
       error = function(e) {
-        stop("[GLMM PQL] offset expand failed: ",
-             conditionMessage(e), call. = FALSE)
+        stop("[GLMM PQL] protected offset expansion failed.",
+             call. = FALSE)
       })
     tryCatch(
-      DSI::datashield.aggregate(
+      .dsvert_aggregate_strict(
         datasources[which(server_names == y_srv)],
         call(name = "k2SetOffsetDS", data_name = data,
-             offset_column = offset_col, session_id = fit$session_id)),
+             offset_column = offset_col, session_id = fit$session_id),
+        operation = "GLMM protected offset registration"),
       error = function(e) {
-        stop("[GLMM PQL] offset registration failed: ",
-             conditionMessage(e), call. = FALSE)
+        stop("[GLMM PQL] protected offset registration failed.",
+             call. = FALSE)
       })
 
     fit$coefficients <- beta_orig
@@ -312,18 +269,7 @@ print.ds.vertGLMM <- function(x, ...) {
     if (length(cl$n_per_cluster) == length(n_i)) {
       n_i <- as.integer(cl$n_per_cluster)
     }
-    step <- tryCatch(
-      .ds_glmm_pql_solve_components(cl$pql_components),
-      error = function(e) {
-        step_error <<- conditionMessage(e)
-        NULL
-      })
-    if (is.null(step)) {
-      if (verbose) {
-        message("[GLMM PQL] stopping at last stable iterate: ", step_error)
-      }
-      break
-    }
+    step <- .ds_glmm_pql_solve_components(cl$pql_components)
     beta_new <- .ds_glmm_unstandardize_beta(step$beta_std, fit,
                                             feature_order)
     common <- intersect(names(beta_orig), names(beta_new))
@@ -373,11 +319,6 @@ print.ds.vertGLMM <- function(x, ...) {
     quality$warnings <- unique(c(
       quality$warnings,
       "GLMM PQL returned a non-finite or negative random-effect variance."))
-  } else if (!is.null(step_error)) {
-    quality$status <- if (nrow(trace)) "degraded" else "failed"
-    quality$warnings <- unique(c(
-      quality$warnings,
-      paste("GLMM PQL stopped at the last stable iterate:", step_error)))
   } else if (is.finite(tau) && tau > 1e5) {
     if (identical(quality$status, "ok")) quality$status <- "approximate"
     quality$warnings <- unique(c(
@@ -401,6 +342,12 @@ print.ds.vertGLMM <- function(x, ...) {
     trace = trace,
     fit = fit,
     method = "pql_aggregate",
+    lambda = as.numeric(fit$lambda %||% 0),
+    estimand = if (isTRUE(as.numeric(fit$lambda %||% 0) > 0)) {
+      "explicit_ridge_penalized_binomial_glmm_pql"
+    } else {
+      "unpenalized_binomial_glmm_pql"
+    },
     family = "binomial (aggregate PQL weighted-LMM)",
     call = call)
   class(out) <- c("ds.vertGLMM", "list")
@@ -449,28 +396,14 @@ print.ds.vertGLMM <- function(x, ...) {
     x
   }
   .dsAgg <- function(conns, expr, ...) {
-    tryCatch(
-      DSI::datashield.aggregate(conns = conns, expr = expr, ...),
-      error = function(e) {
-        fn_name <- if (is.call(expr)) as.character(expr[[1]]) else "?"
-        srv_name <- tryCatch(names(conns)[1], error = function(x) "?")
-        stop(sprintf("%s on %s failed: %s", fn_name, srv_name,
-                     conditionMessage(e)), call. = FALSE)
-      })
+    .dsvert_aggregate_strict(
+      conns, expr, operation = "protected GLMM MPC phase")
   }
-  .sendBlob <- function(blob, key, conn_idx) {
-    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        .dsAgg(datasources[conn_idx],
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               session_id = session_id))
-      } else {
-        .dsAgg(datasources[conn_idx],
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               chunk_index = chunk_idx, n_chunks = n_chunks,
-               session_id = session_id))
-      }
-    })
+  .sendBlob <- function(blob, contract, conn_idx) {
+    .dsvert_store_transfer_or_legacy(
+      blob, contract, datasources[conn_idx], session_id,
+      producer_conns = datasources,
+      .aggregate = .dsAgg)
   }
 
   if (fit$eta_privacy == "k2_beaver") {
@@ -579,6 +512,14 @@ print.ds.vertGLMM <- function(x, ...) {
     call(name = "dsvertClusterIDsReceiveDS", session_id = session_id))
 
   .vecmul <- function(x_key, y_key, output_key) {
+    if (identical(as.integer(ring), 127L)) {
+      .ring127_vecmul(
+        x_key, y_key, output_key, n_obs,
+        datasources, dcf_conns[[2L]], dcf_parties, server_names,
+        dcf_parties[[1L]], dcf_parties[[2L]], transport_pks, session_id,
+        .dsAgg, .sendBlob)
+      return(invisible(output_key))
+    }
     .ot_beaver_prepare_vecmul(
       datasources = datasources,
       party_conns = dcf_conns,
@@ -589,11 +530,6 @@ print.ds.vertGLMM <- function(x, ...) {
       ring = ring,
       .dsAgg = .dsAgg,
       .sendBlob = .sendBlob)
-    for (ci in dcf_conns) {
-      .dsAgg(datasources[ci],
-        call(name = "k2BeaverVecmulConsumeTripleDS",
-             session_id = session_id))
-    }
     r1 <- vector("list", 2L)
     for (i in seq_along(dcf_parties)) {
       peer <- dcf_parties[[3L - i]]
@@ -606,14 +542,15 @@ print.ds.vertGLMM <- function(x, ...) {
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r1[[i]] <- r
     }
-    .sendBlob(r1[[1L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+    .sendBlob(r1[[1L]]$peer_blob, r1[[1L]]$peer_transfer,
               dcf_conns[[2L]])
-    .sendBlob(r1[[2L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+    .sendBlob(r1[[2L]]$peer_blob, r1[[2L]]$peer_transfer,
               dcf_conns[[1L]])
     for (i in seq_along(dcf_parties)) {
       .dsAgg(datasources[dcf_conns[[i]]],
         call(name = "k2BeaverVecmulR2DS",
              is_party0 = (i == 1L),
+             peer_name = dcf_parties[[3L - i]],
              x_key = x_key, y_key = y_key,
              output_key = output_key,
              n = as.numeric(n_obs), session_id = session_id,
@@ -764,14 +701,11 @@ print.ds.vertGLMM <- function(x, ...) {
         values = array(as.numeric(scalar), dim = 1L),
         frac_bits = 50L, ring = "ring127"))$fp_data
       scalar_fp <- .to_b64url(scalar_fp)
-      for (srv in ring_parties) {
-        .dsAgg(datasources[which(server_names == srv)],
-          call(name = "k2Ring127LocalScaleDS",
-               in_key = in_key, scalar_fp = scalar_fp,
-               output_key = output_key, n = as.numeric(n_int),
-               session_id = session_id,
-               is_party0 = identical(srv, coordinator)))
-      }
+      .ring127_exact_public_scale(
+        in_key, scalar_fp, output_key, n_int,
+        datasources, dcf_conns[[2L]], ring_parties, server_names,
+        coordinator, setdiff(ring_parties, coordinator)[[1L]],
+        transport_pks, session_id, .dsAgg, .sendBlob)
       invisible(output_key)
     }
     for (i in seq_along(ring_parties)) {

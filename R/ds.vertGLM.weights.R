@@ -18,6 +18,58 @@
   frac_bits <- if (ring == 127L) 50L else 20L
   n_int <- as.integer(n_obs)
 
+  if (identical(ring, 127L)) {
+    exact_product <- if (
+      identical(weight_key, "k2_weights_share_fp") &&
+      identical(output_key, "k2_weighted_residual_share_fp")) {
+      "weight"
+    } else if (
+      identical(weight_key, "k2_sqrt_weights_share_fp") &&
+      identical(output_key, "k2_sqrt_weighted_residual_share_fp")) {
+      "sqrt_weight"
+    } else {
+      stop("Ring127 weighted residual requested an unapproved exact purpose.",
+           call. = FALSE)
+    }
+    all_names <- names(datasources) %||% dcf_parties
+    selected_names <- all_names[dcf_conns]
+    conns <- datasources[dcf_conns]
+    names(conns) <- selected_names
+    .dsvert_setup_exact_gc_transport(
+      datasources = datasources, server_names = all_names,
+      servers = dcf_conns, session_id = session_id,
+      .aggregate = .dsAgg)
+    prepared <- .dsvert_aggregate_strict(
+      conns,
+      call(name = "k2PrepareWeightedResidualShareDS",
+           exact_product = exact_product, session_id = session_id),
+      operation = "GLM producer-bound weighted residual preparation",
+      .aggregate = .dsAgg)
+    manifests <- stats::setNames(lapply(selected_names, function(server) {
+      value <- prepared[[server]]
+      if (!is.list(value) || !isTRUE(value$stored) ||
+          !is.list(value$exact_vecmul_manifest)) {
+        stop("A GLM peer did not mint its exact multiplication manifest.",
+             call. = FALSE)
+      }
+      value$exact_vecmul_manifest
+    }), selected_names)
+    .dsvert_exact_gc_vecmul_run(
+      datasources = datasources,
+      server_names = all_names,
+      servers = dcf_conns, session_id = session_id, total_n = n_int,
+      x_key = weight_key, y_key = "k2_weight_residual_share_fp",
+      output_key = output_key, input_manifests = manifests,
+      transport_ready = TRUE,
+      .aggregate = .dsAgg)
+    for (ci in dcf_conns) {
+      .dsAgg(datasources[ci], call(
+        name = "k2FinalizeWeightedResidualShareDS",
+        input_key = output_key, session_id = session_id))
+    }
+    return(invisible(NULL))
+  }
+
   for (ci in dcf_conns) {
     .dsAgg(datasources[ci], call(name = "k2PrepareWeightedResidualShareDS",
                                  session_id = session_id))
@@ -34,11 +86,6 @@
     .dsAgg = .dsAgg,
     .sendBlob = .sendBlob)
 
-  for (ci in dcf_conns) {
-    .dsAgg(datasources[ci], call(name = "k2BeaverVecmulConsumeTripleDS",
-                                 session_id = session_id))
-  }
-
   r1 <- vector("list", 2L)
   for (i in seq_along(dcf_parties)) {
     ci <- dcf_conns[i]
@@ -52,12 +99,13 @@
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     r1[[i]] <- r
   }
-  .sendBlob(r1[[1L]]$peer_blob, "k2_beaver_vecmul_peer_masked", dcf_conns[2L])
-  .sendBlob(r1[[2L]]$peer_blob, "k2_beaver_vecmul_peer_masked", dcf_conns[1L])
+  .sendBlob(r1[[1L]]$peer_blob, r1[[1L]]$peer_transfer, dcf_conns[2L])
+  .sendBlob(r1[[2L]]$peer_blob, r1[[2L]]$peer_transfer, dcf_conns[1L])
 
   for (i in seq_along(dcf_parties)) {
     .dsAgg(datasources[dcf_conns[i]], call(name = "k2BeaverVecmulR2DS",
       is_party0 = (i == 1L),
+      peer_name = dcf_parties[3L - i],
       x_key = weight_key,
       y_key = "k2_weight_residual_share_fp",
       output_key = output_key,

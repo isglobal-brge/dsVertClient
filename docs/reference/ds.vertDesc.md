@@ -1,13 +1,9 @@
-# Federated descriptive statistics with approximate quantiles
+# Disclosure-safe descriptive statistics compatibility adapter
 
-Compute a federated
-[`summary()`](https://rdrr.io/r/base/summary.html)-style table of
-numeric variables held across vertically partitioned servers. Exact
-means and standard deviations are obtained from each server's local
-moments; exact extrema are suppressed by default because they can
-disclose outliers. Quantiles are interpolated from disclosure-checked
-histogram bucket counts. No observation-level quantity is reconstructed
-at the client.
+Return the historical `ds.vertDesc` data-frame shape from one
+custodian-owned, sticky `ds.vertDPDescribe` capsule artifact. Counts,
+moments and quantiles are differentially private. Observed extrema and
+data-adaptive histogram queries are never requested.
 
 ## Usage
 
@@ -21,7 +17,8 @@ ds.vertDesc(
   exact_extrema = getOption("dsvert.allow_exact_extrema", FALSE),
   open_ended = getOption("dsvert.desc_open_ended", TRUE),
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  analysis_id = NULL
 )
 ```
 
@@ -33,38 +30,38 @@ ds.vertDesc(
 
 - variables:
 
-  Optional: a character vector of variables of interest, a named list
-  mapping server -\> variables, or `NULL` (default) to auto-detect.
+  Optional character vector, or a named list mapping the artifact-owning
+  server to variables, used only to filter the variables already present
+  in the signed artifact. `NULL` returns every signed variable. A
+  variable absent from the artifact is an error.
 
 - probs:
 
   Numeric vector of quantile probabilities to report. Defaults to the
-  usual tertiles (0.25, 0.5, 0.75).
+  usual quartiles (0.25, 0.5, 0.75).
 
 - n_buckets:
 
-  Integer. Number of uniform histogram buckets used for quantile
-  interpolation. Higher values give tighter quantile resolution at the
-  cost of one extra aggregate call per variable; when
-  `datashield.privacyLevel > 0`, the effective bucket count is capped by
-  the cohort size and privacy threshold.
+  Legacy compatibility argument. If explicitly supplied, it must equal
+  the fixed signed grid length of every selected variable. It never
+  changes the server workload.
 
 - range_sd:
 
-  Numeric. When exact extrema are not released, histogram edges are
-  built over `mean +/- range_sd * sd`. Values outside that range are
-  retained as under/overflow aggregate counts.
+  Legacy data-adaptive range argument. Its omitted default is ignored.
+  Explicit values are rejected because ranges are fixed by the
+  custodian-owned artifact.
 
 - exact_extrema:
 
-  Logical. Return exact min/max and use them for the histogram range.
-  Defaults to `getOption("dsvert.allow_exact_extrema", FALSE)`.
+  Logical legacy argument. `TRUE` is always rejected: exact observed
+  minima and maxima are not disclosure-safe releases.
 
 - open_ended:
 
-  Logical. When exact extrema are suppressed, use open-ended first/last
-  histogram buckets so outliers are absorbed into coarse tail aggregates
-  rather than disclosed as separate under/overflow counts.
+  Legacy adaptive-tail argument. Its omitted default is ignored.
+  Explicit values are rejected because the signed public bounds, grids
+  and invalid bin define the histogram semantics.
 
 - verbose:
 
@@ -74,6 +71,12 @@ ds.vertDesc(
 
   DataSHIELD connections. If `NULL`, auto-detected.
 
+- analysis_id:
+
+  Custodian-owned describe specification id. It must name an existing
+  artifact in the signed capsule. The client never discovers or chooses
+  an id remotely.
+
 ## Value
 
 A data frame with one row per variable containing columns:
@@ -82,39 +85,34 @@ A data frame with one row per variable containing columns:
 
 - `variable`: column name
 
-- `n`: number of non-missing observations
+- `n`: DP-noisy effective count
 
-- `n_na`: number of missing observations
+- `n_na`: DP-noisy invalid/missing-unit count
 
-- `mean`, `sd`: local moments
+- `mean`, `sd`: bounded DP mean and square root of the DP population
+  central second moment (not the usual sample SD)
 
-- `min`, `max`: exact extrema only when `exact_extrema = TRUE`;
-  otherwise `NA`
+- `min`, `max`: always `NA`
 
-- `range_low`, `range_high`: histogram range used for approximate
-  quantiles
+- `range_low`, `range_high`: signed public bounds
 
-- `quantile_status`: `"ran"` or the suppression reason
+- `quantile_status`: fixed-grid DP post-processing status
 
 - one column per requested quantile (named `q25`, `q50`, `q75` etc. by
   default)
 
 ## Details
 
-Per-variable flow:
-
-1.  `dsvertLocalMomentsDS` returns scalar moments in a single aggregate
-    call; exact extrema are omitted unless explicitly enabled.
-
-2.  Edges for `dsvertHistogramDS` are derived from either exact extrema
-    (opt-in) or a moment-bounded range `mean +/- range_sd * sd`.
-
-3.  Client-side linear interpolation within the target bucket converts
-    the cumulative count to the requested quantile.
-
-The quantile estimate inherits the histogram's resolution; for
-`n_buckets = 100` on a roughly normal cohort, the median is typically
-accurate within 0.5\\ at linear extra cost.
+The function makes one call to `ds.vertDPDescribe`. Quantile
+probabilities and variable selection are then pure client-side
+post-processing of that single immutable release. The returned object
+has class `ds.vertDesc` for compatibility and carries `dp_release`,
+`dp_descriptives`, and `dp_quantile_bands` attributes with the formal
+release and mechanism-uncertainty metadata. These regions exclude
+sampling uncertainty. In particular, `n_na` is the noised fixed invalid
+bin rather than an exact row-level NA count, and quantiles are
+fixed-grid upper endpoints rather than interpolation from
+analyst-selected bins.
 
 ## Examples
 
@@ -122,6 +120,7 @@ accurate within 0.5\\ at linear extra cost.
 if (FALSE) { # \dontrun{
 conns <- DSI::datashield.login(logindata)
 ds.vertDesc("DA", variables = c("age", "bmi", "glu", "bp"),
-            probs = c(0.25, 0.5, 0.75, 0.9))
+            probs = c(0.25, 0.5, 0.75, 0.9),
+            analysis_id = "baseline_describe_v1")
 } # }
 ```

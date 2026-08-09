@@ -16,6 +16,14 @@
 #' @keywords internal
 #' @noRd
 
+.nb_fullreg_nd_fanout <- function(datasources, servers, expressions, .dsAgg) {
+  if (!length(servers) || length(expressions) != length(servers)) {
+    stop("Invalid negative-binomial MPC fan-out geometry", call. = FALSE)
+  }
+  names(expressions) <- servers
+  .dsAgg(datasources[servers], expressions)
+}
+
 .nb_fullreg_nd_session_setup <- function(formula, data, base_fit,
                                           datasources, server_names,
                                           y_srv, nl_srv,
@@ -60,14 +68,14 @@
 
   # Sanity: NL's k2_nb_eta_share_fp slot is populated by dsvertNBEtaShareDS;
   # confirm via the helper.
-  conf_r <- .dsAgg(datasources[nl_ci],
-    call(name = "dsvertNBEtaShareConfirmDS", session_id = session_id))
-  if (is.list(conf_r) && length(conf_r) == 1L) conf_r <- conf_r[[1L]]
+  confirmations <- .nb_fullreg_nd_fanout(
+    datasources, c(nl_srv, y_srv), rep(list(
+      call(name = "dsvertNBEtaShareConfirmDS", session_id = session_id)), 2L),
+    .dsAgg)
+  conf_r <- confirmations[[nl_srv]]
   if (!isTRUE(conf_r$stored))
     stop("NL eta_total share confirmation failed", call. = FALSE)
-  conf_l <- .dsAgg(datasources[y_ci],
-    call(name = "dsvertNBEtaShareConfirmDS", session_id = session_id))
-  if (is.list(conf_l) && length(conf_l) == 1L) conf_l <- conf_l[[1L]]
+  conf_l <- confirmations[[y_srv]]
   if (!isTRUE(conf_l$stored))
     stop("Label eta_total share confirmation failed", call. = FALSE)
 
@@ -84,11 +92,11 @@
                                            .dsAgg) {
   transport_pks <- list()
   identity_info <- list()
+  init_results <- .dsAgg(
+    datasources[server_list],
+    call(name = "glmRing63TransportInitDS", session_id = session_id))
   for (server in server_list) {
-    ci <- which(server_names == server)
-    r <- .dsAgg(datasources[ci],
-      call(name = "glmRing63TransportInitDS", session_id = session_id))
-    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+    r <- init_results[[server]]
     transport_pks[[server]] <- r$transport_pk
     if (!is.null(r$identity_pk)) {
       identity_info[[server]] <- list(
@@ -107,13 +115,15 @@
   pk_b64 <- json_to_b64url(pk_sorted)
   id_b64 <- if (!is.null(id_sorted)) json_to_b64url(id_sorted) else ""
 
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    .dsAgg(datasources[ci],
-      call(name = "mpcStoreTransportKeysDS",
-           transport_keys_b64 = pk_b64,
-           identity_info_b64 = id_b64,
-           session_id = session_id))
+  stored <- .dsAgg(
+    datasources[server_list],
+    call(name = "mpcStoreTransportKeysDS",
+         transport_keys_b64 = pk_b64,
+         identity_info_b64 = id_b64,
+         session_id = session_id))
+  if (any(!vapply(stored, identical, logical(1L), TRUE))) {
+    stop("Negative-binomial pinned-key binding returned an invalid acknowledgement.",
+         call. = FALSE)
   }
   transport_pks
 }
@@ -142,66 +152,79 @@
   # Share original, unstandardised X and y into Ring127 additive shares held
   # only by the two DCF parties. All non-DCF servers split their columns once:
   # one share goes to fusion, the complement to the outcome/coordinator party.
-  for (server in dcf_parties) {
-    ci <- which(server_names == server)
+  dcf_share_expr <- lapply(dcf_parties, function(server) {
     peer_dcf <- setdiff(dcf_parties, server)
     srv_x <- x_vars[[server]]
     if (length(srv_x) == 0L) srv_x <- NULL
-    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
+    call(name = "k2ShareInputDS",
       data_name = data,
       x_vars = srv_x,
       y_var = if (identical(server, y_srv)) y_var_char else NULL,
       peer_pk = .to_b64url(transport_pks[[peer_dcf]]),
       ring = 127,
-      session_id = session_id))
-    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+      session_id = session_id)
+  })
+  dcf_share_results <- .nb_fullreg_nd_fanout(
+    datasources, dcf_parties, dcf_share_expr, .dsAgg)
+  for (server in dcf_parties) {
+    peer_dcf <- setdiff(dcf_parties, server)
+    r <- dcf_share_results[[server]]
     peer_ci <- which(server_names == peer_dcf)
-    .sendBlob(r$encrypted_x_share, "k2_peer_x_share", peer_ci)
+    .sendBlob(r$encrypted_x_share, r$encrypted_x_transfer, peer_ci)
     if (!is.null(r$encrypted_y_share)) {
-      .sendBlob(r$encrypted_y_share, "k2_peer_y_share", peer_ci)
+      .sendBlob(r$encrypted_y_share, r$encrypted_y_transfer, peer_ci)
     }
   }
 
-  for (server in non_dcf_servers) {
-    srv_x <- x_vars[[server]]
-    if (length(srv_x) == 0L) next
-    ci <- which(server_names == server)
-    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
-      data_name = data,
-      x_vars = srv_x,
-      y_var = NULL,
-      peer_pk = .to_b64url(transport_pks[[fusion_server]]),
-      ring = 127,
-      session_id = session_id))
-    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-    .sendBlob(r$encrypted_x_share, paste0("k2_extra_x_share_", server),
-              which(server_names == fusion_server))
-
-    r2 <- .dsAgg(datasources[ci], call(name = "glmRing63ExportOwnShareDS",
-      peer_pk = .to_b64url(transport_pks[[y_srv]]),
-      session_id = session_id))
-    if (is.list(r2) && length(r2) == 1L) r2 <- r2[[1L]]
-    .sendBlob(r2$encrypted_own_share, paste0("k2_extra_x_share_", server),
-              which(server_names == y_srv))
+  extra_servers <- non_dcf_servers[vapply(
+    non_dcf_servers, function(server) length(x_vars[[server]]) > 0L,
+    logical(1L))]
+  if (length(extra_servers)) {
+    extra_share <- .nb_fullreg_nd_fanout(
+      datasources, extra_servers, lapply(extra_servers, function(server) {
+        call(name = "glmRing63ShareExtraInputDS", data_name = data,
+             x_vars = x_vars[[server]],
+             peer_pk = .to_b64url(transport_pks[[fusion_server]]),
+             ring = 127, session_id = session_id)
+      }), .dsAgg)
+    for (server in extra_servers) {
+      .sendBlob(
+        extra_share[[server]]$encrypted_x_share,
+        extra_share[[server]]$encrypted_x_transfer,
+        which(server_names == fusion_server))
+    }
+    own_share <- .nb_fullreg_nd_fanout(
+      datasources, extra_servers, lapply(extra_servers, function(server) {
+        call(name = "glmRing63ExportOwnShareDS",
+             peer_pk = .to_b64url(transport_pks[[y_srv]]),
+             session_id = session_id)
+      }), .dsAgg)
+    for (server in extra_servers) {
+      .sendBlob(
+        own_share[[server]]$encrypted_own_share,
+        own_share[[server]]$encrypted_own_transfer,
+        which(server_names == y_srv))
+    }
   }
 
-  for (i in seq_along(dcf_parties)) {
-    dcf_ci <- dcf_conns[[i]]
+  .nb_fullreg_nd_fanout(
+    datasources, dcf_parties, lapply(seq_along(dcf_parties), function(i) {
     peer_srv <- dcf_parties[[3L - i]]
-    .dsAgg(datasources[dcf_ci], call(name = "k2ReceiveShareDS",
+    call(name = "k2ReceiveShareDS",
       peer_p = as.numeric(length(x_vars[[peer_srv]])),
-      session_id = session_id))
-  }
+      peer_name = peer_srv,
+      session_id = session_id)
+    }), .dsAgg)
 
   for (server in non_dcf_servers) {
     extra_p <- length(x_vars[[server]])
     if (extra_p == 0L) next
-    for (dcf_ci in dcf_conns) {
-      .dsAgg(datasources[dcf_ci], call(name = "glmRing63ReceiveExtraShareDS",
-        extra_key = paste0("k2_extra_x_share_", server),
+    .nb_fullreg_nd_fanout(
+      datasources, dcf_parties, rep(list(
+        call(name = "glmRing63ReceiveExtraShareDS",
+        source_name = server,
         extra_p = as.numeric(extra_p),
-        session_id = session_id))
-    }
+        session_id = session_id)), length(dcf_parties)), .dsAgg)
   }
 
   p_coord <- length(x_vars[[y_srv]])
@@ -216,8 +239,7 @@
   }
   int_val <- as.numeric(beta_all[["(Intercept)"]])
 
-  for (server in dcf_parties) {
-    ci <- which(server_names == server)
+  eta_expr <- lapply(dcf_parties, function(server) {
     is_coord <- identical(server, y_srv)
     if (is_coord) {
       b_coord <- beta_get(x_vars[[y_srv]])
@@ -229,20 +251,21 @@
       for (ns in non_dcf_servers) b_nl <- c(b_nl, beta_get(x_vars[[ns]]))
       b_nl <- c(b_nl, beta_get(x_vars[[fusion_server]]))
     }
-    .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
+    call(name = "k2ComputeEtaShareDS",
       beta_coord = b_coord,
       beta_nl = b_nl,
       intercept = if (is_coord) int_val else 0.0,
       is_coordinator = is_coord,
       output_key = "k2_nb_eta_share_fp",
+      session_id = session_id)
+  })
+  .nb_fullreg_nd_fanout(datasources, dcf_parties, eta_expr, .dsAgg)
+  if (p_extras > 0L) {
+    .dsAgg(datasources[fusion_server], call(name = "glmRing63ReorderXFullDS",
+      p_coord = as.numeric(p_coord),
+      p_fusion = as.numeric(p_fusion),
+      p_extras = as.numeric(p_extras),
       session_id = session_id))
-    if (!is_coord && p_extras > 0L) {
-      .dsAgg(datasources[ci], call(name = "glmRing63ReorderXFullDS",
-        p_coord = as.numeric(p_coord),
-        p_fusion = as.numeric(p_fusion),
-        p_extras = as.numeric(p_extras),
-        session_id = session_id))
-    }
   }
 
   n_r <- .dsAgg(datasources[which(server_names == y_srv)],
@@ -286,8 +309,7 @@
     if (is.null(vars) || length(vars) == 0L) NULL else as.numeric(beta_all[vars])
   }
 
-  for (server in dcf_parties) {
-    ci <- which(server_names == server)
+  eta_expr <- lapply(dcf_parties, function(server) {
     is_coord <- identical(server, y_srv)
     b_coord <- beta_get(x_vars[[y_srv]])
     if (is_coord) {
@@ -298,20 +320,21 @@
       for (ns in non_dcf_servers) b_nl <- c(b_nl, beta_get(x_vars[[ns]]))
       b_nl <- c(b_nl, beta_get(x_vars[[fusion_server]]))
     }
-    .dsAgg(datasources[ci], call(name = "k2ComputeEtaShareDS",
+    call(name = "k2ComputeEtaShareDS",
       beta_coord = b_coord,
       beta_nl = b_nl,
       intercept = if (is_coord) int_val else 0.0,
       is_coordinator = is_coord,
       output_key = output_key,
+      session_id = session_id)
+  })
+  .nb_fullreg_nd_fanout(datasources, dcf_parties, eta_expr, .dsAgg)
+  if (setup$p_extras > 0L) {
+    .dsAgg(datasources[fusion_server], call(name = "glmRing63ReorderXFullDS",
+      p_coord = as.numeric(setup$p_coord),
+      p_fusion = as.numeric(setup$p_fusion),
+      p_extras = as.numeric(setup$p_extras),
       session_id = session_id))
-    if (!is_coord && setup$p_extras > 0L) {
-      .dsAgg(datasources[ci], call(name = "glmRing63ReorderXFullDS",
-        p_coord = as.numeric(setup$p_coord),
-        p_fusion = as.numeric(setup$p_fusion),
-        p_extras = as.numeric(setup$p_extras),
-        session_id = session_id))
-    }
   }
   invisible(TRUE)
 }
@@ -323,15 +346,10 @@
 .nb_fullreg_nd_reveal_sum <- function(key, datasources, server_list,
                                       server_names, y_server, nl,
                                       session_id, .dsAgg) {
-  per_srv <- list()
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    r <- .dsAgg(datasources[ci],
-      call(name = "k2BeaverSumShareDS", source_key = key,
-           frac_bits = 50, ring = "ring127", session_id = session_id))
-    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-    per_srv[[server]] <- r
-  }
+  per_srv <- .dsAgg(
+    datasources[server_list],
+    call(name = "k2BeaverSumShareDS", source_key = key,
+         frac_bits = 50, ring = "ring127", session_id = session_id))
   agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
     share_a = per_srv[[y_server]]$sum_share_fp,
     share_b = per_srv[[nl]]$sum_share_fp,
@@ -349,18 +367,13 @@
 
 .nb_fullreg_nd_scale_key <- function(in_key, scalar, output_key, n_obs,
                                      datasources, server_list, server_names,
-                                     y_server, session_id, .dsAgg) {
+                                     y_server, nl, dealer_ci, transport_pks,
+                                     session_id, .dsAgg, .sendBlob) {
   scalar_fp <- .nb_fullreg_nd_fp_scalar(scalar)
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
-      in_key = in_key,
-      scalar_fp = scalar_fp,
-      output_key = output_key,
-      n = as.numeric(n_obs),
-      session_id = session_id,
-      is_party0 = identical(server, y_server)))
-  }
+  .ring127_exact_public_scale(
+    in_key, scalar_fp, output_key, n_obs,
+    datasources, dealer_ci, server_list, server_names, y_server, nl,
+    transport_pks, session_id, .dsAgg, .sendBlob)
   invisible(output_key)
 }
 
@@ -373,17 +386,17 @@
                                       public_const = NULL) {
   public_const_fp <- if (is.null(public_const)) NULL else
     .nb_fullreg_nd_fp_scalar(public_const)
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
+  expressions <- lapply(server_list, function(server) {
+    call(name = "k2Ring127AffineCombineDS",
       a_key = a_key, b_key = b_key,
       sign_a = as.numeric(sign_a), sign_b = as.numeric(sign_b),
       public_const_fp = public_const_fp,
       is_party0 = identical(server, y_server),
       output_key = output_key,
       n = as.numeric(n_obs),
-      session_id = session_id))
-  }
+      session_id = session_id)
+  })
+  .nb_fullreg_nd_fanout(datasources, server_list, expressions, .dsAgg)
   invisible(output_key)
 }
 
@@ -413,34 +426,25 @@
     .dsAgg = .dsAgg,
     .sendBlob = .sendBlob)
 
-  r1 <- list()
-  for (server in server_list) {
-    ci <- which(server_names == server)
+  r1 <- .nb_fullreg_nd_fanout(
+    datasources, server_list, lapply(server_list, function(server) {
     peer <- setdiff(server_list, server)
-    .dsAgg(datasources[ci],
-      call(name = "k2StoreGradTripleDS", session_id = session_id))
-    r <- .dsAgg(datasources[ci],
-      call(name = "k2GradientR1DS",
-           peer_pk = transport_pks[[peer]],
-           session_id = session_id))
-    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-    r1[[server]] <- r
-  }
-  .sendBlob(r1[[y_server]]$encrypted_r1, "k2_grad_peer_r1",
+    call(name = "k2GradientR1DS",
+         peer_pk = transport_pks[[peer]],
+         session_id = session_id)
+    }), .dsAgg)
+  .sendBlob(r1[[y_server]]$encrypted_r1, r1[[y_server]]$encrypted_r1_transfer,
             which(server_names == nl))
-  .sendBlob(r1[[nl]]$encrypted_r1, "k2_grad_peer_r1",
+  .sendBlob(r1[[nl]]$encrypted_r1, r1[[nl]]$encrypted_r1_transfer,
             which(server_names == y_server))
 
-  r2 <- list()
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    r <- .dsAgg(datasources[ci],
+  r2 <- .nb_fullreg_nd_fanout(
+    datasources, server_list, lapply(server_list, function(server) {
       call(name = "k2GradientR2DS",
            party_id = if (identical(server, y_server)) 0 else 1,
-           session_id = session_id))
-    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-    r2[[server]] <- r
-  }
+           peer_name = setdiff(server_list, server),
+           session_id = session_id)
+    }), .dsAgg)
 
   g <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
     share_a = r2[[y_server]]$gradient_fp,
@@ -486,7 +490,9 @@
     output_key = "k2_nb_beta_score_resid_share_fp",
     n_obs = n_obs, datasources = datasources,
     server_list = server_list, server_names = server_names,
-    y_server = y_server, session_id = session_id, .dsAgg = .dsAgg)
+    y_server = y_server, nl = nl, dealer_ci = dealer_ci,
+    transport_pks = transport_pks, session_id = session_id,
+    .dsAgg = .dsAgg, .sendBlob = .sendBlob)
 
   # Expected Fisher weight for NB2/log:
   #   w_i = theta * mu_i / (theta + mu_i)
@@ -506,27 +512,27 @@
     output_key = "k2_nb_fisher_w_share_fp",
     n_obs = n_obs, datasources = datasources,
     server_list = server_list, server_names = server_names,
-    y_server = y_server, session_id = session_id, .dsAgg = .dsAgg)
+    y_server = y_server, nl = nl, dealer_ci = dealer_ci,
+    transport_pks = transport_pks, session_id = session_id,
+    .dsAgg = .dsAgg, .sendBlob = .sendBlob)
 
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    .dsAgg(datasources[ci],
+  .nb_fullreg_nd_fanout(
+    datasources, server_list, lapply(server_list, function(server) {
       call(name = "dsvertGEEInterceptShareDS",
-           output_key = "k2_nb_x_col_0",
-           n = as.numeric(n_obs),
+           output_key = "k2_nb_x_col_0", n = as.numeric(n_obs),
            is_party0 = identical(server, y_server),
+           session_id = session_id, frac_bits = 50, ring = 127)
+    }), .dsAgg)
+  for (j in seq_len(p_total)) {
+    .dsAgg(
+      datasources[server_list],
+      call(name = "k2BeaverExtractColumnDS",
+           source_key = "k2_x_full_fp",
+           n = as.numeric(n_obs), K = as.numeric(p_total),
+           col_index = as.numeric(j),
+           output_key = paste0("k2_nb_x_col_", j),
            session_id = session_id,
-           frac_bits = 50, ring = 127))
-    for (j in seq_len(p_total)) {
-      .dsAgg(datasources[ci],
-        call(name = "k2BeaverExtractColumnDS",
-             source_key = "k2_x_full_fp",
-             n = as.numeric(n_obs), K = as.numeric(p_total),
-             col_index = as.numeric(j),
-             output_key = paste0("k2_nb_x_col_", j),
-             session_id = session_id,
-             frac_bits = 50, ring = "ring127"))
-    }
+           frac_bits = 50, ring = "ring127"))
   }
 
   restore_y <- function() {
@@ -623,17 +629,17 @@
   theta_fp_b64 <- .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
     values = array(as.numeric(theta), dim = 1L),
     frac_bits = 50L, ring = "ring127"))$fp_data)
-  for (server in server_list) {
-    ci <- which(server_names == server)
-    is_p0 <- (server == y_server)
-    .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
+  .nb_fullreg_nd_fanout(
+    datasources, server_list, lapply(server_list, function(server) {
+    is_p0 <- server == y_server
+    call(name = "k2Ring127AffineCombineDS",
       a_key = "k2_nb_mu_share_fp", b_key = NULL,
       sign_a = 1, sign_b = 0,
       public_const_fp = if (is_p0) theta_fp_b64 else NULL,
       is_party0 = is_p0,
       output_key = "k2_nb_mupt_share_fp",
-      n = as.numeric(n_obs), session_id = session_id))
-  }
+      n = as.numeric(n_obs), session_id = session_id)
+    }), .dsAgg)
 
   # === Step 3: log(mu + theta)_share via NR-LOG (Pugh 2004 Sec.3) ===
   # Wide-Chebyshev seed on [0.1, 1000] degree 60 + 5 NR iters of
@@ -671,17 +677,17 @@
     theta_fp_b64_yt <- .to_b64url(dsVert:::.callMpcTool("k2-float-to-fp", list(
       values = array(as.numeric(theta), dim = 1L),
       frac_bits = 50L, ring = "ring127"))$fp_data)
-    for (server in server_list) {
-      ci <- which(server_names == server)
-      is_p0 <- (server == y_server)
-      .dsAgg(datasources[ci], call(name = "k2Ring127AffineCombineDS",
+    .nb_fullreg_nd_fanout(
+      datasources, server_list, lapply(server_list, function(server) {
+      is_p0 <- server == y_server
+      call(name = "k2Ring127AffineCombineDS",
         a_key = "k2_y_share_fp", b_key = NULL,
         sign_a = 1, sign_b = 0,
         public_const_fp = if (is_p0) theta_fp_b64_yt else NULL,
         is_party0 = is_p0,
         output_key = "k2_nb_yt_share_fp",
-        n = as.numeric(n_obs), session_id = session_id))
-    }
+        n = as.numeric(n_obs), session_id = session_id)
+      }), .dsAgg)
   } else {
     # K=2 legacy setup does not keep a y share; label re-shares y+theta as a
     # uniform Ring127 additive split to the non-label DCF party.

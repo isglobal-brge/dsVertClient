@@ -2,23 +2,35 @@
 % Please edit documentation in R/ds.vertCor.R
 \name{ds.vertCor}
 \alias{ds.vertCor}
-\title{Ring63 Privacy-Preserving Correlation for Vertically Partitioned Data}
+\title{Disclosure-safe compatibility adapter for correlation}
 \usage{
-ds.vertCor(data_name, variables = NULL, verbose = TRUE, datasources = NULL)
+ds.vertCor(
+  data_name,
+  variables = NULL,
+  analysis_id = NULL,
+  verbose = TRUE,
+  datasources = NULL
+)
 }
 \arguments{
-\item{data_name}{Character. Aligned data frame name.}
+\item{data_name}{Signed protected dataset name.}
 
-\item{variables}{Named list: server -> variable names.}
+\item{variables}{Optional character subset, or a named list identifying the
+signed owner of each requested variable. At least two variables are
+required.}
 
-\item{verbose}{Logical. If TRUE (default), print progress messages.}
+\item{analysis_id}{Mandatory signed Gaussian artifact id.}
+
+\item{verbose}{Logical progress flag retained for compatibility.}
 
 \item{datasources}{DataSHIELD connections.}
 }
 \value{
-List with correlation matrix, variable names, n_obs.
+A \code{ds.vertDPCor}/\code{ds.cor} object.
 }
 \description{
-Computes Pearson correlation matrix using Ring63 Beaver MPC.
-Only aggregate scalars disclosed.
+This existing name consumes only a signed \code{gaussian_models} sufficient-
+statistic artifact. A signed \code{analysis_id} is mandatory. Same-owner and
+cross-owner variables share one secret complete-case mask; there is no
+silent fallback to pairwise moments.
 }

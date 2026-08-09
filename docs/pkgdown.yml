@@ -1,43 +1,8 @@
 pandoc: 3.8.3
 pkgdown: 2.2.0
 pkgdown_sha: ~
-articles:
-  validation_contingency_k2: validation_contingency_k2.html
-  validation_contingency_kge3: validation_contingency_kge3.html
-  validation_correlation_k2: validation_correlation_k2.html
-  validation_correlation_kge3: validation_correlation_kge3.html
-  validation_cox_k2: validation_cox_k2.html
-  validation_cox_kge3: validation_cox_kge3.html
-  validation_descriptive_k2: validation_descriptive_k2.html
-  validation_descriptive_kge3: validation_descriptive_kge3.html
-  validation_gee_k2: validation_gee_k2.html
-  validation_gee_kge3: validation_gee_kge3.html
-  validation_glm_k2: validation_glm_k2.html
-  validation_glm_kge3: validation_glm_kge3.html
-  validation_glmm_k2: validation_glmm_k2.html
-  validation_glmm_kge3: validation_glmm_kge3.html
-  validation_inference_k2: validation_inference_k2.html
-  validation_inference_kge3: validation_inference_kge3.html
-  validation_ipw_k2: validation_ipw_k2.html
-  validation_ipw_kge3: validation_ipw_kge3.html
-  validation_lasso_k2: validation_lasso_k2.html
-  validation_lasso_kge3: validation_lasso_kge3.html
-  validation_lmm_k2: validation_lmm_k2.html
-  validation_lmm_kge3: validation_lmm_kge3.html
-  validation_mi_k2: validation_mi_k2.html
-  validation_mi_kge3: validation_mi_kge3.html
-  validation_multinomial_k2: validation_multinomial_k2.html
-  validation_multinomial_kge3: validation_multinomial_kge3.html
-  validation_negative_binomial_k2: validation_negative_binomial_k2.html
-  validation_negative_binomial_kge3: validation_negative_binomial_kge3.html
-  validation_ordinal_k2: validation_ordinal_k2.html
-  validation_ordinal_kge3: validation_ordinal_kge3.html
-  validation_pca_k2: validation_pca_k2.html
-  validation_pca_kge3: validation_pca_kge3.html
-  validation_psi_k2: validation_psi_k2.html
-  validation_psi_kge3: validation_psi_kge3.html
-  validation_summary: validation_summary.html
-last_built: 2026-05-06T11:30Z
+articles: {}
+last_built: 2026-08-08T17:57Z
 urls:
   reference: https://isglobal-brge.github.io/dsVertClient/reference
   article: https://isglobal-brge.github.io/dsVertClient/articles

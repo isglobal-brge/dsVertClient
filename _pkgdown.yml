@@ -9,7 +9,7 @@ footer:
 
 navbar:
   structure:
-    left: [reference, articles, news]
+    left: [reference, news]
     right: [search, github]
 
 reference:
@@ -21,7 +21,22 @@ reference:
   - ds.psiAlign
   - ds.isPsiAligned
   - ds.getIdentityPks
-- title: Compatibility backends
+- title: DP policy, security and numeric contracts
+  contents:
+  - ds.vertMethodStatus
+  - ds.vertSecurityStatus
+  - ds.vertNumericPreflight
+  - ds.validateDPGaussianCertificate
+- title: Sticky differentially private biomedical capsule
+  contents:
+  - starts_with("ds.vertDP")
+- title: Epidemiology from authorised inputs
+  contents:
+  - ds.vertEpi2x2
+  - ds.vertMantelHaenszel
+  - ds.vertDirectStandardization
+  - ds.vertIndirectStandardization
+- title: Conditional and compatibility analyses
   contents:
   - ds.vertDesc
   - ds.vertCor
@@ -30,6 +45,17 @@ reference:
   - ds.vertChisqCross
   - ds.vertFisher
   - ds.vertGLM
+  - ds.vertLASSO
+  - ds.vertLASSOProximal
+  - ds.vertLASSO1Step
+  - ds.vertLASSOCV
+  - ds.vertLR
+  - ds.vertConfint
+  - ds.vertWald
+  - ds.vertContrast
+- title: Quarantined compatibility frontdoors
+  desc: Retained public names that fail locally before DSI; consult ds.vertMethodStatus().
+  contents:
   - ds.vertCox
   - ds.vertCoxProfileNonDisclosive
   - ds.vertCoxDiscreteNonDisclosive
@@ -45,15 +71,7 @@ reference:
   - ds.vertGLMM
   - ds.vertIPW
   - ds.vertMI
-  - ds.vertLASSO
   - ds.vertLASSOIter
-  - ds.vertLASSOProximal
-  - ds.vertLASSO1Step
-  - ds.vertLASSOCV
-  - ds.vertLR
-  - ds.vertConfint
-  - ds.vertWald
-  - ds.vertContrast
 - title: Helpers and S3 methods
   contents:
   - k2-beaver-lbfgs-client
@@ -63,49 +81,7 @@ reference:
   - starts_with("print.")
   - starts_with("summary.")
 
-articles:
-- title: Validation evidence
-  navbar: Validation
-  contents:
-  - validation_summary
-  - validation_psi_k2
-  - validation_psi_kge3
-  - validation_descriptive_k2
-  - validation_descriptive_kge3
-  - validation_contingency_k2
-  - validation_contingency_kge3
-  - validation_correlation_k2
-  - validation_correlation_kge3
-  - validation_pca_k2
-  - validation_pca_kge3
-  - validation_glm_k2
-  - validation_glm_kge3
-  - validation_inference_k2
-  - validation_inference_kge3
-  - validation_lasso_k2
-  - validation_lasso_kge3
-  - validation_negative_binomial_k2
-  - validation_negative_binomial_kge3
-  - validation_cox_k2
-  - validation_cox_kge3
-  - validation_lmm_k2
-  - validation_lmm_kge3
-  - validation_gee_k2
-  - validation_gee_kge3
-  - validation_glmm_k2
-  - validation_glmm_kge3
-  - validation_ipw_k2
-  - validation_ipw_kge3
-  - validation_mi_k2
-  - validation_mi_kge3
-  - validation_multinomial_k2
-  - validation_multinomial_kge3
-  - validation_ordinal_k2
-  - validation_ordinal_kge3
-- title: IKNP backend evidence
-  navbar: IKNP backend
-  contents:
-  - validation_beaver_profile_correlation_k2
-  - validation_beaver_profile_glm_k2
-  - validation_beaver_profile_gee_k2
-  - validation_beaver_profile_cox_k2
+# The historical executable Rmd fixtures are intentionally excluded from the
+# release website. Current evidence is linked from README/SECURITY and stored
+# as signed benchmark artifacts under inst/docs/benchmarks.
+articles: []

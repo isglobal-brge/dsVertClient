@@ -1,30 +1,25 @@
-# Cross-server chi-square (one-hot + Beaver cross-products)
+# DP-aware inference for a signed cross-owner categorical table
 
-Pearson chi-square and Fisher-exact tests on a two-way contingency table
-where the row variable is held on one server and the column variable is
-held on another. Uses the existing Ring63 Beaver cross-product
-infrastructure: one-hot indicator matrices are constructed server-side
-via
-[`dsvertOneHotDS`](https://rdrr.io/pkg/dsVert/man/dsvertOneHotDS.html),
-then the \\K \times L\\ cell counts \\n\_{kl} = \sum_i X\_{ik} Y\_{il}\\
-are obtained by Beaver dot products on the shared indicator vectors.
-When cell suppression is active, the DCF parties first run a pre-release
-threshold check over the shared cell-count vector; the exact \\K \times
-L\\ aggregate table is returned to the client only if every positive
-cell passes the configured privacy threshold. The client never sees any
-\\n\\-length indicator vector.
+This compatibility entry point obtains exactly one fixed-domain joint-DP
+contingency release and performs only local post-processing. It never
+discovers columns, constructs analyst-addressable one-hot objects, opens
+an exact table, or invokes the retired cross-count endpoints. The
+row/column ownership and domains must already be present in the
+custodian-signed capsule `vertical_cross_specs` contract.
 
 ## Usage
 
 ``` r
 ds.vertChisqCross(
   data,
-  var1,
-  var2,
+  var1 = NULL,
+  var2 = NULL,
   correct = TRUE,
   fisher = FALSE,
   datasources = NULL,
-  verbose = TRUE
+  verbose = TRUE,
+  simulations = 9999L,
+  mc_confidence = 0.95
 )
 ```
 
@@ -32,35 +27,40 @@ ds.vertChisqCross(
 
 - data:
 
-  Aligned data-frame name.
+  One of the two signed dataset names, or an existing
+  `ds.vertDPContingency` release.
 
-- var1:
+- var1, var2:
 
-  Row variable (categorical or numeric treated as factor).
-
-- var2:
-
-  Column variable.
+  Row and column variables. When `data` is an existing release these are
+  optional orientation assertions.
 
 - correct:
 
-  Apply Yates continuity correction (2x2 only).
+  Apply the DP-aware Yates-style correction for a 2-by-2 table.
 
 - fisher:
 
-  Also return a Fisher-exact p-value (via R's `fisher.test` applied to
-  the reconstructed aggregate table).
+  Also compute the DP-aware conditional 2-by-2 calibration from the same
+  release. No second DSI request is made.
 
 - datasources:
 
-  DataSHIELD connection object.
+  DataSHIELD connections. Omit for an existing release.
 
 - verbose:
 
-  Print progress.
+  Print one non-sensitive progress message.
+
+- simulations:
+
+  Monte Carlo replicates for each requested calibration.
+
+- mc_confidence:
+
+  Confidence level for its Monte Carlo interval.
 
 ## Value
 
-An object of class `ds.vertChisq` (same print method as the same-server
-helper) with components `observed`, `expected`, `chisq`, `df`,
-`p_value`, `fisher_p` (if requested), `n`, `row_levels`, `col_levels`.
+A `ds.vertChisq` result. If `fisher=TRUE`, the same object also contains
+`fisher`, `fisher_p`, and `source_dp_release`.

@@ -1,27 +1,28 @@
-#' @title Information-criterion lambda selection for one-step LASSO
-#' @description Select the L1 penalty on the one-step quadratic-surrogate
-#'   LASSO path (\code{ds.vertLASSO1Step}) by minimising AIC / BIC /
-#'   extended-BIC of the quadratic-surrogate criterion. Because the
-#'   surrogate uses only the already-computed coefficient vector and the
-#'   full covariance matrix, selection is entirely client-side: no new
-#'   MPC rounds are spent beyond the single \code{ds.vertGLM} fit that
-#'   produced \code{fit}.
+#' @title Client-side information-criterion selection for Gaussian LASSO
+#' @description Select an L1 penalty entirely client-side. With a
+#'   \code{ds.vertDPGaussian} input, each candidate is solved from the same
+#'   validated projected DP moments and ranked by an explicitly labelled DP
+#'   projected pseudo-AIC/BIC/EBIC. With a historical \code{ds.glm} input,
+#'   the existing quadratic-surrogate selector is retained. Despite the
+#'   historical function/class suffix \code{CV}, neither route performs
+#'   cross-validation or resampling.
 #'
-#'   For each lambda we solve the one-step LASSO, then score
-#'       IC(lambda) = surrogate_misfit(beta_lambda) + penalty * df
-#'   where \code{df} is the number of nonzero coefficients and
-#'   \code{penalty} is 2 (AIC), log(n) (BIC, default), or
-#'   log(n) + 2 gamma log(p) (extended BIC). The selected
-#'   \code{lambda.min} is the global minimiser; \code{lambda.1se} is
-#'   reported as a more parsimonious alternative that preserves at
-#'   least \code{(1 - se_threshold) * IC_min} of the fit.
+#'   For a DP source, the score uses the projected noisy residual moment and
+#'   noisy effective count. It is therefore a deterministic model-selection
+#'   heuristic, not a classical likelihood information criterion; selection
+#'   is returned as unavailable when those released quantities cannot define
+#'   it. For a legacy source, the score is the quadratic-surrogate misfit plus
+#'   the requested degrees-of-freedom penalty. The preferred metadata name
+#'   for the more parsimonious alternative is \code{lambda.parsimonious}; the
+#'   historical \code{lambda.1se} slot is retained as an exact alias, but it
+#'   is not a one-standard-error rule. It uses a relative IC tolerance set by
+#'   \code{se_threshold} and involves no estimated sampling standard error.
 #'
-#'   This is the standard selector for one-step / SCAD-style penalised
-#'   maximum likelihood and is defensible in large samples without the
-#'   need for full K-fold refitting (which would require rerunning the
-#'   MPC GLM loop K times).
+#'   Candidate paths are reusable post-processing and never trigger K-fold
+#'   refitting or repeated private releases.
 #'
-#' @param fit A \code{ds.glm} object (with \code{fit$covariance}).
+#' @param fit Preferably a \code{ds.vertDPGaussian} object. A historical
+#'   \code{ds.glm} object with \code{fit$covariance} remains accepted.
 #' @param lambda_grid Numeric vector of candidate lambda values
 #'   (default: a 50-point log-spaced grid from \code{lambda_max} to
 #'   \code{lambda_max / 1000}).
@@ -30,12 +31,15 @@
 #' @param ebic_gamma Extended-BIC gamma parameter (default 0.5;
 #'   effective only when \code{criterion = "EBIC"}).
 #' @param keep_intercept Never penalise the intercept.
-#' @param se_threshold For \code{lambda.1se}, retain the sparsest lambda
-#'   whose IC is within this fraction of \code{IC_min} (default 0.02,
-#'   i.e. 2 percent).
+#' @param se_threshold Relative IC tolerance for the parsimonious selection:
+#'   retain the sparsest lambda whose IC is no more than
+#'   \code{abs(IC_min) * se_threshold} above \code{IC_min}. The historical
+#'   argument name is retained for compatibility; it is not a standard error.
 #' @return A \code{ds.vertLASSOCV} object: \code{lambda}, \code{ic},
-#'   \code{df}, \code{lambda.min}, \code{lambda.1se}, \code{beta.min},
-#'   \code{beta.1se}, the original fit.
+#'   \code{df}, \code{lambda.min}, \code{lambda.parsimonious},
+#'   compatibility aliases \code{lambda.1se}/\code{beta.1se}, and metadata
+#'   explicitly identifying information-criterion selection without
+#'   cross-validation.
 #' @export
 ds.vertLASSOCV <- function(fit, lambda_grid = NULL,
                            criterion = c("BIC", "AIC", "EBIC"),
@@ -43,8 +47,15 @@ ds.vertLASSOCV <- function(fit, lambda_grid = NULL,
                            keep_intercept = TRUE,
                            se_threshold = 0.02) {
   criterion <- match.arg(criterion)
+  if (inherits(fit, "ds.vertDPGaussian")) {
+    return(.dsvert_lasso_dp_select(
+      fit = fit, lambda_grid = lambda_grid, criterion = criterion,
+      ebic_gamma = ebic_gamma, keep_intercept = keep_intercept,
+      se_threshold = se_threshold))
+  }
   if (!inherits(fit, "ds.glm")) {
-    stop("fit must be a ds.glm object", call. = FALSE)
+    stop("fit must be a ds.vertDPGaussian or ds.glm object",
+         call. = FALSE)
   }
   if (is.null(fit$covariance)) {
     stop("fit does not expose covariance; refit with dsVert >= 8bb7902",
@@ -52,8 +63,11 @@ ds.vertLASSOCV <- function(fit, lambda_grid = NULL,
   }
 
   cov <- as.matrix(fit$covariance)
-  H <- tryCatch(solve((cov + t(cov)) / 2), error = function(e) NULL)
-  if (is.null(H)) stop("Cov(beta) is singular", call. = FALSE)
+  H <- .dsvert_solve_identifiable(
+    cov,
+    context = "The LASSO-CV source covariance",
+    reason = "singular_lasso_source_covariance",
+    symmetric = TRUE)
   H <- (H + t(H)) / 2
   diag_H <- diag(H)
   if (any(diag_H <= 0)) stop("Non-positive Hessian diagonal", call. = FALSE)
@@ -142,9 +156,15 @@ ds.vertLASSOCV <- function(fit, lambda_grid = NULL,
     df = df_vals,
     criterion = criterion,
     lambda.min = lambda.min,
+    lambda.parsimonious = lambda.1se,
     lambda.1se = lambda.1se,
     beta.min = beta.min,
+    beta.parsimonious = beta.1se,
     beta.1se = beta.1se,
+    selection_method = "information_criterion_quadratic_surrogate",
+    cross_validation = FALSE,
+    one_standard_error_rule = FALSE,
+    relative_ic_tolerance = se_threshold,
     paths = paths,
     fit = fit)
   class(out) <- c("ds.vertLASSOCV", "list")
@@ -153,13 +173,25 @@ ds.vertLASSOCV <- function(fit, lambda_grid = NULL,
 
 #' @export
 print.ds.vertLASSOCV <- function(x, ...) {
-  cat("dsVert information-criterion LASSO path selection\n")
+  cat("dsVert information-criterion LASSO path selection (no cross-validation)\n")
   cat(sprintf("  Criterion : %s\n", x$criterion))
+  if (identical(x$selection_available, FALSE)) {
+    cat("  Selection unavailable: ", x$selection_unavailable_reason,
+        "\n", sep = "")
+    cat("  No classical IC, CV, or sampling-inference claim is made.\n")
+    return(invisible(x))
+  }
   cat(sprintf("  lambda.min: %.4g  (IC = %.4g, df = %d)\n",
               x$lambda.min, min(x$ic),
               x$df[which.min(x$ic)]))
-  cat(sprintf("  lambda.1se: %.4g  (sparsest within %g%% of IC_min)\n",
-              x$lambda.1se, 2))
+  tolerance <- x$relative_ic_tolerance %||% 0.02
+  cat(sprintf("  lambda.parsimonious: %.4g  (sparsest within %g%% of IC_min)\n",
+              x$lambda.parsimonious %||% x$lambda.1se,
+              100 * tolerance))
+  cat("  Legacy alias lambda.1se is retained; this is not a sampling standard-error rule.\n")
+  if (identical(x$input_provenance, "signed_dp_gaussian_capsule")) {
+    cat("  Scores are DP-projected pseudo-IC values; extra DP cost = (0, 0).\n")
+  }
   cat("\nbeta at lambda.min:\n")
   print(round(x$beta.min, 5L))
   if (!isTRUE(all.equal(x$lambda.min, x$lambda.1se))) {

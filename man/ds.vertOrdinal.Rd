@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertOrdinal.R
 \name{ds.vertOrdinal}
 \alias{ds.vertOrdinal}
-\title{Federated ordinal logistic regression}
+\title{Quarantined ordinal-regression compatibility frontdoor}
 \usage{
 ds.vertOrdinal(
   formula,
@@ -21,66 +21,26 @@ ds.vertOrdinal(
 )
 }
 \arguments{
-\item{formula}{R formula with the ORDERED outcome on the LHS (passed
-through as a factor level name in the per-threshold formulas).}
+\item{formula, data, levels_ordered, cumulative_template, max_iter, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 
-\item{data}{Name of the aligned data frame on each server.}
-
-\item{levels_ordered}{Character vector of the ordered levels,
-smallest-to-largest.}
-
-\item{cumulative_template}{String format (\code{sprintf}-style)
-used to build cumulative indicator column names; for instance the
-default \code{"\%s_leq"} produces \code{<level>_leq}, a 0/1 column
-that is 1 when the patient's outcome is at-or-below that level.
-Columns must already exist server-side.}
-
-\item{max_iter}{Optional alias for \code{max_outer}.}
-
-\item{max_outer}{Maximum outer Newton iterations for the joint route.}
-
-\item{tol}{Convergence tolerance for the joint route.}
-
-\item{warm_max_iter}{Optional maximum iterations for each internal
-binomial warm-start GLM.}
-
-\item{warm_tol}{Optional tolerance for each internal binomial warm-start
-GLM.}
-
-\item{binomial_sigmoid_intervals}{Optional DCF spline interval count for
-internal binomial warm-start GLMs.}
-
-\item{verbose}{Logical (default TRUE). Print per-threshold fit
-progress.}
-
-\item{datasources}{DataSHIELD connections; if NULL, uses
-\code{DSI::datashield.connections_find()}.}
-
-\item{...}{Reserved for future extensions.}
+\item{...}{Retained compatibility arguments; not evaluated.}
 }
 \value{
-\code{ds.vertOrdinal} object with (among other fields):
-\code{thresholds} \eqn{\alpha_k} (intercepts of the K-1 cumulative
-binomial fits) and \code{beta_po} \eqn{\gamma} (BLUE-pooled slope
-coefficients from the K-1 fits). Both are in the
-CUMULATIVE-BINOMIAL GLM convention, i.e.\ the fit form is
-
-\if{html}{\out{<div class="sourceCode">}}\preformatted{  \eqn{P(Y \leq k | X) = \mathrm{sigmoid}(\alpha_k + X^\top \gamma)},
-
-NOT the \code{MASS::polr} convention
-\eqn{P(Y \leq k | X) = \mathrm{sigmoid}(\theta_k - X^\top \beta)}.
-The two agree under \eqn{\theta_k = \alpha_k} and \eqn{\beta = -\gamma}.
-Therefore a caller comparing against \code{coef(polr)} must flip the
-sign of \code{beta_po} (or equivalently evaluate predictions with
-\eqn{\mathrm{sigmoid}(\theta_k + X^\top \gamma)} on the \code{ds.vertOrdinal}
-outputs). The public route now runs the strict joint Newton estimator;
-cumulative-binomial fits are used only as internal warm starts.
-}\if{html}{\out{</div>}}
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Public ordinal wrapper. Dispatches to
-\code{\link{ds.vertOrdinalJointNewton}}, the paper-safe joint
-proportional-odds route for K=2 and K>=3. The historical cumulative-binomial
-approximation is no longer exposed as a user-facing estimator; it remains
-only as an internal warm start for the joint route.
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and returns no ordinal fit. Retained cumulative-binomial and
+proportional-odds code after the gate is unreachable through this public
+frontdoor and carries no disclosure, DP, accuracy, or availability claim.
+}
+\details{
+Promotion requires a signed bounded proportional-odds artifact,
+protected score/information and validated covariance and diagnostics.
+}
+\seealso{
+\code{\link{ds.vertMethodStatus}}
 }

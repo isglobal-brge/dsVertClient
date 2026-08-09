@@ -17,7 +17,10 @@
   session_id,
   verbose,
   standardize_y_override = NULL,
-  std_mode = "full"
+  std_mode = "full",
+  missing = "fail",
+  numeric_ring = 63L,
+  .aggregate = DSI::datashield.aggregate
 )
 }
 \value{

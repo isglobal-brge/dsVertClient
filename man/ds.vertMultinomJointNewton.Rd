@@ -2,8 +2,7 @@
 % Please edit documentation in R/ds.vertMultinomJointNewton.R
 \name{ds.vertMultinomJointNewton}
 \alias{ds.vertMultinomJointNewton}
-\title{Federated joint-softmax multinomial logistic regression via
-Ring127 MPC-orchestrated Newton iteration}
+\title{Quarantined joint-softmax Newton compatibility frontdoor}
 \usage{
 ds.vertMultinomJointNewton(
   formula,
@@ -16,50 +15,30 @@ ds.vertMultinomJointNewton(
   warm_tol = NULL,
   binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  design_analysis_id = NULL
 )
 }
 \arguments{
-\item{formula}{R formula with categorical outcome on LHS.}
-
-\item{data}{Aligned data frame name.}
-
-\item{levels}{Character vector of outcome levels (first = reference).}
-
-\item{indicator_template}{sprintf template for class-indicator columns
-on the outcome server, e.g. \code{"\%s_ind"}. Must exist server-side.}
-
-\item{max_outer}{Outer Newton iterations (default 20).}
-
-\item{tol}{Convergence tolerance on max |Deltabeta| (default 1e-5).}
-
-\item{warm_max_iter}{Optional maximum iterations for each internal
-binomial warm-start GLM.}
-
-\item{warm_tol}{Optional tolerance for each internal binomial warm-start
-GLM.}
-
-\item{binomial_sigmoid_intervals}{Optional DCF spline interval count for
-internal binomial warm-start GLMs.}
-
-\item{verbose}{Logical.}
-
-\item{datasources}{DataSHIELD connections.}
+\item{formula, data, levels, indicator_template, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources, design_analysis_id}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 }
 \value{
-\code{ds.vertMultinomJointNewton} object.
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Full softmax Newton path for vertical splits: orchestrates
-class-specific exp(eta) shares, shared softmax denominators, shared
-residuals, and Beaver matvec score aggregation. K=2 uses both servers as
-DCF parties; K>=3 selects the outcome server plus one fusion DCF party
-and has the other servers contribute encrypted additive shares. The client
-performs a Bohning-Hessian-bounded Newton step on stacked coefficients
-using only aggregate gradients and low-dimensional Gram/Hessian objects.
-
-All per-patient probabilities and residuals remain Ring127 additive
-shares. The raw design Gram is built from scalar local moments and the
-federated correlation matrix, which is the same aggregate-disclosure tier
-as \code{ds.vertCor}.
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and returns no multinomial fit. Retained Newton/MPC code after the
+gate is unreachable through this public frontdoor and carries no
+disclosure, DP, accuracy, or availability claim.
+}
+\details{
+Promotion requires a purpose-bound signed
+\code{multinomial_design_grams} artifact over the exact bounded score
+design and a validated joint-softmax inference contract.
+}
+\seealso{
+\code{\link{ds.vertMethodStatus}}
 }

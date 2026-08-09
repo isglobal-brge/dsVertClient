@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertGLMM.R
 \name{ds.vertGLMM}
 \alias{ds.vertGLMM}
-\title{Federated binomial GLMM-PQL}
+\title{Quarantined generalized-linear mixed-model frontdoor}
 \usage{
 ds.vertGLMM(
   formula,
@@ -19,73 +19,25 @@ ds.vertGLMM(
 )
 }
 \arguments{
-\item{formula}{Fixed-effects formula (binomial outcome on LHS).}
-
-\item{data}{Aligned data-frame name.}
-
-\item{cluster_col}{Cluster id column on the outcome server.}
-
-\item{max_outer}{Outer (beta, sigma_b^2) iterations.}
-
-\item{inner_iter}{Inner PIRLS iterations per cluster per outer step.}
-
-\item{tol}{Outer convergence tolerance.}
-
-\item{lambda}{L2 penalty passed to the inner binomial GLM fits.}
-
-\item{compute_se}{Logical. Reserved for future GLMM-PQL standard-error
-support. The aggregate PQL route currently returns \code{NA} standard
-errors, so the default is \code{FALSE}; computing finite-difference SEs
-for the initial GLM would add protected optimisation rounds without
-changing the final GLMM-PQL estimates.}
-
-\item{ring}{Integer 63 or 127. The PQL aggregate route requires Ring127.}
-
-\item{verbose}{Print progress.}
-
-\item{datasources}{DataSHIELD connections.}
+\item{formula, data, cluster_col, max_outer, inner_iter, tol, lambda, compute_se, ring, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 }
 \value{
-\code{ds.vertGLMM} object: fixed-effect coefficients,
-random-effect variance \eqn{\hat\sigma_b^2}, scalar fit diagnostics, and
-the converged binomial \code{fit}. Per-cluster BLUP vectors are internal
-working quantities and are not returned.
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Fit a binomial generalised linear mixed model with a
-single random intercept on vertically partitioned DataSHIELD data.
-The paper-supported route is aggregate PQL: working responses, weights,
-probabilities, residuals, and row scores remain in
-Ring127 share-domain statistics and the client receives fixed effects,
-scalar variance components, and guarded diagnostics only.
-
-Architecture:
-\enumerate{
-\item For each cluster (cluster IDs on outcome server), binomial
-score and information terms \eqn{\sum(y-p)} and
-\eqn{\sum p(1-p)} are computed from DCF shares. The outcome
-server broadcasts cluster membership only to the DCF peer; the
-client receives aggregate cluster sums only.
-\item The outer optimiser on \eqn{(\beta, \sigma_b^2)} is
-client-side, re-calling ds.vertGLM with the shrinkage-
-weight column derived from the current \eqn{b_i^*}.
-\item Variance-component update uses the moment-matching
-estimate \eqn{\hat\sigma_b^2 = \mathrm{var}(\hat b_i)}
-across clusters (Breslow-Clayton approximation).
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and computes or returns no GLMM coefficient, random effect, variance
+component, cluster statistic, or diagnostic. Retained implementation code
+after the gate is unreachable through this public frontdoor and carries
+no disclosure, DP, accuracy, or availability claim.
 }
-
-The scaffolding here reuses every primitive already shipped in
-dsVert 1.1.0+: the keep_session flag on ds.vertGLM, cluster
-membership broadcast, per-cluster share sums, Beaver vecmul, and the
-DCF sigmoid wide-spline.
-
-Privacy: the returned object contains fixed effects, variance-component
-estimates, scalar diagnostics, and the final inner \code{ds.vertGLM} fit.
-Per-patient quantities never leave the DCF parties. Guarded per-cluster
-sufficient statistics are used internally for the random-intercept update,
-but per-cluster BLUPs and cluster-size vectors are not returned. Original
-cluster labels are not returned and clusters below
-\code{datashield.privacyLevel} fail closed.
-
-Inter-server leakage: cluster membership (same tier as ds.vertLMM).
+\details{
+Promotion requires bounded cluster contributions, a precisely
+specified target estimator and validated covariance and diagnostics.
+}
+\seealso{
+\code{\link{ds.vertMethodStatus}}
 }

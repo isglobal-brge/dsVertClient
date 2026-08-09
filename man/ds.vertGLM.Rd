@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertGLM.R
 \name{ds.vertGLM}
 \alias{ds.vertGLM}
-\title{Generalized Linear Model for Vertically Partitioned Data}
+\title{DP-capsule GLM compatibility frontdoor}
 \usage{
 ds.vertGLM(
   formula,
@@ -12,7 +12,7 @@ ds.vertGLM(
   family = "gaussian",
   max_iter = 100,
   tol = 1e-04,
-  lambda = 1e-04,
+  lambda = 0,
   log_n = 12,
   offset = NULL,
   weights = NULL,
@@ -29,182 +29,81 @@ ds.vertGLM(
   compute_deviance = TRUE,
   gradient_only = FALSE,
   data_name = NULL,
-  y_var = NULL
+  y_var = NULL,
+  missing = "fail",
+  numeric_backend = "auto",
+  dp_analysis_id = NULL,
+  formal_analysis_id = NULL
 )
 }
 \arguments{
-\item{formula}{A formula (e.g. \code{npreg ~ age + bmi + glu}) or
-character string (\code{"npreg ~ age + bmi + glu"}). Can also be
-a data_name string for backward compatibility.}
+\item{formula, data, x_vars, y_server}{Additive model specification, aligned
+data name and optional signed-artifact ownership checks for the Gaussian
+capsule route.}
 
-\item{data}{Character string. Name of the (aligned) data frame on
-each server.}
+\item{family}{Must be \code{"gaussian"} with \code{dp_analysis_id}.
+Binomial and Poisson are not available through the public frontdoor.}
 
-\item{x_vars}{Optional. Character vector of predictor names, or a
-named list mapping server names to variable vectors. If NULL and
-formula is used, extracted from the formula. If NULL and no formula,
-all available columns (minus y and IDs) are used.}
+\item{max_iter, tol, log_n, offset, weights, ring, binomial_sigmoid_intervals, eta_privacy, keep_session, std_mode, start, compute_se, compute_deviance, gradient_only, numeric_backend}{Retained legacy arguments. They are rejected when explicitly supplied to
+the Gaussian capsule adapter, and the no-id legacy route is unavailable.}
 
-\item{y_server}{Character string. Name of the server holding the response.}
+\item{lambda, no_intercept, data_name, y_var, missing}{Gaussian capsule
+estimand selectors. \code{lambda} is the explicit non-negative ridge
+penalty; \code{missing}, when supplied, must be
+\code{"complete_case_capsule"}.}
 
-\item{family}{Character string. GLM family: "gaussian", "binomial",
-or "poisson". Default is "gaussian".}
+\item{verbose, datasources}{Progress flag and DataSHIELD connections used
+only after the Gaussian signed-artifact request has passed local checks.}
 
-\item{max_iter}{Integer. Maximum L-BFGS iterations. Default is 100.}
+\item{dp_analysis_id}{Custodian-configured signed bounded Gaussian artifact
+id. This is required for the available route.}
 
-\item{tol}{Numeric. Convergence tolerance on coefficient change.
-Default is 1e-4.}
-
-\item{lambda}{Numeric. L2 regularization parameter. Default is 1e-4.}
-
-\item{log_n}{Integer. Legacy parameter (ignored). Kept for backward
-compatibility.}
-
-\item{offset}{Optional numeric vector or column name on the outcome
-server added to the linear predictor (e.g. \code{log(person_years)}
-for a Poisson rate model).}
-
-\item{weights}{Optional numeric vector or column name of per-row
-weights (e.g. inverse-probability weights for IPW).}
-
-\item{ring}{Integer (63 or 127). Selects the MPC ring / fracBits
-pipeline; Ring127 (fracBits=50) is STRICT-capable per
-Catrina-Saxena. Default 63L for back-compat.}
-
-\item{binomial_sigmoid_intervals}{Optional integer. Number of DCF
-spline intervals for the binomial secure sigmoid in this call. When
-\code{NULL}, the existing \code{dsvert.glm_num_intervals_binomial}
-option/default is used. Precision validation can set this to 150 or
-higher without changing the disclosure surface.}
-
-\item{verbose}{Logical. Print progress messages. Default is TRUE.}
-
-\item{datasources}{DataSHIELD connection object or list of connections.}
-
-\item{eta_privacy}{Character. \code{"auto"} (default) selects
-\code{"k2_beaver"} for K=2 or \code{"secure_agg"} for K>=3.}
-
-\item{keep_session}{Logical. If TRUE, leave the MPC session alive
-on the servers and expose \code{session_id}, \code{transport_pks},
-and \code{server_list} on the returned fit so follow-on helpers
-(LMM cluster residuals, GEE sandwich meat, etc.) can reuse the
-already-aligned shares. Caller must invoke \code{mpcCleanupDS}
-eventually.}
-
-\item{no_intercept}{Logical. Suppress the auto-added intercept.
-Useful when the design matrix already encodes one (e.g. cluster-
-mean-centred GLS fit).}
-
-\item{std_mode}{Character. Standardisation mode: \code{"full"}
-(default) standardises both X and y; alternative modes (e.g.
-\code{"x_only"}) skip y standardisation for offset/weights paths.}
-
-\item{start}{Optional named coefficient vector for internal K>=3 fixed
-evaluation paths. When supplied with \code{max_iter = 0}, the secure
-loop evaluates residual/deviance shares at the supplied coefficients
-without optimisation.}
-
-\item{compute_se}{Logical. Compute finite-difference Hessian/standard
-errors. Internal fixed-evaluation callers can set FALSE to avoid
-extra MPC rounds when only residual shares are needed.}
-
-\item{compute_deviance}{Logical. Compute the secure aggregate deviance.
-Internal score-only callers can set FALSE to avoid the extra MPC pass.}
-
-\item{gradient_only}{Logical. Internal diagnostic/optimizer path. If TRUE,
-evaluate and return the aggregate score at \code{start} without taking
-an optimizer step. If \code{compute_se = TRUE}, the aggregate finite-
-difference Hessian is also returned. The returned score/Hessian are
-low-dimensional aggregates only; no observation-level eta/probability/
-residual vector is opened.}
-
-\item{data_name}{Internal alias for \code{data}; if both are supplied,
-\code{data_name} takes precedence (back-compat path).}
-
-\item{y_var}{Internal alias for the LHS of \code{formula}; if both
-are supplied, \code{y_var} takes precedence (back-compat path).}
+\item{formal_analysis_id}{Reserved custodian-configured binomial/Poisson
+selector. Supplying it returns a typed
+\code{dsvert_formal_glm_frontdoor_unavailable} condition before DSI.}
 }
 \value{
-A list with class "ds.glm" containing:
-\itemize{
-\item \code{coefficients}: Named coefficient vector (original scale)
-\item \code{std_errors}: Standard errors (finite-difference Hessian)
-\item \code{covariance}: Model covariance matrix on the original scale
-\item \code{covariance_information}: Inverse Fisher/bread matrix
-without Gaussian residual-variance scaling, for sandwich methods
-\item \code{z_values}: z-statistics (coef / SE)
-\item \code{p_values}: Two-sided p-values
-\item \code{iterations}: Number of iterations
-\item \code{converged}: Logical
-\item \code{family}: Family used
-\item \code{n_obs}: Number of observations
-\item \code{deviance}: Residual sum of squares
-\item \code{pseudo_r2}: 1 - deviance/null_deviance
-}
+With a valid Gaussian \code{dp_analysis_id}, a
+\code{ds.vertDPGaussian} object containing bounded noisy sufficient-
+statistic regression output and no classical standard errors, p-values,
+individual fitted values, residuals or scores. All other routes raise a
+typed condition before DSI and return no fitted object.
 }
 \description{
-Fits a GLM across vertically partitioned data using Ring63
-Beaver MPC with DCF wide spline for the link function. The system
-auto-detects which server holds each variable. Only p-dimensional
-aggregate gradients are revealed to the client per iteration.
-No observation-level data is ever disclosed.
+This public frontdoor has one available analysis route:
+an explicit \code{dp_analysis_id} with \code{family = "gaussian"}
+delegates to \code{ds.vertDPGaussian()} and returns that signed,
+contribution-bounded sticky joint-DP capsule estimand. A call without
+\code{dp_analysis_id} raises a typed \code{dsvert_route_unavailable}
+condition before any DSI call. An explicit \code{formal_analysis_id} for
+binomial or Poisson also fails before DSI until its durable worker and
+single common joint-DP opening are promoted. The retained iterative
+Ring/Beaver code below the local gate is unreachable through this
+frontdoor and carries no public disclosure, accuracy, or availability
+claim.
 }
 \details{
-\subsection{Protocol}{
-All computation uses Ring63 fixed-point arithmetic with Beaver MPC:
-\enumerate{
-\item \strong{Transport keys}: X25519 keypairs on all servers (~0.5s)
-\item \strong{Standardize}: Each server standardizes its features
-\item \strong{Input sharing}: Features split into additive Ring63 shares
-between 2 DCF parties. Non-DCF servers contribute shares.
-\item \strong{L-BFGS loop}: Per iteration:
-\itemize{
-\item Compute eta shares (Ring63 matrix-vector)
-\item DCF wide spline for sigmoid/exp (binomial/Poisson) or
-identity link (Gaussian)
-\item Beaver matvec for gradient (IKNP OT-extension triple shares)
-\item Client aggregates Ring63 shares -> p gradient scalars
-\item L-BFGS quasi-Newton update
-}
-\item \strong{SE}: p+1 gradient evaluations (finite-difference Hessian)
-\item \strong{Deviance}: Beaver dot-product for residual sum of squares
-\item \strong{Unstandardize}: Coefficients + SE via Jacobian transform
-}
-}
+\strong{Available route.} Supply an additive formula, an aligned data name,
+\code{family = "gaussian"} and a custodian-configured
+\code{dp_analysis_id}. The signed artifact owns clipping bounds, the
+complete-case cohort, contribution caps, privacy parameters and variable
+ownership. The adapter accepts only arguments that describe that bounded
+Gaussian estimand; it never falls back to the retired iterative GLM.
 
-\subsection{Security}{
-No observation-level data is disclosed. The client sees only p-dimensional
-aggregate gradients per iteration. Beaver preprocessing uses the dealer-free
-IKNP OT-extension backend: the two computation parties derive their triple
-shares interactively, so neither ever holds an unsplit triple. The client
-never sees triple shares.
-}
+\strong{Unavailable routes.} Default/no-id calls and all legacy iterative
+routes stop locally with zero DSI calls. The \code{formal_analysis_id}
+selector is reserved for binomial/logit and Poisson/log models but is also
+sealed locally in this release. No binomial or Poisson fit is therefore
+returned by this function.
 }
 \examples{
 \dontrun{
-# Simplest: formula interface (auto-detects everything)
-model <- ds.vertGLM(npreg ~ age + bmi + glu + bp + skin,
-                     data = "DA", family = "gaussian")
-
-# String formula
-model <- ds.vertGLM("diabetes ~ age + bmi + glu",
-                     data = "DA", family = "binomial")
-
-# Auto-detect all features
-model <- ds.vertGLM("DA", "npreg", family = "poisson")
-
-# Manual server mapping (legacy)
-model <- ds.vertGLM("DA", "npreg",
-  list(s1 = c("age", "bmi"), s2 = c("glu", "bp")),
-  y_server = "s2", family = "gaussian")
+fit <- ds.vertGLM(
+  y ~ x1 + x2, data = "D", family = "gaussian",
+  dp_analysis_id = "custodian-gaussian-analysis")
 }
-
-}
-\references{
-van Kesteren, E.J. et al. (2019). Privacy-preserving generalized linear
-models using distributed block coordinate descent. arXiv:1911.03183.
 }
 \seealso{
-\code{\link{ds.vertCor}} for correlation analysis,
-\code{\link{ds.vertPCA}} for PCA analysis
+\code{\link{ds.vertDPGaussian}},
+\code{\link{ds.vertMethodStatus}}
 }

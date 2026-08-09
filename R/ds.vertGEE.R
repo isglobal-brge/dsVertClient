@@ -1,81 +1,31 @@
-#' @title Federated generalised estimating equations
-#' @description Fit a GLM/GEE for vertically partitioned DataSHIELD data and
-#'   return sandwich (robust) standard errors alongside the usual
-#'   model-based ones. For \code{corstr = "independence"}, the point estimate
-#'   \eqn{\hat{\beta}} is obtained by a single call to
-#'   \code{\link{ds.vertGLM}}. For Gaussian \code{corstr = "exchangeable"},
-#'   dsVert promotes the point estimate to a protected cluster-level
-#'   exchangeable GLS/GEE update. For binomial and Poisson
-#'   \code{corstr = "exchangeable"}, dsVert uses a Ring127 protected
-#'   Pearson-score exchangeable GEE update. For Gaussian, binomial, and
-#'   Poisson \code{corstr = "ar1"}, dsVert uses guarded within-cluster order
-#'   metadata on the DCF parties and returns only low-dimensional AR1
-#'   aggregates.
-#'   For Gaussian, binomial, and Poisson independence models the sandwich meat
-#'   is computed in the share domain. If
-#'   \code{id_col} is supplied, dsVert computes the clustered meat
-#'   \eqn{\sum_c S_c S_c^\top}, where
-#'   \eqn{S_c=\sum_{i\in c} X_i r_i}; otherwise it computes the row-level
-#'   HC0 meat \eqn{X^\top \mathrm{diag}(r^2) X}. Cluster membership is
-#'   transport-encrypted between DCF parties and clusters below
-#'   \code{datashield.privacyLevel} fail closed.
-#'
-#'   The client receives only low-dimensional aggregate matrices/vectors.
-#'   It never materialises the \eqn{n}-length residual, squared-residual, or
-#'   weighted-column vectors.
-#'
-#'   Formula:
-#'     \deqn{V_{sand} = \mathrm{Cov}(\hat\beta) \, A \, \mathrm{Cov}(\hat\beta)}
-#'     \deqn{A = \sum_c S_c S_c^\top}
-#'   for clustered Gaussian/binomial/Poisson fits, or
-#'     \deqn{A = X^T \, \mathrm{diag}(r^2) \, X}
-#'   for row-level HC0 when no \code{id_col} is supplied.
-#'
-#' @param formula A model formula passed through to \code{ds.vertGLM}.
-#' @param data Character. Aligned data-frame name on each server.
-#' @param family One of \code{"gaussian"}, \code{"binomial"},
-#'   \code{"poisson"}.
-#' @param id_col Optional character. For Gaussian/binomial/Poisson models this
-#'   enables the cluster-robust sandwich meat; the cluster column must live with
-#'   the outcome and all clusters must pass \code{datashield.privacyLevel}.
-#' @param order_col Optional character. Required for \code{corstr = "ar1"}.
-#'   The order column must live with the outcome and is used only
-#'   server-to-server to derive guarded adjacent records.
-#' @param corstr Working correlation. \code{"independence"} is available for
-#'   Gaussian/binomial/Poisson. \code{"exchangeable"} currently fits true
-#'   exchangeable Gaussian, binomial, and Poisson GEE coefficients from guarded
-#'   cluster-level sufficient statistics. \code{"ar1"} fits Gaussian,
-#'   binomial, and Poisson GEE from guarded adjacent-pair sufficient
-#'   statistics.
-#' @param max_iter,tol,lambda,verbose Passed to \code{ds.vertGLM}.
-#' @param working_max_iter Optional integer. Maximum iterations for
-#'   exchangeable/AR1 working-correlation updates. Defaults to \code{max_iter}.
-#' @param ring Integer 63 or 127. Binomial/Poisson exchangeable and all AR1
-#'   routes are automatically run in Ring127 because protected nonlinear link
-#'   operations and adjacent-product statistics need high precision.
-#' @param binomial_sigmoid_intervals Optional integer. Number of DCF spline
-#'   intervals for protected binomial sigmoid evaluations used by the
-#'   underlying GLM fit and GEE sandwich/working-correlation updates. When
-#'   \code{NULL}, \code{dsvert.gee_binomial_sigmoid_intervals},
-#'   \code{dsvert.glm_num_intervals_binomial}, or the 100-interval default is
-#'   used.
-#' @param datasources DataSHIELD connection object.
-#' @return An object of class \code{ds.vertGEE} with components
-#'   \code{coefficients}, \code{model_se} (sqrt of
-#'   \code{diag(Cov(beta))}), \code{robust_se} (sandwich SEs),
-#'   \code{robust_covariance}, \code{corstr}, and \code{fit}
-#'   (the underlying \code{ds.glm} object).
+#' @title Quarantined GEE compatibility frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and computes or returns no GEE coefficient, working correlation,
+#'   sandwich covariance, cluster statistic, or diagnostic. Retained
+#'   implementation code after the gate is unreachable through this public
+#'   frontdoor and carries no disclosure, DP, accuracy, or availability claim.
+#' @details Promotion requires contribution-bounded cluster score/meat
+#'   artifacts, a protected working-correlation contract and validated robust
+#'   covariance.
+#' @param formula,data,family,id_col,order_col,corstr,max_iter,tol,lambda,working_max_iter,ring,binomial_sigmoid_intervals,verbose,datasources
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertGEE <- function(formula, data = NULL,
                        family = c("gaussian", "binomial", "poisson"),
                        id_col = NULL,
                        order_col = NULL,
                        corstr = c("independence", "exchangeable", "ar1"),
-                       max_iter = 100L, tol = 1e-4, lambda = 1e-4,
+                       max_iter = 100L, tol = 1e-4, lambda = 0,
                        working_max_iter = NULL,
                        ring = 63L,
                        binomial_sigmoid_intervals = NULL,
                        verbose = TRUE, datasources = NULL) {
+  .dsvert_block_retired_remote_route("gee")
   family <- match.arg(family)
   corstr <- match.arg(corstr)
   if (!is.null(binomial_sigmoid_intervals)) {
@@ -196,16 +146,14 @@ ds.vertGEE <- function(formula, data = NULL,
                     keep_session = TRUE)
   if (!is.null(fit$session_id)) {
     on.exit({
-      for (.srv in fit$server_list %||% names(datasources)) {
-        .ci <- which(names(datasources) == .srv)
-        if (length(.ci) == 1L) {
-          tryCatch(DSI::datashield.aggregate(datasources[.ci],
-            call(name = "mpcCleanupDS", session_id = fit$session_id)),
-            error = function(e) NULL)
-          tryCatch(DSI::datashield.aggregate(datasources[.ci],
-            call(name = "mpcGcDS")), error = function(e) NULL)
-        }
-      }
+      .cleanup_sites <- intersect(
+        fit$server_list %||% names(datasources), names(datasources))
+      .cleanup_conns <- datasources[.cleanup_sites]
+      .dsvert_cleanup_best_effort(
+        .cleanup_conns,
+        call(name = "mpcCleanupDS", session_id = fit$session_id))
+      .dsvert_cleanup_best_effort(
+        .cleanup_conns, call(name = "mpcGcDS"))
     }, add = TRUE)
   }
   if (is.null(fit$covariance)) {
@@ -323,6 +271,9 @@ ds.vertGEE <- function(formula, data = NULL,
         working_correlation <- working_fit$working_correlation
       } else {
         if (identical(corstr, "exchangeable")) {
+          if (inherits(exchangeable_error, "non_identifiable")) {
+            stop(exchangeable_error)
+          }
           msg <- if (is.null(exchangeable_error)) {
             "unknown error"
           } else {
@@ -332,6 +283,9 @@ ds.vertGEE <- function(formula, data = NULL,
                call. = FALSE)
         }
         if (identical(corstr, "ar1")) {
+          if (inherits(ar1_error, "non_identifiable")) {
+            stop(ar1_error)
+          }
           msg <- if (is.null(ar1_error)) {
             "unknown error"
           } else {
@@ -364,6 +318,9 @@ ds.vertGEE <- function(formula, data = NULL,
           robust_se <- secure_hc0$robust_se
           robust_method <- secure_hc0$method
         } else {
+        if (inherits(secure_error, "non_identifiable")) {
+          stop(secure_error)
+        }
         if (family %in% c("gaussian", "binomial", "poisson") &&
             !is.null(id_col) &&
             is.character(id_col) && length(id_col) == 1L && nzchar(id_col)) {
@@ -377,7 +334,7 @@ ds.vertGEE <- function(formula, data = NULL,
         x_all <- names(fit$coefficients)
         x_all <- setdiff(x_all, "(Intercept)")
         r2_ok <- tryCatch({
-          DSI::datashield.aggregate(
+          .dsvert_aggregate_strict(
             datasources[which(server_names == y_srv)],
             call(name = "dsvertPearsonR2ColDS",
                  data_name = data, y_var = y_var,
@@ -385,12 +342,12 @@ ds.vertGEE <- function(formula, data = NULL,
                  betahat = as.numeric(fit$coefficients[x_all]),
                  intercept = as.numeric(fit$coefficients["(Intercept)"]),
                  family = family,
-                 r2_column = "__dsvert_r2"))
+                 r2_column = "__dsvert_r2"),
+            operation = "GEE protected residual preparation")
           TRUE
         }, error = function(e) {
           if (verbose) message("[ds.vertGEE] dsvertPearsonR2ColDS not ",
-                               "available yet: ", conditionMessage(e),
-                               "\n  Returning model-based SE.")
+                               "available; returning model-based SE.")
           FALSE
         })
         if (!isTRUE(r2_ok)) {
@@ -449,6 +406,12 @@ ds.vertGEE <- function(formula, data = NULL,
     corstr             = corstr,
     working_correlation = working_correlation,
     family             = family,
+    lambda             = as.numeric(lambda),
+    estimand           = if (isTRUE(as.numeric(lambda) > 0)) {
+      "explicit_ridge_penalized_gee"
+    } else {
+      "unpenalized_gee"
+    },
     binomial_sigmoid_intervals =
       if (identical(family, "binomial")) {
         effective_binomial_sigmoid_intervals
@@ -476,15 +439,19 @@ ds.vertGEE <- function(formula, data = NULL,
 #' @keywords internal
 .ds_gee_find_server_holding <- function(datasources, server_names,
                                         data_name, var) {
-  for (srv in server_names) {
-    ci <- which(server_names == srv)
-    cols <- tryCatch(
-      DSI::datashield.aggregate(datasources[ci],
-        call(name = "dsvertColNamesDS", data_name = data_name))[[1]]$columns,
-      error = function(e) NULL)
-    if (!is.null(cols) && var %in% cols) return(srv)
+  results <- .dsvert_aggregate_strict(
+    datasources,
+    call(name = "dsvertColNamesDS", data_name = data_name),
+    operation = "vertical column discovery")
+  present <- server_names[vapply(
+    results, function(value) is.list(value) && var %in% value$columns,
+    logical(1L))]
+  if (length(present) > 1L) {
+    stop("variable '", var,
+         "' is present on more than one server; choose an unambiguous vertical partition",
+         call. = FALSE)
   }
-  NULL
+  if (length(present) == 1L) present[[1L]] else NULL
 }
 
 #' @keywords internal
@@ -579,16 +546,11 @@ ds.vertGEE <- function(formula, data = NULL,
   upper_alpha <- 0.95
 
   safe_solve <- function(A, b = NULL) {
-    A <- (A + t(A)) / 2
-    out <- tryCatch(if (is.null(b)) solve(A) else solve(A, b),
-                    error = function(e) NULL)
-    if (!is.null(out) && all(is.finite(out))) return(out)
-    ridge <- 1e-8 * max(1, mean(abs(diag(A))))
-    tryCatch(if (is.null(b)) solve(A + diag(ridge, nrow(A)))
-             else solve(A + diag(ridge, nrow(A)), b),
-             error = function(e) {
-               stop("exchangeable GLS system is singular", call. = FALSE)
-             })
+    .dsvert_solve_identifiable(
+      A, b,
+      context = "The exchangeable Gaussian GEE/GLS system",
+      reason = "singular_exchangeable_gee_information",
+      symmetric = TRUE)
   }
 
   residual_summaries <- function(beta) {
@@ -701,16 +663,11 @@ ds.vertGEE <- function(formula, data = NULL,
   upper_rho <- 0.95
 
   safe_solve <- function(A, b = NULL) {
-    A <- (A + t(A)) / 2
-    out <- tryCatch(if (is.null(b)) solve(A) else solve(A, b),
-                    error = function(e) NULL)
-    if (!is.null(out) && all(is.finite(out))) return(out)
-    ridge <- 1e-8 * max(1, mean(abs(diag(A))))
-    tryCatch(if (is.null(b)) solve(A + diag(ridge, nrow(A)))
-             else solve(A + diag(ridge, nrow(A)), b),
-             error = function(e) {
-               stop("AR1 GLS system is singular", call. = FALSE)
-             })
+    .dsvert_solve_identifiable(
+      A, b,
+      context = "The Gaussian AR1 GEE/GLS system",
+      reason = "singular_ar1_gee_information",
+      symmetric = TRUE)
   }
 
   if (is.null(lag_stats) || length(lag_stats) == 0L) {
@@ -829,28 +786,14 @@ ds.vertGEE <- function(formula, data = NULL,
       frac_bits = frac_bits, ring = ring_tag))$fp_data)
   }
   .dsAgg <- function(conns, expr, ...) {
-    tryCatch(
-      DSI::datashield.aggregate(conns = conns, expr = expr, ...),
-      error = function(e) {
-        fn_name <- if (is.call(expr)) as.character(expr[[1]]) else "?"
-        srv_name <- tryCatch(names(conns)[1], error = function(x) "?")
-        stop(sprintf("%s on %s failed: %s", fn_name, srv_name,
-                     conditionMessage(e)), call. = FALSE)
-      })
+    .dsvert_aggregate_strict(
+      conns, expr, operation = "protected GEE MPC phase")
   }
-  .sendBlob <- function(blob, key, conn_idx) {
-    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        .dsAgg(datasources[conn_idx],
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               session_id = session_id))
-      } else {
-        .dsAgg(datasources[conn_idx],
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               chunk_index = chunk_idx, n_chunks = n_chunks,
-               session_id = session_id))
-      }
-    })
+  .sendBlob <- function(blob, contract, conn_idx) {
+    .dsvert_store_transfer_or_legacy(
+      blob, contract, datasources[conn_idx], session_id,
+      producer_conns = datasources,
+      .aggregate = .dsAgg)
   }
 
   if (fit$eta_privacy == "k2_beaver") {
@@ -996,18 +939,22 @@ ds.vertGEE <- function(formula, data = NULL,
   }
   .ring_scale <- function(in_key, scalar, output_key) {
     scalar_fp <- .fp_const(scalar)
-    for (i in seq_along(dcf_parties)) {
-      srv <- dcf_parties[[i]]
-      .dsAgg(datasources[dcf_conns[[i]]],
-        call(name = "k2Ring127LocalScaleDS",
-             in_key = in_key, scalar_fp = scalar_fp,
-             output_key = output_key, n = as.numeric(n_obs),
-             session_id = session_id,
-             is_party0 = identical(srv, coordinator)))
-    }
+    .ring127_exact_public_scale(
+      in_key, scalar_fp, output_key, n_obs,
+      datasources, dcf_conns[[2L]], dcf_parties, server_names,
+      coordinator, setdiff(dcf_parties, coordinator)[[1L]],
+      transport_pks, session_id, .dsAgg, .sendBlob)
     invisible(output_key)
   }
   .vecmul <- function(x_key, y_key, output_key) {
+    if (identical(as.integer(ring), 127L)) {
+      .ring127_vecmul(
+        x_key, y_key, output_key, n_obs,
+        datasources, dcf_conns[[2L]], dcf_parties, server_names,
+        coordinator, setdiff(dcf_parties, coordinator)[[1L]],
+        transport_pks, session_id, .dsAgg, .sendBlob)
+      return(invisible(output_key))
+    }
     .ot_beaver_prepare_vecmul(
       datasources = datasources,
       party_conns = dcf_conns,
@@ -1018,11 +965,6 @@ ds.vertGEE <- function(formula, data = NULL,
       ring = ring,
       .dsAgg = .dsAgg,
       .sendBlob = .sendBlob)
-    for (ci in dcf_conns) {
-      .dsAgg(datasources[ci],
-        call(name = "k2BeaverVecmulConsumeTripleDS",
-             session_id = session_id))
-    }
     r1 <- vector("list", 2L)
     for (i in seq_along(dcf_parties)) {
       peer <- dcf_parties[[3L - i]]
@@ -1035,14 +977,15 @@ ds.vertGEE <- function(formula, data = NULL,
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r1[[i]] <- r
     }
-    .sendBlob(r1[[1L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+    .sendBlob(r1[[1L]]$peer_blob, r1[[1L]]$peer_transfer,
               dcf_conns[[2L]])
-    .sendBlob(r1[[2L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+    .sendBlob(r1[[2L]]$peer_blob, r1[[2L]]$peer_transfer,
               dcf_conns[[1L]])
     for (i in seq_along(dcf_parties)) {
       .dsAgg(datasources[dcf_conns[[i]]],
         call(name = "k2BeaverVecmulR2DS",
              is_party0 = (i == 1L),
+             peer_name = dcf_parties[[3L - i]],
              x_key = x_key, y_key = y_key,
              output_key = output_key,
              n = as.numeric(n_obs), session_id = session_id,
@@ -1427,28 +1370,14 @@ ds.vertGEE <- function(formula, data = NULL,
   .to_b64url <- function(x) gsub("+", "-", gsub("/", "_",
     gsub("=+$", "", x, perl = TRUE), fixed = TRUE), fixed = TRUE)
   .dsAgg <- function(conns, expr, ...) {
-    tryCatch(
-      DSI::datashield.aggregate(conns = conns, expr = expr, ...),
-      error = function(e) {
-        fn_name <- if (is.call(expr)) as.character(expr[[1]]) else "?"
-        srv_name <- tryCatch(names(conns)[1], error = function(x) "?")
-        stop(sprintf("%s on %s failed: %s", fn_name, srv_name,
-                     conditionMessage(e)), call. = FALSE)
-      })
+    .dsvert_aggregate_strict(
+      conns, expr, operation = "protected GEE MPC phase")
   }
-  .sendBlob <- function(blob, key, conn_idx) {
-    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        .dsAgg(datasources[conn_idx],
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               session_id = session_id))
-      } else {
-        .dsAgg(datasources[conn_idx],
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               chunk_index = chunk_idx, n_chunks = n_chunks,
-               session_id = session_id))
-      }
-    })
+  .sendBlob <- function(blob, contract, conn_idx) {
+    .dsvert_store_transfer_or_legacy(
+      blob, contract, datasources[conn_idx], session_id,
+      producer_conns = datasources,
+      .aggregate = .dsAgg)
   }
 
   target_features <- unlist(x_vars[server_list], use.names = FALSE)
@@ -1565,6 +1494,14 @@ ds.vertGEE <- function(formula, data = NULL,
   q <- p_total + 1L
 
   .vecmul <- function(x_key, y_key, output_key) {
+    if (identical(as.integer(ring), 127L)) {
+      .ring127_vecmul(
+        x_key, y_key, output_key, n_obs,
+        datasources, dcf_conns[[2L]], dcf_parties, server_names,
+        coordinator, setdiff(dcf_parties, coordinator)[[1L]],
+        transport_pks, session_id, .dsAgg, .sendBlob)
+      return(invisible(output_key))
+    }
     .ot_beaver_prepare_vecmul(
       datasources = datasources,
       party_conns = dcf_conns,
@@ -1575,11 +1512,6 @@ ds.vertGEE <- function(formula, data = NULL,
       ring = ring,
       .dsAgg = .dsAgg,
       .sendBlob = .sendBlob)
-    for (ci in dcf_conns) {
-      .dsAgg(datasources[ci],
-        call(name = "k2BeaverVecmulConsumeTripleDS",
-             session_id = session_id))
-    }
     r1 <- vector("list", 2L)
     for (i in seq_along(dcf_parties)) {
       peer <- dcf_parties[[3L - i]]
@@ -1592,14 +1524,15 @@ ds.vertGEE <- function(formula, data = NULL,
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r1[[i]] <- r
     }
-    .sendBlob(r1[[1L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+    .sendBlob(r1[[1L]]$peer_blob, r1[[1L]]$peer_transfer,
               dcf_conns[[2L]])
-    .sendBlob(r1[[2L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+    .sendBlob(r1[[2L]]$peer_blob, r1[[2L]]$peer_transfer,
               dcf_conns[[1L]])
     for (i in seq_along(dcf_parties)) {
       .dsAgg(datasources[dcf_conns[[i]]],
         call(name = "k2BeaverVecmulR2DS",
              is_party0 = (i == 1L),
+             peer_name = dcf_parties[[3L - i]],
              x_key = x_key, y_key = y_key,
              output_key = output_key,
              n = as.numeric(n_obs), session_id = session_id,
@@ -1831,28 +1764,14 @@ ds.vertGEE <- function(formula, data = NULL,
       frac_bits = frac_bits, ring = ring_tag))$fp_data)
   }
   .dsAgg <- function(conns, expr, ...) {
-    tryCatch(
-      DSI::datashield.aggregate(conns = conns, expr = expr, ...),
-      error = function(e) {
-        fn_name <- if (is.call(expr)) as.character(expr[[1]]) else "?"
-        srv_name <- tryCatch(names(conns)[1], error = function(x) "?")
-        stop(sprintf("%s on %s failed: %s", fn_name, srv_name,
-                     conditionMessage(e)), call. = FALSE)
-      })
+    .dsvert_aggregate_strict(
+      conns, expr, operation = "protected GEE MPC phase")
   }
-  .sendBlob <- function(blob, key, conn_idx) {
-    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        .dsAgg(datasources[conn_idx],
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               session_id = session_id))
-      } else {
-        .dsAgg(datasources[conn_idx],
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               chunk_index = chunk_idx, n_chunks = n_chunks,
-               session_id = session_id))
-      }
-    })
+  .sendBlob <- function(blob, contract, conn_idx) {
+    .dsvert_store_transfer_or_legacy(
+      blob, contract, datasources[conn_idx], session_id,
+      producer_conns = datasources,
+      .aggregate = .dsAgg)
   }
 
   if (fit$eta_privacy == "k2_beaver") {
@@ -2021,18 +1940,22 @@ ds.vertGEE <- function(formula, data = NULL,
   }
   .ring_scale <- function(in_key, scalar, output_key) {
     scalar_fp <- .fp_const(scalar)
-    for (i in seq_along(dcf_parties)) {
-      srv <- dcf_parties[[i]]
-      .dsAgg(datasources[dcf_conns[[i]]],
-        call(name = "k2Ring127LocalScaleDS",
-             in_key = in_key, scalar_fp = scalar_fp,
-             output_key = output_key, n = as.numeric(n_obs),
-             session_id = session_id,
-             is_party0 = identical(srv, coordinator)))
-    }
+    .ring127_exact_public_scale(
+      in_key, scalar_fp, output_key, n_obs,
+      datasources, dcf_conns[[2L]], dcf_parties, server_names,
+      coordinator, setdiff(dcf_parties, coordinator)[[1L]],
+      transport_pks, session_id, .dsAgg, .sendBlob)
     invisible(output_key)
   }
   .vecmul <- function(x_key, y_key, output_key) {
+    if (identical(as.integer(ring), 127L)) {
+      .ring127_vecmul(
+        x_key, y_key, output_key, n_obs,
+        datasources, dcf_conns[[2L]], dcf_parties, server_names,
+        coordinator, setdiff(dcf_parties, coordinator)[[1L]],
+        transport_pks, session_id, .dsAgg, .sendBlob)
+      return(invisible(output_key))
+    }
     .ot_beaver_prepare_vecmul(
       datasources = datasources,
       party_conns = dcf_conns,
@@ -2043,11 +1966,6 @@ ds.vertGEE <- function(formula, data = NULL,
       ring = ring,
       .dsAgg = .dsAgg,
       .sendBlob = .sendBlob)
-    for (ci in dcf_conns) {
-      .dsAgg(datasources[ci],
-        call(name = "k2BeaverVecmulConsumeTripleDS",
-             session_id = session_id))
-    }
     r1 <- vector("list", 2L)
     for (i in seq_along(dcf_parties)) {
       peer <- dcf_parties[[3L - i]]
@@ -2060,14 +1978,15 @@ ds.vertGEE <- function(formula, data = NULL,
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r1[[i]] <- r
     }
-    .sendBlob(r1[[1L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+    .sendBlob(r1[[1L]]$peer_blob, r1[[1L]]$peer_transfer,
               dcf_conns[[2L]])
-    .sendBlob(r1[[2L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+    .sendBlob(r1[[2L]]$peer_blob, r1[[2L]]$peer_transfer,
               dcf_conns[[1L]])
     for (i in seq_along(dcf_parties)) {
       .dsAgg(datasources[dcf_conns[[i]]],
         call(name = "k2BeaverVecmulR2DS",
              is_party0 = (i == 1L),
+             peer_name = dcf_parties[[3L - i]],
              x_key = x_key, y_key = y_key,
              output_key = output_key,
              n = as.numeric(n_obs), session_id = session_id,
@@ -2232,17 +2151,12 @@ ds.vertGEE <- function(formula, data = NULL,
   }
 
   safe_solve <- function(A, b = NULL) {
-    A <- (A + t(A)) / 2
-    out <- tryCatch(if (is.null(b)) solve(A) else solve(A, b),
-                    error = function(e) NULL)
-    if (!is.null(out) && all(is.finite(out))) return(out)
-    ridge <- 1e-8 * max(1, mean(abs(diag(A))))
-    tryCatch(if (is.null(b)) solve(A + diag(ridge, nrow(A)))
-             else solve(A + diag(ridge, nrow(A)), b),
-             error = function(e) {
-               stop(family_title, " ", cor_label, " GEE system is singular",
-                    call. = FALSE)
-             })
+    .dsvert_solve_identifiable(
+      A, b,
+      context = paste0("The ", family_title, " ", cor_label,
+                       " GEE system"),
+      reason = paste0("singular_", corstr, "_gee_information"),
+      symmetric = TRUE)
   }
 
   if (identical(corstr, "ar1")) {
@@ -2785,28 +2699,14 @@ ds.vertGEE <- function(formula, data = NULL,
     x
   }
   .dsAgg <- function(conns, expr, ...) {
-    tryCatch(
-      DSI::datashield.aggregate(conns = conns, expr = expr, ...),
-      error = function(e) {
-        fn_name <- if (is.call(expr)) as.character(expr[[1]]) else "?"
-        srv_name <- tryCatch(names(conns)[1], error = function(x) "?")
-        stop(sprintf("%s on %s failed: %s", fn_name, srv_name,
-                     conditionMessage(e)), call. = FALSE)
-      })
+    .dsvert_aggregate_strict(
+      conns, expr, operation = "protected GEE MPC phase")
   }
-  .sendBlob <- function(blob, key, conn_idx) {
-    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        .dsAgg(datasources[conn_idx],
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               session_id = session_id))
-      } else {
-        .dsAgg(datasources[conn_idx],
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               chunk_index = chunk_idx, n_chunks = n_chunks,
-               session_id = session_id))
-      }
-    })
+  .sendBlob <- function(blob, contract, conn_idx) {
+    .dsvert_store_transfer_or_legacy(
+      blob, contract, datasources[conn_idx], session_id,
+      producer_conns = datasources,
+      .aggregate = .dsAgg)
   }
 
   target_features <- unlist(x_vars[server_list], use.names = FALSE)
@@ -2955,6 +2855,14 @@ ds.vertGEE <- function(formula, data = NULL,
   canonical_order <- c("(Intercept)", canonical_features)
 
   .vecmul <- function(x_key, y_key, output_key) {
+    if (identical(as.integer(ring), 127L)) {
+      .ring127_vecmul(
+        x_key, y_key, output_key, n_obs,
+        datasources, dcf_conns[[2L]], dcf_parties, server_names,
+        coordinator, setdiff(dcf_parties, coordinator)[[1L]],
+        transport_pks, session_id, .dsAgg, .sendBlob)
+      return(invisible(output_key))
+    }
     .ot_beaver_prepare_vecmul(
       datasources = datasources,
       party_conns = dcf_conns,
@@ -2965,11 +2873,6 @@ ds.vertGEE <- function(formula, data = NULL,
       ring = ring,
       .dsAgg = .dsAgg,
       .sendBlob = .sendBlob)
-    for (ci in dcf_conns) {
-      .dsAgg(datasources[ci],
-        call(name = "k2BeaverVecmulConsumeTripleDS",
-             session_id = session_id))
-    }
     r1 <- vector("list", 2L)
     for (i in seq_along(dcf_parties)) {
       peer <- dcf_parties[[3L - i]]
@@ -2982,14 +2885,15 @@ ds.vertGEE <- function(formula, data = NULL,
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r1[[i]] <- r
     }
-    .sendBlob(r1[[1L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+    .sendBlob(r1[[1L]]$peer_blob, r1[[1L]]$peer_transfer,
               dcf_conns[[2L]])
-    .sendBlob(r1[[2L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
+    .sendBlob(r1[[2L]]$peer_blob, r1[[2L]]$peer_transfer,
               dcf_conns[[1L]])
     for (i in seq_along(dcf_parties)) {
       .dsAgg(datasources[dcf_conns[[i]]],
         call(name = "k2BeaverVecmulR2DS",
              is_party0 = (i == 1L),
+             peer_name = dcf_parties[[3L - i]],
              x_key = x_key, y_key = y_key,
              output_key = output_key,
              n = as.numeric(n_obs), session_id = session_id,
@@ -3013,8 +2917,6 @@ ds.vertGEE <- function(formula, data = NULL,
     r1 <- vector("list", 2L)
     for (i in seq_along(dcf_parties)) {
       peer <- dcf_parties[[3L - i]]
-      .dsAgg(datasources[dcf_conns[[i]]],
-        call(name = "k2StoreGradTripleDS", session_id = session_id))
       r <- .dsAgg(datasources[dcf_conns[[i]]],
         call(name = "k2GradientR1DS",
              peer_pk = transport_pks[[peer]],
@@ -3022,13 +2924,16 @@ ds.vertGEE <- function(formula, data = NULL,
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r1[[i]] <- r
     }
-    .sendBlob(r1[[1L]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[[2L]])
-    .sendBlob(r1[[2L]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[[1L]])
+    .sendBlob(r1[[1L]]$encrypted_r1,
+              r1[[1L]]$encrypted_r1_transfer, dcf_conns[[2L]])
+    .sendBlob(r1[[2L]]$encrypted_r1,
+              r1[[2L]]$encrypted_r1_transfer, dcf_conns[[1L]])
     r2 <- vector("list", 2L)
     for (i in seq_along(dcf_parties)) {
       r <- .dsAgg(datasources[dcf_conns[[i]]],
         call(name = "k2GradientR2DS",
-             party_id = as.integer(i - 1L), session_id = session_id))
+             party_id = as.integer(i - 1L),
+             peer_name = dcf_parties[[3L - i]], session_id = session_id))
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r2[[i]] <- r
     }
@@ -3146,9 +3051,11 @@ ds.vertGEE <- function(formula, data = NULL,
   }
   H_adj <- H - as.numeric(lambda %||% 0) * diag(nrow(H))
   fisher_std <- n_obs * H_adj
-  cov_std <- tryCatch(solve(fisher_std), error = function(e) NULL)
-  if (is.null(cov_std)) stop("standardized Fisher matrix is singular",
-                             call. = FALSE)
+  cov_std <- .dsvert_solve_identifiable(
+    fisher_std,
+    context = "The protected GEE sandwich information",
+    reason = "singular_gee_sandwich_information",
+    symmetric = TRUE)
   dimnames(cov_std) <- list(target_order, target_order)
 
   robust_std <- cov_std %*% A_std %*% cov_std
@@ -3169,6 +3076,10 @@ ds.vertGEE <- function(formula, data = NULL,
 print.ds.vertGEE <- function(x, ...) {
   cat("dsVert GEE (", x$corstr, " working correlation)\n", sep = "")
   cat(sprintf("  Family: %s   N = %d\n", x$family, x$n_obs))
+  if (!is.null(x$estimand)) {
+    cat(sprintf("  Estimand: %s (lambda = %.4g)\n",
+                x$estimand, x$lambda %||% 0))
+  }
   cat("\nCoefficients:\n")
   df <- data.frame(
     Estimate = x$coefficients,

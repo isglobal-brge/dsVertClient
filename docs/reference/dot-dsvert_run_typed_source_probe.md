@@ -1,0 +1,20 @@
+# Run the data-free typed source-stream diagnostic (internal)
+
+This is the only client constructor for the source-stream pilot. It asks
+one pinned producer to create random diagnostic bytes for one pinned
+recipient, then pumps the purpose-bound ticket with the same immutable
+frame protocol used by typed payloads. It never names a server path and
+is not a statistical producer.
+
+## Usage
+
+``` r
+.dsvert_run_typed_source_probe(
+  producer_conn,
+  recipient_conn,
+  recipient_pk,
+  payload_bytes,
+  session_id,
+  .aggregate = DSI::datashield.aggregate
+)
+```

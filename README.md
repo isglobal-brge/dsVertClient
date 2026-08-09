@@ -1,11 +1,25 @@
 # dsVertClient - DataSHIELD Client for Vertically Partitioned Data
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](NEWS.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://isglobal-brge.github.io/dsVertClient/news/index.html)
 
 ## Overview
 
-**dsVertClient** provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols (ECDH-PSI, Ring63 / Ring127 Beaver MPC, DCF threshold comparison for small-cell suppression, dealer-free IKNP OT-extension Beaver preprocessing, X25519 + AES-256-GCM transport, Ed25519 identity verification) run transparently.
+**dsVertClient** provides R workflows for privacy-aware analysis of vertically
+partitioned data across DataSHIELD servers. It combines ECDH-PSI, Ring63 /
+Ring127 additive sharing, dealer-free IKNP OT-extension preprocessing,
+peer-to-peer authenticated encryption and Ed25519 server identity pinning.
+
+Method maturity is intentionally explicit. Run `ds.vertMethodStatus()` before
+choosing a route: only a small conditional surface is currently `promoted`;
+the main distributed estimators remain `provisional`, `compatibility`, or
+`quarantine` while their numerical, disclosure and biomedical contracts are
+closed.
+
+All connected servers must expose dsVert's single immutable
+`disclosure_safe` profile. There is no client or server switch that enables an
+exact legacy release plane; methods still awaiting migration return an
+explicit unavailable/migration error instead of falling back silently.
 
 Pair with the server-side companion package [**dsVert**](https://github.com/isglobal-brge/dsVert).
 
@@ -18,127 +32,304 @@ library(DSI); library(DSOpal); library(dsVertClient)
 conns <- DSI::datashield.login(logins = builder$build())
 DSI::datashield.assign.table(conns, "D", "project.data")
 
-# 1. Align records (NAs removed automatically, like glm na.omit)
-ds.psiAlign("D", "patient_id", "DA", datasources = conns)
+# 1. Align records without mutating the source table
+ds.psiAlign("D", "patient_id", "DA", na.action = "na.omit",
+            datasources = conns)
 
-# 2. Fit a federated GLM (auto-detects which server has each variable)
-fit <- ds.vertGLM(diabetes ~ age + bmi + glu + bp,
-                  data = "DA", family = "binomial",
-                  datasources = conns)
-print(fit)
+# 2. Inspect the immutable server policy and signed, data-free capsule plan
+ds.vertDPStatus(conns)
+ds.vertDPCapsulePlan(conns)
 
-# 3. Cox PH via the non-disclosive Breslow profile route
-cox <- ds.vertCoxProfileNonDisclosive(
-  survival::Surv(time, event) ~ age + bmi + bp,
-  data = "DA",
-  datasources = conns
-)
+# 3. Obtain one sticky bounded Gaussian capsule and reuse it for analysis
+gaussian <- ds.vertDPGaussian("DA", "gaussian_primary",
+                              datasources = conns)
 
-# 4. Correlation + PCA
-cor <- ds.vertCor("DA", datasources = conns)
+# 4. Correlation + PCA from the same authorised Gaussian artifact
+# The admin-declared Gaussian artifact may be same-owner or cross-owner. All
+# variables use its one signed, secret complete-case mask.
+cor <- ds.vertCor(
+  "DA", variables = list(site_a = c("age", "bmi", "glu")),
+  analysis_id = "gaussian_primary", datasources = conns)
 pca <- ds.vertPCA(cor_result = cor)
 
 DSI::datashield.logout(conns)
 ```
 
-## Functions (v1.1.0)
+## Differentially private releases
+
+The package can inspect—never change—the immutable DP policy and run a public,
+data-free utility preview. The signed biomedical capsule covers count, table,
+moment, Gaussian-model and survival artifacts. Its deterministic selector uses
+the exact-GC one-draw Laplace route for a scalar vector, the scalable
+two-complete-draw Laplace convolution for wider vectors, or the formal
+fixed-work dyadic discrete-Gaussian backend when its exact server plan strictly
+improves the certified simultaneous radius. The preview does not impersonate
+that decision: the signed server manifest is authoritative.
+
+```r
+ds.vertDPCalibrate(capsule_epsilon = c(1, 3, 5),
+                   peer_count = length(conns),
+                   sensitivity = 1)
+ds.vertDPStatus(conns)
+ds.vertDPCapsulePlan(conns) # signed dry-run; no data access or release
+# Sticky joint-DP capsule post-processing routes:
+ds.vertDPCount("DA", datasources = conns)
+ds.vertDPContingency("DA", "exposure", "outcome",
+                     datasources = conns)
+frequency <- ds.vertDPFrequency("DA", "exposure", datasources = conns)
+ds.vertDPFrequencyInference(frequency)
+ds.vertDPMeanVar("DA", "age", datasources = conns)
+ds.vertDPDescribe("DA", "primary", datasources = conns)
+gaussian <- ds.vertDPGaussian("DA", "gaussian_primary",
+                              datasources = conns)
+surv <- ds.vertDPSurvival("DA", "primary", datasources = conns)
+ds.vertDPKaplanMeier(surv)
+ds.vertDPSurvivalQuantile(surv, probabilities = c(0.25, 0.5, 0.75))
+ds.vertDPMedianSurvival(surv)
+ds.vertDPRMST(surv, tau = 365)
+ds.vertDPRMTL(surv, tau = 365)
+# Given a second compatible authorised release:
+# ds.vertDPSurvivalContrast(surv_treated, surv_control)
+# ds.vertDPRMSTContrast(surv_treated, surv_control, tau = 365)
+```
+
+The table wrapper itself intentionally reports no ordinary chi-square or
+Fisher p-value: their usual reference distributions ignore DP noise.
+`ds.vertChisq()` provides a mechanism-aware independence bootstrap, while
+`ds.vertFisher()` provides a signed-mechanism 2-by-2 conditional
+hypergeometric plug-in bootstrap. The latter is explicitly not Fisher-exact
+for the confidential table and returns no classical conditional odds-ratio
+interval. Both can reuse the same sticky release with zero additional DSI
+calls and zero additional privacy cost.
+
+Its public repeated-record policy is
+`consistent_cell_else_exclude_v1`: identical valid cells count once,
+conflicting valid cells make the unit contribute zero, and missing or
+out-of-domain rows do not create a conflict. No exact exclusion count is
+released; studies should report the resulting concordant-unit estimand.
+
+The production target has one durable capsule-publication chain, not one
+epsilon ledger per peer or per user operation. Pinned peers cross-sign the
+immutable snapshot/workload capsule, creation sequence, opening and exact
+payload commitments; retry, restart and lost acknowledgement must replay the
+same durable capsule without resampling. Every supported method over that
+capsule is unlimited post-processing: it cannot advance the chain, reduce
+accuracy or be denied because of earlier operations. A previously unseen
+capsule consumes one non-refundable lifetime unit at allocator commit, before
+protected-source access or sampling. The server-owned maximum `N` defaults to
+one and is valid only when exact arithmetic proves `N * epsilon <= 8` and
+`N * delta < 1`. Once exhausted, the client receives only
+`[dsvert_dp_lifetime_budget_exhausted:v1]`; this is not a request quota.
+For privacy and compatibility, the same terminal token also covers a capsule
+that cannot safely advance the requested release instance because its
+irrevocable instance claim or sole publication slot is already bound and the
+exact instance cannot continue or replay. It is an opaque union: it does not
+imply `remaining_distinct_capsules == 0`, and separate cause-specific errors
+would reveal state.
+
+Each capsule may have at most one public release instance. PREPARE persists only
+an authenticated candidate, so sibling candidates may coexist before a claim.
+At each designated peer, the first valid START atomically and irrevocably
+claims one release instance before local staged-source access or sampling.
+Source transport may already have staged encrypted protected material, but no
+noised share or public output exists at that boundary. Rotation may select a
+different candidate only before the claim. Afterwards only that exact instance
+may progress, restore or replay; after publication, state loss must restore and
+replay it or fail closed. Matching bilateral receipts prevent split sibling
+claims from producing a release under the at-least-one-non-colluding-peer model.
+With at least one non-colluding
+designated peer retaining and using complete authenticated monotonic history, a
+divergent rollback is rejected. Simultaneous rollback of both designated
+histories is outside the claim without an external linearizable CAS. The claim is scoped to
+`at_most_N_immutable_snapshot_workload_capsules_per_stable_privacy_accountant_namespace`
+and additionally assumes
+`authenticated_history_retention_assumption=at_least_one_noncolluding_designated_noise_peer_retains_and_uses_complete_authenticated_monotonic_history`
+and
+`privacy_accountant_namespace_assumption=one_stable_unique_namespace_across_domain_cohort_policy_pinset_and_ledger_reconfiguration_per_protected_privacy_universe`.
+That namespace continuity is currently custodian-managed: neither package
+enforces global uniqueness or automatically migrates reservations across
+reconfiguration. The signed biomedical
+vector and its supported post-processors use this complete sequence; reserved
+artifact families still fail before protected payload access.
+
+Server secrets bootstrap automatically into owner-only persistent storage; no
+analyst receives a root or derived seed. All DP DSI calls suppress raw server
+errors and reject partial site responses. The bounded lifetime claim remains
+conditional on root secrecy, correct pinned-peer operation and authenticated
+ledger integrity—not protection after host/root compromise or simultaneous
+history rollback outside the stated model. Public results expose this boundary
+as `dsvert-capsule-security-claim-v3`.
+
+The biomedical vector ABI is frozen as a pre-release baseline: signed PREPARE
+receipts use v6; signed START, RESULT, RELEASE and ACK receipts use v5; the
+authenticated STORE schema uses v6; its claim row and authenticated claim-set
+state use `dsvert-joint-dp-vector-instance-claim-v1` and
+`dsvert-joint-dp-vector-instance-claim-state-v1`; replay uses v4. Every signed
+receipt and replay response carries exactly `history_gate=TRUE`,
+`request_limit=FALSE`, and `operation_limit=TRUE`. Neither package automatically
+migrates or re-signs
+legacy v4/v5 stores. Deployment requires empty DP capsule state or a future
+audited offline migration; legacy state fails closed. This is compatible with
+the previous Opal environments because `POLICY_READY=FALSE`, no DP capsule was
+published, and local K-site state was ephemeral.
+
+Exact COMMIT/RELEASE endpoint replay and sticky replay within a live session
+are O(1). Cold end-to-end reconstruction after process restart returns through
+AllocationProof and performs a complete O(N) allocator-journal audit before the
+proof is returned. It remains privacy-free replay: no lifetime unit, new noise
+or protected-source read is involved.
+
+The clean baseline additionally requires `dsvert-joint-dp-control-v3` and
+`dsvert-joint-dp-capsule-identity-v3`, which bind the lifetime fields and
+biomedical workload v7. V2 control/identity artifacts are legacy and fail
+closed; neither package migrates or re-signs them automatically. Deployment
+must use empty DP capsule state or a future audited offline migration.
+
+`ds.vertDPStatus()` accepts only joint-DP capsule status v5, cross-validates
+reservation and publication counts within the declared stable accountant
+namespace, and reports remaining distinct-capsule units separately from
+request limits. Exhaustion does not redefine consortium readiness; the status
+handshake is not proof that no second namespace exists for the same protected
+privacy universe.
+
+`ds.vertSecurityStatus()` consumes security-profile schema v4 and reports
+readiness per route. Its top-level `ready` field, compatibility field
+`biomedical_joint_dp_capsule_ready`, and server alias
+`formal_dp_claim_eligible` refer only to the custodian-attested surface plus
+the live policy/pinset/authenticated control-plane handshake. They do not prove
+that a particular dataset passes admission, that its manifest can be built,
+that a route's numeric runtime is available, or that a live release will
+complete. The route map says
+`execution_readiness = "not_evaluated_requires_route_specific_preflight"` and
+separately reports formal GLM and formal Cox as not ready.
+
+The surface token is connector-neutral and is provisioned only by server
+administrators after an exact effective-inventory check. Opal stores it in the
+dedicated server profile; Armadillo/Rock may set it in the server/container
+environment. No client option or DSI argument carries an attestation, and an
+installed package never auto-attests. See
+`inst/docs/remote_surface_attestation_20260808.md` for the admin procedure.
+
+## Function surface (v1.1.0 development audit)
+
+This is a capability index, not a claim that every route has the same maturity.
+Use the runtime registry for the authoritative status and limitation of each
+entry point.
 
 | Family | Functions |
 |---|---|
 | **Record alignment** | `ds.psiAlign()`, `ds.isPsiAligned()`, `ds.getIdentityPks()` |
 | **Descriptive / 2nd-order** | `ds.vertDesc()`, `ds.vertCor()`, `ds.vertPCA()`, `ds.vertChisq()`, `ds.vertChisqCross()`, `ds.vertFisher()` |
-| **GLM** (gaussian / binomial / poisson) | `ds.vertGLM()` with `offset`, `weights`, `ring`, `binomial_sigmoid_intervals`, `keep_session`, `no_intercept`, `std_mode` |
+| **Differential privacy** | `ds.vertDPStatus()`, `ds.vertDPCapsulePlan()`, `ds.vertDPCalibrate()`, `ds.vertDPCount()`, `ds.vertDPContingency()`, `ds.vertDPFrequency()`, `ds.vertDPFrequencyInference()`, `ds.vertDPMeanVar()`, `ds.vertDPDescribe()`, `ds.vertDPQuantile()`, `ds.vertDPMedian()`, `ds.vertDPGaussian()`, `ds.vertDPSurvival()`, `ds.vertDPSurvivalQuantile()`, `ds.vertDPMedianSurvival()`, `ds.vertDPSurvivalContrast()`, `ds.vertDPRMSTContrast()`, `ds.vertDPEpi2x2()`, `ds.vertDPEpi2x2Inference()`, `ds.vertDPMantelHaenszel()`, `ds.vertDPDiagnostic2x2()`, `ds.vertDPDiagnostic2x2Inference()`, `ds.vertDPROC()`, `ds.vertDPDirectStandardizationInference()`, `ds.vertDPIndirectStandardizationInference()`, `ds.vertDPCausalStandardization()`, `ds.vertDPCausalStandardizationInference()` and the remaining direct/indirect standardisation, competing-risk, RMST, and RMTL post-processors |
+| **GLM** (gaussian / binomial / poisson) | `ds.vertGLM()` preserves the historical API. A compatible same- or cross-owner Gaussian request may delegate to `ds.vertDPGaussian()`; binomial/Poisson and other iterative routes stay gated until their formal capsule backends are production-ready. |
 | **Inference helpers** | `ds.vertConfint()`, `ds.vertContrast()`, `ds.vertWald()`, `ds.vertLR()` |
-| **Survival** | `ds.vertCox()` / `ds.vertCoxProfileNonDisclosive()` (non-disclosive Breslow Cox PH), `ds.vertCoxDiscreteNonDisclosive()` (pooled-logistic discrete survival); legacy rank/person-time routes removed |
-| **Negative binomial** | `ds.vertNBFullRegTheta(variant = "full_reg_nd")` (default share-domain full-reg θ), `ds.vertNB()` / `ds.vertNBMoMTheta()` for lighter scalar-theta variants |
-| **Multinomial** | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` (joint softmax Newton); warm OVR is internal initialisation only |
-| **Ordinal (proportional odds)** | `ds.vertOrdinal()` / `ds.vertOrdinalJointNewton()` (joint proportional-odds Newton); warm cumulative-binomial is internal initialisation only |
-| **Mixed models** | `ds.vertLMM()` (dispatches on K: exact REML closed-form with random intercept + slopes at K=2, variance-ratio profile at K>=3), `ds.vertGEE()` (sandwich SE, `binomial_sigmoid_intervals`), `ds.vertGLMM()` (binomial GLMM-PQL), `ds.vertGLMMLaplace()` / `ds.vert.glmer()` (binomial GLMM Laplace) |
-| **Causal / robustness** | `ds.vertIPW()` (propensity fit + protected weighted GLM using a server-side IPW column), `ds.vertMI()` (multiple imputation + Rubin pooling) |
-| **Penalised regression** | `ds.vertLASSO()`, `ds.vertLASSO1Step()`, `ds.vertLASSOIter()` (Gaussian/binomial/Poisson standardized L1), `ds.vertLASSOCV()` (AIC / BIC / EBIC selector), `ds.vertLASSOProximal()` |
-
-## Output sample (`ds.vertGLM`)
-
-```
-Coefficients:
-                Estimate Std.Error z value  Pr(>|z|)
-(Intercept)     -9.2784    2.0981  -4.425  0.000010 ***
-age              0.0733    0.0223   3.301  0.000993 ***
-bmi              0.0798    0.0522   1.534  0.126024
-glu              0.0290    0.0101   2.878  0.004046 **
-
-Converged: TRUE (14 iterations)
-Deviance: 22.09
-```
+| **Epidemiology from authorised aggregates** | `ds.vertEpi2x2()`, `ds.vertMantelHaenszel()`, `ds.vertDirectStandardization()`, `ds.vertIndirectStandardization()` |
+| **Survival** | Sticky fixed-grid DP survival artifacts and their Kaplan--Meier, Nelson--Aalen, competing-risk, survival-quantile, RMST and RMTL post-processors are available. Cox frontdoors are retained but quarantined and fail before DSI until the formal Cox capsule is production-ready. |
+| **Negative binomial** | Historical names are retained but quarantined; no NB2 estimator is advertised as disclosure-safe until a complete bounded score/information capsule and validated joint inference are available. |
+| **Multinomial** | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` are quarantined; slope models fail closed before DSI until a signed raw-design Gram workload exists |
+| **Ordinal (proportional odds)** | Historical joint-Newton names are retained but quarantined and fail before DSI pending a formal bounded proportional-odds capsule. |
+| **Mixed / clustered models** | Historical LMM, GEE and GLMM routes; every public frontdoor is currently quarantined and fails before DSI as reported by `ds.vertMethodStatus()` |
+| **Causal / robustness** | `ds.vertIPW()` and `ds.vertMI()` are quarantined compatibility names; their retained implementations are respectively a known-weight workflow and server-local MI, not promoted end-to-end methods |
+| **Penalised regression** | `ds.vertLASSOIter()` is quarantined; `ds.vertLASSO()` and `ds.vertLASSO1Step()` are compatibility helpers; `ds.vertLASSOProximal()` and the information-criterion (not cross-validation) selector `ds.vertLASSOCV()` are provisional |
 
 ## K=2 vs K≥3 support
 
 | Family | K=2 product route | K≥3 product route | Legacy / not offered |
 |---|---|---|---|
-| GLM (gauss / binom / poisson) | `ds.vertGLM()` K=2 Beaver MPC | `ds.vertGLM()` secure-agg / DCF-pair route | manual mapping aliases only |
-| Cox PH | `ds.vertCox()` / `ds.vertCoxProfileNonDisclosive()`; discrete-time ND route also available | same profile ND route | `legacy_rank`, `ds.vertCox.k3()` removed |
-| Negative binomial | `ds.vertNBFullRegTheta(variant = "full_reg_nd")`; iid/MoM scalar-theta variants | same full-reg ND route; iid/MoM scalar-theta variants | disclosive `variant = "full_reg"` removed |
-| Multinomial | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` | same joint softmax route | warm / OVR final-estimator route removed from the exported API |
-| Ordinal | `ds.vertOrdinal()` / `ds.vertOrdinalJointNewton()` | same proportional-odds route | warm final-estimator and patient-level joint reconstruction routes removed from the exported API |
-| LMM | `ds.vertLMM()` K=2 closed form | `ds.vertLMM()` dispatches to the K>=3 variance-ratio profile (`ds.vertLMM.k3()` deprecated) | direct client-supplied cluster-vector helper is not product |
-| GEE | `ds.vertGEE()` exchangeable / guarded AR1 | same route | unguarded order metadata not accepted |
-| GLMM | `ds.vertGLMM()` PQL and `ds.vertGLMMLaplace()` / `ds.vert.glmer()` Laplace | same PQL and Laplace routes | legacy EM and patient-level BLUP/probability routes removed |
-| IPW / MI / LASSO / Cor / PCA / Chisq / Desc | product wrappers | same product wrappers | small-cell / high-dimensional diagnostics gated |
+| GLM (gauss / binom / poisson) | Compatible same- or cross-owner Gaussian capsule adapter only; binomial/Poisson gated | same, tested through K=5 | legacy iterative routes are not production claims |
+| Cox PH | Formal capsule under internal validation; public frontdoors gated | same | `legacy_rank`, `ds.vertCox.k3()` removed |
+| Negative binomial | Quarantined pending bounded NB2 capsule and joint inference | same | disclosive `variant = "full_reg"` removed |
+| Multinomial | Slope route unavailable pending signed `multinomial_design_grams` | same | unsafe local-moment/correlation Gram reconstruction and warm / OVR final-estimator route removed |
+| Ordinal | Quarantined pending a formal proportional-odds capsule | same | warm final-estimator and patient-level joint reconstruction routes removed from the exported API |
+| LMM | Historical K=2 route, quarantined | Historical K>=3 profile, quarantined; `ds.vertLMM.k3()` deprecated | confirmatory inference not supported |
+| GEE | All working-correlation modes are quarantined and fail before DSI | same zero-DSI boundary | robust cluster meat must remain entirely in MPC before promotion |
+| GLMM | Experimental PQL/Laplace routes, quarantined | same maturity boundary | valid final covariance/SE and safer cluster aggregation are incomplete |
+| IPW / MI / LASSO / Cor / PCA / Chisq / Desc | mixed maturity; query `ds.vertMethodStatus()` | same | exact legacy outputs remain subject to composition risk; signed capsule routes retain their explicit formal-DP contract |
 
-See `inst/docs/product_surface.md` for the disclosure/accuracy status table
-used by the cleanup audit.
+See `inst/docs/product_surface.md` for the audited maturity surface.
 
 ## Validation evidence
 
-The validation suite is rendered as executable vignettes. Each method article
-builds its fixture, vertically partitions it across DSLite servers, runs
-`ds.vert.align()`, fits the federated route, computes the centralized R
-reference on the same pooled data, and asserts the numerical tolerance plus the
-route-level disclosure flag.
+The repository contains unit, adversarial, centralized-reference, real-DSLite,
+connector-lifecycle and live-Opal harnesses. PSI additionally has a two-host
+test with independent identity seeds. `K=2`, `K=3` and `K=5` statements for
+the promoted capsule/PSI route identify topology coverage in the named test;
+they do not imply that every topology completed on every connector. The local
+Armadillo S4/httpuv smoke is a connector-lifecycle regression, not a live Rock
+deployment, and cached Opal results are historical evidence rather than a
+blanket release guarantee. Current deployment claims require a fresh,
+artifact-exact live run with the method-specific tolerance and assumptions
+recorded by the harness. Analytical calls use DSI; Opal reconciliation and
+Armadillo TLS/session inspection remain deployment safeguards rather than
+statistical-protocol dependencies.
 
-Current coverage:
-
-- 17 method blocks.
-- Both K=2 and K>=3 topologies.
-- 38 route-level validation rows.
-- All rendered rows pass the declared numerical and disclosure criteria.
-
-Additional Beaver-profile validation vignettes run selected K=2 routes under
-the IKNP OT-extension backend and compare against the centralized R reference.
-The current representative checks all pass:
-
-| Route | IKNP observed | Tolerance |
-|---|---:|---:|
-| Correlation | `1.2441795e-05` | `1e-04` |
-| GLM | `6.1290240e-05` | `1e-03` |
-| GEE | `6.0821320e-05` | `1e-02` |
-| Cox PH | `4.8702002e-05` | `1e-03` |
+Ordinary in-process DSLite cannot faithfully model separate persistent server
+identities because logical servers share one R process. Identity-sensitive
+security tests therefore use isolated host environments; live Opal validation
+remains required before deployment.
 
 ## Security
 
-- **No product observation-level disclosure**: client sees only model-scale
-  aggregates returned by the registered server methods
-- **Dealer-free Beaver preprocessing**: IKNP OT-extension is the sole Beaver
-  preprocessing backend. Trusted-dealer mode has been removed because a
-  participating-party dealer can reconstruct peer operands.
-- **Domain-separated IKNP reuse**: IKNP base-OT state is reused within a
-  DataSHIELD session per sender/receiver/ring tuple, while every multiplication
-  batch receives a distinct extension transcript key.
-- **OT-aware LMM profile**: K>=3 `ds.vert.lmm()` uses the protected
-  moment + cluster-mean GLS route under IKNP preprocessing, avoiding repeated
-  weighted profile fits. Use
-  `options(dsvert.lmm_k3.profile_mode = "profile")` for the exhaustive
-  profile route.
-- **Dealer-free threat model**: removing the privileged preprocessing dealer
-  means no participating server ever holds an unsplit Beaver triple, so no
-  single server can reconstruct a peer's operands from preprocessing.
-- **Transport encryption**: X25519 + AES-256-GCM between servers
-- **Identity verification**: Ed25519 signed peer transport keys (`dsvert.require_trusted_peers`)
-- **Ring**: Ring63 (frac_bits = 20) and Ring127 (frac_bits = 50), selected by
-  method precision needs
-- **Discarded estimators removed**: routes that revealed rank metadata,
-  patient-level working vectors, or old approximations are not part of the
-  exported product API
+The pinned-peer model prevents the analyst/relay from substituting a key and
+opening peer ciphertext. PSI membership messages are signed, encrypted and
+session-bound; completed alignment is verified through a secret-token-backed,
+ordered-ID manifest rather than row counts. Session IDs and persistent identity
+seeds use operating-system entropy, and unused high-risk remote primitives have
+been removed from registration and export.
+
+These controls do **not** imply that source data can never be reconstructed.
+Unlimited adaptive exact outputs can be composed without breaking MPC.
+Dedicated `ds.vertDP*` methods contain patient/row contribution bounding and
+sticky noise in one cross-signed biomedical-vector release. The registered DSI
+path binds allocation, bounded materialization, joint sampling, one final
+opening, durable replay and bilateral finalization; supported methods are
+post-processing of that immutable capsule. This is a computational
+bounded-lifetime DP claim for at most the signed `N` capsules under the
+published adjacency, secret-root and pinned semi-honest non-colluding-peer
+assumptions. DP bounds indistinguishability; it is not a literal guarantee that
+no original value can ever be guessed or reconstructed. The claim does not
+cover collusion of every designated peer. Ordinary exact methods
+remain outside any DP guarantee. Historical local fixed-point truncation and
+legacy DCF comparison survive only inside unregistered/quarantined
+implementations and retain their stated proof limitations. See
+[SECURITY.md](SECURITY.md) for the full threat model and non-claims.
+
+There is no request-count limit. The finite lifetime gate applies only when a
+new capsule is committed; exact replay of an existing release remains free.
+Shape, byte, finite-range and storage caps are retained as separate resource and
+arithmetic-safety controls.
+
+## DSI communication
+
+Persistent DSI connections need no generic application/request batching layer
+and no per-peer wrapper serialization. The capsule-source route can carry a
+byte-bounded consecutive window of unchanged signed inner artifacts in one
+fetch/accept request after public capability negotiation. Its outer framing is
+not independently signed and it never creates multiple in-flight DSI jobs.
+Large opaque values still require frame
+chunking because DSI connectors and parsers impose finite request sizes. One
+named fan-out cycle carries the next dependency-ready immutable frame for every
+peer, and the source-to-recipient pipeline completes `F` frames in `F + 2`
+healthy phases, without pretending that dependent MPC rounds are parallel. The
+frame path uses DSI's public job
+primitives directly and avoids repeated deparsing of the same large expression
+during polling. Stateless request-size probing is session-bound; a reconnect
+revalidates the last connector-profile size before using it. The registered
+typed transport uses absolute offsets, bounded private node spools, complete
+SHA-256 verification and pinned-peer signed receipts. The analyst keeps only
+one frame and no payload-sized integrity copy. The more general relay remains
+unregistered until independent multi-host live-connector validation and
+protocol migration prove that exposing it does not widen the remote surface.
+
+Repeated analyses first refresh the complete pinned control-plane status and
+rebuild the server-authoritative capsule manifest. An in-process LRU then
+reuses an already validated public DP vector only when the current
+`manifest_sha256`, `capsule_id`, policy, pinset, noise root and release domain
+are identical. A hit skips the expensive source-sharing, sampling and vector
+replay phases; it never skips snapshot/workload validation. The cache retains
+no connection handles, is bounded to four entries and 64 MiB, and eviction
+cannot deny an operation or generate different noise—the durable sticky replay
+remains authoritative.
 
 ## Installation
 
@@ -156,9 +347,10 @@ Requires the server-side package [dsVert](https://github.com/isglobal-brge/dsVer
 ## Documentation
 
 - [Reference index](https://isglobal-brge.github.io/dsVertClient/) (pkgdown site)
-- [Method validation evidence](https://isglobal-brge.github.io/dsVertClient/articles/validation_summary.html)
-- [Product surface audit](inst/docs/product_surface.md)
-- [NEWS](NEWS.md)
+- [DP statistical validation evidence](https://github.com/isglobal-brge/dsVertClient/blob/main/inst/docs/benchmarks/dp_statistical_validation_20260802.md)
+- [Historical capsule v6 large-scale audit; current workload is v7](https://github.com/isglobal-brge/dsVertClient/blob/main/inst/docs/capsule_v6_large_scale_audit_20260808.md)
+- [Product surface audit](https://github.com/isglobal-brge/dsVertClient/blob/main/inst/docs/product_surface.md)
+- [NEWS](https://isglobal-brge.github.io/dsVertClient/news/index.html)
 
 ## License
 

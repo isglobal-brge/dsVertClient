@@ -1,10 +1,15 @@
 #' Public ds.vert.* API aliases
 #'
-#' These wrappers provide a compact, formula-style public surface while keeping
-#' the historical CamelCase functions as compatibility backends. Wrappers that
-#' have distinct K=2 and K>=3 implementations dispatch from the number of active
-#' DataSHIELD connections. Every argument is forwarded to the corresponding
-#' \code{ds.vert*} backend, which documents it in full.
+#' These wrappers preserve the compact formula-style API names. Availability
+#' is defined by \code{ds.vertMethodStatus()} and the selected signed capsule,
+#' not by the presence of an alias. Aliases for quarantined families raise a
+#' typed \code{dsvert_route_unavailable} condition before any DSI call.
+#' \code{ds.vert.glm()} can delegate an explicit Gaussian
+#' \code{dp_analysis_id} to \code{ds.vertDPGaussian()}; its no-id legacy route
+#' is unavailable, and the reserved binomial/Poisson
+#' \code{formal_analysis_id} route also fails before DSI in this release.
+#' No alias re-enables a retired remote endpoint or weakens the signed-artifact
+#' and custodian-owned policy gates of an available backend.
 #'
 #' @param data_name,data,formula,datasources Aligned data-frame symbol (or model
 #'   \code{formula}) and the DataSHIELD connections.
@@ -40,7 +45,17 @@ NULL
   if (is.list(x)) {
     x$frontdoor <- frontdoor
     if (!is.null(route)) x$route <- route
-    if (!is.null(K)) x$k_mode <- if (K == 2L) "K=2" else "K>=3"
+    x$k_mode <- if (is.null(K) || length(K) != 1L || is.na(K) ||
+                      !is.numeric(K) || !is.finite(K) || K != floor(K) ||
+                      K < 1L) {
+      "unknown"
+    } else if (K == 1L) {
+      "K=1"
+    } else if (K == 2L) {
+      "K=2"
+    } else {
+      "K>=3"
+    }
   }
   x
 }
@@ -140,35 +155,38 @@ ds.vert.pca <- function(data_name = NULL, variables = NULL,
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.chisq <- function(data_name, var1, var2,
+ds.vert.chisq <- function(data_name, var1 = NULL, var2 = NULL,
                           datasources = NULL, ...) {
-  datasources <- .dsvert_datasources(datasources)
+  existing_release <- inherits(data_name, "ds.vertDPContingency")
+  if (!existing_release) datasources <- .dsvert_datasources(datasources)
   out <- ds.vertChisq(data_name = data_name, var1 = var1, var2 = var2,
                       datasources = datasources, ...)
   .dsvert_set_frontdoor(out, "ds.vert.chisq", "ds.vertChisq",
-                        length(datasources))
+                        if (existing_release) NULL else length(datasources))
 }
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.fisher <- function(data_name, var1, var2,
+ds.vert.fisher <- function(data_name, var1 = NULL, var2 = NULL,
                            datasources = NULL, ...) {
-  datasources <- .dsvert_datasources(datasources)
+  existing_release <- inherits(data_name, "ds.vertDPContingency")
+  if (!existing_release) datasources <- .dsvert_datasources(datasources)
   out <- ds.vertFisher(data_name = data_name, var1 = var1, var2 = var2,
                        datasources = datasources, ...)
   .dsvert_set_frontdoor(out, "ds.vert.fisher", "ds.vertFisher",
-                        length(datasources))
+                        if (existing_release) NULL else length(datasources))
 }
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.chisq_cross <- function(data, var1, var2,
+ds.vert.chisq_cross <- function(data, var1 = NULL, var2 = NULL,
                                 datasources = NULL, ...) {
-  datasources <- .dsvert_datasources(datasources)
+  existing_release <- inherits(data, "ds.vertDPContingency")
+  if (!existing_release) datasources <- .dsvert_datasources(datasources)
   out <- ds.vertChisqCross(data = data, var1 = var1, var2 = var2,
                            datasources = datasources, ...)
   .dsvert_set_frontdoor(out, "ds.vert.chisq_cross", "ds.vertChisqCross",
-                        length(datasources))
+                        if (existing_release) NULL else length(datasources))
 }
 
 #' @rdname ds.vert.aliases
@@ -176,11 +194,35 @@ ds.vert.chisq_cross <- function(data, var1, var2,
 ds.vert.glm <- function(formula, data = NULL,
                         precision = c("auto", "high", "fast"),
                         datasources = NULL, ...) {
+  dots_call <- match.call(expand.dots = FALSE)$...
+  dots_names <- if (is.null(dots_call)) character() else names(dots_call)
+  formal <- "formal_analysis_id" %in% dots_names
+  gaussian_dp <- "dp_analysis_id" %in% dots_names
+  if (!formal && !gaussian_dp) {
+    .dsvert_block_retired_remote_route("legacy_glm")
+  }
   precision <- match.arg(precision)
+  if (formal) {
+    if (!missing(precision) && !identical(precision, "auto")) {
+      stop(paste(
+        "precision is server-owned for formal_analysis_id;",
+        "omit it or use precision='auto'"), call. = FALSE)
+    }
+    # Direct promise forwarding is intentional: the sealed formal adapter
+    # rejects unsupported argument names and blocks before forcing a
+    # datasource expression or discovering any DSI connection.
+    out <- ds.vertGLM(
+      formula = formula, data = data, datasources = datasources, ...)
+    out <- .dsvert_set_frontdoor(
+      out, "ds.vert.glm", "ds.vertGLM.formal",
+      if (is.null(datasources)) NULL else length(datasources))
+    return(.dsvert_add_policy(out, precision = "server-owned"))
+  }
+  dots <- list(...)
   datasources <- .dsvert_datasources(datasources)
   args <- .dsvert_apply_binomial_precision(
     c(list(formula = formula, data = data, datasources = datasources),
-      list(...)),
+      dots),
     precision = precision)
   out <- do.call(ds.vertGLM, args)
   out <- .dsvert_set_frontdoor(out, "ds.vert.glm", "ds.vertGLM",
@@ -193,6 +235,7 @@ ds.vert.glm <- function(formula, data = NULL,
 ds.vert.cox <- function(formula, data = NULL,
                         method = c("profile", "discrete"),
                         datasources = NULL, ...) {
+  .dsvert_block_retired_remote_route("cox")
   method <- match.arg(method)
   datasources <- .dsvert_datasources(datasources)
   if (identical(method, "profile")) {
@@ -212,8 +255,10 @@ ds.vert.cox <- function(formula, data = NULL,
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.coxph <- function(formula, data = NULL, ...) {
-  out <- ds.vert.cox(formula = formula, data = data, ...)
+ds.vert.coxph <- function(formula, data = NULL, method = "profile", ...) {
+  .dsvert_block_retired_remote_route("cox")
+  method <- match.arg(method, "profile")
+  out <- ds.vert.cox(formula = formula, data = data, method = method, ...)
   if (is.list(out)) out$frontdoor <- "ds.vert.coxph"
   out
 }
@@ -223,6 +268,7 @@ ds.vert.coxph <- function(formula, data = NULL, ...) {
 ds.vert.nb <- function(formula, data = NULL,
                        method = "accurate",
                        datasources = NULL, ...) {
+  .dsvert_block_retired_remote_route("negative_binomial")
   method <- match.arg(method, "accurate")
   datasources <- .dsvert_datasources(datasources)
   K <- length(datasources)
@@ -238,6 +284,7 @@ ds.vert.nb <- function(formula, data = NULL,
 #' @export
 ds.vert.multinom <- function(formula, data = NULL,
                              datasources = NULL, ...) {
+  .dsvert_block_retired_remote_route("multinomial")
   datasources <- .dsvert_datasources(datasources)
   out <- ds.vertMultinom(formula = formula, data = data,
                          datasources = datasources, ...)
@@ -249,6 +296,7 @@ ds.vert.multinom <- function(formula, data = NULL,
 #' @export
 ds.vert.ordinal <- function(formula, data = NULL,
                             datasources = NULL, ...) {
+  .dsvert_block_retired_remote_route("ordinal")
   datasources <- .dsvert_datasources(datasources)
   out <- ds.vertOrdinal(formula = formula, data = data,
                         datasources = datasources, ...)
@@ -262,6 +310,7 @@ ds.vert.lmm <- function(formula, data = NULL, cluster_col,
                         max_iter = 30L, inner_iter = 50L,
                         max_outer = 30L, tol = NULL, ring = NULL,
                         verbose = TRUE, datasources = NULL, ...) {
+  .dsvert_block_retired_remote_route("lmm")
   extra <- list(...)
   if (length(extra)) {
     arg_names <- names(extra)
@@ -291,6 +340,7 @@ ds.vert.lmm <- function(formula, data = NULL, cluster_col,
 ds.vert.gee <- function(formula, data = NULL,
                         precision = c("auto", "high", "fast"),
                         datasources = NULL, ...) {
+  .dsvert_block_retired_remote_route("gee")
   precision <- match.arg(precision)
   datasources <- .dsvert_datasources(datasources)
   args <- .dsvert_apply_binomial_precision(
@@ -308,6 +358,7 @@ ds.vert.gee <- function(formula, data = NULL,
 ds.vert.glmm <- function(formula, data = NULL, cluster_col,
                          method = "pql",
                          datasources = NULL, ...) {
+  .dsvert_block_retired_remote_route("glmm")
   method <- match.arg(method, "pql")
   datasources <- .dsvert_datasources(datasources)
   out <- ds.vertGLMM(formula = formula, data = data,
@@ -323,6 +374,7 @@ ds.vert.glmm <- function(formula, data = NULL, cluster_col,
 ds.vert.ipw <- function(outcome_formula, propensity_formula, data = NULL,
                         precision = c("auto", "high", "fast"),
                         datasources = NULL, ...) {
+  .dsvert_block_retired_remote_route("ipw")
   precision <- match.arg(precision)
   datasources <- .dsvert_datasources(datasources)
   args <- .dsvert_apply_binomial_precision(
@@ -342,6 +394,7 @@ ds.vert.ipw <- function(outcome_formula, propensity_formula, data = NULL,
 #' @export
 ds.vert.mi <- function(formula, data = NULL, impute_columns = NULL,
                        datasources = NULL, ...) {
+  .dsvert_block_retired_remote_route("mi")
   datasources <- .dsvert_datasources(datasources)
   out <- ds.vertMI(formula = formula, data = data,
                    impute_columns = impute_columns,
@@ -362,6 +415,7 @@ ds.vert.lasso <- function(fit, lambda_1, ...) {
 ds.vert.lasso_iter <- function(formula, data = NULL,
                                method = c("auto", "accurate", "fast"),
                                ...) {
+  .dsvert_block_retired_remote_route("lasso_iter")
   method <- match.arg(method)
   args <- c(list(formula = formula, data = data), list(...))
   if (is.null(args$exact_non_gaussian)) {

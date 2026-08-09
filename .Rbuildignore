@@ -11,6 +11,7 @@
 ^\.github$
 ^docs$
 ^scripts$
+^experiments$
 ^LICENSE\.md$
 ^CITATION\.cff$
 ^CONTRIBUTING\.md$

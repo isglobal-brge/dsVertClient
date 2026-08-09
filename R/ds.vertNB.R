@@ -59,15 +59,15 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
   }
 
   moments <- tryCatch({
-    r <- DSI::datashield.aggregate(
-      datasources[which(server_names == y_srv)],
-      call(name = "dsvertLocalMomentsDS", data_name = data, variable = y_var))
+    r <- .dsvert_aggregate_strict(
+      conns = datasources[which(server_names == y_srv)],
+      expr = call(name = "dsvertLocalMomentsDS", data_name = data,
+                  variable = y_var),
+      operation = "negative-binomial moment release")
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
     r
-  }, error = function(e) {
-    stop("dsvertLocalMomentsDS failed: ", conditionMessage(e),
-         call. = FALSE)
-  })
+  }, error = function(e) stop(
+    "Negative-binomial moment release is unavailable.", call. = FALSE))
 
   # dsvertLocalMomentsDS returns $mean/$sd scalars (not nested lists).
   y_mean <- as.numeric(moments$mean)
@@ -119,9 +119,11 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
       if (is.null(fit_it)) break
       # Update theta from updated moments (same outcome server path).
       m2 <- tryCatch({
-        r <- DSI::datashield.aggregate(
-          datasources[which(server_names == y_srv)],
-          call(name = "dsvertLocalMomentsDS", data_name = data, variable = y_var))
+        r <- .dsvert_aggregate_strict(
+          conns = datasources[which(server_names == y_srv)],
+          expr = call(name = "dsvertLocalMomentsDS", data_name = data,
+                      variable = y_var),
+          operation = "negative-binomial refinement moments")
         if (is.list(r) && length(r) == 1L) r <- r[[1L]]
         r
       }, error = function(e) NULL)
@@ -212,10 +214,11 @@ ds.vertNB <- function(formula, data = NULL, theta = NULL,
   theta <- max(theta0, 1e-3)
   for (it in seq_len(max_iter)) {
     sums <- tryCatch({
-      r <- DSI::datashield.aggregate(
-        datasources[conn_idx],
-        call(name = "dsvertNBProfileSumsDS",
-             data_name = data, variable = y_var, theta = theta))
+      r <- .dsvert_aggregate_strict(
+        conns = datasources[conn_idx],
+        expr = call(name = "dsvertNBProfileSumsDS",
+                    data_name = data, variable = y_var, theta = theta),
+        operation = "negative-binomial profile update")
       if (is.list(r) && length(r) == 1L) r <- r[[1L]]
       r
     }, error = function(e) NULL)

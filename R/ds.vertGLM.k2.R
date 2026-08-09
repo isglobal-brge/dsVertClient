@@ -37,6 +37,17 @@ NULL
   return(-r)
 }
 
+.k2_use_gaussian_oneshot <- function(
+    family, no_intercept, weights_active, gradient_only, start,
+    offset_active, lambda, ring,
+    option_enabled = getOption("dsvert.gaussian_oneshot", TRUE)) {
+  identical(family, "gaussian") && !isTRUE(no_intercept) &&
+    !isTRUE(weights_active) && !isTRUE(gradient_only) && is.null(start) &&
+    !isTRUE(offset_active) && is.numeric(lambda) && length(lambda) == 1L &&
+    is.finite(lambda) && lambda == 0 && identical(as.integer(ring), 63L) &&
+    isTRUE(option_enabled)
+}
+
 #' @keywords internal
 .k2_strict_loop <- function(datasources, server_names, server_list,
                              coordinator, coordinator_conn,
@@ -46,12 +57,14 @@ NULL
                              family, lambda, max_iter, tol,
                              n_obs, verbose, .dsAgg, .sendBlob,
                              weights_active = FALSE,
+                             offset_active = FALSE,
                              no_intercept  = FALSE,
                              ring = 63L,
                              compute_se = TRUE,
                              compute_deviance = TRUE,
                              gradient_only = FALSE,
-                             start = NULL) {
+                             start = NULL,
+                             numeric_certificate = NULL) {
 
   ring <- as.integer(ring)
   if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
@@ -71,15 +84,18 @@ NULL
   if (!is.finite(num_intervals) || num_intervals < 10L) {
     num_intervals <- default_intervals
   }
-  if (is.null(lambda)) lambda <- 1e-4
+  if (is.null(lambda)) lambda <- 0
   # A gaussian identity-link fit is a single weighted-least-squares / Gram
   # solve (beta = (X'X)^-1 X'y), so it needs no iteration. Take the one-shot
   # path -- reusing the exact LMM closed-form Gram machinery -- unless the fit
   # needs the iterative loop (weights, an intercept-free model, a warm start,
   # or a gradient-only call). Escape hatch: options(dsvert.gaussian_oneshot=FALSE).
-  use_oneshot <- is_gaussian && !isTRUE(no_intercept) &&
-    !isTRUE(weights_active) && !isTRUE(gradient_only) && is.null(start) &&
-    isTRUE(getOption("dsvert.gaussian_oneshot", TRUE))
+  use_oneshot <- .k2_use_gaussian_oneshot(
+    family = family, no_intercept = no_intercept,
+    weights_active = weights_active, gradient_only = gradient_only,
+    start = start, offset_active = offset_active, lambda = lambda,
+    ring = ring
+  )
   if (verbose) {
     if (use_oneshot) {
       message("  Gaussian one-shot: X^T X + X^T y via Beaver Gram, direct solve")
@@ -96,6 +112,7 @@ NULL
       x_vars = x_vars, y_var = y_var, std_data = std_data,
       transport_pks = transport_pks, session_id = session_id,
       lambda = lambda, n_obs = n_obs,
+      offset_active = offset_active, ring = ring,
       compute_se = compute_se, compute_deviance = compute_deviance,
       verbose = verbose))
   }
@@ -130,15 +147,18 @@ NULL
   for (server in server_list) {
     peer <- setdiff(server_list, server)
     peer_ci <- which(server_names == peer)
-    .sendBlob(share_results[[server]]$encrypted_x_share, "k2_peer_x_share", peer_ci)
+    .sendBlob(share_results[[server]]$encrypted_x_share,
+              share_results[[server]]$encrypted_x_transfer, peer_ci)
     if (!is.null(share_results[[server]]$encrypted_y_share))
-      .sendBlob(share_results[[server]]$encrypted_y_share, "k2_peer_y_share", peer_ci)
+      .sendBlob(share_results[[server]]$encrypted_y_share,
+                share_results[[server]]$encrypted_y_transfer, peer_ci)
   }
   for (server in server_list) {
     ci <- which(server_names == server)
     peer <- setdiff(server_list, server)
     .dsAgg(datasources[ci], call(name = "k2ReceiveShareDS",
-      peer_p = as.integer(length(x_vars[[peer]])), session_id = session_id))
+      peer_p = as.integer(length(x_vars[[peer]])), peer_name = peer,
+      session_id = session_id))
   }
   if (verbose) message(sprintf("  [Input Sharing] Complete: p_coord=%d, p_nl=%d (%.1fs)",
                                  p_coord, p_nl, proc.time()[[3]] - t0_share))
@@ -217,6 +237,7 @@ NULL
     # `beta[(p_coord+1):p_total]` would produce `beta[2:1]` = reversed
     # 2-elt vector with NAs via R's `:` semantics. Use explicit
     # seq_len-based slicing that is safe for zero-length cases.
+    .dsvert_numeric_assert_eta_bound(beta, intercept, numeric_certificate)
     beta_coord_slice <- if (p_coord > 0L) unname(beta[seq_len(p_coord)]) else numeric(0)
     beta_nl_slice <- if (p_total > p_coord) unname(beta[(p_coord + 1L):p_total]) else numeric(0)
     for (server in server_list) {
@@ -288,20 +309,22 @@ NULL
     for (server in server_list) {
       ci <- which(server_names == server)
       peer <- setdiff(server_list, server)
-      .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS", session_id = session_id))
       r <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
         peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       r1_results[[server]] <- r
     }
-    .sendBlob(r1_results[[coordinator]]$encrypted_r1, "k2_grad_peer_r1", nl_conn)
-    .sendBlob(r1_results[[nl]]$encrypted_r1, "k2_grad_peer_r1", coordinator_conn)
+    .sendBlob(r1_results[[coordinator]]$encrypted_r1,
+              r1_results[[coordinator]]$encrypted_r1_transfer, nl_conn)
+    .sendBlob(r1_results[[nl]]$encrypted_r1,
+              r1_results[[nl]]$encrypted_r1_transfer, coordinator_conn)
     grad_results <- list()
     for (server in server_list) {
       ci <- which(server_names == server)
       is_coord <- (server == coordinator)
       r <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
-        party_id = if(is_coord) 0L else 1L, session_id = session_id))
+        party_id = if(is_coord) 0L else 1L,
+        peer_name = setdiff(server_list, server), session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       grad_results[[server]] <- r
     }
@@ -415,6 +438,7 @@ NULL
   for (jj in seq_len(p_plus1)) {
     th_p <- theta_conv; th_p[jj] <- th_p[jj] + delta_se
     int_p <- th_p[1]; bet_p <- th_p[-1]
+    .dsvert_numeric_assert_eta_bound(bet_p, int_p, numeric_certificate)
     bet_p_coord <- if (p_coord > 0L) bet_p[seq_len(p_coord)] else numeric(0)
     bet_p_nl <- if (p_total > p_coord) bet_p[(p_coord + 1L):p_total] else numeric(0)
     for (server in server_list) {
@@ -461,10 +485,10 @@ NULL
       ring = ring,
       .dsAgg = .dsAgg,
       .sendBlob = .sendBlob)
-    r1p<-list(); for(server in server_list){ci<-which(server_names==server);peer<-setdiff(server_list,server);.dsAgg(datasources[ci],call(name = "k2StoreGradTripleDS",session_id=session_id));r<-.dsAgg(datasources[ci],call(name = "k2GradientR1DS",peer_pk=transport_pks[[peer]],session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r1p[[server]]<-r}
-    .sendBlob(r1p[[coordinator]]$encrypted_r1,"k2_grad_peer_r1",nl_conn)
-    .sendBlob(r1p[[nl]]$encrypted_r1,"k2_grad_peer_r1",coordinator_conn)
-    r2p<-list(); for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(name = "k2GradientR2DS",party_id=if(is_coord)0L else 1L,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r2p[[server]]<-r}
+    r1p<-list(); for(server in server_list){ci<-which(server_names==server);peer<-setdiff(server_list,server);r<-.dsAgg(datasources[ci],call(name = "k2GradientR1DS",peer_pk=transport_pks[[peer]],session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r1p[[server]]<-r}
+    .sendBlob(r1p[[coordinator]]$encrypted_r1,r1p[[coordinator]]$encrypted_r1_transfer,nl_conn)
+    .sendBlob(r1p[[nl]]$encrypted_r1,r1p[[nl]]$encrypted_r1_transfer,coordinator_conn)
+    r2p<-list(); for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(name = "k2GradientR2DS",party_id=if(is_coord)0L else 1L,peer_name=setdiff(server_list,server),session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r2p[[server]]<-r}
     ag<-dsVert:::.callMpcTool("k2-ring63-aggregate",list(share_a=r2p[[coordinator]]$gradient_fp,share_b=r2p[[nl]]$gradient_fp,frac_bits=frac_bits,ring=ring_tag))
     ar<-dsVert:::.callMpcTool("k2-ring63-aggregate",list(share_a=r1p[[coordinator]]$sum_residual_fp,share_b=r1p[[nl]]$sum_residual_fp,frac_bits=frac_bits,ring=ring_tag))
     gp<-c(ar$values[1]/n_obs,ag$values/n_obs)+lambda*th_p
@@ -472,6 +496,7 @@ NULL
     # Backward perturbation for central difference
     th_m <- theta_conv; th_m[jj] <- th_m[jj] - delta_se
     int_m <- th_m[1]; bet_m <- th_m[-1]
+    .dsvert_numeric_assert_eta_bound(bet_m, int_m, numeric_certificate)
     bet_m_coord <- if (p_coord > 0L) bet_m[seq_len(p_coord)] else numeric(0)
     bet_m_nl <- if (p_total > p_coord) bet_m[(p_coord + 1L):p_total] else numeric(0)
     for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);.dsAgg(datasources[ci],call(name = "k2ComputeEtaShareDS",beta_coord=bet_m_coord,beta_nl=bet_m_nl,intercept=if(is_coord)int_m else 0,is_coordinator=is_coord,session_id=session_id))}
@@ -490,9 +515,9 @@ NULL
         ring = ring)
     }
     .ot_beaver_prepare_grad(datasources=datasources,party_conns=c(coordinator_conn,nl_conn),party_names=c(coordinator,nl),transport_pks=transport_pks,session_id=session_id,n=n_obs,p=p_total,ring=ring,.dsAgg=.dsAgg,.sendBlob=.sendBlob)
-    r1b<-list();for(server in server_list){ci<-which(server_names==server);peer<-setdiff(server_list,server);.dsAgg(datasources[ci],call(name = "k2StoreGradTripleDS",session_id=session_id));r<-.dsAgg(datasources[ci],call(name = "k2GradientR1DS",peer_pk=transport_pks[[peer]],session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r1b[[server]]<-r}
-    .sendBlob(r1b[[coordinator]]$encrypted_r1,"k2_grad_peer_r1",nl_conn);.sendBlob(r1b[[nl]]$encrypted_r1,"k2_grad_peer_r1",coordinator_conn)
-    r2b<-list();for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(name = "k2GradientR2DS",party_id=if(is_coord)0L else 1L,session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r2b[[server]]<-r}
+    r1b<-list();for(server in server_list){ci<-which(server_names==server);peer<-setdiff(server_list,server);r<-.dsAgg(datasources[ci],call(name = "k2GradientR1DS",peer_pk=transport_pks[[peer]],session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r1b[[server]]<-r}
+    .sendBlob(r1b[[coordinator]]$encrypted_r1,r1b[[coordinator]]$encrypted_r1_transfer,nl_conn);.sendBlob(r1b[[nl]]$encrypted_r1,r1b[[nl]]$encrypted_r1_transfer,coordinator_conn)
+    r2b<-list();for(server in server_list){ci<-which(server_names==server);is_coord<-(server==coordinator);r<-.dsAgg(datasources[ci],call(name = "k2GradientR2DS",party_id=if(is_coord)0L else 1L,peer_name=setdiff(server_list,server),session_id=session_id));if(is.list(r)&&length(r)==1)r<-r[[1]];r2b[[server]]<-r}
     agb<-dsVert:::.callMpcTool("k2-ring63-aggregate",list(share_a=r2b[[coordinator]]$gradient_fp,share_b=r2b[[nl]]$gradient_fp,frac_bits=frac_bits,ring=ring_tag))
     arb<-dsVert:::.callMpcTool("k2-ring63-aggregate",list(share_a=r1b[[coordinator]]$sum_residual_fp,share_b=r1b[[nl]]$sum_residual_fp,frac_bits=frac_bits,ring=ring_tag))
     gm<-c(arb$values[1]/n_obs,agb$values/n_obs)+lambda*th_m
@@ -545,6 +570,7 @@ NULL
 
   # Recompute eta from converged beta (SE computation may have overwritten shares)
   # Guard zero-length peer slice (sleepstudy-style p_nl == 0 case).
+  .dsvert_numeric_assert_eta_bound(beta, intercept, numeric_certificate)
   for (s in server_list) {
     ci <- which(server_names == s); is_coord <- (s == coordinator)
     b_coord <- if (p_coord > 0L) beta[seq_len(p_coord)] else numeric(0)
@@ -553,6 +579,17 @@ NULL
       beta_coord = b_coord, beta_nl = b_nl, intercept = intercept,
       is_coordinator = is_coord, session_id = session_id))
   }
+  .glm_refresh_final_mean(
+    family = family, datasources = datasources,
+    server_list = dcf_parties, server_names = server_names,
+    session_id = session_id, .dsAgg = .dsAgg,
+    link_args = list(
+      n = n_obs, datasources = datasources, dealer_ci = nl_conn,
+      server_list = dcf_parties, server_names = server_names,
+      y_server = coordinator, nl = nl, transport_pks = transport_pks,
+      session_id = session_id, .dsAgg = .dsAgg, .sendBlob = .sendBlob
+    )
+  )
 
   # Helper: run one Beaver dot-product (nx1) and return aggregated scalar
   .beaver_dot <- function() {
@@ -570,18 +607,20 @@ NULL
     dr1 <- list()
     for (s in server_list) {
       ci <- which(server_names == s); peer <- setdiff(server_list, s)
-      .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS", session_id = session_id))
       r <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
         peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]; dr1[[s]] <- r
     }
-    .sendBlob(dr1[[coordinator]]$encrypted_r1, "k2_grad_peer_r1", nl_conn)
-    .sendBlob(dr1[[nl]]$encrypted_r1, "k2_grad_peer_r1", coordinator_conn)
+    .sendBlob(dr1[[coordinator]]$encrypted_r1,
+              dr1[[coordinator]]$encrypted_r1_transfer, nl_conn)
+    .sendBlob(dr1[[nl]]$encrypted_r1,
+              dr1[[nl]]$encrypted_r1_transfer, coordinator_conn)
     dr2 <- list()
     for (s in server_list) {
       ci <- which(server_names == s); is_c <- (s == coordinator)
       r <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
-        party_id = if(is_c) 0L else 1L, session_id = session_id))
+        party_id = if(is_c) 0L else 1L,
+        peer_name = setdiff(server_list, s), session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]; dr2[[s]] <- r
     }
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
@@ -626,7 +665,8 @@ NULL
       n = n_obs, datasources = datasources, dealer_ci = nl_conn,
       server_list = dcf_parties, server_names = server_names,
       y_server = coordinator, nl = nl, transport_pks = transport_pks,
-      session_id = session_id, .dsAgg = .dsAgg, .sendBlob = .sendBlob)
+      session_id = session_id, .dsAgg = .dsAgg, .sendBlob = .sendBlob,
+      producer_bound_glm = TRUE)
     # Step 2: get Sumsoftplus from both parties
     sums <- list()
     for (s in server_list) {
@@ -690,24 +730,38 @@ NULL
 # variance-ratio (a single constant cluster), solve beta = (X'X)^-1 X'y on the
 # coordinator, and return the same loop-result contract as the iterative path so
 # ds.vertGLM's standardization / SE / deviance assembly is unchanged. The Fisher
-# information handed back as `raw_hessian` = X'X/n + lambda*I is exactly what the
-# SE step expects (it strips lambda, inverts, and scales by residual variance,
-# reproducing lm() inference). Round count is a public function of the feature
+# information handed back as `raw_hessian` = X'X/n is exactly what the SE step
+# expects for this unpenalized path. Positive lambda, offsets, and Ring127 are
+# routed away before entry. Round count is a public function of the feature
 # partition only -- one deterministic solve, no data-dependent iteration.
 .k2_gaussian_oneshot <- function(datasources, server_names, coordinator, nl,
                                  x_vars, y_var, std_data, transport_pks,
                                  session_id, lambda, n_obs,
+                                 offset_active = FALSE, ring = 63L,
                                  compute_se = TRUE, compute_deviance = TRUE,
                                  verbose = FALSE) {
-  if (is.null(lambda)) lambda <- 1e-4
+  if (is.null(lambda)) lambda <- 0
+  if (!is.numeric(lambda) || length(lambda) != 1L || !is.finite(lambda) ||
+      lambda != 0) {
+    stop("Gaussian one-shot implements only the unpenalized lambda = 0 fit",
+         call. = FALSE)
+  }
+  if (isTRUE(offset_active)) {
+    stop("Gaussian one-shot does not implement offsets", call. = FALSE)
+  }
+  if (!identical(as.integer(ring), 63L)) {
+    stop("Gaussian one-shot currently implements only Ring63",
+         call. = FALSE)
+  }
   ci_c <- which(server_names == coordinator)
   ci_n <- which(server_names == nl)
   # Seed one constant cluster on both parties so the LMM Gram driver's
   # zero-variance-ratio path degenerates to the ordinary normal equations.
-  for (ci in list(ci_c, ci_n))
-    DSI::datashield.aggregate(datasources[ci],
-      call(name = "k2SeedSingleClusterDS", data_name = std_data,
-           session_id = session_id))
+  .dsvert_aggregate_strict(
+    datasources[c(ci_c, ci_n)],
+    call(name = "k2SeedSingleClusterDS", data_name = std_data,
+         session_id = session_id),
+    operation = "Gaussian one-shot cluster initialization")
   cf <- .ds_vertLMM_closed_form(
     conns = datasources, server_names = server_names,
     y_srv = coordinator, peer_srv = nl,
@@ -727,7 +781,7 @@ NULL
   else NA_real_
   inv_hessian <- list()
   if (isTRUE(compute_se)) {
-    H_raw <- as.matrix(cf$XtX[nm, nm]) / n_obs + lambda * diag(length(nm))
+    H_raw <- as.matrix(cf$XtX[nm, nm]) / n_obs
     dimnames(H_raw) <- list(nm, nm)
     attr(inv_hessian, "raw_hessian") <- H_raw
   }

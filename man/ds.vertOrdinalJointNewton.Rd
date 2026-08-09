@@ -2,8 +2,7 @@
 % Please edit documentation in R/ds.vertOrdinalJointNewton.R
 \name{ds.vertOrdinalJointNewton}
 \alias{ds.vertOrdinalJointNewton}
-\title{Federated joint proportional-odds ordinal regression via
-Ring127 MPC-orchestrated Newton iteration}
+\title{Quarantined proportional-odds Newton compatibility frontdoor}
 \usage{
 ds.vertOrdinalJointNewton(
   formula,
@@ -20,69 +19,20 @@ ds.vertOrdinalJointNewton(
 )
 }
 \arguments{
-\item{formula}{Ordered outcome on LHS.}
-
-\item{data}{Aligned data name.}
-
-\item{levels_ordered}{Character vector of ordered levels (low -> high).}
-
-\item{cumulative_template}{e.g. \code{"\%s_leq"} for Y <= k indicator.}
-
-\item{max_outer}{Outer Newton iterations.}
-
-\item{tol}{Convergence tolerance on \eqn{\|\Delta (\beta, \theta)\|_\infty}.}
-
-\item{warm_max_iter}{Optional maximum iterations for each internal
-binomial warm-start GLM.}
-
-\item{warm_tol}{Optional tolerance for each internal binomial warm-start
-GLM.}
-
-\item{binomial_sigmoid_intervals}{Optional DCF spline interval count for
-internal binomial warm-start GLMs.}
-
-\item{verbose}{Logical.}
-
-\item{datasources}{DataSHIELD connections.}
+\item{formula, data, levels_ordered, cumulative_template, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 }
 \value{
-\code{ds.vertOrdinalJointNewton} object.
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Strict K=2 share-domain proportional-odds Newton route by
-default. Patient-level linear predictors, class probabilities,
-reciprocals, and score terms remain Ring127 shares; the client receives
-only guarded class counts, aggregate score/Hessian probes, and final
-model parameters. The older per-patient reconstruction route has been
-removed from the product package.
-
-For a K-level ordered outcome
-the PO log-likelihood is
-\deqn{\ell(\beta, \theta) = \sum_i \log[F(\theta_{y_i} - \eta_i)
-                                           - F(\theta_{y_i-1} - \eta_i)],}
-with \eqn{F = \mathrm{sigmoid}}, \eqn{\eta_i = X_i \beta},
-\eqn{\theta_0 = -\infty}, \eqn{\theta_K = +\infty}. Score:
-\deqn{\partial \ell / \partial \beta_j = -\sum_i x_{ij} \cdot
-          \frac{f(\theta_{y_i}-\eta_i) - f(\theta_{y_i-1}-\eta_i)}
-               {F(\theta_{y_i}-\eta_i) - F(\theta_{y_i-1}-\eta_i)},}
-with \eqn{f(u) = F(u)(1-F(u))}.
-
-MPC pipeline per outer Newton iter:
-\enumerate{
-\item Compute \eqn{\eta} share via \code{k2ComputeEtaShareDS}.
-\item For each threshold \eqn{k}: compute \eqn{\theta_k - \eta}
-share via affine-combine (plaintext \eqn{\theta_k} public).
-\item Apply exp + recip on \eqn{\theta_k - \eta} -> \eqn{F_k} share
-(\eqn{F(u) = 1/(1+\exp(-u)) = e^u/(1+e^u)} -- evaluated as
-\code{exp(u) * (1/(1+exp(u)))} via existing primitives).
-\item \eqn{f_k = F_k (1 - F_k)} via Beaver vecmul.
-\item Per-patient residual numerator/denominator built from
-indicator-weighted differences (done on outcome server
-since it holds \eqn{y_i} plaintext).
-\item \code{.ring127_recip_round_keyed} on the F-difference share.
-\item Beaver vecmul (f-diff) * (1/F-diff) -> \eqn{T_i} share.
-\item Beaver matvec \eqn{X^\top T} -> aggregate score for \eqn{\beta}.
-\item Client Newton on stacked \eqn{(\beta, \theta)} using an
-aggregate finite-difference Hessian over share-domain scores.
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and returns no ordinal fit. Retained Newton/MPC code after the gate
+is unreachable through this public frontdoor and carries no disclosure,
+DP, accuracy, or availability claim.
 }
+\seealso{
+\code{\link{ds.vertMethodStatus}}
 }

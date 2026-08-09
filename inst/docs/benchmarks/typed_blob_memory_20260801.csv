@@ -1,0 +1,5 @@
+"payload_mib","payload_chars","frame_chars","frames","dsi_calls","wall_seconds","throughput_mib_s","max_rss_bytes","baseline_max_rss_bytes","rss_delta_bytes","source_memory_model","integrity"
+1,1048576,655360,2,3,0.0760000000000001,13.1578947368421,150634496,142884864,7749632,"O(payload)","sha256_identical"
+16,16777216,655360,26,27,0.234,68.3760683760684,194887680,142884864,52002816,"O(payload)","sha256_identical"
+64,67108864,655360,103,104,0.693,92.3520923520924,370884608,142884864,227999744,"O(payload)","sha256_identical"
+128,134217728,655360,205,206,1.436,89.1364902506964,436256768,142884864,293371904,"O(payload)","sha256_identical"

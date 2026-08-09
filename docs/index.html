@@ -11,8 +11,8 @@
 <script src="deps/bootstrap-5.3.1/bootstrap.bundle.min.js"></script><link href="deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
 <script src="deps/headroom-0.11.0/headroom.min.js"></script><script src="deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="deps/search-1.0.0/fuse.min.js"></script><script src="deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="pkgdown.js"></script><meta property="og:title" content="DataSHIELD Client Functions for Vertically Partitioned Data">
-<meta name="description" content="Client-side DataSHIELD functions for privacy-preserving analysis of vertically partitioned federated data. Provides record alignment, GLM, Cox PH, negative binomial, multinomial, ordinal, LMM, GEE, GLMM, IPW, multiple imputation, LASSO, contingency, correlation, PCA, and descriptive workflows over the companion dsVert server package. Exported routes use the non-disclosive product surface; disclosive or materially suboptimal historical routes have been removed from the user API.">
-<meta property="og:description" content="Client-side DataSHIELD functions for privacy-preserving analysis of vertically partitioned federated data. Provides record alignment, GLM, Cox PH, negative binomial, multinomial, ordinal, LMM, GEE, GLMM, IPW, multiple imputation, LASSO, contingency, correlation, PCA, and descriptive workflows over the companion dsVert server package. Exported routes use the non-disclosive product surface; disclosive or materially suboptimal historical routes have been removed from the user API.">
+<meta name="description" content="Client-side DataSHIELD functions for privacy-aware analysis of vertically partitioned federated data. The audited active surface covers record alignment, reusable differential-privacy capsules, bounded descriptives, categorical tables, epidemiological post-processing, correlation, PCA and selected Gaussian and penalised research workflows over the companion dsVert server package. Public names for Cox PH, negative-binomial, multinomial, ordinal, LMM, GEE, GLMM, IPW, multiple imputation and other historical workflows are retained for discovery and migration, but unavailable routes fail locally before DSI. An audited maturity registry distinguishes conditional promoted methods, provisional research routes, historical compatibility helpers and quarantined estimators. Peer pinning and MPC protect protocol intermediates. Dedicated ds.vertDP* releases use a persistent, memoizing, cross-signed publication ledger with server-owned contribution bounds. Composition history is informational and never an operation or request quota; legacy exact outputs remain outside that DP guarantee and do not support a non-reconstruction claim under unlimited adaptive queries.">
+<meta property="og:description" content="Client-side DataSHIELD functions for privacy-aware analysis of vertically partitioned federated data. The audited active surface covers record alignment, reusable differential-privacy capsules, bounded descriptives, categorical tables, epidemiological post-processing, correlation, PCA and selected Gaussian and penalised research workflows over the companion dsVert server package. Public names for Cox PH, negative-binomial, multinomial, ordinal, LMM, GEE, GLMM, IPW, multiple imputation and other historical workflows are retained for discovery and migration, but unavailable routes fail locally before DSI. An audited maturity registry distinguishes conditional promoted methods, provisional research routes, historical compatibility helpers and quarantined estimators. Peer pinning and MPC protect protocol intermediates. Dedicated ds.vertDP* releases use a persistent, memoizing, cross-signed publication ledger with server-owned contribution bounds. Composition history is informational and never an operation or request quota; legacy exact outputs remain outside that DP guarantee and do not support a non-reconstruction claim under unlimited adaptive queries.">
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -32,48 +32,6 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
-  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
-<li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Validation</h6></li>
-    <li><a class="dropdown-item" href="articles/validation_summary.html">Validation evidence summary</a></li>
-    <li><a class="dropdown-item" href="articles/validation_psi_k2.html">PSI alignment validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_psi_kge3.html">PSI alignment validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_descriptive_k2.html">Descriptive statistics validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_descriptive_kge3.html">Descriptive statistics validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_contingency_k2.html">Contingency tests validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_contingency_kge3.html">Contingency tests validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_correlation_k2.html">Correlation validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_correlation_kge3.html">Correlation validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_pca_k2.html">PCA validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_pca_kge3.html">PCA validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_glm_k2.html">GLM validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_glm_kge3.html">GLM validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_inference_k2.html">GLM inference validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_inference_kge3.html">GLM inference validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_lasso_k2.html">LASSO validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_lasso_kge3.html">LASSO validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_negative_binomial_k2.html">Negative binomial validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_negative_binomial_kge3.html">Negative binomial validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_cox_k2.html">Cox PH validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_cox_kge3.html">Cox PH validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_lmm_k2.html">LMM validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_lmm_kge3.html">LMM validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_gee_k2.html">GEE validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_gee_kge3.html">GEE validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_glmm_k2.html">GLMM validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_glmm_kge3.html">GLMM validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_ipw_k2.html">IPW validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_ipw_kge3.html">IPW validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_mi_k2.html">Multiple imputation validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_mi_kge3.html">Multiple imputation validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_multinomial_k2.html">Multinomial validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_multinomial_kge3.html">Multinomial validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_ordinal_k2.html">Ordinal validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="articles/validation_ordinal_kge3.html">Ordinal validation (K&gt;=3)</a></li>
-  </ul>
-</li>
 <li class="nav-item"><a class="nav-link" href="news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
@@ -91,11 +49,13 @@
   <main id="main" class="col-md-9"><div class="section level1">
 <div class="page-header"><h1 id="dsvertclient---datashield-client-for-vertically-partitioned-data">dsVertClient - DataSHIELD Client for Vertically Partitioned Data<a class="anchor" aria-label="anchor" href="#dsvertclient---datashield-client-for-vertically-partitioned-data"></a>
 </h1></div>
-<p><a href="https://opensource.org/licenses/MIT" class="external-link"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a> <a href="NEWS.html"><img src="https://img.shields.io/badge/version-1.1.0-blue.svg" alt="Version"></a></p>
+<p><a href="https://opensource.org/licenses/MIT" class="external-link"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a> <a href="https://isglobal-brge.github.io/dsVertClient/news/index.html"><img src="https://img.shields.io/badge/version-1.1.0-blue.svg" alt="Version"></a></p>
 <div class="section level2">
 <h2 id="overview">Overview<a class="anchor" aria-label="anchor" href="#overview"></a>
 </h2>
-<p><strong>dsVertClient</strong> provides user-friendly R functions for privacy-preserving analysis on vertically partitioned data across DataSHIELD servers. The analyst calls simple functions; all cryptographic protocols (ECDH-PSI, Ring63 / Ring127 Beaver MPC, DCF wide-spline, OT-Beaver dishonest-majority triples, X25519 + AES-256-GCM transport, Ed25519 identity verification) run transparently.</p>
+<p><strong>dsVertClient</strong> provides R workflows for privacy-aware analysis of vertically partitioned data across DataSHIELD servers. It combines ECDH-PSI, Ring63 / Ring127 additive sharing, dealer-free IKNP OT-extension preprocessing, peer-to-peer authenticated encryption and Ed25519 server identity pinning.</p>
+<p>Method maturity is intentionally explicit. Run <code><a href="reference/ds.vertMethodStatus.html">ds.vertMethodStatus()</a></code> before choosing a route: only a small conditional surface is currently <code>promoted</code>; the main distributed estimators remain <code>provisional</code>, <code>compatibility</code>, or <code>quarantine</code> while their numerical, disclosure and biomedical contracts are closed.</p>
+<p>All connected servers must expose dsVert’s single immutable <code>disclosure_safe</code> profile. There is no client or server switch that enables an exact legacy release plane; methods still awaiting migration return an explicit unavailable/migration error instead of falling back silently.</p>
 <p>Pair with the server-side companion package <a href="https://github.com/isglobal-brge/dsVert" class="external-link"><strong>dsVert</strong></a>.</p>
 </div>
 <div class="section level2">
@@ -108,31 +68,73 @@
 <span><span class="va">conns</span> <span class="op">&lt;-</span> <span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.login.html" class="external-link">datashield.login</a></span><span class="op">(</span>logins <span class="op">=</span> <span class="va">builder</span><span class="op">$</span><span class="fu">build</span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.assign.table.html" class="external-link">datashield.assign.table</a></span><span class="op">(</span><span class="va">conns</span>, <span class="st">"D"</span>, <span class="st">"project.data"</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 1. Align records (NAs removed automatically, like glm na.omit)</span></span>
-<span><span class="fu"><a href="reference/ds.psiAlign.html">ds.psiAlign</a></span><span class="op">(</span><span class="st">"D"</span>, <span class="st">"patient_id"</span>, <span class="st">"DA"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="co"># 1. Align records without mutating the source table</span></span>
+<span><span class="fu"><a href="reference/ds.psiAlign.html">ds.psiAlign</a></span><span class="op">(</span><span class="st">"D"</span>, <span class="st">"patient_id"</span>, <span class="st">"DA"</span>, na.action <span class="op">=</span> <span class="st">"na.omit"</span>,</span>
+<span>            datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 2. Fit a federated GLM (auto-detects which server has each variable)</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertGLM.html">ds.vertGLM</a></span><span class="op">(</span><span class="va">diabetes</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">glu</span> <span class="op">+</span> <span class="va">bp</span>,</span>
-<span>                  data <span class="op">=</span> <span class="st">"DA"</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
-<span>                  datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co"># 2. Inspect the immutable server policy and signed, data-free capsule plan</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPStatus.html">ds.vertDPStatus</a></span><span class="op">(</span><span class="va">conns</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPCapsulePlan.html">ds.vertDPCapsulePlan</a></span><span class="op">(</span><span class="va">conns</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 3. Cox PH via the non-disclosive Breslow profile route</span></span>
-<span><span class="va">cox</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertCoxProfileNonDisclosive.html">ds.vertCoxProfileNonDisclosive</a></span><span class="op">(</span></span>
-<span>  <span class="fu">survival</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/survival/man/Surv.html" class="external-link">Surv</a></span><span class="op">(</span><span class="va">time</span>, <span class="va">event</span><span class="op">)</span> <span class="op">~</span> <span class="va">age</span> <span class="op">+</span> <span class="va">bmi</span> <span class="op">+</span> <span class="va">bp</span>,</span>
-<span>  data <span class="op">=</span> <span class="st">"DA"</span>,</span>
-<span>  datasources <span class="op">=</span> <span class="va">conns</span></span>
-<span><span class="op">)</span></span>
+<span><span class="co"># 3. Obtain one sticky bounded Gaussian capsule and reuse it for analysis</span></span>
+<span><span class="va">gaussian</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertDPGaussian.html">ds.vertDPGaussian</a></span><span class="op">(</span><span class="st">"DA"</span>, <span class="st">"gaussian_primary"</span>,</span>
+<span>                              datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span></span>
-<span><span class="co"># 4. Correlation + PCA</span></span>
-<span><span class="va">cor</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertCor.html">ds.vertCor</a></span><span class="op">(</span><span class="st">"DA"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="co"># 4. Correlation + PCA from the same authorised Gaussian artifact</span></span>
+<span><span class="co"># The admin-declared Gaussian artifact may be same-owner or cross-owner. All</span></span>
+<span><span class="co"># variables use its one signed, secret complete-case mask.</span></span>
+<span><span class="va">cor</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertCor.html">ds.vertCor</a></span><span class="op">(</span></span>
+<span>  <span class="st">"DA"</span>, variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>site_a <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"age"</span>, <span class="st">"bmi"</span>, <span class="st">"glu"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  analysis_id <span class="op">=</span> <span class="st">"gaussian_primary"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
 <span><span class="va">pca</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertPCA.html">ds.vertPCA</a></span><span class="op">(</span>cor_result <span class="op">=</span> <span class="va">cor</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu">DSI</span><span class="fu">::</span><span class="fu"><a href="https://datashield.github.io/DSI/reference/datashield.logout.html" class="external-link">datashield.logout</a></span><span class="op">(</span><span class="va">conns</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="functions-v110">Functions (v1.1.0)<a class="anchor" aria-label="anchor" href="#functions-v110"></a>
+<h2 id="differentially-private-releases">Differentially private releases<a class="anchor" aria-label="anchor" href="#differentially-private-releases"></a>
 </h2>
+<p>The package can inspect—never change—the immutable DP policy and run a public, data-free utility preview. The signed biomedical capsule covers count, table, moment, Gaussian-model and survival artifacts. Its deterministic selector uses the exact-GC one-draw Laplace route for a scalar vector, the scalable two-complete-draw Laplace convolution for wider vectors, or the formal fixed-work dyadic discrete-Gaussian backend when its exact server plan strictly improves the certified simultaneous radius. The preview does not impersonate that decision: the signed server manifest is authoritative.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="reference/ds.vertDPCalibrate.html">ds.vertDPCalibrate</a></span><span class="op">(</span>capsule_epsilon <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">3</span>, <span class="fl">5</span><span class="op">)</span>,</span>
+<span>                   peer_count <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">conns</span><span class="op">)</span>,</span>
+<span>                   sensitivity <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPStatus.html">ds.vertDPStatus</a></span><span class="op">(</span><span class="va">conns</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPCapsulePlan.html">ds.vertDPCapsulePlan</a></span><span class="op">(</span><span class="va">conns</span><span class="op">)</span> <span class="co"># signed dry-run; no data access or release</span></span>
+<span><span class="co"># Sticky joint-DP capsule post-processing routes:</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPCount.html">ds.vertDPCount</a></span><span class="op">(</span><span class="st">"DA"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPContingency.html">ds.vertDPContingency</a></span><span class="op">(</span><span class="st">"DA"</span>, <span class="st">"exposure"</span>, <span class="st">"outcome"</span>,</span>
+<span>                     datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="va">frequency</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertDPFrequency.html">ds.vertDPFrequency</a></span><span class="op">(</span><span class="st">"DA"</span>, <span class="st">"exposure"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPFrequencyInference.html">ds.vertDPFrequencyInference</a></span><span class="op">(</span><span class="va">frequency</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPMeanVar.html">ds.vertDPMeanVar</a></span><span class="op">(</span><span class="st">"DA"</span>, <span class="st">"age"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPDescribe.html">ds.vertDPDescribe</a></span><span class="op">(</span><span class="st">"DA"</span>, <span class="st">"primary"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="va">gaussian</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertDPGaussian.html">ds.vertDPGaussian</a></span><span class="op">(</span><span class="st">"DA"</span>, <span class="st">"gaussian_primary"</span>,</span>
+<span>                              datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="va">surv</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/ds.vertDPSurvival.html">ds.vertDPSurvival</a></span><span class="op">(</span><span class="st">"DA"</span>, <span class="st">"primary"</span>, datasources <span class="op">=</span> <span class="va">conns</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPKaplanMeier.html">ds.vertDPKaplanMeier</a></span><span class="op">(</span><span class="va">surv</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPSurvivalQuantile.html">ds.vertDPSurvivalQuantile</a></span><span class="op">(</span><span class="va">surv</span>, probabilities <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.25</span>, <span class="fl">0.5</span>, <span class="fl">0.75</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPMedianSurvival.html">ds.vertDPMedianSurvival</a></span><span class="op">(</span><span class="va">surv</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPRMST.html">ds.vertDPRMST</a></span><span class="op">(</span><span class="va">surv</span>, tau <span class="op">=</span> <span class="fl">365</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/ds.vertDPRMTL.html">ds.vertDPRMTL</a></span><span class="op">(</span><span class="va">surv</span>, tau <span class="op">=</span> <span class="fl">365</span><span class="op">)</span></span>
+<span><span class="co"># Given a second compatible authorised release:</span></span>
+<span><span class="co"># ds.vertDPSurvivalContrast(surv_treated, surv_control)</span></span>
+<span><span class="co"># ds.vertDPRMSTContrast(surv_treated, surv_control, tau = 365)</span></span></code></pre></div>
+<p>The table wrapper itself intentionally reports no ordinary chi-square or Fisher p-value: their usual reference distributions ignore DP noise. <code><a href="reference/ds.vertChisq.html">ds.vertChisq()</a></code> provides a mechanism-aware independence bootstrap, while <code><a href="reference/ds.vertFisher.html">ds.vertFisher()</a></code> provides a signed-mechanism 2-by-2 conditional hypergeometric plug-in bootstrap. The latter is explicitly not Fisher-exact for the confidential table and returns no classical conditional odds-ratio interval. Both can reuse the same sticky release with zero additional DSI calls and zero additional privacy cost.</p>
+<p>Its public repeated-record policy is <code>consistent_cell_else_exclude_v1</code>: identical valid cells count once, conflicting valid cells make the unit contribute zero, and missing or out-of-domain rows do not create a conflict. No exact exclusion count is released; studies should report the resulting concordant-unit estimand.</p>
+<p>The production target has one durable capsule-publication chain, not one epsilon ledger per peer or per user operation. Pinned peers cross-sign the immutable snapshot/workload capsule, creation sequence, opening and exact payload commitments; retry, restart and lost acknowledgement must replay the same durable capsule without resampling. Every supported method over that capsule is unlimited post-processing: it cannot advance the chain, reduce accuracy or be denied because of earlier operations. A previously unseen capsule consumes one non-refundable lifetime unit at allocator commit, before protected-source access or sampling. The server-owned maximum <code>N</code> defaults to one and is valid only when exact arithmetic proves <code>N * epsilon &lt;= 8</code> and <code>N * delta &lt; 1</code>. Once exhausted, the client receives only <code>[dsvert_dp_lifetime_budget_exhausted:v1]</code>; this is not a request quota. For privacy and compatibility, the same terminal token also covers a capsule that cannot safely advance the requested release instance because its irrevocable instance claim or sole publication slot is already bound and the exact instance cannot continue or replay. It is an opaque union: it does not imply <code>remaining_distinct_capsules == 0</code>, and separate cause-specific errors would reveal state.</p>
+<p>Each capsule may have at most one public release instance. PREPARE persists only an authenticated candidate, so sibling candidates may coexist before a claim. At each designated peer, the first valid START atomically and irrevocably claims one release instance before local staged-source access or sampling. Source transport may already have staged encrypted protected material, but no noised share or public output exists at that boundary. Rotation may select a different candidate only before the claim. Afterwards only that exact instance may progress, restore or replay; after publication, state loss must restore and replay it or fail closed. Matching bilateral receipts prevent split sibling claims from producing a release under the at-least-one-non-colluding-peer model. With at least one non-colluding designated peer retaining and using complete authenticated monotonic history, a divergent rollback is rejected. Simultaneous rollback of both designated histories is outside the claim without an external linearizable CAS. The claim is scoped to <code>at_most_N_immutable_snapshot_workload_capsules_per_stable_privacy_accountant_namespace</code> and additionally assumes <code>authenticated_history_retention_assumption=at_least_one_noncolluding_designated_noise_peer_retains_and_uses_complete_authenticated_monotonic_history</code> and <code>privacy_accountant_namespace_assumption=one_stable_unique_namespace_across_domain_cohort_policy_pinset_and_ledger_reconfiguration_per_protected_privacy_universe</code>. That namespace continuity is currently custodian-managed: neither package enforces global uniqueness or automatically migrates reservations across reconfiguration. The signed biomedical vector and its supported post-processors use this complete sequence; reserved artifact families still fail before protected payload access.</p>
+<p>Server secrets bootstrap automatically into owner-only persistent storage; no analyst receives a root or derived seed. All DP DSI calls suppress raw server errors and reject partial site responses. The bounded lifetime claim remains conditional on root secrecy, correct pinned-peer operation and authenticated ledger integrity—not protection after host/root compromise or simultaneous history rollback outside the stated model. Public results expose this boundary as <code>dsvert-capsule-security-claim-v3</code>.</p>
+<p>The biomedical vector ABI is frozen as a pre-release baseline: signed PREPARE receipts use v6; signed START, RESULT, RELEASE and ACK receipts use v5; the authenticated STORE schema uses v6; its claim row and authenticated claim-set state use <code>dsvert-joint-dp-vector-instance-claim-v1</code> and <code>dsvert-joint-dp-vector-instance-claim-state-v1</code>; replay uses v4. Every signed receipt and replay response carries exactly <code>history_gate=TRUE</code>, <code>request_limit=FALSE</code>, and <code>operation_limit=TRUE</code>. Neither package automatically migrates or re-signs legacy v4/v5 stores. Deployment requires empty DP capsule state or a future audited offline migration; legacy state fails closed. This is compatible with the previous Opal environments because <code>POLICY_READY=FALSE</code>, no DP capsule was published, and local K-site state was ephemeral.</p>
+<p>Exact COMMIT/RELEASE endpoint replay and sticky replay within a live session are O(1). Cold end-to-end reconstruction after process restart returns through AllocationProof and performs a complete O(N) allocator-journal audit before the proof is returned. It remains privacy-free replay: no lifetime unit, new noise or protected-source read is involved.</p>
+<p>The clean baseline additionally requires <code>dsvert-joint-dp-control-v3</code> and <code>dsvert-joint-dp-capsule-identity-v3</code>, which bind the lifetime fields and biomedical workload v7. V2 control/identity artifacts are legacy and fail closed; neither package migrates or re-signs them automatically. Deployment must use empty DP capsule state or a future audited offline migration.</p>
+<p><code><a href="reference/ds.vertDPStatus.html">ds.vertDPStatus()</a></code> accepts only joint-DP capsule status v5, cross-validates reservation and publication counts within the declared stable accountant namespace, and reports remaining distinct-capsule units separately from request limits. Exhaustion does not redefine consortium readiness; the status handshake is not proof that no second namespace exists for the same protected privacy universe.</p>
+<p><code><a href="reference/ds.vertSecurityStatus.html">ds.vertSecurityStatus()</a></code> consumes security-profile schema v4 and reports readiness per route. Its top-level <code>ready</code> field, compatibility field <code>biomedical_joint_dp_capsule_ready</code>, and server alias <code>formal_dp_claim_eligible</code> refer only to the custodian-attested surface plus the live policy/pinset/authenticated control-plane handshake. They do not prove that a particular dataset passes admission, that its manifest can be built, that a route’s numeric runtime is available, or that a live release will complete. The route map says <code>execution_readiness = "not_evaluated_requires_route_specific_preflight"</code> and separately reports formal GLM and formal Cox as not ready.</p>
+<p>The surface token is connector-neutral and is provisioned only by server administrators after an exact effective-inventory check. Opal stores it in the dedicated server profile; Armadillo/Rock may set it in the server/container environment. No client option or DSI argument carries an attestation, and an installed package never auto-attests. See <code>inst/docs/remote_surface_attestation_20260808.md</code> for the admin procedure.</p>
+</div>
+<div class="section level2">
+<h2 id="function-surface-v110-development-audit">Function surface (v1.1.0 development audit)<a class="anchor" aria-label="anchor" href="#function-surface-v110-development-audit"></a>
+</h2>
+<p>This is a capability index, not a claim that every route has the same maturity. Use the runtime registry for the authoritative status and limitation of each entry point.</p>
 <table class="table">
 <colgroup>
 <col width="50%">
@@ -156,11 +158,15 @@
 </td>
 </tr>
 <tr>
+<td><strong>Differential privacy</strong></td>
+<td>
+<code><a href="reference/ds.vertDPStatus.html">ds.vertDPStatus()</a></code>, <code><a href="reference/ds.vertDPCapsulePlan.html">ds.vertDPCapsulePlan()</a></code>, <code><a href="reference/ds.vertDPCalibrate.html">ds.vertDPCalibrate()</a></code>, <code><a href="reference/ds.vertDPCount.html">ds.vertDPCount()</a></code>, <code><a href="reference/ds.vertDPContingency.html">ds.vertDPContingency()</a></code>, <code><a href="reference/ds.vertDPFrequency.html">ds.vertDPFrequency()</a></code>, <code><a href="reference/ds.vertDPFrequencyInference.html">ds.vertDPFrequencyInference()</a></code>, <code><a href="reference/ds.vertDPMeanVar.html">ds.vertDPMeanVar()</a></code>, <code><a href="reference/ds.vertDPDescribe.html">ds.vertDPDescribe()</a></code>, <code><a href="reference/ds.vertDPQuantile.html">ds.vertDPQuantile()</a></code>, <code><a href="reference/ds.vertDPMedian.html">ds.vertDPMedian()</a></code>, <code><a href="reference/ds.vertDPGaussian.html">ds.vertDPGaussian()</a></code>, <code><a href="reference/ds.vertDPSurvival.html">ds.vertDPSurvival()</a></code>, <code><a href="reference/ds.vertDPSurvivalQuantile.html">ds.vertDPSurvivalQuantile()</a></code>, <code><a href="reference/ds.vertDPMedianSurvival.html">ds.vertDPMedianSurvival()</a></code>, <code><a href="reference/ds.vertDPSurvivalContrast.html">ds.vertDPSurvivalContrast()</a></code>, <code><a href="reference/ds.vertDPRMSTContrast.html">ds.vertDPRMSTContrast()</a></code>, <code><a href="reference/ds.vertDPEpi2x2.html">ds.vertDPEpi2x2()</a></code>, <code><a href="reference/ds.vertDPEpi2x2Inference.html">ds.vertDPEpi2x2Inference()</a></code>, <code><a href="reference/ds.vertDPMantelHaenszel.html">ds.vertDPMantelHaenszel()</a></code>, <code><a href="reference/ds.vertDPDiagnostic2x2.html">ds.vertDPDiagnostic2x2()</a></code>, <code><a href="reference/ds.vertDPDiagnostic2x2Inference.html">ds.vertDPDiagnostic2x2Inference()</a></code>, <code><a href="reference/ds.vertDPROC.html">ds.vertDPROC()</a></code>, <code><a href="reference/ds.vertDPDirectStandardizationInference.html">ds.vertDPDirectStandardizationInference()</a></code>, <code><a href="reference/ds.vertDPIndirectStandardizationInference.html">ds.vertDPIndirectStandardizationInference()</a></code>, <code><a href="reference/ds.vertDPCausalStandardization.html">ds.vertDPCausalStandardization()</a></code>, <code><a href="reference/ds.vertDPCausalStandardizationInference.html">ds.vertDPCausalStandardizationInference()</a></code> and the remaining direct/indirect standardisation, competing-risk, RMST, and RMTL post-processors</td>
+</tr>
+<tr>
 <td>
 <strong>GLM</strong> (gaussian / binomial / poisson)</td>
 <td>
-<code><a href="reference/ds.vertGLM.html">ds.vertGLM()</a></code> with <code>offset</code>, <code>weights</code>, <code>ring</code>, <code>binomial_sigmoid_intervals</code>, <code>keep_session</code>, <code>no_intercept</code>, <code>std_mode</code>
-</td>
+<code><a href="reference/ds.vertGLM.html">ds.vertGLM()</a></code> preserves the historical API. A compatible same- or cross-owner Gaussian request may delegate to <code><a href="reference/ds.vertDPGaussian.html">ds.vertDPGaussian()</a></code>; binomial/Poisson and other iterative routes stay gated until their formal capsule backends are production-ready.</td>
 </tr>
 <tr>
 <td><strong>Inference helpers</strong></td>
@@ -169,56 +175,45 @@
 </td>
 </tr>
 <tr>
-<td><strong>Survival</strong></td>
+<td><strong>Epidemiology from authorised aggregates</strong></td>
 <td>
-<code><a href="reference/ds.vertCox.html">ds.vertCox()</a></code> / <code><a href="reference/ds.vertCoxProfileNonDisclosive.html">ds.vertCoxProfileNonDisclosive()</a></code> (non-disclosive Breslow Cox PH), <code><a href="reference/ds.vertCoxDiscreteNonDisclosive.html">ds.vertCoxDiscreteNonDisclosive()</a></code> (pooled-logistic discrete survival); legacy rank/person-time routes removed</td>
+<code><a href="reference/ds.vertEpi2x2.html">ds.vertEpi2x2()</a></code>, <code><a href="reference/ds.vertMantelHaenszel.html">ds.vertMantelHaenszel()</a></code>, <code><a href="reference/ds.vertDirectStandardization.html">ds.vertDirectStandardization()</a></code>, <code><a href="reference/ds.vertIndirectStandardization.html">ds.vertIndirectStandardization()</a></code>
+</td>
+</tr>
+<tr>
+<td><strong>Survival</strong></td>
+<td>Sticky fixed-grid DP survival artifacts and their Kaplan–Meier, Nelson–Aalen, competing-risk, survival-quantile, RMST and RMTL post-processors are available. Cox frontdoors are retained but quarantined and fail before DSI until the formal Cox capsule is production-ready.</td>
 </tr>
 <tr>
 <td><strong>Negative binomial</strong></td>
-<td>
-<code>ds.vertNBFullRegTheta(variant = "full_reg_nd")</code> (default share-domain full-reg θ), <code><a href="reference/ds.vertNB.html">ds.vertNB()</a></code> / <code><a href="reference/ds.vertNBMoMTheta.html">ds.vertNBMoMTheta()</a></code> for lighter scalar-theta variants</td>
+<td>Historical names are retained but quarantined; no NB2 estimator is advertised as disclosure-safe until a complete bounded score/information capsule and validated joint inference are available.</td>
 </tr>
 <tr>
 <td><strong>Multinomial</strong></td>
 <td>
-<code><a href="reference/ds.vertMultinom.html">ds.vertMultinom()</a></code> / <code><a href="reference/ds.vertMultinomJointNewton.html">ds.vertMultinomJointNewton()</a></code> (joint softmax Newton); warm OVR is internal initialisation only</td>
+<code><a href="reference/ds.vertMultinom.html">ds.vertMultinom()</a></code> / <code><a href="reference/ds.vertMultinomJointNewton.html">ds.vertMultinomJointNewton()</a></code> are quarantined; slope models fail closed before DSI until a signed raw-design Gram workload exists</td>
 </tr>
 <tr>
 <td><strong>Ordinal (proportional odds)</strong></td>
-<td>
-<code><a href="reference/ds.vertOrdinal.html">ds.vertOrdinal()</a></code> / <code><a href="reference/ds.vertOrdinalJointNewton.html">ds.vertOrdinalJointNewton()</a></code> (joint proportional-odds Newton); warm cumulative-binomial is internal initialisation only</td>
+<td>Historical joint-Newton names are retained but quarantined and fail before DSI pending a formal bounded proportional-odds capsule.</td>
 </tr>
 <tr>
-<td><strong>Mixed models</strong></td>
-<td>
-<code><a href="reference/ds.vertLMM.html">ds.vertLMM()</a></code> (REML closed-form, K=2; random intercept + slopes), <code><a href="reference/ds.vertLMM.k3.html">ds.vertLMM.k3()</a></code> (REML 1-D profile, K&gt;=3), <code><a href="reference/ds.vertGEE.html">ds.vertGEE()</a></code> (sandwich SE, <code>binomial_sigmoid_intervals</code>), <code><a href="reference/ds.vertGLMM.html">ds.vertGLMM()</a></code> (binomial GLMM-PQL), <code><a href="reference/ds.vertGLMMLaplace.html">ds.vertGLMMLaplace()</a></code> / <code><a href="reference/ds.vert.aliases.html">ds.vert.glmer()</a></code> (binomial GLMM Laplace)</td>
+<td><strong>Mixed / clustered models</strong></td>
+<td>Historical LMM, GEE and GLMM routes; every public frontdoor is currently quarantined and fails before DSI as reported by <code><a href="reference/ds.vertMethodStatus.html">ds.vertMethodStatus()</a></code>
+</td>
 </tr>
 <tr>
 <td><strong>Causal / robustness</strong></td>
 <td>
-<code><a href="reference/ds.vertIPW.html">ds.vertIPW()</a></code> (propensity fit + protected weighted GLM using a server-side IPW column), <code><a href="reference/ds.vertMI.html">ds.vertMI()</a></code> (multiple imputation + Rubin pooling)</td>
+<code><a href="reference/ds.vertIPW.html">ds.vertIPW()</a></code> and <code><a href="reference/ds.vertMI.html">ds.vertMI()</a></code> are quarantined compatibility names; their retained implementations are respectively a known-weight workflow and server-local MI, not promoted end-to-end methods</td>
 </tr>
 <tr>
 <td><strong>Penalised regression</strong></td>
 <td>
-<code><a href="reference/ds.vertLASSO.html">ds.vertLASSO()</a></code>, <code><a href="reference/ds.vertLASSO1Step.html">ds.vertLASSO1Step()</a></code>, <code><a href="reference/ds.vertLASSOIter.html">ds.vertLASSOIter()</a></code> (Gaussian/binomial/Poisson standardized L1), <code><a href="reference/ds.vertLASSOCV.html">ds.vertLASSOCV()</a></code> (AIC / BIC / EBIC selector), <code><a href="reference/ds.vertLASSOProximal.html">ds.vertLASSOProximal()</a></code>
-</td>
+<code><a href="reference/ds.vertLASSOIter.html">ds.vertLASSOIter()</a></code> is quarantined; <code><a href="reference/ds.vertLASSO.html">ds.vertLASSO()</a></code> and <code><a href="reference/ds.vertLASSO1Step.html">ds.vertLASSO1Step()</a></code> are compatibility helpers; <code><a href="reference/ds.vertLASSOProximal.html">ds.vertLASSOProximal()</a></code> and the information-criterion (not cross-validation) selector <code><a href="reference/ds.vertLASSOCV.html">ds.vertLASSOCV()</a></code> are provisional</td>
 </tr>
 </tbody>
 </table>
-</div>
-<div class="section level2">
-<h2 id="output-sample-dsvertglm">Output sample (<code>ds.vertGLM</code>)<a class="anchor" aria-label="anchor" href="#output-sample-dsvertglm"></a>
-</h2>
-<pre><code>Coefficients:
-                Estimate Std.Error z value  Pr(&gt;|z|)
-(Intercept)     -9.2784    2.0981  -4.425  0.000010 ***
-age              0.0733    0.0223   3.301  0.000993 ***
-bmi              0.0798    0.0522   1.534  0.126024
-glu              0.0290    0.0101   2.878  0.004046 **
-
-Converged: TRUE (14 iterations)
-Deviance: 22.09</code></pre>
 </div>
 <div class="section level2">
 <h2 id="k2-vs-k3-support">K=2 vs K≥3 support<a class="anchor" aria-label="anchor" href="#k2-vs-k3-support"></a>
@@ -239,172 +234,83 @@ Deviance: 22.09</code></pre>
 <tbody>
 <tr>
 <td>GLM (gauss / binom / poisson)</td>
-<td>
-<code><a href="reference/ds.vertGLM.html">ds.vertGLM()</a></code> K=2 Beaver MPC</td>
-<td>
-<code><a href="reference/ds.vertGLM.html">ds.vertGLM()</a></code> secure-agg / DCF-pair route</td>
-<td>manual mapping aliases only</td>
+<td>Compatible same- or cross-owner Gaussian capsule adapter only; binomial/Poisson gated</td>
+<td>same, tested through K=5</td>
+<td>legacy iterative routes are not production claims</td>
 </tr>
 <tr>
 <td>Cox PH</td>
+<td>Formal capsule under internal validation; public frontdoors gated</td>
+<td>same</td>
 <td>
-<code><a href="reference/ds.vertCox.html">ds.vertCox()</a></code> / <code><a href="reference/ds.vertCoxProfileNonDisclosive.html">ds.vertCoxProfileNonDisclosive()</a></code>; discrete-time ND route also available</td>
-<td>same profile ND route</td>
-<td>
-<code>legacy_rank</code>, <code><a href="https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCox.k3.html">ds.vertCox.k3()</a></code> removed</td>
+<code>legacy_rank</code>, <code>ds.vertCox.k3()</code> removed</td>
 </tr>
 <tr>
 <td>Negative binomial</td>
-<td>
-<code>ds.vertNBFullRegTheta(variant = "full_reg_nd")</code>; iid/MoM scalar-theta variants</td>
-<td>same full-reg ND route; iid/MoM scalar-theta variants</td>
+<td>Quarantined pending bounded NB2 capsule and joint inference</td>
+<td>same</td>
 <td>disclosive <code>variant = "full_reg"</code> removed</td>
 </tr>
 <tr>
 <td>Multinomial</td>
-<td>
-<code><a href="reference/ds.vertMultinom.html">ds.vertMultinom()</a></code> / <code><a href="reference/ds.vertMultinomJointNewton.html">ds.vertMultinomJointNewton()</a></code>
+<td>Slope route unavailable pending signed <code>multinomial_design_grams</code>
 </td>
-<td>same joint softmax route</td>
-<td>warm / OVR final-estimator route removed from the exported API</td>
+<td>same</td>
+<td>unsafe local-moment/correlation Gram reconstruction and warm / OVR final-estimator route removed</td>
 </tr>
 <tr>
 <td>Ordinal</td>
-<td>
-<code><a href="reference/ds.vertOrdinal.html">ds.vertOrdinal()</a></code> / <code><a href="reference/ds.vertOrdinalJointNewton.html">ds.vertOrdinalJointNewton()</a></code>
-</td>
-<td>same proportional-odds route</td>
+<td>Quarantined pending a formal proportional-odds capsule</td>
+<td>same</td>
 <td>warm final-estimator and patient-level joint reconstruction routes removed from the exported API</td>
 </tr>
 <tr>
 <td>LMM</td>
-<td>
-<code><a href="reference/ds.vertLMM.html">ds.vertLMM()</a></code> K=2 closed form</td>
-<td>
-<code><a href="reference/ds.vertLMM.k3.html">ds.vertLMM.k3()</a></code> REML 1-D profile</td>
-<td>direct client-supplied cluster-vector helper is not product</td>
+<td>Historical K=2 route, quarantined</td>
+<td>Historical K&gt;=3 profile, quarantined; <code><a href="reference/ds.vertLMM.k3.html">ds.vertLMM.k3()</a></code> deprecated</td>
+<td>confirmatory inference not supported</td>
 </tr>
 <tr>
 <td>GEE</td>
-<td>
-<code><a href="reference/ds.vertGEE.html">ds.vertGEE()</a></code> exchangeable / guarded AR1</td>
-<td>same route</td>
-<td>unguarded order metadata not accepted</td>
+<td>All working-correlation modes are quarantined and fail before DSI</td>
+<td>same zero-DSI boundary</td>
+<td>robust cluster meat must remain entirely in MPC before promotion</td>
 </tr>
 <tr>
 <td>GLMM</td>
-<td>
-<code><a href="reference/ds.vertGLMM.html">ds.vertGLMM()</a></code> PQL and <code><a href="reference/ds.vertGLMMLaplace.html">ds.vertGLMMLaplace()</a></code> / <code><a href="reference/ds.vert.aliases.html">ds.vert.glmer()</a></code> Laplace</td>
-<td>same PQL and Laplace routes</td>
-<td>legacy EM and patient-level BLUP/probability routes removed</td>
+<td>Experimental PQL/Laplace routes, quarantined</td>
+<td>same maturity boundary</td>
+<td>valid final covariance/SE and safer cluster aggregation are incomplete</td>
 </tr>
 <tr>
 <td>IPW / MI / LASSO / Cor / PCA / Chisq / Desc</td>
-<td>product wrappers</td>
-<td>same product wrappers</td>
-<td>small-cell / high-dimensional diagnostics gated</td>
+<td>mixed maturity; query <code><a href="reference/ds.vertMethodStatus.html">ds.vertMethodStatus()</a></code>
+</td>
+<td>same</td>
+<td>exact legacy outputs remain subject to composition risk; signed capsule routes retain their explicit formal-DP contract</td>
 </tr>
 </tbody>
 </table>
-<p>See <code>inst/docs/product_surface.md</code> for the disclosure/accuracy status table used by the cleanup audit.</p>
+<p>See <code>inst/docs/product_surface.md</code> for the audited maturity surface.</p>
 </div>
 <div class="section level2">
 <h2 id="validation-evidence">Validation evidence<a class="anchor" aria-label="anchor" href="#validation-evidence"></a>
 </h2>
-<table class="table">
-<colgroup>
-<col width="25%">
-<col width="25%">
-<col width="25%">
-<col width="25%">
-</colgroup>
-<thead><tr>
-<th>Method</th>
-<th>max|Δβ|</th>
-<th>Reference</th>
-<th>Theoretical bound</th>
-</tr></thead>
-<tbody>
-<tr>
-<td>GLM binomial (Pima, K=2)</td>
-<td>3.18 × 10⁻⁴</td>
-<td>
-<code><a href="https://rdrr.io/r/stats/lm.html" class="external-link">lm()</a></code> / <code><a href="https://rdrr.io/r/stats/glm.html" class="external-link">glm()</a></code>
-</td>
-<td>Catrina-Saxena 2010 fp20</td>
-</tr>
-<tr>
-<td>Cox PH (NCCTG, Ring127)</td>
-<td>1.33 × 10⁻⁵</td>
-<td><code><a href="https://rdrr.io/pkg/survival/man/coxph.html" class="external-link">survival::coxph</a></code></td>
-<td>Catrina-Saxena 2010 fp50</td>
-</tr>
-<tr>
-<td>Cox PH (Pima, Ring127)</td>
-<td>8.09 × 10⁻⁵</td>
-<td><code><a href="https://rdrr.io/pkg/survival/man/coxph.html" class="external-link">survival::coxph</a></code></td>
-<td>Catrina-Saxena 2010 fp50</td>
-</tr>
-<tr>
-<td>Cox PH in LMM+Cox harness</td>
-<td>8.32 × 10⁻⁶</td>
-<td><code><a href="https://rdrr.io/pkg/survival/man/coxph.html" class="external-link">survival::coxph</a></code></td>
-<td>Catrina-Saxena 2010 fp50</td>
-</tr>
-<tr>
-<td>NB iid θ</td>
-<td>6.83 × 10⁻¹²</td>
-<td><code><a href="https://rdrr.io/pkg/MASS/man/theta.md.html" class="external-link">MASS::theta.ml</a></code></td>
-<td>Newton precision</td>
-</tr>
-<tr>
-<td>NB full-reg θ</td>
-<td>4.44 × 10⁻³</td>
-<td><code><a href="https://rdrr.io/pkg/MASS/man/glm.nb.html" class="external-link">MASS::glm.nb</a></code></td>
-<td>Catrina-Saxena fp50 + 5-iter NR (Goldschmidt 1964 + Pugh 2004) — σ-ratio 105×, <strong>SUB-NOISE</strong>
-</td>
-</tr>
-<tr>
-<td>Multinomial joint (Bohning)</td>
-<td>4.70 × 10⁻²</td>
-<td><code><a href="https://rdrr.io/pkg/nnet/man/multinom.html" class="external-link">nnet::multinom</a></code></td>
-<td>Catrina-Saxena Ring63 + Bohning</td>
-</tr>
-<tr>
-<td>Ordinal joint PO</td>
-<td>6.12 × 10⁻²</td>
-<td><code><a href="https://rdrr.io/pkg/MASS/man/polr.html" class="external-link">MASS::polr</a></code></td>
-<td>3× McCullagh-Agresti L1 floor</td>
-</tr>
-<tr>
-<td>LASSO proximal</td>
-<td>1-2 × 10⁻³</td>
-<td><code><a href="https://glmnet.stanford.edu/reference/cv.glmnet.html" class="external-link">glmnet::cv.glmnet</a></code></td>
-<td>FHT 2010 + Beck-Teboulle 2009</td>
-</tr>
-</tbody>
-</table>
-<p>All methods inside their theoretical floors (paper §V.A). <strong>Sub-noise margin</strong> (paper §V.B) at ≥ 100× the per-fit Wald SE for all four federated K=2 estimators (ord_joint β/θ, Cox β, NB θ).</p>
+<p>The repository contains unit, adversarial, centralized-reference, real-DSLite, connector-lifecycle and live-Opal harnesses. PSI additionally has a two-host test with independent identity seeds. <code>K=2</code>, <code>K=3</code> and <code>K=5</code> statements for the promoted capsule/PSI route identify topology coverage in the named test; they do not imply that every topology completed on every connector. The local Armadillo S4/httpuv smoke is a connector-lifecycle regression, not a live Rock deployment, and cached Opal results are historical evidence rather than a blanket release guarantee. Current deployment claims require a fresh, artifact-exact live run with the method-specific tolerance and assumptions recorded by the harness. Analytical calls use DSI; Opal reconciliation and Armadillo TLS/session inspection remain deployment safeguards rather than statistical-protocol dependencies.</p>
+<p>Ordinary in-process DSLite cannot faithfully model separate persistent server identities because logical servers share one R process. Identity-sensitive security tests therefore use isolated host environments; live Opal validation remains required before deployment.</p>
 </div>
 <div class="section level2">
 <h2 id="security">Security<a class="anchor" aria-label="anchor" href="#security"></a>
 </h2>
-<ul>
-<li>
-<strong>No product observation-level disclosure</strong>: client sees only model-scale aggregates returned by the registered server methods</li>
-<li>
-<strong>Server-generated Beaver triples</strong>: client never sees cryptographic material</li>
-<li>
-<strong>Dealer rotation</strong>: different server generates triples each iteration (K ≥ 3); fixed dealer with OT-Beaver for K = 2</li>
-<li>
-<strong>Transport encryption</strong>: X25519 + AES-256-GCM between servers</li>
-<li>
-<strong>Identity verification</strong>: Ed25519 signed peer transport keys (<code>dsvert.require_trusted_peers</code>)</li>
-<li>
-<strong>Ring</strong>: Ring63 (frac_bits = 20) and Ring127 (frac_bits = 50), selected by method precision needs</li>
-<li>
-<strong>Discarded estimators removed</strong>: routes that revealed rank metadata, patient-level working vectors, or old approximations are not part of the exported product API</li>
-</ul>
+<p>The pinned-peer model prevents the analyst/relay from substituting a key and opening peer ciphertext. PSI membership messages are signed, encrypted and session-bound; completed alignment is verified through a secret-token-backed, ordered-ID manifest rather than row counts. Session IDs and persistent identity seeds use operating-system entropy, and unused high-risk remote primitives have been removed from registration and export.</p>
+<p>These controls do <strong>not</strong> imply that source data can never be reconstructed. Unlimited adaptive exact outputs can be composed without breaking MPC. Dedicated <code>ds.vertDP*</code> methods contain patient/row contribution bounding and sticky noise in one cross-signed biomedical-vector release. The registered DSI path binds allocation, bounded materialization, joint sampling, one final opening, durable replay and bilateral finalization; supported methods are post-processing of that immutable capsule. This is a computational bounded-lifetime DP claim for at most the signed <code>N</code> capsules under the published adjacency, secret-root and pinned semi-honest non-colluding-peer assumptions. DP bounds indistinguishability; it is not a literal guarantee that no original value can ever be guessed or reconstructed. The claim does not cover collusion of every designated peer. Ordinary exact methods remain outside any DP guarantee. Historical local fixed-point truncation and legacy DCF comparison survive only inside unregistered/quarantined implementations and retain their stated proof limitations. See <a href="SECURITY.html">SECURITY.md</a> for the full threat model and non-claims.</p>
+<p>There is no request-count limit. The finite lifetime gate applies only when a new capsule is committed; exact replay of an existing release remains free. Shape, byte, finite-range and storage caps are retained as separate resource and arithmetic-safety controls.</p>
+</div>
+<div class="section level2">
+<h2 id="dsi-communication">DSI communication<a class="anchor" aria-label="anchor" href="#dsi-communication"></a>
+</h2>
+<p>Persistent DSI connections need no generic application/request batching layer and no per-peer wrapper serialization. The capsule-source route can carry a byte-bounded consecutive window of unchanged signed inner artifacts in one fetch/accept request after public capability negotiation. Its outer framing is not independently signed and it never creates multiple in-flight DSI jobs. Large opaque values still require frame chunking because DSI connectors and parsers impose finite request sizes. One named fan-out cycle carries the next dependency-ready immutable frame for every peer, and the source-to-recipient pipeline completes <code>F</code> frames in <code>F + 2</code> healthy phases, without pretending that dependent MPC rounds are parallel. The frame path uses DSI’s public job primitives directly and avoids repeated deparsing of the same large expression during polling. Stateless request-size probing is session-bound; a reconnect revalidates the last connector-profile size before using it. The registered typed transport uses absolute offsets, bounded private node spools, complete SHA-256 verification and pinned-peer signed receipts. The analyst keeps only one frame and no payload-sized integrity copy. The more general relay remains unregistered until independent multi-host live-connector validation and protocol migration prove that exposing it does not widen the remote surface.</p>
+<p>Repeated analyses first refresh the complete pinned control-plane status and rebuild the server-authoritative capsule manifest. An in-process LRU then reuses an already validated public DP vector only when the current <code>manifest_sha256</code>, <code>capsule_id</code>, policy, pinset, noise root and release domain are identical. A hit skips the expensive source-sharing, sampling and vector replay phases; it never skips snapshot/workload validation. The cache retains no connection handles, is bounded to four entries and 64 MiB, and eviction cannot deny an operation or generate different noise—the durable sticky replay remains authoritative.</p>
 </div>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
@@ -423,20 +329,16 @@ Deviance: 22.09</code></pre>
 <ul>
 <li>
 <a href="https://isglobal-brge.github.io/dsVertClient/">Reference index</a> (pkgdown site)</li>
-<li><a href="https://isglobal-brge.github.io/dsVertClient/articles/validation_summary.html">Method validation evidence</a></li>
-<li><a href="inst/docs/product_surface.html">Product surface audit</a></li>
-<li><a href="NEWS.html">NEWS</a></li>
+<li><a href="https://github.com/isglobal-brge/dsVertClient/blob/main/inst/docs/benchmarks/dp_statistical_validation_20260802.md" class="external-link">DP statistical validation evidence</a></li>
+<li><a href="https://github.com/isglobal-brge/dsVertClient/blob/main/inst/docs/capsule_v6_large_scale_audit_20260808.md" class="external-link">Historical capsule v6 large-scale audit; current workload is v7</a></li>
+<li><a href="https://github.com/isglobal-brge/dsVertClient/blob/main/inst/docs/product_surface.md" class="external-link">Product surface audit</a></li>
+<li><a href="https://isglobal-brge.github.io/dsVertClient/news/index.html">NEWS</a></li>
 </ul>
 </div>
 <div class="section level2">
 <h2 id="license">License<a class="anchor" aria-label="anchor" href="#license"></a>
 </h2>
 <p>MIT - see <a href="LICENSE.html">LICENSE</a>.</p>
-</div>
-<div class="section level2">
-<h2 id="citation">Citation<a class="anchor" aria-label="anchor" href="#citation"></a>
-</h2>
-<p>See <code>paper/jbhi_dsvert.tex</code> (IEEE J-BHI submission r2.5) for the full validation table, theoretical bounds, and disclosure ledger.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">

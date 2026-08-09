@@ -9,14 +9,18 @@
 
 #' @keywords internal
 .dsvert_setup_peer_transport <- function(datasources, server_names, servers,
-                                         session_id) {
+                                         session_id,
+                                         .aggregate = DSI::datashield.aggregate) {
+  .dsvert_maybe_negotiate_dsi_chunk_size(
+    datasources[servers], .aggregate)
   pks <- list()
   identity_info <- list()
+  init_results <- .dsvert_aggregate_strict(
+    datasources[servers],
+    call(name = "glmRing63TransportInitDS", session_id = session_id),
+    operation = "peer transport initialization", .aggregate = .aggregate)
   for (srv in servers) {
-    ci <- which(server_names == srv)
-    r <- DSI::datashield.aggregate(datasources[ci],
-      call(name = "glmRing63TransportInitDS", session_id = session_id))
-    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+    r <- init_results[[srv]]
     pks[[srv]] <- r$transport_pk
     if (!is.null(r$identity_pk)) {
       identity_info[[srv]] <- list(identity_pk = r$identity_pk,
@@ -29,12 +33,12 @@
   json_b64 <- function(x) to_b64url(gsub("\n", "", jsonlite::base64_enc(charToRaw(jsonlite::toJSON(x, auto_unbox = TRUE))), fixed = TRUE))
   pk_b64 <- json_b64(pk_sorted)
   id_b64 <- if (!is.null(id_sorted)) json_b64(id_sorted) else ""
-  for (srv in servers) {
-    ci <- which(server_names == srv)
-    DSI::datashield.aggregate(datasources[ci],
-      call(name = "mpcStoreTransportKeysDS",
-           transport_keys_b64 = pk_b64, identity_info_b64 = id_b64,
-           session_id = session_id))
-  }
+  .dsvert_aggregate_strict(
+    datasources[servers],
+    call(name = "mpcStoreTransportKeysDS",
+         transport_keys_b64 = pk_b64, identity_info_b64 = id_b64,
+         session_id = session_id),
+    operation = "peer transport pinning", result_contract = "logical_true",
+    .aggregate = .aggregate)
   pks
 }

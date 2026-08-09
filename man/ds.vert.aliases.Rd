@@ -42,11 +42,11 @@ ds.vert.cor(data_name, variables = NULL, datasources = NULL, ...)
 
 ds.vert.pca(data_name = NULL, variables = NULL, datasources = NULL, ...)
 
-ds.vert.chisq(data_name, var1, var2, datasources = NULL, ...)
+ds.vert.chisq(data_name, var1 = NULL, var2 = NULL, datasources = NULL, ...)
 
-ds.vert.fisher(data_name, var1, var2, datasources = NULL, ...)
+ds.vert.fisher(data_name, var1 = NULL, var2 = NULL, datasources = NULL, ...)
 
-ds.vert.chisq_cross(data, var1, var2, datasources = NULL, ...)
+ds.vert.chisq_cross(data, var1 = NULL, var2 = NULL, datasources = NULL, ...)
 
 ds.vert.glm(
   formula,
@@ -64,7 +64,7 @@ ds.vert.cox(
   ...
 )
 
-ds.vert.coxph(formula, data = NULL, ...)
+ds.vert.coxph(formula, data = NULL, method = "profile", ...)
 
 ds.vert.nb(formula, data = NULL, method = "accurate", datasources = NULL, ...)
 
@@ -171,9 +171,14 @@ object, nested models, parameter, confidence level, null value, class count).}
 \item{lambda, lambda_1, lambda_grid}{Penalty or penalty grid for the LASSO routes.}
 }
 \description{
-These wrappers provide a compact, formula-style public surface while keeping
-the historical CamelCase functions as compatibility backends. Wrappers that
-have distinct K=2 and K>=3 implementations dispatch from the number of active
-DataSHIELD connections. Every argument is forwarded to the corresponding
-\code{ds.vert*} backend, which documents it in full.
+These wrappers preserve the compact formula-style API names. Availability
+is defined by \code{ds.vertMethodStatus()} and the selected signed capsule,
+not by the presence of an alias. Aliases for quarantined families raise a
+typed \code{dsvert_route_unavailable} condition before any DSI call.
+\code{ds.vert.glm()} can delegate an explicit Gaussian
+\code{dp_analysis_id} to \code{ds.vertDPGaussian()}; its no-id legacy route
+is unavailable, and the reserved binomial/Poisson
+\code{formal_analysis_id} route also fails before DSI in this release.
+No alias re-enables a retired remote endpoint or weakens the signed-artifact
+and custodian-owned policy gates of an available backend.
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertNBFullRegTheta.R
 \name{ds.vertNBFullRegTheta}
 \alias{ds.vertNBFullRegTheta}
-\title{Federated NB regression with full-regression theta refinement}
+\title{Quarantined negative-binomial compatibility frontdoor}
 \usage{
 ds.vertNBFullRegTheta(
   formula,
@@ -21,90 +21,27 @@ ds.vertNBFullRegTheta(
 )
 }
 \arguments{
-\item{formula}{Model formula for the count outcome and predictors.}
+\item{formula, data, theta, joint, theta_max_iter, theta_tol, variant, beta_max_iter, beta_tol, compute_covariance, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 
-\item{data}{Aligned data-frame name on each server.}
-
-\item{theta}{Optional fixed dispersion parameter. If supplied, theta
-refinement starts from this value.}
-
-\item{joint}{Logical. If \code{TRUE}, iterate beta/theta refinements.}
-
-\item{theta_max_iter}{Integer. Maximum theta outer iterations.}
-
-\item{theta_tol}{Numeric. Relative convergence tolerance for theta.}
-
-\item{variant}{Character. Only \code{"full_reg_nd"} is accepted in the
-validated product route. Historical iid-mu and aggregate-corrected
-variants are retained as internal development code, but are not part of
-the public validation surface. The legacy disclosive \code{"full_reg"}
-eta-transport path has been removed.}
-
-\item{beta_max_iter}{Integer. Maximum beta refinements for the
-non-disclosive full-regression theta variant.}
-
-\item{beta_tol}{Numeric. Relative convergence tolerance for beta refinements
-in the non-disclosive full-regression theta variant.}
-
-\item{compute_covariance}{Logical. If \code{TRUE}, request covariance and
-standard-error diagnostics where the selected beta path supports them.}
-
-\item{verbose}{Logical. Print stage-by-stage progress.}
-
-\item{datasources}{DataSHIELD connections; if \code{NULL}, uses
-\code{DSI::datashield.connections_find()}.}
-
-\item{...}{Extra arguments forwarded to the protected GLM route.}
+\item{...}{Retained compatibility arguments; not evaluated.}
 }
 \value{
-Object of class \code{c("ds.vertNBFullRegTheta", "ds.vertNB")}.
-The object contains model-scale coefficients, standard errors and
-diagnostics, plus \code{$theta_iid} (the internal starting estimate) and
-\code{$variance_correction} (the \eqn{\hat V_\mu} used). For the
-non-disclosive full-regression variant, the object also contains
-\code{$theta_trace}, \code{$theta_iter}, and \code{$theta_converged}.
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Backend used by the public \code{ds.vert.nb()} frontdoor for
-the validated full-regression negative-binomial route. It starts from the
-internal iid-mu profile fit and refines theta while accounting for
-\eqn{\mu_i} variation across patients without requiring per-patient MPC
-reveals.
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and computes or returns no fit or dispersion estimate. Retained
+implementation code after the gate is unreachable through this public
+frontdoor and carries no disclosure, DP, accuracy, or availability claim.
 }
 \details{
-The NB(mu_i, theta) log-likelihood score for theta is
-\deqn{s(\theta) = \sum_i \psi(y_i + \theta) - n \psi(\theta)
-                     + n \log \theta - \sum_i \log(\mu_i + \theta).}
-The internal iid-mu starting fit replaces the last
-term by \eqn{n \log(\bar y + \theta)}. For homogeneous cohorts
-(small \eqn{\text{Var}(\mu)}) this is tight; for regression-rich
-settings the bias on theta can reach ~16\% (quine, overdispersed
-counts) relative to \code{MASS::glm.nb}.
-
-A first-order correction uses the aggregate marginal variance of
-y decomposed via the NB law of total variance:
-\eqn{\text{Var}(y) = E[\mu] + E[\mu^2]/\theta + \text{Var}(\mu)}.
-With \eqn{\bar y} and \eqn{s_y^2} (scalar aggregates from
-\code{dsvertLocalMomentsDS}) and the iid theta_0 as seed, we refine
-via Brent root-finding on the corrected score
-\eqn{s_{\text{corr}}(\theta) = s_{\text{iid}}(\theta) - \frac{1}{2}
-        \frac{n \, \hat{V}_\mu}{(\bar y + \theta)^2}}
-where \eqn{\hat V_\mu} is the aggregate estimate of \eqn{\text{Var}(\mu)}
-and the second term is the Taylor correction to
-\eqn{\sum_i \log(\mu_i + \theta)} around \eqn{\bar y}.
-
-The aggregate \eqn{\hat V_\mu} is computed as
-\eqn{\hat V_\mu = \max(0,\; s_y^2 - \bar y - \bar y^2 / \hat\theta_0)}
--- the portion of total y variance not explained by NB conditional
-variance \eqn{\mu + \mu^2/\theta}. All quantities are scalar
-aggregates; no per-patient disclosure.
-
-Full-share-space Clenshaw evaluation of \eqn{\sum_i \log(\mu_i + \theta)}
-using the shipped \code{Ring127LogShiftPlaintext} Chebyshev
-primitive + DCF argument reduction is a stricter variant scheduled
-separately; the first-order correction here closes the bulk of the
-iid-mu bias (on quine: 16\% -> 4-5\%) without any new MPC machinery.
+Promotion requires a bounded NB2 score/information capsule, joint
+beta/theta inference, certified deviance and covariance, and independent
+multi-host validation.
 }
 \seealso{
-\code{\link{ds.vert.aliases}}
+\code{\link{ds.vertMethodStatus}}
 }

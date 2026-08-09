@@ -1,31 +1,11 @@
-# Federated linear mixed model with a single random intercept
+# Quarantined linear-mixed-model compatibility frontdoor
 
-Fit a random-intercept linear mixed model \\y\_{ij} = x\_{ij}^T \beta +
-b_i + \varepsilon\_{ij}\\ on vertically partitioned DataSHIELD data,
-where the cluster indicator `id` lives on the outcome server. The REML
-log-likelihood profile is expressed in terms of a single variance ratio
-\\\rho = \sigma_b^2 / (\sigma^2 + n_i\sigma_b^2)\\ so the outer
-optimiser is one-dimensional. Each outer step calls
-[`ds.vertGLM`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGLM.md)
-with per-patient weights derived from the current \\\rho\\, reusing the
-already-deployed `ds.vertGLM(weights=)` infrastructure.
-
-Derivation (Laird-Ware compact form): \$\$V_i = \sigma^2 I + \sigma_b^2
-\mathbf{1} \mathbf{1}^T\$\$ \$\$V_i^{-1} = \frac{1}{\sigma^2}\left(I -
-\rho_i \mathbf{1}\mathbf{1}^T\right)\$\$ \$\$\log\|V_i\| = (n_i - 1)
-\log \sigma^2 + \log(\sigma^2 + n_i\sigma_b^2)\$\$
-
-Both summands are one-dimensional functions of \\\rho\\ that the client
-evaluates on centralised aggregates (sum of \\n_i \rho_i\\ and sum of
-\\\log(\sigma^2 + n_i \sigma_b^2)\\); per-cluster residual sums
-\\\sum\_{ij} r\_{ij}\\ are returned by the outcome server as a single
-aggregate vector (one scalar per cluster) under the already-documented
-cluster-ID inter-server leakage tier.
-
-Inter-server disclosure: the DCF peer learns integer cluster membership
-(same class as Cox event-time ordering). Original cluster labels are not
-returned, clusters below datashield.privacyLevel fail closed, and
-individual observations are not revealed to the client.
+This exported name is retained for API compatibility. It raises a typed
+`dsvert_route_unavailable` condition before any DSI call and computes or
+returns no mixed model, variance component, cluster statistic, or
+diagnostic. Retained LMM implementation code after the gate is
+unreachable through this public frontdoor and carries no disclosure, DP,
+accuracy, or availability claim.
 
 ## Usage
 
@@ -49,67 +29,25 @@ ds.vertLMM(
 
 ## Arguments
 
-- formula:
+- formula, data, cluster_col, random_slopes, reml, max_iter, inner_iter,
+  tol, exact_cross_server, sigma_b2_override, ring, verbose,
+  datasources:
 
-  Fixed-effects formula.
-
-- data:
-
-  Aligned data-frame name.
-
-- cluster_col:
-
-  Column holding the cluster id (must be on the outcome server).
-
-- random_slopes:
-
-  Optional character vector of column names for random slopes (in
-  addition to the random intercept). NULL fits an intercept-only
-  random-effects structure.
-
-- reml:
-
-  Use REML (default TRUE) vs ML.
-
-- max_iter:
-
-  Outer variance-component iterations (default 30).
-
-- inner_iter:
-
-  Inner `ds.vertGLM` iteration budget.
-
-- tol:
-
-  Outer tolerance on \\\rho\\ change.
-
-- exact_cross_server:
-
-  Logical (default TRUE). If TRUE, use the exact cross-server Beaver
-  vecmul gram pass; FALSE falls back to a diagonal-only approximation.
-
-- sigma_b2_override:
-
-  Numeric. Optional fixed value of the between-cluster variance,
-  bypassing the iterative REML/ML variance-component update.
-
-- ring:
-
-  Character (`"ring63"` or `"ring127"`). Selects the Beaver vecmul
-  pipeline ring; Ring127 (fracBits=50) is needed for STRICT closure on
-  dense Gram matrices.
-
-- verbose:
-
-  Print progress.
-
-- datasources:
-
-  DataSHIELD connection object.
+  Retained compatibility arguments. They are not evaluated because the
+  public frontdoor fails locally.
 
 ## Value
 
-A `ds.vertLMM` object with components `coefficients`, `covariance`,
-`std_errors`, `sigma2` (residual variance), `sigma_b2` (random-effect
-variance), `icc`, `n_clusters`, `converged`, `iterations`, `fit` (final
-inner `ds.glm`).
+No fitted object. The function raises `dsvert_route_unavailable` before
+DSI.
+
+## Details
+
+Promotion requires contribution-bounded cluster statistics, private
+cluster handling, certified ML/REML and random-effects semantics,
+covariance and identifiability certificates, and independent multi-host
+validation.
+
+## See also
+
+[`ds.vertMethodStatus`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertMethodStatus.md)

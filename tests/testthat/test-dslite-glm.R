@@ -20,7 +20,7 @@ skip_if_not(
   tryCatch({
     s <- DSLite::newDSLiteServer(tables = list(s1 = data.frame(x = 1:3)))
     s$config(DSLite::defaultDSConfiguration(include = "dsVert"))
-    "psiInitDS" %in% names(s$.__enclos_env__$private$.dsConfig$aggregateMethods)
+    "psiPaddedInitDS" %in% names(s$.__enclos_env__$private$.dsConfig$aggregateMethods)
   }, error = function(e) FALSE),
   "DSLite mock missing dsVert PSI methods \u2014 covered by live-Opal probes"
 )

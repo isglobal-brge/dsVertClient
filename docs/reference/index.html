@@ -16,46 +16,6 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto"><li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
-  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><hr class="dropdown-divider"></li>
-    <li><h6 class="dropdown-header" data-toc-skip>Validation</h6></li>
-    <li><a class="dropdown-item" href="../articles/validation_summary.html">Validation evidence summary</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_psi_k2.html">PSI alignment validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_psi_kge3.html">PSI alignment validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_descriptive_k2.html">Descriptive statistics validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_descriptive_kge3.html">Descriptive statistics validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_contingency_k2.html">Contingency tests validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_contingency_kge3.html">Contingency tests validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_correlation_k2.html">Correlation validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_correlation_kge3.html">Correlation validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_pca_k2.html">PCA validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_pca_kge3.html">PCA validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_glm_k2.html">GLM validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_glm_kge3.html">GLM validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_inference_k2.html">GLM inference validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_inference_kge3.html">GLM inference validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_lasso_k2.html">LASSO validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_lasso_kge3.html">LASSO validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_negative_binomial_k2.html">Negative binomial validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_negative_binomial_kge3.html">Negative binomial validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_cox_k2.html">Cox PH validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_cox_kge3.html">Cox PH validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_lmm_k2.html">LMM validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_lmm_kge3.html">LMM validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_gee_k2.html">GEE validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_gee_kge3.html">GEE validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_glmm_k2.html">GLMM validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_glmm_kge3.html">GLMM validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_ipw_k2.html">IPW validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_ipw_kge3.html">IPW validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_mi_k2.html">Multiple imputation validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_mi_kge3.html">Multiple imputation validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_multinomial_k2.html">Multinomial validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_multinomial_kge3.html">Multinomial validation (K&gt;=3)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_ordinal_k2.html">Ordinal validation (K=2)</a></li>
-    <li><a class="dropdown-item" href="../articles/validation_ordinal_kge3.html">Ordinal validation (K&gt;=3)</a></li>
-  </ul></li>
 <li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
@@ -102,14 +62,14 @@
           <code><a href="ds.psiAlign.html">ds.psiAlign()</a></code>
 
         </dt>
-        <dd>ECDH-PSI Record Alignment (Blind Relay)</dd>
+        <dd>Align vertically partitioned records with pinned, fixed-capacity PSI</dd>
 
         <dt>
 
           <code><a href="ds.isPsiAligned.html">ds.isPsiAligned()</a></code>
 
         </dt>
-        <dd>Check whether a data symbol is already PSI-aligned on every server</dd>
+        <dd>Check whether a data symbol is pinned-padded-PSI aligned</dd>
 
         <dt>
 
@@ -118,7 +78,342 @@
         </dt>
         <dd>Query Server Identity Public Keys</dd>
       </dl></div><div class="section level2">
-      <h2 id="compatibility-backends">Compatibility backends<a class="anchor" aria-label="anchor" href="#compatibility-backends"></a></h2>
+      <h2 id="dp-policy-security-and-numeric-contracts">DP policy, security and numeric contracts<a class="anchor" aria-label="anchor" href="#dp-policy-security-and-numeric-contracts"></a></h2>
+
+
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="ds.vertMethodStatus.html">ds.vertMethodStatus()</a></code>
+
+        </dt>
+        <dd>Audited maturity status of dsVert client methods</dd>
+
+        <dt>
+
+          <code><a href="ds.vertSecurityStatus.html">ds.vertSecurityStatus()</a></code>
+
+        </dt>
+        <dd>Verify the consortium disclosure profile</dd>
+
+        <dt>
+
+          <code><a href="ds.vertNumericPreflight.html">ds.vertNumericPreflight()</a></code>
+
+        </dt>
+        <dd>Preflight a vertically partitioned GLM numeric backend</dd>
+
+        <dt>
+
+          <code><a href="ds.validateDPGaussianCertificate.html">ds.validateDPGaussianCertificate()</a></code>
+
+        </dt>
+        <dd>Verify a bounded Gaussian capsule certificate without DSI</dd>
+      </dl></div><div class="section level2">
+      <h2 id="sticky-differentially-private-biomedical-capsule">Sticky differentially private biomedical capsule<a class="anchor" aria-label="anchor" href="#sticky-differentially-private-biomedical-capsule"></a></h2>
+
+
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="ds.vertDPCalibrate.html">ds.vertDPCalibrate()</a></code>
+
+        </dt>
+        <dd>Calibrate deployed DP mechanism candidates</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPCapsulePlan.html">ds.vertDPCapsulePlan()</a></code>
+
+        </dt>
+        <dd>Dry-run one server-authoritative DP capsule</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPCausalStandardization.html">ds.vertDPCausalStandardization()</a></code>
+
+        </dt>
+        <dd>DP stratified causal standardisation</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPCausalStandardizationInference.html">ds.vertDPCausalStandardizationInference()</a></code>
+
+        </dt>
+        <dd>Joint DP and sampling inference for causal standardisation</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPContingency.html">ds.vertDPContingency()</a></code> <code><a href="ds.vertDPContingency.html">print(<i>&lt;ds.vertDPContingency&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Differentially private fixed-domain contingency table</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPCor.html">ds.vertDPCor()</a></code>
+
+        </dt>
+        <dd>Differentially private same-owner Pearson correlation</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPCount.html">ds.vertDPCount()</a></code> <code><a href="ds.vertDPCount.html">print(<i>&lt;ds.vertDPCount&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Differentially private privacy-unit count</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPCumulativeIncidence.html">ds.vertDPCumulativeIncidence()</a></code>
+
+        </dt>
+        <dd>Competing-Risks Cumulative Incidence from One DP Release</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPDescribe.html">ds.vertDPDescribe()</a></code> <code><a href="ds.vertDPDescribe.html">print(<i>&lt;ds.vertDPDescribe&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Differentially Private Fixed-Grid Descriptive Statistics</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPDiagnostic2x2.html">ds.vertDPDiagnostic2x2()</a></code>
+
+        </dt>
+        <dd>Diagnostic-accuracy measures with simultaneous DP-noise regions</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPDiagnostic2x2Inference.html">ds.vertDPDiagnostic2x2Inference()</a></code>
+
+        </dt>
+        <dd>Diagnostic-accuracy inference with DP and sampling uncertainty</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPDirectStandardization.html">ds.vertDPDirectStandardization()</a></code>
+
+        </dt>
+        <dd>Direct standardisation with simultaneous DP-noise bounds</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPDirectStandardizationInference.html">ds.vertDPDirectStandardizationInference()</a></code>
+
+        </dt>
+        <dd>Direct-standardisation inference with DP and sampling uncertainty</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPEpi2x2.html">ds.vertDPEpi2x2()</a></code>
+
+        </dt>
+        <dd>Epidemiological measures with simultaneous DP-noise regions</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPEpi2x2Inference.html">ds.vertDPEpi2x2Inference()</a></code>
+
+        </dt>
+        <dd>Epidemiological 2-by-2 inference with DP and sampling uncertainty</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPFrequency.html">ds.vertDPFrequency()</a></code>
+
+        </dt>
+        <dd>Differentially private one-way frequency distribution</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPFrequencyInference.html">ds.vertDPFrequencyInference()</a></code>
+
+        </dt>
+        <dd>Conservative sampling regions for a DP frequency distribution</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPGaussian.html">ds.vertDPGaussian()</a></code>
+
+        </dt>
+        <dd>Bounded Gaussian regression from the sticky DP capsule</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPIndirectStandardization.html">ds.vertDPIndirectStandardization()</a></code>
+
+        </dt>
+        <dd>Differentially private indirect standardisation</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPIndirectStandardizationInference.html">ds.vertDPIndirectStandardizationInference()</a></code>
+
+        </dt>
+        <dd>Indirect-standardisation inference with DP and sampling uncertainty</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPKaplanMeier.html">ds.vertDPKaplanMeier()</a></code>
+
+        </dt>
+        <dd>Kaplan–Meier Curve from One DP Survival Release</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPMantelHaenszel.html">ds.vertDPMantelHaenszel()</a></code>
+
+        </dt>
+        <dd>DP common Mantel-Haenszel odds ratio from one fixed capsule table</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPMeanVar.html">ds.vertDPMeanVar()</a></code> <code><a href="ds.vertDPMeanVar.html">print(<i>&lt;ds.vertDPMeanVar&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Differentially private bounded mean and variance</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPMedian.html">ds.vertDPMedian()</a></code>
+
+        </dt>
+        <dd>Binned DP median from one validated describe release</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPMedianSurvival.html">ds.vertDPMedianSurvival()</a></code>
+
+        </dt>
+        <dd>Median survival from one DP survival release</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPNelsonAalen.html">ds.vertDPNelsonAalen()</a></code>
+
+        </dt>
+        <dd>Nelson–Aalen Curve from One DP Survival Release</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPPrevalenceRatio.html">ds.vertDPPrevalenceRatio()</a></code> <code><a href="ds.vertDPPrevalenceRatio.html">ds.vertDPPrevalenceRatioInference()</a></code>
+
+        </dt>
+        <dd>Cross-sectional prevalence effects from one DP 2-by-2 release</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPQuantile.html">ds.vertDPQuantile()</a></code>
+
+        </dt>
+        <dd>Binned DP quantiles from one validated describe release</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPRMST.html">ds.vertDPRMST()</a></code>
+
+        </dt>
+        <dd>Restricted mean survival time from one DP survival release</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPRMSTContrast.html">ds.vertDPRMSTContrast()</a></code>
+
+        </dt>
+        <dd>Contrast restricted mean survival time from two DP releases</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPRMTL.html">ds.vertDPRMTL()</a></code>
+
+        </dt>
+        <dd>Restricted mean time lost from one DP survival release</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPROC.html">ds.vertDPROC()</a></code>
+
+        </dt>
+        <dd>Diagnostic ROC curve and AUC from one ordered DP table</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPStatus.html">ds.vertDPStatus()</a></code>
+
+        </dt>
+        <dd>Differential-privacy policy status</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPSurvival.html">ds.vertDPSurvival()</a></code> <code><a href="ds.vertDPSurvival.html">print(<i>&lt;ds.vertDPSurvival&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Differentially Private Non-Parametric Survival Curves</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPSurvivalContrast.html">ds.vertDPSurvivalContrast()</a></code>
+
+        </dt>
+        <dd>Contrast two differentially private survival releases</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPSurvivalQuantile.html">ds.vertDPSurvivalQuantile()</a></code>
+
+        </dt>
+        <dd>Fixed-grid survival quantiles from one DP survival release</dd>
+      </dl></div><div class="section level2">
+      <h2 id="epidemiology-from-authorised-inputs">Epidemiology from authorised inputs<a class="anchor" aria-label="anchor" href="#epidemiology-from-authorised-inputs"></a></h2>
+
+
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="ds.vertEpi2x2.html">ds.vertEpi2x2()</a></code>
+
+        </dt>
+        <dd>Epidemiological effect measures from a protected 2-by-2 table</dd>
+
+        <dt>
+
+          <code><a href="ds.vertMantelHaenszel.html">ds.vertMantelHaenszel()</a></code>
+
+        </dt>
+        <dd>Common Mantel-Haenszel odds ratio from authorised stratified tables</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDirectStandardization.html">ds.vertDirectStandardization()</a></code>
+
+        </dt>
+        <dd>Direct standardization of aggregate stratum-specific rates</dd>
+
+        <dt>
+
+          <code><a href="ds.vertIndirectStandardization.html">ds.vertIndirectStandardization()</a></code>
+
+        </dt>
+        <dd>Indirect standardization from aggregate observed and expected events</dd>
+      </dl></div><div class="section level2">
+      <h2 id="conditional-and-compatibility-analyses">Conditional and compatibility analyses<a class="anchor" aria-label="anchor" href="#conditional-and-compatibility-analyses"></a></h2>
 
 
 
@@ -132,154 +427,49 @@
           <code><a href="ds.vertDesc.html">ds.vertDesc()</a></code>
 
         </dt>
-        <dd>Federated descriptive statistics with approximate quantiles</dd>
+        <dd>Disclosure-safe descriptive statistics compatibility adapter</dd>
 
         <dt>
 
           <code><a href="ds.vertCor.html">ds.vertCor()</a></code>
 
         </dt>
-        <dd>Ring63 Privacy-Preserving Correlation for Vertically Partitioned Data</dd>
+        <dd>Disclosure-safe compatibility adapter for correlation</dd>
 
         <dt>
 
           <code><a href="ds.vertPCA.html">ds.vertPCA()</a></code>
 
         </dt>
-        <dd>Principal Component Analysis for Vertically Partitioned Data</dd>
+        <dd>Principal components from a signed DP correlation artifact</dd>
 
         <dt>
 
           <code><a href="ds.vertChisq.html">ds.vertChisq()</a></code>
 
         </dt>
-        <dd>Federated chi-square test on a 2-way contingency table</dd>
+        <dd>DP-aware independence test on a 2-way contingency table</dd>
 
         <dt>
 
           <code><a href="ds.vertChisqCross.html">ds.vertChisqCross()</a></code>
 
         </dt>
-        <dd>Cross-server chi-square (one-hot + Beaver cross-products)</dd>
+        <dd>DP-aware inference for a signed cross-owner categorical table</dd>
 
         <dt>
 
           <code><a href="ds.vertFisher.html">ds.vertFisher()</a></code>
 
         </dt>
-        <dd>Federated Fisher exact test (same-server case)</dd>
+        <dd>DP-aware conditional test for a 2-by-2 contingency release</dd>
 
         <dt>
 
           <code><a href="ds.vertGLM.html">ds.vertGLM()</a></code>
 
         </dt>
-        <dd>Generalized Linear Model for Vertically Partitioned Data</dd>
-
-        <dt>
-
-          <code><a href="ds.vertCox.html">ds.vertCox()</a></code>
-
-        </dt>
-        <dd>Federated Cox proportional-hazards regression</dd>
-
-        <dt>
-
-          <code><a href="ds.vertCoxProfileNonDisclosive.html">ds.vertCoxProfileNonDisclosive()</a></code>
-
-        </dt>
-        <dd>Cox proportional hazards via non-disclosive Breslow profile Newton</dd>
-
-        <dt>
-
-          <code><a href="ds.vertCoxDiscreteNonDisclosive.html">ds.vertCoxDiscreteNonDisclosive()</a></code>
-
-        </dt>
-        <dd>Cox discrete-time pooled-logistic – non-disclosive option B (#D')</dd>
-
-        <dt>
-
-          <code><a href="ds.vertNBFullRegTheta.html">ds.vertNBFullRegTheta()</a></code>
-
-        </dt>
-        <dd>Federated NB regression with full-regression theta refinement</dd>
-
-        <dt>
-
-          <code><a href="ds.vertMultinom.html">ds.vertMultinom()</a></code>
-
-        </dt>
-        <dd>Federated multinomial logistic regression</dd>
-
-        <dt>
-
-          <code><a href="ds.vertMultinomJoint.html">ds.vertMultinomJoint()</a></code>
-
-        </dt>
-        <dd>Federated joint-softmax multinomial logistic regression</dd>
-
-        <dt>
-
-          <code><a href="ds.vertMultinomJointNewton.html">ds.vertMultinomJointNewton()</a></code>
-
-        </dt>
-        <dd>Federated joint-softmax multinomial logistic regression via Ring127 MPC-orchestrated Newton iteration</dd>
-
-        <dt>
-
-          <code><a href="ds.vertOrdinal.html">ds.vertOrdinal()</a></code>
-
-        </dt>
-        <dd>Federated ordinal logistic regression</dd>
-
-        <dt>
-
-          <code><a href="ds.vertOrdinalJointNewton.html">ds.vertOrdinalJointNewton()</a></code>
-
-        </dt>
-        <dd>Federated joint proportional-odds ordinal regression via Ring127 MPC-orchestrated Newton iteration</dd>
-
-        <dt>
-
-          <code><a href="ds.vertLMM.html">ds.vertLMM()</a></code>
-
-        </dt>
-        <dd>Federated linear mixed model with a single random intercept</dd>
-
-        <dt>
-
-          <code><a href="ds.vertLMM.k3.html">ds.vertLMM.k3()</a></code>
-
-        </dt>
-        <dd>Federated linear mixed model via share-domain residual GLS (K&gt;=3)</dd>
-
-        <dt>
-
-          <code><a href="ds.vertGEE.html">ds.vertGEE()</a></code>
-
-        </dt>
-        <dd>Federated generalised estimating equations</dd>
-
-        <dt>
-
-          <code><a href="ds.vertGLMM.html">ds.vertGLMM()</a></code>
-
-        </dt>
-        <dd>Federated binomial GLMM-PQL</dd>
-
-        <dt>
-
-          <code><a href="ds.vertIPW.html">ds.vertIPW()</a></code>
-
-        </dt>
-        <dd>Federated inverse-probability-weighted GLM (two-stage)</dd>
-
-        <dt>
-
-          <code><a href="ds.vertMI.html">ds.vertMI()</a></code>
-
-        </dt>
-        <dd>Federated multiple imputation with Rubin pooling</dd>
+        <dd>DP-capsule GLM compatibility frontdoor</dd>
 
         <dt>
 
@@ -290,17 +480,10 @@
 
         <dt>
 
-          <code><a href="ds.vertLASSOIter.html">ds.vertLASSOIter()</a></code>
-
-        </dt>
-        <dd>Federated LASSO path from a non-disclosive GLM fit</dd>
-
-        <dt>
-
           <code><a href="ds.vertLASSOProximal.html">ds.vertLASSOProximal()</a></code>
 
         </dt>
-        <dd>Proper LASSO via client-side proximal gradient on normal equations</dd>
+        <dd>Gaussian LASSO via client-side coordinate descent</dd>
 
         <dt>
 
@@ -314,7 +497,7 @@
           <code><a href="ds.vertLASSOCV.html">ds.vertLASSOCV()</a></code>
 
         </dt>
-        <dd>Information-criterion lambda selection for one-step LASSO</dd>
+        <dd>Client-side information-criterion selection for Gaussian LASSO</dd>
 
         <dt>
 
@@ -344,6 +527,127 @@
         </dt>
         <dd>Multi-coefficient Wald test via linear contrast K*beta</dd>
       </dl></div><div class="section level2">
+      <h2 id="quarantined-compatibility-frontdoors">Quarantined compatibility frontdoors<a class="anchor" aria-label="anchor" href="#quarantined-compatibility-frontdoors"></a></h2>
+
+      <div class="section-desc"><p>Retained public names that fail locally before DSI; consult ds.vertMethodStatus().</p></div>
+
+      <dl></dl></div><div class="section level2">
+
+
+
+
+      <dl><dt>
+
+          <code><a href="ds.vertCox.html">ds.vertCox()</a></code>
+
+        </dt>
+        <dd>Quarantined Cox compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertCoxProfileNonDisclosive.html">ds.vertCoxProfileNonDisclosive()</a></code>
+
+        </dt>
+        <dd>Quarantined Cox-profile compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertCoxDiscreteNonDisclosive.html">ds.vertCoxDiscreteNonDisclosive()</a></code>
+
+        </dt>
+        <dd>Quarantined discrete-hazard compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertNBFullRegTheta.html">ds.vertNBFullRegTheta()</a></code>
+
+        </dt>
+        <dd>Quarantined negative-binomial compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertMultinom.html">ds.vertMultinom()</a></code>
+
+        </dt>
+        <dd>Quarantined multinomial compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertMultinomJoint.html">ds.vertMultinomJoint()</a></code>
+
+        </dt>
+        <dd>Quarantined joint-multinomial compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertMultinomJointNewton.html">ds.vertMultinomJointNewton()</a></code>
+
+        </dt>
+        <dd>Quarantined joint-softmax Newton compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertOrdinal.html">ds.vertOrdinal()</a></code>
+
+        </dt>
+        <dd>Quarantined ordinal-regression compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertOrdinalJointNewton.html">ds.vertOrdinalJointNewton()</a></code>
+
+        </dt>
+        <dd>Quarantined proportional-odds Newton compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLMM.html">ds.vertLMM()</a></code>
+
+        </dt>
+        <dd>Quarantined linear-mixed-model compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLMM.k3.html">ds.vertLMM.k3()</a></code>
+
+        </dt>
+        <dd>Quarantined deprecated K&gt;=3 LMM frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertGEE.html">ds.vertGEE()</a></code>
+
+        </dt>
+        <dd>Quarantined GEE compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertGLMM.html">ds.vertGLMM()</a></code>
+
+        </dt>
+        <dd>Quarantined generalized-linear mixed-model frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertIPW.html">ds.vertIPW()</a></code>
+
+        </dt>
+        <dd>Quarantined IPW compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertMI.html">ds.vertMI()</a></code>
+
+        </dt>
+        <dd>Quarantined multiple-imputation compatibility frontdoor</dd>
+
+        <dt>
+
+          <code><a href="ds.vertLASSOIter.html">ds.vertLASSOIter()</a></code>
+
+        </dt>
+        <dd>Quarantined iterative-LASSO compatibility frontdoor</dd>
+      </dl></div><div class="section level2">
       <h2 id="helpers-and-s-methods">Helpers and S3 methods<a class="anchor" aria-label="anchor" href="#helpers-and-s-methods"></a></h2>
 
 
@@ -372,7 +676,7 @@
           <code><a href="chunk-utils.html">chunk-utils</a></code>
 
         </dt>
-        <dd>Adaptive Chunking for DataSHIELD Transport</dd>
+        <dd>Acknowledged Chunking for DataSHIELD Transport</dd>
 
         <dt>
 
@@ -380,6 +684,41 @@
 
         </dt>
         <dd>Coefficients Method for ds.glm Objects</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPContingency.html">ds.vertDPContingency()</a></code> <code><a href="ds.vertDPContingency.html">print(<i>&lt;ds.vertDPContingency&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Differentially private fixed-domain contingency table</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPCount.html">ds.vertDPCount()</a></code> <code><a href="ds.vertDPCount.html">print(<i>&lt;ds.vertDPCount&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Differentially private privacy-unit count</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPDescribe.html">ds.vertDPDescribe()</a></code> <code><a href="ds.vertDPDescribe.html">print(<i>&lt;ds.vertDPDescribe&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Differentially Private Fixed-Grid Descriptive Statistics</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPMeanVar.html">ds.vertDPMeanVar()</a></code> <code><a href="ds.vertDPMeanVar.html">print(<i>&lt;ds.vertDPMeanVar&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Differentially private bounded mean and variance</dd>
+
+        <dt>
+
+          <code><a href="ds.vertDPSurvival.html">ds.vertDPSurvival()</a></code> <code><a href="ds.vertDPSurvival.html">print(<i>&lt;ds.vertDPSurvival&gt;</i>)</a></code>
+
+        </dt>
+        <dd>Differentially Private Non-Parametric Survival Curves</dd>
 
         <dt>
 

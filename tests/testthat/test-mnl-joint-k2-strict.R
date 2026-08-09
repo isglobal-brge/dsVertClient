@@ -33,7 +33,7 @@ library(testthat)
 
 # ---- Test 1-3: API contract of the H_emp pipeline ---------------------
 
-test_that("ds.vertMultinomJointNewton signature includes max_outer + tol", {
+test_that("multinomial signature includes solver and signed-design controls", {
   expect_true(exists("ds.vertMultinomJointNewton",
                       envir = asNamespace("dsVertClient"),
                       inherits = FALSE))
@@ -45,6 +45,7 @@ test_that("ds.vertMultinomJointNewton signature includes max_outer + tol", {
   expect_true("tol" %in% names(args))
   expect_true("levels" %in% names(args))
   expect_true("indicator_template" %in% names(args))
+  expect_true("design_analysis_id" %in% names(args))
 })
 
 test_that("ds.vertMultinomJointNewton requires K=2 datasources", {
@@ -186,23 +187,27 @@ test_that("symmetrise (H + t(H))/2 preserves PD when input near-symmetric", {
 
 # ---- Test 14-16: Negative-control + L2 STRICT fixture handoff -------
 
-test_that("Bohning B_reg fallback triggers on H_emp construction failure", {
-  # Source-level invariant: the empirical-H Newton solve must include
-  # a tryCatch fallback to Bohning B_reg per Bohning 1992 Thm 2
-  # (Loewner upper-bound always positive-definite).
+test_that("Bohning majorant is an explicit unpenalized optimizer route", {
+  # Source-level invariant: an unusable opt-in empirical information matrix
+  # selects the declared Bohning majorant for the same likelihood. Neither a
+  # ridge nor an invented gradient step may rescue a failed linear solve.
   src <- .read_dsvertclient_source("ds.vertMultinomJointNewton.R")
   joined <- paste(src, collapse = "\n")
-  expect_match(joined, "B_reg.*g_stacked")
+  expect_match(joined, "bohning_majorant_after_empirical_information_rejected")
+  expect_match(joined, "The protected Bohning multinomial majorant")
   expect_match(joined, "H_emp_ok")
-  expect_match(joined, "tryCatch")
+  expect_false(grepl("B_reg", joined, fixed = TRUE))
+  expect_false(grepl("0.1 * g_stacked", joined, fixed = TRUE))
 })
 
 test_that("L2 fixture STRICT target documented at rel<1e-4 (cum-P)", {
-  # Smoke-test that the documented STRICT target appears in the
-  # docs/error_bounds path — the actual numerical verification runs
-  # in the dsvert-paper L2 fixture under DataSHIELD harness.
-  expect_true(file.exists(
-    file.path(getwd(), "..", "dsvert-paper", "scripts",
-              "l2_k2safe_fixture.R")) ||
-    file.exists("/Users/david/Documents/GitHub/dsvert-paper/scripts/l2_k2safe_fixture.R"))
+  # The installed historical record must preserve both the ex-ante target and
+  # its quarantine banner. Numerical verification belongs to the independent
+  # DataSHIELD harness, never to a developer-specific filesystem path.
+  record <- system.file(
+    "docs", "acceptance", "path_b_targets.md", package = "dsVertClient")
+  expect_true(nzchar(record) && file.exists(record))
+  text <- paste(readLines(record, warn = FALSE), collapse = "\n")
+  expect_match(text, "Archived historical design record", fixed = TRUE)
+  expect_match(text, "rel<1e-4", fixed = TRUE)
 })
