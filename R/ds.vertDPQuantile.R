@@ -128,7 +128,6 @@
       !scalar_string(x$adjacency) ||
       !x$adjacency %in% c(
         "add_remove_patient", "replace_one_fixed_cohort") ||
-      !identical(x$composition_partitions, 1L) ||
       !.dsvert_vector_whole(x$privacy_epoch, 1, 2^53 - 1) ||
       !scalar_string(x$noise_key_id) ||
       !.dsvert_vector_hex(x$capsule_id) ||

@@ -57,6 +57,41 @@ test_that("exported DP methods cannot reach retired DP endpoints", {
     length(offenders) > 0L, info = paste(offenders, collapse = "\n"))
 })
 
+test_that("retired local schema-6 validators are absent", {
+  namespace <- asNamespace("dsVertClient")
+  retired <- c(
+    ".DSVERT_DP_TRANSCRIPT_POLICY_VALUE",
+    ".dsvert_dp_validate_named_domains",
+    ".dsvert_dp_validate_numeric_bounds",
+    ".dsvert_dp_validate_datasets",
+    ".dsvert_dp_expected_anchor_id",
+    ".dsvert_dp_validate_rollback_policy",
+    ".dsvert_dp_validate_noise_selection_policy",
+    ".dsvert_dp_validate_policy",
+    ".dsvert_dp_find_server",
+    ".dsvert_dp_release_epsilon_is_valid",
+    ".dsvert_dp_validate_release_common",
+    ".dsvert_dp_sampler_metadata_is_valid",
+    ".dsvert_dp_validate_noise_selection_certificate",
+    ".dsvert_dp_selected_sampler_metadata_is_valid",
+    ".dsvert_dp_validate_count_release",
+    ".dsvert_dp_validate_table_release",
+    ".dsvert_dp_validate_meanvar_release",
+    ".dsvert_dp_validate_release",
+    ".dsvert_dp_validate_describe_release",
+    ".dsvert_dp_validate_survival_release",
+    ".dsvert_dp_simultaneous_radius",
+    ".dsvert_dp_gaussian_sigma_matches_calibration",
+    ".dsvert_dp_meanvar_simultaneous_radii",
+    ".dsvert_dp_meanvar_projection_interval",
+    ".dsvert_dp_meanvar_mechanism_region",
+    ".dsvert_dp_meanvar_postprocess")
+
+  present <- retired[vapply(
+    retired, exists, logical(1L), envir = namespace, inherits = FALSE)]
+  expect_length(present, 0L)
+})
+
 test_that("DP calibration uses fixed per-capsule privacy parameters", {
   default_calibration <- ds.vertDPCalibrate(capsule_epsilon = 1)
   expect_identical(
@@ -284,102 +319,4 @@ test_that("postprocessed count boxes cover all bounded integer noise draws", {
     covered[[iteration]] <- all(truth >= lower & truth <= upper)
   }
   expect_true(all(covered))
-})
-
-test_that("DP mean/variance regions exhaust every small noise box", {
-  grid_scale <- 16
-  lower_bound <- -2
-  upper_bound <- 6
-  width <- upper_bound - lower_bound
-  radii <- c(count = 1, sum = 2, sumsq = 2)
-  normalized_grid <- c(0, 0.2, 0.5, 0.8, 1)
-  datasets <- list(numeric())
-  for (size in 1:3) {
-    indices <- expand.grid(
-      rep(list(seq_along(normalized_grid)), size),
-      KEEP.OUT.ATTRS = FALSE)
-    datasets <- c(datasets, lapply(seq_len(nrow(indices)), function(index) {
-      normalized_grid[as.integer(indices[index, ])]
-    }))
-  }
-  noises <- expand.grid(
-    count = -radii[["count"]]:radii[["count"]],
-    sum = -radii[["sum"]]:radii[["sum"]],
-    sumsq = -radii[["sumsq"]]:radii[["sumsq"]],
-    KEEP.OUT.ATTRS = FALSE)
-  covered <- states_valid <- TRUE
-  failure <- ""
-  checked <- 0L
-  for (dataset_index in seq_along(datasets)) {
-    normalized <- datasets[[dataset_index]]
-    exact <- c(
-      count = length(normalized),
-      sum = sum(round(normalized * grid_scale)),
-      sumsq = sum(round(normalized^2 * grid_scale)))
-    for (noise_index in seq_len(nrow(noises))) {
-      noisy <- exact + as.numeric(noises[noise_index, ])
-      n_dp <- max(0, noisy[["count"]])
-      mean <- variance <- NULL
-      if (n_dp > 0) {
-        sum_hat <- min(n_dp, max(0, noisy[["sum"]] / grid_scale))
-        sumsq_hat <- min(
-          sum_hat,
-          max(sum_hat^2 / n_dp, noisy[["sumsq"]] / grid_scale))
-        mean_normalized <- sum_hat / n_dp
-        variance_normalized <-
-          sumsq_hat / n_dp - mean_normalized^2
-        mean <- lower_bound + width * mean_normalized
-        variance <- width^2 * variance_normalized
-      }
-      region <- .dsvert_dp_meanvar_mechanism_region(
-        list(
-          n = n_dp, mean = mean, variance = variance,
-          lower_bound = lower_bound, upper_bound = upper_bound,
-          numeric_grid_scale = grid_scale),
-        raw_radius = radii)
-      true_n <- length(normalized)
-      inside <- true_n >=
-        region$regions$effective_count[["lower"]] &&
-        true_n <= region$regions$effective_count[["upper"]]
-      if (true_n > 0) {
-        original <- lower_bound + width * normalized
-        truth <- c(
-          mean = mean(original),
-          variance = mean((original - mean(original))^2))
-        inside <- inside &&
-          truth[["mean"]] >=
-            region$regions$mean[["lower"]] - 1e-10 &&
-          truth[["mean"]] <=
-            region$regions$mean[["upper"]] + 1e-10 &&
-          truth[["variance"]] >=
-            region$regions$variance[["lower"]] - 1e-10 &&
-          truth[["variance"]] <=
-            region$regions$variance[["upper"]] + 1e-10
-      } else {
-        states_valid <- states_valid &&
-          isTRUE(region$includes_non_estimable)
-      }
-      if (!inside) {
-        covered <- FALSE
-        failure <- paste(
-          "dataset", dataset_index, "noise", noise_index,
-          "projection", paste(region$projection_state, collapse = ","))
-      }
-      checked <- checked + 1L
-    }
-  }
-  expect_identical(checked, 11700L)
-  expect_true(covered, info = failure)
-  expect_true(states_valid)
-
-  empty <- .dsvert_dp_meanvar_mechanism_region(
-    list(
-      n = 0, mean = NULL, variance = NULL,
-      lower_bound = lower_bound, upper_bound = upper_bound,
-      numeric_grid_scale = grid_scale),
-    raw_radius = c(count = 0, sum = 0, sumsq = 0))
-  expect_identical(
-    empty$status, "dp_region_has_no_positive_effective_count")
-  expect_true(all(is.na(empty$regions$mean)))
-  expect_true(all(is.na(empty$regions$variance)))
 })

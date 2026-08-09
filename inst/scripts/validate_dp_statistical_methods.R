@@ -210,7 +210,7 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
     sticky_noise = "one immutable capsule vector; unlimited replay",
     epsilon = contract$epsilon, delta = 2^-100,
     implementation_delta = .dv_implementation_delta,
-    adjacency = "add_remove_patient", composition_partitions = 1L,
+    adjacency = "add_remove_patient",
     capsule_id = strrep("a", 64L), final_vector_root = strrep("b", 64L),
     coordinate_order_sha256 = strrep("c", 64L), server = "site_a",
     history_gate = TRUE, request_limit = FALSE, operation_limit = TRUE)
@@ -735,7 +735,7 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
     sticky_noise = "one immutable capsule vector; unlimited replay",
     epsilon = contract$epsilon, delta = 2^-100,
     implementation_delta = .dv_implementation_delta,
-    adjacency = "add_remove_patient", composition_partitions = 1L,
+    adjacency = "add_remove_patient",
     capsule_id = strrep("d", 64L), final_vector_root = strrep("e", 64L),
     coordinate_order_sha256 = strrep("f", 64L), server = "site_a",
     history_gate = TRUE, request_limit = FALSE, operation_limit = TRUE)

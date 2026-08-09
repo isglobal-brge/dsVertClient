@@ -1,130 +1,8 @@
-.dp_survival_client_status <- function(
-    adjacency = "add_remove_patient") {
-  list(
-    policy = list(
-      adjacency = adjacency,
-      composition_partitions = 2L,
-      local_total_epsilon = 0.5,
-      local_total_delta = 0,
-      decay = 0.5),
-    noise_root = list(
-      privacy_epoch = 1,
-      key_id = "test-noise-key-v1"))
+.dp_survival_client_release <- function(delayed_entry = FALSE) {
+  .dsvert_dp_survival_vector_result(
+    .dp_survival_vector_capsule(delayed_entry, decoded = TRUE),
+    "protected", "primary")
 }
-
-.dp_survival_client_release <- function(
-    delayed_entry = FALSE, adjacency = "add_remove_patient") {
-  grid <- as.numeric(1:4)
-  exit <- cbind(
-    `0` = c(0, 1, 0, 0),
-    A = c(1, 0, 0, 1),
-    B = c(0, 0, 1, 0))
-  entry <- if (delayed_entry) c(2, 1, 1, 0) else NULL
-  histogram <- c(entry, as.vector(exit), 0)
-  sensitivity <- (if (delayed_entry) 2L else 1L) *
-    if (identical(adjacency, "add_remove_patient")) 1L else 2L
-  epsilon <- 0.25
-  coordinates <- length(histogram)
-  l2_sensitivity <- sqrt(
-    (if (delayed_entry) 2L else 1L) *
-      if (identical(adjacency, "add_remove_patient")) 1L else 2L)
-  marginal <- .dsvert_dp_google_ci_radius(epsilon, sensitivity)
-  simultaneous <- .dsvert_dp_google_ci_radius(
-    epsilon, sensitivity, alpha = 0.05 / coordinates)
-  laplace <- list(
-    available = TRUE,
-    mechanism = "dsvert_dp_v1_deterministic_granular_laplace_int64",
-    epsilon = epsilon, delta = 0, analytic_delta = 0,
-    implementation_delta_bound = 0,
-    accounting_rule = "pure_dp_no_implementation_slack",
-    accuracy_accounting = "exact_granular_laplace_confidence_interval",
-    sensitivity_norm = "l1", sensitivity = sensitivity,
-    marginal_95_abs = marginal, simultaneous_95_abs = simultaneous,
-    nominal_rmse = sqrt(2) * sensitivity / epsilon, sigma = 0,
-    granularity = 2^ceiling(log2((sensitivity / epsilon) / 2^40)),
-    analytic_accounting_verified = TRUE, unavailable_reason = "")
-  gaussian <- list(
-    available = FALSE,
-    mechanism = "dsvert_dp_v3_deterministic_approximate_gaussian_int64",
-    epsilon = epsilon, delta = 0, analytic_delta = 0,
-    implementation_delta_bound =
-      .dsvert_dp_gaussian_implementation_delta_bound(coordinates, epsilon),
-    accounting_rule =
-      "analytic_gaussian_delta_plus_dp_transfer_from_total_variation_bound",
-    accuracy_accounting =
-      "gaussian_tail_alpha_minus_total_variation_union_bound",
-    sensitivity_norm = "l2", sensitivity = l2_sensitivity,
-    marginal_95_abs = 0, simultaneous_95_abs = 0,
-    nominal_rmse = 0, sigma = 0, granularity = 0,
-    analytic_accounting_verified = FALSE,
-    unavailable_reason = "gaussian_delta_is_zero")
-  noise_selection <- list(
-    schema_version = 2L,
-    selector = "minimum_conservative_95_radius_v3",
-    objective = "simultaneous_95_abs", coordinate_count = coordinates,
-    laplace = laplace, gaussian = gaussian, winner = "laplace",
-    winner_mechanism = laplace$mechanism,
-    winning_metric_abs = laplace$simultaneous_95_abs,
-    winner_delta = 0,
-    tie_break = "laplace_unless_gaussian_strictly_improves")
-  list(
-    released = TRUE,
-    analysis_id = "primary",
-    analysis_version = "v1",
-    time_grid = grid,
-    time_lower_bound = 0,
-    time_upper_bound = 4,
-    interval_semantics =
-      "(previous_endpoint,current_endpoint] after public-bound clipping",
-    unit_collapse =
-      "first_event_else_latest_censor_public_tiebreak",
-    censor_level = "0",
-    causes = c("A", "B"),
-    delayed_entry = delayed_entry,
-    histogram = histogram,
-    coordinate_count = coordinates,
-    histogram_layout = if (delayed_entry) {
-      "entry[T],exit[T x (censor+causes) column-major],not_in_analysis"
-    } else {
-      "exit[T x (censor+causes) column-major],not_in_analysis"
-    },
-    not_in_analysis_definition = if (delayed_entry) {
-      paste(
-        "DP-noisy bin for unknown outcome, non-finite time,",
-        "non-finite entry, or entry after exit")
-    } else {
-      "DP-noisy bin for unknown outcome or non-finite time"
-    },
-    invalid_unit_rule =
-      "invalid_patient_ids_rejected_by_admission",
-    mechanism = "dsvert_dp_v1_deterministic_granular_laplace_int64",
-    implementation = paste0(
-      "dsVert adapted Google Differential Privacy v4.1.0 ",
-      "granular Laplace integer mechanism"),
-    sampler = "deterministic_two_sided_geometric",
-    randomness = "HMAC-SHA256/ChaCha20",
-    l1_sensitivity = sensitivity,
-    l2_sensitivity = l2_sensitivity,
-    noise_selection = noise_selection,
-    max_histogram_cells_per_unit = if (delayed_entry) 2L else 1L,
-    contribution_unit = adjacency,
-    postprocessing = "cellwise_nonnegative_integer",
-    clipped_coordinates = 0L,
-    accuracy_95_abs_per_coordinate = marginal,
-    accuracy_simultaneous_95_abs = simultaneous,
-    accuracy_simultaneous_confidence = 0.95,
-    accuracy_simultaneous_method = "union_bound",
-    uncertainty_scope =
-      "DP mechanism noise only; sampling uncertainty excluded",
-    privacy_epoch = 1,
-    noise_key_id = "test-noise-key-v1",
-    sticky_noise = "dsvert-sticky-noise-v1",
-    epsilon = epsilon,
-    delta = 0,
-    adjacency = adjacency,
-    composition_partitions = 2L)
-}
-
 .dp_survival_vector_capsule <- function(delayed_entry = FALSE,
                                         decoded = TRUE, gaussian = FALSE) {
   grid <- as.numeric(1:4)
@@ -302,6 +180,51 @@ test_that("survival maps only its signed final-vector block", {
     capsule, "protected", "primary"), "coordinate contract")
 })
 
+test_that("survival vector contract rejects semantic and clamp tampering", {
+  base <- .dp_survival_vector_capsule(FALSE, decoded = TRUE)
+  forged <- list(
+    coordinate_order = "forged",
+    repeated_record_policy = "forged",
+    missingness_policy = "forged",
+    l1_sensitivity = 0.5,
+    l2_sensitivity = 0.5,
+    statistic_maximum = 99,
+    coordinate_count = 12L)
+  for (field in names(forged)) {
+    candidate <- base
+    candidate$release$manifest$workload$families$survival_artifacts$
+      primary[[field]] <- forged[[field]]
+    expect_error(
+      .dsvert_dp_survival_vector_result(
+        candidate, "protected", "primary"),
+      "coordinate contract is inconsistent", info = field)
+  }
+
+  candidate <- base
+  start <- candidate$layout$blocks[["survival_artifacts::primary"]]$start
+  candidate$release$values[[start]] <- 101
+  expect_error(
+    .dsvert_dp_survival_vector_result(
+      candidate, "protected", "primary"),
+    "violates its signed public clamp")
+
+  for (delayed in c(FALSE, TRUE)) {
+    candidate <- .dp_survival_vector_capsule(delayed, decoded = TRUE)
+    baseline <- .dsvert_dp_survival_postprocess(
+      .dsvert_dp_survival_vector_result(
+        candidate, "protected", "primary"))
+    block <- candidate$layout$blocks[["survival_artifacts::primary"]]
+    candidate$release$values[[block$end]] <- 7
+    result <- .dsvert_dp_survival_postprocess(
+      .dsvert_dp_survival_vector_result(
+        candidate, "protected", "primary"))
+    expect_identical(result$not_in_analysis, 7)
+    expect_identical(result$curve, baseline$curve)
+    expect_identical(result$cumulative_incidence,
+                     baseline$cumulative_incidence)
+  }
+})
+
 test_that("survival propagates the signed Gaussian L2 plan", {
   for (delayed in c(FALSE, TRUE)) {
     capsule <- .dp_survival_vector_capsule(
@@ -350,8 +273,6 @@ test_that("RMTL accepts the formal vector survival object and binds provenance",
 
 .dp_survival_client_object <- function(delayed_entry = FALSE) {
   release <- .dp_survival_client_release(delayed_entry)
-  release <- .dsvert_dp_validate_survival_release(
-    release, "primary", "site_a", .dp_survival_client_status())
   result <- .dsvert_dp_survival_postprocess(release)
   class(result) <- c("ds.vertDPSurvival", "list")
   result
@@ -359,7 +280,9 @@ test_that("RMTL accepts the formal vector survival object and binds provenance",
 
 test_that("KM, Nelson-Aalen and CIF match the no-noise central oracle", {
   result <- .dp_survival_client_object(FALSE)
-  expect_identical(result$status, "ok")
+  expect_identical(
+    result$status,
+    "fixed_public_clamp_applied_preclamp_state_not_released")
   expect_equal(result$curve$at_risk_dp, c(4, 3, 2, 1))
   expect_equal(result$curve$event_dp, c(1, 0, 1, 1))
   expect_equal(result$curve$censor_dp, c(0, 1, 0, 0))
@@ -435,10 +358,7 @@ test_that("oversized noisy cause hazards are jointly normalized", {
 
 test_that("RMST is zero-cost fixed-grid post-processing with valid bands", {
   release <- .dp_survival_client_release(delayed_entry = FALSE)
-  status <- .dp_survival_client_status()
-  result <- .dsvert_dp_validate_survival_release(
-    release, "primary", "site_a", status)
-  result <- .dsvert_dp_survival_postprocess(result)
+  result <- .dsvert_dp_survival_postprocess(release)
   class(result) <- c("ds.vertDPSurvival", "list")
 
   rmst <- ds.vertDPRMST(result, tau = c(0.5, 1, 1.5, 4))
@@ -460,10 +380,7 @@ test_that("RMST is zero-cost fixed-grid post-processing with valid bands", {
 
 test_that("RMST validates public restriction times and release provenance", {
   release <- .dp_survival_client_release(delayed_entry = TRUE)
-  status <- .dp_survival_client_status()
-  result <- .dsvert_dp_validate_survival_release(
-    release, "primary", "site_a", status)
-  result <- .dsvert_dp_survival_postprocess(result)
+  result <- .dsvert_dp_survival_postprocess(release)
   class(result) <- c("ds.vertDPSurvival", "list")
 
   for (invalid in list(numeric(), NA_real_, Inf, -1, 0, 4.1, "4")) {
@@ -516,8 +433,6 @@ test_that("RMTL is the exact zero-cost complement of released RMST", {
 test_that("RMTL uses the released lower bound rather than assuming time zero", {
   release <- .dp_survival_client_release(FALSE)
   release$time_lower_bound <- 0.25
-  release <- .dsvert_dp_validate_survival_release(
-    release, "primary", "site_a", .dp_survival_client_status())
   result <- .dsvert_dp_survival_postprocess(release)
   class(result) <- c("ds.vertDPSurvival", "list")
   tau <- c(0.5, 1.5, 4)
@@ -763,8 +678,6 @@ test_that("fixed-grid survival quantiles and median match the central curve", {
 test_that("survival quantiles type horizons that do not reach the target", {
   release <- .dp_survival_client_release(FALSE)
   release$histogram <- c(c(1, 1, 1, 1), rep(0, 8), 0)
-  release <- .dsvert_dp_validate_survival_release(
-    release, "primary", "site_a", .dp_survival_client_status())
   release$accuracy_simultaneous_95_abs <- 0
   result <- .dsvert_dp_survival_postprocess(release)
   class(result) <- c("ds.vertDPSurvival", "list")
@@ -992,8 +905,6 @@ test_that("empty survival releases remain finite and explicitly typed", {
   for (delayed in c(FALSE, TRUE)) {
     release <- .dp_survival_client_release(delayed)
     release$histogram[] <- 0
-    release <- .dsvert_dp_validate_survival_release(
-      release, "primary", "site_a", .dp_survival_client_status())
     result <- .dsvert_dp_survival_postprocess(release)
     expect_identical(result$status, "dp_curve_empty_after_postprocessing")
     expect_true(all(result$curve$at_risk_dp == 0))
@@ -1003,39 +914,6 @@ test_that("empty survival releases remain finite and explicitly typed", {
     expect_false(anyNA(unlist(
       list(result$curve, result$cumulative_incidence),
       use.names = FALSE)))
-  }
-})
-
-test_that("client enforces replacement survival sensitivity", {
-  for (delayed in c(FALSE, TRUE)) {
-    status <- .dp_survival_client_status("replace_one_fixed_cohort")
-    release <- .dp_survival_client_release(
-      delayed, "replace_one_fixed_cohort")
-    result <- .dsvert_dp_validate_survival_release(
-      release, "primary", "site_a", status)
-    expect_identical(result$l1_sensitivity,
-                     if (delayed) 4L else 2L)
-
-    release$l1_sensitivity <- release$l1_sensitivity / 2
-    expect_error(
-      .dsvert_dp_validate_survival_release(
-        release, "primary", "site_a", status),
-      "invalid DP survival release")
-  }
-})
-
-test_that("client enforces the server invalid-bin semantics by entry mode", {
-  for (delayed in c(FALSE, TRUE)) {
-    release <- .dp_survival_client_release(delayed)
-    expect_silent(.dsvert_dp_validate_survival_release(
-      release, "primary", "site_a", .dp_survival_client_status()))
-
-    release$not_in_analysis_definition <-
-      "DP-noisy bin with ambiguous invalid records"
-    expect_error(
-      .dsvert_dp_validate_survival_release(
-        release, "primary", "site_a", .dp_survival_client_status()),
-      "invalid DP survival release")
   }
 })
 
@@ -1073,43 +951,6 @@ test_that("named methods are post-processing of the same release", {
   expect_error(
     ds.vertDPCumulativeIncidence(result, "unknown"),
     "released event cause")
-})
-
-test_that("the client rejects malformed or disclosure-expanded releases", {
-  status <- .dp_survival_client_status()
-  base <- .dp_survival_client_release(FALSE)
-  malformed <- list(
-    utils::modifyList(base, list(l1_sensitivity = 2L)),
-    utils::modifyList(base, list(histogram = base$histogram[-1L])),
-    utils::modifyList(base, list(
-      uncertainty_scope = "sampling confidence interval")),
-    c(base, list(exact_n = 4L)))
-  for (value in malformed) {
-    expect_error(
-      .dsvert_dp_validate_survival_release(
-        value, "primary", "site_a", status),
-      "invalid DP survival release")
-  }
-})
-
-test_that("survival validation rejects non-finite and overflowing histograms", {
-  status <- .dp_survival_client_status()
-  for (bad in c(NA_real_, NaN, Inf, -Inf, 2^53)) {
-    release <- .dp_survival_client_release(FALSE)
-    release$histogram[[1L]] <- bad
-    expect_error(
-      .dsvert_dp_validate_survival_release(
-        release, "primary", "site_a", status),
-      "invalid DP survival release")
-  }
-  for (bad in c(NA_real_, NaN, Inf, -Inf)) {
-    release <- .dp_survival_client_release(FALSE)
-    release$time_grid[[1L]] <- bad
-    expect_error(
-      .dsvert_dp_validate_survival_release(
-        release, "primary", "site_a", status),
-      "invalid DP survival release")
-  }
 })
 
 test_that("repeated survival requests reuse the one capsule vector", {

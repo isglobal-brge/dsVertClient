@@ -1,165 +1,3 @@
-.dsvert_dp_validate_survival_release <- function(result, analysis_id,
-                                                  server, status) {
-  invalid <- function() {
-    stop("Server '", server, "' returned an invalid DP survival release",
-         call. = FALSE)
-  }
-  if (is.list(result) && length(result) == 1L &&
-      is.list(result[[1L]]) && !"released" %in% names(result)) {
-    if (is.null(names(result)) || !identical(names(result), server)) invalid()
-    result <- result[[1L]]
-  }
-  if (!is.list(result) || !is.list(status) || !is.list(status$policy)) {
-    invalid()
-  }
-  if (identical(result$released, FALSE)) {
-    expected <- c(
-      "released", "value", "reason", "epsilon", "delta", "adjacency",
-      "composition_partitions")
-    if (!.dsvert_dp_has_exact_names(result, expected) ||
-        !is.null(result$value) ||
-        !identical(result$reason,
-                   "privacy_allocation_not_representable")) invalid()
-    .dsvert_dp_validate_release_common(result, status, server)
-    result$server <- server
-    return(result)
-  }
-
-  expected <- c(
-    "released", "analysis_id", "analysis_version", "time_grid",
-    "time_lower_bound", "time_upper_bound", "interval_semantics",
-    "unit_collapse", "censor_level", "causes", "delayed_entry", "histogram",
-    "coordinate_count", "histogram_layout",
-    "not_in_analysis_definition", "invalid_unit_rule", "mechanism",
-    "implementation",
-    "sampler", "randomness", "l1_sensitivity", "l2_sensitivity",
-    "noise_selection",
-    "max_histogram_cells_per_unit", "contribution_unit",
-    "postprocessing", "clipped_coordinates",
-    "accuracy_95_abs_per_coordinate", "accuracy_simultaneous_95_abs",
-    "accuracy_simultaneous_confidence",
-    "accuracy_simultaneous_method", "uncertainty_scope",
-    "privacy_epoch", "noise_key_id", "sticky_noise", "epsilon", "delta",
-    "adjacency", "composition_partitions")
-  if (!identical(result$released, TRUE) ||
-      !.dsvert_dp_has_exact_names(result, expected)) invalid()
-  tryCatch(
-    .dsvert_dp_validate_release_common(result, status, server),
-    error = function(e) invalid())
-  if (!identical(result$analysis_id, analysis_id) ||
-      !.dsvert_dp_is_string(result$analysis_version) ||
-      !grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
-             result$analysis_version) ||
-      !is.numeric(result$time_grid) || !length(result$time_grid) ||
-      anyNA(result$time_grid) || any(!is.finite(result$time_grid)) ||
-      any(diff(result$time_grid) <= 0) ||
-      !.dsvert_dp_is_number(result$time_lower_bound) ||
-      !.dsvert_dp_is_number(result$time_upper_bound) ||
-      result$time_lower_bound >= result$time_grid[[1L]] ||
-      !.dsvert_dp_num_equal(
-        result$time_upper_bound,
-        result$time_grid[[length(result$time_grid)]]) ||
-      !identical(
-        result$interval_semantics,
-        "(previous_endpoint,current_endpoint] after public-bound clipping") ||
-      !identical(
-        result$unit_collapse,
-        "first_event_else_latest_censor_public_tiebreak") ||
-      !.dsvert_dp_is_string(result$censor_level) ||
-      !is.character(result$causes) || !length(result$causes) ||
-      anyNA(result$causes) || any(!nzchar(result$causes)) ||
-      anyDuplicated(result$causes) || result$censor_level %in% result$causes ||
-      !is.logical(result$delayed_entry) ||
-      length(result$delayed_entry) != 1L || is.na(result$delayed_entry)) {
-    invalid()
-  }
-
-  time_count <- length(result$time_grid)
-  outcome_count <- length(result$causes) + 1L
-  if (time_count > .DSVERT_DP_MAX_COORDINATES ||
-      outcome_count > floor(.DSVERT_DP_MAX_COORDINATES / time_count)) {
-    invalid()
-  }
-  delayed_count <- if (isTRUE(result$delayed_entry)) time_count else 0L
-  coordinate_count <- delayed_count + time_count * outcome_count + 1L
-  max_cells_per_unit <- if (isTRUE(result$delayed_entry)) 2L else 1L
-  sensitivity <- max_cells_per_unit *
-    if (identical(
-      status$policy$adjacency, "add_remove_patient")) 1L else 2L
-  l2_sensitivity <- sqrt(max_cells_per_unit *
-    if (identical(
-      status$policy$adjacency, "add_remove_patient")) 1L else 2L)
-  layout <- if (isTRUE(result$delayed_entry)) {
-    "entry[T],exit[T x (censor+causes) column-major],not_in_analysis"
-  } else {
-    "exit[T x (censor+causes) column-major],not_in_analysis"
-  }
-  not_in_analysis_definition <- if (isTRUE(result$delayed_entry)) {
-    paste(
-      "DP-noisy bin for unknown outcome, non-finite time,",
-      "non-finite entry, or entry after exit")
-  } else {
-    "DP-noisy bin for unknown outcome or non-finite time"
-  }
-  local_total_delta <- status$policy$local_total_delta
-  if (is.null(local_total_delta)) local_total_delta <- 0
-  scheduled_delta <- result$epsilon * local_total_delta /
-    status$policy$local_total_epsilon
-  selection <- .dsvert_dp_validate_noise_selection_certificate(
-    result$noise_selection, coordinate_count, "simultaneous_95_abs",
-    result$epsilon, sensitivity, result$epsilon, scheduled_delta,
-    l2_sensitivity)
-  histogram_ok <- is.numeric(result$histogram) &&
-    length(result$histogram) == coordinate_count &&
-    !anyNA(result$histogram) && all(is.finite(result$histogram)) &&
-    all(result$histogram >= 0) &&
-    all(result$histogram == floor(result$histogram)) &&
-    all(result$histogram <= 2^53 - 1)
-  if (coordinate_count > .DSVERT_DP_MAX_COORDINATES ||
-      !.dsvert_dp_is_integer(result$coordinate_count, 1,
-                             .DSVERT_DP_MAX_COORDINATES) ||
-      result$coordinate_count != coordinate_count || !histogram_ok ||
-      !identical(result$histogram_layout, layout) ||
-      !identical(result$not_in_analysis_definition,
-                 not_in_analysis_definition) ||
-      !identical(result$invalid_unit_rule,
-                 "invalid_patient_ids_rejected_by_admission") ||
-      is.null(selection) ||
-      !.dsvert_dp_selected_sampler_metadata_is_valid(
-        result, selection, coordinate_count) ||
-      !.dsvert_dp_is_integer(result$l1_sensitivity, sensitivity,
-                             sensitivity) ||
-      !.dsvert_dp_num_equal(result$l2_sensitivity, l2_sensitivity,
-                            multiplier = 2048) ||
-      !.dsvert_dp_num_equal(result$delta, selection$selected$delta) ||
-      !.dsvert_dp_is_integer(
-        result$max_histogram_cells_per_unit,
-        max_cells_per_unit, max_cells_per_unit) ||
-      !identical(result$contribution_unit, status$policy$adjacency) ||
-      !identical(result$postprocessing,
-                 "cellwise_nonnegative_integer") ||
-      !.dsvert_dp_is_integer(result$accuracy_95_abs_per_coordinate) ||
-      !.dsvert_dp_num_equal(
-        result$accuracy_95_abs_per_coordinate,
-        selection$selected$marginal_95_abs) ||
-      !.dsvert_dp_is_integer(result$accuracy_simultaneous_95_abs) ||
-      !.dsvert_dp_num_equal(
-        result$accuracy_simultaneous_95_abs,
-        selection$selected$simultaneous_95_abs) ||
-      result$accuracy_simultaneous_95_abs <
-        result$accuracy_95_abs_per_coordinate ||
-      !.dsvert_dp_num_equal(
-        result$accuracy_simultaneous_confidence, 0.95) ||
-      !identical(result$accuracy_simultaneous_method, "union_bound") ||
-      !identical(
-        result$uncertainty_scope,
-        "DP mechanism noise only; sampling uncertainty excluded")) {
-    invalid()
-  }
-  result$server <- server
-  result
-}
-
 .dsvert_dp_survival_normalize_hazards <- function(cause_hazard) {
   totals <- rowSums(cause_hazard)
   scale <- ifelse(totals > 1, 1 / totals, 1)
@@ -653,7 +491,7 @@
     sticky_noise = "one immutable capsule vector; unlimited replay",
     epsilon = release$epsilon, delta = release$delta,
     implementation_delta = release$implementation_delta,
-    adjacency = adjacency, composition_partitions = 1L,
+    adjacency = adjacency,
     capsule_id = release$capsule_id,
     final_vector_root = release$final_vector_root,
     coordinate_order_sha256 = release$coordinate_order_sha256,
@@ -939,8 +777,7 @@ ds.vertDPRMST <- function(x, tau = NULL) {
     "analysis_id", "analysis_version", "server", "capsule_id",
     "final_vector_root", "coordinate_order_sha256", "privacy_epoch",
     "noise_key_id", "mechanism", "implementation", "sampler", "epsilon",
-    "delta", "implementation_delta", "adjacency",
-    "composition_partitions", "time_grid", "time_lower_bound",
+    "delta", "implementation_delta", "adjacency", "time_grid", "time_lower_bound",
     "time_upper_bound", "security_claim")
   attr(result, "source_release_provenance") <- c(
     list(source_class = "ds.vertDPSurvival"), x[provenance_fields])

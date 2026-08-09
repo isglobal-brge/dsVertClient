@@ -111,8 +111,7 @@ ds.vertDPSurvivalQuantile <- function(x, probabilities = 0.5) {
     "analysis_id", "analysis_version", "server", "capsule_id",
     "final_vector_root", "coordinate_order_sha256", "privacy_epoch",
     "noise_key_id", "mechanism", "implementation", "sampler", "epsilon",
-    "delta", "implementation_delta", "adjacency",
-    "composition_partitions", "time_grid", "time_lower_bound",
+    "delta", "implementation_delta", "adjacency", "time_grid", "time_lower_bound",
     "time_upper_bound", "security_claim")
   attr(result, "source_release_provenance") <- c(
     list(source_class = "ds.vertDPSurvival"), x[provenance_fields])
