@@ -29,6 +29,14 @@ overlapping analyses has no finite global composition claim and no absolute
 non-reconstruction theorem. The status API and documentation must say this
 directly.
 
+One semantic analysis is the only privacy-accounting boundary. If its mechanism
+contains several DP coordinates or internal rounds, their epsilon/delta shares
+are calibrated and composed in memory inside that operation and are committed
+in its semantic contract. They never update persistent state. The preferred
+design keeps all rounds inside MPC and makes one final DP opening, avoiding
+internal composition where possible. There is no accumulated budget per user,
+dataset, resource, method, server or deployment.
+
 ## Product goals
 
 - Preserve row values and all iteration-level statistics inside the sites or
@@ -36,8 +44,8 @@ directly.
 - Return results that are numerically close to the corresponding centralized
   bounded estimand.
 - Make the common path fast: one source preparation, one internal model job
-  and one final opening. Equivalent calls use identical randomness and may be
-  coalesced or memoized only in process memory.
+  and one final opening. Equivalent calls use identical randomness even when
+  they are recomputed.
 - Make the client plug-and-play: ordinary formulas and method arguments, no
   ring selection, no manual release identifiers and no protocol phases.
 - Support K=2 and the generic K>=3 source-owner topology. Exactly two pinned
@@ -113,18 +121,31 @@ The `semantic_release_contract` and its artifact key contain at least:
 - offsets, weights and missingness policy;
 - method family, link, tuning and convergence policy;
 - custodian bounds, clipping and maximum contribution;
+- the two stable Ed25519 identities that contribute private noise;
+- scale, grid, rounding, overflow, sampler and output encoding;
+- the complete server-compiled plan of stochastic lanes used by the operation;
 - public result shape;
 - statistical mechanism and semantic version; and
 - server-owned epsilon and delta.
 
-A separate signed `execution_contract` contains build hashes, fixed-point
-format, ring, chunk geometry, transport parameters and current TLS pins. Build,
-chunk and certificate details can change without rerolling noise when the
-result remains bit-exact. The two logical noise authorities and their roots are
-fixed for the lifetime of one deployment. Replacing or reassigning one starts
-a new deployment without a continuity claim. If an implementation change alters the
-estimand, numeric result or DP mechanism, it requires an explicit
-semantic-version change instead.
+The initial contract derives the two noise authorities as the first two
+canonical stable identity keys in the full owner pinset. A request cannot pick
+another pair to obtain a fresh draw. Its randomness schema requires one audited
+final-noise lane and may contain compiler-declared confidential internal lanes;
+all are committed by the artifact key. This versions DP mechanisms, not a
+catalogue of statistical operations.
+
+A separate signed `execution_contract` contains build hashes, connection-name
+to stable-identity mappings, chunk geometry, transport parameters and current
+TLS details. Build, chunk and certificate details can change without rerolling
+noise only when conformance tests prove that the public bytes remain bit-exact.
+The physical ring is always execution metadata. If it cannot satisfy the
+committed value domain and bit-exact numeric semantics, execution fails closed;
+it does not mint another artifact for the same analysis. The two logical noise
+authorities and identity seeds are fixed for one deployment. Replacing or
+reassigning one starts a new deployment without a continuity claim. If an
+implementation change alters the estimand, numeric result or DP mechanism, it
+requires an explicit semantic-version change instead.
 
 The key excludes the analyst login, session, connection, API alias, argument
 ordering, formatting and pure post-processing choices. Semantically equivalent
@@ -146,42 +167,43 @@ not rescan the full dataset on every call.
 
 ## Sticky randomness without a release database
 
-Each designated peer keeps one fixed owner-only secret noise root. The root
-and the canonical artifact key derive deterministic pseudorandom material in a
-domain-separated way. A single raw seed must never be reused across distinct
-artifacts. Every stochastic choice uses a labelled substream derived from both
-private peer contributions and the canonical contract. The joint sampler
-produces one valid draw for the target standard DP mechanism. The same key must
-reproduce the same random stream after a restart or cache loss; a different
-artifact key obtains computationally independent material.
+Each designated peer already keeps one fixed owner-only `identity.seed`. It is
+the only persistent secret. Domain-separated HMAC derivations create an
+internal sticky-noise subkey and a separate snapshot-commitment subkey; the raw
+master is never reused directly as noise. The sticky subkey and canonical
+artifact key derive labelled pseudorandom streams for every stochastic choice.
+The two private peer contributions are combined inside MPC to produce one valid
+draw for the target standard DP mechanism.
 
-The security authority is only the two stable secret roots, the canonical
-semantic contract and its domain-separated derivation. The new route has no
-SQLite release database, privacy ledger, allocator, reservation log or durable
-result memoization. It does not depend on an external storage service.
+The same semantic key reproduces the same random stream after a restart; a
+different key obtains computationally independent material. The new route has
+no SQLite release database, privacy ledger, allocator, reservation log, result
+memoization or external storage dependency. Repeating a call may recompute the
+model, but it cannot obtain independent noise.
 
-Equivalent concurrent calls may be coalesced in process memory, and an
-evictable RAM cache may accelerate repeated calls within one service process.
-Neither is required for privacy or correctness. After a restart or RAM-cache
-loss, the system reads the immutable snapshot and reruns MPC, derives the same
-randomness and reproduces the same canonical result bytes. This requires
-deterministic fixed-point computation, ordering, serialization and signing;
-timestamps, attempt IDs and transport nonces are excluded from the replayable
-artifact.
-
-Only those small secret roots are persisted. Losing one requires restoring the
-same bytes from authenticated backup or failing closed. A root never rotates
-inside one deployment and the service never silently generates a replacement.
-Changing execution builds or TLS certificates must not alter the derivation;
-changing a logical noise authority starts a new deployment without continuity.
+Deterministic recomputation requires fixed-point computation, ordering,
+serialization and signing; timestamps, attempt IDs and transport nonces are
+excluded from the replayable artifact. Losing `identity.seed` requires
+restoring the same bytes from authenticated backup or failing closed. The seed
+never rotates inside one deployment and the service never silently generates a
+replacement. Changing execution builds or TLS certificates must not alter the
+derivation; changing a logical noise authority starts a new deployment without
+continuity.
 
 This is computational DP: the standard DP mechanism is driven by secret PRF
 outputs that are computationally indistinguishable from independent random
-coins. Root custody, separation between noise/signing domains, owner-only
+coins. Seed custody, separation between noise/signing domains, owner-only
 permissions and authenticated backup are therefore part of the threat model.
 
 No state field records or uses the number of earlier analyses to deny, alter or
 degrade a new distinct analysis.
+
+Package `configure`, installation and `.onLoad()` never create the seed. The
+first real service bootstrap runs only after the node's private persistent
+volume is mounted, creates 32 bytes from the operating-system CSPRNG if the
+file is absent, and commits them atomically with owner-only permissions. An
+image must not contain a configured literal seed; different nodes use
+different state volumes and therefore different identities.
 
 ## Confidential computation engine
 
@@ -290,8 +312,7 @@ Performance is a release gate, not deferred cleanup.
 - Keep iteration inside one persistent worker.
 - Derive one logical noise draw for each semantic key, even when a restart
   causes deterministic recomputation.
-- Coalesce equivalent concurrent calls in memory without changing their
-  randomness or result.
+- Make concurrent equivalent calls derive identical randomness and results.
 - Select one-draw versus independent-full/convolution backends using measured
   certified radius and p95 latency, not a hard-coded dimension guess.
 
@@ -303,7 +324,6 @@ phases.
 
 Initial performance targets are:
 
-- a same-process coalesced call adds no second source read, sampler or MPC job;
 - a restart may repeat protected computation but reproduces the same canonical
   result bytes and does not obtain fresh randomness;
 - DP release overhead is no greater than 1.5x the same secure-MPC estimator
@@ -343,8 +363,8 @@ result.
 - lifetime allocator/reservation -> remove; deterministic calls need no
   privacy charge or durable query claim;
 - capsule registry and lifetime release ledger -> remove without replacement;
-- privacy-accountant namespace -> remove; keep only one fixed secret root per
-  logical noise authority;
+- privacy-accountant namespace and noise-root subsystem -> remove; derive
+  domain-separated subkeys from the existing fixed `identity.seed`;
 - universal capsule catalogue -> minimal automatic artifact contract;
 - manual `analysis_id` -> optional display label, never authority;
 - O(history) audit -> remove with the historical accountant;
@@ -395,11 +415,10 @@ Security and replay:
 - 10,000 equivalent calls, aliases, argument reorderings and concurrent
   sessions produce one semantic artifact ID, one randomness commitment and
   identical result bytes;
-- same-process concurrent calls are coalesced when practical, without making
-  coalescing a security requirement;
 - restart and lost ACK may rerun source, sampler and MPC but must reproduce the
   same randomness commitment and canonical result bytes;
-- tamper, path drift and unilateral rollback fail closed;
+- loss, substitution or path drift of the persistent identity seed fails
+  closed; immutable snapshot commitments prevent a silent in-place rewrite;
 - no repeat can obtain an independent noise draw for the same semantic key;
 - the new route creates no SQLite database and has no history-dependent gate;
   and
