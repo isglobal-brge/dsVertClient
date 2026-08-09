@@ -11,8 +11,10 @@
 #' verifies the fixed per-capsule epsilon/delta, the authenticated lifetime
 #' privacy bound, adjacency, exact
 #' logical-name-to-Ed25519 pin map, privacy epoch, and the two designated noise
-#' peers. Exact replay is unlimited and there is no request counter or accuracy
-#' decay, while a new distinct capsule consumes one authenticated,
+#' peers. It also requires one consensus `jdpc1_` privacy-accountant namespace
+#' protected by an identity-bound immutable receipt. Exact replay is unlimited
+#' and there is no request counter or accuracy decay, while a new distinct
+#' capsule consumes one authenticated,
 #' non-refundable distinct-capsule reservation unit at allocator commit. This
 #' call releases no protected statistic and consumes no privacy allocation.
 #' Printing the result distinguishes the remaining reservation units from
@@ -1491,7 +1493,7 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
 
 .dsvert_dp_capsule_security_claim <- function() {
   list(
-    version = "dsvert-capsule-security-claim-v3",
+    version = "dsvert-capsule-security-claim-v4",
     privacy_definition = "bounded_lifetime_epsilon_delta_dp",
     operation_accounting =
       "one_per_distinct_capsule_allocator_commit",
@@ -1514,9 +1516,8 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
     authenticated_history_retention_assumption =
       paste0("at_least_one_noncolluding_designated_noise_peer_retains_and_",
              "uses_complete_authenticated_monotonic_history"),
-    privacy_accountant_namespace_assumption = paste0(
-      "one_stable_unique_namespace_across_domain_cohort_policy_pinset_",
-      "and_ledger_reconfiguration_per_protected_privacy_universe"),
+    privacy_accountant_namespace_enforcement =
+      "identity_bound_immutable_receipt_v1",
     simultaneous_designated_history_rollback_protection =
       "not_claimed_without_external_linearizable_cas",
     malicious_peer_security = FALSE,

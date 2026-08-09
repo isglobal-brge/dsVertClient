@@ -18,6 +18,9 @@
     capsule_epsilon, lifetime_max)
   lifetime_delta <- .dsvert_joint_dp_lifetime_exact_total(
     capsule_delta, lifetime_max)
+  namespace_id <- paste0("jdpc1_", digest::digest(
+    paste(c(servers, designated), collapse = "|"),
+    "sha256", serialize = FALSE))
   values <- lapply(servers, function(server) {
     is_designated <- server %in% designated
     telemetry <- if (is_designated) list(
@@ -54,7 +57,7 @@
       request_limit = FALSE, history_can_deny_operation = TRUE,
       admission_role = "authenticated_lifetime_gate_before_sampler") else NULL
     list(
-      version = "dsvert-joint-dp-capsule-status-v5",
+      version = "dsvert-joint-dp-capsule-status-v6",
       enabled = TRUE,
       privacy_contract = list(
         definition = "bounded_lifetime_epsilon_delta_dp",
@@ -62,12 +65,14 @@
           "at_most_N_immutable_snapshot_workload_capsules_per_stable_",
           "privacy_accountant_namespace"),
         adversary_model = "authenticated_semi_honest_noncollusion",
+        privacy_accountant_namespace_id = namespace_id,
+        privacy_accountant_namespace_enforcement =
+          "identity_bound_immutable_receipt_v1",
         assumptions = paste0(
-          "declared_adjacency_bounds_immutable_snapshot_protocol_",
-          "compliant_peers_at_least_one_noncolluding_designated_noise_peer_",
-          "retains_and_uses_complete_authenticated_monotonic_history_",
-          "stable_unique_privacy_accountant_namespace_per_protected_",
-          "privacy_universe"),
+          "declared_adjacency_bounds_immutable_snapshot_protocol_compliant_",
+          "peers_at_least_one_noncolluding_designated_noise_peer_retains_and_",
+          "uses_complete_authenticated_monotonic_history_preserves_identity_",
+          "bound_privacy_accountant_receipt_and_accounting_history"),
         simultaneous_designated_history_rollback_protection =
           "not_claimed_without_external_linearizable_cas",
         transcript_security = "computational_mpc_and_csprng",
@@ -172,6 +177,19 @@ test_that("K=2 through K=5 handshakes expose a lifetime gate, not a request quot
       expect_true(value$privacy_contract$operation_limit)
       expect_false(value$privacy_contract$request_limit)
       expect_true(value$privacy_contract$history_can_deny_operation)
+      expect_match(
+        value$privacy_contract$privacy_accountant_namespace_id,
+        "^jdpc1_[0-9a-f]{64}$")
+      expect_identical(
+        value$privacy_contract$privacy_accountant_namespace_enforcement,
+        "identity_bound_immutable_receipt_v1")
+      expect_identical(
+        value$privacy_contract$assumptions,
+        paste0(
+          "declared_adjacency_bounds_immutable_snapshot_protocol_compliant_",
+          "peers_at_least_one_noncolluding_designated_noise_peer_retains_and_",
+          "uses_complete_authenticated_monotonic_history_preserves_identity_",
+          "bound_privacy_accountant_receipt_and_accounting_history"))
       expect_identical(
         value$privacy_contract$
           simultaneous_designated_history_rollback_protection,
@@ -394,10 +412,26 @@ test_that("capsule handshake requires gates and consistent telemetry", {
   expect_error(.dsvert_joint_dp_capsule_status_impl(
     conns, .capsule_status_aggregate(gated)), "required reusable")
 
-  old_schema <- .capsule_status_fixture()
-  old_schema$site_a$version <- "dsvert-joint-dp-capsule-status-v4"
+  old_schema <- lapply(.capsule_status_fixture(), function(value) {
+    value$version <- "dsvert-joint-dp-capsule-status-v5"
+    value
+  })
   expect_error(.dsvert_joint_dp_capsule_status_impl(
     conns, .capsule_status_aggregate(old_schema)), "required reusable")
+
+  malformed_namespace <- .capsule_status_fixture()
+  malformed_namespace$site_a$privacy_contract$
+    privacy_accountant_namespace_id <- "jdpc1_invalid"
+  expect_error(.dsvert_joint_dp_capsule_status_impl(
+    conns, .capsule_status_aggregate(malformed_namespace)),
+    "required reusable")
+
+  mismatched_namespace <- .capsule_status_fixture()
+  mismatched_namespace$site_c$privacy_contract$
+    privacy_accountant_namespace_id <- paste0("jdpc1_", strrep("b", 64L))
+  expect_error(.dsvert_joint_dp_capsule_status_impl(
+    conns, .capsule_status_aggregate(mismatched_namespace)),
+    "disagree on the reusable capsule privacy contract")
 
   overstated_rollback <- .capsule_status_fixture()
   overstated_rollback$site_a$privacy_contract$
