@@ -1,24 +1,26 @@
-# Information-criterion lambda selection for one-step LASSO
+# Client-side information-criterion selection for Gaussian LASSO
 
-Select the L1 penalty on the one-step quadratic-surrogate LASSO path
-(`ds.vertLASSO1Step`) by minimising AIC / BIC / extended-BIC of the
-quadratic-surrogate criterion. Because the surrogate uses only the
-already-computed coefficient vector and the full covariance matrix,
-selection is entirely client-side: no new MPC rounds are spent beyond
-the single `ds.vertGLM` fit that produced `fit`.
+Select an L1 penalty entirely client-side. With a `ds.vertDPGaussian`
+input, each candidate is solved from the same validated projected DP
+moments and ranked by an explicitly labelled DP projected
+pseudo-AIC/BIC/EBIC. With a historical `ds.glm` input, the existing
+quadratic-surrogate selector is retained. Despite the historical
+function/class suffix `CV`, neither route performs cross-validation or
+resampling.
 
-For each lambda we solve the one-step LASSO, then score IC(lambda) =
-surrogate_misfit(beta_lambda) + penalty \* df where `df` is the number
-of nonzero coefficients and `penalty` is 2 (AIC), log(n) (BIC, default),
-or log(n) + 2 gamma log(p) (extended BIC). The selected `lambda.min` is
-the global minimiser; `lambda.1se` is reported as a more parsimonious
-alternative that preserves at least `(1 - se_threshold) * IC_min` of the
-fit.
+For a DP source, the score uses the projected noisy residual moment and
+noisy effective count. It is therefore a deterministic model-selection
+heuristic, not a classical likelihood information criterion; selection
+is returned as unavailable when those released quantities cannot define
+it. For a legacy source, the score is the quadratic-surrogate misfit
+plus the requested degrees-of-freedom penalty. The preferred metadata
+name for the more parsimonious alternative is `lambda.parsimonious`; the
+historical `lambda.1se` slot is retained as an exact alias, but it is
+not a one-standard-error rule. It uses a relative IC tolerance set by
+`se_threshold` and involves no estimated sampling standard error.
 
-This is the standard selector for one-step / SCAD-style penalised
-maximum likelihood and is defensible in large samples without the need
-for full K-fold refitting (which would require rerunning the MPC GLM
-loop K times).
+Candidate paths are reusable post-processing and never trigger K-fold
+refitting or repeated private releases.
 
 ## Usage
 
@@ -37,7 +39,8 @@ ds.vertLASSOCV(
 
 - fit:
 
-  A `ds.glm` object (with `fit$covariance`).
+  Preferably a `ds.vertDPGaussian` object. A historical `ds.glm` object
+  with `fit$covariance` remains accepted.
 
 - lambda_grid:
 
@@ -59,10 +62,14 @@ ds.vertLASSOCV(
 
 - se_threshold:
 
-  For `lambda.1se`, retain the sparsest lambda whose IC is within this
-  fraction of `IC_min` (default 0.02, i.e. 2 percent).
+  Relative IC tolerance for the parsimonious selection: retain the
+  sparsest lambda whose IC is no more than `abs(IC_min) * se_threshold`
+  above `IC_min`. The historical argument name is retained for
+  compatibility; it is not a standard error.
 
 ## Value
 
 A `ds.vertLASSOCV` object: `lambda`, `ic`, `df`, `lambda.min`,
-`lambda.1se`, `beta.min`, `beta.1se`, the original fit.
+`lambda.parsimonious`, compatibility aliases `lambda.1se`/`beta.1se`,
+and metadata explicitly identifying information-criterion selection
+without cross-validation.

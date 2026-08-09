@@ -10,17 +10,24 @@ script_path <- if (length(file_arg) && !is.na(file_arg)) {
 root <- normalizePath(file.path(dirname(script_path), ".."), mustWork = TRUE)
 setwd(root)
 
-dir.create("vignettes", showWarnings = FALSE, recursive = TRUE)
-keep_rmd <- c("vignettes/validation_summary.Rmd",
-              Sys.glob("vignettes/validation_beaver_profile_*.Rmd"))
-keep_html <- c("vignettes/validation_summary.html",
-               Sys.glob("vignettes/validation_beaver_profile_*.html"))
-unlink(setdiff(Sys.glob("vignettes/validation_*.Rmd"), keep_rmd),
+archive_dir <- "_archive_vignettes"
+dir.create(archive_dir, showWarnings = FALSE, recursive = TRUE)
+warning(
+  "Building retired numerical fixtures in _archive_vignettes only; ",
+  "these files are not package or release-website evidence.",
+  call. = FALSE)
+keep_rmd <- c(file.path(archive_dir, "validation_summary.Rmd"),
+              Sys.glob(file.path(archive_dir,
+                                 "validation_beaver_profile_*.Rmd")))
+keep_html <- c(file.path(archive_dir, "validation_summary.html"),
+               Sys.glob(file.path(archive_dir,
+                                  "validation_beaver_profile_*.html")))
+unlink(setdiff(Sys.glob(file.path(archive_dir, "validation_*.Rmd")), keep_rmd),
        force = TRUE)
-unlink(setdiff(Sys.glob("vignettes/validation_*.html"), keep_html),
+unlink(setdiff(Sys.glob(file.path(archive_dir, "validation_*.html")), keep_html),
        force = TRUE)
-unlink("vignettes/vert_validation_evidence.Rmd", force = TRUE)
-unlink("vignettes/vert_validation_evidence.html", force = TRUE)
+unlink(file.path(archive_dir, "vert_validation_evidence.Rmd"), force = TRUE)
+unlink(file.path(archive_dir, "vert_validation_evidence.html"), force = TRUE)
 
 literal <- function(x) {
   x <- sub("^\\n", "", x)
@@ -58,7 +65,7 @@ setup_chunk <- function(builder = NULL) {
     "  message = TRUE, collapse = TRUE, comment = \"#>\")",
     "helper_candidates <- c(\"validation_helpers.R\",",
     "  file.path(\"..\", \"validation_helpers.R\"),",
-    "  file.path(\"vignettes\", \"validation_helpers.R\"))",
+    "  file.path(\"_archive_vignettes\", \"validation_helpers.R\"))",
     "source(helper_candidates[file.exists(helper_candidates)][1])",
     "validation_load_packages()",
     "options(dsvert.beaver_preprocessing = \"auto\")",
@@ -76,7 +83,7 @@ setup_chunk <- function(builder = NULL) {
 
 write_case <- function(id, K, title, functions, method, math, disclosure,
                        builder, code) {
-  file <- file.path("vignettes", sprintf("validation_%s_%s.Rmd", id,
+  file <- file.path(archive_dir, sprintf("validation_%s_%s.Rmd", id,
                                          if (K == 2L) "k2" else "kge3"))
   k_label <- if (K == 2L) "K=2" else "K>=3"
   lines <- c(
@@ -93,6 +100,10 @@ write_case <- function(id, K, title, functions, method, math, disclosure,
     "  %\\VignetteEngine{knitr::rmarkdown}",
     "  %\\VignetteEncoding{UTF-8}",
     "---",
+    "",
+    "> **Archived historical fixture -- excluded from package and website.**",
+    "> It is not current evidence of availability, formal DP, or safety under",
+    "> unlimited adaptive queries. Consult `ds.vertMethodStatus()`.",
     "",
     setup_chunk(builder),
     "",
@@ -122,10 +133,10 @@ write_case <- function(id, K, title, functions, method, math, disclosure,
     "",
     disclosure,
     "",
-    "The DSLite validation uses `datashield.privacyLevel = 5`. Trusted-peer",
-    "pinning is disabled only because DSLite is an in-memory test backend, not",
-    "an Opal/Rock deployment. That does not weaken the method-level check of",
-    "what the product route returns to the analyst.",
+    "This in-process DSLite vignette is numerical evidence only: it cannot",
+    "emulate independently persisted server identities. Mandatory name-bound",
+    "pinning is tested in isolated security harnesses; no package option",
+    "disables it.",
     "",
     "## Executed validation",
     "",
@@ -1269,5 +1280,5 @@ for (id in order_ids) {
   }
 }
 
-cat("Wrote", length(files), "validation vignettes\n")
+cat("Wrote", length(files), "archived historical validation fixtures\n")
 cat(paste(files, collapse = "\n"), "\n")

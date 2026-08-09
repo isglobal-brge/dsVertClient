@@ -1,10 +1,10 @@
 # Multi-coefficient Wald test via linear contrast K\*beta
 
-Test H0: K \* beta = m against the two-sided alternative using the
-multivariate Wald statistic W = (K \* beta_hat - m)^T inv(K \* Cov \*
-K^T) (K \* beta_hat - m), which under H0 is chi-square distributed with
-rank(K) degrees of freedom. Requires the fit's full covariance matrix
-(exposed by ds.vertGLM as `fit$covariance` since commit TBD).
+Test H0: K \* beta = m using the multivariate Wald statistic W = (K \*
+beta_hat - m)^T inv(K \* Cov \* K^T) (K \* beta_hat - m), using F = W /
+rank(K) for Gaussian fits with residual degrees of freedom, and the
+asymptotic chi-square reference otherwise. Requires the fit's full
+covariance matrix.
 
 ## Usage
 
@@ -31,5 +31,6 @@ ds.vertContrast(fit, K, m = NULL)
 
 ## Value
 
-A list of class ds.vertContrast with estimates, variance, statistic, df,
-p_value.
+A list of class ds.vertContrast with estimates, variance, reference
+`statistic`, raw `wald_statistic`, `distribution`, degrees of freedom
+and `p_value`.

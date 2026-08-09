@@ -7,12 +7,12 @@
 \method{print}{ds.cor}(x, digits = 3, ...)
 }
 \arguments{
-\item{x}{A ds.cor object}
+\item{x}{A \code{ds.cor} object.}
 
-\item{digits}{Number of digits for correlation matrix. Default 3.}
+\item{digits}{Number of displayed digits.}
 
-\item{...}{Additional arguments (ignored)}
+\item{...}{Additional arguments passed to \code{print}.}
 }
 \description{
-Prints a summary of correlation results.
+Prints a summary of the DP correlation result.
 }

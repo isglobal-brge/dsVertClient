@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertLMM.R
 \name{ds.vertLMM}
 \alias{ds.vertLMM}
-\title{Federated linear mixed model with a single random intercept}
+\title{Quarantined linear-mixed-model compatibility frontdoor}
 \usage{
 ds.vertLMM(
   formula,
@@ -21,74 +21,27 @@ ds.vertLMM(
 )
 }
 \arguments{
-\item{formula}{Fixed-effects formula.}
-
-\item{data}{Aligned data-frame name.}
-
-\item{cluster_col}{Column holding the cluster id (must be on the
-outcome server).}
-
-\item{random_slopes}{Optional character vector of column names for
-random slopes (in addition to the random intercept). NULL fits an
-intercept-only random-effects structure.}
-
-\item{reml}{Use REML (default TRUE) vs ML.}
-
-\item{max_iter}{Outer variance-component iterations (default 30).}
-
-\item{inner_iter}{Inner \code{ds.vertGLM} iteration budget.}
-
-\item{tol}{Outer tolerance on \eqn{\rho} change.}
-
-\item{exact_cross_server}{Logical (default TRUE). If TRUE, use the
-exact cross-server Beaver vecmul gram pass; FALSE falls back to a
-diagonal-only approximation.}
-
-\item{sigma_b2_override}{Numeric. Optional fixed value of the
-between-cluster variance, bypassing the iterative REML/ML
-variance-component update.}
-
-\item{ring}{Character (\code{"ring63"} or \code{"ring127"}). Selects
-the Beaver vecmul pipeline ring; Ring127 (fracBits=50) is needed
-for STRICT closure on dense Gram matrices.}
-
-\item{verbose}{Print progress.}
-
-\item{datasources}{DataSHIELD connection object.}
+\item{formula, data, cluster_col, random_slopes, reml, max_iter, inner_iter, tol, exact_cross_server, sigma_b2_override, ring, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 }
 \value{
-A \code{ds.vertLMM} object with components
-\code{coefficients}, \code{covariance}, \code{std_errors},
-\code{sigma2} (residual variance), \code{sigma_b2} (random-effect
-variance), \code{icc}, \code{n_clusters}, \code{converged},
-\code{iterations}, \code{fit} (final inner \code{ds.glm}).
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Fit a random-intercept linear mixed model
-\eqn{y_{ij} = x_{ij}^T \beta + b_i + \varepsilon_{ij}} on vertically
-partitioned DataSHIELD data, where the cluster indicator \code{id}
-lives on the outcome server. The REML log-likelihood profile is
-expressed in terms of a single variance ratio
-\eqn{\rho = \sigma_b^2 / (\sigma^2 + n_i\sigma_b^2)} so the outer
-optimiser is one-dimensional. Each outer step calls
-\code{\link{ds.vertGLM}} with per-patient weights derived from the
-current \eqn{\rho}, reusing the already-deployed
-\code{ds.vertGLM(weights=)} infrastructure.
-
-Derivation (Laird-Ware compact form):
-\deqn{V_i = \sigma^2 I + \sigma_b^2 \mathbf{1} \mathbf{1}^T}
-\deqn{V_i^{-1} = \frac{1}{\sigma^2}\left(I - \rho_i \mathbf{1}\mathbf{1}^T\right)}
-\deqn{\log|V_i| = (n_i - 1) \log \sigma^2 + \log(\sigma^2 + n_i\sigma_b^2)}
-
-Both summands are one-dimensional functions of \eqn{\rho} that the
-client evaluates on centralised aggregates (sum of \eqn{n_i \rho_i}
-and sum of \eqn{\log(\sigma^2 + n_i \sigma_b^2)}); per-cluster
-residual sums \eqn{\sum_{ij} r_{ij}} are returned by the outcome
-server as a single aggregate vector (one scalar per cluster) under
-the already-documented cluster-ID inter-server leakage tier.
-
-Inter-server disclosure: the DCF peer learns integer cluster
-membership (same class as Cox event-time ordering). Original cluster
-labels are not returned, clusters below datashield.privacyLevel fail
-closed, and individual observations are not revealed to the client.
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and computes or returns no mixed model, variance component,
+cluster statistic, or diagnostic. Retained LMM implementation code after
+the gate is unreachable through this public frontdoor and carries no
+disclosure, DP, accuracy, or availability claim.
+}
+\details{
+Promotion requires contribution-bounded cluster statistics,
+private cluster handling, certified ML/REML and random-effects semantics,
+covariance and identifiability certificates, and independent multi-host
+validation.
+}
+\seealso{
+\code{\link{ds.vertMethodStatus}}
 }

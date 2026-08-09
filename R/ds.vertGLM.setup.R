@@ -9,42 +9,28 @@
                            non_label_servers, y_server, y_var, x_vars,
                            data_name, family, session_id, verbose,
                            standardize_y_override = NULL,
-                           std_mode = "full") {
+                           std_mode = "full", missing = "fail",
+                           numeric_ring = 63L,
+                           .aggregate = DSI::datashield.aggregate) {
 
   # =========================================================================
   # Helpers (closures capturing datasources, session_id)
   # =========================================================================
   .dsAgg <- function(conns, expr, ...) {
-    tryCatch(
-      DSI::datashield.aggregate(conns = conns, expr = expr, ...),
-      error = function(e) {
-        msg <- conditionMessage(e)
-        fn_name <- if (is.call(expr)) as.character(expr[[1]]) else "?"
-        srv_name <- tryCatch(names(conns)[1], error = function(x) "?")
-        message("  [dsAgg ERROR] ", fn_name, " on ", srv_name, ": ", msg)
-        ds_errs <- tryCatch(DSI::datashield.errors(), error = function(x) NULL)
-        if (!is.null(ds_errs) && length(ds_errs) > 0)
-          for (nm in names(ds_errs)) message("    ", nm, ": ", ds_errs[[nm]])
-        if (grepl("500|NullPointer|Internal Server Error", msg)) {
-          Sys.sleep(2)
-          DSI::datashield.aggregate(conns = conns, expr = expr, ...)
-        } else stop(e)
-      })
+    if (length(list(...))) {
+      stop("Additional aggregate controls are unavailable in a protected MPC phase",
+           call. = FALSE)
+    }
+    .dsvert_aggregate_strict(
+      conns = conns, expr = expr, operation = "GLM MPC protocol phase",
+      .aggregate = .aggregate)
   }
 
-  .sendBlob <- function(blob, key, conn_idx) {
-    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        .dsAgg(conns = datasources[conn_idx],
-          expr = call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-                      session_id = session_id))
-      } else {
-        .dsAgg(conns = datasources[conn_idx],
-          expr = call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-                      chunk_index = chunk_idx, n_chunks = n_chunks,
-                      session_id = session_id))
-      }
-    })
+  .sendBlob <- function(blob, contract, conn_idx) {
+    .dsvert_store_transfer_or_legacy(
+      blob, contract, datasources[conn_idx], session_id,
+      producer_conns = datasources,
+      .aggregate = .aggregate)
   }
 
   # =========================================================================
@@ -57,11 +43,11 @@
     if (verbose) message("\n[Phase 0] Transport key setup (", length(server_list), " servers)...")
     t0_key <- proc.time()[[3]]
 
+    tk_results <- .dsAgg(
+      conns = datasources[server_list],
+      expr = call(name = "glmRing63TransportInitDS", session_id = session_id))
     for (server in server_list) {
-      conn_idx <- which(server_names == server)
-      tk_result <- .dsAgg(conns = datasources[conn_idx],
-        expr = call(name = "glmRing63TransportInitDS", session_id = session_id))
-      if (is.list(tk_result)) tk_result <- tk_result[[1]]
+      tk_result <- tk_results[[server]]
       transport_pks[[server]] <- tk_result$transport_pk
       if (!is.null(tk_result$identity_pk))
         identity_info[[server]] <- list(
@@ -74,13 +60,13 @@
     .json_to_b64url <- function(x) .to_b64url(gsub("\n","",jsonlite::base64_enc(charToRaw(jsonlite::toJSON(x, auto_unbox = TRUE))),fixed=TRUE))
     pk_b64 <- .json_to_b64url(pk_sorted)
     id_b64 <- if (!is.null(id_sorted)) .json_to_b64url(id_sorted) else ""
-    for (server in server_list) {
-      conn_idx <- which(server_names == server)
-      .dsAgg(conns = datasources[conn_idx],
-        expr = call(name = "mpcStoreTransportKeysDS",
-                    transport_keys_b64 = pk_b64, identity_info_b64 = id_b64,
-                    session_id = session_id))
-    }
+    .dsvert_aggregate_strict(
+      conns = datasources[server_list],
+      expr = call(name = "mpcStoreTransportKeysDS",
+                  transport_keys_b64 = pk_b64, identity_info_b64 = id_b64,
+                  session_id = session_id),
+      operation = "GLM pinned-key binding",
+      result_contract = "logical_true", .aggregate = .aggregate)
 
     if (verbose) message(sprintf("  [Key Setup] Transport keys exchanged (%d servers, %.1fs)",
                                    length(server_list), proc.time()[[3]] - t0_key))
@@ -109,29 +95,36 @@
   x_sds <- list()
   y_mean <- NULL
   y_sd <- NULL
+  numeric_attestations <- list()
 
-  for (server in server_list) {
-    conn_idx <- which(server_names == server)
+  std_exprs <- stats::setNames(lapply(server_list, function(server) {
     y_arg <- if (server == y_server && standardize_y) y_var else NULL
 
     srv_x <- x_vars[[server]]
     if (length(srv_x) == 0) srv_x <- NULL
-    std_result <- .dsAgg(conns = datasources[conn_idx],
-      expr = call(name = "glmStandardizeDS",
-                  data_name = data_name, output_name = std_data,
-                  x_vars = srv_x, y_var = y_arg,
-                  session_id = session_id,
-                  skip_standardize = isTRUE(skip_std),
-                  mode = .std_mode))
-    if (is.list(std_result) && length(std_result) == 1)
-      std_result <- std_result[[1]]
+    call(name = "glmStandardizeDS",
+         data_name = data_name, output_name = std_data,
+         x_vars = srv_x, y_var = y_arg,
+         session_id = session_id,
+         skip_standardize = isTRUE(skip_std),
+         mode = .std_mode,
+         missing = missing,
+         numeric_family = family,
+         numeric_ring = as.integer(numeric_ring),
+         numeric_y_var = if (server == y_server) y_var else NULL)
+  }), server_list)
+  std_results <- .dsAgg(
+    conns = datasources[server_list], expr = std_exprs)
 
+  for (server in server_list) {
+    std_result <- std_results[[server]]
     x_means[[server]] <- std_result$x_means
     x_sds[[server]] <- std_result$x_sds
     if (!is.null(std_result$y_mean)) {
       y_mean <- std_result$y_mean
       y_sd <- std_result$y_sd
     }
+    numeric_attestations[[server]] <- std_result$numeric_attestation
   }
 
   if (verbose) {
@@ -152,6 +145,8 @@
     y_sd           = y_sd,
     std_data       = std_data,
     standardize_y  = standardize_y,
+    missing_policy = missing,
+    numeric_attestations = numeric_attestations,
     .dsAgg         = .dsAgg,
     .sendBlob      = .sendBlob
   )

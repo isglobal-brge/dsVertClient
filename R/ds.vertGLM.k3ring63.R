@@ -39,7 +39,8 @@ NULL
     compute_se = TRUE,
     compute_deviance = TRUE,
     gradient_only = FALSE,
-    ring = 63L) {
+    ring = 63L,
+    numeric_certificate = NULL) {
 
   K <- length(server_list)
   ring <- as.integer(ring)
@@ -110,9 +111,9 @@ NULL
         if (is.list(r) && length(r) == 1) r <- r[[1]]
         # Send encrypted shares to the other DCF party
         peer_ci <- dcf_conns[3 - di]
-        .sendBlob(r$encrypted_x_share, "k2_peer_x_share", peer_ci)
+        .sendBlob(r$encrypted_x_share, r$encrypted_x_transfer, peer_ci)
         if (!is.null(r$encrypted_y_share))
-          .sendBlob(r$encrypted_y_share, "k2_peer_y_share", peer_ci)
+          .sendBlob(r$encrypted_y_share, r$encrypted_y_transfer, peer_ci)
         break  # Only share once (with the other DCF party)
       }
     }
@@ -127,20 +128,20 @@ NULL
     # Split once targeting fusion as peer
     fusion_pk_safe <- .to_b64url(transport_pks[[fusion_server]])
     srv_x <- x_vars[[server]]; if (length(srv_x) == 0) srv_x <- NULL
-    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
+    r <- .dsAgg(datasources[ci], call(name = "glmRing63ShareExtraInputDS",
       data_name = std_data, x_vars = srv_x,
-      y_var = NULL,
       peer_pk = fusion_pk_safe, ring = ring, session_id = session_id))
     if (is.list(r) && length(r) == 1) r <- r[[1]]
     # Send peer_share to fusion
-    .sendBlob(r$encrypted_x_share, paste0("k2_extra_x_share_", server), fusion_conn)
+    .sendBlob(r$encrypted_x_share, r$encrypted_x_transfer, fusion_conn)
 
     # Export own_share (the complement) to coordinator
     coord_pk_safe <- .to_b64url(transport_pks[[coordinator]])
     r2 <- .dsAgg(datasources[ci], call(name = "glmRing63ExportOwnShareDS",
       peer_pk = coord_pk_safe, session_id = session_id))
     if (is.list(r2) && length(r2) == 1) r2 <- r2[[1]]
-    .sendBlob(r2$encrypted_own_share, paste0("k2_extra_x_share_", server), coordinator_conn)
+    .sendBlob(r2$encrypted_own_share, r2$encrypted_own_transfer,
+              coordinator_conn)
   }
 
   # DCF parties: receive peer's shares
@@ -149,7 +150,8 @@ NULL
     dcf_ci <- dcf_conns[di]
     peer_p <- length(x_vars[[dcf_parties[3 - di]]])  # no intercept in features
     .dsAgg(datasources[dcf_ci], call(name = "k2ReceiveShareDS",
-      peer_p = as.integer(peer_p), session_id = session_id))
+      peer_p = as.integer(peer_p), peer_name = dcf_parties[3 - di],
+      session_id = session_id))
   }
 
   # DCF parties: receive non-DCF feature shares
@@ -159,7 +161,7 @@ NULL
       # Receive and store the extra feature shares
       # These will be assembled into the full X matrix
       .dsAgg(datasources[dcf_ci], call(name = "glmRing63ReceiveExtraShareDS",
-        extra_key = paste0("k2_extra_x_share_", server),
+        source_name = server,
         extra_p = as.integer(length(x_vars[[server]])),
         session_id = session_id))
     }
@@ -281,6 +283,8 @@ NULL
       beta_map[[srv]] <- idx:(idx + p_s - 1); idx <- idx + p_s
     }
 
+    .dsvert_numeric_assert_eta_bound(beta, intercept, numeric_certificate)
+
     for (i in seq_along(dcf_parties)) {
       ci <- dcf_conns[i]
       srv <- dcf_parties[i]
@@ -381,20 +385,22 @@ NULL
     for (i in seq_along(dcf_parties)) {
       ci <- dcf_conns[i]
       peer <- dcf_parties[3 - i]
-      .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS", session_id = session_id))
       r <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
         peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       r1_results[[i]] <- r
     }
-    .sendBlob(r1_results[[1]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[2])
-    .sendBlob(r1_results[[2]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[1])
+    .sendBlob(r1_results[[1]]$encrypted_r1,
+              r1_results[[1]]$encrypted_r1_transfer, dcf_conns[2])
+    .sendBlob(r1_results[[2]]$encrypted_r1,
+              r1_results[[2]]$encrypted_r1_transfer, dcf_conns[1])
 
     grad_results <- list()
     for (i in seq_along(dcf_parties)) {
       ci <- dcf_conns[i]
       r <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
-        party_id = as.integer(i - 1), session_id = session_id))
+        party_id = as.integer(i - 1), peer_name = dcf_parties[3 - i],
+        session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]
       grad_results[[i]] <- r
     }
@@ -543,6 +549,8 @@ NULL
     theta_pert[j] <- theta[j] + delta
     int_pert <- theta_pert[1]
     beta_pert <- theta_pert[-1]
+    .dsvert_numeric_assert_eta_bound(
+      beta_pert, int_pert, numeric_certificate)
 
     # Rotate the DCF key-generation helper for this SE evaluation too.
     dealer <- all_dealers[((final_iter + j - 1L) %% length(all_dealers)) + 1L]
@@ -619,18 +627,20 @@ NULL
     se_r1 <- list()
     for (di in seq_along(dcf_parties)) {
       ci <- dcf_conns[di]; peer <- dcf_parties[3 - di]
-      .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS", session_id = session_id))
       r <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
         peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]; se_r1[[di]] <- r
     }
-    .sendBlob(se_r1[[1]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[2])
-    .sendBlob(se_r1[[2]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[1])
+    .sendBlob(se_r1[[1]]$encrypted_r1,
+              se_r1[[1]]$encrypted_r1_transfer, dcf_conns[2])
+    .sendBlob(se_r1[[2]]$encrypted_r1,
+              se_r1[[2]]$encrypted_r1_transfer, dcf_conns[1])
     se_r2 <- list()
     for (di in seq_along(dcf_parties)) {
       ci <- dcf_conns[di]
       r <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
-        party_id = as.integer(di - 1), session_id = session_id))
+        party_id = as.integer(di - 1), peer_name = dcf_parties[3 - di],
+        session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]; se_r2[[di]] <- r
     }
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
@@ -656,6 +666,8 @@ NULL
     theta_back <- theta
     theta_back[j] <- theta[j] - delta
     int_back <- theta_back[1]; beta_back <- theta_back[-1]
+    .dsvert_numeric_assert_eta_bound(
+      beta_back, int_back, numeric_certificate)
     dealer_b <- all_dealers[((final_iter + p_plus1 + j - 1L) %% length(all_dealers)) + 1L]
     dealer_conn_b <- which(server_names == dealer_b)
     for (di in seq_along(dcf_parties)) {
@@ -715,15 +727,14 @@ NULL
     br1 <- list()
     for (di in 1:2) {
       ci<-dcf_conns[di]; peer<-dcf_parties[3-di]
-      .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS", session_id=session_id))
       r<-.dsAgg(datasources[ci], call(name = "k2GradientR1DS", peer_pk=transport_pks[[peer]], session_id=session_id))
       if(is.list(r)&&length(r)==1) r<-r[[1]]; br1[[di]]<-r
     }
-    .sendBlob(br1[[1]]$encrypted_r1,"k2_grad_peer_r1",dcf_conns[2])
-    .sendBlob(br1[[2]]$encrypted_r1,"k2_grad_peer_r1",dcf_conns[1])
+    .sendBlob(br1[[1]]$encrypted_r1,br1[[1]]$encrypted_r1_transfer,dcf_conns[2])
+    .sendBlob(br1[[2]]$encrypted_r1,br1[[2]]$encrypted_r1_transfer,dcf_conns[1])
     br2 <- list()
     for (di in 1:2) {
-      r<-.dsAgg(datasources[dcf_conns[di]], call(name = "k2GradientR2DS", party_id=as.integer(di-1), session_id=session_id))
+      r<-.dsAgg(datasources[dcf_conns[di]], call(name = "k2GradientR2DS", party_id=as.integer(di-1), peer_name=dcf_parties[3-di], session_id=session_id))
       if(is.list(r)&&length(r)==1) r<-r[[1]]; br2[[di]]<-r
     }
     ba <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(share_a=br2[[1]]$gradient_fp, share_b=br2[[2]]$gradient_fp, frac_bits=frac_bits, ring=ring_tag))
@@ -772,6 +783,7 @@ NULL
   if (verbose) message("  [Deviance] Computing canonical deviance...")
 
   # Recompute eta from converged beta (SE computation may have overwritten shares)
+  .dsvert_numeric_assert_eta_bound(beta, intercept, numeric_certificate)
   for (di in seq_along(dcf_parties)) {
     ci <- dcf_conns[di]
     is_coord <- (dcf_parties[di] == coordinator)
@@ -788,12 +800,18 @@ NULL
       intercept = intercept, is_coordinator = is_coord,
       session_id = session_id))
   }
-  if (family == "gaussian") {
-    for (di in seq_along(dcf_parties)) {
-      .dsAgg(datasources[dcf_conns[di]], call(name = "k2IdentityLinkDS",
-        session_id = session_id))
-    }
-  }
+  .glm_refresh_final_mean(
+    family = family, datasources = datasources,
+    server_list = dcf_parties, server_names = server_names,
+    session_id = session_id, .dsAgg = .dsAgg,
+    link_args = list(
+      n = n_obs, datasources = datasources, dealer_ci = dcf_conns[2L],
+      server_list = dcf_parties, server_names = server_names,
+      y_server = fusion_server, nl = coordinator,
+      transport_pks = transport_pks, session_id = session_id,
+      .dsAgg = .dsAgg, .sendBlob = .sendBlob
+    )
+  )
 
   # Helper: Beaver dot-product (nx1) on both DCF parties, returns scalar
   .k3_beaver_dot <- function() {
@@ -811,18 +829,20 @@ NULL
     dr1 <- list()
     for (i in seq_along(dcf_parties)) {
       ci <- dcf_conns[i]; peer <- dcf_parties[3-i]
-      .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS", session_id = session_id))
       r <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
         peer_pk = transport_pks[[peer]], session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]; dr1[[i]] <- r
     }
-    .sendBlob(dr1[[1]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[2])
-    .sendBlob(dr1[[2]]$encrypted_r1, "k2_grad_peer_r1", dcf_conns[1])
+    .sendBlob(dr1[[1]]$encrypted_r1,
+              dr1[[1]]$encrypted_r1_transfer, dcf_conns[2])
+    .sendBlob(dr1[[2]]$encrypted_r1,
+              dr1[[2]]$encrypted_r1_transfer, dcf_conns[1])
     dr2 <- list()
     for (i in seq_along(dcf_parties)) {
       ci <- dcf_conns[i]
       r <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
-        party_id = as.integer(i-1), session_id = session_id))
+        party_id = as.integer(i-1), peer_name = dcf_parties[3-i],
+        session_id = session_id))
       if (is.list(r) && length(r) == 1) r <- r[[1]]; dr2[[i]] <- r
     }
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
@@ -864,7 +884,8 @@ NULL
       n = n_obs, datasources = datasources, dealer_ci = dcf_conns[2],
       server_list = dcf_parties, server_names = server_names,
       y_server = fusion_server, nl = coordinator, transport_pks = transport_pks,
-      session_id = session_id, .dsAgg = .dsAgg, .sendBlob = .sendBlob)
+      session_id = session_id, .dsAgg = .dsAgg, .sendBlob = .sendBlob,
+      producer_bound_glm = TRUE)
     sums <- list()
     for (di in seq_along(dcf_parties)) {
       r <- .dsAgg(datasources[dcf_conns[di]], call(name = "glmRing63DevianceSumsDS",

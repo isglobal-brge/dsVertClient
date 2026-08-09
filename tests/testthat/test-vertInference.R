@@ -4,19 +4,24 @@
 
 library(testthat)
 
-make_fake_fit <- function(coefs, ses, deviance, family = "gaussian",
-                          n_obs = 100L) {
+make_fake_fit <- function(coefs, ses, deviance, family = "binomial",
+                          n_obs = 100L, lambda = 0, converged = TRUE,
+                          cohort_id = "cohort-a") {
   fit <- list(
     coefficients = coefs,
     std_errors = ses,
     z_values = coefs / ses,
     p_values = 2 * pnorm(abs(coefs / ses), lower.tail = FALSE),
     iterations = 5L,
-    converged = TRUE,
+    converged = converged,
     family = family,
     n_obs = n_obs,
     n_vars = length(coefs),
-    lambda = 1e-4,
+    lambda = lambda,
+    deviance_type = paste0("canonical_", family),
+    weights = NULL,
+    offset = NULL,
+    cohort_id = cohort_id,
     deviance = deviance,
     null_deviance = deviance * 1.5,
     pseudo_r2 = 1 - deviance / (deviance * 1.5))
@@ -44,11 +49,11 @@ test_that("LR test matches chi-square on simulated nested fits", {
   expect_equal(lr$p_value, pchisq(20.0, df = 1L, lower.tail = FALSE))
 })
 
-test_that("LR test floors slightly-negative statistic at 0", {
+test_that("LR test floors only numerical negative noise at 0", {
   reduced <- make_fake_fit(
     coefs = c(`(Intercept)` = 1.0, x1 = 0.5),
     ses = c(`(Intercept)` = 0.1, x1 = 0.1),
-    deviance = 99.9999)
+    deviance = 100 - 1e-12)
   full <- make_fake_fit(
     coefs = c(`(Intercept)` = 1.0, x1 = 0.5, x2 = 0.3),
     ses = c(`(Intercept)` = 0.1, x1 = 0.1, x2 = 0.1),
@@ -57,6 +62,9 @@ test_that("LR test floors slightly-negative statistic at 0", {
   lr <- ds.vertLR(reduced, full)
   expect_equal(lr$statistic, 0)
   expect_equal(lr$p_value, 1)
+
+  reduced$deviance <- 99
+  expect_error(ds.vertLR(reduced, full), "larger deviance")
 })
 
 test_that("LR test errors on non-nested or mismatched inputs", {
@@ -65,18 +73,31 @@ test_that("LR test errors on non-nested or mismatched inputs", {
   expect_error(ds.vertLR(r, f), "subset of `full`")
 
   r2 <- make_fake_fit(c(`(Intercept)` = 1), c(`(Intercept)` = 0.1), 100,
-                      family = "gaussian", n_obs = 50L)
+                      family = "binomial", n_obs = 50L)
   f2 <- make_fake_fit(c(`(Intercept)` = 1, x = 0.5),
                       c(`(Intercept)` = 0.1, x = 0.1),
-                      80, family = "gaussian", n_obs = 100L)
+                      80, family = "binomial", n_obs = 100L)
   expect_error(ds.vertLR(r2, f2), "same cohort")
 
   r3 <- make_fake_fit(c(`(Intercept)` = 1), c(`(Intercept)` = 0.1), 100,
-                      family = "gaussian")
+                      family = "binomial")
   f3 <- make_fake_fit(c(`(Intercept)` = 1, x = 0.5),
                       c(`(Intercept)` = 0.1, x = 0.1),
-                      80, family = "binomial")
+                      80, family = "poisson")
   expect_error(ds.vertLR(r3, f3), "same family")
+
+  expect_error(ds.vertLR(
+    make_fake_fit(c(a = 1), c(a = .1), 100, family = "gaussian"),
+    make_fake_fit(c(a = 1, b = 2), c(a = .1, b = .2), 90,
+                  family = "gaussian")), "binomial or Poisson")
+  expect_error(ds.vertLR(
+    make_fake_fit(c(a = 1), c(a = .1), 100, lambda = 1e-4),
+    make_fake_fit(c(a = 1, b = 2), c(a = .1, b = .2), 90,
+                  lambda = 1e-4)), "unpenalized")
+  expect_error(ds.vertLR(
+    make_fake_fit(c(a = 1), c(a = .1), 100, cohort_id = "a"),
+    make_fake_fit(c(a = 1, b = 2), c(a = .1, b = .2), 90,
+                  cohort_id = "b")), "same cohort")
 })
 
 # =============================================================================
@@ -108,6 +129,17 @@ test_that("confint errors on unknown parm", {
   fit <- make_fake_fit(c(`(Intercept)` = 0), c(`(Intercept)` = 1), 50)
   expect_error(ds.vertConfint(fit, parm = "nope"),
                "Unknown coefficient")
+})
+
+test_that("inference refuses failed fits and invalid standard errors", {
+  failed <- make_fake_fit(c(x = 1), c(x = 0.1), 50, converged = FALSE)
+  expect_error(ds.vertConfint(failed), "converged")
+
+  penalized <- make_fake_fit(c(x = 1), c(x = 0.1), 50, lambda = 0.1)
+  expect_error(ds.vertWald(penalized, "x"), "unpenalized")
+
+  invalid <- make_fake_fit(c(x = 1), c(x = NA_real_), 50)
+  expect_error(ds.vertConfint(invalid), "finite, positive")
 })
 
 # =============================================================================

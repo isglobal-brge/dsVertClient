@@ -16,11 +16,13 @@ default all.}
 }
 \value{
 A data frame with columns \code{estimate}, \code{std_error},
-\code{lower}, \code{upper}; row names are coefficient names.
+\code{lower}, \code{upper}; row names are coefficient names. Attributes
+\code{distribution} and \code{df} record the reference distribution.
 }
 \description{
-Return Wald-type confidence intervals using the
-finite-difference standard errors already stored in a ds.glm object.
-Observation-level quantities are never touched; this is a scalar
-client-side transformation.
+Return Wald-type confidence intervals using the standard
+errors already stored in a ds.glm object. Gaussian fits use a Student t
+reference with residual degrees of freedom; binomial and Poisson fits use
+the asymptotic normal reference. Observation-level quantities are never
+touched; this is a scalar client-side transformation.
 }

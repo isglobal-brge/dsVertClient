@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertLMM.k3.R
 \name{ds.vertLMM.k3}
 \alias{ds.vertLMM.k3}
-\title{Federated linear mixed model via share-domain residual GLS (K>=3)}
+\title{Quarantined deprecated K>=3 LMM frontdoor}
 \usage{
 ds.vertLMM.k3(
   formula,
@@ -18,73 +18,20 @@ ds.vertLMM.k3(
 )
 }
 \arguments{
-\item{formula}{Fixed-effects formula \code{y ~ X}.}
-
-\item{data}{Aligned data-frame name on each server.}
-
-\item{cluster_col}{Cluster id column on the outcome server.}
-
-\item{rho_lo, rho_hi}{Profile search interval (default 0.001, 0.999).}
-
-\item{tol}{Profile convergence tolerance on \eqn{\rho} (default 1e-3).}
-
-\item{max_outer}{Maximum golden-section iterations.}
-
-\item{ring}{Character (\code{"ring127"} or \code{"ring63"}). MPC ring
-used for the K>=3 Gaussian GLM, residual squared sums, and GLS refits.
-Ring127 is the default because variance components are sensitive to
-fixed-point noise in the secure \eqn{r^2} pass.}
-
-\item{verbose}{Print progress.}
-
-\item{datasources}{DataSHIELD K=3 connections.}
+\item{formula, data, cluster_col, rho_lo, rho_hi, tol, max_outer, ring, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 }
 \value{
-list of class \code{ds.vertLMM.k3} with
-\code{coefficients}, \code{sigma_b2}, \code{sigma2}, \code{rho_hat},
-\code{n_clusters}, \code{cluster_sizes}, and the inner ds.glm fit.
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Random-intercept LMM
-\deqn{y_{ij} = X_{ij} \beta + b_i + \varepsilon_{ij},
-        \quad b_i \sim \mathcal{N}(0, \sigma_b^2),\;
-        \varepsilon_{ij} \sim \mathcal{N}(0, \sigma^2)}
-estimated by an initial REML 1-D profile followed by share-domain
-residual sufficient statistics and the closed-form cluster-mean GLS
-transform. The final fixed-effect step applies
-\eqn{\tilde v_{ij} = v_{ij} - \lambda_i \bar v_i} locally on each
-server and fits the transformed Gaussian system with an explicit
-transformed intercept \eqn{1-\lambda_i}.
-
-K>=3 implementation reuses the secure-aggregation \code{ds.vertGLM}
-pipeline. Residual sums and squared-residual sums are evaluated at
-a supplied beta inside the DCF share domain; the analyst client never
-receives row-level residuals, fitted values, eta, or transformed
-columns. Cluster membership is sent as encrypted server-to-server
-integer metadata, with original labels withheld and small clusters
-blocked by \code{datashield.privacyLevel}.
-
-Outer optimisation is golden-section search over
-\eqn{\rho \in (\rho_{\min}, \rho_{\max})}; default
-\eqn{(0.001, 0.999)} so the search never enters the boundary
-singularities at \eqn{\rho = 0} (no random effect -- degenerate
-GLS) or \eqn{\rho = 1} (infinite \eqn{\sigma_b^2}).
-}
-\references{
-Christensen, R. H. B. (2019). \emph{Linear Models}. \code{ordinal::clm.fit}
-Sec.A.3 -- REML profile likelihood for variance components.
-Pinheiro, J. C. & Bates, D. M. (2000). \emph{Mixed-Effects Models in
-S/S-PLUS}, Sec.2.4.
-Laird, N. M. & Ware, J. H. (1982). Random-effects models for
-longitudinal data. \emph{Biometrics}, 38(4), 963-974.
-Lindstrom, M. J. & Bates, D. M. (1990). Nonlinear mixed effects
-models for repeated measures data. \emph{Biometrics}, 46(3),
-673-687.
+This exported deprecated name is retained for API
+compatibility. It raises a typed \code{dsvert_route_unavailable}
+condition before any DSI call and returns no mixed model. Retained K>=3
+implementation code after the gate is unreachable through this public
+frontdoor and carries no disclosure, DP, accuracy, or availability claim.
 }
 \seealso{
-\code{\link{ds.vertGLM}}, \code{\link{ds.vertLMM}} (K=2
-exact closed-form path).
-
-\code{ds.vertLMM.k3} is retained as a thin deprecated wrapper: call
-\code{ds.vertLMM}, which dispatches to this K>=3 algorithm automatically.
+\code{\link{ds.vertMethodStatus}}
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertMultinomJoint.R
 \name{ds.vertMultinomJoint}
 \alias{ds.vertMultinomJoint}
-\title{Federated joint-softmax multinomial logistic regression}
+\title{Quarantined joint-multinomial compatibility frontdoor}
 \usage{
 ds.vertMultinomJoint(
   formula,
@@ -11,33 +11,25 @@ ds.vertMultinomJoint(
   max_iter = 30L,
   tol = 1e-04,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  design_analysis_id = NULL
 )
 }
 \arguments{
-\item{formula}{R formula with the categorical outcome on the LHS.}
-
-\item{data}{Aligned data-frame name.}
-
-\item{levels}{Optional character vector of outcome levels (first is
-reference). If NULL, inferred from the outcome server.}
-
-\item{max_iter}{Outer Newton iterations.}
-
-\item{tol}{Convergence tolerance on max |delta beta|.}
-
-\item{verbose}{Print progress.}
-
-\item{datasources}{DataSHIELD connections.}
+\item{formula, data, levels, max_iter, tol, verbose, datasources, design_analysis_id}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 }
 \value{
-A \code{ds.vertMultinomJointNewton} object.
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Compatibility wrapper for
-\code{\link{ds.vertMultinomJointNewton}}. The historical
-one-vs-rest/covariance-rescale implementation was removed from the
-product package because it did not close the softmax MLE accuracy gap.
-Calls now always dispatch to the non-disclosive joint Newton route for
-K >= 3 classes.
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and returns no joint-softmax fit. Retained code after the gate is
+unreachable through this public frontdoor and carries no disclosure, DP,
+accuracy, or availability claim.
+}
+\seealso{
+\code{\link{ds.vertMethodStatus}}
 }

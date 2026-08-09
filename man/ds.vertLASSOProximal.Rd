@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertLASSOProximal.R
 \name{ds.vertLASSOProximal}
 \alias{ds.vertLASSOProximal}
-\title{Proper LASSO via client-side proximal gradient on normal equations}
+\title{Gaussian LASSO via client-side coordinate descent}
 \usage{
 ds.vertLASSOProximal(
   fit,
@@ -15,23 +15,25 @@ ds.vertLASSOProximal(
 )
 }
 \arguments{
-\item{fit}{A \code{ds.glm} object from \code{ds.vertGLM(family="gaussian")}.
-Must have \code{$covariance} and \code{$n_obs} populated.}
+\item{fit}{Preferably a \code{ds.vertDPGaussian} object. A historical
+unpenalised Gaussian \code{ds.glm} object with \code{$covariance} and
+\code{$n_obs} remains accepted for compatibility.}
 
 \item{lambda}{Numeric. L1 penalty magnitude (on the 1/n-normalised objective).}
 
-\item{max_iter}{Integer. Outer proximal-gradient iterations (default 200).}
+\item{max_iter}{Positive integer. Coordinate-descent passes (default 2000).}
 
 \item{tol}{Numeric. Convergence tolerance on \eqn{\|\beta_{t+1} - \beta_t\|}
-(default 1e-7).}
+(default 1e-9).}
 
 \item{keep_intercept}{Logical. If TRUE, do NOT penalise the intercept.}
 
-\item{warm_start}{Numeric vector. Optional beta_0 (default = beta_OLS).}
+\item{warm_start}{Numeric vector. For a \code{ds.vertDPGaussian} input this
+is an optional original-scale coefficient vector containing the intercept
+and every signed predictor. For a legacy \code{ds.glm}, it is beta_0.}
 
-\item{accelerate}{Logical (default TRUE). Use Beck-Teboulle FISTA
-acceleration on the proximal-gradient inner loop. FALSE falls
-back to plain ISTA.}
+\item{accelerate}{Compatibility argument retained for historical callers.
+The current solver is coordinate descent, so this value has no effect.}
 }
 \value{
 An object of class \code{ds.vertLASSOProximal} with the proximal-MLE
@@ -41,9 +43,11 @@ objective value, and the reconstructed Gram matrix used. The slot
 soft-thresholded OLS for comparison.
 }
 \description{
-Solve the Gaussian LASSO objective using only quantities
-already exposed by \code{ds.vertGLM} (beta, covariance / Hessian, n),
-without adding any MPC round beyond the unpenalised fit.
+Solve the Gaussian LASSO objective entirely client-side. The
+preferred route accepts a validated \code{ds.vertDPGaussian} release and
+optimises its signed, projected DP sufficient statistics without another
+DSI call or privacy cost. The historical \code{ds.glm} route is retained
+for compatibility with already-created fits.
 
 Normal equations: para Gaussian \eqn{y = X\beta + \varepsilon} el
 minimizador LASSO es
@@ -60,10 +64,11 @@ con \eqn{L \ge \lambda_{\max}(X^\top X / n)} (upper bound local) y
 }
 \section{Disclosure budget}{
 
-Zero new MPC rounds beyond the initial \code{ds.vertGLM} call. All
-iteration is client-side on quantities already in the \code{fit}
-object. The optimisation volume argument is therefore moot -- no
-additional reveals happen regardless of iteration count.
+Zero new DSI or MPC rounds. For a \code{ds.vertDPGaussian} input, every
+lambda and iteration is deterministic post-processing of the same sticky
+release and has additional privacy cost \code{(epsilon, delta) = (0, 0)}.
+No classical sampling inference or coefficient confidence region is
+implied by the projected noisy moments.
 }
 
 \seealso{

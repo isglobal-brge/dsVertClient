@@ -112,13 +112,38 @@ test_that("frontdoor precision helper only raises binomial precision safely", {
                  binomial_sigmoid_intervals, 150L)
 })
 
-test_that("frontdoor route metadata is attached to list outputs", {
+test_that("frontdoor route metadata distinguishes every supported K mode", {
   x <- list(coefficients = c(a = 1))
-  out <- dsVertClient:::.dsvert_set_frontdoor(
-    x, frontdoor = "ds.vert.demo", route = "backend", K = 3L)
+  set_frontdoor <- dsVertClient:::.dsvert_set_frontdoor
+  modes <- vapply(
+    list(1L, 2L, 3L, 7L, NULL, NA_integer_, 0L),
+    function(K) set_frontdoor(
+      x, frontdoor = "ds.vert.demo", route = "backend", K = K)$k_mode,
+    character(1L))
+
+  expect_identical(modes,
+                   c("K=1", "K=2", "K>=3", "K>=3",
+                     "unknown", "unknown", "unknown"))
+  out <- set_frontdoor(x, "ds.vert.demo", route = "backend", K = 3L)
   expect_equal(out$frontdoor, "ds.vert.demo")
   expect_equal(out$route, "backend")
-  expect_equal(out$k_mode, "K>=3")
+})
+
+test_that("ds.vert.coxph cannot dispatch to a non-Cox estimand", {
+  calls <- list()
+  local_mocked_bindings(
+    ds.vert.cox = function(formula, data = NULL, method, ...) {
+      calls[[length(calls) + 1L]] <<- list(method = method, data = data)
+      list(coefficients = c(x = 0.25), frontdoor = "ds.vert.cox")
+    },
+    .package = "dsVertClient")
+
+  out <- ds.vert.coxph(y ~ x, data = "D")
+  expect_identical(out$frontdoor, "ds.vert.coxph")
+  expect_identical(calls[[1L]]$method, "profile")
+  expect_error(ds.vert.coxph(y ~ x, data = "D", method = "discrete"),
+               "profile")
+  expect_length(calls, 1L)
 })
 
 test_that("frontdoor aliases preserve backend outputs and route metadata", {

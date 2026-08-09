@@ -57,6 +57,14 @@ centred design via:
 and solves \code{beta = solve(XtX, Xty)} client-side. Matches
 \code{lme4::lmer} to FP precision (~1e-5 on small n).
 
+This internal compatibility driver reconstructs the exact Gram matrix
+and right-hand side at the analyst client. Its paired per-cluster share
+consumers likewise reconstruct exact cluster-level residual moments.
+Transport encryption protects peer-to-peer operands; it does not make
+those client-side exact openings differentially private or
+non-reconstructible. The driver is quarantined and must not be treated as
+a promoted biomedical release route.
+
 Assumptions:
 - Cluster IDs have been broadcast via
 \code{dsvertLMMBroadcastClusterIDsDS} /

@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertMI.R
 \name{ds.vertMI}
 \alias{ds.vertMI}
-\title{Federated multiple imputation with Rubin pooling}
+\title{Quarantined multiple-imputation compatibility frontdoor}
 \usage{
 ds.vertMI(
   formula,
@@ -12,67 +12,34 @@ ds.vertMI(
   family = "gaussian",
   max_iter = 50L,
   tol = 1e-04,
-  lambda = 1e-04,
+  lambda = 0,
+  intercept_only = c("error", "aggregate"),
   verbose = TRUE,
   datasources = NULL,
   seed = 1L
 )
 }
 \arguments{
-\item{formula}{Model formula.}
-
-\item{data}{Aligned data-frame name.}
-
-\item{impute_columns}{Character vector of column names with
-missingness that should be imputed (on whichever server holds
-them). Per-server column presence is auto-detected.}
-
-\item{m}{Number of imputations (default 20).}
-
-\item{family}{GLM family.}
-
-\item{max_iter}{Inner \code{ds.vertGLM} \code{max_iter}.}
-
-\item{tol}{Convergence tolerance for inner fits.}
-
-\item{lambda}{L2 regularisation for inner fits.}
-
-\item{verbose}{Print progress.}
-
-\item{datasources}{DataSHIELD connection object.}
-
-\item{seed}{RNG seed (default 1L). Per-round seed = \code{seed + m}.}
+\item{formula, data, impute_columns, m, family, max_iter, tol, lambda, intercept_only, verbose, datasources, seed}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 }
 \value{
-A \code{ds.vertMI} object with fields \code{coefficients},
-\code{covariance} (Rubin total variance T), \code{std_errors},
-\code{within}, \code{between}, \code{fmi} (fraction of missing
-information), \code{m}, \code{family}, \code{fits} (list of the M
-inner \code{ds.glm} fits).
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Fit a GLM on vertically partitioned DataSHIELD data with
-multiple imputation of missing values. Imputations stay on the
-server holding the missing variable (via
-\code{dsvertImputeColumnDS}); the client only ever sees the
-\eqn{M} pooled coefficient vectors and covariance matrices and
-applies Rubin's rules client-side.
-
-Protocol for each of \eqn{m = 1..M}:
-1. On every server holding a column with missingness, call
-\code{dsvertImputeColumnDS} with seed \eqn{s_m}. The server
-draws a local imputation using a Bayesian-ridge model
-conditional on the other complete-case columns available on
-that server. The imputed column is written back into the
-aligned data frame under a per-round name (e.g.
-\code{__dsvert_imp_<var>_<m>}).
-2. Run \code{\link{ds.vertGLM}} on the imputed data, collect
-\code{beta_m} and \code{Cov(beta_m)}.
-3. Client accumulates \eqn{(\beta_m, \mathrm{Cov}_m)}.
-
-Rubin's pooling rules are applied client-side:
-\deqn{\bar\beta = \frac{1}{M}\sum_m \beta_m}
-\deqn{W = \frac{1}{M}\sum_m \mathrm{Cov}_m}
-\deqn{B = \frac{1}{M-1} \sum_m (\beta_m-\bar\beta)(\beta_m-\bar\beta)^T}
-\deqn{T = W + (1 + 1/M) B}
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and mutates no server data, draws no imputation, and returns no
+coefficients, counts, covariance, or diagnostic. Retained implementation
+code after the gate is unreachable through this public frontdoor and
+carries no disclosure, DP, accuracy, or availability claim.
+}
+\details{
+Promotion requires a signed bounded imputation contract,
+non-rerollable cryptographic randomness, no exact per-round count release,
+and validated Rubin-rule inference.
+}
+\seealso{
+\code{\link{ds.vertMethodStatus}}
 }

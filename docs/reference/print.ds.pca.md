@@ -1,6 +1,6 @@
 # Print Method for ds.pca Objects
 
-Prints a summary of PCA results.
+Prints a summary of signed DP PCA results.
 
 ## Usage
 
@@ -13,8 +13,8 @@ print(x, ...)
 
 - x:
 
-  A ds.pca object
+  A `ds.pca` object.
 
 - ...:
 
-  Additional arguments (ignored)
+  Additional arguments passed to `print`.

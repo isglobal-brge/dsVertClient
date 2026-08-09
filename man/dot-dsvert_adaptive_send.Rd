@@ -2,33 +2,32 @@
 % Please edit documentation in R/chunk_utils.R
 \name{.dsvert_adaptive_send}
 \alias{.dsvert_adaptive_send}
-\title{Send chunked data via DataSHIELD with adaptive chunk sizing (internal)}
+\title{Send chunked data via DataSHIELD with immutable geometry (internal)}
 \usage{
-.dsvert_adaptive_send(data, send_one_chunk, min_chunk_size = 10000L)
+.dsvert_adaptive_send(data, send_one_chunk, target, idempotent = FALSE)
 }
 \arguments{
 \item{data}{Character. The full payload string to send.}
 
 \item{send_one_chunk}{Function(chunk_str, chunk_index, n_chunks).
-Callback that sends a single chunk via \code{DSI::datashield.aggregate}.
-Must throw an error on failure.}
+Callback that sends one chunk and returns the unmodified result from
+\code{DSI::datashield.aggregate}.}
 
-\item{min_chunk_size}{Integer. Minimum chunk size before giving up.
-Default 10000 (10KB).}
+\item{target}{Expected logical DataSHIELD connection name.}
+
+\item{idempotent}{Whether exact replay is permitted after an ambiguous
+response. This must only be enabled for a server operation whose duplicate
+request is explicitly idempotent.}
 }
 \value{
 Integer. Number of chunks sent (invisible).
 }
 \description{
-Wraps the standard chunk-and-send pattern with automatic fallback.
-On the first large send in a session, probes the server with the initial
-chunk size. If the probe fails (expression too large), reduces the
-chunk size by 25\\% and retries until a working size is found (or the
-minimum is reached). The successful chunk size is cached for all subsequent
-sends.
-}
-\details{
-Small payloads (less than half the chunk size) are sent directly without
-counting as a conclusive probe, since they don't test the actual limit.
+The complete transfer geometry is fixed before the first request. A
+callback exception or missing acknowledgement may be replayed
+when \code{idempotent = TRUE}; every replay receives byte-for-byte identical
+chunk data and identical indices until an availability deadline. There is
+no request-attempt quota. Explicit negative or malformed replies are
+protocol failures and are never retried.
 }
 \keyword{internal}

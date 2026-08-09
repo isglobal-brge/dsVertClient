@@ -1,24 +1,31 @@
-# Adaptive Chunking for DataSHIELD Transport
+# Acknowledged Chunking for DataSHIELD Transport
 
 Utilities for sending large payloads through DataSHIELD's R expression
-parser with automatic chunk size detection and fallback.
+parser with fixed transfer geometry and typed acknowledgements.
 
 ## Details
 
 DataSHIELD passes function arguments as inline R expressions via HTTP.
 Large string arguments (base64-encoded ciphertexts, EC points, encrypted
 vectors) can exceed the parser or HTTP body size limit. This module
-implements adaptive chunking:
+implements acknowledged chunking:
 
-1.  Start with a large initial chunk size (default 100KB, configurable
-    via `options(dsvert.chunk_size = N)`)
+1.  Start with a portable initial chunk size (default 640 KiB of Base64
+    text / at most 480 KiB raw, configurable via
+    `options(dsvert.chunk_size = N)`)
 
-2.  On first large send, probe whether the chunk size is accepted
+2.  Freeze the chunk size, chunk count, indices, and bytes before the
+    first request
 
-3.  If the probe fails, reduce the chunk size by 25\\
+3.  Require an exact logical `TRUE` acknowledgement from the intended
+    DataSHIELD target before advancing
 
-4.  Cache the successful chunk size for all subsequent sends
+4.  If an idempotent store loses its response, replay only the exact
+    same request until a monotonic availability deadline; never silently
+    change transfer geometry
 
-The probe is only conclusive when a chunk of at least half the target
-chunk size is successfully sent. Small payloads that succeed trivially
-do not confirm that the full chunk size is accepted.
+Automatic fallback to a smaller geometry is deliberately not attempted
+after transmission starts: the server may already have committed the
+first chunk even when its response is lost. Changing `n_chunks` at that
+point would turn a recoverable response loss into a conflicting
+transfer.

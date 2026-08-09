@@ -1,11 +1,10 @@
-# Federated joint-softmax multinomial logistic regression
+# Quarantined joint-multinomial compatibility frontdoor
 
-Compatibility wrapper for
-[`ds.vertMultinomJointNewton`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertMultinomJointNewton.md).
-The historical one-vs-rest/covariance-rescale implementation was removed
-from the product package because it did not close the softmax MLE
-accuracy gap. Calls now always dispatch to the non-disclosive joint
-Newton route for K \>= 3 classes.
+This exported name is retained for API compatibility. It raises a typed
+`dsvert_route_unavailable` condition before any DSI call and returns no
+joint-softmax fit. Retained code after the gate is unreachable through
+this public frontdoor and carries no disclosure, DP, accuracy, or
+availability claim.
 
 ## Usage
 
@@ -17,41 +16,24 @@ ds.vertMultinomJoint(
   max_iter = 30L,
   tol = 1e-04,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  design_analysis_id = NULL
 )
 ```
 
 ## Arguments
 
-- formula:
+- formula, data, levels, max_iter, tol, verbose, datasources,
+  design_analysis_id:
 
-  R formula with the categorical outcome on the LHS.
-
-- data:
-
-  Aligned data-frame name.
-
-- levels:
-
-  Optional character vector of outcome levels (first is reference). If
-  NULL, inferred from the outcome server.
-
-- max_iter:
-
-  Outer Newton iterations.
-
-- tol:
-
-  Convergence tolerance on max \|delta beta\|.
-
-- verbose:
-
-  Print progress.
-
-- datasources:
-
-  DataSHIELD connections.
+  Retained compatibility arguments. They are not evaluated because the
+  public frontdoor fails locally.
 
 ## Value
 
-A `ds.vertMultinomJointNewton` object.
+No fitted object. The function raises `dsvert_route_unavailable` before
+DSI.
+
+## See also
+
+[`ds.vertMethodStatus`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertMethodStatus.md)

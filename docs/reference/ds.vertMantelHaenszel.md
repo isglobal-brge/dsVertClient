@@ -1,0 +1,68 @@
+# Common Mantel-Haenszel odds ratio from authorised stratified tables
+
+Purely post-processes an already disclosure-authorised set of stratified
+2-by-2 aggregate tables. A three-dimensional input uses dimensions
+exposure by outcome by stratum. A matrix uses rows as strata and four
+columns mapped to the canonical cell roles. Bare arrays and matrices
+cannot carry independently verifiable DataSHIELD provenance; supplying
+them is an explicit caller attestation that the aggregates were
+authorised upstream.
+
+## Usage
+
+``` r
+ds.vertMantelHaenszel(
+  x,
+  exposed = 2L,
+  event = 2L,
+  cell_map = NULL,
+  level = 0.95,
+  correct = TRUE
+)
+```
+
+## Arguments
+
+- x:
+
+  A 2-by-2-by-K count array, a K-by-4 count matrix, or a checked object
+  containing one of these in `observed`. A single 2-by-2 matrix is
+  accepted as one descriptive stratum.
+
+- exposed, event:
+
+  For array inputs, the exposed row and event column by name or index.
+  Ignored for a K-by-4 input.
+
+- cell_map:
+
+  For a K-by-4 matrix, a named character or numeric vector mapping
+  `exposed_event`, `exposed_nonevent`, `unexposed_event`, and
+  `unexposed_nonevent` to distinct columns. It may be omitted only when
+  the four columns already use those exact canonical names.
+
+- level:
+
+  Confidence level for the asymptotic classical interval.
+
+- correct:
+
+  Logical; use the continuity correction in the classical
+  Mantel-Haenszel test.
+
+## Value
+
+A `ds.vertMantelHaenszel` object containing the descriptive common odds
+ratio and its explicit finite/zero/infinite/non-estimable type. When the
+authorised aggregate satisfies the classical test requirements, the
+result also contains the `stats::mantelhaen.test(exact = FALSE)`
+statistic, p-value and asymptotic confidence interval. No server call is
+made.
+
+## Details
+
+Classical inference is conditional on the caller-provided table,
+independent observational units, a scientifically valid
+common-odds-ratio model and valid public strata. It is not a privacy
+guarantee and cannot repair selection, sparse-stratum, heterogeneity or
+provenance problems.

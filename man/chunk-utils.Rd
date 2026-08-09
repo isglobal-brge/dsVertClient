@@ -2,26 +2,32 @@
 % Please edit documentation in R/chunk_utils.R
 \name{chunk-utils}
 \alias{chunk-utils}
-\title{Adaptive Chunking for DataSHIELD Transport}
+\title{Acknowledged Chunking for DataSHIELD Transport}
 \description{
 Utilities for sending large payloads through DataSHIELD's
-R expression parser with automatic chunk size detection and fallback.
+R expression parser with fixed transfer geometry and typed acknowledgements.
 }
 \details{
 DataSHIELD passes function arguments as inline R expressions via HTTP.
 Large string arguments (base64-encoded ciphertexts, EC points, encrypted
 vectors) can exceed the parser or HTTP body size limit. This module
-implements adaptive chunking:
+implements acknowledged chunking:
 
 \enumerate{
-\item Start with a large initial chunk size (default 100KB, configurable
+\item Start with a portable initial chunk size (default 640 KiB of Base64
+text / at most 480 KiB raw, configurable
 via \code{options(dsvert.chunk_size = N)})
-\item On first large send, probe whether the chunk size is accepted
-\item If the probe fails, reduce the chunk size by 25\\% and retry
-\item Cache the successful chunk size for all subsequent sends
+\item Freeze the chunk size, chunk count, indices, and bytes before the
+first request
+\item Require an exact logical \code{TRUE} acknowledgement from the
+intended DataSHIELD target before advancing
+\item If an idempotent store loses its response, replay only the exact
+same request until a monotonic availability deadline; never silently
+change transfer geometry
 }
 
-The probe is only conclusive when a chunk of at least half the target
-chunk size is successfully sent. Small payloads that succeed trivially
-do not confirm that the full chunk size is accepted.
+Automatic fallback to a smaller geometry is deliberately not attempted
+after transmission starts: the server may already have committed the first
+chunk even when its response is lost. Changing \code{n_chunks} at that point
+would turn a recoverable response loss into a conflicting transfer.
 }

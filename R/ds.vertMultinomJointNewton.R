@@ -1,7 +1,11 @@
-#' Build raw design Gram for multinomial Bohning Newton
+#' Require a signed raw-design Gram for multinomial Bohning Newton
 #'
-#' Internal helper that reconstructs X'X/n in formula order from scalar
-#' local moments and a low-dimensional correlation matrix.
+#' The existing multinomial score MPC consumes the raw design. A Gaussian
+#' correlation capsule is computed over a clipped, normalised complete-case
+#' design and therefore cannot certify the Bohning majorant for that score
+#' workload. Until the server emits a purpose-bound signed design Gram, this
+#' helper only supports an intercept-only design and otherwise fails before
+#' any DSI operation.
 #'
 #' @param data_name Aligned data frame name.
 #' @param x_vars_per_server Named list of predictor variables per server.
@@ -9,10 +13,12 @@
 #' @param datasources DataSHIELD connections.
 #' @param cnames Coefficient names in formula order.
 #' @param n_obs Number of aligned observations.
+#' @param design_analysis_id Explicit signed multinomial design analysis id.
 #' @keywords internal
 #' @noRd
 .mnl_joint_xtx_over_n <- function(data_name, x_vars_per_server, server_list,
-                                  datasources, cnames, n_obs) {
+                                  datasources, cnames, n_obs,
+                                  design_analysis_id = NULL) {
   slope_names <- setdiff(cnames, "(Intercept)")
   p <- length(cnames)
   G <- matrix(0, p, p, dimnames = list(cnames, cnames))
@@ -20,119 +26,39 @@
   if (!is.na(int_idx)) G[int_idx, int_idx] <- 1
   if (length(slope_names) == 0L) return(G)
 
-  vars_by_server <- lapply(x_vars_per_server[server_list], function(v) {
-    intersect(v, slope_names)
-  })
-  vars_by_server <- vars_by_server[vapply(vars_by_server, length, integer(1L)) > 0L]
-  if (length(vars_by_server) == 0L) {
-    stop("no slope variables available for multinomial Gram", call. = FALSE)
-  }
-  available <- unlist(vars_by_server, use.names = FALSE)
-  missing <- setdiff(slope_names, available)
-  if (length(missing) > 0L) {
-    stop("missing slope variables for multinomial Gram: ",
-         paste(missing, collapse = ", "), call. = FALSE)
-  }
-
-  server_names <- names(datasources)
-  moments <- list()
-  for (srv in names(vars_by_server)) {
-    ci <- which(server_names == srv)
-    for (v in vars_by_server[[srv]]) {
-      r <- DSI::datashield.aggregate(
-        datasources[ci],
-        call(name = "dsvertLocalMomentsDS", data_name = data_name,
-             variable = v))
-      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-      if (!is.list(r) || !is.finite(r$mean) || !is.finite(r$sd)) {
-        stop("non-finite moments for variable '", v, "'", call. = FALSE)
-      }
-      if (!is.null(r$n_total) && as.integer(r$n_total) != as.integer(n_obs)) {
-        stop("moment count for variable '", v, "' does not match aligned n",
-             call. = FALSE)
-      }
-      moments[[v]] <- list(mean = as.numeric(r$mean),
-                           sd = as.numeric(r$sd))
-    }
-  }
-  means <- vapply(slope_names, function(v) moments[[v]]$mean, numeric(1L))
-  sds <- vapply(slope_names, function(v) {
-    sd_v <- moments[[v]]$sd
-    if (!is.finite(sd_v) || sd_v < 1e-12) 0 else sd_v
-  }, numeric(1L))
-
-  cor_mat <- diag(length(slope_names))
-  rownames(cor_mat) <- colnames(cor_mat) <- slope_names
-  if (length(slope_names) > 1L) {
-    if (length(vars_by_server) >= 2L) {
-      cor_res <- ds.vertCor(data_name, variables = vars_by_server,
-                            verbose = FALSE, datasources = datasources)
-      cor_mat <- as.matrix(cor_res$correlation[slope_names, slope_names,
-                                                drop = FALSE])
-    } else {
-      srv <- names(vars_by_server)[1L]
-      r <- DSI::datashield.aggregate(
-        datasources[which(server_names == srv)],
-        call(name = "localCorDS", data_name = data_name,
-             variables = vars_by_server[[srv]]))
-      if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-      cor_mat <- as.matrix(r$correlation[slope_names, slope_names,
-                                          drop = FALSE])
-    }
-  }
-  if (any(!is.finite(cor_mat))) {
-    stop("non-finite correlation entries while building multinomial Gram",
-         call. = FALSE)
-  }
-
-  if (!is.na(int_idx)) {
-    G[int_idx, slope_names] <- means
-    G[slope_names, int_idx] <- means
-  }
-  n <- as.numeric(n_obs)
-  for (j in slope_names) {
-    for (k in slope_names) {
-      sample_cov <- cor_mat[j, k] * sds[[j]] * sds[[k]]
-      G[j, k] <- ((n - 1) / n) * sample_cov + means[[j]] * means[[k]]
-    }
-  }
-  G <- (G + t(G)) / 2
-  if (any(!is.finite(G))) {
-    stop("non-finite multinomial Gram entries", call. = FALSE)
-  }
-  G
+  design_analysis_id <- .dsvert_require_signed_analysis_id(
+    design_analysis_id,
+    method = "ds.vertMultinomJointNewton",
+    argument = "design_analysis_id",
+    required_artifact_family = "multinomial_design_grams")
+  .dsvert_stop_signed_workload_unavailable(
+    method = "ds.vertMultinomJointNewton",
+    argument = "design_analysis_id",
+    required_artifact_family = "multinomial_design_grams",
+    analysis_id = design_analysis_id,
+    reason = "raw_multinomial_score_design_has_no_signed_gram_binding",
+    detail = paste(
+      "the raw design used by the score MPC is not bound to a signed Gram",
+      "with the same clipping, normalization, complete-case mask, snapshot,",
+      "and design order. A gaussian_models correlation artifact is not",
+      "sufficient."))
 }
 
-#' @title Federated joint-softmax multinomial logistic regression via
-#'   Ring127 MPC-orchestrated Newton iteration
-#' @description Full softmax Newton path for vertical splits: orchestrates
-#'   class-specific exp(eta) shares, shared softmax denominators, shared
-#'   residuals, and Beaver matvec score aggregation. K=2 uses both servers as
-#'   DCF parties; K>=3 selects the outcome server plus one fusion DCF party
-#'   and has the other servers contribute encrypted additive shares. The client
-#'   performs a Bohning-Hessian-bounded Newton step on stacked coefficients
-#'   using only aggregate gradients and low-dimensional Gram/Hessian objects.
-#'
-#'   All per-patient probabilities and residuals remain Ring127 additive
-#'   shares. The raw design Gram is built from scalar local moments and the
-#'   federated correlation matrix, which is the same aggregate-disclosure tier
-#'   as \code{ds.vertCor}.
-#' @param formula R formula with categorical outcome on LHS.
-#' @param data Aligned data frame name.
-#' @param levels Character vector of outcome levels (first = reference).
-#' @param indicator_template sprintf template for class-indicator columns
-#'   on the outcome server, e.g. \code{"\%s_ind"}. Must exist server-side.
-#' @param max_outer Outer Newton iterations (default 20).
-#' @param tol Convergence tolerance on max |Deltabeta| (default 1e-5).
-#' @param warm_max_iter Optional maximum iterations for each internal
-#'   binomial warm-start GLM.
-#' @param warm_tol Optional tolerance for each internal binomial warm-start
-#'   GLM.
-#' @param binomial_sigmoid_intervals Optional DCF spline interval count for
-#'   internal binomial warm-start GLMs.
-#' @param verbose Logical.
-#' @param datasources DataSHIELD connections.
-#' @return \code{ds.vertMultinomJointNewton} object.
+#' @title Quarantined joint-softmax Newton compatibility frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and returns no multinomial fit. Retained Newton/MPC code after the
+#'   gate is unreachable through this public frontdoor and carries no
+#'   disclosure, DP, accuracy, or availability claim.
+#' @details Promotion requires a purpose-bound signed
+#'   \code{multinomial_design_grams} artifact over the exact bounded score
+#'   design and a validated joint-softmax inference contract.
+#' @param formula,data,levels,indicator_template,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources,design_analysis_id
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                                         indicator_template = "%s_ind",
@@ -140,13 +66,34 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                                         warm_max_iter = NULL,
                                         warm_tol = NULL,
                                         binomial_sigmoid_intervals = NULL,
-                                        verbose = TRUE, datasources = NULL) {
+                                        verbose = TRUE, datasources = NULL,
+                                        design_analysis_id = NULL) {
+  .dsvert_block_retired_remote_route("multinomial")
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   if (!inherits(formula, "formula"))
     stop("formula required", call. = FALSE)
   if (!is.character(levels) || length(levels) < 3L)
     stop("levels must have >= 3 ordered levels (first = reference)",
          call. = FALSE)
+  formula_slopes <- attr(stats::terms(formula), "term.labels")
+  if (length(formula_slopes) > 0L) {
+    design_analysis_id <- .dsvert_require_signed_analysis_id(
+      design_analysis_id,
+      method = "ds.vertMultinomJointNewton",
+      argument = "design_analysis_id",
+      required_artifact_family = "multinomial_design_grams")
+    .dsvert_stop_signed_workload_unavailable(
+      method = "ds.vertMultinomJointNewton",
+      argument = "design_analysis_id",
+      required_artifact_family = "multinomial_design_grams",
+      analysis_id = design_analysis_id,
+      reason = "raw_multinomial_score_design_has_no_signed_gram_binding",
+      detail = paste(
+        "the raw design used by the score MPC is not bound to a signed Gram",
+        "with the same clipping, normalization, complete-case mask, snapshot,",
+        "and design order. A gaussian_models correlation artifact is not",
+        "sufficient."))
+  }
   ref <- levels[1L]
   non_ref <- levels[-1L]
   K_minus_1 <- length(non_ref)
@@ -183,12 +130,12 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   rhs <- attr(terms(formula), "term.labels")
   # Partition predictors by home server across the full vertical pool.
   x_vars_by_server <- list()
+  column_results <- .dsvert_aggregate_strict(
+    conns = datasources,
+    expr = call(name = "dsvertColNamesDS", data_name = data),
+    operation = "multinomial column discovery")
   for (srv in server_names) {
-    ci <- which(server_names == srv)
-    r <- tryCatch(DSI::datashield.aggregate(datasources[ci],
-      call(name = "dsvertColNamesDS", data_name = data)),
-      error = function(e) NULL)
-    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+    r <- column_results[[srv]]
     cols_here <- if (is.list(r) && !is.null(r$columns)) r$columns
                  else if (is.character(r)) r else character(0)
     x_vars_by_server[[srv]] <- intersect(rhs, cols_here)
@@ -220,15 +167,21 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   dealer_srv <- if (length(non_dcf_servers) > 0L) non_dcf_servers[[1L]] else nl
   dealer_ci <- which(server_names == dealer_srv)
 
-  session_id <- paste0("multinomJoint_", as.integer(Sys.time()),
-                       "_", sample.int(.Machine$integer.max, 1L))
+  session_id <- .dsvert_uuid4()
+  cleanup_session <- function() {
+    .dsvert_cleanup_best_effort(
+      datasources, call(name = "mpcCleanupDS", session_id = session_id))
+    .dsvert_reset_chunk_size()
+  }
+  on.exit(cleanup_session(), add = TRUE)
   transport_pks <- list()
   identity_info <- list()
+  transport_results <- .dsvert_aggregate_strict(
+    conns = datasources,
+    expr = call(name = "glmRing63TransportInitDS", session_id = session_id),
+    operation = "multinomial transport initialisation")
   for (srv in server_names) {
-    ci <- which(server_names == srv)
-    r <- DSI::datashield.aggregate(datasources[ci],
-      call(name = "glmRing63TransportInitDS", session_id = session_id))
-    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
+    r <- transport_results[[srv]]
     transport_pks[[srv]] <- r$transport_pk
     if (!is.null(r$identity_pk)) {
       identity_info[[srv]] <- list(
@@ -248,34 +201,30 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   id_b64 <- if (length(identity_info) > 0L) {
     .json_to_b64url(identity_info[sort(names(identity_info))])
   } else ""
-  for (srv in server_names) {
-    ci <- which(server_names == srv)
-    DSI::datashield.aggregate(datasources[ci],
-      call(name = "mpcStoreTransportKeysDS",
-           transport_keys_b64 = pk_b64,
-           identity_info_b64 = id_b64,
-           session_id = session_id))
-  }
+  .dsvert_aggregate_strict(
+    conns = datasources,
+    expr = call(name = "mpcStoreTransportKeysDS",
+                transport_keys_b64 = pk_b64,
+                identity_info_b64 = id_b64,
+                session_id = session_id),
+    operation = "multinomial pinned-key binding",
+    result_contract = "logical_true")
 
-  .dsAgg <- function(conns, expr, ...)
-    DSI::datashield.aggregate(conns, expr, ...)
+  .dsAgg <- function(conns, expr, ...) {
+    if (length(list(...)))
+      stop("Additional aggregate controls are unavailable in a multinomial MPC phase",
+           call. = FALSE)
+    .dsvert_aggregate_strict(
+      conns = conns, expr = expr,
+      operation = "multinomial MPC protocol phase")
+  }
   # Adaptive chunking (same pattern as ds.psiAlign). Canonical server
   # signature: mpcStoreBlobDS(key, chunk, chunk_index, n_chunks, session_id).
-  .sendBlob <- function(blob, key, conn_idx) {
+  .sendBlob <- function(blob, contract, conn_idx) {
     if (is.null(blob) || !nzchar(blob)) return(invisible())
-    conn <- datasources[conn_idx]
-    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        DSI::datashield.aggregate(conn,
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               session_id = session_id))
-      } else {
-        DSI::datashield.aggregate(conn,
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               chunk_index = chunk_idx, n_chunks = n_chunks,
-               session_id = session_id))
-      }
-    })
+    .dsvert_store_transfer_or_legacy(
+      blob, contract, datasources[conn_idx], session_id,
+      producer_conns = datasources)
   }
 
   # Share input at Ring127. All original columns are split into additive
@@ -300,34 +249,35 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   for (srv in server_list) {
     peer <- setdiff(server_list, srv)
     peer_ci <- which(server_names == peer)
-    .sendBlob(share_results[[srv]]$encrypted_x_share, "k2_peer_x_share", peer_ci)
+    .sendBlob(share_results[[srv]]$encrypted_x_share,
+              share_results[[srv]]$encrypted_x_transfer, peer_ci)
     if (!is.null(share_results[[srv]]$encrypted_y_share))
-      .sendBlob(share_results[[srv]]$encrypted_y_share, "k2_peer_y_share", peer_ci)
+      .sendBlob(share_results[[srv]]$encrypted_y_share,
+                share_results[[srv]]$encrypted_y_transfer, peer_ci)
   }
   for (srv in server_list) {
     ci <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
     .dsAgg(datasources[ci], call(name = "k2ReceiveShareDS",
       peer_p = as.integer(length(x_vars_per_server[[peer]])),
+      peer_name = peer,
       session_id = session_id))
   }
   for (srv in non_dcf_servers) {
     if (length(x_vars_per_server[[srv]]) == 0L) next
     ci <- which(server_names == srv)
-    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
+    r <- .dsAgg(datasources[ci], call(name = "glmRing63ShareExtraInputDS",
       data_name = data, x_vars = x_vars_per_server[[srv]],
-      y_var = NULL,
       peer_pk = .to_b64url(transport_pks[[nl]]),
       ring = 127L, session_id = session_id))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-    .sendBlob(r$encrypted_x_share, paste0("k2_extra_x_share_", srv), nl_ci)
+    .sendBlob(r$encrypted_x_share, r$encrypted_x_transfer, nl_ci)
 
     r2 <- .dsAgg(datasources[ci], call(name = "glmRing63ExportOwnShareDS",
       peer_pk = .to_b64url(transport_pks[[y_server]]),
       session_id = session_id))
     if (is.list(r2) && length(r2) == 1L) r2 <- r2[[1L]]
-    .sendBlob(r2$encrypted_own_share, paste0("k2_extra_x_share_", srv),
-              y_server_ci)
+    .sendBlob(r2$encrypted_own_share, r2$encrypted_own_transfer, y_server_ci)
   }
   for (srv in non_dcf_servers) {
     extra_p <- length(x_vars_per_server[[srv]])
@@ -335,7 +285,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     for (dcf_srv in server_list) {
       .dsAgg(datasources[which(server_names == dcf_srv)],
         call(name = "glmRing63ReceiveExtraShareDS",
-             extra_key = paste0("k2_extra_x_share_", srv),
+             source_name = srv,
              extra_p = as.integer(extra_p),
              session_id = session_id))
     }
@@ -360,6 +310,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   best_step_beta <- NULL
   best_step_norm <- Inf
   best_step_iter <- 0L
+  step_solver_history <- character(0)
   convergence_reason <- "max_outer"
   # Ring127 softmax/reciprocal products have a practical approximation
   # floor. Past this point additional Newton steps mostly oscillate around
@@ -376,19 +327,23 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   # descent (Bohning 1992 Ann Inst Stat Math 44:197-200, Theorem 2;
   # Krishnapuram et al 2005 IEEE PAMI 27(6)).
   #
-  # XtX_over_n must be the raw design Gram in FORMULA order. Do not
-  # reconstruct it from a binomial GLM Hessian: that Hessian is X'WX/n,
-  # not X'X/n, and it under-scales the Bohning majorant enough to create
-  # oversized Newton steps. The aggregate Gram below uses only scalar
-  # moments and a federated correlation matrix, the same disclosure tier
-  # as ds.vertCor/PCA.
+  # XtX_over_n must be the raw design Gram in FORMULA order. A binomial GLM
+  # Hessian is X'WX/n, not X'X/n, and a Gaussian capsule is bound to a
+  # different clipped/normalised workload. The helper therefore admits only
+  # intercept-only designs until a signed raw-design Gram is materialized.
   XtX_over_n <- .mnl_joint_xtx_over_n(
     data_name = data,
     x_vars_per_server = x_vars_per_server,
     server_list = feature_server_order,
     datasources = datasources,
     cnames = cnames,
-    n_obs = n_obs)
+    n_obs = n_obs,
+    design_analysis_id = design_analysis_id)
+  invisible(.dsvert_solve_identifiable(
+    XtX_over_n, rep(0, nrow(XtX_over_n)),
+    context = "The protected multinomial design Gram matrix",
+    reason = "rank_deficient_multinomial_design",
+    symmetric = TRUE))
   B <- matrix(0, p * K_minus_1, p * K_minus_1)
   for (i in seq_len(K_minus_1))
     for (j in seq_len(K_minus_1)) {
@@ -398,7 +353,9 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                  else -0.5 / (K_minus_1 + 1L)
       B[row_i, col_j] <- coef_ij * XtX_over_n
     }
-  B_reg <- B + 1e-6 * max(abs(diag(B))) * diag(p * K_minus_1)
+  # The protected design Gram has already been certified full rank, so the
+  # Bohning majorant is solved as-is. A diagonal ridge here would conceal a
+  # broken identifiability or numerical contract.
 
   coord <- y_server   # label server
   # Leak-free fixed outer-iteration count (public); best-iterate tracking below
@@ -556,22 +513,22 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       for (srv in server_list) {
         ci <- which(server_names == srv)
         peer <- setdiff(server_list, srv)
-        .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS",
-          session_id = session_id,
-          grad_triple_key = grad_triple_key))
         rr <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
           peer_pk = .to_b64url(transport_pks[[peer]]), session_id = session_id))
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
         r1[[srv]] <- rr
       }
-      .sendBlob(r1[[coord]]$encrypted_r1, "k2_grad_peer_r1", nl_ci)
-      .sendBlob(r1[[nl]]$encrypted_r1, "k2_grad_peer_r1", y_server_ci)
+      .sendBlob(r1[[coord]]$encrypted_r1,
+                r1[[coord]]$encrypted_r1_transfer, nl_ci)
+      .sendBlob(r1[[nl]]$encrypted_r1,
+                r1[[nl]]$encrypted_r1_transfer, y_server_ci)
       r2 <- list()
       for (srv in server_list) {
         ci <- which(server_names == srv)
         is_c <- (srv == coord)
         rr <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
-          party_id = if (is_c) 0L else 1L, session_id = session_id))
+          party_id = if (is_c) 0L else 1L,
+          peer_name = setdiff(server_list, srv), session_id = session_id))
         if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
         r2[[srv]] <- rr
       }
@@ -631,7 +588,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     }
 
     # H_emp activation gate. Default FALSE per reviewer architectural
-    # call 2026-04-29: Bohning B_reg ships as the production Hessian.
+    # call 2026-04-29: the Bohning majorant ships as the production Hessian.
     #
     # Diagnostic history. The first L3 sweep of the H_emp pipeline at
     # SHA fe03cf1 produced max|Deltapi| = 1.19e-1 (regression vs the prior
@@ -664,7 +621,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     # alone cannot push below this floor at L3.
     #
     # Architectural decision (reviewer 2026-04-29 option 2): ship
-    # Bohning B_reg as default for production runs (~3x fewer MPC
+    # Bohning majorant as default for production runs (~3x fewer MPC
     # rounds per iter for identical L3 numerical quality). The H_emp
     # scaffolding remains in source as opt-in via
     # `options(dsvert.mnl_joint_h_emp = TRUE)` for any future
@@ -681,7 +638,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     H_emp_full <- NULL
     if (use_h_emp) {
     # === Empirical Hessian H_emp_k per class via MPC X^T diag(W_k) X ===
-    # Replaces Bohning B_reg's per-class diagonal blocks with the
+    # Replaces the Bohning majorant's per-class diagonal blocks with the
     # empirical second-derivative form (Tutz 1990 Sec.3.2 closed-form
     # multinomial Hessian; Krishnapuram et al 2005 IEEE PAMI 27(6) Sec.3.2;
     # Friedman-Hastie-Tibshirani 2010 Sec.3.2; Hosmer-Lemeshow 2013 Sec.3.5).
@@ -828,21 +785,22 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
         for (srv in server_list) {
           ci <- which(server_names == srv)
           peer <- setdiff(server_list, srv)
-          .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS",
-            session_id = session_id, grad_triple_key = gtk_xw))
           rr <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
             peer_pk = .to_b64url(transport_pks[[peer]]), session_id = session_id))
           if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
           r1xw[[srv]] <- rr
         }
-        .sendBlob(r1xw[[coord]]$encrypted_r1, "k2_grad_peer_r1", nl_ci)
-        .sendBlob(r1xw[[nl]]$encrypted_r1, "k2_grad_peer_r1", y_server_ci)
+        .sendBlob(r1xw[[coord]]$encrypted_r1,
+                  r1xw[[coord]]$encrypted_r1_transfer, nl_ci)
+        .sendBlob(r1xw[[nl]]$encrypted_r1,
+                  r1xw[[nl]]$encrypted_r1_transfer, y_server_ci)
         r2xw <- list()
         for (srv in server_list) {
           ci <- which(server_names == srv)
           is_c <- (srv == coord)
           rr <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
-            party_id = if (is_c) 0L else 1L, session_id = session_id))
+            party_id = if (is_c) 0L else 1L,
+            peer_name = setdiff(server_list, srv), session_id = session_id))
           if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
           r2xw[[srv]] <- rr
         }
@@ -912,21 +870,22 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
           for (srv in server_list) {
             ci <- which(server_names == srv)
             peer <- setdiff(server_list, srv)
-            .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS",
-              session_id = session_id, grad_triple_key = gtk_H))
             rr <- .dsAgg(datasources[ci], call(name = "k2GradientR1DS",
               peer_pk = .to_b64url(transport_pks[[peer]]), session_id = session_id))
             if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
             r1H[[srv]] <- rr
           }
-          .sendBlob(r1H[[coord]]$encrypted_r1, "k2_grad_peer_r1", nl_ci)
-          .sendBlob(r1H[[nl]]$encrypted_r1, "k2_grad_peer_r1", y_server_ci)
+          .sendBlob(r1H[[coord]]$encrypted_r1,
+                    r1H[[coord]]$encrypted_r1_transfer, nl_ci)
+          .sendBlob(r1H[[nl]]$encrypted_r1,
+                    r1H[[nl]]$encrypted_r1_transfer, y_server_ci)
           r2H <- list()
           for (srv in server_list) {
             ci <- which(server_names == srv)
             is_c <- (srv == coord)
             rr <- .dsAgg(datasources[ci], call(name = "k2GradientR2DS",
-              party_id = if (is_c) 0L else 1L, session_id = session_id))
+              party_id = if (is_c) 0L else 1L,
+              peer_name = setdiff(server_list, srv), session_id = session_id))
             if (is.list(rr) && length(rr) == 1L) rr <- rr[[1L]]
             r2H[[srv]] <- rr
           }
@@ -991,11 +950,11 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
                         paste(sprintf("%.3e", diag(H_emp_full)), collapse=",")))
       }
     }
-    } # end if (use_h_emp) -- H_emp pipeline gated FALSE; B_reg used below
+    } # end if (use_h_emp) -- empirical information pipeline
 
-    # Client-side empirical-Hessian Newton step (replaces Bohning B_reg
-    # when H_emp is available; falls back to Bohning for stability when
-    # H_emp construction fails).
+    # Client-side empirical-information Newton step when the opt-in path is
+    # available; otherwise use the declared Bohning majorant for the same
+    # multinomial likelihood.
     g_stacked <- as.numeric(gradients)
     g_norm <- sqrt(sum(g_stacked^2))
     g_max  <- max(abs(g_stacked))
@@ -1008,27 +967,34 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
       best_beta <- beta_mat
       best_iter <- outer - 1L  # beta_mat is current iterate PRE step
     }
-    # Newton solve: use empirical H_emp_full if successfully assembled
-    # (Tutz 1990 Sec.3.2 quadratic local convergence per Pratt 1981 +
-    # Burridge 1981); fall back to Bohning B_reg majorant otherwise
-    # (monotone descent guarantee per Bohning 1992 Thm 2). Christensen
-    # 2019 ordinal::clm.fit Sec.A.3 diagonal eigenvalue inflation +
-    # ridge epsilon*I for numerical stability of the empirical-H solve.
-    H_solve <- if (H_emp_ok) {
-      ridge <- 1e-6 * max(abs(diag(H_emp_full)), 1)
-      H_emp_full + ridge * diag(p * K_minus_1)
-    } else {
-      B_reg
+    # The empirical approximation may cease to be positive definite at the
+    # MPC error floor. Reject it explicitly in that case and use Bohning's
+    # positive-definite majorant; never invent ridge or a gradient step after
+    # a failed solve. Both routes optimize the same unpenalized objective.
+    step_stacked <- NULL
+    step_solver <- "bohning_majorant"
+    if (H_emp_ok) {
+      step_stacked <- tryCatch(
+        .dsvert_solve_identifiable(
+          H_emp_full, g_stacked,
+          context = "The protected empirical multinomial information",
+          reason = "unstable_empirical_multinomial_information",
+          symmetric = TRUE),
+        non_identifiable = function(e) NULL)
+      step_solver <- if (is.null(step_stacked)) {
+        "bohning_majorant_after_empirical_information_rejected"
+      } else {
+        "empirical_information"
+      }
     }
-    step_stacked <- tryCatch(solve(H_solve, g_stacked),
-                              error = function(e) {
-                                # Empirical solve failed -> fall back to
-                                # Bohning B_reg (Loewner upper-bound
-                                # always positive-definite per Bohning
-                                # 1992 Thm 2).
-                                tryCatch(solve(B_reg, g_stacked),
-                                          error = function(e2) 0.1 * g_stacked)
-                              })
+    if (is.null(step_stacked)) {
+      step_stacked <- .dsvert_solve_identifiable(
+        B, g_stacked,
+        context = "The protected Bohning multinomial majorant",
+        reason = "singular_multinomial_majorant",
+        symmetric = TRUE)
+    }
+    step_solver_history <- c(step_solver_history, step_solver)
     step_mat <- matrix(step_stacked, p, K_minus_1,
                        dimnames = dimnames(gradients))
     step_norm_pre <- max(abs(step_mat))
@@ -1076,14 +1042,6 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
     }
   }
 
-  # Cleanup MPC session
-  for (srv in server_names) {
-    ci <- which(server_names == srv)
-    try(.dsAgg(datasources[ci],
-               call(name = "mpcCleanupDS", session_id = session_id)),
-        silent = TRUE)
-  }
-
   # Return the best stationarity iterate, not necessarily the final iterate.
   # Raw |g| and final beta can both be poor selectors after the Ring127
   # softmax approximation floor is reached. The minimum aggregate Newton
@@ -1091,8 +1049,7 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   # retained for diagnostics.
   gradient_beta <- if (!is.null(best_beta)) best_beta else beta_mat
   final_beta <- if (!is.null(best_step_beta)) best_step_beta else gradient_beta
-  out <- warm
-  out$coefficients_anchored <- warm$coefficients
+  out <- .dsvert_label_joint_warm_start(warm, "multinomial")
   out$coefficients <- final_beta
   out$coefficients_best_gradient <- gradient_beta
   out$coefficients_final_iter <- beta_mat  # last iterate for diagnostics
@@ -1117,6 +1074,15 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
   out$quality$metrics$convergence_reason <- convergence_reason
   out$quality$metrics$returned_selection <- out$returned_selection
   out$family <- "multinomial_joint_softmax_ring127"
+  out$method_status <- "provisional_point_estimates_only"
+  out$optimizer_stabilization <- list(
+    method = "Bohning_majorized_or_empirical_Newton_step",
+    step_solvers = unique(step_solver_history),
+    empirical_information_rejections = sum(
+      step_solver_history ==
+        "bohning_majorant_after_empirical_information_rejected"),
+    changes_estimand = FALSE,
+    design_rank_certified = TRUE)
   out$session_id <- session_id
   class(out) <- c("ds.vertMultinomJointNewton", class(out))
   out

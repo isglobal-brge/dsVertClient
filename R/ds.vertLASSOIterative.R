@@ -1,68 +1,19 @@
-#' @title Federated LASSO path from a non-disclosive GLM fit
-#' @description Fit an L1-regularised path without revealing row-level
-#'   gradients or residuals. For Gaussian models this is the proper LASSO
-#'   objective solved from the normal equations already exposed by
-#'   \code{\link{ds.vertGLM}}:
-#'
-#'     \deqn{\arg\min_\beta \tfrac{1}{2n}\|y-X\beta\|^2 +
-#'            \lambda\|\beta_{-0}\|_1.}
-#'
-#'   The solver delegates to \code{\link{ds.vertLASSOProximal}}, which
-#'   reconstructs \eqn{X^T X/n} from aggregate covariance/Hessian output
-#'   and runs coordinate descent client-side. Binomial models use the internal
-#'   aggregate score path to run proximal-gradient on the standardized L1
-#'   objective. Poisson models use fixed-start aggregate score/Hessian probes
-#'   and a damped proximal-Newton update on the same standardized L1 objective.
-#'
-#'   Non-disclosure: the inner ds.vertGLM call already hides everything
-#'   at the p-aggregate level; this wrapper only manipulates returned
-#'   aggregate coefficients, covariance/Hessian matrices, or p-dimensional
-#'   aggregate scores.
-#'
-#' @param formula Model formula.
-#' @param data Aligned data-frame name.
-#' @param family GLM family.
-#' @param lambda L1 penalty scalar or vector (path).
-#' @param max_outer Retained for backward compatibility; used as a lower
-#'   bound on the Gaussian coordinate-descent iteration budget.
-#' @param tol Tolerance passed to the LASSO path solver.
-#' @param alpha Retained for backward compatibility; no longer used.
-#' @param inner_iter Inner \code{ds.vertGLM} budget for the initial
-#'   unpenalised fit.
-#' @param exact_non_gaussian Logical. For binomial models, use repeated
-#'   secure aggregate-score evaluations and proximal-gradient updates on
-#'   the standardized L1 objective instead of the one-step surrogate. For
-#'   Poisson models, use repeated aggregate score/Hessian probes and a
-#'   damped proximal-Newton update.
-#' @param ring Integer (63 or 127). MPC ring for the GLM score evaluations.
-#'   Defaults to Ring63. Ring127 can be requested explicitly after fixture
-#'   validation for the target deployment.
-#' @param lipschitz Character. Step-size rule for binomial proximal-gradient:
-#'   \code{"auto"} (default) tries a guarded aggregate Gram/correlation
-#'   bound and falls back to the conservative \code{0.25 * (p + 1)} bound;
-#'   \code{"gram"} requires the aggregate Gram bound; \code{"safe"} always
-#'   uses the conservative bound.
-#' @param fista_restart Logical. For binomial proximal-gradient, reset FISTA
-#'   momentum when the client-side gradient-restart criterion triggers. This
-#'   uses only p-dimensional coefficient vectors already held by the client
-#'   and does not require opening objectives or row-level quantities.
-#' @param binomial_sigmoid_intervals Integer or NULL. Number of secure
-#'   sigmoid spline intervals used by binomial aggregate-score evaluations.
-#'   The default, \code{getOption("dsvert.lasso_binomial_sigmoid_intervals",
-#'   200L)}, is intentionally finer than the generic GLM default because
-#'   L1 optimisation repeatedly reuses the score oracle and amplifies the
-#'   spline floor. Set NULL to inherit the ambient
-#'   \code{dsvert.glm_num_intervals_binomial} option.
-#' @param poisson_damping Numeric in (0, 1]. Fixed damping applied to Poisson
-#'   proximal-Newton proposals. The default 0.5 is intentionally conservative
-#'   and avoids an extra objective/deviance pass.
-#' @param verbose Print progress.
-#' @param datasources DataSHIELD connections.
-#' @return A \code{ds.vertLASSOIter} object with components
-#'   \code{lambda}, \code{paths} (per-lambda coefficient vectors),
-#'   \code{n_outer} (solver iterations used per lambda),
-#'   \code{final_fit} (the unpenalised \code{ds.glm} fit), and
-#'   \code{method} describing the estimator target.
+#' @title Quarantined iterative-LASSO compatibility frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and computes or returns no coefficient path, score, Hessian,
+#'   selection result, or diagnostic. Retained iterative code after the gate
+#'   is unreachable through this public frontdoor and carries no disclosure,
+#'   DP, accuracy, model-selection, or availability claim.
+#' @details Promotion requires a signed bounded artifact over the exact score
+#'   design, a whole-path privacy contract, KKT validation and DP-aware
+#'   selection and inference.
+#' @param formula,data,family,lambda,max_outer,tol,alpha,inner_iter,exact_non_gaussian,ring,lipschitz,fista_restart,binomial_sigmoid_intervals,poisson_damping,verbose,datasources,cor_analysis_id
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertLASSOIter <- function(formula, data = NULL,
                               family = c("gaussian", "binomial", "poisson"),
@@ -77,7 +28,9 @@ ds.vertLASSOIter <- function(formula, data = NULL,
                                 "dsvert.lasso_binomial_sigmoid_intervals",
                                 200L),
                               poisson_damping = 0.5,
-                              verbose = TRUE, datasources = NULL) {
+                              verbose = TRUE, datasources = NULL,
+                              cor_analysis_id = NULL) {
+  .dsvert_block_retired_remote_route("lasso_iter")
   family <- match.arg(family)
   lipschitz <- match.arg(lipschitz)
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
@@ -105,6 +58,28 @@ ds.vertLASSOIter <- function(formula, data = NULL,
       stop("binomial_sigmoid_intervals must be NULL or an integer >= 10",
            call. = FALSE)
     }
+  }
+  formula_has_slopes <- inherits(formula, "formula") &&
+    length(attr(stats::terms(formula), "term.labels")) > 0L
+  if (exact_binomial && formula_has_slopes) {
+    cor_analysis_id <- .dsvert_require_signed_analysis_id(
+      cor_analysis_id, method = "ds.vertLASSOIter",
+      argument = "cor_analysis_id",
+      required_artifact_family = "gaussian_models")
+    .dsvert_stop_signed_workload_unavailable(
+      method = "ds.vertLASSOIter", argument = "cor_analysis_id",
+      required_artifact_family = "binomial_lasso_design_grams",
+      analysis_id = cor_analysis_id,
+      reason = "signed_clipped_design_not_bound_to_raw_score_mpc",
+      detail = paste(
+        "the existing binomial score MPC does not attest the same clipping,",
+        "normalization, complete-case mask, snapshot, and design order as",
+        "the signed Gaussian correlation artifact."))
+  }
+  if (!exact_binomial && !is.null(cor_analysis_id)) {
+    stop(
+      "cor_analysis_id is available only for the exact binomial LASSO route",
+      call. = FALSE)
   }
 
   .with_binomial_sigmoid_intervals <- function(expr) {
@@ -199,45 +174,24 @@ ds.vertLASSOIter <- function(formula, data = NULL,
   .gram_lipschitz <- function(fit) {
     slope_names <- setdiff(names(fit$coefficients), "(Intercept)")
     if (length(slope_names) == 0L) return(0.25)
-    cor_fit <- ds.vertCor(data, variables = slope_names,
-                          verbose = FALSE, datasources = datasources)
-    corr <- as.matrix(cor_fit$correlation)
-    corr <- corr[slope_names, slope_names, drop = FALSE]
-    corr <- (corr + t(corr)) / 2
-    # glmStandardizeDS uses sample sd, so crossprod(X_std) / n equals
-    # ((n - 1) / n) * cor(X), while the intercept block is orthogonal to
-    # centred predictors and has Gram value 1.
-    n_obs <- as.numeric(fit$n_obs)
-    slope_gram <- corr * ((n_obs - 1) / n_obs)
-    gram <- diag(length(slope_names) + 1L)
-    gram[-1L, -1L] <- slope_gram
-    ev <- eigen((gram + t(gram)) / 2, symmetric = TRUE,
-                only.values = TRUE)$values
-    L <- 0.25 * max(ev, na.rm = TRUE)
-    if (!is.finite(L) || L <= 0) {
-      stop("non-finite aggregate Gram Lipschitz bound", call. = FALSE)
-    }
-    as.numeric(L)
+    .dsvert_stop_signed_workload_unavailable(
+      method = "ds.vertLASSOIter", argument = "cor_analysis_id",
+      required_artifact_family = "binomial_lasso_design_grams",
+      analysis_id = cor_analysis_id,
+      reason = "signed_clipped_design_not_bound_to_raw_score_mpc",
+      detail = paste(
+        "the exact score route reached a slope design without an attested",
+        "server-authoritative Gram majorant over the same protected inputs."))
   }
 
   .choose_lipschitz <- function(fit, theta_names) {
+    # The aggregate Gram pass also certifies coefficient identifiability. A
+    # conservative step bound is not a substitute for that rank check.
+    gram_bound <- .gram_lipschitz(fit)
     if (identical(lipschitz, "safe")) {
       return(list(L = .safe_lipschitz(theta_names), source = "safe"))
     }
-    gram_try <- tryCatch(.gram_lipschitz(fit), error = function(e) e)
-    if (inherits(gram_try, "error")) {
-      if (identical(lipschitz, "gram")) {
-        stop("aggregate Gram Lipschitz bound failed: ",
-             conditionMessage(gram_try), call. = FALSE)
-      }
-      if (verbose) {
-        message("[LASSOIter] aggregate Gram Lipschitz unavailable; ",
-                "using conservative bound: ",
-                conditionMessage(gram_try))
-      }
-      return(list(L = .safe_lipschitz(theta_names), source = "safe_fallback"))
-    }
-    list(L = gram_try, source = "aggregate_gram")
+    list(L = gram_bound, source = "aggregate_gram")
   }
 
   .binomial_pg <- function(fit0, lam, warm_std, step_bound) {
@@ -324,6 +278,11 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     for (it in seq_len(as.integer(max_outer))) {
       old <- theta
       eval <- .score_hessian_std(theta)
+      invisible(.dsvert_solve_identifiable(
+        eval$hessian, rep(0, nrow(eval$hessian)),
+        context = "The protected Poisson LASSO information",
+        reason = "rank_deficient_lasso_design",
+        symmetric = TRUE))
       proposal <- .prox_quadratic_cd(theta, eval$score, eval$hessian, lam)
       theta <- theta + poisson_damping * (proposal - theta)
       last_step <- max(abs(theta - old))
@@ -449,6 +408,13 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     },
     poisson_damping = if (exact_poisson) poisson_damping else NA_real_,
     fista_restart = if (exact_binomial) fista_restart else NA,
+    cor_analysis_id = if (exact_binomial) cor_analysis_id else NULL,
+    correlation_artifact_family = NULL,
+    correlation_calls_per_fit = 0L,
+    identifiability = list(
+      coefficient_uniqueness_certified = TRUE,
+      regularization_requested = "L1",
+      implicit_ridge_or_pseudoinverse = FALSE),
     call        = match.call())
   class(out) <- c("ds.vertLASSOIter", "list")
   out

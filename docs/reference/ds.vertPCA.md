@@ -1,7 +1,9 @@
-# Principal Component Analysis for Vertically Partitioned Data
+# Principal components from a signed DP correlation artifact
 
-Performs PCA on vertically partitioned data using the privacy-preserving
-correlation matrix from Ring63 Beaver MPC.
+Performs client-only eigen decomposition of the explicitly PSD-projected
+complete-case matrix returned by `ds.vertCor`. It never accepts the
+pairwise-complete correlation artifact, invokes the former Ring63/exact
+correlation protocol, or returns individual component scores.
 
 ## Usage
 
@@ -10,6 +12,7 @@ ds.vertPCA(
   data_name = NULL,
   variables = NULL,
   n_components = NULL,
+  analysis_id = NULL,
   cor_result = NULL,
   verbose = TRUE,
   datasources = NULL
@@ -20,127 +23,38 @@ ds.vertPCA(
 
 - data_name:
 
-  Character string. Name of the (aligned) data frame. Ignored if
-  `cor_result` is provided.
+  Signed protected dataset name. Ignored when `cor_result` is supplied.
 
 - variables:
 
-  Named list: server -\> variable names. Ignored if `cor_result` is
-  provided.
+  Optional signed variable subset. Named owner lists are supported when
+  they agree with the Gaussian artifact.
 
 - n_components:
 
-  Integer. Number of components. Default NULL (all).
+  Number of components, or `NULL` for all.
+
+- analysis_id:
+
+  Mandatory signed Gaussian artifact id when `cor_result` is not
+  supplied.
 
 - cor_result:
 
-  An existing `ds.cor` object from
-  [`ds.vertCor`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md).
-  If provided, the correlation protocol is not re-run.
+  An existing complete-case `ds.vertCor` result from the same sticky
+  capsule. Pairwise, arbitrary, and legacy `ds.cor` objects are
+  rejected.
 
 - verbose:
 
-  Logical. If TRUE (default), print progress messages.
+  Logical progress flag.
 
 - datasources:
 
-  DataSHIELD connection object or list of connections. If NULL, uses all
-  available connections. Ignored if `cor_result` is provided.
+  DataSHIELD connections.
 
 ## Value
 
-A list with class "ds.pca" containing:
-
-- `loadings`: Matrix of variable loadings (n_vars x n_components)
-
-- `eigenvalues`: Eigenvalues for each component
-
-- `variance_pct`: Percentage of variance explained
-
-- `cumulative_pct`: Cumulative percentage explained
-
-- `var_names`: Variable names
-
-- `n_obs`: Number of observations
-
-- `correlation`: The correlation matrix used for PCA
-
-## Details
-
-This function performs PCA using the correlation matrix obtained via
-Ring63 Beaver MPC (via
-[`ds.vertCor`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md)).
-The approach is:
-
-1.  Compute the privacy-preserving correlation matrix using
-    [`ds.vertCor`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md)
-    (or reuse an existing one via the `cor_result` parameter)
-
-2.  Perform eigen decomposition on the correlation matrix
-
-3.  Extract loadings (eigenvectors) and eigenvalues
-
-Since PCA on standardized data is equivalent to eigen decomposition of
-the correlation matrix, this gives correct loadings and variance
-explained.
-
-**Note on scores:** This function does NOT return principal component
-scores because computing scores would require access to the raw data. If
-you need scores, you would need to compute them on each server using the
-loadings and aggregate the results (which is a separate operation).
-
-### Interpreting Loadings
-
-Each column of the loadings matrix represents a principal component. The
-values show how much each variable contributes to that component:
-
-- Values close to 1 or -1 indicate strong contribution
-
-- Values close to 0 indicate weak contribution
-
-- Sign indicates direction of relationship
-
-## Security
-
-This function inherits all security properties from
-[`ds.vertCor`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md):
-
-- Individual observations are never exposed
-
-- The client cannot decrypt without all servers cooperating
-
-- Only aggregate statistics (correlation matrix) are revealed
-
-## See also
-
-[`ds.vertCor`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md)
-for correlation analysis
-
-## Examples
-
-``` r
-if (FALSE) { # \dontrun{
-vars <- list(
-  server1 = c("age", "weight"),
-  server2 = c("height", "bmi")
-)
-
-pca_result <- ds.vertPCA("D_aligned", vars, n_components = 3)
-
-# Or reuse an existing correlation result (avoids running protocol again):
-cor_result <- ds.vertCor("D_aligned", vars)
-pca_result <- ds.vertPCA(cor_result = cor_result, n_components = 3)
-
-# View variance explained
-print(pca_result)
-
-# Biplot of loadings for first two PCs
-plot(pca_result$loadings[, 1], pca_result$loadings[, 2],
-     xlim = c(-1, 1), ylim = c(-1, 1),
-     xlab = paste0("PC1 (", round(pca_result$variance_pct[1], 1), "%)"),
-     ylab = paste0("PC2 (", round(pca_result$variance_pct[2], 1), "%)"))
-text(pca_result$loadings[, 1], pca_result$loadings[, 2],
-     labels = pca_result$var_names, pos = 3)
-abline(h = 0, v = 0, lty = 2)
-} # }
-```
+A `ds.pca` object with loadings, eigenvalues, explicit spectral
+mechanism diagnostics and inherited DP provenance. Scores are
+unavailable.

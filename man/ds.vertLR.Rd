@@ -14,7 +14,7 @@ ds.vertLR(reduced, full)
 \value{
 A list with:
 \itemize{
-\item \code{statistic}: 2 * (reduced$deviance - full$deviance)
+\item \code{statistic}: reduced$deviance - full$deviance
 \item \code{df}: full$n_vars - reduced$n_vars
 \item \code{p_value}: upper-tail chi-square p-value
 \item \code{deviance_reduced}, \code{deviance_full}
@@ -28,5 +28,9 @@ the reduced model must be nested within the full model.
 \details{
 This is a pure client-side computation over the scalar
 deviances already returned by ds.vertGLM; no additional MPC round
-is performed and no observation-level information is exposed.
+is performed and no observation-level information is exposed. It is
+available only for converged, unpenalized binomial or Poisson fits on the
+same analysis cohort. Gaussian nested-model inference requires an F test
+with a valid dispersion estimate and is therefore not represented as an
+LR chi-square test here.
 }

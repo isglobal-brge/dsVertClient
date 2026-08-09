@@ -1,0 +1,6 @@
+"family","epsilon","natural_l1_sensitivity","coordinate_count","scale","simultaneous_radius_95","implementation_tv_upper_bound","certified_failure_probability_upper","certified_coverage_lower","accuracy_method"
+"describe_quantile_median",6,5,12,256,5.8203125,1.57772181044202e-30,0.0498261642353147,0.950173835764685,"exact ideal two-sided-geometric convolution tail with union bound; two-peer finite-sampler TV deducted; fixed-clamp range applied"
+"epidemiology_2x2",3,2,4,256,3.82421875,1.57772181044202e-30,0.0497965216905787,0.950203478309421,"exact ideal two-sided-geometric convolution tail with union bound; two-peer finite-sampler TV deducted; fixed-clamp range applied"
+"mantel_haenszel",3,2,12,256,4.65625,1.57772181044202e-30,0.04980012485232,0.95019987514768,"exact ideal two-sided-geometric convolution tail with union bound; two-peer finite-sampler TV deducted; fixed-clamp range applied"
+"survival_rmst",3,2,19,256,5,1.57772181044202e-30,0.0497849078111537,0.950215092188846,"exact ideal two-sided-geometric convolution tail with union bound; two-peer finite-sampler TV deducted; fixed-clamp range applied"
+"gaussian_correlation_pca",6,12,12,256,13.96484375,1.57772181044202e-30,0.049973554164488,0.950026445835512,"exact ideal two-sided-geometric convolution tail with union bound; two-peer finite-sampler TV deducted; fixed-clamp range applied"

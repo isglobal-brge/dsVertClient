@@ -7,10 +7,10 @@
 \method{print}{ds.pca}(x, ...)
 }
 \arguments{
-\item{x}{A ds.pca object}
+\item{x}{A \code{ds.pca} object.}
 
-\item{...}{Additional arguments (ignored)}
+\item{...}{Additional arguments passed to \code{print}.}
 }
 \description{
-Prints a summary of PCA results.
+Prints a summary of signed DP PCA results.
 }

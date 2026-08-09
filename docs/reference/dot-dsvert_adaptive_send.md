@@ -1,15 +1,16 @@
-# Send chunked data via DataSHIELD with adaptive chunk sizing (internal)
+# Send chunked data via DataSHIELD with immutable geometry (internal)
 
-Wraps the standard chunk-and-send pattern with automatic fallback. On
-the first large send in a session, probes the server with the initial
-chunk size. If the probe fails (expression too large), reduces the chunk
-size by 25\\ minimum is reached). The successful chunk size is cached
-for all subsequent sends.
+The complete transfer geometry is fixed before the first request. A
+callback exception or missing acknowledgement may be replayed when
+`idempotent = TRUE`; every replay receives byte-for-byte identical chunk
+data and identical indices until an availability deadline. There is no
+request-attempt quota. Explicit negative or malformed replies are
+protocol failures and are never retried.
 
 ## Usage
 
 ``` r
-.dsvert_adaptive_send(data, send_one_chunk, min_chunk_size = 10000L)
+.dsvert_adaptive_send(data, send_one_chunk, target, idempotent = FALSE)
 ```
 
 ## Arguments
@@ -20,20 +21,20 @@ for all subsequent sends.
 
 - send_one_chunk:
 
-  Function(chunk_str, chunk_index, n_chunks). Callback that sends a
-  single chunk via
+  Function(chunk_str, chunk_index, n_chunks). Callback that sends one
+  chunk and returns the unmodified result from
   [`DSI::datashield.aggregate`](https://datashield.github.io/DSI/reference/datashield.aggregate.html).
-  Must throw an error on failure.
 
-- min_chunk_size:
+- target:
 
-  Integer. Minimum chunk size before giving up. Default 10000 (10KB).
+  Expected logical DataSHIELD connection name.
+
+- idempotent:
+
+  Whether exact replay is permitted after an ambiguous response. This
+  must only be enabled for a server operation whose duplicate request is
+  explicitly idempotent.
 
 ## Value
 
 Integer. Number of chunks sent (invisible).
-
-## Details
-
-Small payloads (less than half the chunk size) are sent directly without
-counting as a conclusive probe, since they don't test the actual limit.

@@ -2,40 +2,76 @@
 % Please edit documentation in R/ds.vertChisq.R
 \name{ds.vertFisher}
 \alias{ds.vertFisher}
-\title{Federated Fisher exact test (same-server case)}
+\title{DP-aware conditional test for a 2-by-2 contingency release}
 \usage{
 ds.vertFisher(
   data_name,
-  var1,
-  var2,
+  var1 = NULL,
+  var2 = NULL,
   server = NULL,
   alternative = c("two.sided", "greater", "less"),
   conf.int = TRUE,
   conf.level = 0.95,
-  datasources = NULL
+  datasources = NULL,
+  simulations = 9999L,
+  mc_confidence = 0.95
 )
 }
 \arguments{
-\item{data_name, var1, var2, server, datasources}{Same semantics as in
-\code{ds.vertChisq}.}
+\item{data_name}{A released \code{ds.vertDPContingency} object, or the protected
+data-frame name.}
 
-\item{alternative}{One of "two.sided" (default), "greater", "less"; only
-consulted for 2x2 tables.}
+\item{var1, var2}{Row and column variables for a character \code{data_name}. They
+may be omitted for an existing release.}
 
-\item{conf.int}{Logical. Return an odds-ratio confidence interval for 2x2.}
+\item{server}{Optional owner-peer assertion forwarded to
+\code{ds.vertDPContingency}. No separate column-discovery request is
+performed. It must be omitted for an existing release.}
 
-\item{conf.level}{Confidence level for 2x2 OR interval.}
+\item{alternative}{One of \code{"two.sided"}, \code{"greater"}, or \code{"less"}. The
+directional alternatives refer to an odds ratio above or below one in the
+displayed row/column orientation.}
+
+\item{conf.int}{Logical compatibility argument. A classical conditional
+odds-ratio interval is deliberately not returned from a DP release.}
+
+\item{conf.level}{Compatibility confidence level recorded in the result.}
+
+\item{datasources}{DataSHIELD connections. Omit for an existing release.}
+
+\item{simulations}{Number of Monte Carlo replicates.}
+
+\item{mc_confidence}{Confidence level of the exact binomial Monte Carlo
+interval.}
 }
 \value{
-An object of class \code{ds.vertFisher} (a
-\code{htest}-compatible list plus table metadata).
+An object of class \code{ds.vertFisher}. It retains the historical
+\code{p_value}, \code{odds_ratio}, and \code{conf_int} fields, but the p-value is from the
+explicitly labelled DP-aware plug-in conditional bootstrap and
+\code{conf_int} is always \code{NULL}.
 }
 \description{
-Exact conditional p-value for a 2x2 (or small 2xK) contingency
-table of two variables held at the same server. Uses the
-\code{stats::fisher.test} implementation on the released count matrix
-(itself already subject to datashield.privacyLevel small-cell
-suppression), so this is a safe exact-inference complement to
-ds.vertChisq when any expected cell count is below the chi-square
-validity floor.
+Test association by conditioning a plug-in latent table on
+deterministic integer margins, then reproducing the signed capsule noise
+and clamp in a Monte Carlo reference law. The input is either one already
+released \code{ds.vertDPContingency} object (zero DSI calls) or data and variable
+identifiers, in which case \code{ds.vertDPContingency} is called exactly once.
+}
+\details{
+The projected DP table supplies a fitted contributing total and
+margins. Those margins are rounded deterministically to a feasible
+positive integer 2-by-2 configuration. Under the odds-ratio-one null, the
+upper-left latent cell is drawn from its hypergeometric law. Each simulated
+latent table then receives the same ideal one-draw or two-peer
+discrete-Laplace law and public clamp as the signed release, after which nuisance
+margins and the signed root-Pearson statistic are refitted.
+
+This is not Fisher's finite-sample exact test for the confidential table:
+noisy projected margins are neither the confidential margins nor exact
+nuisance-sufficient statistics. The plug-in calibration is asymptotic.
+Monte Carlo error and the signed finite-sampler total-variation allowance
+are reported separately. Degenerate fitted margins return a structured
+non-tested result. Only the signed Ring128 discrete-Laplace capsule is
+currently certified; other mechanisms fail with a typed condition rather
+than being silently approximated.
 }

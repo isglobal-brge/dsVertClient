@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertGEE.R
 \name{ds.vertGEE}
 \alias{ds.vertGEE}
-\title{Federated generalised estimating equations}
+\title{Quarantined GEE compatibility frontdoor}
 \usage{
 ds.vertGEE(
   formula,
@@ -13,7 +13,7 @@ ds.vertGEE(
   corstr = c("independence", "exchangeable", "ar1"),
   max_iter = 100L,
   tol = 1e-04,
-  lambda = 1e-04,
+  lambda = 0,
   working_max_iter = NULL,
   ring = 63L,
   binomial_sigmoid_intervals = NULL,
@@ -22,83 +22,26 @@ ds.vertGEE(
 )
 }
 \arguments{
-\item{formula}{A model formula passed through to \code{ds.vertGLM}.}
-
-\item{data}{Character. Aligned data-frame name on each server.}
-
-\item{family}{One of \code{"gaussian"}, \code{"binomial"},
-\code{"poisson"}.}
-
-\item{id_col}{Optional character. For Gaussian/binomial/Poisson models this
-enables the cluster-robust sandwich meat; the cluster column must live with
-the outcome and all clusters must pass \code{datashield.privacyLevel}.}
-
-\item{order_col}{Optional character. Required for \code{corstr = "ar1"}.
-The order column must live with the outcome and is used only
-server-to-server to derive guarded adjacent records.}
-
-\item{corstr}{Working correlation. \code{"independence"} is available for
-Gaussian/binomial/Poisson. \code{"exchangeable"} currently fits true
-exchangeable Gaussian, binomial, and Poisson GEE coefficients from guarded
-cluster-level sufficient statistics. \code{"ar1"} fits Gaussian,
-binomial, and Poisson GEE from guarded adjacent-pair sufficient
-statistics.}
-
-\item{max_iter, tol, lambda, verbose}{Passed to \code{ds.vertGLM}.}
-
-\item{working_max_iter}{Optional integer. Maximum iterations for
-exchangeable/AR1 working-correlation updates. Defaults to \code{max_iter}.}
-
-\item{ring}{Integer 63 or 127. Binomial/Poisson exchangeable and all AR1
-routes are automatically run in Ring127 because protected nonlinear link
-operations and adjacent-product statistics need high precision.}
-
-\item{binomial_sigmoid_intervals}{Optional integer. Number of DCF spline
-intervals for protected binomial sigmoid evaluations used by the
-underlying GLM fit and GEE sandwich/working-correlation updates. When
-\code{NULL}, \code{dsvert.gee_binomial_sigmoid_intervals},
-\code{dsvert.glm_num_intervals_binomial}, or the 100-interval default is
-used.}
-
-\item{datasources}{DataSHIELD connection object.}
+\item{formula, data, family, id_col, order_col, corstr, max_iter, tol, lambda, working_max_iter, ring, binomial_sigmoid_intervals, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 }
 \value{
-An object of class \code{ds.vertGEE} with components
-\code{coefficients}, \code{model_se} (sqrt of
-\code{diag(Cov(beta))}), \code{robust_se} (sandwich SEs),
-\code{robust_covariance}, \code{corstr}, and \code{fit}
-(the underlying \code{ds.glm} object).
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Fit a GLM/GEE for vertically partitioned DataSHIELD data and
-return sandwich (robust) standard errors alongside the usual
-model-based ones. For \code{corstr = "independence"}, the point estimate
-\eqn{\hat{\beta}} is obtained by a single call to
-\code{\link{ds.vertGLM}}. For Gaussian \code{corstr = "exchangeable"},
-dsVert promotes the point estimate to a protected cluster-level
-exchangeable GLS/GEE update. For binomial and Poisson
-\code{corstr = "exchangeable"}, dsVert uses a Ring127 protected
-Pearson-score exchangeable GEE update. For Gaussian, binomial, and
-Poisson \code{corstr = "ar1"}, dsVert uses guarded within-cluster order
-metadata on the DCF parties and returns only low-dimensional AR1
-aggregates.
-For Gaussian, binomial, and Poisson independence models the sandwich meat
-is computed in the share domain. If
-\code{id_col} is supplied, dsVert computes the clustered meat
-\eqn{\sum_c S_c S_c^\top}, where
-\eqn{S_c=\sum_{i\in c} X_i r_i}; otherwise it computes the row-level
-HC0 meat \eqn{X^\top \mathrm{diag}(r^2) X}. Cluster membership is
-transport-encrypted between DCF parties and clusters below
-\code{datashield.privacyLevel} fail closed.
-
-The client receives only low-dimensional aggregate matrices/vectors.
-It never materialises the \eqn{n}-length residual, squared-residual, or
-weighted-column vectors.
-
-Formula:
-\deqn{V_{sand} = \mathrm{Cov}(\hat\beta) \, A \, \mathrm{Cov}(\hat\beta)}
-\deqn{A = \sum_c S_c S_c^\top}
-for clustered Gaussian/binomial/Poisson fits, or
-\deqn{A = X^T \, \mathrm{diag}(r^2) \, X}
-for row-level HC0 when no \code{id_col} is supplied.
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and computes or returns no GEE coefficient, working correlation,
+sandwich covariance, cluster statistic, or diagnostic. Retained
+implementation code after the gate is unreachable through this public
+frontdoor and carries no disclosure, DP, accuracy, or availability claim.
+}
+\details{
+Promotion requires contribution-bounded cluster score/meat
+artifacts, a protected working-correlation contract and validated robust
+covariance.
+}
+\seealso{
+\code{\link{ds.vertMethodStatus}}
 }

@@ -1,8 +1,7 @@
-# Pure helper: compute chi-square statistics from observed counts + margins. Exposed as an internal function so unit tests can exercise the math path without a DataSHIELD round trip.
+# Compute chi-square statistics from observed counts
 
-Pure helper: compute chi-square statistics from observed counts +
-margins. Exposed as an internal function so unit tests can exercise the
-math path without a DataSHIELD round trip.
+Pure helper exposed internally so unit tests can exercise the math path
+without a DataSHIELD round trip.
 
 ## Usage
 

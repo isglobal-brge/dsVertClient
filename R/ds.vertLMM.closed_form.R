@@ -1,3 +1,74 @@
+# LMM is retained as a quarantined compatibility route while its statistical
+# release contract is redesigned.  Even so, every remote phase must use the
+# same fail-closed DSI boundary as promoted routes: named results, transport
+# validation and typed identity/session failures. This helper adds no LMM
+# endpoint to the replay allowlist; generic typed producers replay only when
+# already classified as idempotent by the shared transport contract.
+.dsvert_lmm_aggregate_strict <- function(conns, expr) {
+  endpoints <- unique(.dsvert_dsi_call_names(expr))
+  endpoints <- endpoints[!is.na(endpoints) & nzchar(endpoints)]
+  operation <- if (length(endpoints)) {
+    paste0("LMM ", paste(endpoints, collapse = "+"))
+  } else {
+    "LMM remote phase"
+  }
+  .dsvert_aggregate_strict(
+    conns = conns, expr = expr, operation = operation)
+}
+
+# A few historical LMM optional branches deliberately convert ordinary
+# capability/numeric failures into a local fallback. Identity mismatch and an
+# unresolved DSI session are never optional and must cross those boundaries
+# with their typed class intact.
+.dsvert_lmm_transport_fallback <- function(condition, fallback = NULL) {
+  if (inherits(condition, c("dsvert_peer_not_recognized",
+                            "dsvert_dsi_poisoned_session"))) {
+    stop(condition)
+  }
+  fallback
+}
+
+# Complete the public fixed-effect fit from the protected GLS sufficient
+# statistics. The closed-form path replaces the inner Gaussian fit, so its
+# covariance must come from the same transformed information matrix rather
+# than from the preliminary OLS fit.
+.dsvert_lmm_closed_form_fit <- function(cf_fit, coefficients, sigma2) {
+  coefficient_names <- names(coefficients)
+  information <- as.matrix(cf_fit$XtX)
+  if (!is.numeric(coefficients) || !length(coefficients) ||
+      is.null(coefficient_names) || any(!nzchar(coefficient_names)) ||
+      anyDuplicated(coefficient_names) || any(!is.finite(coefficients)) ||
+      !is.numeric(information) || length(dim(information)) != 2L ||
+      nrow(information) != ncol(information) ||
+      is.null(rownames(information)) || is.null(colnames(information)) ||
+      !all(coefficient_names %in% rownames(information)) ||
+      !all(coefficient_names %in% colnames(information)) ||
+      length(sigma2) != 1L || !is.finite(sigma2) || sigma2 <= 0) {
+    .dsvert_stop_non_identifiable(
+      "The protected LMM fixed-effect information is incomplete.",
+      reason = "invalid_lmm_fixed_effect_information")
+  }
+  information <- information[
+    coefficient_names, coefficient_names, drop = FALSE]
+  covariance <- sigma2 * .dsvert_solve_identifiable(
+    information,
+    context = "The protected LMM fixed-effect information",
+    reason = "singular_lmm_fixed_effect_information",
+    symmetric = TRUE)
+  covariance <- (covariance + t(covariance)) / 2
+  dimnames(covariance) <- list(coefficient_names, coefficient_names)
+  standard_errors <- sqrt(diag(covariance))
+  if (any(!is.finite(standard_errors)) || any(standard_errors <= 0)) {
+    .dsvert_stop_non_identifiable(
+      "The protected LMM fixed-effect covariance is invalid.",
+      reason = "invalid_lmm_fixed_effect_covariance")
+  }
+  list(
+    coefficients = coefficients,
+    covariance = covariance,
+    std_errors = stats::setNames(standard_errors, coefficient_names))
+}
+
 #' @title LMM closed-form GLS driver
 #' @description Computes the exact Laird-Ware generalised-least-squares
 #'   estimate for a random-intercept LMM without relying on
@@ -8,6 +79,14 @@
 #'     - Beaver vecmul + FP-sum for cross-server entries
 #'   and solves \code{beta = solve(XtX, Xty)} client-side. Matches
 #'   \code{lme4::lmer} to FP precision (~1e-5 on small n).
+#'
+#'   This internal compatibility driver reconstructs the exact Gram matrix
+#'   and right-hand side at the analyst client. Its paired per-cluster share
+#'   consumers likewise reconstruct exact cluster-level residual moments.
+#'   Transport encryption protects peer-to-peer operands; it does not make
+#'   those client-side exact openings differentially private or
+#'   non-reconstructible. The driver is quarantined and must not be treated as
+#'   a promoted biomedical release route.
 #'
 #'   Assumptions:
 #'     - Cluster IDs have been broadcast via
@@ -82,9 +161,11 @@
   # Default ON; caller can pass `standardize = FALSE` for debugging.
   std_flag <- isTRUE(standardize)
 
-  # Outcome server: transforms y + x_ysrv columns, creates int_col,
-  # stores shares under lmm_gram_col_<name>, returns peer blob.
-  local_y <- DSI::datashield.aggregate(conns[ysrv_ci],
+  # Outcome and peer transforms are independent and launch in one named DSI
+  # fan-out phase. The outcome creates the intercept/y shares; the peer only
+  # transforms its predictor block.
+  gram_conns <- conns[c(ysrv_ci, peer_ci)]
+  gram_expressions <- stats::setNames(list(
     call(name = "dsvertLMMLocalGramDS",
          data_name = data,
          columns = as.character(x_ysrv),
@@ -96,11 +177,7 @@
          session_id = session_id,
          share_scale = sc,
          standardize = std_flag,
-         ring = ring_tag))
-  if (is.list(local_y) && length(local_y) == 1L) local_y <- local_y[[1L]]
-
-  # Peer server: transforms x_peer columns only.
-  local_p <- DSI::datashield.aggregate(conns[peer_ci],
+         ring = ring_tag),
     call(name = "dsvertLMMLocalGramDS",
          data_name = data,
          columns = as.character(x_peer),
@@ -111,21 +188,26 @@
          session_id = session_id,
          share_scale = sc,
          standardize = std_flag,
-         ring = ring_tag))
-  if (is.list(local_p) && length(local_p) == 1L) local_p <- local_p[[1L]]
+         ring = ring_tag)), c(y_srv, peer_srv))
+  gram_results <- .dsvert_fanout_by_site(
+    gram_conns, gram_expressions, operation = "LMM local Gram preparation")
+  local_y <- gram_results[[y_srv]]
+  local_p <- gram_results[[peer_srv]]
 
   # Relay peer blobs to the opposite party.
-  DSI::datashield.aggregate(conns[peer_ci],
-    call(name = "mpcStoreBlobDS", key = "k2_lmm_gram_peer_shares",
-         chunk = local_y$peer_blob, session_id = session_id))
-  DSI::datashield.aggregate(conns[ysrv_ci],
-    call(name = "mpcStoreBlobDS", key = "k2_lmm_gram_peer_shares",
-         chunk = local_p$peer_blob, session_id = session_id))
-  # Each party ingests the other's column shares.
-  DSI::datashield.aggregate(conns[peer_ci],
-    call(name = "dsvertLMMReceiveGramSharesDS", session_id = session_id))
-  DSI::datashield.aggregate(conns[ysrv_ci],
-    call(name = "dsvertLMMReceiveGramSharesDS", session_id = session_id))
+  .dsvert_store_blob(
+    local_y$peer_blob, "k2_lmm_gram_peer_shares",
+    conns[peer_ci], session_id)
+  .dsvert_store_blob(
+    local_p$peer_blob, "k2_lmm_gram_peer_shares",
+    conns[ysrv_ci], session_id)
+  # Each party ingests the other's column shares in one fan-out phase.
+  .dsvert_fanout_by_site(
+    gram_conns,
+    stats::setNames(rep(list(call(
+      name = "dsvertLMMReceiveGramSharesDS", session_id = session_id)), 2L),
+      c(y_srv, peer_srv)),
+    operation = "LMM Gram-share receipt")
 
   y_key <- local_y$y_key
   ysrv_cols <- as.character(local_y$column_names)   # int_col + x_ysrv
@@ -148,11 +230,9 @@
   cross_results <- vector("numeric", length(pairs))
 
   send_blob <- function(blob, key, conn_idx) {
-    DSI::datashield.aggregate(conns[conn_idx],
-      call(name = "mpcStoreBlobDS", key = key, chunk = blob,
-           session_id = session_id))
+    .dsvert_store_blob(blob, key, conns[conn_idx], session_id)
   }
-  ds_agg <- function(ds, expr) DSI::datashield.aggregate(ds, expr)
+  ds_agg <- function(ds, expr) .dsvert_lmm_aggregate_strict(ds, expr)
 
   # One Beaver vecmul per pair (sequential; each pair uses a fresh
   # OT-generated triple and then the existing online R1/R2 path).
@@ -169,46 +249,47 @@
       ring = ring_int,
       .dsAgg = ds_agg,
       .sendBlob = send_blob)
-    for (ci in c(ysrv_ci, peer_ci))
-      DSI::datashield.aggregate(conns[ci],
-        call(name = "k2BeaverVecmulConsumeTripleDS", session_id = session_id))
     # R1 on both parties.
-    r1_y <- DSI::datashield.aggregate(conns[ysrv_ci],
-      call(name = "dsvertLMMGramR1DS",
-           peer_pk = transport_pks[[peer_srv]],
-           x_col = a_col, y_col = b_col,
-           session_id = session_id, frac_bits = fb,
-           ring = ring_tag))
-    r1_p <- DSI::datashield.aggregate(conns[peer_ci],
-      call(name = "dsvertLMMGramR1DS",
-           peer_pk = transport_pks[[y_srv]],
-           x_col = a_col, y_col = b_col,
-           session_id = session_id, frac_bits = fb,
-           ring = ring_tag))
-    if (is.list(r1_y) && length(r1_y) == 1L) r1_y <- r1_y[[1L]]
-    if (is.list(r1_p) && length(r1_p) == 1L) r1_p <- r1_p[[1L]]
+    r1 <- .dsvert_fanout_by_site(
+      gram_conns,
+      stats::setNames(list(
+        call(name = "dsvertLMMGramR1DS",
+             peer_pk = transport_pks[[peer_srv]],
+             x_col = a_col, y_col = b_col,
+             session_id = session_id, frac_bits = fb,
+             ring = ring_tag),
+        call(name = "dsvertLMMGramR1DS",
+             peer_pk = transport_pks[[y_srv]],
+             x_col = a_col, y_col = b_col,
+             session_id = session_id, frac_bits = fb,
+             ring = ring_tag)), c(y_srv, peer_srv)),
+      operation = "LMM Gram R1")
+    r1_y <- r1[[y_srv]]
+    r1_p <- r1[[peer_srv]]
     # Relay masks between parties.
-    DSI::datashield.aggregate(conns[peer_ci],
-      call(name = "mpcStoreBlobDS", key = "k2_beaver_vecmul_peer_masked",
-           chunk = r1_y$peer_blob, session_id = session_id))
-    DSI::datashield.aggregate(conns[ysrv_ci],
-      call(name = "mpcStoreBlobDS", key = "k2_beaver_vecmul_peer_masked",
-           chunk = r1_p$peer_blob, session_id = session_id))
-    # R2 on both parties reduces to scalar share.
-    r2_y <- DSI::datashield.aggregate(conns[ysrv_ci],
-      call(name = "dsvertLMMGramR2DS",
-           is_party0 = TRUE,
-           x_col = a_col, y_col = b_col,
-           session_id = session_id, frac_bits = fb,
-           ring = ring_tag))
-    r2_p <- DSI::datashield.aggregate(conns[peer_ci],
-      call(name = "dsvertLMMGramR2DS",
-           is_party0 = FALSE,
-           x_col = a_col, y_col = b_col,
-           session_id = session_id, frac_bits = fb,
-           ring = ring_tag))
-    if (is.list(r2_y) && length(r2_y) == 1L) r2_y <- r2_y[[1L]]
-    if (is.list(r2_p) && length(r2_p) == 1L) r2_p <- r2_p[[1L]]
+    .dsvert_store_blob(
+      r1_y$peer_blob, "k2_beaver_vecmul_peer_masked",
+      conns[peer_ci], session_id)
+    .dsvert_store_blob(
+      r1_p$peer_blob, "k2_beaver_vecmul_peer_masked",
+      conns[ysrv_ci], session_id)
+    # R2 on both parties reduces to scalar shares.
+    r2 <- .dsvert_fanout_by_site(
+      gram_conns,
+      stats::setNames(list(
+        call(name = "dsvertLMMGramR2DS",
+             is_party0 = TRUE,
+             x_col = a_col, y_col = b_col,
+             session_id = session_id, frac_bits = fb,
+             ring = ring_tag),
+        call(name = "dsvertLMMGramR2DS",
+             is_party0 = FALSE,
+             x_col = a_col, y_col = b_col,
+             session_id = session_id, frac_bits = fb,
+             ring = ring_tag)), c(y_srv, peer_srv)),
+      operation = "LMM Gram R2")
+    r2_y <- r2[[y_srv]]
+    r2_p <- r2[[peer_srv]]
     # Aggregate two scalar shares into the true dot product.
     agg <- dsVert:::.callMpcTool("k2-ring63-aggregate", list(
       share_a = r2_y$scalar_share,
@@ -247,11 +328,11 @@
   names(Xty) <- all_cols
 
   # --- Phase 4: direct solve. ----------------------------------------
-  beta_hat <- tryCatch(drop(solve(XtX, Xty)),
-                        error = function(e) {
-                          lam_reg <- 1e-6 * max(abs(diag(XtX)))
-                          drop(solve(XtX + lam_reg * diag(p_total), Xty))
-                        })
+  beta_hat <- drop(.dsvert_solve_identifiable(
+    XtX, Xty,
+    context = "The protected Gaussian/GLS normal equations",
+    reason = "rank_deficient_design_matrix",
+    symmetric = TRUE))
   names(beta_hat) <- all_cols
 
   # Rename int_col -> (Intercept) for downstream callers.

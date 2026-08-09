@@ -7,7 +7,6 @@
 .dsvert_reset_chunk_size()
 }
 \description{
-Forces re-probing on the next send. Useful if connecting to a different
-Opal instance with different limits.
+Forces the configured chunk size to be read again on the next send.
 }
 \keyword{internal}

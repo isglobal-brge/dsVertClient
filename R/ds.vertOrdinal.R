@@ -1,50 +1,18 @@
-#' @title Federated ordinal logistic regression
-#' @description Public ordinal wrapper. Dispatches to
-#'   \code{\link{ds.vertOrdinalJointNewton}}, the paper-safe joint
-#'   proportional-odds route for K=2 and K>=3. The historical cumulative-binomial
-#'   approximation is no longer exposed as a user-facing estimator; it remains
-#'   only as an internal warm start for the joint route.
-#'
-#' @param formula R formula with the ORDERED outcome on the LHS (passed
-#'   through as a factor level name in the per-threshold formulas).
-#' @param data Name of the aligned data frame on each server.
-#' @param levels_ordered Character vector of the ordered levels,
-#'   smallest-to-largest.
-#' @param cumulative_template String format (\code{sprintf}-style)
-#'   used to build cumulative indicator column names; for instance the
-#'   default \code{"\%s_leq"} produces \code{<level>_leq}, a 0/1 column
-#'   that is 1 when the patient's outcome is at-or-below that level.
-#'   Columns must already exist server-side.
-#' @param max_iter Optional alias for \code{max_outer}.
-#' @param max_outer Maximum outer Newton iterations for the joint route.
-#' @param tol Convergence tolerance for the joint route.
-#' @param warm_max_iter Optional maximum iterations for each internal
-#'   binomial warm-start GLM.
-#' @param warm_tol Optional tolerance for each internal binomial warm-start
-#'   GLM.
-#' @param binomial_sigmoid_intervals Optional DCF spline interval count for
-#'   internal binomial warm-start GLMs.
-#' @param verbose Logical (default TRUE). Print per-threshold fit
-#'   progress.
-#' @param datasources DataSHIELD connections; if NULL, uses
-#'   \code{DSI::datashield.connections_find()}.
-#' @param ... Reserved for future extensions.
-#' @return \code{ds.vertOrdinal} object with (among other fields):
-#'   \code{thresholds} \eqn{\alpha_k} (intercepts of the K-1 cumulative
-#'     binomial fits) and \code{beta_po} \eqn{\gamma} (BLUE-pooled slope
-#'     coefficients from the K-1 fits). Both are in the
-#'     CUMULATIVE-BINOMIAL GLM convention, i.e.\ the fit form is
-#'
-#'       \eqn{P(Y \leq k | X) = \mathrm{sigmoid}(\alpha_k + X^\top \gamma)},
-#'
-#'     NOT the \code{MASS::polr} convention
-#'     \eqn{P(Y \leq k | X) = \mathrm{sigmoid}(\theta_k - X^\top \beta)}.
-#'     The two agree under \eqn{\theta_k = \alpha_k} and \eqn{\beta = -\gamma}.
-#'     Therefore a caller comparing against \code{coef(polr)} must flip the
-#'     sign of \code{beta_po} (or equivalently evaluate predictions with
-#'     \eqn{\mathrm{sigmoid}(\theta_k + X^\top \gamma)} on the \code{ds.vertOrdinal}
-#'     outputs). The public route now runs the strict joint Newton estimator;
-#'     cumulative-binomial fits are used only as internal warm starts.
+#' @title Quarantined ordinal-regression compatibility frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and returns no ordinal fit. Retained cumulative-binomial and
+#'   proportional-odds code after the gate is unreachable through this public
+#'   frontdoor and carries no disclosure, DP, accuracy, or availability claim.
+#' @details Promotion requires a signed bounded proportional-odds artifact,
+#'   protected score/information and validated covariance and diagnostics.
+#' @param formula,data,levels_ordered,cumulative_template,max_iter,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @param ... Retained compatibility arguments; not evaluated.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
                            cumulative_template = "%s_leq",
@@ -52,6 +20,7 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
                            warm_max_iter = NULL, warm_tol = NULL,
                            binomial_sigmoid_intervals = NULL,
                            verbose = TRUE, datasources = NULL, ...) {
+  .dsvert_block_retired_remote_route("ordinal")
   extra <- list(...)
   if (length(extra) > 0L) {
     arg_names <- names(extra)
@@ -165,7 +134,11 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
     nm <- setdiff(names(fits[[1]]$coefficients), "(Intercept)")
     info_stack <- lapply(fits, function(f) {
       cov_k <- f$covariance[nm, nm, drop = FALSE]
-      tryCatch(solve(cov_k), error = function(e) NULL)
+      .dsvert_solve_identifiable(
+        cov_k,
+        context = "An ordinal warm-start threshold covariance",
+        reason = "singular_ordinal_threshold_information",
+        symmetric = TRUE)
     })
     valid <- vapply(info_stack, Negate(is.null), logical(1L))
     if (all(valid)) {
@@ -174,7 +147,11 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
       I_beta_sum <- Reduce(`+`,
         mapply(function(I_k, f) I_k %*% as.numeric(f$coefficients[nm]),
                info_stack, fits, SIMPLIFY = FALSE))
-      cov_po <- solve(I_sum)
+      cov_po <- .dsvert_solve_identifiable(
+        I_sum,
+        context = "The proportional-odds pooled information",
+        reason = "singular_ordinal_pooled_information",
+        symmetric = TRUE)
       beta_po <- drop(cov_po %*% I_beta_sum)
       names(beta_po) <- nm
       # Brant test: K-2 extra freedom per predictor
@@ -202,8 +179,11 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
       for (k in seq_along(fits)) {
         cov_k <- fits[[k]]$covariance
         if (is.null(cov_k)) next
-        I_k_full <- tryCatch(solve(cov_k), error = function(e) NULL)
-        if (is.null(I_k_full)) next
+        I_k_full <- .dsvert_solve_identifiable(
+          cov_k,
+          context = "An ordinal warm-start full covariance",
+          reason = "singular_ordinal_threshold_information",
+          symmetric = TRUE)
         if (!("(Intercept)" %in% rownames(I_k_full))) next
         I_aa <- I_k_full["(Intercept)", "(Intercept)"]
         I_ag <- I_k_full["(Intercept)", nm, drop = TRUE]
@@ -255,13 +235,20 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
         th_idx <- p_non + k
         Info_joint[th_idx, th_idx] <- 1 / cov_k["(Intercept)", "(Intercept)"]
         # Cross-covariance: -I_k[intercept, nm]
-        cross <- -solve(cov_k)[nm, "(Intercept)"]
+        cross <- -.dsvert_solve_identifiable(
+          cov_k,
+          context = "An ordinal warm-start joint covariance",
+          reason = "singular_ordinal_threshold_information",
+          symmetric = TRUE)[nm, "(Intercept)"]
         Info_joint[seq_len(p_non), th_idx] <- cross
         Info_joint[th_idx, seq_len(p_non)] <- cross
       }
     }
-    cov_joint <- tryCatch(solve(Info_joint),
-      error = function(e) solve(Info_joint + 1e-8 * diag(dim_total)))
+    cov_joint <- .dsvert_solve_identifiable(
+      Info_joint,
+      context = "The ordinal warm-start joint information",
+      reason = "singular_ordinal_joint_information",
+      symmetric = TRUE)
     out$joint_mle <- list(
       beta = beta_po, theta = theta_hat_vec,
       covariance = cov_joint,

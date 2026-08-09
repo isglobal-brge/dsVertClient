@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertMultinom.R
 \name{ds.vertMultinom}
 \alias{ds.vertMultinom}
-\title{Federated multinomial logistic regression}
+\title{Quarantined multinomial compatibility frontdoor}
 \usage{
 ds.vertMultinom(
   formula,
@@ -18,61 +18,31 @@ ds.vertMultinom(
   binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
   datasources = NULL,
-  ...
+  ...,
+  design_analysis_id = NULL
 )
 }
 \arguments{
-\item{formula}{R formula with the class indicator on the LHS. The
-class column must be a factor with K levels OR a pre-existing set
-of binary indicator columns named \code{paste0(class_col, "_is_",
-  level_name)} (one per non-reference level) on a single server.}
+\item{formula, data, classes, reference, indicator_template, max_iter, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources, design_analysis_id}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 
-\item{data}{Name of the aligned data frame on all servers.}
-
-\item{classes}{Optional character vector specifying which levels to
-fit (default: all non-reference). The reference level is excluded
-and its probability is computed as \eqn{1 - \sum p_k} client-side
-for any subsequent prediction.}
-
-\item{reference}{Optional name of the reference level.}
-
-\item{indicator_template}{String format with "\%s" replaced by each
-class name to construct indicator column names on the server.
-Default "\\%s_ind" (e.g., stage_ind_I, stage_ind_II, ...). The
-indicator columns must already exist server-side.}
-
-\item{max_iter}{Optional alias for \code{max_outer}.}
-
-\item{max_outer}{Maximum outer Newton iterations for the joint route.}
-
-\item{tol}{Convergence tolerance for the joint route.}
-
-\item{warm_max_iter}{Optional maximum iterations for each internal
-binomial warm-start GLM.}
-
-\item{warm_tol}{Optional tolerance for each internal binomial warm-start
-GLM.}
-
-\item{binomial_sigmoid_intervals}{Optional DCF spline interval count for
-internal binomial warm-start GLMs.}
-
-\item{verbose}{Logical (default TRUE). Print per-class fit progress.}
-
-\item{datasources}{DataSHIELD connections; if NULL, uses
-\code{DSI::datashield.connections_find()}.}
-
-\item{...}{Reserved for future extensions.}
+\item{...}{Retained compatibility arguments; not evaluated.}
 }
 \value{
-ds.vertMultinom object: a list with per-class \code{ds.glm}
-fits, the level vector, the reference, and a consolidated
-coefficient matrix (rows = coefficients, columns = non-reference
-classes).
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Public multinomial wrapper. Dispatches to
-\code{\link{ds.vertMultinomJointNewton}}, the paper-safe joint softmax
-Newton route for K=2 and K>=3. The historical one-vs-rest approximation is no
-longer exposed as a user-facing estimator; it remains only as an internal
-warm start for the joint Newton route.
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and computes or returns no multinomial fit. Retained one-vs-rest and
+joint-softmax code after the gate is unreachable through this public
+frontdoor and carries no disclosure, DP, accuracy, or availability claim.
+}
+\details{
+Promotion requires a signed bounded joint-softmax artifact over
+the exact score design plus validated joint covariance and inference.
+}
+\seealso{
+\code{\link{ds.vertMethodStatus}}
 }

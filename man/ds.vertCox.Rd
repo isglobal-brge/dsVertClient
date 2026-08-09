@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertCox.R
 \name{ds.vertCox}
 \alias{ds.vertCox}
-\title{Federated Cox proportional-hazards regression}
+\title{Quarantined Cox compatibility frontdoor}
 \usage{
 ds.vertCox(
   formula,
@@ -18,35 +18,28 @@ ds.vertCox(
 )
 }
 \arguments{
-\item{formula}{Formula of the form \code{Surv(time, event) ~ x1 + ...}.}
-
-\item{data}{Aligned data-frame name on each server.}
-
-\item{max_iter}{Maximum Newton iterations for the profile route.}
-
-\item{tol}{Convergence tolerance on max |delta beta|.}
-
-\item{max_event_times}{Integer runtime guard passed to
-\code{\link{ds.vertCoxProfileNonDisclosive}}.}
-
-\item{newton, ridge_eps, debug_trace}{Parameters passed through to
-\code{\link{ds.vertCoxProfileNonDisclosive}}.}
-
-\item{verbose}{Print progress.}
-
-\item{datasources}{DataSHIELD connections.}
+\item{formula, data, max_iter, tol, max_event_times, newton, ridge_eps, debug_trace, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 }
 \value{
-A \code{ds.vertCox} object: \code{coefficients},
-\code{std_errors}, \code{covariance}, \code{loglik}
-(partial log-likelihood), \code{n_obs}, \code{n_events},
-\code{iterations}, \code{converged}.
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Public Cox PH wrapper. Dispatches to
-\code{\link{ds.vertCoxProfileNonDisclosive}}, the non-disclosive
-Breslow profile route validated for K=2 and K>=3. The historical
-rank/permutation and person-time Poisson Cox routes were removed from the
-product package because they exposed event-rank metadata or required
-person-time-expanded inputs.
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and computes or returns no model, statistic, diagnostic, or
+patient-derived metadata. Retained implementation code after the local
+migration gate is unreachable through this frontdoor and is not evidence
+of disclosure safety, differential privacy, numerical accuracy, or
+availability.
+}
+\details{
+Promotion requires a purpose-bound contribution-limited Cox
+capsule, private risk-set evaluation, certified ties/strata/delayed-entry
+semantics, covariance and identifiability certificates, and independent
+multi-host validation.
+}
+\seealso{
+\code{\link{ds.vertMethodStatus}}
 }

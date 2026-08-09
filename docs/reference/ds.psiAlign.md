@@ -1,10 +1,12 @@
-# ECDH-PSI Record Alignment (Blind Relay)
+# Align vertically partitioned records with pinned, fixed-capacity PSI
 
-Privacy-preserving record alignment using Elliptic Curve Diffie-Hellman
-Private Set Intersection (ECDH-PSI) with blind-relay transport
-encryption. Aligns data frames across vertically partitioned DataSHIELD
-servers so that rows correspond to the same individuals. The client
-never sees raw EC points – only opaque encrypted blobs.
+Runs the sole public dsVert alignment protocol. Every participating
+server pads its private input to a server-owned power-of-two capacity
+bucket. The relay sees only authenticated ciphertexts with fixed shapes
+for that public bucket; it never receives identifiers, row maps,
+membership bits or an exact cardinality. Peer identities, the complete
+contract, phase receipts and every server-to-server envelope are
+cryptographically bound before use.
 
 ## Usage
 
@@ -16,7 +18,7 @@ ds.psiAlign(
   ref_server = NULL,
   verbose = TRUE,
   datasources = NULL,
-  na.action = "na.omit"
+  na.action = c("na.omit", "na.fail", "none")
 )
 ```
 
@@ -24,104 +26,65 @@ ds.psiAlign(
 
 - data_name:
 
-  Character string. Name of the data frame on each server.
+  Character. Source data-frame symbol on every server.
 
 - id_col:
 
-  Character string. Name of the identifier column.
+  Character. Identifier-column name on every server.
 
 - newobj:
 
-  Character string. Name for the aligned data frame on servers. Default
-  is `"D_aligned"`.
+  Character. Destination symbol for the aligned data frames.
 
 - ref_server:
 
-  Character string or NULL. Name of the reference server. If NULL
-  (default), the first connection is used.
+  Deprecated compatibility argument. It must be `NULL`: the reference is
+  selected deterministically from authenticated peer identities and
+  cannot be chosen by the relay.
 
 - verbose:
 
-  Logical. If TRUE (default), print progress messages.
+  Logical. Emit fixed, data-independent progress messages.
 
 - datasources:
 
-  DataSHIELD connection object or list of connections. If NULL, uses all
-  available connections.
+  Named DataSHIELD connections. At least two are required.
 
 - na.action:
 
-  Character. NA-handling strategy passed to the server-side aligner;
-  default `"na.omit"` drops rows with any NA in the join column or
-  covariates before alignment.
+  Compatibility argument. Its value is validated but the server-owned
+  `dsvert.psi.padded_missing_policy` determines eligibility; the analyst
+  cannot override that disclosure policy.
 
 ## Value
 
-Invisibly returns a list with alignment statistics for each server:
-
-- `n_matched`: Number of records matched
-
-- `n_total`: Number of records on that server
+Invisibly, the common public protocol attestation. It contains the
+public capacity bucket and authenticated contract identifiers, never an
+input count or intersection cardinality.
 
 ## Details
 
-This function performs privacy-preserving record alignment in a single
-call, using ECDH-PSI with blind-relay transport encryption.
+The global all-server membership vector is evaluated with the
+purpose-bound exact GC/OT backend between the two contract compute
+peers. Results are delivered as authenticated shares to the reference
+and materialized in one deterministic order on every server. A malicious
+relay can delay, drop or replay traffic and thereby cause denial of
+service, but cannot forge a peer, alter a contract or silently
+substitute a protocol message. As with any two-party secure computation,
+collusion of both designated compute peers is outside the non-collusion
+confidentiality claim. The public capacity bucket is an upper bound on
+local input shape.
 
-### Protocol overview
-
-ECDH-PSI exploits the commutativity of elliptic curve scalar
-multiplication: \\\alpha \cdot (\beta \cdot H(id)) = \beta \cdot (\alpha
-\cdot H(id))\\.
-
-All EC point exchanges are encrypted server-to-server (X25519 +
-AES-256-GCM ECIES). The client acts as a blind relay, seeing only opaque
-blobs.
-
-1.  **Phase 0**: Each server generates an X25519 transport keypair.
-    Public keys are exchanged via the client.
-
-2.  **Phase 1**: The reference server masks IDs with scalar \\\alpha\\.
-    Points are stored server-side (not returned to client).
-
-3.  For each target server:
-
-    - The reference encrypts masked points under the target's PK.
-
-    - The target decrypts, generates scalar \\\beta\\, double-masks ref
-      points (stores locally), masks own IDs, encrypts them under the
-      ref's PK.
-
-    - The reference decrypts, double-masks with \\\alpha\\, encrypts
-      result under target's PK.
-
-    - The target decrypts, matches double-masked sets, aligns data.
-
-4.  A multi-server intersection ensures only records present on ALL
-    servers are retained.
-
-### Security (DDH assumption on P-256, malicious-client model)
-
-- The client sees only opaque encrypted blobs – not EC points.
-
-- Each server's scalar never leaves the server.
-
-- PSI firewall: phase ordering + one-shot semantics prevent OPRF oracle
-  attacks.
-
-## See also
-
-[`ds.vertCor`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertCor.md),
-[`ds.vertGLM`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertGLM.md)
-for analysis functions that operate on aligned data.
+This function is privacy-preserving preprocessing, not itself a
+statistical release and not a differential-privacy mechanism. Subsequent
+result methods remain subject to their own disclosure and DP contracts.
 
 ## Examples
 
 ``` r
 if (FALSE) { # \dontrun{
-# Align records across all servers using PSI
-ds.psiAlign("D", "patient_id", "D_aligned", datasources = connections)
-
-# Now "D_aligned" on all servers has matching, ordered observations
+aligned <- ds.psiAlign(
+  "D", "patient_id", "D_aligned", datasources = connections)
+ds.isPsiAligned("D_aligned", datasources = connections)
 } # }
 ```

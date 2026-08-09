@@ -147,13 +147,11 @@ ds.vertGLMMLaplace <- function(formula, data = NULL, cluster_col,
     names(beta0) <- coef_names
   }
 
-  clust_info <- DSI::datashield.aggregate(
+  clust_info <- .dsvert_aggregate_strict(
     datasources[which(server_names == y_srv)],
     call(name = "dsvertClusterSizesDS", data_name = data,
-         cluster_col = cluster_col))
-  if (is.list(clust_info) && length(clust_info) == 1L) {
-    clust_info <- clust_info[[1L]]
-  }
+         cluster_col = cluster_col),
+    operation = "GLMM-Laplace protected cluster-size release")[[1L]]
   n_clusters <- as.integer(clust_info$n_clusters %||%
                              length(clust_info$sizes))
   n_obs <- as.integer(clust_info$n_total %||% sum(clust_info$sizes))
@@ -522,24 +520,26 @@ print.ds.vertGLMMLaplace <- function(x, ...) {
                                                 session_id) {
   y_ci <- which(server_names == y_srv)
   tryCatch(
-    DSI::datashield.aggregate(
+    .dsvert_aggregate_strict(
       datasources[y_ci],
       call(name = "dsvertExpandClusterWeightsDS",
            data_name = data, cluster_col = cluster_col,
            weights_per_cluster = as.numeric(weights),
-           output_column = output_column)),
+           output_column = output_column),
+      operation = "GLMM-Laplace protected offset expansion"),
     error = function(e) {
-      stop("[GLMM-Laplace] offset expand failed: ",
-           conditionMessage(e), call. = FALSE)
+      stop("[GLMM-Laplace] protected offset expansion failed.",
+           call. = FALSE)
     })
   tryCatch(
-    DSI::datashield.aggregate(
+    .dsvert_aggregate_strict(
       datasources[y_ci],
       call(name = "k2SetOffsetDS", data_name = data,
-           offset_column = output_column, session_id = session_id)),
+           offset_column = output_column, session_id = session_id),
+      operation = "GLMM-Laplace protected offset registration"),
     error = function(e) {
-      stop("[GLMM-Laplace] offset registration failed: ",
-           conditionMessage(e), call. = FALSE)
+      stop("[GLMM-Laplace] protected offset registration failed.",
+           call. = FALSE)
     })
   invisible(TRUE)
 }

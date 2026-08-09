@@ -10,7 +10,9 @@ re-optimise under the sparsity constraint.
 Useful for quick variable-selection sketches and for comparing with the
 current product LASSO solvers. For an estimator that optimises the L1
 objective rather than only thresholding an already-fitted GLM, use
-`ds.vertLASSOProximal` or `ds.vertLASSOIter`.
+[`ds.vertLASSOProximal`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertLASSOProximal.md)
+or
+[`ds.vertLASSOIter`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertLASSOIter.md).
 
 ## Usage
 

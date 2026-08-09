@@ -1,156 +1,160 @@
-#' @title Generalized Linear Model for Vertically Partitioned Data
-#' @description Fits a GLM across vertically partitioned data using Ring63
-#'   Beaver MPC with DCF wide spline for the link function. The system
-#'   auto-detects which server holds each variable. Only p-dimensional
-#'   aggregate gradients are revealed to the client per iteration.
-#'   No observation-level data is ever disclosed.
-#'
-#' @param formula A formula (e.g. \code{npreg ~ age + bmi + glu}) or
-#'   character string (\code{"npreg ~ age + bmi + glu"}). Can also be
-#'   a data_name string for backward compatibility.
-#' @param data Character string. Name of the (aligned) data frame on
-#'   each server.
-#' @param x_vars Optional. Character vector of predictor names, or a
-#'   named list mapping server names to variable vectors. If NULL and
-#'   formula is used, extracted from the formula. If NULL and no formula,
-#'   all available columns (minus y and IDs) are used.
-#' @param y_server Character string. Name of the server holding the response.
-#' @param family Character string. GLM family: "gaussian", "binomial",
-#'   or "poisson". Default is "gaussian".
-#' @param max_iter Integer. Maximum L-BFGS iterations. Default is 100.
-#' @param tol Numeric. Convergence tolerance on coefficient change.
-#'   Default is 1e-4.
-#' @param lambda Numeric. L2 regularization parameter. Default is 1e-4.
-#' @param log_n Integer. Legacy parameter (ignored). Kept for backward
-#'   compatibility.
-#' @param verbose Logical. Print progress messages. Default is TRUE.
-#' @param datasources DataSHIELD connection object or list of connections.
-#' @param eta_privacy Character. \code{"auto"} (default) selects
-#'   \code{"k2_beaver"} for K=2 or \code{"secure_agg"} for K>=3.
-#'
-#' @return A list with class "ds.glm" containing:
-#'   \itemize{
-#'     \item \code{coefficients}: Named coefficient vector (original scale)
-#'     \item \code{std_errors}: Standard errors (finite-difference Hessian)
-#'     \item \code{covariance}: Model covariance matrix on the original scale
-#'     \item \code{covariance_information}: Inverse Fisher/bread matrix
-#'       without Gaussian residual-variance scaling, for sandwich methods
-#'     \item \code{z_values}: z-statistics (coef / SE)
-#'     \item \code{p_values}: Two-sided p-values
-#'     \item \code{iterations}: Number of iterations
-#'     \item \code{converged}: Logical
-#'     \item \code{family}: Family used
-#'     \item \code{n_obs}: Number of observations
-#'     \item \code{deviance}: Residual sum of squares
-#'     \item \code{pseudo_r2}: 1 - deviance/null_deviance
-#'   }
+.dsvert_effective_glm_ring <- function(family, requested_ring) {
+  if (!identical(family, "gaussian")) return(127L)
+  as.integer(requested_ring)
+}
+
+.dsvert_glm_fit_statistics <- function(family, deviance, n_obs,
+                                        n_parameters, y_sd = NULL,
+                                        weights_active = FALSE,
+                                        offset_active = FALSE,
+                                        intercept_included = TRUE) {
+  deviance <- as.numeric(deviance)[1L]
+  n_obs <- as.integer(n_obs)[1L]
+  n_parameters <- as.integer(n_parameters)[1L]
+
+  deviance_type <- if (!is.finite(deviance)) {
+    "unavailable"
+  } else if (identical(family, "gaussian")) {
+    if (isTRUE(weights_active)) "weighted_gaussian_rss" else "gaussian_rss"
+  } else {
+    paste0("canonical_", family)
+  }
+
+  valid_gaussian_null <- identical(family, "gaussian") &&
+    !isTRUE(weights_active) && !isTRUE(offset_active) &&
+    isTRUE(intercept_included) && length(y_sd) == 1L &&
+    is.numeric(y_sd) && is.finite(y_sd) && y_sd > 0 &&
+    is.finite(n_obs) && n_obs > 1L
+  null_deviance <- if (valid_gaussian_null) {
+    (n_obs - 1L) * y_sd^2
+  } else {
+    NA_real_
+  }
+  pseudo_r2 <- if (is.finite(deviance) && is.finite(null_deviance) &&
+                   null_deviance > 0) {
+    1 - deviance / null_deviance
+  } else {
+    NA_real_
+  }
+
+  aic <- NA_real_
+  aic_type <- "unavailable"
+  if (is.finite(deviance) && is.finite(n_obs) && n_obs > 0L &&
+      is.finite(n_parameters) && n_parameters >= 0L) {
+    if (identical(family, "gaussian") && !isTRUE(weights_active) &&
+        deviance > 0) {
+      # Gaussian ML estimates one additional scale/dispersion parameter.
+      aic <- n_obs * (log(2 * pi) + 1 + log(deviance / n_obs)) +
+        2 * (n_parameters + 1L)
+      aic_type <- "gaussian_ml_including_dispersion"
+    } else if (identical(family, "binomial") &&
+               !isTRUE(weights_active)) {
+      aic <- deviance + 2 * n_parameters
+      aic_type <- "binomial_canonical"
+    }
+  }
+
+  list(
+    deviance_type = deviance_type,
+    null_deviance = null_deviance,
+    pseudo_r2 = pseudo_r2,
+    aic = aic,
+    aic_type = aic_type
+  )
+}
+
+.dsvert_glm_alignment_metadata <- function(status, n_obs) {
+  unavailable <- function() list(
+    alignment_attested = FALSE,
+    alignment_manifest_hash = NULL,
+    cohort_id = NULL
+  )
+  if (!is.list(status) || !isTRUE(status$aligned) ||
+      length(status$n_common) != 1L || !is.numeric(status$n_common) ||
+      !is.finite(status$n_common) || !isTRUE(status$n_common == n_obs) ||
+      !is.list(status$manifests) || !length(status$manifests)) {
+    return(unavailable())
+  }
+  hashes <- vapply(status$manifests, function(manifest) {
+    if (!is.list(manifest) || !is.character(manifest$hash) ||
+        length(manifest$hash) != 1L || is.na(manifest$hash)) return(NA_character_)
+    manifest$hash
+  }, character(1L))
+  if (anyNA(hashes) || length(unique(hashes)) != 1L ||
+      !grepl("^[0-9a-f]{64}$", hashes[[1L]])) {
+    return(unavailable())
+  }
+  list(
+    alignment_attested = TRUE,
+    alignment_manifest_hash = hashes[[1L]],
+    cohort_id = hashes[[1L]]
+  )
+}
+
+#' @title DP-capsule GLM compatibility frontdoor
+#' @description This public frontdoor has one available analysis route:
+#'   an explicit \code{dp_analysis_id} with \code{family = "gaussian"}
+#'   delegates to \code{ds.vertDPGaussian()} and returns that signed,
+#'   contribution-bounded sticky joint-DP capsule estimand. A call without
+#'   \code{dp_analysis_id} raises a typed \code{dsvert_route_unavailable}
+#'   condition before any DSI call. An explicit \code{formal_analysis_id} for
+#'   binomial or Poisson also fails before DSI until its durable worker and
+#'   single common joint-DP opening are promoted. The retained iterative
+#'   Ring/Beaver code below the local gate is unreachable through this
+#'   frontdoor and carries no public disclosure, accuracy, or availability
+#'   claim.
 #'
 #' @details
-#' \subsection{Protocol}{
-#' All computation uses Ring63 fixed-point arithmetic with Beaver MPC:
-#' \enumerate{
-#'   \item \strong{Transport keys}: X25519 keypairs on all servers (~0.5s)
-#'   \item \strong{Standardize}: Each server standardizes its features
-#'   \item \strong{Input sharing}: Features split into additive Ring63 shares
-#'     between 2 DCF parties. Non-DCF servers contribute shares.
-#'   \item \strong{L-BFGS loop}: Per iteration:
-#'     \itemize{
-#'       \item Compute eta shares (Ring63 matrix-vector)
-#'       \item DCF wide spline for sigmoid/exp (binomial/Poisson) or
-#'         identity link (Gaussian)
-#'       \item Beaver matvec for gradient (IKNP OT-extension triple shares)
-#'       \item Client aggregates Ring63 shares -> p gradient scalars
-#'       \item L-BFGS quasi-Newton update
-#'     }
-#'   \item \strong{SE}: p+1 gradient evaluations (finite-difference Hessian)
-#'   \item \strong{Deviance}: Beaver dot-product for residual sum of squares
-#'   \item \strong{Unstandardize}: Coefficients + SE via Jacobian transform
-#' }
-#' }
+#' \strong{Available route.} Supply an additive formula, an aligned data name,
+#' \code{family = "gaussian"} and a custodian-configured
+#' \code{dp_analysis_id}. The signed artifact owns clipping bounds, the
+#' complete-case cohort, contribution caps, privacy parameters and variable
+#' ownership. The adapter accepts only arguments that describe that bounded
+#' Gaussian estimand; it never falls back to the retired iterative GLM.
 #'
-#' \subsection{Security}{
-#' No observation-level data is disclosed. The client sees only p-dimensional
-#' aggregate gradients per iteration. Beaver preprocessing uses the dealer-free
-#' IKNP OT-extension backend: the two computation parties derive their triple
-#' shares interactively, so neither ever holds an unsplit triple. The client
-#' never sees triple shares.
-#' }
+#' \strong{Unavailable routes.} Default/no-id calls and all legacy iterative
+#' routes stop locally with zero DSI calls. The \code{formal_analysis_id}
+#' selector is reserved for binomial/logit and Poisson/log models but is also
+#' sealed locally in this release. No binomial or Poisson fit is therefore
+#' returned by this function.
 #'
-#' @references
-#' van Kesteren, E.J. et al. (2019). Privacy-preserving generalized linear
-#' models using distributed block coordinate descent. arXiv:1911.03183.
-#'
-#' @seealso \code{\link{ds.vertCor}} for correlation analysis,
-#'   \code{\link{ds.vertPCA}} for PCA analysis
-#'
+#' @param formula,data,x_vars,y_server Additive model specification, aligned
+#'   data name and optional signed-artifact ownership checks for the Gaussian
+#'   capsule route.
+#' @param family Must be \code{"gaussian"} with \code{dp_analysis_id}.
+#'   Binomial and Poisson are not available through the public frontdoor.
+#' @param lambda,no_intercept,data_name,y_var,missing Gaussian capsule
+#'   estimand selectors. \code{lambda} is the explicit non-negative ridge
+#'   penalty; \code{missing}, when supplied, must be
+#'   \code{"complete_case_capsule"}.
+#' @param verbose,datasources Progress flag and DataSHIELD connections used
+#'   only after the Gaussian signed-artifact request has passed local checks.
+#' @param dp_analysis_id Custodian-configured signed bounded Gaussian artifact
+#'   id. This is required for the available route.
+#' @param formal_analysis_id Reserved custodian-configured binomial/Poisson
+#'   selector. Supplying it returns a typed
+#'   \code{dsvert_formal_glm_frontdoor_unavailable} condition before DSI.
+#' @param max_iter,tol,log_n,offset,weights,ring,binomial_sigmoid_intervals,eta_privacy,keep_session,std_mode,start,compute_se,compute_deviance,gradient_only,numeric_backend
+#'   Retained legacy arguments. They are rejected when explicitly supplied to
+#'   the Gaussian capsule adapter, and the no-id legacy route is unavailable.
+#' @return With a valid Gaussian \code{dp_analysis_id}, a
+#'   \code{ds.vertDPGaussian} object containing bounded noisy sufficient-
+#'   statistic regression output and no classical standard errors, p-values,
+#'   individual fitted values, residuals or scores. All other routes raise a
+#'   typed condition before DSI and return no fitted object.
+#' @seealso \code{\link{ds.vertDPGaussian}},
+#'   \code{\link{ds.vertMethodStatus}}
 #' @examples
 #' \dontrun{
-#' # Simplest: formula interface (auto-detects everything)
-#' model <- ds.vertGLM(npreg ~ age + bmi + glu + bp + skin,
-#'                      data = "DA", family = "gaussian")
-#'
-#' # String formula
-#' model <- ds.vertGLM("diabetes ~ age + bmi + glu",
-#'                      data = "DA", family = "binomial")
-#'
-#' # Auto-detect all features
-#' model <- ds.vertGLM("DA", "npreg", family = "poisson")
-#'
-#' # Manual server mapping (legacy)
-#' model <- ds.vertGLM("DA", "npreg",
-#'   list(s1 = c("age", "bmi"), s2 = c("glu", "bp")),
-#'   y_server = "s2", family = "gaussian")
+#' fit <- ds.vertGLM(
+#'   y ~ x1 + x2, data = "D", family = "gaussian",
+#'   dp_analysis_id = "custodian-gaussian-analysis")
 #' }
-#'
-#' @param data_name Internal alias for \code{data}; if both are supplied,
-#'   \code{data_name} takes precedence (back-compat path).
-#' @param y_var Internal alias for the LHS of \code{formula}; if both
-#'   are supplied, \code{y_var} takes precedence (back-compat path).
-#' @param offset Optional numeric vector or column name on the outcome
-#'   server added to the linear predictor (e.g. \code{log(person_years)}
-#'   for a Poisson rate model).
-#' @param weights Optional numeric vector or column name of per-row
-#'   weights (e.g. inverse-probability weights for IPW).
-#' @param ring Integer (63 or 127). Selects the MPC ring / fracBits
-#'   pipeline; Ring127 (fracBits=50) is STRICT-capable per
-#'   Catrina-Saxena. Default 63L for back-compat.
-#' @param binomial_sigmoid_intervals Optional integer. Number of DCF
-#'   spline intervals for the binomial secure sigmoid in this call. When
-#'   \code{NULL}, the existing \code{dsvert.glm_num_intervals_binomial}
-#'   option/default is used. Precision validation can set this to 150 or
-#'   higher without changing the disclosure surface.
-#' @param keep_session Logical. If TRUE, leave the MPC session alive
-#'   on the servers and expose \code{session_id}, \code{transport_pks},
-#'   and \code{server_list} on the returned fit so follow-on helpers
-#'   (LMM cluster residuals, GEE sandwich meat, etc.) can reuse the
-#'   already-aligned shares. Caller must invoke \code{mpcCleanupDS}
-#'   eventually.
-#' @param no_intercept Logical. Suppress the auto-added intercept.
-#'   Useful when the design matrix already encodes one (e.g. cluster-
-#'   mean-centred GLS fit).
-#' @param std_mode Character. Standardisation mode: \code{"full"}
-#'   (default) standardises both X and y; alternative modes (e.g.
-#'   \code{"x_only"}) skip y standardisation for offset/weights paths.
-#' @param start Optional named coefficient vector for internal K>=3 fixed
-#'   evaluation paths. When supplied with \code{max_iter = 0}, the secure
-#'   loop evaluates residual/deviance shares at the supplied coefficients
-#'   without optimisation.
-#' @param compute_se Logical. Compute finite-difference Hessian/standard
-#'   errors. Internal fixed-evaluation callers can set FALSE to avoid
-#'   extra MPC rounds when only residual shares are needed.
-#' @param compute_deviance Logical. Compute the secure aggregate deviance.
-#'   Internal score-only callers can set FALSE to avoid the extra MPC pass.
-#' @param gradient_only Logical. Internal diagnostic/optimizer path. If TRUE,
-#'   evaluate and return the aggregate score at \code{start} without taking
-#'   an optimizer step. If \code{compute_se = TRUE}, the aggregate finite-
-#'   difference Hessian is also returned. The returned score/Hessian are
-#'   low-dimensional aggregates only; no observation-level eta/probability/
-#'   residual vector is opened.
 #' @importFrom DSI datashield.aggregate datashield.connections_find
 #' @export
 ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        family = "gaussian", max_iter = 100, tol = 1e-4,
-                       lambda = 1e-4, log_n = 12,
+                       lambda = 0, log_n = 12,
                        offset = NULL, weights = NULL,
                        # Ring63 (frac_bits=20, default, back-compat) or
                        # Ring127 (frac_bits=50, STRICT-capable per
@@ -192,27 +196,135 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        compute_deviance = TRUE,
                        gradient_only = FALSE,
                        # Legacy positional args for backward compatibility
-                       data_name = NULL, y_var = NULL) {
+                       data_name = NULL, y_var = NULL,
+                       missing = "fail",
+                       numeric_backend = "auto",
+                       dp_analysis_id = NULL,
+                       formal_analysis_id = NULL) {
   call_matched <- match.call()
+
+  if (!is.null(dp_analysis_id) && !is.null(formal_analysis_id)) {
+    stop("dp_analysis_id and formal_analysis_id are mutually exclusive",
+         call. = FALSE)
+  }
+
+  if (!is.null(formal_analysis_id)) {
+    return(.dsvert_formal_glm_frontdoor_adapter(
+      explicit_arguments = names(call_matched)[-1L],
+      formula = if (missing(formula)) NULL else formula,
+      data = data, family = family, verbose = verbose,
+      datasources = datasources, analysis_id = formal_analysis_id))
+  }
+
+  if (!is.null(dp_analysis_id)) {
+    return(.dsvert_dp_gaussian_glm_adapter(
+      explicit_arguments = names(call_matched)[-1L],
+      formula = if (missing(formula)) NULL else formula,
+      data = data, x_vars = x_vars, y_server = y_server,
+      family = family, lambda = lambda, no_intercept = no_intercept,
+      data_name = data_name, y_var = y_var, missing = missing,
+      verbose = verbose, datasources = datasources,
+      analysis_id = dp_analysis_id))
+  }
+
+  .dsvert_block_retired_remote_route("legacy_glm")
+
+  if (!is.character(missing) || length(missing) != 1L ||
+      !missing %in% c("fail", "mean_impute")) {
+    stop("missing must be one of 'fail' or 'mean_impute'", call. = FALSE)
+  }
+  if (!is.character(family) || length(family) != 1L || is.na(family) ||
+      !family %in% c("gaussian", "binomial", "poisson")) {
+    stop("family must be 'gaussian', 'binomial', or 'poisson'",
+         call. = FALSE)
+  }
+  if (!is.numeric(max_iter) || length(max_iter) != 1L ||
+      !is.finite(max_iter) || max_iter < 0 || max_iter != floor(max_iter)) {
+    stop("max_iter must be one non-negative integer", call. = FALSE)
+  }
+  max_iter <- as.integer(max_iter)
+  if (!is.numeric(tol) || length(tol) != 1L || !is.finite(tol) || tol <= 0) {
+    stop("tol must be one finite positive number", call. = FALSE)
+  }
+  if (!is.numeric(lambda) || length(lambda) != 1L ||
+      !is.finite(lambda) || lambda < 0) {
+    stop("lambda must be one finite non-negative number", call. = FALSE)
+  }
+  if (!is.numeric(ring) || length(ring) != 1L || !is.finite(ring) ||
+      ring != floor(ring) || !as.integer(ring) %in% c(63L, 127L)) {
+    stop("ring must be 63 or 127", call. = FALSE)
+  }
+  requested_ring <- as.integer(ring)
+  ring <- requested_ring
+  if (!is.character(numeric_backend) || length(numeric_backend) != 1L ||
+      is.na(numeric_backend) ||
+      !tolower(numeric_backend) %in%
+        c("auto", "ring63", "ring127", "exact_gc", "multiprecision")) {
+    stop("numeric_backend must be auto, ring63, ring127, exact_gc, or ",
+         "multiprecision", call. = FALSE)
+  }
+  numeric_backend <- tolower(numeric_backend)
+  if (!is.character(eta_privacy) || length(eta_privacy) != 1L ||
+      is.na(eta_privacy) ||
+      !eta_privacy %in% c("auto", "k2_beaver", "secure_agg")) {
+    stop("eta_privacy must be 'auto', 'k2_beaver', or 'secure_agg'",
+         call. = FALSE)
+  }
+  if (!is.character(std_mode) || length(std_mode) != 1L || is.na(std_mode) ||
+      !std_mode %in% c("full", "scale_only", "none")) {
+    stop("std_mode must be 'full', 'scale_only', or 'none'", call. = FALSE)
+  }
+  logical_args <- list(
+    verbose = verbose, keep_session = keep_session,
+    no_intercept = no_intercept, compute_se = compute_se,
+    compute_deviance = compute_deviance, gradient_only = gradient_only
+  )
+  invalid_logical <- names(logical_args)[!vapply(
+    logical_args,
+    function(x) is.logical(x) && length(x) == 1L && !is.na(x),
+    logical(1L)
+  )]
+  if (length(invalid_logical)) {
+    stop(paste(invalid_logical, collapse = ", "),
+         " must be non-missing logical scalars", call. = FALSE)
+  }
+  if (!is.null(start) &&
+      (!is.numeric(start) || !length(start) || any(!is.finite(start)))) {
+    stop("start must be NULL or a non-empty finite numeric vector",
+         call. = FALSE)
+  }
+  for (argument in c("offset", "weights")) {
+    value <- get(argument, inherits = FALSE)
+    if (!is.null(value) &&
+        (!is.character(value) || length(value) != 1L || is.na(value) ||
+         !nzchar(value))) {
+      stop(argument, " must be NULL or one non-empty column name",
+           call. = FALSE)
+    }
+  }
+  if (identical(family, "gaussian") && !is.null(offset)) {
+    stop(
+      "Gaussian offsets are not implemented on the standardized MPC scale; ",
+      "use an explicit offset-adjusted response or a supported Poisson offset",
+      call. = FALSE
+    )
+  }
 
   # ===========================================================================
   # Parse formula or legacy arguments
   # ===========================================================================
   if (!missing(formula)) {
     if (inherits(formula, "formula")) {
-      # R formula object: npreg ~ age + bmi + ped
-      f_terms <- terms(formula)
-      y_var <- as.character(attr(f_terms, "variables")[[2]])
-      x_from_formula <- attr(f_terms, "term.labels")
-      if (is.null(x_vars)) x_vars <- x_from_formula
+      formula_spec <- .dsvert_plain_formula(formula)
+      y_var <- formula_spec$response
+      if (is.null(x_vars)) x_vars <- formula_spec$predictors
+      if (!formula_spec$intercept) no_intercept <- TRUE
       data_name <- data
     } else if (is.character(formula) && grepl("~", formula)) {
-      # String formula: "npreg ~ age + bmi + ped"
-      f <- as.formula(formula)
-      f_terms <- terms(f)
-      y_var <- as.character(attr(f_terms, "variables")[[2]])
-      x_from_formula <- attr(f_terms, "term.labels")
-      if (is.null(x_vars)) x_vars <- x_from_formula
+      formula_spec <- .dsvert_plain_formula(formula)
+      y_var <- formula_spec$response
+      if (is.null(x_vars)) x_vars <- formula_spec$predictors
+      if (!formula_spec$intercept) no_intercept <- TRUE
       data_name <- data
     } else if (is.character(formula) && !grepl("~", formula)) {
       # Legacy: first arg is data_name (backward compat)
@@ -240,9 +352,17 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
          call. = FALSE)
   if (!is.character(y_var) || length(y_var) != 1)
     stop("y_var must be a single character string", call. = FALSE)
-  if (!family %in% c("gaussian", "binomial", "poisson"))
-    stop("family must be 'gaussian', 'binomial', or 'poisson'",
+  if (!is.null(x_vars) && !is.character(x_vars) && !is.list(x_vars)) {
+    stop("x_vars must be NULL, a character vector, or a named list",
          call. = FALSE)
+  }
+  if (is.list(x_vars) &&
+      (is.null(names(x_vars)) || any(!nzchar(names(x_vars))) ||
+       anyDuplicated(names(x_vars)) ||
+       any(!vapply(x_vars, is.character, logical(1L))))) {
+    stop("x_vars must be a named list mapping server names to variable vectors",
+         call. = FALSE)
+  }
   if (!is.null(binomial_sigmoid_intervals)) {
     binomial_sigmoid_intervals <- as.integer(binomial_sigmoid_intervals)
     if (length(binomial_sigmoid_intervals) != 1L ||
@@ -279,12 +399,20 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   if (length(datasources) == 0)
     stop("No DataSHIELD connections found", call. = FALSE)
 
+  # Authenticate and validate every participating custodian's public numeric
+  # policy before querying schema, row counts, alignment state, or creating MPC
+  # state. There is no unattested compatibility route.
+  numeric_policies <- .dsvert_require_numeric_policies(datasources)
+
   # Auto-detect: query servers for their columns and map variables automatically
+  col_results <- NULL
   if (is.null(x_vars) || is.character(x_vars)) {
     user_x_vars <- x_vars  # NULL = use all available, character = specific vars
     if (verbose) message("[Auto-detect] Querying server columns...")
-    col_results <- DSI::datashield.aggregate(datasources,
-      call(name = "dsvertColNamesDS", data_name = data_name))
+    col_results <- .dsvert_aggregate_strict(
+      conns = datasources,
+      expr = call(name = "dsvertColNamesDS", data_name = data_name),
+      operation = "GLM column discovery")
     server_names <- names(datasources)
 
     # Build column map: which server has which variable (exclude IDs)
@@ -299,9 +427,10 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
     # Validate: all requested variables must exist somewhere
     if (!is.null(user_x_vars)) {
-      missing <- setdiff(user_x_vars, all_available)
-      if (length(missing) > 0)
-        stop("Variables not found on any server: ", paste(missing, collapse = ", "),
+      missing_variables <- setdiff(user_x_vars, all_available)
+      if (length(missing_variables) > 0)
+        stop("Variables not found on any server: ",
+             paste(missing_variables, collapse = ", "),
              "\n  Available: ", paste(all_available, collapse = ", "), call. = FALSE)
     }
     if (!y_var %in% all_available)
@@ -354,30 +483,27 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
          call. = FALSE)
   if (!y_server %in% names(x_vars))
     stop("y_server '", y_server, "' must be in x_vars", call. = FALSE)
+  if (anyDuplicated(names(x_vars)) || any(!nzchar(names(x_vars))) ||
+      any(!vapply(x_vars, is.character, logical(1L)))) {
+    stop("x_vars must map unique non-empty server names to character vectors",
+         call. = FALSE)
+  }
+  predictor_names <- unlist(x_vars, use.names = FALSE)
+  if (anyNA(predictor_names) || any(!nzchar(predictor_names)) ||
+      anyDuplicated(predictor_names)) {
+    stop("Every predictor must be a unique non-empty column across servers",
+         call. = FALSE)
+  }
 
   n_partitions_check <- length(x_vars)
-  non_label_count <- n_partitions_check - 1
-
-  # Route to the appropriate protocol:
-  #   K=2: Beaver MPC with wide spline DCF (non-disclosive, ~1e-3 precision)
-  #   K>=3: Secure aggregation with Enc(r) + L-BFGS (~8e-3 precision)
-  if (eta_privacy == "auto") {
-    if (non_label_count >= 2) {
-      eta_privacy <- "secure_agg"
-    } else if (non_label_count >= 1) {
-      eta_privacy <- "k2_beaver"
-    } else {
-      stop("Need at least 2 servers (1 label + 1 non-label)", call. = FALSE)
-    }
-  }
+  non_label_count <- n_partitions_check - 1L
+  eta_privacy <- .dsvert_select_eta_privacy(
+    eta_privacy, n_partitions = n_partitions_check
+  )
 
   use_secure_agg <- (eta_privacy == "secure_agg")
   use_k2_beaver <- (eta_privacy == "k2_beaver")
 
-  if (use_secure_agg && non_label_count < 2)
-    stop("secure_agg requires >= 3 servers", call. = FALSE)
-  if (use_k2_beaver && non_label_count != 1)
-    stop("K=2 mode requires exactly 2 servers", call. = FALSE)
   if (isTRUE(gradient_only)) {
     if (is.null(start)) {
       stop("gradient_only requires a standardized `start` vector",
@@ -397,8 +523,9 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
   server_names <- names(datasources)
   if (!all(names(x_vars) %in% server_names)) {
-    missing <- setdiff(names(x_vars), server_names)
-    stop("Unknown server(s) in x_vars: ", paste(missing, collapse = ", "),
+    missing_servers <- setdiff(names(x_vars), server_names)
+    stop("Unknown server(s) in x_vars: ",
+         paste(missing_servers, collapse = ", "),
          call. = FALSE)
   }
 
@@ -406,15 +533,35 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   non_label_servers <- setdiff(server_list, y_server)
   n_partitions <- length(x_vars)
 
+  # Offset/weight discovery needs the same public column catalogue. Query all
+  # participating sites once, never sequentially until a match is found.
+  if ((!is.null(offset) || !is.null(weights)) && is.null(col_results)) {
+    col_results <- .dsvert_aggregate_strict(
+      conns = datasources[server_list],
+      expr = call(name = "dsvertColNamesDS", data_name = data_name),
+      operation = "GLM column discovery")
+  }
+
   # Get observation count (lightweight sync call before helpers are available)
   first_conn <- which(server_names == server_list[1])
-  count_result <- DSI::datashield.aggregate(
+  count_result <- .dsvert_aggregate_strict(
     conns = datasources[first_conn],
-    expr = call(name = "getObsCountDS", data_name)
+    expr = call(name = "getObsCountDS", data_name),
+    operation = "GLM observation-count preflight"
   )
   if (is.list(count_result) && length(count_result) == 1)
     count_result <- count_result[[1]]
   n_obs <- count_result$n_obs
+
+  # Reuse an existing authenticated PSI row-order manifest when available.
+  # This does not execute PSI; older/non-PSI deployments simply produce no
+  # attestation, in which case cohort-sensitive LR inference fails closed.
+  alignment_status <- .psi_alignment_status(
+    data_name, datasources[server_list]
+  )
+  alignment_metadata <- .dsvert_glm_alignment_metadata(
+    alignment_status, n_obs
+  )
 
   # Adaptive log_n: ensure max_slots >= n_obs
   max_slots <- 2^(log_n - 1)
@@ -431,6 +578,36 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
 
   n_vars_total <- sum(sapply(x_vars, length))
 
+  # Numeric preflight runs before a session or any MPC state is created.  All
+  # magnitude/error bounds come from the custodians; no analyst argument can
+  # relax them.  The current R orchestrator has adapters only for ring63/127,
+  # so an attested future backend is still refused until its adapter exists.
+  numeric_workload <- .dsvert_numeric_glm_workload(
+    n_obs = n_obs,
+    n_predictors = n_vars_total,
+    family = family,
+    max_iter = max_iter,
+    compute_se = isTRUE(compute_se),
+    compute_deviance = isTRUE(compute_deviance),
+    weights_active = !is.null(weights),
+    offset_active = !is.null(offset))
+  numeric_certificate <- .dsvert_numeric_preflight_from_policies(
+    numeric_policies[server_list], numeric_workload,
+    requested_backend = numeric_backend,
+    requested_ring = requested_ring)
+  if (!numeric_certificate$effective_backend %in% c("ring63", "ring127")) {
+    unavailable_certificate <- numeric_certificate
+    unavailable_certificate$status <- "numeric_backend_unavailable"
+    unavailable_certificate$reason <- "client_backend_adapter_unavailable"
+    .dsvert_stop_numeric(
+      "numeric_backend_unavailable",
+      paste0("The selected ", numeric_certificate$effective_backend,
+             " backend has no integrated ds.vertGLM client adapter"),
+      unavailable_certificate, "client_backend_adapter_unavailable")
+  }
+  effective_ring <- as.integer(numeric_certificate$ring_bits)
+  ring <- effective_ring
+
   if (verbose) {
     message(sprintf("=== Encrypted-Label BCD-IRLS for %s GLM ===", family))
     message(sprintf("Observations: %d, Variables: %d, Partitions: %d",
@@ -442,37 +619,21 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   }
 
   # Generate session_id for all protocol phases (crypto state isolation)
-  session_id <- local({
-    hex <- sample(c(0:9, letters[1:6]), 32, replace = TRUE)
-    hex[13] <- "4"  # UUID v4
-    hex[17] <- sample(c("8","9","a","b"), 1)  # variant 1
-    paste0(
-      paste(hex[1:8], collapse = ""), "-",
-      paste(hex[9:12], collapse = ""), "-",
-      paste(hex[13:16], collapse = ""), "-",
-      paste(hex[17:20], collapse = ""), "-",
-      paste(hex[21:32], collapse = "")
-    )
-  })
+  session_id <- .dsvert_uuid4()
 
   # Guaranteed cleanup on exit (even if error occurs mid-protocol).
-  # Uses DSI::datashield.aggregate directly (not .dsAgg) so cleanup works
-  # even if .glm_mpc_setup() fails before returning the closure.
+  # Cleanup remains best-effort because it runs only after the protocol can no
+  # longer advance. It uses one async fan-out per cleanup phase and suppresses
+  # connector diagnostics.
   # Skipped when keep_session = TRUE so follow-on helpers can reuse the
   # MPC session (caller assumes cleanup responsibility).
   on.exit({
     if (!isTRUE(keep_session)) {
-      for (.srv in server_list) {
-        .ci <- which(server_names == .srv)
-        tryCatch(
-          DSI::datashield.aggregate(conns = datasources[.ci],
-            expr = call(name = "mpcCleanupDS", session_id = session_id)),
-          error = function(e) NULL)
-        tryCatch(
-          DSI::datashield.aggregate(conns = datasources[.ci],
-            expr = call(name = "mpcGcDS")),
-          error = function(e) NULL)
-      }
+      .dsvert_cleanup_best_effort(
+        datasources[server_list],
+        call(name = "mpcCleanupDS", session_id = session_id))
+      .dsvert_cleanup_best_effort(
+        datasources[server_list], call(name = "mpcGcDS"))
     }
     .dsvert_reset_chunk_size()
   }, add = TRUE)
@@ -495,7 +656,9 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     verbose          = verbose,
     # no_intercept=TRUE: skip y-standardisation (no mean-shift).
     standardize_y_override = if (isTRUE(no_intercept)) FALSE else NULL,
-    std_mode = std_mode
+    std_mode = std_mode,
+    missing = missing,
+    numeric_ring = ring
   )
 
   # Unpack setup results
@@ -506,8 +669,29 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   y_sd          <- setup$y_sd
   std_data      <- setup$std_data
   standardize_y <- setup$standardize_y
+  missing_policy <- setup$missing_policy
+  numeric_attestations <- setup$numeric_attestations
   .dsAgg        <- setup$.dsAgg
   .sendBlob     <- setup$.sendBlob
+
+  if (length(numeric_certificate$policy_ids)) {
+    input_bindings <- vapply(server_list, function(server) {
+      .dsvert_numeric_validate_attestation(
+        attestation = numeric_attestations[[server]],
+        certificate = numeric_certificate,
+        server = server,
+        kind = "glm_standardized_input",
+        session_id = session_id,
+        data_name = data_name,
+        variables = unique(c(
+          x_vars[[server]], if (server == y_server) y_var else NULL)),
+        family = family,
+        ring = ring,
+        n = n_obs)
+    }, character(1L))
+    numeric_certificate <- .dsvert_numeric_attach_attestations(
+      numeric_certificate, input_bindings, all_inputs = TRUE)
+  }
 
   if (max_iter < 1L && !isTRUE(compute_se) &&
       !isTRUE(compute_deviance) && !isTRUE(gradient_only) &&
@@ -517,11 +701,27 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     all_x_sds <- unlist(x_sds[server_list], use.names = FALSE)
     all_coefs <- c("(Intercept)" = 0, setNames(rep(0, length(all_names)),
                                                all_names))
+    n_parameters <- length(all_coefs) - as.integer(isTRUE(no_intercept))
+    fit_statistics <- .dsvert_glm_fit_statistics(
+      family = family, deviance = NA_real_, n_obs = n_obs,
+      n_parameters = n_parameters, y_sd = y_sd,
+      weights_active = FALSE, offset_active = FALSE,
+      intercept_included = !isTRUE(no_intercept)
+    )
+    numeric_certificate <- .dsvert_numeric_finalize_certificate(
+      numeric_certificate, all_coefs, converged = TRUE)
     result <- list(
       coefficients = all_coefs,
       std_errors = rep(NA_real_, length(all_coefs)),
+      statistic_values = rep(NA_real_, length(all_coefs)),
+      t_values = if (identical(family, "gaussian")) {
+        rep(NA_real_, length(all_coefs))
+      } else {
+        NULL
+      },
       z_values = rep(NA_real_, length(all_coefs)),
       p_values = rep(NA_real_, length(all_coefs)),
+      coefficient_reference = if (identical(family, "gaussian")) "t" else "normal",
       covariance = NULL,
       covariance_information = NULL,
       covariance_unscaled = NULL,
@@ -530,13 +730,30 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       family = family,
       n_obs = n_obs,
       n_vars = length(all_coefs),
+      n_parameters = n_parameters,
+      df_residual = n_obs - n_parameters,
       lambda = lambda,
       deviance = NA_real_,
-      null_deviance = if (family == "gaussian") (n_obs - 1) * (y_sd %||% 1)^2 else NA,
-      pseudo_r2 = NA_real_,
-      aic = NA_real_,
+      deviance_type = fit_statistics$deviance_type,
+      null_deviance = fit_statistics$null_deviance,
+      pseudo_r2 = fit_statistics$pseudo_r2,
+      aic = fit_statistics$aic,
+      aic_type = fit_statistics$aic_type,
       y_server = y_server,
       eta_privacy = eta_privacy,
+      missing_policy = missing_policy,
+      data_name = data_name,
+      y_var = y_var,
+      x_vars = x_vars,
+      offset = offset,
+      weights = weights,
+      ring = effective_ring,
+      requested_ring = requested_ring,
+      effective_ring = effective_ring,
+      numeric_certificate = numeric_certificate,
+      alignment_attested = alignment_metadata$alignment_attested,
+      alignment_manifest_hash = alignment_metadata$alignment_manifest_hash,
+      cohort_id = alignment_metadata$cohort_id,
       x_means = setNames(all_x_means, all_names),
       x_sds = setNames(all_x_sds, all_names),
       y_sd = if (exists("y_sd", inherits = FALSE)) y_sd else NULL,
@@ -565,11 +782,13 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     }
     offset_srv <- NULL
     for (.srv in server_list) {
-      .ci <- which(server_names == .srv)
-      cols <- tryCatch(
-        DSI::datashield.aggregate(datasources[.ci],
-          call(name = "dsvertColNamesDS", data_name = data_name))[[1]]$columns,
-        error = function(e) NULL)
+      site_catalog <- col_results[[.srv]]
+      cols <- if (is.list(site_catalog) &&
+                  is.character(site_catalog$columns)) {
+        site_catalog$columns
+      } else {
+        character()
+      }
       if (!is.null(cols) && offset %in% cols) {
         offset_srv <- .srv
         break
@@ -582,10 +801,23 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     if (verbose) message(sprintf("Registering offset '%s' on server %s",
                                   offset, offset_srv))
     .ci <- which(server_names == offset_srv)
-    .dsAgg(datasources[.ci], call(name = "k2SetOffsetDS",
+    offset_result <- .dsAgg(datasources[.ci], call(name = "k2SetOffsetDS",
       data_name = data_name,
       offset_column = offset,
+      numeric_family = family,
       session_id = session_id))
+    if (is.list(offset_result) && length(offset_result) == 1L) {
+      offset_result <- offset_result[[1L]]
+    }
+    if (length(numeric_certificate$policy_ids)) {
+      offset_binding <- .dsvert_numeric_validate_attestation(
+        offset_result$numeric_attestation, numeric_certificate,
+        server = offset_srv, kind = "glm_offset",
+        session_id = session_id, data_name = data_name,
+        variables = offset, family = family, ring = ring, n = n_obs)
+      numeric_certificate <- .dsvert_numeric_attach_attestations(
+        numeric_certificate, offset_binding)
+    }
   }
 
   # ===========================================================================
@@ -605,11 +837,13 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     }
     weights_srv <- NULL
     for (.srv in server_list) {
-      .ci <- which(server_names == .srv)
-      cols <- tryCatch(
-        DSI::datashield.aggregate(datasources[.ci],
-          call(name = "dsvertColNamesDS", data_name = data_name))[[1]]$columns,
-        error = function(e) NULL)
+      site_catalog <- col_results[[.srv]]
+      cols <- if (is.list(site_catalog) &&
+                  is.character(site_catalog$columns)) {
+        site_catalog$columns
+      } else {
+        character()
+      }
       if (!is.null(cols) && weights %in% cols) {
         weights_srv <- .srv
         break
@@ -642,28 +876,32 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
         dcf1_pk = transport_pks[[dcf_weight_parties[2L]]],
         dcf_role = dcf_role,
         ring = weights_ring,
+        numeric_family = family,
         session_id = session_id))
       if (is.list(setres) && length(setres) == 1L) setres <- setres[[1]]
 
       if (dcf_role == "dealer") {
-        .sendBlob(setres$dcf0_blob, "k2_peer_weight_share",
+        .sendBlob(setres$dcf0_blob, setres$dcf0_transfer,
                   which(server_names == dcf_weight_parties[1L]))
-        .sendBlob(setres$dcf1_blob, "k2_peer_weight_share",
+        .sendBlob(setres$dcf1_blob, setres$dcf1_transfer,
                   which(server_names == dcf_weight_parties[2L]))
-        .sendBlob(setres$dcf0_sqrt_blob, "k2_peer_sqrt_weight_share",
+        .sendBlob(setres$dcf0_sqrt_blob, setres$dcf0_sqrt_transfer,
                   which(server_names == dcf_weight_parties[1L]))
-        .sendBlob(setres$dcf1_sqrt_blob, "k2_peer_sqrt_weight_share",
+        .sendBlob(setres$dcf1_sqrt_blob, setres$dcf1_sqrt_transfer,
                   which(server_names == dcf_weight_parties[2L]))
         for (srv in dcf_weight_parties) {
           .dsAgg(datasources[which(server_names == srv)],
-            call(name = "k2ReceiveWeightSharesDS", session_id = session_id))
+            call(name = "k2ReceiveWeightSharesDS", numeric_family = family,
+                 peer_name = weights_srv,
+                 session_id = session_id))
         }
       } else {
         peer_srv <- if (dcf_role == "dcf0") dcf_weight_parties[2L] else dcf_weight_parties[1L]
         peer_ci <- which(server_names == peer_srv)
-        .sendBlob(setres$peer_blob, "k2_peer_weight_share", peer_ci)
-        .sendBlob(setres$peer_sqrt_blob, "k2_peer_sqrt_weight_share", peer_ci)
+        .sendBlob(setres$peer_blob, setres$peer_transfer, peer_ci)
+        .sendBlob(setres$peer_sqrt_blob, setres$peer_sqrt_transfer, peer_ci)
         .dsAgg(datasources[peer_ci], call(name = "k2ReceiveWeightSharesDS",
+          numeric_family = family, peer_name = weights_srv,
           session_id = session_id))
       }
     } else {
@@ -680,12 +918,23 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
         dcf1_pk = transport_pks[[dcf1_srv]],
         dcf_role = dcf_role,
         ring = weights_ring,
+        numeric_family = family,
         session_id = session_id))
       if (is.list(setres) && length(setres) == 1L) setres <- setres[[1]]
-      .sendBlob(setres$peer_blob, "k2_peer_weight_share", peer_ci)
-      .sendBlob(setres$peer_sqrt_blob, "k2_peer_sqrt_weight_share", peer_ci)
+      .sendBlob(setres$peer_blob, setres$peer_transfer, peer_ci)
+      .sendBlob(setres$peer_sqrt_blob, setres$peer_sqrt_transfer, peer_ci)
       .dsAgg(datasources[peer_ci], call(name = "k2ReceiveWeightSharesDS",
+        numeric_family = family, peer_name = weights_srv,
         session_id = session_id))
+    }
+    if (length(numeric_certificate$policy_ids)) {
+      weight_binding <- .dsvert_numeric_validate_attestation(
+        setres$numeric_attestation, numeric_certificate,
+        server = weights_srv, kind = "glm_weights",
+        session_id = session_id, data_name = data_name,
+        variables = weights, family = family, ring = ring, n = n_obs)
+      numeric_certificate <- .dsvert_numeric_attach_attestations(
+        numeric_certificate, weight_binding)
     }
     weights_active <- TRUE
   }
@@ -747,12 +996,14 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       .dsAgg = .dsAgg,
       .sendBlob = .sendBlob,
       weights_active = isTRUE(weights_active),
+      offset_active = !is.null(offset),
       no_intercept  = isTRUE(no_intercept),
       ring = ring,
       compute_se = isTRUE(compute_se),
       compute_deviance = isTRUE(compute_deviance),
       gradient_only = isTRUE(gradient_only),
-      start = start
+      start = start,
+      numeric_certificate = numeric_certificate
     )
 
     betas <- loop_result$betas
@@ -782,7 +1033,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       compute_se = isTRUE(compute_se),
       compute_deviance = isTRUE(compute_deviance),
       gradient_only = isTRUE(gradient_only),
-      ring = ring)
+      ring = ring,
+      numeric_certificate = numeric_certificate)
     betas <- k3_result$betas
     converged <- k3_result$converged
     final_iter <- k3_result$final_iter
@@ -845,6 +1097,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   all_coefs <- c(intercept, all_coefs_orig)
   names(all_coefs) <- c("(Intercept)", all_names)
   n_vars_total <- length(all_coefs)
+  n_parameters <- n_vars_total - as.integer(isTRUE(no_intercept))
+  df_residual <- n_obs - n_parameters
 
   # ===========================================================================
   # Phase 5: Deviance (server-side, on ORIGINAL-scale data)
@@ -867,7 +1121,10 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     }
   }
 
-  # Deviance: from secure Beaver Sumr^2 (available in both K=2 and K>=3)
+  # Deviance is computed in share-domain: Gaussian weighted/unweighted RSS,
+  # binomial canonical deviance, or Poisson canonical deviance. Weighted
+  # non-Gaussian fits deliberately return NA until their canonical expression
+  # is implemented.
   deviance <- NA; null_deviance <- NA
   if (use_secure_agg && exists("k3_result") && !is.null(k3_result$deviance)) {
     deviance <- k3_result$deviance
@@ -878,10 +1135,18 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   if (family == "gaussian" && !is.null(y_sd) && !is.na(deviance)) {
     deviance <- deviance * y_sd^2
   }
-  # Null deviance: for Gaussian = Sum(y-ybar)^2 = (n-1)*var(y). In std space, var(y_std)=1.
-  null_deviance <- if (family == "gaussian") (n_obs - 1) * (y_sd %||% 1)^2 else NA
-  pseudo_r2 <- if (!is.na(null_deviance) && null_deviance > 0) 1 - (deviance / null_deviance) else NA
-  aic <- if (!is.na(deviance)) deviance + 2 * n_vars_total else NA
+  fit_statistics <- .dsvert_glm_fit_statistics(
+    family = family, deviance = deviance, n_obs = n_obs,
+    n_parameters = n_parameters, y_sd = y_sd,
+    weights_active = isTRUE(weights_active),
+    offset_active = !is.null(offset),
+    intercept_included = !isTRUE(no_intercept)
+  )
+  null_deviance <- fit_statistics$null_deviance
+  pseudo_r2 <- fit_statistics$pseudo_r2
+  deviance_type <- fit_statistics$deviance_type
+  aic <- fit_statistics$aic
+  aic_type <- fit_statistics$aic_type
 
   if (verbose)
     message(sprintf("\nDeviance: %.4f, Null deviance: %.4f, Pseudo R2: %.4f",
@@ -895,9 +1160,13 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   if (use_secure_agg && exists("k3_result")) inv_H <- k3_result$inv_hessian
   if (use_k2_beaver && exists("loop_result")) inv_H <- loop_result$inv_hessian
 
-  std_errors <- rep(NA, n_vars_total)
-  z_values <- rep(NA, n_vars_total)
-  p_values <- rep(NA, n_vars_total)
+  empty_inference <- stats::setNames(
+    rep(NA_real_, length(all_coefs)), names(all_coefs))
+  std_errors <- empty_inference
+  statistic_values <- empty_inference
+  t_values <- NULL
+  z_values <- empty_inference
+  p_values <- empty_inference
   covariance <- NULL
   covariance_information <- NULL
 
@@ -927,7 +1196,30 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     # Fisher = n x (Hessian - lambdaI) where Hessian = X_std^T W X_std / n + lambdaI
     H_adj <- H_raw - lambda * diag(nrow(H_raw))
     fisher_std <- n_obs * H_adj
-    cov_std <- tryCatch(solve(fisher_std), error = function(e) NULL)
+    if (any(!is.finite(fisher_std))) {
+      unavailable_certificate <- numeric_certificate
+      unavailable_certificate$status <- "numeric_backend_unavailable"
+      unavailable_certificate$reason <- "non_finite_information_matrix"
+      .dsvert_stop_numeric(
+        "numeric_backend_unavailable",
+        "The protected information matrix contains a non-finite numeric result",
+        unavailable_certificate, "non_finite_information_matrix")
+    }
+    identifiability_reason <- if (identical(family, "binomial") &&
+                                    identical(as.numeric(lambda), 0)) {
+      "separation_or_singular_information"
+    } else {
+      "singular_information_matrix"
+    }
+    cov_std <- .dsvert_solve_identifiable(
+      fisher_std,
+      context = paste0("The protected ", family, " model"),
+      reason = identifiability_reason,
+      symmetric = TRUE,
+      certificate = numeric_certificate)
+    numeric_certificate <- .dsvert_numeric_mark_estimable(
+      numeric_certificate,
+      reason = "positive_definite_full_rank_fisher_information")
 
     if (!is.null(cov_std)) {
       # Destandardize: construct Jacobian J where theta_orig = J x theta_std + const
@@ -968,8 +1260,8 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
         }
         cov_info_orig <- cov_orig / y_scale
         if (!is.na(deviance) && is.finite(deviance)) {
-          df_resid <- max(n_obs - n_vars_total, 1L)
-          sigma2_hat <- deviance / df_resid
+          covariance_df_residual <- max(df_residual, 1L)
+          sigma2_hat <- deviance / covariance_df_residual
           cov_orig <- cov_info_orig * sigma2_hat
           dimnames(cov_orig) <- list(names(all_coefs), names(all_coefs))
         }
@@ -980,10 +1272,22 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
       std_errors <- se_orig
       names(std_errors) <- names(all_coefs)
 
-      z_values <- all_coefs / std_errors
-      z_values[!is.finite(z_values)] <- NA
-      p_values <- 2 * stats::pnorm(-abs(z_values))
-      names(z_values) <- names(p_values) <- names(all_coefs)
+      statistic_values <- all_coefs / std_errors
+      statistic_values[!is.finite(statistic_values)] <- NA
+      z_values <- statistic_values  # historical field; see coefficient_reference
+      if (identical(family, "gaussian")) {
+        t_values <- statistic_values
+        p_values <- if (is.finite(df_residual) && df_residual > 0L) {
+          2 * stats::pt(-abs(statistic_values), df = df_residual)
+        } else {
+          rep(NA_real_, length(statistic_values))
+        }
+      } else {
+        p_values <- 2 * stats::pnorm(-abs(statistic_values))
+      }
+      names(statistic_values) <- names(z_values) <- names(p_values) <-
+        names(all_coefs)
+      if (!is.null(t_values)) names(t_values) <- names(all_coefs)
     }
     # Expose the full covariance matrix (original scale) so downstream
     # client-side inference (multi-coef Wald, GEE sandwich, CI on linear
@@ -994,15 +1298,19 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     }
 
     if (verbose && any(!is.na(std_errors))) {
+      statistic_label <- if (identical(family, "gaussian")) "t value" else "z value"
+      p_label <- if (identical(family, "gaussian")) "Pr(>|t|)" else "Pr(>|z|)"
       message("\nCoefficients:")
-      message(sprintf("  %-15s %10s %10s %10s %10s", "", "Estimate", "Std.Error", "z value", "Pr(>|z|)"))
+      message(sprintf("  %-15s %10s %10s %10s %10s", "", "Estimate",
+                      "Std.Error", statistic_label, p_label))
       for (nm in names(all_coefs)) {
         sig <- if (!is.na(p_values[nm]) && p_values[nm] < 0.001) "***"
                else if (!is.na(p_values[nm]) && p_values[nm] < 0.01) "**"
                else if (!is.na(p_values[nm]) && p_values[nm] < 0.05) "*"
                else ""
         message(sprintf("  %-15s %10.4f %10.4f %10.3f %10.6f %s",
-          nm, all_coefs[nm], std_errors[nm], z_values[nm], p_values[nm], sig))
+          nm, all_coefs[nm], std_errors[nm], statistic_values[nm],
+          p_values[nm], sig))
       }
     }
   }
@@ -1041,11 +1349,24 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   # ===========================================================================
   # Assemble Result
   # ===========================================================================
+  numeric_certificate <- .dsvert_numeric_finalize_certificate(
+    numeric_certificate,
+    coefficients = all_coefs,
+    converged = converged,
+    returned_numeric = list(
+      deviance = deviance,
+      covariance = covariance,
+      covariance_information = covariance_information,
+      std_errors = std_errors,
+      gradient = gradient_original))
   result <- list(
     coefficients = all_coefs,
     std_errors = std_errors,
+    statistic_values = statistic_values,
+    t_values = t_values,
     z_values = z_values,
     p_values = p_values,
+    coefficient_reference = if (identical(family, "gaussian")) "t" else "normal",
     covariance = covariance,
     covariance_information = covariance_information,
     covariance_unscaled = covariance_information,
@@ -1055,13 +1376,35 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
     binomial_sigmoid_intervals = effective_binomial_sigmoid_intervals,
     n_obs = n_obs,
     n_vars = n_vars_total,
+    n_parameters = n_parameters,
+    df_residual = df_residual,
     lambda = lambda,
+    estimand = if (isTRUE(as.numeric(lambda) > 0)) {
+      paste0("explicit_ridge_penalized_", family, "_glm")
+    } else {
+      paste0("unpenalized_", family, "_glm")
+    },
     deviance = deviance,
+    deviance_type = deviance_type,
     null_deviance = null_deviance,
     pseudo_r2 = pseudo_r2,
     aic = aic,
+    aic_type = aic_type,
     y_server = y_server,
     eta_privacy = eta_privacy,
+    missing_policy = missing_policy,
+    data_name = data_name,
+    y_var = y_var,
+    x_vars = x_vars,
+    offset = offset,
+    weights = weights,
+    ring = effective_ring,
+    requested_ring = requested_ring,
+    effective_ring = effective_ring,
+    numeric_certificate = numeric_certificate,
+    alignment_attested = alignment_metadata$alignment_attested,
+    alignment_manifest_hash = alignment_metadata$alignment_manifest_hash,
+    cohort_id = alignment_metadata$cohort_id,
     x_means = setNames(all_x_means, all_names),
     x_sds   = setNames(all_x_sds,   all_names),
     y_sd    = if (exists("y_sd", inherits = FALSE)) y_sd else NULL,
@@ -1107,6 +1450,18 @@ print.ds.glm <- function(x, ...) {
   cat("Observations:", x$n_obs, "\n")
   cat("Predictors:", x$n_vars, "\n")
   cat("Regularization (lambda):", x$lambda, "\n")
+  if (!is.null(x$estimand)) cat("Estimand:", x$estimand, "\n")
+  if (!is.null(x$effective_ring)) {
+    cat("MPC ring: requested", x$requested_ring %||% x$effective_ring,
+        ", effective", x$effective_ring, "\n")
+  }
+  if (!is.null(x$numeric_certificate)) {
+    cat("Numeric preflight:", x$numeric_certificate$status,
+        "[", x$numeric_certificate$effective_backend, "]",
+        "| execution certified:",
+        if (isTRUE(x$numeric_certificate$numerically_certified)) "yes" else "no",
+        "\n")
+  }
   if (!is.null(x$y_server))
     cat("Label server:", x$y_server, "\n")
   cat("Iterations:", x$iterations, "\n")
@@ -1135,6 +1490,22 @@ summary.ds.glm <- function(object, ...) {
   cat("Observations:", object$n_obs, "\n")
   cat("Predictors:", object$n_vars, "\n")
   cat("Regularization (lambda):", object$lambda, "\n")
+  if (!is.null(object$effective_ring)) {
+    cat("MPC ring: requested", object$requested_ring %||% object$effective_ring,
+        ", effective", object$effective_ring, "\n")
+  }
+  if (!is.null(object$numeric_certificate)) {
+    cat("Numeric preflight:", object$numeric_certificate$status,
+        "[", object$numeric_certificate$effective_backend, "]",
+        "| execution certified:",
+        if (isTRUE(object$numeric_certificate$numerically_certified)) "yes" else "no",
+        "\n")
+    if (is.finite(object$numeric_certificate$total_numeric_error_max)) {
+      cat("Certified per-path arithmetic error bound:",
+          format(object$numeric_certificate$total_numeric_error_max,
+                 scientific = TRUE), "\n")
+    }
+  }
   if (!is.null(object$y_server))
     cat("Label server:", object$y_server, "\n")
   cat("\n")
@@ -1144,14 +1515,26 @@ summary.ds.glm <- function(object, ...) {
   cat("  Converged:", object$converged, "\n\n")
 
   cat("Deviance:\n")
-  cat("  Null deviance:    ", sprintf("%.4f", object$null_deviance),
-      " on", object$n_obs - 1, "degrees of freedom\n")
+  if (length(object$null_deviance) == 1L &&
+      is.finite(object$null_deviance)) {
+    cat("  Null deviance:    ", sprintf("%.4f", object$null_deviance),
+        " on", object$n_obs - 1, "degrees of freedom\n")
+  } else {
+    cat("  Null deviance:     unavailable for this fit contract\n")
+  }
+  residual_df <- object$df_residual %||% (object$n_obs - object$n_vars)
   cat("  Residual deviance:", sprintf("%.4f", object$deviance),
-      " on", object$n_obs - object$n_vars, "degrees of freedom\n\n")
+      " on", residual_df, "degrees of freedom\n\n")
 
   cat("Model Fit:\n")
-  cat("  Pseudo R-squared (McFadden):", sprintf("%.4f", object$pseudo_r2), "\n")
-  cat("  AIC:", sprintf("%.4f", object$aic), "\n\n")
+  r2_label <- if (identical(object$family, "gaussian")) {
+    "R-squared"
+  } else {
+    "Pseudo R-squared"
+  }
+  cat(" ", r2_label, ":", sprintf("%.4f", object$pseudo_r2), "\n")
+  cat("  AIC:", sprintf("%.4f", object$aic),
+      "[", object$aic_type %||% "unspecified", "]\n\n")
 
   cat("Coefficients:\n")
   coef_df <- data.frame(Estimate = object$coefficients)

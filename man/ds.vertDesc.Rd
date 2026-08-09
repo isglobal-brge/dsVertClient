@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertDesc.R
 \name{ds.vertDesc}
 \alias{ds.vertDesc}
-\title{Federated descriptive statistics with approximate quantiles}
+\title{Disclosure-safe descriptive statistics compatibility adapter}
 \usage{
 ds.vertDesc(
   data_name,
@@ -13,90 +13,83 @@ ds.vertDesc(
   exact_extrema = getOption("dsvert.allow_exact_extrema", FALSE),
   open_ended = getOption("dsvert.desc_open_ended", TRUE),
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  analysis_id = NULL
 )
 }
 \arguments{
 \item{data_name}{Character. Name of the aligned data frame held on each
 server.}
 
-\item{variables}{Optional: a character vector of variables of interest,
-a named list mapping server -> variables, or \code{NULL} (default) to
-auto-detect.}
+\item{variables}{Optional character vector, or a named list mapping the
+artifact-owning server to variables, used only to filter the variables
+already present in the signed artifact. \code{NULL} returns every signed
+variable. A variable absent from the artifact is an error.}
 
 \item{probs}{Numeric vector of quantile probabilities to report.
-Defaults to the usual tertiles (0.25, 0.5, 0.75).}
+Defaults to the usual quartiles (0.25, 0.5, 0.75).}
 
-\item{n_buckets}{Integer. Number of uniform histogram buckets used for
-quantile interpolation. Higher values give tighter quantile resolution
-at the cost of one extra aggregate call per variable; when
-\code{datashield.privacyLevel > 0}, the effective bucket count is capped
-by the cohort size and privacy threshold.}
+\item{n_buckets}{Legacy compatibility argument. If explicitly supplied, it
+must equal the fixed signed grid length of every selected variable. It
+never changes the server workload.}
 
-\item{range_sd}{Numeric. When exact extrema are not released, histogram
-edges are built over \code{mean +/- range_sd * sd}. Values outside that
-range are retained as under/overflow aggregate counts.}
+\item{range_sd}{Legacy data-adaptive range argument. Its omitted default is
+ignored. Explicit values are rejected because ranges are fixed by the
+custodian-owned artifact.}
 
-\item{exact_extrema}{Logical. Return exact min/max and use them for the
-histogram range. Defaults to
-\code{getOption("dsvert.allow_exact_extrema", FALSE)}.}
+\item{exact_extrema}{Logical legacy argument. \code{TRUE} is always rejected:
+exact observed minima and maxima are not disclosure-safe releases.}
 
-\item{open_ended}{Logical. When exact extrema are suppressed, use
-open-ended first/last histogram buckets so outliers are absorbed into
-coarse tail aggregates rather than disclosed as separate under/overflow
-counts.}
+\item{open_ended}{Legacy adaptive-tail argument. Its omitted default is
+ignored. Explicit values are rejected because the signed public bounds,
+grids and invalid bin define the histogram semantics.}
 
 \item{verbose}{Logical. Print per-variable progress when TRUE.}
 
 \item{datasources}{DataSHIELD connections. If \code{NULL}, auto-detected.}
+
+\item{analysis_id}{Custodian-owned describe specification id. It must name
+an existing artifact in the signed capsule. The client never discovers or
+chooses an id remotely.}
 }
 \value{
 A data frame with one row per variable containing columns:
 \itemize{
 \item \code{server}: which server holds the variable
 \item \code{variable}: column name
-\item \code{n}: number of non-missing observations
-\item \code{n_na}: number of missing observations
-\item \code{mean}, \code{sd}: local moments
-\item \code{min}, \code{max}: exact extrema only when
-\code{exact_extrema = TRUE}; otherwise \code{NA}
-\item \code{range_low}, \code{range_high}: histogram range used for
-approximate quantiles
-\item \code{quantile_status}: \code{"ran"} or the suppression reason
+\item \code{n}: DP-noisy effective count
+\item \code{n_na}: DP-noisy invalid/missing-unit count
+\item \code{mean}, \code{sd}: bounded DP mean and square root of the
+DP population central second moment (not the usual sample SD)
+\item \code{min}, \code{max}: always \code{NA}
+\item \code{range_low}, \code{range_high}: signed public bounds
+\item \code{quantile_status}: fixed-grid DP post-processing status
 \item one column per requested quantile (named \code{q25}, \code{q50},
 \code{q75} etc. by default)
 }
 }
 \description{
-Compute a federated \code{summary()}-style table of numeric
-variables held across vertically partitioned servers. Exact means and
-standard deviations are obtained from each server's local moments;
-exact extrema are suppressed by default because they can disclose
-outliers. Quantiles are interpolated from disclosure-checked histogram
-bucket counts. No observation-level quantity is reconstructed at the
-client.
+Return the historical \code{ds.vertDesc} data-frame shape from
+one custodian-owned, sticky \code{ds.vertDPDescribe} capsule artifact.
+Counts, moments and quantiles are differentially private. Observed extrema
+and data-adaptive histogram queries are never requested.
 }
 \details{
-Per-variable flow:
-\enumerate{
-\item \code{dsvertLocalMomentsDS} returns scalar moments in a single
-aggregate call; exact extrema are omitted unless explicitly enabled.
-\item Edges for \code{dsvertHistogramDS} are derived from either exact
-extrema (opt-in) or a moment-bounded range
-\code{mean +/- range_sd * sd}.
-\item Client-side linear interpolation within the target bucket converts
-the cumulative count to the requested quantile.
-}
-
-The quantile estimate inherits the histogram's resolution; for
-\code{n_buckets = 100} on a roughly normal cohort, the median is typically
-accurate within 0.5\\% of the exact value, tightening with \code{n_buckets}
-at linear extra cost.
+The function makes one call to \code{ds.vertDPDescribe}. Quantile
+probabilities and variable selection are then pure client-side
+post-processing of that single immutable release. The returned object has
+class \code{ds.vertDesc} for compatibility and carries \code{dp_release},
+\code{dp_descriptives}, and \code{dp_quantile_bands} attributes with the
+formal release and mechanism-uncertainty metadata. These regions exclude
+sampling uncertainty. In particular, \code{n_na} is the noised fixed invalid
+bin rather than an exact row-level NA count, and quantiles are fixed-grid
+upper endpoints rather than interpolation from analyst-selected bins.
 }
 \examples{
 \dontrun{
 conns <- DSI::datashield.login(logindata)
 ds.vertDesc("DA", variables = c("age", "bmi", "glu", "bp"),
-            probs = c(0.25, 0.5, 0.75, 0.9))
+            probs = c(0.25, 0.5, 0.75, 0.9),
+            analysis_id = "baseline_describe_v1")
 }
 }

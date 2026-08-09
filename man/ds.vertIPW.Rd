@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertIPW.R
 \name{ds.vertIPW}
 \alias{ds.vertIPW}
-\title{Federated inverse-probability-weighted GLM (two-stage)}
+\title{Quarantined IPW compatibility frontdoor}
 \usage{
 ds.vertIPW(
   outcome_formula,
@@ -16,41 +16,29 @@ ds.vertIPW(
 )
 }
 \arguments{
-\item{outcome_formula}{Formula for the outcome model.}
+\item{outcome_formula, propensity_formula, data, weights_column, outcome_family, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
+public frontdoor fails locally.}
 
-\item{propensity_formula}{Formula for the propensity (binary treatment) model.}
-
-\item{data}{Name of the aligned data frame on each server.}
-
-\item{weights_column}{Name of the column on the outcome server that
-holds 1/P(T=1|X) for treated units and 1/(1-P(T=1|X)) for controls,
-or the stabilised analogue. The column must be created server-side
-before this wrapper is called; it is never returned to the client.}
-
-\item{outcome_family}{Family for the outcome model. Default "gaussian".}
-
-\item{verbose}{Logical. Print stage-by-stage progress (default TRUE).}
-
-\item{datasources}{DataSHIELD connections; if NULL, uses
-\code{DSI::datashield.connections_find()}.}
-
-\item{...}{Passed through to both underlying
-\code{ds.vertGLM} calls.}
+\item{...}{Retained compatibility arguments; not evaluated.}
 }
 \value{
-list of class \code{ds.vertIPW} with \code{propensity} and
-\code{outcome} ds.glm objects.
+No fitted object. The function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
-Convenience wrapper implementing the two-stage IPW
-(inverse-probability weighting) workflow on vertically partitioned
-DataSHIELD data.
-
-Stage 1: fit the propensity model via \code{ds.vertGLM} with a binomial
-family on the supplied \code{propensity_formula}.
-Stage 2: fit the outcome model via \code{ds.vertGLM} with a
-server-side \code{weights_column}. The current product route assumes
-this column already contains IPW weights on the server that owns the
-treatment / outcome variables; the weights are consumed by the
-protected weighted-GLM path and are not returned to the client.
+This exported name is retained for API compatibility. It
+raises a typed \code{dsvert_route_unavailable} condition before any DSI
+call and computes or returns no propensity model, weights, effect
+estimate, or diagnostic. Retained two-stage code after the gate is
+unreachable through this public frontdoor and carries no disclosure, DP,
+causal-identification, accuracy, or availability claim.
+}
+\details{
+Promotion requires signed treatment/outcome binding, a complete
+propensity and outcome workflow, bounded weights and contributions,
+explicit estimand and identification assumptions, and validated
+uncertainty.
+}
+\seealso{
+\code{\link{ds.vertMethodStatus}}
 }

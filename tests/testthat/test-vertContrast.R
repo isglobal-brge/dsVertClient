@@ -11,6 +11,7 @@ make_fit_with_cov <- function() {
     std_errors = sqrt(diag(cov)),
     covariance = cov,
     family = "gaussian", n_obs = 200L, n_vars = 4L,
+    converged = TRUE, lambda = 0,
     deviance = 100, null_deviance = 200)
   class(fit) <- c("ds.glm", "list")
   fit
@@ -22,8 +23,8 @@ test_that("contrast matches single-coef Wald when K is one-hot row", {
   res <- ds.vertContrast(fit, K = K)
 
   w <- ds.vertWald(fit, parm = "x1")
-  # chi^2 on 1 df equals z^2
-  expect_equal(res$statistic, w$z^2, tolerance = 1e-10)
+  # F on 1 numerator df equals t^2.
+  expect_equal(res$statistic, w$t^2, tolerance = 1e-10)
   expect_equal(res$df, 1L)
   expect_equal(res$p_value, w$p_value, tolerance = 1e-10)
 })
@@ -43,8 +44,9 @@ test_that("contrast supports non-zero null vector", {
   res <- ds.vertContrast(fit, K = K, m = m)
   expect_equal(unname(res$estimate), c(0.5 - 0.4, -0.3 - (-0.5)),
                tolerance = 1e-10)
-  # With small SE = 0.1, both estimates (0.1 and 0.2) -> W = (0.1/0.1)^2 + (0.2/0.1)^2 = 1+4=5
-  expect_equal(res$statistic, 5.0, tolerance = 1e-8)
+  # W = 5 and the Gaussian joint reference statistic is F = W / 2.
+  expect_equal(res$wald_statistic, 5.0, tolerance = 1e-8)
+  expect_equal(res$statistic, 2.5, tolerance = 1e-8)
 })
 
 test_that("contrast errors when covariance is missing", {
@@ -54,11 +56,13 @@ test_that("contrast errors when covariance is missing", {
                "does not expose the full covariance matrix")
 })
 
-test_that("contrast errors on singular K*Cov*Kt", {
+test_that("contrast returns typed non-identifiability on singular K*Cov*Kt", {
   fit <- make_fit_with_cov()
   # Perfectly redundant K rows
   K <- rbind(c(0, 1, 0, 0), c(0, 2, 0, 0))  # linearly dependent
-  expect_error(ds.vertContrast(fit, K = K), "singular")
+  err <- tryCatch(ds.vertContrast(fit, K = K), error = identity)
+  expect_s3_class(err, "non_identifiable")
+  expect_identical(err$reason, "singular_contrast_covariance")
 })
 
 test_that("contrast matches lmtest::waldtest-style joint on linear model", {
@@ -71,7 +75,7 @@ test_that("contrast matches lmtest::waldtest-style joint on linear model", {
   dimnames(cov) <- list(names(coefs), names(coefs))
   fit <- list(coefficients = coefs, std_errors = sqrt(diag(cov)),
               covariance = cov, family = "gaussian", n_obs = 100L,
-              n_vars = 3L)
+              n_vars = 3L, converged = TRUE, lambda = 0)
   class(fit) <- c("ds.glm", "list")
 
   # Test joint hypothesis b = 0, c = 0
@@ -79,6 +83,7 @@ test_that("contrast matches lmtest::waldtest-style joint on linear model", {
   res <- ds.vertContrast(fit, K = K)
   # Manually: V = K cov K^T = [[2,0],[0,0.25]]; V^-1 = [[0.5,0],[0,4]]
   # W = [2, 3] V^-1 [2, 3]^T = 2*0.5*2 + 3*4*3 = 2 + 36 = 38
-  expect_equal(res$statistic, 38, tolerance = 1e-10)
+  expect_equal(res$wald_statistic, 38, tolerance = 1e-10)
+  expect_equal(res$statistic, 19, tolerance = 1e-10)
   expect_equal(res$df, 2L)
 })

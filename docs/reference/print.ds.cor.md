@@ -1,6 +1,6 @@
 # Print Method for ds.cor Objects
 
-Prints a summary of correlation results.
+Prints a summary of the DP correlation result.
 
 ## Usage
 
@@ -13,12 +13,12 @@ print(x, digits = 3, ...)
 
 - x:
 
-  A ds.cor object
+  A `ds.cor` object.
 
 - digits:
 
-  Number of digits for correlation matrix. Default 3.
+  Number of displayed digits.
 
 - ...:
 
-  Additional arguments (ignored)
+  Additional arguments passed to `print`.

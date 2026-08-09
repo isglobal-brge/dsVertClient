@@ -4,126 +4,23 @@
   opt || env %in% c("1", "true", "yes")
 }
 
-#' @title Cox discrete-time pooled-logistic -- non-disclosive option B (#D')
-#' @description K=2 and K>=3 OT-Beaver discrete-time Cox via pooled-logistic with
-#'   the per-patient ending-bin index J_i hidden from the covariate
-#'   (non-label) server. Closes the disclosure gap of the leaky variant
-#'   \code{run_cox_discrete} (where the person-period frame leaked
-#'   J_i = #replicas(X_i) to the covariate server).
+#' @title Quarantined discrete-hazard compatibility frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and computes or returns no model, statistic, diagnostic, or
+#'   patient-derived metadata. The retained pooled-logistic research code is
+#'   unreachable through this public frontdoor and is not a Cox fallback or a
+#'   public disclosure, DP, accuracy, or availability claim.
 #'
-#'   Architecture (selected by David 2026-04-27 ~10:00, option B in the
-#'   project_k2_strict_unified_plan_2026-04-27.md "Option B FEASIBILITY
-#'   ANALYSIS" Sec.):
-#'
-#'   1. Outcome (label) server holds (time, status) -> computes J_i +
-#'      m_ij = I(j <= J_i) + y_ij = I(j == J_i AND status_i = 1) plaintext.
-#'   2. m and y are split into Ring127 additive shares (frac=50) between
-#'      OS and the selected fusion/NL DCF party. The fusion party never sees
-#'      J_i directly -- only uniform-random-looking length-(J*n) shares whose
-#'      mod-2^127 sum with OS shares reconstructs the masks.
-#'   3. Each feature server replicates X_i to a uniform Jxn person-period
-#'      frame (every patient contributes exactly J rows, regardless of true
-#'      J_i). K>=3 non-DCF servers export only encrypted additive shares of
-#'      this uniform frame. Zero row-count signal leaks per Aliasgari-Blanton
-#'      2013 NDSS share-mask gating folklore.
-#'   4. Newton inner loop: mask-gated residual \code{(y - p) * m}
-#'      via \code{.ring127_vecmul} Beaver round per bin + mask-gated Hessian
-#'      \code{X^T diag(W * m) X} share-space + ridge epsilon*I (~1e-8) on
-#'      Hessian diagonal to handle all-zero-mask alpha_j strata per Christensen
-#'      2019 Sec.A.3.
-#'
-#'   The masked-Newton loop runs over exactly two DCF parties. For K=2 those
-#'   parties are the two servers. For K>=3 the outcome server and one selected
-#'   fusion server hold the DCF state; additional feature servers only export
-#'   encrypted additive shares of their uniform person-period covariate frame.
-#'
-#'   Citations:
-#'   \itemize{
-#'     \item Aliasgari & Blanton 2013 NDSS (eprint 2012/405) -- share-mask
-#'       gating for FP branch elimination, the underlying primitive.
-#'     \item De Cock et al. 2016 (eprint 2016/736) -- oblivious selection
-#'       under additive secret sharing.
-#'     \item Mohassel & Zhang 2017 IEEE S&P (eprint 2017/396) SecureML --
-#'       probabilistic-truncation noise model that bounds the Ring127
-#'       per-mult error budget.
-#'     \item Catrina & Saxena 2010 FC Sec.3.3 -- fixed-point representation
-#'       statistical-security analysis (kappa = ring_bits - 2*frac).
-#'     \item Andreux et al. 2020 arXiv:2006.08997 -- discrete-time Cox via
-#'       pooled-logistic; the algorithmic substrate.
-#'     \item Allison 1982 *Sociological Methodology* 13:61-98 -- canonical
-#'       pooled-logistic equivalence to discrete Cox.
-#'     \item Prentice & Gloeckler 1978 *Biometrics* 34:57-67 -- discrete
-#'       Cox MLE properties.
-#'     \item Christensen 2019 CRAN ordinal vignette Sec.A.3 -- Newton
-#'       diagonal eigenvalue inflation for handling singular H.
-#'   }
-#'
-#' @param formula Cox-style formula \code{Surv(time, status) ~ x1 + x2 +
-#'   ...} (interpreted as discrete-time pooled-logistic on time-bin
-#'   reformulation). The LHS \code{Surv(time_var, status_var)} is parsed
-#'   to extract the time / status column names; OS must hold both.
-#' @param data Character. Server-side data frame symbol.
-#' @param J Integer. Number of time bins (default 5L). Larger J -> finer
-#'   discretisation, lower bias to continuous Cox, higher MPC cost.
-#' @param bin_breaks Numeric vector of length J+1 (sorted, increasing,
-#'   first = 0). If \code{NULL}, the caller must precompute and pass
-#'   them -- they are public metadata that must be reproducible across
-#'   servers (typically equal-quantile breaks of observed event times,
-#'   computed at the coordinator from non-disclosive aggregates).
-#' @param target Character. \code{"discrete_logit"} keeps the existing
-#'   non-disclosive pooled-logistic discrete-time target. \code{"cox_profile"}
-#'   uses event-time risk-set masks and reconstructs only Breslow Cox slope
-#'   score/Hessian aggregates.
-#' @param max_event_times Integer public runtime guard for \code{target =
-#'   "cox_profile"}.
-#' @param max_iter Integer. Newton outer iterations (default 20L). Used
-#'   by the masked-Newton inner loop.
-#' @param tol Numeric. Convergence tolerance on max(|score|) (default
-#'   1e-6). STRICT 1e-4 on beta_hat vs glm pooled-logistic reachable per the
-#'   Catrina-Saxena 2010 Sec.3.3 noise-floor analysis (frac=50 Ring127 per-
-#'   mult ulp approx 8.9e-16; depth-50 chain -> relative error approx 4.4e-14, ~10
-#'   orders of margin to STRICT 1e-4 on coefficients).
-#' @param newton Logical. If TRUE (default), run the masked-Newton inner
-#'   loop after the share-domain setup to produce coefficient
-#'   estimates. If FALSE, return primitive/setup audit metadata with
-#'   coefficients=NULL (diagnostic mode for primitive validation).
-#' @param ridge_eps Numeric. Diagonal eigenvalue inflation added to the
-#'   Hessian before \code{solve()} to handle all-zero-mask alpha_j strata
-#'   per Christensen 2019 CRAN ordinal vignette Sec.A.3, plus to suppress
-#'   the spurious near-singular eigenvalues introduced by the masked-W
-#'   noise (Catrina-Saxena 2010 frac=50 truncation accumulating across
-#'   the \code{mask * W * X^T * X} chain). Default 1e-6 -- empirically drops the
-#'   L2 fixture rel from 4.4e-2 (epsilon=1e-8) to 4.1e-4 by suppressing the
-#'   |step|->noise oscillation around the iter-4 attractor.
-#' @param debug_trace Logical. If \code{TRUE}, retain per-iteration beta and
-#'   gradient traces plus diagnostic bin summaries for local debugging.
-#'   Defaults to \code{FALSE}; setting it to \code{TRUE} requires
-#'   \code{options(dsvert.allow_cox_debug_trace = TRUE)} or the
-#'   \code{DSVERT_ALLOW_COX_DEBUG_TRACE=true} environment variable.
-#' @param verbose Logical.
-#' @param datasources DSI connections. The outcome server holds
-#'   \code{time_var/status_var}. For K>=3, the outcome server and one selected
-#'   fusion server are the DCF parties; other servers contribute encrypted
-#'   additive shares of their uniform person-period covariate frames.
-#' @return List with class \code{"ds.vertCoxDiscreteNonDisclosive"}:
-#'   \describe{
-#'     \item{stage}{Character: \code{"converged"} or \code{"max_iter"} when
-#'       \code{newton=TRUE}; \code{"primitives_validated"} in diagnostic
-#'       \code{newton=FALSE} mode.}
-#'     \item{coefficients}{Named pooled-logistic coefficients when
-#'       \code{newton=TRUE}; otherwise \code{NULL}.}
-#'     \item{n_obs}{Number of patients.}
-#'     \item{J}{Number of bins.}
-#'     \item{n_pp}{Person-period rows = J * n_obs (uniform -- no leak).}
-#'     \item{mask_share_key, y_share_key}{Session slot names where the
-#'       Ring127 (m, y) shares are stored on both DCF parties.}
-#'     \item{expanded_x_name}{Symbol of the uniform Jxn covariate frame at
-#'       each participating feature server.}
-#'     \item{os_name, nl_name, non_dcf_servers}{Outcome server, selected
-#'       fusion/DCF peer, and any K>=3 non-DCF feature servers.}
-#'     \item{disclosure_audit}{List of per-step disclosure validation
-#'       (uniform J*n expansion and no per-patient row-count variation).}
-#'   }
+#' @details A future discrete-time route must use its own signed bounded
+#'   hazard estimand and must remain explicitly distinct from Cox partial
+#'   likelihood.
+#' @param formula,data,J,bin_breaks,target,max_event_times,max_iter,tol,newton,ridge_eps,debug_trace,verbose,datasources
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertCoxDiscreteNonDisclosive <- function(formula,
                                              data       = NULL,
@@ -139,12 +36,18 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                                              debug_trace = FALSE,
                                              verbose    = FALSE,
                                              datasources = NULL) {
+  .dsvert_block_retired_remote_route("cox")
   if (is.null(datasources))
     datasources <- DSI::datashield.connections_find()
   if (length(datasources) < 2L)
     stop("ds.vertCoxDiscreteNonDisclosive requires at least two servers.",
          call. = FALSE)
   target <- match.arg(target)
+  if (!is.numeric(ridge_eps) || length(ridge_eps) != 1L ||
+      !is.finite(ridge_eps) || ridge_eps < 0) {
+    stop("ridge_eps must be one finite non-negative number", call. = FALSE)
+  }
+  ridge_eps <- as.numeric(ridge_eps)
   if (isTRUE(debug_trace) && !.cox_nd_debug_trace_allowed()) {
     stop("Cox debug_trace is disabled by default because it returns ",
          "diagnostic traces/bin summaries outside the paper disclosure ",
@@ -208,12 +111,15 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     max_event_times <- as.integer(max_event_times)
   }
 
-  session_id <- paste0("cox_nd_",
-                        format(Sys.time(), "%Y%m%d%H%M%S"),
-                        "_", sample.int(.Machine$integer.max, 1L))
+  session_id <- .dsvert_uuid4()
   server_names <- names(datasources)
   if (any(!nzchar(server_names)))
     stop("datasources must be a named list", call. = FALSE)
+  on.exit({
+    .dsvert_cleanup_best_effort(
+      datasources, call(name = "mpcCleanupDS", session_id = session_id))
+    .dsvert_reset_chunk_size()
+  }, add = TRUE)
 
   # Identify the outcome (label) server: the one whose data frame
   # holds the (time_var, status_var) columns. We verify via a colnames
@@ -221,11 +127,12 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   # datasources in any order.
   os_idx <- NA_integer_
   cols_by_server <- list()
+  column_results <- .dsvert_aggregate_strict(
+    conns = datasources,
+    expr = call(name = "dsvertColNamesDS", data_name = data),
+    operation = "Cox column discovery")
   for (i in seq_along(datasources)) {
-    cn_res <- DSI::datashield.aggregate(
-      conns = datasources[i],
-      expr  = call(name = "dsvertColNamesDS", data_name = data))
-    cn_inner <- if (is.list(cn_res)) cn_res[[1L]] else cn_res
+    cn_inner <- column_results[[server_names[[i]]]]
     cn <- if (is.list(cn_inner) && !is.null(cn_inner$columns))
             cn_inner$columns else cn_inner
     cols_by_server[[server_names[i]]] <- cn
@@ -273,12 +180,12 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   # ---- Phase 0: transport keys (mirror .glm_mpc_setup minimal subset) ----
   transport_pks <- list()
   identity_info <- list()
+  transport_results <- .dsvert_aggregate_strict(
+    conns = datasources,
+    expr = call(name = "glmRing63TransportInitDS", session_id = session_id),
+    operation = "Cox transport initialisation")
   for (server in server_names) {
-    ci <- which(server_names == server)
-    tk_res <- DSI::datashield.aggregate(
-      conns = datasources[ci],
-      expr  = call(name = "glmRing63TransportInitDS", session_id = session_id))
-    if (is.list(tk_res) && length(tk_res) == 1L) tk_res <- tk_res[[1L]]
+    tk_res <- transport_results[[server]]
     transport_pks[[server]] <- tk_res$transport_pk
     if (!is.null(tk_res$identity_pk)) {
       identity_info[[server]] <- list(
@@ -295,14 +202,14 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   id_b64 <- if (length(identity_info) > 0L) {
     .json_to_b64url(identity_info[sort(names(identity_info))])
   } else ""
-  for (server in server_names) {
-    ci <- which(server_names == server)
-    DSI::datashield.aggregate(datasources[ci],
-      call(name = "mpcStoreTransportKeysDS",
-           transport_keys_b64 = pk_b64,
-           identity_info_b64 = id_b64,
-           session_id = session_id))
-  }
+  .dsvert_aggregate_strict(
+    conns = datasources,
+    expr = call(name = "mpcStoreTransportKeysDS",
+                transport_keys_b64 = pk_b64,
+                identity_info_b64 = id_b64,
+                session_id = session_id),
+    operation = "Cox pinned-key binding",
+    result_contract = "logical_true")
 
   .to_b64url <- function(x) {
     if (is.null(x) || !nzchar(x)) return(x)
@@ -314,7 +221,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   mask_share_key <- "cox_nd_mask_share"
   y_share_key    <- "cox_nd_y_share"
   if (identical(target, "discrete_logit")) {
-    share_res <- DSI::datashield.aggregate(
+    share_res <- .dsvert_aggregate_strict(
       conns = os_conn,
       expr  = call(name = "dsvertCoxDiscreteShareMaskDS",
                     data_name        = data,
@@ -326,9 +233,10 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                     y_output_key     = y_share_key,
                     target_pk        = .to_b64url(transport_pks[[nl_name]]),
                     debug            = isTRUE(debug_trace),
-                    session_id       = session_id))
+                    session_id       = session_id),
+      operation = "Cox discrete mask sharing")
   } else {
-    share_res <- DSI::datashield.aggregate(
+    share_res <- .dsvert_aggregate_strict(
       conns = os_conn,
       expr  = call(name = "dsvertCoxEventTimeShareMaskDS",
                     data_name        = data,
@@ -339,7 +247,8 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                     target_pk        = .to_b64url(transport_pks[[nl_name]]),
                     max_event_times  = as.numeric(max_event_times),
                     debug            = isTRUE(debug_trace),
-                    session_id       = session_id))
+                    session_id       = session_id),
+      operation = "Cox event-time mask sharing")
   }
   if (is.list(share_res) && length(share_res) == 1L)
     share_res <- share_res[[1L]]
@@ -355,22 +264,14 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   # length-(J*n) Ring127 share fits in one chunk comfortably.
   blob_key_m <- "cox_nd_mask_sealed"
   blob_key_y <- "cox_nd_y_sealed"
-  DSI::datashield.aggregate(
-    conns = nl_conn,
-    expr  = call(name = "mpcStoreBlobDS",
-                  key        = blob_key_m,
-                  chunk      = share_res$sealed_m_blob,
-                  session_id = session_id))
-  DSI::datashield.aggregate(
-    conns = nl_conn,
-    expr  = call(name = "mpcStoreBlobDS",
-                  key        = blob_key_y,
-                  chunk      = share_res$sealed_y_blob,
-                  session_id = session_id))
+  .dsvert_store_blob(
+    share_res$sealed_m_blob, blob_key_m, nl_conn, session_id)
+  .dsvert_store_blob(
+    share_res$sealed_y_blob, blob_key_y, nl_conn, session_id)
 
   # ---- Phase 2: NL decrypts sealed blobs into Ring127 shares ----
   if (verbose) message("[#D' non-disclosive] Phase 2: NL receive shares")
-  recv_res <- DSI::datashield.aggregate(
+  recv_res <- .dsvert_aggregate_strict(
     conns = nl_conn,
     expr  = call(name = "dsvertCoxDiscreteReceiveSharesDS",
                     mask_blob_key   = blob_key_m,
@@ -378,7 +279,8 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                     mask_output_key = mask_share_key,
                     y_output_key    = y_share_key,
                     n_pp            = as.numeric(n_pp),
-                    session_id      = session_id))
+                    session_id      = session_id),
+    operation = "Cox encrypted-share receipt")
   if (is.list(recv_res) && length(recv_res) == 1L)
     recv_res <- recv_res[[1L]]
   if (!isTRUE(recv_res$stored))
@@ -388,14 +290,15 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (verbose) message("[#D' non-disclosive] Phase 3: fusion uniform expansion")
   x_nl <- x_vars_by_server[[nl_name]]
   expanded_x_name <- sprintf("cox_nd_pp_%s", substr(session_id, 1L, 12L))
-  expand_res <- DSI::datashield.aggregate(
+  expand_res <- .dsvert_aggregate_strict(
     conns = nl_conn,
     expr  = call(name = "dsvertCoxDiscreteExpandXDS",
                   data_name     = data,
                   new_data_name = expanded_x_name,
                   x_vars        = x_nl,
                   J             = as.numeric(J),
-                  session_id    = session_id))
+                  session_id    = session_id),
+    operation = "Cox fusion-frame expansion")
   if (is.list(expand_res) && length(expand_res) == 1L)
     expand_res <- expand_res[[1L]]
   if (!isTRUE(expand_res$stored) || expand_res$n_pp != n_pp)
@@ -490,40 +393,18 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   if (length(x_os) == 0L && length(x_nl) == 0L && p_extra == 0L)
     stop("No covariates found at any server (RHS empty after intersection).",
          call. = FALSE)
-  if (length(x_os) > 0L) {
-    DSI::datashield.aggregate(
-      conns = os_conn,
-      expr  = call(name = "dsvertCoxDiscreteExpandXDS",
-                    data_name     = data,
-                      new_data_name = expanded_x_name,
-                      x_vars        = x_os,
-                      J             = as.numeric(J),
-                      session_id    = session_id))
-  } else {
-    # OS still needs the bin-dummy frame to share -- call expansion with
-    # zero x_vars (the primitive still emits bin dummies + patient_id).
-    DSI::datashield.aggregate(
-      conns = os_conn,
-      expr  = call(name = "dsvertCoxDiscreteExpandXDS",
-                    data_name     = data,
-                      new_data_name = expanded_x_name,
-                      x_vars        = character(0),
-                      J             = as.numeric(J),
-                      session_id    = session_id))
-  }
-  for (srv in non_dcf_servers) {
-    x_extra <- x_vars_by_server[[srv]]
-    if (length(x_extra) == 0L) next
-    ci <- which(server_names == srv)
-    DSI::datashield.aggregate(
-      conns = datasources[ci],
-      expr  = call(name = "dsvertCoxDiscreteExpandXDS",
-                    data_name     = data,
-                    new_data_name = expanded_x_name,
-                    x_vars        = x_extra,
-                    J             = as.numeric(J),
-                    session_id    = session_id))
-  }
+  expand_servers <- c(os_name, non_dcf_servers[vapply(
+    non_dcf_servers, function(srv) length(x_vars_by_server[[srv]]) > 0L,
+    logical(1L))])
+  expand_exprs <- stats::setNames(lapply(expand_servers, function(srv) {
+    call(name = "dsvertCoxDiscreteExpandXDS",
+         data_name = data, new_data_name = expanded_x_name,
+         x_vars = x_vars_by_server[[srv]], J = as.numeric(J),
+         session_id = session_id)
+  }), expand_servers)
+  .dsvert_fanout_by_site(
+    datasources[expand_servers], expand_exprs,
+    operation = "Cox distributed frame expansion")
 
   # Discrete target estimates bin baseline intercepts. Cox-profile target
   # profiles the baseline hazard out and estimates slopes only.
@@ -543,23 +424,18 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     stop("p_total < 1 after expansion -- degenerate design.", call. = FALSE)
 
   # --- Phase 4b: Ring127 X-share via k2ShareInputDS at both servers ---
-  .dsAgg <- function(conns, expr, ...)
-    DSI::datashield.aggregate(conns, expr, ...)
-  .sendBlob <- function(blob, key, conn_idx) {
+  .dsAgg <- function(conns, expr, ...) {
+    if (length(list(...)))
+      stop("Additional aggregate controls are unavailable in a Cox MPC phase",
+           call. = FALSE)
+    .dsvert_aggregate_strict(
+      conns = conns, expr = expr, operation = "Cox MPC protocol phase")
+  }
+  .sendBlob <- function(blob, contract, conn_idx) {
     if (is.null(blob) || !nzchar(blob)) return(invisible())
-    conn <- datasources[conn_idx]
-    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        DSI::datashield.aggregate(conn,
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               session_id = session_id))
-      } else {
-        DSI::datashield.aggregate(conn,
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               chunk_index = chunk_idx, n_chunks = n_chunks,
-               session_id = session_id))
-      }
-    })
+    .dsvert_store_transfer_or_legacy(
+      blob, contract, datasources[conn_idx], session_id,
+      producer_conns = datasources)
   }
 
   share_results <- list()
@@ -585,35 +461,35 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
   for (srv in server_list) {
     peer <- setdiff(server_list, srv)
     peer_ci <- which(server_names == peer)
-    .sendBlob(share_results[[srv]]$encrypted_x_share, "k2_peer_x_share", peer_ci)
+    .sendBlob(share_results[[srv]]$encrypted_x_share,
+              share_results[[srv]]$encrypted_x_transfer, peer_ci)
   }
   for (srv in server_list) {
     ci   <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
     .dsAgg(datasources[ci], call(name = "k2ReceiveShareDS",
       peer_p = as.numeric(length(x_vars_per_server[[peer]])),
+      peer_name = peer,
       session_id = session_id))
   }
   for (srv in non_dcf_servers) {
     extra_p <- length(x_vars_per_server[[srv]])
     if (extra_p == 0L) next
     ci <- which(server_names == srv)
-    r <- .dsAgg(datasources[ci], call(name = "k2ShareInputDS",
+    r <- .dsAgg(datasources[ci], call(name = "glmRing63ShareExtraInputDS",
       data_name = expanded_x_name,
       x_vars = x_vars_per_server[[srv]],
-      y_var = NULL,
       peer_pk = .to_b64url(transport_pks[[nl_name]]),
       ring = 127,
       session_id = session_id))
     if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-    .sendBlob(r$encrypted_x_share, paste0("k2_extra_x_share_", srv), nl_idx)
+    .sendBlob(r$encrypted_x_share, r$encrypted_x_transfer, nl_idx)
 
     r2 <- .dsAgg(datasources[ci], call(name = "glmRing63ExportOwnShareDS",
       peer_pk = .to_b64url(transport_pks[[os_name]]),
       session_id = session_id))
     if (is.list(r2) && length(r2) == 1L) r2 <- r2[[1L]]
-    .sendBlob(r2$encrypted_own_share, paste0("k2_extra_x_share_", srv),
-              os_idx)
+    .sendBlob(r2$encrypted_own_share, r2$encrypted_own_transfer, os_idx)
   }
   for (srv in non_dcf_servers) {
     extra_p <- length(x_vars_per_server[[srv]])
@@ -621,7 +497,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     for (dcf_srv in server_list) {
       .dsAgg(datasources[which(server_names == dcf_srv)],
         call(name = "glmRing63ReceiveExtraShareDS",
-             extra_key = paste0("k2_extra_x_share_", srv),
+             source_name = srv,
              extra_p = as.integer(extra_p),
              session_id = session_id))
     }
@@ -831,13 +707,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       iter_audit[[iter]] <- list(score_max = score_norm,
                                  score_l2 = score_l2,
                                  target = "cox_profile")
-      if (score_norm < tol) {
-        converged <- TRUE; final_iter <- iter; break
-      }
-      if (iter >= as.integer(max_iter)) {
-        final_iter <- iter
-        break
-      }
+      score_converged <- is.finite(score_norm) && score_norm < tol
 
       H <- matrix(0, p_total, p_total,
                   dimnames = list(beta_names, beta_names))
@@ -876,14 +746,33 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
         }
       }
 
-      H_ridged <- H + ridge_eps * diag(p_total)
-      step <- tryCatch(solve(H_ridged, grad),
-        error = function(e) {
-          if (verbose) message(sprintf(
-            "[#D' Cox-profile iter %d] solve failed: %s -- ridge bumped to 1e-4",
-            iter, conditionMessage(e)))
-          solve(H + 1e-4 * diag(p_total), grad)
-        })
+      information_step <- .dsvert_solve_identifiable(
+        H, grad,
+        context = "The protected Breslow Cox information",
+        reason = "singular_cox_information",
+        symmetric = TRUE)
+      # A small/zero score does not establish identifiability: a singular
+      # information matrix can have a zero score.  Certify the undamped
+      # information before accepting convergence or a max-iteration result.
+      if (score_converged) {
+        converged <- TRUE
+        final_iter <- iter
+        break
+      }
+      if (iter >= as.integer(max_iter)) {
+        final_iter <- iter
+        break
+      }
+      H_step <- H + ridge_eps * diag(p_total)
+      step <- if (isTRUE(ridge_eps > 0)) {
+        .dsvert_solve_identifiable(
+          H_step, grad,
+          context = "The protected Breslow Cox damped Newton system",
+          reason = "singular_cox_information",
+          symmetric = TRUE)
+      } else {
+        information_step
+      }
       step_max_raw <- max(abs(step))
       profile_step_tol <- as.numeric(getOption(
         "dsvert.cox_profile_step_tol", max(as.numeric(tol), 1e-4)))
@@ -909,18 +798,11 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       next
     }
 
-    # 2. neg_eta = (-1) * eta  (local scale, no MPC round)
-      for (srv in server_list) {
-        ci <- which(server_names == srv)
-        is_c <- (srv == os_name)
-        .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
-          in_key     = "cox_nd_eta",
-          scalar_fp  = fp_neg1_b64,
-          output_key = "cox_nd_neg_eta",
-          n          = as.numeric(n_pp),
-          is_party0  = is_c,
-          session_id = session_id))
-      }
+    # 2. neg_eta = (-1) * eta with joint exact truncation.
+    .ring127_exact_public_scale(
+      "cox_nd_eta", fp_neg1_b64, "cox_nd_neg_eta", n_pp,
+      datasources, dealer_ci, server_list, server_names, os_name, nl_name,
+      transport_pks, session_id, .dsAgg, .sendBlob)
 
     # 3. exp(-eta)  (Chebyshev-Horner extended for |x|<=10)
     .ring127_exp_round_keyed_extended(
@@ -1059,9 +941,7 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     }
     iter_audit[[iter]] <- list(score_max = score_norm,
                                score_l2 = score_l2)
-    if (score_norm < tol) {
-      converged <- TRUE; final_iter <- iter; if (.dsvert_early_stop()) break
-    }
+    score_converged <- is.finite(score_norm) && score_norm < tol
 
     if (debug_trace && iter == 1L) {
       y_by_bin <- numeric(J)
@@ -1107,11 +987,6 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                                 share_mask_debug = share_res$debug)
     }
 
-    if (iter >= as.integer(max_iter)) {
-      final_iter <- iter
-      break
-    }
-
     # 11. Per-pair Hessian H[j,k] = X[:,j]^T diag(mw) X[:,k] -- symmetric,
     #     so we compute upper triangle only.
     H <- matrix(0, p_total, p_total,
@@ -1150,20 +1025,39 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
       }
     }
 
-    # 12. Ridge epsilon*I + Newton solve  (Christensen 2019 Sec.A.3 diagonal
-    #     eigenvalue inflation handles all-zero-mask alpha_j strata where
-    #     no patient was at risk in bin j -> singular block).  Step
+    # 12. Certify the undamped information, then optionally damp the Newton
+    #     step. An all-zero-mask alpha_j stratum is non-identifiable and must
+    #     fail the certification rather than be hidden by damping. Step
     #     magnitude cap to 1.0 per coefficient prevents the iter-4 ->
     #     iter-5 overshoot observed empirically when bin2 sits near
     #     zero (Nocedal-Wright 2006 Sec.4.1 trust-region radius cap).
-    H_ridged <- H + ridge_eps * diag(p_total)
-    step <- tryCatch(solve(H_ridged, grad),
-      error = function(e) {
-        if (verbose) message(sprintf(
-          "[#D' Newton iter %d] solve failed: %s -- ridge bumped to 1e-4",
-          iter, conditionMessage(e)))
-        solve(H + 1e-4 * diag(p_total), grad)
-      })
+    information_step <- .dsvert_solve_identifiable(
+      H, grad,
+      context = "The protected discrete-time Cox information",
+      reason = "singular_discrete_cox_information",
+      symmetric = TRUE)
+    # Certify the undamped information even when the initial/current score is
+    # already below tolerance; otherwise a flat, non-identifiable likelihood
+    # could be reported as converged.
+    if (score_converged) {
+      converged <- TRUE
+      final_iter <- iter
+      break
+    }
+    if (iter >= as.integer(max_iter)) {
+      final_iter <- iter
+      break
+    }
+    H_step <- H + ridge_eps * diag(p_total)
+    step <- if (isTRUE(ridge_eps > 0)) {
+      .dsvert_solve_identifiable(
+        H_step, grad,
+        context = "The protected discrete-time Cox damped Newton system",
+        reason = "singular_discrete_cox_information",
+        symmetric = TRUE)
+    } else {
+      information_step
+    }
     step_max_raw <- max(abs(step))
     cap <- 1.0
     cap_factor <- if (is.finite(step_max_raw) && step_max_raw > cap)
@@ -1232,6 +1126,15 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     max_iter          = as.integer(max_iter),
     tol               = as.numeric(tol),
     ridge_eps         = as.numeric(ridge_eps),
+    optimizer_stabilization = list(
+      method = if (isTRUE(ridge_eps > 0)) {
+        "diagonal_newton_step_damping"
+      } else {
+        "none"
+      },
+      magnitude = as.numeric(ridge_eps),
+      changes_estimand = FALSE,
+      information_rank_certified_before_damping = TRUE),
     disclosure_audit  = audit,
     debug_trace       = if (debug_trace) {
       keep <- seq_len(length(score_history))
@@ -1250,21 +1153,22 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
         "Discrete-time Cox via pooled-logistic (Andreux 2020 + Allison 1982",
         " + Prentice-Gloeckler 1978) under masked Newton (Aliasgari-Blanton",
         " 2013 + De Cock 2016 share-mask gating; Mohassel-Zhang 2017 +",
-        " Catrina-Saxena 2010 frac=50 noise floor; Christensen 2019 Sec.A.3",
-        " diagonal ridge for singular alpha_j strata).")
+        " Catrina-Saxena 2010 frac=50 noise floor; optional diagonal Newton",
+        " damping after an undamped information-rank check).")
     })
 }
 
-#' @title Cox proportional hazards via non-disclosive Breslow profile Newton
-#' @description Convenience wrapper for \code{ds.vertCoxDiscreteNonDisclosive}
-#'   with \code{target = "cox_profile"}. Event times, event indicators, and
-#'   risk-set membership remain local or in Ring127 share domain; the analyst
-#'   receives only the usual slope coefficients and aggregate Newton traces.
-#' @param formula Cox-style \code{Surv(time, status) ~ x1 + ...} formula.
-#' @param data Character server-side data symbol.
-#' @param max_event_times Integer runtime guard for the number of distinct
-#'   observed event times.
-#' @inheritParams ds.vertCoxDiscreteNonDisclosive
+#' @title Quarantined Cox-profile compatibility frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and returns no Cox fit. The word \dQuote{NonDisclosive} is a
+#'   historical name, not a current security or differential-privacy claim.
+#' @param formula,data,max_event_times,max_iter,tol,newton,ridge_eps,debug_trace,verbose,datasources
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertCoxProfileNonDisclosive <- function(formula,
                                            data = NULL,
@@ -1276,6 +1180,7 @@ ds.vertCoxProfileNonDisclosive <- function(formula,
                                            debug_trace = FALSE,
                                            verbose = FALSE,
                                            datasources = NULL) {
+  .dsvert_block_retired_remote_route("cox")
   ds.vertCoxDiscreteNonDisclosive(
     formula = formula,
     data = data,

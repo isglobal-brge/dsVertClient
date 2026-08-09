@@ -24,7 +24,7 @@ ds.vertLR(reduced, full)
 
 A list with:
 
-- `statistic`: 2 \* (reduced\$deviance - full\$deviance)
+- `statistic`: reduced\$deviance - full\$deviance
 
 - `df`: full\$n_vars - reduced\$n_vars
 
@@ -36,4 +36,8 @@ A list with:
 
 This is a pure client-side computation over the scalar deviances already
 returned by ds.vertGLM; no additional MPC round is performed and no
-observation-level information is exposed.
+observation-level information is exposed. It is available only for
+converged, unpenalized binomial or Poisson fits on the same analysis
+cohort. Gaussian nested-model inference requires an F test with a valid
+dispersion estimate and is therefore not represented as an LR chi-square
+test here.

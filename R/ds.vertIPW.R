@@ -1,36 +1,27 @@
-#' @title Federated inverse-probability-weighted GLM (two-stage)
-#' @description Convenience wrapper implementing the two-stage IPW
-#'   (inverse-probability weighting) workflow on vertically partitioned
-#'   DataSHIELD data.
-#'
-#' Stage 1: fit the propensity model via \code{ds.vertGLM} with a binomial
-#'   family on the supplied \code{propensity_formula}.
-#' Stage 2: fit the outcome model via \code{ds.vertGLM} with a
-#'   server-side \code{weights_column}. The current product route assumes
-#'   this column already contains IPW weights on the server that owns the
-#'   treatment / outcome variables; the weights are consumed by the
-#'   protected weighted-GLM path and are not returned to the client.
-#'
-#' @param outcome_formula   Formula for the outcome model.
-#' @param propensity_formula Formula for the propensity (binary treatment) model.
-#' @param data              Name of the aligned data frame on each server.
-#' @param weights_column    Name of the column on the outcome server that
-#'   holds 1/P(T=1|X) for treated units and 1/(1-P(T=1|X)) for controls,
-#'   or the stabilised analogue. The column must be created server-side
-#'   before this wrapper is called; it is never returned to the client.
-#' @param outcome_family    Family for the outcome model. Default "gaussian".
-#' @param verbose Logical. Print stage-by-stage progress (default TRUE).
-#' @param datasources DataSHIELD connections; if NULL, uses
-#'   \code{DSI::datashield.connections_find()}.
-#' @param ...               Passed through to both underlying
-#'   \code{ds.vertGLM} calls.
-#' @return list of class \code{ds.vertIPW} with \code{propensity} and
-#'   \code{outcome} ds.glm objects.
+#' @title Quarantined IPW compatibility frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and computes or returns no propensity model, weights, effect
+#'   estimate, or diagnostic. Retained two-stage code after the gate is
+#'   unreachable through this public frontdoor and carries no disclosure, DP,
+#'   causal-identification, accuracy, or availability claim.
+#' @details Promotion requires signed treatment/outcome binding, a complete
+#'   propensity and outcome workflow, bounded weights and contributions,
+#'   explicit estimand and identification assumptions, and validated
+#'   uncertainty.
+#' @param outcome_formula,propensity_formula,data,weights_column,outcome_family,verbose,datasources
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @param ... Retained compatibility arguments; not evaluated.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertIPW <- function(outcome_formula, propensity_formula, data = NULL,
                       weights_column = "ipw",
                       outcome_family = "gaussian",
                       verbose = TRUE, datasources = NULL, ...) {
+  .dsvert_block_retired_remote_route("ipw")
   if (verbose) message("[ds.vertIPW] Stage 1: propensity model")
   prop_fit <- ds.vertGLM(propensity_formula, data = data,
                          family = "binomial",

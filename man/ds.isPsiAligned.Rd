@@ -2,23 +2,24 @@
 % Please edit documentation in R/ds.psiAlign.R
 \name{ds.isPsiAligned}
 \alias{ds.isPsiAligned}
-\title{Check whether a data symbol is already PSI-aligned on every server}
+\title{Check whether a data symbol is pinned-padded-PSI aligned}
 \usage{
 ds.isPsiAligned(newobj = "DA", datasources = NULL)
 }
 \arguments{
-\item{newobj}{Character. Symbol name to test on each server (default \code{"DA"}).}
+\item{newobj}{Character. Symbol to validate on every server.}
 
-\item{datasources}{DataSHIELD connections; if NULL, uses
-\code{DSI::datashield.connections_find()}.}
+\item{datasources}{Named DataSHIELD connections. When \code{NULL}, the current
+connections returned by \code{\link[DSI:datashield.connections_find]{DSI::datashield.connections_find()}} are used.}
 }
 \value{
-List with \code{aligned} (logical) and \code{n_common}
-(integer or NA_integer_).
+A list with \code{aligned} and \code{n_common}. \code{n_common} is always
+\code{NA_integer_}; the alignment-status route never releases cardinality.
 }
 \description{
-Ask each server whether the named symbol has the same
-row count. Used by \code{ds.vertGLM}/LMM/GEE/Cox to SKIP a fresh
-PSI run when the caller already aligned the cohort. Security-
-preserving: only queries shape.
+Each server validates a persistent, secret-token-authenticated manifest
+against the current identifier values and row order. The client accepts the
+result only when every named server returns the same fixed-schema public
+attestation. No row count, identifier commitment or intersection size is
+released.
 }

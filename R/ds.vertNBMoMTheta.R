@@ -65,13 +65,12 @@ ds.vertNBMoMTheta <- function(formula, data = NULL,
   # dsvertNBMomentSumsDS DS function. Disclosure: 4 floats per call
   # (same magnitude as dsvertNBProfileSumsDS for MLE-theta).
   sums <- tryCatch({
-    r <- DSI::datashield.aggregate(
+    .dsvert_aggregate_strict(
       datasources[conn_idx],
-      call(name = "dsvertNBMomentSumsDS", data_name = data, variable = y_var))
-    if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-    r
+      call(name = "dsvertNBMomentSumsDS", data_name = data, variable = y_var),
+      operation = "negative-binomial protected moment release")[[1L]]
   }, error = function(e) {
-    stop("dsvertNBMomentSumsDS failed: ", conditionMessage(e),
+    stop("The negative-binomial protected moment release failed.",
          call. = FALSE)
   })
   if (!is.finite(sums$y_mean) || !is.finite(sums$y_var)) {

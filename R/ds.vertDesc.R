@@ -1,73 +1,66 @@
-#' @title Federated descriptive statistics with approximate quantiles
-#' @description Compute a federated \code{summary()}-style table of numeric
-#'   variables held across vertically partitioned servers. Exact means and
-#'   standard deviations are obtained from each server's local moments;
-#'   exact extrema are suppressed by default because they can disclose
-#'   outliers. Quantiles are interpolated from disclosure-checked histogram
-#'   bucket counts. No observation-level quantity is reconstructed at the
-#'   client.
+#' @title Disclosure-safe descriptive statistics compatibility adapter
+#' @description Return the historical \code{ds.vertDesc} data-frame shape from
+#'   one custodian-owned, sticky \code{ds.vertDPDescribe} capsule artifact.
+#'   Counts, moments and quantiles are differentially private. Observed extrema
+#'   and data-adaptive histogram queries are never requested.
 #'
 #' @param data_name Character. Name of the aligned data frame held on each
 #'   server.
-#' @param variables Optional: a character vector of variables of interest,
-#'   a named list mapping server -> variables, or \code{NULL} (default) to
-#'   auto-detect.
+#' @param variables Optional character vector, or a named list mapping the
+#'   artifact-owning server to variables, used only to filter the variables
+#'   already present in the signed artifact. \code{NULL} returns every signed
+#'   variable. A variable absent from the artifact is an error.
 #' @param probs Numeric vector of quantile probabilities to report.
-#'   Defaults to the usual tertiles (0.25, 0.5, 0.75).
-#' @param n_buckets Integer. Number of uniform histogram buckets used for
-#'   quantile interpolation. Higher values give tighter quantile resolution
-#'   at the cost of one extra aggregate call per variable; when
-#'   \code{datashield.privacyLevel > 0}, the effective bucket count is capped
-#'   by the cohort size and privacy threshold.
-#' @param range_sd Numeric. When exact extrema are not released, histogram
-#'   edges are built over \code{mean +/- range_sd * sd}. Values outside that
-#'   range are retained as under/overflow aggregate counts.
-#' @param exact_extrema Logical. Return exact min/max and use them for the
-#'   histogram range. Defaults to
-#'   \code{getOption("dsvert.allow_exact_extrema", FALSE)}.
-#' @param open_ended Logical. When exact extrema are suppressed, use
-#'   open-ended first/last histogram buckets so outliers are absorbed into
-#'   coarse tail aggregates rather than disclosed as separate under/overflow
-#'   counts.
+#'   Defaults to the usual quartiles (0.25, 0.5, 0.75).
+#' @param n_buckets Legacy compatibility argument. If explicitly supplied, it
+#'   must equal the fixed signed grid length of every selected variable. It
+#'   never changes the server workload.
+#' @param range_sd Legacy data-adaptive range argument. Its omitted default is
+#'   ignored. Explicit values are rejected because ranges are fixed by the
+#'   custodian-owned artifact.
+#' @param exact_extrema Logical legacy argument. \code{TRUE} is always rejected:
+#'   exact observed minima and maxima are not disclosure-safe releases.
+#' @param open_ended Legacy adaptive-tail argument. Its omitted default is
+#'   ignored. Explicit values are rejected because the signed public bounds,
+#'   grids and invalid bin define the histogram semantics.
 #' @param verbose Logical. Print per-variable progress when TRUE.
 #' @param datasources DataSHIELD connections. If \code{NULL}, auto-detected.
+#' @param analysis_id Custodian-owned describe specification id. It must name
+#'   an existing artifact in the signed capsule. The client never discovers or
+#'   chooses an id remotely.
 #'
 #' @return A data frame with one row per variable containing columns:
 #'   \itemize{
 #'     \item \code{server}: which server holds the variable
 #'     \item \code{variable}: column name
-#'     \item \code{n}: number of non-missing observations
-#'     \item \code{n_na}: number of missing observations
-#'     \item \code{mean}, \code{sd}: local moments
-#'     \item \code{min}, \code{max}: exact extrema only when
-#'       \code{exact_extrema = TRUE}; otherwise \code{NA}
-#'     \item \code{range_low}, \code{range_high}: histogram range used for
-#'       approximate quantiles
-#'     \item \code{quantile_status}: \code{"ran"} or the suppression reason
+#'     \item \code{n}: DP-noisy effective count
+#'     \item \code{n_na}: DP-noisy invalid/missing-unit count
+#'     \item \code{mean}, \code{sd}: bounded DP mean and square root of the
+#'       DP population central second moment (not the usual sample SD)
+#'     \item \code{min}, \code{max}: always \code{NA}
+#'     \item \code{range_low}, \code{range_high}: signed public bounds
+#'     \item \code{quantile_status}: fixed-grid DP post-processing status
 #'     \item one column per requested quantile (named \code{q25}, \code{q50},
 #'       \code{q75} etc. by default)
 #'   }
 #'
 #' @details
-#' Per-variable flow:
-#'   1. \code{dsvertLocalMomentsDS} returns scalar moments in a single
-#'      aggregate call; exact extrema are omitted unless explicitly enabled.
-#'   2. Edges for \code{dsvertHistogramDS} are derived from either exact
-#'      extrema (opt-in) or a moment-bounded range
-#'      \code{mean +/- range_sd * sd}.
-#'   3. Client-side linear interpolation within the target bucket converts
-#'      the cumulative count to the requested quantile.
-#'
-#' The quantile estimate inherits the histogram's resolution; for
-#' \code{n_buckets = 100} on a roughly normal cohort, the median is typically
-#' accurate within 0.5\% of the exact value, tightening with \code{n_buckets}
-#' at linear extra cost.
+#' The function makes one call to \code{ds.vertDPDescribe}. Quantile
+#' probabilities and variable selection are then pure client-side
+#' post-processing of that single immutable release. The returned object has
+#' class \code{ds.vertDesc} for compatibility and carries \code{dp_release},
+#' \code{dp_descriptives}, and \code{dp_quantile_bands} attributes with the
+#' formal release and mechanism-uncertainty metadata. These regions exclude
+#' sampling uncertainty. In particular, \code{n_na} is the noised fixed invalid
+#' bin rather than an exact row-level NA count, and quantiles are fixed-grid
+#' upper endpoints rather than interpolation from analyst-selected bins.
 #'
 #' @examples
 #' \dontrun{
 #' conns <- DSI::datashield.login(logindata)
 #' ds.vertDesc("DA", variables = c("age", "bmi", "glu", "bp"),
-#'             probs = c(0.25, 0.5, 0.75, 0.9))
+#'             probs = c(0.25, 0.5, 0.75, 0.9),
+#'             analysis_id = "baseline_describe_v1")
 #' }
 #' @export
 ds.vertDesc <- function(data_name,
@@ -79,187 +72,246 @@ ds.vertDesc <- function(data_name,
                                                   FALSE),
                         open_ended = getOption("dsvert.desc_open_ended", TRUE),
                         verbose = TRUE,
-                        datasources = NULL) {
-  if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
-  if (!is.numeric(probs) || any(probs <= 0) || any(probs >= 1)) {
-    stop("probs must be a numeric vector strictly between 0 and 1",
+                        datasources = NULL,
+                        analysis_id = NULL) {
+  buckets_supplied <- !missing(n_buckets)
+  range_supplied <- !missing(range_sd)
+  tails_supplied <- !missing(open_ended)
+
+  if (!is.character(data_name) || length(data_name) != 1L ||
+      is.na(data_name) || !nzchar(data_name)) {
+    stop("data_name must be a non-empty string", call. = FALSE)
+  }
+  if (!is.character(analysis_id) || length(analysis_id) != 1L ||
+      is.na(analysis_id) || !nzchar(analysis_id)) {
+    stop(paste(
+      "analysis_id is required for ds.vertDesc.",
+      "Ask the server administrator to provision a custodian-owned describe",
+      "specification in the signed DP capsule, then pass that id explicitly."),
+      call. = FALSE)
+  }
+  if (!is.numeric(probs) || !length(probs) || anyNA(probs) ||
+      any(!is.finite(probs)) || any(probs <= 0 | probs >= 1)) {
+    stop("probs must contain finite probabilities strictly inside (0,1)",
          call. = FALSE)
   }
-  n_buckets <- as.integer(n_buckets)
-  if (n_buckets < 2L) {
-    stop("n_buckets must be >= 2", call. = FALSE)
-  }
-  range_sd <- as.numeric(range_sd)
-  if (!is.finite(range_sd) || range_sd <= 0) {
-    stop("range_sd must be a positive finite number", call. = FALSE)
-  }
-  exact_extrema <- isTRUE(exact_extrema)
-  open_ended <- isTRUE(open_ended)
-
-  # Build variable -> server map ---------------------------------------
-  if (is.null(variables) || is.character(variables)) {
-    user_vars <- variables
-    col_results <- DSI::datashield.aggregate(
-      datasources, call(name = "dsvertColNamesDS", data_name = data_name))
-    var_map <- list()
-    for (srv in names(datasources)) {
-      feats <- setdiff(col_results[[srv]]$columns, c("id", "patient_id"))
-      if (!is.null(user_vars)) feats <- intersect(feats, user_vars)
-      if (length(feats) > 0) var_map[[srv]] <- feats
-    }
-  } else if (is.list(variables) && !is.null(names(variables))) {
-    var_map <- variables
-  } else {
-    stop("variables must be NULL, a character vector, or a named list",
-         call. = FALSE)
-  }
-
-  server_names <- names(datasources)
-  rows <- list()
-
+  probs <- sort(unique(as.numeric(probs)), method = "radix")
   q_names <- sprintf("q%02d", as.integer(round(100 * probs)))
-
-  for (srv in names(var_map)) {
-    ci <- which(server_names == srv)
-    if (length(ci) == 0L) {
-      stop("Server '", srv, "' not in datasources", call. = FALSE)
+  if (anyDuplicated(q_names)) {
+    stop("probs produce duplicate legacy quantile column names", call. = FALSE)
+  }
+  if (!is.logical(exact_extrema) || length(exact_extrema) != 1L ||
+      is.na(exact_extrema)) {
+    stop("exact_extrema must be TRUE or FALSE", call. = FALSE)
+  }
+  if (isTRUE(exact_extrema)) {
+    stop(paste(
+      "exact_extrema = TRUE is unavailable because observed minima and",
+      "maxima are not disclosure-safe under repeated queries.",
+      "Use the signed public bounds and fixed-grid DP quantiles instead."),
+      call. = FALSE)
+  }
+  if (range_supplied) {
+    if (!is.numeric(range_sd) || length(range_sd) != 1L ||
+        is.na(range_sd) || !is.finite(range_sd) || range_sd <= 0) {
+      stop("range_sd must be a positive finite number", call. = FALSE)
     }
-    for (v in var_map[[srv]]) {
-      if (verbose) message("[ds.vertDesc] ", srv, ":", v)
-
-      moments <- DSI::datashield.aggregate(datasources[ci],
-        call(name = "dsvertLocalMomentsDS", data_name = data_name,
-             variable = v, return_extrema = exact_extrema))[[1]]
-
-      row <- list(
-        server = srv, variable = v,
-        n = moments$n_total, n_na = moments$n_na,
-        mean = moments$mean, sd = moments$sd,
-        min = moments$min, max = moments$max,
-        range_low = NA_real_, range_high = NA_real_,
-        range_method = if (exact_extrema) "exact_extrema" else "moment_sd",
-        histogram_buckets = NA_integer_,
-        quantile_status = "not_run")
-
-      # Quantiles via histogram interpolation --------------------------
-      if (is.na(moments$mean) || moments$n_total < 2L ||
-          !is.finite(moments$sd) || moments$sd <= 0) {
-        for (qn in q_names) row[[qn]] <- NA_real_
-        row$quantile_status <- "insufficient_variation"
-      } else {
-        if (exact_extrema &&
-            is.finite(moments$min) && is.finite(moments$max) &&
-            moments$min < moments$max) {
-          lo <- moments$min
-          hi <- moments$max
-        } else {
-          lo <- moments$mean - range_sd * moments$sd
-          hi <- moments$mean + range_sd * moments$sd
-        }
-        if (!is.finite(lo) || !is.finite(hi) || lo >= hi) {
-          for (qn in q_names) row[[qn]] <- NA_real_
-          row$quantile_status <- "invalid_range"
-        } else {
-          privacy_min <- suppressWarnings(as.numeric(getOption(
-            "dsvert.min_cell_count",
-            getOption("datashield.privacyLevel", 5L)))[1L])
-          effective_buckets <- n_buckets
-          if (is.numeric(privacy_min) && is.finite(privacy_min) &&
-              privacy_min > 0) {
-            target_n_per_bucket <- as.numeric(getOption(
-              "dsvert.desc_target_n_per_bucket", privacy_min + 1))
-            effective_buckets <- min(
-              effective_buckets,
-              max(2L, floor(as.numeric(moments$n_total) /
-                              target_n_per_bucket)))
-          }
-          row$range_low <- lo
-          row$range_high <- hi
-          make_edges <- function(bucket_count) {
-            if (!exact_extrema && open_ended) {
-              finite_grid <- seq(lo, hi, length.out = bucket_count + 1L)
-              inner <- finite_grid[-c(1L, length(finite_grid))]
-              c(-Inf, inner, Inf)
-            } else {
-              pad <- (hi - lo) * 1e-9
-              seq(lo, hi + pad, length.out = bucket_count + 1L)
-            }
-          }
-          candidate_buckets <- if (isTRUE(getOption(
-            "dsvert.desc_adaptive_buckets", TRUE))) {
-            seq(effective_buckets, 2L, by = -1L)
-          } else {
-            effective_buckets
-          }
-          hist_res <- NULL
-          hist_err <- NULL
-          edges <- NULL
-          for (bucket_count in candidate_buckets) {
-            trial_edges <- make_edges(bucket_count)
-            trial_res <- tryCatch(
-              DSI::datashield.aggregate(datasources[ci],
-                call(name = "dsvertHistogramDS", data_name = data_name,
-                     variable = v, edges = trial_edges,
-                     suppress_small_cells = TRUE,
-                     fail_on_small_cells = TRUE))[[1]],
-              error = function(e) e)
-            if (!inherits(trial_res, "error")) {
-              hist_res <- trial_res
-              edges <- trial_edges
-              row$histogram_buckets <- as.integer(bucket_count)
-              break
-            }
-            hist_err <- conditionMessage(trial_res)
-          }
-          if (!exact_extrema && open_ended) {
-            row$range_method <- "moment_sd_open_ended"
-          }
-          if (inherits(hist_res, "error")) {
-            for (qn in q_names) row[[qn]] <- NA_real_
-            row$quantile_status <- conditionMessage(hist_res)
-          } else if (is.null(hist_res)) {
-            for (qn in q_names) row[[qn]] <- NA_real_
-            row$quantile_status <- hist_err %||% "histogram_suppressed"
-          } else {
-            q_vals <- .dsvert_interp_quantile(
-              edges = edges,
-              counts = hist_res$counts,
-              probs = probs,
-              below = as.numeric(hist_res$below),
-              above = as.numeric(hist_res$above))
-            for (k in seq_along(probs)) row[[q_names[k]]] <- q_vals[k]
-            row$quantile_status <- "ran"
-          }
-        }
+    stop(paste(
+      "range_sd cannot redefine a disclosure-safe signed workload.",
+      "Ask the server administrator for a custodian-owned analysis_id whose",
+      "fixed public bounds and histogram grid match the intended analysis."),
+      call. = FALSE)
+  }
+  if (tails_supplied) {
+    if (!is.logical(open_ended) || length(open_ended) != 1L ||
+        is.na(open_ended)) {
+      stop("open_ended must be TRUE or FALSE", call. = FALSE)
+    }
+    stop(paste(
+      "open_ended cannot redefine a disclosure-safe signed workload.",
+      "The custodian-owned analysis_id fixes public bounds, bins and the",
+      "invalid-bin policy."), call. = FALSE)
+  }
+  if (buckets_supplied &&
+      (!is.numeric(n_buckets) || length(n_buckets) != 1L ||
+       is.na(n_buckets) || !is.finite(n_buckets) || n_buckets < 2 ||
+       n_buckets != floor(n_buckets))) {
+    stop("n_buckets must be one integer >= 2", call. = FALSE)
+  }
+  if (!is.logical(verbose) || length(verbose) != 1L || is.na(verbose)) {
+    stop("verbose must be TRUE or FALSE", call. = FALSE)
+  }
+  if (!is.null(variables)) {
+    if (is.character(variables)) {
+      if (!length(variables) || anyNA(variables) || any(!nzchar(variables)) ||
+          anyDuplicated(variables)) {
+        stop("variables must contain unique non-empty names", call. = FALSE)
       }
-      rows[[length(rows) + 1L]] <- row
+    } else if (is.list(variables) && !is.null(names(variables)) &&
+               length(variables) && !anyNA(names(variables)) &&
+               all(nzchar(names(variables))) && !anyDuplicated(names(variables)) &&
+               all(vapply(variables, function(value) {
+                 is.character(value) && length(value) && !anyNA(value) &&
+                   all(nzchar(value)) && !anyDuplicated(value)
+               }, logical(1L)))) {
+      # Validated after the signed artifact identifies its single owner.
+    } else {
+      stop(paste(
+        "variables must be NULL, unique variable names, or a named list of",
+        "unique variable names for one artifact-owning server"), call. = FALSE)
     }
   }
 
-  # Assemble data frame
-  if (length(rows) == 0L) {
-    return(data.frame(server = character(0), variable = character(0),
-                      n = integer(0), n_na = integer(0),
-                      mean = numeric(0), sd = numeric(0),
-                      min = numeric(0), max = numeric(0),
-                      range_low = numeric(0), range_high = numeric(0),
-                      range_method = character(0),
-                      histogram_buckets = integer(0),
-                      quantile_status = character(0)))
+  if (isTRUE(verbose)) {
+    message("[ds.vertDesc] reading signed DP describe artifact '",
+            analysis_id, "'")
   }
-  cols <- names(rows[[1L]])
-  out <- lapply(cols, function(cname) {
-    vals <- sapply(rows, function(r) r[[cname]])
-    unname(vals)
+  release <- ds.vertDPDescribe(
+    data_name = data_name, analysis_id = analysis_id, probs = probs,
+    datasources = datasources)
+  if (!is.list(release) || !isTRUE(release$released)) {
+    stop(paste(
+      "The signed DP describe artifact did not produce a release.",
+      "Ask the server administrator to verify the custodian-owned",
+      "analysis_id and its representable fixed privacy allocation."),
+      call. = FALSE)
+  }
+
+  available <- release$variables
+  selected <- available
+  if (is.character(variables)) {
+    selected <- variables
+  } else if (is.list(variables)) {
+    other_servers <- setdiff(names(variables), release$server)
+    if (length(other_servers)) {
+      stop("analysis_id is owned by server '", release$server,
+           "'; variables cannot select another server", call. = FALSE)
+    }
+    selected <- variables[[release$server]]
+  }
+  absent <- setdiff(selected, available)
+  if (length(absent)) {
+    stop(paste0(
+      "Variable(s) not included in signed describe artifact '", analysis_id,
+      "': ", paste(absent, collapse = ", "), ". Ask the server administrator ",
+      "for a custodian-owned analysis_id containing the required fixed ",
+      "variables and grids."), call. = FALSE)
+  }
+
+  signed_buckets <- stats::setNames(
+    as.integer(release$grid_lengths), available)
+  selected_buckets <- signed_buckets[selected]
+  if (buckets_supplied && any(selected_buckets != as.integer(n_buckets))) {
+    details <- paste(paste0(names(selected_buckets), "=", selected_buckets),
+                     collapse = ", ")
+    stop(paste0(
+      "n_buckets does not match the signed fixed grid (", details,
+      "). It cannot change or reroll the capsule workload; ask the server ",
+      "administrator for a custodian-owned analysis_id with the intended grid."),
+      call. = FALSE)
+  }
+
+  descriptions <- release$descriptives[
+    match(selected, release$descriptives$variable), , drop = FALSE]
+  quantiles <- release$quantiles[
+    release$quantiles$variable %in% selected, , drop = FALSE]
+  rows <- lapply(seq_along(selected), function(index) {
+    variable <- selected[[index]]
+    description <- descriptions[index, , drop = FALSE]
+    variable_quantiles <- quantiles[quantiles$variable == variable, ,
+                                    drop = FALSE]
+    positions <- match(probs, variable_quantiles$probability)
+    if (anyNA(positions)) {
+      stop("The DP describe artifact omitted a requested quantile",
+           call. = FALSE)
+    }
+    variable_quantiles <- variable_quantiles[positions, , drop = FALSE]
+    row <- list(
+      server = release$server,
+      variable = variable,
+      n = description$n_dp,
+      n_na = description$invalid_dp,
+      mean = description$mean,
+      sd = description$sd,
+      min = NA_real_,
+      max = NA_real_,
+      range_low = description$lower_bound,
+      range_high = description$upper_bound,
+      range_method = "custodian_signed_fixed_grid",
+      histogram_buckets = unname(selected_buckets[[variable]]),
+      quantile_status = if (all(variable_quantiles$status == "ok")) {
+        "ran_dp_fixed_grid"
+      } else {
+        paste(unique(variable_quantiles$status), collapse = ";")
+      })
+    for (quantile_index in seq_along(q_names)) {
+      row[[q_names[[quantile_index]]]] <-
+        variable_quantiles$estimate[[quantile_index]]
+    }
+    as.data.frame(row, stringsAsFactors = FALSE, check.names = FALSE)
   })
-  names(out) <- cols
-  out_df <- as.data.frame(out, stringsAsFactors = FALSE)
+  out_df <- do.call(rbind, rows)
+  rownames(out_df) <- NULL
   class(out_df) <- c("ds.vertDesc", "data.frame")
   attr(out_df, "probs") <- probs
-  attr(out_df, "n_buckets") <- n_buckets
-  attr(out_df, "range_sd") <- range_sd
-  attr(out_df, "exact_extrema") <- exact_extrema
-  attr(out_df, "open_ended") <- open_ended
+  attr(out_df, "n_buckets") <- if (length(unique(selected_buckets)) == 1L) {
+    unname(selected_buckets[[1L]])
+  } else selected_buckets
+  attr(out_df, "signed_histogram_buckets") <- selected_buckets
+  attr(out_df, "range_sd") <- NA_real_
+  attr(out_df, "exact_extrema") <- FALSE
+  attr(out_df, "open_ended") <- NA
+  attr(out_df, "analysis_id") <- release$analysis_id
+  attr(out_df, "compatibility_semantics") <- list(
+    n = "DP-noisy effective privacy-unit count",
+    n_na = "DP-noisy fixed invalid-bin count, not an exact row NA count",
+    sd = paste(
+      "square root of the bounded DP population central second moment;",
+      "not the usual sample standard deviation"),
+    min_max = "observed extrema are not released",
+    quantiles = "upper endpoints of custodian-signed fixed histogram bins")
+  attr(out_df, "dp_release") <- list(
+    formal_dp = TRUE,
+    source = "ds.vertDPDescribe",
+    analysis_id = release$analysis_id,
+    analysis_version = release$analysis_version,
+    server = release$server,
+    capsule_id = release$capsule_id,
+    final_vector_root = release$final_vector_root,
+    coordinate_order_sha256 = release$coordinate_order_sha256,
+    privacy_epoch = release$privacy_epoch,
+    noise_key_id = release$noise_key_id,
+    epsilon = release$epsilon,
+    delta = release$delta,
+    implementation_delta = release$implementation_delta,
+    adjacency = release$adjacency,
+    composition_partitions = release$composition_partitions,
+    mechanism = release$mechanism,
+    sampler = release$sampler,
+    sticky_noise = release$sticky_noise,
+    uncertainty_scope = release$uncertainty_scope,
+    histogram_semantics = release$histogram_semantics,
+    unit_collapse = release$unit_collapse,
+    count_definition = release$count_definition,
+    invalid_unit_rule = release$invalid_unit_rule,
+    quantization = release$quantization,
+    postprocessing = release$postprocessing,
+    artifact_variables = release$variables,
+    selected_variables = selected,
+    quantile_band_confidence = release$quantile_band_confidence,
+    quantile_band_scope = release$quantile_band_scope,
+    moment_region_confidence = release$moment_region_confidence,
+    moment_region_method = release$moment_region_method,
+    moment_region_scope = release$moment_region_scope,
+    statistical_inference = release$statistical_inference)
+  attr(out_df, "dp_descriptives") <- descriptions
+  quantile_keys <- unlist(lapply(selected, function(variable) {
+    paste(variable, probs, sep = "\r")
+  }), use.names = FALSE)
+  attr(out_df, "dp_quantile_bands") <- quantiles[
+    match(quantile_keys,
+          paste(quantiles$variable, quantiles$probability, sep = "\r")),
+    , drop = FALSE]
   out_df
 }
 
@@ -326,8 +378,11 @@ ds.vertDesc <- function(data_name,
 
 #' @export
 print.ds.vertDesc <- function(x, ...) {
-  cat("dsVert descriptive summary (", nrow(x), " variables, ",
-      attr(x, "n_buckets"), " requested histogram buckets for quantiles)\n",
+  release <- attr(x, "dp_release")
+  cat("dsVert DP descriptive summary (", nrow(x),
+      " variables; custodian-signed fixed grids)\n", sep = "")
+  cat("analysis_id: ", attr(x, "analysis_id"), " | epsilon: ",
+      format(release$epsilon), " | delta: ", format(release$delta), "\n",
       sep = "")
   y <- x
   class(y) <- "data.frame"

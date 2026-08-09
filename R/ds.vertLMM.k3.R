@@ -1,65 +1,22 @@
-#' @title Federated linear mixed model via share-domain residual GLS (K>=3)
-#' @description Random-intercept LMM
-#'   \deqn{y_{ij} = X_{ij} \beta + b_i + \varepsilon_{ij},
-#'         \quad b_i \sim \mathcal{N}(0, \sigma_b^2),\;
-#'         \varepsilon_{ij} \sim \mathcal{N}(0, \sigma^2)}
-#'   estimated by an initial REML 1-D profile followed by share-domain
-#'   residual sufficient statistics and the closed-form cluster-mean GLS
-#'   transform. The final fixed-effect step applies
-#'   \eqn{\tilde v_{ij} = v_{ij} - \lambda_i \bar v_i} locally on each
-#'   server and fits the transformed Gaussian system with an explicit
-#'   transformed intercept \eqn{1-\lambda_i}.
-#'
-#'   K>=3 implementation reuses the secure-aggregation \code{ds.vertGLM}
-#'   pipeline. Residual sums and squared-residual sums are evaluated at
-#'   a supplied beta inside the DCF share domain; the analyst client never
-#'   receives row-level residuals, fitted values, eta, or transformed
-#'   columns. Cluster membership is sent as encrypted server-to-server
-#'   integer metadata, with original labels withheld and small clusters
-#'   blocked by \code{datashield.privacyLevel}.
-#'
-#'   Outer optimisation is golden-section search over
-#'   \eqn{\rho \in (\rho_{\min}, \rho_{\max})}; default
-#'   \eqn{(0.001, 0.999)} so the search never enters the boundary
-#'   singularities at \eqn{\rho = 0} (no random effect -- degenerate
-#'   GLS) or \eqn{\rho = 1} (infinite \eqn{\sigma_b^2}).
-#'
-#' @param formula Fixed-effects formula \code{y ~ X}.
-#' @param data Aligned data-frame name on each server.
-#' @param cluster_col Cluster id column on the outcome server.
-#' @param rho_lo,rho_hi Profile search interval (default 0.001, 0.999).
-#' @param tol Profile convergence tolerance on \eqn{\rho} (default 1e-3).
-#' @param max_outer Maximum golden-section iterations.
-#' @param ring Character (\code{"ring127"} or \code{"ring63"}). MPC ring
-#'   used for the K>=3 Gaussian GLM, residual squared sums, and GLS refits.
-#'   Ring127 is the default because variance components are sensitive to
-#'   fixed-point noise in the secure \eqn{r^2} pass.
-#' @param verbose Print progress.
-#' @param datasources DataSHIELD K=3 connections.
-#' @return list of class \code{ds.vertLMM.k3} with
-#'   \code{coefficients}, \code{sigma_b2}, \code{sigma2}, \code{rho_hat},
-#'   \code{n_clusters}, \code{cluster_sizes}, and the inner ds.glm fit.
-#' @references
-#' Christensen, R. H. B. (2019). \emph{Linear Models}. \code{ordinal::clm.fit}
-#'   Sec.A.3 -- REML profile likelihood for variance components.
-#' Pinheiro, J. C. & Bates, D. M. (2000). \emph{Mixed-Effects Models in
-#'   S/S-PLUS}, Sec.2.4.
-#' Laird, N. M. & Ware, J. H. (1982). Random-effects models for
-#'   longitudinal data. \emph{Biometrics}, 38(4), 963-974.
-#' Lindstrom, M. J. & Bates, D. M. (1990). Nonlinear mixed effects
-#'   models for repeated measures data. \emph{Biometrics}, 46(3),
-#'   673-687.
-#' @seealso \code{\link{ds.vertGLM}}, \code{\link{ds.vertLMM}} (K=2
-#'   exact closed-form path).
-#'
-#' \code{ds.vertLMM.k3} is retained as a thin deprecated wrapper: call
-#' \code{ds.vertLMM}, which dispatches to this K>=3 algorithm automatically.
+#' @title Quarantined deprecated K>=3 LMM frontdoor
+#' @description This exported deprecated name is retained for API
+#'   compatibility. It raises a typed \code{dsvert_route_unavailable}
+#'   condition before any DSI call and returns no mixed model. Retained K>=3
+#'   implementation code after the gate is unreachable through this public
+#'   frontdoor and carries no disclosure, DP, accuracy, or availability claim.
+#' @param formula,data,cluster_col,rho_lo,rho_hi,tol,max_outer,ring,verbose,datasources
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertLMM.k3 <- function(formula, data, cluster_col,
                            rho_lo = 0.001, rho_hi = 0.999,
                            tol = 1e-4, max_outer = 30L,
                            ring = c("ring127", "ring63"),
                            verbose = TRUE, datasources = NULL) {
+  .dsvert_block_retired_remote_route("lmm")
   .Deprecated("ds.vertLMM", package = "dsVertClient",
               msg = paste("ds.vertLMM.k3() is deprecated; call ds.vertLMM(),",
                           "which dispatches to the K>=3 algorithm automatically."))
@@ -81,7 +38,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   ring_frac_bits <- if (ring_int == 127L) 50L else 20L
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   if (length(datasources) < 3L)
-    stop("ds.vertLMM.k3 requires K=3 connections (got ",
+    stop("ds.vertLMM.k3 requires K>=3 connections (got ",
          length(datasources), ")", call. = FALSE)
   if (!inherits(formula, "formula"))
     stop("formula must be a y ~ X formula", call. = FALSE)
@@ -89,17 +46,16 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   ## Locate cluster_col on one of the servers (must be the outcome
   ## server -- same constraint as ds.vertGLMM).
   server_names <- names(datasources)
-  cluster_srv <- NULL
-  for (.srv in server_names) {
-    .ci <- which(server_names == .srv)
-    cols <- tryCatch(
-      DSI::datashield.aggregate(datasources[.ci],
-        call(name = "dsvertColNamesDS", data_name = data))[[1]]$columns,
-      error = function(e) NULL)
-    if (!is.null(cols) && cluster_col %in% cols) {
-      cluster_srv <- .srv; break
-    }
-  }
+  column_expressions <- stats::setNames(
+    rep(list(call(name = "dsvertColNamesDS", data_name = data)),
+        length(server_names)),
+    server_names)
+  column_results <- .dsvert_fanout_by_site(
+    datasources, column_expressions, operation = "LMM column discovery")
+  server_columns <- lapply(column_results, function(value) value$columns)
+  cluster_servers <- server_names[vapply(
+    server_columns, function(columns) cluster_col %in% columns, logical(1L))]
+  cluster_srv <- if (length(cluster_servers)) cluster_servers[[1L]] else NULL
   if (is.null(cluster_srv))
     stop("cluster_col '", cluster_col, "' not found on any server",
          call. = FALSE)
@@ -107,29 +63,18 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   ## Per-cluster sizes -- public under privacy-level threshold.
   if (verbose) message("[ds.vertLMM.k3] Querying cluster sizes ...")
   ci <- which(server_names == cluster_srv)
-  ci_info <- DSI::datashield.aggregate(datasources[ci],
+  ci_info <- .dsvert_lmm_aggregate_strict(datasources[ci],
     call(name = "dsvertClusterSizesDS", data_name = data,
          cluster_col = cluster_col))
   if (is.list(ci_info) && length(ci_info) == 1L) ci_info <- ci_info[[1]]
   n_i <- as.integer(ci_info$sizes)
   n_clusters <- length(n_i)
   n_total <- sum(n_i)
-  term_names_profile <- attr(stats::terms(formula), "term.labels")
-  beaver_mode <- tryCatch(
-    .beaver_preprocessing_mode(
-      "grad", n_total, max(1L, length(term_names_profile)), ring_int,
-      datasources = datasources, party_conns = seq_along(datasources),
-      .dsAgg = DSI::datashield.aggregate),
-    error = function(e) getOption("dsvert.beaver_preprocessing", "auto"))
   profile_mode <- match.arg(tolower(as.character(getOption(
-    "dsvert.lmm_k3.profile_mode", "auto"))[1L]),
+    "dsvert.lmm_k3.profile_mode", "profile"))[1L]),
     c("auto", "profile", "moment"))
   if (identical(profile_mode, "auto")) {
-    profile_mode <- if (identical(beaver_mode, "iknp")) {
-      "moment"
-    } else {
-      "profile"
-    }
+    profile_mode <- "profile"
   }
 
   ## REML profile log-likelihood. For balanced or near-balanced
@@ -150,7 +95,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   .neg_profile_loglik <- function(rho) {
     if (verbose) message(sprintf("[ds.vertLMM.k3] inner fit at rho=%.4f", rho))
     w_per_cluster <- .compute_weights_per_cluster(rho)
-    DSI::datashield.aggregate(datasources[ci],
+    .dsvert_lmm_aggregate_strict(datasources[ci],
       call(name = "dsvertExpandClusterWeightsDS",
            data_name = data, cluster_col = cluster_col,
            weights_per_cluster = as.numeric(w_per_cluster),
@@ -195,7 +140,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
 
     ## Final fit at rho.
     w_final <- .compute_weights_per_cluster(rho_hat)
-    DSI::datashield.aggregate(datasources[ci],
+    .dsvert_lmm_aggregate_strict(datasources[ci],
       call(name = "dsvertExpandClusterWeightsDS",
            data_name = data, cluster_col = cluster_col,
            weights_per_cluster = as.numeric(w_final),
@@ -252,7 +197,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
                         "variance components (Pinheiro-Bates 2000 sec.2.4.2) ...")
   ci_vc <- which(server_names == cluster_srv)
   y_var <- as.character(formula[[2L]])
-  vc_info <- DSI::datashield.aggregate(datasources[ci_vc],
+  vc_info <- .dsvert_lmm_aggregate_strict(datasources[ci_vc],
     call(name = "dsvertLMMVarianceComponentsDS",
          data_name = data, y_var = y_var,
          cluster_col = cluster_col))
@@ -279,10 +224,11 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   on.exit({
     for (.srv in server_names) {
       .ci <- which(server_names == .srv)
-      try(DSI::datashield.aggregate(datasources[.ci],
-        call(name = "mpcCleanupDS", session_id = cluster_session)), silent = TRUE)
-      try(DSI::datashield.aggregate(datasources[.ci],
-        call(name = "mpcGcDS")), silent = TRUE)
+      .dsvert_cleanup_best_effort(
+        datasources[.ci],
+        call(name = "mpcCleanupDS", session_id = cluster_session))
+      .dsvert_cleanup_best_effort(
+        datasources[.ci], call(name = "mpcGcDS"))
     }
   }, add = TRUE)
   # Establish the identity-verified peer transport set on every cluster server
@@ -290,29 +236,20 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   cluster_pks <- .dsvert_setup_peer_transport(datasources, server_names,
                                               server_names, cluster_session)
   .send_cluster_blob <- function(blob, target_ci) {
-    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        DSI::datashield.aggregate(datasources[target_ci],
-          call(name = "mpcStoreBlobDS", key = "dsvert_cluster_ids_blob",
-               chunk = chunk_str, session_id = cluster_session))
-      } else {
-        DSI::datashield.aggregate(datasources[target_ci],
-          call(name = "mpcStoreBlobDS", key = "dsvert_cluster_ids_blob",
-               chunk = chunk_str, chunk_index = chunk_idx,
-               n_chunks = n_chunks, session_id = cluster_session))
-      }
-    })
+    .dsvert_store_blob(
+      blob, "dsvert_cluster_ids_blob", datasources[target_ci],
+      cluster_session)
   }
   for (.srv in setdiff(server_names, cluster_srv)) {
     .peer_ci <- which(server_names == .srv)
-    cb <- DSI::datashield.aggregate(datasources[ci_vc],
+    cb <- .dsvert_lmm_aggregate_strict(datasources[ci_vc],
       call(name = "dsvertClusterIDsBroadcastDS",
            data_name = data, cluster_col = cluster_col,
            peer_pk = cluster_pks[[.srv]],
            session_id = cluster_session))
     if (is.list(cb) && length(cb) == 1L) cb <- cb[[1L]]
     .send_cluster_blob(cb$peer_blob, .peer_ci)
-    DSI::datashield.aggregate(datasources[.peer_ci],
+    .dsvert_lmm_aggregate_strict(datasources[.peer_ci],
       call(name = "dsvertClusterIDsReceiveDS",
            session_id = cluster_session))
   }
@@ -333,13 +270,10 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     var_within_xb <- 0
     for (.srv in server_names) {
       .ci <- which(server_names == .srv)
-      cols <- tryCatch(
-        DSI::datashield.aggregate(datasources[.ci],
-          call(name = "dsvertColNamesDS", data_name = data))[[1]]$columns,
-        error = function(e) character(0))
+      cols <- server_columns[[.srv]]
       srv_x <- intersect(cols, slope_names)
       if (length(srv_x) == 0L) next
-      xc_info <- DSI::datashield.aggregate(datasources[.ci],
+      xc_info <- .dsvert_lmm_aggregate_strict(datasources[.ci],
         call(name = "dsvertLMMXCovarianceWithinStoredDS",
              data_name = data, x_vars = srv_x,
              session_id = cluster_session))
@@ -368,12 +302,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   x_vars_orig <- stats::setNames(vector("list", length(server_names)),
                                  server_names)
   for (.srv in server_names) {
-    .ci <- which(server_names == .srv)
-    cols <- tryCatch(
-      DSI::datashield.aggregate(datasources[.ci],
-        call(name = "dsvertColNamesDS", data_name = data))[[1]]$columns,
-      error = function(e) character(0))
-    x_vars_orig[[.srv]] <- intersect(cols, term_names)
+    x_vars_orig[[.srv]] <- intersect(server_columns[[.srv]], term_names)
   }
   y_tx <- paste0(y_var, ".lmmgls")
   tx_name <- function(x) paste0(x, ".lmmgls")
@@ -385,18 +314,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   gls_passes <- 0L
 
   .send_session_blob <- function(blob, key, target_ci, sid) {
-    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        DSI::datashield.aggregate(datasources[target_ci],
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               session_id = sid))
-      } else {
-        DSI::datashield.aggregate(datasources[target_ci],
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               chunk_index = chunk_idx, n_chunks = n_chunks,
-               session_id = sid))
-      }
-    })
+    .dsvert_store_blob(blob, key, datasources[target_ci], sid)
   }
 
   .aggregate_fp_scalar <- function(share_a, share_b) {
@@ -425,11 +343,11 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
       on.exit({
         for (.srv in fit_eval$server_list) {
           .ci <- which(server_names == .srv)
-          try(DSI::datashield.aggregate(datasources[.ci],
-            call(name = "mpcCleanupDS", session_id = eval_session)),
-            silent = TRUE)
-          try(DSI::datashield.aggregate(datasources[.ci],
-            call(name = "mpcGcDS")), silent = TRUE)
+          .dsvert_cleanup_best_effort(
+            datasources[.ci],
+            call(name = "mpcCleanupDS", session_id = eval_session))
+          .dsvert_cleanup_best_effort(
+            datasources[.ci], call(name = "mpcGcDS"))
         }
       }, add = TRUE)
 
@@ -441,13 +359,14 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
       dcf_parties <- c(fusion_srv, cluster_srv)
       dcf_conns <- sapply(dcf_parties, function(s)
         which(server_names == s))
+      residual_conns <- datasources[dcf_conns]
       dealer_srv <- setdiff(eval_server_list, dcf_parties)[1L]
       if (is.na(dealer_srv)) dealer_srv <- fusion_srv
       dealer_conn <- which(server_names == dealer_srv)
 
       for (.srv in setdiff(dcf_parties, cluster_srv)) {
         .peer_ci <- which(server_names == .srv)
-        cb <- DSI::datashield.aggregate(datasources[ci_vc],
+        cb <- .dsvert_lmm_aggregate_strict(datasources[ci_vc],
           call(name = "dsvertClusterIDsBroadcastDS",
                data_name = data, cluster_col = cluster_col,
                peer_pk = fit_eval$transport_pks[[.srv]],
@@ -455,21 +374,18 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
         if (is.list(cb) && length(cb) == 1L) cb <- cb[[1L]]
         .send_session_blob(cb$peer_blob, "dsvert_cluster_ids_blob",
                            .peer_ci, eval_session)
-        DSI::datashield.aggregate(datasources[.peer_ci],
+        .dsvert_lmm_aggregate_strict(datasources[.peer_ci],
           call(name = "dsvertClusterIDsReceiveDS",
                session_id = eval_session))
       }
 
-      rs <- lapply(dcf_conns, function(.ci) {
-        r <- DSI::datashield.aggregate(datasources[.ci],
-          call(name = "dsvertPerClusterSumShareDS",
-               share_key = "k2_x_full_fp",
-               session_id = eval_session,
-               frac_bits = ring_frac_bits,
-               ring = ring_int))
-        if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-        r
-      })
+      rs <- unname(.dsvert_lmm_aggregate_strict(
+        residual_conns,
+        call(name = "dsvertPerClusterSumShareDS",
+             share_key = "k2_x_full_fp",
+             session_id = eval_session,
+             frac_bits = ring_frac_bits,
+             ring = ring_int)))
       K_res <- length(rs[[1L]]$per_cluster_fp)
       rsum <- numeric(K_res)
       for (.kk in seq_len(K_res)) {
@@ -477,66 +393,73 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
                                           rs[[2L]]$per_cluster_fp[[.kk]])
       }
 
-      ds_agg <- function(ds, expr) DSI::datashield.aggregate(ds, expr)
+      ds_agg <- function(ds, expr) .dsvert_lmm_aggregate_strict(ds, expr)
       send_blob <- function(blob, key, conn_idx) {
         .send_session_blob(blob, key, conn_idx, eval_session)
       }
-      .ot_beaver_prepare_vecmul(
-        datasources = datasources,
-        party_conns = dcf_conns,
-        party_names = dcf_parties,
-        transport_pks = fit_eval$transport_pks,
-        session_id = eval_session,
-        n = n_eval,
-        ring = ring_int,
-        .dsAgg = ds_agg,
-        .sendBlob = send_blob)
-      for (.ci in dcf_conns) {
-        DSI::datashield.aggregate(datasources[.ci],
-          call(name = "k2BeaverVecmulConsumeTripleDS",
-               session_id = eval_session))
+      if (identical(ring_int, 127L)) {
+        .dsvert_exact_gc_vecmul_run(
+          datasources = datasources, server_names = server_names,
+          servers = dcf_conns, session_id = eval_session,
+          total_n = n_eval, x_key = "k2_x_full_fp",
+          y_key = "k2_x_full_fp", output_key = "lmm_k3_r2_share",
+          transport_ready = FALSE, .aggregate = ds_agg)
+      } else {
+        .ot_beaver_prepare_vecmul(
+          datasources = datasources,
+          party_conns = dcf_conns,
+          party_names = dcf_parties,
+          transport_pks = fit_eval$transport_pks,
+          session_id = eval_session,
+          n = n_eval,
+          ring = ring_int,
+          .dsAgg = ds_agg,
+          .sendBlob = send_blob)
+        r1 <- unname(.dsvert_fanout_by_site(
+          residual_conns,
+          stats::setNames(lapply(seq_along(dcf_parties), function(.ii) {
+            peer_i <- 3L - .ii
+            call(name = "k2BeaverVecmulR1DS",
+                 peer_pk = fit_eval$transport_pks[[dcf_parties[peer_i]]],
+                 x_key = "k2_x_full_fp",
+                 y_key = "k2_x_full_fp",
+                 n = n_eval,
+                 session_id = eval_session,
+                 frac_bits = ring_frac_bits,
+                 ring = ring_int)
+          }), dcf_parties),
+          operation = "LMM K>=3 residual vecmul R1"))
+        .dsvert_store_typed_blob(
+          r1[[1L]]$peer_blob, r1[[1L]]$peer_transfer,
+          datasources[dcf_conns[2L]], eval_session,
+          producer_conn = datasources[dcf_conns[1L]])
+        .dsvert_store_typed_blob(
+          r1[[2L]]$peer_blob, r1[[2L]]$peer_transfer,
+          datasources[dcf_conns[1L]], eval_session,
+          producer_conn = datasources[dcf_conns[2L]])
+        .dsvert_fanout_by_site(
+          residual_conns,
+          stats::setNames(lapply(seq_along(dcf_parties), function(.ii) {
+            call(name = "k2BeaverVecmulR2DS",
+                 is_party0 = (.ii == 1L),
+                 peer_name = dcf_parties[3L - .ii],
+                 x_key = "k2_x_full_fp",
+                 y_key = "k2_x_full_fp",
+                 output_key = "lmm_k3_r2_share",
+                 n = n_eval,
+                 session_id = eval_session,
+                 frac_bits = ring_frac_bits,
+                 ring = ring_int)
+          }), dcf_parties),
+          operation = "LMM K>=3 residual vecmul R2")
       }
-      r1 <- vector("list", 2L)
-      for (.ii in 1:2) {
-        peer_i <- 3L - .ii
-        r1[[.ii]] <- DSI::datashield.aggregate(datasources[dcf_conns[.ii]],
-          call(name = "k2BeaverVecmulR1DS",
-               peer_pk = fit_eval$transport_pks[[dcf_parties[peer_i]]],
-               x_key = "k2_x_full_fp",
-               y_key = "k2_x_full_fp",
-               n = n_eval,
-               session_id = eval_session,
-               frac_bits = ring_frac_bits,
-               ring = ring_int))
-        if (is.list(r1[[.ii]]) && length(r1[[.ii]]) == 1L)
-          r1[[.ii]] <- r1[[.ii]][[1L]]
-      }
-      .send_session_blob(r1[[1L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
-                         dcf_conns[2L], eval_session)
-      .send_session_blob(r1[[2L]]$peer_blob, "k2_beaver_vecmul_peer_masked",
-                         dcf_conns[1L], eval_session)
-      for (.ii in 1:2) {
-        DSI::datashield.aggregate(datasources[dcf_conns[.ii]],
-          call(name = "k2BeaverVecmulR2DS",
-               is_party0 = (.ii == 1L),
-               x_key = "k2_x_full_fp",
-               y_key = "k2_x_full_fp",
-               output_key = "lmm_k3_r2_share",
-               n = n_eval,
-               session_id = eval_session,
-               frac_bits = ring_frac_bits,
-               ring = ring_int))
-      }
-      r2s <- lapply(dcf_conns, function(.ci) {
-        r <- DSI::datashield.aggregate(datasources[.ci],
-          call(name = "dsvertPerClusterSumShareDS",
-               share_key = "lmm_k3_r2_share",
-               session_id = eval_session,
-               frac_bits = ring_frac_bits,
-               ring = ring_int))
-        if (is.list(r) && length(r) == 1L) r <- r[[1L]]
-        r
-      })
+      r2s <- unname(.dsvert_lmm_aggregate_strict(
+        residual_conns,
+        call(name = "dsvertPerClusterSumShareDS",
+             share_key = "lmm_k3_r2_share",
+             session_id = eval_session,
+             frac_bits = ring_frac_bits,
+             ring = ring_int)))
       rss <- numeric(K_res)
       for (.kk in seq_len(K_res)) {
         rss[.kk] <- .aggregate_fp_scalar(r2s[[1L]]$per_cluster_fp[[.kk]],
@@ -583,12 +506,12 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
                      method = "Nelder-Mead",
                      control = list(reltol = 1e-12, maxit = 2000)),
         error = function(e) NULL)
-      sigma_b2_reml <- if (!is.null(opt_joint) &&
-                            is.finite(opt_joint$par[2L])) {
-        exp(opt_joint$par[2L])
-      } else {
-        sigma_b2_mom
+      if (is.null(opt_joint) || !identical(opt_joint$convergence, 0L) ||
+          length(opt_joint$par) != 2L || any(!is.finite(opt_joint$par)) ||
+          !is.finite(opt_joint$value)) {
+        stop("share-domain residual REML optimizer failed", call. = FALSE)
       }
+      sigma_b2_reml <- exp(opt_joint$par[2L])
       list(sigma2 = max(MSW_res, 0),
            sigma_b2 = max(sigma_b2_reml, 0),
            SSW = SSW_res, SSB = SSB_res, MSW = MSW_res, MSB = MSB_res,
@@ -596,6 +519,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
            n_per_cluster = n_res,
            method = "share_domain_residual_reml")
     }, error = function(e) {
+      .dsvert_lmm_transport_fallback(e)
       if (verbose) {
         message("[ds.vertLMM.k3] residual variance moments failed: ",
                 conditionMessage(e))
@@ -613,6 +537,12 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     sigma2_hat <- resid_vc$sigma2
     sigma_b2_hat <- resid_vc$sigma_b2
     variance_method <- resid_vc$method
+  } else {
+    .dsvert_stop_numeric(
+      "numeric_backend_unavailable",
+      paste0("The K>=3 share-domain residual REML backend failed. ",
+             "No raw-outcome ANOVA fallback was applied."),
+      reason = "lmm_k3_residual_reml_failure")
   }
 
   .rho_from_components <- function(sigma2, sigma_b2) {
@@ -642,15 +572,11 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
                                   server_names)
     for (.srv in server_names) {
       .ci <- which(server_names == .srv)
-      cols <- tryCatch(
-        DSI::datashield.aggregate(datasources[.ci],
-          call(name = "dsvertColNamesDS", data_name = data))[[1]]$columns,
-        error = function(e) character(0))
-      srv_terms <- intersect(cols, term_names)
+      srv_terms <- intersect(server_columns[[.srv]], term_names)
       local_cols <- srv_terms
       if (.srv == cluster_srv) local_cols <- c(y_var, local_cols)
       if (length(local_cols) || .srv == cluster_srv) {
-        tr <- DSI::datashield.aggregate(datasources[.ci],
+        tr <- .dsvert_lmm_aggregate_strict(datasources[.ci],
           call(name = "dsvertLMMGLSTransformDS",
                data_name = data,
                columns = local_cols,
@@ -732,8 +658,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
       sigma2_hat_new <- resid_vc_new$sigma2
       sigma_b2_hat_new <- resid_vc_new$sigma_b2
     } else {
-      var_within_xb_new <- .var_within_xb_for(fit_gls$coefficients)
-      sigma2_hat_new <- max(sigma2_hat_raw - var_within_xb_new, 0)
+      stop("post-GLS residual REML update failed", call. = FALSE)
     }
     if (max_gls_passes >= 2L &&
         is.finite(sigma2_hat_new) &&
@@ -755,8 +680,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
         MSB <- resid_vc_new$MSB
         variance_method <- resid_vc_new$method
       } else {
-        var_within_xb_new <- .var_within_xb_for(fit_gls$coefficients)
-        sigma2_hat_new <- max(sigma2_hat_raw - var_within_xb_new, 0)
+        stop("second post-GLS residual REML update failed", call. = FALSE)
       }
     }
     var_within_xb <- var_within_xb_new
@@ -764,15 +688,25 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     sigma_b2_hat <- sigma_b2_hat_new
     fit_gls
   }, error = function(e) {
-    gls_error <<- conditionMessage(e)
+    .dsvert_lmm_transport_fallback(e)
+    gls_error <<- e
     NULL
   })
   if (!is.null(gls_attempt)) {
     fit_final <- gls_attempt
     coef_method <- "cluster_mean_gls_transform"
-  } else if (verbose) {
-    warning("[ds.vertLMM.k3] GLS transform failed; returning weighted ",
-            "profile approximation: ", gls_error, call. = FALSE)
+  } else {
+    if (inherits(gls_error, "non_identifiable")) stop(gls_error)
+    .dsvert_stop_numeric(
+      "numeric_backend_unavailable",
+      paste0("The K>=3 protected GLS transform failed",
+             if (!is.null(gls_error)) {
+               paste0(": ", conditionMessage(gls_error))
+             } else {
+               "."
+             },
+             " No weighted-profile fallback was applied."),
+      reason = "lmm_k3_gls_failure")
   }
 
   out <- list(
@@ -789,7 +723,12 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
     converged      = !is.null(gls_attempt),
     iterations     = gls_passes,
     gls_passes     = gls_passes,
-    gls_error      = gls_error,
+    gls_error      = NULL,
+    estimand       = if (identical(profile_mode, "moment")) {
+      "explicit_moment_initialized_random_intercept_lmm"
+    } else {
+      "random_intercept_lmm_reml"
+    },
     SSW            = SSW,
     SSB            = SSB,
     MSW            = MSW,
@@ -806,7 +745,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
 
 #' @export
 print.ds.vertLMM.k3 <- function(x, ...) {
-  cat("dsVert LMM (K=3, REML 1-D profile)\n")
+  cat("dsVert LMM (K>=3, REML 1-D profile)\n")
   cat(sprintf("  Clusters = %d   Total N = %d\n",
               x$n_clusters, sum(x$cluster_sizes)))
   cat(sprintf("  rho = %.4f   sigma_b^2 = %.4g   sigma^2 = %.4g\n",

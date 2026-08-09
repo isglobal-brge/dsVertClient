@@ -11,7 +11,8 @@ Integer. Chunk size in characters.
 }
 \description{
 Returns the cached effective chunk size if available (from a previous
-successful probe), otherwise returns the initial chunk size from
-\code{getOption("dsvert.chunk_size")} or the default (200KB).
+successful transfer), otherwise returns the configured chunk size from
+\code{getOption("dsvert.chunk_size")} or the portable default (640 KiB of
+Base64 text, representing at most 480 KiB of raw bytes).
 }
 \keyword{internal}

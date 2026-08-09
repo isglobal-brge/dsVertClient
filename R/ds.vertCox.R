@@ -1,25 +1,22 @@
-#' @title Federated Cox proportional-hazards regression
-#' @description Public Cox PH wrapper. Dispatches to
-#'   \code{\link{ds.vertCoxProfileNonDisclosive}}, the non-disclosive
-#'   Breslow profile route validated for K=2 and K>=3. The historical
-#'   rank/permutation and person-time Poisson Cox routes were removed from the
-#'   product package because they exposed event-rank metadata or required
-#'   person-time-expanded inputs.
+#' @title Quarantined Cox compatibility frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and computes or returns no model, statistic, diagnostic, or
+#'   patient-derived metadata. Retained implementation code after the local
+#'   migration gate is unreachable through this frontdoor and is not evidence
+#'   of disclosure safety, differential privacy, numerical accuracy, or
+#'   availability.
 #'
-#' @param formula Formula of the form \code{Surv(time, event) ~ x1 + ...}.
-#' @param data Aligned data-frame name on each server.
-#' @param max_iter Maximum Newton iterations for the profile route.
-#' @param tol Convergence tolerance on max |delta beta|.
-#' @param max_event_times Integer runtime guard passed to
-#'   \code{\link{ds.vertCoxProfileNonDisclosive}}.
-#' @param newton,ridge_eps,debug_trace Parameters passed through to
-#'   \code{\link{ds.vertCoxProfileNonDisclosive}}.
-#' @param verbose Print progress.
-#' @param datasources DataSHIELD connections.
-#' @return A \code{ds.vertCox} object: \code{coefficients},
-#'   \code{std_errors}, \code{covariance}, \code{loglik}
-#'   (partial log-likelihood), \code{n_obs}, \code{n_events},
-#'   \code{iterations}, \code{converged}.
+#' @details Promotion requires a purpose-bound contribution-limited Cox
+#'   capsule, private risk-set evaluation, certified ties/strata/delayed-entry
+#'   semantics, covariance and identifiability certificates, and independent
+#'   multi-host validation.
+#' @param formula,data,max_iter,tol,max_event_times,newton,ridge_eps,debug_trace,verbose,datasources
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertCox <- function(formula, data = NULL,
                        max_iter = 30L, tol = 1e-4,
@@ -28,6 +25,7 @@ ds.vertCox <- function(formula, data = NULL,
                        ridge_eps = 1e-6,
                        debug_trace = FALSE,
                        verbose = TRUE, datasources = NULL) {
+  .dsvert_block_retired_remote_route("cox")
   fit <- ds.vertCoxProfileNonDisclosive(
     formula = formula,
     data = data,

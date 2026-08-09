@@ -1,4 +1,4 @@
-# Interpolate a quantile from histogram bucket counts.
+# Interpolate a quantile from histogram bucket counts
 
 Pure helper function extracted for unit testing. Given bucket edges,
 bucket counts (optionally with under/overflow), and target

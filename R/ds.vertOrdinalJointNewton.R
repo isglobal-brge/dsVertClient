@@ -47,9 +47,20 @@
   if (is.null(y_server))
     stop("outcome server for ", y_var_char, " not found", call. = FALSE)
 
-  session_id <- paste0("ordinalStrict_", as.integer(Sys.time()),
-                       "_", sample.int(.Machine$integer.max, 1L))
-  .dsAgg <- function(conns, expr, ...) DSI::datashield.aggregate(conns, expr, ...)
+  session_id <- .dsvert_uuid4()
+  cleanup_session <- function() {
+    .dsvert_cleanup_best_effort(
+      datasources, call(name = "mpcCleanupDS", session_id = session_id))
+    .dsvert_reset_chunk_size()
+  }
+  on.exit(cleanup_session(), add = TRUE)
+  .dsAgg <- function(conns, expr, ...) {
+    if (length(list(...)))
+      stop("Additional aggregate controls are unavailable in an ordinal MPC phase",
+           call. = FALSE)
+    .dsvert_aggregate_strict(
+      conns = conns, expr = expr, operation = "ordinal MPC protocol phase")
+  }
   .unwrap <- function(x) if (is.list(x) && length(x) == 1L) x[[1L]] else x
   .json_to_b64url <- function(x) {
     raw <- charToRaw(jsonlite::toJSON(x, auto_unbox = TRUE))
@@ -57,29 +68,20 @@
     chartr("+/", "-_", sub("=+$", "", b64, perl = TRUE))
   }
   .to_b64url <- function(x) chartr("+/", "-_", sub("=+$", "", x, perl = TRUE))
-  .sendBlob <- function(blob, key, conn_idx) {
+  .sendBlob <- function(blob, contract, conn_idx) {
     if (is.null(blob) || !nzchar(blob)) return(invisible())
-    conn <- datasources[conn_idx]
-    .dsvert_adaptive_send(blob, function(chunk_str, chunk_idx, n_chunks) {
-      if (n_chunks == 1L) {
-        DSI::datashield.aggregate(conn,
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               session_id = session_id))
-      } else {
-        DSI::datashield.aggregate(conn,
-          call(name = "mpcStoreBlobDS", key = key, chunk = chunk_str,
-               chunk_index = chunk_idx, n_chunks = n_chunks,
-               session_id = session_id))
-      }
-    })
+    .dsvert_store_transfer_or_legacy(
+      blob, contract, datasources[conn_idx], session_id,
+      producer_conns = datasources)
   }
 
   x_vars_by_server <- list()
+  column_results <- .dsvert_aggregate_strict(
+    conns = datasources,
+    expr = call(name = "dsvertColNamesDS", data_name = data),
+    operation = "ordinal column discovery")
   for (srv in server_names) {
-    ci <- which(server_names == srv)
-    cols <- tryCatch(.unwrap(.dsAgg(datasources[ci],
-      call(name = "dsvertColNamesDS", data_name = data))),
-      error = function(e) NULL)
+    cols <- column_results[[srv]]
     cols_here <- if (is.list(cols) && !is.null(cols$columns)) cols$columns
                  else if (is.character(cols)) cols else character(0)
     x_vars_by_server[[srv]] <- intersect(rhs, cols_here)
@@ -126,10 +128,12 @@
 
   transport_pks <- list()
   identity_info <- list()
+  transport_results <- .dsvert_aggregate_strict(
+    conns = datasources,
+    expr = call(name = "glmRing63TransportInitDS", session_id = session_id),
+    operation = "ordinal transport initialisation")
   for (srv in server_names) {
-    ci <- which(server_names == srv)
-    r <- .unwrap(.dsAgg(datasources[ci],
-      call(name = "glmRing63TransportInitDS", session_id = session_id)))
+    r <- transport_results[[srv]]
     transport_pks[[srv]] <- r$transport_pk
     if (!is.null(r$identity_pk)) {
       identity_info[[srv]] <- list(identity_pk = r$identity_pk,
@@ -140,14 +144,14 @@
   id_b64 <- if (length(identity_info) > 0L) {
     .json_to_b64url(identity_info[sort(names(identity_info))])
   } else ""
-  for (srv in server_names) {
-    ci <- which(server_names == srv)
-    .dsAgg(datasources[ci],
-      call(name = "mpcStoreTransportKeysDS",
-           transport_keys_b64 = pk_b64,
-           identity_info_b64 = id_b64,
-           session_id = session_id))
-  }
+  .dsvert_aggregate_strict(
+    conns = datasources,
+    expr = call(name = "mpcStoreTransportKeysDS",
+                transport_keys_b64 = pk_b64,
+                identity_info_b64 = id_b64,
+                session_id = session_id),
+    operation = "ordinal pinned-key binding",
+    result_contract = "logical_true")
 
   share_results <- list()
   for (srv in server_list) {
@@ -163,30 +167,30 @@
     peer <- setdiff(server_list, srv)
     peer_ci <- which(server_names == peer)
     .sendBlob(share_results[[srv]]$encrypted_x_share,
-              "k2_peer_x_share", peer_ci)
+              share_results[[srv]]$encrypted_x_transfer, peer_ci)
   }
   for (srv in server_list) {
     ci <- which(server_names == srv)
     peer <- setdiff(server_list, srv)
     .dsAgg(datasources[ci], call(name = "k2ReceiveShareDS",
       peer_p = as.integer(length(x_vars_per_server[[peer]])),
+      peer_name = peer,
       session_id = session_id))
   }
   for (srv in non_dcf_servers) {
     if (length(x_vars_per_server[[srv]]) == 0L) next
     ci <- which(server_names == srv)
-    r <- .unwrap(.dsAgg(datasources[ci], call(name = "k2ShareInputDS",
+    r <- .unwrap(.dsAgg(datasources[ci], call(name = "glmRing63ShareExtraInputDS",
       data_name = data, x_vars = x_vars_per_server[[srv]],
-      y_var = NULL,
       peer_pk = .to_b64url(transport_pks[[nl]]),
       ring = 127L, session_id = session_id)))
-    .sendBlob(r$encrypted_x_share, paste0("k2_extra_x_share_", srv), ci_nl)
+    .sendBlob(r$encrypted_x_share, r$encrypted_x_transfer, ci_nl)
 
     r2 <- .unwrap(.dsAgg(datasources[ci],
       call(name = "glmRing63ExportOwnShareDS",
            peer_pk = .to_b64url(transport_pks[[y_server]]),
            session_id = session_id)))
-    .sendBlob(r2$encrypted_own_share, paste0("k2_extra_x_share_", srv), ci_os)
+    .sendBlob(r2$encrypted_own_share, r2$encrypted_own_transfer, ci_os)
   }
   for (srv in non_dcf_servers) {
     extra_p <- length(x_vars_per_server[[srv]])
@@ -194,7 +198,7 @@
     for (dcf_srv in server_list) {
       .dsAgg(datasources[which(server_names == dcf_srv)],
         call(name = "glmRing63ReceiveExtraShareDS",
-             extra_key = paste0("k2_extra_x_share_", srv),
+             source_name = srv,
              extra_p = as.integer(extra_p),
              session_id = session_id))
     }
@@ -298,19 +302,20 @@
     for (srv in server_list) {
       ci <- which(server_names == srv)
       peer <- setdiff(server_list, srv)
-      .dsAgg(datasources[ci], call(name = "k2StoreGradTripleDS",
-        session_id = session_id, grad_triple_key = gtk))
       rr <- .unwrap(.dsAgg(datasources[ci], call(name = "k2GradientR1DS",
         peer_pk = .to_b64url(transport_pks[[peer]]), session_id = session_id)))
       r1[[srv]] <- rr
     }
-    .sendBlob(r1[[y_server]]$encrypted_r1, "k2_grad_peer_r1", ci_nl)
-    .sendBlob(r1[[nl]]$encrypted_r1, "k2_grad_peer_r1", ci_os)
+    .sendBlob(r1[[y_server]]$encrypted_r1,
+              r1[[y_server]]$encrypted_r1_transfer, ci_nl)
+    .sendBlob(r1[[nl]]$encrypted_r1,
+              r1[[nl]]$encrypted_r1_transfer, ci_os)
     r2 <- list()
     for (srv in server_list) {
       ci <- which(server_names == srv)
       rr <- .unwrap(.dsAgg(datasources[ci], call(name = "k2GradientR2DS",
         party_id = if (srv == y_server) 0L else 1L,
+        peer_name = setdiff(server_list, srv),
         session_id = session_id)))
       r2[[srv]] <- rr
     }
@@ -500,14 +505,10 @@
       scaledP <- sprintf("ord_strict_scaledP_%s", tag)
       logP <- sprintf("ord_strict_logP_%s", tag)
       logPc <- sprintf("ord_strict_logPc_%s", tag)
-      for (srv in server_list) {
-        ci <- which(server_names == srv)
-        .dsAgg(datasources[ci], call(name = "k2Ring127LocalScaleDS",
-          in_key = Py_key, scalar_fp = scale_log_fp,
-          output_key = scaledP, n = as.numeric(n_obs),
-          session_id = session_id,
-          is_party0 = (srv == y_server)))
-      }
+      .ring127_exact_public_scale(
+        Py_key, scale_log_fp, scaledP, n_obs,
+        datasources, dealer_ci, server_list, server_names, y_server, nl,
+        transport_pks, session_id, .dsAgg, .sendBlob)
       .ring127_log_round_keyed_nr(scaledP, logP, n_obs,
         datasources, dealer_ci, server_list, server_names,
         y_server, nl, transport_pks, session_id, .dsAgg, .sendBlob,
@@ -736,14 +737,9 @@
     final <- secure_eval(q, compute_loglik = TRUE)
   }
 
-  for (srv in server_list) {
-    ci <- which(server_names == srv)
-    try(.dsAgg(datasources[ci],
-               call(name = "mpcCleanupDS", session_id = session_id)),
-        silent = TRUE)
-  }
-
-  out <- warm
+  out <- .dsvert_label_joint_warm_start(warm, "ordinal")
+  out$coefficients <- final$beta
+  out$thresholds <- final$theta
   out$beta_po_joint <- final$beta
   out$thresholds_joint <- final$theta
   out$strict_non_disclosive <- TRUE
@@ -773,66 +769,38 @@
   out$quality$metrics$protected_grad_floor <- protected_grad_floor
   out$quality$metrics$convergence_reason <- convergence_reason
   out$family <- "ordinal_joint_po_ring127_strict"
+  out$method_status <- "provisional_point_estimates_only"
+  out$optimizer_stabilization <- list(
+    method = if (isTRUE(fd_newton_used)) {
+      "finite_difference_damped_Newton_step"
+    } else {
+      "BFGS_inverse_Hessian_step"
+    },
+    finite_difference_eigenvalue_floor = if (isTRUE(fd_newton_used)) {
+      as.numeric(fd_ridge)
+    } else {
+      0
+    },
+    changes_estimand = FALSE,
+    warm_start_information_rank_certified = TRUE)
   out$session_id <- session_id
   class(out) <- c("ds.vertOrdinalJointNewton", class(out))
   out
 }
 
 
-#' @title Federated joint proportional-odds ordinal regression via
-#'   Ring127 MPC-orchestrated Newton iteration
-#' @description Strict K=2 share-domain proportional-odds Newton route by
-#'   default. Patient-level linear predictors, class probabilities,
-#'   reciprocals, and score terms remain Ring127 shares; the client receives
-#'   only guarded class counts, aggregate score/Hessian probes, and final
-#'   model parameters. The older per-patient reconstruction route has been
-#'   removed from the product package.
-#'
-#'   For a K-level ordered outcome
-#'   the PO log-likelihood is
-#'     \deqn{\ell(\beta, \theta) = \sum_i \log[F(\theta_{y_i} - \eta_i)
-#'                                            - F(\theta_{y_i-1} - \eta_i)],}
-#'   with \eqn{F = \mathrm{sigmoid}}, \eqn{\eta_i = X_i \beta},
-#'   \eqn{\theta_0 = -\infty}, \eqn{\theta_K = +\infty}. Score:
-#'     \deqn{\partial \ell / \partial \beta_j = -\sum_i x_{ij} \cdot
-#'           \frac{f(\theta_{y_i}-\eta_i) - f(\theta_{y_i-1}-\eta_i)}
-#'                {F(\theta_{y_i}-\eta_i) - F(\theta_{y_i-1}-\eta_i)},}
-#'   with \eqn{f(u) = F(u)(1-F(u))}.
-#'
-#'   MPC pipeline per outer Newton iter:
-#'   \enumerate{
-#'     \item Compute \eqn{\eta} share via \code{k2ComputeEtaShareDS}.
-#'     \item For each threshold \eqn{k}: compute \eqn{\theta_k - \eta}
-#'           share via affine-combine (plaintext \eqn{\theta_k} public).
-#'     \item Apply exp + recip on \eqn{\theta_k - \eta} -> \eqn{F_k} share
-#'           (\eqn{F(u) = 1/(1+\exp(-u)) = e^u/(1+e^u)} -- evaluated as
-#'           \code{exp(u) * (1/(1+exp(u)))} via existing primitives).
-#'     \item \eqn{f_k = F_k (1 - F_k)} via Beaver vecmul.
-#'     \item Per-patient residual numerator/denominator built from
-#'           indicator-weighted differences (done on outcome server
-#'           since it holds \eqn{y_i} plaintext).
-#'     \item \code{.ring127_recip_round_keyed} on the F-difference share.
-#'     \item Beaver vecmul (f-diff) * (1/F-diff) -> \eqn{T_i} share.
-#'     \item Beaver matvec \eqn{X^\top T} -> aggregate score for \eqn{\beta}.
-#'     \item Client Newton on stacked \eqn{(\beta, \theta)} using an
-#'           aggregate finite-difference Hessian over share-domain scores.
-#'   }
-#'
-#' @param formula Ordered outcome on LHS.
-#' @param data Aligned data name.
-#' @param levels_ordered Character vector of ordered levels (low -> high).
-#' @param cumulative_template e.g. \code{"\%s_leq"} for Y <= k indicator.
-#' @param max_outer Outer Newton iterations.
-#' @param tol Convergence tolerance on \eqn{\|\Delta (\beta, \theta)\|_\infty}.
-#' @param warm_max_iter Optional maximum iterations for each internal
-#'   binomial warm-start GLM.
-#' @param warm_tol Optional tolerance for each internal binomial warm-start
-#'   GLM.
-#' @param binomial_sigmoid_intervals Optional DCF spline interval count for
-#'   internal binomial warm-start GLMs.
-#' @param verbose Logical.
-#' @param datasources DataSHIELD connections.
-#' @return \code{ds.vertOrdinalJointNewton} object.
+#' @title Quarantined proportional-odds Newton compatibility frontdoor
+#' @description This exported name is retained for API compatibility. It
+#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
+#'   call and returns no ordinal fit. Retained Newton/MPC code after the gate
+#'   is unreachable through this public frontdoor and carries no disclosure,
+#'   DP, accuracy, or availability claim.
+#' @param formula,data,levels_ordered,cumulative_template,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources
+#'   Retained compatibility arguments. They are not evaluated because the
+#'   public frontdoor fails locally.
+#' @return No fitted object. The function raises
+#'   \code{dsvert_route_unavailable} before DSI.
+#' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
                                       cumulative_template = "%s_leq",
@@ -841,6 +809,7 @@ ds.vertOrdinalJointNewton <- function(formula, data = NULL, levels_ordered,
                                       warm_tol = NULL,
                                       binomial_sigmoid_intervals = NULL,
                                       verbose = TRUE, datasources = NULL) {
+  .dsvert_block_retired_remote_route("ordinal")
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   .ord_joint_secure_fit(
     formula = formula, data = data,
