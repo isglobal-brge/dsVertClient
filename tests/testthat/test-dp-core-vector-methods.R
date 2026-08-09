@@ -338,8 +338,9 @@ test_that("core methods preserve one signed Gaussian L2 release", {
   expect_match(moments$mechanism_region_method,
                "discrete-Gaussian plan", fixed = TRUE)
   expect_identical(
-    .dsvert_dp_meanvar_simultaneous_radii(moments),
-    c(count = 25 / 256, sum = 25 / 256, sumsq = 25 / 256))
+    moments$accuracy_simultaneous_95_abs_raw_coordinates,
+    c(count = 25 / 256, normalized_sum = 25 / 256,
+      normalized_sumsq = 25 / 256))
 })
 
 test_that("core vector methods reject missing and ambiguous signed blocks", {

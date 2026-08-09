@@ -1,23 +1,3 @@
-.dsvert_dp_simultaneous_radius <- function(epsilon, cells, level,
-                                            sensitivity = 1) {
-  values <- c(epsilon = epsilon, cells = cells, level = level,
-              sensitivity = sensitivity)
-  if (any(!is.finite(values)) || epsilon <= 0 || cells < 1 ||
-      cells != floor(cells) || level <= 0 || level >= 1 || sensitivity <= 0) {
-    stop("Invalid DP uncertainty parameters", call. = FALSE)
-  }
-  # Pass the tail probability directly. Constructing 1 - alpha first loses
-  # every bit of alpha for high-confidence, high-dimensional tables.
-  per_cell_alpha <- (1 - level) / cells
-  radius <- .dsvert_dp_google_ci_radius(
-    epsilon, sensitivity, alpha = per_cell_alpha)
-  if (!is.finite(radius)) {
-    stop("The requested DP uncertainty radius is not representable",
-         call. = FALSE)
-  }
-  max(0, radius)
-}
-
 .dsvert_dp_table_vector_profile <- function(x) {
   capsule_mechanism <- x$capsule_mechanism
   if (is.null(capsule_mechanism)) {
@@ -63,7 +43,6 @@
 
 .dsvert_dp_table_contract <- function(x) {
   table <- if (is.list(x)) x$table else NULL
-  coordinate_count <- if (is.matrix(table)) length(table) else 0L
   if (inherits(x, "ds.vertDPContingency") && is.list(x) &&
       identical(x$backend, "exact_signed_Ring128_global_vector")) {
     profile <- .dsvert_dp_table_vector_profile(x)
@@ -149,41 +128,8 @@
     }
     return(x)
   }
-  certificate <- if (is.list(x)) x$noise_selection else NULL
-  selection <- if (is.list(certificate) &&
-      is.list(certificate$laplace) && is.list(certificate$gaussian)) {
-    .dsvert_dp_validate_noise_selection_certificate(
-      certificate, coordinate_count, "simultaneous_95_abs",
-      certificate$laplace$epsilon, certificate$laplace$sensitivity,
-      certificate$gaussian$epsilon, certificate$gaussian$delta,
-      certificate$gaussian$sensitivity)
-  } else {
-    NULL
-  }
-  if (!inherits(x, "ds.vertDPContingency") || !is.list(x) ||
-      !isTRUE(x$released) ||
-      is.null(selection) ||
-      !.dsvert_dp_selected_sampler_metadata_is_valid(
-        x, selection, coordinate_count) ||
-      !identical(x$randomness, "HMAC-SHA256/ChaCha20") ||
-      !.dsvert_dp_is_integer(x$privacy_epoch, 1) ||
-      !.dsvert_dp_is_string(x$noise_key_id) ||
-      !identical(x$sticky_noise, "dsvert-sticky-noise-v1") ||
-      !is.numeric(x$epsilon) || length(x$epsilon) != 1L ||
-      !is.finite(x$epsilon) || x$epsilon <= 0 ||
-      !is.numeric(x$sensitivity) || length(x$sensitivity) != 1L ||
-      !is.finite(x$sensitivity) || !x$sensitivity %in% c(1, 2) ||
-      !.dsvert_dp_num_equal(x$l1_sensitivity, x$sensitivity) ||
-      !.dsvert_dp_num_equal(x$delta, selection$selected$delta) ||
-      !identical(
-        x$unit_aggregation_policy,
-        "consistent_cell_else_exclude_v1") ||
-      !is.matrix(x$table) || any(!is.finite(x$table)) ||
-      any(x$table < 0) || any(x$table != floor(x$table))) {
-    stop("x must be a released, validated ds.vertDPContingency object",
-         call. = FALSE)
-  }
-  x
+  stop("x must be a released, validated ds.vertDPContingency object",
+       call. = FALSE)
 }
 
 .dsvert_dp_vector_table_radius <- function(x, level) {
@@ -248,60 +194,32 @@
 }
 
 .dsvert_dp_table_simultaneous_radius <- function(x, level) {
-  if (identical(x$backend, "exact_signed_Ring128_global_vector")) {
-    return(.dsvert_dp_vector_table_radius(x, level))
-  }
-  cells <- length(x$table)
-  selected <- x$noise_selection[[x$noise_selection$winner]]
-  if (identical(x$noise_selection$winner, "laplace")) {
-    return(.dsvert_dp_simultaneous_radius(
-      selected$epsilon, cells, level, selected$sensitivity))
-  }
-  alpha <- (1 - level) / cells
-  radius <- .dsvert_dp_gaussian_accuracy_radius(selected$sigma, alpha)
-  if (!is.finite(radius)) {
-    stop("The requested DP uncertainty radius is not representable",
-         call. = FALSE)
-  }
-  radius
+  .dsvert_dp_vector_table_radius(x, level)
 }
 
 .dsvert_dp_table_coverage_method <- function(x) {
-  if (identical(x$backend, "exact_signed_Ring128_global_vector")) {
-    profile <- .dsvert_dp_table_vector_profile(x)
-    if (isTRUE(profile$gaussian)) {
-      return(paste(
-        "Signed fixed-work dyadic discrete-Gaussian plan v2 confidence-specific",
-        "subgaussian bound; signed tail and CDF TV transfers are deducted from",
-        "the requested accuracy probability; the published 95% radius is used",
-        "unchanged at level 0.95"))
-    }
-    if (isTRUE(profile$exact_gc)) {
-      return(paste(
-        "Exact ideal one-draw two-sided-geometric tail with union bound;",
-        "the signed vector sampler TV bound is deducted once"))
-    }
+  profile <- .dsvert_dp_table_vector_profile(x)
+  if (isTRUE(profile$gaussian)) {
     return(paste(
-      "Exact ideal two-sided-geometric convolution tail with union bound;",
-      "both pinned peers' finite-sampler TV bounds are deducted"))
+      "Signed fixed-work dyadic discrete-Gaussian plan v2 confidence-specific",
+      "subgaussian bound; signed tail and CDF TV transfers are deducted from",
+      "the requested accuracy probability; the published 95% radius is used",
+      "unchanged at level 0.95"))
   }
-  if (identical(x$noise_selection$winner, "gaussian")) {
+  if (isTRUE(profile$exact_gc)) {
     return(paste(
-      "Gaussian tail bound adjusted for the published total-variation",
-      "bound, with union bound"))
+      "Exact ideal one-draw two-sided-geometric tail with union bound;",
+      "the signed vector sampler TV bound is deducted once"))
   }
-  "Google DP Laplace confidence intervals with union bound"
+  paste(
+    "Exact ideal two-sided-geometric convolution tail with union bound;",
+    "both pinned peers' finite-sampler TV bounds are deducted")
 }
 
 .dsvert_dp_table_published_accuracy_matches <- function(x, radius) {
-  valid_method <- if (identical(
-      x$backend, "exact_signed_Ring128_global_vector")) {
-    profile <- .dsvert_dp_table_vector_profile(x)
-    is.list(profile) &&
-      .dsvert_dp_table_vector_accuracy_method_is_valid(x, profile)
-  } else {
-    identical(x$accuracy_simultaneous_method, "union_bound")
-  }
+  profile <- .dsvert_dp_table_vector_profile(x)
+  valid_method <- is.list(profile) &&
+    .dsvert_dp_table_vector_accuracy_method_is_valid(x, profile)
   is.numeric(x$accuracy_simultaneous_95_abs) &&
     length(x$accuracy_simultaneous_95_abs) == 1L &&
     !is.na(x$accuracy_simultaneous_95_abs) &&

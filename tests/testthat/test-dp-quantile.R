@@ -59,7 +59,6 @@
     implementation_delta =
       "1/1267650600228229401496703205376",
     adjacency = "add_remove_patient",
-    composition_partitions = 1L,
     capsule_id = strrep("a", 64L),
     final_vector_root = strrep("b", 64L),
     coordinate_order_sha256 = strrep("c", 64L),

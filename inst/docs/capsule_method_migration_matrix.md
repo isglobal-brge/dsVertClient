@@ -133,8 +133,6 @@ exact aggregate:
 - `opaque_peer_ciphertext`: the client relays a blob sealed to a pinned peer and
   cannot inspect the protected payload.
 - `public_metadata`: dimensions, receipts, domains or attestations.
-- `legacy_dp_release`: output of one of the current allocator-backed DP
-  producers.
 
 Verified evidence includes the previously omitted exact outputs from
 `glmStandardizeDS`; the NB bootstrap/profile and full share route (including

@@ -1,67 +1,6 @@
 .dp_table_fixture <- function(table, epsilon = 1) {
-  table <- as.matrix(table)
-  simultaneous_radius <- .dsvert_dp_google_ci_radius(
-    epsilon, 1, confidence = 1 - 0.05 / length(table))
-  marginal_radius <- .dsvert_dp_google_ci_radius(epsilon, 1)
-  laplace <- list(
-    available = TRUE,
-    mechanism = "dsvert_dp_v1_deterministic_granular_laplace_int64",
-    epsilon = epsilon, delta = 0, analytic_delta = 0,
-    implementation_delta_bound = 0,
-    accounting_rule = "pure_dp_no_implementation_slack",
-    accuracy_accounting = "exact_granular_laplace_confidence_interval",
-    sensitivity_norm = "l1", sensitivity = 1,
-    marginal_95_abs = marginal_radius,
-    simultaneous_95_abs = simultaneous_radius,
-    nominal_rmse = sqrt(2) / epsilon, sigma = 0,
-    granularity = 2^ceiling(log2((1 / epsilon) / 2^40)),
-    analytic_accounting_verified = TRUE, unavailable_reason = "")
-  gaussian <- list(
-    available = FALSE,
-    mechanism = "dsvert_dp_v3_deterministic_approximate_gaussian_int64",
-    epsilon = epsilon, delta = 0, analytic_delta = 0,
-    implementation_delta_bound =
-      .dsvert_dp_gaussian_implementation_delta_bound(
-        length(table), epsilon),
-    accounting_rule =
-      "analytic_gaussian_delta_plus_dp_transfer_from_total_variation_bound",
-    accuracy_accounting =
-      "gaussian_tail_alpha_minus_total_variation_union_bound",
-    sensitivity_norm = "l2", sensitivity = 1,
-    marginal_95_abs = 0, simultaneous_95_abs = 0,
-    nominal_rmse = 0, sigma = 0, granularity = 0,
-    analytic_accounting_verified = FALSE,
-    unavailable_reason = "gaussian_delta_is_zero")
-  noise_selection <- list(
-    schema_version = 2L,
-    selector = "minimum_conservative_95_radius_v3",
-    objective = "simultaneous_95_abs", coordinate_count = length(table),
-    laplace = laplace, gaussian = gaussian, winner = "laplace",
-    winner_mechanism = laplace$mechanism,
-    winning_metric_abs = simultaneous_radius, winner_delta = 0,
-    tie_break = "laplace_unless_gaussian_strictly_improves")
-  structure(list(
-    released = TRUE, table = table, counts = as.numeric(table),
-    nrow = nrow(table), ncol = ncol(table),
-    row_levels = rownames(table), col_levels = colnames(table),
-    mechanism = "dsvert_dp_v1_deterministic_granular_laplace_int64",
-    implementation = paste0(
-      "dsVert adapted Google Differential Privacy v4.1.0 ",
-      "granular Laplace integer mechanism"),
-    sampler = "deterministic_two_sided_geometric",
-    randomness = "HMAC-SHA256/ChaCha20",
-    privacy_epoch = 1, noise_key_id = "test-noise-key-v1",
-    sticky_noise = "dsvert-sticky-noise-v1",
-    sensitivity = 1, l1_sensitivity = 1, l2_sensitivity = 1,
-    noise_selection = noise_selection, clipped_coordinates = 0L,
-    accuracy_simultaneous_95_abs = simultaneous_radius,
-    accuracy_simultaneous_confidence = 0.95,
-    accuracy_simultaneous_method = "union_bound",
-    unit_aggregation_policy = "consistent_cell_else_exclude_v1",
-    epsilon = epsilon, delta = 0, server = "site-a"),
-    class = c("ds.vertDPContingency", "list"))
+  .dp_vector_table_fixture(table, epsilon)
 }
-
 .dp_vector_table_fixture <- function(table, epsilon = 3) {
   table <- as.matrix(table)
   result <- list(
@@ -91,7 +30,8 @@
     table = table, counts = unname(as.numeric(table)),
     nrow = as.integer(nrow(table)), ncol = as.integer(ncol(table)),
     row_levels = unname(rownames(table)),
-    col_levels = unname(colnames(table)), coordinate_maximum = 100,
+    col_levels = unname(colnames(table)),
+    coordinate_maximum = max(1000, table),
     artifact_l1_sensitivity = 1, artifact_l2_sensitivity = 1,
     unit_aggregation_policy = "consistent_joint_cell_else_exclude_v1",
     server = "site-a",
@@ -556,8 +496,8 @@ test_that("DP indirect-standardisation region covers every small table", {
   rates <- c(0.1, 0.4)
   result <- ds.vertDPIndirectStandardization(
     .dp_table_fixture(tab, epsilon = 3), rates, event = "event")
-  lower <- as.integer(result$count_lower)
-  upper <- as.integer(result$count_upper)
+  lower <- as.integer(ceiling(result$count_lower))
+  upper <- as.integer(floor(result$count_upper))
   candidates <- expand.grid(lapply(seq_along(lower), function(index) {
     seq.int(lower[[index]], upper[[index]])
   }), KEEP.OUT.ATTRS = FALSE)
@@ -696,24 +636,14 @@ test_that("DP 2x2 gives conservative regions for undefined zero ratios", {
   expect_true(is.infinite(result$mechanism_regions$risk_ratio[["upper"]]))
 })
 
-test_that("DP uncertainty radius responds monotonically", {
-  expect_gte(.dsvert_dp_simultaneous_radius(1, 10, 0.95),
-             .dsvert_dp_simultaneous_radius(1, 4, 0.95))
-  expect_gte(.dsvert_dp_simultaneous_radius(0.5, 4, 0.95),
-             .dsvert_dp_simultaneous_radius(2, 4, 0.95))
-  expect_error(.dsvert_dp_simultaneous_radius(0, 4, 0.95), "Invalid")
-  expect_true(is.finite(.dsvert_dp_simultaneous_radius(
-    1, 1000000, 1 - 1e-12)))
-})
-
 test_that("DP 2x2 mechanism regions enclose every integer table in the box", {
   tab <- matrix(c(3, 4, 2, 5), nrow = 2L, byrow = TRUE,
                 dimnames = list(c("unexposed", "exposed"),
                                 c("nonevent", "event")))
   x <- .dp_table_fixture(tab, epsilon = 3)
   result <- ds.vertDPEpi2x2(x, exposed = "exposed", event = "event")
-  lower <- as.integer(result$count_lower)
-  upper <- as.integer(result$count_upper)
+  lower <- as.integer(ceiling(result$count_lower))
+  upper <- as.integer(floor(result$count_upper))
   candidates <- expand.grid(lapply(seq_along(lower), function(index) {
     seq.int(lower[[index]], upper[[index]])
   }))
@@ -746,8 +676,10 @@ test_that("DP standardisation region encloses every integer table in the box", {
   x <- .dp_table_fixture(tab, epsilon = 3)
   result <- ds.vertDPDirectStandardization(
     x, c(young = 0.25, old = 0.75), event = "event")
-  lower <- as.integer(result$count_lower %||% (x$table - result$simultaneous_radius))
-  upper <- as.integer(result$count_upper %||% (x$table + result$simultaneous_radius))
+  lower <- as.integer(ceiling(
+    result$count_lower %||% (x$table - result$simultaneous_radius)))
+  upper <- as.integer(floor(
+    result$count_upper %||% (x$table + result$simultaneous_radius)))
   lower[lower < 0L] <- 0L
   candidates <- expand.grid(lapply(seq_along(lower), function(index) {
     seq.int(lower[[index]], upper[[index]])
@@ -1893,7 +1825,7 @@ test_that("causal standardization rejects ambiguous public designs", {
     released, valid_strata, valid_treatment, "t",
     c(s1 = 0.5, wrong = 0.5)), "named public weights")
   forged <- released
-  forged$noise_key_id <- ""
+  forged$noise_key_ids[[1L]] <- ""
   expect_error(ds.vertDPCausalStandardization(
     forged, valid_strata, valid_treatment, "t", valid_weights),
     "released, validated")

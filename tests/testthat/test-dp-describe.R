@@ -1,147 +1,8 @@
-.dp_describe_client_status <- function(
-    adjacency = "add_remove_patient") {
-  list(
-    policy = list(
-      adjacency = adjacency,
-      composition_partitions = 2L,
-      local_total_epsilon = 0.5,
-      local_total_delta = 0,
-      decay = 0.5,
-      numeric_grid_bits = 8L,
-      numeric_bounds = list(x = c(0, 4), y = c(0, 8))),
-    noise_root = list(
-      privacy_epoch = 1,
-      key_id = "test-noise-key-v1"))
+.dp_describe_client_release <- function() {
+  .dsvert_dp_describe_vector_result(
+    .dp_describe_vector_capsule(decoded = TRUE),
+    "protected", "primary")
 }
-
-.dp_describe_client_release <- function(
-    adjacency = "add_remove_patient") {
-  epsilon <- 0.25
-  weights <- c(0.2, 0.3, 0.3, 0.2)
-  family_epsilon <- epsilon * weights / 2
-  sensitivity <- c(
-    1, 256, 256,
-    if (identical(adjacency, "add_remove_patient")) 1 else 2)
-  coordinates <- 16L
-  marginal <- vapply(seq_len(4L), function(index) {
-    .dsvert_dp_google_ci_radius(
-      family_epsilon[[index]], sensitivity[[index]])
-  }, numeric(1L))
-  simultaneous <- vapply(seq_len(4L), function(index) {
-    .dsvert_dp_google_ci_radius(
-      family_epsilon[[index]], sensitivity[[index]],
-      alpha = 0.05 / coordinates)
-  }, numeric(1L))
-  l2_sensitivity <- sqrt(2 * (2 * 256^2 + if (identical(
-    adjacency, "add_remove_patient")) 2 else 3))
-  worst <- which.max(sensitivity / family_epsilon)
-  laplace <- list(
-    available = TRUE,
-    mechanism = "dsvert_dp_v1_deterministic_granular_laplace_int64",
-    epsilon = family_epsilon[[worst]], delta = 0, analytic_delta = 0,
-    implementation_delta_bound = 0,
-    accounting_rule = "pure_dp_no_implementation_slack",
-    accuracy_accounting = "exact_granular_laplace_confidence_interval",
-    sensitivity_norm = "l1", sensitivity = sensitivity[[worst]],
-    marginal_95_abs = marginal[[worst]],
-    simultaneous_95_abs = simultaneous[[worst]],
-    nominal_rmse = sqrt(2) * sensitivity[[worst]] /
-      family_epsilon[[worst]], sigma = 0,
-    granularity = 2^ceiling(log2(
-      (sensitivity[[worst]] / family_epsilon[[worst]]) / 2^40)),
-    analytic_accounting_verified = TRUE, unavailable_reason = "")
-  gaussian <- list(
-    available = FALSE,
-    mechanism = "dsvert_dp_v3_deterministic_approximate_gaussian_int64",
-    epsilon = epsilon, delta = 0, analytic_delta = 0,
-    implementation_delta_bound =
-      .dsvert_dp_gaussian_implementation_delta_bound(coordinates, epsilon),
-    accounting_rule =
-      "analytic_gaussian_delta_plus_dp_transfer_from_total_variation_bound",
-    accuracy_accounting =
-      "gaussian_tail_alpha_minus_total_variation_union_bound",
-    sensitivity_norm = "l2", sensitivity = l2_sensitivity,
-    marginal_95_abs = 0, simultaneous_95_abs = 0,
-    nominal_rmse = 0, sigma = 0, granularity = 0,
-    analytic_accounting_verified = FALSE,
-    unavailable_reason = "gaussian_delta_is_zero")
-  noise_selection <- list(
-    schema_version = 2L,
-    selector = "minimum_conservative_95_radius_v3",
-    objective = "simultaneous_95_abs", coordinate_count = coordinates,
-    laplace = laplace, gaussian = gaussian, winner = "laplace",
-    winner_mechanism = laplace$mechanism,
-    winning_metric_abs = laplace$simultaneous_95_abs,
-    winner_delta = 0,
-    tie_break = "laplace_unless_gaussian_strictly_improves")
-  block <- c(4, 512, 336, 1, 1, 1, 1, 1)
-  list(
-    released = TRUE,
-    analysis_id = "primary",
-    analysis_version = "v1",
-    variables = c("x", "y"),
-    variable_count = 2L,
-    lower_bounds = c(0, 0),
-    upper_bounds = c(4, 8),
-    grid_lengths = c(4L, 4L),
-    grid_values = c(1, 2, 3, 4, 2, 4, 6, 8),
-    histogram_semantics =
-      "(previous_endpoint,current_endpoint] plus fixed invalid bin",
-    unit_collapse =
-      "mean_of_finite_rows_after_public_bound_clipping",
-    count_definition =
-      "DP-noisy effective units with at least one finite bounded value",
-    invalid_unit_rule =
-      "invalid_patient_ids_rejected_by_admission",
-    statistics = c(block, block),
-    coordinate_count = coordinates,
-    coordinate_layout = paste(
-      "per_variable[count,qsum,qsumsq,",
-      "histogram[grid_bins+invalid]]"),
-    numeric_grid_bits = 8L,
-    numeric_grid_scale = 256,
-    quantization =
-      "round(z*scale) and round(z^2*scale) independently",
-    max_abs_normalized_quantization_per_unit = 0.5 / 256,
-    allocation_names = c("count", "sum", "sumsq", "histogram"),
-    allocation_weights = weights,
-    epsilon_per_variable_family = family_epsilon,
-    epsilon_allocation_sum = epsilon,
-    submechanism_count = 8L,
-    composition_rule = paste(
-      "sequential composition across variables and count/sum/sumsq/",
-      "histogram families; each histogram is one L1 vector mechanism"),
-    calibration_rule = paste(
-      "each family is calibrated with its own epsilon and sensitivity;",
-      "the summed sensitivity bound is descriptive, not a shared scale"),
-    family_sensitivity = sensitivity,
-    sum_family_l1_sensitivity_bound = 2 * sum(sensitivity),
-    l2_sensitivity_bound = l2_sensitivity,
-    noise_selection = noise_selection,
-    mechanism = "dsvert_dp_v1_deterministic_granular_laplace_int64",
-    implementation = paste0(
-      "dsVert adapted Google Differential Privacy v4.1.0 ",
-      "granular Laplace integer mechanism"),
-    sampler = "deterministic_two_sided_geometric",
-    randomness = "HMAC-SHA256/ChaCha20",
-    postprocessing = "coordinatewise_nonnegative_integer",
-    clipped_coordinates = 0L,
-    accuracy_95_abs_by_variable_family = rep(marginal, times = 2L),
-    accuracy_simultaneous_95_abs_by_variable_family =
-      rep(simultaneous, times = 2L),
-    accuracy_simultaneous_confidence = 0.95,
-    accuracy_simultaneous_method = "union_bound",
-    uncertainty_scope =
-      "DP mechanism noise only; sampling uncertainty excluded",
-    privacy_epoch = 1,
-    noise_key_id = "test-noise-key-v1",
-    sticky_noise = "dsvert-sticky-noise-v1",
-    epsilon = epsilon,
-    delta = 0,
-    adjacency = adjacency,
-    composition_partitions = 2L)
-}
-
 .dp_describe_vector_capsule <- function(decoded = TRUE, gaussian = FALSE) {
   numeric <- list(artifacts = list(
     x = list(
@@ -312,6 +173,42 @@ test_that("describe maps only signed final vector blocks", {
     stale_gate, "protected", "primary"), "vector context is invalid")
 })
 
+test_that("describe vector contract rejects shape and lattice tampering", {
+  base <- .dp_describe_vector_capsule(decoded = TRUE)
+  reject <- function(change, pattern) {
+    candidate <- change(base)
+    expect_error(
+      .dsvert_dp_describe_vector_result(
+        candidate, "protected", "primary"),
+      pattern)
+  }
+  reject(function(x) {
+    x$release$manifest$workload$families$describe_artifacts$primary$
+      histogram_references[[1L]]$primitive_id <- "missing"
+    x
+  }, "does not contain exactly one fixed histogram block")
+  reject(function(x) {
+    x$layout$blocks[["fixed_numeric_histograms::h_x"]]$descriptor$
+      grid[[1L]] <- 0.5
+    x
+  }, "histogram reference is inconsistent")
+  reject(function(x) {
+    x$layout$blocks[["fixed_numeric_histograms::h_x"]]$length <- 4L
+    x
+  }, "histogram reference is inconsistent")
+  reject(function(x) {
+    x$release$manifest$workload$release_lattice$
+      natural_l1_sensitivity <- 0
+    x
+  }, "release lattice is invalid")
+  reject(function(x) {
+    start <- x$layout$blocks[["numeric_moments::x"]]$start
+    x$release$values[[start + 1L]] <-
+      x$release$values[[start + 1L]] + 1 / 512
+    x
+  }, "not on its signed lattice")
+})
+
 test_that("describe propagates the signed Gaussian L2 plan", {
   capsule <- .dp_describe_vector_capsule(
     decoded = FALSE, gaussian = TRUE)
@@ -328,37 +225,6 @@ test_that("describe propagates the signed Gaussian L2 plan", {
   postprocessed <- .dsvert_dp_describe_postprocess(result, probs = 0.5)
   expect_identical(postprocessed$mechanism,
                    .DSVERT_CLIENT_VECTOR_GAUSSIAN_RELEASE_MECHANISM)
-})
-
-test_that("client validates explicit sequential epsilon composition", {
-  result <- .dsvert_dp_validate_describe_release(
-    .dp_describe_client_release(), "primary", "site_a",
-    .dp_describe_client_status())
-  expect_equal(
-    result$variable_count * sum(result$epsilon_per_variable_family),
-    result$epsilon, tolerance = 1e-15)
-  expect_equal(
-    result$epsilon_per_variable_family,
-    c(0.025, 0.0375, 0.0375, 0.025))
-  expect_match(result$composition_rule, "each histogram is one L1 vector")
-  expect_false(any(grepl(
-    "observed_min|observed_max|exact|raw", names(result),
-    ignore.case = TRUE)))
-})
-
-test_that("client enforces replacement histogram sensitivity", {
-  status <- .dp_describe_client_status("replace_one_fixed_cohort")
-  release <- .dp_describe_client_release("replace_one_fixed_cohort")
-  result <- .dsvert_dp_validate_describe_release(
-    release, "primary", "site_a", status)
-  expect_identical(result$family_sensitivity, c(1, 256, 256, 2))
-  expect_identical(result$sum_family_l1_sensitivity_bound, 1030)
-
-  release$family_sensitivity[[4L]] <- 1
-  expect_error(
-    .dsvert_dp_validate_describe_release(
-      release, "primary", "site_a", status),
-    "invalid DP describe release")
 })
 
 test_that("no-noise descriptives and quantiles match the binned oracle", {
@@ -522,9 +388,7 @@ test_that("describe exposes typed non-sampling moment regions", {
 })
 
 test_that("uncertified positive noisy counts retain an explicit warning", {
-  result <- .dsvert_dp_validate_describe_release(
-    .dp_describe_client_release(), "primary", "site_a",
-    .dp_describe_client_status())
+  result <- .dp_describe_client_release()
   result <- .dsvert_dp_describe_postprocess(result, probs = 0.5)
   expect_true(all(result$descriptives$status ==
     "dp_point_available_count_not_certified_positive"))
@@ -634,44 +498,6 @@ test_that("empty noisy histograms return typed full-domain quantile bands", {
   x <- result$quantiles[result$quantiles$variable == "x", ]
   expect_equal(x$dp_grid_lower, c(0, 0))
   expect_equal(x$dp_grid_upper, c(4, 4))
-})
-
-test_that("client rejects malformed, fractional, or expanded releases", {
-  status <- .dp_describe_client_status()
-  base <- .dp_describe_client_release()
-  malformed <- list(
-    utils::modifyList(base, list(epsilon_allocation_sum = 0.3)),
-    utils::modifyList(base, list(statistics = c(4.5, base$statistics[-1L]))),
-    utils::modifyList(base, list(grid_lengths = c(5L, 4L))),
-    utils::modifyList(base, list(
-      composition_rule = "full epsilon independently for every statistic")),
-    c(base, list(observed_minimum = 0)))
-  for (value in malformed) {
-    expect_error(
-      .dsvert_dp_validate_describe_release(
-        value, "primary", "site_a", status),
-      "invalid DP describe release")
-  }
-})
-
-test_that("describe validation rejects non-finite and overflowing coordinates", {
-  status <- .dp_describe_client_status()
-  for (bad in c(NA_real_, NaN, Inf, -Inf, 2^53)) {
-    release <- .dp_describe_client_release()
-    release$statistics[[1L]] <- bad
-    expect_error(
-      .dsvert_dp_validate_describe_release(
-        release, "primary", "site_a", status),
-      "invalid DP describe release")
-  }
-  for (bad in c(NA_real_, NaN, Inf, -Inf)) {
-    release <- .dp_describe_client_release()
-    release$grid_values[[1L]] <- bad
-    expect_error(
-      .dsvert_dp_validate_describe_release(
-        release, "primary", "site_a", status),
-      "invalid DP describe release")
-  }
 })
 
 test_that("probs never alter the canonical sticky server request", {

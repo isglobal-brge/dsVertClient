@@ -44,7 +44,6 @@ library(testthat)
     delta = 1e-6,
     implementation_delta = 0,
     adjacency = "add_remove_patient",
-    composition_partitions = 1L,
     mechanism = "complete_discrete_laplace_two_peer",
     sampler = "hkdf_chacha20",
     sticky_noise = "one immutable capsule vector; unlimited replay",
