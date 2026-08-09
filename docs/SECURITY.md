@@ -137,11 +137,10 @@ denial of service.
   `request_limit=FALSE`, and the registry counts reservations separately
   from publication. The claim is scoped to
   `at_most_N_immutable_snapshot_workload_capsules_per_stable_privacy_accountant_namespace`
-  and assumes
-  `privacy_accountant_namespace_assumption=one_stable_unique_namespace_across_domain_cohort_policy_pinset_and_ledger_reconfiguration_per_protected_privacy_universe`.
-  Namespace continuity is a custodial deployment obligation: neither
-  package enforces global uniqueness or automatically migrates
-  reservations across reconfiguration. The fixed, non-retryable
+  and enforces
+  `privacy_accountant_namespace_enforcement=identity_bound_immutable_receipt_v1`.
+  Status v6 requires all peers to agree on the exact `jdpc1_` namespace
+  ID. The fixed, non-retryable
   `[dsvert_dp_lifetime_budget_exhausted:v1]` token is an opaque terminal
   union of global `N` exhaustion and a requested capsule whose
   irrevocable instance claim/publication binding prevents that instance

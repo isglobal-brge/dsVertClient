@@ -4,7 +4,7 @@
 # slots or decay.
 
 .DSVERT_CLIENT_JOINT_DP_CAPSULE_STATUS_VERSION <-
-  "dsvert-joint-dp-capsule-status-v5"
+  "dsvert-joint-dp-capsule-status-v6"
 
 .dsvert_joint_dp_lifetime_decimal_parts <- function(value) {
   if (!is.character(value) || length(value) != 1L || is.na(value) ||
@@ -199,7 +199,10 @@
 
 .dsvert_joint_dp_validate_capsule_privacy_contract <- function(value) {
   expected <- c(
-    "definition", "scope", "adversary_model", "assumptions",
+    "definition", "scope", "adversary_model",
+    "privacy_accountant_namespace_id",
+    "privacy_accountant_namespace_enforcement",
+    "assumptions",
     "simultaneous_designated_history_rollback_protection",
     "transcript_security", "malicious_security", "operation_accounting",
     "privacy_budget_gate", "operation_limit", "request_limit",
@@ -216,14 +219,19 @@
                 "stable_privacy_accountant_namespace")) &&
     identical(value$adversary_model,
               "authenticated_semi_honest_noncollusion") &&
+    .dsvert_dp_is_string(value$privacy_accountant_namespace_id) &&
+    grepl("^jdpc1_[0-9a-f]{64}$",
+          value$privacy_accountant_namespace_id) &&
+    identical(
+      value$privacy_accountant_namespace_enforcement,
+      "identity_bound_immutable_receipt_v1") &&
     identical(
       value$assumptions,
       paste0("declared_adjacency_bounds_immutable_snapshot_protocol_",
              "compliant_peers_at_least_one_noncolluding_designated_",
              "noise_peer_retains_and_uses_complete_authenticated_monotonic_",
-             "history_stable_unique_privacy_accountant_namespace_per_",
-             "protected_privacy_",
-             "universe")) &&
+             "history_preserves_identity_bound_privacy_accountant_receipt_",
+             "and_accounting_history")) &&
     identical(
       value$simultaneous_designated_history_rollback_protection,
       "not_claimed_without_external_linearizable_cas") &&
@@ -488,6 +496,12 @@
                    reference$policy[common_policy])) {
       stop("The connected servers disagree on the reusable capsule policy",
            call. = FALSE)
+    }
+    if (!identical(current$privacy_contract,
+                   reference$privacy_contract)) {
+      stop(
+        "The connected servers disagree on the reusable capsule privacy contract",
+        call. = FALSE)
     }
   }
   designated <- reference$policy$designated_noise_peers

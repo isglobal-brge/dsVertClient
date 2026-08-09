@@ -25,6 +25,8 @@
   lifetime_epsilon <- .dsvert_joint_dp_lifetime_exact_total(1, lifetime_max)
   lifetime_delta <- .dsvert_joint_dp_lifetime_exact_total(
     2^-100, lifetime_max)
+  namespace_id <- paste0("jdpc1_", digest::digest(
+    paste(peers, collapse = "|"), "sha256", serialize = FALSE))
   telemetry <- list(
     capsules_created = capsules,
     lifetime_max_distinct_capsules = lifetime_max,
@@ -61,19 +63,21 @@
   statuses <- stats::setNames(lapply(peers, function(peer) {
     is_designated <- peer %in% designated
     list(
-      version = "dsvert-joint-dp-capsule-status-v5", enabled = TRUE,
+      version = "dsvert-joint-dp-capsule-status-v6", enabled = TRUE,
       privacy_contract = list(
         definition = "bounded_lifetime_epsilon_delta_dp",
         scope = paste0(
           "at_most_N_immutable_snapshot_workload_capsules_per_stable_",
           "privacy_accountant_namespace"),
         adversary_model = "authenticated_semi_honest_noncollusion",
+        privacy_accountant_namespace_id = namespace_id,
+        privacy_accountant_namespace_enforcement =
+          "identity_bound_immutable_receipt_v1",
         assumptions = paste0(
-          "declared_adjacency_bounds_immutable_snapshot_protocol_",
-          "compliant_peers_at_least_one_noncolluding_designated_noise_peer_",
-          "retains_and_uses_complete_authenticated_monotonic_history_",
-          "stable_unique_privacy_accountant_namespace_per_protected_",
-          "privacy_universe"),
+          "declared_adjacency_bounds_immutable_snapshot_protocol_compliant_",
+          "peers_at_least_one_noncolluding_designated_noise_peer_retains_and_",
+          "uses_complete_authenticated_monotonic_history_preserves_identity_",
+          "bound_privacy_accountant_receipt_and_accounting_history"),
         simultaneous_designated_history_rollback_protection =
           "not_claimed_without_external_linearizable_cas",
         transcript_security = "computational_mpc_and_csprng",
