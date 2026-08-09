@@ -9,6 +9,10 @@
 .DSVERT_DP_ANALYSIS_ARTIFACT_DOMAIN <-
   "dsVert/analysis-artifact-key/v1|"
 .DSVERT_DP_ANALYSIS_GAUSSIAN_TV_PER_COORDINATE <- 2^-40
+.DSVERT_DP_ANALYSIS_COUNT_TV_MECHANISM <-
+  "discrete-laplace-output-perturbation-tv-v2"
+.DSVERT_DP_ANALYSIS_COUNT_TV_SAMPLER <-
+  "hkdf-sha256-aes128ctr-two-geometric-tv-v2"
 .DSVERT_DP_ANALYSIS_RESERVED_FIELDS <- c(
   "analysis_id", "attempt_id", "connection_id", "epoch", "key_id", "nonce",
   "operation_id", "release_index", "request_id", "session_id", "user_id",
@@ -110,6 +114,16 @@
   as.numeric(value)
 }
 
+.dsvert_dp_analysis_client_nonnegative_integer <- function(value) {
+  if (!is.numeric(value) || length(value) != 1L || is.na(value) ||
+      !is.finite(value) || value < 0 || value != floor(value) ||
+      value > .Machine$integer.max) {
+    stop("Invalid nonnegative integer in the analysis contract",
+         call. = FALSE)
+  }
+  as.numeric(value)
+}
+
 .dsvert_dp_analysis_client_gaussian_impl_delta_v1 <- function(
     coordinates, epsilon) {
   log_bound <- log(coordinates) +
@@ -137,6 +151,8 @@
     mechanism, epsilon, delta, coordinates) {
   calibration <- mechanism$calibration
   sensitivity <- mechanism$sensitivity$value
+  count_tv <- identical(
+    mechanism$version, .DSVERT_DP_ANALYSIS_COUNT_TV_MECHANISM)
   expected <- switch(mechanism$family,
     gaussian = c(
       version = "gaussian-output-perturbation-v1",
@@ -144,9 +160,11 @@
     laplace = c(
       version = "laplace-output-perturbation-v1",
       sampler = "laplace-one-draw-v1"),
-    discrete_laplace = c(
-      version = "discrete-laplace-output-perturbation-v1",
-      sampler = "discrete-laplace-one-draw-v1"))
+    discrete_laplace = if (count_tv) c(
+      version = .DSVERT_DP_ANALYSIS_COUNT_TV_MECHANISM,
+      sampler = .DSVERT_DP_ANALYSIS_COUNT_TV_SAMPLER) else c(
+        version = "discrete-laplace-output-perturbation-v1",
+        sampler = "discrete-laplace-one-draw-v1"))
   if (!identical(mechanism$version, unname(expected[["version"]])) ||
       !identical(calibration$sampler, unname(expected[["sampler"]]))) {
     return(FALSE)
@@ -163,6 +181,12 @@
       calibration$implementation_delta + tolerance >=
         implementation_floor &&
       achieved + calibration$implementation_delta <= delta + tolerance
+  } else if (count_tv) {
+    minimum_scale <- sensitivity / epsilon
+    is.finite(minimum_scale) && minimum_scale > 0 &&
+      calibration$noise_scale >= minimum_scale && delta > 0 &&
+      calibration$implementation_delta > 0 &&
+      calibration$implementation_delta <= delta && coordinates == 1
   } else {
     minimum_scale <- sensitivity / epsilon
     if (!is.finite(minimum_scale) || minimum_scale <= 0) return(FALSE)
@@ -361,6 +385,16 @@
         mechanism, privacy$epsilon, privacy$delta,
         randomness$lanes$final_noise$coordinates)
   }
+  count_tv_valid <- isTRUE(analysis_valid) && identical(
+    identical(mechanism$version,
+              .DSVERT_DP_ANALYSIS_COUNT_TV_MECHANISM),
+    identical(analysis$primitive, "joint-dp-laplace-v2"))
+  count_tv <- identical(
+    mechanism$version, .DSVERT_DP_ANALYSIS_COUNT_TV_MECHANISM)
+  if (count_tv) {
+    count_tv_valid <- count_tv_valid && identical(sensitivity$value, 1) &&
+      identical(names(randomness$lanes), "final_noise")
+  }
   privacy$mechanism <- mechanism
   value$privacy <- privacy
 
@@ -383,18 +417,32 @@
       .dsvert_dp_analysis_client_positive_integer(numeric$value_bits),
       error = function(error) NULL)
     numeric$fractional_bits <- tryCatch(
-      .dsvert_dp_analysis_client_positive_integer(numeric$fractional_bits),
+      .dsvert_dp_analysis_client_nonnegative_integer(
+        numeric$fractional_bits),
       error = function(error) NULL)
     numeric_valid <- !is.null(numeric$value_bits) &&
       !is.null(numeric$fractional_bits) &&
       numeric$fractional_bits < numeric$value_bits
   }
+  if (isTRUE(numeric_valid) && count_tv) {
+    numeric_valid <- identical(numeric$value_bits, 127) &&
+      identical(numeric$fractional_bits, 0) &&
+      identical(numeric$rounding, "toward_zero") &&
+      identical(numeric$overflow, "reject") &&
+      identical(numeric$sampler_encoding,
+                "aes128ctr_integer_coordinate_v2") &&
+      identical(numeric$output_encoding,
+                "twos_complement_integer_v1")
+  }
   value$numeric <- numeric
   shape_valid <- .dsvert_dp_analysis_client_named_list(value$public_shape)
+  if (isTRUE(shape_valid) && count_tv) {
+    shape_valid <- identical(value$public_shape, list(count = 1))
+  }
   if (!isTRUE(snapshots_valid && authorities_valid && analysis_valid &&
               privacy_valid && contribution_valid && constraints_valid &&
               mechanism_valid && sensitivity_valid && calibration_valid &&
-              lanes_valid && numeric_valid && shape_valid)) {
+              lanes_valid && count_tv_valid && numeric_valid && shape_valid)) {
     stop("Invalid semantic contract", call. = FALSE)
   }
   .dsvert_dp_analysis_client_canonical_value_v1(value)
@@ -447,6 +495,12 @@
   physical_ring_bits <- switch(
     backend$ring, ring127 = 127, ring128 = 128)
   if (physical_ring_bits < semantic$numeric$value_bits) {
+    stop("Invalid execution backend", call. = FALSE)
+  }
+  if (identical(
+      semantic$privacy$mechanism$version,
+      .DSVERT_DP_ANALYSIS_COUNT_TV_MECHANISM) &&
+      !identical(backend$ring, "ring127")) {
     stop("Invalid execution backend", call. = FALSE)
   }
   transport <- value$transport
