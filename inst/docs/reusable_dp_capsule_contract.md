@@ -52,7 +52,7 @@ sole publication slot is already bound and the exact instance cannot continue
 or replay. It does not imply `remaining_distinct_capsules == 0`; separate public
 causes would leak state and break the compatible failure boundary.
 
-Joint-DP capsule status v6 therefore reports `capsule_epsilon`, `capsule_delta`,
+Joint-DP capsule status v5 therefore reports `capsule_epsilon`, `capsule_delta`,
 `lifetime_max_distinct_capsules`, `capsules_created`,
 `releases_published`, `remaining_distinct_capsules` and exact bounded
 composition. It binds
@@ -62,15 +62,15 @@ composition. It binds
 not end-user requests. It exposes no geometric `decay` or per-query epsilon
 schedule.
 
-Status v6 and result security claim v4 also bind the assumption that at least
+Status v5 and result security claim v3 also bind the assumption that at least
 one non-colluding designated peer retains and uses complete authenticated
 monotonic history. The exact public value is
 `authenticated_history_retention_assumption=at_least_one_noncolluding_designated_noise_peer_retains_and_uses_complete_authenticated_monotonic_history`.
-Status v6 additionally carries a consensus namespace matching
-`^jdpc1_[0-9a-f]{64}$`; the result claim binds
-`privacy_accountant_namespace_enforcement=identity_bound_immutable_receipt_v1`.
-The server preserves the identity-bound privacy-accountant receipt and
-accounting history. They make no claim against simultaneous
+The result claim additionally binds
+`privacy_accountant_namespace_assumption=one_stable_unique_namespace_across_domain_cohort_policy_pinset_and_ledger_reconfiguration_per_protected_privacy_universe`.
+Today this is a custodial deployment assumption: neither package discovers or
+enforces a unique namespace globally, nor automatically migrates reservation
+history across reconfiguration. They make no claim against simultaneous
 rollback of both designated histories without an external linearizable CAS.
 This is not protection against a compromised host or collusion of both
 designated peers.

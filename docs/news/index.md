@@ -26,7 +26,7 @@
   phase has not yet been committed.
 
 - [`ds.vertDPStatus()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertDPStatus.md)
-  now accepts only joint-DP capsule status v6 and prints the fixed
+  now accepts only joint-DP capsule status v5 and prints the fixed
   per-capsule parameters, lifetime maximum, burned reservations,
   publications and remaining distinct-capsule units. Exact validation
   requires `N * epsilon <= 8` and `N * delta < 1`, so a vacuous delta
@@ -35,15 +35,15 @@
   does not reinterpret exhaustion as consortium unreadiness. New capsule
   reservation is an operation/history gate, while `request_limit` is
   false and exact replay of the same capsule/release instance remains
-  unlimited post-processing. Every peer must agree on the exact `jdpc1_`
-  privacy-accountant namespace ID and attest
-  `privacy_accountant_namespace_enforcement=identity_bound_immutable_receipt_v1`.
+  unlimited post-processing.
 
-- Public DP results now carry `dsvert-capsule-security-claim-v4`. It
+- Public DP results now carry `dsvert-capsule-security-claim-v3`. It
   binds the exact field
   `authenticated_history_retention_assumption=at_least_one_noncolluding_designated_noise_peer_retains_and_uses_complete_authenticated_monotonic_history`
   and
-  `privacy_accountant_namespace_enforcement=identity_bound_immutable_receipt_v1`.
+  `privacy_accountant_namespace_assumption=one_stable_unique_namespace_across_domain_cohort_policy_pinset_and_ledger_reconfiguration_per_protected_privacy_universe`.
+  The namespace condition is a custodial deployment assumption, not
+  client or server enforcement and not automatic accounting migration.
   The claim states explicitly that simultaneous rollback of both
   designated histories is not protected without an external linearizable
   CAS. The client recognizes the fixed, non-retryable, detail-free

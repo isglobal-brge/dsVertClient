@@ -1,16 +1,12 @@
 .capsule_release_cache_status <- function(
-    domain = strrep("1", 64L), namespace = strrep("a", 64L),
-    capsules = 0, releases = 0) {
+    domain = strrep("1", 64L), capsules = 0, releases = 0) {
   structure(list(peer_a = list(
-    version = "dsvert-joint-dp-capsule-status-v6",
+    version = "dsvert-joint-dp-capsule-status-v5",
     enabled = TRUE,
     privacy_contract = list(
       scope = paste0(
         "at_most_N_immutable_snapshot_workload_capsules_per_stable_",
-        "privacy_accountant_namespace"),
-      privacy_accountant_namespace_id = paste0("jdpc1_", namespace),
-      privacy_accountant_namespace_enforcement =
-        "identity_bound_immutable_receipt_v1"),
+        "privacy_accountant_namespace")),
     policy = list(peer_pinset_sha256 = strrep("2", 64L)),
     noise_root = list(epoch = 1, key_id = "root-1"),
     release_domain = list(
@@ -51,12 +47,6 @@ test_that("public release cache is bounded, LRU and connection-free", {
     datasources, .capsule_release_cache_status(strrep("6", 64L)), bundle)
   expect_match(key1, "^[0-9a-f]{64}$")
   expect_false(identical(key1, key2))
-  expect_false(identical(
-    key1,
-    .dsvert_dp_capsule_release_cache_key(
-      datasources,
-      .capsule_release_cache_status(namespace = strrep("b", 64L)),
-      bundle)))
   expect_identical(
     key1,
     .dsvert_dp_capsule_release_cache_key(
