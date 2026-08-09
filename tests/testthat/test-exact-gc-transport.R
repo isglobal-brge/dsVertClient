@@ -155,6 +155,116 @@ test_that("exact client pump retries identical fan-out requests without a quota"
   expect_false(any(grepl("share|result", names(result), ignore.case = TRUE)))
 })
 
+.client_exact_gc_analysis_identity_pk <- function(index) {
+  encoded <- jsonlite::base64_enc(as.raw(rep(as.integer(index), 32L)))
+  chartr("+/", "-_", sub("=+$", "", encoded))
+}
+
+.client_exact_gc_analysis_contract <- function(k = 3L) {
+  owners <- paste0("site_", seq_len(k))
+  pins <- setNames(vapply(
+    seq_along(owners), .client_exact_gc_analysis_identity_pk, character(1L)),
+    owners)
+  contract <- list(
+    version = "dsvert-analysis-contract-v1",
+    artifact_key = strrep("0", 64L),
+    semantic = list(
+      version = "dsvert-analysis-semantic-v1",
+      domain = "study-domain",
+      cohort_id = "cohort-v1",
+      owner_snapshots = setNames(lapply(seq_along(owners), function(index) {
+        list(
+          version = "dsvert-analysis-snapshot-v1",
+          dataset_id = "cohort_table",
+          dataset_version = "v1",
+          snapshot_commitment = strrep(sprintf("%x", index), 64L))
+      }), unname(pins)),
+      noise_authorities = unname(pins[seq_len(2L)]),
+      analysis = list(
+        primitive = "joint-dp-laplace-v2",
+        formula = NULL,
+        effective_arguments = list(
+          statistic = "admitted_privacy_unit_count")),
+      privacy = list(
+        version = "dsvert-per-analysis-dp-v1",
+        adjacency = "add_remove_patient",
+        privacy_unit = "patient",
+        contribution = list(
+          version = "dsvert-contribution-policy-v1",
+          max_records_per_unit = 1,
+          overflow_policy = "reject_operation",
+          constraints = list(
+            version = "dsvert-contribution-constraints-v1",
+            policy_sha256 = strrep("c", 64L))),
+        mechanism = list(
+          family = "discrete_laplace",
+          version = "discrete-laplace-output-perturbation-tv-v2",
+          sensitivity = list(
+            version = "dsvert-sensitivity-v1", norm = "l1", value = 1),
+          calibration = list(
+            version = "dsvert-calibration-v1", noise_scale = 1,
+            sampler = "hkdf-sha256-aes128ctr-two-geometric-tv-v2",
+            implementation_delta = 1e-9),
+          randomness = list(
+            version = "dsvert-randomness-plan-v1",
+            lanes = list(final_noise = list(
+              version = "dsvert-randomness-lane-v1",
+              purpose = "privatize_final_vector",
+              primitive = "hkdf-sha256-aes128ctr-two-geometric-tv-v2",
+              coordinates = 1)))),
+        epsilon = 1,
+        delta = 1e-6),
+      numeric = list(
+        version = "dsvert-numeric-semantics-v1",
+        value_bits = 127,
+        fractional_bits = 0,
+        rounding = "toward_zero",
+        overflow = "reject",
+        sampler_encoding = "aes128ctr_integer_coordinate_v2",
+        output_encoding = "twos_complement_integer_v1"),
+      public_shape = list(count = 1)),
+    execution = list(
+      version = "dsvert-analysis-execution-v1",
+      peer_pins = as.list(pins),
+      backend = list(
+        kernel = "joint-dp-laplace-v2",
+        ring = "ring127",
+        build_sha256 = strrep("a", 64L)),
+      transport = list(chunk_coordinates = 4096)))
+  contract$artifact_key <-
+    .dsvert_dp_analysis_artifact_key_v1(contract$semantic)
+  contract
+}
+
+test_that("client derives the same execution-free Count binding for K=2,3,5", {
+  bindings <- lapply(c(2L, 3L, 5L), function(k) {
+    .dsvert_exact_gc_analysis_binding(
+      .client_exact_gc_analysis_contract(k))
+  })
+  expect_true(all(vapply(bindings, function(value) {
+    identical(value$binding$artifact_key, value$contract$artifact_key) &&
+      identical(sort(unname(unlist(value$binding$authority_roles)),
+                       method = "radix"),
+                sort(unlist(
+                  value$contract$semantic$noise_authorities),
+                  method = "radix"))
+  }, logical(1L))))
+  expect_identical(
+    bindings[[2L]]$sha256,
+    "a06bf0f0e116adeac41990142cf11cf95aff778fbc00983fd6ab612b9cbd0221")
+
+  changed_execution <- bindings[[2L]]$contract
+  changed_execution$execution$backend$build_sha256 <- strrep("b", 64L)
+  changed_execution$execution$transport$chunk_coordinates <- 8192
+  expect_identical(
+    .dsvert_exact_gc_analysis_binding(changed_execution)$binding,
+    bindings[[2L]]$binding)
+  expect_false(any(vapply(c(
+    "session", "operation", "transport", "build_sha256", "ring",
+    "chunk_coordinates"), grepl, logical(1L),
+    x = .dsvert_joint_dp_client_json(bindings[[2L]]$binding), fixed = TRUE)))
+})
+
 test_that("exact client emits one complete direct scalar delivery shape", {
   expect_identical(.dsvert_exact_gc_delivery_fields(), list(
     delivery_offset = 0,
@@ -1194,6 +1304,7 @@ test_that("exact transport setup uses only exact-specific pinned endpoints", {
         signature = encode(index + 4L, 64L))), names(conns)))
     }
     if (identical(command, "exactGCBindPeersDS")) {
+      expect_false("analysis_contract_b64" %in% names(expr))
       return(stats::setNames(lapply(seq_along(conns), function(index) list(
         capability_id = "exact_gc_v1", bound = TRUE)), names(conns)))
     }
@@ -1207,6 +1318,137 @@ test_that("exact transport setup uses only exact-specific pinned endpoints", {
                    c("exactGCTransportInitDS", "exactGCBindPeersDS"))
   expect_false(any(commands %in% c(
     "glmRing63TransportInitDS", "mpcStoreTransportKeysDS")))
+})
+
+test_that("analysis-bound setup selects authorities by full K identity pins", {
+  contract <- .client_exact_gc_analysis_contract(3L)
+  analysis <- .dsvert_exact_gc_analysis_binding(contract)
+  server_names <- names(contract$execution$peer_pins)
+  pins <- unlist(contract$execution$peer_pins, use.names = TRUE)
+  authorities <- unlist(
+    contract$semantic$noise_authorities, use.names = FALSE)
+  authority_names <- names(pins)[match(authorities, unname(pins))]
+  datasources <- stats::setNames(lapply(
+    server_names, function(...) structure(list(), class = "mock")),
+    server_names)
+  selected <- match(authority_names, server_names)
+  bound_call <- NULL
+  encode <- function(byte, n) {
+    .dsvert_exact_gc_b64url_encode(as.raw(rep(byte, n)))
+  }
+  aggregate <- function(conns, expr, ...) {
+    command <- as.character(expr[[1L]])
+    if (identical(command, "exactGCTransportInitDS")) {
+      return(stats::setNames(lapply(names(conns), function(server) list(
+        capability_id = "exact_gc_v1",
+        transport_pk = encode(match(server, server_names) + 10L, 32L),
+        identity_pk = unname(pins[[server]]),
+        signature = encode(match(server, server_names) + 20L, 64L))),
+        names(conns)))
+    }
+    if (identical(command, "exactGCBindPeersDS")) {
+      bound_call <<- expr
+      return(stats::setNames(lapply(names(conns), function(...) list(
+        capability_id = "exact_gc_v1", bound = TRUE,
+        analysis_binding = analysis$binding,
+        analysis_binding_sha256 = analysis$sha256)), names(conns)))
+    }
+    stop("unexpected endpoint")
+  }
+
+  result <- .dsvert_setup_exact_gc_transport(
+    datasources, server_names, selected,
+    "12345678-1234-4234-9234-123456789abc",
+    analysis_contract = contract, .aggregate = aggregate)
+  expect_setequal(names(result), authority_names)
+  expect_false("analysis_contract_b64" %in% names(bound_call))
+  expect_identical(bound_call$artifact_key, contract$artifact_key)
+  expect_identical(
+    attr(result, "exact_gc_analysis_binding", exact = TRUE),
+    analysis$binding)
+
+  wrong <- contract
+  names(wrong$execution$peer_pins)[[3L]] <- "other_site"
+  expect_error(.dsvert_setup_exact_gc_transport(
+    datasources, server_names, selected,
+    "12345678-1234-4234-9234-123456789abc",
+    analysis_contract = wrong, .aggregate = aggregate),
+    "full K|peer names")
+})
+
+test_that("client accepts only analysis-bound scalar Count initialization", {
+  contract <- .client_exact_gc_analysis_contract(3L)
+  analysis <- .dsvert_exact_gc_analysis_binding(contract)
+  servers <- names(contract$execution$peer_pins)[1:2]
+  peer_ids <- vapply(
+    unlist(contract$semantic$noise_authorities, use.names = FALSE),
+    .dsvert_exact_gc_identity_peer_id, character(1L))
+  purpose <- paste0("joint-dp-laplace-v2/", strrep("c", 64L))
+  states <- stats::setNames(lapply(seq_along(servers), function(index) list(
+    capability_id = "exact_gc_v1",
+    peer_id = peer_ids[[index]],
+    peer_peer_id = peer_ids[[3L - index]],
+    role = if (identical(peer_ids[[index]], sort(peer_ids)[[1L]])) {
+      "garbler"
+    } else {
+      "evaluator"
+    },
+    context_hash = strrep("d", 64L),
+    operation = "joint-dp-laplace-v2",
+    output_kind = "joint-dp-ring-share-v2",
+    purpose = purpose,
+    source_producer = "count.scalar.v1",
+    ring_bits = 127L,
+    frac_bits = 0L,
+    vector_len = 1L,
+    threshold = "",
+    chunk_bytes = 65536L,
+    ttl_seconds = 10L,
+    max_runtime_seconds = 120L,
+    worker_heartbeat = 1,
+    analysis_binding_sha256 = analysis$sha256,
+    state = "running",
+    stored = FALSE)), servers)
+  validated <- .dsvert_exact_gc_validate_init(
+    states, servers, "joint-dp-laplace-v2", 127L, 0L, 1L, purpose,
+    analysis_binding = analysis)
+  expect_identical(validated$analysis_binding_sha256, analysis$sha256)
+
+  conns <- stats::setNames(lapply(
+    servers, function(...) structure(list(), class = "mock")), servers)
+  aggregate <- function(conns, expr, ...) {
+    expect_true(is.list(expr) && !is.call(expr))
+    stats::setNames(lapply(names(conns), function(server) list(
+      capability_id = "exact_gc_v1",
+      peer_id = states[[server]]$peer_id,
+      state = "complete", stored = TRUE,
+      inbound_size = 0, outbound = NULL, worker_heartbeat = 2)),
+      names(conns))
+  }
+  result <- .dsvert_exact_gc_run(
+    conns, server_names = servers, servers = 1:2,
+    session_id = "12345678-1234-4234-9234-123456789abc",
+    operation_id = "op_33333333333333333333333333333333",
+    source_key = "exact_gc_in_33333333333333333333333333333333",
+    output_key = "exact_gc_out_33333333333333333333333333333333",
+    operation = "joint-dp-laplace-v2", ring = 127L,
+    frac_bits = 0L, vector_len = 1L, purpose = purpose,
+    transport_ready = TRUE, initialized = states,
+    analysis_contract = contract, timeout_seconds = 1,
+    .aggregate = aggregate)
+  expect_identical(result$analysis_binding_sha256, analysis$sha256)
+
+  bad <- states
+  bad[[1L]]$analysis_binding_sha256 <- strrep("e", 64L)
+  expect_error(.dsvert_exact_gc_validate_init(
+    bad, servers, "joint-dp-laplace-v2", 127L, 0L, 1L, purpose,
+    analysis_binding = analysis), "analysis binding")
+  expect_error(.dsvert_exact_gc_validate_init(
+    states, servers, "joint-dp-laplace-v2", 127L, 0L, 1L, purpose),
+    "analysis binding")
+  expect_error(.dsvert_exact_gc_validate_init(
+    states, servers, "joint-dp-laplace-v2", 128L, 0L, 1L, purpose,
+    analysis_binding = analysis))
 })
 
 test_that("cross transport mints and consumes peer-specific cleanup capabilities", {
