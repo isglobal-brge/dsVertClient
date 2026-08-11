@@ -196,6 +196,7 @@
     levels = c("control", "caf\u00e9", "case"),
     chunk_coordinates = min(8192L, length(levels))) {
   profile <- match.arg(profile)
+  levels <- sort(levels, method = "radix")
   contract <- .client_analysis_contract_fixture(k)
   owner_ids <- sort(names(contract$semantic$owner_snapshots), method = "radix")
   source_owner <- owner_ids[[min(2L, length(owner_ids))]]
@@ -235,7 +236,7 @@
       maximum_noise_per_peer = "100",
       maximum_noise_release = "200"))
   contract$semantic$version <-
-    "dsvert-analysis-semantic-fixed-categorical-vector-v1"
+    "dsvert-analysis-semantic-fixed-categorical-vector-v2"
   contract$semantic$noise_authorities <- NULL
   contract$semantic$noise_authority_roles <- list(
     version = "dsvert-frequency-noise-authority-roles-v1",
@@ -245,7 +246,7 @@
     primitive = primitive,
     formula = NULL,
     effective_arguments = list(
-      version = "dsvert-fixed-domain-categorical-frequency-v1",
+      version = "dsvert-fixed-domain-categorical-frequency-v2",
       statistic = "aligned_fixed_domain_categorical_frequency",
       source_owner = source_owner,
       dataset_id = "cohort_table",
@@ -253,7 +254,8 @@
       variable_id = "status",
       levels = as.list(levels),
       dimension = dimension,
-      repeated_record_policy = "consistent_level_else_exclude_v1",
+      repeated_record_policy =
+        "psi_v4_first_eligible_source_record_per_privacy_unit_v1",
       missingness_policy = "missing_or_out_of_domain_rows_are_ignored",
       coordinate_bounds = list(lower = 0, upper = 1000),
       sampler_plan = list(
@@ -278,6 +280,18 @@
           "dsVert/frequency/physical-profile/v1|", registry),
         backend_selection = selection)))
   contract$semantic$privacy$adjacency <- "add_remove_patient"
+  contract$semantic$privacy$contribution$overflow_policy <-
+    "clip_to_psi_v4_first_eligible_source_record_v1"
+  contract$semantic$privacy$contribution$constraints$policy_sha256 <-
+    .dsvert_dp_analysis_frequency_hash_v1(
+      "dsVert/dp-frequency/contribution/v1|", list(
+        alignment_protocol = "dsvert-pinned-padded-psi-v4",
+        duplicate_policy = "first",
+        repeated_record_policy =
+          "psi_v4_first_eligible_source_record_per_privacy_unit_v1",
+        max_records_per_unit = 1,
+        overflow_policy =
+          "clip_to_psi_v4_first_eligible_source_record_v1"))
   contract$semantic$privacy$mechanism <- list(
     family = if (convolution) "discrete_laplace" else "gaussian",
     version = mechanism_version,
@@ -338,17 +352,17 @@ test_that("client validates fixed categorical Frequency contracts for K=2,3,5", 
     stats::setNames(vapply(gaussian_contracts, `[[`, character(1L),
                            "artifact_key"), paste0("gaussian_k", ks))), c(
       convolution_k2 =
-        "2a0abdacec92dab37bdfcc5bf81a7f6c71f1516e717484750f6c388f223bee5e",
+        "7e7931ccc08c7803483d6ad0ce6b78250b68cf365408badc58bf62509cd48d41",
       convolution_k3 =
-        "cadc52df2a7d587eb4d8df95638fc285f8e49e61a9b814db13384747bcd67030",
+        "dd2f7e4b69426ba27210ef0c9adc3fe33768ac39495d785e6fa9d947ed070150",
       convolution_k5 =
-        "d638651a3dbf71604abca30e0c4d75b7c60f4706d21db633cb517c359a39e10b",
+        "bf4fe8d228deeee2d7236a7f0fbc1b635cda3d312b1ab01d2cc04ef5049c795d",
       gaussian_k2 =
-        "a240e28031da11b49c3f8bda61606416905fc086bf6516d4adf501520fcd2d9c",
+        "2248ade285d4125d1a27989296c72595a34cad3eb7d0b79825996f48abb3d019",
       gaussian_k3 =
-        "aba2d6c4cf0d34d9e152d7e6aed4bd79c703529f92536d8b171a6a52e8b71a02",
+        "15c906ce50e29adeb6e7356533538f83cc92932f00e193afa57a7ec561697609",
       gaussian_k5 =
-        "264a8e4f4e3f4e74c9239d6fc4533394c202b8399be669c6a9c06bf15cacea9a"))
+        "e9d02fca22487596f22e72f1dc060cd8e94f180436aa290c865182ba16bd50e5"))
 
   singleton <- .dsvert_dp_analysis_contract_validate_v1(
     .client_analysis_frequency_contract_fixture(
@@ -439,9 +453,26 @@ test_that("client validates fixed categorical Frequency contracts for K=2,3,5", 
   }
 })
 
+test_that("Frequency level metadata is capped before semantic sorting", {
+  expect_null(.dsvert_dp_analysis_frequency_levels_dimension_v1(
+    list(structure("not-inspected", class = "tripwire")), 1000001))
+  expect_null(.dsvert_dp_analysis_frequency_levels_dimension_v1(
+    rep(list(strrep("x", 1024L)), 16385L), 16385))
+  expect_equal(.dsvert_dp_analysis_frequency_levels_dimension_v1(
+    list("a", "b"), 2), 2)
+})
+
 test_that("client Frequency identity is canonical and fully semantic", {
   original <- .client_analysis_frequency_contract_fixture(3L)
   validated <- .dsvert_dp_analysis_contract_validate_v1(original)
+
+  legacy <- original
+  legacy$semantic$version <-
+    "dsvert-analysis-semantic-fixed-categorical-vector-v1"
+  legacy$semantic$analysis$effective_arguments$version <-
+    "dsvert-fixed-domain-categorical-frequency-v1"
+  expect_error(.dsvert_dp_analysis_contract_validate_v1(legacy),
+               "contract|semantic")
 
   aliased <- original
   source <- aliased$semantic$analysis$effective_arguments$source_owner
@@ -569,6 +600,24 @@ test_that("client Frequency identity is canonical and fully semantic", {
 test_that("client Frequency contracts fail closed on every bound dimension", {
   original <- .client_analysis_frequency_contract_fixture(3L)
   invalid_semantic <- list(
+    legacy_effective = function(x) {
+      x$analysis$effective_arguments$version <-
+        "dsvert-fixed-domain-categorical-frequency-v1"; x
+    },
+    legacy_repeated = function(x) {
+      x$analysis$effective_arguments$repeated_record_policy <-
+        "consistent_level_else_exclude_v1"; x
+    },
+    legacy_overflow = function(x) {
+      x$privacy$contribution$overflow_policy <- "reject_operation"; x
+    },
+    wrong_policy_hash = function(x) {
+      x$privacy$contribution$constraints$policy_sha256 <- strrep("f", 64L); x
+    },
+    unsorted_levels = function(x) {
+      x$analysis$effective_arguments$levels <-
+        rev(x$analysis$effective_arguments$levels); x
+    },
     roles = function(x) {
       x$noise_authority_roles$role_order <-
         list("secondary_noise_authority", "source_owner"); x
