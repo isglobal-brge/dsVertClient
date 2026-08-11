@@ -564,7 +564,7 @@
     parsimonious_delta = parsimonious_delta)
 }
 
-.dsvert_lasso_dp_source <- function(fit) {
+.dsvert_lasso_dp_source <- function(fit, trusted_pinset = NULL) {
   if (!inherits(fit, "ds.vertDPGaussian") || !is.list(fit) ||
       !identical(fit$status, "ok") || !identical(fit$family, "gaussian") ||
       !identical(fit$source_values_exposed, FALSE) ||
@@ -574,7 +574,7 @@
     stop("fit is not a valid ds.vertDPGaussian release", call. = FALSE)
   }
   verification <- tryCatch(
-    ds.validateDPGaussianCertificate(fit),
+    ds.validateDPGaussianCertificate(fit, trusted_pinset = trusted_pinset),
     error = function(error) {
       stop(
         "The Gaussian DP provenance certificate is invalid: ",
@@ -583,6 +583,11 @@
   if (!is.list(verification) ||
       !identical(verification$integrity_valid, TRUE)) {
     stop("The Gaussian DP provenance certificate failed integrity validation",
+         call. = FALSE)
+  }
+  if (!identical(verification$authenticity, "caller_anchored") &&
+      !identical(verification$authenticity, "session_transport_anchored")) {
+    stop("The Gaussian DP provenance certificate is not anchored to trusted peers",
          call. = FALSE)
   }
   statistics <- fit$sufficient_statistics_dp
@@ -632,7 +637,8 @@
 }
 
 .dsvert_lasso_dp_proximal <- function(
-    fit, lambda, max_iter, tol, keep_intercept, warm_start, accelerate) {
+    fit, lambda, max_iter, tol, keep_intercept, warm_start, accelerate,
+    trusted_pinset = NULL) {
   if (!is.numeric(lambda) || length(lambda) != 1L ||
       !is.finite(lambda) || lambda < 0) {
     stop("lambda must be one finite non-negative number", call. = FALSE)
@@ -653,7 +659,7 @@
       is.na(accelerate)) {
     stop("accelerate must be TRUE or FALSE", call. = FALSE)
   }
-  source <- .dsvert_lasso_dp_source(fit)
+  source <- .dsvert_lasso_dp_source(fit, trusted_pinset = trusted_pinset)
   warm_normalized <- .dsvert_lasso_dp_warm_start(warm_start, source)
   solution <- .dsvert_lasso_dp_solver(
     gram = source$moments$gram,
@@ -733,7 +739,7 @@
 
 .dsvert_lasso_dp_select <- function(
     fit, lambda_grid, criterion, ebic_gamma, keep_intercept,
-    se_threshold) {
+    se_threshold, trusted_pinset = NULL) {
   if (!is.numeric(ebic_gamma) || length(ebic_gamma) != 1L ||
       !is.finite(ebic_gamma) || ebic_gamma < 0 || ebic_gamma > 1) {
     stop("ebic_gamma must be one number in [0, 1]", call. = FALSE)
@@ -747,7 +753,7 @@
     stop("se_threshold must be one finite non-negative number",
          call. = FALSE)
   }
-  source <- .dsvert_lasso_dp_source(fit)
+  source <- .dsvert_lasso_dp_source(fit, trusted_pinset = trusted_pinset)
   if (is.null(lambda_grid)) {
     lambda_grid <- .dsvert_lasso_dp_default_lambda(
       source$moments$gram, source$moments$cross,

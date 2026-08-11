@@ -35,6 +35,10 @@
 #'   retain the sparsest lambda whose IC is no more than
 #'   \code{abs(IC_min) * se_threshold} above \code{IC_min}. The historical
 #'   argument name is retained for compatibility; it is not a standard error.
+#' @param trusted_pinset Optional trusted named peer-to-Ed25519-public-key map
+#'   used to authenticate a saved or offline \code{ds.vertDPGaussian} release.
+#'   Online releases created in the current session use their transport-
+#'   anchored pinset cache. It is invalid for the legacy \code{ds.glm} route.
 #' @return A \code{ds.vertLASSOCV} object: \code{lambda}, \code{ic},
 #'   \code{df}, \code{lambda.min}, \code{lambda.parsimonious},
 #'   compatibility aliases \code{lambda.1se}/\code{beta.1se}, and metadata
@@ -45,13 +49,18 @@ ds.vertLASSOCV <- function(fit, lambda_grid = NULL,
                            criterion = c("BIC", "AIC", "EBIC"),
                            ebic_gamma = 0.5,
                            keep_intercept = TRUE,
-                           se_threshold = 0.02) {
+                           se_threshold = 0.02,
+                           trusted_pinset = NULL) {
   criterion <- match.arg(criterion)
   if (inherits(fit, "ds.vertDPGaussian")) {
     return(.dsvert_lasso_dp_select(
       fit = fit, lambda_grid = lambda_grid, criterion = criterion,
       ebic_gamma = ebic_gamma, keep_intercept = keep_intercept,
-      se_threshold = se_threshold))
+      se_threshold = se_threshold, trusted_pinset = trusted_pinset))
+  }
+  if (!is.null(trusted_pinset)) {
+    stop("trusted_pinset applies only to a ds.vertDPGaussian fit",
+         call. = FALSE)
   }
   if (!inherits(fit, "ds.glm")) {
     stop("fit must be a ds.vertDPGaussian or ds.glm object",

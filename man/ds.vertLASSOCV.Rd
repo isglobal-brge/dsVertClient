@@ -10,7 +10,8 @@ ds.vertLASSOCV(
   criterion = c("BIC", "AIC", "EBIC"),
   ebic_gamma = 0.5,
   keep_intercept = TRUE,
-  se_threshold = 0.02
+  se_threshold = 0.02,
+  trusted_pinset = NULL
 )
 }
 \arguments{
@@ -33,6 +34,11 @@ effective only when \code{criterion = "EBIC"}).}
 retain the sparsest lambda whose IC is no more than
 \code{abs(IC_min) * se_threshold} above \code{IC_min}. The historical
 argument name is retained for compatibility; it is not a standard error.}
+
+\item{trusted_pinset}{Optional trusted named peer-to-Ed25519-public-key map
+used to authenticate a saved or offline \code{ds.vertDPGaussian} release.
+Online releases created in the current session use their transport-
+anchored pinset cache. It is invalid for the legacy \code{ds.glm} route.}
 }
 \value{
 A \code{ds.vertLASSOCV} object: \code{lambda}, \code{ic},

@@ -714,11 +714,23 @@ test_that("one authentic Gaussian release supports LASSO and honest pseudo-IC", 
     gaussian, lambda = 0.05, max_iter = 5000L, tol = 1e-12)
   selected <- ds.vertLASSOCV(
     gaussian, lambda_grid = c(0.1, 0.05, 0), criterion = "BIC")
+  caller_anchored_proximal <- ds.vertLASSOProximal(
+    gaussian, lambda = 0.05, max_iter = 5000L, tol = 1e-12,
+    trusted_pinset = fixture$pins)
 
   expect_identical(capsule_calls, 1L)
   expect_true(verified$integrity_valid)
   expect_true(proximal$source_certificate_validation$integrity_valid)
   expect_true(selected$source_certificate_validation$integrity_valid)
+  expect_identical(
+    proximal$source_certificate_validation$authenticity,
+    "session_transport_anchored")
+  expect_identical(
+    selected$source_certificate_validation$authenticity,
+    "session_transport_anchored")
+  expect_identical(
+    caller_anchored_proximal$source_certificate_validation$authenticity,
+    "caller_anchored")
   expect_identical(
     gaussian$provenance_certificate$certificate_sha256, certificate_hash)
   expect_true(proximal$kkt$satisfied)
