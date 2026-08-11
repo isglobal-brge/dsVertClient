@@ -115,9 +115,9 @@ test_that("Frequency requires an explicit source before any DSI call", {
 })
 
 test_that("Frequency routes K2/K3/K5 and both physical backends", {
-  cases <- data.frame(
-    k = c(2L, 3L, 5L),
-    kind = c("convolution", "gaussian", "convolution"))
+  cases <- expand.grid(
+    k = c(2L, 3L, 5L), kind = c("convolution", "gaussian"),
+    stringsAsFactors = FALSE)
   for (index in seq_len(nrow(cases))) {
     fixture <- .frequency_client_fixture(cases$k[[index]], cases$kind[[index]])
     run <- .frequency_public_run(fixture)
