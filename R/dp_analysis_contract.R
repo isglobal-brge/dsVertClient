@@ -137,12 +137,15 @@
 }
 
 .dsvert_dp_analysis_frequency_levels_dimension_v1 <- function(
-    levels, dimension) {
+    levels, dimension, variable_name = NULL) {
   dimension <- tryCatch(.dsvert_dp_analysis_client_positive_integer(dimension),
                         error = function(error) NULL)
   if (!is.list(levels) || !is.null(names(levels)) || is.null(dimension) ||
       dimension > 1000000 || length(levels) != dimension) return(NULL)
-  total_bytes <- 0
+  total_bytes <- if (is.null(variable_name)) 0 else tryCatch(
+    nchar(variable_name, type = "bytes"), error = function(error) NA_integer_)
+  if (length(total_bytes) != 1L || is.na(total_bytes) ||
+      total_bytes > 16L * 1024L * 1024L) return(NULL)
   for (level in levels) {
     if (!is.character(level) || length(level) != 1L || is.na(level)) return(NULL)
     level_bytes <- tryCatch(nchar(level, type = "bytes"),

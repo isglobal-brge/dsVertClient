@@ -45,6 +45,7 @@
   "blob.joint-dp.vector-final-share.v3"
 .DSVERT_CLIENT_VECTOR_CHUNK_COORDINATES <- 8192L
 .DSVERT_CLIENT_VECTOR_MAX_RECEIPT_BYTES <- 2L * 1024L^2
+.DSVERT_CLIENT_VECTOR_IMPLEMENTATION_DELTA_MAX_BYTES <- 1024L
 .DSVERT_CLIENT_JOINT_DP_RECEIPT_DOMAIN <-
   "dsVert/joint-dp/signed-receipt/v1|"
 .DSVERT_CLIENT_VECTOR_RETRY_CURRENT_INSTANCE_TOKEN <-
@@ -351,9 +352,11 @@
       !identical(plan$epsilon_divided_by_peer_count, FALSE) ||
       !identical(plan$capability_available, TRUE) ||
       !.dsvert_vector_integer_text(
-        plan$per_peer_implementation_delta_numerator) ||
+        plan$per_peer_implementation_delta_numerator,
+        maximum_bytes = .DSVERT_CLIENT_VECTOR_IMPLEMENTATION_DELTA_MAX_BYTES) ||
       !.dsvert_vector_integer_text(
-        plan$per_peer_implementation_delta_denominator, TRUE)) {
+        plan$per_peer_implementation_delta_denominator, TRUE,
+        maximum_bytes = .DSVERT_CLIENT_VECTOR_IMPLEMENTATION_DELTA_MAX_BYTES)) {
     stop("The signed vector mechanism plan is invalid", call. = FALSE)
   }
   if (isTRUE(profile$gaussian)) {
@@ -454,7 +457,7 @@
   exact_gc <- isTRUE(contract$profile$exact_gc)
   maximum_bytes <- if (exact_gc) {
     .DSVERT_CLIENT_VECTOR_MAX_RECEIPT_BYTES
-  } else 128L
+  } else .DSVERT_CLIENT_VECTOR_IMPLEMENTATION_DELTA_MAX_BYTES
   fields <- if (exact_gc) {
     c("implementation_delta_numerator", "implementation_delta_denominator")
   } else {
@@ -846,7 +849,7 @@
   chunk <- .dsvert_vector_chunk_geometry(contract, chunk_index)
   delta_maximum_bytes <- if (isTRUE(contract$profile$exact_gc)) {
     .DSVERT_CLIENT_VECTOR_MAX_RECEIPT_BYTES
-  } else 128L
+  } else .DSVERT_CLIENT_VECTOR_IMPLEMENTATION_DELTA_MAX_BYTES
   receipts <- stats::setNames(lapply(peers, function(peer) {
     value <- .dsvert_vector_verify_receipt(
       responses[[peer]], .DSVERT_CLIENT_VECTOR_START_VERSION,
@@ -961,7 +964,7 @@
   peers <- context$designated
   delta_maximum_bytes <- if (isTRUE(contract$profile$exact_gc)) {
     .DSVERT_CLIENT_VECTOR_MAX_RECEIPT_BYTES
-  } else 128L
+  } else .DSVERT_CLIENT_VECTOR_IMPLEMENTATION_DELTA_MAX_BYTES
   receipts <- stats::setNames(lapply(peers, function(peer) {
     value <- .dsvert_vector_verify_receipt(
       responses[[peer]], .DSVERT_CLIENT_VECTOR_RELEASE_VERSION,

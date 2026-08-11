@@ -621,6 +621,8 @@
   "dsvertDPCountStartDS",
   "dsvertDPCountFinalShareDS",
   "dsvertDPCountReleaseDS",
+  "dsvertDPFrequencyClaimDS", "dsvertDPFrequencyCompileDS",
+  "dsvertDPFrequencyAuthorizeDS", "dsvertDPFrequencyCleanupDS",
   "dsvertDPCapsuleManifestDraftDS",
   "dsvertDPCapsuleManifestSignDS",
   "dsvertDPCapsuleManifestBuildDS",

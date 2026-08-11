@@ -12,8 +12,12 @@
 .DSVERT_CLIENT_JOINT_DP_VECTOR_MAX_CHUNK <- 128L
 .DSVERT_CLIENT_EXACT_GC_CROSS_CLEANUP_PURPOSE <-
   "dp.cross-owner.exact-session.v1"
+.DSVERT_CLIENT_EXACT_GC_FREQUENCY_CLEANUP_PURPOSE <-
+  "dp.frequency.exact-session.v1"
 .DSVERT_CLIENT_EXACT_GC_ANALYSIS_BINDING_VERSION <-
   "dsvert-exact-gc-analysis-binding-v1"
+.DSVERT_CLIENT_EXACT_GC_FREQUENCY_BINDING_VERSION <-
+  "dsvert-exact-gc-frequency-binding-v1"
 .DSVERT_CLIENT_EXACT_GC_CLEANUP_CAPABILITY_VERSION <-
   "dsvert-exact-gc-cleanup-capability-v1"
 .DSVERT_CLIENT_EXACT_GC_WIRE_CONTAINER_BITS <-
@@ -101,13 +105,81 @@
       serialize = FALSE))
 }
 
+.dsvert_exact_gc_frequency_analysis_binding <- function(contract) {
+  contract <- .dsvert_dp_analysis_contract_validate_v1(contract)
+  roles <- contract$semantic$noise_authority_roles
+  role_names <- c("source_owner", "secondary_noise_authority")
+  authority_ids <- unlist(roles$authority_ids, use.names = FALSE)
+  pins <- unlist(contract$execution$peer_pins, use.names = TRUE)
+  pins <- pins[order(names(pins), method = "radix")]
+  authority_names <- names(pins)[match(authority_ids, unname(pins))]
+  if (!identical(unlist(roles$role_order, use.names = FALSE), role_names) ||
+      length(authority_ids) != 2L || anyNA(authority_names) ||
+      anyDuplicated(authority_names) ||
+      !identical(contract$execution$backend$ring, "ring128")) {
+    stop("Invalid exact MPC Frequency analysis contract.", call. = FALSE)
+  }
+  binding <- list(
+    version = "dsvert-dp-frequency-analysis-binding-v1",
+    artifact_key = contract$artifact_key,
+    semantic_contract_sha256 = .dsvert_dp_analysis_frequency_hash_v1(
+      "dsVert/dp-frequency/semantic-contract/v1|", contract$semantic),
+    authority_roles = as.list(stats::setNames(authority_ids, role_names)))
+  list(contract = contract, full_pins = pins,
+       authority_names = unname(authority_names), binding = binding,
+       sha256 = .dsvert_dp_analysis_frequency_hash_v1(
+         "dsVert/dp-frequency/analysis-binding/v1|", binding))
+}
+
+.dsvert_exact_gc_frequency_binding <- function(frequency_analysis) {
+  required <- c("contract", "binding", "worker_static", "config_sha256",
+    "source_claim_sha256", "receipt_set_sha256", "psi_run_sha256",
+    "contract_sha256", "worker_static_sha256")
+  if (!is.list(frequency_analysis) ||
+      any(!required %in% names(frequency_analysis))) {
+    stop("Invalid exact MPC Frequency preparation.", call. = FALSE)
+  }
+  analysis <- .dsvert_exact_gc_frequency_analysis_binding(
+    frequency_analysis$contract)
+  common <- c(
+    artifact_key = analysis$contract$artifact_key,
+    config_sha256 = frequency_analysis$config_sha256,
+    source_claim_sha256 = frequency_analysis$source_claim_sha256,
+    receipt_set_sha256 = frequency_analysis$receipt_set_sha256,
+    psi_run_sha256 = frequency_analysis$psi_run_sha256,
+    contract_sha256 = frequency_analysis$contract_sha256,
+    analysis_binding_sha256 = analysis$sha256,
+    worker_static_sha256 = frequency_analysis$worker_static_sha256)
+  if (!identical(frequency_analysis$binding, analysis) ||
+      any(!vapply(common, .dsvert_dp_analysis_frequency_hex_v1, logical(1L))) ||
+      !.dsvert_dp_analysis_frequency_hex_v1(
+        frequency_analysis$worker_static$release_contract_hash)) {
+    stop("Invalid exact MPC Frequency preparation.", call. = FALSE)
+  }
+  binding <- .dsvert_dp_analysis_client_canonical_value_v1(c(
+    list(version = .DSVERT_CLIENT_EXACT_GC_FREQUENCY_BINDING_VERSION),
+    as.list(common), list(
+      authority_roles = analysis$binding$authority_roles,
+      release_contract_hash =
+        frequency_analysis$worker_static$release_contract_hash)))
+  list(analysis = analysis, binding = binding, sha256 = digest::digest(
+    .dsvert_joint_dp_client_json(binding), "sha256", serialize = FALSE))
+}
+
 .dsvert_setup_exact_gc_transport <- function(
     datasources, server_names, servers, session_id,
     cleanup_purpose = "",
     analysis_contract = NULL,
+    frequency_analysis = NULL,
     .aggregate = DSI::datashield.aggregate) {
-  analysis <- if (is.null(analysis_contract)) NULL else
+  if (!is.null(analysis_contract) && !is.null(frequency_analysis)) {
+    stop("Exact MPC transport accepts one analysis binding.", call. = FALSE)
+  }
+  count_analysis <- if (is.null(analysis_contract)) NULL else
     .dsvert_exact_gc_analysis_binding(analysis_contract)
+  frequency <- if (is.null(frequency_analysis)) NULL else
+    .dsvert_exact_gc_frequency_binding(frequency_analysis)
+  analysis <- if (is.null(frequency)) count_analysis else frequency$analysis
   if (!is.null(analysis) &&
       (length(server_names) != length(datasources) || anyNA(server_names) ||
        any(!nzchar(server_names)) || anyDuplicated(server_names) ||
@@ -140,7 +212,8 @@
   if (!is.character(cleanup_purpose) || length(cleanup_purpose) != 1L ||
       is.na(cleanup_purpose) ||
       !cleanup_purpose %in% c(
-        "", .DSVERT_CLIENT_EXACT_GC_CROSS_CLEANUP_PURPOSE)) {
+        "", .DSVERT_CLIENT_EXACT_GC_CROSS_CLEANUP_PURPOSE,
+        .DSVERT_CLIENT_EXACT_GC_FREQUENCY_CLEANUP_PURPOSE)) {
     stop("Invalid exact MPC cleanup capability purpose.", call. = FALSE)
   }
   initialized <- .dsvert_aggregate_strict(
@@ -160,6 +233,15 @@
       stop("An exact MPC peer returned an invalid signed transport key.",
            call. = FALSE)
     }
+    if (!is.null(frequency)) {
+      transport_raw <- .dsvert_joint_dp_client_b64url(
+        value$transport_pk, 32L, "Frequency transport public key")
+      value$transport_pk <- .dsvert_exact_gc_b64url_encode(transport_raw)
+      value$identity_pk <- .dsvert_dp_analysis_client_identity_pk(
+        value$identity_pk)
+      .dsvert_dp_frequency_client_verify_v1(
+        transport_raw, value$identity_pk, value$signature, "transport")
+    }
     transport[[server]] <- value$transport_pk
     identities[[server]] <- list(
       identity_pk = value$identity_pk, signature = value$signature)
@@ -171,12 +253,32 @@
            call. = FALSE)
     }
   }
-  ordered <- sort(selected_names)
+  ordered <- sort(selected_names, method = "radix")
+  frequency_peer_digest <- NULL
+  if (!is.null(frequency)) {
+    contract <- list(
+      version = "dsvert-exact-gc-frequency-peer-binding-v1",
+      capability_id = .DSVERT_CLIENT_EXACT_GC_CAPABILITY,
+      session_id = session_id,
+      consortium_id = analysis$contract$artifact_key,
+      full_peer_pinset_sha256 = digest::digest(
+        .dsvert_dp_frequency_client_wire_json_v1(
+          as.list(analysis$full_pins)), "sha256", serialize = FALSE),
+      designated_peers = as.list(ordered),
+      designated_peer_pinset = as.list(analysis$full_pins[ordered]),
+      identity_pks = lapply(identities[ordered], `[[`, "identity_pk"),
+      transport_pks = as.list(unlist(transport[ordered], use.names = TRUE)),
+      frequency_binding = frequency$binding,
+      frequency_binding_sha256 = frequency$sha256)
+    frequency_peer_digest <- digest::digest(
+      .dsvert_dp_frequency_client_wire_json_v1(contract), "sha256",
+      serialize = FALSE)
+  }
   encode_map <- function(value) {
     .dsvert_exact_gc_b64url_encode(charToRaw(as.character(jsonlite::toJSON(
       value[ordered], auto_unbox = TRUE, null = "null", digits = NA))))
   }
-  bind_call <- if (is.null(analysis)) {
+  bind_call <- if (is.null(analysis) || !is.null(frequency)) {
     call(
       name = "exactGCBindPeersDS",
       transport_keys_b64 = encode_map(transport),
@@ -204,8 +306,13 @@
            call. = FALSE)
     }
     if (!is.null(analysis) &&
-        (!identical(value$analysis_binding, analysis$binding) ||
-         !identical(value$analysis_binding_sha256, analysis$sha256))) {
+        ((is.null(frequency) &&
+          (!identical(value$analysis_binding, analysis$binding) ||
+           !identical(value$analysis_binding_sha256, analysis$sha256))) ||
+         (!is.null(frequency) &&
+          (!is.null(value$analysis_binding) ||
+           !identical(value$frequency_binding, frequency$binding) ||
+           !identical(value$frequency_binding_sha256, frequency$sha256))))) {
       stop("An exact MPC peer returned a conflicting analysis binding.",
            call. = FALSE)
     }
@@ -248,6 +355,18 @@
         stop("An exact MPC peer returned an invalid cleanup capability.",
              call. = FALSE)
       }
+      if (!is.null(frequency)) {
+        if (!identical(contract$peer_binding_digest,
+                       frequency_peer_digest)) {
+          stop("An exact MPC peer returned a misbound cleanup capability.",
+               call. = FALSE)
+        }
+        .dsvert_dp_frequency_client_verify_v1(
+          charToRaw(paste0("dsVert/exact-gc/cleanup-capability/v1|",
+            .dsvert_dp_frequency_client_wire_json_v1(contract))),
+          unname(analysis$full_pins[[server]]), capability$signature,
+          "cleanup capability")
+      }
       cleanup_capabilities[[server]] <- value$cleanup_capability_json
     }
   }
@@ -257,10 +376,25 @@
     attr(transport, "exact_gc_cleanup_purpose") <- cleanup_purpose
   }
   if (!is.null(analysis)) {
-    attr(transport, "exact_gc_analysis_binding") <- analysis$binding
-    attr(transport, "exact_gc_analysis_binding_sha256") <- analysis$sha256
+    prefix <- if (is.null(frequency)) "exact_gc_analysis_binding" else
+      "exact_gc_frequency_binding"
+    binding <- if (is.null(frequency)) analysis else frequency
+    attr(transport, prefix) <- binding$binding
+    attr(transport, paste0(prefix, "_sha256")) <- binding$sha256
+  }
+  if (!is.null(frequency)) {
+    attr(transport, "exact_gc_peer_binding_digest") <- frequency_peer_digest
   }
   transport
+}
+
+.dsvert_setup_frequency_transport <- function(
+    datasources, server_names, servers, session_id, frequency_analysis,
+    .aggregate = DSI::datashield.aggregate) {
+  .dsvert_setup_exact_gc_transport(
+    datasources, server_names, servers, session_id,
+    cleanup_purpose = .DSVERT_CLIENT_EXACT_GC_FREQUENCY_CLEANUP_PURPOSE,
+    frequency_analysis = frequency_analysis, .aggregate = .aggregate)
 }
 
 .dsvert_exact_gc_cleanup_best_effort <- function(
@@ -272,8 +406,9 @@
   if (!is.list(capabilities) || !length(capabilities) ||
       is.null(names(capabilities)) || anyNA(names(capabilities)) ||
       any(!nzchar(names(capabilities))) || anyDuplicated(names(capabilities)) ||
-      !identical(purpose,
-                 .DSVERT_CLIENT_EXACT_GC_CROSS_CLEANUP_PURPOSE) ||
+      !purpose %in% c(
+        .DSVERT_CLIENT_EXACT_GC_CROSS_CLEANUP_PURPOSE,
+        .DSVERT_CLIENT_EXACT_GC_FREQUENCY_CLEANUP_PURPOSE) ||
       !is.list(conns) || !setequal(names(conns), names(capabilities))) {
     return(invisible(FALSE))
   }
