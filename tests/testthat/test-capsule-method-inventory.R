@@ -111,6 +111,33 @@ test_that("only new capsule reservation can be denied by lifetime history", {
   expect_identical(count$artifact_implementation_state,
                    "signed_count_artifact_implemented")
   expect_false(count$new_capsule_reservation_history_can_deny)
+
+  frequency <- row_for(inventory, "ds.vertDPFrequency")
+  expect_identical(frequency$current_route_status,
+                   "formal_sticky_frequency_artifact")
+  expect_identical(frequency$migration_feasibility,
+                   "frequency_operation_implemented")
+  expect_identical(frequency$artifact_implementation_state,
+                   "signed_frequency_artifact_implemented")
+  expect_identical(frequency$inference_implementation_state,
+                   "formal_frequency_release_implemented")
+  expect_false(frequency$new_capsule_reservation_history_can_deny)
+  expect_false(any(grepl("capsule", c(
+    artifacts_for(inventory, "ds.vertDPFrequency"),
+    requirements_for(inventory, "ds.vertDPFrequency")),
+    ignore.case = TRUE)))
+
+  frequency_inference <-
+    row_for(inventory, "ds.vertDPFrequencyInference")
+  expect_identical(frequency_inference$current_route_status,
+                   "client_only_inherits_input")
+  expect_identical(frequency_inference$migration_feasibility,
+                   "frequency_operation_implemented")
+  expect_identical(frequency_inference$artifact_implementation_state,
+                   "validated_frequency_artifact_adapter_implemented")
+  expect_identical(frequency_inference$inference_implementation_state,
+                   "frequency_postprocess_implemented")
+  expect_false(frequency_inference$new_capsule_reservation_history_can_deny)
 })
 
 test_that("aliases and wrappers retain honest routing semantics", {

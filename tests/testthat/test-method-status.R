@@ -8,6 +8,7 @@ test_that("method maturity registry covers every public analysis entry point", {
     "formal_joint_dp_capsule",
     "formal_joint_dp_capsule_only_legacy_unavailable",
     "formal_sticky_count_artifact",
+    "formal_sticky_frequency_artifact",
     "disclosure_safe_protocol_no_statistic",
     "postprocessing_inherits_input",
     "legacy_exact_release_not_capsule_safe")))
@@ -109,6 +110,23 @@ test_that("known unsafe legacy routes are not presented as promoted", {
   expect_identical(
     ds.vertMethodStatus("ds.vertDPCount")$status,
     "promoted")
+  frequency <- ds.vertMethodStatus("ds.vertDPFrequency")
+  expect_identical(frequency$status, "promoted")
+  expect_identical(frequency$release_contract,
+                   "formal_sticky_frequency_artifact")
+  expect_identical(frequency$numeric_contract,
+                   "separate_integer_dp_contract")
+  expect_match(frequency$numeric_blocker, "not an accountant", fixed = TRUE)
+  expect_false(any(grepl("capsule", unlist(frequency),
+                         ignore.case = TRUE)))
+  expect_match(attr(frequency, "threat_model"),
+               "distinct Frequency artifacts compose", fixed = TRUE)
+  frequency_inference <-
+    ds.vertMethodStatus("ds.vertDPFrequencyInference")
+  expect_identical(frequency_inference$status, "promoted")
+  expect_identical(frequency_inference$release_contract,
+                   "postprocessing_inherits_input")
+  expect_match(frequency_inference$safe_scope, "Zero-call")
   combined_epi <- ds.vertMethodStatus("ds.vertDPEpi2x2Inference")
   expect_identical(combined_epi$status, "promoted")
   expect_identical(

@@ -2,6 +2,12 @@
 
 ### Estimators
 
+* `ds.vertDPFrequency()` now uses the canonical fixed-domain sticky Frequency
+  protocol rather than the biomedical capsule. It requires an explicit source
+  owner, compiles one signed contract across K peers, executes only on the
+  source and one pinned secondary noise authority, and returns one authenticated
+  Ring128 release. Confidence-specific mechanism and sampling regions are O(d)
+  client post-processing and make no further server call or privacy release.
 * `ds.vertLMM` now dispatches on K internally (K=2 exact closed-form, K>=3
   variance-ratio profile), matching every other method; it previously used only
   the first peer at K>=3, silently producing an incomplete fit. `ds.vertLMM.k3`

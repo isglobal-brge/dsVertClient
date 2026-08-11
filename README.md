@@ -60,7 +60,10 @@ DSI::datashield.logout(conns)
 The package can inspect—never change—the immutable DP policy and run a public,
 data-free utility preview. Count independently compiles one canonical signed
 current-snapshot artifact and uses sticky exact-MPC noise or signed fixed-cohort
-K-consensus. The signed biomedical capsule covers table, moment,
+K-consensus. Frequency independently compiles one signed fixed-domain artifact
+and executes one sticky two-authority Ring128 release; the source owner must be
+named explicitly and the remaining K-2 peers are compile-only witnesses. The
+signed biomedical capsule covers table, moment,
 Gaussian-model and survival artifacts. Its deterministic selector uses
 the exact-GC one-draw Laplace route for a scalar vector, the scalable
 two-complete-draw Laplace convolution for wider vectors, or the formal
@@ -74,13 +77,14 @@ ds.vertDPCalibrate(capsule_epsilon = c(1, 3, 5),
                    sensitivity = 1)
 ds.vertDPStatus(conns)
 ds.vertDPCapsulePlan(conns) # signed dry-run; no data access or release
-# Canonical sticky Count artifact:
+# Canonical stateless sticky artifacts:
 ds.vertDPCount("DA", datasources = conns)
+frequency <- ds.vertDPFrequency(
+  "DA", "exposure", server = "site_a", datasources = conns)
+ds.vertDPFrequencyInference(frequency)
 # Sticky joint-DP capsule post-processing routes:
 ds.vertDPContingency("DA", "exposure", "outcome",
                      datasources = conns)
-frequency <- ds.vertDPFrequency("DA", "exposure", datasources = conns)
-ds.vertDPFrequencyInference(frequency)
 ds.vertDPMeanVar("DA", "age", datasources = conns)
 ds.vertDPDescribe("DA", "primary", datasources = conns)
 gaussian <- ds.vertDPGaussian("DA", "gaussian_primary",
@@ -288,6 +292,10 @@ compiles one canonical signed current-snapshot artifact; the same artifact
 recomputes the same identity-seeded noise, while distinct artifacts compose
 and have no finite global composition claim. Fixed-cohort Count instead uses
 an exact public K-consensus declaration with zero sensitivity and no MPC noise.
+`ds.vertDPFrequency()` likewise has no capsule allocator: one canonical signed
+source/factor artifact derives one identity-seeded two-authority release;
+replays are identical and distinct signed artifacts compose without a claimed
+finite global budget.
 The still-provisional table, moment, Gaussian-model and survival routes retain
 their separate cross-signed biomedical-capsule contract while they are being
 migrated. DP bounds indistinguishability; it is not a literal guarantee that no
@@ -298,10 +306,10 @@ legacy DCF comparison survive only inside unregistered/quarantined
 implementations and retain their stated proof limitations. See
 [SECURITY.md](SECURITY.md) for the full threat model and non-claims.
 
-There is no request-count limit. Count has no lifetime budget, accountant or
-history gate. The finite lifetime gate applies only to the provisional capsule
-routes that still use the old capsule backend; exact replay of an existing
-capsule release remains free. Shape, byte, finite-range and storage caps are
+There is no request-count limit. Count and Frequency have no lifetime budget,
+accountant or history gate. The finite lifetime gate applies only to
+provisional capsule routes that still use the old capsule backend; exact replay
+of an existing capsule release remains free. Shape, byte, finite-range and storage caps are
 retained as separate resource and arithmetic-safety controls.
 
 ## DSI communication

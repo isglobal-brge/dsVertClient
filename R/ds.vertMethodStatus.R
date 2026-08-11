@@ -43,7 +43,10 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "privacy and composition follow each row's release contract; Count is",
     "sticky per canonical signed artifact, distinct Count artifacts compose,",
     "and no finite global Count composition claim is made; capsule-backed",
-    "routes retain their separately documented capsule contract;",
+    "routes retain their separately documented capsule contract; Frequency",
+    "is independently sticky per canonical signed artifact, distinct",
+    "Frequency artifacts compose, and no finite global Frequency composition",
+    "claim is made;",
     "no malicious-peer security or unlimited exact-output non-reconstruction claim"
   )
   registry
@@ -135,14 +138,17 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "Cross-owner use requires the predeclared private alignment contract;",
         "ordinary chi-square/Fisher laws are invalid for the noisy table, and",
         "the concordant-unit estimand must be reported."))
-  add("ds.vertDPFrequency", "ds.vertDPFrequency", "provisional",
+  add("ds.vertDPFrequency", "ds.vertDPFrequency", "promoted",
       paste(
-        "One fixed-domain categorical marginal extracted from the signed",
-        "sticky joint capsule, with simultaneous mechanism-only count and",
-        "proportion regions."),
+        "One canonical signed fixed-domain categorical vector from the",
+        "explicit PSI-aligned source owner; K peers compile and sign, while",
+        "the source and one pinned secondary authority execute one sticky",
+        "Ring128 release with simultaneous mechanism-only regions."),
       paste(
-        "Missing, out-of-domain and conflicting repeated records are excluded;",
-        "the base regions exclude population-sampling uncertainty."))
+        "The formal DP claim is per canonical signed artifact; distinct",
+        "artifacts compose and no finite global composition claim is made.",
+        "It assumes persistent secret seeds and one non-colluding authority;",
+        "base regions exclude population-sampling uncertainty."))
   add("ds.vertDPFrequencyInference", "ds.vertDPFrequencyInference", "promoted",
       paste(
         "Zero-call conservative joint regions combining the validated",
@@ -568,7 +574,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertDPCor", "ds.vertCor", "ds.vert.cor",
     "ds.vertPCA", "ds.vert.pca",
     "ds.vertDPContingency", "ds.vertDPMeanVar",
-    "ds.vertDPDescribe", "ds.vertDPSurvival", "ds.vertDPFrequency")
+    "ds.vertDPDescribe", "ds.vertDPSurvival")
   safe_nonreleases <- c(
     "ds.getIdentityPks",
     "ds.psiAlign", "ds.vert.align",
@@ -607,6 +613,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "formal_joint_dp_capsule"
   out$release_contract[out$method == "ds.vertDPCount"] <-
     "formal_sticky_count_artifact"
+  out$release_contract[out$method == "ds.vertDPFrequency"] <-
+    "formal_sticky_frequency_artifact"
   out$release_contract[out$method %in% safe_nonreleases] <-
     "disclosure_safe_protocol_no_statistic"
   out$release_contract[out$method %in% inherited_postprocessing] <-
@@ -635,7 +643,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   dp_release <- out$release_contract %in% c(
     "formal_joint_dp_capsule",
     "formal_joint_dp_capsule_only_legacy_unavailable",
-    "formal_sticky_count_artifact")
+    "formal_sticky_count_artifact",
+    "formal_sticky_frequency_artifact")
   out$numeric_contract[dp_release] <- "separate_integer_dp_contract"
   out$numeric_blocker[dp_release] <- paste(
     "Covered by the DP mechanism/accountant contract, not the Ring numeric",
@@ -644,6 +653,10 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   out$numeric_blocker[count_release] <- paste(
     "Covered by the signed per-artifact integer DP or exact public",
     "K-consensus contract, not an accountant or Ring numeric certificate.")
+  frequency_release <- out$method == "ds.vertDPFrequency"
+  out$numeric_blocker[frequency_release] <- paste(
+    "Covered by the signed per-artifact integer DP contract, not an",
+    "accountant or Ring numeric certificate.")
 
   inherited <- out$release_contract == "postprocessing_inherits_input"
   out$numeric_contract[inherited] <- "inherits_input_contract"

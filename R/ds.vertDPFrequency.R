@@ -203,6 +203,7 @@
     source_owner = execution$source_owner, finalizer_peer = execution$finalizer_peer)
 }
 #' Differentially private one-way frequency distribution
+#'
 #' Executes a sticky two-authority release and returns authenticated public
 #' values and proof. `server` is the required explicit source owner.
 #' @param data_name Name of the registered protected data frame.
@@ -392,6 +393,7 @@ ds.vertDPFrequency <- function(data_name, variable, server = NULL,
   result
 }
 #' Conservative sampling regions for a DP frequency distribution
+#'
 #' Pure post-processing with a DP count box and exact binomial regions.
 #' @param x A validated `ds.vertDPFrequency` object.
 #' @param level Requested joint coverage.
