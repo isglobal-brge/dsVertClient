@@ -296,6 +296,10 @@
       alias_kind[alias_kind_names] <- unname(alias_kinds)
     }
     defaults <- switch(migration_feasibility,
+      count_operation_implemented = list(
+        route = "formal_sticky_count_artifact",
+        artifact = "signed_count_artifact_implemented",
+        inference = "formal_count_release_implemented"),
       capsule_release_implemented = list(
         route = "formal_joint_dp_capsule",
         artifact = "joint_vector_release_implemented",
@@ -859,11 +863,12 @@
 
   add(
     "ds.vertDPCount", "ds.vertDPCount", "dp_count",
-    c("admitted_count", "joint_dp_noise"),
-    "Privacy-unit count for the capsule's immutable snapshot.",
+    c("current_aligned_snapshot", "signed_count_analysis_contract",
+      "joint_dp_noise_or_fixed_public_consensus"),
+    "Privacy-unit count for the canonical signed current snapshot.",
     c("adjacency_contract", "mechanism_uncertainty",
-      "validated_capsule_provenance"),
-    "capsule_release_implemented")
+      "signed_K_peer_provenance"),
+    "count_operation_implemented")
 
   add(
     "ds.vertDPContingency", "ds.vertDPContingency", "dp_contingency",
@@ -1334,6 +1339,7 @@
   attr(out, "current_route_status_levels") <- c(
     "client_only_inherits_input",
     "client_only_validated_capsule_postprocess",
+    "formal_sticky_count_artifact",
     "formal_joint_dp_capsule", "known_broken_route_quarantine",
     "legacy_exact_release_not_capsule_safe",
     "legacy_granular_release_not_capsule_safe",
@@ -1343,12 +1349,14 @@
     "signed_workload_unavailable_quarantine",
     "formal_capsule_variant_only_legacy_unavailable")
   attr(out, "migration_feasibility_levels") <- c(
+    "count_operation_implemented",
     "capsule_release_implemented",
     "client_only_requires_attested_input",
     "requires_new_capsule_artifact", "requires_new_secure_protocol")
   attr(out, "artifact_implementation_state_levels") <- c(
     "client_input_not_capsule_attested",
     "joint_vector_release_implemented",
+    "signed_count_artifact_implemented",
     "planned_no_materializer", "reserved_not_materialized",
     "secure_artifact_not_implemented",
     "validated_capsule_adapter_implemented",
@@ -1364,6 +1372,7 @@
     "dp_aware_parametric_bootstrap_implemented",
     "existing_inference_requires_capsule_backend",
     "formal_capsule_release_implemented",
+    "formal_count_release_implemented",
     "implemented_client_algebra_inherits_input",
     "capsule_postprocess_implemented",
     "client_only_spectral_postprocess_with_eigengap_regions",

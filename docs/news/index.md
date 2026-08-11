@@ -37,7 +37,13 @@
   false and exact replay of the same capsule/release instance remains
   unlimited post-processing.
 
-- Public DP results now carry `dsvert-capsule-security-claim-v3`. It
+- Capsule-backed public DP results carry
+  `dsvert-capsule-security-claim-v3`. The independent
+  [`ds.vertDPCount()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertDPCount.md)
+  route instead returns one canonical current-snapshot artifact with
+  per-artifact epsilon/delta, identity-seeded sticky replay, no lifetime
+  accountant and no finite global composition claim; fixed-cohort Count
+  is exact public K-consensus with zero sensitivity. The capsule claim
   binds the exact field
   `authenticated_history_retention_assumption=at_least_one_noncolluding_designated_noise_peer_retains_and_uses_complete_authenticated_monotonic_history`
   and
@@ -177,8 +183,9 @@
   blanket model-readiness claim.
 
 - Release evidence now distinguishes topology coverage from connector
-  execution. `K=2`, `K=3` and `K=5` for the promoted capsule/PSI route
-  denote unit, adversarial and isolated-process/DSLite coverage unless a
+  execution. `K=2`, `K=3` and `K=5` for the promoted Count and PSI routes,
+  and for provisional capsule routes, denote unit, adversarial and
+  isolated-process/DSLite coverage unless a
   current live harness artifact is cited explicitly. Analytical calls
   are constructed through DSI; Opal method reconciliation and Armadillo
   TLS/session inspection are deployment and lifecycle safeguards, not

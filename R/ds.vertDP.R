@@ -688,24 +688,25 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
   as.numeric(maximum[[1L]])
 }
 
-#' Differentially private patient count
+#' Differentially private privacy-unit count
 #'
-#' Under add/remove adjacency this is local post-processing of the admitted-
-#' count coordinate in the one signed, sticky biomedical capsule vector. Two
-#' designated pinned peers contribute independent complete-vector geometric
-#' draws; Ring128 decoding and the public coordinate clamp happen before the
-#' client sees the vector. Under fixed-cohort adjacency, the only exception is
-#' a public policy constant whose declared sensitivity, epsilon and delta are
-#' all zero.
+#' Every connected peer signs one canonical current aligned-snapshot contract.
+#' Under add/remove adjacency, exactly two pinned authorities combine their
+#' persistent sticky randomness with the protected count inside exact MPC; the
+#' client sees only one bounded release signed by the finalizer. Under
+#' fixed-cohort replace-one adjacency, all K peers sign the same public cohort
+#' size and PSI-run binding, so no MPC session or DP noise is needed. The
+#' privacy metadata is per canonical signed artifact: distinct artifacts
+#' compose and no finite global composition claim is made. Reported accuracy
+#' covers mechanism noise, not population sampling uncertainty.
 #'
-#' @param data_name Name of the protected data frame.
-#' @param server Optional returned-source label for the fixed-cohort
-#'   public-policy path; every connected peer must return the same value and it
-#'   must equal the consensus policy capacity. On the joint add/remove path it
-#'   is only a compatibility assertion; the signed manifest selects the
-#'   coordinate owner.
-#' @param datasources DataSHIELD connections.
-#' @return A DP count release with accuracy and composition metadata.
+#' @param data_name Name of the registered protected data frame.
+#' @param server Optional connected-peer assertion. For add/remove Count the
+#'   signed contract selects the finalizer. For fixed-cohort Count this is the
+#'   label attached to the K-consensus public result.
+#' @param datasources Named DataSHIELD connections.
+#' @return A signed Count release with mechanism, accuracy, and per-artifact
+#'   privacy metadata.
 #' @export
 ds.vertDPCount <- function(data_name, server = NULL, datasources = NULL) {
   .dsvert_dp_count_impl(
@@ -719,105 +720,152 @@ ds.vertDPCount <- function(data_name, server = NULL, datasources = NULL) {
     stop("data_name must be one non-empty string", call. = FALSE)
   }
   datasources <- .dsvert_dp_datasources(datasources)
-  status <- .dsvert_joint_dp_capsule_status_impl(datasources, .aggregate)
-  server <- .dsvert_dp_server(server, datasources)
-  joint_add_remove <- all(vapply(status, function(value) {
-    identical(value$policy$adjacency, "add_remove_patient")
-  }, logical(1L)))
-  if (isTRUE(joint_add_remove)) {
-    # `server` is retained as a compatibility assertion only.  The signed
-    # capsule descriptor, not the analyst, chooses the count owner.
-    if (!is.null(server)) .dsvert_dp_server(server, datasources)
-    run <- .dsvert_dp_capsule_vector_run(
-      datasources, status = status, .aggregate = .aggregate)
-    context <- .dsvert_dp_vector_context(run)
-    block <- .dsvert_dp_capsule_single_block(
-      context$layout, "admitted_count", dataset = data_name,
-      description = paste0("signed admitted-count block for dataset '",
-                           data_name, "'"))
-    value <- .dsvert_dp_capsule_vector_values(context$release, block)
-    capacity <- .dsvert_dp_vector_block_capacity(block)
-    if (length(value) != 1L || value[[1L]] < 0 || value[[1L]] > capacity) {
-      stop("The released admitted count violates its signed bounds",
-           call. = FALSE)
-    }
-    accuracy <- .dsvert_dp_vector_accuracy_radius(
-      context$release, context$manifest, coordinate_count = 1L,
-      confidence = 0.95, maximum_error = capacity)
-    result <- c(.dsvert_dp_vector_public_metadata(context), list(
-      value = unname(value[[1L]]), server = block$owner_peer,
-      coordinate_family = "admitted_count",
-      coordinate_descriptor = block$descriptor,
-      lower_bound = 0, upper_bound = capacity,
-      artifact_l1_sensitivity = 1,
-      accuracy_95_abs = accuracy$radius,
-      accuracy_95_confidence = accuracy$confidence,
-      accuracy_95_method = accuracy$method,
-      accuracy_implementation_tv_upper_bound =
-        accuracy$implementation_tv_upper_bound,
-      accuracy_additional_privacy_cost =
-        accuracy$additional_privacy_cost))
-  } else {
-    if (!all(vapply(status, function(value) {
-      identical(value$policy$adjacency, "replace_one_fixed_cohort")
-    }, logical(1L)))) {
-      stop("Connected peers do not share a supported Count adjacency",
-           call. = FALSE)
-    }
-    response <- .dsvert_aggregate_strict(
-      conns = datasources,
-      expr = call(
-        name = "dsvertPublicFixedCohortCountDS", data_name = data_name),
-      operation = "DP count release", .aggregate = .aggregate)
-    fields <- c(
-      "released", "value", "mechanism", "implementation", "sampler",
-      "randomness", "sensitivity", "postprocessing",
-      "clipped_coordinates", "accuracy_95_abs", "data_dependency",
-      "epsilon", "delta", "adjacency", "peer_count")
-    valid <- vapply(names(datasources), function(peer) {
-      result <- response[[peer]]
-      policy <- status[[peer]]$policy
-      is.list(result) && !is.null(names(result)) &&
-        !anyNA(names(result)) && !anyDuplicated(names(result)) &&
-        setequal(names(result), fields) && identical(result$released, TRUE) &&
-        .dsvert_dp_is_integer(
-          result$value, policy$unit_capacity, policy$unit_capacity) &&
-        identical(result$mechanism, "public_fixed_cohort_size_v1") &&
-        identical(result$implementation,
-                  "custodian_owned_policy_constant") &&
-        identical(result$sampler, "none") &&
-        identical(result$randomness, "none") &&
-        identical(as.numeric(result$sensitivity), 0) &&
-        identical(result$postprocessing, "none_public_policy_value") &&
-        identical(as.numeric(result$clipped_coordinates), 0) &&
-        identical(as.numeric(result$accuracy_95_abs), 0) &&
-        identical(result$data_dependency,
-                  "none_public_fixed_cohort_policy") &&
-        identical(as.numeric(result$epsilon), 0) &&
-        identical(as.numeric(result$delta), 0) &&
-        identical(result$adjacency, "replace_one_fixed_cohort") &&
-        .dsvert_dp_is_integer(
-          result$peer_count, 2, .Machine$integer.max) &&
-        identical(as.numeric(result$peer_count),
-                  as.numeric(policy$peer_count))
-    }, logical(1L))
-    valid <- all(valid) &&
-      length(unique(vapply(response, `[[`, numeric(1L), "value"))) == 1L
-    if (!isTRUE(valid)) {
-      stop("The peers returned an invalid public fixed-cohort Count",
-           call. = FALSE)
-    }
-    result <- response[[server]]
-    result$server <- server
-    result$history_gate <- FALSE
-    result$request_limit <- FALSE
-    result$operation_limit <- FALSE
-    result$composition_rule <- "public_policy_constant_no_dp_composition"
+  selected_server <- .dsvert_dp_server(server, datasources)
+  execution <- .dsvert_dp_count_execute_v1(
+    data_name, datasources, .aggregate = .aggregate)
+  if (!is.list(execution) || is.null(names(execution)) ||
+      anyNA(names(execution)) || anyDuplicated(names(execution)) ||
+      !setequal(names(execution), c("version", "mode", "payload")) ||
+      !identical(execution$version,
+                 .DSVERT_CLIENT_DP_COUNT_EXECUTION_RESULT_VERSION) ||
+      !is.character(execution$mode) || length(execution$mode) != 1L ||
+      is.na(execution$mode) ||
+      !execution$mode %in% c("add_remove_dp", "fixed_cohort_public") ||
+      !is.list(execution$payload)) {
+    stop("Invalid closed Count execution result", call. = FALSE)
   }
-  result$uncertainty_scope <- if (isTRUE(result$released) &&
-      identical(result$mechanism, "public_fixed_cohort_size_v1")) {
+  payload <- execution$payload
+  if (identical(execution$mode, "add_remove_dp")) {
+    payload_fields <- c(
+      "release", "finalizer_peer", "accuracy_95_abs",
+      "accuracy_95_confidence", "accuracy_95_method")
+    release <- payload$release
+    release_fields <- c(
+      "version", "artifact_key", "contract_sha256",
+      "analysis_binding_sha256", "worker_static_sha256", "circuit",
+      "mechanism", "bounds", "value", "source_identity_pk",
+      "finalizer_identity_pk", "backend", "postprocessing",
+      "intermediate_values_exposed", "public_openings", "release_sha256",
+      "signature")
+    mechanism_fields <- c(
+      "family", "version", "sampler", "epsilon", "delta",
+      "implementation_delta", "sensitivity_l1")
+    valid <- !is.null(names(payload)) && !anyNA(names(payload)) &&
+      !anyDuplicated(names(payload)) &&
+      setequal(names(payload), payload_fields) &&
+      is.list(release) && !is.null(names(release)) &&
+      !anyNA(names(release)) && !anyDuplicated(names(release)) &&
+      setequal(names(release), release_fields) &&
+      is.list(release$mechanism) &&
+      setequal(names(release$mechanism), mechanism_fields) &&
+      is.list(release$bounds) &&
+      setequal(names(release$bounds), c("lower", "upper")) &&
+      payload$finalizer_peer %in% names(datasources) &&
+      .dsvert_dp_is_integer(payload$accuracy_95_abs, 0, 4096) &&
+      identical(as.numeric(payload$accuracy_95_confidence), 0.95) &&
+      identical(payload$accuracy_95_method,
+                .DSVERT_CLIENT_DP_COUNT_ACCURACY_95_METHOD) &&
+      identical(release$intermediate_values_exposed, FALSE) &&
+      identical(as.numeric(release$public_openings), 1)
+    lower <- suppressWarnings(as.numeric(release$bounds$lower))
+    upper <- suppressWarnings(as.numeric(release$bounds$upper))
+    value <- suppressWarnings(as.numeric(release$value))
+    valid <- isTRUE(valid) && .dsvert_dp_is_integer(lower, 0, 0) &&
+      .dsvert_dp_is_integer(upper, 1, 1000000) &&
+      .dsvert_dp_is_integer(value, lower, upper)
+    if (!isTRUE(valid)) {
+      stop("Invalid add/remove Count execution payload", call. = FALSE)
+    }
+    result <- list(
+      released = TRUE,
+      value = value,
+      server = payload$finalizer_peer,
+      mechanism = release$mechanism$version,
+      implementation = release$backend,
+      sampler = release$mechanism$sampler,
+      randomness = "two_persistent_identity_seeds_joint_exact_gc_v1",
+      sensitivity = as.numeric(release$mechanism$sensitivity_l1),
+      artifact_l1_sensitivity = 1,
+      postprocessing = release$postprocessing,
+      clipped_coordinates = NA_integer_,
+      clamp_activation_disclosed = FALSE,
+      accuracy_95_abs = min(as.numeric(payload$accuracy_95_abs), upper),
+      accuracy_95_confidence = 0.95,
+      accuracy_95_method = payload$accuracy_95_method,
+      accuracy_additional_privacy_cost = 0,
+      epsilon = as.numeric(release$mechanism$epsilon),
+      delta = as.numeric(release$mechanism$delta),
+      implementation_delta =
+        as.numeric(release$mechanism$implementation_delta),
+      adjacency = "add_remove_patient",
+      lower_bound = lower,
+      upper_bound = upper,
+      artifact_key = release$artifact_key,
+      release_sha256 = release$release_sha256,
+      signed_release = release,
+      sticky_replay = TRUE,
+      intermediate_values_exposed = FALSE,
+      privacy = list(
+        per_artifact_epsilon = as.numeric(release$mechanism$epsilon),
+        per_artifact_delta = as.numeric(release$mechanism$delta),
+        sticky_noise = TRUE,
+        finite_global_composition_claim = FALSE,
+        distinct_artifacts_compose = TRUE,
+        public_openings = 1L),
+      composition_rule =
+        "one_sticky_release_per_canonical_signed_artifact",
+      data_dependency = "current_signed_aligned_snapshot")
+  } else {
+    if (is.null(names(payload)) || anyNA(names(payload)) ||
+        anyDuplicated(names(payload)) || !setequal(names(payload), c(
+          "declaration", "receipt_set_sha256", "peer_count"))) {
+      stop("Invalid fixed-cohort Count execution payload", call. = FALSE)
+    }
+    declaration <- .dsvert_dp_count_client_fixed_declaration_v1(
+      payload$declaration, names(datasources))
+    receipt_set_sha256 <- .dsvert_dp_count_client_hex_v1(
+      payload$receipt_set_sha256, "fixed receipt-set hash")
+    if (!identical(as.numeric(payload$peer_count),
+                   as.numeric(length(datasources)))) {
+      stop("Invalid fixed-cohort Count execution payload", call. = FALSE)
+    }
+    result <- list(
+      released = TRUE,
+      value = as.numeric(declaration$fixed_cohort_size),
+      server = selected_server,
+      mechanism = "public_fixed_cohort_size_v1",
+      implementation = "custodian_owned_signed_K_consensus",
+      sampler = "none",
+      randomness = "none",
+      sensitivity = 0,
+      postprocessing = "none_public_signed_declaration",
+      clipped_coordinates = 0L,
+      accuracy_95_abs = 0,
+      accuracy_95_confidence = 0.95,
+      accuracy_95_method = "exact_public_fixed_cohort_value",
+      accuracy_additional_privacy_cost = 0,
+      epsilon = 0,
+      delta = 0,
+      implementation_delta = 0,
+      adjacency = "replace_one_fixed_cohort",
+      peer_count = as.integer(payload$peer_count),
+      declaration = declaration,
+      receipt_set_sha256 = receipt_set_sha256,
+      privacy = list(
+        per_artifact_epsilon = 0,
+        per_artifact_delta = 0,
+        sticky_noise = FALSE,
+        finite_global_composition_claim = FALSE,
+        distinct_artifacts_compose = TRUE,
+        public_openings = 1L),
+      composition_rule = "public_signed_constant_no_dp_composition",
+      data_dependency =
+        "public_fixed_contract_validated_against_current_aligned_snapshot")
+  }
+  result$uncertainty_scope <- if (identical(
+      execution$mode, "fixed_cohort_public")) {
     paste(
-      "Public fixed-cohort policy value; no DP mechanism noise;",
+      "Public fixed-cohort signed value; no DP mechanism noise;",
       "sampling uncertainty excluded")
   } else {
     "DP mechanism noise only; sampling uncertainty excluded"
@@ -1210,6 +1258,9 @@ ds.vertDPMeanVar <- function(data_name, variable, server = NULL,
   result
 }
 
+#' @rdname ds.vertDPCount
+#' @param x A `ds.vertDPCount` object.
+#' @param ... Additional print arguments.
 #' @export
 print.ds.vertDPCount <- function(x, ...) {
   if (!isTRUE(x$released)) {

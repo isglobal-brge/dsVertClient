@@ -1,6 +1,6 @@
 # dsVert security and disclosure contract
 
-Status: development hardening, updated 2026-08-08.
+Status: development hardening, updated 2026-08-11.
 
 ## Threat model
 
@@ -54,10 +54,11 @@ denial of service.
 - No request-count quota is imposed. Input dimensions, byte sizes,
   finite numeric ranges and storage paths are still bounded as
   denial-of-service and arithmetic-safety controls.
-- Dedicated DP releases use an immutable server-owned policy, fixed
-  patient or row add-remove adjacency, bounded one-unit contribution,
-  two independently rooted designated peers, sticky query memoisation
-  and persistent SQLite composition ledgers. The signed server plan
+- The still-provisional capsule-backed DP releases use an immutable
+  server-owned policy, fixed patient or row add-remove adjacency,
+  bounded one-unit contribution, two independently rooted designated
+  peers, sticky query memoisation and persistent SQLite composition
+  ledgers. Their signed server plan
   selects either the exact discrete-Laplace construction or the
   fixed-work dyadic discrete-Gaussian mechanism; HMAC-SHA256 domain
   separation and ChaCha20 streams make retries byte-identical. No root
@@ -113,18 +114,21 @@ denial of service.
   server-local-HMAC-authenticated proposal; later inputs are canonical
   Ed25519 receipts verified again client-side. It exposes no generic
   proposal minter, statistic/noise/seed input, result stager or payload
-  getter. The Count path uses only purpose-bound endpoints and a
-  matching bilateral signed final value; generic delivery remains
-  unavailable.
+  getter. Count does not use this capsule bridge: its purpose-bound
+  endpoints require a full-K signed analysis contract, authorize exactly
+  two identity-bound peers and return one bounded release signed by the
+  finalizer.
 - Every client DP status, discovery and release call forces DSI
   `errors.print = FALSE` and rejects partial/NULL site results
-  uniformly. Purpose-bound Count, capsule-source and joint control
-  phases are durable and ledger-idempotent, so the relay may replay only
-  the byte-identical request after an ambiguous missing ACK. Retry has
-  an inactivity deadline but no request-attempt quota and cannot reroll
-  an allocation, noise draw or payload. Detailed node errors remain in
-  privileged server logs rather than becoming an analyst-visible
-  disclosure channel.
+  uniformly. Purpose-bound Count phases are session-idempotent and
+  recompute the same artifact-bound noise from persistent identity
+  seeds; capsule-source and joint control phases retain their separate
+  durable ledger idempotency. The relay may replay only a byte-identical
+  request after an ambiguous missing ACK. Retry has an inactivity
+  deadline but no request-attempt quota and cannot reroll a Count
+  artifact, capsule allocation, noise draw or payload. Detailed node
+  errors remain in privileged server logs rather than becoming an
+  analyst-visible disclosure channel.
 - Each immutable capsule has fixed epsilon/delta parameters. There is no
   request-count quota, geometric decay or accuracy suppression caused by
   prior requests. Reusing the same capsule/release instance is zero-cost
@@ -177,32 +181,40 @@ limitation. Strong non-reconstruction needs either a narrow
 server-enforced catalogue of final analyses on immutable cohorts, or
 differential privacy/composition controls.
 
-The promoted Count route, and the still-provisional capsule-backed
-table, moment, Gaussian-model and survival routes, select coordinates
-from one signed sticky biomedical vector. Promotion of a client
-postprocessor does not by itself promote the upstream release that it
-consumes. The vector’s public deterministic selector uses the exact-GC
-one-draw Laplace route only for a scalar vector and the scalable
-two-independent-complete-draw Laplace convolution otherwise; a formal
-fixed-work dyadic discrete-Gaussian route may be selected when its exact
-server plan strictly improves the certified simultaneous radius. The
-analyst cannot choose epsilon, adjacency, categorical domains, clipping
-bounds, workload or ledger state. Every supported method over the same
-immutable capsule reuses its authenticated release, preventing averaging
-through retry or a syntactic alias.
+The promoted Count route is separate from the capsule vector. Every peer
+signs one canonical current-snapshot contract; exactly two
+identity-bound authorities run the fixed scalar exact-GC mechanism and
+only the finalizer opens one bounded signed value. The same canonical
+artifact recomputes the same noise after a new session or process, while
+distinct artifacts compose and have no finite global composition claim.
+Under replace-one fixed-cohort adjacency, all K peers sign the same exact
+public cohort size and no DP noise or MPC session is created.
+
+The still-provisional capsule-backed table, moment, Gaussian-model and
+survival routes select coordinates from their separate signed sticky
+biomedical vector. Promotion of a client postprocessor does not by
+itself promote the upstream release that it consumes. The vector’s
+public deterministic selector uses the scalable
+two-independent-complete-draw Laplace convolution or a formal fixed-work
+dyadic discrete-Gaussian route when its exact server plan strictly
+improves the certified simultaneous radius. The analyst cannot choose
+epsilon, adjacency, categorical domains, clipping bounds, workload or
+ledger state. Every supported method over the same immutable capsule
+reuses its authenticated release, preventing averaging through retry or
+a syntactic alias.
 [`ds.vertDPCalibrate()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertDPCalibrate.md)
 reports data-free floating-point utility previews, but never presents
 them as the executed choice: only the signed server manifest contains
 the exact selected mechanism and certificate. Operation count never
 changes those values and calibration does not authorize a release.
 
-This computational DP guarantee is scoped to those methods, their
-published adjacency, and release values after a custodian-approved
-snapshot has passed setup validation. It is conditional on secrecy and
-correct operation of each service-runtime-bootstrapped owner-only noise
-root or external provider, and authenticated ledger integrity. Server
-file-backed roots require POSIX owner/mode semantics; Windows servers
-require HSM/KMS, while dsVertClient itself remains Windows-compatible.
+These computational DP guarantees are scoped to each method’s published
+adjacency and release contract after a custodian-approved snapshot has
+passed setup validation. Count is conditional on secrecy and persistence
+of the two authority identity seeds and correct pinned-peer operation;
+capsule routes are additionally conditional on their documented
+noise-root and authenticated ledger assumptions. dsVertClient itself
+remains Windows-compatible.
 Compromise of a noise root can reveal the keyed randomness for known
 release contexts and is outside the guarantee.
 
@@ -408,14 +420,15 @@ readiness merely from an installed package. The Rock procedure is
 documented in `inst/docs/remote_surface_attestation_20260808.md`.
 
 Topology and connector claims are also separate. `K=2`, `K=3` and `K=5`
-coverage for the promoted capsule/PSI route means the named unit,
-adversarial, isolated-process or real-DSLite harness unless a current
-live connector artifact is cited. The local Armadillo S4/httpuv
-lifecycle regression is not a live Rock service, and cached Opal runs
-are historical evidence only. The analytical protocol constructs DSI
-calls; Opal reconciliation and Armadillo TLS/session inspection are
-deployment safeguards. Fresh artifact-exact Opal and Armadillo/Rock
-smoke remains part of the deployment release gate.
+coverage for the promoted Count and PSI routes, and for provisional
+capsule routes, means the named unit, adversarial, isolated-process or
+real-DSLite harness unless a current live connector artifact is cited.
+The local Armadillo S4/httpuv lifecycle regression is not a live Rock
+service, and cached Opal runs are historical evidence only. The
+analytical protocol constructs DSI calls; Opal reconciliation and
+Armadillo TLS/session inspection are deployment safeguards. Fresh
+artifact-exact Opal and Armadillo/Rock smoke remains part of the
+deployment release gate.
 
 ## Reporting vulnerabilities
 

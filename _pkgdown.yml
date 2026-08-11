@@ -27,9 +27,13 @@ reference:
   - ds.vertSecurityStatus
   - ds.vertNumericPreflight
   - ds.validateDPGaussianCertificate
+- title: Canonical sticky Count
+  contents:
+  - ds.vertDPCount
 - title: Sticky differentially private biomedical capsule
   contents:
   - starts_with("ds.vertDP")
+  - "-ds.vertDPCount"
 - title: Epidemiology from authorised inputs
   contents:
   - ds.vertEpi2x2

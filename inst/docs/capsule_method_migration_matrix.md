@@ -1,6 +1,6 @@
 # dsVert capsule method migration matrix
 
-Audit date: 2026-08-08. The machine-readable source of truth is
+Audit date: 2026-08-11. The machine-readable source of truth is
 `.dsvert_capsule_method_inventory()` in
 `R/capsule_method_inventory.R`. This inventory is a migration and evidence
 contract; it does not alter the public maturity registry in
@@ -38,10 +38,12 @@ available.
 
 - `current_route_status`: what the exported method does today and whether its
   output contract is exact/granular, allocator-backed DP, local-only, or a
-  postprocessor of a legacy input.
+  postprocessor of a legacy input. `formal_sticky_count_artifact` identifies
+  the independent canonical Count release and is not a capsule status.
 - `migration_feasibility`: whether migration needs a capsule artifact, a new
   secure protocol, an attested capsule input, or a capsule adapter around
-  already implemented post-processing.
+  already implemented post-processing. `count_operation_implemented` records
+  that Count has completed this migration independently of the capsule path.
 - `artifact_implementation_state`: whether the artifact is only planned,
   reserved, absent, or waiting for an input adapter.
 - `inference_implementation_state`: separates existing numerical/client
@@ -87,7 +89,8 @@ schema. It must not be read as “direct capsule support”.
 | Exact stratified epidemiology: `ds.vertMantelHaenszel` | authorised 2x2xK or strata-by-four-cells aggregate with explicit orientation; common MH odds ratio and conditional classical inference | client algebra exists and inherits input provenance; bare tables are caller-attested and inference remains model-dependent |
 | Exact direct standardization: `ds.vertDirectStandardization` | authorized stratum-specific cases/person-time plus public reference weights; standardized rate | client algebra exists and inherits input provenance |
 | Exact indirect standardization: `ds.vertIndirectStandardization` | authorized compatible strata aggregates; observed/expected standardized ratio | client algebra exists and inherits input provenance |
-| DP producers: `ds.vertDPCount`, `ds.vertDPContingency`, `ds.vertDPFrequency`, `ds.vertDPMeanVar`, `ds.vertDPCor`, `ds.vertDPDescribe`, `ds.vertDPGaussian`, `ds.vertDPSurvival` | one joint capsule vector covering admitted count, categorical marginals/pairs, numeric moments/pairs, fixed histograms, signed Gaussian sufficient statistics, and fixed-grid survival as applicable | sticky-capsule adapters are implemented for the listed artifacts; declared cross-owner categorical tables use the pre-source cross-signed allocation gate and private exact-GC injection; unsupported cross-owner families remain explicit reserved states |
+| DP Count: `ds.vertDPCount` | one canonical signed current-snapshot Count artifact; identity-seeded sticky scalar exact GC under add/remove adjacency, or an exact public K-consensus declaration under fixed-cohort replace-one adjacency | `count_operation_implemented`: independent of capsule allocation, lifetime accounting and SQLite; identical artifacts recompute one identical bounded release, distinct artifacts compose, and no finite global composition is claimed |
+| Capsule DP producers: `ds.vertDPContingency`, `ds.vertDPFrequency`, `ds.vertDPMeanVar`, `ds.vertDPCor`, `ds.vertDPDescribe`, `ds.vertDPGaussian`, `ds.vertDPSurvival` | one joint capsule vector covering categorical marginals/pairs, numeric moments/pairs, fixed histograms, signed Gaussian sufficient statistics, and fixed-grid survival as applicable | sticky-capsule adapters are implemented for the listed artifacts; declared cross-owner categorical tables use the pre-source cross-signed allocation gate and private exact-GC injection; unsupported cross-owner families remain explicit reserved states |
 | DP frequency view: `ds.vertDPFrequencyInference` | one validated fixed-domain categorical-marginal artifact from `ds.vertDPFrequency` | zero-cost client post-processing implemented; combines a simultaneous mechanism count box with conservative Bonferroni/Clopper--Pearson population-proportion regions and makes no p-value claim |
 | DP describe views: `ds.vertDPQuantile`, `ds.vertDPMedian` | one validated capsule describe artifact with a fixed public histogram grid | zero-cost client post-processing implemented; returns only a bin and interval, with no exact-quantile or interpolation claim |
 | DP survival views: `ds.vertDPKaplanMeier`, `ds.vertDPNelsonAalen`, `ds.vertDPCumulativeIncidence`, `ds.vertDPSurvivalQuantile`, `ds.vertDPMedianSurvival`, `ds.vertDPRMST`, `ds.vertDPRMTL`, `ds.vertDPSurvivalContrast`, `ds.vertDPRMSTContrast` | one validated capsule survival artifact, or two compatible artifacts for contrasts | validated capsule adapters and zero-cost post-processing implemented; survival quantiles do not extrapolate, RMTL is the exact public-interval complement of RMST, and two-release contrasts use a Bonferroni joint-confidence lower bound with typed zero denominators |

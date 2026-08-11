@@ -37,11 +37,13 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   }
   rownames(registry) <- NULL
   class(registry) <- c("ds.vertMethodStatus", class(registry))
-  attr(registry, "audit_date") <- "2026-08-08"
+  attr(registry, "audit_date") <- "2026-08-11"
   attr(registry, "threat_model") <- paste(
     "pinned honest-but-curious peers; untrusted analyst/relay;",
-    "formal composition applies when each capsule is created; all supported",
-    "operations over that capsule are unlimited post-processing;",
+    "privacy and composition follow each row's release contract; Count is",
+    "sticky per canonical signed artifact, distinct Count artifacts compose,",
+    "and no finite global Count composition claim is made; capsule-backed",
+    "routes retain their separately documented capsule contract;",
     "no malicious-peer security or unlimited exact-output non-reconstruction claim"
   )
   registry
@@ -116,14 +118,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "shape and the declared implementation-delta allowance."))
   add("ds.vertDPCount", "ds.vertDPCount", "promoted",
       paste(
-        "The admitted-count coordinate from one sticky joint Ring128 capsule",
-        "under server-owned add/remove adjacency, or the declared public",
-        "fixed-cohort constant."),
+        "A canonical current-snapshot Count artifact signed by all K peers:",
+        "two pinned authorities apply sticky discrete-Laplace noise inside",
+        "exact MPC for add/remove adjacency, while fixed-cohort adjacency",
+        "uses a signed public K-consensus value with zero sensitivity."),
       paste(
-        "Its formal (epsilon, delta)-DP claim is per capsule and conditional",
-        "on the published bounds, pinned semi-honest non-colluding-peer",
-        "model and secret persistent roots; it is not a fixed global",
-        "lifetime-DP claim."))
+        "The formal (epsilon, delta)-DP claim is per canonical signed",
+        "artifact; distinct artifacts compose and no finite global",
+        "composition claim is made. It assumes published bounds, secret",
+        "persistent seeds and at least one non-colluding pinned authority."))
   add("ds.vertDPContingency", "ds.vertDPContingency", "provisional",
       paste(
         "Fixed-domain, one-contribution-per-unit table from the one sticky",
@@ -564,7 +567,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertDPGaussian",
     "ds.vertDPCor", "ds.vertCor", "ds.vert.cor",
     "ds.vertPCA", "ds.vert.pca",
-    "ds.vertDPCount", "ds.vertDPContingency", "ds.vertDPMeanVar",
+    "ds.vertDPContingency", "ds.vertDPMeanVar",
     "ds.vertDPDescribe", "ds.vertDPSurvival", "ds.vertDPFrequency")
   safe_nonreleases <- c(
     "ds.getIdentityPks",
@@ -602,6 +605,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertGLM", "ds.vert.glm")
   out$release_contract[out$method %in% capsule_releases] <-
     "formal_joint_dp_capsule"
+  out$release_contract[out$method == "ds.vertDPCount"] <-
+    "formal_sticky_count_artifact"
   out$release_contract[out$method %in% safe_nonreleases] <-
     "disclosure_safe_protocol_no_statistic"
   out$release_contract[out$method %in% inherited_postprocessing] <-
@@ -629,11 +634,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
 
   dp_release <- out$release_contract %in% c(
     "formal_joint_dp_capsule",
-    "formal_joint_dp_capsule_only_legacy_unavailable")
+    "formal_joint_dp_capsule_only_legacy_unavailable",
+    "formal_sticky_count_artifact")
   out$numeric_contract[dp_release] <- "separate_integer_dp_contract"
   out$numeric_blocker[dp_release] <- paste(
     "Covered by the DP mechanism/accountant contract, not the Ring numeric",
     "certificate.")
+  count_release <- out$method == "ds.vertDPCount"
+  out$numeric_blocker[count_release] <- paste(
+    "Covered by the signed per-artifact integer DP or exact public",
+    "K-consensus contract, not an accountant or Ring numeric certificate.")
 
   inherited <- out$release_contract == "postprocessing_inherits_input"
   out$numeric_contract[inherited] <- "inherits_input_contract"

@@ -107,6 +107,57 @@
        envelopes = envelopes)
 }
 
+.count_client_compile_envelopes <- function(fixture, mode = "add_remove_dp") {
+  stats::setNames(lapply(names(fixture$envelopes), function(peer) {
+    list(
+      version = "dsvert-dp-count-compile-envelope-v1",
+      mode = mode,
+      payload = fixture$envelopes[[peer]])
+  }), names(fixture$envelopes))
+}
+
+.count_client_fixed_fixture <- function(k) {
+  keys <- .count_client_keys(k)
+  declaration <- list(
+    version = "dsvert-fixed-cohort-count-declaration-v1",
+    domain = "study-domain",
+    cohort_id = "cohort-v1",
+    dataset_id = "cohort-table",
+    dataset_version = "v1",
+    privacy_unit_column = "patient_id",
+    alignment_purpose = "patient-record-alignment-v1",
+    adjacency = "replace_one_fixed_cohort",
+    fixed_cohort_size = 1000L,
+    peer_pins = as.list(keys$public))
+  declaration <- .dsvert_dp_analysis_client_canonical_value_v1(declaration)
+  declaration_sha256 <- .count_client_hash(
+    "dsVert/dp-count/fixed-cohort-declaration/v1|", declaration)
+  receipts <- stats::setNames(lapply(names(keys$public), function(peer) {
+    unsigned <- list(
+      version = "dsvert-fixed-cohort-count-receipt-v1",
+      peer_name = peer,
+      peer_identity_pk = unname(keys$public[[peer]]),
+      declaration_sha256 = declaration_sha256,
+      psi_run_sha256 = strrep("d", 64L))
+    unsigned <- .dsvert_dp_analysis_client_canonical_value_v1(unsigned)
+    .dsvert_dp_analysis_client_canonical_value_v1(c(
+      unsigned, list(signature = .count_client_sign(charToRaw(paste0(
+        "dsVert/dp-count/fixed-cohort-receipt-signature/v1|",
+        .dsvert_joint_dp_client_json(unsigned))),
+        keys$private[[peer]]))))
+  }), names(keys$public))
+  envelopes <- stats::setNames(lapply(names(keys$public), function(peer) {
+    .dsvert_dp_analysis_client_canonical_value_v1(list(
+      version = "dsvert-dp-count-compile-envelope-v1",
+      mode = "fixed_cohort_public",
+      payload = list(
+        declaration = declaration, receipt = receipts[[peer]])))
+  }), names(keys$public))
+  list(
+    keys = keys, declaration = declaration, receipts = receipts,
+    envelopes = envelopes)
+}
+
 .count_client_public_authorization <- function(
     peer, session_id, compiled, keys) {
   contract <- compiled$contract
@@ -179,7 +230,7 @@
     state$calls[[length(state$calls) + 1L]] <- list(
       command = command, peers = names(conns), expression = expr)
     if (identical(command, "dsvertDPCountCompileDS")) {
-      values <- fixture$envelopes[names(conns)]
+      values <- .count_client_compile_envelopes(fixture)[names(conns)]
     } else if (identical(command, "dsvertDPCountAuthorizeDS")) {
       config_json <- .dsvert_dsi_text_decode(expr$config_json)
       receipts_json <- .dsvert_dsi_text_decode(expr$receipts_json)
@@ -273,6 +324,10 @@ test_that("Count compile-authorize-bind is K-generic and role stable", {
       mock$state$calls[[3L]]$peers, mock$state$authorities)
     expect_identical(
       mock$state$calls[[4L]]$peers, mock$state$authorities)
+    expect_identical(names(result), c("version", "mode", "payload"))
+    expect_identical(result$version, "dsvert-dp-count-prepared-v1")
+    expect_identical(result$mode, "add_remove_dp")
+    result <- result$payload
     expect_identical(names(result), c(
       "session_id", "contract", "authorities", "authorizations",
       "transport"))
@@ -303,6 +358,115 @@ test_that("Count compile-authorize-bind is K-generic and role stable", {
       paste(unlist(mock$state$authorize_wire, use.names = FALSE),
             collapse = ""), ignore.case = TRUE))
   }
+})
+
+test_that("Count compile mode is a closed full-K sum type", {
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .count_client_fixture(k)
+    envelopes <- .count_client_compile_envelopes(fixture)
+    result <- .dsvert_dp_count_client_compile_sum_v1(
+      envelopes, names(envelopes))
+
+    expect_identical(names(result), c("version", "mode", "payload"))
+    expect_identical(result$version, "dsvert-dp-count-compiled-mode-v1")
+    expect_identical(result$mode, "add_remove_dp")
+    expect_identical(result$payload$contract$artifact_key,
+                     .dsvert_dp_count_client_compile_v1(
+                       fixture$envelopes,
+                       names(fixture$envelopes))$contract$artifact_key)
+  }
+
+  fixture <- .count_client_fixture(3L)
+  envelopes <- .count_client_compile_envelopes(fixture)
+  envelopes[[1L]]$extra <- TRUE
+  expect_error(.dsvert_dp_count_client_compile_sum_v1(
+    envelopes, names(envelopes)), "compile envelope")
+  envelopes <- .count_client_compile_envelopes(fixture)
+  envelopes[[2L]]$mode <- "fixed_cohort_public"
+  expect_error(.dsvert_dp_count_client_compile_sum_v1(
+    envelopes, names(envelopes)), "mode")
+})
+
+test_that("fixed Count Compile verifies exact K signatures and short-circuits", {
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .count_client_fixed_fixture(k)
+    sites <- rev(names(fixture$envelopes))
+    datasources <- stats::setNames(lapply(
+      sites, function(...) structure(list(), class = "mock")), sites)
+    calls <- character()
+    aggregate <- function(conns, expr, ...) {
+      calls <<- c(calls, as.character(expr[[1L]]))
+      fixture$envelopes[names(conns)]
+    }
+    result <- .dsvert_dp_count_compile_authorize_bind_v1(
+      "D", datasources, .aggregate = aggregate,
+      .session_id = function() stop("fixed Count created a UUID"),
+      .setup_exact = function(...) stop("fixed Count initialized MPC"))
+
+    expect_identical(calls, "dsvertDPCountCompileDS")
+    expect_identical(names(result), c("version", "mode", "payload"))
+    expect_identical(result$version, "dsvert-dp-count-prepared-v1")
+    expect_identical(result$mode, "fixed_cohort_public")
+    expect_identical(names(result$payload), c(
+      "declaration", "receipt_set_sha256", "peer_count"))
+    expect_identical(result$payload$declaration, fixture$declaration)
+    expect_identical(result$payload$peer_count, k)
+    expect_match(result$payload$receipt_set_sha256, "^[0-9a-f]{64}$")
+  }
+})
+
+test_that("fixed Count Compile rejects every consensus and pin tamper", {
+  fixture <- .count_client_fixed_fixture(3L)
+  compile <- function(envelopes) .dsvert_dp_count_client_compile_sum_v1(
+    envelopes, names(fixture$envelopes))
+
+  missing <- fixture$envelopes[-1L]
+  expect_error(compile(missing), "complete federation")
+
+  mixed <- fixture$envelopes
+  mixed[[1L]]$mode <- "add_remove_dp"
+  expect_error(compile(mixed), "mode")
+
+  split <- fixture$envelopes
+  split[[2L]]$payload$declaration$fixed_cohort_size <- 999L
+  expect_error(compile(split), "disagree|declaration")
+
+  too_large <- fixture$envelopes
+  too_large <- lapply(too_large, function(envelope) {
+    envelope$payload$declaration$fixed_cohort_size <- 1000001L
+    envelope
+  })
+  expect_error(compile(too_large), "fixed cohort size")
+
+  wrong_pin <- fixture$envelopes
+  wrong_pin[[1L]]$payload$declaration$peer_pins[[1L]] <-
+    wrong_pin[[1L]]$payload$declaration$peer_pins[[2L]]
+  expect_error(compile(wrong_pin), "pinset|disagree")
+
+  wrong_peer <- fixture$envelopes
+  wrong_peer[[2L]]$payload$receipt <- wrong_peer[[1L]]$payload$receipt
+  expect_error(compile(wrong_peer), "pinned|receipt")
+
+  bad_signature <- fixture$envelopes
+  bad_signature[[1L]]$payload$receipt$signature <- paste0(
+    if (substr(bad_signature[[1L]]$payload$receipt$signature, 1L, 1L) ==
+        "A") "B" else "A",
+    substring(bad_signature[[1L]]$payload$receipt$signature, 2L))
+  expect_error(compile(bad_signature), "signature verification")
+
+  split_psi <- fixture$envelopes
+  peer <- names(split_psi)[[3L]]
+  unsigned <- split_psi[[peer]]$payload$receipt[
+    setdiff(names(split_psi[[peer]]$payload$receipt), "signature")]
+  unsigned$psi_run_sha256 <- strrep("e", 64L)
+  unsigned <- .dsvert_dp_analysis_client_canonical_value_v1(unsigned)
+  split_psi[[peer]]$payload$receipt <-
+    .dsvert_dp_analysis_client_canonical_value_v1(c(
+      unsigned, list(signature = .count_client_sign(charToRaw(paste0(
+        "dsVert/dp-count/fixed-cohort-receipt-signature/v1|",
+        .dsvert_joint_dp_client_json(unsigned))),
+        fixture$keys$private[[peer]]))))
+  expect_error(compile(split_psi), "PSI consensus")
 })
 
 test_that("Count client compiler has exact K, signature and server hash parity", {
@@ -495,6 +659,9 @@ test_that("Count control-plane result contains no protected statistic", {
   result <- .dsvert_dp_count_compile_authorize_bind_v1(
     "D", datasources, .aggregate = mock$aggregate,
     .session_id = function() "12345678-1234-4234-9234-123456789abc")
+  expect_identical(result$version, "dsvert-dp-count-prepared-v1")
+  expect_identical(result$mode, "add_remove_dp")
+  result <- result$payload
   collect_names <- function(value) {
     if (!is.list(value)) return(character())
     c(names(value), unlist(lapply(value, collect_names), use.names = FALSE))

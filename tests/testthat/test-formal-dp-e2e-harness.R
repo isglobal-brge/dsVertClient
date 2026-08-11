@@ -43,11 +43,12 @@ test_that("formal DP E2E harness is source-only and has a safe help path", {
   expect_false(grepl(
     "dsvert\\.dp\\.total_delta[[:space:]]*=[[:space:]]*0", code))
   expect_false(grepl("dsVert:::\\.dsvert_dp_policy\\(\\)", code))
+  expect_false(grepl("ds\\.vertDPStatus|ds\\.vertDPCapsulePlan", code))
+  expect_false(grepl("noise_root|ledger_path|total_epsilon", code))
+  expect_match(code, "dsvert.dp.implementation_delta = 1e-9", fixed = TRUE)
+  expect_match(code, "first$artifact_key, replay$artifact_key", fixed = TRUE)
   expect_match(
-    code, "identical(unname(effective_delta), rep(2^-100, k))", fixed = TRUE)
-  expect_match(code, "all(effective_delta > 0)", fixed = TRUE)
-  expect_false(grepl("noise_root\\$epoch", code))
-  expect_match(code, "noise_root$privacy_epoch", fixed = TRUE)
+    code, "sampler_recomputed_after_service_restart", fixed = TRUE)
 
   result <- callr::rscript(
     script, "--help", stdout = "|", stderr = "|", show = FALSE,

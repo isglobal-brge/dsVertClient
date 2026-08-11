@@ -84,7 +84,7 @@ test_that("inventory separates current, migration, artifact and inference state"
 test_that("only new capsule reservation can be denied by lifetime history", {
   inventory <- .dsvert_capsule_method_inventory()
   capsule_producers <- c(
-    "ds.vertDPCount", "ds.vertDPContingency", "ds.vertDPMeanVar",
+    "ds.vertDPContingency", "ds.vertDPMeanVar",
     "ds.vertDPCor", "ds.vertDPDescribe", "ds.vertDPGaussian",
     "ds.vertDPSurvival")
   currently_deniable <- inventory$method[
@@ -103,6 +103,14 @@ test_that("only new capsule reservation can be denied by lifetime history", {
   expect_false(any(inventory$same_capsule_replay_history_can_deny))
   expect_true(all(inventory$new_capsule_reservation_history_can_deny[
     inventory$method %in% capsule_producers]))
+  count <- row_for(inventory, "ds.vertDPCount")
+  expect_identical(count$current_route_status,
+                   "formal_sticky_count_artifact")
+  expect_identical(count$migration_feasibility,
+                   "count_operation_implemented")
+  expect_identical(count$artifact_implementation_state,
+                   "signed_count_artifact_implemented")
+  expect_false(count$new_capsule_reservation_history_can_deny)
 })
 
 test_that("aliases and wrappers retain honest routing semantics", {
@@ -393,7 +401,7 @@ test_that("estimands and inference requirements match implemented semantics", {
 test_that("implemented capsule producers and postprocessors are explicit", {
   inventory <- .dsvert_capsule_method_inventory()
   capsule_producers <- c(
-    "ds.vertDPCount", "ds.vertDPContingency", "ds.vertDPMeanVar",
+    "ds.vertDPContingency", "ds.vertDPMeanVar",
     "ds.vertDPCor", "ds.vertDPDescribe", "ds.vertDPGaussian",
     "ds.vertDPSurvival")
   postprocessors <- c(
@@ -431,6 +439,14 @@ test_that("implemented capsule producers and postprocessors are explicit", {
     row_for(inventory, "ds.vertDPGaussian")$
       artifact_implementation_state,
     "validated_same_and_cross_owner_capsule_adapter_implemented")
+  count <- row_for(inventory, "ds.vertDPCount")
+  expect_identical(count$current_route_status,
+                   "formal_sticky_count_artifact")
+  expect_identical(count$inference_implementation_state,
+                   "formal_count_release_implemented")
+  expect_false(grepl(
+    "capsule|lifetime|budget|remaining|limit",
+    paste(unlist(count), collapse = " "), ignore.case = TRUE))
   chisq <- inventory$method %in% c("ds.vertChisq", "ds.vert.chisq")
   expect_true(all(inventory$current_route_status[chisq] ==
                     "formal_joint_dp_capsule"))

@@ -1,14 +1,15 @@
 # Differentially private privacy-unit count
 
-Under add/remove adjacency, the two custodian-designated pinned peers
-create one sticky discrete-Laplace draw and one bounded clamp inside
-exact GC; the client accepts only byte-identical releases signed by both
-peers. Under fixed-cohort replace-one adjacency, the count is the
-zero-cost public policy constant unanimously returned by all connected
-peers and checked against the consensus policy capacity. Capsule reuse
-has no request quota, remaining budget, or history-dependent accuracy
-change. Reported accuracy covers mechanism noise, not population
-sampling uncertainty.
+Every connected peer signs one canonical current aligned-snapshot
+contract. Under add/remove adjacency, exactly two pinned authorities
+combine persistent sticky randomness with the protected count inside
+exact MPC; the client sees only one bounded release signed by the
+finalizer. Under fixed-cohort replace-one adjacency, all K peers sign the
+same public cohort size and PSI-run binding, so no MPC session or DP
+noise is needed. Privacy metadata is per canonical signed artifact:
+distinct artifacts compose and no finite global composition claim is
+made. Reported accuracy covers mechanism noise, not population sampling
+uncertainty.
 
 ## Usage
 
@@ -23,14 +24,13 @@ print(x, ...)
 
 - data_name:
 
-  Name of the registered protected data frame.
+  Name of the protected data frame.
 
 - server:
 
-  Optional returned-source label for the fixed-cohort public-policy
-  path. Every connected peer must return the same value and it must
-  equal the consensus policy capacity. On the joint add/remove path it
-  is only a compatibility assertion.
+  Optional connected-peer assertion. For add/remove Count the signed
+  contract selects the finalizer. For fixed-cohort Count this is the
+  label attached to the K-consensus public result.
 
 - datasources:
 
@@ -46,5 +46,5 @@ print(x, ...)
 
 ## Value
 
-A validated DP count release with mechanism, accuracy, sticky-noise, and
-composition metadata.
+A signed Count release with mechanism, accuracy, and per-artifact privacy
+metadata.
