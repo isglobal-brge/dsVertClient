@@ -605,6 +605,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertMantelHaenszel",
     "ds.vertDirectStandardization", "ds.vertIndirectStandardization",
     "ds.vertLR", "ds.vert.lr",
+    "ds.vertLASSO", "ds.vert.lasso",
+    "ds.vertLASSO1Step", "ds.vert.lasso_1step",
     "ds.vertLASSOProximal", "ds.vert.lasso_proximal",
     "ds.vertLASSOCV", "ds.vert.lasso_cv")
   capsule_only_wrappers <- c(

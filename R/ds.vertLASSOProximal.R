@@ -31,6 +31,10 @@
 #'   and every signed predictor. For a legacy \code{ds.glm}, it is beta_0.
 #' @param accelerate Compatibility argument retained for historical callers.
 #'   The current solver is coordinate descent, so this value has no effect.
+#' @param trusted_pinset Optional trusted named peer-to-Ed25519-public-key map
+#'   used to authenticate a saved or offline \code{ds.vertDPGaussian} release.
+#'   Online releases created in the current session use their transport-
+#'   anchored pinset cache. It is invalid for the legacy \code{ds.glm} route.
 #'
 #' @return An object of class \code{ds.vertLASSOProximal} with the proximal-MLE
 #'   coefficients, number of iterations, convergence flag, support, final
@@ -51,12 +55,17 @@ ds.vertLASSOProximal <- function(fit, lambda,
                                  max_iter = 2000L, tol = 1e-9,
                                  keep_intercept = TRUE,
                                  warm_start = NULL,
-                                 accelerate = TRUE) {
+                                 accelerate = TRUE,
+                                 trusted_pinset = NULL) {
   if (inherits(fit, "ds.vertDPGaussian")) {
     return(.dsvert_lasso_dp_proximal(
       fit = fit, lambda = lambda, max_iter = max_iter, tol = tol,
       keep_intercept = keep_intercept, warm_start = warm_start,
-      accelerate = accelerate))
+      accelerate = accelerate, trusted_pinset = trusted_pinset))
+  }
+  if (!is.null(trusted_pinset)) {
+    stop("trusted_pinset applies only to a ds.vertDPGaussian fit",
+         call. = FALSE)
   }
   if (!inherits(fit, "ds.glm")) {
     stop("`fit` must be a ds.vertDPGaussian or ds.glm object",

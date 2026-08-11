@@ -323,8 +323,8 @@ test_that("public proximal LASSO post-processes one certified DP release", {
       list(
         integrity_valid = isTRUE(
           value$provenance_certificate$test_integrity),
-        authenticity = "unanchored",
-        anchor_source = "none")
+        authenticity = "session_transport_anchored",
+        anchor_source = "online_session")
     },
     .package = "dsVertClient")
 
@@ -357,7 +357,8 @@ test_that("DP LASSO fails closed on certificate or design mismatch", {
   testthat::local_mocked_bindings(
     ds.validateDPGaussianCertificate = function(value, ...) {
       list(integrity_valid = isTRUE(
-        value$provenance_certificate$test_integrity))
+        value$provenance_certificate$test_integrity),
+        authenticity = "session_transport_anchored")
     },
     .package = "dsVertClient")
   expect_error(
@@ -375,7 +376,8 @@ test_that("DP LASSO warm starts are original-scale and never contact DSI", {
   fit <- make_dp_gaussian_lasso_fit()
   testthat::local_mocked_bindings(
     ds.validateDPGaussianCertificate = function(...) {
-      list(integrity_valid = TRUE, authenticity = "unanchored")
+      list(integrity_valid = TRUE,
+           authenticity = "session_transport_anchored")
     },
     .dsvert_aggregate_strict = function(...) {
       stop("unexpected DSI call", call. = FALSE)
@@ -403,7 +405,8 @@ test_that("public LASSOCV is honest deterministic DP pseudo-IC selection", {
   fit <- make_dp_gaussian_lasso_fit()
   testthat::local_mocked_bindings(
     ds.validateDPGaussianCertificate = function(...) {
-      list(integrity_valid = TRUE, authenticity = "unanchored")
+      list(integrity_valid = TRUE,
+           authenticity = "session_transport_anchored")
     },
     .dsvert_aggregate_strict = function(...) {
       stop("unexpected DSI call", call. = FALSE)
@@ -442,7 +445,8 @@ test_that("DP pseudo-IC returns structured unavailability", {
   fit$n_obs <- 1
   testthat::local_mocked_bindings(
     ds.validateDPGaussianCertificate = function(...) {
-      list(integrity_valid = TRUE, authenticity = "unanchored")
+      list(integrity_valid = TRUE,
+           authenticity = "session_transport_anchored")
     },
     .package = "dsVertClient")
 
@@ -455,6 +459,54 @@ test_that("DP pseudo-IC returns structured unavailability", {
   expect_null(result$beta.min)
   expect_true(any(grepl(
     "Selection unavailable", capture.output(print(result)), fixed = TRUE)))
+})
+
+test_that("DP LASSO requires transport- or caller-anchored provenance", {
+  fit <- make_dp_gaussian_lasso_fit()
+  trusted <- list(site_a = paste(rep("A", 43L), collapse = ""))
+  testthat::local_mocked_bindings(
+    ds.validateDPGaussianCertificate = function(value,
+                                                  trusted_pinset = NULL) {
+      list(
+        integrity_valid = TRUE,
+        authenticity = if (is.null(trusted_pinset)) {
+          "unanchored"
+        } else {
+          "caller_anchored"
+        })
+    },
+    .package = "dsVertClient")
+
+  expect_error(
+    ds.vertLASSOProximal(fit, lambda = 0.05),
+    "not anchored")
+  expect_error(
+    ds.vertLASSOCV(fit, lambda_grid = c(0.1, 0)),
+    "not anchored")
+  expect_s3_class(
+    ds.vertLASSOProximal(
+      fit, lambda = 0.05, trusted_pinset = trusted),
+    "ds.vertDPLASSO")
+  expect_s3_class(
+    ds.vertLASSOCV(
+      fit, lambda_grid = c(0.1, 0), trusted_pinset = trusted),
+    "ds.vertDPLASSOSelect")
+})
+
+test_that("trusted_pinset is not silently ignored by legacy LASSO routes", {
+  legacy <- structure(
+    list(family = "gaussian", lambda = 0, covariance = diag(2),
+         n_obs = 10, coefficients = c("(Intercept)" = 0, x = 0)),
+    class = c("ds.glm", "list"))
+  expect_error(
+    ds.vertLASSOProximal(
+      legacy, lambda = 0.05, trusted_pinset = list(site_a = "pin")),
+    "applies only")
+  expect_error(
+    ds.vertLASSOCV(
+      legacy, lambda_grid = c(0.1, 0),
+      trusted_pinset = list(site_a = "pin")),
+    "applies only")
 })
 
 test_that("DP LASSO coefficient scale transforms round-trip signed bounds", {

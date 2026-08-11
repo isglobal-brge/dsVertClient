@@ -11,7 +11,8 @@ ds.vertLASSOProximal(
   tol = 1e-09,
   keep_intercept = TRUE,
   warm_start = NULL,
-  accelerate = TRUE
+  accelerate = TRUE,
+  trusted_pinset = NULL
 )
 }
 \arguments{
@@ -34,6 +35,11 @@ and every signed predictor. For a legacy \code{ds.glm}, it is beta_0.}
 
 \item{accelerate}{Compatibility argument retained for historical callers.
 The current solver is coordinate descent, so this value has no effect.}
+
+\item{trusted_pinset}{Optional trusted named peer-to-Ed25519-public-key map
+used to authenticate a saved or offline \code{ds.vertDPGaussian} release.
+Online releases created in the current session use their transport-
+anchored pinset cache. It is invalid for the legacy \code{ds.glm} route.}
 }
 \value{
 An object of class \code{ds.vertLASSOProximal} with the proximal-MLE
