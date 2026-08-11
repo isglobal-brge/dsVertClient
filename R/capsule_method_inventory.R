@@ -300,6 +300,10 @@
         route = "formal_sticky_count_artifact",
         artifact = "signed_count_artifact_implemented",
         inference = "formal_count_release_implemented"),
+      frequency_operation_implemented = list(
+        route = "formal_sticky_frequency_artifact",
+        artifact = "signed_frequency_artifact_implemented",
+        inference = "formal_frequency_release_implemented"),
       capsule_release_implemented = list(
         route = "formal_joint_dp_capsule",
         artifact = "joint_vector_release_implemented",
@@ -882,28 +886,32 @@
 
   add(
     "ds.vertDPFrequency", "ds.vertDPFrequency", "dp_frequency",
-    c("admitted_count", "categorical_marginals", "joint_dp_noise"),
+    c("current_aligned_snapshot", "fixed_category_domain",
+      "signed_frequency_analysis_contract",
+      "sticky_two_authority_ring128_vector"),
     paste(
       "Fixed-domain finite-snapshot frequency distribution for one declared",
       "categorical variable after the signed repeated-record collapse."),
-    c("adjacency_contract", "fixed_category_domain",
-      "mechanism_uncertainty", "validated_capsule_provenance"),
-    "capsule_release_implemented")
+    c("adjacency_contract", "explicit_source_owner", "fixed_category_domain",
+      "mechanism_uncertainty", "signed_K_peer_provenance", "sticky_replay"),
+    "frequency_operation_implemented")
 
   add(
     "ds.vertDPFrequencyInference", "ds.vertDPFrequencyInference",
-    "dp_frequency_sampling_inference", "validated_dp_frequency_artifact",
+    "dp_frequency_sampling_inference",
+    "validated_sticky_frequency_artifact",
     paste(
       "Conservative simultaneous population-proportion regions combining",
       "the signed DP count-box event with exact multinomial sampling",
       "uncertainty."),
     c("iid_multinomial_sampling_model", "clopper_pearson_exact_intervals",
       "joint_mechanism_and_sampling_uncertainty",
-      "validated_capsule_provenance"),
-    "capsule_release_implemented",
-    current_route_status = "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "validated_frequency_provenance", "zero_call_postprocessing"),
+    "frequency_operation_implemented",
+    current_route_status = "client_only_inherits_input",
+    artifact_implementation_state =
+      "validated_frequency_artifact_adapter_implemented",
+    inference_implementation_state = "frequency_postprocess_implemented")
 
   add(
     "ds.vertDPMeanVar", "ds.vertDPMeanVar", "dp_mean_variance",
@@ -1340,6 +1348,7 @@
     "client_only_inherits_input",
     "client_only_validated_capsule_postprocess",
     "formal_sticky_count_artifact",
+    "formal_sticky_frequency_artifact",
     "formal_joint_dp_capsule", "known_broken_route_quarantine",
     "legacy_exact_release_not_capsule_safe",
     "legacy_granular_release_not_capsule_safe",
@@ -1350,6 +1359,7 @@
     "formal_capsule_variant_only_legacy_unavailable")
   attr(out, "migration_feasibility_levels") <- c(
     "count_operation_implemented",
+    "frequency_operation_implemented",
     "capsule_release_implemented",
     "client_only_requires_attested_input",
     "requires_new_capsule_artifact", "requires_new_secure_protocol")
@@ -1357,9 +1367,11 @@
     "client_input_not_capsule_attested",
     "joint_vector_release_implemented",
     "signed_count_artifact_implemented",
+    "signed_frequency_artifact_implemented",
     "planned_no_materializer", "reserved_not_materialized",
     "secure_artifact_not_implemented",
     "validated_capsule_adapter_implemented",
+    "validated_frequency_artifact_adapter_implemented",
     "validated_complete_case_gaussian_capsule_adapter_implemented",
     "validated_same_and_cross_owner_capsule_adapter_implemented",
     "validated_same_owner_capsule_adapter_implemented")
@@ -1373,6 +1385,8 @@
     "existing_inference_requires_capsule_backend",
     "formal_capsule_release_implemented",
     "formal_count_release_implemented",
+    "formal_frequency_release_implemented",
+    "frequency_postprocess_implemented",
     "implemented_client_algebra_inherits_input",
     "capsule_postprocess_implemented",
     "client_only_spectral_postprocess_with_eigengap_regions",

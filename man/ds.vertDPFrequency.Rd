@@ -7,21 +7,18 @@
 ds.vertDPFrequency(data_name, variable, server = NULL, datasources = NULL)
 }
 \arguments{
-\item{data_name}{Signed protected dataset name.}
+\item{data_name}{Name of the registered protected data frame.}
 
-\item{variable}{Signed fixed-domain categorical variable.}
+\item{variable}{Fixed-domain categorical variable.}
 
-\item{server}{Optional expected owner server.}
+\item{server}{Required source-owner peer name.}
 
-\item{datasources}{DataSHIELD connections.}
+\item{datasources}{Named DataSHIELD connections.}
 }
 \value{
 A \code{ds.vertDPFrequency} object.
 }
 \description{
-Extracts one signed categorical-marginal block from the single reusable
-joint-DP capsule. Each admitted patient contributes to at most one public
-level after the custodian-defined repeated-record collapse. The returned
-count and proportion regions cover mechanism noise only; no exact marginal,
-missingness count, or patient-level value is requested.
+Executes a sticky two-authority release and returns authenticated public
+values and proof. \code{server} is the required explicit source owner.
 }

@@ -11,15 +11,11 @@ ds.vertDPFrequencyInference(x, level = 0.95, dp_fraction = 0.5)
 
 \item{level}{Requested joint coverage.}
 
-\item{dp_fraction}{Fraction of the total error probability assigned to the
-simultaneous DP mechanism event; the remainder is split over categories.}
+\item{dp_fraction}{Fraction of total error assigned to the DP event.}
 }
 \value{
 A \code{ds.vertDPFrequencyInference} object.
 }
 \description{
-Combines one simultaneous DP count-box event with exact Clopper--Pearson
-intervals for every public level. A Bonferroni union bound supplies the
-advertised joint coverage. This is pure post-processing and makes no DSI
-call.
+Pure post-processing with a DP count box and exact binomial regions.
 }
