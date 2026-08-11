@@ -623,6 +623,8 @@
   "dsvertDPCountReleaseDS",
   "dsvertDPFrequencyClaimDS", "dsvertDPFrequencyCompileDS",
   "dsvertDPFrequencyAuthorizeDS", "dsvertDPFrequencyCleanupDS",
+  "dsvertDPFrequencySourceWindowDS", "dsvertDPFrequencyFinalizeWindowDS",
+  "dsvertDPFrequencyReplayDS",
   "dsvertDPCapsuleManifestDraftDS",
   "dsvertDPCapsuleManifestSignDS",
   "dsvertDPCapsuleManifestBuildDS",
