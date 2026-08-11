@@ -100,11 +100,14 @@ test_that("Count execution keeps analyst inputs out of the cryptographic contrac
   attr(transport, "exact_gc_cleanup_purpose") <-
     .DSVERT_CLIENT_EXACT_GC_CROSS_CLEANUP_PURPOSE
   prepared <- list(
-    session_id = session_id,
-    contract = contract,
-    authorities = authorities,
-    authorizations = authorizations,
-    transport = transport)
+    version = "dsvert-dp-count-prepared-v1",
+    mode = "add_remove_dp",
+    payload = list(
+      session_id = session_id,
+      contract = contract,
+      authorities = authorities,
+      authorizations = authorizations,
+      transport = transport))
   result <- list(
     private = private, config = config, contract = contract,
     roles = roles, authorities = authorities, prepared = prepared)
@@ -232,7 +235,14 @@ test_that("Count execution keeps analyst inputs out of the cryptographic contrac
     command <- as.character(expr[[1L]])
     state$calls[[length(state$calls) + 1L]] <- list(
       command = command, peers = names(conns), expression = expr)
-    if (identical(fail, command)) stop("injected phase failure")
+    if (identical(fail, command)) {
+      callback <- list(...)[["error"]]
+      if (is.function(callback)) {
+        callback(names(conns)[[1L]], "injected phase failure")
+        return(stats::setNames(vector("list", length(conns)), names(conns)))
+      }
+      stop("injected phase failure")
+    }
     if (command == "dsvertDPCountStartDS") {
       decoded <- jsonlite::fromJSON(
         .dsvert_dsi_text_decode(expr$authorizations_json),
@@ -297,7 +307,7 @@ test_that("Count execution is K-generic but computes on exactly two roles", {
   for (k in c(2L, 3L, 5L)) {
     fixture <- .count_exec_fixture(k)
     mock <- .count_exec_mock(fixture)
-    release <- .count_exec_run(fixture, mock)
+    result <- .count_exec_run(fixture, mock)
 
     expect_identical(
       vapply(mock$state$calls, `[[`, character(1L), "command"),
@@ -327,7 +337,20 @@ test_that("Count execution is K-generic but computes on exactly two roles", {
                      fixture$authorities[[2L]])
     expect_identical(names(mock$state$stores[[1L]]$producer_conn),
                      fixture$authorities[[1L]])
-    expect_identical(release$value, "17")
+    expect_identical(names(result), c("version", "mode", "payload"))
+    expect_identical(result$version,
+                     "dsvert-dp-count-execution-result-v1")
+    expect_identical(result$mode, "add_remove_dp")
+    expect_identical(names(result$payload), c(
+      "release", "finalizer_peer", "accuracy_95_abs",
+      "accuracy_95_confidence", "accuracy_95_method"))
+    expect_identical(result$payload$release$value, "17")
+    expect_identical(result$payload$finalizer_peer,
+                     fixture$authorities[[2L]])
+    expect_identical(result$payload$accuracy_95_abs, 13L)
+    expect_identical(result$payload$accuracy_95_confidence, 0.95)
+    expect_identical(result$payload$accuracy_95_method,
+      "conservative_truncated_dyadic_two_geometric_tail_bound_v1")
     expect_identical(mock$state$cleanups, 1L)
     expect_identical(mock$state$cleanup_peers[[1L]],
                      fixture$authorities)
@@ -339,7 +362,8 @@ test_that("Count execution rejects cardinality, order and closed-state tamper", 
   fixture <- .count_exec_fixture(3L)
 
   bad <- fixture
-  bad$prepared$authorities <- rev(bad$prepared$authorities)
+  bad$prepared$payload$authorities <-
+    rev(bad$prepared$payload$authorities)
   mock <- .count_exec_mock(bad)
   expect_error(.count_exec_run(bad, mock), "authority|binding")
   expect_length(mock$state$calls, 0L)
@@ -420,10 +444,12 @@ test_that("Count release is deterministic, bounded and contains no execution sta
   fixture <- .count_exec_fixture(5L)
   first <- .count_exec_mock(fixture)
   second <- .count_exec_mock(fixture)
-  release_a <- .count_exec_run(fixture, first)
-  release_b <- .count_exec_run(fixture, second)
+  result_a <- .count_exec_run(fixture, first)
+  result_b <- .count_exec_run(fixture, second)
+  release_a <- result_a$payload$release
+  release_b <- result_b$payload$release
 
-  expect_identical(release_a, release_b)
+  expect_identical(result_a, result_b)
   expect_identical(as.numeric(release_a$value), 17)
   expect_false(any(c(
     "session_id", "operation_id", "request_id", "timestamp",
@@ -432,4 +458,64 @@ test_that("Count release is deterministic, bounded and contains no execution sta
       names(release_a)))
   expect_identical(release_a$intermediate_values_exposed, FALSE)
   expect_identical(as.numeric(release_a$public_openings), 1)
+  exposed <- paste(unlist(result_a, use.names = TRUE), collapse = "|")
+  expect_false(grepl(
+    "session_id|operation_id|source_key|output_key|ciphertext|ticket|seed",
+    exposed, ignore.case = TRUE))
+})
+
+test_that("Count 95% accuracy radius is an exact conservative dyadic bound", {
+  expect_identical(.dsvert_dp_count_client_accuracy_95_v1(
+    .count_exec_plan()), 13L)
+
+  plan <- .count_exec_plan()
+  plan$stop_numerator <- "1"
+  plan$max_geometric_steps <- 1L
+  expect_identical(.dsvert_dp_count_client_accuracy_95_v1(plan), 1L)
+})
+
+test_that("fixed Count execution returns public consensus without session work", {
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .count_exec_fixture(k)
+    peers <- names(fixture$config$peer_pins)
+    declaration <- .dsvert_dp_analysis_client_canonical_value_v1(list(
+      version = "dsvert-fixed-cohort-count-declaration-v1",
+      domain = "study-domain",
+      cohort_id = "cohort-v1",
+      dataset_id = "cohort-table",
+      dataset_version = "v1",
+      privacy_unit_column = "patient_id",
+      alignment_purpose = "patient-record-alignment-v1",
+      adjacency = "replace_one_fixed_cohort",
+      fixed_cohort_size = 1000L,
+      peer_pins = as.list(fixture$config$peer_pins)))
+    prepared <- list(
+      version = "dsvert-dp-count-prepared-v1",
+      mode = "fixed_cohort_public",
+      payload = list(
+        declaration = declaration,
+        receipt_set_sha256 = strrep("f", 64L),
+        peer_count = k))
+    datasources <- stats::setNames(lapply(
+      rev(peers), function(...) structure(list(), class = "mock")),
+      rev(peers))
+    forbidden <- function(...) stop("fixed Count entered session/MPC")
+    result <- .dsvert_dp_count_execute_v1(
+      "D", datasources,
+      .aggregate = forbidden,
+      .prepare = function(...) prepared,
+      .new_context = forbidden,
+      .run_exact = forbidden,
+      .store_typed = forbidden,
+      .cleanup = forbidden,
+      .abort = forbidden)
+
+    expect_identical(result, list(
+      version = "dsvert-dp-count-execution-result-v1",
+      mode = "fixed_cohort_public",
+      payload = list(
+        declaration = declaration,
+        receipt_set_sha256 = strrep("f", 64L),
+        peer_count = k)))
+  }
 })

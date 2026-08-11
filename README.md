@@ -58,8 +58,10 @@ DSI::datashield.logout(conns)
 ## Differentially private releases
 
 The package can inspect—never change—the immutable DP policy and run a public,
-data-free utility preview. The signed biomedical capsule covers count, table,
-moment, Gaussian-model and survival artifacts. Its deterministic selector uses
+data-free utility preview. Count independently compiles one canonical signed
+current-snapshot artifact and uses sticky exact-MPC noise or signed fixed-cohort
+K-consensus. The signed biomedical capsule covers table, moment,
+Gaussian-model and survival artifacts. Its deterministic selector uses
 the exact-GC one-draw Laplace route for a scalar vector, the scalable
 two-complete-draw Laplace convolution for wider vectors, or the formal
 fixed-work dyadic discrete-Gaussian backend when its exact server plan strictly
@@ -72,8 +74,9 @@ ds.vertDPCalibrate(capsule_epsilon = c(1, 3, 5),
                    sensitivity = 1)
 ds.vertDPStatus(conns)
 ds.vertDPCapsulePlan(conns) # signed dry-run; no data access or release
-# Sticky joint-DP capsule post-processing routes:
+# Canonical sticky Count artifact:
 ds.vertDPCount("DA", datasources = conns)
+# Sticky joint-DP capsule post-processing routes:
 ds.vertDPContingency("DA", "exposure", "outcome",
                      datasources = conns)
 frequency <- ds.vertDPFrequency("DA", "exposure", datasources = conns)
@@ -253,7 +256,8 @@ See `inst/docs/product_surface.md` for the audited maturity surface.
 The repository contains unit, adversarial, centralized-reference, real-DSLite,
 connector-lifecycle and live-Opal harnesses. PSI additionally has a two-host
 test with independent identity seeds. `K=2`, `K=3` and `K=5` statements for
-the promoted capsule/PSI route identify topology coverage in the named test;
+the promoted Count and PSI routes, and for provisional capsule routes,
+identify topology coverage in the named test;
 they do not imply that every topology completed on every connector. The local
 Armadillo S4/httpuv smoke is a connector-lifecycle regression, not a live Rock
 deployment, and cached Opal results are historical evidence rather than a
@@ -279,25 +283,26 @@ been removed from registration and export.
 
 These controls do **not** imply that source data can never be reconstructed.
 Unlimited adaptive exact outputs can be composed without breaking MPC.
-Dedicated `ds.vertDP*` methods contain patient/row contribution bounding and
-sticky noise in one cross-signed biomedical-vector release. The registered DSI
-path binds allocation, bounded materialization, joint sampling, one final
-opening, durable replay and bilateral finalization; supported methods are
-post-processing of that immutable capsule. This is a computational
-bounded-lifetime DP claim for at most the signed `N` capsules under the
-published adjacency, secret-root and pinned semi-honest non-colluding-peer
-assumptions. DP bounds indistinguishability; it is not a literal guarantee that
-no original value can ever be guessed or reconstructed. The claim does not
-cover collusion of every designated peer. Ordinary exact methods
+`ds.vertDPCount()` is independent of the capsule allocator and accountant. It
+compiles one canonical signed current-snapshot artifact; the same artifact
+recomputes the same identity-seeded noise, while distinct artifacts compose
+and have no finite global composition claim. Fixed-cohort Count instead uses
+an exact public K-consensus declaration with zero sensitivity and no MPC noise.
+The still-provisional table, moment, Gaussian-model and survival routes retain
+their separate cross-signed biomedical-capsule contract while they are being
+migrated. DP bounds indistinguishability; it is not a literal guarantee that no
+original value can ever be guessed or reconstructed. The claim does not cover
+collusion of every designated peer. Ordinary exact methods
 remain outside any DP guarantee. Historical local fixed-point truncation and
 legacy DCF comparison survive only inside unregistered/quarantined
 implementations and retain their stated proof limitations. See
 [SECURITY.md](SECURITY.md) for the full threat model and non-claims.
 
-There is no request-count limit. The finite lifetime gate applies only when a
-new capsule is committed; exact replay of an existing release remains free.
-Shape, byte, finite-range and storage caps are retained as separate resource and
-arithmetic-safety controls.
+There is no request-count limit. Count has no lifetime budget, accountant or
+history gate. The finite lifetime gate applies only to the provisional capsule
+routes that still use the old capsule backend; exact replay of an existing
+capsule release remains free. Shape, byte, finite-range and storage caps are
+retained as separate resource and arithmetic-safety controls.
 
 ## DSI communication
 

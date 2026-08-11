@@ -12,8 +12,71 @@
   "dsVert/dp-count/release/v1|"
 .DSVERT_CLIENT_DP_COUNT_RELEASE_SIGNATURE_DOMAIN <-
   "dsVert/dp-count/release-signature/v1|"
+.DSVERT_CLIENT_DP_COUNT_EXECUTION_RESULT_VERSION <-
+  "dsvert-dp-count-execution-result-v1"
+.DSVERT_CLIENT_DP_COUNT_ACCURACY_95_METHOD <-
+  "conservative_truncated_dyadic_two_geometric_tail_bound_v1"
 .DSVERT_CLIENT_DP_COUNT_AUTHORIZATIONS_MAX_BYTES <- 1024L * 1024L
 .DSVERT_CLIENT_DP_COUNT_FINAL_CIPHERTEXT_MAX_BYTES <- 1024L * 1024L
+
+.dsvert_dp_count_client_accuracy_95_v1 <- function(plan) {
+  plan <- .dsvert_dp_count_client_plan_v1(plan)
+  denominator <- openssl::bignum(2)^
+    as.integer(plan$bernoulli_bits)
+  continuation <- denominator - openssl::bignum(plan$stop_numerator)
+  left <- 40 * continuation
+  right <- denominator + continuation
+  maximum <- as.integer(plan$max_geometric_steps)
+  for (radius in 0:maximum) {
+    if (left <= right) return(as.integer(radius))
+    left <- left * continuation
+    right <- right * denominator
+  }
+  maximum
+}
+
+.dsvert_dp_count_client_prepared_v1 <- function(prepared, datasources) {
+  fields <- c("version", "mode", "payload")
+  valid <- is.list(prepared) && !is.null(names(prepared)) &&
+    !anyNA(names(prepared)) && !anyDuplicated(names(prepared)) &&
+    setequal(names(prepared), fields) &&
+    identical(prepared$version, .DSVERT_CLIENT_DP_COUNT_PREPARED_VERSION) &&
+    is.character(prepared$mode) && length(prepared$mode) == 1L &&
+    !is.na(prepared$mode) &&
+    prepared$mode %in% c("add_remove_dp", "fixed_cohort_public") &&
+    is.list(prepared$payload) &&
+    is.list(datasources) && length(datasources) >= 2L &&
+    !is.null(names(datasources)) && !anyNA(names(datasources)) &&
+    !any(!nzchar(names(datasources))) && !anyDuplicated(names(datasources))
+  if (!isTRUE(valid)) {
+    stop("Invalid prepared Count execution mode.", call. = FALSE)
+  }
+  if (identical(prepared$mode, "add_remove_dp")) return(prepared)
+
+  payload <- prepared$payload
+  if (is.null(names(payload)) || anyNA(names(payload)) ||
+      anyDuplicated(names(payload)) || !setequal(
+        names(payload),
+        c("declaration", "receipt_set_sha256", "peer_count"))) {
+    stop("Invalid prepared fixed-cohort Count result.", call. = FALSE)
+  }
+  declaration <- .dsvert_dp_count_client_fixed_declaration_v1(
+    payload$declaration, names(datasources))
+  receipt_set_sha256 <- .dsvert_dp_count_client_hex_v1(
+    payload$receipt_set_sha256, "fixed receipt-set hash")
+  peer_count <- .dsvert_dp_count_client_positive_integer_v1(
+    payload$peer_count, "fixed peer count", 4096)
+  if (!identical(peer_count, as.numeric(length(datasources)))) {
+    stop("Invalid prepared fixed-cohort Count peer count.", call. = FALSE)
+  }
+  list(
+    version = .DSVERT_CLIENT_DP_COUNT_PREPARED_VERSION,
+    mode = "fixed_cohort_public",
+    payload = list(
+      declaration = declaration,
+      receipt_set_sha256 = receipt_set_sha256,
+      peer_count = as.integer(peer_count)))
+}
 
 .dsvert_dp_count_client_execution_roles_v1 <- function(contract) {
   binding <- .dsvert_exact_gc_analysis_binding(contract)
@@ -349,25 +412,43 @@
   }
   prepared <- .prepare(
     data_name, datasources, .aggregate = .aggregate)
+  fixed_candidate <- is.list(prepared) &&
+    identical(prepared$version, .DSVERT_CLIENT_DP_COUNT_PREPARED_VERSION) &&
+    identical(prepared$mode, "fixed_cohort_public")
+  if (isTRUE(fixed_candidate)) {
+    prepared <- .dsvert_dp_count_client_prepared_v1(prepared, datasources)
+    return(list(
+      version = .DSVERT_CLIENT_DP_COUNT_EXECUTION_RESULT_VERSION,
+      mode = "fixed_cohort_public",
+      payload = prepared$payload))
+  }
+  prepared_payload <- if (is.list(prepared)) prepared$payload else NULL
   cleanup_conns <- list()
-  cleanup_session <- if (is.list(prepared) &&
-      is.character(prepared$session_id) &&
-      length(prepared$session_id) == 1L && !is.na(prepared$session_id)) {
-    prepared$session_id
+  cleanup_session <- if (is.list(prepared_payload) &&
+      is.character(prepared_payload$session_id) &&
+      length(prepared_payload$session_id) == 1L &&
+      !is.na(prepared_payload$session_id)) {
+    prepared_payload$session_id
   } else {
     ""
   }
-  cleanup_transport <- if (is.list(prepared)) prepared$transport else NULL
+  cleanup_transport <- if (is.list(prepared_payload)) {
+    prepared_payload$transport
+  } else {
+    NULL
+  }
   cleanup_authorities <- if (is.list(cleanup_transport) &&
       !is.null(names(cleanup_transport)) &&
       length(names(cleanup_transport)) == 2L &&
       !anyNA(names(cleanup_transport)) &&
       !anyDuplicated(names(cleanup_transport))) {
     names(cleanup_transport)
-  } else if (is.list(prepared) && is.character(prepared$authorities) &&
-      length(prepared$authorities) == 2L &&
-      !anyNA(prepared$authorities) && !anyDuplicated(prepared$authorities)) {
-    prepared$authorities
+  } else if (is.list(prepared_payload) &&
+      is.character(prepared_payload$authorities) &&
+      length(prepared_payload$authorities) == 2L &&
+      !anyNA(prepared_payload$authorities) &&
+      !anyDuplicated(prepared_payload$authorities)) {
+    prepared_payload$authorities
   } else {
     character()
   }
@@ -391,11 +472,12 @@
       cleanup_conns, cleanup_session, cleanup_transport,
       .aggregate = .aggregate), error = function(error) NULL)
   }, add = TRUE)
+  prepared <- .dsvert_dp_count_client_prepared_v1(prepared, datasources)
   context <- .dsvert_dp_count_client_execution_context_v1(
-    prepared, datasources)
+    prepared$payload, datasources)
   cleanup_conns <- context$conns
   cleanup_session <- context$session_id
-  cleanup_transport <- prepared$transport
+  cleanup_transport <- prepared$payload$transport
   operation <- .dsvert_dp_count_client_operation_v1(.new_context())
 
   authorizations_json <-
@@ -450,6 +532,16 @@
     .aggregate = .aggregate)[[evaluator]]
   release <- .dsvert_dp_count_client_release_v1(
     release, context$contract, started$purpose)
+  accuracy_95_abs <- .dsvert_dp_count_client_accuracy_95_v1(
+    context$contract$semantic$analysis$effective_arguments$sampler_plan)
   released <- TRUE
-  release
+  list(
+    version = .DSVERT_CLIENT_DP_COUNT_EXECUTION_RESULT_VERSION,
+    mode = "add_remove_dp",
+    payload = list(
+      release = release,
+      finalizer_peer = evaluator,
+      accuracy_95_abs = accuracy_95_abs,
+      accuracy_95_confidence = 0.95,
+      accuracy_95_method = .DSVERT_CLIENT_DP_COUNT_ACCURACY_95_METHOD))
 }

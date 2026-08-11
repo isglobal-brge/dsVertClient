@@ -52,6 +52,12 @@
 - [`ds.validateDPGaussianCertificate()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.validateDPGaussianCertificate.md)
   : Verify a bounded Gaussian capsule certificate without DSI
 
+## Canonical sticky Count
+
+- [`ds.vertDPCount()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertDPCount.md)
+  [`print(`*`<ds.vertDPCount>`*`)`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertDPCount.md)
+  : Differentially private privacy-unit count
+
 ## Sticky differentially private biomedical capsule
 
 - [`ds.vertDPCalibrate()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertDPCalibrate.md)
@@ -67,9 +73,6 @@
   : Differentially private fixed-domain contingency table
 - [`ds.vertDPCor()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertDPCor.md)
   : Differentially private same-owner Pearson correlation
-- [`ds.vertDPCount()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertDPCount.md)
-  [`print(`*`<ds.vertDPCount>`*`)`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertDPCount.md)
-  : Differentially private privacy-unit count
 - [`ds.vertDPCumulativeIncidence()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertDPCumulativeIncidence.md)
   : Competing-Risks Cumulative Incidence from One DP Release
 - [`ds.vertDPDescribe()`](https://isglobal-brge.github.io/dsVertClient/reference/ds.vertDPDescribe.md)

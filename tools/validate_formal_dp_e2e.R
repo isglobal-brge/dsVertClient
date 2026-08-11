@@ -1,12 +1,12 @@
 #!/usr/bin/env Rscript
 
-# Source-tree-only release validation of dsVert's formal biomedical DP capsule.
+# Source-tree-only release validation of dsVert's canonical sticky Count.
 # Validation dependencies: callr, digest, DSI, DSLite, jsonlite, methods,
 # openssl and pkgload. This script is not an installed runtime entry point.
 #
 # This harness deliberately uses only exported analyst APIs and documented
 # custodian boundaries.  Every peer is a separate persistent R process with an
-# exact DSLite allowlist. Identity and DP roots bootstrap automatically. There
+# exact DSLite allowlist. Persistent identities bootstrap automatically. There
 # is no client-supplied/test bypass, analyst secret, plaintext exception or raw
 # remote route: the harness acts as custodian administrator and derives the
 # server-side surface token only after verifying the exact effective inventory.
@@ -232,26 +232,17 @@ if (nzchar(.e2e_cleanup_test)) {
 .e2e_create_wrapper <- function(peer_dir) {
   wrapper <- file.path(peer_dir, "dsvert-mpc-observer")
   log_path <- file.path(peer_dir, "mpc-command.log")
-  block_path <- file.path(peer_dir, "block-second-sampler")
   writeLines(c(
     "#!/bin/sh",
     "cmd=\"${1-}\"",
     paste0("printf '%s\\n' \"$cmd\" >> ", shQuote(log_path)),
-    paste0("if [ -f ", shQuote(block_path), " ]; then"),
-    "  case \"$cmd\" in",
-    paste0("    ", paste(.e2e_sampler_commands, collapse = "|"), ")"),
-    "      printf '%s\\n' 'second sampler invocation blocked' >&2",
-    "      exit 86",
-    "      ;;",
-    "  esac",
-    "fi",
     paste0("exec ", shQuote(.e2e_real_mpc), " \"$@\"")), wrapper,
     useBytes = TRUE)
   Sys.chmod(wrapper, mode = "0700")
   file.create(log_path)
   Sys.chmod(log_path, mode = "0600")
   list(wrapper = normalizePath(wrapper, mustWork = TRUE),
-       log = normalizePath(log_path, mustWork = TRUE), block = block_path)
+       log = normalizePath(log_path, mustWork = TRUE))
 }
 
 # The connector inherits DSLiteConnection so dsVertClient applies its normal
@@ -348,10 +339,10 @@ setMethod(
   strict = TRUE, home = file.path(.e2e_state_root, "connector-dummy"))
 
 .e2e_boot_peer <- function(spec, pins = NULL, raw = NULL,
-                           restore_policy = FALSE) {
+                           configure_count = FALSE) {
   worker <- callr::r_session$new(wait = TRUE)
   boot <- tryCatch(worker$run(
-    function(server_dir, spec, pins, raw, restore_policy) {
+    function(server_dir, spec, pins, raw, configure_count) {
       options(
         dsvert.state_dir = spec$state_dir,
         dsvert.peer_name = spec$name,
@@ -420,33 +411,16 @@ setMethod(
           purpose = "patient-record-alignment-v1")
         options(dsvert.psi.authorized_sources = list(D = authorization))
       }
-      # Ex-ante custodian template. The live non-empty-session padded-PSI
-      # attestation fills the private binding without exporting a digest.
-      options(
-        dsvert.dp.patient_column = "patient_id",
-        dsvert.dp.datasets = list(DA = list(
-          id = spec$dataset_id, version = spec$dataset_version)))
-      if (isTRUE(restore_policy)) {
+      if (isTRUE(configure_count)) {
         options(
-          dsvert.dp.total_epsilon = 4,
+          dsvert.dp.epsilon = 1,
+          dsvert.dp.delta = 1e-6,
+          dsvert.dp.implementation_delta = 1e-9,
           dsvert.dp.domain = spec$domain,
           dsvert.dp.cohort_id = spec$cohort_id,
-          dsvert.dp.ledger_path = spec$ledger_path,
-          dsvert.dp.designated_noise_peers = spec$designated,
           dsvert.dp.adjacency = "add_remove_patient",
           dsvert.dp.unit_capacity = 64L,
-          dsvert.dp.max_records_per_unit = 1L,
-          dsvert.dp.fixed_cohort_size = NULL,
-          dsvert.dp.overflow_policy = "reject_snapshot",
-          dsvert.dp.contingency_unit_aggregation_policy =
-            "consistent_cell_else_exclude_v1",
-          dsvert.dp.numeric_grid_bits = 16L,
-          dsvert.dp.numeric_bounds = stats::setNames(
-            list(c(0, 100)), spec$numeric_column),
-          dsvert.dp.workload_scope = list(
-            mode = "catalog_v1", numeric_moments = character(),
-            categorical_marginals = character(), categorical_pairs = list(),
-            correlations = list()))
+          dsvert.dp.fixed_cohort_size = NULL)
       }
 
       tables <- if (is.null(raw)) list() else list(D = raw)
@@ -462,10 +436,10 @@ setMethod(
         surface_sha256 = digest::digest(
           canonical, algo = "sha256", serialize = FALSE),
         source_present = !is.null(raw),
-        restored_policy = isTRUE(restore_policy))
+        count_configured = isTRUE(configure_count))
     }, args = list(
       server_dir = .e2e_server_dir, spec = spec, pins = pins, raw = raw,
-      restore_policy = restore_policy)),
+      configure_count = configure_count)),
     error = identity)
   if (inherits(boot, "error")) {
     try(worker$close(), silent = TRUE)
@@ -510,26 +484,18 @@ setMethod(
 
 .e2e_make_specs <- function(k, scenario_dir) {
   names <- paste0("site_", letters[seq_len(k)])
-  designated <- names[1:2]
   stats::setNames(lapply(seq_along(names), function(index) {
     peer_dir <- file.path(scenario_dir, names[[index]])
     dir.create(peer_dir, recursive = TRUE, mode = "0700")
     Sys.chmod(peer_dir, mode = "0700")
-    ledger_dir <- file.path(peer_dir, "ledger")
-    dir.create(ledger_dir, mode = "0700")
-    Sys.chmod(ledger_dir, mode = "0700")
     observer <- .e2e_create_wrapper(peer_dir)
     list(
       name = names[[index]], state_dir = peer_dir,
       dslite_home = file.path(peer_dir, "dslite"),
-      ledger_path = file.path(ledger_dir, "formal-dp.sqlite"),
       wrapper = observer$wrapper, command_log = observer$log,
-      block_path = observer$block,
       dataset_id = paste0("formal-dp-e2e-k", k),
       dataset_version = "v1", domain = paste0("formal-dp-e2e-k", k),
-      cohort_id = paste0("formal-dp-e2e-k", k, "-cohort"),
-      designated = designated,
-      numeric_column = paste0("value_", letters[[index]]))
+      cohort_id = paste0("formal-dp-e2e-k", k, "-cohort"))
   }), names)
 }
 
@@ -559,18 +525,6 @@ setMethod(
   invisible(TRUE)
 }
 
-.e2e_telemetry <- function(status, designated) {
-  stats::setNames(lapply(designated, function(peer) {
-    value <- status[[peer]]
-    list(
-      capsules_created = value$composition_telemetry$capsules_created,
-      releases_published =
-        value$release_instance_telemetry$releases_published,
-      noise_key_id = value$noise_root$key_id,
-      privacy_epoch = value$noise_root$privacy_epoch)
-  }), designated)
-}
-
 .e2e_run_scenario <- function(k) {
   message("[formal-dp-e2e] K=", k, ": bootstrapping isolated peers")
   scenario_dir <- file.path(.e2e_state_root, paste0("k", k))
@@ -579,9 +533,7 @@ setMethod(
   specs <- .e2e_make_specs(k, scenario_dir)
   peer_names <- names(specs)
   raw <- stats::setNames(lapply(seq_len(k), function(index) {
-    value <- .e2e_raw_data(index)
-    names(value)[names(value) == "value"] <- specs[[index]]$numeric_column
-    value
+    .e2e_raw_data(index)
   }), peer_names)
 
   bootstrap <- stats::setNames(lapply(peer_names, function(peer) {
@@ -617,125 +569,124 @@ setMethod(
   .e2e_assert(isTRUE(aligned$aligned) && is.na(aligned$n_common),
               "Pinned PSI did not return its non-disclosive attestation")
 
-  # Restart once into the exact production policy. The raw data are retained
-  # for the first materialization; the aligned binding remains only in each
-  # peer's authenticated owner-only registry.
+  # Restart once into the exact custodian-owned Count configuration. The raw
+  # data are retained because a stateless current-snapshot artifact is
+  # deliberately recomputed rather than served from durable release storage.
   .e2e_close_peers(peers)
   peers <- stats::setNames(lapply(peer_names, function(peer) {
     .e2e_boot_peer(
       specs[[peer]], pins = pins[[peer]], raw = raw[[peer]],
-      restore_policy = TRUE)
+      configure_count = TRUE)
   }), peer_names)
   conns <- .e2e_connections(peers)
 
-  # Recreate the aligned object through the public protocol after the policy
-  # restart. This proves that policy bootstrap did not rely on test state.
+  # Recreate the aligned object through the public protocol after the service
+  # restart. PSI run identifiers may change; Count semantics must not.
   dsVertClient::ds.psiAlign(
     "D", "patient_id", "DA", datasources = conns, verbose = FALSE)
   .e2e_assert(isTRUE(dsVertClient::ds.isPsiAligned(
     "DA", datasources = conns)$aligned),
-    "Pinned PSI did not survive production-policy bootstrap")
+    "Pinned PSI did not survive Count configuration bootstrap")
   .e2e_truncate_logs(specs)
 
-  message("[formal-dp-e2e] K=", k, ": validating policy and dry-run plan")
-  security <- dsVertClient::ds.vertSecurityStatus(conns)
-  .e2e_assert(isTRUE(security$ready) && isTRUE(security$surface_attested),
-              "The legitimate custodian-attested consortium is not ready")
-  before <- dsVertClient::ds.vertDPStatus(conns)
-  effective_delta <- vapply(
-    before, function(value) value$policy$capsule_delta, numeric(1L))
-  .e2e_assert(
-    all(is.finite(effective_delta)) && all(effective_delta > 0) &&
-      all(effective_delta < 1) &&
-      identical(unname(effective_delta), rep(2^-100, k)),
-    "The production peers did not bootstrap the automatic capsule delta")
-  before_telemetry <- .e2e_telemetry(before, specs[[1L]]$designated)
-  plan <- dsVertClient::ds.vertDPCapsulePlan(conns, status = before)
-  .e2e_assert(identical(plan$guarantees$data_access, FALSE) &&
-                identical(plan$guarantees$release_created, FALSE) &&
-                identical(as.numeric(plan$guarantees$privacy_cost), c(0, 0)),
-              "The public capsule dry-run accessed data or created a release")
-
-  message("[formal-dp-e2e] K=", k, ": creating one formal DP release")
+  message("[formal-dp-e2e] K=", k, ": creating one canonical Count release")
   first <- dsVertClient::ds.vertDPCount("DA", datasources = conns)
+  legacy_fields <- c(
+    "capsule_id", "final_vector_root", "history_gate", "request_limit",
+    "operation_limit")
+  .e2e_assert(
+    identical(first$released, TRUE) &&
+      identical(first$adjacency, "add_remove_patient") &&
+      identical(first$sticky_replay, TRUE) &&
+      identical(first$intermediate_values_exposed, FALSE) &&
+      identical(first$privacy$finite_global_composition_claim, FALSE) &&
+      identical(first$privacy$distinct_artifacts_compose, TRUE) &&
+      identical(as.numeric(first$privacy$public_openings), 1) &&
+      !length(intersect(names(first), legacy_fields)),
+    "Count did not expose the canonical per-artifact release contract")
+  identity_values <- unlist(identities, use.names = FALSE)
+  authority_pks <- c(
+    first$signed_release$source_identity_pk,
+    first$signed_release$finalizer_identity_pk)
+  authorities <- names(identities)[match(authority_pks, identity_values)]
+  .e2e_assert(
+    length(authorities) == 2L && !anyNA(authorities) &&
+      !anyDuplicated(authorities),
+    "The signed Count authorities do not map to two pinned peers")
   first_counts <- .e2e_command_counts(specs)
-  designated <- specs[[1L]]$designated
-  .e2e_assert(all(vapply(designated, function(peer) {
+  .e2e_assert(all(vapply(authorities, function(peer) {
     identical(first_counts[[peer]]$sampler, 1L) &&
       identical(first_counts[[peer]]$exact_gc_workers, 1L)
   }, logical(1L))),
-  "Each designated peer must invoke exactly one exact-GC sampler worker")
-  non_designated <- setdiff(peer_names, designated)
-  .e2e_assert(all(vapply(non_designated, function(peer) {
+  "Each Count authority must invoke exactly one exact-GC sampler worker")
+  non_authorities <- setdiff(peer_names, authorities)
+  .e2e_assert(all(vapply(non_authorities, function(peer) {
     identical(first_counts[[peer]]$sampler, 0L)
   }, logical(1L))),
-  "A non-designated peer invoked a DP sampler")
-  after_first <- dsVertClient::ds.vertDPStatus(conns)
-  first_telemetry <- .e2e_telemetry(after_first, designated)
-  .e2e_assert(all(vapply(first_telemetry, function(value) {
-    identical(as.numeric(value$capsules_created), 1) &&
-      identical(as.numeric(value$releases_published), 1)
-  }, logical(1L))),
-  "The first capsule/release was not recorded exactly once")
+  "A non-authority peer invoked a Count sampler")
 
-  # A real client-process restart clears only volatile post-processing cache.
-  # The blocker proves that the server replay cannot enter any sampler command.
-  for (spec in specs) file.create(spec$block_path)
+  # A real client-process restart creates a new ephemeral MPC session. The
+  # sampler runs again, but persistent identity-derived subseeds must reproduce
+  # exactly the same public artifact and release bytes.
   .e2e_load_client()
   replay <- dsVertClient::ds.vertDPCount("DA", datasources = conns)
   replay_counts <- .e2e_command_counts(specs)
-  replay_status <- dsVertClient::ds.vertDPStatus(conns)
-  replay_telemetry <- .e2e_telemetry(replay_status, designated)
-
-  .e2e_assert(identical(first$value, replay$value) &&
-                identical(first$capsule_id, replay$capsule_id) &&
-                identical(first$final_vector_root, replay$final_vector_root),
-              "Sticky replay changed the DP output or release root")
-  .e2e_assert(identical(first_counts, replay_counts),
-              "Sticky replay invoked an additional sampler command")
-  .e2e_assert(identical(first_telemetry, replay_telemetry),
-              "Sticky replay changed composition telemetry")
+  replay_incremented <- all(vapply(peer_names, function(peer) {
+    increment <- if (peer %in% authorities) 1L else 0L
+    identical(replay_counts[[peer]]$sampler,
+              first_counts[[peer]]$sampler + increment) &&
+      identical(replay_counts[[peer]]$exact_gc_workers,
+                first_counts[[peer]]$exact_gc_workers + increment)
+  }, logical(1L)))
+  .e2e_assert(
+    identical(first$value, replay$value) &&
+      identical(first$artifact_key, replay$artifact_key) &&
+      identical(first$release_sha256, replay$release_sha256) &&
+      identical(first$signed_release, replay$signed_release),
+    "A new client session changed the sticky Count artifact or release")
+  .e2e_assert(replay_incremented,
+              "A new Count session did not recompute on exactly two peers")
 
   message("[formal-dp-e2e] K=", k,
-          ": restarting every server without protected data")
+          ": restarting every server with the current protected snapshot")
   .e2e_close_peers(peers)
   peers <- stats::setNames(lapply(peer_names, function(peer) {
     .e2e_boot_peer(
-      specs[[peer]], pins = pins[[peer]], raw = NULL,
-      restore_policy = TRUE)
+      specs[[peer]], pins = pins[[peer]], raw = raw[[peer]],
+      configure_count = TRUE)
   }), peer_names)
   conns <- .e2e_connections(peers)
-  source_absent <- vapply(peers, function(peer) {
-    identical(peer$boot$source_present, FALSE)
+  source_present <- vapply(peers, function(peer) {
+    identical(peer$boot$source_present, TRUE)
   }, logical(1L))
-  .e2e_assert(all(source_absent),
-              "A protected source remained in the restarted server session")
+  .e2e_assert(all(source_present),
+              "The current protected source was not restored for recomputation")
   restart_identities <- dsVertClient::ds.getIdentityPks(conns)
   .e2e_assert(identical(restart_identities, identities),
               "Identity keys changed across the service restart")
+  dsVertClient::ds.psiAlign(
+    "D", "patient_id", "DA", datasources = conns, verbose = FALSE)
+  .e2e_assert(isTRUE(dsVertClient::ds.isPsiAligned(
+    "DA", datasources = conns)$aligned),
+    "Pinned PSI did not reconstruct the current Count snapshot")
   .e2e_load_client()
   restarted <- dsVertClient::ds.vertDPCount("DA", datasources = conns)
   restart_counts <- .e2e_command_counts(specs)
-  restart_status <- dsVertClient::ds.vertDPStatus(conns)
-  restart_telemetry <- .e2e_telemetry(restart_status, designated)
-  restart_noise_ids <- stats::setNames(vapply(restart_telemetry, `[[`,
-                                               character(1L), "noise_key_id"),
-                                        designated)
-  first_noise_ids <- stats::setNames(vapply(first_telemetry, `[[`,
-                                             character(1L), "noise_key_id"),
-                                      designated)
-
-  .e2e_assert(identical(first$value, restarted$value) &&
-                identical(first$capsule_id, restarted$capsule_id) &&
-                identical(first$final_vector_root,
-                          restarted$final_vector_root),
-              "Durable replay changed the DP output or release root")
-  .e2e_assert(identical(first_counts, restart_counts),
-              "Durable replay invoked an additional sampler command")
-  .e2e_assert(identical(first_telemetry, restart_telemetry),
-              "Durable replay changed composition telemetry")
-  .e2e_assert(identical(first_noise_ids, restart_noise_ids),
-              "Persistent DP roots changed across the service restart")
+  restart_incremented <- all(vapply(peer_names, function(peer) {
+    increment <- if (peer %in% authorities) 1L else 0L
+    identical(restart_counts[[peer]]$sampler,
+              replay_counts[[peer]]$sampler + increment) &&
+      identical(restart_counts[[peer]]$exact_gc_workers,
+                replay_counts[[peer]]$exact_gc_workers + increment)
+  }, logical(1L)))
+  .e2e_assert(
+    identical(first$value, restarted$value) &&
+      identical(first$artifact_key, restarted$artifact_key) &&
+      identical(first$release_sha256, restarted$release_sha256) &&
+      identical(first$signed_release, restarted$signed_release),
+    "A service restart changed the sticky Count artifact or release")
+  .e2e_assert(restart_incremented,
+              "Restarted Count did not recompute on exactly two peers")
 
   .e2e_close_peers(peers)
   list(
@@ -744,27 +695,19 @@ setMethod(
     surface_sha256 = bootstrap[[1L]]$boot$surface_sha256,
     mpc_binary_sha256 = .e2e_real_mpc_sha256,
     psi_aligned_without_cardinality = TRUE,
-    protected_source_absent_on_restart = all(source_absent),
+    protected_source_present_on_restart = all(source_present),
     identity_persistent = identical(restart_identities, identities),
-    noise_root_persistent = identical(first_noise_ids, restart_noise_ids),
     dp_value = first$value,
-    capsule_id = first$capsule_id,
-    final_vector_root = first$final_vector_root,
+    artifact_key = first$artifact_key,
+    release_sha256 = first$release_sha256,
     sticky_same_output = identical(first$value, replay$value),
     restart_same_output = identical(first$value, restarted$value),
+    finite_global_composition_claim =
+      first$privacy$finite_global_composition_claim,
     sampler_invocations = stats::setNames(vapply(
       first_counts, `[[`, integer(1L), "sampler"), peer_names),
-    sampler_unchanged_after_replay = identical(first_counts, replay_counts),
-    sampler_unchanged_after_restart = identical(first_counts, restart_counts),
-    capsules_created_before = stats::setNames(vapply(
-      before_telemetry, `[[`, numeric(1L), "capsules_created"), designated),
-    capsules_created_after = stats::setNames(vapply(
-      restart_telemetry, `[[`, numeric(1L), "capsules_created"), designated),
-    releases_published_after = stats::setNames(vapply(
-      restart_telemetry, `[[`, numeric(1L), "releases_published"), designated),
-    request_limit = first$request_limit,
-    operation_limit = first$operation_limit,
-    history_gate = first$history_gate)
+    sampler_recomputed_after_client_restart = replay_incremented,
+    sampler_recomputed_after_service_restart = restart_incremented)
 }
 
 .e2e_load_client()
@@ -776,7 +719,7 @@ setMethod(
             "The validation harness changed the packaged MPC binary mode")
 .e2e_retained_state <- .e2e_finish_state(.e2e_state_guard)
 .e2e_report <- list(
-  version = "dsvert-legitimate-formal-dp-e2e-v1",
+  version = "dsvert-canonical-count-e2e-v1",
   passed = all(vapply(.e2e_results, `[[`, logical(1L), "passed")),
   started_utc = format(.e2e_started, tz = "UTC", usetz = TRUE),
   completed_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),

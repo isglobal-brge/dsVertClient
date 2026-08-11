@@ -84,7 +84,11 @@ test_that("only the audited producer allowlist receives automatic replay", {
     call(name = "exactGCVecmulValidityReceiveDS"),
     call(name = "exactGCVecmulCommitDS"),
     call(name = "k2ChisqCrossAccumulateCountDS"),
-    call(name = "dsvertPublicFixedCohortCountDS"),
+    call(name = "dsvertDPCountCompileDS"),
+    call(name = "dsvertDPCountAuthorizeDS"),
+    call(name = "dsvertDPCountStartDS"),
+    call(name = "dsvertDPCountFinalShareDS"),
+    call(name = "dsvertDPCountReleaseDS"),
     call(name = "dsvertDPCapsuleManifestDraftDS"),
     call(name = "dsvertDPCapsuleManifestSignDS"),
     call(name = "dsvertDPCapsuleManifestBuildDS"),
@@ -145,6 +149,34 @@ test_that("exact Chisq phases replay an identical request after a lost ACK", {
     aggregate <- function(conns, expr, error, async, errors.print) {
       observed[[length(observed) + 1L]] <<- expr
       if (length(observed) == 1L) stop("simulated lost response")
+      list(site = list(stored = TRUE))
+    }
+    result <- testthat::with_mocked_bindings(
+      .dsvert_aggregate_strict(
+        conns, request, operation = paste(phase, "lost-ACK test"),
+        .aggregate = aggregate),
+      .dsvert_retry_sleep = function(seconds) invisible(NULL),
+      .dsvert_retry_jitter = function() 1)
+    expect_length(observed, 2L)
+    expect_identical(observed[[1L]], observed[[2L]])
+    expect_true(is.list(result[["site"]]))
+  }
+})
+
+test_that("canonical Count phases replay an identical request after a lost ACK", {
+  phases <- c(
+    "dsvertDPCountCompileDS", "dsvertDPCountAuthorizeDS",
+    "dsvertDPCountStartDS", "dsvertDPCountFinalShareDS",
+    "dsvertDPCountReleaseDS")
+  conns <- list(site = structure(list(), class = "test"))
+
+  expect_false(any(phases %in% names(.DSVERT_DSI_TEXT_REMOTE_FORMALS)))
+  for (phase in phases) {
+    request <- call(name = phase, immutable_request_id = "fixed")
+    observed <- list()
+    aggregate <- function(conns, expr, error, async, errors.print) {
+      observed[[length(observed) + 1L]] <<- expr
+      if (length(observed) == 1L) stop("simulated lost Count response")
       list(site = list(stored = TRUE))
     }
     result <- testthat::with_mocked_bindings(

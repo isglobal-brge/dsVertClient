@@ -152,67 +152,109 @@
   }
 }
 
-test_that("DP count reads only the signed vector count coordinate", {
+.dp_count_public_add_execution <- function(
+    value = "7", upper = "10", radius = 13L) {
+  release <- list(
+    version = "dsvert-dp-count-release-v1",
+    artifact_key = strrep("1", 64L),
+    contract_sha256 = strrep("2", 64L),
+    analysis_binding_sha256 = strrep("3", 64L),
+    worker_static_sha256 = strrep("4", 64L),
+    circuit = paste0("joint-dp-laplace-v2/", strrep("5", 64L)),
+    mechanism = list(
+      family = "discrete_laplace",
+      version = .DSVERT_DP_ANALYSIS_COUNT_TV_MECHANISM,
+      sampler = .DSVERT_DP_ANALYSIS_COUNT_TV_SAMPLER,
+      epsilon = 1,
+      delta = 1e-6,
+      implementation_delta = 1e-9,
+      sensitivity_l1 = 1),
+    bounds = list(lower = "0", upper = upper),
+    value = value,
+    source_identity_pk = strrep("A", 43L),
+    finalizer_identity_pk = strrep("B", 43L),
+    backend = "exact-gc-joint-dp-laplace-ring127-v2",
+    postprocessing = "one-joint-noise-draw-and-one-clamp-inside-exact-gc",
+    intermediate_values_exposed = FALSE,
+    public_openings = 1,
+    release_sha256 = strrep("6", 64L),
+    signature = "signed-release-fixture")
+  list(
+    version = "dsvert-dp-count-execution-result-v1",
+    mode = "add_remove_dp",
+    payload = list(
+      release = release,
+      finalizer_peer = "site_b",
+      accuracy_95_abs = radius,
+      accuracy_95_confidence = 0.95,
+      accuracy_95_method =
+        "conservative_truncated_dyadic_two_geometric_tail_bound_v1"))
+}
+
+.dp_count_public_pin <- function(byte) {
+  chartr("+/", "-_", sub(
+    "=+$", "", gsub("[\r\n]", "", jsonlite::base64_enc(
+      as.raw(rep(byte, 32L)))), perl = TRUE))
+}
+
+test_that("DP count adapts only the canonical signed Count execution", {
   fixture <- .dp_core_vector_fixture()
+  expect_identical(names(formals(ds.vertDPCount)),
+                   c("data_name", "server", "datasources"))
   counter <- new.env(parent = emptyenv())
   counter$calls <- 0L
   testthat::local_mocked_bindings(
-    .dsvert_joint_dp_capsule_status_impl = function(...) fixture$status,
-    .dsvert_dp_capsule_vector_run =
-      .dp_core_vector_mock_runner(fixture, counter),
+    .dsvert_dp_count_execute_v1 = function(
+        data_name, datasources, .aggregate) {
+      counter$calls <- counter$calls + 1L
+      expect_identical(data_name, "cohort")
+      expect_identical(datasources, fixture$conns)
+      .dp_count_public_add_execution()
+    },
     .package = "dsVertClient")
 
   result <- .dsvert_dp_count_impl(
     "cohort", NULL, fixture$conns,
     function(...) stop("unexpected raw DSI call", call. = FALSE))
   expect_s3_class(result, "ds.vertDPCount")
+  expect_true(all(c(
+    "released", "server", "epsilon", "accuracy_95_abs",
+    "uncertainty_scope") %in% names(result)))
+  expect_output(print(result), "dsVert DP count: 7 [ site_b ]", fixed = TRUE)
   expect_identical(counter$calls, 1L)
-  expect_identical(result$value, 42.25)
+  expect_identical(result$value, 7)
   expect_identical(result$server, "site_b")
   expect_identical(result$mechanism,
-    "two-independent-complete-vector-discrete-laplace-draws-v3")
+                   .DSVERT_DP_ANALYSIS_COUNT_TV_MECHANISM)
   expect_identical(result$implementation,
-                   .DSVERT_CLIENT_VECTOR_BACKEND)
-  expect_identical(result$backend, "exact_signed_Ring128_global_vector")
-  expect_true(result$history_gate)
-  expect_false(result$request_limit)
-  expect_true(result$operation_limit)
-  expect_identical(result$security_claim, list(
-    version = "dsvert-capsule-security-claim-v3",
-    privacy_definition = "bounded_lifetime_epsilon_delta_dp",
-    operation_accounting =
-      "one_per_distinct_capsule_allocator_commit",
-    one_public_release_instance_per_capsule = TRUE,
-    history_can_deny_new_capsule = TRUE,
-    request_limit = FALSE,
-    same_release_replay_is_postprocessing = TRUE,
-    observable_scope =
-      paste0(
-        "successful_authenticated_semantic_messages_public_shape_or_",
-        "dp_output_postprocessing_only"),
-    timing_availability_and_traffic_flow_in_scope = FALSE,
-    analyst_relay_trusted = FALSE,
-    relay_tamper_behavior =
-      "signature_or_AEAD_failure_aborts_without_an_accepted_result",
-    peer_execution_model =
-      "authenticated_protocol_compliant_semi_honest",
-    designated_noise_peer_count = 2L,
-    minimum_noncolluding_designated_noise_peers = 1L,
-    authenticated_history_retention_assumption =
-      paste0("at_least_one_noncolluding_designated_noise_peer_retains_and_",
-             "uses_complete_authenticated_monotonic_history"),
-    privacy_accountant_namespace_assumption = paste0(
-      "one_stable_unique_namespace_across_domain_cohort_policy_pinset_",
-      "and_ledger_reconfiguration_per_protected_privacy_universe"),
-    simultaneous_designated_history_rollback_protection =
-      "not_claimed_without_external_linearizable_cas",
-    malicious_peer_security = FALSE,
-    host_compromise_in_scope = FALSE,
-    all_designated_noise_peer_collusion_in_scope = FALSE,
-    unconditional_non_reconstruction_guarantee = FALSE))
-  expect_gt(result$accuracy_95_abs, 0)
-  expect_lte(result$accuracy_95_abs, 100)
-  expect_match(result$accuracy_95_method, "convolution")
+                   "exact-gc-joint-dp-laplace-ring127-v2")
+  expect_identical(result$accuracy_95_abs, 10)
+  expect_identical(result$epsilon, 1)
+  expect_identical(result$randomness,
+                   "two_persistent_identity_seeds_joint_exact_gc_v1")
+  expect_identical(result$composition_rule,
+                   "one_sticky_release_per_canonical_signed_artifact")
+  expect_identical(result$artifact_l1_sensitivity, 1)
+  expect_identical(result$privacy, list(
+    per_artifact_epsilon = 1,
+    per_artifact_delta = 1e-6,
+    sticky_noise = TRUE,
+    finite_global_composition_claim = FALSE,
+    distinct_artifacts_compose = TRUE,
+    public_openings = 1L))
+  expect_false(any(c(
+    "history_gate", "request_limit", "operation_limit", "capsule_id",
+    "lifetime_budget") %in% names(result)))
+  expect_match(result$uncertainty_scope, "mechanism noise")
+
+  split_mode <- .dp_count_public_add_execution()
+  split_mode$mode <- c("add_remove_dp", "fixed_cohort_public")
+  testthat::local_mocked_bindings(
+    .dsvert_dp_count_execute_v1 = function(...) split_mode,
+    .package = "dsVertClient")
+  expect_error(.dsvert_dp_count_impl(
+    "cohort", NULL, fixture$conns, function(...) NULL),
+    "Invalid closed Count execution result")
 })
 
 test_that("DP contingency respects signed column-major orientation", {
@@ -299,7 +341,7 @@ test_that("DP mean/variance converts normalized moments to natural scale", {
   expect_identical(result$mechanism_region_additional_server_calls, 0L)
 })
 
-test_that("core methods preserve one signed Gaussian L2 release", {
+test_that("remaining core vector methods preserve one signed Gaussian L2 release", {
   fixture <- .dp_core_vector_fixture(gaussian = TRUE)
   counter <- new.env(parent = emptyenv())
   counter$calls <- 0L
@@ -309,17 +351,14 @@ test_that("core methods preserve one signed Gaussian L2 release", {
       .dp_core_vector_mock_runner(fixture, counter),
     .package = "dsVertClient")
 
-  count <- .dsvert_dp_count_impl(
-    "cohort", NULL, fixture$conns,
-    function(...) stop("unexpected raw DSI call", call. = FALSE))
   table <- .dsvert_dp_contingency_impl(
     "cohort", "exposure", "disease", NULL, fixture$conns,
     function(...) stop("unexpected raw DSI call", call. = FALSE))
   moments <- .dsvert_dp_meanvar_impl(
     "cohort", "age", NULL, fixture$conns,
     function(...) stop("unexpected raw DSI call", call. = FALSE))
-  expect_identical(counter$calls, 3L)
-  for (result in list(count, table, moments)) {
+  expect_identical(counter$calls, 2L)
+  for (result in list(table, moments)) {
     expect_identical(result$mechanism,
                      .DSVERT_CLIENT_VECTOR_GAUSSIAN_RELEASE_MECHANISM)
     expect_identical(result$implementation,
@@ -330,7 +369,6 @@ test_that("core methods preserve one signed Gaussian L2 release", {
     expect_identical(result$mechanism_selection,
                      fixture$run$release$manifest$workload$mechanism_selection)
   }
-  expect_equal(count$accuracy_95_abs, 25 / 256, tolerance = 0)
   expect_equal(table$accuracy_simultaneous_95_abs,
                25 / 256, tolerance = 0)
   expect_equal(moments$accuracy_95_abs_count, 25 / 256, tolerance = 0)
@@ -371,68 +409,54 @@ test_that("core vector methods reject missing and ambiguous signed blocks", {
     "exactly one signed numeric-moment block")
 })
 
-test_that("fixed-cohort count remains only a zero-sensitivity public value", {
+test_that("fixed-cohort Count exposes only the signed K-consensus value", {
   fixture <- .dp_core_vector_fixture()
-  fixed_status <- fixture$status
-  for (peer in names(fixed_status)) {
-    fixed_status[[peer]]$policy$adjacency <- "replace_one_fixed_cohort"
-    fixed_status[[peer]]$policy$unit_capacity <- 100L
-    fixed_status[[peer]]$policy$peer_count <- 2L
-  }
-  public <- list(
-    released = TRUE, value = 100,
-    mechanism = "public_fixed_cohort_size_v1",
-    implementation = "custodian_owned_policy_constant",
-    sampler = "none", randomness = "none", sensitivity = 0,
-    postprocessing = "none_public_policy_value",
-    clipped_coordinates = 0L, accuracy_95_abs = 0,
-    data_dependency = "none_public_fixed_cohort_policy",
-    epsilon = 0, delta = 0, adjacency = "replace_one_fixed_cohort",
-    peer_count = 2L)
-  aggregate <- function(conns, expr, error = NULL,
-                        errors.print = TRUE, ...) {
-    expect_false(errors.print)
-    expect_identical(as.character(expr[[1L]]),
-                     "dsvertPublicFixedCohortCountDS")
-    stats::setNames(rep(list(public), length(conns)), names(conns))
-  }
+  pins <- list(
+    site_a = .dp_count_public_pin(1L),
+    site_b = .dp_count_public_pin(2L))
+  declaration <- .dsvert_dp_analysis_client_canonical_value_v1(list(
+    version = "dsvert-fixed-cohort-count-declaration-v1",
+    domain = "study-domain",
+    cohort_id = "cohort-v1",
+    dataset_id = "cohort-table",
+    dataset_version = "v1",
+    privacy_unit_column = "patient_id",
+    alignment_purpose = "patient-record-alignment-v1",
+    adjacency = "replace_one_fixed_cohort",
+    fixed_cohort_size = 100L,
+    peer_pins = pins))
+  execution <- list(
+    version = "dsvert-dp-count-execution-result-v1",
+    mode = "fixed_cohort_public",
+    payload = list(
+      declaration = declaration,
+      receipt_set_sha256 = strrep("f", 64L),
+      peer_count = 2L))
   testthat::local_mocked_bindings(
-    .dsvert_joint_dp_capsule_status_impl = function(...) fixed_status,
-    .dsvert_dp_capsule_vector_run = function(...) {
-      stop("fixed public Count must not invoke the DP vector", call. = FALSE)
-    },
+    .dsvert_dp_count_execute_v1 = function(...) execution,
     .package = "dsVertClient")
 
   result <- .dsvert_dp_count_impl(
-    "cohort", "site_b", fixture$conns, aggregate)
+    "cohort", "site_b", fixture$conns,
+    function(...) stop("fixed Count used an obsolete endpoint"))
   expect_identical(result$value, 100)
+  expect_identical(result$server, "site_b")
+  expect_identical(result$mechanism, "public_fixed_cohort_size_v1")
+  expect_identical(result$implementation,
+                   "custodian_owned_signed_K_consensus")
   expect_identical(result$sensitivity, 0)
   expect_identical(result$epsilon, 0)
   expect_identical(result$delta, 0)
-
-  forged <- public
-  forged$sensitivity <- 1
-  expect_error(.dsvert_dp_count_impl(
-    "cohort", "site_b", fixture$conns,
-    function(conns, expr, ...) {
-      stats::setNames(rep(list(forged), length(conns)), names(conns))
-    }),
-    "invalid public fixed-cohort Count")
-
-  split <- stats::setNames(rep(list(public), 2L), names(fixture$conns))
-  split$site_a$value <- 99
-  expect_error(.dsvert_dp_count_impl(
-    "cohort", "site_b", fixture$conns,
-    function(...) split), "invalid public fixed-cohort Count")
-
-  wrong_consensus <- public
-  wrong_consensus$value <- 99
-  expect_error(.dsvert_dp_count_impl(
-    "cohort", "site_b", fixture$conns,
-    function(conns, expr, ...) {
-      stats::setNames(
-        rep(list(wrong_consensus), length(conns)), names(conns))
-    }), "invalid public fixed-cohort Count")
+  expect_identical(result$accuracy_95_abs, 0)
+  expect_identical(result$data_dependency,
+    "public_fixed_contract_validated_against_current_aligned_snapshot")
+  expect_identical(result$declaration, declaration)
+  expect_identical(result$privacy$finite_global_composition_claim, FALSE)
+  expect_identical(result$privacy$sticky_noise, FALSE)
+  expect_false(grepl(
+    "capsule|status|lifetime",
+    paste(deparse(body(.dsvert_dp_count_impl)), collapse = " "),
+    ignore.case = TRUE))
 })
 
 test_that("public vector metadata follows the signed backend selection", {

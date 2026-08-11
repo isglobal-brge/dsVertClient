@@ -29,7 +29,7 @@ population-model inference for item 4.
 |---|---|---|---|---|
 | `ds.vertDPStatus()` | None | None | Read-only policy, accountant, pinset, epoch, and rollback-anchor handshake | It is not a statistical release or remote proof of an honest host |
 | `ds.vertDPCalibrate()` | None | Public inputs only | Candidate mechanism radii and planning metrics | It does not select a universally correct epsilon or quantify sampling error |
-| `ds.vertDPCount()` | Number of admitted privacy units; for replace-one, the configured fixed cohort size | One admitted unit | Non-negative DP count and a mechanism-noise radius; fixed-cohort count is a zero-cost public policy constant | No population-size sampling interval |
+| `ds.vertDPCount()` | Number of aligned privacy units in one canonical signed current-snapshot artifact; for replace-one, the signed fixed cohort size | One admitted unit under add/remove adjacency; zero sensitivity for the fixed public declaration | One bounded exact-MPC DP count with a conservative mechanism-noise radius, or an exact public K-consensus fixed-cohort count | No population-size sampling interval and no finite global composition claim across distinct Count artifacts |
 | `ds.vertDPContingency()` | Fixed-domain cell counts on one server | At most one selected cell per unit | Non-negative DP table with marginal and simultaneous mechanism-noise radii | No ordinary Pearson, Fisher, or Yates p-value is valid merely by applying it to noisy cells |
 | `ds.vertDPFrequency()` | Fixed-domain marginal counts and proportions after the signed repeated-record collapse | At most one public category per admitted unit; missing, out-of-domain and conflicting units are excluded | Non-negative DP counts plus simultaneous count and proportion mechanism regions from the same sticky capsule | Base regions exclude population sampling uncertainty and the excluded-unit mechanism is part of the estimand |
 | `ds.vertDPFrequencyInference()` | Population category proportions under an iid multinomial privacy-unit model | No new contribution; client post-processing only | Conservative joint regions combining the signed simultaneous DP count box with Bonferroni exact Clopper--Pearson intervals | Exclusions must be scientifically ignorable; regions may be wide and no multinomial test or p-value is claimed |
@@ -79,9 +79,9 @@ has public geometry, but dsVert makes no host constant-time claim.
 The present DP release surface is statistically useful but is not yet a full
 cross-peer vertical inference suite:
 
-- fixed-cohort count uses the public consensus-policy constant, which every
-  connected peer must return identically; add/remove count uses its signed
-  capsule coordinate;
+- fixed-cohort Count uses one public signed K-consensus declaration; add/remove
+  Count uses its independent canonical current-snapshot exact-MPC artifact and
+  is not a coordinate of the capsule vector;
 - contingency supports a declared same-owner table or the signed cross-owner
   exact-GC categorical artifact;
 - mean/variance releases one bounded variable from one peer; and

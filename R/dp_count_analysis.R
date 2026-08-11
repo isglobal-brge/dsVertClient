@@ -21,6 +21,22 @@
   "dsVert/dp-count/public-authorization-signature/v1|"
 .DSVERT_CLIENT_DP_COUNT_WORKER_VERSION <-
   "dsvert-dp-count-worker-static-v1"
+.DSVERT_CLIENT_DP_COUNT_COMPILE_ENVELOPE_VERSION <-
+  "dsvert-dp-count-compile-envelope-v1"
+.DSVERT_CLIENT_DP_COUNT_COMPILED_MODE_VERSION <-
+  "dsvert-dp-count-compiled-mode-v1"
+.DSVERT_CLIENT_DP_COUNT_PREPARED_VERSION <-
+  "dsvert-dp-count-prepared-v1"
+.DSVERT_CLIENT_DP_COUNT_FIXED_DECLARATION_VERSION <-
+  "dsvert-fixed-cohort-count-declaration-v1"
+.DSVERT_CLIENT_DP_COUNT_FIXED_RECEIPT_VERSION <-
+  "dsvert-fixed-cohort-count-receipt-v1"
+.DSVERT_CLIENT_DP_COUNT_FIXED_DECLARATION_DOMAIN <-
+  "dsVert/dp-count/fixed-cohort-declaration/v1|"
+.DSVERT_CLIENT_DP_COUNT_FIXED_RECEIPT_SIGNATURE_DOMAIN <-
+  "dsVert/dp-count/fixed-cohort-receipt-signature/v1|"
+.DSVERT_CLIENT_DP_COUNT_FIXED_RECEIPT_SET_DOMAIN <-
+  "dsVert/dp-count/fixed-cohort-receipt-set/v1|"
 .DSVERT_CLIENT_DP_COUNT_CONFIG_MAX_BYTES <- 1024L * 1024L
 .DSVERT_CLIENT_DP_COUNT_RECEIPTS_MAX_BYTES <- 16L * 1024L^2
 
@@ -537,6 +553,196 @@
         binding$sha256, "evaluator", peer_ids[["evaluator"]])))
 }
 
+.dsvert_dp_count_client_fixed_declaration_v1 <- function(
+    value, server_names) {
+  fields <- c(
+    "version", "domain", "cohort_id", "dataset_id", "dataset_version",
+    "privacy_unit_column", "alignment_purpose", "adjacency",
+    "fixed_cohort_size", "peer_pins")
+  if (!is.list(value) || is.null(names(value)) || anyNA(names(value)) ||
+      anyDuplicated(names(value)) || !setequal(names(value), fields) ||
+      !identical(value$version,
+                 .DSVERT_CLIENT_DP_COUNT_FIXED_DECLARATION_VERSION) ||
+      !identical(value$adjacency, "replace_one_fixed_cohort")) {
+    stop("Invalid fixed-cohort Count declaration.", call. = FALSE)
+  }
+  identifiers <- c(
+    "domain", "cohort_id", "dataset_id", "dataset_version",
+    "alignment_purpose")
+  if (any(!vapply(value[identifiers],
+                  .dsvert_dp_analysis_client_scalar_id, logical(1L))) ||
+      !is.character(value$privacy_unit_column) ||
+      length(value$privacy_unit_column) != 1L ||
+      is.na(value$privacy_unit_column) ||
+      !grepl("^[A-Za-z._][A-Za-z0-9._]{0,127}$",
+             value$privacy_unit_column)) {
+    stop("Invalid fixed-cohort Count declaration.", call. = FALSE)
+  }
+  size <- .dsvert_dp_count_client_positive_integer_v1(
+    value$fixed_cohort_size, "fixed cohort size", 1000000)
+  pins <- value$peer_pins
+  if (!is.list(pins) || is.null(names(pins)) || anyNA(names(pins)) ||
+      anyDuplicated(names(pins)) ||
+      !setequal(names(pins), server_names) ||
+      any(!vapply(pins, function(pin) {
+        is.character(pin) && length(pin) == 1L && !is.na(pin)
+      }, logical(1L)))) {
+    stop("Invalid fixed-cohort Count declaration pinset.", call. = FALSE)
+  }
+  normalized <- tryCatch(vapply(
+    pins, .dsvert_dp_analysis_client_identity_pk, character(1L)),
+    error = function(error) character())
+  if (length(normalized) != length(server_names) ||
+      anyDuplicated(normalized)) {
+    stop("Invalid fixed-cohort Count declaration pinset.", call. = FALSE)
+  }
+  names(normalized) <- names(pins)
+  result <- value
+  result$fixed_cohort_size <- size
+  result$peer_pins <- as.list(normalized[
+    order(names(normalized), method = "radix")])
+  .dsvert_dp_analysis_client_canonical_value_v1(result)
+}
+
+.dsvert_dp_count_client_fixed_receipt_v1 <- function(
+    value, declaration, connection_peer) {
+  fields <- c(
+    "version", "peer_name", "peer_identity_pk", "declaration_sha256",
+    "psi_run_sha256", "signature")
+  if (!is.list(value) || is.null(names(value)) || anyNA(names(value)) ||
+      anyDuplicated(names(value)) || !setequal(names(value), fields) ||
+      !identical(value$version,
+                 .DSVERT_CLIENT_DP_COUNT_FIXED_RECEIPT_VERSION)) {
+    stop("Invalid signed fixed-cohort Count receipt.", call. = FALSE)
+  }
+  unsigned <- value[setdiff(names(value), "signature")]
+  unsigned$peer_name <- .dsvert_dp_count_client_peer_name_v1(
+    unsigned$peer_name)
+  unsigned$peer_identity_pk <- tryCatch(
+    .dsvert_dp_analysis_client_identity_pk(unsigned$peer_identity_pk),
+    error = function(error) stop(
+      "Invalid fixed-cohort Count receipt identity.", call. = FALSE))
+  unsigned$declaration_sha256 <- .dsvert_dp_count_client_hex_v1(
+    unsigned$declaration_sha256, "fixed declaration hash")
+  unsigned$psi_run_sha256 <- .dsvert_dp_count_client_hex_v1(
+    unsigned$psi_run_sha256, "fixed receipt PSI run hash")
+  unsigned <- .dsvert_dp_analysis_client_canonical_value_v1(unsigned)
+  expected_hash <- .dsvert_dp_count_client_hash_v1(
+    .DSVERT_CLIENT_DP_COUNT_FIXED_DECLARATION_DOMAIN, declaration)
+  expected_pin <- declaration$peer_pins[[connection_peer]]
+  valid <- identical(unsigned$peer_name, connection_peer) &&
+    !is.null(expected_pin) &&
+    identical(unsigned$peer_identity_pk, expected_pin) &&
+    identical(unsigned$declaration_sha256, expected_hash)
+  if (!isTRUE(valid)) {
+    stop("The fixed-cohort Count receipt is not pinned to its declaration.",
+         call. = FALSE)
+  }
+  public <- .dsvert_joint_dp_client_b64url(
+    expected_pin, 32L, "fixed-cohort Count receipt identity public key")
+  signature <- .dsvert_joint_dp_client_b64url(
+    value$signature, 64L, "fixed-cohort Count receipt signature")
+  verified <- tryCatch(openssl::ed25519_verify(
+    charToRaw(paste0(
+      .DSVERT_CLIENT_DP_COUNT_FIXED_RECEIPT_SIGNATURE_DOMAIN,
+      .dsvert_joint_dp_client_json(unsigned))),
+    signature, openssl::read_ed25519_pubkey(public)),
+    error = function(error) FALSE)
+  if (!isTRUE(verified)) {
+    stop("Fixed-cohort Count receipt signature verification failed.",
+         call. = FALSE)
+  }
+  .dsvert_dp_analysis_client_canonical_value_v1(c(
+    unsigned, list(signature = value$signature)))
+}
+
+.dsvert_dp_count_client_fixed_compile_v1 <- function(
+    payloads, server_names) {
+  declarations <- lapply(payloads, function(payload) {
+    if (!is.list(payload) || is.null(names(payload)) ||
+        anyNA(names(payload)) || anyDuplicated(names(payload)) ||
+        !setequal(names(payload), c("declaration", "receipt"))) {
+      stop("Invalid fixed-cohort Count compile payload.", call. = FALSE)
+    }
+    .dsvert_dp_count_client_fixed_declaration_v1(
+      payload$declaration, server_names)
+  })
+  declaration <- declarations[[1L]]
+  if (!all(vapply(declarations, identical, logical(1L), declaration))) {
+    stop("Fixed-cohort Count peers disagree on one declaration.",
+         call. = FALSE)
+  }
+  receipts <- Map(function(payload, peer) {
+    .dsvert_dp_count_client_fixed_receipt_v1(
+      payload$receipt, declaration, peer)
+  }, payloads, server_names)
+  names(receipts) <- server_names
+  receipts <- receipts[sort(server_names, method = "radix")]
+  receipt_peers <- vapply(
+    receipts, function(receipt) receipt$peer_name, character(1L))
+  psi_runs <- vapply(
+    receipts, function(receipt) receipt$psi_run_sha256, character(1L))
+  if (anyDuplicated(receipt_peers) ||
+      !setequal(receipt_peers, server_names) ||
+      length(unique(psi_runs)) != 1L) {
+    stop("Fixed-cohort Count receipts lack exact K/PSI consensus.",
+         call. = FALSE)
+  }
+  list(
+    declaration = declaration,
+    receipts = receipts,
+    declaration_sha256 = .dsvert_dp_count_client_hash_v1(
+      .DSVERT_CLIENT_DP_COUNT_FIXED_DECLARATION_DOMAIN, declaration),
+    receipt_set_sha256 = .dsvert_dp_count_client_hash_v1(
+      .DSVERT_CLIENT_DP_COUNT_FIXED_RECEIPT_SET_DOMAIN, receipts),
+    psi_run_sha256 = psi_runs[[1L]],
+    peer_count = as.integer(length(server_names)))
+}
+
+.dsvert_dp_count_client_compile_sum_v1 <- function(
+    envelopes, server_names) {
+  if (!is.character(server_names) || length(server_names) < 2L ||
+      length(server_names) > 4096L || anyNA(server_names) ||
+      any(!nzchar(server_names)) || anyDuplicated(server_names) ||
+      !is.list(envelopes) || is.null(names(envelopes)) ||
+      anyNA(names(envelopes)) || anyDuplicated(names(envelopes)) ||
+      !setequal(names(envelopes), server_names)) {
+    stop("Count compile results do not cover the complete federation.",
+         call. = FALSE)
+  }
+  envelopes <- envelopes[server_names]
+  fields <- c("version", "mode", "payload")
+  valid <- vapply(envelopes, function(envelope) {
+    is.list(envelope) && !is.null(names(envelope)) &&
+      !anyNA(names(envelope)) && !anyDuplicated(names(envelope)) &&
+      setequal(names(envelope), fields) &&
+      identical(envelope$version,
+                .DSVERT_CLIENT_DP_COUNT_COMPILE_ENVELOPE_VERSION) &&
+      is.character(envelope$mode) && length(envelope$mode) == 1L &&
+      !is.na(envelope$mode) &&
+      envelope$mode %in% c("add_remove_dp", "fixed_cohort_public") &&
+      is.list(envelope$payload)
+  }, logical(1L))
+  if (!all(valid)) {
+    stop("A peer returned an invalid Count compile envelope.",
+         call. = FALSE)
+  }
+  modes <- vapply(envelopes, `[[`, character(1L), "mode")
+  if (length(unique(modes)) != 1L) {
+    stop("Count peers disagree on the compile mode.", call. = FALSE)
+  }
+  payloads <- lapply(envelopes, `[[`, "payload")
+  names(payloads) <- server_names
+  payload <- if (identical(modes[[1L]], "add_remove_dp")) {
+    .dsvert_dp_count_client_compile_v1(payloads, server_names)
+  } else {
+    .dsvert_dp_count_client_fixed_compile_v1(payloads, server_names)
+  }
+  list(
+    version = .DSVERT_CLIENT_DP_COUNT_COMPILED_MODE_VERSION,
+    mode = modes[[1L]], payload = payload)
+}
+
 .dsvert_dp_count_client_compile_v1 <- function(envelopes, server_names) {
   if (!is.character(server_names) || length(server_names) < 2L ||
       length(server_names) > 4096L || anyNA(server_names) ||
@@ -748,7 +954,19 @@
     call(name = "dsvertDPCountCompileDS", data_name = data_name),
     operation = "Count signed analysis compilation",
     .aggregate = .aggregate)
-  compiled <- .dsvert_dp_count_client_compile_v1(envelopes, server_names)
+  compiled_mode <- .dsvert_dp_count_client_compile_sum_v1(
+    envelopes, server_names)
+  if (identical(compiled_mode$mode, "fixed_cohort_public")) {
+    fixed <- compiled_mode$payload
+    return(list(
+      version = .DSVERT_CLIENT_DP_COUNT_PREPARED_VERSION,
+      mode = "fixed_cohort_public",
+      payload = list(
+        declaration = fixed$declaration,
+        receipt_set_sha256 = fixed$receipt_set_sha256,
+        peer_count = fixed$peer_count)))
+  }
+  compiled <- compiled_mode$payload
   session_id <- .session_id()
   if (!is.character(session_id) || length(session_id) != 1L ||
       is.na(session_id) || !grepl(
@@ -793,9 +1011,12 @@
     analysis_contract = compiled$contract,
     .aggregate = .aggregate)
   list(
-    session_id = session_id,
-    contract = compiled$contract,
-    authorities = authorities,
-    authorizations = authorized,
-    transport = transport)
+    version = .DSVERT_CLIENT_DP_COUNT_PREPARED_VERSION,
+    mode = "add_remove_dp",
+    payload = list(
+      session_id = session_id,
+      contract = compiled$contract,
+      authorities = authorities,
+      authorizations = authorized,
+      transport = transport))
 }

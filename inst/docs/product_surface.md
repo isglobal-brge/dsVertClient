@@ -1,6 +1,6 @@
 # dsVertClient audited method surface
 
-Status: development audit, 2026-08-08.
+Status: development audit, 2026-08-11.
 
 The release contract is available at runtime through
 `ds.vertMethodStatus()`. It classifies every public analysis entry point as
@@ -25,7 +25,7 @@ the authoritative maturity classification.
 | `ds.vertDPStatus()` | Read-only joint-DP capsule-status v5/accounting handshake | All peers must agree on domain, fixed per-capsule privacy parameters, `N`, adjacency, complete pinset, designated peers and one stable accountant namespace; the allocator-commit history can deny a new capsule at `N`, while `request_limit` is false and exact replay remains free; namespace uniqueness across reconfiguration is a custodial assumption, not automatic enforcement or migration |
 | `ds.vertDPCapsulePlan()` | Data-free signed dry-run of the immutable capsule workload | It accesses no protected snapshot, creates no release and has zero privacy cost; it cannot change the custodian workload |
 | `ds.vertDPCalibrate()` | Data-free fixed-capsule noise calibration | Quantifies mechanism noise, not sampling error or a universally optimal epsilon; operation history never degrades the calibration |
-| `ds.vertDPCount()` | Patient/row add-remove capsule coordinate | Adjacency and fixed capsule epsilon/delta are server-owned; repeated use consumes nothing |
+| `ds.vertDPCount()` | Canonical signed current-snapshot privacy-unit Count: sticky exact-MPC add/remove DP or public fixed-cohort K-consensus | Privacy is per signed artifact and distinct artifacts compose; no finite global composition claim is made. Add/remove assumes signed bounds, secret persistent seeds and one non-colluding pinned authority; the fixed value has zero sensitivity |
 | `ds.vertDPContingency()` | Fixed-domain one-contribution DP histogram | Ordinary chi-square/Fisher p-values are not calibrated for noisy counts |
 | `ds.vertDPFrequency()` | One fixed-domain categorical marginal from the same signed sticky capsule | Missing, out-of-domain and conflicting repeated records are excluded; count/proportion regions cover mechanism noise only |
 | `ds.vertDPFrequencyInference()` | Zero-call conservative population-proportion regions from a validated DP frequency release | Requires iid privacy units and scientifically ignorable exclusions; Bonferroni/Clopper--Pearson regions can be wide and provide no p-value |

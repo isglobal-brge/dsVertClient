@@ -7,13 +7,14 @@ test_that("method maturity registry covers every public analysis entry point", {
   expect_true(all(registry$release_contract %in% c(
     "formal_joint_dp_capsule",
     "formal_joint_dp_capsule_only_legacy_unavailable",
+    "formal_sticky_count_artifact",
     "disclosure_safe_protocol_no_statistic",
     "postprocessing_inherits_input",
     "legacy_exact_release_not_capsule_safe")))
   expect_false(any(grepl("strict|budget|exhaust|remaining",
                          registry$release_contract, ignore.case = TRUE)))
   expect_match(attr(registry, "threat_model"),
-               "unlimited post-processing", fixed = TRUE)
+               "distinct Count artifacts compose", fixed = TRUE)
   expect_true(all(registry$numeric_contract %in% c(
     "not_applicable_no_statistic", "separate_integer_dp_contract",
     "inherits_input_contract", "data_free_preflight_only",
@@ -98,7 +99,7 @@ test_that("known unsafe legacy routes are not presented as promoted", {
                "not certified")
   expect_identical(
     ds.vertMethodStatus("ds.vertDPCount")$release_contract,
-    "formal_joint_dp_capsule")
+    "formal_sticky_count_artifact")
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertDesc", "ds.vert.desc"))$release_contract ==
       "formal_joint_dp_capsule"))
@@ -150,7 +151,7 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     ds.vertMethodStatus("ds.vertDPCor")$status,
     "provisional")
   expect_true(all(ds.vertMethodStatus(c(
-    "ds.vertDPCount", "ds.vertDPContingency", "ds.vertDPMeanVar",
+    "ds.vertDPContingency", "ds.vertDPMeanVar",
     "ds.vertDPCor", "ds.vertDPGaussian", "ds.vertCor", "ds.vertPCA",
     "ds.vertDPDescribe", "ds.vertDPSurvival"))$release_contract ==
       "formal_joint_dp_capsule"))
@@ -184,7 +185,21 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "alignment")
   expect_match(
     ds.vertMethodStatus("ds.vertDPCount")$principal_limitation,
-    "per capsule")
+    "per canonical signed")
+  count_status <- ds.vertMethodStatus("ds.vertDPCount")
+  count_public_contract <- paste(c(
+    unlist(count_status), attr(count_status, "threat_model")), collapse = " ")
+  expect_false(grepl(
+    paste(
+      "formal composition applies when each capsule",
+      "operations over that capsule",
+      "DP mechanism/accountant contract", sep = "|"),
+    count_public_contract, ignore.case = TRUE))
+  expect_match(attr(count_status, "threat_model"),
+               "no finite global Count composition claim", fixed = TRUE)
+  expect_match(
+    ds.vertMethodStatus("ds.vertDPCount")$numeric_blocker,
+    "not an accountant", fixed = TRUE)
   expect_identical(
     ds.vertMethodStatus("ds.vertGLM")$release_contract,
     "formal_joint_dp_capsule_only_legacy_unavailable")
