@@ -1011,6 +1011,7 @@
       source_values_included = FALSE,
       intermediate_payload_exposed = FALSE,
       durable_replay = TRUE))
-  class(result) <- c("dsvert_joint_dp_vector", "list")
+  class(result) <- c(
+    "dsvert_synopsis_public_vector", "dsvert_joint_dp_vector", "list")
   result
 }
