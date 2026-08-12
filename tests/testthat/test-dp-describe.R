@@ -173,6 +173,55 @@ test_that("describe maps only signed final vector blocks", {
     stale_gate, "protected", "primary"), "vector context is invalid")
 })
 
+test_that("describe admits synopsis provenance without legacy claims", {
+  capsule <- .dp_describe_vector_capsule(decoded = TRUE)
+  capsule$release$artifact_key <- strrep("c", 64L)
+  capsule$release$execution_id <- strrep("d", 64L)
+  capsule$release$contract_sha256 <- strrep("e", 64L)
+  capsule$release$attempt_sha256 <- strrep("f", 64L)
+  capsule$release$source_contract_sha256 <- strrep("1", 64L)
+  capsule$release$result_set_sha256 <- strrep("2", 64L)
+  capsule$release$signed_provenance <- c(list(
+    version = "dsvert-stateless-synopsis-public-provenance-v1"),
+    capsule$release[c(
+      "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+      "source_contract_sha256", "result_set_sha256", "final_vector_root")])
+  class(capsule$release) <- c(
+    "dsvert_synopsis_public_vector", "dsvert_joint_dp_vector", "list")
+  capsule$release[c(
+    "capsule_id", "history_gate", "request_limit", "operation_limit")] <-
+    NULL
+  capsule$release$manifest$admission <- list(
+    adjacency = "add_remove_patient", unit_capacity = 100)
+  capsule$status[[1L]]$noise_root <- NULL
+
+  expect_error(.dsvert_dp_vector_context(capsule), "does not yet accept")
+  result <- .dsvert_dp_describe_vector_result(
+    capsule, "protected", "primary")
+  expect_identical(result$statistics,
+                   c(4, 512, 336, rep(1, 5L),
+                     4, 512, 336, rep(1, 5L)))
+  expect_identical(result$artifact_key, strrep("c", 64L))
+  expect_identical(result$execution_id, strrep("d", 64L))
+  expect_identical(result$privacy$version, "dsvert-per-synopsis-dp-v1")
+  expect_false(result$privacy$finite_global_composition_claim)
+  expect_false(result$security_claim$allocation_openings_used)
+  expect_false(any(c(
+    "capsule_id", "privacy_epoch", "noise_key_id", "history_gate",
+    "request_limit", "operation_limit") %in% names(result)))
+  postprocessed <- .dsvert_dp_describe_postprocess(result, probs = 0.5)
+  expect_equal(postprocessed$descriptives$mean, c(2, 4), tolerance = 0)
+  expect_equal(postprocessed$descriptives$variance, c(1.25, 5),
+               tolerance = 0)
+  capsule$release$manifest$admission$unit_capacity <- 99L
+  expect_error(.dsvert_dp_describe_vector_result(
+    capsule, "protected", "primary"), "capacity")
+  capsule$release$manifest$admission$unit_capacity <- 100L
+  capsule$release$artifact_key <- strrep("a", 64L)
+  expect_error(.dsvert_dp_describe_vector_result(
+    capsule, "protected", "primary"), "provenance")
+})
+
 test_that("describe vector contract rejects shape and lattice tampering", {
   base <- .dp_describe_vector_capsule(decoded = TRUE)
   reject <- function(change, pattern) {

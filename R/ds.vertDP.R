@@ -512,7 +512,16 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
     radius
 }
 
-.dsvert_dp_vector_context <- function(run) {
+.dsvert_dp_vector_context <- function(run, allow_synopsis = FALSE) {
+  synopsis <- is.list(run) && is.list(run$release) &&
+    inherits(run$release, "dsvert_synopsis_public_vector") &&
+    identical(
+      run$release$signed_provenance$version,
+      "dsvert-stateless-synopsis-public-provenance-v1")
+  if (isTRUE(synopsis) && !isTRUE(allow_synopsis)) {
+    stop("This biomedical consumer does not yet accept synopsis provenance",
+         call. = FALSE)
+  }
   if (!is.list(run) || !inherits(run$release, "dsvert_joint_dp_vector") ||
       !is.list(run$layout) || !is.list(run$status) || !length(run$status) ||
       is.null(names(run$status)) || anyNA(names(run$status)) ||
@@ -520,18 +529,47 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
       !identical(as.numeric(run$layout$coordinate_count),
                  as.numeric(run$release$coordinate_count)) ||
       !is.list(run$release$manifest) ||
-      !identical(run$release$history_gate, TRUE) ||
-      !identical(run$release$request_limit, FALSE) ||
-      !identical(run$release$operation_limit, TRUE)) {
+      (!isTRUE(synopsis) &&
+       (!identical(run$release$history_gate, TRUE) ||
+        !identical(run$release$request_limit, FALSE) ||
+        !identical(run$release$operation_limit, TRUE)))) {
     stop("The joint biomedical DP vector context is invalid", call. = FALSE)
   }
-  adjacency <- tryCatch(vapply(run$status, function(value) {
+  if (isTRUE(synopsis) &&
+      any(c("capsule_id", "privacy_epoch", "noise_key_id",
+            "history_gate", "request_limit", "operation_limit") %in%
+          names(run$release))) {
+    stop("The synopsis vector contains incompatible legacy provenance",
+         call. = FALSE)
+  }
+  if (isTRUE(synopsis)) {
+    provenance <- run$release$signed_provenance
+    bindings <- c(
+      "artifact_key", "execution_id", "contract_sha256",
+      "attempt_sha256", "source_contract_sha256", "result_set_sha256",
+      "final_vector_root")
+    if (!all(vapply(bindings, function(field) {
+      .dsvert_vector_hex(run$release[[field]]) &&
+        identical(run$release[[field]], provenance[[field]])
+    }, logical(1L)))) {
+      stop("The synopsis vector provenance is detached", call. = FALSE)
+    }
+  }
+  status_adjacency <- tryCatch(vapply(run$status, function(value) {
     value$policy$adjacency
   }, character(1L)), error = function(error) character())
-  if (length(adjacency) != length(run$status) ||
-      !all(adjacency %in% c(
+  adjacency <- if (isTRUE(synopsis)) {
+    run$release$manifest$admission$adjacency
+  } else if (length(status_adjacency)) status_adjacency[[1L]] else NULL
+  if (length(status_adjacency) != length(run$status) ||
+      !all(status_adjacency %in% c(
         "add_remove_patient", "replace_one_fixed_cohort")) ||
-      length(unique(adjacency)) != 1L) {
+      length(unique(status_adjacency)) != 1L ||
+      !is.character(adjacency) || length(adjacency) != 1L ||
+      is.na(adjacency) ||
+      !adjacency %in% c("add_remove_patient", "replace_one_fixed_cohort") ||
+      (isTRUE(synopsis) &&
+       !identical(adjacency, status_adjacency[[1L]]))) {
     stop("The joint biomedical DP vector has inconsistent adjacency",
          call. = FALSE)
   }
@@ -550,7 +588,7 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
   list(release = run$release, layout = run$layout, status = run$status,
        manifest_bundle = run$manifest_bundle,
        manifest = run$release$manifest, lattice = lattice,
-       adjacency = adjacency[[1L]])
+       adjacency = adjacency, synopsis = synopsis)
 }
 
 .dsvert_dp_capsule_security_claim <- function() {

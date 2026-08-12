@@ -284,7 +284,7 @@
 
 .dsvert_dp_describe_vector_result <- function(
     capsule, data_name, analysis_id, server = NULL) {
-  capsule <- .dsvert_dp_vector_context(capsule)
+  capsule <- .dsvert_dp_vector_context(capsule, allow_synopsis = TRUE)
   release <- capsule$release
   manifest <- release$manifest
   families <- manifest$workload$families
@@ -309,7 +309,15 @@
   }
   scale <- as.numeric(manifest$workload$release_lattice$output_lattice_scale)
   bits <- as.integer(manifest$workload$release_lattice$output_lattice_bits)
-  capacity <- as.numeric(capsule$status[[owner]]$policy$unit_capacity)
+  capacity <- as.numeric(if (isTRUE(capsule$synopsis)) {
+    manifest$admission$unit_capacity
+  } else capsule$status[[owner]]$policy$unit_capacity)
+  if (!.dsvert_dp_is_integer(capacity, 1, .DSVERT_DP_MAX_COORDINATES) ||
+      (isTRUE(capsule$synopsis) &&
+       !identical(as.numeric(capacity), as.numeric(
+         capsule$status[[owner]]$policy$unit_capacity)))) {
+    stop("The signed describe unit capacity is invalid", call. = FALSE)
+  }
   marginal <- .dsvert_dp_vector_accuracy_radius(
     release, manifest, coordinate_count = 1L, maximum_error = capacity)
 
@@ -385,11 +393,12 @@
       simultaneous$radius * scale, simultaneous$radius * scale,
       simultaneous$radius)
   }
-  noise_root <- capsule$status[[owner]]$noise_root
+  noise_root <- if (isTRUE(capsule$synopsis)) NULL else
+    capsule$status[[owner]]$noise_root
   profile <- .dsvert_vector_profile(
     manifest$workload$capsule_mechanism,
     manifest$workload$mechanism_selection)
-  list(
+  result <- list(
     released = TRUE, analysis_id = analysis_id,
     analysis_version = artifact$version, variables = variables,
     variable_count = length(variables), lower_bounds = lower,
@@ -423,18 +432,45 @@
     accuracy_simultaneous_method = simultaneous$method,
     uncertainty_scope =
       "DP mechanism noise only; sampling uncertainty excluded",
-    privacy_epoch = noise_root$privacy_epoch,
-    noise_key_id = noise_root$key_id,
     sticky_noise = "one immutable capsule vector; unlimited replay",
     epsilon = release$epsilon, delta = release$delta,
     implementation_delta = release$implementation_delta,
-    adjacency = capsule$status[[owner]]$policy$adjacency,
-    capsule_id = release$capsule_id,
+    adjacency = capsule$adjacency,
     final_vector_root = release$final_vector_root,
     coordinate_order_sha256 = release$coordinate_order_sha256,
-    history_gate = TRUE, request_limit = FALSE, operation_limit = TRUE,
-    security_claim = .dsvert_dp_capsule_security_claim(),
     server = owner)
+  if (isTRUE(capsule$synopsis)) {
+    result$artifact_key <- release$artifact_key
+    result$execution_id <- release$execution_id
+    result$release_provenance <- release$signed_provenance
+    result$privacy <- list(
+      version = "dsvert-per-synopsis-dp-v1",
+      per_artifact_epsilon = release$epsilon,
+      per_artifact_delta = release$delta,
+      sticky_noise = TRUE, public_openings = 1L,
+      distinct_artifacts_compose = TRUE,
+      finite_global_composition_claim = FALSE)
+    result$composition_rule <-
+      "one_sticky_release_per_canonical_signed_artifact"
+    result$security_claim <- list(
+      version = "dsvert-synopsis-security-claim-v1",
+      privacy_definition = "per_synopsis_epsilon_delta_dp",
+      two_pinned_noise_authorities = TRUE,
+      maximum_colluding_noise_authorities = 1L,
+      analyst_relay_trusted = FALSE,
+      replay_is_postprocessing = TRUE,
+      allocation_openings_used = FALSE,
+      finite_global_composition_claim = FALSE)
+  } else {
+    result$privacy_epoch <- noise_root$privacy_epoch
+    result$noise_key_id <- noise_root$key_id
+    result$capsule_id <- release$capsule_id
+    result$history_gate <- TRUE
+    result$request_limit <- FALSE
+    result$operation_limit <- TRUE
+    result$security_claim <- .dsvert_dp_capsule_security_claim()
+  }
+  result
 }
 
 #' Differentially private fixed-grid descriptive statistics
