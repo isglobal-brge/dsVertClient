@@ -229,7 +229,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "The limits exclude sampling uncertainty and continuous-time grid",
         "error; RMTL is tau-RMST only when the public lower bound is zero."))
   add("ds.vertDPSurvivalContrast", "ds.vertDPSurvival post-processing",
-      "provisional",
+      "promoted",
       paste(
         "Zero-call fixed-grid survival differences and ratios from two",
         "validated Synopsis survival artifacts, with conservative joint",
@@ -239,7 +239,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "lower bound; sampling uncertainty, hypothesis tests and",
         "continuous-time grid error are excluded."))
   add("ds.vertDPRMSTContrast", "ds.vertDPSurvival post-processing",
-      "provisional",
+      "promoted",
       paste(
         "Zero-call fixed-grid RMST differences and ratios from two",
         "validated Synopsis survival artifacts through a common public tau."),
