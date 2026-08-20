@@ -303,7 +303,9 @@ make_dp_gaussian_lasso_fit <- function(integrity = TRUE) {
       predictor_order = "x",
       predictors = list(x = list(lower = -2, upper = 2)),
       outcome = list(lower = 10, upper = 20),
-      intercept = TRUE),
+      intercept = TRUE,
+      implementation_state = "same_owner_materialized",
+      cross_owner_state = "reserved_not_materialized"),
     sufficient_statistics_dp = list(
       gram_projected = gram,
       cross_projected = c("(Intercept)" = 1.5, x = 1),
@@ -350,6 +352,59 @@ test_that("public proximal LASSO post-processes one certified DP release", {
   expect_false(result$coefficient_regions_available)
   printed <- capture.output(print(result))
   expect_true(any(grepl("extra DP cost = (0, 0)", printed, fixed = TRUE)))
+})
+
+test_that("historical LASSO frontdoor returns a certified DP path", {
+  fit <- make_dp_gaussian_lasso_fit()
+  testthat::local_mocked_bindings(
+    ds.validateDPGaussianCertificate = function(value, ...) {
+      list(
+        integrity_valid = isTRUE(
+          value$provenance_certificate$test_integrity),
+        authenticity = "session_transport_anchored",
+        anchor_source = "online_session")
+    },
+    .package = "dsVertClient")
+
+  result <- ds.vertLASSO(
+    fit, lambda_1 = 0.1, alpha_grid = c(1, 0.5, 0),
+    max_iter = 2000L, tol = 1e-12)
+
+  expect_s3_class(result, "ds.vertLASSO")
+  expect_s3_class(result, "ds.vertDPLASSOPath")
+  expect_equal(result$lambda_grid, c(0.1, 0.05, 0))
+  expect_equal(result$original, result$paths[[3L]], tolerance = 1e-12)
+  expect_true(all(vapply(result$path_certificates, function(value) {
+    isTRUE(value$kkt$satisfied)
+  }, logical(1L))))
+  expect_identical(result$input_provenance, "signed_dp_gaussian_capsule")
+  expect_identical(result$additional_server_calls_after_capsule, 0L)
+  expect_equal(result$additional_privacy_cost,
+               c(epsilon = 0, delta = 0))
+  expect_false(result$source_values_exposed)
+  expect_false(result$intermediate_values_exposed)
+  expect_error(
+    ds.vertLASSO(
+      structure(list(coefficients = c(`(Intercept)` = 0, x = 0)),
+                class = c("ds.glm", "list")),
+      lambda_1 = 0.1),
+    "validated ds.vertDPGaussian")
+  fit$signed_artifact$cross_owner_state <- "exact_gc_to_joint_dp_vector_v1"
+  expect_error(ds.vertLASSO(fit, lambda_1 = 0.1), "same-owner")
+})
+
+test_that("lowercase LASSO alias retains only the DP path", {
+  fit <- make_dp_gaussian_lasso_fit()
+  testthat::local_mocked_bindings(
+    ds.validateDPGaussianCertificate = function(...) {
+      list(integrity_valid = TRUE,
+           authenticity = "session_transport_anchored")
+    },
+    .package = "dsVertClient")
+  result <- ds.vert.lasso(fit, lambda_1 = 0.1, alpha_grid = 1)
+  expect_s3_class(result, "ds.vertDPLASSOPath")
+  expect_identical(result$frontdoor, "ds.vert.lasso")
+  expect_identical(result$route, "ds.vertLASSO")
 })
 
 test_that("DP LASSO fails closed on certificate or design mismatch", {

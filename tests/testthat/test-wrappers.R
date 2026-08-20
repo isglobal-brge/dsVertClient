@@ -1,5 +1,5 @@
-# Tests for the client-side wrapper functions (LASSO post-hoc, IPW shape,
-# multinom shape, NB shape). Mock ds.glm objects, no MPC interaction.
+# Tests for client-side wrapper functions (IPW shape, multinom shape and NB
+# shape). Historical ds.glm LASSO sketches must stay unavailable.
 
 library(testthat)
 
@@ -18,30 +18,13 @@ mock_fit <- function(coefs = c(`(Intercept)` = 1, x1 = 0.5, x2 = -0.3, x3 = 0.05
 }
 
 # =============================================================================
-# ds.vertLASSO
+# Legacy ds.vertLASSO boundary
 # =============================================================================
-test_that("LASSO soft-thresholds coefficients below lambda", {
+test_that("LASSO rejects the retired ds.glm thresholding sketch", {
   fit <- mock_fit()
-  res <- ds.vertLASSO(fit, lambda_1 = 0.3, alpha_grid = c(1))
-  # lambda = 0.3: |x3| = 0.05 < 0.3 -> zeroed; others kept
-  path <- res$paths[[1]]
-  expect_equal(unname(path["x3"]), 0)
-  # x1 (0.5) shrunk to 0.5 - 0.3 = 0.2
-  expect_equal(unname(path["x1"]), 0.2, tolerance = 1e-10)
-  # x2 (-0.3) shrunk to 0 (|x2| == lambda boundary)
-  expect_equal(unname(path["x2"]), 0, tolerance = 1e-10)
-  # Intercept preserved
-  expect_equal(unname(path["(Intercept)"]), unname(fit$coefficients["(Intercept)"]))
-})
-
-test_that("LASSO sweeps alpha_grid", {
-  fit <- mock_fit()
-  res <- ds.vertLASSO(fit, lambda_1 = 0.3,
-                     alpha_grid = c(1, 0.5, 0.1))
-  expect_equal(length(res$paths), 3L)
-  # Smaller alpha -> less shrinkage -> x1 coef closer to original
-  x1_path <- sapply(res$paths, function(p) unname(p["x1"]))
-  expect_true(all(diff(x1_path) >= -1e-12))
+  expect_error(
+    ds.vertLASSO(fit, lambda_1 = 0.3, alpha_grid = c(1, 0.5)),
+    "validated ds.vertDPGaussian")
 })
 
 # =============================================================================
@@ -148,10 +131,8 @@ test_that("ds.vert.coxph cannot dispatch to a non-Cox estimand", {
 
 test_that("frontdoor aliases preserve backend outputs and route metadata", {
   fit <- mock_fit()
-  out <- ds.vert.lasso(fit, lambda_1 = 0.3, alpha_grid = 1)
-  expect_s3_class(out, "ds.vertLASSO")
-  expect_equal(out$frontdoor, "ds.vert.lasso")
-  expect_equal(out$route, "ds.vertLASSO")
+  expect_error(ds.vert.lasso(fit, lambda_1 = 0.3, alpha_grid = 1),
+               "validated ds.vertDPGaussian")
 })
 
 # =============================================================================
