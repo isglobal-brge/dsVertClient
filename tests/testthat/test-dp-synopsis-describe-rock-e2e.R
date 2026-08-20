@@ -133,6 +133,66 @@
   fixture
 }
 
+.synopsis_cross_contingency_real_e2e_fixture <- function(k, server_ns) {
+  fixture <- .synopsis_describe_real_e2e_fixture(k, server_ns)
+  get_server <- function(name) get(name, envir = server_ns, inherits = FALSE)
+  scope <- list(
+    mode = "catalog_v1", numeric_moments = character(),
+    categorical_marginals = character(), categorical_pairs = list(),
+    correlations = list())
+  cross_spec <- list(
+    version = "v2", left_dataset = "data_peer_a",
+    right_dataset = "data_peer_b", left = "disease", right = "exposure",
+    family = "categorical_pair")
+  for (peer in fixture$peers) {
+    policy <- fixture$policies[[peer]]
+    policy$unit_capacity <- 16L
+    policy$capsule_workload_scope <- scope
+    policy$capsule_workload_specs <- list(
+      describe = list(), survival = list(), gaussian = list(),
+      vertical_cross = list())
+    if (identical(peer, "peer_a")) {
+      policy$categorical_levels <- list(disease = c("no", "yes"))
+      policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+        "x_peer_a", "disease")
+      policy$capsule_workload_specs$vertical_cross$cross_table <- cross_spec
+    } else if (identical(peer, "peer_b")) {
+      policy$categorical_levels <- list(exposure = c("high", "low"))
+      policy$capsule_dataset_mapping[["data_peer_b"]] <- c(
+        "x_peer_b", "exposure")
+    }
+    fixture$policies[[peer]] <- policy
+  }
+  for (peer in fixture$peers) {
+    data_name <- paste0("data_", peer)
+    fixture$snapshots[[peer]][[data_name]]$data <-
+      fixture$snapshots[[peer]][[data_name]]$data[seq_len(16L), , drop = FALSE]
+  }
+  fixture$snapshots$peer_a[["data_peer_a"]]$data$disease <-
+    rep(c("no", "yes"), each = 8L)
+  fixture$snapshots$peer_b[["data_peer_b"]]$data$exposure <-
+    rep(c("high", "low"), 8L)
+  token <- chartr(
+    "+/", "-_", sub("=+$", "",
+                       jsonlite::base64_enc(as.raw(seq_len(32L) - 1L))))
+  for (peer in fixture$peers) {
+    data_name <- paste0("data_", peer)
+    aligned <- get_server(".psi_attach_alignment_manifest")(
+      fixture$snapshots[[peer]][[data_name]]$data, "patient_id", token)
+    alignment <- get_server(".psi_validate_alignment_manifest")(aligned)
+    fixture$snapshots[[peer]][[data_name]]$data <- aligned
+    fixture$policies[[peer]]$datasets[[data_name]]$alignment_manifest_hash <-
+      alignment$hash
+    fixture$policies[[peer]]$datasets[[data_name]]$alignment_manifest_version <-
+      alignment$version
+    fixture$snapshots[[peer]][[data_name]]$dataset$public$
+      alignment_manifest_hash <- alignment$hash
+    fixture$snapshots[[peer]][[data_name]]$dataset$public$
+      alignment_manifest_version <- alignment$version
+  }
+  fixture
+}
+
 .synopsis_frequency_real_e2e_fixture <- function(k, server_ns) {
   fixture <- .synopsis_describe_real_e2e_fixture(k, server_ns)
   scope <- list(
@@ -442,6 +502,61 @@ test_that("real same-owner Synopsis contingency is plausible and Rock-replayable
   }
 })
 
+test_that("real cross-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5", {
+  server_ns <- .synopsis_describe_real_e2e_server()
+  contingency <- get(".dsvert_dp_contingency_impl",
+                     asNamespace("dsVertClient"), inherits = FALSE)
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .synopsis_cross_contingency_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+
+    first <- contingency(
+      "data_peer_a", "peer_a$disease", "peer_b$exposure", NULL,
+      conns, dispatch)
+    expect_s3_class(first, "ds.vertDPContingency")
+    expect_true(isTRUE(first$released))
+    expect_true(isTRUE(first$cross_owner))
+    expect_identical(first$servers, c("peer_a", "peer_b"))
+    expect_identical(fixture$state$source_prepare, 2L)
+    expect_identical(fixture$state$start, 2L)
+    expect_identical(first$release_provenance$designated_noise_peers,
+                     as.list(fixture$peers[1:2]))
+    expect_length(first$release_provenance$ordered_peer_pinset, k)
+    expect_identical(dim(first$table), c(2L, 2L))
+    expect_true(all(is.finite(first$table)))
+    expect_true(all(first$table >= 0 & first$table <= 200))
+    expect_gt(sum(first$table), 0)
+
+    inference <- ds.vertChisqCross(
+      first, correct = TRUE, fisher = TRUE, simulations = 128L,
+      verbose = FALSE)
+    expect_s3_class(inference, "ds.vertChisq")
+    expect_true(isTRUE(inference$cross_owner))
+    expect_identical(inference$source_dp_release, first)
+    expect_true(is.finite(inference$p_value) &&
+                inference$p_value >= 0 && inference$p_value <= 1)
+    expect_true(is.finite(inference$fisher_p) &&
+                inference$fisher_p >= 0 && inference$fisher_p <= 1)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(2L, 2L))
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- contingency(
+      "data_peer_a", "peer_a$disease", "peer_b$exposure", NULL,
+      conns, dispatch)
+    expect_identical(replay$table, first$table)
+    expect_identical(replay$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
 test_that("real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5", {
   server_ns <- .synopsis_describe_real_e2e_server()
   frequency <- get(".dsvert_dp_frequency_impl",
@@ -660,5 +775,26 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_identical(serialize(replay, NULL, version = 3L),
                      serialize(fit, NULL, version = 3L))
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("cross-owner Synopsis rejects a tampered witness before mutation", {
+  server_ns <- .synopsis_describe_real_e2e_server()
+  contingency <- get(".dsvert_dp_contingency_impl",
+                     asNamespace("dsVertClient"), inherits = FALSE)
+  for (k in c(3L, 5L)) {
+    fixture <- .synopsis_cross_contingency_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    witness <- fixture$peers[[3L]]
+    fixture$pins[[witness]] <- fixture$pins[["peer_a"]]
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+
+    expect_error(.dsvert_dp_contingency_impl(
+      "data_peer_a", "peer_a$disease", "peer_b$exposure", NULL,
+      conns, .synopsis_describe_real_e2e_dispatch(fixture)))
+    expect_identical(fixture$state$source_prepare, 0L)
+    expect_identical(fixture$state$start, 0L)
   }
 })

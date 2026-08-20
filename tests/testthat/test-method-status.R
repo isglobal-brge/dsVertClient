@@ -159,7 +159,7 @@ test_that("known unsafe legacy routes are not presented as promoted", {
   expect_match(combined_standardization$safe_scope, "sampling uncertainty")
   expect_identical(
     ds.vertMethodStatus("ds.vertDPContingency")$status,
-    "provisional")
+    "promoted")
   expect_identical(
     ds.vertMethodStatus("ds.vertDPMeanVar")$status,
     "promoted")
@@ -269,7 +269,7 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "ds.vertChisqCross", "ds.vert.chisq_cross"))$release_contract ==
       "formal_sticky_synopsis_artifact"))
   expect_true(all(ds.vertMethodStatus(c(
-    "ds.vertChisqCross", "ds.vert.chisq_cross"))$status == "provisional"))
+    "ds.vertChisqCross", "ds.vert.chisq_cross"))$status == "promoted"))
   expect_match(ds.vertMethodStatus("ds.vertChisqCross")$principal_limitation,
                "finite-sample")
   expect_match(ds.vertMethodStatus("ds.vertMultinomJointNewton")$

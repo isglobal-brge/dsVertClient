@@ -676,8 +676,9 @@
   actual_sides <- if (is.list(artifact)) list(
     artifact$left[c("dataset", "column", "owner_peer")],
     artifact$right[c("dataset", "column", "owner_peer")]) else NULL
-  valid <- identical(manifest$logical_snapshot,
-                     selector$parent$logical_snapshot) &&
+  valid <- identical(
+      .dsvert_joint_dp_client_json(manifest$logical_snapshot),
+      .dsvert_joint_dp_client_json(selector$parent$logical_snapshot)) &&
     is.list(artifact) && identical(
       artifact$version,
       .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_ARTIFACT_VERSION) &&

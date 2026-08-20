@@ -128,9 +128,8 @@
   bindings <- .dsvert_dp_cross_shared_bindings(context, layout)
   alignment <- .dsvert_dp_cross_alignment_validate(
     alignment, layout, source_receipt)
-  capsule_id <- manifest$capsule_identity$capsule_id
+  capsule_id <- source_receipt$capsule_id
   valid_source <- .dsvert_dp_capsule_source_hex(capsule_id) &&
-    identical(source_receipt$capsule_id, capsule_id) &&
     .dsvert_dp_capsule_source_hex(source_receipt$contract_hash) &&
     identical(source_receipt$private_layout_sha256,
               layout$transport_coordinate_order_sha256) &&
@@ -189,8 +188,6 @@
       shared$session_id) &&
     identical(shared$manifest_sha256, digest::digest(
       charToRaw(manifest_json), algo = "sha256", serialize = FALSE)) &&
-    identical(shared$capsule_id,
-              manifest$capsule_identity$capsule_id) &&
     identical(shared$capsule_id, source_receipt$capsule_id) &&
     identical(shared$source_contract_hash,
               source_receipt$contract_hash) &&

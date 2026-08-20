@@ -57,7 +57,7 @@
 }
 
 .dsvert_dp_categorical_cross_bind_set <- function(
-    responses, context, manifest, layout, analysis_id) {
+    responses, context, manifest, layout, analysis_id, source_receipt) {
   peers <- context$designated
   artifact <- .dsvert_dp_categorical_cross_artifacts_client(
     manifest)[[analysis_id]]
@@ -84,7 +84,7 @@
     valid <- identical(
       value$version, .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_BIND_VERSION) &&
       identical(value$phase, "cross_categorical_private_inputs_bound") &&
-      identical(value$capsule_id, manifest$capsule_identity$capsule_id) &&
+      identical(value$capsule_id, source_receipt$capsule_id) &&
       identical(value$analysis_id, analysis_id) &&
       identical(value$artifact_sha256,
                 .dsvert_dp_capsule_source_hash(artifact)) &&
@@ -129,8 +129,9 @@
          call. = FALSE)
   }
   list(artifact = artifact, receipts = receipts,
-       state = receipts[[1L]]$state,
-       source_contract_hash = receipts[[1L]]$source_contract_hash)
+        state = receipts[[1L]]$state,
+        capsule_id = receipts[[1L]]$capsule_id,
+        source_contract_hash = receipts[[1L]]$source_contract_hash)
 }
 
 .dsvert_dp_categorical_cross_stage_contract <- function(
@@ -156,7 +157,7 @@
   peers <- context$designated
   artifact <- binding$artifact
   expected <- .dsvert_dp_categorical_cross_stage_contract(
-    artifact, manifest$capsule_identity$capsule_id, analysis_id)
+    artifact, binding$capsule_id, analysis_id)
   fields <- c(
     "capability_id", "manifest_handle", "context_hash", "plan_id",
     "ring_bits", "frac_bits", "backend", "bound_x", "bound_y",
@@ -182,7 +183,7 @@
       identical(value$producer,
                 .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_PRODUCER) &&
       identical(value$purpose, expected$purpose) &&
-      identical(value$capsule_id, manifest$capsule_identity$capsule_id) &&
+      identical(value$capsule_id, binding$capsule_id) &&
       identical(value$analysis_id, analysis_id) &&
       identical(value$stage, expected$stage) &&
       identical(as.numeric(value$stage_index), 1) &&
@@ -257,7 +258,7 @@
       value$version,
       .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_RECEIPT_VERSION) &&
       identical(value$phase, "cross_categorical_result_share_persisted") &&
-      identical(value$capsule_id, manifest$capsule_identity$capsule_id) &&
+      identical(value$capsule_id, binding$capsule_id) &&
       identical(value$analysis_id, analysis_id) &&
       identical(value$peer_name, peer) &&
       identical(value$peer_identity_pk, unname(context$pinset[[peer]])) &&
@@ -396,7 +397,7 @@
         context$conns, bind_calls,
         operation = "cross-owner categorical private-input binding",
         .aggregate = .aggregate),
-      context, manifest, layout, analysis_id)
+      context, manifest, layout, analysis_id, source_receipt)
     if (!identical(binding$source_contract_hash,
                    source_receipt$contract_hash)) {
       stop("The exact categorical binding changed the source contract",
@@ -404,7 +405,7 @@
     }
     if (!identical(binding$state, "complete")) {
       contract <- .dsvert_dp_categorical_cross_stage_contract(
-        binding$artifact, manifest$capsule_identity$capsule_id, analysis_id)
+        binding$artifact, binding$capsule_id, analysis_id)
       prepare_calls <- stats::setNames(lapply(peers, function(peer) call(
         name = "dsvertDPCategoricalCrossPrepareDS",
         analysis_id = analysis_id, session_id = session_id)), peers)

@@ -1337,14 +1337,38 @@
       !.dsvert_vector_hex(mechanism$source_context_hash)) {
     stop("The trusted synopsis source manifest is invalid", call. = FALSE)
   }
+  cross_artifacts <- .dsvert_dp_gaussian_cross_artifacts_client(manifest)
+  categorical_cross_artifacts <-
+    .dsvert_dp_categorical_cross_artifacts_client(manifest)
+  cross_layout <- if (length(cross_artifacts) ||
+                      length(categorical_cross_artifacts)) {
+    .dsvert_dp_gaussian_cross_layout_client(manifest)
+  } else {
+    NULL
+  }
+  coordinate_count <- if (!is.null(cross_layout)) {
+    cross_layout$transport_coordinate_count
+  } else {
+    count
+  }
   list(
     value = manifest,
     capsule_id = manifest$capsule_identity$capsule_id,
-    coordinate_count = as.numeric(count),
+    coordinate_count = as.numeric(coordinate_count),
     release_coordinate_count = as.numeric(count),
-    release_coordinate_order_sha256 = NULL,
-    private_layout_sha256 = NULL,
-    cross_enabled = FALSE,
-    purpose = .DSVERT_CLIENT_DP_CAPSULE_SOURCE_PURPOSE,
+    release_coordinate_order_sha256 = if (!is.null(cross_layout)) {
+      cross_layout$release_coordinate_order_sha256
+    } else NULL,
+    private_layout_sha256 = if (!is.null(cross_layout)) {
+      cross_layout$transport_coordinate_order_sha256
+    } else NULL,
+    cross_enabled = !is.null(cross_layout),
+    purpose = if (length(categorical_cross_artifacts)) {
+      .DSVERT_CLIENT_DP_CAPSULE_SOURCE_CATEGORICAL_CROSS_PURPOSE
+    } else if (!is.null(cross_layout)) {
+      .DSVERT_CLIENT_DP_CAPSULE_SOURCE_CROSS_PURPOSE
+    } else {
+      .DSVERT_CLIENT_DP_CAPSULE_SOURCE_PURPOSE
+    },
     source_context_hash = mechanism$source_context_hash)
 }
