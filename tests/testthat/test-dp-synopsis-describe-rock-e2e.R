@@ -195,6 +195,27 @@
   fixture
 }
 
+.synopsis_gaussian_real_e2e_fixture <- function(k, server_ns) {
+  fixture <- .synopsis_correlation_real_e2e_fixture(k, server_ns)
+  n <- 10000L
+  for (peer in fixture$peers) {
+    policy <- fixture$policies[[peer]]
+    policy$unit_capacity <- n
+    fixture$policies[[peer]] <- policy
+  }
+  policy <- fixture$policies$peer_a
+  policy$capsule_workload_specs$gaussian$gaussian_primary <- list(
+    version = "v1", dataset = "data_peer_a", outcome = "y_peer_a",
+    predictors = "x_peer_a", intercept = TRUE)
+  fixture$policies$peer_a <- policy
+  fixture$snapshots$peer_a[["data_peer_a"]]$data <- data.frame(
+    patient_id = paste0("u", seq_len(n)),
+    x_peer_a = rep(c(0, 10), length.out = n),
+    y_peer_a = rep(c(10, 0), length.out = n),
+    stringsAsFactors = FALSE)
+  fixture
+}
+
 .synopsis_describe_real_e2e_dispatch <- function(fixture) {
   get_server <- function(name) get(name, envir = fixture$server_ns,
                                    inherits = FALSE)
@@ -219,8 +240,31 @@
       value <- tryCatch(testthat::with_mocked_bindings(
         do.call(get_server(method), args),
         .dsvert_dp_synopsis_policy_v1 = function() fixture$policies[[peer]],
+        .dsvert_dp_policy = function() fixture$policies[[peer]],
         .dsvert_dp_synopsis_state_path_v1 = function() {
           fixture$policies[[peer]]$synopsis_state_path
+        },
+        .dsvert_session_storage_root = function() {
+          root <- file.path(fixture$root, peer, "rock")
+          if (!dir.exists(root)) {
+            dir.create(root, recursive = TRUE, mode = "0700")
+          }
+          Sys.chmod(root, mode = "0700")
+          normalizePath(root, winslash = "/", mustWork = TRUE)
+        },
+        .dsvert_require_configured_local_peer_name = function() peer,
+        .get_trusted_peers = function() {
+          designated <- fixture$peers[1:2]
+          fixture$pins[setdiff(designated, peer)]
+        },
+        .exact_gc_designated_policy_context = function() {
+          designated <- sort(fixture$peers[1:2], method = "radix")
+          list(
+            peer_name = peer, designated = designated,
+            pins = fixture$pins[designated],
+            full_pinset_sha256 =
+              fixture$policies[[peer]]$peer_pinset_sha256,
+            consortium_id = "synopsis-real-e2e-exact-gc")
         },
         .dsvert_dp_secret = function() fixture$secrets[[peer]],
         .get_identity_keypair = function() fixture$identities[[peer]],
@@ -552,6 +596,69 @@ test_that("real same-owner Synopsis correlation is plausible and Rock-replayable
                      first$correlation_raw_pairwise)
     expect_identical(replay$correlation, first$correlation)
     expect_identical(replay$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real same-owner Gaussian Synopsis and correlation are plausible and Rock-replayable at K=2/3/5", {
+  server_ns <- .synopsis_describe_real_e2e_server()
+  gaussian <- get(".dsvert_dp_gaussian_impl", asNamespace("dsVertClient"),
+                  inherits = FALSE)
+  correlation <- get(".dsvert_dp_cor_gaussian_impl", asNamespace("dsVertClient"),
+                     inherits = FALSE)
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .synopsis_gaussian_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    fit <- gaussian(
+      "data_peer_a", "gaussian_primary", 0, "peer_a", conns, dispatch)
+
+    expect_s3_class(fit, "ds.vertDPGaussian")
+    expect_identical(fixture$state$source_prepare, 1L)
+    expect_identical(fixture$state$start, 2L)
+    expect_identical(fit$release_provenance$designated_noise_peers,
+                     as.list(fixture$peers[1:2]))
+    expect_length(fit$release_provenance$ordered_peer_pinset, k)
+    expect_identical(fit$cross_owner_state, "reserved_not_materialized")
+    expect_true(fit$provenance_integrity)
+    expect_identical(fit$provenance_authenticity,
+                     "session_transport_anchored")
+    expect_true(is.finite(fit$n_obs) && fit$n_obs > 9000 && fit$n_obs < 11000)
+    expect_true(all(is.finite(fit$coefficients_original_scale)))
+    expect_equal(fit$coefficients_original_scale,
+                 c(`(Intercept)` = 10, x_peer_a = -1), tolerance = 0.1)
+
+    cor <- correlation(
+      "data_peer_a", "gaussian_primary", c("x_peer_a", "y_peer_a"),
+      "peer_a", conns, dispatch)
+    expect_equal(unname(diag(cor$correlation)), c(1, 1), tolerance = 1e-12)
+    expect_equal(cor$correlation["x_peer_a", "y_peer_a"], -1,
+                 tolerance = 0.05)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    pca <- ds.vertPCA(cor_result = cor, n_components = 2L, verbose = FALSE)
+    expect_s3_class(pca, "ds.pca")
+    expect_true(all(is.finite(pca$eigenvalues) & pca$eigenvalues >= 0))
+    expect_gt(pca$variance_pct[[1L]], 95)
+    expect_identical(pca$additional_server_calls, 0L)
+    expect_identical(pca$additional_server_calls_after_synopsis, 0L)
+    expect_identical(pca$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- gaussian(
+      "data_peer_a", "gaussian_primary", 0, "peer_a", conns, dispatch)
+    expect_identical(serialize(replay, NULL, version = 3L),
+                     serialize(fit, NULL, version = 3L))
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
   }
 })

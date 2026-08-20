@@ -15,8 +15,8 @@ ds.vertPCA(
 )
 }
 \arguments{
-\item{data_name}{Signed protected dataset name. Ignored when \code{cor_result} is
-supplied.}
+\item{data_name}{Signed protected dataset name or reusable
+\code{ds.vertFederation}. Ignored when \code{cor_result} is supplied.}
 
 \item{variables}{Optional signed variable subset. Named owner lists are
 supported when they agree with the Gaussian artifact.}
@@ -27,7 +27,7 @@ supported when they agree with the Gaussian artifact.}
 \code{cor_result} is not supplied.}
 
 \item{cor_result}{An existing complete-case \code{ds.vertCor} result from the
-same sticky capsule. Pairwise, arbitrary, and legacy \code{ds.cor} objects are
+same sticky Synopsis. Pairwise, arbitrary, and legacy \code{ds.cor} objects are
 rejected.}
 
 \item{verbose}{Logical progress flag.}

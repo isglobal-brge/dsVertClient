@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertDPGaussian.R
 \name{ds.vertDPGaussian}
 \alias{ds.vertDPGaussian}
-\title{Bounded Gaussian regression from the sticky DP capsule}
+\title{Bounded Gaussian regression from a canonical signed DP Synopsis}
 \usage{
 ds.vertDPGaussian(
   data_name,
@@ -33,5 +33,5 @@ Fits a descriptive Gaussian linear model from one signed sufficient-
 statistic artifact. Outcome and predictors are clipped to custodian-owned
 public bounds, collapsed once per admitted patient, normalized to \verb{[0,1]},
 and restricted to a fixed complete-case estimand. The function performs one
-sticky capsule retrieval and then only deterministic client post-processing.
+canonical Synopsis retrieval and then only deterministic client post-processing.
 }
