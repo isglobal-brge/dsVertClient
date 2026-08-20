@@ -284,13 +284,15 @@ test_that("README maturity and numeric claims match the runtime registry", {
       ds.vertLASSOIter = "quarantine",
       ds.vertLASSO = "compatibility",
       ds.vertLASSO1Step = "compatibility",
-      ds.vertLASSOProximal = "provisional",
+      ds.vertLASSOProximal = "promoted",
       ds.vertLASSOCV = "provisional"))
   expect_match(
     readme,
     paste0("`ds.vertLASSOIter()` is quarantined; ",
            "`ds.vertLASSO()` and `ds.vertLASSO1Step()` are compatibility ",
-           "helpers; `ds.vertLASSOProximal()` and the information-criterion"),
+           "helpers; the same-owner Gaussian Synopsis post-processor ",
+           "`ds.vertLASSOProximal()` is promoted without sampling inference, ",
+           "while the information-criterion"),
     fixed = TRUE)
 
   registry <- ds.vertMethodStatus()
