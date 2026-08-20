@@ -91,11 +91,11 @@
   )
 }
 
-#' @title DP-capsule GLM compatibility frontdoor
+#' @title Sticky-Synopsis Gaussian GLM frontdoor
 #' @description This public frontdoor has one available analysis route:
 #'   an explicit \code{dp_analysis_id} with \code{family = "gaussian"}
 #'   delegates to \code{ds.vertDPGaussian()} and returns that signed,
-#'   contribution-bounded sticky joint-DP capsule estimand. A call without
+#'   contribution-bounded sticky joint-DP Synopsis estimand. A call without
 #'   \code{dp_analysis_id} raises a typed \code{dsvert_route_unavailable}
 #'   condition before any DSI call. An explicit \code{formal_analysis_id} for
 #'   binomial or Poisson also fails before DSI until its durable worker and
@@ -120,10 +120,10 @@
 #'
 #' @param formula,data,x_vars,y_server Additive model specification, aligned
 #'   data name and optional signed-artifact ownership checks for the Gaussian
-#'   capsule route.
+#'   Synopsis route.
 #' @param family Must be \code{"gaussian"} with \code{dp_analysis_id}.
 #'   Binomial and Poisson are not available through the public frontdoor.
-#' @param lambda,no_intercept,data_name,y_var,missing Gaussian capsule
+#' @param lambda,no_intercept,data_name,y_var,missing Gaussian Synopsis
 #'   estimand selectors. \code{lambda} is the explicit non-negative ridge
 #'   penalty; \code{missing}, when supplied, must be
 #'   \code{"complete_case_capsule"}.
@@ -136,7 +136,7 @@
 #'   \code{dsvert_formal_glm_frontdoor_unavailable} condition before DSI.
 #' @param max_iter,tol,log_n,offset,weights,ring,binomial_sigmoid_intervals,eta_privacy,keep_session,std_mode,start,compute_se,compute_deviance,gradient_only,numeric_backend
 #'   Retained legacy arguments. They are rejected when explicitly supplied to
-#'   the Gaussian capsule adapter, and the no-id legacy route is unavailable.
+#'   the Gaussian Synopsis adapter, and the no-id legacy route is unavailable.
 #' @return With a valid Gaussian \code{dp_analysis_id}, a
 #'   \code{ds.vertDPGaussian} object containing bounded noisy sufficient-
 #'   statistic regression output and no classical standard errors, p-values,

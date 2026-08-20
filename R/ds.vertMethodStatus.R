@@ -37,7 +37,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   }
   rownames(registry) <- NULL
   class(registry) <- c("ds.vertMethodStatus", class(registry))
-  attr(registry, "audit_date") <- "2026-08-14"
+  attr(registry, "audit_date") <- "2026-08-21"
   attr(registry, "threat_model") <- paste(
     "pinned honest-but-curious peers; untrusted analyst/relay;",
     "privacy and composition follow each row's release contract; Count is",
@@ -434,15 +434,17 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "peer authenticity requires a caller/session-anchored trusted pinset,",
         "and it certifies the release mechanism rather than population-",
         "sampling validity."))
-  add(c("ds.vertGLM", "ds.vert.glm"), "ds.vertGLM", "provisional",
+  add(c("ds.vertGLM", "ds.vert.glm"), "ds.vertGLM", "promoted",
       paste(
-        "Explicit dp_analysis_id selects the bounded same-owner Gaussian",
-        "Synopsis adapter. Cross-owner and identifier-free calls fail closed",
-        "without capsule fallback; the legacy estimator is unreachable."),
+        "Preferred Gaussian GLM frontdoor when an explicit dp_analysis_id",
+        "selects a bounded signed Synopsis artifact. Same- and cross-owner",
+        "artifacts are accepted only when their formula and ownership match;",
+        "the legacy estimator is unreachable."),
       paste(
-        "Binomial and Poisson variants have no released replacement; use",
-        "ds.vertDPGaussian directly when the Gaussian capsule contract matches",
-        "the scientific estimand."))
+        "Only family='gaussian' with a matching complete-case artifact is",
+        "available. Binomial and Poisson variants have no released",
+        "replacement, and neither sampling inference nor individual fitted",
+        "values is returned."))
   add(c("ds.vertCox", "ds.vertCoxProfileNonDisclosive", "ds.vert.coxph"),
       "ds.vertCoxProfileNonDisclosive", "quarantine",
       "Cox PH point coefficients on the tested profile route.",
@@ -617,7 +619,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertLASSO1Step", "ds.vert.lasso_1step",
     "ds.vertLASSOProximal", "ds.vert.lasso_proximal",
     "ds.vertLASSOCV", "ds.vert.lasso_cv")
-  capsule_only_wrappers <- c(
+  glm_synopsis_wrappers <- c(
     "ds.vertGLM", "ds.vert.glm")
   out$release_contract[out$method %in% synopsis_releases] <-
     "formal_sticky_synopsis_artifact"
@@ -629,8 +631,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "disclosure_safe_protocol_no_statistic"
   out$release_contract[out$method %in% inherited_postprocessing] <-
     "postprocessing_inherits_input"
-  out$release_contract[out$method %in% capsule_only_wrappers] <-
-    "formal_joint_dp_capsule_only_legacy_unavailable"
+  out$release_contract[out$method %in% glm_synopsis_wrappers] <-
+    "formal_sticky_synopsis_artifact"
 
   # Numeric certification is a separate axis from statistical maturity and
   # disclosure release status.  Keep it explicit so a newly promoted method
