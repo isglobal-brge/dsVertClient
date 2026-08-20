@@ -311,7 +311,7 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "sampling uncertainty", fixed = TRUE)
   survival_contrasts <- ds.vertMethodStatus(c(
     "ds.vertDPSurvivalContrast", "ds.vertDPRMSTContrast"))
-  expect_true(all(survival_contrasts$status == "provisional"))
+  expect_true(all(survival_contrasts$status == "promoted"))
   expect_true(all(survival_contrasts$release_contract ==
                     "postprocessing_inherits_input"))
   expect_true(all(grepl(
