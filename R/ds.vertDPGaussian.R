@@ -529,6 +529,63 @@
   c(`(Intercept)` = offset, slopes)
 }
 
+.dsvert_dp_gaussian_synopsis_release <- function(
+    data_name, analysis_id, server = NULL, datasources = NULL, .aggregate) {
+  datasources <- .dsvert_dp_datasources(datasources)
+  if (!is.null(server)) server <- .dsvert_dp_server(server, datasources)
+  run <- .dsvert_dp_synopsis_vector_run(
+    datasources, .aggregate = .aggregate)
+  context <- .dsvert_dp_vector_context(run, allow_synopsis = TRUE)
+  metadata <- .dsvert_dp_vector_public_metadata(context)
+  scale <- as.numeric(context$lattice$output_lattice_scale)
+  count_block <- .dsvert_dp_capsule_single_block(
+    context$layout, "admitted_count",
+    description = "signed admitted-count capacity block")
+  capacity <- .dsvert_dp_vector_block_capacity(count_block)
+  artifact <- .dsvert_dp_gaussian_artifact(
+    context$manifest, data_name, analysis_id, server,
+    context$adjacency, scale, capacity)
+  blocks <- .dsvert_dp_capsule_vector_blocks(
+    context$layout, "gaussian_models", dataset = data_name,
+    owner_peer = artifact$owner_peer)
+  blocks <- blocks[vapply(
+    blocks, function(block) identical(block$key, analysis_id), logical(1L))]
+  signed_descriptor <- tryCatch(
+    context$manifest$workload$families$gaussian_models$artifacts[[analysis_id]],
+    error = function(error) NULL)
+  if (length(blocks) != 1L ||
+      !identical(
+        .dsvert_joint_dp_client_json(blocks[[1L]]$descriptor),
+        .dsvert_joint_dp_client_json(signed_descriptor))) {
+    stop("The signed Gaussian artifact does not match its Synopsis layout",
+         call. = FALSE)
+  }
+  coordinates <- .dsvert_dp_capsule_vector_values(
+    context$release, blocks[[1L]])
+  if (length(coordinates) != artifact$coordinate_count ||
+      anyNA(coordinates) || any(!is.finite(coordinates)) ||
+      any(coordinates < 0) || any(coordinates > capacity)) {
+    stop("The released Gaussian Synopsis block violates its signed bounds",
+         call. = FALSE)
+  }
+  certificate <- .dsvert_dp_gaussian_synopsis_certificate_build(
+    context, artifact, blocks[[1L]], coordinates)
+  verification <- ds.validateDPGaussianCertificate(certificate)
+  if (!identical(verification$integrity_valid, TRUE) ||
+      !identical(verification$authenticity,
+                 "session_transport_anchored")) {
+    stop("The Gaussian Synopsis certificate is not transport-anchored",
+         call. = FALSE)
+  }
+  list(
+    context = context, metadata = metadata,
+    artifact = verification$artifact,
+    block = blocks[[1L]], coordinates = verification$coordinates,
+    moment = verification$validated_moment,
+    certificate = certificate, verification = verification,
+    scale = scale, capacity = capacity)
+}
+
 #' Bounded Gaussian regression from the sticky DP capsule
 #'
 #' Fits a descriptive Gaussian linear model from one signed sufficient-
