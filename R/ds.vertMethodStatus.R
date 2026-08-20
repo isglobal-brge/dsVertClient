@@ -516,8 +516,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "coefficient regions are available, and the retired ds.glm",
         "thresholding sketch is rejected."))
   add(c("ds.vertLASSO1Step", "ds.vert.lasso_1step"), "ds.vertLASSO1Step",
-      "compatibility", "Local quadratic-surrogate exploration near a converged fit.",
-      "It is not a general L1 estimator.")
+      "promoted",
+      paste(
+        "Historical one-step name for the Gaussian L1 penalty path over one",
+        "validated same-owner signed Synopsis moment artifact; each member",
+        "has a deterministic KKT certificate and incurs no new private",
+        "computation."),
+      paste(
+        "Gaussian same-owner designs only; no sampling inference or",
+        "coefficient regions are available, and the retired ds.glm",
+        "quadratic-surrogate route is rejected."))
   add(c("ds.vertLASSOProximal", "ds.vert.lasso_proximal"),
       "ds.vertLASSOProximal", "promoted",
       paste(

@@ -719,22 +719,37 @@
 
   add(
     c("ds.vertLASSO", "ds.vert.lasso"), "ds.vertLASSO",
-    "lasso_posthoc",
-    "authorized_fit_coefficients",
-    "Post-hoc soft-thresholded coefficients (not a penalized-likelihood optimizer).",
-    c("authorized_fit_provenance", "estimand_label"),
-    "client_only_requires_attested_input",
-    aliases = c("ds.vert.lasso" = "ds.vertLASSO"))
+    "lasso_gaussian",
+    c("admitted_count", "gaussian_sufficient_statistics_same_owner",
+      "signed_gaussian_model_artifact",
+      "validated_gaussian_provenance_certificate"),
+    "Bound-normalized Gaussian LASSO path over one signed projected DP moment artifact.",
+    c("certificate_integrity_validation", "gaussian_only",
+      "identifiability", "kkt_validation", "no_sampling_inference",
+      "objective_scale_contract", "authentic_federation_e2e_validation"),
+    "synopsis_release_implemented", character(),
+    aliases = c("ds.vert.lasso" = "ds.vertLASSO"),
+    current_route_status = "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state =
+      "validated_same_owner_synopsis_adapter_implemented",
+    inference_implementation_state = "dp_gaussian_lasso_path_implemented")
 
   add(
     c("ds.vertLASSO1Step", "ds.vert.lasso_1step"), "ds.vertLASSO1Step",
-    "lasso_quadratic_surrogate",
-    c("authorized_fit_coefficients", "authorized_fit_covariance_or_fisher"),
-    "L1 solution of the local quadratic likelihood surrogate.",
-    c("authorized_fit_provenance", "identifiability",
-      "surrogate_validity"),
-    "client_only_requires_attested_input",
-    aliases = c("ds.vert.lasso_1step" = "ds.vertLASSO1Step"))
+    "lasso_gaussian",
+    c("admitted_count", "gaussian_sufficient_statistics_same_owner",
+      "signed_gaussian_model_artifact",
+      "validated_gaussian_provenance_certificate"),
+    "Historical one-step frontdoor for the bound-normalized Gaussian LASSO path over one signed projected DP moment artifact.",
+    c("certificate_integrity_validation", "gaussian_only",
+      "identifiability", "kkt_validation", "no_sampling_inference",
+      "objective_scale_contract", "authentic_federation_e2e_validation"),
+    "synopsis_release_implemented", character(),
+    aliases = c("ds.vert.lasso_1step" = "ds.vertLASSO1Step"),
+    current_route_status = "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state =
+      "validated_same_owner_synopsis_adapter_implemented",
+    inference_implementation_state = "dp_gaussian_lasso_path_implemented")
 
   add(
     c("ds.vertLASSOProximal", "ds.vert.lasso_proximal"),
@@ -1409,6 +1424,7 @@
     "validated_same_and_cross_owner_capsule_adapter_implemented",
     "validated_same_owner_capsule_adapter_implemented")
   attr(out, "inference_implementation_state_levels") <- c(
+    "dp_gaussian_lasso_path_implemented",
     "dp_gaussian_lasso_with_legacy_compatibility_implemented",
     "dp_gaussian_pseudo_ic_with_legacy_compatibility_implemented",
     "dp_aware_conditional_hypergeometric_bootstrap_implemented",

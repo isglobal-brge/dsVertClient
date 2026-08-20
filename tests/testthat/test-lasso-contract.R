@@ -407,6 +407,33 @@ test_that("lowercase LASSO alias retains only the DP path", {
   expect_identical(result$route, "ds.vertLASSO")
 })
 
+test_that("LASSO1Step is a certified DP path compatibility alias", {
+  fit <- make_dp_gaussian_lasso_fit()
+  testthat::local_mocked_bindings(
+    ds.validateDPGaussianCertificate = function(...) {
+      list(integrity_valid = TRUE,
+           authenticity = "session_transport_anchored")
+    },
+    .package = "dsVertClient")
+  result <- ds.vertLASSO1Step(
+    fit, lambda = c(0.1, 0.05, 0), max_iter = 2000L, tol = 1e-12)
+  expect_s3_class(result, "ds.vertLASSO1Step")
+  expect_s3_class(result, "ds.vertDPLASSOPath")
+  expect_equal(result$lambda, c(0.1, 0.05, 0))
+  expect_equal(result$original, result$paths[[3L]], tolerance = 1e-12)
+  expect_true(all(vapply(result$path_certificates, function(value) {
+    isTRUE(value$kkt$satisfied)
+  }, logical(1L))))
+  expect_identical(result$additional_server_calls_after_capsule, 0L)
+
+  alias_result <- ds.vert.lasso_1step(
+    fit, lambda = c(0.1, 0.05, 0), max_iter = 2000L, tol = 1e-12)
+  expect_s3_class(alias_result, "ds.vertLASSO1Step")
+  expect_identical(alias_result$frontdoor, "ds.vert.lasso_1step")
+  expect_identical(alias_result$route, "ds.vertLASSO1Step")
+  expect_equal(alias_result$paths, result$paths, tolerance = 1e-12)
+})
+
 test_that("DP LASSO fails closed on certificate or design mismatch", {
   fit <- make_dp_gaussian_lasso_fit(integrity = FALSE)
   testthat::local_mocked_bindings(

@@ -2,52 +2,43 @@
 % Please edit documentation in R/ds.vertLASSO.R
 \name{ds.vertLASSO1Step}
 \alias{ds.vertLASSO1Step}
-\title{One-step LASSO via quadratic-surrogate proximal gradient}
+\title{Gaussian LASSO path under the historical one-step name}
 \usage{
 ds.vertLASSO1Step(
   fit,
   lambda,
   keep_intercept = TRUE,
   max_iter = 500L,
-  tol = 1e-08
+  tol = 1e-08,
+  trusted_pinset = NULL
 )
 }
 \arguments{
-\item{fit}{A \code{ds.glm} object with \code{fit$covariance}
-populated.}
+\item{fit}{A validated \code{ds.vertDPGaussian} object.}
 
-\item{lambda}{Numeric vector of L1 penalty values (a regularisation
-path).}
+\item{lambda}{Numeric vector of finite non-negative L1 penalties.}
 
-\item{keep_intercept}{Never penalise the intercept.}
+\item{keep_intercept}{If TRUE (default), the intercept is not penalised.}
 
-\item{max_iter}{Coordinate-descent iterations per lambda.}
+\item{max_iter}{Positive bound on coordinate-descent iterations per path
+member.}
 
-\item{tol}{Convergence tolerance on max |Delta beta|.}
+\item{tol}{Positive KKT and convergence tolerance.}
+
+\item{trusted_pinset}{Optional trusted peer pinset for an offline release.}
 }
 \value{
-A ds.vertLASSO1Step object: per-lambda coefficient vectors,
-the penalty path, the quadratic-surrogate objective at each
-lambda, and the fit.
+An \code{ds.vertLASSO1Step} / \code{ds.vertDPLASSOPath} object with
+original- and normalized-scale paths and KKT certificates.
 }
 \description{
-Fit a proper L1-regularised coefficient vector by
-expanding the log-likelihood at the converged GLM point as a local
-quadratic and then running proximal coordinate descent with soft-
-thresholding to minimise
-
-\if{html}{\out{<div class="sourceCode">}}\preformatted{0.5 (beta - betahat)^T H (beta - betahat) + lambda ||beta||_1
-}\if{html}{\out{</div>}}
-
-where H = solve(Cov(betahat)) is the Fisher information matrix
-already exposed by \code{ds.vertGLM} (\code{fit$covariance}). This
-yields a consistent, efficient L1-regularised estimator in large
-samples without a second MPC round: it uses only the already-
-returned coefficient vector and full covariance matrix.
-
-Useful for:
-- Regularised post-selection inference.
-- Model compression while preserving the statistical geometry.
-- A fast surrogate baseline for comparison with the product
-proximal / iterative LASSO routes.
+Compatibility frontdoor for the ordinary one-step LASSO name.
+It delegates to the KKT-certified path over one validated sticky
+\code{ds.vertDPGaussian} Synopsis. The retired \code{ds.glm}
+quadratic-surrogate approximation is unavailable.
+}
+\section{Disclosure budget}{
+Every path member is deterministic post-processing of one authenticated
+sticky Synopsis: additional privacy cost is \code{(epsilon, delta) =
+(0, 0)} and no additional server calls occur.
 }
