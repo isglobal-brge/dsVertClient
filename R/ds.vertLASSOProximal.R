@@ -1,6 +1,7 @@
 #' @title Gaussian LASSO via client-side coordinate descent
 #' @description Solve the Gaussian LASSO objective entirely client-side. The
-#'   preferred route accepts a validated \code{ds.vertDPGaussian} release and
+#'   preferred route accepts a validated same-owner no-lifetime Synopsis
+#'   \code{ds.vertDPGaussian} release and
 #'   optimises its signed, projected DP sufficient statistics without another
 #'   DSI call or privacy cost. The historical \code{ds.glm} route is retained
 #'   for compatibility with already-created fits.
@@ -383,8 +384,14 @@ print.ds.vertLASSOProximal <- function(x, ...) {
               } else {
                 length(x$coefficients)
               }))
-  if (identical(x$input_provenance, "signed_dp_gaussian_capsule")) {
-    cat("  source = validated sticky Gaussian DP capsule; extra DP cost = (0, 0)\n")
+  if (x$input_provenance %in% c(
+      "signed_dp_gaussian_synopsis", "signed_dp_gaussian_capsule")) {
+    source <- if (identical(
+        x$input_provenance, "signed_dp_gaussian_synopsis")) {
+      "Synopsis"
+    } else "capsule"
+    cat("  source = validated sticky Gaussian DP ", source,
+        "; extra DP cost = (0, 0)\n", sep = "")
     cat("\nOriginal-scale coefficients:\n")
     print(round(x$coefficients, 5L))
     cat("\nNormalized coefficients and KKT certificate:\n")

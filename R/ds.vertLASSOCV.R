@@ -1,6 +1,7 @@
 #' @title Client-side information-criterion selection for Gaussian LASSO
 #' @description Select an L1 penalty entirely client-side. With a
-#'   \code{ds.vertDPGaussian} input, each candidate is solved from the same
+#'   same-owner no-lifetime Synopsis \code{ds.vertDPGaussian} input, each
+#'   candidate is solved from the same
 #'   validated projected DP moments and ranked by an explicitly labelled DP
 #'   projected pseudo-AIC/BIC/EBIC. With a historical \code{ds.glm} input,
 #'   the existing quadratic-surrogate selector is retained. Despite the
@@ -198,7 +199,10 @@ print.ds.vertLASSOCV <- function(x, ...) {
               x$lambda.parsimonious %||% x$lambda.1se,
               100 * tolerance))
   cat("  Legacy alias lambda.1se is retained; this is not a sampling standard-error rule.\n")
-  if (identical(x$input_provenance, "signed_dp_gaussian_capsule")) {
+  if (identical(x$input_provenance, "signed_dp_gaussian_synopsis")) {
+    cat("Input: validated sticky Gaussian DP Synopsis (zero extra DP cost)\n")
+  } else if (identical(
+      x$input_provenance, "signed_dp_gaussian_capsule")) {
     cat("  Scores are DP-projected pseudo-IC values; extra DP cost = (0, 0).\n")
   }
   cat("\nbeta at lambda.min:\n")

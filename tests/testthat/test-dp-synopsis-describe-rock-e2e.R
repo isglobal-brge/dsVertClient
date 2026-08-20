@@ -746,6 +746,39 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_equal(fit$coefficients_original_scale,
                  c(`(Intercept)` = 10, x_peer_a = -1), tolerance = 0.1)
 
+    lasso <- ds.vertLASSOProximal(
+      fit, lambda = 0.05, max_iter = 2000L, tol = 1e-10)
+    expect_s3_class(lasso, "ds.vertLASSOProximal")
+    expect_true(lasso$converged)
+    expect_true(lasso$kkt$satisfied)
+    expect_identical(lasso$input_provenance,
+                     "signed_dp_gaussian_synopsis")
+    expect_identical(lasso$additional_server_calls_after_synopsis, 0L)
+    expect_identical(lasso$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
+    expect_true(all(is.finite(lasso$coefficients)))
+    expect_lt(lasso$coefficients[["x_peer_a"]], 0)
+    expect_gte(abs(lasso$coefficients[["x_peer_a"]]), 0.25)
+    expect_lte(abs(lasso$coefficients[["x_peer_a"]]),
+               abs(fit$coefficients_original_scale[["x_peer_a"]]) + 1e-8)
+    expect_lte(abs(lasso$coefficients[["(Intercept)"]] -
+                   fit$coefficients_original_scale[["(Intercept)"]]), 1.5)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    selection <- ds.vertLASSOCV(
+      fit, lambda_grid = c(0.1, 0.05, 0.01), criterion = "BIC")
+    expect_s3_class(selection, "ds.vertLASSOCV")
+    expect_false(selection$cross_validation)
+    expect_false(selection$one_standard_error_rule)
+    expect_identical(selection$input_provenance,
+                     "signed_dp_gaussian_synopsis")
+    expect_identical(selection$additional_server_calls_after_synopsis, 0L)
+    expect_identical(selection$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
     cor <- correlation(
       "data_peer_a", "gaussian_primary", c("x_peer_a", "y_peer_a"),
       "peer_a", conns, dispatch)
