@@ -15,11 +15,11 @@
 #'   sampling distribution and the privacy mechanism. The input is either an
 #'   already released `ds.vertDPContingency` object (zero DSI calls) or the
 #'   original data/variable identifiers, in which case the one immutable
-#'   signed DP capsule is obtained through `ds.vertDPContingency`. Ordinary
+#'   signed Synopsis projection is obtained through `ds.vertDPContingency`. Ordinary
 #'   chi-square or Fisher reference laws are never applied to the noisy cells.
 #'
-#' @param data_name A released `ds.vertDPContingency` object, or the name of
-#'   the protected data frame.
+#' @param data_name A released `ds.vertDPContingency` object, the name of the
+#'   protected data frame, or a reusable `ds.vertFederation`.
 #' @param var1,var2 Row and column variables when `data_name` is a character
 #'   string. They may be omitted for an already released object.
 #' @param server Optional owner-peer assertion forwarded to
@@ -88,6 +88,11 @@ ds.vertChisq <- function(data_name, var1 = NULL, var2 = NULL, server = NULL,
       }
     }
   } else {
+    if (inherits(data_name, "ds.vertFederation")) {
+      resolved <- .dsvert_federation_argument(data_name, datasources)
+      data_name <- resolved$value
+      datasources <- resolved$datasources
+    }
     for (value in list(data_name = data_name, var1 = var1, var2 = var2)) {
       if (!is.character(value) || length(value) != 1L || is.na(value) ||
           !nzchar(value)) {
@@ -122,8 +127,11 @@ ds.vertChisq <- function(data_name, var1 = NULL, var2 = NULL, server = NULL,
 }
 
 .dsvert_dp_chisq_seed <- function(x, correct, calibration) {
+  release_identity <- if (.dsvert_vector_hex(x$artifact_key)) {
+    x$artifact_key
+  } else x$capsule_id
   fields <- c(
-    calibration, x$capsule_id,
+    calibration, release_identity,
     x$final_vector_root, x$coordinate_order_sha256,
     x$row_var, x$col_var, if (isTRUE(correct)) "yates" else "pearson")
   if (anyNA(fields) || any(!nzchar(fields))) {
@@ -134,6 +142,18 @@ ds.vertChisq <- function(data_name, var1 = NULL, var2 = NULL, server = NULL,
     paste(enc2utf8(fields), collapse = "|"), algo = "sha256",
     serialize = FALSE)
   as.integer(strtoi(substr(hash, 1L, 7L), base = 16L)) + 1L
+}
+
+.dsvert_dp_table_source_binding <- function(x) {
+  identity <- if (.dsvert_vector_hex(x$artifact_key)) {
+    list(artifact_key = x$artifact_key)
+  } else {
+    list(capsule_id = x$capsule_id)
+  }
+  c(identity, list(
+    final_vector_root = x$final_vector_root,
+    manifest_sha256 = x$manifest_sha256,
+    coordinate_order_sha256 = x$coordinate_order_sha256))
 }
 
 .dsvert_dp_chisq_with_seed <- function(seed, code) {
@@ -633,7 +653,7 @@ ds.vertChisq <- function(data_name, var1 = NULL, var2 = NULL, server = NULL,
     mechanism_reference_tv_upper_bound =
       noise$calibration_tv_upper_bound,
     bootstrap_seed_source = paste(
-      "SHA-256 of public capsule/vector/orientation commitments;",
+      "SHA-256 of public artifact/vector/orientation commitments;",
       "not analyst-controlled and not privacy randomness"),
     bootstrap_seed_id = digest::digest(
       paste(noise$chisq_calibration, seed, sep = "|"),
@@ -645,10 +665,7 @@ ds.vertChisq <- function(data_name, var1 = NULL, var2 = NULL, server = NULL,
       "asymptotically calibrated for positive cell probabilities; not a",
       "finite-sample exact conditional test; MC and sampler-TV uncertainty",
       "reported separately"),
-    source_release = list(
-      capsule_id = x$capsule_id, final_vector_root = x$final_vector_root,
-      manifest_sha256 = x$manifest_sha256,
-      coordinate_order_sha256 = x$coordinate_order_sha256),
+    source_release = .dsvert_dp_table_source_binding(x),
     source_dp_release = x)
   class(result) <- c("ds.vertChisq", "list")
   result
@@ -716,13 +733,13 @@ ds.vertChisq <- function(data_name, var1 = NULL, var2 = NULL, server = NULL,
 
 #' @title DP-aware conditional test for a 2-by-2 contingency release
 #' @description Test association by conditioning a plug-in latent table on
-#'   deterministic integer margins, then reproducing the signed capsule noise
+#'   deterministic integer margins, then reproducing the signed Synopsis noise
 #'   and clamp in a Monte Carlo reference law. The input is either one already
 #'   released `ds.vertDPContingency` object (zero DSI calls) or data and variable
 #'   identifiers, in which case `ds.vertDPContingency` is called exactly once.
 #'
-#' @param data_name A released `ds.vertDPContingency` object, or the protected
-#'   data-frame name.
+#' @param data_name A released `ds.vertDPContingency` object, the protected
+#'   data-frame name, or a reusable `ds.vertFederation`.
 #' @param var1,var2 Row and column variables for a character `data_name`. They
 #'   may be omitted for an existing release.
 #' @param server Optional owner-peer assertion forwarded to
@@ -759,7 +776,7 @@ ds.vertChisq <- function(data_name, var1 = NULL, var2 = NULL, server = NULL,
 #'   Monte Carlo error, signed finite-sampler total variation, and the
 #'   exact-GC numeric-reference transfer are reported separately. Degenerate
 #'   fitted margins return a structured
-#'   non-tested result. Only the signed Ring128 discrete-Laplace capsule is
+#'   non-tested result. Only the signed Ring128 discrete-Laplace Synopsis artifact is
 #'   currently certified; other mechanisms fail with a typed condition rather
 #'   than being silently approximated.
 #'
@@ -797,6 +814,11 @@ ds.vertFisher <- function(data_name, var1 = NULL, var2 = NULL, server = NULL,
       }
     }
   } else {
+    if (inherits(data_name, "ds.vertFederation")) {
+      resolved <- .dsvert_federation_argument(data_name, datasources)
+      data_name <- resolved$value
+      datasources <- resolved$datasources
+    }
     for (value in list(data_name = data_name, var1 = var1, var2 = var2)) {
       if (!is.character(value) || length(value) != 1L || is.na(value) ||
           !nzchar(value)) {
@@ -839,8 +861,11 @@ ds.vertFisher <- function(data_name, var1 = NULL, var2 = NULL, server = NULL,
 }
 
 .dsvert_dp_fisher_seed <- function(x, alternative, calibration) {
+  release_identity <- if (.dsvert_vector_hex(x$artifact_key)) {
+    x$artifact_key
+  } else x$capsule_id
   fields <- list(
-    calibration, x$capsule_id,
+    calibration, release_identity,
     x$final_vector_root, x$coordinate_order_sha256,
     x$row_var, x$col_var, alternative)
   valid <- vapply(fields, function(value) {
@@ -1154,7 +1179,7 @@ ds.vertFisher <- function(data_name, var1 = NULL, var2 = NULL, server = NULL,
     mechanism_reference_tv_upper_bound =
       noise$calibration_tv_upper_bound,
     bootstrap_seed_source = paste(
-      "SHA-256 of public capsule/vector/orientation/alternative commitments;",
+      "SHA-256 of public artifact/vector/orientation/alternative commitments;",
       "not analyst-controlled and not privacy randomness"),
     bootstrap_seed_id = digest::digest(
       paste(noise$fisher_calibration, seed, sep = "|"),
@@ -1163,15 +1188,12 @@ ds.vertFisher <- function(data_name, var1 = NULL, var2 = NULL, server = NULL,
     additional_privacy_cost = c(epsilon = 0, delta = 0),
     disclosure_guard = list(
       satisfied = TRUE,
-      basis = "validated formal joint sticky DP capsule post-processing"),
+      basis = "validated formal sticky DP artifact post-processing"),
     inferential_contract = paste(
       "DP-aware conditional hypergeometric plug-in bootstrap; asymptotically",
       "calibrated under positive margins, not Fisher-exact for confidential",
       "data; Monte Carlo and signed sampler-TV uncertainty reported"),
-    source_release = list(
-      capsule_id = x$capsule_id, final_vector_root = x$final_vector_root,
-      manifest_sha256 = x$manifest_sha256,
-      coordinate_order_sha256 = x$coordinate_order_sha256),
+    source_release = .dsvert_dp_table_source_binding(x),
     source_dp_release = x)
   class(result) <- c("ds.vertFisher", "list")
   result

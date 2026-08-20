@@ -25,5 +25,5 @@ grid. This is pure post-processing: it performs no server call and consumes
 no additional privacy budget. Its limits propagate the simultaneous DP
 mechanism band; they are not sampling confidence intervals and do not cover
 error from replacing continuous event times by the public grid. The result
-carries a copy of the source release's DP and capsule provenance.
+carries a copy of the source release's signed DP provenance.
 }

@@ -247,9 +247,9 @@
   if (!is.character(config$privacy_unit_column) ||
       length(config$privacy_unit_column) != 1L ||
       is.na(config$privacy_unit_column) ||
-      !grepl("^[A-Za-z._][A-Za-z0-9._]{0,127}$",
+      !grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
              config$privacy_unit_column)) {
-    stop("Invalid Count privacy-unit column.", call. = FALSE)
+    stop("Invalid Count privacy-unit identifier.", call. = FALSE)
   }
   records <- .dsvert_dp_count_client_positive_integer_v1(
     config$max_records_per_unit, "maximum records per privacy unit",
@@ -574,7 +574,7 @@
       !is.character(value$privacy_unit_column) ||
       length(value$privacy_unit_column) != 1L ||
       is.na(value$privacy_unit_column) ||
-      !grepl("^[A-Za-z._][A-Za-z0-9._]{0,127}$",
+      !grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
              value$privacy_unit_column)) {
     stop("Invalid fixed-cohort Count declaration.", call. = FALSE)
   }

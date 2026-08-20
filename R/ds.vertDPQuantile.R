@@ -1,3 +1,90 @@
+.dsvert_dp_describe_provenance_contract <- function(x) {
+  invalid <- function() {
+    stop(
+      "x must be an intact released ds.vertDPDescribe capsule object",
+      call. = FALSE)
+  }
+  legacy_fields <- c(
+    "capsule_id", "privacy_epoch", "noise_key_id", "history_gate",
+    "request_limit", "operation_limit")
+  synopsis_fields <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "release_provenance",
+    "privacy", "composition_rule")
+  if (!inherits(x, "ds.vertDPDescribe") || !is.list(x) ||
+      !identical(x$released, TRUE) || is.null(names(x)) ||
+      anyNA(names(x)) || anyDuplicated(names(x)) ||
+      !.dsvert_vector_hex(x$final_vector_root) ||
+      !.dsvert_vector_hex(x$coordinate_order_sha256) ||
+      !.dsvert_dp_is_number(
+        x$epsilon, 0, .DSVERT_DP_MAXIMUM_EPSILON, lower_open = TRUE) ||
+      !.dsvert_dp_is_number(x$delta, 0, 1) || x$delta >= 1) {
+    invalid()
+  }
+
+  legacy <- all(legacy_fields %in% names(x)) &&
+    !any(synopsis_fields %in% names(x))
+  synopsis <- all(synopsis_fields %in% names(x)) &&
+    !any(legacy_fields %in% names(x))
+  if (identical(legacy, synopsis)) invalid()
+
+  if (isTRUE(legacy)) {
+    if (!identical(x$history_gate, TRUE) ||
+        !identical(x$request_limit, FALSE) ||
+        !identical(x$operation_limit, TRUE) ||
+        !.dsvert_vector_whole(x$privacy_epoch, 1, 2^53 - 1) ||
+        !.dsvert_vector_string(x$noise_key_id) ||
+        !.dsvert_vector_hex(x$capsule_id)) {
+      invalid()
+    }
+    return("legacy")
+  }
+
+  anchors <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "final_vector_root")
+  provenance <- x$release_provenance
+  if (!is.list(provenance) || is.null(names(provenance)) ||
+      anyNA(names(provenance)) || anyDuplicated(names(provenance)) ||
+      !all(c("version", anchors) %in% names(provenance)) ||
+      any(legacy_fields %in% names(provenance)) ||
+      !identical(
+        provenance$version,
+        "dsvert-stateless-synopsis-public-provenance-v1") ||
+      !all(vapply(anchors, function(field) {
+        .dsvert_vector_hex(x[[field]]) &&
+          identical(x[[field]], provenance[[field]])
+      }, logical(1L)))) {
+    invalid()
+  }
+  privacy_fields <- c(
+    "version", "per_artifact_epsilon", "per_artifact_delta",
+    "sticky_noise", "public_openings", "distinct_artifacts_compose",
+    "finite_global_composition_claim")
+  privacy <- x$privacy
+  if (!.dsvert_dp_has_exact_names(privacy, privacy_fields) ||
+      !identical(privacy$version, "dsvert-per-synopsis-dp-v1") ||
+      !.dsvert_dp_is_number(
+        privacy$per_artifact_epsilon, 0, .DSVERT_DP_MAXIMUM_EPSILON,
+        lower_open = TRUE) ||
+      !.dsvert_dp_is_number(privacy$per_artifact_delta, 0, 1) ||
+      privacy$per_artifact_delta >= 1 ||
+      !identical(as.numeric(privacy$per_artifact_epsilon),
+                 as.numeric(x$epsilon)) ||
+      !identical(as.numeric(privacy$per_artifact_delta),
+                 as.numeric(x$delta)) ||
+      !identical(privacy$sticky_noise, TRUE) ||
+      !.dsvert_vector_whole(privacy$public_openings, 1, 1) ||
+      !identical(privacy$distinct_artifacts_compose, TRUE) ||
+      !identical(privacy$finite_global_composition_claim, FALSE) ||
+      !identical(
+        x$composition_rule,
+        "one_sticky_release_per_canonical_signed_artifact")) {
+    invalid()
+  }
+  "synopsis"
+}
+
 .dsvert_dp_describe_postprocess_contract <- function(x) {
   invalid <- function() {
     stop(
@@ -14,11 +101,9 @@
       nzchar(value) && nchar(value, type = "bytes") <= 1024L
   }
 
+  .dsvert_dp_describe_provenance_contract(x)
   if (!inherits(x, "ds.vertDPDescribe") || !is.list(x) ||
       !identical(x$released, TRUE) ||
-      !identical(x$history_gate, TRUE) ||
-      !identical(x$request_limit, FALSE) ||
-      !identical(x$operation_limit, TRUE) ||
       !identical(
         x$status,
         "fixed_public_clamp_applied_preclamp_state_not_released") ||
@@ -128,9 +213,6 @@
       !scalar_string(x$adjacency) ||
       !x$adjacency %in% c(
         "add_remove_patient", "replace_one_fixed_cohort") ||
-      !.dsvert_vector_whole(x$privacy_epoch, 1, 2^53 - 1) ||
-      !scalar_string(x$noise_key_id) ||
-      !.dsvert_vector_hex(x$capsule_id) ||
       !.dsvert_vector_hex(x$final_vector_root) ||
       !.dsvert_vector_hex(x$coordinate_order_sha256) ||
       !identical(
@@ -350,7 +432,8 @@
 #' identifies a public histogram bin and its interval; it is not an exact
 #' sample quantile and does not interpolate within bins.
 #'
-#' @param x An intact released `ds.vertDPDescribe` capsule object.
+#' @param x An intact released `ds.vertDPDescribe` object with either legacy
+#'   capsule provenance or stateless synopsis provenance.
 #' @param probs Finite public probabilities in `[0, 1]`. Duplicates are
 #'   removed and the result is sorted by probability within each variable.
 #' @return A `ds.vertDPQuantile` data frame with the selected public bin,
@@ -359,6 +442,11 @@
 #' @export
 ds.vertDPQuantile <- function(x, probs = c(0.25, 0.5, 0.75)) {
   x <- .dsvert_dp_describe_postprocess_contract(x)
+  provenance_kind <- if ("release_provenance" %in% names(x)) {
+    "synopsis"
+  } else {
+    "legacy"
+  }
   if (!is.numeric(probs) || !length(probs) || anyNA(probs) ||
       any(!is.finite(probs)) || any(probs < 0 | probs > 1)) {
     stop("probs must contain finite probabilities in [0, 1]",
@@ -366,21 +454,47 @@ ds.vertDPQuantile <- function(x, probs = c(0.25, 0.5, 0.75)) {
   }
   probs <- sort(unique(as.numeric(probs)), method = "radix")
   result <- .dsvert_dp_quantile_rows(x, probs)
-  attr(result, "source_provenance") <- list(
-    source_class = "ds.vertDPDescribe",
-    analysis_id = x$analysis_id,
-    analysis_version = x$analysis_version,
-    server = x$server,
-    capsule_id = x$capsule_id,
-    final_vector_root = x$final_vector_root,
-    coordinate_order_sha256 = x$coordinate_order_sha256,
-    mechanism = x$mechanism,
-    epsilon = x$epsilon,
-    delta = x$delta,
-    implementation_delta = x$implementation_delta,
-    adjacency = x$adjacency,
-    privacy_epoch = x$privacy_epoch,
-    noise_key_id = x$noise_key_id)
+  attr(result, "source_provenance") <- if (identical(
+      provenance_kind, "legacy")) {
+    list(
+      source_class = "ds.vertDPDescribe",
+      analysis_id = x$analysis_id,
+      analysis_version = x$analysis_version,
+      server = x$server,
+      capsule_id = x$capsule_id,
+      final_vector_root = x$final_vector_root,
+      coordinate_order_sha256 = x$coordinate_order_sha256,
+      mechanism = x$mechanism,
+      epsilon = x$epsilon,
+      delta = x$delta,
+      implementation_delta = x$implementation_delta,
+      adjacency = x$adjacency,
+      privacy_epoch = x$privacy_epoch,
+      noise_key_id = x$noise_key_id)
+  } else {
+    list(
+      source_class = "ds.vertDPDescribe",
+      analysis_id = x$analysis_id,
+      analysis_version = x$analysis_version,
+      server = x$server,
+      artifact_key = x$artifact_key,
+      execution_id = x$execution_id,
+      contract_sha256 = x$contract_sha256,
+      attempt_sha256 = x$attempt_sha256,
+      source_contract_sha256 = x$source_contract_sha256,
+      result_set_sha256 = x$result_set_sha256,
+      final_vector_root = x$final_vector_root,
+      coordinate_order_sha256 = x$coordinate_order_sha256,
+      release_provenance = x$release_provenance,
+      privacy = x$privacy,
+      composition_rule = x$composition_rule,
+      security_claim = x$security_claim,
+      mechanism = x$mechanism,
+      epsilon = x$epsilon,
+      delta = x$delta,
+      implementation_delta = x$implementation_delta,
+      adjacency = x$adjacency)
+  }
   attr(result, "additional_privacy_cost") <- c(epsilon = 0, delta = 0)
   attr(result, "additional_server_calls") <- 0L
   attr(result, "postprocessing_only") <- TRUE
@@ -411,7 +525,8 @@ ds.vertDPQuantile <- function(x, probs = c(0.25, 0.5, 0.75)) {
 #' probability `0.5`. It performs no DSI operation and has additional privacy
 #' cost `(0, 0)`.
 #'
-#' @param x An intact released `ds.vertDPDescribe` capsule object.
+#' @param x An intact released `ds.vertDPDescribe` object with either legacy
+#'   capsule provenance or stateless synopsis provenance.
 #' @return A `ds.vertDPMedian` data frame with one binned median per released
 #'   variable and the same mechanism/grid metadata as `ds.vertDPQuantile()`.
 #' @export

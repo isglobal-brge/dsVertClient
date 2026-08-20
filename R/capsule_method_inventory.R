@@ -18,6 +18,7 @@
     "ds.validateDPGaussianCertificate",
     "ds.vertMethodStatus",
     "ds.vertNumericPreflight",
+    "ds.vertPublishOpalMethods",
     "ds.vertSecurityStatus"
   ), method = "radix")
 }
@@ -304,10 +305,14 @@
         route = "formal_sticky_frequency_artifact",
         artifact = "signed_frequency_artifact_implemented",
         inference = "formal_frequency_release_implemented"),
+      synopsis_release_implemented = list(
+        route = "formal_sticky_synopsis_artifact",
+        artifact = "signed_synopsis_describe_artifact_implemented",
+        inference = "formal_synopsis_describe_release_implemented"),
       capsule_release_implemented = list(
-        route = "formal_joint_dp_capsule",
+        route = "legacy_joint_dp_capsule_incompatible",
         artifact = "joint_vector_release_implemented",
-        inference = "formal_capsule_release_implemented"),
+        inference = "legacy_capsule_release_incompatible"),
       requires_new_capsule_artifact = list(
         route = "legacy_exact_release_not_capsule_safe",
         artifact = "planned_no_materializer",
@@ -345,8 +350,10 @@
         as.character(inference_requirements)), method = "radix")), n)),
       current_route_status = rep(current_route_status, n),
       same_capsule_replay_history_can_deny = rep(FALSE, n),
-      new_capsule_reservation_history_can_deny = rep(
-        identical(current_route_status, "formal_joint_dp_capsule"), n),
+      # Historical capsule validators remain available for old certificates,
+      # but no current public route may be denied by lifetime or reservation
+      # history.
+      new_capsule_reservation_history_can_deny = rep(FALSE, n),
       migration_feasibility = rep(migration_feasibility, n),
       artifact_implementation_state = rep(
         artifact_implementation_state, n),
@@ -359,46 +366,50 @@
 
   add(
     c("ds.vertDesc", "ds.vert.desc"), "ds.vertDesc", "descriptive",
-    c("admitted_count", "fixed_numeric_histograms", "numeric_moments"),
+    c("admitted_count", "fixed_numeric_histograms", "numeric_moments",
+      "signed_synopsis_describe_artifact"),
     "Bounded univariate moments, fixed-grid distributions and quantiles.",
     c("finite_public_bounds", "fixed_histogram_grid", "fixed_workload",
       "mechanism_uncertainty"),
-    "capsule_release_implemented",
+    "synopsis_release_implemented",
     character(),
     c("ds.vert.desc" = "ds.vertDesc"),
     artifact_implementation_state =
-      "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     c("ds.vertCor", "ds.vert.cor"), "ds.vertCor", "correlation",
     c("joint_dp_noise", "gaussian_models",
-      "signed_complete_case_gaussian_artifact"),
+      "signed_complete_case_gaussian_artifact",
+      "validated_synopsis_provenance"),
     paste(
       "Bounded joint complete-case Pearson correlations for signed",
-      "same-owner or cross-owner Gaussian artifacts."),
+      "same-owner Gaussian Synopsis artifacts; cross-owner requests are",
+      "quarantined without a capsule fallback."),
     c("finite_public_bounds", "identifiability", "mechanism_uncertainty",
       "positive_semidefinite_projection"),
-    "capsule_release_implemented", character(),
+    "synopsis_release_implemented", character(),
     c("ds.vert.cor" = "ds.vertCor"),
     artifact_implementation_state =
-      "validated_complete_case_gaussian_capsule_adapter_implemented",
+      "validated_complete_case_gaussian_synopsis_adapter_implemented",
     inference_implementation_state =
       "complete_case_postprocess_and_explicit_psd_projection_implemented")
 
   add(
     c("ds.vertPCA", "ds.vert.pca"), "ds.vertPCA", "pca",
     c("joint_dp_noise", "gaussian_models",
-      "signed_complete_case_gaussian_artifact"),
+      "signed_complete_case_gaussian_artifact",
+      "validated_synopsis_provenance"),
     paste(
       "Eigenstructure of the explicitly PSD-projected bounded DP joint",
       "complete-case correlation matrix."),
     c("finite_public_bounds", "mechanism_uncertainty",
       "positive_semidefinite_projection", "spectral_stability"),
-    "capsule_release_implemented", character(),
+    "synopsis_release_implemented", character(),
     c("ds.vert.pca" = "ds.vertPCA"),
     artifact_implementation_state =
-      "validated_complete_case_gaussian_capsule_adapter_implemented",
+      "validated_complete_case_gaussian_synopsis_adapter_implemented",
     inference_implementation_state =
       "client_only_spectral_postprocess_with_eigengap_regions")
 
@@ -410,10 +421,10 @@
     "Pearson/Yates independence statistic for a fixed-domain contingency table.",
     c("dp_aware_null_distribution", "fixed_category_domain",
       "minimum_expected_cell_handling"),
-    "capsule_release_implemented", character(),
+    "synopsis_release_implemented", character(),
     c("ds.vert.chisq" = "ds.vertChisq"),
     artifact_implementation_state =
-      "validated_capsule_adapter_implemented",
+      "validated_same_owner_synopsis_adapter_implemented",
     inference_implementation_state =
       "dp_aware_parametric_bootstrap_implemented")
 
@@ -429,49 +440,51 @@
       "estimate."),
     c("dp_aware_null_distribution", "fixed_category_domain",
       "signed_sampler_total_variation", "two_by_two_domain"),
-    "capsule_release_implemented", character(),
+    "synopsis_release_implemented", character(),
     c("ds.vert.fisher" = "ds.vertFisher"),
     artifact_implementation_state =
-      "validated_capsule_adapter_implemented",
+      "validated_same_owner_synopsis_adapter_implemented",
     inference_implementation_state =
       "dp_aware_conditional_hypergeometric_bootstrap_implemented")
 
   add(
     c("ds.vertChisqCross", "ds.vert.chisq_cross"), "ds.vertChisqCross",
     "cross_vertical_categorical",
-    c("admitted_count", "categorical_marginals",
-      "categorical_pairs_cross_owner", "joint_dp_noise",
-      "cross_signed_capsule_allocation", "private_psi_alignment"),
+    c("categorical_pairs_cross_owner", "joint_dp_noise",
+      "private_psi_alignment", "signed_no_lifetime_projection_protocol",
+      "validated_synopsis_provenance"),
     paste(
       "DP-aware Pearson/Yates or conditional hypergeometric plug-in",
       "inference for fixed-domain variables held by different peers."),
     c("dp_aware_null_distribution", "fixed_category_domain",
       "numeric_certificate", "signed_sampler_total_variation",
       "cross_signed_allocation_before_source_access"),
-    "capsule_release_implemented", character(),
+    "synopsis_release_implemented", character(),
     c("ds.vert.chisq_cross" = "ds.vertChisqCross"),
-    current_route_status = "formal_joint_dp_capsule",
+    current_route_status = "formal_sticky_synopsis_artifact",
     artifact_implementation_state =
-      "validated_capsule_adapter_implemented",
+      "validated_synopsis_adapter_implemented",
     inference_implementation_state =
       "dp_aware_parametric_bootstrap_implemented")
 
   add(
     "ds.vertDPGaussian", "ds.vertDPGaussian", "gaussian_regression",
     c("admitted_count", "complete_case_patient_collapse",
-      "gaussian_sufficient_statistics_same_and_cross_owner", "joint_dp_noise",
-      "public_numeric_bounds", "signed_gaussian_model_artifact"),
+      "gaussian_sufficient_statistics_same_owner", "joint_dp_noise",
+      "public_numeric_bounds", "signed_gaussian_model_artifact",
+      "validated_synopsis_provenance"),
     paste(
-      "Bounded, clipped same- or cross-owner complete-case Gaussian",
+      "Bounded, clipped same-owner complete-case Gaussian",
       "least-squares coefficients for one signed public model; a positive",
-      "ridge requests an explicitly different normalized-design estimand."),
+      "ridge requests an explicitly different normalized-design estimand;",
+      "cross-owner descriptors fail closed without capsule fallback."),
     c("explicit_regularization_estimand", "finite_public_bounds",
       "fixed_complete_case_rule", "identifiability", "mechanism_uncertainty",
       "no_sampling_inference", "positive_semidefinite_projection"),
-    "capsule_release_implemented", character(),
+    "synopsis_release_implemented", character(),
     artifact_implementation_state =
-      "validated_same_and_cross_owner_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "validated_same_owner_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     c("ds.vertGLM", "ds.vert.glm"), "ds.vertGLM", "glm",
@@ -479,8 +492,9 @@
       "numeric_cross_products_same_and_cross_owner", "numeric_moments"),
     paste(
       "Bounded Gaussian coefficients only when explicit dp_analysis_id selects",
-      "the same- or cross-owner capsule adapter; calls without it, including",
-      "binomial and Poisson variants, fail locally before DSI."),
+      "the same-owner Synopsis adapter; cross-owner, identifier-free,",
+      "binomial, and Poisson calls fail closed without capsule fallback;",
+      "the unsupported variants fail before protected analysis."),
     c("convergence", "dp_aware_covariance", "identifiability",
       "numeric_certificate"),
     "requires_new_capsule_artifact",
@@ -488,7 +502,7 @@
       "k2GradientR1DS", "k2GradientR2DS"),
     c("ds.vert.glm" = "ds.vertGLM"),
     current_route_status =
-      "formal_capsule_variant_only_legacy_unavailable")
+      "formal_same_owner_synopsis_variant_only_legacy_unavailable")
 
   add(
     c("ds.vertCox", "ds.vertCoxProfileNonDisclosive", "ds.vert.coxph"),
@@ -726,7 +740,7 @@
   add(
     c("ds.vertLASSOProximal", "ds.vert.lasso_proximal"),
     "ds.vertLASSOProximal", "lasso_gaussian",
-    c("admitted_count", "gaussian_sufficient_statistics_same_and_cross_owner",
+    c("admitted_count", "gaussian_sufficient_statistics_same_owner",
       "signed_gaussian_model_artifact",
       "validated_gaussian_provenance_certificate",
       "legacy_authorized_unpenalized_gaussian_fit"),
@@ -737,11 +751,11 @@
     c("certificate_integrity_validation", "gaussian_only",
       "identifiability", "kkt_validation", "no_sampling_inference",
       "objective_scale_contract", "authentic_federation_e2e_validation"),
-    "capsule_release_implemented", character(),
+    "synopsis_release_implemented", character(),
     aliases = c("ds.vert.lasso_proximal" = "ds.vertLASSOProximal"),
     current_route_status = "client_only_inherits_input",
     artifact_implementation_state =
-      "validated_same_and_cross_owner_capsule_adapter_implemented",
+      "validated_same_owner_synopsis_adapter_implemented",
     inference_implementation_state =
       "dp_gaussian_lasso_with_legacy_compatibility_implemented")
 
@@ -765,7 +779,7 @@
   add(
     c("ds.vertLASSOCV", "ds.vert.lasso_cv"), "ds.vertLASSOCV",
     "lasso_information_criterion",
-    c("admitted_count", "gaussian_sufficient_statistics_same_and_cross_owner",
+    c("admitted_count", "gaussian_sufficient_statistics_same_owner",
       "signed_gaussian_model_artifact",
       "validated_gaussian_provenance_certificate",
       "legacy_authorized_fit_covariance_or_fisher"),
@@ -776,11 +790,11 @@
     c("certificate_integrity_validation", "estimand_label",
       "no_sampling_inference", "pseudo_information_criterion_label",
       "selection_uncertainty", "authentic_federation_e2e_validation"),
-    "capsule_release_implemented", character(),
+    "synopsis_release_implemented", character(),
     aliases = c("ds.vert.lasso_cv" = "ds.vertLASSOCV"),
     current_route_status = "client_only_inherits_input",
     artifact_implementation_state =
-      "validated_same_and_cross_owner_capsule_adapter_implemented",
+      "validated_same_owner_synopsis_adapter_implemented",
     inference_implementation_state =
       "dp_gaussian_pseudo_ic_with_legacy_compatibility_implemented")
 
@@ -878,11 +892,17 @@
     "ds.vertDPContingency", "ds.vertDPContingency", "dp_contingency",
     c("admitted_count", "categorical_marginals",
       "categorical_pairs_same_owner", "categorical_pairs_cross_owner",
-      "joint_dp_noise", "cross_signed_capsule_allocation"),
-    "Fixed-domain noisy contingency table for the declared variable pair.",
+      "joint_dp_noise", "signed_categorical_pair_projection",
+      "validated_synopsis_provenance"),
+    paste(
+      "Fixed-domain noisy contingency table for one signed same- or",
+      "cross-owner categorical pair."),
     c("adjacency_contract", "fixed_category_domain",
-      "mechanism_uncertainty", "validated_capsule_provenance"),
-    "capsule_release_implemented")
+      "mechanism_uncertainty", "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
+    artifact_implementation_state =
+      "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPFrequency", "ds.vertDPFrequency", "dp_frequency",
@@ -915,11 +935,14 @@
 
   add(
     "ds.vertDPMeanVar", "ds.vertDPMeanVar", "dp_mean_variance",
-    c("admitted_count", "joint_dp_noise", "numeric_moments"),
+    c("admitted_count", "joint_dp_noise", "numeric_moments",
+      "signed_synopsis_artifact"),
     "Clipped bounded mean and variance for one declared numeric variable.",
     c("adjacency_contract", "finite_public_bounds",
-      "mechanism_uncertainty", "validated_capsule_provenance"),
-    "capsule_release_implemented")
+      "mechanism_uncertainty", "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPCor", "ds.vertDPCor", "dp_correlation",
@@ -929,143 +952,146 @@
       "Pairwise-complete bounded correlations and explicit PSD",
       "post-processing for one signed same-owner variable set."),
     c("adjacency_contract", "finite_public_bounds", "identifiability",
-      "mechanism_uncertainty", "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "mechanism_uncertainty", "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     artifact_implementation_state =
-      "validated_same_owner_capsule_adapter_implemented",
+      "validated_synopsis_adapter_implemented",
     inference_implementation_state =
       "pairwise_postprocess_and_explicit_psd_projection_implemented")
 
   add(
     "ds.vertDPDescribe", "ds.vertDPDescribe", "dp_descriptive",
     c("admitted_count", "categorical_marginals",
-      "fixed_numeric_histograms", "joint_dp_noise", "numeric_moments"),
+      "fixed_numeric_histograms", "joint_dp_noise", "numeric_moments",
+      "signed_synopsis_describe_artifact"),
     "Bounded moments and fixed-grid quantiles for a custodian-declared variable set.",
     c("adjacency_contract", "finite_public_bounds", "fixed_workload",
-      "mechanism_uncertainty", "validated_capsule_provenance"),
-    "capsule_release_implemented")
+      "mechanism_uncertainty", "validated_synopsis_provenance"),
+    "synopsis_release_implemented")
 
   add(
     "ds.vertDPQuantile", "ds.vertDPQuantile",
     "dp_descriptive_postprocess",
-    "validated_capsule_describe_artifact",
+    "validated_synopsis_describe_artifact",
     paste(
       "Fixed-grid binned quantiles from the coordinatewise-",
       "nonnegative histogram in one validated DP describe release."),
     c("fixed_public_grid", "mechanism_uncertainty",
-      "sampling_uncertainty_if_claimed", "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "sampling_uncertainty_if_claimed", "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPMedian", "ds.vertDPMedian", "dp_descriptive_postprocess",
-    "validated_capsule_describe_artifact",
+    "validated_synopsis_describe_artifact",
     paste(
       "Fixed-grid binned medians from the coordinatewise-nonnegative",
       "histogram in one validated DP describe release."),
     c("fixed_public_grid", "mechanism_uncertainty",
-      "sampling_uncertainty_if_claimed", "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "sampling_uncertainty_if_claimed", "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPSurvival", "ds.vertDPSurvival", "dp_survival_release",
     c("admitted_count", "joint_dp_noise", "survival_fixed_grid"),
     "Fixed-grid entry, censoring and cause-specific event release.",
     c("adjacency_contract", "fixed_time_grid", "mechanism_uncertainty",
-      "validated_capsule_provenance"),
-    "capsule_release_implemented")
+      "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPKaplanMeier", "ds.vertDPKaplanMeier",
-    "dp_survival_postprocess", "validated_capsule_survival_artifact",
+    "dp_survival_postprocess", "validated_synopsis_survival_artifact",
     "Kaplan-Meier survival curve from one validated DP survival artifact.",
     c("mechanism_uncertainty", "sampling_uncertainty_if_claimed",
-      "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPNelsonAalen", "ds.vertDPNelsonAalen",
-    "dp_survival_postprocess", "validated_capsule_survival_artifact",
+    "dp_survival_postprocess", "validated_synopsis_survival_artifact",
     "Nelson-Aalen cumulative hazard from one validated DP survival artifact.",
     c("mechanism_uncertainty", "sampling_uncertainty_if_claimed",
-      "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPCumulativeIncidence", "ds.vertDPCumulativeIncidence",
-    "dp_survival_postprocess", "validated_capsule_survival_artifact",
+    "dp_survival_postprocess", "validated_synopsis_survival_artifact",
     "Cause-specific cumulative incidence from one validated DP survival artifact.",
     c("competing_risk_contract", "mechanism_uncertainty",
-      "sampling_uncertainty_if_claimed", "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "sampling_uncertainty_if_claimed", "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPRMST", "ds.vertDPRMST", "dp_survival_postprocess",
-    "validated_capsule_survival_artifact",
+    "validated_synopsis_survival_artifact",
     "Fixed-grid restricted mean survival time through public tau.",
     c("fixed_time_grid", "mechanism_uncertainty",
-      "sampling_uncertainty_if_claimed", "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "sampling_uncertainty_if_claimed", "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPRMTL", "ds.vertDPRMTL", "dp_survival_postprocess",
-    "validated_capsule_survival_artifact",
+    "validated_synopsis_survival_artifact",
     paste(
       "Fixed-grid restricted mean time lost over the public interval as the",
       "exact restriction-width complement of released RMST."),
     c("fixed_time_grid", "mechanism_uncertainty",
-      "sampling_uncertainty_if_claimed", "validated_capsule_provenance",
+      "sampling_uncertainty_if_claimed", "validated_synopsis_provenance",
       "zero_call_numeric_identity"),
-    "capsule_release_implemented",
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPSurvivalContrast", "ds.vertDPSurvivalContrast",
     "dp_survival_postprocess",
-    "two_compatible_validated_capsule_survival_artifacts",
+    "two_compatible_validated_synopsis_survival_artifacts",
     paste(
       "Fixed-grid comparison-minus-reference survival difference and",
       "comparison/reference survival ratio."),
     c("identical_signed_public_time_grid", "mechanism_uncertainty",
       "bonferroni_joint_event_for_distinct_releases",
       "typed_zero_denominator", "sampling_uncertainty_if_claimed",
-      "validated_capsule_provenance", "zero_call_postprocessing"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance", "zero_call_postprocessing"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPRMSTContrast", "ds.vertDPRMSTContrast",
     "dp_survival_postprocess",
-    "two_compatible_validated_capsule_survival_artifacts",
+    "two_compatible_validated_synopsis_survival_artifacts",
     paste(
       "Fixed-grid comparison-minus-reference RMST difference and",
       "comparison/reference RMST ratio through common tau."),
@@ -1073,77 +1099,77 @@
       "mechanism_uncertainty",
       "bonferroni_joint_event_for_distinct_releases",
       "typed_zero_denominator", "sampling_uncertainty_if_claimed",
-      "validated_capsule_provenance", "zero_call_postprocessing"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance", "zero_call_postprocessing"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPSurvivalQuantile", "ds.vertDPSurvivalQuantile",
-    "dp_survival_postprocess", "validated_capsule_survival_artifact",
+    "dp_survival_postprocess", "validated_synopsis_survival_artifact",
     paste(
       "Fixed-grid survival quantiles as first public endpoints crossing",
       "requested event-distribution probabilities, with inverted",
       "simultaneous mechanism limits and explicit beyond-grid states."),
     c("fixed_time_grid", "mechanism_uncertainty",
-      "sampling_uncertainty_if_claimed", "validated_capsule_provenance",
+      "sampling_uncertainty_if_claimed", "validated_synopsis_provenance",
       "beyond_grid_estimability_state"),
-    "capsule_release_implemented",
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPMedianSurvival", "ds.vertDPMedianSurvival",
-    "dp_survival_postprocess", "validated_capsule_survival_artifact",
+    "dp_survival_postprocess", "validated_synopsis_survival_artifact",
     paste(
       "Median survival as the exact probability-one-half view of the",
       "validated fixed-grid survival-quantile result."),
     c("fixed_time_grid", "mechanism_uncertainty",
-      "sampling_uncertainty_if_claimed", "validated_capsule_provenance",
+      "sampling_uncertainty_if_claimed", "validated_synopsis_provenance",
       "beyond_grid_estimability_state", "zero_call_numeric_identity"),
-    "capsule_release_implemented",
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPEpi2x2", "ds.vertDPEpi2x2", "dp_epi_2x2",
-    "validated_capsule_2x2_artifact",
+    "validated_synopsis_2x2_artifact",
     paste(
       "Group and population risks, risk difference, risk/odds ratios,",
       "attributable fractions and number needed from one DP 2x2 table."),
     c("mechanism_uncertainty", "sampling_uncertainty_if_claimed",
-      "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPEpi2x2Inference", "ds.vertDPEpi2x2Inference",
-    "dp_epi_2x2_sampling_inference", "validated_capsule_2x2_artifact",
+    "dp_epi_2x2_sampling_inference", "validated_synopsis_2x2_artifact",
     paste(
       "Conservative joint confidence regions for group/population risks,",
       "risk difference, risk/odds ratios, attributable fractions and number",
       "needed, combining signed DP-mechanism and binomial sampling uncertainty."),
     c("binomial_sampling_model", "clopper_pearson_exact_intervals",
       "joint_mechanism_and_sampling_uncertainty",
-      "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPPrevalenceRatio", "ds.vertDPPrevalenceRatio",
-    "dp_prevalence_ratio", "validated_capsule_2x2_artifact",
+    "dp_prevalence_ratio", "validated_synopsis_2x2_artifact",
     paste(
       "Caller-declared cross-sectional exposed/unexposed prevalences,",
       "prevalence difference, prevalence/odds ratios, attributable",
@@ -1152,18 +1178,18 @@
     c("cross_sectional_design_declared_not_inferred",
       "explicit_exposed_and_prevalent_orientation",
       "mechanism_uncertainty", "sampling_uncertainty_if_claimed",
-      "validated_capsule_provenance", "zero_call_numeric_identity"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance", "zero_call_numeric_identity"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPPrevalenceRatioInference",
     "ds.vertDPPrevalenceRatioInference",
     "dp_prevalence_ratio_sampling_inference",
-    "validated_capsule_2x2_artifact",
+    "validated_synopsis_2x2_artifact",
     paste(
       "Caller-declared cross-sectional prevalence effects with the exact",
       "same conservative joint DP-mechanism and binomial sampling regions",
@@ -1172,90 +1198,90 @@
       "cross_sectional_design_declared_not_inferred",
       "explicit_exposed_and_prevalent_orientation",
       "joint_mechanism_and_sampling_uncertainty",
-      "validated_capsule_provenance", "zero_call_numeric_identity"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance", "zero_call_numeric_identity"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPMantelHaenszel", "ds.vertDPMantelHaenszel",
-    "dp_mantel_haenszel", "validated_capsule_strata_by_four_cells_artifact",
+    "dp_mantel_haenszel", "validated_synopsis_strata_by_four_cells_artifact",
     paste(
       "Finite-snapshot common Mantel-Haenszel odds ratio with a conservative",
       "simultaneous mechanism region and no classical CMH p-value."),
     c("mechanism_uncertainty", "public_cell_mapping", "public_strata",
-      "sampling_uncertainty_if_claimed", "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "sampling_uncertainty_if_claimed", "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPDiagnostic2x2", "ds.vertDPDiagnostic2x2",
-    "dp_diagnostic_2x2", "validated_capsule_2x2_artifact",
+    "dp_diagnostic_2x2", "validated_synopsis_2x2_artifact",
     paste(
       "Sensitivity, specificity, predictive values, balanced accuracy, F1,",
       "likelihood ratios and diagnostic odds ratio from one DP 2x2 table."),
     c("diagnostic_axis_contract", "mechanism_uncertainty",
-      "sampling_uncertainty_if_claimed", "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "sampling_uncertainty_if_claimed", "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPDiagnostic2x2Inference",
     "ds.vertDPDiagnostic2x2Inference", "dp_diagnostic_2x2_sampling_inference",
-    "validated_capsule_2x2_artifact",
+    "validated_synopsis_2x2_artifact",
     paste(
       "Conservative joint confidence regions for diagnostic accuracy,",
       "combining signed DP-mechanism and exact-binomial sampling uncertainty."),
     c("binomial_sampling_model", "clopper_pearson_exact_intervals",
       "diagnostic_axis_contract",
       "joint_mechanism_and_sampling_uncertainty",
-      "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPROC", "ds.vertDPROC", "dp_diagnostic_curve",
-    "validated_capsule_ordered_diagnostic_artifact",
+    "validated_synopsis_ordered_diagnostic_artifact",
     paste(
       "Threshold ROC curve and tie-adjusted finite-snapshot AUC from one",
       "ordered disease-status by score-bin DP table."),
     c("diagnostic_axis_contract", "fixed_public_score_order",
       "mechanism_uncertainty", "sampling_uncertainty_if_claimed",
-      "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPDirectStandardization", "ds.vertDPDirectStandardization",
-    "dp_direct_standardization", "validated_capsule_strata_artifact",
+    "dp_direct_standardization", "validated_synopsis_strata_artifact",
     "Directly standardized risk from one DP strata-by-outcome table.",
     c("compatible_strata", "mechanism_uncertainty",
-      "sampling_uncertainty_if_claimed", "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "sampling_uncertainty_if_claimed", "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPDirectStandardizationInference",
     "ds.vertDPDirectStandardizationInference",
     "dp_direct_standardization_sampling_inference",
-    "validated_capsule_strata_artifact",
+    "validated_synopsis_strata_artifact",
     paste(
       "Conservative joint confidence region for one directly standardized",
       "risk, combining signed DP-mechanism and exact-binomial stratum",
@@ -1263,34 +1289,34 @@
     c("binomial_sampling_model", "clopper_pearson_exact_intervals",
       "compatible_strata", "fixed_public_standard_weights",
       "joint_mechanism_and_sampling_uncertainty",
-      "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPCausalStandardization", "ds.vertDPCausalStandardization",
     "dp_causal_stratified_standardization",
-    "validated_capsule_stratum_treatment_by_outcome_artifact",
+    "validated_synopsis_stratum_treatment_by_outcome_artifact",
     paste(
       "Saturated stratum-standardised treated/control risks and derived",
       "contrasts from one DP table and fixed public target weights."),
     c("binary_treatment_contract", "compatible_strata",
       "fixed_public_standard_weights", "causal_identification_assumptions",
-      "mechanism_uncertainty", "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "mechanism_uncertainty", "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPCausalStandardizationInference",
     "ds.vertDPCausalStandardizationInference",
     "dp_causal_stratified_standardization_sampling_inference",
-    "validated_capsule_stratum_treatment_by_outcome_artifact",
+    "validated_synopsis_stratum_treatment_by_outcome_artifact",
     paste(
       "Conservative joint regions for saturated stratum-standardised",
       "treated/control risks and contrasts, combining signed DP-mechanism",
@@ -1299,30 +1325,30 @@
       "clopper_pearson_exact_intervals", "compatible_strata",
       "fixed_public_standard_weights", "causal_identification_assumptions",
       "joint_mechanism_and_sampling_uncertainty",
-      "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPIndirectStandardization", "ds.vertDPIndirectStandardization",
-    "dp_indirect_standardization", "validated_capsule_strata_artifact",
+    "dp_indirect_standardization", "validated_synopsis_strata_artifact",
     "Observed-to-expected standardized ratio from one DP strata table.",
     c("compatible_populations", "mechanism_uncertainty",
-      "sampling_uncertainty_if_claimed", "validated_capsule_provenance"),
-    "capsule_release_implemented",
+      "sampling_uncertainty_if_claimed", "validated_synopsis_provenance"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertDPIndirectStandardizationInference",
     "ds.vertDPIndirectStandardizationInference",
     "dp_indirect_standardization_sampling_inference",
-    "validated_capsule_strata_artifact",
+    "validated_synopsis_strata_artifact",
     paste(
       "Conservative joint confidence region for an observed-to-expected",
       "ratio, combining signed DP-mechanism and exact Poisson Garwood",
@@ -1330,36 +1356,40 @@
     c("compatible_populations", "fixed_public_expected_rates",
       "poisson_total_count_model", "garwood_exact_interval",
       "joint_mechanism_and_sampling_uncertainty",
-      "validated_capsule_provenance", "zero_call_postprocessing"),
-    "capsule_release_implemented",
+      "validated_synopsis_provenance", "zero_call_postprocessing"),
+    "synopsis_release_implemented",
     current_route_status =
-      "client_only_validated_capsule_postprocess",
-    artifact_implementation_state = "validated_capsule_adapter_implemented",
-    inference_implementation_state = "capsule_postprocess_implemented")
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   out <- do.call(rbind, rows)
   out <- out[order(out$method, method = "radix"), , drop = FALSE]
   rownames(out) <- NULL
-  attr(out, "schema_version") <- "dsvert-capsule-method-inventory-v3"
+  attr(out, "schema_version") <- "dsvert-capsule-method-inventory-v4"
   attr(out, "alias_kind_levels") <- c(
     "canonical", "compatibility_alias", "compatibility_wrapper",
     "deprecated_subroute")
   attr(out, "current_route_status_levels") <- c(
     "client_only_inherits_input",
     "client_only_validated_capsule_postprocess",
+    "client_only_validated_synopsis_postprocess",
     "formal_sticky_count_artifact",
     "formal_sticky_frequency_artifact",
-    "formal_joint_dp_capsule", "known_broken_route_quarantine",
+    "formal_sticky_synopsis_artifact",
+    "legacy_joint_dp_capsule_incompatible", "known_broken_route_quarantine",
     "legacy_exact_release_not_capsule_safe",
     "legacy_granular_release_not_capsule_safe",
     "legacy_granular_release_quarantine",
     "legacy_mutating_release_not_capsule_safe",
     "legacy_mutating_release_quarantine",
     "signed_workload_unavailable_quarantine",
-    "formal_capsule_variant_only_legacy_unavailable")
+    "formal_capsule_variant_only_legacy_unavailable",
+    "formal_same_owner_synopsis_variant_only_legacy_unavailable")
   attr(out, "migration_feasibility_levels") <- c(
     "count_operation_implemented",
     "frequency_operation_implemented",
+    "synopsis_release_implemented",
     "capsule_release_implemented",
     "client_only_requires_attested_input",
     "requires_new_capsule_artifact", "requires_new_secure_protocol")
@@ -1368,10 +1398,14 @@
     "joint_vector_release_implemented",
     "signed_count_artifact_implemented",
     "signed_frequency_artifact_implemented",
+    "signed_synopsis_describe_artifact_implemented",
     "planned_no_materializer", "reserved_not_materialized",
     "secure_artifact_not_implemented",
     "validated_capsule_adapter_implemented",
     "validated_frequency_artifact_adapter_implemented",
+    "validated_synopsis_adapter_implemented",
+    "validated_complete_case_gaussian_synopsis_adapter_implemented",
+    "validated_same_owner_synopsis_adapter_implemented",
     "validated_complete_case_gaussian_capsule_adapter_implemented",
     "validated_same_and_cross_owner_capsule_adapter_implemented",
     "validated_same_owner_capsule_adapter_implemented")
@@ -1383,12 +1417,14 @@
     "dp_aware_null_distribution_not_implemented",
     "dp_aware_parametric_bootstrap_implemented",
     "existing_inference_requires_capsule_backend",
-    "formal_capsule_release_implemented",
+    "legacy_capsule_release_incompatible",
     "formal_count_release_implemented",
     "formal_frequency_release_implemented",
+    "formal_synopsis_describe_release_implemented",
     "frequency_postprocess_implemented",
     "implemented_client_algebra_inherits_input",
     "capsule_postprocess_implemented",
+    "synopsis_postprocess_implemented",
     "client_only_spectral_postprocess_with_eigengap_regions",
     "complete_case_postprocess_and_explicit_psd_projection_implemented",
     "pairwise_postprocess_and_explicit_psd_projection_implemented",

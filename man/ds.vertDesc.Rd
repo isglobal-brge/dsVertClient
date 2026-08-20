@@ -18,8 +18,8 @@ ds.vertDesc(
 )
 }
 \arguments{
-\item{data_name}{Character. Name of the aligned data frame held on each
-server.}
+\item{data_name}{Name of the aligned data frame held on each server, or a
+reusable \code{ds.vertFederation} returned by \code{ds.vert.align()}.}
 
 \item{variables}{Optional character vector, or a named list mapping the
 artifact-owning server to variables, used only to filter the variables
@@ -49,8 +49,8 @@ grids and invalid bin define the histogram semantics.}
 \item{datasources}{DataSHIELD connections. If \code{NULL}, auto-detected.}
 
 \item{analysis_id}{Custodian-owned describe specification id. It must name
-an existing artifact in the signed capsule. The client never discovers or
-chooses an id remotely.}
+an existing artifact in the signed server catalog. The client never
+discovers or chooses an id remotely.}
 }
 \value{
 A data frame with one row per variable containing columns:
@@ -70,7 +70,7 @@ DP population central second moment (not the usual sample SD)
 }
 \description{
 Return the historical \code{ds.vertDesc} data-frame shape from
-one custodian-owned, sticky \code{ds.vertDPDescribe} capsule artifact.
+one custodian-owned, sticky \code{ds.vertDPDescribe} release.
 Counts, moments and quantiles are differentially private. Observed extrema
 and data-adaptive histogram queries are never requested.
 }
@@ -80,8 +80,10 @@ probabilities and variable selection are then pure client-side
 post-processing of that single immutable release. The returned object has
 class \code{ds.vertDesc} for compatibility and carries \code{dp_release},
 \code{dp_descriptives}, and \code{dp_quantile_bands} attributes with the
-formal release and mechanism-uncertainty metadata. These regions exclude
-sampling uncertainty. In particular, \code{n_na} is the noised fixed invalid
+formal release and mechanism-uncertainty metadata. The \code{dp_release}
+attribute preserves exactly one provenance family: legacy capsule anchors
+or stateless synopsis anchors. These regions exclude sampling uncertainty.
+In particular, \code{n_na} is the noised fixed invalid
 bin rather than an exact row-level NA count, and quantiles are fixed-grid
 upper endpoints rather than interpolation from analyst-selected bins.
 }

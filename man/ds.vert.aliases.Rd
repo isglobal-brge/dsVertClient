@@ -144,10 +144,16 @@ ds.vert.wald(fit, parm, null = 0)
 ds.vert.contrast(fit, K, m = NULL)
 }
 \arguments{
-\item{data_name, data, formula, datasources}{Aligned data-frame symbol (or model
-\code{formula}) and the DataSHIELD connections.}
+\item{data_name, data, formula, datasources}{Aligned data-frame symbol, reusable
+\code{ds.vertFederation}, model \code{formula}, and DataSHIELD connections.
+Model formulas may qualify ambiguous columns as
+\code{site_name$column}; the expression is parsed, never evaluated.}
 
-\item{id_col, newobj}{Record-identifier column and output symbol for alignment.}
+\item{id_col, newobj}{Record-identifier column and output symbol for alignment.
+\code{data_name} and \code{id_col} may each be one string broadcast to all
+sites or a complete named per-site character/list map. Per-site identifier
+columns are local routing aliases bound by custodian policy to one common
+semantic \code{privacy_unit_id}.}
 
 \item{...}{Further arguments forwarded to the backend.}
 
@@ -181,4 +187,11 @@ is unavailable, and the reserved binomial/Poisson
 \code{formal_analysis_id} route also fails before DSI in this release.
 No alias re-enables a retired remote endpoint or weakens the signed-artifact
 and custodian-owned policy gates of an available backend.
+\code{ds.vert.align()} returns a credential-free
+\code{ds.vertFederation}. Pass that object as \code{data_name} (or
+\code{data} for Gaussian GLM) to reuse the aligned symbol. Each consumer
+re-attests the same sites and PSI contract; it does not rerun PSI. The
+federation also caches the custodian-published, policy-only column kind and
+role catalogue. Formula frontdoors use it to resolve unique names and to
+require explicit \code{server$column} qualification for collisions.
 }

@@ -1,6 +1,8 @@
 # Client pump for producer-minted, purpose-bound server blob tickets.
 
 .DSVERT_TYPED_BLOB_FRAME_OVERHEAD_BYTES <- 1024L
+.DSVERT_FORMAL_GLM_CONTROL_MAX_OUTER_CHARS <- 14971339
+.DSVERT_FORMAL_COX_CONTROL_MAX_OUTER_CHARS <- 14971339
 
 .dsvert_typed_blob_resource_model <- function() {
   list(
@@ -13,11 +15,58 @@
         client_source_streaming = TRUE,
         statistical_producer = FALSE,
         recipient_consumer_streaming = FALSE),
+      formal_finalizer_handoff_v1 = list(
+        endpoints = c(
+          "dsvertFormalFinalizerHandoffSourceDS", "mpcTypedBlobReadDS",
+          "mpcTypedBlobStoreDS", "mpcTypedBlobReceiptDS"),
+        producer_source_streaming = FALSE,
+        client_source_streaming = TRUE,
+        statistical_producer = TRUE,
+        recipient_consumer_streaming = FALSE,
+        producer_peak_memory = "O(envelope), bounded at 8 MiB raw",
+        client_peak_memory = "O(frame)",
+        maximum_outer_payload_chars = 11184811,
+        payload_class = "authenticated recipient-AEAD ciphertext",
+        statistical_frontdoors_connected = FALSE,
+        production_ready = FALSE),
+      formal_glm_one_draw_control_v1 = list(
+        endpoints = c(
+          "dsvertFormalGLMControlSourceDS", "mpcTypedBlobReadDS",
+          "mpcTypedBlobStoreDS", "mpcTypedBlobReceiptDS"),
+        producer_source_streaming = FALSE,
+        client_source_streaming = TRUE,
+        statistical_producer = TRUE,
+        recipient_consumer_streaming = FALSE,
+        producer_peak_memory =
+          "O(envelope), bounded at 11,228,504 encoded envelope bytes",
+        client_peak_memory = "O(frame)",
+        maximum_outer_payload_chars =
+          .DSVERT_FORMAL_GLM_CONTROL_MAX_OUTER_CHARS,
+        payload_class = "authenticated recipient-AEAD lifecycle record",
+        statistical_frontdoors_connected = FALSE,
+        production_ready = FALSE),
+      formal_cox_blockwise_control_v1 = list(
+        endpoints = c(
+          "dsvertFormalCoxControlSourceDS", "mpcTypedBlobReadDS",
+          "mpcTypedBlobStoreDS", "mpcTypedBlobReceiptDS"),
+        producer_source_streaming = FALSE,
+        client_source_streaming = TRUE,
+        statistical_producer = TRUE,
+        recipient_consumer_streaming = FALSE,
+        producer_peak_memory =
+          "O(envelope), bounded at 11,228,504 encoded envelope bytes",
+        client_peak_memory = "O(frame)",
+        maximum_outer_payload_chars =
+          .DSVERT_FORMAL_COX_CONTROL_MAX_OUTER_CHARS,
+        payload_class = "authenticated recipient-AEAD lifecycle record",
+        statistical_frontdoors_connected = FALSE,
+        production_ready = FALSE),
       biomedical_capsule_source_v2 = list(
         endpoints = c(
           "dsvertDPCapsuleSourcePrepareDS",
           "dsvertDPCapsuleSourceChunkDS",
-          "dsvertDPCapsuleSourceAcceptDS"),
+          "dsvertDPCapsuleSourceAcceptDS",
+          "dsvertDPSynopsisSourceAcceptDS"),
         producer_source_streaming = TRUE,
         client_source_streaming = TRUE,
         statistical_producer = TRUE,
@@ -45,9 +94,11 @@
       "before immutable frames can be forwarded, and current consumers read",
       "the committed value in full. True end-to-end streaming needs a private",
       "producer spool and streaming MPC runtime input/output per producer.",
-      "Only the data-free source probe currently proves the spool/reader/client",
-      "layers for generic blobs. The separately declared biomedical-capsule",
-      "source v2 is the sole statistical chunk producer/consumer exception."))
+      "The data-free source probe proves the generic source layers. The formal",
+      "finalizer handoff streams through the client but retains one bounded",
+      "ciphertext in producer and consumer R memory; its statistical frontdoors",
+      "remain disconnected. biomedical-capsule source v2 is the sole complete",
+      "statistical chunk producer/consumer exception."))
 }
 
 .dsvert_dsi_retry_deadline_seconds <- function() {
@@ -740,6 +791,182 @@
       !identical(transfer$capability_id,
                  "blob.transport.source-probe.v1")) {
     stop("Source probe producer returned a misbound transfer contract",
+         call. = FALSE)
+  }
+  frames <- .dsvert_store_typed_blob_stream(
+    transfer = transfer, conn = recipient_conn, session_id = session_id,
+    producer_conn = producer_conn, .aggregate = .aggregate)
+  invisible(list(transfer = transfer, frames = as.integer(frames)))
+}
+
+# Internal formal GLM/Cox relay. The signed lifecycle has already selected the
+# artifact and roles; this wrapper may choose only the pinned finalizer key and
+# the ephemeral session. It reuses the one generic ticket/frame pump below.
+.dsvert_relay_formal_finalizer_handoff_v1 <- function(
+    producer_conn, recipient_conn, recipient_pk, session_id,
+    .aggregate = DSI::datashield.aggregate) {
+  named_peer <- function(conn) {
+    is.list(conn) && length(conn) == 1L && !is.null(names(conn)) &&
+      is.character(names(conn)) && length(names(conn)) == 1L &&
+      !is.na(names(conn)) && nzchar(names(conn))
+  }
+  if (!named_peer(producer_conn) || !named_peer(recipient_conn) ||
+      identical(names(producer_conn), names(recipient_conn))) {
+    stop("Formal-finalizer relay requires two distinct named pinned peers",
+         call. = FALSE)
+  }
+  recipient_pk <- .dsvert_dp_normalize_identity_pk(recipient_pk)
+  if (is.null(recipient_pk)) {
+    stop("Formal-finalizer relay requires one canonical pinned recipient key",
+         call. = FALSE)
+  }
+  if (!is.character(session_id) || length(session_id) != 1L ||
+      is.na(session_id) ||
+      !grepl("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+             session_id)) {
+    stop("Formal-finalizer relay requires one canonical session identifier",
+         call. = FALSE)
+  }
+
+  produced <- .dsvert_aggregate_strict(
+    producer_conn,
+    call(
+      name = "dsvertFormalFinalizerHandoffSourceDS",
+      recipient_pk = recipient_pk, session_id = session_id),
+    operation = "formal-finalizer typed source ticket",
+    .aggregate = .aggregate)
+  value <- produced[[1L]]
+  if (!is.list(value) || is.null(names(value)) ||
+      anyDuplicated(names(value)) ||
+      !identical(names(value), "source_transfer")) {
+    stop("Formal-finalizer producer returned an invalid transfer envelope",
+         call. = FALSE)
+  }
+  transfer <- .dsvert_validate_typed_blob_contract(
+    value$source_transfer, names(recipient_conn))
+  if (!identical(transfer$sender_name, names(producer_conn)) ||
+      !identical(transfer$capability_id,
+                 "blob.formal-finalizer-handoff.v1") ||
+      transfer$payload_chars > 11184811) {
+    stop("Formal-finalizer producer returned a misbound transfer contract",
+         call. = FALSE)
+  }
+  frames <- .dsvert_store_typed_blob_stream(
+    transfer = transfer, conn = recipient_conn, session_id = session_id,
+    producer_conn = producer_conn, .aggregate = .aggregate)
+  invisible(list(transfer = transfer, frames = as.integer(frames)))
+}
+
+# Internal formal-GLM control relay. Rock has already selected the next
+# lifecycle record and its direction; the client supplies only the fixed peer
+# connection, its pinned transport key, and the ephemeral typed-blob session.
+.dsvert_relay_formal_glm_control_v1 <- function(
+    producer_conn, recipient_conn, recipient_pk, session_id,
+    .aggregate = DSI::datashield.aggregate) {
+  named_peer <- function(conn) {
+    is.list(conn) && length(conn) == 1L && !is.null(names(conn)) &&
+      is.character(names(conn)) && length(names(conn)) == 1L &&
+      !is.na(names(conn)) && nzchar(names(conn))
+  }
+  if (!named_peer(producer_conn) || !named_peer(recipient_conn) ||
+      identical(names(producer_conn), names(recipient_conn))) {
+    stop("Formal GLM control relay requires two distinct named pinned peers",
+         call. = FALSE)
+  }
+  recipient_pk <- .dsvert_dp_normalize_identity_pk(recipient_pk)
+  if (is.null(recipient_pk)) {
+    stop("Formal GLM control relay requires one canonical pinned recipient key",
+         call. = FALSE)
+  }
+  if (!is.character(session_id) || length(session_id) != 1L ||
+      is.na(session_id) ||
+      !grepl("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+             session_id)) {
+    stop("Formal GLM control relay requires one canonical session identifier",
+         call. = FALSE)
+  }
+
+  produced <- .dsvert_aggregate_strict(
+    producer_conn,
+    call(
+      name = "dsvertFormalGLMControlSourceDS",
+      recipient_pk = recipient_pk, session_id = session_id),
+    operation = "formal GLM control typed source ticket",
+    .aggregate = .aggregate)
+  value <- produced[[1L]]
+  if (!is.list(value) || is.null(names(value)) ||
+      anyDuplicated(names(value)) ||
+      !identical(names(value), "source_transfer")) {
+    stop("Formal GLM control producer returned an invalid transfer envelope",
+         call. = FALSE)
+  }
+  transfer <- .dsvert_validate_typed_blob_contract(
+    value$source_transfer, names(recipient_conn))
+  if (!identical(transfer$sender_name, names(producer_conn)) ||
+      !identical(transfer$capability_id,
+                 "blob.formal-glm-one-draw-control.v1") ||
+      transfer$payload_chars >
+        .DSVERT_FORMAL_GLM_CONTROL_MAX_OUTER_CHARS) {
+    stop("Formal GLM control producer returned a misbound transfer contract",
+         call. = FALSE)
+  }
+  frames <- .dsvert_store_typed_blob_stream(
+    transfer = transfer, conn = recipient_conn, session_id = session_id,
+    producer_conn = producer_conn, .aggregate = .aggregate)
+  invisible(list(transfer = transfer, frames = as.integer(frames)))
+}
+
+# Internal formal-Cox control relay. Rock has already selected the next
+# lifecycle record and direction; this layer forwards only the typed ticket
+# and immutable frames through the existing generic pump.
+.dsvert_relay_formal_cox_control_v1 <- function(
+    producer_conn, recipient_conn, recipient_pk, session_id,
+    .aggregate = DSI::datashield.aggregate) {
+  named_peer <- function(conn) {
+    is.list(conn) && length(conn) == 1L && !is.null(names(conn)) &&
+      is.character(names(conn)) && length(names(conn)) == 1L &&
+      !is.na(names(conn)) && nzchar(names(conn))
+  }
+  if (!named_peer(producer_conn) || !named_peer(recipient_conn) ||
+      identical(names(producer_conn), names(recipient_conn))) {
+    stop("Formal Cox control relay requires two distinct named pinned peers",
+         call. = FALSE)
+  }
+  recipient_pk <- .dsvert_dp_normalize_identity_pk(recipient_pk)
+  if (is.null(recipient_pk)) {
+    stop("Formal Cox control relay requires one canonical pinned recipient key",
+         call. = FALSE)
+  }
+  if (!is.character(session_id) || length(session_id) != 1L ||
+      is.na(session_id) ||
+      !grepl("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+             session_id)) {
+    stop("Formal Cox control relay requires one canonical session identifier",
+         call. = FALSE)
+  }
+
+  produced <- .dsvert_aggregate_strict(
+    producer_conn,
+    call(
+      name = "dsvertFormalCoxControlSourceDS",
+      recipient_pk = recipient_pk, session_id = session_id),
+    operation = "formal Cox control typed source ticket",
+    .aggregate = .aggregate)
+  value <- produced[[1L]]
+  if (!is.list(value) || is.null(names(value)) ||
+      anyDuplicated(names(value)) ||
+      !identical(names(value), "source_transfer")) {
+    stop("Formal Cox control producer returned an invalid transfer envelope",
+         call. = FALSE)
+  }
+  transfer <- .dsvert_validate_typed_blob_contract(
+    value$source_transfer, names(recipient_conn))
+  if (!identical(transfer$sender_name, names(producer_conn)) ||
+      !identical(transfer$capability_id,
+                 "blob.formal-cox-blockwise-control.v1") ||
+      transfer$payload_chars >
+        .DSVERT_FORMAL_COX_CONTROL_MAX_OUTER_CHARS) {
+    stop("Formal Cox control producer returned a misbound transfer contract",
          call. = FALSE)
   }
   frames <- .dsvert_store_typed_blob_stream(

@@ -18,13 +18,15 @@ ds.vertDPMeanVar(data_name, variable, server = NULL, datasources = NULL)
 \value{
 A validated release containing a noisy effective count, bounded mean,
 population central second moment, typed estimability state, and mechanism
-metadata.
+metadata bound to the signed canonical Synopsis artifact.
 }
 \description{
-Clips finite records to public bounds, averages within privacy unit, quantises
-normalised moments, and selects either sequential granular-Laplace coordinates
-or one joint TV-accounted approximate-Gaussian vector. Coordinate radii cover
-mechanism noise only. The compact payload does not expose the noisy sums needed
-for a client-verifiable propagated ratio interval and provides no sampling
-confidence interval.
+One canonical signed Synopsis artifact clips one contribution per protected
+unit to immutable bounds and releases the effective count, normalised quantised
+sum, and normalised quantised sum of squares in a common Ring128 vector. Replay
+of the same durable artifact is unlimited post-processing and is never denied
+by lifetime history. Distinct artifacts compose and no finite global
+composition bound is claimed. The client applies only bounded-moment and exact
+affine post-processing. Reported regions cover mechanism noise and deterministic
+quantisation, not sampling uncertainty.
 }

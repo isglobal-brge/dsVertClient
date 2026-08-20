@@ -18,22 +18,90 @@
   algo = "sha256", serialize = FALSE)
 }
 
-.synopsis_public_fixture <- function(k = 3L, scaled_values = c("256", "512")) {
-  source <- .synopsis_public_helpers$.capsule_source_client_fixture(
-    k = k, coordinate_count = 2L, source_count = 1L)
-  context <- .dsvert_joint_dp_client_context(
+.synopsis_public_fixture <- function(
+    k = 3L, scaled_values = c("256", "512"), gaussian_artifact = NULL,
+    .source = NULL, parent_authorization = NULL) {
+  dimension <- if (is.null(gaussian_artifact)) 2L else
+    1L + as.integer(gaussian_artifact$coordinate_count)
+  if (!is.character(scaled_values) || length(scaled_values) != dimension) {
+    stop("scaled_values must cover the complete Synopsis vector")
+  }
+  source <- if (is.null(.source)) {
+    .synopsis_public_helpers$.capsule_source_client_fixture(
+      k = k, coordinate_count = dimension, source_count = 1L)
+  } else {
+    .source
+  }
+  legacy_context <- .dsvert_joint_dp_client_context(
     source$conns, status = source$status, .aggregate = source$aggregate)
-  peers <- context$servers
-  authorities <- context$designated
+  peers <- legacy_context$servers
+  authorities <- legacy_context$designated
   owner <- peers[[1L]]
-  policy <- source$status[[peers[[1L]]]]$policy
+  pins <- legacy_context$pinset
+  legacy_policy <- source$status[[peers[[1L]]]]$policy
+  policy <- list(
+    version = .DSVERT_CLIENT_SYNOPSIS_POLICY_VERSION,
+    privacy_scope = "per_canonical_artifact_v1",
+    global_composition_claim = FALSE,
+    domain = legacy_policy$domain, cohort_id = legacy_policy$cohort_id,
+    ordered_peer_pinset = as.list(pins),
+    peer_pinset_sha256 = .dsvert_vector_hash(as.list(pins)),
+    peer_count = as.integer(k),
+    designated_noise_peers = as.list(authorities),
+    artifact_epsilon = 1, artifact_delta = 2^-100,
+    adjacency = legacy_policy$adjacency,
+    patient_column = legacy_policy$patient_column,
+    unit_capacity = as.integer(legacy_policy$unit_capacity),
+    fixed_cohort_size = NULL,
+    max_records_per_unit = as.integer(legacy_policy$max_records_per_unit),
+    overflow_policy = legacy_policy$overflow_policy,
+    contingency_unit_aggregation_policy =
+      "consistent_cell_else_exclude_v1",
+    numeric_grid_bits = 8L,
+    primitive_scope = .dsvert_dp_synopsis_manifest_policy_scope_v1(
+      source$manifest),
+    mechanism_version = "fixture-synopsis-mechanism-v1",
+    sticky_release = TRUE, distinct_artifact_gate = FALSE,
+    request_limit = FALSE, rate_limit = FALSE, catalog_limit = FALSE)
+  sign_outer <- function(value, peer, domain) {
+    unsigned <- value
+    if (identical(domain, .DSVERT_CLIENT_SYNOPSIS_BIND_DOMAIN)) {
+      unsigned$manifest_json <- NULL
+      unsigned$artifact_commitments <- NULL
+    }
+    message <- charToRaw(paste0(
+      domain, .dsvert_joint_dp_client_json(unsigned)))
+    .synopsis_public_helpers$.capsule_source_client_b64url(
+      openssl::ed25519_sign(message, source$keys[[peer]]))
+  }
+  bootstraps <- stats::setNames(lapply(peers, function(peer) {
+    draft <- list(version = "fixture-signed-draft-v1", peer_name = peer)
+    if (!is.null(parent_authorization)) {
+      draft$parent_authorization <- parent_authorization
+    }
+    unsigned <- list(
+      version = .DSVERT_CLIENT_SYNOPSIS_BOOTSTRAP_VERSION,
+      phase = "custodian_policy_bootstrap", peer_name = peer,
+      peer_identity_pk = unname(pins[[peer]]), policy = policy,
+      draft = draft,
+      data_access = FALSE, patient_derived_metadata = FALSE,
+      request_limit = FALSE, rate_limit = FALSE, catalog_limit = FALSE)
+    c(unsigned, list(signature = sign_outer(
+      unsigned, peer, .DSVERT_CLIENT_SYNOPSIS_BOOTSTRAP_DOMAIN)))
+  }), peers)
+  status <- structure(bootstraps, class = c(
+    "ds.vertDPSynopsisStatus", "list"))
+  context <- list(
+    status = status, servers = peers, pinset = pins,
+    designated = authorities, conns = source$conns[authorities],
+    all_conns = source$conns, policy = policy)
   manifest <- source$manifest
 
   schema_unsigned <- list(
     version = "synopsis-client-test-schema-v1",
     logical_snapshot = .dsvert_joint_dp_client_canonical(
       manifest$logical_snapshot),
-    peer_pinset_sha256 = source$status[[1L]]$policy$peer_pinset_sha256)
+    peer_pinset_sha256 = policy$peer_pinset_sha256)
   schema_message <- charToRaw(paste0(
     .DSVERT_CLIENT_DP_CAPSULE_SCHEMA_SIGNATURE_DOMAIN,
     .dsvert_joint_dp_client_json(schema_unsigned)))
@@ -53,20 +121,25 @@
     numeric_pair_moments = list(
       artifacts = list(), natural_l1_sensitivity = 0),
     gaussian_models = list(
-      artifacts = list(), natural_l1_sensitivity = 0),
+      artifacts = if (is.null(gaussian_artifact)) list() else
+        stats::setNames(list(gaussian_artifact),
+                        gaussian_artifact$analysis_id),
+      natural_l1_sensitivity = if (is.null(gaussian_artifact)) 0 else
+        gaussian_artifact$natural_l1_sensitivity),
     fixed_numeric_histograms = list(artifacts = list(), l1_sensitivity = 0),
     categorical_marginals = list(
-      artifacts = list(flag = list(
+      artifacts = if (is.null(gaussian_artifact)) list(flag = list(
         owner_peer = owner, dataset = paste0("data_", owner),
-        column = "flag", levels = "yes", statistic_maximum = 100)),
-      l1_sensitivity = 1),
+        column = "flag", levels = "yes", statistic_maximum = 100)) else
+          list(),
+      l1_sensitivity = if (is.null(gaussian_artifact)) 1 else 0),
     categorical_pairs = list(
       sets = list(), cross_artifacts = list(), l1_sensitivity = 0),
     correlation_artifacts = list(), describe_artifacts = list(),
     survival_artifacts = list())
   bits <- 8L
   scale <- 2^bits
-  manifest$workload$coordinate_count <- 2
+  manifest$workload$coordinate_count <- dimension
   manifest$admission$adjacency <- policy$adjacency
   manifest$admission$unit_capacity <- policy$unit_capacity
   manifest$workload$families <- families
@@ -78,21 +151,33 @@
     version = "biomedical-capsule-common-lattice-v1",
     transform_rule = "raw_coordinate_left_shift_to_common_numeric_grid_v1",
     output_lattice_bits = bits, output_lattice_scale = scale,
-    natural_l1_sensitivity = 2, integer_l1_sensitivity_steps = 512,
-    natural_l2_sensitivity = sqrt(2),
-    integer_l2_sensitivity_steps = sqrt(2) * scale)
-  manifest$workload$sensitivity <- list(l1 = 512, l2 = sqrt(2) * scale)
+    natural_l1_sensitivity = dimension,
+    integer_l1_sensitivity_steps = dimension * scale,
+    natural_l2_sensitivity = sqrt(dimension),
+    integer_l2_sensitivity_steps = sqrt(dimension) * scale)
+  manifest$workload$sensitivity <- list(
+    l1 = dimension * scale, l2 = sqrt(dimension) * scale)
   manifest$workload$mechanism_selection <- list(version = "test-selection")
   manifest$workload$capsule_mechanism <- c(
     manifest$workload$capsule_mechanism,
     list(
       mechanism = "discrete-laplace", sensitivity_norm = "l1",
-      sensitivity = 512, coordinate_count = 2, clipping_hash = strrep("c", 64L),
+      sensitivity = dimension * scale, coordinate_count = dimension,
+      clipping_hash = strrep("c", 64L),
       ring_bits = 128L, frac_bits = 0L))
-  manifest$capsule_identity$contract$admission <- manifest$admission
-  manifest$capsule_identity$contract$workload <- manifest$workload
+  policy_hash <- .dsvert_vector_hash(policy)
+  manifest$capsule_identity$contract <- list(
+    protocol = "dsvert-stateless-catalog-synopsis-capsule-identity-v1",
+    consortium_id = paste0("dpsc1_", policy_hash),
+    policy_contract_hash = policy_hash,
+    peer_pinset_sha256 = policy$peer_pinset_sha256,
+    logical_snapshot = manifest$logical_snapshot,
+    capsule_schema = manifest$capsule_schema,
+    admission = manifest$admission, bounds = manifest$bounds,
+    workload = manifest$workload,
+    privacy_epoch_scope = "per_canonical_artifact_sticky_v1")
   manifest$capsule_identity$capsule_id <-
-    .dsvert_dp_capsule_source_hash(manifest$capsule_identity$contract)
+    .dsvert_vector_hash(manifest$capsule_identity$contract)
   manifest_json <- .dsvert_joint_dp_client_json(manifest)
   manifest_sha256 <- digest::digest(
     manifest_json, algo = "sha256", serialize = FALSE)
@@ -112,7 +197,7 @@
     primitive_scope = manifest$workload$primitive_scope,
     release_lattice = manifest$workload$release_lattice,
     sensitivity = manifest$workload$sensitivity,
-    coordinate_count = 2L, coordinate_order_sha256 = layout$sha256,
+    coordinate_count = dimension, coordinate_order_sha256 = layout$sha256,
     clipping_sha256 = manifest$workload$capsule_mechanism$clipping_hash)
   rename_ids <- function(value) {
     if (!is.list(value)) return(value)
@@ -128,7 +213,18 @@
       "dsVert/stateless-catalog-synopsis/catalog/v1|", catalog),
     catalog = catalog)
 
-  plan <- .synopsis_public_helpers$.vector_client_convolution_plan(2L, "512")
+  sensitivity_steps <- as.character(dimension * scale)
+  plan <- .synopsis_public_helpers$.vector_client_convolution_plan(
+    dimension, sensitivity_steps)
+  # Use the same certified dyadic geometric law as the Gaussian fixtures.
+  # The generic structural fixture's 1/2^128 stop probability is deliberately
+  # tiny and cannot yield a representable utility radius.
+  plan$stop_numerator <- "166112941255448185114116409827120804"
+  plan$one_geometric_tv_numerator <-
+    "6125082604576892348297572878053259906739"
+  plan$one_geometric_tv_denominator <- paste0(
+    "231584178474632390847141970017375815706539969331281128078915",
+    "168015826259279872")
   # Keep the finite sampler-transfer certificate strictly below the declared
   # decimal delta.  The legacy vector fixture uses equality at binary 2^-100,
   # which is fractionally above the synopsis decimal canonicalization.
@@ -160,28 +256,30 @@
     retry_may_change_backend = FALSE,
     policy_version =
       .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_COST_POLICY_VERSION,
-    total_coordinate_count = 2L, maximum_promoted_coordinates = 1L,
+    total_coordinate_count = dimension, maximum_promoted_coordinates = 1L,
     promoted = FALSE, backend = profile$backend,
     selection_reason = "above_public_exact_gc_cost_ceiling")
+  lattice_info <- .dsvert_dp_synopsis_client_lattice(manifest, layout)
   lattice_transform <- list(
     version = manifest$workload$release_lattice$version,
     transform_rule = manifest$workload$release_lattice$transform_rule,
-    output_lattice_bits = bits, scale_shifts = list(bits, bits),
-    raw_upper_bounds = list("100", "100"), sensitivity_norm = "l1",
-    sensitivity_steps = "512")
+    output_lattice_bits = bits,
+    scale_shifts = as.list(lattice_info$scale_shifts),
+    raw_upper_bounds = as.list(lattice_info$raw_upper_bounds),
+    sensitivity_norm = "l1", sensitivity_steps = sensitivity_steps)
   lattice <- list(
     version = "dsvert-stateless-catalog-synopsis-lattice-v1",
-    coordinate_count = 2L, coordinate_order_sha256 = layout$sha256,
+    coordinate_count = dimension, coordinate_order_sha256 = layout$sha256,
     clipping_sha256 = strrep("c", 64L),
     transform_sha256 = .dsvert_vector_hash(lattice_transform),
     output_lattice_bits = bits, output_lattice_scale = scale,
-    sensitivity_norm = "l1", sensitivity_steps = "512",
+    sensitivity_norm = "l1", sensitivity_steps = sensitivity_steps,
     ring_bits = 128L, fractional_bits = 0L)
   epsilon <- formatC(1, digits = 18L, format = "e", decimal.mark = ".")
   delta <- formatC(2^-100, digits = 18L, format = "e", decimal.mark = ".")
   request <- list(
-    epsilon = epsilon, delta = delta, sensitivity_steps = "512",
-    total_coordinate_count = 2L)
+    epsilon = epsilon, delta = delta, sensitivity_steps = sensitivity_steps,
+    total_coordinate_count = dimension)
   convolution_fields <- c(
     "version", "sampler", "stop_bits", "stop_numerator", "uniform_bits",
     "binary_geometric_bits", "bernoulli_thresholds", "sensitivity_steps",
@@ -223,17 +321,18 @@
       mechanism = list(
         version = profile$release_mechanism, family = "discrete_laplace",
         sensitivity = list(
-          version = "dsvert-sensitivity-v1", norm = "l1", steps = "512"),
+          version = "dsvert-sensitivity-v1", norm = "l1",
+          steps = sensitivity_steps),
         randomness = list(
           version = "dsvert-randomness-plan-v1",
           lanes = list(final_noise = list(
             version = "dsvert-randomness-lane-v1",
             purpose = "privatize_final_vector", primitive = profile$sampler,
-            coordinates = 2L))))),
+            coordinates = dimension))))),
     release = physical_identity,
     public_shape = list(
       version = "dsvert-stateless-catalog-synopsis-shape-v1",
-      coordinates = 2L))
+      coordinates = dimension))
   artifact_value <- list(
     semantic = semantic,
     artifact_key = .synopsis_public_domain_hash(
@@ -269,34 +368,40 @@
         receipts = compile_unsigned)))
 
   artifact_index <- .dsvert_dp_capsule_artifact_commitment_index_client(
-    manifest, policy, manifest_sha256)
+    manifest, .dsvert_dp_synopsis_policy_view_v1(policy), manifest_sha256)
   workload_contract_json <- .dsvert_joint_dp_client_json(list(
     version = "synopsis-client-test-workload-v1"))
   workload_contract_sha256 <- digest::digest(
     workload_contract_json, algo = "sha256", serialize = FALSE)
-  build_receipts <- stats::setNames(lapply(peers, function(peer) {
+  bootstrap_set_sha256 <- .dsvert_vector_hash(list(
+    version = .DSVERT_CLIENT_SYNOPSIS_BOOTSTRAP_VERSION,
+    bootstraps = unname(unclass(status))))
+  bound_manifests <- stats::setNames(lapply(peers, function(peer) {
     unsigned <- list(
-      version = .DSVERT_CLIENT_DP_CAPSULE_MANIFEST_BUILD_VERSION,
-      phase = "server_authoritative_manifest_memoized",
+      version = .DSVERT_CLIENT_SYNOPSIS_BOUND_MANIFEST_VERSION,
+      phase = "server_authoritative_synopsis_manifest_memoized",
       peer_name = peer, peer_identity_pk = unname(context$pinset[[peer]]),
       peer_pinset_sha256 = policy$peer_pinset_sha256,
+      bootstrap_set_sha256 = bootstrap_set_sha256,
       schema_sha256 = schema_sha256,
       workload_contract_sha256 = workload_contract_sha256,
       manifest_sha256 = manifest_sha256,
       manifest_bytes = nchar(manifest_json, type = "bytes"),
       capsule_id = manifest$capsule_identity$capsule_id,
-      privacy_epoch = source$status[[peer]]$noise_root$privacy_epoch,
-      noise_key_id = source$status[[peer]]$noise_root$key_id,
       artifact_commitment_count = artifact_index$count,
       artifact_commitments_root = artifact_index$root,
+      artifact_commitments = artifact_index$value,
+      manifest_json = manifest_json,
+      privacy_scope = "per_canonical_artifact_v1",
+      global_composition_claim = FALSE,
       durable_memoization = TRUE, deterministic_replay = TRUE,
-      data_access = FALSE, operation_limit = FALSE,
-      request_limit = FALSE, history_can_deny_operation = FALSE)
-    signature <- .synopsis_public_helpers$.capsule_source_client_b64url(
-      openssl::ed25519_sign(
-        .dsvert_dp_capsule_manifest_message("build", unsigned),
-        source$keys[[peer]]))
-    c(unsigned, list(signature = signature))
+      data_access = FALSE, request_limit = FALSE, rate_limit = FALSE,
+      catalog_limit = FALSE)
+    c(unsigned, list(signature = sign_outer(
+      unsigned, peer, .DSVERT_CLIENT_SYNOPSIS_BIND_DOMAIN)))
+  }), peers)
+  build_receipts <- stats::setNames(lapply(bound_manifests, function(value) {
+    value[setdiff(names(value), c("manifest_json", "artifact_commitments"))]
   }), peers)
   manifest_bundle <- list(
     schema_json = schema_json, schema_sha256 = schema_sha256,
@@ -310,7 +415,7 @@
     artifact_commitment_count = artifact_index$count,
     artifact_commitments_root = artifact_index$root,
     manifest_build_receipts = build_receipts,
-    manifest_signatures = lapply(build_receipts, `[[`, "signature"),
+    manifest_signatures = lapply(bound_manifests, `[[`, "signature"),
     deterministic_replay = TRUE, operation_or_request_limit = FALSE,
     history_can_deny_operation = FALSE, context = context)
 
@@ -323,7 +428,7 @@
     source_context_hash = manifest$workload$capsule_mechanism$source_context_hash,
     peer_pinset_sha256 = policy$peer_pinset_sha256,
     source_peers = list(owner), designated_noise_peers = as.list(authorities),
-    coordinate_count = 2L, coordinate_order_sha256 = layout$sha256,
+    coordinate_count = dimension, coordinate_order_sha256 = layout$sha256,
     ring_bits = 128L, record_bytes = 16L,
     record_encoding = "little_endian_unsigned_fixed_16_bytes",
     chunk_coordinates = .DSVERT_CLIENT_DP_CAPSULE_SOURCE_CHUNK_COORDINATES,
@@ -343,10 +448,16 @@
     artifact_value$artifact_key)), algo = "sha256", serialize = FALSE)
   support <- openssl::bignum(plan$maximum_noise_magnitude) * 2L
   positive_limit <- (openssl::bignum(2) ^ 127L) - 1L
+  maximum_scaled_source <- openssl::bignum(0)
+  for (index in seq_len(dimension)) {
+    candidate <- openssl::bignum(lattice_info$raw_upper_bounds[[index]]) *
+      (openssl::bignum(2) ^ lattice_info$scale_shifts[[index]])
+    if (candidate > maximum_scaled_source) maximum_scaled_source <- candidate
+  }
   ring_unsigned <- list(
     version = "dsvert-stateless-catalog-synopsis-ring128-certificate-v1",
     ring_bits = 128L, fractional_bits = 0L,
-    maximum_scaled_source_coordinate = "25600",
+    maximum_scaled_source_coordinate = as.character(maximum_scaled_source),
     maximum_release_noise_magnitude = as.character(support),
     positive_limit = as.character(positive_limit), no_wrap_certified = TRUE)
   ring <- c(ring_unsigned, list(sha256 = .synopsis_public_domain_hash(
@@ -361,7 +472,7 @@
     authority_roles = semantic$noise_authority_roles,
     authority_peers = as.list(authorities),
     geometry = list(
-      coordinate_count = 2L, public_chunk_coordinates = 2L,
+      coordinate_count = dimension, public_chunk_coordinates = dimension,
       public_chunk_count = 1L, coordinate_order_sha256 = layout$sha256,
       lattice_transform_sha256 = lattice$transform_sha256),
     mechanism = list(
@@ -378,7 +489,8 @@
     manifest_capsule_id = manifest$capsule_identity$capsule_id,
     source_contract_sha256 = source_contract_sha256,
     full_plan_sha256 = full_plan_sha256,
-    execution_geometry = list(chunk_coordinates = 2L, chunk_count = 1L))
+    execution_geometry = list(
+      chunk_coordinates = dimension, chunk_count = 1L))
   attempt_sha256 <- .synopsis_public_domain_hash(
     "dsVert/stateless-catalog-synopsis/execution-attempt/v1|",
     attempt_value)
@@ -388,7 +500,8 @@
     artifact_key = artifact_value$artifact_key, execution_id = execution_id,
     contract_sha256 = contract_sha256, attempt_sha256 = attempt_sha256,
     result_set_sha256 = result_set_sha256, public_chunk_index = 0L,
-    public_chunk_count = 1L, coordinate_offset = 0L, coordinate_count = 2L,
+    public_chunk_count = 1L, coordinate_offset = 0L,
+    coordinate_count = dimension,
     output_lattice_bits = bits, output_lattice_scale = scale,
     scaled_values = as.list(scaled_values),
     value_encoding = "nonnegative-decimal-integer-common-lattice-v1",
@@ -468,6 +581,38 @@ test_that("synopsis public vector has a closed trusted-input ABI", {
     "4611686018427387904")
 })
 
+test_that("synopsis evidence uses an application bound above portable DSI", {
+  expect_identical(
+    .DSVERT_CLIENT_SYNOPSIS_MAX_OBJECT_BYTES,
+    32L * 1024L^2)
+  expect_identical(
+    .DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES,
+    2L * 1024L^2)
+  expect_identical(
+    .DSVERT_CLIENT_SYNOPSIS_PREPARE_MAX_OBJECT_BYTES,
+    64L * 1024L)
+
+  padding_bytes <- 8L * 1024L^2 + 4096L
+  wire <- paste0('{"padding":"', strrep("A", padding_bytes), '"}')
+  parsed <- .dsvert_dp_synopsis_client_json(wire, "large synopsis evidence")
+  expect_equal(nchar(parsed$padding, type = "bytes"), padding_bytes)
+  expect_error(
+    .dsvert_dp_synopsis_client_json(
+      wire, "oversized synopsis receipt",
+      .DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES),
+    "Invalid joint-DP oversized synopsis receipt")
+
+  expression <- .dsvert_dsi_text_frame_call(call(
+    name = "dsvertDPSynopsisCompileDS",
+    manifest_sha256 = strrep("1", 64L), claims_json = wire))
+  condition <- tryCatch(
+    .dsvert_validate_dsi_expression_sizes(
+      expression, capacity_bytes = 8L * 1024L^2),
+    error = identity)
+  expect_s3_class(condition, "dsvert_resource_oversize")
+  expect_identical(condition$scope, "DataSHIELD negotiated expression")
+})
+
 test_that("synopsis RELEASE and bilateral REPLAY become one exact public vector", {
   fixture <- .synopsis_public_fixture()
   value <- do.call(.dsvert_dp_synopsis_public_vector_v1, fixture[c(
@@ -495,6 +640,53 @@ test_that("synopsis RELEASE and bilateral REPLAY become one exact public vector"
     do.call(.dsvert_dp_synopsis_public_vector_v1, reversed[c(
       "release_receipts", "replay_responses", "manifest_bundle",
       "status", "artifact")]), value)
+})
+
+test_that(paste(
+  "unrelated signed parent metadata preserves manifest artifact and release",
+  "for K=2/3/5"), {
+  arguments <- c(
+    "release_receipts", "replay_responses", "manifest_bundle",
+    "status", "artifact")
+  parent_authorization <- list(
+    schema_sha256 = strrep("7", 64L),
+    workload_contract_sha256 = strrep("8", 64L),
+    catalog = list(
+      unrelated_column = "stage",
+      unrelated_pair = c("disease", "stage"),
+      unrelated_gaussian = list(
+        outcome = "gaussian_y", predictors = "gaussian_x")))
+  for (k in c(2L, 3L, 5L)) {
+    selected_only <- .synopsis_public_fixture(k = k)
+    expanded_parent <- .synopsis_public_fixture(
+      k = k, .source = selected_only$source,
+      parent_authorization = parent_authorization)
+    selected_release <- do.call(
+      .dsvert_dp_synopsis_public_vector_v1,
+      selected_only[arguments])
+    expanded_release <- do.call(
+      .dsvert_dp_synopsis_public_vector_v1,
+      expanded_parent[arguments])
+
+    expect_identical(
+      expanded_parent$manifest_bundle$manifest_sha256,
+      selected_only$manifest_bundle$manifest_sha256,
+      info = paste("manifest K =", k))
+    expect_identical(
+      expanded_release$artifact_key, selected_release$artifact_key,
+      info = paste("artifact K =", k))
+    expect_identical(
+      expanded_release$final_vector_root,
+      selected_release$final_vector_root,
+      info = paste("release K =", k))
+    expect_identical(
+      expanded_release$scaled_values, selected_release$scaled_values,
+      info = paste("draw K =", k))
+    expect_identical(
+      expanded_parent$release_receipts,
+      selected_only$release_receipts,
+      info = paste("signed RELEASE K =", k))
+  }
 })
 
 test_that("synopsis public vector keeps K witnesses out of the release pair", {
@@ -710,4 +902,56 @@ test_that("synopsis accepts canonical server release field ordering", {
     "release_receipts", "replay_responses", "manifest_bundle",
     "status", "artifact")])
   expect_identical(value$values, c(1, 2))
+})
+
+test_that("client rejects zero delta certificates from finite Laplace v3", {
+  fixture <- .synopsis_public_fixture()
+  trusted <- .dsvert_dp_synopsis_client_bundle(
+    fixture$manifest_bundle, fixture$status)
+  zero <- "0.000000000000000000e+00"
+  expect_true(.dsvert_dp_synopsis_client_fraction_leq(
+    "0", "1", zero, "implementation delta"))
+  expect_false(.dsvert_dp_synopsis_client_fraction_leq(
+    "1", "1000000000000000000000000000000", zero,
+    "implementation delta"))
+  long_denominator <- paste0("1", strrep("0", 255L))
+  expect_true(.dsvert_dp_synopsis_client_fraction_leq(
+    "1", long_denominator, "1.000000000000000000e+00",
+    "implementation delta"))
+  expect_error(.dsvert_dp_synopsis_client_fraction_leq(
+    "1", paste0("1", strrep("0", 512L)),
+    "1.000000000000000000e+00", "implementation delta"),
+    "Invalid synopsis implementation delta")
+  for (peer in trusted$context$servers) {
+    trusted$status[[peer]]$policy$capsule_delta <- 0
+  }
+  compilation <- fixture$artifact
+  physical <- compilation$artifact$physical_plan
+  physical$request$delta <- zero
+  physical$draw_law$implementation_delta_numerator <- "0"
+  physical$draw_law$implementation_delta_denominator <- "1"
+  physical$draw_law$per_peer_implementation_delta_numerator <- "0"
+  physical$draw_law$per_peer_implementation_delta_denominator <- "1"
+  physical$full_plan$implementation_delta_numerator <- "0"
+  physical$full_plan$implementation_delta_denominator <- "1"
+  physical$full_plan$implementation_delta_bound <- "0"
+  physical$full_plan$per_peer_implementation_delta_numerator <- "0"
+  physical$full_plan$per_peer_implementation_delta_denominator <- "1"
+  physical$full_plan$per_peer_implementation_delta_bound <- "0"
+  physical$full_plan_sha256 <- .dsvert_vector_hash(physical$full_plan)
+  physical$draw_law_sha256 <- .synopsis_public_domain_hash(
+    "dsVert/stateless-catalog-synopsis/draw-law/v1|",
+    physical$draw_law)
+  compilation$artifact$physical_plan <- physical
+  compilation$artifact$semantic$privacy$delta <- zero
+  compilation$artifact$semantic$release <- physical[setdiff(
+    names(physical), c("full_plan", "full_plan_sha256"))]
+  compilation$artifact$artifact_key <- .synopsis_public_domain_hash(
+    "dsVert/analysis-artifact-key/v1|",
+    compilation$artifact$semantic)
+
+  expect_error(
+    .dsvert_dp_synopsis_client_compile(
+      compilation, trusted, fixture$manifest_bundle),
+    "pure DP|finite Laplace|positive implementation delta")
 })

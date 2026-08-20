@@ -26,7 +26,7 @@ library(testthat)
       status = "ok",
       stringsAsFactors = FALSE)
   }))
-  list(
+  result <- list(
     released = TRUE,
     analysis_id = "baseline_v1",
     analysis_version = "1",
@@ -35,11 +35,14 @@ library(testthat)
     descriptives = descriptives,
     quantiles = quantiles,
     server = "site_a",
-    capsule_id = "capsule-1",
+    capsule_id = paste(rep("d", 64L), collapse = ""),
     final_vector_root = paste(rep("a", 64L), collapse = ""),
     coordinate_order_sha256 = paste(rep("b", 64L), collapse = ""),
-    privacy_epoch = "epoch-1",
+    privacy_epoch = 1L,
     noise_key_id = paste(rep("c", 64L), collapse = ""),
+    history_gate = TRUE,
+    request_limit = FALSE,
+    operation_limit = TRUE,
     epsilon = 1,
     delta = 1e-6,
     implementation_delta = 0,
@@ -60,6 +63,40 @@ library(testthat)
     moment_region_method = "simultaneous coordinate-box propagation",
     moment_region_scope = "mechanism and quantisation; no sampling uncertainty",
     statistical_inference = "DP points; no sampling intervals or p-values")
+  class(result) <- c("ds.vertDPDescribe", "list")
+  result
+}
+
+.desc_synopsis_fixture <- function() {
+  result <- .desc_dp_fixture()
+  anchors <- list(
+    artifact_key = strrep("e", 64L),
+    execution_id = strrep("f", 64L),
+    contract_sha256 = strrep("1", 64L),
+    attempt_sha256 = strrep("2", 64L),
+    source_contract_sha256 = strrep("3", 64L),
+    result_set_sha256 = strrep("4", 64L),
+    final_vector_root = result$final_vector_root)
+  result[c(
+    "capsule_id", "privacy_epoch", "noise_key_id", "history_gate",
+    "request_limit", "operation_limit")] <- NULL
+  result[names(anchors)[-length(anchors)]] <- anchors[-length(anchors)]
+  result$release_provenance <- c(list(
+    version = "dsvert-stateless-synopsis-public-provenance-v1"), anchors)
+  result$privacy <- list(
+    version = "dsvert-per-synopsis-dp-v1",
+    per_artifact_epsilon = result$epsilon,
+    per_artifact_delta = result$delta,
+    sticky_noise = TRUE,
+    public_openings = 1L,
+    distinct_artifacts_compose = TRUE,
+    finite_global_composition_claim = FALSE)
+  result$composition_rule <-
+    "one_sticky_release_per_canonical_signed_artifact"
+  result$security_claim <- list(
+    version = "dsvert-synopsis-security-claim-v1",
+    finite_global_composition_claim = FALSE)
+  result
 }
 
 test_that("ds.vertDesc is a one-release compatibility adapter", {
@@ -102,7 +139,8 @@ test_that("ds.vertDesc is a one-release compatibility adapter", {
   expect_identical(result$q50, 54)
   expect_identical(attr(result, "signed_histogram_buckets"), c(bmi = 5L))
   expect_true(attr(result, "dp_release")$formal_dp)
-  expect_identical(attr(result, "dp_release")$capsule_id, "capsule-1")
+  expect_identical(
+    attr(result, "dp_release")$capsule_id, strrep("d", 64L))
   expect_match(attr(result, "dp_release")$uncertainty_scope,
                "sampling uncertainty excluded")
   expect_identical(attr(result, "dp_release")$selected_variables, "bmi")
@@ -111,6 +149,42 @@ test_that("ds.vertDesc is a one-release compatibility adapter", {
   expect_match(attr(result, "compatibility_semantics")$sd,
                "not the usual sample standard deviation")
   expect_equal(nrow(attr(result, "dp_quantile_bands")), 2L)
+})
+
+test_that("ds.vertDesc propagates synopsis release provenance by branch", {
+  fixture <- .desc_synopsis_fixture()
+  testthat::local_mocked_bindings(
+    ds.vertDPDescribe = function(...) fixture,
+    .package = "dsVertClient")
+
+  result <- ds.vertDesc(
+    "cohort", variables = "bmi", probs = 0.5,
+    verbose = FALSE, analysis_id = "baseline_v1")
+  release <- attr(result, "dp_release")
+  expect_identical(release$artifact_key, fixture$artifact_key)
+  expect_identical(release$execution_id, fixture$execution_id)
+  expect_identical(release$contract_sha256, fixture$contract_sha256)
+  expect_identical(release$attempt_sha256, fixture$attempt_sha256)
+  expect_identical(
+    release$source_contract_sha256, fixture$source_contract_sha256)
+  expect_identical(release$result_set_sha256, fixture$result_set_sha256)
+  expect_identical(release$release_provenance, fixture$release_provenance)
+  expect_identical(release$privacy, fixture$privacy)
+  expect_identical(release$security_claim, fixture$security_claim)
+  expect_false(any(c(
+    "capsule_id", "privacy_epoch", "noise_key_id", "history_gate",
+    "request_limit", "operation_limit") %in% names(release)))
+})
+
+test_that("ds.vertDesc rejects mixed describe provenance", {
+  synopsis <- .desc_synopsis_fixture()
+  synopsis$capsule_id <- strrep("5", 64L)
+  testthat::local_mocked_bindings(
+    ds.vertDPDescribe = function(...) synopsis,
+    .package = "dsVertClient")
+  expect_error(
+    ds.vertDesc("cohort", analysis_id = "baseline_v1", verbose = FALSE),
+    "intact released")
 })
 
 test_that("legacy knobs cannot alter the signed describe workload", {

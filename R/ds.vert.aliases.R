@@ -10,10 +10,21 @@
 #' \code{formal_analysis_id} route also fails before DSI in this release.
 #' No alias re-enables a retired remote endpoint or weakens the signed-artifact
 #' and custodian-owned policy gates of an available backend.
+#' \code{ds.vert.align()} returns a credential-free
+#' \code{ds.vertFederation}. Pass that object as \code{data_name} (or
+#' \code{data} for Gaussian GLM) to reuse the aligned symbol. Each consumer
+#' re-attests the same sites and PSI contract; it does not rerun PSI. The
+#' federation also caches the custodian-published, policy-only column kind and
+#' role catalogue. Formula frontdoors use it to resolve unique names and to
+#' require explicit \code{server$column} qualification for collisions.
 #'
-#' @param data_name,data,formula,datasources Aligned data-frame symbol (or model
-#'   \code{formula}) and the DataSHIELD connections.
+#' @param data_name,data,formula,datasources Aligned data-frame symbol, reusable
+#'   \code{ds.vertFederation}, model \code{formula}, and DataSHIELD connections.
+#'   Model formulas may qualify ambiguous columns as
+#'   \code{site_name$column}; the expression is parsed, never evaluated.
 #' @param id_col,newobj Record-identifier column and output symbol for alignment.
+#'   \code{data_name} and \code{id_col} may each be one string broadcast to all
+#'   sites or a complete named per-site character/list map.
 #' @param variables,var1,var2 Column selections for descriptive / bivariate routes.
 #' @param cluster_col Grouping column for the mixed-model routes.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
@@ -107,16 +118,38 @@ NULL
 ds.vert.align <- function(data_name, id_col, newobj = "D_aligned",
                           datasources = NULL, ...) {
   datasources <- .dsvert_datasources(datasources)
-  out <- ds.psiAlign(data_name = data_name, id_col = id_col, newobj = newobj,
-                     datasources = datasources, ...)
-  .dsvert_set_frontdoor(out, "ds.vert.align", "ds.psiAlign",
-                        length(datasources))
+  data_name <- .dsvert_site_character(data_name, datasources, "data_name")
+  id_col <- .dsvert_site_character(id_col, datasources, "id_col")
+  attestation <- ds.psiAlign(
+    data_name = data_name, id_col = id_col, newobj = newobj,
+    datasources = datasources, ...)
+  attestation <- .dsvert_validate_psi_padded_attestation(attestation)
+  public_schema <- .dsvert_federation_public_schema(
+    symbol = newobj,
+    datasources = datasources,
+    id_columns = id_col,
+    attestation = attestation)
+  .dsvert_new_federation(
+    symbol = newobj,
+    sites = names(datasources),
+    source_symbols = data_name,
+    id_columns = id_col,
+    attestation = attestation,
+    public_schema = public_schema)
 }
 
 #' @rdname ds.vert.aliases
 #' @export
 ds.vert.is_aligned <- function(newobj = "DA", datasources = NULL, ...) {
   datasources <- .dsvert_datasources(datasources)
+  if (inherits(newobj, "ds.vertFederation")) {
+    status <- tryCatch(
+      .dsvert_federation_status(newobj, datasources),
+      error = function(e) NULL)
+    out <- list(aligned = !is.null(status), n_common = NA_integer_)
+    return(.dsvert_set_frontdoor(
+      out, "ds.vert.is_aligned", "ds.isPsiAligned", length(datasources)))
+  }
   out <- ds.isPsiAligned(newobj = newobj, datasources = datasources, ...)
   .dsvert_set_frontdoor(out, "ds.vert.is_aligned", "ds.isPsiAligned",
                         length(datasources))
@@ -126,7 +159,9 @@ ds.vert.is_aligned <- function(newobj = "DA", datasources = NULL, ...) {
 #' @export
 ds.vert.desc <- function(data_name, datasources = NULL, ...) {
   datasources <- .dsvert_datasources(datasources)
-  out <- ds.vertDesc(data_name = data_name, datasources = datasources, ...)
+  resolved <- .dsvert_resolve_federation(data_name, datasources)
+  out <- ds.vertDesc(
+    data_name = resolved$value, datasources = resolved$datasources, ...)
   .dsvert_set_frontdoor(out, "ds.vert.desc", "ds.vertDesc",
                         length(datasources))
 }
@@ -136,8 +171,10 @@ ds.vert.desc <- function(data_name, datasources = NULL, ...) {
 ds.vert.cor <- function(data_name, variables = NULL,
                         datasources = NULL, ...) {
   datasources <- .dsvert_datasources(datasources)
-  out <- ds.vertCor(data_name = data_name, variables = variables,
-                    datasources = datasources, ...)
+  resolved <- .dsvert_resolve_federation(data_name, datasources)
+  out <- ds.vertCor(
+    data_name = resolved$value, variables = variables,
+    datasources = resolved$datasources, ...)
   .dsvert_set_frontdoor(out, "ds.vert.cor", "ds.vertCor",
                         length(datasources))
 }
@@ -147,8 +184,10 @@ ds.vert.cor <- function(data_name, variables = NULL,
 ds.vert.pca <- function(data_name = NULL, variables = NULL,
                         datasources = NULL, ...) {
   datasources <- .dsvert_datasources(datasources)
-  out <- ds.vertPCA(data_name = data_name, variables = variables,
-                    datasources = datasources, ...)
+  resolved <- .dsvert_resolve_federation(data_name, datasources)
+  out <- ds.vertPCA(
+    data_name = resolved$value, variables = variables,
+    datasources = resolved$datasources, ...)
   .dsvert_set_frontdoor(out, "ds.vert.pca", "ds.vertPCA",
                         length(datasources))
 }
@@ -157,6 +196,12 @@ ds.vert.pca <- function(data_name = NULL, variables = NULL,
 #' @export
 ds.vert.chisq <- function(data_name, var1 = NULL, var2 = NULL,
                           datasources = NULL, ...) {
+  if (inherits(data_name, "ds.vertFederation")) {
+    datasources <- .dsvert_datasources(datasources)
+    resolved <- .dsvert_resolve_federation(data_name, datasources)
+    data_name <- resolved$value
+    datasources <- resolved$datasources
+  }
   existing_release <- inherits(data_name, "ds.vertDPContingency")
   if (!existing_release) datasources <- .dsvert_datasources(datasources)
   out <- ds.vertChisq(data_name = data_name, var1 = var1, var2 = var2,
@@ -169,6 +214,12 @@ ds.vert.chisq <- function(data_name, var1 = NULL, var2 = NULL,
 #' @export
 ds.vert.fisher <- function(data_name, var1 = NULL, var2 = NULL,
                            datasources = NULL, ...) {
+  if (inherits(data_name, "ds.vertFederation")) {
+    datasources <- .dsvert_datasources(datasources)
+    resolved <- .dsvert_resolve_federation(data_name, datasources)
+    data_name <- resolved$value
+    datasources <- resolved$datasources
+  }
   existing_release <- inherits(data_name, "ds.vertDPContingency")
   if (!existing_release) datasources <- .dsvert_datasources(datasources)
   out <- ds.vertFisher(data_name = data_name, var1 = var1, var2 = var2,
@@ -181,6 +232,12 @@ ds.vert.fisher <- function(data_name, var1 = NULL, var2 = NULL,
 #' @export
 ds.vert.chisq_cross <- function(data, var1 = NULL, var2 = NULL,
                                 datasources = NULL, ...) {
+  if (inherits(data, "ds.vertFederation")) {
+    datasources <- .dsvert_datasources(datasources)
+    resolved <- .dsvert_resolve_federation(data, datasources)
+    data <- resolved$value
+    datasources <- resolved$datasources
+  }
   existing_release <- inherits(data, "ds.vertDPContingency")
   if (!existing_release) datasources <- .dsvert_datasources(datasources)
   out <- ds.vertChisqCross(data = data, var1 = var1, var2 = var2,

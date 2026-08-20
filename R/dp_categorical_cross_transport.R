@@ -7,6 +7,9 @@
 
 .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_ARTIFACT_VERSION <-
   "fixed-domain-categorical-cross-contingency-v1"
+.DSVERT_CLIENT_DP_CATEGORICAL_CROSS_UNIT_POLICY <- paste0(
+  "per_owner_consistent_level_else_zero_then_one_joint_cell_per_",
+  "admitted_unit_v1")
 .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_BIND_VERSION <-
   "dsvert-cross-categorical-exact-binding-v1"
 .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_STAGE_VERSION <-
@@ -307,7 +310,7 @@
     .setup_exact = .dsvert_setup_exact_gc_transport,
     .vecmul = .dsvert_exact_gc_vecmul_run,
     .alignment_mask = .dsvert_dp_alignment_mask_run,
-    .shared_exact = NULL) {
+    .shared_exact = NULL, .remote_context = NULL) {
   artifacts <- .dsvert_dp_categorical_cross_artifacts_client(manifest)
   if (!length(artifacts)) {
     return(list(enabled = FALSE, sampler_handoff_ready = TRUE,
@@ -321,7 +324,14 @@
   }
   layout <- .dsvert_dp_gaussian_cross_layout_client(manifest)
   peers <- context$designated
-  openings <- .dsvert_dp_capsule_allocation_openings(context)
+  synopsis <- !is.null(.remote_context)
+  openings <- if (isTRUE(synopsis)) NULL else
+    .dsvert_dp_capsule_allocation_openings(context)
+  if (isTRUE(synopsis)) {
+    .remote_context <-
+      .dsvert_dp_synopsis_categorical_cross_remote_context_v1(
+        .remote_context)
+  }
   valid_source <- identical(
       sort(peers, method = "radix"),
       unname(unlist(layout$computation_peers))) &&
@@ -349,9 +359,16 @@
     on.exit(.dsvert_dp_cross_exact_cleanup(
       context$conns, session_id, setup_result, .aggregate, .setup_exact),
       add = TRUE)
-    alignment <- .alignment_mask(
-      manifest_json, context, layout, source_receipt,
-      session_id, .aggregate)
+    alignment <- if (isTRUE(synopsis) && identical(
+        .alignment_mask, .dsvert_dp_alignment_mask_run)) {
+      .alignment_mask(
+        manifest_json, context, layout, source_receipt,
+        session_id, .aggregate, .remote_context = .remote_context)
+    } else {
+      .alignment_mask(
+        manifest_json, context, layout, source_receipt,
+        session_id, .aggregate)
+    }
     .shared_exact <- .dsvert_dp_cross_shared_exact_build(
       manifest_json, manifest, context, layout, source_receipt,
       session_id, alignment)
@@ -363,12 +380,17 @@
   }
   completed <- list()
   for (analysis_id in names(artifacts)) {
-    bind_calls <- stats::setNames(lapply(peers, function(peer) call(
-      name = "dsvertDPCategoricalCrossBindDS",
-      manifest_json = manifest_json, analysis_id = analysis_id,
-      session_id = session_id,
-      first_opening_json = openings[[peers[[1L]]]],
-      second_opening_json = openings[[peers[[2L]]]])), peers)
+    bind_calls <- stats::setNames(lapply(peers, function(peer) {
+      if (isTRUE(synopsis)) {
+        .dsvert_dp_synopsis_categorical_cross_bind_call_v1(
+          .remote_context, analysis_id, session_id)
+      } else call(
+        name = "dsvertDPCategoricalCrossBindDS",
+        manifest_json = manifest_json, analysis_id = analysis_id,
+        session_id = session_id,
+        first_opening_json = openings[[peers[[1L]]]],
+        second_opening_json = openings[[peers[[2L]]]])
+    }), peers)
     binding <- .dsvert_dp_categorical_cross_bind_set(
       .dsvert_fanout_by_site(
         context$conns, bind_calls,
@@ -399,10 +421,15 @@
         input_manifests = producer_manifests,
         transport_ready = TRUE, .aggregate = .aggregate)
     }
-    finalize_calls <- stats::setNames(lapply(peers, function(peer) call(
-      name = "dsvertDPCategoricalCrossFinalizeDS",
-      manifest_json = manifest_json, analysis_id = analysis_id,
-      session_id = session_id)), peers)
+    finalize_calls <- stats::setNames(lapply(peers, function(peer) {
+      if (isTRUE(synopsis)) {
+        .dsvert_dp_synopsis_categorical_cross_finalize_call_v1(
+          .remote_context, analysis_id, session_id)
+      } else call(
+        name = "dsvertDPCategoricalCrossFinalizeDS",
+        manifest_json = manifest_json, analysis_id = analysis_id,
+        session_id = session_id)
+    }), peers)
     completed[[analysis_id]] <- .dsvert_dp_categorical_cross_result_set(
       .dsvert_fanout_by_site(
         context$conns, finalize_calls,

@@ -7,7 +7,8 @@
 ds.vertDPMedian(x)
 }
 \arguments{
-\item{x}{An intact released \code{ds.vertDPDescribe} capsule object.}
+\item{x}{An intact released \code{ds.vertDPDescribe} object with either legacy
+capsule provenance or stateless synopsis provenance.}
 }
 \value{
 A \code{ds.vertDPMedian} data frame with one binned median per released

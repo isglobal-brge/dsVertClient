@@ -37,29 +37,34 @@
   result[order(names(result), method = "radix")]
 }
 
-.dsvert_dp_gaussian_cross_names_client <- function(value, what) {
+.dsvert_dp_gaussian_cross_names_client <- function(value, what,
+                                                   qualified = FALSE) {
   if (is.list(value) && is.null(names(value))) {
     valid <- all(vapply(value, function(item) {
       is.character(item) && length(item) == 1L && !is.na(item)
     }, logical(1L)))
     if (isTRUE(valid)) value <- unname(unlist(value, use.names = FALSE))
   }
+  valid_item <- if (isTRUE(qualified)) {
+    function(item) !is.null(.dsvert_dp_gaussian_reference(item))
+  } else {
+    function(item) grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", item)
+  }
   if (!is.character(value) || !length(value) || !is.null(names(value)) ||
-      anyNA(value) || any(!grepl(
-        "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", value))) {
+      anyNA(value) || any(!vapply(value, valid_item, logical(1L)))) {
     stop("Invalid signed cross-owner Gaussian ", what, call. = FALSE)
   }
   unname(enc2utf8(value))
 }
 
 .dsvert_dp_gaussian_cross_variable_client <- function(artifact, variable) {
-  if (identical(variable, artifact$outcome$column)) return(artifact$outcome)
   descriptor <- artifact$predictors[[variable]]
-  if (!is.list(descriptor)) {
-    stop("The signed cross-owner Gaussian variable order is invalid",
-         call. = FALSE)
+  if (is.list(descriptor)) return(descriptor)
+  if (.dsvert_dp_gaussian_reference_matches(variable, artifact$outcome)) {
+    return(artifact$outcome)
   }
-  descriptor
+  stop("The signed cross-owner Gaussian variable order is invalid",
+       call. = FALSE)
 }
 
 .dsvert_dp_gaussian_cross_layout_client <- function(
@@ -99,7 +104,8 @@
   for (analysis_id in names(artifacts)) {
     artifact <- artifacts[[analysis_id]]
     variables <- .dsvert_dp_gaussian_cross_names_client(
-      artifact$input_variable_order, "input-variable order")
+      artifact$input_variable_order, "input-variable order",
+      qualified = TRUE)
     participants <- .dsvert_dp_gaussian_cross_names_client(
       artifact$participating_peers, "participant list")
     computation <- .dsvert_dp_gaussian_cross_names_client(
@@ -120,7 +126,7 @@
         artifact, variable)
       required <- c("column", "dataset", "owner_peer", "lower", "upper")
       if (!.dsvert_dp_has_exact_names(descriptor, required) ||
-          !identical(descriptor$column, variable) ||
+          !.dsvert_dp_gaussian_reference_matches(variable, descriptor) ||
           !descriptor$owner_peer %in% participants ||
           !.dsvert_dp_is_number(descriptor$lower) ||
           !.dsvert_dp_is_number(descriptor$upper) ||
@@ -137,7 +143,8 @@
         }
         key <- paste(analysis_id, variable, kind, sep = "::")
         blocks[[key]] <- list(
-          analysis_id = analysis_id, variable = variable, kind = kind,
+          analysis_id = analysis_id, variable = descriptor$column,
+          kind = kind,
           dataset = descriptor$dataset, owner_peer = descriptor$owner_peer,
           lower = descriptor$lower, upper = descriptor$upper,
           start = as.integer(cursor), end = as.integer(end),

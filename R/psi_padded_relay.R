@@ -2,6 +2,11 @@
 .DSVERT_CLIENT_PSI_RELAY_CAPABILITY <- "psi.padded.v4"
 .DSVERT_CLIENT_PSI_RELAY_JOURNAL <- "dsvert-client-psi-relay-journal-v1"
 
+.dsvert_psi_relay_path_is_link <- function(path) {
+  target <- Sys.readlink(path)
+  length(target) == 1L && !is.na(target) && nzchar(target)
+}
+
 .dsvert_psi_relay_state_root <- function() {
   configured <- getOption("dsvert.client.state_dir")
   root <- if (!is.null(configured)) configured else file.path(
@@ -19,7 +24,7 @@
     stop("Could not create the private PSI relay journal directory.",
          call. = FALSE)
   }
-  if (nzchar(Sys.readlink(directory))) stop(
+  if (.dsvert_psi_relay_path_is_link(directory)) stop(
     "The PSI relay journal directory must not be a symbolic link.",
     call. = FALSE)
   Sys.chmod(directory, mode = "0700")
@@ -76,7 +81,8 @@
   value <- if (file.exists(path)) {
     info <- file.info(path)
     if (nrow(info) != 1L || is.na(info$size) || info$size < 1L ||
-        info$size > 4L * 1024L^2 || nzchar(Sys.readlink(path))) stop(
+        info$size > 4L * 1024L^2 ||
+        .dsvert_psi_relay_path_is_link(path)) stop(
       "The PSI relay journal has an invalid representation.", call. = FALSE)
     parsed <- tryCatch(jsonlite::fromJSON(
       rawToChar(readBin(path, "raw", n = info$size + 1L)),
@@ -104,7 +110,8 @@
 .dsvert_psi_relay_journal_delete <- function(controller) {
   if (!is.environment(controller) || !is.character(controller$path) ||
       length(controller$path) != 1L) return(invisible(FALSE))
-  if (file.exists(controller$path) && !nzchar(Sys.readlink(controller$path))) {
+  if (file.exists(controller$path) &&
+      !.dsvert_psi_relay_path_is_link(controller$path)) {
     unlink(controller$path, force = TRUE)
   }
   invisible(TRUE)
@@ -118,12 +125,15 @@
 .dsvert_psi_relay_exchange <- function(
     datasources, peer, route, session_id, operation_id, .aggregate,
     terminal_receipt_b64url = "") {
+  expression <- call(
+    name = "psiPaddedRelayExchangeDS",
+    request_json = .dsvert_psi_relay_request_json(route),
+    session_id = session_id, outbound_operation_id = operation_id)
+  if (nzchar(terminal_receipt_b64url)) {
+    expression$terminal_receipt_b64url <- terminal_receipt_b64url
+  }
   result <- .dsvert_aggregate_strict(
-    datasources[peer], call(
-      name = "psiPaddedRelayExchangeDS",
-      request_json = .dsvert_psi_relay_request_json(route),
-      session_id = session_id, outbound_operation_id = operation_id,
-      terminal_receipt_b64url = terminal_receipt_b64url),
+    datasources[peer], expression,
     operation = "pinned padded PSI framed relay",
     .aggregate = .aggregate)[[1L]]
   required <- c("peer_id", "accepted", "outbox_cursor", "outbox_eof",

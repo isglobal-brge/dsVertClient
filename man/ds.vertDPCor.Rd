@@ -13,7 +13,8 @@ ds.vertDPCor(
 )
 }
 \arguments{
-\item{data_name}{Signed protected dataset name.}
+\item{data_name}{Signed protected dataset name, or a reusable
+\code{ds.vertFederation} returned by \code{ds.vert.align()}.}
 
 \item{analysis_id}{Signed correlation artifact id, normally
 \code{paste(data_name, owner, sep = "::")}.}
@@ -28,12 +29,13 @@ exactly one owner entry. At least two variables are required.}
 \value{
 A \code{ds.vertDPCor}/\code{ds.cor} object containing raw and projected
 correlations, pair counts, simultaneous mechanism/quantization regions,
-and capsule provenance.
+and signed Synopsis provenance.
 }
 \description{
 Reads pairwise-complete bounded moments from exactly one signed, sticky
-biomedical capsule vector. The requested variables must all be co-located in
-one dataset and owner. Cross-owner products remain deliberately unavailable.
+biomedical Synopsis vector. The requested variables must all be co-located
+in one dataset and owner. Cross-owner products remain deliberately
+unavailable.
 The returned raw matrix uses pairwise-complete DP moments and can therefore
 be indefinite; \code{correlation} is an explicitly labelled eigenvalue-clipping
 and diagonal-rescaling projection, not an exact correlation reconstruction

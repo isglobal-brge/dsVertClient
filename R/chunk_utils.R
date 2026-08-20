@@ -9,9 +9,10 @@
 #' implements acknowledged chunking:
 #'
 #' \enumerate{
-#'   \item Start with a portable initial chunk size (default 640 KiB of Base64
-#'     text / at most 480 KiB raw, configurable
-#'     via \code{options(dsvert.chunk_size = N)})
+#'   \item Use a conservative unprobed default of 640 KiB of Base64 text, then
+#'     let production DSI negotiate 688 KiB (enough for 512 KiB raw) or a
+#'     smaller common value before any payload is sent. Test harnesses may set
+#'     \code{options(dsvert.chunk_size = N)} explicitly.
 #'   \item Freeze the chunk size, chunk count, indices, and bytes before the
 #'     first request
 #'   \item Require an exact logical \code{TRUE} acknowledgement from the
@@ -93,8 +94,10 @@ NULL
 #'
 #' Returns the cached effective chunk size if available (from a previous
 #' successful transfer), otherwise returns the configured chunk size from
-#' \code{getOption("dsvert.chunk_size")} or the portable default (640 KiB of
-#' Base64 text, representing at most 480 KiB of raw bytes).
+#' \code{getOption("dsvert.chunk_size")} or the conservative unprobed default
+#' (640 KiB of Base64 text, representing at most 480 KiB raw). Production DSI
+#' negotiation can replace it with a verified 688 KiB text geometry, enough
+#' for a 512 KiB raw frame.
 #'
 #' @return Integer. Chunk size in characters.
 #' @keywords internal

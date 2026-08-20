@@ -1,4 +1,4 @@
-# Joint complete-case correlation from one signed sticky biomedical capsule.
+# Joint complete-case correlation from one signed sticky biomedical Synopsis.
 # No protected column discovery or legacy exact/Ring correlation endpoint is
 # reachable from this file.
 
@@ -126,7 +126,7 @@
       !identical(artifact$implementation_state, "same_owner_materialized") ||
       !identical(artifact$cross_owner_state, "reserved_not_materialized")) {
     .dsvert_dp_cor_reserved(paste0(
-      "the signed capsule has no same-owner correlation artifact '",
+      "the signed Synopsis has no same-owner correlation artifact '",
       analysis_id, "' for dataset '", data_name, "'"))
   }
   variables <- .dsvert_dp_capsule_manifest_strings(
@@ -392,14 +392,16 @@
 #' Differentially private same-owner Pearson correlation
 #'
 #' Reads pairwise-complete bounded moments from exactly one signed, sticky
-#' biomedical capsule vector. The requested variables must all be co-located in
-#' one dataset and owner. Cross-owner products remain deliberately unavailable.
+#' biomedical Synopsis vector. The requested variables must all be co-located
+#' in one dataset and owner. Cross-owner products remain deliberately
+#' unavailable.
 #' The returned raw matrix uses pairwise-complete DP moments and can therefore
 #' be indefinite; `correlation` is an explicitly labelled eigenvalue-clipping
 #' and diagonal-rescaling projection, not an exact correlation reconstruction
 #' or an exact nearest-correlation solution.
 #'
-#' @param data_name Signed protected dataset name.
+#' @param data_name Signed protected dataset name, or a reusable
+#'   `ds.vertFederation` returned by `ds.vert.align()`.
 #' @param analysis_id Signed correlation artifact id, normally
 #'   `paste(data_name, owner, sep = "::")`.
 #' @param variables Optional character subset, or a named list containing
@@ -408,12 +410,13 @@
 #' @param datasources DataSHIELD connections.
 #' @return A `ds.vertDPCor`/`ds.cor` object containing raw and projected
 #'   correlations, pair counts, simultaneous mechanism/quantization regions,
-#'   and capsule provenance.
+#'   and signed Synopsis provenance.
 #' @export
 ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
                          server = NULL, datasources = NULL) {
+  resolved <- .dsvert_federation_argument(data_name, datasources)
   .dsvert_dp_cor_impl(
-    data_name, analysis_id, variables, server, datasources,
+    resolved$value, analysis_id, variables, server, resolved$datasources,
     DSI::datashield.aggregate)
 }
 
@@ -430,9 +433,10 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
       "use ds.vertCor with a signed complete-case gaussian_models artifact",
       "for cross-owner correlation"))
   }
-  run <- .dsvert_dp_capsule_vector_run(
+  run <- .dsvert_dp_synopsis_vector_run(
     datasources, .aggregate = .aggregate)
-  context <- .dsvert_dp_vector_context(run)
+  context <- .dsvert_dp_vector_context(run, allow_synopsis = TRUE)
+  metadata <- .dsvert_dp_vector_public_metadata(context)
   artifact <- .dsvert_dp_cor_artifact(
     context$manifest, data_name, analysis_id, request$owner_peer)
   variables <- if (is.null(request$variables)) {
@@ -564,7 +568,6 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
     }
   }
   n_obs <- min(pair_n[upper.tri(pair_n)])
-  metadata <- .dsvert_dp_vector_public_metadata(context)
   result <- c(metadata, list(
     status = "ok", analysis_id = analysis_id,
     estimand_missingness = "pairwise_complete",
@@ -578,7 +581,7 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
     correlation_raw_pairwise = raw,
     local_correlations = stats::setNames(list(psd$matrix), owner),
     method = paste(
-      "single-sticky-joint-DP-capsule pairwise-complete Pearson;",
+      "single-sticky-canonical-Synopsis pairwise-complete Pearson;",
       "explicit PSD post-processing"),
     pairwise_moment_postprocessing = paste(
       "bounded moment/Frechet projection and denominator validation;",
@@ -610,7 +613,7 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
     quantization_rule =
       "each_normalized_first_second_cross_moment_rounded_to_signed_grid",
     uncertainty_scope = paste(
-      "Simultaneous 95% regions cover capsule mechanism noise and a",
+      "Simultaneous 95% regions cover Synopsis mechanism noise and a",
       "deterministic quantization enclosure; clipping and pairwise missingness",
       "define the finite-snapshot estimand; sampling uncertainty is excluded"),
     inferential_scope = paste(
@@ -672,6 +675,136 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
     sums = sums, second = second)
 }
 
+.dsvert_dp_cor_gaussian_certificate_match <- function(result, verification) {
+  artifact <- verification$artifact
+  variables <- result$var_names
+  all_variables <- if (is.list(artifact)) {
+    c(artifact$predictor_order, artifact$outcome$column)
+  } else character()
+  roots <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "final_vector_root")
+  scalar_equal <- function(left, right) {
+    isTRUE(all.equal(left, right, tolerance = 0, check.attributes = TRUE))
+  }
+  valid <- is.list(result) && is.list(verification) &&
+    identical(verification$integrity_valid, TRUE) &&
+    verification$authenticity %in% c(
+      "caller_anchored", "session_transport_anchored") &&
+    identical(result$analysis_id, verification$analysis_id) &&
+    is.character(variables) && length(variables) >= 2L &&
+    !anyNA(variables) && !anyDuplicated(variables) &&
+    all(variables %in% all_variables) &&
+    identical(
+      .dsvert_joint_dp_client_json(result$signed_artifact),
+      .dsvert_joint_dp_client_json(artifact)) &&
+    all(vapply(roots, function(field) {
+      identical(result[[field]], verification[[field]])
+    }, logical(1L))) &&
+    identical(result$coordinate_order_sha256,
+              verification$coordinate_order_sha256) &&
+    identical(result$provenance_certificate$certificate_sha256,
+              verification$certificate$certificate_sha256) &&
+    identical(result$cross_owner_state, "reserved_not_materialized") &&
+    scalar_equal(as.numeric(result$epsilon),
+                 as.numeric(verification$epsilon)) &&
+    scalar_equal(as.numeric(result$delta),
+                 as.numeric(verification$delta)) &&
+    identical(result$mechanism, verification$mechanism) &&
+    is.list(verification$validated_moment) &&
+    is.numeric(verification$coordinates) &&
+    .dsvert_dp_is_number(verification$coordinate_capacity, 0, 2^53 - 1,
+                         lower_open = TRUE) &&
+    .dsvert_dp_is_number(verification$output_lattice_scale, 0, 2^62,
+                         lower_open = TRUE) &&
+    is.list(verification$accuracy_simultaneous_95) &&
+    .dsvert_dp_is_number(
+      verification$accuracy_simultaneous_95$radius, 0, 2^53 - 1)
+  if (!isTRUE(valid)) {
+    stop("The DP correlation is detached from its Gaussian Synopsis certificate",
+         call. = FALSE)
+  }
+
+  coordinate_summary <- .dsvert_dp_cor_gaussian_coordinates(
+    verification$coordinates, artifact)
+  moment <- verification$validated_moment
+  augmented_names <- c(artifact$design_terms, artifact$outcome$column)
+  augmented <- moment$augmented_projected
+  dimnames(augmented) <- list(augmented_names, augmented_names)
+  selected <- match(variables, augmented_names)
+  intercept <- match("(Intercept)", augmented_names)
+  mass <- augmented[intercept, intercept]
+  sums <- augmented[intercept, selected]
+  second <- augmented[selected, selected, drop = FALSE]
+  centered <- second - outer(sums, sums) / mass
+  centered <- (centered + t(centered)) / 2
+  variances <- diag(centered)
+  if (!is.finite(mass) || mass <= 0 || any(!is.finite(variances)) ||
+      any(variances <= 0)) {
+    stop("The certified Gaussian correlation moments are non-identifiable",
+         call. = FALSE)
+  }
+  raw <- centered / sqrt(outer(variances, variances))
+  raw <- (raw + t(raw)) / 2
+  diag(raw) <- 1
+  dimnames(raw) <- list(variables, variables)
+  psd <- .dsvert_dp_cor_psd(raw)
+
+  lower <- upper <- raw
+  radius <- verification$accuracy_simultaneous_95$radius
+  capacity <- as.numeric(verification$coordinate_capacity)
+  scale <- as.numeric(verification$output_lattice_scale)
+  for (left_index in seq_len(length(variables) - 1L)) {
+    for (right_index in seq.int(left_index + 1L, length(variables))) {
+      left <- variables[[left_index]]
+      right <- variables[[right_index]]
+      interval <- .dsvert_dp_cor_interval(c(
+        coordinate_summary$mass,
+        coordinate_summary$sums[[left]], coordinate_summary$sums[[right]],
+        coordinate_summary$second[left, left],
+        coordinate_summary$second[right, right],
+        coordinate_summary$second[left, right]),
+        radius, capacity, scale)
+      lower[left_index, right_index] <- lower[right_index, left_index] <-
+        interval$correlation[["lower"]]
+      upper[left_index, right_index] <- upper[right_index, left_index] <-
+        interval$correlation[["upper"]]
+    }
+  }
+  projected_lower <- projected_upper <- psd$matrix
+  for (row in seq_along(variables)) {
+    for (column in seq_along(variables)) {
+      enclosure_radius <- max(
+        abs(psd$matrix[row, column] - lower[row, column]),
+        abs(psd$matrix[row, column] - upper[row, column]))
+      projected_lower[row, column] <- max(
+        -1, psd$matrix[row, column] - enclosure_radius)
+      projected_upper[row, column] <- min(
+        1, psd$matrix[row, column] + enclosure_radius)
+    }
+  }
+  complete_case_n <- matrix(
+    mass, length(variables), length(variables),
+    dimnames = list(variables, variables))
+  bound <-
+    scalar_equal(result$n_obs, mass) &&
+    scalar_equal(result$complete_case_n, complete_case_n) &&
+    scalar_equal(result$correlation_raw_complete_case, raw) &&
+    scalar_equal(result$correlation, psd$matrix) &&
+    scalar_equal(result$psd_projection, psd) &&
+    scalar_equal(
+      result$correlation_95_interval_complete_case,
+      list(lower = lower, upper = upper)) &&
+    scalar_equal(
+      result$correlation_95_enclosure_raw_estimand_around_projected_release,
+      list(lower = projected_lower, upper = projected_upper))
+  if (!isTRUE(bound)) {
+    stop("The DP correlation values do not match their Gaussian Synopsis certificate",
+         call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
 .dsvert_dp_cor_gaussian_impl <- function(
     data_name, analysis_id, variables = NULL, server = NULL,
     datasources = NULL, .aggregate) {
@@ -679,26 +812,12 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
   analysis_id <- .dsvert_dp_cor_identifier(analysis_id, "analysis_id")
   datasources <- .dsvert_dp_datasources(datasources)
   request <- .dsvert_dp_cor_request(variables, server, datasources)
-  run <- .dsvert_dp_capsule_vector_run(
-    datasources, .aggregate = .aggregate)
-  context <- .dsvert_dp_vector_context(run)
-  scale <- as.numeric(context$lattice$output_lattice_scale)
-  count_block <- .dsvert_dp_capsule_single_block(
-    context$layout, "admitted_count",
-    description = "signed admitted-count capacity block")
-  capacity <- .dsvert_dp_vector_block_capacity(count_block)
-  signed <- tryCatch(
-    context$manifest$workload$families$gaussian_models$artifacts[[analysis_id]],
-    error = function(error) NULL)
-  if (!is.list(signed)) {
-    stop(
-      "The signed capsule has no complete-case gaussian_models artifact '",
-      analysis_id, "'; ds.vertCor never falls back to pairwise moments.",
-      call. = FALSE)
-  }
-  artifact <- .dsvert_dp_gaussian_artifact(
-    context$manifest, data_name, analysis_id, request$server,
-    context$adjacency, scale, capacity)
+  source <- .dsvert_dp_gaussian_synopsis_release(
+    data_name, analysis_id, request$server, datasources, .aggregate)
+  context <- source$context
+  scale <- source$scale
+  capacity <- source$capacity
+  artifact <- source$artifact
   all_variables <- c(artifact$predictor_order, artifact$outcome$column)
   variables <- if (is.null(request$variables)) {
     all_variables
@@ -722,26 +841,10 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
            call. = FALSE)
     }
   }
-  blocks <- .dsvert_dp_capsule_vector_blocks(
-    context$layout, "gaussian_models", dataset = data_name,
-    owner_peer = artifact$owner_peer)
-  blocks <- blocks[vapply(
-    blocks, function(block) identical(block$key, analysis_id), logical(1L))]
-  if (length(blocks) != 1L || !identical(
-      .dsvert_joint_dp_client_json(blocks[[1L]]$descriptor),
-      .dsvert_joint_dp_client_json(signed))) {
-    stop("The signed Gaussian artifact does not match its vector layout",
-         call. = FALSE)
-  }
-  coordinates <- .dsvert_dp_capsule_vector_values(
-    context$release, blocks[[1L]])
-  if (length(coordinates) != artifact$coordinate_count ||
-      any(coordinates < 0) || any(coordinates > capacity)) {
-    stop("The released complete-case Gaussian block violates its bounds",
-         call. = FALSE)
-  }
-  released <- .dsvert_dp_cor_gaussian_coordinates(coordinates, artifact)
-  moment <- .dsvert_dp_gaussian_unpack(coordinates, artifact, capacity)
+  coordinates <- source$coordinates
+  coordinate_summary <- .dsvert_dp_cor_gaussian_coordinates(
+    coordinates, artifact)
+  moment <- source$moment
   augmented_names <- c(artifact$design_terms, artifact$outcome$column)
   augmented <- moment$augmented_projected
   dimnames(augmented) <- list(augmented_names, augmented_names)
@@ -791,9 +894,11 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
       left <- variables[[left_index]]
       right <- variables[[right_index]]
       interval <- .dsvert_dp_cor_interval(c(
-        released$mass, released$sums[[left]], released$sums[[right]],
-        released$second[left, left], released$second[right, right],
-        released$second[left, right]), simultaneous$radius,
+        coordinate_summary$mass,
+        coordinate_summary$sums[[left]], coordinate_summary$sums[[right]],
+        coordinate_summary$second[left, left],
+        coordinate_summary$second[right, right],
+        coordinate_summary$second[left, right]), simultaneous$radius,
         capacity, scale, quantization = quantization)
       lower[left_index, right_index] <- lower[right_index, left_index] <-
         interval$correlation[["lower"]]
@@ -801,7 +906,7 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
         interval$correlation[["upper"]]
       pair_details[[.dsvert_dp_cor_pair_key(left, right)]] <- list(
         variables = c(left, right),
-        complete_case_moment_mass_dp = released$mass,
+        complete_case_moment_mass_dp = coordinate_summary$mass,
         correlation_raw_complete_case = raw[left, right],
         correlation_95_interval = interval$correlation,
         interval_status = interval$status,
@@ -825,8 +930,7 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
   complete_case_n <- matrix(
     mass, length(variables), length(variables),
     dimnames = list(variables, variables))
-  metadata <- .dsvert_dp_vector_public_metadata(context)
-  result <- c(metadata, list(
+  result <- c(source$metadata, list(
     status = "ok", analysis_id = analysis_id,
     signed_artifact = artifact,
     source_artifact_family = "gaussian_models",
@@ -841,14 +945,14 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
     complete_case_n = complete_case_n,
     complete_case_moment_mass_dp = mass,
     complete_case_count_coordinate_dp = moment$n,
-    complete_case_gram_intercept_released_dp = released$mass,
+    complete_case_gram_intercept_released_dp = coordinate_summary$mass,
     pairwise_n = NULL,
     correlation = psd$matrix,
     correlation_raw_complete_case = raw,
     correlation_raw_pairwise = NULL,
     local_correlations = list(joint_complete_case = psd$matrix),
     method = paste(
-      "single-sticky-joint-DP-capsule complete-case Pearson from signed",
+      "single-sticky-canonical-Synopsis complete-case Pearson from signed",
       "gaussian_models sufficient statistics; explicit PSD post-processing"),
     psd_projection = psd, psd_projection_applied = TRUE,
     psd_projection_changes_complete_case_estimand =
@@ -877,13 +981,16 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
     inference = list(
       p_values = NULL, confidence_intervals = NULL,
       sampling_inference_available = FALSE),
-    additional_server_calls_after_capsule = 0L,
+    additional_server_calls_after_synopsis = 0L,
     additional_privacy_cost = c(epsilon = 0, delta = 0),
     cross_owner_state = artifact$cross_owner_state,
+    provenance_certificate = source$certificate,
+    provenance_integrity = source$verification$integrity_valid,
+    provenance_authenticity = source$verification$authenticity,
     legacy_exact_route_called = FALSE,
     disclosure_guard = list(
       satisfied = TRUE,
-      basis = "formal_joint_sticky_DP_capsule_postprocessing")))
+      basis = "formal_canonical_sticky_DP_synopsis_postprocessing")))
   class(result) <- c("ds.vertDPCor", "ds.cor", "list")
   result
 }
@@ -891,9 +998,9 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
 #' Disclosure-safe compatibility adapter for correlation
 #'
 #' This existing name consumes only a signed `gaussian_models` sufficient-
-#' statistic artifact. A signed `analysis_id` is mandatory. Same-owner and
-#' cross-owner variables share one secret complete-case mask; there is no
-#' silent fallback to pairwise moments.
+#' statistic Synopsis artifact. A signed `analysis_id` is mandatory and every
+#' requested variable must be same-owner. Cross-owner descriptors fail closed;
+#' there is no silent fallback to either pairwise moments or a legacy capsule.
 #'
 #' @param data_name Signed protected dataset name.
 #' @param variables Optional character subset, or a named list identifying the
@@ -909,14 +1016,15 @@ ds.vertCor <- function(data_name, variables = NULL, analysis_id = NULL,
   if (!is.logical(verbose) || length(verbose) != 1L || is.na(verbose)) {
     stop("verbose must be one non-missing logical", call. = FALSE)
   }
+  resolved <- .dsvert_federation_argument(data_name, datasources)
   analysis_id <- .dsvert_dp_cor_identifier(analysis_id, "analysis_id")
   if (isTRUE(verbose)) {
     message("Reading signed complete-case DP Gaussian artifact '",
             analysis_id, "'...")
   }
   result <- .dsvert_dp_cor_gaussian_impl(
-    data_name = data_name, analysis_id = analysis_id,
-    variables = variables, datasources = datasources,
+    data_name = resolved$value, analysis_id = analysis_id,
+    variables = variables, datasources = resolved$datasources,
     .aggregate = DSI::datashield.aggregate)
   if (isTRUE(verbose)) message("DP correlation post-processing complete.")
   result
@@ -931,7 +1039,7 @@ ds.vertCor <- function(data_name, variables = NULL, analysis_id = NULL,
 print.ds.cor <- function(x, digits = 3, ...) {
   complete_case <- identical(x$estimand_missingness, "complete_case_joint")
   heading <- if (complete_case) {
-    "Complete-case Pearson Correlation (Sticky Joint DP Capsule)"
+    "Complete-case Pearson Correlation (Sticky DP Synopsis)"
   } else {
     "Pairwise Pearson Correlation (Sticky Joint DP Capsule)"
   }

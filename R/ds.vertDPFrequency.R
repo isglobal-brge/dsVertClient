@@ -214,8 +214,10 @@
 #' @export
 ds.vertDPFrequency <- function(data_name, variable, server = NULL,
                                datasources = NULL) {
+  resolved <- .dsvert_federation_argument(data_name, datasources)
   .dsvert_dp_frequency_impl(
-    data_name, variable, server, datasources, DSI::datashield.aggregate)
+    resolved$value, variable, server, resolved$datasources,
+    DSI::datashield.aggregate)
 }
 .dsvert_dp_frequency_impl <- function(
     data_name, variable, server = NULL, datasources = NULL, .aggregate,

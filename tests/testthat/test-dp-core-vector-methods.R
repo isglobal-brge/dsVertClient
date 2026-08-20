@@ -152,6 +152,181 @@
   }
 }
 
+.dp_meanvar_synopsis_fixture <- function(k = 2L, gaussian = FALSE) {
+  fixture <- .dp_core_vector_fixture(gaussian = gaussian)
+  peers <- paste0("site_", letters[seq_len(k)])
+  fixture$conns <- stats::setNames(lapply(seq_along(peers), function(index) {
+    structure(index, class = "fake")
+  }), peers)
+  fixture$status <- stats::setNames(lapply(peers, function(peer) {
+    list(policy = list(
+      adjacency = "add_remove_patient", peer_count = as.integer(k),
+      unit_capacity = 100))
+  }), peers)
+
+  release <- fixture$run$release
+  release$version <- "dsvert-stateless-synopsis-public-vector-client-v1"
+  release$backend <- if (isTRUE(gaussian)) {
+    .DSVERT_CLIENT_VECTOR_GAUSSIAN_BACKEND
+  } else {
+    .DSVERT_CLIENT_VECTOR_BACKEND
+  }
+  release$backend_selection <- NULL
+  release$backend_assessment <- NULL
+  if (isTRUE(gaussian)) {
+    release$mechanism_plan <-
+      release$manifest$workload$mechanism_selection$gaussian_plan
+    release$plan_sha256 <-
+      release$manifest$workload$mechanism_selection$gaussian_plan_sha256
+  }
+  release$manifest$admission <- list(
+    adjacency = "add_remove_patient", unit_capacity = 100)
+  release[c(
+    "capsule_id", "history_gate", "request_limit", "operation_limit"
+  )] <- NULL
+  bindings <- c(
+    artifact_key = "a", execution_id = "b", contract_sha256 = "c",
+    attempt_sha256 = "d", source_contract_sha256 = "e",
+    result_set_sha256 = "f", final_vector_root = "3")
+  for (field in names(bindings)) {
+    release[[field]] <- strrep(bindings[[field]], 64L)
+  }
+  release$signed_provenance <- c(list(
+    version = "dsvert-stateless-synopsis-public-provenance-v1",
+    ordered_peer_pinset = as.list(stats::setNames(
+      paste0("pin-", peers), peers)),
+    designated_noise_peers = as.list(peers[1:2])),
+    release[names(bindings)], list(
+      compile_receipts = stats::setNames(vector("list", k), peers),
+      release_receipts = stats::setNames(vector("list", 2L), peers[1:2]),
+      replay_responses = stats::setNames(vector("list", 2L), peers[1:2]),
+      protected_shares_included = FALSE,
+      source_values_included = FALSE,
+      intermediate_payload_exposed = FALSE,
+      durable_replay = TRUE))
+  class(release) <- c(
+    "dsvert_synopsis_public_vector", "dsvert_joint_dp_vector", "list")
+  fixture$run <- list(
+    release = release, layout = fixture$run$layout, status = fixture$status,
+    manifest_bundle = list(manifest_sha256 = release$manifest_sha256))
+  fixture
+}
+
+.dp_cross_contingency_synopsis_fixture <- function(
+    k = 2L, duplicate_physical = FALSE) {
+  fixture <- .dp_meanvar_synopsis_fixture(k = k)
+  peers <- names(fixture$conns)
+  authorities <- peers[1:2]
+  scale <- 2^8
+  artifact <- list(
+    version = .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_ARTIFACT_VERSION,
+    spec_version = "v2", analysis_id = "cross_table",
+    implementation_state = "cross_owner_exact_gc_materialized",
+    alignment_group = "cohort-v1",
+    left = list(
+      dataset = "leftdata", column = "disease",
+      owner_peer = authorities[[1L]], levels = as.list(c("no", "yes"))),
+    right = list(
+      dataset = "rightdata", column = "exposure",
+      owner_peer = authorities[[2L]], levels = as.list(c("high", "low"))),
+    participating_peers = as.list(authorities),
+    computation_peers = as.list(authorities), coordinate_count = 4L,
+    coordinate_order = paste0(
+      "canonical_left_level_rows_then_canonical_right_level_columns_",
+      "column_major_v1"),
+    source_coordinate_scaling =
+      "all_coordinates_already_on_common_numeric_lattice_v1",
+    private_input_layout = paste0(
+      "capacity_padded_one_hot_by_public_level_then_side_",
+      "manifest_order_v1"),
+    repeated_record_policy =
+      .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_UNIT_POLICY,
+    missingness_policy = paste0(
+      "missing_out_of_domain_or_conflicting_side_is_all_zero_and_",
+      "contributes_no_joint_cell_v1"),
+    statistic_maximum = as.list(rep(100 * scale, 4L)),
+    selected_l1_sensitivity = 1, selected_l2_sensitivity = 1,
+    numeric_certificate = list(frac_bits = 8L),
+    transcript = list(padded_units = 100L))
+  if (isTRUE(duplicate_physical)) {
+    artifact$left$column <- "marker"
+    artifact$right$column <- "marker"
+  }
+  manifest <- fixture$run$release$manifest
+  manifest$workload$coordinate_count <- 9L
+  manifest$workload$release_lattice$natural_l1_sensitivity <- 4
+  manifest$workload$release_lattice$integer_l1_sensitivity_steps <-
+    4 * scale
+  manifest$workload$release_lattice$natural_l2_sensitivity <- 2
+  manifest$workload$release_lattice$integer_l2_sensitivity_steps <-
+    2 * scale
+  manifest$workload$families$admitted_count <- list(
+    version = "admitted-unit-count-v2", owner_peer = authorities[[1L]],
+    dataset = "leftdata", statistic_minimum = 0,
+    statistic_maximum = 100)
+  for (family in c(
+      "numeric_moments", "numeric_pair_moments", "gaussian_models",
+      "fixed_numeric_histograms")) {
+    manifest$workload$families[[family]] <- list(artifacts = list())
+  }
+  manifest$workload$families$categorical_marginals <- list(artifacts = list(
+    `leftdata::disease` = list(
+      owner_peer = authorities[[1L]], dataset = "leftdata",
+      column = "disease", levels = as.list(c("no", "yes"))),
+    `rightdata::exposure` = list(
+      owner_peer = authorities[[2L]], dataset = "rightdata",
+      column = "exposure", levels = as.list(c("high", "low")))))
+  manifest$workload$families$categorical_pairs <- list(
+    sets = list(), cross_artifacts = list(cross_table = artifact))
+  manifest$workload$families$correlation_artifacts <- list()
+  manifest$workload$families$describe_artifacts <- list()
+  manifest$workload$families$survival_artifacts <- list()
+  layout <- .dsvert_dp_capsule_vector_layout(manifest)
+  release <- fixture$run$release
+  release$manifest <- manifest
+  release$coordinate_count <- layout$coordinate_count
+  release$coordinate_order_sha256 <- layout$sha256
+  # admitted; left/right marginals; canonical disease-by-exposure cells.
+  release$values <- c(42, 12, 30, 20, 22, 8.5, 3.75, 2.25, 9.5)
+  fixture$run$release <- release
+  fixture$run$layout <- layout
+  fixture
+}
+
+.dp_contingency_public_federation <- function(k = 2L) {
+  sites <- paste0("site_", letters[seq_len(k)])
+  id_columns <- stats::setNames(paste0("pid_", letters[seq_len(k)]), sites)
+  rows <- lapply(seq_along(sites), function(index) {
+    site <- sites[[index]]
+    columns <- c(
+      id_columns[[index]], "marker", paste0("unique_", letters[[index]]),
+      paste0("numeric_", letters[[index]]))
+    data.frame(
+      server = rep(site, length(columns)), column = columns,
+      kind = c("identifier", "categorical", "categorical", "numeric"),
+      role = c("id", "data", "data", "data"),
+      stringsAsFactors = FALSE)
+  })
+  structure(list(
+    version = 2L, symbol = "DA", sites = sites,
+    source_symbols = stats::setNames(paste0("source_", letters[seq_len(k)]),
+                                     sites),
+    id_columns = id_columns,
+    public_schema = do.call(rbind, rows), attestation = list()),
+    class = c("ds.vertFederation", "list"))
+}
+
+.dp_meanvar_synopsis_mock_runner <- function(fixture, counter) {
+  force(fixture)
+  force(counter)
+  function(datasources, status = NULL, local_projection = NULL, .aggregate) {
+    counter$synopsis <- counter$synopsis + 1L
+    expect_identical(datasources, fixture$conns)
+    expect_null(status)
+    fixture$run
+  }
+}
+
 .dp_count_public_add_execution <- function(
     value = "7", upper = "10", radius = 13L) {
   release <- list(
@@ -258,19 +433,37 @@ test_that("DP count adapts only the canonical signed Count execution", {
 })
 
 test_that("DP contingency respects signed column-major orientation", {
-  fixture <- .dp_core_vector_fixture()
+  fixture <- .dp_meanvar_synopsis_fixture()
   counter <- new.env(parent = emptyenv())
-  counter$calls <- 0L
+  counter$synopsis <- counter$legacy <- counter$sampling <-
+    counter$claim <- 0L
+  counter$selectors <- list()
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run =
-      .dp_core_vector_mock_runner(fixture, counter),
+    .dsvert_dp_synopsis_vector_run = function(
+        datasources, status = NULL, local_projection = NULL, .aggregate) {
+      counter$synopsis <- counter$synopsis + 1L
+      counter$selectors[[counter$synopsis]] <- local_projection
+      if (counter$synopsis == 1L) {
+        counter$claim <- counter$claim + 1L
+        counter$sampling <- counter$sampling + 1L
+      }
+      expect_identical(local_projection$family, "categorical_pair")
+      expect_identical(local_projection$dataset, "cohort")
+      expect_identical(local_projection$columns, c("disease", "exposure"))
+      fixture$run
+    },
+    .dsvert_dp_capsule_vector_run = function(...) {
+      counter$legacy <- counter$legacy + 1L
+      stop("legacy capsule runner reached", call. = FALSE)
+    },
     .package = "dsVertClient")
 
   result <- .dsvert_dp_contingency_impl(
     "cohort", "exposure", "disease", NULL, fixture$conns,
     function(...) stop("unexpected raw DSI call", call. = FALSE))
   expect_s3_class(result, "ds.vertDPContingency")
-  expect_identical(counter$calls, 1L)
+  expect_identical(counter$synopsis, 1L)
+  expect_identical(counter$legacy, 0L)
   expect_equal(result$table, matrix(
     c(8.5, 3.75, 2.25, 9.5), 2L, 2L,
     dimnames = list(c("no", "yes"), c("no", "yes"))))
@@ -284,24 +477,426 @@ test_that("DP contingency respects signed column-major orientation", {
             result$accuracy_95_abs_per_cell[[1L]])
   expect_identical(result$accuracy_additional_privacy_cost,
                    c(epsilon = 0, delta = 0))
+  expect_identical(.dsvert_dp_table_contract(result), result)
+
+  reversed <- .dsvert_dp_contingency_impl(
+    "cohort", "disease", "exposure", NULL, fixture$conns,
+    function(...) stop("unexpected raw DSI call", call. = FALSE))
+  expect_identical(counter$selectors[[2L]], counter$selectors[[1L]])
+  expect_identical(counter$claim, 1L)
+  expect_identical(counter$sampling, 1L)
+  expect_identical(counter$legacy, 0L)
+  expect_identical(
+    reversed$artifact_key, result$artifact_key)
+  expect_identical(
+    reversed$final_vector_root, result$final_vector_root)
+  expect_equal(reversed$table, t(result$table), tolerance = 0)
+  expect_identical(reversed$row_levels, result$col_levels)
+  expect_identical(reversed$col_levels, result$row_levels)
+})
+
+test_that("DP contingency consumes one projected Synopsis for K=2,3,5", {
+  forbidden <- c(
+    "capsule_id", "privacy_epoch", "privacy_epochs", "noise_key_id",
+    "noise_key_ids", "history_gate", "request_limit", "operation_limit",
+    "lifetime_budget", "lifetime_composition", "privacy_accountant",
+    "release_instance", "release_instance_id", "allocation_certificate",
+    "capsule_coordinate_count")
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .dp_meanvar_synopsis_fixture(k = k)
+    counter <- new.env(parent = emptyenv())
+    counter$synopsis <- counter$legacy <- 0L
+    runner <- function(
+        datasources, status = NULL, local_projection = NULL, .aggregate) {
+      counter$synopsis <- counter$synopsis + 1L
+      expect_null(status)
+      expect_identical(local_projection, list(
+        version = .DSVERT_CLIENT_SYNOPSIS_CATEGORICAL_PAIR_REQUEST_VERSION,
+        family = "categorical_pair", dataset = "cohort",
+        columns = c("disease", "exposure"), owner_peer = NULL))
+      fixture$run
+    }
+    evaluate <- function() testthat::with_mocked_bindings(
+      .dsvert_dp_contingency_impl(
+        "cohort", "exposure", "disease", NULL, fixture$conns,
+        function(...) stop("unexpected raw DSI call", call. = FALSE)),
+      .dsvert_dp_synopsis_vector_run = runner,
+      .dsvert_dp_capsule_vector_run = function(...) {
+        counter$legacy <- counter$legacy + 1L
+        stop("legacy capsule runner reached", call. = FALSE)
+      }, .package = "dsVertClient")
+    first <- evaluate()
+    expect_identical(counter$synopsis, 1L, info = paste("K =", k))
+    expect_identical(counter$legacy, 0L, info = paste("K =", k))
+    expect_equal(first$table, matrix(
+      c(8.5, 3.75, 2.25, 9.5), 2L, 2L,
+      dimnames = list(c("no", "yes"), c("no", "yes"))))
+    expect_false(first$cross_owner)
+    expect_true(first$privacy$unlimited_replay)
+    expect_true(first$privacy$replay_is_postprocessing)
+    paths <- names(unlist(first, recursive = TRUE, use.names = TRUE))
+    leaves <- sub("^.*[.]", "", paths)
+    expect_length(intersect(forbidden, c(names(first), leaves)), 0L)
+
+    chisq <- .dsvert_dp_chisq_from_release(
+      first, simulations = 31L, mc_confidence = 0.9)
+    fisher <- .dsvert_dp_fisher_from_release(
+      first, simulations = 31L, mc_confidence = 0.9)
+    epi <- ds.vertDPEpi2x2(first, exposed = "yes", event = "yes")
+    direct <- ds.vertDPDirectStandardization(
+      first, standard_weights = c(no = 0.4, yes = 0.6), event = "yes")
+    indirect <- ds.vertDPIndirectStandardization(
+      first, expected_rates = c(no = 0.2, yes = 0.3), event = "yes")
+    expect_identical(counter$synopsis, 1L, info = paste("K =", k))
+    expect_true(all(vapply(
+      list(chisq, fisher, epi, direct, indirect),
+      function(value) identical(value$additional_server_calls, 0L),
+      logical(1L))), info = paste("K =", k))
+    expect_identical(chisq$source_release$artifact_key, first$artifact_key)
+    expect_false("capsule_id" %in% names(chisq$source_release))
+    expect_identical(fisher$source_release$artifact_key, first$artifact_key)
+    expect_false("capsule_id" %in% names(fisher$source_release))
+    expect_equal(epi$point_estimates$risk_exposed,
+                 9.5 / (9.5 + 3.75), tolerance = 0)
+    expect_equal(direct$estimate,
+      0.4 * 2.25 / (8.5 + 2.25) +
+        0.6 * 9.5 / (3.75 + 9.5), tolerance = 1e-15)
+    expect_true(is.finite(indirect$estimate))
+
+    second <- evaluate()
+    expect_identical(serialize(second, NULL, version = 3L),
+                     serialize(first, NULL, version = 3L))
+    expect_identical(counter$synopsis, 2L, info = paste("K =", k))
+    expect_identical(counter$legacy, 0L, info = paste("K =", k))
+  }
+})
+
+test_that(paste(
+  "cross-owner contingency uses one canonical Synopsis draw for K=2,3,5",
+  "and only transposes in the client"), {
+  forbidden <- c(
+    "capsule_id", "privacy_epoch", "privacy_epochs", "noise_key_id",
+    "noise_key_ids", "history_gate", "request_limit", "operation_limit",
+    "lifetime_budget", "lifetime_composition", "privacy_accountant",
+    "release_instance", "release_instance_id", "allocation_certificate",
+    "ledger", "reservation", "rate_limit", "catalog_limit", "quota")
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .dp_cross_contingency_synopsis_fixture(k)
+    counter <- new.env(parent = emptyenv())
+    counter$synopsis <- counter$claim <- counter$noise <- counter$legacy <- 0L
+    counter$selectors <- list()
+    runner <- function(
+        datasources, status = NULL, local_projection = NULL, .aggregate) {
+      counter$synopsis <- counter$synopsis + 1L
+      counter$selectors[[counter$synopsis]] <- local_projection
+      if (counter$synopsis == 1L) {
+        counter$claim <- counter$claim + 1L
+        counter$noise <- counter$noise + 1L
+      }
+      expect_identical(datasources, fixture$conns)
+      expect_null(status)
+      expect_identical(local_projection$version,
+        .DSVERT_CLIENT_SYNOPSIS_CATEGORICAL_PAIR_REQUEST_VERSION)
+      expect_identical(local_projection$family, "categorical_pair")
+      expect_identical(local_projection$columns, c("disease", "exposure"))
+      fixture$run
+    }
+    evaluate <- function(dataset, row, column) {
+      testthat::with_mocked_bindings(
+        .dsvert_dp_contingency_impl(
+          dataset, row, column, NULL, fixture$conns,
+          function(...) stop("unexpected raw DSI call", call. = FALSE)),
+        .dsvert_dp_synopsis_vector_run = runner,
+        .dsvert_dp_capsule_vector_run = function(...) {
+          counter$legacy <- counter$legacy + 1L
+          stop("legacy capsule runner reached", call. = FALSE)
+        }, .package = "dsVertClient")
+    }
+
+    first <- evaluate("leftdata", "disease", "exposure")
+    expect_true(first$cross_owner, info = paste("K =", k))
+    expect_identical(first$servers, fixture$run$status |> names() |> head(2L))
+    expect_identical(first$datasets, c("leftdata", "rightdata"))
+    expect_identical(
+      first$unit_aggregation_policy,
+      .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_UNIT_POLICY)
+    expect_equal(first$table, matrix(
+      c(8.5, 3.75, 2.25, 9.5), 2L, 2L,
+      dimnames = list(c("no", "yes"), c("high", "low"))))
+    expect_identical(.dsvert_dp_table_contract(first), first)
+    expect_identical(counter$claim, 1L)
+    expect_identical(counter$noise, 1L)
+    expect_identical(counter$legacy, 0L)
+
+    reverse <- evaluate("rightdata", "exposure", "disease")
+    expect_identical(counter$selectors[[1L]]$columns,
+                     counter$selectors[[2L]]$columns)
+    expect_identical(counter$selectors[[1L]]$dataset, "leftdata")
+    expect_identical(counter$selectors[[2L]]$dataset, "rightdata")
+    expect_identical(reverse$artifact_key, first$artifact_key)
+    expect_identical(reverse$final_vector_root, first$final_vector_root)
+    expect_equal(reverse$table, t(first$table), tolerance = 0)
+    expect_identical(counter$claim, 1L, info = paste("sticky Claim K =", k))
+    expect_identical(counter$noise, 1L, info = paste("sticky draw K =", k))
+    expect_identical(counter$legacy, 0L, info = paste("no capsule K =", k))
+
+    chisq <- ds.vertChisqCross(
+      reverse, fisher = TRUE, verbose = FALSE,
+      simulations = 31L, mc_confidence = 0.9)
+    epi <- ds.vertDPEpi2x2(reverse, exposed = "high", event = "yes")
+    expect_identical(chisq$source_dp_release$artifact_key,
+                     first$artifact_key)
+    expect_identical(chisq$additional_server_calls, 0L)
+    expect_identical(chisq$fisher$additional_server_calls, 0L)
+    expect_identical(epi$additional_server_calls, 0L)
+    expect_identical(counter$synopsis, 2L)
+    paths <- names(unlist(first, recursive = TRUE, use.names = TRUE))
+    leaves <- sub("^.*[.]", "", paths)
+    expect_length(intersect(forbidden, c(names(first), leaves)), 0L)
+  }
+})
+
+test_that(paste(
+  "qualified duplicate physical columns map one cross Synopsis for K=2,3,5",
+  "and bare duplicates fail before the runner"), {
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .dp_cross_contingency_synopsis_fixture(
+      k, duplicate_physical = TRUE)
+    calls <- new.env(parent = emptyenv())
+    calls$runner <- calls$legacy <- 0L
+    runner <- function(
+        datasources, status = NULL, local_projection = NULL, .aggregate) {
+      calls$runner <- calls$runner + 1L
+      expect_identical(
+        local_projection$columns,
+        c("site_a$marker", "site_b$marker"), info = paste("K =", k))
+      fixture$run
+    }
+    evaluate <- function(row, column, dataset = "leftdata") {
+      testthat::with_mocked_bindings(
+        .dsvert_dp_contingency_impl(
+          dataset, row, column, NULL, fixture$conns,
+          function(...) stop("protected DSI reached", call. = FALSE)),
+        .dsvert_dp_synopsis_vector_run = runner,
+        .dsvert_dp_capsule_vector_run = function(...) {
+          calls$legacy <- calls$legacy + 1L
+          stop("legacy capsule runner reached", call. = FALSE)
+        }, .package = "dsVertClient")
+    }
+
+    first <- evaluate("site_a$marker", "site_b$marker")
+    reverse <- evaluate(
+      "site_b$marker", "site_a$marker", dataset = "rightdata")
+    expect_true(first$cross_owner, info = paste("K =", k))
+    expect_equal(reverse$table, t(first$table), tolerance = 0,
+                 info = paste("transpose K =", k))
+    expect_identical(reverse$artifact_key, first$artifact_key)
+    expect_identical(reverse$final_vector_root, first$final_vector_root)
+    expect_identical(calls$runner, 2L, info = paste("runner K =", k))
+    expect_identical(calls$legacy, 0L, info = paste("legacy K =", k))
+
+    before <- calls$runner
+    expect_error(evaluate("marker", "marker"), "distinct variables",
+                 info = paste("bare duplicate K =", k))
+    expect_identical(calls$runner, before,
+                     info = paste("pre-runner K =", k))
+  }
+})
+
+test_that(paste(
+  "federation categorical references resolve locally before DSI for K=2,3,5"),
+  {
+    for (k in c(2L, 3L, 5L)) {
+      federation <- .dp_contingency_public_federation(k)
+      conns <- stats::setNames(rep(list(list()), k), federation$sites)
+      calls <- new.env(parent = emptyenv())
+      calls$aggregate <- calls$runner <- 0L
+      received <- list()
+      resolve <- function(value, datasources) {
+        calls$aggregate <- calls$aggregate + 1L
+        expect_identical(value, federation)
+        expect_identical(datasources, conns)
+        list(value = "leftdata", datasources = conns)
+      }
+      backend <- function(
+          data_name, row_var, col_var, server, datasources, .aggregate) {
+        calls$runner <- calls$runner + 1L
+        received[[calls$runner]] <<- list(
+          data_name = data_name, row_var = row_var, col_var = col_var,
+          datasources = datasources)
+        list(row_var = row_var, col_var = col_var)
+      }
+      evaluate <- function(row, column) testthat::with_mocked_bindings(
+        ds.vertDPContingency(
+          federation, row, column, datasources = conns),
+        .dsvert_federation_argument = resolve,
+        .dsvert_dp_contingency_impl = backend,
+        .package = "dsVertClient")
+
+      qualified <- evaluate("site_a$marker", "site_b$marker")
+      expect_identical(
+        received[[1L]][c("row_var", "col_var")],
+        list(row_var = "site_a$marker", col_var = "site_b$marker"),
+        info = paste("qualified K =", k))
+      expect_identical(qualified$row_var, "site_a$marker")
+      expect_identical(qualified$col_var, "site_b$marker")
+
+      bare <- evaluate("unique_a", "unique_b")
+      expect_identical(
+        received[[2L]][c("row_var", "col_var")],
+        list(row_var = "site_a$unique_a", col_var = "site_b$unique_b"),
+        info = paste("bare-to-qualified K =", k))
+      expect_identical(bare$row_var, "unique_a")
+      expect_identical(bare$col_var, "unique_b")
+      expect_identical(calls$aggregate, 2L)
+      expect_identical(calls$runner, 2L)
+
+      invalid <- list(
+        ambiguous = list(c("marker", "marker"), "multiple owners"),
+        wrong_owner = list(
+          c("site_b$unique_a", "site_a$marker"), "not owned"),
+        missing = list(
+          c("site_a$missing", "site_b$marker"), "missing from public schema"),
+        wrong_kind = list(
+          c("site_a$numeric_a", "site_b$marker"), "expected categorical"),
+        unknown_owner = list(
+          c("site_z$marker", "site_b$marker"), "Unknown contingency server"),
+        nested = list(
+          c("site_a$dataset$marker", "site_b$marker"),
+          "exact server\\$column"))
+      for (name in names(invalid)) {
+        before <- c(aggregate = calls$aggregate, runner = calls$runner)
+        expect_error(
+          evaluate(invalid[[name]][[1L]][[1L]],
+                   invalid[[name]][[1L]][[2L]]),
+          invalid[[name]][[2L]], info = paste(name, "K =", k))
+        expect_identical(
+          c(aggregate = calls$aggregate, runner = calls$runner), before,
+          info = paste(name, "pre-DSI K =", k))
+      }
+    }
+  })
+
+test_that("cross chi-square preserves a federation for its single front door", {
+  federation <- .dp_contingency_public_federation(2L)
+  conns <- stats::setNames(rep(list(list()), 2L), federation$sites)
+  delegated <- 0L
+  expect_error(testthat::with_mocked_bindings(
+    ds.vertChisqCross(
+      federation, "site_a$marker", "site_b$marker", verbose = FALSE,
+      datasources = conns, simulations = 31L),
+    .dsvert_federation_argument = function(...) {
+      stop("unexpected early federation unwrap", call. = FALSE)
+    },
+    ds.vertDPContingency = function(
+        data_name, row_var, col_var, server, datasources) {
+      delegated <<- delegated + 1L
+      expect_identical(data_name, federation)
+      expect_identical(row_var, "site_a$marker")
+      expect_identical(col_var, "site_b$marker")
+      expect_null(server)
+      expect_identical(datasources, conns)
+      stop("CONTINGENCY_FRONTDOOR", call. = FALSE)
+    }, .package = "dsVertClient"), "CONTINGENCY_FRONTDOOR")
+  expect_identical(delegated, 1L)
+})
+
+test_that("cross-owner contingency rejects all seven detached roots pre-map", {
+  fixture <- .dp_cross_contingency_synopsis_fixture(k = 3L)
+  bindings <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "final_vector_root")
+  for (field in bindings) {
+    tampered <- fixture
+    tampered$run$release[[field]] <- strrep("0", 64L)
+    postprocess_calls <- 0L
+    expect_error(testthat::with_mocked_bindings(
+      .dsvert_dp_contingency_impl(
+        "leftdata", "disease", "exposure", NULL, tampered$conns,
+        function(...) stop("unexpected raw DSI call", call. = FALSE)),
+      .dsvert_dp_synopsis_vector_run = function(...) tampered$run,
+      .dsvert_dp_capsule_vector_run = function(...) {
+        stop("legacy capsule runner reached", call. = FALSE)
+      }, .dsvert_dp_capsule_single_block = function(...) {
+        postprocess_calls <<- postprocess_calls + 1L
+        stop("table mapping reached", call. = FALSE)
+      }, .package = "dsVertClient"), "provenance is detached", info = field)
+    expect_identical(postprocess_calls, 0L, info = field)
+  }
+})
+
+test_that("cross-owner contingency fails closed on missing or ambiguous blocks", {
+  fixture <- .dp_cross_contingency_synopsis_fixture(k = 3L)
+  cross_name <- names(fixture$run$layout$blocks)[vapply(
+    fixture$run$layout$blocks, function(block) {
+      identical(block$family, "categorical_pairs")
+    }, logical(1L))]
+  expect_length(cross_name, 1L)
+  malformed <- list(missing = fixture, ambiguous = fixture)
+  malformed$missing$run$layout$blocks[[cross_name]] <- NULL
+  malformed$ambiguous$run$layout$blocks[[paste0(cross_name, "::duplicate")]] <-
+    malformed$ambiguous$run$layout$blocks[[cross_name]]
+  for (name in names(malformed)) {
+    candidate <- malformed[[name]]
+    expect_error(testthat::with_mocked_bindings(
+      .dsvert_dp_contingency_impl(
+        "leftdata", "disease", "exposure", NULL, candidate$conns,
+        function(...) stop("unexpected raw DSI call", call. = FALSE)),
+      .dsvert_dp_synopsis_vector_run = function(...) candidate$run,
+      .dsvert_dp_capsule_vector_run = function(...) {
+        stop("legacy capsule runner reached", call. = FALSE)
+      }, .package = "dsVertClient"),
+      if (identical(name, "missing")) "does not contain" else "exactly one",
+      info = name)
+  }
+})
+
+test_that("DP contingency rejects detached Synopsis roots before table mapping", {
+  fixture <- .dp_meanvar_synopsis_fixture(k = 3L)
+  bindings <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "final_vector_root")
+  for (field in bindings) {
+    tampered <- fixture
+    tampered$run$release[[field]] <- strrep("0", 64L)
+    postprocess_calls <- 0L
+    expect_error(testthat::with_mocked_bindings(
+      .dsvert_dp_contingency_impl(
+        "cohort", "exposure", "disease", NULL, tampered$conns,
+        function(...) NULL),
+      .dsvert_dp_synopsis_vector_run = function(...) tampered$run,
+      .dsvert_dp_capsule_vector_run = function(...) {
+        stop("legacy capsule runner reached", call. = FALSE)
+      },
+      .dsvert_dp_capsule_single_block = function(...) {
+        postprocess_calls <<- postprocess_calls + 1L
+        stop("table mapping reached", call. = FALSE)
+      }, .package = "dsVertClient"), "provenance is detached", info = field)
+    expect_identical(postprocess_calls, 0L, info = field)
+  }
 })
 
 test_that("vector statistics support fixed-cohort replacement adjacency", {
-  fixture <- .dp_core_vector_fixture()
-  for (peer in names(fixture$status)) {
-    fixture$status[[peer]]$policy$adjacency <-
+  synopsis <- .dp_meanvar_synopsis_fixture()
+  for (peer in names(synopsis$status)) {
+    synopsis$status[[peer]]$policy$adjacency <-
       "replace_one_fixed_cohort"
   }
-  fixture$run$status <- fixture$status
+  synopsis$run$status <- synopsis$status
+  synopsis$run$release$manifest$admission$adjacency <-
+    "replace_one_fixed_cohort"
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) fixture$run,
+    .dsvert_dp_synopsis_vector_run = function(...) synopsis$run,
+    .dsvert_dp_capsule_vector_run = function(...) {
+      stop("legacy capsule runner reached", call. = FALSE)
+    },
     .package = "dsVertClient")
 
   table <- .dsvert_dp_contingency_impl(
-    "cohort", "exposure", "disease", NULL, fixture$conns,
+    "cohort", "exposure", "disease", NULL, synopsis$conns,
     function(...) stop("unexpected raw DSI call", call. = FALSE))
   moments <- .dsvert_dp_meanvar_impl(
-    "cohort", "age", NULL, fixture$conns,
+    "cohort", "age", NULL, synopsis$conns,
     function(...) stop("unexpected raw DSI call", call. = FALSE))
   expect_identical(table$adjacency, "replace_one_fixed_cohort")
   expect_identical(table$artifact_l1_sensitivity, 2)
@@ -310,54 +905,164 @@ test_that("vector statistics support fixed-cohort replacement adjacency", {
   expect_identical(moments$artifact_l1_sensitivity, 3)
 })
 
-test_that("DP mean/variance converts normalized moments to natural scale", {
-  fixture <- .dp_core_vector_fixture()
-  counter <- new.env(parent = emptyenv())
-  counter$calls <- 0L
-  testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run =
-      .dp_core_vector_mock_runner(fixture, counter),
-    .package = "dsVertClient")
+test_that("DP mean/variance consumes one no-lifetime Synopsis for K=2,3,5", {
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .dp_meanvar_synopsis_fixture(k = k)
+    counter <- new.env(parent = emptyenv())
+    counter$synopsis <- 0L
+    counter$legacy <- 0L
+    result <- testthat::with_mocked_bindings(
+      .dsvert_dp_meanvar_impl(
+        "cohort", "age", NULL, fixture$conns,
+        function(...) stop("unexpected raw DSI call", call. = FALSE)),
+      .dsvert_dp_synopsis_vector_run =
+        .dp_meanvar_synopsis_mock_runner(fixture, counter),
+      .dsvert_dp_capsule_vector_run = function(...) {
+        counter$legacy <- counter$legacy + 1L
+        stop("legacy capsule runner reached", call. = FALSE)
+      }, .package = "dsVertClient")
 
-  result <- .dsvert_dp_meanvar_impl(
-    "cohort", "age", NULL, fixture$conns,
-    function(...) stop("unexpected raw DSI call", call. = FALSE))
-  expect_s3_class(result, "ds.vertDPMeanVar")
-  expect_identical(counter$calls, 1L)
-  expect_identical(result$n, 4)
-  expect_equal(result$mean, 5, tolerance = 0)
-  expect_equal(result$variance, 75, tolerance = 0)
-  expect_equal(result$sum, 20, tolerance = 0)
-  expect_equal(result$sumsq, 400, tolerance = 0)
-  expect_identical(result$normalized_sum_dp, 1.5)
-  expect_identical(result$normalized_sumsq_dp, 0.75)
-  expect_identical(result$submechanism_count, 1L)
-  expect_false(result$noise_selection$coordinate_epsilon_split)
-  expect_identical(
-    names(result$mechanism_regions),
-    c("effective_count", "mean", "variance"))
-  expect_match(result$mechanism_region_scope,
-               "sampling uncertainty excluded")
-  expect_identical(result$mechanism_region_additional_server_calls, 0L)
+    expect_s3_class(result, "ds.vertDPMeanVar")
+    expect_identical(counter$synopsis, 1L, info = paste("K =", k))
+    expect_identical(counter$legacy, 0L, info = paste("K =", k))
+    expect_identical(result$n, 4)
+    expect_equal(result$mean, 5, tolerance = 0)
+    expect_equal(result$variance, 75, tolerance = 0)
+    expect_equal(result$sum, 20, tolerance = 0)
+    expect_equal(result$sumsq, 400, tolerance = 0)
+    expect_identical(result$normalized_sum_dp, 1.5)
+    expect_identical(result$normalized_sumsq_dp, 0.75)
+    expect_identical(result$submechanism_count, 1L)
+    expect_false(result$noise_selection$coordinate_epsilon_split)
+    expect_identical(
+      names(result$mechanism_regions),
+      c("effective_count", "mean", "variance"))
+    expect_match(result$mechanism_region_scope,
+                 "sampling uncertainty excluded")
+    expect_identical(result$mechanism_region_additional_server_calls, 0L)
+    expect_identical(result$artifact_key,
+                     fixture$run$release$artifact_key)
+    expect_identical(result$execution_id,
+                     fixture$run$release$execution_id)
+    expect_identical(result$contract_sha256,
+                     fixture$run$release$contract_sha256)
+    expect_identical(result$attempt_sha256,
+                     fixture$run$release$attempt_sha256)
+    expect_identical(result$source_contract_sha256,
+                     fixture$run$release$source_contract_sha256)
+    expect_identical(result$result_set_sha256,
+                     fixture$run$release$result_set_sha256)
+    expect_identical(result$final_vector_root,
+                     fixture$run$release$final_vector_root)
+    expect_identical(result$release_provenance,
+                     fixture$run$release$signed_provenance)
+    expect_true(result$privacy$unlimited_replay)
+    expect_true(result$privacy$replay_is_postprocessing)
+    expect_identical(names(result$privacy), c(
+      "version", "per_artifact_epsilon", "per_artifact_delta",
+      "sticky_noise", "unlimited_replay", "replay_is_postprocessing",
+      "public_openings", "distinct_artifacts_compose",
+      "finite_global_composition_claim"))
+    expect_identical(
+      result$composition_rule,
+      "one_sticky_release_per_canonical_signed_artifact")
+    expect_false(result$privacy$finite_global_composition_claim)
+    expect_true(result$privacy$distinct_artifacts_compose)
+    legacy_fields <- c(
+      "capsule_id", "privacy_epoch", "privacy_epochs", "noise_key_id",
+      "noise_key_ids", "history_gate", "request_limit", "operation_limit",
+      "lifetime_budget", "lifetime_composition", "privacy_accountant",
+      "release_instance", "release_instance_id", "allocation_certificate",
+      "capsule_coordinate_count")
+    paths <- names(unlist(result, recursive = TRUE, use.names = TRUE))
+    leaf_names <- sub("^.*[.]", "", paths)
+    expect_length(intersect(legacy_fields, c(names(result), leaf_names)), 0L)
+  }
+})
+
+test_that("DP mean/variance replay is byte-identical", {
+  fixture <- .dp_meanvar_synopsis_fixture(k = 5L)
+  counter <- new.env(parent = emptyenv())
+  counter$synopsis <- counter$legacy <- 0L
+  evaluate <- function() testthat::with_mocked_bindings(
+    .dsvert_dp_meanvar_impl(
+      "cohort", "age", NULL, fixture$conns,
+      function(...) stop("unexpected raw DSI call", call. = FALSE)),
+    .dsvert_dp_synopsis_vector_run =
+      .dp_meanvar_synopsis_mock_runner(fixture, counter),
+    .dsvert_dp_capsule_vector_run = function(...) {
+      counter$legacy <- counter$legacy + 1L
+      stop("legacy capsule runner reached", call. = FALSE)
+    }, .package = "dsVertClient")
+  first <- evaluate()
+  second <- evaluate()
+  expect_identical(serialize(second, NULL, version = 3L),
+                   serialize(first, NULL, version = 3L))
+  expect_identical(counter$synopsis, 2L)
+  expect_identical(counter$legacy, 0L)
+})
+
+test_that("DP mean/variance rejects detached Synopsis hashes before postprocess", {
+  fixture <- .dp_meanvar_synopsis_fixture(k = 3L)
+  bindings <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "final_vector_root")
+  for (field in bindings) {
+    tampered <- fixture
+    tampered$run$release[[field]] <- strrep("0", 64L)
+    postprocess_calls <- 0L
+    expect_error(testthat::with_mocked_bindings(
+      .dsvert_dp_meanvar_impl(
+        "cohort", "age", NULL, tampered$conns, function(...) NULL),
+      .dsvert_dp_synopsis_vector_run = function(...) tampered$run,
+      .dsvert_dp_capsule_vector_run = function(...) {
+        stop("legacy capsule runner reached", call. = FALSE)
+      },
+      .dsvert_dp_capsule_single_block = function(...) {
+        postprocess_calls <<- postprocess_calls + 1L
+        stop("postprocess reached", call. = FALSE)
+      }, .package = "dsVertClient"), "provenance is detached",
+      info = field)
+    expect_identical(postprocess_calls, 0L, info = field)
+  }
+
+  tampered <- fixture
+  tampered$run$release$signed_provenance$durable_replay <- FALSE
+  postprocess_calls <- 0L
+  expect_error(testthat::with_mocked_bindings(
+    .dsvert_dp_meanvar_impl(
+      "cohort", "age", NULL, tampered$conns, function(...) NULL),
+    .dsvert_dp_synopsis_vector_run = function(...) tampered$run,
+    .dsvert_dp_capsule_single_block = function(...) {
+      postprocess_calls <<- postprocess_calls + 1L
+      stop("postprocess reached", call. = FALSE)
+    }, .package = "dsVertClient"), "durable replay binding")
+  expect_identical(postprocess_calls, 0L)
 })
 
 test_that("remaining core vector methods preserve one signed Gaussian L2 release", {
-  fixture <- .dp_core_vector_fixture(gaussian = TRUE)
+  synopsis <- .dp_meanvar_synopsis_fixture(k = 2L, gaussian = TRUE)
   counter <- new.env(parent = emptyenv())
-  counter$calls <- 0L
+  counter$capsule <- counter$synopsis <- 0L
   testthat::local_mocked_bindings(
-    .dsvert_joint_dp_capsule_status_impl = function(...) fixture$status,
-    .dsvert_dp_capsule_vector_run =
-      .dp_core_vector_mock_runner(fixture, counter),
+    .dsvert_dp_capsule_vector_run = function(...) {
+      counter$capsule <- counter$capsule + 1L
+      stop("legacy capsule runner reached", call. = FALSE)
+    },
+    .dsvert_dp_synopsis_vector_run = function(...) {
+      counter$synopsis <- counter$synopsis + 1L
+      synopsis$run
+    },
     .package = "dsVertClient")
 
   table <- .dsvert_dp_contingency_impl(
-    "cohort", "exposure", "disease", NULL, fixture$conns,
+    "cohort", "exposure", "disease", NULL, synopsis$conns,
     function(...) stop("unexpected raw DSI call", call. = FALSE))
   moments <- .dsvert_dp_meanvar_impl(
-    "cohort", "age", NULL, fixture$conns,
+    "cohort", "age", NULL, synopsis$conns,
     function(...) stop("unexpected raw DSI call", call. = FALSE))
-  expect_identical(counter$calls, 2L)
+  expect_identical(counter$capsule, 0L)
+  expect_identical(counter$synopsis, 2L)
   for (result in list(table, moments)) {
     expect_identical(result$mechanism,
                      .DSVERT_CLIENT_VECTOR_GAUSSIAN_RELEASE_MECHANISM)
@@ -367,7 +1072,7 @@ test_that("remaining core vector methods preserve one signed Gaussian L2 release
                      .DSVERT_CLIENT_VECTOR_GAUSSIAN_SAMPLER)
     expect_identical(result$sensitivity_norm, "l2")
     expect_identical(result$mechanism_selection,
-                     fixture$run$release$manifest$workload$mechanism_selection)
+                     synopsis$run$release$manifest$workload$mechanism_selection)
   }
   expect_equal(table$accuracy_simultaneous_95_abs,
                25 / 256, tolerance = 0)
@@ -383,9 +1088,11 @@ test_that("remaining core vector methods preserve one signed Gaussian L2 release
 
 test_that("core vector methods reject missing and ambiguous signed blocks", {
   fixture <- .dp_core_vector_fixture()
+  synopsis <- .dp_meanvar_synopsis_fixture()
   runner <- function(datasources, status = NULL, .aggregate) fixture$run
   testthat::local_mocked_bindings(
     .dsvert_dp_capsule_vector_run = runner,
+    .dsvert_dp_synopsis_vector_run = function(...) synopsis$run,
     .package = "dsVertClient")
   expect_error(.dsvert_dp_meanvar_impl(
     "cohort", "missing", NULL, fixture$conns, function(...) NULL),
@@ -397,12 +1104,12 @@ test_that("core vector methods reject missing and ambiguous signed blocks", {
     "cohort", "exposure", "disease", "site_a", fixture$conns,
     function(...) NULL), "exactly one signed categorical-pair block")
 
-  ambiguous <- fixture
+  ambiguous <- synopsis
   duplicate <- ambiguous$run$layout$blocks[[
     "numeric_moments::age"]]
   ambiguous$run$layout$blocks[["numeric_moments::age_alias"]] <- duplicate
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) ambiguous$run,
+    .dsvert_dp_synopsis_vector_run = function(...) ambiguous$run,
     .package = "dsVertClient")
   expect_error(.dsvert_dp_meanvar_impl(
     "cohort", "age", NULL, fixture$conns, function(...) NULL),

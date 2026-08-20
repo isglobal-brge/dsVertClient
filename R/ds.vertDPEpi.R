@@ -41,8 +41,149 @@
   identical(x$accuracy_simultaneous_method, expected)
 }
 
+.dsvert_dp_table_synopsis_contract <- function(x) {
+  finite_scalar <- function(value, lower = -Inf, upper = Inf,
+                            lower_open = FALSE) {
+    is.numeric(value) && length(value) == 1L && !is.na(value) &&
+      is.finite(value) &&
+      (if (lower_open) value > lower else value >= lower) &&
+      value <= upper
+  }
+  table <- x$table
+  profile <- .dsvert_dp_table_vector_profile(x)
+  valid_table <- is.matrix(table) && is.numeric(table) &&
+    length(table) > 0L && !anyNA(table) && all(is.finite(table)) &&
+    all(table >= 0) && finite_scalar(x$coordinate_maximum, 1) &&
+    all(table <= x$coordinate_maximum) &&
+    identical(as.integer(nrow(table)), x$nrow) &&
+    identical(as.integer(ncol(table)), x$ncol) &&
+    identical(unname(rownames(table)), unname(x$row_levels)) &&
+    identical(unname(colnames(table)), unname(x$col_levels)) &&
+    identical(unname(as.numeric(table)), unname(x$counts))
+  roots <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "final_vector_root")
+  valid_roots <- all(vapply(roots, function(field) {
+    .dsvert_vector_hex(x[[field]]) &&
+      identical(x$release_provenance[[field]], x[[field]])
+  }, logical(1L)))
+  privacy <- x$privacy
+  valid_privacy <- is.list(privacy) && identical(names(privacy), c(
+    "version", "per_artifact_epsilon", "per_artifact_delta",
+    "sticky_noise", "unlimited_replay", "replay_is_postprocessing",
+    "public_openings", "distinct_artifacts_compose",
+    "finite_global_composition_claim")) &&
+    identical(privacy$version, "dsvert-per-synopsis-dp-v1") &&
+    .dsvert_dp_num_equal(privacy$per_artifact_epsilon, x$epsilon, 128) &&
+    .dsvert_dp_num_equal(privacy$per_artifact_delta, x$delta, 128) &&
+    identical(privacy$sticky_noise, TRUE) &&
+    identical(privacy$unlimited_replay, TRUE) &&
+    identical(privacy$replay_is_postprocessing, TRUE) &&
+    identical(privacy$public_openings, 1L) &&
+    identical(privacy$distinct_artifacts_compose, TRUE) &&
+    identical(privacy$finite_global_composition_claim, FALSE)
+  recursive_names <- function(value) {
+    if (!is.list(value)) return(character())
+    c(names(value), unlist(lapply(value, recursive_names), use.names = FALSE))
+  }
+  forbidden <- c(
+    "capsule_id", "capsule_coordinate_count", "privacy_epoch",
+    "privacy_epochs", "noise_key_id", "noise_key_ids", "history_gate",
+    "request_limit", "operation_limit", "lifetime_budget",
+    "lifetime_composition", "privacy_accountant", "release_instance",
+    "release_instance_id", "allocation_certificate", "ledger",
+    "reservation", "rate_limit", "catalog_limit", "quota")
+  no_legacy <- !any(recursive_names(x) %in% forbidden)
+  radius <- tryCatch(
+    .dsvert_dp_vector_table_radius(x, 0.95),
+    error = function(error) NA_real_)
+  selected_sensitivity <- if (is.list(profile) && isTRUE(profile$gaussian)) {
+    x$l2_sensitivity
+  } else x$l1_sensitivity
+  descriptor <- x$coordinate_descriptor
+  cross_owner <- isTRUE(x$cross_owner)
+  cross_owners <- if (cross_owner && is.list(descriptor)) sort(unique(c(
+    descriptor$left$owner_peer, descriptor$right$owner_peer
+  )), method = "radix") else character()
+  cross_datasets <- if (cross_owner && is.list(descriptor)) sort(unique(c(
+    descriptor$left$dataset, descriptor$right$dataset
+  )), method = "radix") else character()
+  valid_unit_policy <- if (cross_owner) {
+    identical(
+      descriptor$version,
+      .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_ARTIFACT_VERSION) &&
+      identical(
+        x$unit_aggregation_policy,
+        .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_UNIT_POLICY) &&
+      length(cross_owners) == 2L &&
+      identical(sort(unique(x$servers), method = "radix"), cross_owners) &&
+      identical(sort(unique(x$datasets), method = "radix"), cross_datasets)
+  } else {
+    identical(x$cross_owner, FALSE) &&
+      identical(x$unit_aggregation_policy,
+                "consistent_joint_cell_else_exclude_v1")
+  }
+  valid <- isTRUE(x$released) && valid_table && valid_roots &&
+    valid_privacy && no_legacy && is.list(profile) &&
+    identical(x$implementation, profile$backend) &&
+    identical(x$sampler, profile$sampler) &&
+    identical(x$mechanism, profile$release_mechanism) &&
+    identical(
+      x$randomness,
+      paste("independent pinned-peer HKDF-SHA256/ChaCha20 streams;",
+            "no analyst-controlled seed")) &&
+    identical(x$sticky_noise,
+              "one_immutable_canonical_synopsis_artifact") &&
+    identical(x$sticky_replay, TRUE) &&
+    identical(x$unlimited_replay, TRUE) &&
+    identical(x$sensitivity_scope,
+              "complete_signed_canonical_synopsis_vector") &&
+    finite_scalar(x$epsilon, 0, .DSVERT_DP_MAXIMUM_EPSILON, TRUE) &&
+    finite_scalar(x$delta, 0, 1) && x$delta < 1 &&
+    finite_scalar(x$sensitivity, 0, Inf, TRUE) &&
+    identical(x$sensitivity_norm,
+              if (isTRUE(profile$gaussian)) "l2" else "l1") &&
+    finite_scalar(x$l1_sensitivity, 0, Inf, TRUE) &&
+    finite_scalar(x$l2_sensitivity, 0, Inf, TRUE) &&
+    .dsvert_dp_num_equal(selected_sensitivity, x$sensitivity, 2048) &&
+    x$adjacency %in% c(
+      "add_remove_patient", "replace_one_fixed_cohort") &&
+    .dsvert_dp_num_equal(
+      x$artifact_l1_sensitivity,
+      if (identical(x$adjacency, "add_remove_patient")) 1 else 2) &&
+    .dsvert_dp_num_equal(
+      x$artifact_l2_sensitivity,
+      if (identical(x$adjacency, "add_remove_patient")) 1 else sqrt(2),
+      2048) &&
+    isTRUE(valid_unit_policy) &&
+    identical(x$source_values_exposed, FALSE) &&
+    identical(x$intermediate_values_exposed, FALSE) &&
+    identical(x$clipped_coordinates, NA_integer_) &&
+    identical(x$clamp_activation_disclosed, FALSE) && is.finite(radius) &&
+    .dsvert_dp_num_equal(x$accuracy_simultaneous_95_abs, radius) &&
+    identical(x$accuracy_simultaneous_confidence, 0.95) &&
+    .dsvert_dp_table_vector_accuracy_method_is_valid(x, profile) &&
+    identical(x$accuracy_additional_privacy_cost, c(epsilon = 0, delta = 0)) &&
+    is.list(x$release_provenance) &&
+    identical(x$release_provenance$version,
+              "dsvert-stateless-synopsis-public-provenance-v1") &&
+    identical(x$release_provenance$durable_replay, TRUE) &&
+    identical(x$composition_rule,
+              "one_sticky_release_per_canonical_signed_artifact")
+  if (!isTRUE(valid)) {
+    stop("x must be a released, validated ds.vertDPContingency object",
+         call. = FALSE)
+  }
+  x
+}
+
 .dsvert_dp_table_contract <- function(x) {
   table <- if (is.list(x)) x$table else NULL
+  if (inherits(x, "ds.vertDPContingency") && is.list(x) &&
+      identical(
+        x$backend, "exact_signed_Ring128_canonical_synopsis_vector")) {
+    return(.dsvert_dp_table_synopsis_contract(x))
+  }
   if (inherits(x, "ds.vertDPContingency") && is.list(x) &&
       identical(x$backend, "exact_signed_Ring128_global_vector")) {
     profile <- .dsvert_dp_table_vector_profile(x)
@@ -148,7 +289,10 @@
       x$l2_sensitivity <= 0 || !is.list(profile)) {
     stop("Invalid vector-table uncertainty contract", call. = FALSE)
   }
-  total_coordinates <- x$capsule_coordinate_count
+  total_coordinates <- if (.dsvert_dp_is_integer(
+      x$synopsis_coordinate_count, 1, .DSVERT_DP_MAX_COORDINATES)) {
+    x$synopsis_coordinate_count
+  } else x$capsule_coordinate_count
   if (!.dsvert_dp_is_integer(total_coordinates, 1,
                              .DSVERT_DP_MAX_COORDINATES)) {
     request <- tryCatch(
@@ -167,7 +311,9 @@
     backend_selection = x$backend_selection,
     backend_assessment = x$backend_assessment,
     manifest_sha256 = x$manifest_sha256)
-  capsule_mechanism <- x$capsule_mechanism
+  capsule_mechanism <- if (!is.null(x$synopsis_mechanism)) {
+    x$synopsis_mechanism
+  } else x$capsule_mechanism
   if (is.null(capsule_mechanism)) {
     capsule_mechanism <- if (isTRUE(profile$gaussian)) {
       .DSVERT_CLIENT_VECTOR_GAUSSIAN_MECHANISM

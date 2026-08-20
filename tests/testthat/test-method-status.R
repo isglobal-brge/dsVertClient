@@ -9,6 +9,7 @@ test_that("method maturity registry covers every public analysis entry point", {
     "formal_joint_dp_capsule_only_legacy_unavailable",
     "formal_sticky_count_artifact",
     "formal_sticky_frequency_artifact",
+    "formal_sticky_synopsis_artifact",
     "disclosure_safe_protocol_no_statistic",
     "postprocessing_inherits_input",
     "legacy_exact_release_not_capsule_safe")))
@@ -16,6 +17,8 @@ test_that("method maturity registry covers every public analysis entry point", {
                          registry$release_contract, ignore.case = TRUE)))
   expect_match(attr(registry, "threat_model"),
                "distinct Count artifacts compose", fixed = TRUE)
+  expect_match(attr(registry, "threat_model"),
+               "distinct Synopsis artifacts compose", fixed = TRUE)
   expect_true(all(registry$numeric_contract %in% c(
     "not_applicable_no_statistic", "separate_integer_dp_contract",
     "inherits_input_contract", "data_free_preflight_only",
@@ -90,12 +93,12 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     ds.vertMethodStatus("ds.vertMantelHaenszel")$status, "promoted")
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertChisq", "ds.vert.chisq"))$release_contract ==
-      "formal_joint_dp_capsule"))
+      "formal_sticky_synopsis_artifact"))
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertFisher", "ds.vert.fisher"))$status == "provisional"))
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertFisher", "ds.vert.fisher"))$release_contract ==
-      "formal_joint_dp_capsule"))
+      "formal_sticky_synopsis_artifact"))
   expect_match(ds.vertMethodStatus("ds.vertFisher")$principal_limitation,
                "not certified")
   expect_identical(
@@ -103,8 +106,8 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "formal_sticky_count_artifact")
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertDesc", "ds.vert.desc"))$release_contract ==
-      "formal_joint_dp_capsule"))
-  expect_identical(ds.vertMethodStatus("ds.vertDesc")$status, "provisional")
+      "formal_sticky_synopsis_artifact"))
+  expect_identical(ds.vertMethodStatus("ds.vertDesc")$status, "promoted")
   expect_match(ds.vertMethodStatus("ds.vertDesc")$principal_limitation,
                "explicit analysis_id")
   expect_identical(
@@ -158,21 +161,52 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "provisional")
   expect_identical(
     ds.vertMethodStatus("ds.vertDPMeanVar")$status,
-    "provisional")
+    "promoted")
   expect_identical(
     ds.vertMethodStatus("ds.vertDPDescribe")$status,
-    "provisional")
+    "promoted")
+  expect_true(all(ds.vertMethodStatus(c(
+    "ds.vertDPQuantile", "ds.vertDPMedian"))$status == "promoted"))
+  expect_identical(
+    ds.vertMethodStatus("ds.vertDPDescribe")$release_contract,
+    "formal_sticky_synopsis_artifact")
   expect_identical(
     ds.vertMethodStatus("ds.vertDPSurvival")$status,
-    "provisional")
+    "promoted")
   expect_identical(
     ds.vertMethodStatus("ds.vertDPCor")$status,
-    "provisional")
-  expect_true(all(ds.vertMethodStatus(c(
-    "ds.vertDPContingency", "ds.vertDPMeanVar",
-    "ds.vertDPCor", "ds.vertDPGaussian", "ds.vertCor", "ds.vertPCA",
-    "ds.vertDPDescribe", "ds.vertDPSurvival"))$release_contract ==
-      "formal_joint_dp_capsule"))
+    "promoted")
+  gaussian_synopsis <- ds.vertMethodStatus(c(
+    "ds.vertDPGaussian", "ds.vertCor", "ds.vertPCA"))
+  expect_true(all(gaussian_synopsis$release_contract ==
+                    "formal_sticky_synopsis_artifact"))
+  synopsis <- ds.vertMethodStatus(c(
+    "ds.vertDesc", "ds.vert.desc", "ds.vertDPDescribe",
+    "ds.vertDPMeanVar", "ds.vertDPCor", "ds.vertDPSurvival",
+    "ds.vertDPContingency", "ds.vertChisq", "ds.vert.chisq",
+    "ds.vertFisher", "ds.vert.fisher",
+    "ds.vertChisqCross", "ds.vert.chisq_cross"))
+  expect_true(all(synopsis$release_contract ==
+                    "formal_sticky_synopsis_artifact"))
+  expect_false(any(grepl(
+    "capsule|lifetime|accountant",
+    apply(synopsis, 1L, paste, collapse = " "), ignore.case = TRUE)))
+  survival_views <- ds.vertMethodStatus(c(
+    "ds.vertDPKaplanMeier", "ds.vertDPNelsonAalen",
+    "ds.vertDPCumulativeIncidence", "ds.vertDPRMST", "ds.vertDPRMTL",
+    "ds.vertDPSurvivalContrast", "ds.vertDPRMSTContrast",
+    "ds.vertDPSurvivalQuantile", "ds.vertDPMedianSurvival"))
+  expect_true(all(survival_views$release_contract ==
+                    "postprocessing_inherits_input"))
+  expect_true(all(grepl("Synopsis", survival_views$safe_scope, fixed = TRUE)))
+  expect_false(any(grepl(
+    "capsule|lifetime|accountant",
+    apply(survival_views, 1L, paste, collapse = " "), ignore.case = TRUE)))
+  one_release_survival_views <- ds.vertMethodStatus(c(
+    "ds.vertDPKaplanMeier", "ds.vertDPNelsonAalen",
+    "ds.vertDPCumulativeIncidence", "ds.vertDPRMST", "ds.vertDPRMTL",
+    "ds.vertDPSurvivalQuantile", "ds.vertDPMedianSurvival"))
+  expect_true(all(one_release_survival_views$status == "promoted"))
   expect_match(
     ds.vertMethodStatus("ds.vertDPGaussian")$principal_limitation,
     "sampling inference")
@@ -208,7 +242,7 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "Cross-owner")
   expect_match(
     ds.vertMethodStatus("ds.vertDPContingency")$principal_limitation,
-    "alignment")
+    "threat boundary")
   expect_match(
     ds.vertMethodStatus("ds.vertDPCount")$principal_limitation,
     "per canonical signed")
@@ -231,9 +265,11 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "formal_joint_dp_capsule_only_legacy_unavailable")
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertChisqCross", "ds.vert.chisq_cross"))$release_contract ==
-      "formal_joint_dp_capsule"))
-  expect_match(ds.vertMethodStatus("ds.vertChisqCross")$safe_scope,
-               "[Cc]ross-owner")
+      "formal_sticky_synopsis_artifact"))
+  expect_true(all(ds.vertMethodStatus(c(
+    "ds.vertChisqCross", "ds.vert.chisq_cross"))$status == "provisional"))
+  expect_match(ds.vertMethodStatus("ds.vertChisqCross")$principal_limitation,
+               "finite-sample")
   expect_match(ds.vertMethodStatus("ds.vertMultinomJointNewton")$
                  principal_limitation,
                "multinomial_design_grams", fixed = TRUE)
@@ -281,7 +317,7 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "Bonferroni", survival_contrasts$principal_limitation, fixed = TRUE)))
   survival_quantiles <- ds.vertMethodStatus(c(
     "ds.vertDPSurvivalQuantile", "ds.vertDPMedianSurvival"))
-  expect_true(all(survival_quantiles$status == "provisional"))
+  expect_true(all(survival_quantiles$status == "promoted"))
   expect_true(all(survival_quantiles$release_contract ==
                     "postprocessing_inherits_input"))
   expect_true(all(grepl(

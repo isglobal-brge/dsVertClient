@@ -107,14 +107,8 @@ ds.vertDPSurvivalQuantile <- function(x, probabilities = 0.5) {
     "released product-limit curve itself does not cross")
   attr(result, "additional_privacy_cost") <- c(epsilon = 0, delta = 0)
   attr(result, "additional_server_calls") <- 0L
-  provenance_fields <- c(
-    "analysis_id", "analysis_version", "server", "capsule_id",
-    "final_vector_root", "coordinate_order_sha256", "privacy_epoch",
-    "noise_key_id", "mechanism", "implementation", "sampler", "epsilon",
-    "delta", "implementation_delta", "adjacency", "time_grid", "time_lower_bound",
-    "time_upper_bound", "security_claim")
-  attr(result, "source_release_provenance") <- c(
-    list(source_class = "ds.vertDPSurvival"), x[provenance_fields])
+  attr(result, "source_release_provenance") <-
+    .dsvert_dp_survival_source_provenance(x)
   class(result) <- c("ds.vertDPSurvivalQuantile", class(result))
   result
 }

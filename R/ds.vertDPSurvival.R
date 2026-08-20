@@ -352,8 +352,13 @@
 }
 
 .dsvert_dp_survival_vector_result <- function(
-    capsule, data_name, analysis_id, server = NULL) {
-  capsule <- .dsvert_dp_vector_context(capsule)
+    capsule, data_name, analysis_id, server = NULL,
+    allow_synopsis = FALSE) {
+  capsule <- .dsvert_dp_vector_context(
+    capsule, allow_synopsis = allow_synopsis)
+  public_metadata <- if (isTRUE(capsule$synopsis)) {
+    .dsvert_dp_vector_public_metadata(capsule)
+  } else NULL
   release <- capsule$release
   manifest <- release$manifest
   families <- manifest$workload$families
@@ -383,7 +388,7 @@
     !artifact$censor %in% causes &&
     artifact$owner_peer %in% names(capsule$status)
   if (!isTRUE(valid_artifact)) {
-    stop("The signed capsule does not contain the requested survival ",
+    stop("The signed biomedical release does not contain the requested survival ",
          "artifact", call. = FALSE)
   }
   owner <- artifact$owner_peer
@@ -407,7 +412,10 @@
   block_l1 <- (if (delayed_entry) 2L else 1L) * multiplier
   block_l2 <- sqrt((if (delayed_entry) 2L else 1L) * multiplier)
   capacity <- as.numeric(capsule$status[[owner]]$policy$unit_capacity)
-  artifact_valid <- block$length == coordinate_count &&
+  artifact_valid <- identical(
+    .dsvert_joint_dp_client_json(block$descriptor),
+    .dsvert_joint_dp_client_json(artifact)) &&
+    block$length == coordinate_count &&
     identical(as.numeric(artifact$coordinate_count),
               as.numeric(coordinate_count)) &&
     identical(artifact$coordinate_order,
@@ -437,6 +445,52 @@
     release, manifest, coordinate_count = coordinate_count,
     maximum_error = capacity)
   lattice <- manifest$workload$release_lattice
+  if (isTRUE(capsule$synopsis)) {
+    return(c(public_metadata, list(
+      analysis_id = analysis_id,
+      analysis_version = artifact$version,
+      coordinate_family = "survival_artifacts",
+      coordinate_descriptor = artifact,
+      time_grid = time_grid,
+      time_lower_bound = time_bounds[[1L]],
+      time_upper_bound = time_bounds[[2L]],
+      interval_semantics =
+        "(previous_endpoint,current_endpoint] after public-bound clipping",
+      unit_collapse = "first_event_else_latest_censor_public_tiebreak",
+      censor_level = artifact$censor,
+      causes = causes,
+      delayed_entry = delayed_entry,
+      histogram = histogram,
+      coordinate_count = coordinate_count,
+      histogram_layout = if (delayed_entry) {
+        "entry[T],exit[T x (censor+causes) column-major],not_in_analysis"
+      } else {
+        "exit[T x (censor+causes) column-major],not_in_analysis"
+      },
+      not_in_analysis_definition = if (delayed_entry) {
+        paste("DP-noisy bin for unknown outcome, non-finite time,",
+              "non-finite entry, or entry after exit")
+      } else {
+        "DP-noisy bin for unknown outcome or non-finite time"
+      },
+      invalid_unit_rule = "invalid_patient_ids_rejected_by_admission",
+      artifact_l1_sensitivity = block_l1,
+      artifact_l2_sensitivity = block_l2,
+      max_histogram_cells_per_unit = if (delayed_entry) 2L else 1L,
+      contribution_unit = adjacency,
+      clipping_observable = FALSE,
+      accuracy_95_abs_per_coordinate = marginal$radius,
+      accuracy_simultaneous_95_abs = simultaneous$radius,
+      accuracy_simultaneous_confidence = simultaneous$confidence,
+      accuracy_simultaneous_method = simultaneous$method,
+      accuracy_implementation_tv_upper_bound =
+        simultaneous$implementation_tv_upper_bound,
+      accuracy_additional_privacy_cost =
+        simultaneous$additional_privacy_cost,
+      uncertainty_scope =
+        "DP mechanism noise only; sampling uncertainty excluded",
+      server = owner)))
+  }
   noise_root <- capsule$status[[owner]]$noise_root
   profile <- .dsvert_vector_profile(
     manifest$workload$capsule_mechanism,
@@ -502,24 +556,28 @@
 
 #' Differentially private non-parametric survival curves
 #'
-#' Makes one release of a fixed, custodian-owned time histogram and derives
+#' Reads one canonical signed Synopsis release of a fixed, custodian-owned time
+#' histogram and derives
 #' Kaplan--Meier survival, Nelson--Aalen cumulative hazard, and competing-risk
 #' cumulative incidence by post-processing that same release. Repeating the
-#' same analysis id over the same snapshot replays the same sticky result.
+#' same analysis id over the same snapshot replays the same sticky result
+#' without lifetime admission.
 #'
 #' @param data_name Name of the registered protected data frame.
 #' @param analysis_id Custodian-owned survival specification id.
 #' @param server Optional datasource name. If omitted, the lexicographically
 #'   first connected datasource is selected deterministically.
 #' @param datasources DataSHIELD connections.
-#' @return A `ds.vertDPSurvival` object. Accuracy metadata covers DP mechanism
-#'   noise in histogram coordinates only, not sampling uncertainty or public
-#'   grid discretisation.
+#' @return A `ds.vertDPSurvival` object with signed Synopsis provenance and
+#'   per-artifact privacy metadata. Accuracy covers DP mechanism noise in
+#'   histogram coordinates only, not sampling uncertainty or public-grid
+#'   discretisation.
 #' @export
 ds.vertDPSurvival <- function(data_name, analysis_id, server = NULL,
                               datasources = NULL) {
+  resolved <- .dsvert_federation_argument(data_name, datasources)
   .dsvert_dp_survival_impl(
-    data_name, analysis_id, server, datasources,
+    resolved$value, analysis_id, server, resolved$datasources,
     DSI::datashield.aggregate)
 }
 
@@ -533,13 +591,57 @@ ds.vertDPSurvival <- function(data_name, analysis_id, server = NULL,
     }
   }
   datasources <- .dsvert_dp_datasources(datasources)
-  capsule <- .dsvert_dp_capsule_vector_run(
+  capsule <- .dsvert_dp_synopsis_vector_run(
     datasources, .aggregate = .aggregate)
   result <- .dsvert_dp_survival_vector_result(
-    capsule, data_name, analysis_id, server)
+    capsule, data_name, analysis_id, server, allow_synopsis = TRUE)
   result <- .dsvert_dp_survival_postprocess(result)
   class(result) <- c("ds.vertDPSurvival", "list")
   result
+}
+
+.dsvert_dp_survival_is_synopsis <- function(x) {
+  is.list(x) && is.list(x$release_provenance) &&
+    identical(
+      x$release_provenance$version,
+      "dsvert-stateless-synopsis-public-provenance-v1")
+}
+
+.dsvert_dp_survival_synopsis_binding_valid <- function(x) {
+  if (!.dsvert_dp_survival_is_synopsis(x)) return(FALSE)
+  bindings <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "final_vector_root")
+  all(vapply(bindings, function(field) {
+    .dsvert_vector_hex(x[[field]]) &&
+      identical(x[[field]], x$release_provenance[[field]])
+  }, logical(1L))) &&
+    identical(x$release_provenance$durable_replay, TRUE) &&
+    is.list(x$privacy) && identical(x$privacy$unlimited_replay, TRUE) &&
+    !any(c(
+      "capsule_id", "privacy_epoch", "noise_key_id", "history_gate",
+      "request_limit", "operation_limit") %in% names(x))
+}
+
+.dsvert_dp_survival_source_provenance <- function(x) {
+  fields <- if (.dsvert_dp_survival_is_synopsis(x)) {
+    c(
+      "analysis_id", "analysis_version", "server", "artifact_key",
+      "execution_id", "manifest_sha256", "contract_sha256",
+      "attempt_sha256", "source_contract_sha256", "result_set_sha256",
+      "final_vector_root", "coordinate_order_sha256", "release_provenance",
+      "privacy", "mechanism", "implementation", "sampler", "epsilon",
+      "delta", "implementation_delta", "adjacency", "time_grid",
+      "time_lower_bound", "time_upper_bound", "security_claim")
+  } else {
+    c(
+      "analysis_id", "analysis_version", "server", "capsule_id",
+      "final_vector_root", "coordinate_order_sha256", "privacy_epoch",
+      "noise_key_id", "mechanism", "implementation", "sampler", "epsilon",
+      "delta", "implementation_delta", "adjacency", "time_grid",
+      "time_lower_bound", "time_upper_bound", "security_claim")
+  }
+  c(list(source_class = "ds.vertDPSurvival"), x[fields])
 }
 
 .dsvert_dp_survival_object <- function(x) {
@@ -554,6 +656,7 @@ ds.vertDPSurvival <- function(data_name, analysis_id, server = NULL,
   current_vector <- is.list(x) && x$mechanism %in% c(
     .DSVERT_CLIENT_VECTOR_RELEASE_MECHANISM,
     .DSVERT_CLIENT_VECTOR_GAUSSIAN_RELEASE_MECHANISM)
+  synopsis <- .dsvert_dp_survival_is_synopsis(x)
   if (!inherits(x, "ds.vertDPSurvival") || !is.list(x) ||
       !isTRUE(x$released) || !is.numeric(x$time_grid) ||
       !length(x$time_grid) || anyNA(x$time_grid) ||
@@ -572,10 +675,12 @@ ds.vertDPSurvival <- function(data_name, analysis_id, server = NULL,
       is.na(x$delayed_entry) ||
       !is.numeric(x$histogram) || anyNA(x$histogram) ||
       any(!is.finite(x$histogram)) || any(x$histogram < 0) ||
-      (isTRUE(current_vector) &&
+      (isTRUE(current_vector) && !isTRUE(synopsis) &&
        (!identical(x$history_gate, TRUE) ||
         !identical(x$request_limit, FALSE) ||
         !identical(x$operation_limit, TRUE))) ||
+      (isTRUE(synopsis) &&
+       !.dsvert_dp_survival_synopsis_binding_valid(x)) ||
       !scalar_number(x$accuracy_simultaneous_95_abs) ||
       x$accuracy_simultaneous_95_abs < 0 ||
       !is.data.frame(x$curve) || !is.matrix(x$cumulative_incidence)) {
@@ -590,7 +695,7 @@ ds.vertDPSurvival <- function(data_name, analysis_id, server = NULL,
   # second check protects client-only algebra against accidental or partial
   # in-memory edits by requiring every consumed derived field to remain the
   # deterministic post-processing of that release. It is not a replacement
-  # for the signed capsule boundary.
+  # for the signed release boundary.
   recomputed <- tryCatch(
     .dsvert_dp_survival_postprocess(x),
     error = function(error) NULL)
@@ -713,7 +818,7 @@ ds.vertDPCumulativeIncidence <- function(x, cause = NULL) {
 #' no additional privacy budget. Its limits propagate the simultaneous DP
 #' mechanism band; they are not sampling confidence intervals and do not cover
 #' error from replacing continuous event times by the public grid. The result
-#' carries a copy of the source release's DP and capsule provenance.
+#' carries a copy of the source release's signed DP provenance.
 #'
 #' @param x A released `ds.vertDPSurvival` object.
 #' @param tau One or more public finite restriction times greater than the
@@ -773,14 +878,8 @@ ds.vertDPRMST <- function(x, tau = NULL) {
     "interval endpoints")
   attr(result, "additional_privacy_cost") <- c(epsilon = 0, delta = 0)
   attr(result, "additional_server_calls") <- 0L
-  provenance_fields <- c(
-    "analysis_id", "analysis_version", "server", "capsule_id",
-    "final_vector_root", "coordinate_order_sha256", "privacy_epoch",
-    "noise_key_id", "mechanism", "implementation", "sampler", "epsilon",
-    "delta", "implementation_delta", "adjacency", "time_grid", "time_lower_bound",
-    "time_upper_bound", "security_claim")
-  attr(result, "source_release_provenance") <- c(
-    list(source_class = "ds.vertDPSurvival"), x[provenance_fields])
+  attr(result, "source_release_provenance") <-
+    .dsvert_dp_survival_source_provenance(x)
   class(result) <- c("ds.vertDPRMST", class(result))
   result
 }
