@@ -76,6 +76,10 @@
 }
 .dsvert_dp_frequency_radius <- function(x, confidence) {
   x <- .dsvert_dp_frequency_contract(x)
+  if (identical(x$proof$version,
+                "dsvert-dp-frequency-synopsis-proof-v1")) {
+    return(.dsvert_dp_frequency_synopsis_accuracy_v1(x, confidence)$radius)
+  }
   .dsvert_dp_frequency_accuracy_v1(x$proof$config, confidence)$radius
 }
 .dsvert_dp_frequency_regions <- function(counts, radius, capacity) {
@@ -204,8 +208,9 @@
 }
 #' Differentially private one-way frequency distribution
 #'
-#' Executes a sticky two-authority release and returns authenticated public
-#' values and proof. `server` is the required explicit source owner.
+#' Reads one signed categorical marginal from the durable canonical Synopsis.
+#' It performs no extra sampling or public opening; replay is post-processing
+#' of that same per-artifact release. `server` is the required source owner.
 #' @param data_name Name of the registered protected data frame.
 #' @param variable Fixed-domain categorical variable.
 #' @param server Required source-owner peer name.
@@ -219,7 +224,111 @@ ds.vertDPFrequency <- function(data_name, variable, server = NULL,
     resolved$value, variable, server, resolved$datasources,
     DSI::datashield.aggregate)
 }
-.dsvert_dp_frequency_impl <- function(
+
+.dsvert_dp_frequency_synopsis_accuracy_v1 <- function(x, confidence) {
+  table <- x
+  table$table <- unname(x$counts)
+  profile <- .dsvert_dp_table_vector_profile(table)
+  if (!is.list(profile)) {
+    stop("Invalid Synopsis Frequency profile", call. = FALSE)
+  }
+  total_coordinates <- table$synopsis_coordinate_count
+  if (!.dsvert_dp_is_integer(total_coordinates, 1,
+                             .DSVERT_DP_MAX_COORDINATES)) {
+    stop("Invalid Synopsis Frequency coordinate count", call. = FALSE)
+  }
+  release <- list(
+    epsilon = table$epsilon,
+    implementation_delta = table$implementation_delta,
+    mechanism = table$mechanism,
+    backend = table$implementation,
+    mechanism_plan = table$mechanism_plan,
+    plan_sha256 = table$plan_sha256,
+    backend_selection = table$backend_selection,
+    backend_assessment = table$backend_assessment,
+    manifest_sha256 = table$manifest_sha256)
+  manifest <- list(workload = list(
+    coordinate_count = total_coordinates,
+    capsule_mechanism = table$synopsis_mechanism,
+    mechanism_selection = table$mechanism_selection,
+    release_lattice = list(
+      output_lattice_bits = table$output_lattice_bits,
+      output_lattice_scale = table$output_lattice_scale,
+      natural_l1_sensitivity = table$l1_sensitivity,
+      integer_l1_sensitivity_steps =
+        table$l1_sensitivity * table$output_lattice_scale,
+      natural_l2_sensitivity = table$l2_sensitivity,
+      integer_l2_sensitivity_steps =
+        table$l2_sensitivity * table$output_lattice_scale)))
+  .dsvert_dp_vector_accuracy_radius(
+    release, manifest, coordinate_count = total_coordinates,
+    confidence = confidence, maximum_error = table$coordinate_maximum)
+}
+
+.dsvert_dp_frequency_synopsis_result_v1 <- function(
+    data_name, variable, source, datasources, .aggregate,
+    .run = .dsvert_dp_synopsis_vector_run) {
+  run <- .run(datasources, .aggregate = .aggregate)
+  context <- .dsvert_dp_vector_context(run, allow_synopsis = TRUE)
+  block <- .dsvert_dp_capsule_single_block(
+    context$layout, "categorical_marginals", dataset = data_name,
+    owner_peer = source,
+    predicate = function(candidate) identical(
+      candidate$descriptor$column, variable),
+    description = paste0("signed categorical marginal for '", variable, "'"))
+  descriptor <- block$descriptor
+  levels <- .dsvert_dp_capsule_manifest_strings(
+    descriptor$levels, "categorical marginal levels", sorted = TRUE)
+  capacity <- .dsvert_dp_vector_block_capacity(block)
+  counts <- .dsvert_dp_capsule_vector_values(context$release, block)
+  if (length(counts) != length(levels) || any(counts < 0) ||
+      any(counts > capacity)) {
+    stop("The released categorical marginal violates its signed domain",
+         call. = FALSE)
+  }
+  metadata <- .dsvert_dp_vector_public_metadata(context)
+  result <- c(metadata, list(
+    status = if (sum(counts) > 0) "ok" else "dp_effective_count_zero",
+    server = source, source_owner = source, variable = variable,
+    levels = levels, counts = stats::setNames(counts, levels),
+    effective_count_dp = sum(counts),
+    proportions = if (sum(counts) > 0) stats::setNames(
+      counts / sum(counts), levels) else
+      stats::setNames(rep(NA_real_, length(counts)), levels),
+    coordinate_family = "categorical_marginals",
+    coordinate_descriptor = descriptor,
+    coordinate_maximum = capacity,
+    repeated_record_policy = descriptor$repeated_record_policy,
+    missingness_policy = descriptor$missingness_policy,
+    primitive = "signed_categorical_marginal_v1",
+    public_openings = 1L,
+    additional_privacy_cost = c(epsilon = 0, delta = 0),
+    operation_id = metadata$execution_id,
+    release_sha256 = metadata$final_vector_root,
+    proof = list(
+      version = "dsvert-dp-frequency-synopsis-proof-v1",
+      coordinate_family = "categorical_marginals",
+      coordinate_descriptor = descriptor,
+      release_provenance = metadata$release_provenance),
+    uncertainty_scope = paste(
+      "Simultaneous regions cover DP mechanism noise only; population",
+      "sampling uncertainty is excluded"),
+    inferential_scope = paste(
+      "Finite-snapshot DP frequencies; use ds.vertDPFrequencyInference()",
+      "for conservative iid multinomial sampling regions")))
+  accuracy <- .dsvert_dp_frequency_synopsis_accuracy_v1(result, 0.95)
+  result$accuracy_simultaneous_95_abs <- accuracy$radius
+  result$accuracy_simultaneous_confidence <- accuracy$confidence
+  result$accuracy_simultaneous_method <- accuracy$method
+  result$accuracy_implementation_tv_upper_bound <-
+    accuracy$implementation_tv_upper_bound
+  result$mechanism_regions <- .dsvert_dp_frequency_regions(
+    result$counts, accuracy$radius, capacity)
+  class(result) <- c("ds.vertDPFrequency", "list")
+  .dsvert_dp_frequency_contract(result)
+}
+
+.dsvert_dp_frequency_legacy_impl <- function(
     data_name, variable, server = NULL, datasources = NULL, .aggregate,
     .prepare = .dsvert_dp_frequency_prepare_v1,
     .execute = .dsvert_dp_frequency_execute_v1) {
@@ -282,12 +391,168 @@ ds.vertDPFrequency <- function(data_name, variable, server = NULL,
   class(result) <- c("ds.vertDPFrequency", "list")
   .dsvert_dp_frequency_contract(result)
 }
+
+.dsvert_dp_frequency_impl <- function(
+    data_name, variable, server = NULL, datasources = NULL, .aggregate,
+    .prepare = NULL, .execute = NULL,
+    .run = .dsvert_dp_synopsis_vector_run) {
+  values <- list(data_name = data_name, variable = variable)
+  if (any(!vapply(values, function(value) is.character(value) &&
+      length(value) == 1L && !is.na(value) && nzchar(value), logical(1L)))) {
+    stop("data_name and variable must be non-empty strings", call. = FALSE)
+  }
+  if (is.null(server)) stop(
+    "Frequency requires an explicit source owner before DSI.", call. = FALSE)
+  datasources <- .dsvert_dp_datasources(datasources)
+  source <- .dsvert_dp_server(server, datasources)
+  if (is.null(.prepare) && is.null(.execute)) {
+    return(.dsvert_dp_frequency_synopsis_result_v1(
+      data_name, variable, source, datasources, .aggregate, .run = .run))
+  }
+  if (!is.function(.prepare) || !is.function(.execute)) stop(
+    "Invalid Frequency client dependency.", call. = FALSE)
+  .dsvert_dp_frequency_legacy_impl(
+    data_name, variable, source, datasources, .aggregate,
+    .prepare = .prepare, .execute = .execute)
+}
+
+.dsvert_dp_frequency_synopsis_contract_v1 <- function(x, fail) {
+  proof <- x$proof
+  proof_fields <- c(
+    "version", "coordinate_family", "coordinate_descriptor",
+    "release_provenance")
+  roots <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "final_vector_root")
+  recursive_names <- function(value) {
+    if (!is.list(value)) return(character())
+    c(names(value), unlist(lapply(value, recursive_names), use.names = FALSE))
+  }
+  forbidden <- c(
+    "capsule_id", "privacy_epoch", "noise_key_id", "history_gate",
+    "request_limit", "operation_limit", "lifetime_budget",
+    "lifetime_composition", "privacy_accountant", "release_instance",
+    "allocation_certificate", "ledger", "reservation", "rate_limit",
+    "catalog_limit", "quota")
+  descriptor <- proof$coordinate_descriptor
+  levels <- tryCatch(.dsvert_dp_capsule_manifest_strings(
+    descriptor$levels, "Frequency synopsis levels", sorted = TRUE),
+    error = function(error) NULL)
+  capacity <- tryCatch(.dsvert_dp_vector_block_capacity(
+    list(descriptor = descriptor)), error = function(error) NA_real_)
+  accuracy <- tryCatch(
+    .dsvert_dp_frequency_synopsis_accuracy_v1(x, 0.95),
+    error = function(error) NULL)
+  expected_proportions <- if (sum(x$counts) > 0) {
+    x$counts / sum(x$counts)
+  } else stats::setNames(rep(NA_real_, length(x$counts)), x$levels)
+  regions <- tryCatch(.dsvert_dp_frequency_regions(
+    x$counts, accuracy$radius, capacity), error = function(error) NULL)
+  expected_status <- if (sum(x$counts) > 0) "ok" else "dp_effective_count_zero"
+  profile <- .dsvert_dp_table_vector_profile(x)
+  valid_roots <- all(vapply(roots, function(field) {
+    .dsvert_vector_hex(x[[field]]) &&
+      identical(x[[field]], proof$release_provenance[[field]])
+  }, logical(1L)))
+  provenance <- x$release_provenance
+  peers <- tryCatch(names(provenance$ordered_peer_pinset),
+                    error = function(error) NULL)
+  pinset <- tryCatch(.dsvert_dp_synopsis_client_pinset_v1(
+    provenance$ordered_peer_pinset, peers), error = function(error) NULL)
+  designated <- tryCatch(.dsvert_dp_synopsis_client_string_list_v1(
+    provenance$designated_noise_peers, "Frequency noise authority set", 2L),
+    error = function(error) NULL)
+  valid_authorities <- !is.null(pinset) && length(pinset) >= 2L &&
+    !is.null(designated) && length(designated) == 2L &&
+    !anyDuplicated(designated) && all(designated %in% names(pinset)) &&
+    identical(provenance$peer_pinset_sha256,
+              .dsvert_vector_hash(as.list(pinset)))
+  privacy <- x$privacy
+  valid_privacy <- is.list(privacy) && identical(names(privacy), c(
+    "version", "per_artifact_epsilon", "per_artifact_delta",
+    "sticky_noise", "unlimited_replay", "replay_is_postprocessing",
+    "public_openings", "distinct_artifacts_compose",
+    "finite_global_composition_claim")) &&
+    identical(privacy$version, "dsvert-per-synopsis-dp-v1") &&
+    .dsvert_dp_num_equal(privacy$per_artifact_epsilon, x$epsilon, 128) &&
+    .dsvert_dp_num_equal(privacy$per_artifact_delta, x$delta, 128) &&
+    identical(privacy$sticky_noise, TRUE) &&
+    identical(privacy$unlimited_replay, TRUE) &&
+    identical(privacy$replay_is_postprocessing, TRUE) &&
+    identical(privacy$public_openings, 1L) &&
+    identical(privacy$distinct_artifacts_compose, TRUE) &&
+    identical(privacy$finite_global_composition_claim, FALSE)
+  valid <- .dsvert_dp_has_exact_names(proof, proof_fields) &&
+    identical(proof$version, "dsvert-dp-frequency-synopsis-proof-v1") &&
+    identical(proof$coordinate_family, "categorical_marginals") &&
+    identical(proof$coordinate_descriptor, x$coordinate_descriptor) &&
+    identical(proof$release_provenance, x$release_provenance) &&
+    valid_roots && is.list(provenance) && valid_authorities &&
+    identical(provenance$version,
+              "dsvert-stateless-synopsis-public-provenance-v1") &&
+    identical(provenance$durable_replay, TRUE) &&
+    is.character(x$variable) && length(x$variable) == 1L && !is.na(x$variable) &&
+    identical(x$variable, descriptor$column) &&
+    identical(x$source_owner, descriptor$owner_peer) &&
+    identical(x$server, descriptor$owner_peer) &&
+    identical(x$levels, levels) && identical(names(x$counts), levels) &&
+    is.numeric(x$counts) && length(x$counts) == length(levels) &&
+    !anyNA(x$counts) && all(is.finite(x$counts)) &&
+    all(x$counts >= 0 & x$counts <= capacity) &&
+    identical(as.numeric(x$coordinate_maximum), as.numeric(capacity)) &&
+    identical(x$repeated_record_policy, descriptor$repeated_record_policy) &&
+    identical(x$missingness_policy, descriptor$missingness_policy) &&
+    identical(x$coordinate_family, "categorical_marginals") &&
+    identical(x$primitive, "signed_categorical_marginal_v1") &&
+    identical(x$status, expected_status) &&
+    identical(as.numeric(x$effective_count_dp), sum(x$counts)) &&
+    isTRUE(all.equal(x$proportions, expected_proportions,
+                     tolerance = 64 * .Machine$double.eps)) &&
+    is.list(profile) && identical(x$implementation, profile$backend) &&
+    identical(x$sampler, profile$sampler) &&
+    identical(x$mechanism, profile$release_mechanism) &&
+    identical(x$sticky_noise, "one_immutable_canonical_synopsis_artifact") &&
+    identical(x$sticky_replay, TRUE) && identical(x$unlimited_replay, TRUE) &&
+    identical(x$source_values_exposed, FALSE) &&
+    identical(x$intermediate_values_exposed, FALSE) &&
+    identical(x$clipped_coordinates, NA_integer_) &&
+    identical(x$clamp_activation_disclosed, FALSE) &&
+    identical(as.numeric(x$public_openings), 1) &&
+    identical(x$additional_privacy_cost, c(epsilon = 0, delta = 0)) &&
+    identical(x$composition_rule,
+              "one_sticky_release_per_canonical_signed_artifact") &&
+    identical(x$operation_id, x$execution_id) &&
+    identical(x$release_sha256, x$final_vector_root) &&
+    identical(x$uncertainty_scope, paste(
+      "Simultaneous regions cover DP mechanism noise only; population",
+      "sampling uncertainty is excluded")) &&
+    identical(x$inferential_scope, paste(
+      "Finite-snapshot DP frequencies; use ds.vertDPFrequencyInference()",
+      "for conservative iid multinomial sampling regions")) &&
+    isTRUE(valid_privacy) && !any(recursive_names(x) %in% forbidden) &&
+    !is.null(accuracy) && !is.null(regions) &&
+    identical(as.numeric(x$accuracy_simultaneous_95_abs),
+              as.numeric(accuracy$radius)) &&
+    identical(as.numeric(x$accuracy_simultaneous_confidence), 0.95) &&
+    identical(x$accuracy_simultaneous_method, accuracy$method) &&
+    identical(as.numeric(x$accuracy_implementation_tv_upper_bound),
+              as.numeric(accuracy$implementation_tv_upper_bound)) &&
+    isTRUE(all.equal(x$mechanism_regions, regions,
+                     tolerance = 64 * .Machine$double.eps))
+  if (!isTRUE(valid)) fail()
+  x
+}
+
 .dsvert_dp_frequency_contract <- function(x) {
   fail <- function() stop(
     "x must be a released, validated ds.vertDPFrequency object",
     call. = FALSE)
   if (!inherits(x, "ds.vertDPFrequency") || !is.list(x) ||
       !isTRUE(x$released) || !is.list(x$proof)) fail()
+  if (identical(x$proof$version,
+                "dsvert-dp-frequency-synopsis-proof-v1")) {
+    return(.dsvert_dp_frequency_synopsis_contract_v1(x, fail))
+  }
   execution <- list(
     version = .DSVERT_CLIENT_DP_FREQUENCY_RESULT_VERSION,
     operation_id = x$operation_id, variable_name = x$variable,
@@ -413,8 +678,12 @@ ds.vertDPFrequencyInference <- function(x, level = 0.95,
   dp_alpha <- alpha * dp_fraction
   sampling_alpha <- alpha - dp_alpha
   per_level_alpha <- sampling_alpha / length(x$counts)
-  accuracy <- .dsvert_dp_frequency_accuracy_v1(
-    x$proof$config, 1 - dp_alpha)
+  accuracy <- if (identical(x$proof$version,
+                             "dsvert-dp-frequency-synopsis-proof-v1")) {
+    .dsvert_dp_frequency_synopsis_accuracy_v1(x, 1 - dp_alpha)
+  } else {
+    .dsvert_dp_frequency_accuracy_v1(x$proof$config, 1 - dp_alpha)
+  }
   regions <- .dsvert_dp_frequency_regions(
     x$counts, accuracy$radius, x$coordinate_maximum)
   intervals <- .dsvert_dp_frequency_cp_regions_v1(

@@ -12,6 +12,52 @@ for (.frequency_public_fixture_expression in .frequency_public_fixture_code) {
 rm(.frequency_public_fixture_code, .frequency_public_fixture_expression,
    .frequency_public_fixture_name)
 
+.frequency_synopsis_fixture_code <- parse(testthat::test_path(
+  "test-dp-core-vector-methods.R"))
+for (.frequency_synopsis_fixture_expression in
+     .frequency_synopsis_fixture_code) {
+  if (is.call(.frequency_synopsis_fixture_expression) && identical(
+      .frequency_synopsis_fixture_expression[[1L]], quote(`<-`))) {
+    .frequency_synopsis_fixture_name <- as.character(
+      .frequency_synopsis_fixture_expression[[2L]])
+    if (.frequency_synopsis_fixture_name %in% c(
+          ".dp_core_vector_fixture", ".dp_meanvar_synopsis_fixture")) {
+      eval(.frequency_synopsis_fixture_expression)
+    }
+  }
+}
+rm(.frequency_synopsis_fixture_code, .frequency_synopsis_fixture_expression,
+   .frequency_synopsis_fixture_name)
+
+.frequency_synopsis_fixture <- function(k) {
+  fixture <- .dp_meanvar_synopsis_fixture(k = k)
+  manifest <- fixture$run$release$manifest
+  manifest$workload$coordinate_count <- 10L
+  manifest$workload$families$categorical_marginals <- list(
+    artifacts = list(`cohort::status` = list(
+      owner_peer = "site_b", dataset = "cohort", column = "status",
+      levels = as.list(c("case", "control")), statistic_maximum = 100,
+      repeated_record_policy = "consistent_level_else_exclude_v1",
+      missingness_policy = "missing_or_out_of_domain_rows_are_ignored")))
+  fixture$run$release$manifest <- manifest
+  fixture$run$layout <- .dsvert_dp_capsule_vector_layout(manifest)
+  fixture$run$release$coordinate_count <-
+    fixture$run$layout$coordinate_count
+  fixture$run$release$coordinate_order_sha256 <- fixture$run$layout$sha256
+  peers <- names(fixture$conns)
+  pins <- stats::setNames(vapply(seq_along(peers), function(index) {
+    chartr("+/", "-_", sub("=+$", "", jsonlite::base64_enc(
+      as.raw(rep(index, 32L)))))
+  }, character(1L)), peers)
+  fixture$run$release$signed_provenance$ordered_peer_pinset <- as.list(pins)
+  fixture$run$release$signed_provenance$peer_pinset_sha256 <-
+    .dsvert_vector_hash(as.list(pins))
+  # count; numeric moments; canonical categorical marginal; pair cells.
+  fixture$run$release$values <- c(
+    42.25, 4, 1.5, 0.75, 50, 50, 8.5, 2.25, 3.75, 9.5)
+  fixture
+}
+
 .frequency_public_execution <- function(fixture, values = c(4, 4, 3)) {
   compiled <- fixture$compiled
   authorities <- compiled$authorities
@@ -112,6 +158,62 @@ test_that("Frequency requires an explicit source before any DSI call", {
       calls <<- calls + 1L
     }), "explicit source")
   expect_identical(calls, 0L)
+})
+
+test_that("Frequency reads a signed Synopsis marginal at K=2, K=3, and K=5", {
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .frequency_synopsis_fixture(k)
+    calls <- 0L
+    run <- function(datasources, status = NULL, local_projection = NULL,
+                    .aggregate) {
+      calls <<- calls + 1L
+      expect_identical(datasources, fixture$conns)
+      expect_null(status)
+      expect_null(local_projection)
+      fixture$run
+    }
+    result <- .dsvert_dp_frequency_impl(
+      "cohort", "status", "site_b", fixture$conns,
+      function(...) stop("unexpected raw DSI call", call. = FALSE),
+      .run = run)
+    expect_s3_class(result, "ds.vertDPFrequency")
+    expect_identical(calls, 1L)
+    expect_identical(result$proof$version,
+                     "dsvert-dp-frequency-synopsis-proof-v1")
+    expect_identical(result$levels, c("case", "control"))
+    expect_identical(result$counts, c(case = 50, control = 50))
+    expect_identical(result$effective_count_dp, 100)
+    expect_true(is.finite(result$accuracy_simultaneous_95_abs))
+    expect_gte(result$accuracy_simultaneous_95_abs, 0)
+    expect_true(all(result$mechanism_regions$lower >= 0))
+    expect_true(all(result$mechanism_regions$upper <= 100))
+    expect_identical(result$release_provenance$designated_noise_peers,
+                     as.list(names(fixture$conns)[1:2]))
+    expect_length(result$release_provenance$ordered_peer_pinset, k)
+    expect_identical(result$privacy$unlimited_replay, TRUE)
+    expect_identical(result$privacy$finite_global_composition_claim, FALSE)
+
+    inference <- ds.vertDPFrequencyInference(result, level = 0.95)
+    expect_s3_class(inference, "ds.vertDPFrequencyInference")
+    expect_true(all(is.finite(inference$intervals)))
+    expect_true(all(inference$intervals >= 0 & inference$intervals <= 1))
+
+    replay <- .dsvert_dp_frequency_impl(
+      "cohort", "status", "site_b", fixture$conns,
+      function(...) stop("unexpected raw DSI call", call. = FALSE),
+      .run = run)
+    expect_identical(replay$counts, result$counts)
+    expect_identical(replay$final_vector_root, result$final_vector_root)
+    expect_identical(calls, 2L)
+
+    tampered <- result
+    tampered$counts[[1L]] <- tampered$counts[[1L]] + 1
+    expect_error(ds.vertDPFrequencyInference(tampered), "validated")
+    tampered <- result
+    tampered$release_provenance$designated_noise_peers[[2L]] <-
+      tampered$release_provenance$designated_noise_peers[[1L]]
+    expect_error(ds.vertDPFrequencyInference(tampered), "validated")
+  }
 })
 
 test_that("Frequency routes K2/K3/K5 and both physical backends", {
