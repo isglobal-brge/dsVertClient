@@ -222,10 +222,15 @@ test_that("known unsafe legacy routes are not presented as promoted", {
   lasso <- ds.vertMethodStatus(c(
     "ds.vertLASSOProximal", "ds.vert.lasso_proximal",
     "ds.vertLASSOCV", "ds.vert.lasso_cv"))
-  expect_true(all(lasso$status == "provisional"))
+  proximal <- lasso$canonical == "ds.vertLASSOProximal"
+  expect_true(all(lasso$status[proximal] == "promoted"))
+  expect_true(all(lasso$status[!proximal] == "provisional"))
   expect_true(all(lasso$release_contract ==
                     "postprocessing_inherits_input"))
-  expect_true(all(grepl("E2E", lasso$principal_limitation, fixed = TRUE)))
+  expect_match(lasso$principal_limitation[proximal][[1L]],
+               "cross-owner", fixed = TRUE)
+  expect_true(all(grepl(
+    "cross-validation", lasso$principal_limitation[!proximal], fixed = TRUE)))
   expect_match(
     ds.vertMethodStatus("ds.vertLASSOProximal")$safe_scope,
     "legacy compatibility")

@@ -733,6 +733,17 @@
     disclosure_guard = list(
       satisfied = TRUE,
       basis = "deterministic_postprocessing_of_one_validated_DP_capsule"))
+  if (identical(source$verification$certificate$version,
+                .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION)) {
+    out$input_provenance <- "signed_dp_gaussian_synopsis"
+    out$source_query_contract_sha256 <- NULL
+    out$source_release_contract_hash <- NULL
+    out$source_contract_sha256 <- fit$contract_sha256
+    out$additional_server_calls_after_capsule <- NULL
+    out$additional_server_calls_after_synopsis <- 0L
+    out$disclosure_guard$basis <-
+      "deterministic_postprocessing_of_one_validated_DP_synopsis"
+  }
   class(out) <- c("ds.vertLASSOProximal", "ds.vertDPLASSO", "list")
   out
 }
@@ -841,6 +852,17 @@
     disclosure_guard = list(
       satisfied = TRUE,
       basis = "deterministic_postprocessing_of_one_validated_DP_capsule"))
+  if (identical(source$verification$certificate$version,
+                .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION)) {
+    out$input_provenance <- "signed_dp_gaussian_synopsis"
+    out$source_query_contract_sha256 <- NULL
+    out$source_release_contract_hash <- NULL
+    out$source_contract_sha256 <- fit$contract_sha256
+    out$additional_server_calls_after_capsule <- NULL
+    out$additional_server_calls_after_synopsis <- 0L
+    out$disclosure_guard$basis <-
+      "deterministic_postprocessing_of_one_validated_DP_synopsis"
+  }
   class(out) <- c("ds.vertLASSOCV", "ds.vertDPLASSOSelect", "list")
   out
 }

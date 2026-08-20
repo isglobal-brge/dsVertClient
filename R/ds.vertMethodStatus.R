@@ -521,16 +521,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "compatibility", "Local quadratic-surrogate exploration near a converged fit.",
       "It is not a general L1 estimator.")
   add(c("ds.vertLASSOProximal", "ds.vert.lasso_proximal"),
-      "ds.vertLASSOProximal", "provisional",
+      "ds.vertLASSOProximal", "promoted",
       paste(
         "Preferred zero-call Gaussian LASSO post-processing of one validated",
         "same-owner signed Synopsis moment artifact; the ds.glm",
         "normal-equation path remains",
         "as legacy compatibility."),
       paste(
-        "Gaussian only; no sampling inference or coefficient regions; the",
-        "legacy route inherits its source-fit limitations and authentic",
-        "federation E2E validation remains pending."))
+        "Gaussian only; no sampling inference or coefficient regions;",
+        "cross-owner designs are unavailable and the legacy ds.glm route",
+        "remains compatibility only."))
   add(c("ds.vertLASSOIter", "ds.vert.lasso_iter"), "ds.vertLASSOIter",
       "quarantine", "Exact slope-binomial route fails closed pending its signed Gram.",
       paste(

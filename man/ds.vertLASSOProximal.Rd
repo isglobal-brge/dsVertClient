@@ -50,7 +50,8 @@ soft-thresholded OLS for comparison.
 }
 \description{
 Solve the Gaussian LASSO objective entirely client-side. The
-preferred route accepts a validated \code{ds.vertDPGaussian} release and
+preferred route accepts a validated same-owner no-lifetime Synopsis
+\code{ds.vertDPGaussian} release and
 optimises its signed, projected DP sufficient statistics without another
 DSI call or privacy cost. The historical \code{ds.glm} route is retained
 for compatibility with already-created fits.
