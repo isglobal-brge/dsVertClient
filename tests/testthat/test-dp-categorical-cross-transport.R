@@ -124,6 +124,7 @@
         correlation_artifacts = list(), describe_artifacts = list(),
         survival_artifacts = list())),
     capsule_identity = list(capsule_id = strrep("a", 64L)))
+  source_capsule_id <- strrep("d", 64L)
   layout <- .dsvert_dp_gaussian_cross_layout_client(manifest)
   release_layout <- .dsvert_dp_capsule_vector_layout(manifest)
   source_hash <- strrep("b", 64L)
@@ -143,7 +144,7 @@
     .dsvert_joint_dp_client_json(sign_value(list(
       version = .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_BIND_VERSION,
       phase = "cross_categorical_private_inputs_bound",
-      capsule_id = manifest$capsule_identity$capsule_id,
+      capsule_id = source_capsule_id,
       analysis_id = "cross_table", artifact_sha256 = artifact_hash,
       source_contract_hash = source_hash,
       private_layout_sha256 = layout$transport_coordinate_order_sha256,
@@ -163,7 +164,7 @@
     .dsvert_joint_dp_client_json(sign_value(list(
       version = .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_RECEIPT_VERSION,
       phase = "cross_categorical_result_share_persisted",
-      capsule_id = manifest$capsule_identity$capsule_id,
+      capsule_id = source_capsule_id,
       analysis_id = "cross_table", peer_name = peer,
       peer_identity_pk = unname(pins[[peer]]),
       artifact_sha256 = artifact_hash,
@@ -185,7 +186,7 @@
   }), designated)
   stage_response <- function(peer) {
     contract <- .dsvert_dp_categorical_cross_stage_contract(
-      artifact, manifest$capsule_identity$capsule_id, "cross_table")
+      artifact, source_capsule_id, "cross_table")
     prefix <- if (identical(peer, designated[[1L]])) "A" else "B"
     handle <- paste0(prefix, substr(digest::digest(
       peer, "sha256", serialize = FALSE), 1L, 42L))
@@ -200,7 +201,7 @@
       state = "prepared",
       producer = .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_PRODUCER,
       purpose = contract$purpose,
-      capsule_id = manifest$capsule_identity$capsule_id,
+      capsule_id = source_capsule_id,
       analysis_id = "cross_table", stage = "cell-products",
       stage_index = 1, artifact_sha256 = artifact_hash,
       source_contract_hash = source_hash,
@@ -228,7 +229,7 @@
   }
   source_receipt <- list(
     purpose = .DSVERT_CLIENT_DP_CAPSULE_SOURCE_CATEGORICAL_CROSS_PURPOSE,
-    capsule_id = manifest$capsule_identity$capsule_id,
+    capsule_id = source_capsule_id,
     contract_hash = source_hash,
     coordinate_count = layout$transport_coordinate_count,
     release_coordinate_count = layout$release_coordinate_count,
@@ -368,7 +369,7 @@ test_that("completed categorical result replays and tampering fails closed", {
   bad_result[["site_b"]] <- .dsvert_joint_dp_client_json(decoded)
   binding <- .dsvert_dp_categorical_cross_bind_set(
     fixture$bind, fixture$context, fixture$manifest, fixture$layout,
-    "cross_table")
+    "cross_table", fixture$source_receipt)
   expect_error(.dsvert_dp_categorical_cross_result_set(
     bad_result, fixture$context, fixture$manifest, fixture$layout,
     binding, "cross_table"), "invalid biomedical capsule source signature")

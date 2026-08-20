@@ -248,7 +248,7 @@
 }
 
 .dsvert_dp_gaussian_cross_bind_set <- function(
-    responses, context, manifest, layout, analysis_id) {
+    responses, context, manifest, layout, analysis_id, source_receipt) {
   peers <- context$designated
   if (!is.list(responses) || !setequal(names(responses), peers)) {
     stop("Cross-owner Gaussian binding did not cover both computation peers",
@@ -273,7 +273,7 @@
     valid <- identical(value$version,
                        .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_BIND_VERSION) &&
       identical(value$phase, "cross_gaussian_private_inputs_bound") &&
-      identical(value$capsule_id, manifest$capsule_identity$capsule_id) &&
+      identical(value$capsule_id, source_receipt$capsule_id) &&
       identical(value$analysis_id, analysis_id) &&
       identical(value$artifact_sha256,
                 .dsvert_dp_capsule_source_hash(artifact)) &&
@@ -318,6 +318,7 @@
   list(
     artifact = artifact, receipts = receipts,
     state = receipts[[1L]]$state,
+    capsule_id = receipts[[1L]]$capsule_id,
     source_contract_hash = receipts[[1L]]$source_contract_hash)
 }
 
@@ -359,7 +360,7 @@
   peers <- context$designated
   artifact <- binding$artifact
   expected <- .dsvert_dp_gaussian_cross_stage_contract(
-    artifact, manifest$capsule_identity$capsule_id, analysis_id,
+    artifact, binding$capsule_id, analysis_id,
     stage, stage_index)
   fields <- c(
     "capability_id", "manifest_handle", "context_hash", "plan_id",
@@ -383,7 +384,7 @@
       identical(value$producer,
                 .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_PRODUCER) &&
       identical(value$purpose, expected$purpose) &&
-      identical(value$capsule_id, manifest$capsule_identity$capsule_id) &&
+      identical(value$capsule_id, binding$capsule_id) &&
       identical(value$analysis_id, analysis_id) &&
       identical(value$stage, expected$stage) &&
       identical(as.numeric(value$stage_index),
@@ -468,7 +469,7 @@
     valid <- identical(value$version,
                        .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_RECEIPT_VERSION) &&
       identical(value$phase, "cross_gaussian_result_share_persisted") &&
-      identical(value$capsule_id, manifest$capsule_identity$capsule_id) &&
+      identical(value$capsule_id, binding$capsule_id) &&
       identical(value$analysis_id, analysis_id) &&
       identical(value$peer_name, peer) &&
       identical(value$peer_identity_pk, unname(context$pinset[[peer]])) &&
@@ -590,7 +591,7 @@
         context$conns, bind_calls,
         operation = "cross-owner Gaussian private-input binding",
         .aggregate = .aggregate),
-      context, manifest, layout, analysis_id)
+      context, manifest, layout, analysis_id, source_receipt)
     if (!identical(binding$source_contract_hash,
                    source_receipt$contract_hash)) {
       stop("The exact Gaussian binding changed the source contract",
@@ -606,7 +607,7 @@
         list(list(stage = "moments", stage_index = 1L)))
       for (stage in stages) {
         contract <- .dsvert_dp_gaussian_cross_stage_contract(
-          binding$artifact, manifest$capsule_identity$capsule_id,
+          binding$artifact, binding$capsule_id,
           analysis_id, stage$stage, stage$stage_index)
         prepare_calls <- stats::setNames(lapply(peers, function(peer) call(
           name = "dsvertDPGaussianCrossPrepareDS",

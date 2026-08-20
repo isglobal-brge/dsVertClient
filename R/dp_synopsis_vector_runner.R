@@ -420,7 +420,6 @@
         .dsvert_dp_synopsis_categorical_cross_source_receipt_v1(
           source_manifest, tickets, authorities, source_peers)
       cross_manifest <- trusted$manifest
-      cross_manifest$capsule_identity$capsule_id <- source_capsule_id
       remote_context <- list(
         manifest_sha256 = manifest_bundle$manifest_sha256,
         claim_set_json = claim_set_json,

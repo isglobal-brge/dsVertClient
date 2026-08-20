@@ -140,7 +140,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "artifact; distinct artifacts compose and no finite global",
         "composition claim is made. It assumes published bounds, secret",
         "persistent seeds and at least one non-colluding pinned authority."))
-  add("ds.vertDPContingency", "ds.vertDPContingency", "provisional",
+  add("ds.vertDPContingency", "ds.vertDPContingency", "promoted",
       paste(
         "Fixed-domain, one-contribution-per-unit table from one canonical",
         "sticky Synopsis projection selected from signed same- or cross-owner",
@@ -414,7 +414,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "Gaussian-mechanism calibration and a conditional odds-ratio",
         "confidence interval are not certified."))
   add(c("ds.vertChisqCross", "ds.vert.chisq_cross"), "ds.vertChisqCross",
-      "provisional",
+      "promoted",
       paste(
         "One canonical signed cross-owner categorical Synopsis release, then",
         "client-only DP-aware Pearson/Yates and optional conditional",

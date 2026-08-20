@@ -35,14 +35,15 @@
   list(manifest = manifest, conns = conns)
 }
 
-test_that("cross chi-square surface contains no retired exact/discovery route", {
+test_that("cross chi-square surface uses only the Synopsis contingency route", {
   surface <- paste(deparse(body(ds.vertChisqCross)), collapse = "\n")
   retired <- c(
     "dsvertColNamesDS", "dsvertOneHotDS", "exactGCChisq",
     "k2ChisqCross", "glmRing63TransportInitDS", "fisher.test")
   expect_false(any(vapply(
     retired, grepl, logical(1L), x = surface, fixed = TRUE)))
-  expect_match(surface, "ds.vertDPContingency", fixed = TRUE)
+  expect_true(grepl("release <- ds.vertDPContingency", surface,
+                    fixed = TRUE))
   expect_match(surface, ".dsvert_dp_chisq_from_release", fixed = TRUE)
   expect_match(surface, ".dsvert_dp_fisher_from_release", fixed = TRUE)
 })
@@ -73,40 +74,30 @@ test_that("cross chi-square and Fisher reuse the identical DP release", {
   expect_true(result$cross_owner)
 })
 
-test_that("cross contingency maps the signed orientation without discovery", {
+test_that("new cross-owner categorical requests use one Synopsis release", {
   fixture <- .chisq_cross_manifest_fixture()
-  layout <- .dsvert_dp_capsule_vector_layout(fixture$manifest)
-  context <- list(
-    layout = layout, manifest = fixture$manifest,
-    release = structure(list(), class = "test-release"),
-    adjacency = "add_remove_patient")
-  values <- c(1, 2, 0, 1, 2, 0)
-  run <- function(data_name, row_var, col_var, server = NULL) {
-    testthat::with_mocked_bindings(
-      .dsvert_dp_contingency_impl(
-        data_name, row_var, col_var, server = server,
-        datasources = fixture$conns,
-        .aggregate = function(...) stop("no DSI call expected")),
-      .dsvert_dp_datasources = function(datasources) datasources,
-      .dsvert_dp_capsule_vector_run = function(...) list(),
-      .dsvert_dp_vector_context = function(...) context,
-      .dsvert_dp_capsule_vector_values = function(release, block) values,
-      .dsvert_dp_vector_public_metadata = function(...) list(
-        mechanism = "discrete-laplace"),
-      .dsvert_dp_vector_accuracy_radius = function(...) list(
-        radius = 1, confidence = 0.95, method = "test",
-        implementation_tv_upper_bound = 0,
-        additional_privacy_cost = 0),
-      .package = "dsVertClient")
-  }
-  canonical <- run("right_data", "left_cat", "right_cat", "site_b")
-  expect_true(canonical$cross_owner)
-  expect_identical(canonical$servers, c("site_b", "site_c"))
-  expect_identical(canonical$datasets, c("left_data", "right_data"))
-  expect_equal(unname(canonical$table), matrix(values, nrow = 2L))
-
-  transposed <- run("left_data", "right_cat", "left_cat", "site_c")
-  expect_equal(unname(transposed$table), t(matrix(values, nrow = 2L)))
-  expect_error(run("unknown", "left_cat", "right_cat"),
-               "does not contain exactly one")
+  calls <- 0L
+  release <- structure(list(
+    row_var = "left_cat", col_var = "right_cat", cross_owner = TRUE,
+    servers = c("site_b", "site_c")),
+    class = c("ds.vertDPContingency", "list"))
+  result <- testthat::with_mocked_bindings(
+    ds.vertChisqCross(
+      "right_data", "left_cat", "right_cat",
+      datasources = fixture$conns, verbose = FALSE, simulations = 10L),
+    ds.vertDPContingency = function(
+        data_name, row_var, col_var, server, datasources) {
+      calls <<- calls + 1L
+      expect_identical(data_name, "right_data")
+      expect_identical(c(row_var, col_var), c("left_cat", "right_cat"))
+      expect_null(server)
+      expect_identical(datasources, fixture$conns)
+      release
+    }, .dsvert_dp_chisq_from_release = function(x, ...) {
+      expect_identical(x, release)
+      structure(list(p_value = 0.5), class = c("ds.vertChisq", "list"))
+    }, .package = "dsVertClient")
+  expect_identical(calls, 1L)
+  expect_identical(result$source_dp_release, release)
+  expect_true(result$cross_owner)
 })
