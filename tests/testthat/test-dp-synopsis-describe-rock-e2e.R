@@ -783,6 +783,29 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_equal(fit$coefficients_original_scale,
                  c(`(Intercept)` = 10, x_peer_a = -1), tolerance = 0.1)
 
+    adapter <- testthat::with_mocked_bindings(
+      ds.vertDPGaussian = function(
+          data_name, analysis_id, ridge = 0, server = NULL,
+          datasources = NULL) {
+        gaussian(data_name, analysis_id, ridge, server, datasources, dispatch)
+      },
+      ds.vertGLM(
+        y_peer_a ~ x_peer_a, data = "data_peer_a", family = "gaussian",
+        dp_analysis_id = "gaussian_primary",
+        missing = "complete_case_capsule", verbose = FALSE,
+        datasources = conns),
+      .package = "dsVertClient")
+    expect_s3_class(adapter, "ds.vertDPGaussian")
+    expect_identical(adapter$called_via,
+                     "ds.vertGLM_explicit_dp_analysis_id")
+    expect_identical(adapter$legacy_glm_estimand, FALSE)
+    expect_identical(adapter$provenance_certificate$certificate_sha256,
+                     fit$provenance_certificate$certificate_sha256)
+    expect_equal(adapter$coefficients_original_scale,
+                 fit$coefficients_original_scale, tolerance = 0)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
     lasso <- ds.vertLASSOProximal(
       fit, lambda = 0.05, max_iter = 2000L, tol = 1e-10)
     expect_s3_class(lasso, "ds.vertLASSOProximal")
