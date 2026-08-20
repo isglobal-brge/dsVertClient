@@ -711,7 +711,9 @@
       length(set$included_pairs) == 1L) {
     unname(unlist(set$included_pairs[[1L]], use.names = FALSE))
   } else character()
-  valid <- identical(manifest$logical_snapshot, selector$parent$logical_snapshot) &&
+  valid <- identical(
+    .dsvert_joint_dp_client_json(manifest$logical_snapshot),
+    .dsvert_joint_dp_client_json(selector$parent$logical_snapshot)) &&
     is.list(scope) && identical(scope$mode, "catalog_v1") &&
     is.list(explicit) && length(explicit) == 1L &&
     identical(sort(unname(unlist(explicit[[1L]], use.names = FALSE)),

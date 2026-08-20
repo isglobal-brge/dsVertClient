@@ -578,6 +578,9 @@ test_that("pairwise DP correlation uses one no-lifetime Synopsis for K=2,3,5", {
       "not an interval for the projection", fixed = TRUE)
     expect_identical(result$accuracy_additional_privacy_cost,
                      c(epsilon = 0, delta = 0))
+    expect_identical(result$additional_server_calls_after_synopsis, 0L)
+    expect_identical(result$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
     expect_identical(result$artifact_key, fixture$release$artifact_key)
     expect_identical(result$execution_id, fixture$release$execution_id)
     expect_identical(result$contract_sha256, fixture$release$contract_sha256)
