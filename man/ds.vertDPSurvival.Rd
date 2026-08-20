@@ -20,11 +20,13 @@ ds.vertDPSurvival(data_name, analysis_id, server = NULL,
 \value{
 A \code{ds.vertDPSurvival} object containing the single released DP
 histogram, DP-derived risk/event/censor values, Kaplan--Meier survival,
-Nelson--Aalen cumulative hazard, and cause-specific cumulative incidence.
+Nelson--Aalen cumulative hazard, cause-specific cumulative incidence, signed
+Synopsis provenance, and per-artifact privacy metadata.
 }
 \description{
-Makes exactly one strict DataSHIELD aggregate release and derives all three
-non-parametric estimators by post-processing that same sticky DP histogram.
+Reads one canonical signed Synopsis release and derives all three
+non-parametric estimators by post-processing that same sticky fixed-grid DP
+histogram. Exact replay is unlimited and does not use lifetime admission.
 }
 \details{
 Time is discretised on a public, fixed grid selected by the custodian. With

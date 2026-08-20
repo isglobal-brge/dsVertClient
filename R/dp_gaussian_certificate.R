@@ -10,11 +10,59 @@
   "dsvert-dp-gaussian-signed-evidence-v1"
 .DSVERT_DP_GAUSSIAN_CERTIFICATE_CHUNK_VERSION <-
   "dsvert-dp-gaussian-public-chunk-evidence-v1"
+.DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION <-
+  "dsvert-dp-gaussian-synopsis-provenance-certificate-v1"
+.DSVERT_DP_GAUSSIAN_SYNOPSIS_EVIDENCE_VERSION <-
+  "dsvert-dp-gaussian-synopsis-signed-evidence-v1"
 
 .dsvert_dp_gaussian_trust_cache <- new.env(parent = emptyenv())
 
 .dsvert_dp_gaussian_certificate_hash <- function(value) {
   .dsvert_dp_capsule_manifest_hash(value)
+}
+
+.dsvert_dp_gaussian_synopsis_no_legacy_fields <- function(value) {
+  forbidden <- paste(
+    c("release_instance", "privacy_epoch", "noise_key", "capsule",
+      "lifetime", "ledger", "reservation", "request", "rate", "catalog",
+      "quota"), collapse = "|")
+  visit <- function(node, path = "certificate") {
+    if (!is.list(node)) return(invisible(TRUE))
+    fields <- names(node)
+    if (!is.null(fields)) {
+      invalid <- fields[grepl(forbidden, fields, ignore.case = TRUE)]
+      if (length(invalid)) {
+        stop(
+          "The Gaussian Synopsis certificate contains a forbidden legacy ",
+          "field at ", path, ": ", invalid[[1L]], call. = FALSE)
+      }
+      for (index in seq_along(node)) {
+        visit(node[[index]], paste0(path, "$", fields[[index]]))
+      }
+    } else {
+      for (index in seq_along(node)) {
+        visit(node[[index]], paste0(path, "[[", index, "]]"))
+      }
+    }
+    invisible(TRUE)
+  }
+  visit(value)
+}
+
+.dsvert_dp_gaussian_synopsis_evidence_json <- function(value, what) {
+  json <- .dsvert_joint_dp_client_json(value)
+  .dsvert_dp_synopsis_client_json(
+    json, what, .DSVERT_CLIENT_SYNOPSIS_MAX_OBJECT_BYTES)
+  json
+}
+
+.dsvert_dp_gaussian_synopsis_evidence_decode <- function(value, what) {
+  if (!.dsvert_dp_is_string(value)) {
+    stop("Invalid Gaussian Synopsis ", what, call. = FALSE)
+  }
+  .dsvert_dp_synopsis_client_json(
+    value, paste("Gaussian Synopsis", what),
+    .DSVERT_CLIENT_SYNOPSIS_MAX_OBJECT_BYTES)
 }
 
 .dsvert_dp_gaussian_pinset <- function(value, what = "certificate pinset") {
@@ -854,11 +902,476 @@
   invisible(TRUE)
 }
 
-#' Verify a bounded Gaussian capsule certificate without DSI
+.dsvert_dp_gaussian_synopsis_certificate_build <- function(
+    context, artifact, block, coordinates) {
+  release <- context$release
+  provenance <- if (is.list(release)) release$signed_provenance else NULL
+  bundle <- context$manifest_bundle
+  compilation <- context$verification_compilation
+  required_roots <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "final_vector_root")
+  required_provenance <- c(
+    "version", "ordered_peer_pinset", "peer_pinset_sha256",
+    "designated_noise_peers", required_roots, "full_plan_sha256",
+    "compile_receipts", "release_receipts", "replay_responses",
+    "protected_shares_included", "preclamp_values_included",
+    "source_values_included", "intermediate_payload_exposed",
+    "durable_replay")
+  if (!isTRUE(context$synopsis) || !is.list(bundle) || !is.list(compilation) ||
+      !is.list(provenance) || !all(required_provenance %in% names(provenance)) ||
+      !identical(
+        provenance$version,
+        "dsvert-stateless-synopsis-public-provenance-v1") ||
+      !identical(provenance$protected_shares_included, FALSE) ||
+      !identical(provenance$preclamp_values_included, FALSE) ||
+      !identical(provenance$source_values_included, FALSE) ||
+      !identical(provenance$intermediate_payload_exposed, FALSE) ||
+      !identical(provenance$durable_replay, TRUE) ||
+      !identical(artifact$version,
+                 "bounded-normalized-gaussian-sufficient-statistics-v1") ||
+      !identical(artifact$spec_version, "v1") ||
+      !identical(artifact$implementation_state, "same_owner_materialized") ||
+      !identical(artifact$cross_owner_state, "reserved_not_materialized")) {
+    stop("The Gaussian result lacks closed same-owner Synopsis provenance",
+         call. = FALSE)
+  }
+  if (!all(vapply(required_roots, function(field) {
+        .dsvert_vector_hex(release[[field]]) &&
+          identical(release[[field]], provenance[[field]])
+      }, logical(1L)))) {
+    stop("The Gaussian Synopsis roots are detached", call. = FALSE)
+  }
+  pinset <- .dsvert_dp_gaussian_pinset(provenance$ordered_peer_pinset)
+  designated <- unlist(provenance$designated_noise_peers, use.names = FALSE)
+  if (!identical(.dsvert_dp_pinset_hash(pinset),
+                 provenance$peer_pinset_sha256) ||
+      length(designated) != 2L || anyNA(designated) ||
+      anyDuplicated(designated) || !all(designated %in% names(pinset)) ||
+      !identical(
+        .dsvert_joint_dp_client_json(compilation$receipts),
+        .dsvert_joint_dp_client_json(provenance$compile_receipts))) {
+    stop("The Gaussian Synopsis peer or compilation binding is invalid",
+         call. = FALSE)
+  }
+  if (!is.character(release$scaled_values) ||
+      length(release$scaled_values) != release$coordinate_count ||
+      anyNA(release$scaled_values) ||
+      !all(vapply(release$scaled_values, .dsvert_vector_integer_text,
+                  logical(1L))) ||
+      !is.numeric(coordinates) || length(coordinates) != block$length) {
+    stop("The Gaussian Synopsis released coordinates are invalid",
+         call. = FALSE)
+  }
+  positions <- seq.int(block$start, block$end)
+  scaled <- release$scaled_values[positions]
+  descriptor <- block$descriptor
+  descriptor_sha256 <- .dsvert_dp_gaussian_certificate_hash(descriptor)
+  block_public <- block[c(
+    "family", "key", "start", "end", "length", "owner_peer", "dataset")]
+  names(block_public)[names(block_public) == "key"] <- "analysis_id"
+  block_values_sha256 <- .dsvert_dp_gaussian_certificate_hash(list(
+    protocol = "dsvert-dp-gaussian-synopsis-block-values-v1",
+    start = as.numeric(block$start), end = as.numeric(block$end),
+    scaled_values = as.list(scaled)))
+  public_bundle <- bundle
+  public_bundle$context <- NULL
+  evidence <- list(
+    version = .DSVERT_DP_GAUSSIAN_SYNOPSIS_EVIDENCE_VERSION,
+    federation_state_json =
+      .dsvert_dp_gaussian_synopsis_evidence_json(
+        unclass(context$status), "federation state"),
+    manifest_bundle_json =
+      .dsvert_dp_gaussian_synopsis_evidence_json(
+        public_bundle, "manifest bundle"),
+    compilation_json =
+      .dsvert_dp_gaussian_synopsis_evidence_json(
+        compilation, "compilation"),
+    release_set_json =
+      .dsvert_dp_gaussian_synopsis_evidence_json(
+        provenance$release_receipts, "release set"),
+    replay_set_json =
+      .dsvert_dp_gaussian_synopsis_evidence_json(
+        provenance$replay_responses, "replay set"))
+  unsigned <- list(
+    version = .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION,
+    analysis_id = artifact$analysis_id,
+    dataset = artifact$dataset,
+    owner_peer = artifact$owner_peer,
+    cross_owner_state = artifact$cross_owner_state,
+    descriptor_sha256 = descriptor_sha256,
+    descriptor = descriptor,
+    block = block_public,
+    block_values_sha256 = block_values_sha256,
+    manifest_sha256 = release$manifest_sha256,
+    schema_sha256 = bundle$schema_sha256,
+    workload_contract_sha256 = bundle$workload_contract_sha256,
+    artifact_key = release$artifact_key,
+    execution_id = release$execution_id,
+    contract_sha256 = release$contract_sha256,
+    attempt_sha256 = release$attempt_sha256,
+    source_contract_sha256 = release$source_contract_sha256,
+    result_set_sha256 = release$result_set_sha256,
+    final_vector_root = release$final_vector_root,
+    coordinate_order_sha256 = release$coordinate_order_sha256,
+    coordinate_count = as.numeric(release$coordinate_count),
+    output_lattice_bits = as.numeric(release$output_lattice_bits),
+    output_lattice_scale = as.numeric(release$output_lattice_scale),
+    plan_sha256 = release$plan_sha256,
+    backend = release$backend,
+    sampler = release$sampler,
+    mechanism = release$mechanism,
+    epsilon = release$epsilon,
+    delta = release$delta,
+    implementation_delta = release$implementation_delta,
+    peer_context = list(
+      ordered_peer_pinset = as.list(pinset),
+      peer_pinset_sha256 = provenance$peer_pinset_sha256,
+      designated_noise_peers = as.list(designated)),
+    signed_evidence = evidence,
+    public_dp_coordinates_only = TRUE,
+    protected_shares_included = FALSE,
+    preclamp_values_included = FALSE,
+    patient_derived_identifiers_included = FALSE)
+  certificate <- c(unsigned, list(
+    certificate_sha256 = .dsvert_dp_gaussian_certificate_hash(unsigned)))
+  .dsvert_dp_gaussian_synopsis_no_legacy_fields(certificate)
+  .dsvert_dp_gaussian_cache_pinset(pinset)
+  certificate
+}
+
+.dsvert_dp_gaussian_synopsis_trusted <- function(certificate) {
+  evidence <- certificate$signed_evidence
+  status <- .dsvert_dp_gaussian_synopsis_evidence_decode(
+    evidence$federation_state_json, "federation state")
+  if (!is.list(status) || is.null(names(status)) || length(status) < 2L ||
+      anyNA(names(status)) || any(!nzchar(names(status))) ||
+      anyDuplicated(names(status))) {
+    stop("The Gaussian Synopsis federation evidence is invalid",
+         call. = FALSE)
+  }
+  peers <- sort(names(status), method = "radix")
+  if (!identical(names(status), peers)) {
+    stop("The Gaussian Synopsis peer order is not canonical", call. = FALSE)
+  }
+  class(status) <- c("ds.vertDPSynopsisStatus", "list")
+  policy <- tryCatch(status[[peers[[1L]]]]$policy,
+                     error = function(error) NULL)
+  policy_info <- .dsvert_dp_synopsis_client_policy_v1(policy, peers)
+  placeholder <- stats::setNames(lapply(peers, function(peer) {
+    structure(list(peer = peer), class = "dsvert_certificate_peer")
+  }), peers)
+  context <- list(
+    status = status, servers = peers, pinset = policy_info$pins,
+    designated = policy_info$designated,
+    conns = placeholder[policy_info$designated], all_conns = placeholder,
+    policy = policy_info$value)
+  bundle <- .dsvert_dp_gaussian_synopsis_evidence_decode(
+    evidence$manifest_bundle_json, "manifest bundle")
+  if (!is.list(bundle) || "context" %in% names(bundle)) {
+    stop("The Gaussian Synopsis manifest evidence is invalid",
+         call. = FALSE)
+  }
+  manifest_preview <- .dsvert_joint_dp_client_decode(
+    bundle$manifest_json, "Gaussian Synopsis manifest evidence",
+    .DSVERT_CLIENT_SYNOPSIS_MAX_OBJECT_BYTES)
+  bundle$logical_snapshot <- .dsvert_joint_dp_client_canonical(
+    manifest_preview$logical_snapshot)
+  bundle$artifact_commitments <- .dsvert_joint_dp_client_canonical(
+    bundle$artifact_commitments)
+  bundle$context <- context
+  trusted <- .dsvert_dp_synopsis_client_bundle(bundle, status)
+  list(status = status, bundle = bundle, trusted = trusted)
+}
+
+.dsvert_dp_gaussian_synopsis_result_match <- function(
+    object, certificate, artifact, moment) {
+  if (identical(object, certificate)) return(invisible(TRUE))
+  roots <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "final_vector_root")
+  valid <- is.list(object) &&
+    identical(object$analysis_id, certificate$analysis_id) &&
+    identical(.dsvert_joint_dp_client_json(object$signed_artifact),
+              .dsvert_joint_dp_client_json(artifact)) &&
+    isTRUE(all.equal(as.numeric(object$n_obs), as.numeric(moment$n),
+                     tolerance = 0)) &&
+    is.list(object$sufficient_statistics_dp) &&
+    isTRUE(all.equal(object$sufficient_statistics_dp$gram_projected,
+                     moment$gram, tolerance = 0)) &&
+    isTRUE(all.equal(object$sufficient_statistics_dp$cross_projected,
+                     moment$cross, tolerance = 0)) &&
+    isTRUE(all.equal(
+      object$sufficient_statistics_dp$outcome_square_projected,
+      moment$outcome_square, tolerance = 0)) &&
+    all(vapply(roots, function(field) {
+      identical(object[[field]], certificate[[field]])
+    }, logical(1L))) &&
+    identical(object$coordinate_order_sha256,
+              certificate$coordinate_order_sha256) &&
+    is.list(object$provenance_certificate) &&
+    identical(object$provenance_certificate$certificate_sha256,
+              certificate$certificate_sha256)
+  if (!isTRUE(valid)) {
+    stop("The Gaussian result does not match its signed Synopsis certificate",
+         call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.dsvert_dp_gaussian_synopsis_certificate_validate <- function(
+    object, certificate, trusted_pinset = NULL) {
+  required <- c(
+    "version", "analysis_id", "dataset", "owner_peer",
+    "cross_owner_state", "descriptor_sha256", "descriptor", "block",
+    "block_values_sha256", "manifest_sha256", "schema_sha256",
+    "workload_contract_sha256", "artifact_key", "execution_id",
+    "contract_sha256", "attempt_sha256", "source_contract_sha256",
+    "result_set_sha256", "final_vector_root", "coordinate_order_sha256",
+    "coordinate_count", "output_lattice_bits", "output_lattice_scale",
+    "plan_sha256", "backend", "sampler", "mechanism", "epsilon", "delta",
+    "implementation_delta", "peer_context", "signed_evidence",
+    "public_dp_coordinates_only", "protected_shares_included",
+    "preclamp_values_included", "patient_derived_identifiers_included",
+    "certificate_sha256")
+  if (!.dsvert_dp_has_exact_names(certificate, required) ||
+      !identical(certificate$version,
+                 .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION) ||
+      !identical(certificate$cross_owner_state,
+                 "reserved_not_materialized") ||
+      !identical(certificate$public_dp_coordinates_only, TRUE) ||
+      !identical(certificate$protected_shares_included, FALSE) ||
+      !identical(certificate$preclamp_values_included, FALSE) ||
+      !identical(certificate$patient_derived_identifiers_included, FALSE) ||
+      !identical(certificate$certificate_sha256,
+        .dsvert_dp_gaussian_certificate_hash(certificate[
+          setdiff(names(certificate), "certificate_sha256")]))) {
+    stop("Invalid Gaussian Synopsis provenance certificate", call. = FALSE)
+  }
+  .dsvert_dp_gaussian_synopsis_no_legacy_fields(certificate)
+  peer_fields <- c(
+    "ordered_peer_pinset", "peer_pinset_sha256", "designated_noise_peers")
+  evidence_fields <- c(
+    "version", "federation_state_json", "manifest_bundle_json",
+    "compilation_json", "release_set_json", "replay_set_json")
+  if (!.dsvert_dp_has_exact_names(certificate$peer_context, peer_fields) ||
+      !.dsvert_dp_has_exact_names(
+        certificate$signed_evidence, evidence_fields) ||
+      !identical(certificate$signed_evidence$version,
+                 .DSVERT_DP_GAUSSIAN_SYNOPSIS_EVIDENCE_VERSION)) {
+    stop("Invalid Gaussian Synopsis evidence envelope", call. = FALSE)
+  }
+  pinset <- .dsvert_dp_gaussian_pinset(
+    certificate$peer_context$ordered_peer_pinset)
+  pin_hash <- .dsvert_dp_pinset_hash(pinset)
+  designated <- unlist(
+    certificate$peer_context$designated_noise_peers, use.names = FALSE)
+  if (!identical(pin_hash, certificate$peer_context$peer_pinset_sha256) ||
+      length(designated) != 2L || anyNA(designated) ||
+      anyDuplicated(designated) || !all(designated %in% names(pinset))) {
+    stop("Invalid Gaussian Synopsis peer context", call. = FALSE)
+  }
+  authenticity <- "unanchored"
+  if (!is.null(trusted_pinset)) {
+    trusted_pins <- .dsvert_dp_gaussian_pinset(
+      trusted_pinset, "trusted pinset")
+    if (!identical(trusted_pins, pinset)) {
+      stop("The Gaussian certificate does not match the trusted pinset",
+           call. = FALSE)
+    }
+    authenticity <- "caller_anchored"
+  } else if (exists(pin_hash, envir = .dsvert_dp_gaussian_trust_cache,
+                    inherits = FALSE) && identical(
+                      get(pin_hash, envir =
+                            .dsvert_dp_gaussian_trust_cache,
+                          inherits = FALSE), pinset)) {
+    authenticity <- "session_transport_anchored"
+  }
+  reconstructed <- .dsvert_dp_gaussian_synopsis_trusted(certificate)
+  trusted <- reconstructed$trusted
+  bundle <- reconstructed$bundle
+  if (!identical(trusted$context$pinset, pinset) ||
+      !identical(trusted$context$designated, designated) ||
+      !identical(bundle$manifest_sha256, certificate$manifest_sha256) ||
+      !identical(bundle$schema_sha256, certificate$schema_sha256) ||
+      !identical(bundle$workload_contract_sha256,
+                 certificate$workload_contract_sha256)) {
+    stop("The Gaussian Synopsis manifest bindings changed", call. = FALSE)
+  }
+  compilation <- .dsvert_dp_gaussian_synopsis_evidence_decode(
+    certificate$signed_evidence$compilation_json, "compilation")
+  compiled <- .dsvert_dp_synopsis_client_compile(
+    compilation, trusted, bundle)
+  execution <- .dsvert_dp_synopsis_client_execution(compiled)
+  release_values <- .dsvert_dp_gaussian_synopsis_evidence_decode(
+    certificate$signed_evidence$release_set_json, "release set")
+  if (!is.list(release_values)) {
+    stop("The Gaussian Synopsis release evidence is invalid", call. = FALSE)
+  }
+  release_json <- lapply(release_values, .dsvert_joint_dp_client_json)
+  releases <- .dsvert_dp_synopsis_client_release_set(
+    release_json, compiled, execution, trusted)
+  replay_values <- .dsvert_dp_gaussian_synopsis_evidence_decode(
+    certificate$signed_evidence$replay_set_json, "replay set")
+  chunk_count <- as.integer(releases$reference$public_chunk_count)
+  if (!is.list(replay_values) || length(replay_values) != chunk_count) {
+    stop("The Gaussian Synopsis replay evidence is incomplete",
+         call. = FALSE)
+  }
+  replay_input <- stats::setNames(lapply(seq_len(chunk_count), function(index) {
+    json <- .dsvert_joint_dp_client_json(replay_values[[index]])
+    stats::setNames(rep(list(json), 2L), designated)
+  }), as.character(seq.int(0L, chunk_count - 1L)))
+  replay <- .dsvert_dp_synopsis_client_replay(
+    replay_input, releases, compiled, execution, trusted)
+  reference <- releases$reference
+  roots <- c(
+    artifact_key = compiled$artifact$artifact_key,
+    execution_id = execution$execution_id,
+    contract_sha256 = reference$contract_sha256,
+    attempt_sha256 = reference$attempt_sha256,
+    source_contract_sha256 = reference$source_contract_sha256,
+    result_set_sha256 = reference$result_set_sha256,
+    final_vector_root = reference$final_vector_root)
+  if (!all(vapply(names(roots), function(field) {
+        identical(certificate[[field]], unname(roots[[field]]))
+      }, logical(1L))) ||
+      !identical(certificate$coordinate_order_sha256,
+                 compiled$layout$sha256) ||
+      !identical(as.numeric(certificate$coordinate_count),
+                 as.numeric(compiled$layout$coordinate_count)) ||
+      !identical(as.numeric(certificate$output_lattice_bits),
+                 as.numeric(compiled$lattice$output_lattice_bits)) ||
+      !identical(as.numeric(certificate$output_lattice_scale),
+                 as.numeric(compiled$lattice$output_lattice_scale)) ||
+      !identical(certificate$plan_sha256,
+                 compiled$physical$full_plan_sha256) ||
+      !identical(certificate$backend, compiled$profile$backend) ||
+      !identical(certificate$sampler, compiled$profile$sampler) ||
+      !identical(certificate$mechanism, reference$mechanism) ||
+      !identical(as.numeric(certificate$epsilon),
+                 as.numeric(reference$epsilon)) ||
+      !identical(as.numeric(certificate$delta),
+                 as.numeric(reference$delta)) ||
+      !identical(certificate$implementation_delta, paste0(
+        reference$implementation_delta_numerator, "/",
+        reference$implementation_delta_denominator))) {
+    stop("The Gaussian Synopsis execution bindings changed", call. = FALSE)
+  }
+  count_block <- .dsvert_dp_capsule_single_block(
+    compiled$layout, "admitted_count",
+    description = "signed admitted-count capacity block")
+  capacity <- .dsvert_dp_vector_block_capacity(count_block)
+  artifact <- .dsvert_dp_gaussian_artifact(
+    trusted$manifest, certificate$dataset, certificate$analysis_id,
+    certificate$owner_peer,
+    trusted$manifest$admission$adjacency,
+    compiled$lattice$output_lattice_scale, capacity)
+  blocks <- .dsvert_dp_capsule_vector_blocks(
+    compiled$layout, "gaussian_models", dataset = certificate$dataset,
+    owner_peer = certificate$owner_peer)
+  blocks <- blocks[vapply(blocks, function(block) {
+    identical(block$key, certificate$analysis_id)
+  }, logical(1L))]
+  block <- if (length(blocks) == 1L) blocks[[1L]] else NULL
+  block_public <- if (is.list(block)) block[c(
+    "family", "key", "start", "end", "length", "owner_peer", "dataset")]
+  else NULL
+  if (is.list(block_public)) {
+    names(block_public)[names(block_public) == "key"] <- "analysis_id"
+  }
+  if (!is.list(block) ||
+      !identical(.dsvert_joint_dp_client_json(block_public),
+                 .dsvert_joint_dp_client_json(certificate$block)) ||
+      !identical(.dsvert_joint_dp_client_json(block$descriptor),
+                 .dsvert_joint_dp_client_json(certificate$descriptor)) ||
+      !identical(.dsvert_joint_dp_client_json(artifact),
+                 .dsvert_joint_dp_client_json(certificate$descriptor)) ||
+      !identical(.dsvert_dp_gaussian_certificate_hash(
+        certificate$descriptor), certificate$descriptor_sha256)) {
+    stop("The Gaussian Synopsis descriptor or layout changed", call. = FALSE)
+  }
+  scaled <- replay$scaled[seq.int(block$start, block$end)]
+  block_hash <- .dsvert_dp_gaussian_certificate_hash(list(
+    protocol = "dsvert-dp-gaussian-synopsis-block-values-v1",
+    start = as.numeric(block$start), end = as.numeric(block$end),
+    scaled_values = as.list(scaled)))
+  if (!identical(block_hash, certificate$block_values_sha256)) {
+    stop("The Gaussian Synopsis released block commitment changed",
+         call. = FALSE)
+  }
+  coordinates <- .dsvert_vector_scaled_to_double(
+    scaled, compiled$lattice$output_lattice_scale)
+  if (length(coordinates) != artifact$coordinate_count ||
+      anyNA(coordinates) || any(!is.finite(coordinates)) ||
+      any(coordinates < 0) || any(coordinates > capacity)) {
+    stop("The certified Gaussian Synopsis block violates its signed bounds",
+         call. = FALSE)
+  }
+  moment <- .dsvert_dp_gaussian_unpack(coordinates, artifact, capacity)
+  .dsvert_dp_gaussian_synopsis_result_match(
+    object, certificate, artifact, moment)
+  accuracy_release <- list(
+    manifest_sha256 = certificate$manifest_sha256,
+    epsilon = certificate$epsilon,
+    mechanism = certificate$mechanism,
+    implementation_delta = certificate$implementation_delta,
+    mechanism_plan = compiled$physical$full_plan,
+    plan_sha256 = certificate$plan_sha256,
+    backend = certificate$backend)
+  accuracy_simultaneous_95 <- .dsvert_dp_vector_accuracy_radius(
+    accuracy_release, trusted$manifest,
+    coordinate_count = artifact$coordinate_count,
+    confidence = 0.95, maximum_error = capacity)
+  list(
+    integrity_valid = TRUE, authenticity = authenticity,
+    artifact = artifact,
+    bounds = list(outcome = artifact$outcome,
+                  predictors = artifact$predictors),
+    design_terms = artifact$design_terms,
+    coordinates = coordinates,
+    validated_moment = moment,
+    coordinate_capacity = capacity,
+    output_lattice_scale = compiled$lattice$output_lattice_scale,
+    accuracy_simultaneous_95 = accuracy_simultaneous_95,
+    sufficient_statistics_dp = list(
+      gram_projected = moment$gram, cross_projected = moment$cross,
+      outcome_square_projected = moment$outcome_square),
+    n_obs = moment$n,
+    cohort_id = trusted$status[[trusted$context$servers[[1L]]]]$policy$cohort_id,
+    logical_snapshot = trusted$manifest$logical_snapshot,
+    analysis_id = certificate$analysis_id,
+    manifest_sha256 = certificate$manifest_sha256,
+    artifact_key = certificate$artifact_key,
+    execution_id = certificate$execution_id,
+    contract_sha256 = certificate$contract_sha256,
+    attempt_sha256 = certificate$attempt_sha256,
+    source_contract_sha256 = certificate$source_contract_sha256,
+    result_set_sha256 = certificate$result_set_sha256,
+    final_vector_root = certificate$final_vector_root,
+    coordinate_order_sha256 = certificate$coordinate_order_sha256,
+    mechanism_plan = compiled$physical$full_plan,
+    plan_sha256 = certificate$plan_sha256,
+    backend = certificate$backend, sampler = certificate$sampler,
+    mechanism = certificate$mechanism,
+    epsilon = certificate$epsilon, delta = certificate$delta,
+    implementation_delta = certificate$implementation_delta,
+    privacy = list(
+      version = "dsvert-per-synopsis-dp-v1",
+      per_artifact_epsilon = certificate$epsilon,
+      per_artifact_delta = certificate$delta,
+      unlimited_replay = TRUE,
+      replay_is_postprocessing = TRUE,
+      finite_global_composition_claim = FALSE),
+    certificate = certificate)
+}
+
+#' Verify a bounded Gaussian provenance certificate without DSI
 #'
-#' Revalidates the signed schema, manifest build commitments, pinned-peer
-#' vector receipts, Gaussian artifact membership and the intersecting public
-#' DP chunks required by the current Merkle layout. A self-contained
+#' Dispatches between the same-owner no-lifetime Synopsis provenance
+#' certificate v1 and the byte-compatible legacy capsule certificate v3. It
+#' revalidates the signed schema/manifest, pinned-peer receipts, Gaussian
+#' descriptor and exact released DP block before algebra. A self-contained
 #' certificate proves internal integrity. Strong
 #' peer authenticity additionally requires a caller-supplied trusted pinset or
 #' the ephemeral pinset cache populated by an online fit in this R session.
@@ -869,12 +1382,20 @@
 #'   and `authenticity` fields.
 #' @export
 ds.validateDPGaussianCertificate <- function(x, trusted_pinset = NULL) {
-  certificate <- if (is.list(x) &&
-      identical(x$version, .DSVERT_DP_GAUSSIAN_CERTIFICATE_VERSION)) {
+  certificate <- if (is.list(x) && (
+      identical(x$version, .DSVERT_DP_GAUSSIAN_CERTIFICATE_VERSION) ||
+      identical(x$version,
+                .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION))) {
     x
   } else if (is.list(x)) {
     x$provenance_certificate
   } else NULL
+  if (is.list(certificate) && identical(
+      certificate$version,
+      .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION)) {
+    return(.dsvert_dp_gaussian_synopsis_certificate_validate(
+      x, certificate, trusted_pinset = trusted_pinset))
+  }
   required <- c(
     "version", "analysis_id", "dataset", "owner_peer",
     "cross_owner_state", "query_contract_sha256", "artifact_sha256",

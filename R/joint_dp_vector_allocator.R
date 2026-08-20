@@ -194,8 +194,7 @@
     leader_raw <- .dsvert_fanout_by_site(
       context$conns[leader], stats::setNames(list(call(
         name = "dsvertJointDPVectorAllocationPrepareDS",
-        manifest_json = manifest_json,
-        leader_prepare_json = "")), leader),
+        manifest_json = manifest_json)), leader),
       operation = "joint-DP allocation leader prepare",
       .aggregate = .aggregate)
     leader_receipt <- .dsvert_vector_allocation_verify(

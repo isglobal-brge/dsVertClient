@@ -7,7 +7,8 @@
 ds.vertDPQuantile(x, probs = c(0.25, 0.5, 0.75))
 }
 \arguments{
-\item{x}{An intact released \code{ds.vertDPDescribe} capsule object.}
+\item{x}{An intact released \code{ds.vertDPDescribe} object with either legacy
+capsule provenance or stateless synopsis provenance.}
 
 \item{probs}{Finite public probabilities in \verb{[0, 1]}. Duplicates are
 removed and the result is sorted by probability within each variable.}

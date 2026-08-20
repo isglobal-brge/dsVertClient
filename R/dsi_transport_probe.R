@@ -9,8 +9,19 @@
 .DSVERT_DSI_RESPONSE_PROBE_VERSION <-
   "dsvert-transport-response-probe-v1"
 .DSVERT_DSI_PROBE_CANDIDATES <- as.numeric(c(
-  8L * 1024L^2, 4L * 1024L^2, 2L * 1024L^2,
-  1L * 1024L^2, 640L * 1024L, 320L * 1024L,
+  # Keep the complete framed expression below the portable ~1 MiB parser and
+  # proxy boundary used by DataSHIELD deployments. Larger logical transfers
+  # remain unbounded because their authenticated offset protocol is chunked.
+  # 688 KiB of Base64url text covers one 512-KiB raw frame while its complete
+  # expression, including the fixed reserve below, remains below 768 KiB.
+  688L * 1024L, 640L * 1024L, 320L * 1024L,
+  160L * 1024L, 80L * 1024L, 32L * 1024L, 16L * 1024L))
+.DSVERT_DSI_RESPONSE_PROBE_CANDIDATES <- as.numeric(c(
+  # Response padding is not embedded in the request expression.  A verified
+  # 1-MiB response leaves 768 KiB after the fixed parser/JSON headroom, enough
+  # for the Base64url representation of a 512-KiB raw response without
+  # assuming that every path has that capacity.
+  1024L * 1024L, 768L * 1024L, 640L * 1024L, 320L * 1024L,
   160L * 1024L, 80L * 1024L, 32L * 1024L, 16L * 1024L))
 .DSVERT_DSI_PROBE_ABSOLUTE_MAX <- 8L * 1024L^2
 .DSVERT_DSI_PROBE_MIN <- 16L * 1024L
@@ -18,7 +29,7 @@
 .DSVERT_DSI_RESPONSE_PROBE_HEADROOM <- 128L * 1024L
 .DSVERT_DSI_RESPONSE_PROBE_USABLE_NUMERATOR <- 7L
 .DSVERT_DSI_RESPONSE_PROBE_USABLE_DENOMINATOR <- 8L
-.DSVERT_DSI_PORTABLE_CHUNK_CHARS <- 640L * 1024L
+.DSVERT_DSI_PORTABLE_CHUNK_CHARS <- 688L * 1024L
 .DSVERT_DSI_PORTABLE_EXPRESSION_BYTES <- 768L * 1024L - 1L
 .DSVERT_DSI_PROBE_CACHE_ENTRIES <- 64L
 .DSVERT_DSI_KNOWN_DSLITE_VERSION <- "1.4.1"
@@ -320,13 +331,12 @@
   response <- tryCatch(
     .dsvert_transport_aggregate(
       .aggregate = .aggregate,
-      # A deliberately oversized public probe may be rejected after an async
-      # connector has accepted a job.  DSI has no portable cancellation or
-      # fetch-resume primitive, so that ambiguity would poison the login and
-      # prevent the safe candidate ladder from descending.  Run only this
-      # stateless, data-free negotiation call synchronously; all statistical
-      # and MPC phases retain named asynchronous fan-out.
-      conns = conns, expr = expressions, async = FALSE,
+      # The portable ceiling keeps the complete expression below the common
+      # DataSHIELD parser/proxy boundary. Submit every site asynchronously so
+      # a slow R parser never holds one sequential HTTP request open. A
+      # provider-confirmed rejection may descend; ambiguity still poisons the
+      # exact login before any protected payload is sent.
+      conns = conns, expr = expressions, async = TRUE,
       error = function(site, message) {
         callback_failed <<- union(
           callback_failed,
@@ -415,7 +425,7 @@
   result <- tryCatch(
     .dsvert_transport_aggregate(
       .aggregate = .aggregate, conns = conns, expr = expressions,
-      async = FALSE, error = callback, errors.print = FALSE,
+      async = TRUE, error = callback, errors.print = FALSE,
       require_settled_sync_failure = TRUE),
     interrupt = function(error) {
       .dsvert_dsi_poison_ambiguous_sessions(conns)
@@ -453,7 +463,7 @@
   unresolved <- setdiff(targets, successful)
   if (length(unresolved) && any(!failure_kind[unresolved] %in%
                                c("unsupported", "oversize"))) {
-    # A synchronous remote failure may be settled yet unrelated to size. It
+    # A completed remote failure may be settled yet unrelated to size. It
     # cannot authorize a response geometry, and silently reusing the handle
     # would be unsafe for singleton-result connectors.
     stop(.dsvert_dsi_poison_ambiguous_sessions(conns, unresolved))
@@ -489,10 +499,20 @@
 }
 
 #' Negotiate one common request geometry before opaque payload transfer
+#' @param conns Named DataSHIELD connections.
+#' @param .aggregate Aggregate dispatcher.
+#' @param .candidates Descending public request-padding candidates.
+#' @param .response_candidates Descending public response-padding candidates.
 #' @keywords internal
 .dsvert_negotiate_dsi_chunk_size <- function(
     conns, .aggregate = DSI::datashield.aggregate,
-    .candidates = .DSVERT_DSI_PROBE_CANDIDATES) {
+    .candidates = .DSVERT_DSI_PROBE_CANDIDATES,
+    .response_candidates = if (identical(
+      .candidates, .DSVERT_DSI_PROBE_CANDIDATES)) {
+      .DSVERT_DSI_RESPONSE_PROBE_CANDIDATES
+    } else {
+      .candidates
+    }) {
   if (isTRUE(.dsvert_chunk_env$geometry_locked)) {
     stop("DSI payload geometry cannot be renegotiated after transfer begins",
          call. = FALSE)
@@ -506,8 +526,16 @@
          call. = FALSE)
   }
   .dsvert_validate_real_dsi_transport(conns, .aggregate)
-  response_candidates <- .candidates[
-    .candidates >= .DSVERT_DSI_PROBE_MIN]
+  if (!is.numeric(.response_candidates) || !length(.response_candidates) ||
+      anyNA(.response_candidates) || any(!is.finite(.response_candidates)) ||
+      any(.response_candidates != floor(.response_candidates)) ||
+      any(.response_candidates < 1) ||
+      any(.response_candidates > .DSVERT_DSI_PROBE_ABSOLUTE_MAX) ||
+      is.unsorted(-.response_candidates, strictly = TRUE)) {
+    stop("Invalid descending DSI response-probe candidates", call. = FALSE)
+  }
+  response_candidates <- .response_candidates[
+    .response_candidates >= .DSVERT_DSI_PROBE_MIN]
   cache_key <- .dsvert_dsi_probe_cache_key(conns)
   cached <- .dsvert_dsi_probe_cache_get(cache_key)
   if (!is.null(cached)) {

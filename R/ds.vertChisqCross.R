@@ -1,14 +1,15 @@
 #' DP-aware inference for a signed cross-owner categorical table
 #'
-#' This compatibility entry point obtains exactly one fixed-domain joint-DP
-#' contingency release and performs only local post-processing. It never
+#' This compatibility entry point either performs local post-processing of an
+#' existing validated DP contingency release or obtains the one canonical
+#' cross-owner categorical Synopsis release. It never
 #' discovers columns, constructs analyst-addressable one-hot objects, opens an
 #' exact table, or invokes the retired cross-count endpoints. The row/column
 #' ownership and domains must already be present in the custodian-signed
-#' capsule `vertical_cross_specs` contract.
+#' signed `vertical_cross_specs` contract.
 #'
-#' @param data One of the two signed dataset names, or an existing
-#'   `ds.vertDPContingency` release.
+#' @param data One of the two signed dataset names, a reusable
+#'   `ds.vertFederation`, or an existing `ds.vertDPContingency` release.
 #' @param var1,var2 Row and column variables. When `data` is an existing
 #'   release these are optional orientation assertions.
 #' @param correct Apply the DP-aware Yates-style correction for a 2-by-2 table.
@@ -52,19 +53,34 @@ ds.vertChisqCross <- function(
       }
     }
   } else {
-    for (value in list(data = data, var1 = var1, var2 = var2)) {
+    values <- if (inherits(data, "ds.vertFederation")) {
+      list(var1 = var1, var2 = var2)
+    } else {
+      list(data = data, var1 = var1, var2 = var2)
+    }
+    for (value in values) {
       if (!is.character(value) || length(value) != 1L || is.na(value) ||
           !nzchar(value)) {
-        stop("data, var1 and var2 must be non-empty strings",
+        stop("data, var1 and var2 must be non-empty strings, except that ",
+             "data may be a ds.vertFederation",
              call. = FALSE)
       }
     }
     release <- ds.vertDPContingency(
       data_name = data, row_var = var1, col_var = var2,
-      datasources = datasources)
+      server = NULL, datasources = datasources)
+    if (!isTRUE(release$cross_owner)) {
+      stop(structure(list(
+        message = paste(
+          "ds.vertChisqCross requires one signed cross-owner categorical",
+          "Synopsis pair"),
+        call = NULL, reason = "signed_pair_is_not_cross_owner"),
+        class = c("dsvert_cross_owner_synopsis_required", "error",
+                  "condition")))
+    }
   }
   if (isTRUE(verbose)) {
-    message("[ds.vertChisqCross] DP-aware post-processing of one capsule release")
+    message("[ds.vertChisqCross] DP-aware post-processing of one signed release")
   }
   chisq <- .dsvert_dp_chisq_from_release(
     release, correct = correct, simulations = simulations,

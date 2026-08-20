@@ -1,11 +1,11 @@
 #' @title Disclosure-safe descriptive statistics compatibility adapter
 #' @description Return the historical \code{ds.vertDesc} data-frame shape from
-#'   one custodian-owned, sticky \code{ds.vertDPDescribe} capsule artifact.
+#'   one custodian-owned, sticky \code{ds.vertDPDescribe} release.
 #'   Counts, moments and quantiles are differentially private. Observed extrema
 #'   and data-adaptive histogram queries are never requested.
 #'
-#' @param data_name Character. Name of the aligned data frame held on each
-#'   server.
+#' @param data_name Name of the aligned data frame held on each server, or a
+#'   reusable `ds.vertFederation` returned by `ds.vert.align()`.
 #' @param variables Optional character vector, or a named list mapping the
 #'   artifact-owning server to variables, used only to filter the variables
 #'   already present in the signed artifact. \code{NULL} returns every signed
@@ -26,8 +26,8 @@
 #' @param verbose Logical. Print per-variable progress when TRUE.
 #' @param datasources DataSHIELD connections. If \code{NULL}, auto-detected.
 #' @param analysis_id Custodian-owned describe specification id. It must name
-#'   an existing artifact in the signed capsule. The client never discovers or
-#'   chooses an id remotely.
+#'   an existing artifact in the signed server catalog. The client never
+#'   discovers or chooses an id remotely.
 #'
 #' @return A data frame with one row per variable containing columns:
 #'   \itemize{
@@ -50,8 +50,10 @@
 #' post-processing of that single immutable release. The returned object has
 #' class \code{ds.vertDesc} for compatibility and carries \code{dp_release},
 #' \code{dp_descriptives}, and \code{dp_quantile_bands} attributes with the
-#' formal release and mechanism-uncertainty metadata. These regions exclude
-#' sampling uncertainty. In particular, \code{n_na} is the noised fixed invalid
+#' formal release and mechanism-uncertainty metadata. The \code{dp_release}
+#' attribute preserves exactly one provenance family: legacy capsule anchors
+#' or stateless synopsis anchors. These regions exclude sampling uncertainty.
+#' In particular, \code{n_na} is the noised fixed invalid
 #' bin rather than an exact row-level NA count, and quantiles are fixed-grid
 #' upper endpoints rather than interpolation from analyst-selected bins.
 #'
@@ -74,6 +76,11 @@ ds.vertDesc <- function(data_name,
                         verbose = TRUE,
                         datasources = NULL,
                         analysis_id = NULL) {
+  if (inherits(data_name, "ds.vertFederation")) {
+    resolved <- .dsvert_federation_argument(data_name, datasources)
+    data_name <- resolved$value
+    datasources <- resolved$datasources
+  }
   buckets_supplied <- !missing(n_buckets)
   range_supplied <- !missing(range_sd)
   tails_supplied <- !missing(open_ended)
@@ -176,6 +183,7 @@ ds.vertDesc <- function(data_name,
       "analysis_id and its representable fixed privacy allocation."),
       call. = FALSE)
   }
+  provenance_kind <- .dsvert_dp_describe_provenance_contract(release)
 
   available <- release$variables
   selected <- available
@@ -270,39 +278,83 @@ ds.vertDesc <- function(data_name,
       "not the usual sample standard deviation"),
     min_max = "observed extrema are not released",
     quantiles = "upper endpoints of custodian-signed fixed histogram bins")
-  attr(out_df, "dp_release") <- list(
-    formal_dp = TRUE,
-    source = "ds.vertDPDescribe",
-    analysis_id = release$analysis_id,
-    analysis_version = release$analysis_version,
-    server = release$server,
-    capsule_id = release$capsule_id,
-    final_vector_root = release$final_vector_root,
-    coordinate_order_sha256 = release$coordinate_order_sha256,
-    privacy_epoch = release$privacy_epoch,
-    noise_key_id = release$noise_key_id,
-    epsilon = release$epsilon,
-    delta = release$delta,
-    implementation_delta = release$implementation_delta,
-    adjacency = release$adjacency,
-    mechanism = release$mechanism,
-    sampler = release$sampler,
-    sticky_noise = release$sticky_noise,
-    uncertainty_scope = release$uncertainty_scope,
-    histogram_semantics = release$histogram_semantics,
-    unit_collapse = release$unit_collapse,
-    count_definition = release$count_definition,
-    invalid_unit_rule = release$invalid_unit_rule,
-    quantization = release$quantization,
-    postprocessing = release$postprocessing,
-    artifact_variables = release$variables,
-    selected_variables = selected,
-    quantile_band_confidence = release$quantile_band_confidence,
-    quantile_band_scope = release$quantile_band_scope,
-    moment_region_confidence = release$moment_region_confidence,
-    moment_region_method = release$moment_region_method,
-    moment_region_scope = release$moment_region_scope,
-    statistical_inference = release$statistical_inference)
+  attr(out_df, "dp_release") <- if (identical(
+      provenance_kind, "legacy")) {
+    list(
+      formal_dp = TRUE,
+      source = "ds.vertDPDescribe",
+      analysis_id = release$analysis_id,
+      analysis_version = release$analysis_version,
+      server = release$server,
+      capsule_id = release$capsule_id,
+      final_vector_root = release$final_vector_root,
+      coordinate_order_sha256 = release$coordinate_order_sha256,
+      privacy_epoch = release$privacy_epoch,
+      noise_key_id = release$noise_key_id,
+      epsilon = release$epsilon,
+      delta = release$delta,
+      implementation_delta = release$implementation_delta,
+      adjacency = release$adjacency,
+      mechanism = release$mechanism,
+      sampler = release$sampler,
+      sticky_noise = release$sticky_noise,
+      uncertainty_scope = release$uncertainty_scope,
+      histogram_semantics = release$histogram_semantics,
+      unit_collapse = release$unit_collapse,
+      count_definition = release$count_definition,
+      invalid_unit_rule = release$invalid_unit_rule,
+      quantization = release$quantization,
+      postprocessing = release$postprocessing,
+      artifact_variables = release$variables,
+      selected_variables = selected,
+      quantile_band_confidence = release$quantile_band_confidence,
+      quantile_band_scope = release$quantile_band_scope,
+      moment_region_confidence = release$moment_region_confidence,
+      moment_region_method = release$moment_region_method,
+      moment_region_scope = release$moment_region_scope,
+      statistical_inference = release$statistical_inference)
+  } else {
+    list(
+      formal_dp = TRUE,
+      source = "ds.vertDPDescribe",
+      analysis_id = release$analysis_id,
+      analysis_version = release$analysis_version,
+      server = release$server,
+      artifact_key = release$artifact_key,
+      execution_id = release$execution_id,
+      contract_sha256 = release$contract_sha256,
+      attempt_sha256 = release$attempt_sha256,
+      source_contract_sha256 = release$source_contract_sha256,
+      result_set_sha256 = release$result_set_sha256,
+      final_vector_root = release$final_vector_root,
+      coordinate_order_sha256 = release$coordinate_order_sha256,
+      release_provenance = release$release_provenance,
+      privacy = release$privacy,
+      composition_rule = release$composition_rule,
+      security_claim = release$security_claim,
+      epsilon = release$epsilon,
+      delta = release$delta,
+      implementation_delta = release$implementation_delta,
+      adjacency = release$adjacency,
+      mechanism = release$mechanism,
+      sampler = release$sampler,
+      sticky_noise = release$sticky_noise,
+      uncertainty_scope = release$uncertainty_scope,
+      histogram_semantics = release$histogram_semantics,
+      unit_collapse = release$unit_collapse,
+      count_definition = release$count_definition,
+      invalid_unit_rule = release$invalid_unit_rule,
+      quantization = release$quantization,
+      postprocessing = release$postprocessing,
+      artifact_variables = release$variables,
+      selected_variables = selected,
+      quantile_band_confidence = release$quantile_band_confidence,
+      quantile_band_scope = release$quantile_band_scope,
+      moment_region_confidence = release$moment_region_confidence,
+      moment_region_method = release$moment_region_method,
+      moment_region_scope = release$moment_region_scope,
+      statistical_inference = release$statistical_inference)
+  }
   attr(out_df, "dp_descriptives") <- descriptions
   quantile_keys <- unlist(lapply(selected, function(variable) {
     paste(variable, probs, sep = "\r")

@@ -279,18 +279,24 @@
       value[ordered], auto_unbox = TRUE, null = "null", digits = NA))))
   }
   bind_call <- if (is.null(analysis) || !is.null(frequency)) {
-    call(
+    expression <- call(
       name = "exactGCBindPeersDS",
       transport_keys_b64 = encode_map(transport),
-      identity_info_b64 = encode_map(identities), session_id = session_id,
-      cleanup_purpose = cleanup_purpose)
+      identity_info_b64 = encode_map(identities), session_id = session_id)
+    if (nzchar(cleanup_purpose)) {
+      expression$cleanup_purpose <- cleanup_purpose
+    }
+    expression
   } else {
-    call(
+    expression <- call(
       name = "exactGCBindPeersDS",
       transport_keys_b64 = encode_map(transport),
       identity_info_b64 = encode_map(identities), session_id = session_id,
-      cleanup_purpose = cleanup_purpose,
       artifact_key = analysis$contract$artifact_key)
+    if (nzchar(cleanup_purpose)) {
+      expression$cleanup_purpose <- cleanup_purpose
+    }
+    expression
   }
   bound <- .dsvert_aggregate_strict(
     conns, bind_call,
@@ -726,10 +732,7 @@
   if (is.null(envelope)) {
     return(list(
       delivery_offset = 0,
-      delivery_chunk_bytes = 0,
-      delivery_payload_hash = "",
-      delivery_payload = "",
-      delivery_signature = ""))
+      delivery_chunk_bytes = 0))
   }
   required <- c(
     "version", "capability_id", "session_id", "operation_id",

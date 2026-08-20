@@ -69,6 +69,38 @@
   result
 }
 
+.dp_quantile_synopsis_release <- function() {
+  result <- .dp_quantile_release()
+  anchors <- list(
+    artifact_key = strrep("d", 64L),
+    execution_id = strrep("e", 64L),
+    contract_sha256 = strrep("f", 64L),
+    attempt_sha256 = strrep("1", 64L),
+    source_contract_sha256 = strrep("2", 64L),
+    result_set_sha256 = strrep("3", 64L),
+    final_vector_root = result$final_vector_root)
+  result[c(
+    "capsule_id", "privacy_epoch", "noise_key_id", "history_gate",
+    "request_limit", "operation_limit")] <- NULL
+  result[names(anchors)[-length(anchors)]] <- anchors[-length(anchors)]
+  result$release_provenance <- c(list(
+    version = "dsvert-stateless-synopsis-public-provenance-v1"), anchors)
+  result$privacy <- list(
+    version = "dsvert-per-synopsis-dp-v1",
+    per_artifact_epsilon = result$epsilon,
+    per_artifact_delta = result$delta,
+    sticky_noise = TRUE,
+    public_openings = 1L,
+    distinct_artifacts_compose = TRUE,
+    finite_global_composition_claim = FALSE)
+  result$composition_rule <-
+    "one_sticky_release_per_canonical_signed_artifact"
+  result$security_claim <- list(
+    version = "dsvert-synopsis-security-claim-v1",
+    finite_global_composition_claim = FALSE)
+  result
+}
+
 .dp_quantile_candidate_index <- function(counts, probability) {
   total <- sum(counts)
   if (!total) return(NA_integer_)
@@ -208,6 +240,79 @@ test_that("median is a zero-cost release-only quantile wrapper", {
   expect_identical(provenance$epsilon, release$epsilon)
   expect_identical(provenance$delta, release$delta)
   expect_identical(provenance$adjacency, release$adjacency)
+  expect_identical(provenance, list(
+    source_class = "ds.vertDPDescribe",
+    analysis_id = release$analysis_id,
+    analysis_version = release$analysis_version,
+    server = release$server,
+    capsule_id = release$capsule_id,
+    final_vector_root = release$final_vector_root,
+    coordinate_order_sha256 = release$coordinate_order_sha256,
+    mechanism = release$mechanism,
+    epsilon = release$epsilon,
+    delta = release$delta,
+    implementation_delta = release$implementation_delta,
+    adjacency = release$adjacency,
+    privacy_epoch = release$privacy_epoch,
+    noise_key_id = release$noise_key_id))
+})
+
+test_that("quantile and median accept one intact synopsis provenance", {
+  release <- .dp_quantile_synopsis_release()
+  quantile <- ds.vertDPQuantile(release, c(0.25, 0.5))
+  median <- ds.vertDPMedian(release)
+
+  for (result in list(quantile, median)) {
+    provenance <- attr(result, "source_provenance")
+    expect_identical(provenance$artifact_key, release$artifact_key)
+    expect_identical(provenance$execution_id, release$execution_id)
+    expect_identical(provenance$contract_sha256, release$contract_sha256)
+    expect_identical(provenance$attempt_sha256, release$attempt_sha256)
+    expect_identical(
+      provenance$source_contract_sha256, release$source_contract_sha256)
+    expect_identical(
+      provenance$result_set_sha256, release$result_set_sha256)
+    expect_identical(
+      provenance$release_provenance, release$release_provenance)
+    expect_identical(provenance$privacy, release$privacy)
+    expect_identical(provenance$security_claim, release$security_claim)
+    expect_false(any(c(
+      "capsule_id", "privacy_epoch", "noise_key_id", "history_gate",
+      "request_limit", "operation_limit") %in% names(provenance)))
+  }
+})
+
+test_that("quantile rejects mixed, incomplete, and detached provenance", {
+  synopsis <- .dp_quantile_synopsis_release()
+  mixed <- synopsis
+  mixed$capsule_id <- strrep("4", 64L)
+  expect_error(ds.vertDPQuantile(mixed, 0.5), "intact released")
+
+  legacy_mixed <- .dp_quantile_release()
+  legacy_mixed$artifact_key <- strrep("4", 64L)
+  expect_error(ds.vertDPQuantile(legacy_mixed, 0.5), "intact released")
+
+  incomplete <- synopsis
+  incomplete$result_set_sha256 <- NULL
+  expect_error(ds.vertDPQuantile(incomplete, 0.5), "intact released")
+
+  anchor_names <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "final_vector_root")
+  for (index in seq_along(anchor_names)) {
+    detached <- synopsis
+    detached$release_provenance[[anchor_names[[index]]]] <-
+      strrep(substr("456789a", index, index), 64L)
+    expect_error(ds.vertDPQuantile(detached, 0.5), "intact released")
+  }
+
+  misleading <- synopsis
+  misleading$privacy$finite_global_composition_claim <- TRUE
+  expect_error(ds.vertDPQuantile(misleading, 0.5), "intact released")
+
+  nested_legacy <- synopsis
+  nested_legacy$release_provenance$capsule_id <- strrep("b", 64L)
+  expect_error(ds.vertDPQuantile(nested_legacy, 0.5), "intact released")
 })
 
 test_that("validated Laplace and Gaussian capsule profiles are explicit", {
@@ -329,7 +434,7 @@ test_that("quantile and median are registered as validated post-processors", {
                       c("ds.vertDPQuantile", "ds.vertDPMedian"), ]
   expect_equal(nrow(rows), 2L)
   expect_true(all(rows$current_route_status ==
-                    "client_only_validated_capsule_postprocess"))
+                    "client_only_validated_synopsis_postprocess"))
   expect_false(any(rows$same_capsule_replay_history_can_deny))
   expect_false(any(rows$new_capsule_reservation_history_can_deny))
   expect_true(all(vapply(

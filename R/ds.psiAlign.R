@@ -34,8 +34,7 @@ ds.isPsiAligned <- function(newobj = "DA", datasources = NULL) {
     .dsvert_aggregate_strict(
       conns = datasources,
       expr = call(
-        name = "psiPaddedAttestationDS", data_name = newobj,
-        session_id = ""),
+        name = "psiPaddedAttestationDS", data_name = newobj),
       operation = "pinned padded PSI alignment attestation",
       .aggregate = .aggregate),
     error = function(e) NULL)
@@ -61,8 +60,12 @@ ds.isPsiAligned <- function(newobj = "DA", datasources = NULL) {
 #' cardinality. Peer identities, the complete contract, phase receipts and
 #' every server-to-server envelope are cryptographically bound before use.
 #'
-#' @param data_name Character. Source data-frame symbol on every server.
-#' @param id_col Character. Identifier-column name on every server.
+#' @param data_name One source data-frame symbol used on every server, or a
+#'   complete named character/list map from datasource name to local symbol.
+#' @param id_col One identifier-column name used on every server, or a complete
+#'   named character/list map from datasource name to local column. These are
+#'   local routing aliases: each custodian must authorize them against the same
+#'   semantic `privacy_unit_id`, which is what the signed common contract uses.
 #' @param newobj Character. Destination symbol for the aligned data frames.
 #' @param ref_server Deprecated compatibility argument. It must be `NULL`:
 #'   the reference is selected deterministically from authenticated peer
@@ -105,14 +108,21 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
                         ref_server = NULL, verbose = TRUE,
                         datasources = NULL,
                         na.action = c("na.omit", "na.fail", "none")) {
-  values <- list(data_name = data_name, id_col = id_col, newobj = newobj)
-  labels <- names(values)
-  for (index in seq_along(values)) {
-    value <- values[[index]]
-    if (!is.character(value) || length(value) != 1L || is.na(value) ||
-        !nzchar(value)) {
-      stop(labels[[index]], " must be a single non-empty character string",
-           call. = FALSE)
+  if (!is.character(newobj) || length(newobj) != 1L || is.na(newobj) ||
+      !nzchar(newobj)) {
+    stop("newobj must be a single non-empty character string", call. = FALSE)
+  }
+  for (argument in c("data_name", "id_col")) {
+    value <- get(argument, inherits = FALSE)
+    scalar <- is.character(value) && length(value) == 1L &&
+      is.null(names(value)) && !is.na(value) && nzchar(value)
+    named_map <- (is.character(value) || is.list(value)) &&
+      !is.null(names(value))
+    if (!isTRUE(scalar) && !isTRUE(named_map)) {
+      stop(
+        argument,
+        " must be a single non-empty character string or a complete named per-site map",
+        call. = FALSE)
     }
   }
   if (!is.null(ref_server)) {
@@ -137,6 +147,8 @@ ds.psiAlign <- function(data_name, id_col, newobj = "D_aligned",
       "Pinned padded PSI requires at least two uniquely named DataSHIELD connections.",
       call. = FALSE)
   }
+  data_name <- .dsvert_site_character(data_name, datasources, "data_name")
+  id_col <- .dsvert_site_character(id_col, datasources, "id_col")
   .dsvert_maybe_negotiate_dsi_chunk_size(datasources)
   on.exit(.dsvert_reset_chunk_size(), add = TRUE)
   if (verbose) message("Starting pinned, fixed-capacity PSI alignment.")

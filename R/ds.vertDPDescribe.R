@@ -282,6 +282,113 @@
   result
 }
 
+.DSVERT_CLIENT_DP_DESCRIBE_RESUME_VERSION <-
+  "dsvert-dp-describe-resume-v1"
+
+.dsvert_dp_describe_resume_binding_v1 <- function(
+    manifest, manifest_sha256, capsule_id, data_name, analysis_id) {
+  artifact <- manifest$workload$families$describe_artifacts[[analysis_id]]
+  if (!is.list(artifact) || !identical(artifact$dataset, data_name)) {
+    stop("The Describe resume token is not bound to this analysis",
+         call. = FALSE)
+  }
+  list(
+    version = .DSVERT_CLIENT_DP_DESCRIBE_RESUME_VERSION,
+    method = "ds.vertDPDescribe", data_name = data_name,
+    analysis_id = analysis_id, manifest_sha256 = manifest_sha256,
+    capsule_id = capsule_id,
+    artifact_sha256 = .dsvert_vector_hash(artifact))
+}
+
+.dsvert_dp_describe_resume_token_v1 <- function(
+    capsule, data_name, analysis_id) {
+  bundle <- if (is.list(capsule)) capsule$manifest_bundle else NULL
+  context <- if (is.list(bundle)) bundle$context else NULL
+  if (!is.list(bundle) || !is.list(context) ||
+      !inherits(capsule$release, "dsvert_synopsis_public_vector") ||
+      !inherits(capsule$status, "ds.vertDPSynopsisStatus") ||
+      !.dsvert_vector_hex(bundle$manifest_sha256) ||
+      !.dsvert_vector_hex(bundle$capsule_id) ||
+      !.dsvert_dp_is_string(bundle$manifest_json) ||
+      !identical(bundle$manifest_sha256, digest::digest(
+        bundle$manifest_json, algo = "sha256", serialize = FALSE))) {
+    stop("The Synopsis Describe release cannot produce a resume token",
+         call. = FALSE)
+  }
+  manifest <- .dsvert_joint_dp_client_decode(
+    bundle$manifest_json, "Describe resume manifest",
+    .DSVERT_CLIENT_SYNOPSIS_MAX_OBJECT_BYTES)
+  if (!identical(
+        .dsvert_joint_dp_client_json(manifest),
+        .dsvert_joint_dp_client_json(capsule$release$manifest))) {
+    stop("The Describe resume manifest is detached from its release",
+         call. = FALSE)
+  }
+  unsigned <- .dsvert_dp_describe_resume_binding_v1(
+    manifest, bundle$manifest_sha256, bundle$capsule_id,
+    data_name, analysis_id)
+  portable_context <- context
+  portable_context[c("conns", "all_conns")] <- NULL
+  portable_bundle <- bundle
+  portable_bundle$context <- portable_context
+  bootstrap <- structure(list(
+    version = "dsvert-stateless-catalog-synopsis-client-bootstrap-v1",
+    status = capsule$status, manifest_bundle = portable_bundle,
+    context = portable_context, layout = capsule$layout),
+    class = c("dsvert_synopsis_bootstrap_v1", "list"))
+  token <- c(unsigned, list(
+    binding_sha256 = .dsvert_vector_hash(unsigned), bootstrap = bootstrap))
+  class(token) <- c("dsvertDPDescribeResume", "list")
+  token
+}
+
+.dsvert_dp_describe_resume_bootstrap_v1 <- function(
+    resume, data_name, analysis_id) {
+  if (is.null(resume)) return(NULL)
+  if (inherits(resume, "ds.vertDPDescribe")) resume <- resume$resume
+  fields <- c(
+    "version", "method", "data_name", "analysis_id", "manifest_sha256",
+    "capsule_id", "artifact_sha256", "binding_sha256", "bootstrap")
+  if (!inherits(resume, "dsvertDPDescribeResume") ||
+      !.dsvert_dp_has_exact_names(resume, fields) ||
+      !inherits(resume$bootstrap, "dsvert_synopsis_bootstrap_v1")) {
+    stop("resume must be an intact ds.vertDPDescribe resume token",
+         call. = FALSE)
+  }
+  bootstrap <- resume$bootstrap
+  bundle <- bootstrap$manifest_bundle
+  context <- bootstrap$context
+  if (!is.list(bundle) || !is.list(context) ||
+      any(c("conns", "all_conns") %in% names(context)) ||
+      !is.list(bundle$context) ||
+      any(c("conns", "all_conns") %in% names(bundle$context)) ||
+      !identical(bundle$context, context) ||
+      !identical(resume$method, "ds.vertDPDescribe") ||
+      !identical(resume$data_name, data_name) ||
+      !identical(resume$analysis_id, analysis_id) ||
+      !identical(resume$manifest_sha256, bundle$manifest_sha256) ||
+      !identical(resume$capsule_id, bundle$capsule_id) ||
+      !.dsvert_vector_hex(bundle$manifest_sha256) ||
+      !.dsvert_vector_hex(bundle$capsule_id) ||
+      !.dsvert_dp_is_string(bundle$manifest_json) ||
+      !.dsvert_vector_hex(resume$binding_sha256) ||
+      !identical(bundle$manifest_sha256, digest::digest(
+        bundle$manifest_json, algo = "sha256", serialize = FALSE))) {
+    stop("The Describe resume token is invalid or misbound", call. = FALSE)
+  }
+  manifest <- .dsvert_joint_dp_client_decode(
+    bundle$manifest_json, "Describe resume manifest",
+    .DSVERT_CLIENT_SYNOPSIS_MAX_OBJECT_BYTES)
+  expected <- .dsvert_dp_describe_resume_binding_v1(
+    manifest, bundle$manifest_sha256, bundle$capsule_id,
+    data_name, analysis_id)
+  if (!identical(unclass(resume[names(expected)]), expected) ||
+      !identical(resume$binding_sha256, .dsvert_vector_hash(expected))) {
+    stop("The Describe resume token is invalid or misbound", call. = FALSE)
+  }
+  bootstrap
+}
+
 .dsvert_dp_describe_vector_result <- function(
     capsule, data_name, analysis_id, server = NULL) {
   capsule <- .dsvert_dp_vector_context(capsule, allow_synopsis = TRUE)
@@ -372,12 +479,14 @@
     # postprocessor consumes exact integer qsum/qsumsq coordinates.
     qmoments <- c(moments[[1L]], moments[[2L]] * scale,
                   moments[[3L]] * scale)
-    if (any(abs(qmoments - round(qmoments)) >
-            64 * .Machine$double.eps * pmax(1, abs(qmoments)))) {
+    quantized <- qmoments[2:3]
+    if (any(abs(quantized - round(quantized)) >
+            64 * .Machine$double.eps * pmax(1, abs(quantized)))) {
       stop("A released numeric moment is not on its signed lattice",
            call. = FALSE)
     }
-    statistics <- c(statistics, round(qmoments), histogram)
+    qmoments[2:3] <- round(quantized)
+    statistics <- c(statistics, qmoments, histogram)
     descriptor <- moment_blocks[[index]]$descriptor
     lower[[index]] <- descriptor$lower
     upper[[index]] <- descriptor$upper
@@ -397,7 +506,8 @@
     capsule$status[[owner]]$noise_root
   profile <- .dsvert_vector_profile(
     manifest$workload$capsule_mechanism,
-    manifest$workload$mechanism_selection)
+    manifest$workload$mechanism_selection,
+    backend = release$backend)
   result <- list(
     released = TRUE, analysis_id = analysis_id,
     analysis_version = artifact$version, variables = variables,
@@ -442,6 +552,10 @@
   if (isTRUE(capsule$synopsis)) {
     result$artifact_key <- release$artifact_key
     result$execution_id <- release$execution_id
+    result$contract_sha256 <- release$contract_sha256
+    result$attempt_sha256 <- release$attempt_sha256
+    result$source_contract_sha256 <- release$source_contract_sha256
+    result$result_set_sha256 <- release$result_set_sha256
     result$release_provenance <- release$signed_provenance
     result$privacy <- list(
       version = "dsvert-per-synopsis-dp-v1",
@@ -487,20 +601,38 @@
 #' @param server Optional datasource name. If omitted, the lexicographically
 #'   first datasource is selected deterministically.
 #' @param datasources DataSHIELD connections.
+#' @param resume Optional portable resume token returned in the `resume` field
+#'   of an earlier `ds.vertDPDescribe()` result, or that earlier result itself.
+#'   The token is authenticated by the pinned peers' signed public bootstrap
+#'   and manifest evidence and contains no connection handles.
 #' @return A `ds.vertDPDescribe` object. Mechanism/grid regions exclude
-#'   sampling error.
+#'   sampling error. Synopsis results include `resume` and `cleanup_pending`.
+#'
+#' @details The Synopsis route has no request, rate, catalogue-count or lifetime
+#'   budget that can deny a future analysis. Its privacy claim is per canonical
+#'   signed artifact; distinct artifacts compose and no finite global
+#'   composition bound is claimed. A resume call rebinds the saved signed
+#'   bootstrap to the live peer identities and replays the durable publication
+#'   without rerunning source work.
+#'
+#'   This release currently supports same-owner Describe artifacts. A cold
+#'   exact-GC Synopsis execution fails before Claim or Compile; an already
+#'   published exact artifact may still be replayed through the publication
+#'   fast path.
 #' @export
 ds.vertDPDescribe <- function(data_name, analysis_id,
                               probs = c(0.25, 0.5, 0.75),
-                              server = NULL, datasources = NULL) {
+                              server = NULL, datasources = NULL,
+                              resume = NULL) {
+  resolved <- .dsvert_federation_argument(data_name, datasources)
   .dsvert_dp_describe_impl(
-    data_name, analysis_id, probs, server, datasources,
-    DSI::datashield.aggregate)
+    resolved$value, analysis_id, probs, server, resolved$datasources,
+    DSI::datashield.aggregate, resume = resume)
 }
 
 .dsvert_dp_describe_impl <- function(data_name, analysis_id, probs,
                                      server = NULL, datasources = NULL,
-                                     .aggregate) {
+                                     .aggregate, resume = NULL) {
   for (value in list(data_name, analysis_id)) {
     if (!is.character(value) || length(value) != 1L || is.na(value) ||
         !nzchar(value)) {
@@ -515,11 +647,16 @@ ds.vertDPDescribe <- function(data_name, analysis_id,
   }
   probs <- sort(unique(as.numeric(probs)), method = "radix")
   datasources <- .dsvert_dp_datasources(datasources)
-  capsule <- .dsvert_dp_capsule_vector_run(
-    datasources, .aggregate = .aggregate)
+  resume_bootstrap <- .dsvert_dp_describe_resume_bootstrap_v1(
+    resume, data_name, analysis_id)
+  capsule <- .dsvert_dp_synopsis_vector_run(
+    datasources, status = resume_bootstrap, .aggregate = .aggregate)
   result <- .dsvert_dp_describe_vector_result(
     capsule, data_name, analysis_id, server)
   result <- .dsvert_dp_describe_postprocess(result, probs)
+  result$cleanup_pending <- isTRUE(capsule$cleanup_pending)
+  result$resume <- .dsvert_dp_describe_resume_token_v1(
+    capsule, data_name, analysis_id)
   class(result) <- c("ds.vertDPDescribe", "list")
   result
 }

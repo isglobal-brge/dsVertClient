@@ -14,7 +14,12 @@
   "dsvert-stateless-catalog-synopsis-public-chunk-v1"
 .DSVERT_CLIENT_SYNOPSIS_PUBLIC_CHUNK_COORDINATES <- 8192L
 .DSVERT_CLIENT_SYNOPSIS_EXACT_CHUNK_COORDINATES <- 64L
-.DSVERT_CLIENT_SYNOPSIS_MAX_OBJECT_BYTES <- 8L * 1024L^2
+# Per-object availability bounds. They constrain one physical protocol object;
+# they are not call, catalogue, rate or lifetime privacy limits.
+.DSVERT_CLIENT_SYNOPSIS_MAX_OBJECT_BYTES <- 32L * 1024L^2
+.DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES <- 2L * 1024L^2
+.DSVERT_CLIENT_SYNOPSIS_PREPARE_MAX_OBJECT_BYTES <- 64L * 1024L
+.DSVERT_CLIENT_SYNOPSIS_FRACTION_MAX_BYTES <- 512L
 
 .dsvert_dp_synopsis_client_hash <- function(domain, value) {
   digest::digest(charToRaw(paste0(
@@ -23,9 +28,11 @@
   algo = "sha256", serialize = FALSE)
 }
 
-.dsvert_dp_synopsis_client_json <- function(value, what) {
+.dsvert_dp_synopsis_client_json <- function(
+    value, what,
+    maximum_bytes = .DSVERT_CLIENT_SYNOPSIS_MAX_OBJECT_BYTES) {
   parsed <- .dsvert_joint_dp_client_decode(
-    value, what, .DSVERT_CLIENT_SYNOPSIS_MAX_OBJECT_BYTES)
+    value, what, maximum_bytes)
   if (!identical(.dsvert_joint_dp_client_json(parsed), value)) {
     stop("The ", what, " is not canonical", call. = FALSE)
   }
@@ -72,8 +79,11 @@
 
 .dsvert_dp_synopsis_client_fraction_leq <- function(
     numerator, denominator, decimal, what) {
-  if (!.dsvert_vector_integer_text(numerator) ||
-      !.dsvert_vector_integer_text(denominator, positive = TRUE)) {
+  if (!.dsvert_vector_integer_text(
+        numerator, maximum_bytes = .DSVERT_CLIENT_SYNOPSIS_FRACTION_MAX_BYTES) ||
+      !.dsvert_vector_integer_text(
+        denominator, positive = TRUE,
+        maximum_bytes = .DSVERT_CLIENT_SYNOPSIS_FRACTION_MAX_BYTES)) {
     stop("Invalid synopsis ", what, call. = FALSE)
   }
   right <- .dsvert_dp_synopsis_client_decimal_fraction(decimal, what)
@@ -102,6 +112,9 @@
       !is.list(manifest_bundle$context$all_conns)) {
     stop("A trusted manifest bundle with a verified context is required",
          call. = FALSE)
+  }
+  if (inherits(status, "ds.vertDPSynopsisStatus")) {
+    return(.dsvert_dp_synopsis_trusted_bundle_v1(manifest_bundle, status))
   }
   context <- manifest_bundle$context
   consensus <- .dsvert_joint_dp_capsule_status_consensus(
@@ -541,8 +554,14 @@
     .dsvert_vector_decimal(privacy$epsilon, 0, 8, open_minimum = TRUE)
   } else NULL
   delta_number <- if (is.list(privacy)) {
-    .dsvert_vector_decimal(privacy$delta, 0, 1, open_minimum = TRUE)
+    .dsvert_vector_decimal(
+      privacy$delta, 0, 1, open_minimum = isTRUE(profile$gaussian))
   } else NULL
+  if (!isTRUE(profile$gaussian) && identical(delta_number, 0)) {
+    stop(paste(
+      "The finite synopsis Laplace v3 backend has positive implementation",
+      "delta and cannot certify pure DP"), call. = FALSE)
+  }
   family <- if (isTRUE(profile$gaussian)) "gaussian" else
     "discrete_laplace"
   expected_sensitivity <- list(
@@ -562,8 +581,12 @@
     identical(privacy$privacy_unit, "patient") &&
     identical(privacy$adjacency, projection$catalog$admission$adjacency) &&
     !is.null(epsilon_number) && !is.null(delta_number) &&
-    .dsvert_dp_num_equal(epsilon_number, policy$capsule_epsilon, 128) &&
-    .dsvert_dp_num_equal(delta_number, policy$capsule_delta, 128) &&
+    .dsvert_dp_num_equal(epsilon_number, if (!is.null(
+      policy$artifact_epsilon)) policy$artifact_epsilon else
+        policy$capsule_epsilon, 128) &&
+    .dsvert_dp_num_equal(delta_number, if (!is.null(
+      policy$artifact_delta)) policy$artifact_delta else
+        policy$capsule_delta, 128) &&
     identical(privacy$epsilon, formatC(
       epsilon_number, digits = 18L, format = "e", decimal.mark = ".")) &&
     identical(privacy$delta, formatC(
@@ -731,7 +754,9 @@
   } else c("per_peer_implementation_delta_numerator",
            "per_peer_implementation_delta_denominator")
   decoded <- lapply(release_receipts, function(json) {
-    receipt <- .dsvert_dp_synopsis_client_json(json, "synopsis RELEASE")
+    receipt <- .dsvert_dp_synopsis_client_json(
+      json, "synopsis RELEASE",
+      .DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES)
     peer <- if (is.list(receipt$local_authority)) {
       receipt$local_authority$peer_name
     } else NULL
@@ -855,7 +880,8 @@
            call. = FALSE)
     }
     replay <- .dsvert_dp_synopsis_client_json(
-      bilateral[[authorities[[1L]]]], "synopsis REPLAY")
+      bilateral[[authorities[[1L]]]], "synopsis REPLAY",
+      .DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES)
     public <- replay$chunk
     offset <- index * execution$geometry$public_chunk_coordinates
     count <- min(

@@ -455,7 +455,43 @@
   dsvertJointDPVectorReplayDS =
     c("manifest_json", "first_release_json", "second_release_json"),
   dsvertJointDPVectorFinalizeAckDS =
-    c("manifest_json", "first_release_json", "second_release_json"))
+    c("manifest_json", "first_release_json", "second_release_json"),
+  dsvertDPSynopsisCompileDS = "claims_json",
+  dsvertDPSynopsisPrepareDS =
+    c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisStartDS =
+    c("first_prepare_json", "second_prepare_json"),
+  dsvertDPSynopsisResultDS =
+    c("first_prepare_json", "second_prepare_json"),
+  dsvertDPSynopsisFinalShareDS =
+    c("first_result_json", "second_result_json"),
+  dsvertDPSynopsisReleaseDS =
+    c("first_result_json", "second_result_json"),
+  dsvertDPSynopsisSourceTicketDS =
+    c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisSourcePrepareDS = c(
+    "claim_set_json", "compilation_json", "first_ticket_json",
+    "second_ticket_json"),
+  dsvertDPSynopsisSourceChunkDS =
+    c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisSourceAcceptDS = "envelope_json",
+  dsvertDPSynopsisCategoricalCrossBindDS =
+    c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisCategoricalCrossFinalizeDS =
+    c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisAlignmentMaskStartDS =
+    c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisAlignmentMaskStoreDS =
+    c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisAlignmentMaskSealDS =
+    c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisAlignmentMaskReceiveDS =
+    c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisBindDS = "bootstrap_set_json",
+  dsvertDPSynopsisPublishedReplayDS =
+    c("first_release_json", "second_release_json"),
+  dsvertDPSynopsisFinalizeAckDS =
+    c("first_release_json", "second_release_json"))
 
 .dsvert_dsi_text_call_method <- function(expression) {
   if (!is.call(expression) || !is.symbol(expression[[1L]])) return("")

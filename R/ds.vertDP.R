@@ -587,6 +587,7 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
   }
   list(release = run$release, layout = run$layout, status = run$status,
        manifest_bundle = run$manifest_bundle,
+       verification_compilation = run$verification_compilation,
        manifest = run$release$manifest, lattice = lattice,
        adjacency = adjacency, synopsis = synopsis)
 }
@@ -627,7 +628,97 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
     unconditional_non_reconstruction_guarantee = FALSE)
 }
 
+.dsvert_dp_synopsis_vector_public_metadata <- function(context) {
+  if (!is.list(context) || !isTRUE(context$synopsis)) {
+    stop("The Synopsis biomedical DP vector context is invalid",
+         call. = FALSE)
+  }
+  release <- context$release
+  if (!identical(release$sticky_replay, TRUE) ||
+      !identical(release$signed_provenance$durable_replay, TRUE)) {
+    stop("The Synopsis biomedical DP vector has no durable replay binding",
+         call. = FALSE)
+  }
+  lattice <- context$lattice
+  profile <- .dsvert_dp_vector_release_profile(release, context$manifest)
+  list(
+    released = TRUE,
+    mechanism = release$mechanism,
+    implementation = profile$backend,
+    backend = "exact_signed_Ring128_canonical_synopsis_vector",
+    sampler = profile$sampler,
+    randomness = paste(
+      "independent pinned-peer HKDF-SHA256/ChaCha20 streams;",
+      "no analyst-controlled seed"),
+    postprocessing = profile$postprocessing,
+    one_joint_draw = isTRUE(profile$exact_gc),
+    mechanism_plan = release$mechanism_plan,
+    plan_sha256 = release$plan_sha256,
+    backend_selection = release$backend_selection,
+    backend_assessment = release$backend_assessment,
+    epsilon = as.numeric(release$epsilon),
+    delta = as.numeric(release$delta),
+    implementation_delta = release$implementation_delta,
+    delta_aggregation = release$delta_aggregation,
+    adjacency = context$adjacency,
+    sensitivity = as.numeric(if (isTRUE(profile$gaussian)) {
+      lattice$natural_l2_sensitivity
+    } else {
+      lattice$natural_l1_sensitivity
+    }),
+    sensitivity_norm = if (isTRUE(profile$gaussian)) "l2" else "l1",
+    l1_sensitivity = as.numeric(lattice$natural_l1_sensitivity),
+    l2_sensitivity = as.numeric(lattice$natural_l2_sensitivity),
+    sensitivity_scope = "complete_signed_canonical_synopsis_vector",
+    synopsis_mechanism = context$manifest$workload$capsule_mechanism,
+    mechanism_selection = context$manifest$workload$mechanism_selection,
+    output_lattice_bits = as.integer(lattice$output_lattice_bits),
+    output_lattice_scale = as.numeric(lattice$output_lattice_scale),
+    artifact_key = release$artifact_key,
+    execution_id = release$execution_id,
+    manifest_sha256 = release$manifest_sha256,
+    contract_sha256 = release$contract_sha256,
+    attempt_sha256 = release$attempt_sha256,
+    source_contract_sha256 = release$source_contract_sha256,
+    result_set_sha256 = release$result_set_sha256,
+    final_vector_root = release$final_vector_root,
+    coordinate_order_sha256 = release$coordinate_order_sha256,
+    synopsis_coordinate_count = as.integer(release$coordinate_count),
+    sticky_noise = "one_immutable_canonical_synopsis_artifact",
+    sticky_replay = isTRUE(release$sticky_replay),
+    unlimited_replay = TRUE,
+    release_provenance = release$signed_provenance,
+    privacy = list(
+      version = "dsvert-per-synopsis-dp-v1",
+      per_artifact_epsilon = release$epsilon,
+      per_artifact_delta = release$delta,
+      sticky_noise = TRUE,
+      unlimited_replay = TRUE,
+      replay_is_postprocessing = TRUE,
+      public_openings = 1L,
+      distinct_artifacts_compose = TRUE,
+      finite_global_composition_claim = FALSE),
+    source_values_exposed = FALSE,
+    intermediate_values_exposed = FALSE,
+    composition_rule = "one_sticky_release_per_canonical_signed_artifact",
+    data_dependency = "immutable_signed_canonical_synopsis_snapshot",
+    security_claim = list(
+      version = "dsvert-synopsis-security-claim-v1",
+      privacy_definition = "per_synopsis_epsilon_delta_dp",
+      two_pinned_noise_authorities = TRUE,
+      maximum_colluding_noise_authorities = 1L,
+      analyst_relay_trusted = FALSE,
+      replay_is_postprocessing = TRUE,
+      allocation_openings_used = FALSE,
+      finite_global_composition_claim = FALSE),
+    clipped_coordinates = NA_integer_,
+    clamp_activation_disclosed = FALSE)
+}
+
 .dsvert_dp_vector_public_metadata <- function(context) {
+  if (isTRUE(context$synopsis)) {
+    return(.dsvert_dp_synopsis_vector_public_metadata(context))
+  }
   release <- context$release
   lattice <- context$lattice
   profile <- .dsvert_dp_vector_release_profile(release, context$manifest)
@@ -747,8 +838,9 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
 #'   privacy metadata.
 #' @export
 ds.vertDPCount <- function(data_name, server = NULL, datasources = NULL) {
+  resolved <- .dsvert_federation_argument(data_name, datasources)
   .dsvert_dp_count_impl(
-    data_name, server, datasources, DSI::datashield.aggregate)
+    resolved$value, server, resolved$datasources, DSI::datashield.aggregate)
 }
 
 .dsvert_dp_count_impl <- function(data_name, server = NULL,
@@ -918,8 +1010,11 @@ ds.vertDPCount <- function(data_name, server = NULL, datasources = NULL) {
 #' Differentially private fixed-domain contingency table
 #'
 #' The table domain, orientation and one-contribution-per-unit rule come from
-#' the signed capsule descriptor. This function only reshapes the already-DP
-#' block in the global sticky vector; it does not apply an
+#' signed catalog metadata. The canonical selector binds a reduced sticky
+#' Synopsis artifact containing only the authorized same-owner or cross-owner
+#' pair and its two marginals. Cross-owner products remain private exact-MPC
+#' shares until the single noisy Synopsis release. This function only reshapes
+#' that already-DP block; it does not apply an
 #' ordinary chi-square or Fisher p-value, because those reference
 #' distributions are not calibrated for DP-noised counts. Under the current
 #' repeated-record contract, a unit contributes once only when all its valid
@@ -927,21 +1022,34 @@ ds.vertDPCount <- function(data_name, server = NULL, datasources = NULL) {
 #' zero, while missing and out-of-domain rows are ignored for consistency.
 #' This public, custodian-owned rule is returned with every release.
 #'
-#' @param data_name Name of the protected data frame.
-#' @param row_var,col_var Fixed-domain categorical variables. They may be held
-#'   by one custodian or by two different custodians named in a signed
-#'   `vertical_cross_specs` `categorical_pair` descriptor.
-#' @param server Optional owner assertion. For a cross-owner table it may name
-#'   either declared source owner; it never triggers column discovery.
+#' @param data_name Name of the protected data frame or a version-2
+#'   `ds.vertFederation` carrying its public schema.
+#' @param row_var,col_var Fixed-domain categorical variables authorized as one
+#'   unambiguous signed same-owner or cross-owner pair. With a federation,
+#'   ambiguous bare names require an exact `server$column` reference.
+#' @param server Optional same-owner assertion; it never triggers column
+#'   discovery.
 #' @param datasources DataSHIELD connections.
 #' @return A `ds.vertDPContingency` object containing the noisy table and
 #'   privacy/accuracy metadata.
 #' @export
 ds.vertDPContingency <- function(data_name, row_var, col_var, server = NULL,
                                  datasources = NULL) {
-  .dsvert_dp_contingency_impl(
-    data_name, row_var, col_var, server, datasources,
+  display_variables <- c(row_var, col_var)
+  if (inherits(data_name, "ds.vertFederation") &&
+      identical(data_name$version, 2L)) {
+    references <- .dsvert_dp_synopsis_pair_federation_references_v1(
+      data_name, display_variables)
+    row_var <- references[[1L]]$reference
+    col_var <- references[[2L]]$reference
+  }
+  resolved <- .dsvert_federation_argument(data_name, datasources)
+  result <- .dsvert_dp_contingency_impl(
+    resolved$value, row_var, col_var, server, resolved$datasources,
     DSI::datashield.aggregate)
+  result$row_var <- display_variables[[1L]]
+  result$col_var <- display_variables[[2L]]
+  result
 }
 
 .dsvert_dp_contingency_impl <- function(data_name, row_var, col_var,
@@ -959,30 +1067,51 @@ ds.vertDPContingency <- function(data_name, row_var, col_var, server = NULL,
     stop("row_var and col_var must identify two distinct variables",
          call. = FALSE)
   }
+  requested_references <- lapply(
+    list(row_var, col_var), .dsvert_dp_synopsis_pair_reference_v1,
+    what = "A contingency variable")
+  if (identical(
+        requested_references[[1L]]$reference,
+        requested_references[[2L]]$reference)) {
+    stop("row_var and col_var must identify two distinct variables",
+         call. = FALSE)
+  }
   datasources <- .dsvert_dp_datasources(datasources)
   owner_assertion <- .dsvert_dp_vector_server_filter(server, datasources)
-  run <- .dsvert_dp_capsule_vector_run(
-    datasources, .aggregate = .aggregate)
-  context <- .dsvert_dp_vector_context(run)
-  requested <- sort(c(row_var, col_var), method = "radix")
+  selector_request <- list(
+    version = .DSVERT_CLIENT_SYNOPSIS_CATEGORICAL_PAIR_REQUEST_VERSION,
+    family = "categorical_pair", dataset = data_name,
+    columns = unname(sort(vapply(
+      requested_references, `[[`, character(1L), "reference"),
+      method = "radix")),
+    owner_peer = owner_assertion)
+  run <- .dsvert_dp_synopsis_vector_run(
+    datasources, local_projection = selector_request,
+    .aggregate = .aggregate)
+  context <- .dsvert_dp_vector_context(run, allow_synopsis = TRUE)
+  accepts <- function(reference, side) {
+    identical(reference$column, side$column) &&
+      (is.null(reference$owner_peer) ||
+         identical(reference$owner_peer, side$owner_peer))
+  }
   predicate <- function(candidate) {
     descriptor <- candidate$descriptor
-    left <- tryCatch(descriptor$left$column,
-                     error = function(error) NULL)
-    right <- tryCatch(descriptor$right$column,
-                      error = function(error) NULL)
-    columns_match <- is.character(left) && length(left) == 1L && !is.na(left) &&
-      is.character(right) && length(right) == 1L && !is.na(right) &&
-      identical(sort(c(left, right), method = "radix"), requested)
-    if (!isTRUE(columns_match)) return(FALSE)
+    sides <- tryCatch(list(
+      descriptor$left[c("dataset", "column", "owner_peer")],
+      descriptor$right[c("dataset", "column", "owner_peer")]),
+      error = function(error) list())
+    bindings <- if (length(sides) == 2L) c(
+      accepts(requested_references[[1L]], sides[[1L]]) &&
+        accepts(requested_references[[2L]], sides[[2L]]),
+      accepts(requested_references[[1L]], sides[[2L]]) &&
+        accepts(requested_references[[2L]], sides[[1L]])) else FALSE
+    if (sum(bindings) != 1L) return(FALSE)
     cross <- identical(
       descriptor$version,
       .DSVERT_CLIENT_DP_CATEGORICAL_CROSS_ARTIFACT_VERSION)
     if (isTRUE(cross)) {
       datasets <- c(descriptor$left$dataset, descriptor$right$dataset)
-      owners <- c(descriptor$left$owner_peer, descriptor$right$owner_peer)
-      identical(length(datasets), 2L) && data_name %in% datasets &&
-        (is.null(owner_assertion) || owner_assertion %in% owners)
+      is.null(owner_assertion) && data_name %in% datasets
     } else {
       identical(candidate$dataset, data_name) &&
         (is.null(owner_assertion) ||
@@ -1005,20 +1134,10 @@ ds.vertDPContingency <- function(data_name, row_var, col_var, server = NULL,
     descriptor$right$levels, "right categorical levels", sorted = TRUE)
   counts <- .dsvert_dp_capsule_vector_values(context$release, block)
   expected <- as.double(length(left_levels)) * length(right_levels)
-  capacity <- if (isTRUE(cross_owner)) {
-    value <- .dsvert_dp_capsule_manifest_numbers(
-      context$manifest$admission$unit_capacity, "unit capacity")
-    if (length(value) != 1L || value < 1 ||
-        value != floor(value) || value > 2^53 - 1) {
-      stop("The signed capsule unit capacity is invalid", call. = FALSE)
-    }
-    as.numeric(value)
-  } else {
-    count_block <- .dsvert_dp_capsule_single_block(
-      context$layout, "admitted_count",
-      description = "signed admitted-count capacity block")
-    .dsvert_dp_vector_block_capacity(count_block)
-  }
+  count_block <- .dsvert_dp_capsule_single_block(
+    context$layout, "admitted_count",
+    description = "signed admitted-count capacity block")
+  capacity <- .dsvert_dp_vector_block_capacity(count_block)
   if (length(counts) != expected || any(counts < 0) ||
       any(counts > capacity)) {
     stop("The released contingency block violates its signed domain",
@@ -1027,10 +1146,13 @@ ds.vertDPContingency <- function(data_name, row_var, col_var, server = NULL,
   canonical <- matrix(
     counts, nrow = length(left_levels), ncol = length(right_levels),
     dimnames = list(left_levels, right_levels))
-  if (identical(left_column, row_var) && identical(right_column, col_var)) {
+  left_side <- descriptor$left[c("dataset", "column", "owner_peer")]
+  right_side <- descriptor$right[c("dataset", "column", "owner_peer")]
+  if (accepts(requested_references[[1L]], left_side) &&
+      accepts(requested_references[[2L]], right_side)) {
     table <- canonical
-  } else if (identical(left_column, col_var) &&
-             identical(right_column, row_var)) {
+  } else if (accepts(requested_references[[1L]], right_side) &&
+             accepts(requested_references[[2L]], left_side)) {
     table <- t(canonical)
   } else {
     stop("The signed contingency descriptor changed during mapping",
@@ -1044,22 +1166,16 @@ ds.vertDPContingency <- function(data_name, row_var, col_var, server = NULL,
     confidence = 0.95, maximum_error = capacity)
   owners <- if (isTRUE(cross_owner)) {
     c(descriptor$left$owner_peer, descriptor$right$owner_peer)
-  } else {
-    block$owner_peer
-  }
+  } else block$owner_peer
   datasets <- if (isTRUE(cross_owner)) {
     c(descriptor$left$dataset, descriptor$right$dataset)
-  } else {
-    block$dataset
-  }
+  } else block$dataset
   owners <- sort(unique(owners), method = "radix")
   datasets <- sort(unique(datasets), method = "radix")
   result <- c(.dsvert_dp_vector_public_metadata(context), list(
     server = if (isTRUE(cross_owner)) {
-      paste(owners, collapse = "::")
-    } else {
-      block$owner_peer
-    },
+      paste(owners, collapse = "+")
+    } else block$owner_peer,
     servers = unname(owners), datasets = unname(datasets),
     cross_owner = isTRUE(cross_owner),
     coordinate_family = "categorical_pairs",
@@ -1072,13 +1188,9 @@ ds.vertDPContingency <- function(data_name, row_var, col_var, server = NULL,
     coordinate_maximum = capacity,
     unit_aggregation_policy = descriptor$repeated_record_policy,
     missingness_policy = descriptor$missingness_policy,
-    artifact_l1_sensitivity = if (isTRUE(cross_owner)) {
-      as.numeric(descriptor$selected_l1_sensitivity)
-    } else if (identical(
+    artifact_l1_sensitivity = if (identical(
       context$adjacency, "add_remove_patient")) 1 else 2,
-    artifact_l2_sensitivity = if (isTRUE(cross_owner)) {
-      as.numeric(descriptor$selected_l2_sensitivity)
-    } else if (identical(
+    artifact_l2_sensitivity = if (identical(
       context$adjacency, "add_remove_patient")) 1 else sqrt(2),
     accuracy_95_abs_per_cell = rep(
       marginal$radius, length(table)),
@@ -1100,26 +1212,31 @@ ds.vertDPContingency <- function(data_name, row_var, col_var, server = NULL,
 
 #' Differentially private bounded mean and variance
 #'
-#' The signed capsule clips one contribution per protected unit to immutable
-#' bounds and releases count, normalized quantized sum and normalized
-#' quantized sum of squares as part of one global Ring128 vector. There is no
-#' coordinate-wise epsilon split. The client applies only bounded-moment
-#' post-processing and the exact affine conversion back to the original
-#' scale. The reported variance is the population central second moment with
-#' the DP-noisy denominator eqn{n}, not an eqn{n-1} sampling estimator.
-#' Simultaneous regions cover mechanism noise and deterministic quantization;
-#' they are not sampling confidence intervals.
+#' One canonical signed Synopsis artifact clips one contribution per protected
+#' unit to immutable bounds and releases count, normalized quantized sum and
+#' normalized quantized sum of squares in a common Ring128 vector. There is no
+#' coordinate-wise epsilon split. Replay of the same durable artifact is
+#' unlimited post-processing and is never denied by lifetime history. Distinct
+#' artifacts compose and no finite global composition bound is claimed. The
+#' client applies only bounded-moment post-processing and the exact affine
+#' conversion back to the original scale. The reported variance is the
+#' population central second moment with the DP-noisy denominator eqn{n}, not
+#' an eqn{n-1} sampling estimator. Simultaneous regions cover mechanism noise
+#' and deterministic quantization; they are not sampling confidence intervals.
 #'
 #' @param data_name Name of the protected data frame.
 #' @param variable Numeric variable with custodian-configured bounds.
 #' @param server Optional server name; auto-detected when unambiguous.
 #' @param datasources DataSHIELD connections.
-#' @return A DP moment release with bounds and accuracy metadata.
+#' @return A DP moment release with bounds, accuracy, signed Synopsis
+#'   provenance, and per-artifact privacy metadata.
 #' @export
 ds.vertDPMeanVar <- function(data_name, variable, server = NULL,
                              datasources = NULL) {
+  resolved <- .dsvert_federation_argument(data_name, datasources)
   .dsvert_dp_meanvar_impl(
-    data_name, variable, server, datasources, DSI::datashield.aggregate)
+    resolved$value, variable, server, resolved$datasources,
+    DSI::datashield.aggregate)
 }
 
 .dsvert_dp_meanvar_impl <- function(data_name, variable, server = NULL,
@@ -1132,9 +1249,10 @@ ds.vertDPMeanVar <- function(data_name, variable, server = NULL,
   }
   datasources <- .dsvert_dp_datasources(datasources)
   owner <- .dsvert_dp_vector_server_filter(server, datasources)
-  run <- .dsvert_dp_capsule_vector_run(
+  run <- .dsvert_dp_synopsis_vector_run(
     datasources, .aggregate = .aggregate)
-  context <- .dsvert_dp_vector_context(run)
+  context <- .dsvert_dp_vector_context(run, allow_synopsis = TRUE)
+  public_metadata <- .dsvert_dp_vector_public_metadata(context)
   block <- .dsvert_dp_capsule_single_block(
     context$layout, "numeric_moments", dataset = data_name,
     owner_peer = owner,
@@ -1214,7 +1332,7 @@ ds.vertDPMeanVar <- function(data_name, variable, server = NULL,
   }
   reason <- if (identical(release_status, "ok")) NULL else
     "dp_noisy_effective_count_lower_bound_is_zero"
-  result <- c(.dsvert_dp_vector_public_metadata(context), list(
+  result <- c(public_metadata, list(
     server = block$owner_peer,
     coordinate_family = "numeric_moments",
     coordinate_descriptor = descriptor,
@@ -1244,7 +1362,8 @@ ds.vertDPMeanVar <- function(data_name, variable, server = NULL,
     artifact_l2_sensitivity = sqrt(3),
     coordinate_natural_l1_sensitivity = c(
       count = 1, normalized_sum = 1, normalized_sumsq = 1),
-    epsilon_allocation = c(global_capsule_vector = context$release$epsilon),
+    epsilon_allocation = c(
+      canonical_synopsis_artifact = context$release$epsilon),
     submechanism_count = 1L,
     noise_selection = list(
       winner = if (isTRUE(profile$gaussian)) {
@@ -1254,9 +1373,9 @@ ds.vertDPMeanVar <- function(data_name, variable, server = NULL,
       },
       mechanism = context$release$mechanism,
       objective = if (isTRUE(profile$gaussian)) {
-        "signed_global_capsule_l2_sensitivity"
+        "signed_canonical_synopsis_l2_sensitivity"
       } else {
-        "signed_global_capsule_l1_sensitivity"
+        "signed_canonical_synopsis_l1_sensitivity"
       },
       sensitivity_norm = if (isTRUE(profile$gaussian)) "l2" else "l1",
       coordinate_epsilon_split = FALSE),

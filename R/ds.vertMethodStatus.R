@@ -37,7 +37,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   }
   rownames(registry) <- NULL
   class(registry) <- c("ds.vertMethodStatus", class(registry))
-  attr(registry, "audit_date") <- "2026-08-11"
+  attr(registry, "audit_date") <- "2026-08-14"
   attr(registry, "threat_model") <- paste(
     "pinned honest-but-curious peers; untrusted analyst/relay;",
     "privacy and composition follow each row's release contract; Count is",
@@ -46,7 +46,9 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "routes retain their separately documented capsule contract; Frequency",
     "is independently sticky per canonical signed artifact, distinct",
     "Frequency artifacts compose, and no finite global Frequency composition",
-    "claim is made;",
+    "claim is made; Synopsis releases are independently sticky per canonical",
+    "signed artifact, distinct Synopsis artifacts compose, and no finite",
+    "global Synopsis composition claim is made;",
     "no malicious-peer security or unlimited exact-output non-reconstruction claim"
   )
   registry
@@ -68,6 +70,14 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add("ds.getIdentityPks", "ds.getIdentityPks", "promoted",
       "Public Ed25519 identity discovery.",
       "Deployment must still test rotation, restart persistence and pin mismatch.")
+  add("ds.vertPublishOpalMethods", "ds.vertPublishOpalMethods", "promoted",
+      paste(
+        "Administrative helper that reconciles one dedicated Opal profile",
+        "to the exact method allowlist of the dsVert package installed in",
+        "its Rock cluster and leaves that profile disabled and restricted."),
+      paste(
+        "It deliberately does not install packages, configure policy or ACLs,",
+        "or enable the profile; those remain custodian deployment steps."))
   add(c("ds.psiAlign", "ds.vert.align"), "ds.psiAlign", "promoted",
       paste(
         "Pinned ECDH-PSI with a server-owned fixed-capacity bucket, signed",
@@ -85,7 +95,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       paste(
         "It intentionally returns no count; externally pre-aligned data",
         "without the authenticated manifest fail closed."))
-  add(c("ds.vertDesc", "ds.vert.desc"), "ds.vertDesc", "provisional",
+  add(c("ds.vertDesc", "ds.vert.desc"), "ds.vertDesc", "promoted",
       paste(
         "Compatibility data frame over one custodian-owned sticky DP describe",
         "artifact with bounded moments and fixed-grid quantiles."),
@@ -132,12 +142,13 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "persistent seeds and at least one non-colluding pinned authority."))
   add("ds.vertDPContingency", "ds.vertDPContingency", "provisional",
       paste(
-        "Fixed-domain, one-contribution-per-unit table from the one sticky",
-        "joint capsule vector for same-owner or signed cross-owner variables."),
+        "Fixed-domain, one-contribution-per-unit table from one canonical",
+        "sticky Synopsis projection selected from signed same- or cross-owner",
+        "categorical metadata."),
       paste(
-        "Cross-owner use requires the predeclared private alignment contract;",
         "ordinary chi-square/Fisher laws are invalid for the noisy table, and",
-        "the concordant-unit estimand must be reported."))
+        "the concordant-unit estimand and cross-owner threat boundary must be",
+        "reported."))
   add("ds.vertDPFrequency", "ds.vertDPFrequency", "promoted",
       paste(
         "One canonical signed fixed-domain categorical vector from the",
@@ -157,14 +168,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       paste(
         "Requires iid privacy units and scientifically ignorable exclusions;",
         "Bonferroni/Clopper-Pearson regions can be wide and provide no p-value."))
-  add("ds.vertDPMeanVar", "ds.vertDPMeanVar", "provisional",
+  add("ds.vertDPMeanVar", "ds.vertDPMeanVar", "promoted",
       paste(
         "Bounded per-unit count, normalized sum and sum-of-squares from the",
-        "one sticky joint capsule vector with consistent post-processing."),
+        "one canonical sticky Synopsis artifact with consistent",
+        "post-processing and unlimited replay."),
       paste(
         "Clipping, quantisation and privacy noise change finite-sample",
         "utility; the custodian bounds must be scientifically defensible."))
-  add("ds.vertDPDescribe", "ds.vertDPDescribe", "provisional",
+  add("ds.vertDPDescribe", "ds.vertDPDescribe", "promoted",
       paste(
         "One custodian-specified sticky release of bounded quantized moments,",
         "fixed-grid histograms and quantile post-processing."),
@@ -172,45 +184,47 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "Moment/quantile regions cover mechanism noise and public",
         "quantisation/grid resolution only; sampling uncertainty is excluded."))
   add(c("ds.vertDPQuantile", "ds.vertDPMedian"),
-      "ds.vertDPDescribe post-processing", "provisional",
+      "ds.vertDPDescribe post-processing", "promoted",
       paste(
         "Release-only binned quantiles or medians from one validated sticky",
-        "DP describe capsule, with zero additional DSI calls and privacy cost."),
+        "DP Synopsis Describe artifact, with zero additional DSI calls and",
+        "privacy cost."),
       paste(
         "The estimand is identified only to a fixed public histogram bin;",
         "mechanism regions exclude sampling uncertainty and no exact sample",
         "quantile or within-bin interpolation is claimed."))
-  add("ds.vertDPCor", "ds.vertDPCor", "provisional",
+  add("ds.vertDPCor", "ds.vertDPCor", "promoted",
       paste(
         "Same-owner pairwise-complete bounded correlations from one sticky",
-        "joint capsule vector, with explicit PSD post-processing."),
+        "canonical Synopsis artifact, with unlimited exact replay and explicit",
+        "PSD post-processing."),
       paste(
         "Cross-owner products remain reserved_not_materialized; mechanism",
         "regions exclude sampling uncertainty and PSD projection changes the",
         "raw pairwise estimand when the matrix is indefinite."))
-  add("ds.vertDPSurvival", "ds.vertDPSurvival", "provisional",
+  add("ds.vertDPSurvival", "ds.vertDPSurvival", "promoted",
       paste(
-        "One fixed-grid sticky DP release for Kaplan-Meier, Nelson-Aalen,",
-        "and competing-risk post-processing."),
+        "One canonical fixed-grid sticky Synopsis artifact for Kaplan-Meier,",
+        "Nelson-Aalen, competing-risk post-processing and unlimited replay."),
       paste(
         "Current accuracy metadata covers DP histogram noise and public-grid",
         "discretisation separately; sampling confidence bands are not yet provided."))
   add(c("ds.vertDPKaplanMeier", "ds.vertDPNelsonAalen",
         "ds.vertDPCumulativeIncidence"),
-      "ds.vertDPSurvival post-processing", "provisional",
+      "ds.vertDPSurvival post-processing", "promoted",
       paste(
         "Pure curve post-processing with conservative simultaneous",
-        "mechanism bands from one validated fixed-grid DP survival release."),
+        "mechanism bands from one validated fixed-grid Synopsis artifact."),
       "No sampling confidence bands or hypothesis tests are provided.")
-  add("ds.vertDPRMST", "ds.vertDPSurvival post-processing", "provisional",
-      "Zero-cost fixed-grid RMST and simultaneous mechanism limits from one validated DP survival release.",
+  add("ds.vertDPRMST", "ds.vertDPSurvival post-processing", "promoted",
+      "Zero-cost fixed-grid RMST and simultaneous mechanism limits from one validated Synopsis survival artifact.",
       paste(
         "The limits exclude sampling uncertainty and continuous-time grid",
         "error; tau must lie within the public release bounds."))
-  add("ds.vertDPRMTL", "ds.vertDPSurvival post-processing", "provisional",
+  add("ds.vertDPRMTL", "ds.vertDPSurvival post-processing", "promoted",
       paste(
         "Exact zero-cost fixed-grid RMTL complement of RMST over the public",
-        "release interval, with unchanged simultaneous mechanism coverage."),
+        "Synopsis interval, with unchanged simultaneous mechanism coverage."),
       paste(
         "The limits exclude sampling uncertainty and continuous-time grid",
         "error; RMTL is tau-RMST only when the public lower bound is zero."))
@@ -218,7 +232,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "provisional",
       paste(
         "Zero-call fixed-grid survival differences and ratios from two",
-        "validated DP survival artifacts, with conservative joint",
+        "validated Synopsis survival artifacts, with conservative joint",
         "mechanism-only regions and typed zero denominators."),
       paste(
         "Distinct artifacts retain only the Bonferroni joint-confidence",
@@ -228,16 +242,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "provisional",
       paste(
         "Zero-call fixed-grid RMST differences and ratios from two",
-        "validated DP survival artifacts through a common public tau."),
+        "validated Synopsis survival artifacts through a common public tau."),
       paste(
         "Distinct artifacts retain only the Bonferroni joint-confidence",
         "lower bound; sampling uncertainty and continuous-time grid error",
         "are excluded, and denominator-zero ratios can be unbounded."))
   add(c("ds.vertDPSurvivalQuantile", "ds.vertDPMedianSurvival"),
-      "ds.vertDPSurvival post-processing", "provisional",
+      "ds.vertDPSurvival post-processing", "promoted",
       paste(
         "Zero-cost fixed-grid survival quantiles obtained by inverting one",
-        "validated Kaplan-Meier release and its simultaneous mechanism band."),
+        "validated Synopsis Kaplan-Meier release and its mechanism band."),
       paste(
         "Targets not reached by the signed public horizon are explicitly",
         "typed as beyond-grid; limits exclude sampling uncertainty and",
@@ -369,10 +383,11 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add(c("ds.vertCor", "ds.vert.cor"), "ds.vertCor", "provisional",
       paste(
         "Joint complete-case Pearson correlation from one signed same-owner",
-        "or exact-GC cross-owner Gaussian artifact."),
+        "Gaussian Synopsis artifact."),
       paste(
         "A signed analysis id and intercept are mandatory; mechanism regions",
-        "exclude population-sampling uncertainty."))
+        "exclude population-sampling uncertainty. Cross-owner descriptors",
+        "are quarantined without a capsule fallback."))
   add(c("ds.vertPCA", "ds.vert.pca"), "ds.vertPCA", "provisional",
       paste(
         "Client-only eigenstructure of the explicitly PSD-projected sticky DP",
@@ -385,7 +400,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "ds.vertChisq", "provisional",
       paste(
         "DP-aware parametric-bootstrap inference over one signed sticky",
-        "same-owner contingency capsule."),
+        "same-owner contingency Synopsis artifact."),
       paste(
         "The plug-in null is asymptotic rather than finite-sample conditional;",
         "mechanism and Monte Carlo uncertainty are reported separately."))
@@ -393,7 +408,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "ds.vertFisher", "provisional",
       paste(
         "DP-aware conditional hypergeometric plug-in bootstrap over one",
-        "signed sticky same-owner 2-by-2 contingency capsule."),
+        "signed sticky same-owner 2-by-2 contingency Synopsis artifact."),
       paste(
         "It is asymptotic rather than Fisher-exact for confidential data;",
         "Gaussian-mechanism calibration and a conditional odds-ratio",
@@ -401,27 +416,29 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add(c("ds.vertChisqCross", "ds.vert.chisq_cross"), "ds.vertChisqCross",
       "provisional",
       paste(
-        "DP-aware bootstrap inference over one signed sticky fixed-domain",
-        "contingency artifact for co-located or cross-owner variables; the",
-        "cross-owner table is formed privately by fixed-shape exact GC."),
+        "One canonical signed cross-owner categorical Synopsis release, then",
+        "client-only DP-aware Pearson/Yates and optional conditional",
+        "hypergeometric plug-in post-processing."),
       paste(
-        "The plug-in calibration is asymptotic rather than finite-sample",
-        "exact; only the signed discrete-Laplace reference law is currently",
-        "certified for chi-square and conditional 2-by-2 inference."))
+        "The plug-in reference laws are asymptotic rather than finite-sample",
+        "exact; mechanism and Monte Carlo uncertainty are reported",
+        "separately, and no malicious-peer security is claimed."))
   add("ds.vertDPGaussian", "ds.vertDPGaussian", "provisional",
       paste(
         "Bounded, clipped complete-case Gaussian coefficients from one signed",
-        "sticky DP sufficient-statistic artifact, for same-owner or signed",
-        "cross-owner predictors."),
+        "no-lifetime Synopsis sufficient-statistic artifact for same-owner",
+        "predictors."),
       paste(
         "Binomial/Poisson links and population-sampling inference are not",
         "implemented on this route; singular released designs require an",
-        "explicit ridge that changes the estimand."))
+        "explicit ridge that changes the estimand. Cross-owner descriptors",
+        "fail closed without capsule fallback."))
   add("ds.validateDPGaussianCertificate",
       "ds.validateDPGaussianCertificate", "provisional",
       paste(
-        "Client-only revalidation of Gaussian capsule schema, signed peer",
-        "evidence, Merkle membership and released DP moments without DSI."),
+        "Client-only version-dispatched revalidation of the parallel Synopsis",
+        "provenance certificate v1 and byte-compatible legacy capsule v3",
+        "without DSI."),
       paste(
         "A self-contained certificate establishes internal integrity only;",
         "peer authenticity requires a caller/session-anchored trusted pinset,",
@@ -429,9 +446,9 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "sampling validity."))
   add(c("ds.vertGLM", "ds.vert.glm"), "ds.vertGLM", "provisional",
       paste(
-        "Explicit dp_analysis_id selects the bounded same- or cross-owner",
-        "Gaussian capsule adapter. Calls without that identifier fail locally",
-        "before DSI; the legacy estimator is no longer remotely reachable."),
+        "Explicit dp_analysis_id selects the bounded same-owner Gaussian",
+        "Synopsis adapter. Cross-owner and identifier-free calls fail closed",
+        "without capsule fallback; the legacy estimator is unreachable."),
       paste(
         "Binomial and Poisson variants have no released replacement; use",
         "ds.vertDPGaussian directly when the Gaussian capsule contract matches",
@@ -507,7 +524,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "ds.vertLASSOProximal", "provisional",
       paste(
         "Preferred zero-call Gaussian LASSO post-processing of one validated",
-        "signed DP moment artifact; the ds.glm normal-equation path remains",
+        "same-owner signed Synopsis moment artifact; the ds.glm",
+        "normal-equation path remains",
         "as legacy compatibility."),
       paste(
         "Gaussian only; no sampling inference or coefficient regions; the",
@@ -524,7 +542,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "provisional",
       paste(
         "Zero-call DP-projected pseudo-AIC/BIC/EBIC selection over a signed",
-        "Gaussian LASSO path, with the legacy ds.glm quadratic-surrogate",
+        "same-owner Gaussian Synopsis LASSO path, with the legacy ds.glm",
+        "quadratic-surrogate",
         "selector retained."),
       paste(
         "Neither route is cross-validation or a one-standard-error rule;",
@@ -565,16 +584,14 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
 
   out <- do.call(rbind, rows)
   out$release_contract <- "legacy_exact_release_not_capsule_safe"
-  capsule_releases <- c(
-    "ds.vertDesc", "ds.vert.desc",
-    "ds.vertChisq", "ds.vert.chisq",
-    "ds.vertFisher", "ds.vert.fisher",
-    "ds.vertChisqCross", "ds.vert.chisq_cross",
-    "ds.vertDPGaussian",
-    "ds.vertDPCor", "ds.vertCor", "ds.vert.cor",
+  synopsis_releases <- c(
+    "ds.vertDesc", "ds.vert.desc", "ds.vertDPDescribe",
+    "ds.vertDPMeanVar", "ds.vertDPCor", "ds.vertDPSurvival",
+    "ds.vertDPGaussian", "ds.vertCor", "ds.vert.cor",
     "ds.vertPCA", "ds.vert.pca",
-    "ds.vertDPContingency", "ds.vertDPMeanVar",
-    "ds.vertDPDescribe", "ds.vertDPSurvival")
+    "ds.vertDPContingency", "ds.vertChisq", "ds.vert.chisq",
+    "ds.vertFisher", "ds.vert.fisher",
+    "ds.vertChisqCross", "ds.vert.chisq_cross")
   safe_nonreleases <- c(
     "ds.getIdentityPks",
     "ds.psiAlign", "ds.vert.align",
@@ -611,8 +628,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertLASSOCV", "ds.vert.lasso_cv")
   capsule_only_wrappers <- c(
     "ds.vertGLM", "ds.vert.glm")
-  out$release_contract[out$method %in% capsule_releases] <-
-    "formal_joint_dp_capsule"
+  out$release_contract[out$method %in% synopsis_releases] <-
+    "formal_sticky_synopsis_artifact"
   out$release_contract[out$method == "ds.vertDPCount"] <-
     "formal_sticky_count_artifact"
   out$release_contract[out$method == "ds.vertDPFrequency"] <-
@@ -646,7 +663,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "formal_joint_dp_capsule",
     "formal_joint_dp_capsule_only_legacy_unavailable",
     "formal_sticky_count_artifact",
-    "formal_sticky_frequency_artifact")
+    "formal_sticky_frequency_artifact",
+    "formal_sticky_synopsis_artifact")
   out$numeric_contract[dp_release] <- "separate_integer_dp_contract"
   out$numeric_blocker[dp_release] <- paste(
     "Covered by the DP mechanism/accountant contract, not the Ring numeric",
@@ -659,6 +677,10 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   out$numeric_blocker[frequency_release] <- paste(
     "Covered by the signed per-artifact integer DP contract, not an",
     "accountant or Ring numeric certificate.")
+  synopsis_release <- out$method %in% synopsis_releases
+  out$numeric_blocker[synopsis_release] <- paste(
+    "Covered by the signed per-artifact integer DP contract, not the Ring",
+    "numeric certificate.")
 
   inherited <- out$release_contract == "postprocessing_inherits_input"
   out$numeric_contract[inherited] <- "inherits_input_contract"

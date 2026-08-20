@@ -131,6 +131,11 @@
     } else {
       .DSVERT_CLIENT_VECTOR_RELEASE_MECHANISM
     },
+    backend = if (isTRUE(gaussian)) {
+      .DSVERT_CLIENT_VECTOR_GAUSSIAN_BACKEND
+    } else {
+      .DSVERT_CLIENT_VECTOR_BACKEND
+    },
     manifest = manifest,
     history_gate = TRUE, request_limit = FALSE, operation_limit = TRUE)
   class(release) <- c("dsvert_joint_dp_vector", "list")
@@ -203,6 +208,10 @@ test_that("describe admits synopsis provenance without legacy claims", {
                      4, 512, 336, rep(1, 5L)))
   expect_identical(result$artifact_key, strrep("c", 64L))
   expect_identical(result$execution_id, strrep("d", 64L))
+  expect_identical(result$contract_sha256, strrep("e", 64L))
+  expect_identical(result$attempt_sha256, strrep("f", 64L))
+  expect_identical(result$source_contract_sha256, strrep("1", 64L))
+  expect_identical(result$result_set_sha256, strrep("2", 64L))
   expect_identical(result$privacy$version, "dsvert-per-synopsis-dp-v1")
   expect_false(result$privacy$finite_global_composition_claim)
   expect_false(result$security_claim$allocation_openings_used)
@@ -210,6 +219,8 @@ test_that("describe admits synopsis provenance without legacy claims", {
     "capsule_id", "privacy_epoch", "noise_key_id", "history_gate",
     "request_limit", "operation_limit") %in% names(result)))
   postprocessed <- .dsvert_dp_describe_postprocess(result, probs = 0.5)
+  class(postprocessed) <- c("ds.vertDPDescribe", "list")
+  expect_no_error(ds.vertDPQuantile(postprocessed, 0.5))
   expect_equal(postprocessed$descriptives$mean, c(2, 4), tolerance = 0)
   expect_equal(postprocessed$descriptives$variance, c(1.25, 5),
                tolerance = 0)
@@ -256,6 +267,26 @@ test_that("describe vector contract rejects shape and lattice tampering", {
       x$release$values[[start + 1L]] + 1 / 512
     x
   }, "not on its signed lattice")
+})
+
+test_that("describe preserves a fractional noisy count on the common lattice", {
+  capsule <- .dp_describe_vector_capsule(decoded = TRUE)
+  block <- capsule$layout$blocks[["numeric_moments::x"]]
+  capsule$release$values[block$start:block$end] <-
+    c(46.6953125, 24.89453125, 17.0625)
+
+  result <- .dsvert_dp_describe_vector_result(
+    capsule, "protected", "primary")
+  expect_identical(result$statistics[1:3], c(46.6953125, 6373, 4368))
+
+  postprocessed <- .dsvert_dp_describe_postprocess(result, probs = 0.5)
+  x <- postprocessed$descriptives[
+    postprocessed$descriptives$variable == "x", ]
+  expect_identical(x$n_dp, 46.6953125)
+  expect_true(all(is.finite(c(x$mean, x$variance, x$sd))))
+  expect_true(x$mean >= x$lower_bound && x$mean <= x$upper_bound)
+  expect_true(x$variance >= 0 &&
+                x$variance <= (x$upper_bound - x$lower_bound)^2 / 4)
 })
 
 test_that("describe propagates the signed Gaussian L2 plan", {
@@ -551,7 +582,8 @@ test_that("empty noisy histograms return typed full-domain quantile bands", {
 
 test_that("probs never alter the canonical sticky server request", {
   conns <- list(site_a = structure(1, class = "fake"))
-  calls <- 0L
+  synopsis_calls <- 0L
+  legacy_calls <- 0L
   evaluate <- function(probs) {
     .dsvert_dp_describe_impl(
       "protected", "primary", probs, "site_a", conns,
@@ -559,13 +591,21 @@ test_that("probs never alter the canonical sticky server request", {
   }
   result <- testthat::with_mocked_bindings(
     list(evaluate(0.5), evaluate(c(0.1, 0.9))),
-    .dsvert_dp_capsule_vector_run = function(
-        datasources, status = NULL, .aggregate) {
-      calls <<- calls + 1L
+    .dsvert_dp_synopsis_vector_run = function(
+        datasources, status, .aggregate) {
+      expect_null(status)
+      synopsis_calls <<- synopsis_calls + 1L
       .dp_describe_vector_capsule(decoded = TRUE)
     },
+    .dsvert_dp_describe_resume_token_v1 = function(...) structure(
+      list(), class = c("dsvertDPDescribeResume", "list")),
+    .dsvert_dp_capsule_vector_run = function(...) {
+      legacy_calls <<- legacy_calls + 1L
+      stop("legacy runner reached", call. = FALSE)
+    },
     .package = "dsVertClient")
-  expect_identical(calls, 2L)
+  expect_identical(synopsis_calls, 2L)
+  expect_identical(legacy_calls, 0L)
   expect_identical(result[[1L]]$final_vector_root,
                    result[[2L]]$final_vector_root)
   expect_identical(result[[1L]]$statistics, result[[2L]]$statistics)
@@ -573,8 +613,94 @@ test_that("probs never alter the canonical sticky server request", {
   expect_length(result[[2L]]$quantiles$probability, 4L)
 })
 
+test_that("Describe exposes a portable bound resume token and cleanup state", {
+  capsule <- .dp_describe_vector_capsule(decoded = TRUE)
+  capsule$release$artifact_key <- strrep("c", 64L)
+  capsule$release$execution_id <- strrep("d", 64L)
+  capsule$release$contract_sha256 <- strrep("e", 64L)
+  capsule$release$attempt_sha256 <- strrep("f", 64L)
+  capsule$release$source_contract_sha256 <- strrep("1", 64L)
+  capsule$release$result_set_sha256 <- strrep("2", 64L)
+  capsule$release$signed_provenance <- c(list(
+    version = "dsvert-stateless-synopsis-public-provenance-v1"),
+    capsule$release[c(
+      "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+      "source_contract_sha256", "result_set_sha256", "final_vector_root")])
+  class(capsule$release) <- c(
+    "dsvert_synopsis_public_vector", "dsvert_joint_dp_vector", "list")
+  capsule$release[c(
+    "capsule_id", "history_gate", "request_limit", "operation_limit")] <-
+    NULL
+  capsule$release$manifest$admission <- list(
+    adjacency = "add_remove_patient", unit_capacity = 100)
+  capsule$status[[1L]]$noise_root <- NULL
+  class(capsule$status) <- c("ds.vertDPSynopsisStatus", "list")
+  manifest_json <- .dsvert_joint_dp_client_json(capsule$release$manifest)
+  conns <- list(site_a = structure(list(peer = "site_a"),
+                                     class = "fake_connection"))
+  context <- list(
+    status = capsule$status, servers = "site_a", pinset = c(site_a = "pin"),
+    designated = "site_a", policy = list(version = "test"),
+    conns = conns, all_conns = conns)
+  capsule$manifest_bundle <- list(
+    manifest_json = manifest_json,
+    manifest_sha256 = digest::digest(
+      manifest_json, "sha256", serialize = FALSE),
+    capsule_id = strrep("a", 64L), context = context)
+  capsule$cleanup_pending <- TRUE
+
+  statuses <- list()
+  calls <- 0L
+  evaluate <- function(resume = NULL) .dsvert_dp_describe_impl(
+    "protected", "primary", 0.5, "site_a", conns,
+    function(...) stop("unexpected aggregate"), resume = resume)
+  run <- function(resume = NULL) testthat::with_mocked_bindings(
+    evaluate(resume),
+    .dsvert_dp_synopsis_vector_run = function(
+      datasources, status, .aggregate) {
+      calls <<- calls + 1L
+      statuses[calls] <<- list(status)
+      current <- capsule
+      current$cleanup_pending <- calls == 1L
+      current
+    }, .package = "dsVertClient")
+
+  first <- run()
+  expect_s3_class(first$resume, "dsvertDPDescribeResume")
+  expect_true(first$cleanup_pending)
+  expect_null(statuses[[1L]])
+  connection_reference <- function(value) {
+    if (inherits(value, "fake_connection")) return(TRUE)
+    is.list(value) && any(vapply(value, connection_reference, logical(1L)))
+  }
+  expect_false(connection_reference(first$resume))
+
+  portable <- unserialize(serialize(first$resume, NULL))
+  expect_false(connection_reference(portable))
+  second <- run(portable)
+  expect_false(second$cleanup_pending)
+  expect_s3_class(statuses[[2L]], "dsvert_synopsis_bootstrap_v1")
+  expect_identical(second$statistics, first$statistics)
+  expect_no_error(run(first))
+
+  tampered <- first$resume
+  tampered$binding_sha256 <- strrep("0", 64L)
+  expect_error(run(tampered), "invalid|misbound", ignore.case = TRUE)
+  tampered <- first$resume
+  tampered$method <- "ds.vertDPMeanVar"
+  expect_error(run(tampered), "invalid|misbound", ignore.case = TRUE)
+  tampered <- first$resume
+  tampered$artifact_sha256 <- strrep("0", 64L)
+  expect_error(run(tampered), "invalid|misbound", ignore.case = TRUE)
+  tampered <- first$resume
+  tampered$bootstrap$manifest_bundle$manifest_sha256 <- strrep("0", 64L)
+  expect_error(run(tampered), "invalid|misbound", ignore.case = TRUE)
+})
+
 test_that("describe release rejects DSI failures without raw text or retry", {
-  conns <- list(site_a = structure(1, class = "fake"))
+  conns <- list(
+    site_a = structure(1, class = "fake"),
+    site_b = structure(2, class = "fake"))
   for (kind in c("throw", "partial", "callback")) {
     attempts <- 0L
     aggregate <- function(conns, expr, error = NULL,
@@ -592,7 +718,7 @@ test_that("describe release rejects DSI failures without raw text or retry", {
     }
     captured <- tryCatch(evaluate(), error = function(e) conditionMessage(e))
     expect_true(grepl(
-      "DataSHIELD transport failed during 'reusable joint-DP capsule status'",
+      "DataSHIELD transport failed during 'synopsis connection identity fan-out'",
       captured, fixed = TRUE))
     expect_false(grepl("SECRET_REMOTE_DETAIL", captured, fixed = TRUE))
     expect_identical(attempts, 1L)

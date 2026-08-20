@@ -107,7 +107,7 @@
 
 .dsvert_dp_alignment_mask_run <- function(
     manifest_json, context, layout, source_receipt, session_id, .aggregate,
-    .run = .dsvert_exact_gc_run) {
+    .run = .dsvert_exact_gc_run, .remote_context = NULL) {
   peers <- context$designated
   sources <- unname(unlist(layout$source_peers))
   source_count <- length(sources)
@@ -126,6 +126,26 @@
   chunk_count <- as.integer(ceiling(total / chunk_size))
   batch <- .dsvert_exact_gc_new_context()$operation_id
   conns <- context$conns
+  synopsis <- !is.null(.remote_context)
+  if (isTRUE(synopsis)) {
+    .remote_context <-
+      .dsvert_dp_synopsis_categorical_cross_remote_context_v1(
+        .remote_context)
+  }
+  start_method <- if (isTRUE(synopsis)) {
+    as.name("dsvertDPSynopsisAlignmentMaskStartDS")
+  } else as.name("dsvertDPAlignmentMaskStartDS")
+  store_method <- if (isTRUE(synopsis)) {
+    as.name("dsvertDPSynopsisAlignmentMaskStoreDS")
+  } else as.name("dsvertDPAlignmentMaskStoreDS")
+  seal_method <- if (isTRUE(synopsis)) {
+    as.name("dsvertDPSynopsisAlignmentMaskSealDS")
+  } else as.name("dsvertDPAlignmentMaskSealDS")
+  receive_method <- if (isTRUE(synopsis)) {
+    as.name("dsvertDPSynopsisAlignmentMaskReceiveDS")
+  } else as.name("dsvertDPAlignmentMaskReceiveDS")
+  endpoint_context <- if (isTRUE(synopsis)) .remote_context else
+    list(manifest_json = manifest_json)
   cleanup_operations <- character()
   committed <- FALSE
   on.exit(if (!committed && length(cleanup_operations)) {
@@ -144,13 +164,13 @@
     purpose <- paste0(
       "dp.alignment-mask.", substr(contract_hash, 1L, 20L),
       ".c-", index, "-", chunk_count)
-    common <- list(
-      manifest_json = manifest_json, batch_operation_id = batch,
+    common <- c(endpoint_context, list(
+      batch_operation_id = batch,
       operation_id = operation_id, chunk_index = as.integer(index),
-      chunk_count = chunk_count, session_id = session_id)
+      chunk_count = chunk_count, session_id = session_id))
     started <- .dsvert_fanout_by_site(
       conns, stats::setNames(lapply(peers, function(peer) {
-        as.call(c(list(as.name("dsvertDPAlignmentMaskStartDS")), common))
+        as.call(c(list(start_method), common))
       }), peers), operation = "private alignment-mask start",
       .aggregate = .aggregate)
     .run(
@@ -164,7 +184,7 @@
       alignment_source_count = source_count, .aggregate = .aggregate)
     stored <- .dsvert_fanout_by_site(
       conns, stats::setNames(lapply(peers, function(peer) {
-        as.call(c(list(as.name("dsvertDPAlignmentMaskStoreDS")), common))
+        as.call(c(list(store_method), common))
       }), peers), operation = "private alignment-mask persistence",
       .aggregate = .aggregate)
     for (peer in peers) {
@@ -183,9 +203,10 @@
   }
 
   sealed <- .dsvert_fanout_by_site(
-    conns, stats::setNames(lapply(peers, function(peer) call(
-      name = "dsvertDPAlignmentMaskSealDS", manifest_json = manifest_json,
-      batch_operation_id = batch, session_id = session_id)), peers),
+    conns, stats::setNames(lapply(peers, function(peer) as.call(c(
+      list(seal_method),
+      endpoint_context,
+      list(batch_operation_id = batch, session_id = session_id)))), peers),
     operation = "private alignment terminal sealing",
     .aggregate = .aggregate)
   for (peer in peers) {
@@ -203,11 +224,10 @@
   }
   receive_calls <- stats::setNames(lapply(seq_along(peers), function(i) {
     other <- setdiff(seq_along(peers), i)
-    call(
-      name = "dsvertDPAlignmentMaskReceiveDS",
-      peer_blob = sealed[[peers[[other]]]]$peer_blob,
-      manifest_json = manifest_json, batch_operation_id = batch,
-      session_id = session_id)
+    as.call(c(list(receive_method),
+      endpoint_context,
+      list(peer_blob = sealed[[peers[[other]]]]$peer_blob,
+           batch_operation_id = batch, session_id = session_id)))
   }), peers)
   terminal <- .dsvert_fanout_by_site(
     conns, receive_calls, operation = "private alignment terminal opening",

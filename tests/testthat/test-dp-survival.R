@@ -139,6 +139,70 @@
   list(release = release, layout = layout, status = status)
 }
 
+.dp_survival_synopsis_run <- function(k = 2L, delayed_entry = FALSE,
+                                      gaussian = FALSE) {
+  run <- .dp_survival_vector_capsule(
+    delayed_entry = delayed_entry, decoded = FALSE, gaussian = gaussian)
+  peers <- paste0("site_", letters[seq_len(k)])
+  run$status <- stats::setNames(lapply(peers, function(peer) {
+    list(policy = list(
+      adjacency = "add_remove_patient", peer_count = as.integer(k),
+      unit_capacity = 100))
+  }), peers)
+
+  release <- run$release
+  release$version <- "dsvert-stateless-synopsis-public-vector-client-v1"
+  release$backend <- if (isTRUE(gaussian)) {
+    .DSVERT_CLIENT_VECTOR_GAUSSIAN_BACKEND
+  } else {
+    .DSVERT_CLIENT_VECTOR_BACKEND
+  }
+  release$backend_selection <- NULL
+  release$backend_assessment <- NULL
+  release$manifest_sha256 <- strrep("b", 64L)
+  release$sticky_replay <- TRUE
+  release$delta_aggregation <- "max_per_peer_not_sum"
+  release$manifest$admission <- list(
+    adjacency = "add_remove_patient", unit_capacity = 100)
+  if (isTRUE(gaussian)) {
+    release$mechanism_plan <-
+      release$manifest$workload$mechanism_selection$gaussian_plan
+    release$plan_sha256 <-
+      release$manifest$workload$mechanism_selection$gaussian_plan_sha256
+  }
+  release[c(
+    "capsule_id", "history_gate", "request_limit", "operation_limit"
+  )] <- NULL
+  bindings <- c(
+    artifact_key = "1", execution_id = "2", contract_sha256 = "3",
+    attempt_sha256 = "4", source_contract_sha256 = "5",
+    result_set_sha256 = "6", final_vector_root = "7")
+  for (field in names(bindings)) {
+    release[[field]] <- strrep(bindings[[field]], 64L)
+  }
+  release$signed_provenance <- c(list(
+    version = "dsvert-stateless-synopsis-public-provenance-v1",
+    ordered_peer_pinset = as.list(stats::setNames(
+      paste0("pin-", peers), peers)),
+    designated_noise_peers = as.list(peers[1:2])),
+    release[names(bindings)], list(
+      compile_receipts = stats::setNames(vector("list", k), peers),
+      release_receipts = stats::setNames(vector("list", 2L), peers[1:2]),
+      replay_responses = stats::setNames(vector("list", 2L), peers[1:2]),
+      protected_shares_included = FALSE,
+      source_values_included = FALSE,
+      intermediate_payload_exposed = FALSE,
+      durable_replay = TRUE))
+  class(release) <- c(
+    "dsvert_synopsis_public_vector", "dsvert_joint_dp_vector", "list")
+  run$release <- release
+  run$manifest_bundle <- list(manifest_sha256 = release$manifest_sha256)
+  run$conns <- stats::setNames(lapply(seq_along(peers), function(index) {
+    structure(list(index = index), class = "fake")
+  }), peers)
+  run
+}
+
 test_that("survival maps only its signed final-vector block", {
   for (delayed in c(FALSE, TRUE)) {
     capsule <- .dp_survival_vector_capsule(delayed, decoded = TRUE)
@@ -277,6 +341,209 @@ test_that("RMTL accepts the formal vector survival object and binds provenance",
   class(result) <- c("ds.vertDPSurvival", "list")
   result
 }
+
+.dp_survival_pure_views <- function(result) {
+  list(
+    kaplan_meier = ds.vertDPKaplanMeier(result),
+    nelson_aalen = ds.vertDPNelsonAalen(result),
+    cumulative_incidence = ds.vertDPCumulativeIncidence(result),
+    rmst = ds.vertDPRMST(result, c(1, 2, 4)),
+    rmtl = ds.vertDPRMTL(result, c(1, 2, 4)),
+    quantile = ds.vertDPSurvivalQuantile(result, c(0.25, 0.5, 0.75)),
+    median = ds.vertDPMedianSurvival(result),
+    survival_contrast = ds.vertDPSurvivalContrast(
+      result, result, "comparison", "reference"),
+    rmst_contrast = ds.vertDPRMSTContrast(
+      result, result, c(1, 2, 4), "comparison", "reference"))
+}
+
+test_that("survival uses one no-lifetime Synopsis for K=2,3,5", {
+  baseline <- .dp_survival_client_object(FALSE)
+  expected_views <- .dp_survival_pure_views(baseline)
+  legacy_fields <- c(
+    "capsule_id", "privacy_epoch", "privacy_epochs", "noise_key_id",
+    "noise_key_ids", "history_gate", "request_limit", "operation_limit",
+    "lifetime_budget", "lifetime_composition", "privacy_accountant",
+    "release_instance", "release_instance_id", "allocation_certificate")
+  legacy_names <- function(value) {
+    paths <- names(unlist(value, recursive = TRUE, use.names = TRUE))
+    intersect(legacy_fields, c(names(value), sub("^.*[.]", "", paths)))
+  }
+
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .dp_survival_synopsis_run(k = k)
+    calls <- new.env(parent = emptyenv())
+    calls$synopsis <- calls$capsule <- 0L
+    result <- testthat::with_mocked_bindings(
+      .dsvert_dp_survival_impl(
+        "protected", "primary", "site_a", fixture$conns,
+        function(...) stop("raw DSI call", call. = FALSE)),
+      .dsvert_dp_synopsis_vector_run = function(
+          datasources, status = NULL, .aggregate) {
+        calls$synopsis <- calls$synopsis + 1L
+        expect_identical(datasources, fixture$conns)
+        expect_null(status)
+        fixture[c("release", "layout", "status", "manifest_bundle")]
+      },
+      .dsvert_dp_capsule_vector_run = function(...) {
+        calls$capsule <- calls$capsule + 1L
+        stop("legacy capsule runner reached", call. = FALSE)
+      },
+      .dsvert_aggregate_strict = function(...) {
+        stop("legacy aggregate route reached", call. = FALSE)
+      },
+      .dsvert_fanout_by_site = function(...) {
+        stop("legacy fanout route reached", call. = FALSE)
+      }, .package = "dsVertClient")
+
+    expect_identical(calls$synopsis, 1L, info = paste("K =", k))
+    expect_identical(calls$capsule, 0L, info = paste("K =", k))
+    expect_equal(result$curve, baseline$curve, tolerance = 0)
+    expect_equal(result$cumulative_incidence, baseline$cumulative_incidence,
+                 tolerance = 0)
+    expect_identical(result$causes, c("A", "B"))
+    expect_identical(result$artifact_key, fixture$release$artifact_key)
+    expect_identical(result$execution_id, fixture$release$execution_id)
+    expect_identical(result$contract_sha256, fixture$release$contract_sha256)
+    expect_identical(result$attempt_sha256, fixture$release$attempt_sha256)
+    expect_identical(result$source_contract_sha256,
+                     fixture$release$source_contract_sha256)
+    expect_identical(result$result_set_sha256,
+                     fixture$release$result_set_sha256)
+    expect_identical(result$final_vector_root,
+                     fixture$release$final_vector_root)
+    expect_identical(result$release_provenance,
+                     fixture$release$signed_provenance)
+    expect_true(result$privacy$unlimited_replay)
+    expect_length(legacy_names(result), 0L)
+
+    views <- testthat::with_mocked_bindings(
+      .dp_survival_pure_views(result),
+      .dsvert_dp_synopsis_vector_run = function(...) {
+        stop("Synopsis rerun from pure postprocessing", call. = FALSE)
+      },
+      .dsvert_dp_capsule_vector_run = function(...) {
+        stop("capsule rerun from pure postprocessing", call. = FALSE)
+      },
+      .dsvert_aggregate_strict = function(...) {
+        stop("aggregate from pure postprocessing", call. = FALSE)
+      },
+      .dsvert_fanout_by_site = function(...) {
+        stop("fanout from pure postprocessing", call. = FALSE)
+      }, .package = "dsVertClient")
+    for (name in names(views)) {
+      expect_equal(
+        as.matrix(views[[name]]), as.matrix(expected_views[[name]]),
+        tolerance = 0, info = paste(name, "K =", k))
+    }
+    provenances <- list(
+      attr(views$rmst, "source_release_provenance"),
+      attr(views$rmtl, "source_release_provenance"),
+      attr(views$quantile, "source_release_provenance"),
+      attr(views$median, "source_release_provenance"),
+      attr(views$survival_contrast, "source_release_provenance")$comparison,
+      attr(views$rmst_contrast, "source_release_provenance")$comparison)
+    for (provenance in provenances) {
+      expect_identical(provenance$artifact_key, result$artifact_key)
+      expect_identical(provenance$release_provenance,
+                       result$release_provenance)
+      expect_length(legacy_names(provenance), 0L)
+    }
+  }
+})
+
+test_that("survival Synopsis replay is byte-identical", {
+  fixture <- .dp_survival_synopsis_run(k = 5L, delayed_entry = TRUE)
+  calls <- new.env(parent = emptyenv())
+  calls$synopsis <- calls$capsule <- 0L
+  evaluate <- function() testthat::with_mocked_bindings(
+    .dsvert_dp_survival_impl(
+      "protected", "primary", "site_a", fixture$conns,
+      function(...) stop("raw DSI call", call. = FALSE)),
+    .dsvert_dp_synopsis_vector_run = function(...) {
+      calls$synopsis <- calls$synopsis + 1L
+      fixture[c("release", "layout", "status", "manifest_bundle")]
+    },
+    .dsvert_dp_capsule_vector_run = function(...) {
+      calls$capsule <- calls$capsule + 1L
+      stop("legacy capsule runner reached", call. = FALSE)
+    }, .package = "dsVertClient")
+  first <- evaluate()
+  second <- evaluate()
+  expect_identical(serialize(second, NULL, version = 3L),
+                   serialize(first, NULL, version = 3L))
+  expect_identical(calls$synopsis, 2L)
+  expect_identical(calls$capsule, 0L)
+})
+
+test_that("survival rejects detached Synopsis bindings before block access", {
+  fixture <- .dp_survival_synopsis_run(k = 3L)
+  bindings <- c(
+    "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+    "source_contract_sha256", "result_set_sha256", "final_vector_root")
+  for (field in bindings) {
+    tampered <- fixture
+    tampered$release[[field]] <- strrep("0", 64L)
+    block_calls <- postprocess_calls <- 0L
+    expect_error(testthat::with_mocked_bindings(
+      .dsvert_dp_survival_impl(
+        "protected", "primary", "site_a", tampered$conns,
+        function(...) NULL),
+      .dsvert_dp_synopsis_vector_run = function(...) {
+        tampered[c("release", "layout", "status", "manifest_bundle")]
+      },
+      .dsvert_dp_capsule_vector_run = function(...) {
+        stop("legacy capsule runner reached", call. = FALSE)
+      },
+      .dsvert_dp_capsule_single_block = function(...) {
+        block_calls <<- block_calls + 1L
+        stop("block access reached", call. = FALSE)
+      },
+      .dsvert_dp_survival_postprocess = function(...) {
+        postprocess_calls <<- postprocess_calls + 1L
+        stop("postprocess reached", call. = FALSE)
+      }, .package = "dsVertClient"), "provenance is detached", info = field)
+    expect_identical(block_calls, 0L, info = field)
+    expect_identical(postprocess_calls, 0L, info = field)
+  }
+})
+
+test_that("survival Synopsis rejects missing ambiguous and detached blocks", {
+  fixture <- .dp_survival_synopsis_run(k = 3L)
+  missing <- fixture
+  missing$layout$blocks[["survival_artifacts::primary"]] <- NULL
+  ambiguous <- fixture
+  ambiguous$layout$blocks[["survival_artifacts::duplicate"]] <-
+    ambiguous$layout$blocks[["survival_artifacts::primary"]]
+  detached <- fixture
+  detached$layout$blocks[[
+    "survival_artifacts::primary"]]$descriptor$causes <- c("B", "A")
+
+  candidates <- list(
+    missing = list(run = missing, message = "does not contain exactly one"),
+    ambiguous = list(
+      run = ambiguous, message = "does not contain exactly one"),
+    detached = list(run = detached, message = "coordinate contract"))
+  for (name in names(candidates)) {
+    candidate <- candidates[[name]]
+    postprocess_calls <- 0L
+    expect_error(testthat::with_mocked_bindings(
+      .dsvert_dp_survival_impl(
+        "protected", "primary", "site_a", candidate$run$conns,
+        function(...) NULL),
+      .dsvert_dp_synopsis_vector_run = function(...) {
+        candidate$run[c("release", "layout", "status", "manifest_bundle")]
+      },
+      .dsvert_dp_capsule_vector_run = function(...) {
+        stop("legacy capsule runner reached", call. = FALSE)
+      },
+      .dsvert_dp_survival_postprocess = function(...) {
+        postprocess_calls <<- postprocess_calls + 1L
+        stop("postprocess reached", call. = FALSE)
+      }, .package = "dsVertClient"), candidate$message, info = name)
+    expect_identical(postprocess_calls, 0L, info = name)
+  }
+})
 
 test_that("KM, Nelson-Aalen and CIF match the no-noise central oracle", {
   result <- .dp_survival_client_object(FALSE)
@@ -953,30 +1220,38 @@ test_that("named methods are post-processing of the same release", {
     "released event cause")
 })
 
-test_that("repeated survival requests reuse the one capsule vector", {
-  conns <- list(site_a = structure(1, class = "fake"))
-  calls <- 0L
+test_that("repeated survival requests replay the one Synopsis vector", {
+  fixture <- .dp_survival_synopsis_run(k = 2L)
+  calls <- new.env(parent = emptyenv())
+  calls$synopsis <- calls$capsule <- 0L
   evaluate <- function() {
     .dsvert_dp_survival_impl(
-      "protected", "primary", "site_a", conns,
+      "protected", "primary", "site_a", fixture$conns,
       function(...) stop("unexpected direct aggregate"))
   }
   result <- testthat::with_mocked_bindings(
     list(evaluate(), evaluate()),
-    .dsvert_dp_capsule_vector_run = function(
+    .dsvert_dp_synopsis_vector_run = function(
         datasources, status = NULL, .aggregate) {
-      calls <<- calls + 1L
-      .dp_survival_vector_capsule(FALSE, decoded = TRUE)
+      calls$synopsis <- calls$synopsis + 1L
+      fixture[c("release", "layout", "status", "manifest_bundle")]
+    },
+    .dsvert_dp_capsule_vector_run = function(...) {
+      calls$capsule <- calls$capsule + 1L
+      stop("legacy capsule runner reached", call. = FALSE)
     },
     .package = "dsVertClient")
   expect_identical(result[[1L]], result[[2L]])
-  expect_identical(calls, 2L)
+  expect_identical(calls$synopsis, 2L)
+  expect_identical(calls$capsule, 0L)
   expect_identical(result[[1L]]$final_vector_root,
                    result[[2L]]$final_vector_root)
 })
 
 test_that("survival release rejects partial/raw DSI errors without retry", {
-  conns <- list(site_a = structure(1, class = "fake"))
+  conns <- list(
+    site_a = structure(1, class = "fake"),
+    site_b = structure(2, class = "fake"))
   for (kind in c("throw", "partial", "callback")) {
     attempts <- 0L
     aggregate <- function(conns, expr, error = NULL,
@@ -995,7 +1270,7 @@ test_that("survival release rejects partial/raw DSI errors without retry", {
     captured <- tryCatch(evaluate(), error = function(e) conditionMessage(e))
     expect_match(
       captured,
-      "DataSHIELD transport failed during 'reusable joint-DP capsule status'",
+      "DataSHIELD transport failed during 'synopsis connection identity fan-out'",
       fixed = TRUE)
     expect_false(grepl("SECRET_REMOTE_DETAIL", captured, fixed = TRUE))
     expect_identical(attempts, 1L)

@@ -17,11 +17,27 @@
     is.character(value) && length(value) == 1L && !is.na(value) &&
       grepl("^[0-9a-f]{64}$", value)
   }
-  identity_fields <- c(
-    "analysis_id", "analysis_version", "server", "capsule_id",
-    "final_vector_root", "coordinate_order_sha256", "privacy_epoch")
-  required_hashes <- c(
-    "capsule_id", "final_vector_root", "coordinate_order_sha256")
+  synopsis <- .dsvert_dp_survival_is_synopsis(comparison) &&
+    .dsvert_dp_survival_is_synopsis(reference)
+  identity_fields <- if (isTRUE(synopsis)) {
+    c(
+      "analysis_id", "analysis_version", "server", "artifact_key",
+      "execution_id", "contract_sha256", "attempt_sha256",
+      "source_contract_sha256", "result_set_sha256", "final_vector_root",
+      "coordinate_order_sha256")
+  } else {
+    c(
+      "analysis_id", "analysis_version", "server", "capsule_id",
+      "final_vector_root", "coordinate_order_sha256", "privacy_epoch")
+  }
+  required_hashes <- if (isTRUE(synopsis)) {
+    c(
+      "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
+      "source_contract_sha256", "result_set_sha256", "final_vector_root",
+      "coordinate_order_sha256")
+  } else {
+    c("capsule_id", "final_vector_root", "coordinate_order_sha256")
+  }
   # Provenance fields are mutable after materialisation in R. Retain the
   # single-event coverage claim only for identical validated release objects.
   all(vapply(required_hashes, function(field) {
@@ -92,13 +108,7 @@
 }
 
 .dsvert_dp_survival_release_provenance <- function(x) {
-  fields <- c(
-    "analysis_id", "analysis_version", "server", "capsule_id",
-    "final_vector_root", "coordinate_order_sha256", "privacy_epoch",
-    "noise_key_id", "mechanism", "implementation", "sampler", "epsilon",
-    "delta", "implementation_delta", "adjacency", "time_grid", "time_lower_bound",
-    "time_upper_bound", "security_claim")
-  c(list(source_class = "ds.vertDPSurvival"), x[fields])
+  .dsvert_dp_survival_source_provenance(x)
 }
 
 .dsvert_dp_survival_contrast_attributes <- function(

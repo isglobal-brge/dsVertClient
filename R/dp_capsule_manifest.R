@@ -133,7 +133,13 @@
     peer_pinset_sha256 = policy$peer_pinset_sha256,
     designated_noise_peers = as.list(
       sort(policy$designated_noise_peers, method = "radix")),
-    privacy_epoch_scope = "per_peer_signed_receipts_v1",
+    privacy_epoch_scope = if (identical(
+      manifest$capsule_identity$contract$protocol,
+      "dsvert-stateless-catalog-synopsis-capsule-identity-v1")) {
+      "per_canonical_artifact_sticky_v1"
+    } else {
+      "per_peer_signed_receipts_v1"
+    },
     epsilon = as.numeric(policy$capsule_epsilon),
     delta = as.numeric(policy$capsule_delta),
     adjacency = policy$adjacency,
@@ -302,6 +308,13 @@
     .dsvert_dp_is_string(value) &&
       grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", value)
   }
+  column_reference <- function(value) {
+    .dsvert_dp_is_string(value) && grepl(
+      paste0(
+        "^(?:[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\\$)?",
+        "[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"),
+      value)
+  }
   for (family in families) {
     entries <- value[[family]]
     if (is.null(entries)) entries <- list()
@@ -374,8 +387,8 @@
         expected <- c(
           "version", "dataset", "outcome", "predictors", "intercept")
         valid <- setequal(names(spec), expected) &&
-          all(vapply(spec[c("version", "dataset", "outcome")],
-                     identifier, logical(1L))) &&
+          identifier(spec$version) && identifier(spec$dataset) &&
+          column_reference(spec$outcome) &&
           is.logical(spec$intercept) && length(spec$intercept) == 1L &&
           !is.na(spec$intercept)
         predictors <- if (isTRUE(valid)) {
@@ -384,14 +397,16 @@
           error = function(error) character())
         } else character()
         valid <- isTRUE(valid) && length(predictors) > 0L &&
+          all(vapply(predictors, column_reference, logical(1L))) &&
           !spec$outcome %in% predictors
       } else {
         expected <- c(
           "version", "left_dataset", "right_dataset", "left", "right",
           "family")
         valid <- setequal(names(spec), expected) &&
-          all(vapply(spec[setdiff(expected, "family")],
+          all(vapply(spec[c("version", "left_dataset", "right_dataset")],
                      identifier, logical(1L))) &&
+          column_reference(spec$left) && column_reference(spec$right) &&
           .dsvert_dp_is_string(spec$family) && spec$family %in% c(
             "categorical_pair", "numeric_cross_moment",
             "numeric_by_category") && !identical(spec$left, spec$right)
@@ -561,8 +576,14 @@
     stop("Capsule policy drafts do not cover every pinned peer",
          call. = FALSE)
   }
+  column_names <- unlist(lapply(peers, function(peer) {
+    unlist(lapply(drafts[[peer]]$datasets, function(dataset) {
+      names(dataset$columns)
+    }), use.names = FALSE)
+  }), use.names = FALSE)
+  duplicate_columns <- unique(column_names[
+    duplicated(column_names) | duplicated(column_names, fromLast = TRUE)])
   datasets <- list()
-  seen_columns <- character()
   alignment_versions <- numeric()
   for (peer in peers) {
     for (data_name in names(drafts[[peer]]$datasets)) {
@@ -585,12 +606,14 @@
       }
       datasets[[data_name]]$patient_keys[[peer]] <- local$patient_column
       local_names <- names(local$columns)
-      if (any(local_names %in% seen_columns) ||
-          any(local_names %in% names(datasets[[data_name]]$columns))) {
-        stop("Biomedical capsule analysis columns are globally ambiguous",
-             call. = FALSE)
+      signed_names <- ifelse(
+        local_names %in% duplicate_columns,
+        paste0(peer, "$", local_names), local_names)
+      if (any(signed_names %in% names(datasets[[data_name]]$columns))) {
+        stop("Biomedical capsule columns do not identify a unique signed ",
+             "owner/dataset/column triplet", call. = FALSE)
       }
-      seen_columns <- c(seen_columns, local_names)
+      names(local$columns) <- signed_names
       datasets[[data_name]]$columns <- c(
         datasets[[data_name]]$columns, local$columns)
     }

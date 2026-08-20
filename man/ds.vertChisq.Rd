@@ -16,8 +16,8 @@ ds.vertChisq(
 )
 }
 \arguments{
-\item{data_name}{A released \code{ds.vertDPContingency} object, or the name of
-the protected data frame.}
+\item{data_name}{A released \code{ds.vertDPContingency} object, the name of the
+protected data frame, or a reusable \code{ds.vertFederation}.}
 
 \item{var1, var2}{Row and column variables when \code{data_name} is a character
 string. They may be omitted for an already released object.}
@@ -49,7 +49,7 @@ Calibrate a categorical independence statistic against the
 sampling distribution and the privacy mechanism. The input is either an
 already released \code{ds.vertDPContingency} object (zero DSI calls) or the
 original data/variable identifiers, in which case the one immutable
-signed DP capsule is obtained through \code{ds.vertDPContingency}. Ordinary
+signed Synopsis projection is obtained through \code{ds.vertDPContingency}. Ordinary
 chi-square or Fisher reference laws are never applied to the noisy cells.
 }
 \details{
@@ -57,8 +57,9 @@ The test follows the Monte Carlo independence-testing principle of
 Gaboardi et al. (2016), adapted to dsVert's signed mechanism. It estimates
 the latent contributing sample size and null margins from the released
 table, simulates multinomial tables under the fitted independence model,
-adds the signed release's one exact-GC draw or two independent peer
-discrete-Laplace draws per cell, applies the same common-lattice clamp,
+adds the signed exact-GC plan's dyadic one-draw reference or two
+independent peer discrete-Laplace draws per cell, applies the same
+common-lattice clamp,
 and repeats the nuisance fit for every
 replicate. This is a parametric-bootstrap test: it is asymptotically
 calibrated under positive cell probabilities, but is not a finite-sample
@@ -66,9 +67,10 @@ exact conditional test. Tables whose fitted expected count is below five
 return a structured non-tested result rather than an unreliable p-value.
 
 The production sampler is a finite binary-geometric approximation to its
-signed ideal one-draw or two-peer-convolution law. Its signed
+signed-plan dyadic one-draw or two-peer-convolution reference law. Its
 total-variation certificate is propagated into a separate calibration
-interval. Bootstrap randomness
+interval; the exact-GC branch also charges an outward-rounded coupling
+bound for R's numeric stop probability. Bootstrap randomness
 is deterministically derived from public release commitments solely for
 reproducible post-processing; it is not DP mechanism randomness and adds
 no privacy cost.

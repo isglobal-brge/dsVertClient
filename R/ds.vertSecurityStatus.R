@@ -199,10 +199,10 @@
 #'
 #' Checks that every connected server enforces dsVert's single disclosure-safe
 #' profile, a matching custodian-owned attestation of the dedicated logical
-#' dsVert surface and, by default, the coherent joint-capsule policy, pinset,
-#' privacy epoch and authenticated lifetime-budget control-plane handshake. The
-#' availability of a new capsule reservation is reported separately in the
-#' joint-DP status telemetry and does not redefine consortium readiness. The
+#' dsVert surface and the coherent current sticky-artifact policy and pinset.
+#' Historical joint-capsule lifetime fields may still be parsed as
+#' compatibility telemetry, but they never admit or deny a current public
+#' route and do not redefine consortium readiness. The
 #' surface
 #' attestation is an
 #' administrative assertion, not live introspection: it must be renewed after
@@ -220,9 +220,10 @@
 #' route-specific `ready` fields remain false while sealed.
 #'
 #' @param datasources DataSHIELD connections; active connections by default.
-#' @param require_ready Fail if the custodian-attested remote surface or the
-#'   biomedical joint-DP consortium policy/authenticated control plane is not
-#'   ready. This is not a route-specific execution preflight and never
+#' @param require_ready Fail if the custodian-attested remote surface or
+#'   current sticky-artifact consortium policy is not ready. Historical
+#'   capsule lifetime telemetry is not an admission gate. This is not a
+#'   route-specific execution preflight and never
 #'   promotes formal GLM or Cox.
 #' @return A `ds.vertSecurityStatus` object with explicit route readiness.
 #' @export

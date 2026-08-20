@@ -1,7 +1,7 @@
 # Internal client preparation for one server-authoritative Frequency analysis.
 
-.DSVERT_CLIENT_DP_FREQUENCY_CLAIM_VERSION <- "dsvert-dp-frequency-factor-claim-v1"
-.DSVERT_CLIENT_DP_FREQUENCY_CONFIG_VERSION <- "dsvert-dp-frequency-config-v1"
+.DSVERT_CLIENT_DP_FREQUENCY_CLAIM_VERSION <- "dsvert-dp-frequency-factor-claim-v2"
+.DSVERT_CLIENT_DP_FREQUENCY_CONFIG_VERSION <- "dsvert-dp-frequency-config-v2"
 .DSVERT_CLIENT_DP_FREQUENCY_RECEIPT_VERSION <- "dsvert-dp-frequency-receipt-v1"
 .DSVERT_CLIENT_DP_FREQUENCY_PUBLIC_AUTH_VERSION <- "dsvert-dp-frequency-public-authorization-v1"
 .DSVERT_CLIENT_DP_FREQUENCY_PREPARED_VERSION <- "dsvert-dp-frequency-prepared-v1"
@@ -100,7 +100,7 @@
     source <- list(alignment_purpose = value$alignment_purpose, dataset_id = value$dataset_id, dataset_version = value$dataset_version, id_column = value$privacy_unit_column)
     source_binding <- paste0("source_", digest::digest(.dsvert_dp_frequency_client_wire_json_v1(source), "sha256", serialize = FALSE))
     valid <- identical(peer, source_owner) && !is.null(identity) && !is.null(factor) && all(vapply(value[ids], .dsvert_dp_analysis_client_scalar_id, logical(1L))) && is.character(value$privacy_unit_column) &&
-        grepl("^[A-Za-z._][A-Za-z0-9._]{0,127}$", value$privacy_unit_column) && grepl("^attest_[0-9a-f]{64}$", value$attestation_id) && identical(value$source_binding_id, source_binding) &&
+        grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", value$privacy_unit_column) && grepl("^attest_[0-9a-f]{64}$", value$attestation_id) && identical(value$source_binding_id, source_binding) &&
         grepl("^pinset_[0-9a-f]{64}$", value$pinset_id) && length(capacity) == 1L && is.finite(capacity) && capacity == floor(capacity) && capacity >= 64 && capacity <= 1048576 && bitwAnd(as.integer(capacity),
         as.integer(capacity) - 1L) == 0L
     for (field in c("psi_run_sha256", "contract_hash", "alignment_hash", "factor_entry_sha256")) {
@@ -119,7 +119,7 @@
     normalized$capacity_bucket <- as.integer(capacity)
     normalized$factor_entry <- factor
     unsigned <- .dsvert_dp_analysis_client_canonical_value_v1(normalized[setdiff(names(normalized), "signature")])
-    .dsvert_dp_frequency_client_verify_v1(charToRaw(paste0("dsVert/dp-frequency/factor-claim/v1|", .dsvert_joint_dp_client_json(unsigned))), identity, value$signature, "Claim")
+    .dsvert_dp_frequency_client_verify_v1(charToRaw(paste0("dsVert/dp-frequency/factor-claim/v2|", .dsvert_joint_dp_client_json(unsigned))), identity, value$signature, "Claim")
     .dsvert_dp_analysis_client_canonical_value_v1(normalized)
 }
 .dsvert_dp_frequency_client_reduce_v1 <- function(numerator, denominator) {
@@ -257,12 +257,12 @@
     calibration <- value$calibration
     source <- list(alignment_purpose = value$alignment_purpose, dataset_id = value$dataset_id, dataset_version = value$dataset_version, id_column = value$privacy_unit_column)
     source_binding <- paste0("source_", digest::digest(.dsvert_dp_frequency_client_wire_json_v1(source), "sha256", serialize = FALSE))
-    valid <- all(vapply(value[ids], .dsvert_dp_analysis_client_scalar_id, logical(1L))) && is.character(value$privacy_unit_column) && grepl("^[A-Za-z._][A-Za-z0-9._]{0,127}$", value$privacy_unit_column) &&
+    valid <- all(vapply(value[ids], .dsvert_dp_analysis_client_scalar_id, logical(1L))) && is.character(value$privacy_unit_column) && grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", value$privacy_unit_column) &&
         identical(value$source_binding_id, source_binding) && .dsvert_dp_frequency_client_object_v1(owner, c("peer_name", "identity_pk")) && .dsvert_dp_frequency_client_object_v1(privacy,
         c("adjacency", "epsilon", "delta")) && .dsvert_dp_frequency_client_object_v1(calibration, "implementation_delta") && privacy$adjacency %in% c("add_remove_patient", "replace_one_fixed_cohort") &&
         scalar(privacy$epsilon, .Machine$double.xmin, 8) && scalar(privacy$delta, .Machine$double.xmin, 1 - .Machine$double.eps) && scalar(calibration$implementation_delta, .Machine$double.xmin,
-        privacy$delta) && scalar(value$coordinate_upper_bound, 1, 1e+06, TRUE) && identical(as.numeric(value$max_records_per_unit), 1) && identical(value$repeated_record_policy, "psi_v4_first_eligible_source_record_per_privacy_unit_v1") &&
-        identical(value$overflow_policy, "clip_to_psi_v4_first_eligible_source_record_v1") && identical(value$missingness_policy, "missing_or_out_of_domain_rows_are_ignored") && .dsvert_dp_analysis_frequency_hex_v1(value$backend_build_sha256) &&
+        privacy$delta) && scalar(value$coordinate_upper_bound, 1, 1e+06, TRUE) && identical(as.numeric(value$max_records_per_unit), 1) && identical(value$repeated_record_policy, "psi_v5_first_eligible_source_record_per_privacy_unit_v1") &&
+        identical(value$overflow_policy, "clip_to_psi_v5_first_eligible_source_record_v1") && identical(value$missingness_policy, "missing_or_out_of_domain_rows_are_ignored") && .dsvert_dp_analysis_frequency_hex_v1(value$backend_build_sha256) &&
         scalar(value$transport_chunk_coordinates, 1, .Machine$integer.max, TRUE) && identical(value$factor_entry_sha256, .dsvert_dp_frequency_client_factor_hash_v1(factor))
     owner_peer <- tryCatch(.dsvert_dp_frequency_client_peer_v1(owner$peer_name), error = function(error) NULL)
     owner_pk <- tryCatch(.dsvert_dp_analysis_client_identity_pk(owner$identity_pk), error = function(error) NULL)
@@ -285,7 +285,7 @@
 .dsvert_dp_frequency_client_config_hash_v1 <- function(value) {
     value <- .dsvert_dp_frequency_client_config_v1(value)
     value$peer_pins <- as.list(value$peer_pins)
-    .dsvert_dp_frequency_client_hash_v1("dsVert/dp-frequency/config/v1|", value)
+    .dsvert_dp_frequency_client_hash_v1("dsVert/dp-frequency/config/v2|", value)
 }
 .dsvert_dp_frequency_client_claim_hash_v1 <- function(value, config) {
     value <- .dsvert_dp_frequency_client_claim_v1(value, config$source_owner$peer_name, config$peer_pins)

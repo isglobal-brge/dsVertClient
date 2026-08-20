@@ -113,12 +113,11 @@
 
 #' Portable upper bound for one deparsed DSI expression (internal)
 #'
-#' DSI 1.8 with DSLite 1.4.1 accepts a 640 KiB Base64url text payload inside a
-#' complete expression measured below the portable 768 KiB ceiling, but rejects
-#' the larger candidates in the recorded data-free sweep. The default stays
-#' strictly below that observed boundary. A deployment raises it only after
-#' every target accepts the stateless transport probe; the complete expression
-#' geometry is then frozen before its first payload transmission.
+#' DSI 1.8 with DSLite 1.4.1 accepts a 512 KiB raw frame as about 683 KiB of
+#' Base64url expression text. Production therefore probes 688 KiB of request
+#' text while retaining a complete-expression bound below 768 KiB. No payload
+#' uses that geometry until every target accepts the stateless probe, and the
+#' resulting common geometry is frozen before its first payload transmission.
 #' @keywords internal
 .dsvert_dsi_max_expression_bytes <- function() {
   negotiated <- if (exists(".dsvert_chunk_env", inherits = TRUE) &&
@@ -322,6 +321,26 @@
   .dsvert_dsi_poisoned_session_condition(sites)
 }
 
+.dsvert_dsi_pre_job_rejection_is_settled <- function(condition) {
+  message <- substr(conditionMessage(condition), 1L, 8192L)
+  grepl(
+    "^\\[Client error: \\(413\\) Request Entity Too Large\\](?:\\s|$)",
+    message, perl = TRUE)
+}
+
+.dsvert_dsi_probe_bound_failure_is_settled <- function(condition) {
+  message <- conditionMessage(condition)
+  if (!startsWith(message, "Command 'dsvertTransportProbeDS(")) return(FALSE)
+  tail_start <- max(1L, nchar(message, type = "chars") - 8191L)
+  tail <- substr(message, tail_start, nchar(message, type = "chars"))
+  any(vapply(c(
+    "Transport-probe padding exceeds the server byte bound.",
+    "Transport-probe padding exceeds the server byte bound",
+    "Transport-response-probe padding exceeds the server byte bound.",
+    "Transport-response-probe padding exceeds the server byte bound"),
+    function(suffix) endsWith(tail, suffix), logical(1L)))
+}
+
 .dsvert_dsi_sync_failure_is_settled <- function(connection, condition) {
   if (inherits(condition, c(
       "dsvert_peer_not_recognized", "dsvert_resource_oversize",
@@ -345,6 +364,7 @@
       "(transport_contract|response_padding_chars)[^\\n]*unused argument"),
     message, ignore.case = TRUE, perl = TRUE)
   if (isTRUE(unsupported_argument)) return(TRUE)
+  if (.dsvert_dsi_probe_bound_failure_is_settled(condition)) return(TRUE)
   if (identical(kind, "armadillo")) {
     return(grepl(
       paste0(
@@ -353,8 +373,11 @@
       message, perl = TRUE))
   }
   if (identical(kind, "opal")) {
-    return(grepl("^\\[[^]]*\\([0-9]{3}\\)[^]]*\\]", message,
-                 perl = TRUE))
+    # A reverse proxy can report 502/503/504 after Opal accepted a command but
+    # before its result identifier reached the client. Only an unequivocal
+    # request-size rejection is known to precede job creation. Expected remote
+    # application failures were matched by their exact public contracts above.
+    return(.dsvert_dsi_pre_job_rejection_is_settled(condition))
   }
   FALSE
 }
@@ -476,9 +499,15 @@
         stop(e)
       },
       error = function(e) {
-        # A transport error after submission is ambiguous: the remote endpoint
-        # may have accepted the job even though no DSResult reached the client.
-        .dsvert_dsi_poison_sessions(session_keys[[site]])
+        # A connector can reject an oversized request before creating a job.
+        # Only an explicitly settled provider error permits the public probe
+        # ladder to descend on the same login; every ambiguous failure still
+        # poisons that exact authenticated session.
+        settled_rejection <- isTRUE(require_settled_sync_failure) &&
+          .dsvert_dsi_pre_job_rejection_is_settled(e)
+        if (!settled_rejection) {
+          .dsvert_dsi_poison_sessions(session_keys[[site]])
+        }
         report(site, e)
         NULL
       })
@@ -648,7 +677,22 @@
   "dsvertJointDPVectorFinalShareDS",
   "dsvertJointDPVectorReleaseDS",
   "dsvertJointDPVectorReplayDS",
-  "dsvertJointDPVectorFinalizeAckDS")
+  "dsvertJointDPVectorFinalizeAckDS",
+  "dsvertDPSynopsisClaimDS", "dsvertDPSynopsisCompileDS",
+  "dsvertDPSynopsisPrepareDS", "dsvertDPSynopsisStartDS",
+  "dsvertDPSynopsisResultDS", "dsvertDPSynopsisFinalShareDS",
+  "dsvertDPSynopsisReleaseDS",
+  "dsvertDPSynopsisSourceTicketDS", "dsvertDPSynopsisSourcePrepareDS",
+  "dsvertDPSynopsisSourceChunkDS", "dsvertDPSynopsisSourceAcceptDS",
+  "dsvertDPSynopsisCategoricalCrossBindDS",
+  "dsvertDPSynopsisCategoricalCrossFinalizeDS",
+  "dsvertDPSynopsisAlignmentMaskStartDS",
+  "dsvertDPSynopsisAlignmentMaskStoreDS",
+  "dsvertDPSynopsisAlignmentMaskSealDS",
+  "dsvertDPSynopsisAlignmentMaskReceiveDS",
+  "dsvertDPSynopsisBootstrapDS", "dsvertDPSynopsisBindDS",
+  "dsvertDPSynopsisPublicationDS", "dsvertDPSynopsisPublishedReplayDS",
+  "dsvertDPSynopsisFinalizeAckDS")
 
 .dsvert_dsi_call_names <- function(expr) {
   expressions <- if (is.list(expr) && !is.call(expr)) expr else list(expr)
