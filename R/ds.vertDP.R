@@ -817,22 +817,94 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
   as.numeric(maximum[[1L]])
 }
 
+.dsvert_dp_count_synopsis_result_v1 <- function(
+    data_name, server, datasources, .aggregate,
+    .run = .dsvert_dp_synopsis_vector_run) {
+  run <- .run(datasources, .aggregate = .aggregate)
+  context <- .dsvert_dp_vector_context(run, allow_synopsis = TRUE)
+  block <- .dsvert_dp_capsule_single_block(
+    context$layout, "admitted_count",
+    description = "signed admitted-count block")
+  descriptor <- block$descriptor
+  if (!identical(block$dataset, data_name) ||
+      !identical(descriptor$dataset, block$dataset) ||
+      !identical(descriptor$owner_peer, block$owner_peer) ||
+      !identical(as.numeric(descriptor$statistic_minimum), 0) ||
+      !block$owner_peer %in% names(datasources)) {
+    stop("The signed admitted-count block does not match data_name",
+         call. = FALSE)
+  }
+  capacity <- .dsvert_dp_vector_block_capacity(block)
+  value <- .dsvert_dp_capsule_vector_values(context$release, block)
+  if (length(value) != 1L || !is.finite(value) || value < 0 ||
+      value > capacity) {
+    stop("The released admitted-count block violates its signed domain",
+         call. = FALSE)
+  }
+  metadata <- .dsvert_dp_vector_public_metadata(context)
+  provenance <- metadata$release_provenance
+  peers <- tryCatch(names(provenance$ordered_peer_pinset),
+                    error = function(error) NULL)
+  pinset <- tryCatch(.dsvert_dp_synopsis_client_pinset_v1(
+    provenance$ordered_peer_pinset, peers), error = function(error) NULL)
+  designated <- tryCatch(.dsvert_dp_synopsis_client_string_list_v1(
+    provenance$designated_noise_peers, "Count noise authority set", 2L),
+    error = function(error) NULL)
+  if (is.null(pinset) || length(pinset) < 2L || is.null(designated) ||
+      length(designated) != 2L || anyDuplicated(designated) ||
+      any(!designated %in% names(pinset)) ||
+      !identical(provenance$peer_pinset_sha256,
+                 .dsvert_vector_hash(as.list(pinset)))) {
+    stop("The signed Count noise authorities are invalid", call. = FALSE)
+  }
+  finalizer <- designated[[2L]]
+  if (!is.null(server) && !identical(server, finalizer)) {
+    stop("server must match the signed Count finalizer", call. = FALSE)
+  }
+  accuracy <- .dsvert_dp_vector_accuracy_radius(
+    context$release, context$manifest, coordinate_count = 1L,
+    confidence = 0.95, maximum_error = capacity)
+  result <- c(metadata, list(
+    value = unname(value), server = finalizer,
+    source_owner = block$owner_peer, dataset = block$dataset,
+    coordinate_family = "admitted_count", coordinate_descriptor = descriptor,
+    coordinate_maximum = capacity,
+    primitive = "signed_admitted_count_v1",
+    artifact_l1_sensitivity = if (identical(
+      context$adjacency, "add_remove_patient")) 1 else 2,
+    artifact_l2_sensitivity = if (identical(
+      context$adjacency, "add_remove_patient")) 1 else sqrt(2),
+    accuracy_95_abs = accuracy$radius,
+    accuracy_95_confidence = accuracy$confidence,
+    accuracy_95_method = accuracy$method,
+    accuracy_implementation_tv_upper_bound =
+      accuracy$implementation_tv_upper_bound,
+    accuracy_additional_privacy_cost = accuracy$additional_privacy_cost,
+    additional_privacy_cost = c(epsilon = 0, delta = 0),
+    operation_id = metadata$execution_id,
+    release_sha256 = metadata$final_vector_root,
+    uncertainty_scope =
+      "DP mechanism noise only; sampling uncertainty excluded",
+    inferential_scope = paste(
+      "Finite-snapshot DP count; no sampling confidence interval or",
+      "population-supermodel inference is provided")))
+  class(result) <- c("ds.vertDPCount", "list")
+  result
+}
+
 #' Differentially private privacy-unit count
 #'
-#' Every connected peer signs one canonical current aligned-snapshot contract.
-#' Under add/remove adjacency, exactly two pinned authorities combine their
-#' persistent sticky randomness with the protected count inside exact MPC; the
-#' client sees only one bounded release signed by the finalizer. Under
-#' fixed-cohort replace-one adjacency, all K peers sign the same public cohort
-#' size and PSI-run binding, so no MPC session or DP noise is needed. The
-#' privacy metadata is per canonical signed artifact: distinct artifacts
-#' compose and no finite global composition claim is made. Reported accuracy
-#' covers mechanism noise, not population sampling uncertainty.
+#' The signed durable Synopsis contains one bounded \code{admitted_count}
+#' coordinate for its canonical aligned snapshot.
+#' Every connected peer validates that same artifact, while exactly two pinned
+#' authorities supply the sticky mechanism randomness. This function reads and
+#' validates that coordinate only: it neither draws additional noise nor opens
+#' a second MPC output. Replaying the artifact is post-processing. Reported
+#' accuracy covers mechanism noise, not population sampling uncertainty.
 #'
 #' @param data_name Name of the registered protected data frame.
-#' @param server Optional connected-peer assertion. For add/remove Count the
-#'   signed contract selects the finalizer. For fixed-cohort Count this is the
-#'   label attached to the K-consensus public result.
+#' @param server Optional connected-peer assertion. When supplied it must match
+#'   the signed Synopsis finalizer.
 #' @param datasources Named DataSHIELD connections.
 #' @return A signed Count release with mechanism, accuracy, and per-artifact
 #'   privacy metadata.
@@ -843,15 +915,16 @@ ds.vertDPCount <- function(data_name, server = NULL, datasources = NULL) {
     resolved$value, server, resolved$datasources, DSI::datashield.aggregate)
 }
 
-.dsvert_dp_count_impl <- function(data_name, server = NULL,
-                                  datasources = NULL, .aggregate) {
+.dsvert_dp_count_legacy_impl <- function(data_name, server = NULL,
+                                         datasources = NULL, .aggregate,
+                                         .execute = .dsvert_dp_count_execute_v1) {
   if (!is.character(data_name) || length(data_name) != 1L ||
       is.na(data_name) || !nzchar(data_name)) {
     stop("data_name must be one non-empty string", call. = FALSE)
   }
   datasources <- .dsvert_dp_datasources(datasources)
   selected_server <- .dsvert_dp_server(server, datasources)
-  execution <- .dsvert_dp_count_execute_v1(
+  execution <- .execute(
     data_name, datasources, .aggregate = .aggregate)
   if (!is.list(execution) || is.null(names(execution)) ||
       anyNA(names(execution)) || anyDuplicated(names(execution)) ||
@@ -1005,6 +1078,26 @@ ds.vertDPCount <- function(data_name, server = NULL, datasources = NULL) {
     "population-supermodel inference is provided")
   class(result) <- c("ds.vertDPCount", "list")
   result
+}
+
+.dsvert_dp_count_impl <- function(
+    data_name, server = NULL, datasources = NULL, .aggregate,
+    .execute = NULL, .run = .dsvert_dp_synopsis_vector_run) {
+  if (!is.character(data_name) || length(data_name) != 1L ||
+      is.na(data_name) || !nzchar(data_name)) {
+    stop("data_name must be one non-empty string", call. = FALSE)
+  }
+  datasources <- .dsvert_dp_datasources(datasources)
+  selected_server <- .dsvert_dp_vector_server_filter(server, datasources)
+  if (is.null(.execute)) {
+    return(.dsvert_dp_count_synopsis_result_v1(
+      data_name, selected_server, datasources, .aggregate, .run = .run))
+  }
+  if (!is.function(.execute)) {
+    stop("Invalid Count client dependency", call. = FALSE)
+  }
+  .dsvert_dp_count_legacy_impl(
+    data_name, selected_server, datasources, .aggregate, .execute = .execute)
 }
 
 #' Differentially private fixed-domain contingency table

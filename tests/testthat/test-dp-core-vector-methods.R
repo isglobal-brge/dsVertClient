@@ -372,7 +372,7 @@
       as.raw(rep(byte, 32L)))), perl = TRUE))
 }
 
-test_that("DP count adapts only the canonical signed Count execution", {
+test_that("legacy Count validator is explicit-test-only", {
   fixture <- .dp_core_vector_fixture()
   expect_identical(names(formals(ds.vertDPCount)),
                    c("data_name", "server", "datasources"))
@@ -390,7 +390,8 @@ test_that("DP count adapts only the canonical signed Count execution", {
 
   result <- .dsvert_dp_count_impl(
     "cohort", NULL, fixture$conns,
-    function(...) stop("unexpected raw DSI call", call. = FALSE))
+    function(...) stop("unexpected raw DSI call", call. = FALSE),
+    .execute = .dsvert_dp_count_execute_v1)
   expect_s3_class(result, "ds.vertDPCount")
   expect_true(all(c(
     "released", "server", "epsilon", "accuracy_95_abs",
@@ -428,8 +429,72 @@ test_that("DP count adapts only the canonical signed Count execution", {
     .dsvert_dp_count_execute_v1 = function(...) split_mode,
     .package = "dsVertClient")
   expect_error(.dsvert_dp_count_impl(
-    "cohort", NULL, fixture$conns, function(...) NULL),
+    "cohort", NULL, fixture$conns, function(...) NULL,
+    .execute = .dsvert_dp_count_execute_v1),
     "Invalid closed Count execution result")
+})
+
+test_that("DP Count reads a signed durable Synopsis at K=2, K=3, and K=5", {
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .dp_meanvar_synopsis_fixture(k = k)
+    peers <- names(fixture$conns)
+    pins <- stats::setNames(vapply(seq_along(peers), function(index) {
+      chartr("+/", "-_", sub("=+$", "", jsonlite::base64_enc(
+        as.raw(rep(index, 32L)))))
+    }, character(1L)), peers)
+    fixture$run$release$signed_provenance$ordered_peer_pinset <- as.list(pins)
+    fixture$run$release$signed_provenance$peer_pinset_sha256 <-
+      .dsvert_vector_hash(as.list(pins))
+    calls <- 0L
+    run <- function(datasources, status = NULL, local_projection = NULL,
+                    .aggregate) {
+      calls <<- calls + 1L
+      expect_identical(datasources, fixture$conns)
+      expect_null(status)
+      expect_null(local_projection)
+      fixture$run
+    }
+    result <- .dsvert_dp_count_impl(
+      "cohort", "site_b", fixture$conns,
+      function(...) stop("unexpected raw DSI call", call. = FALSE),
+      .run = run)
+    expect_s3_class(result, "ds.vertDPCount")
+    expect_identical(calls, 1L)
+    expect_identical(result$value, 42.25)
+    expect_identical(result$source_owner, "site_b")
+    expect_identical(result$server, "site_b")
+    expect_identical(result$coordinate_family, "admitted_count")
+    expect_identical(result$coordinate_maximum, 100)
+    expect_true(is.finite(result$accuracy_95_abs))
+    expect_gte(result$accuracy_95_abs, 0)
+    expect_lte(result$accuracy_95_abs, 100)
+    expect_identical(result$release_provenance$designated_noise_peers,
+                     as.list(peers[1:2]))
+    expect_length(result$release_provenance$ordered_peer_pinset, k)
+    expect_identical(result$privacy$finite_global_composition_claim, FALSE)
+    expect_identical(result$privacy$unlimited_replay, TRUE)
+    expect_false(any(c(
+      "history_gate", "request_limit", "operation_limit", "capsule_id",
+      "lifetime_budget", "quota") %in% names(result)))
+
+    tampered <- fixture
+    tampered$run$release$values[[1L]] <- 101
+    expect_error(.dsvert_dp_count_impl(
+      "cohort", "site_b", tampered$conns, function(...) NULL,
+      .run = function(...) tampered$run), "violates its signed domain")
+    expect_error(.dsvert_dp_count_impl(
+      "other", "site_b", fixture$conns, function(...) NULL,
+      .run = run), "does not match data_name")
+    expect_error(.dsvert_dp_count_impl(
+      "cohort", "site_a", fixture$conns, function(...) NULL,
+      .run = run), "signed Count finalizer")
+    wrong_pinset <- fixture
+    wrong_pinset$run$release$signed_provenance$peer_pinset_sha256 <-
+      paste(rep("0", 64L), collapse = "")
+    expect_error(.dsvert_dp_count_impl(
+      "cohort", "site_b", wrong_pinset$conns, function(...) NULL,
+      .run = function(...) wrong_pinset$run), "noise authorities")
+  }
 })
 
 test_that("DP contingency respects signed column-major orientation", {
@@ -1145,7 +1210,8 @@ test_that("fixed-cohort Count exposes only the signed K-consensus value", {
 
   result <- .dsvert_dp_count_impl(
     "cohort", "site_b", fixture$conns,
-    function(...) stop("fixed Count used an obsolete endpoint"))
+    function(...) stop("fixed Count used an obsolete endpoint"),
+    .execute = .dsvert_dp_count_execute_v1)
   expect_identical(result$value, 100)
   expect_identical(result$server, "site_b")
   expect_identical(result$mechanism, "public_fixed_cohort_size_v1")
@@ -1162,7 +1228,7 @@ test_that("fixed-cohort Count exposes only the signed K-consensus value", {
   expect_identical(result$privacy$sticky_noise, FALSE)
   expect_false(grepl(
     "capsule|status|lifetime",
-    paste(deparse(body(.dsvert_dp_count_impl)), collapse = " "),
+    paste(deparse(body(.dsvert_dp_count_legacy_impl)), collapse = " "),
     ignore.case = TRUE))
 })
 

@@ -9,9 +9,8 @@ ds.vertDPCount(data_name, server = NULL, datasources = NULL)
 }
 \arguments{
 \item{data_name}{Name of the registered protected data frame.}
-\item{server}{Optional connected-peer assertion. For add/remove Count the
-signed contract selects the finalizer. For fixed-cohort Count this is the
-label attached to the K-consensus public result.}
+\item{server}{Optional connected-peer assertion. When supplied it must match
+the signed Synopsis finalizer.}
 \item{datasources}{Named DataSHIELD connections.}
 \item{x}{A \code{ds.vertDPCount} object.}
 \item{...}{Additional print arguments.}
@@ -21,13 +20,13 @@ A signed Count release with mechanism, accuracy, and per-artifact privacy
 metadata.
 }
 \description{
-Every connected peer signs one canonical current aligned-snapshot contract.
-Under add/remove adjacency, exactly two pinned authorities combine persistent
-sticky randomness with the protected count inside exact MPC; the client sees
-only one bounded release signed by the finalizer. Under fixed-cohort
-replace-one adjacency, all K peers sign the same public cohort size and PSI-run
-binding, so no MPC session or DP noise is needed. The privacy metadata is per
-canonical signed artifact: distinct artifacts compose and no finite global
-composition claim is made. Reported accuracy covers mechanism noise, not
-population sampling uncertainty.
+The signed durable Synopsis contains one bounded \code{admitted_count}
+coordinate for its canonical aligned snapshot. Every connected peer validates
+that same artifact, while exactly two pinned authorities supply the sticky
+mechanism randomness. This function reads and validates that coordinate only:
+it neither draws additional noise nor opens a second MPC output. Replaying the
+artifact is post-processing. The privacy metadata is per canonical signed
+artifact: distinct artifacts compose and no finite global composition claim is
+made. Reported accuracy covers mechanism noise, not population sampling
+uncertainty.
 }
