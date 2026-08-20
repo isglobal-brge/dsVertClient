@@ -293,6 +293,23 @@ test_that("interp_quantile matches known closed-form for uniform buckets", {
   expect_equal(q, c(0.1, 0.25, 0.5, 0.75, 0.9), tolerance = 1e-12)
 })
 
+test_that("descriptive alias preserves the compatibility data-frame shape", {
+  conns <- list(site_a = list(), site_b = list())
+  expected <- data.frame(
+    server = "site_a", variable = "age", n = 10,
+    stringsAsFactors = FALSE)
+  class(expected) <- c("ds.vertDesc", "data.frame")
+  local_mocked_bindings(
+    ds.vertDesc = function(data_name, datasources, ...) {
+      expect_identical(data_name, "DA")
+      expect_identical(datasources, conns)
+      expected
+    },
+    .package = "dsVertClient")
+
+  expect_identical(ds.vert.desc("DA", datasources = conns), expected)
+})
+
 test_that("interp_quantile is within bucket width of exact quantile on normal", {
   set.seed(7)
   x <- rnorm(5000)
