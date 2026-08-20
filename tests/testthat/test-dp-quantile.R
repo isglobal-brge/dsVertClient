@@ -129,6 +129,19 @@ test_that("binned quantiles match a synthetic projected-histogram oracle", {
   expect_match(attr(result, "estimate_scope"), "no within-bin")
 })
 
+test_that("quantiles accept a Synopsis count on the signed output lattice", {
+  release <- .dp_quantile_release()
+  release$statistics[[1L]] <- 10.5
+  release <- .dsvert_dp_describe_postprocess(release, probs = 0.5)
+  class(release) <- c("ds.vertDPDescribe", "list")
+  expect_no_error(ds.vertDPQuantile(release, 0.5))
+
+  malformed <- release
+  malformed$statistics[[1L]] <- 10.5001
+  malformed <- .dsvert_dp_describe_postprocess(malformed, probs = 0.5)
+  expect_error(ds.vertDPQuantile(malformed, 0.5), "intact released")
+})
+
 test_that("all released variables share one deterministic probability order", {
   one <- .dp_quantile_release()
   two <- unclass(one)
@@ -424,7 +437,7 @@ test_that("quantile and median are registered as validated post-processors", {
   expect_contains(exports, c("ds.vertDPQuantile", "ds.vertDPMedian"))
 
   status <- ds.vertMethodStatus(c("ds.vertDPQuantile", "ds.vertDPMedian"))
-  expect_true(all(status$status == "provisional"))
+  expect_true(all(status$status == "promoted"))
   expect_true(all(status$release_contract == "postprocessing_inherits_input"))
   expect_true(all(grepl("fixed public histogram bin",
                         status$principal_limitation, fixed = TRUE)))

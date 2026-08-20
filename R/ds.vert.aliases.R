@@ -162,6 +162,7 @@ ds.vert.desc <- function(data_name, datasources = NULL, ...) {
   resolved <- .dsvert_resolve_federation(data_name, datasources)
   out <- ds.vertDesc(
     data_name = resolved$value, datasources = resolved$datasources, ...)
+  if (inherits(out, "data.frame")) return(out)
   .dsvert_set_frontdoor(out, "ds.vert.desc", "ds.vertDesc",
                         length(datasources))
 }

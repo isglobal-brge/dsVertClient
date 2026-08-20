@@ -290,7 +290,10 @@
         !identical(as.numeric(histogram$counts),
                    as.numeric(expected_counts)) ||
         !lattice_ok ||
-        any(block[1:3] != floor(block[1:3])) ||
+        !.dsvert_dp_num_equal(
+          block[[1L]] * x$numeric_grid_scale,
+          round(block[[1L]] * x$numeric_grid_scale), multiplier = 64) ||
+        any(block[2:3] != floor(block[2:3])) ||
         !.dsvert_dp_is_number(histogram$invalid_dp, 0, 2^53 - 1) ||
         !identical(as.numeric(histogram$invalid_dp),
                    as.numeric(expected_invalid)) ||
