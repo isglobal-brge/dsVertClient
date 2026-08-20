@@ -171,7 +171,7 @@ entry point.
 | **Ordinal (proportional odds)** | Historical joint-Newton names are retained but quarantined and fail before DSI pending a formal bounded proportional-odds capsule. |
 | **Mixed / clustered models** | Historical LMM, GEE and GLMM routes; every public frontdoor is currently quarantined and fails before DSI as reported by `ds.vertMethodStatus()` |
 | **Causal / robustness** | `ds.vertIPW()` and `ds.vertMI()` are quarantined compatibility names; their retained implementations are respectively a known-weight workflow and server-local MI, not promoted end-to-end methods |
-| **Penalised regression** | `ds.vertLASSOIter()` is quarantined; `ds.vertLASSO()` and `ds.vertLASSO1Step()` are compatibility helpers; the same-owner Gaussian Synopsis post-processor `ds.vertLASSOProximal()` is promoted without sampling inference, while the information-criterion (not cross-validation) selector `ds.vertLASSOCV()` remains provisional |
+| **Penalised regression** | `ds.vertLASSOIter()` is quarantined; `ds.vertLASSO()` and `ds.vertLASSO1Step()` are compatibility helpers; the same-owner Gaussian Synopsis post-processors `ds.vertLASSOProximal()` and the information-criterion (not cross-validation) selector `ds.vertLASSOCV()` are promoted without sampling inference |
 
 ## K=2 vs K≥3 support
 

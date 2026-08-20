@@ -529,16 +529,17 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "A purpose-bound binomial_lasso_design_grams artifact is required;",
         "Gaussian and Poisson still lack a whole-path capsule-bound KKT contract."))
   add(c("ds.vertLASSOCV", "ds.vert.lasso_cv"), "ds.vertLASSOCV",
-      "provisional",
+      "promoted",
       paste(
-        "Zero-call DP-projected pseudo-AIC/BIC/EBIC selection over a signed",
-        "same-owner Gaussian Synopsis LASSO path, with the legacy ds.glm",
-        "quadratic-surrogate",
-        "selector retained."),
+        "Preferred zero-call DP-projected pseudo-AIC/BIC/EBIC selection over",
+        "one validated same-owner signed Gaussian Synopsis LASSO path; the",
+        "legacy ds.glm quadratic-surrogate selector remains compatibility",
+        "only."),
       paste(
         "Neither route is cross-validation or a one-standard-error rule;",
-        "selection uncertainty and sampling inference are unavailable, and",
-        "authentic federation E2E validation remains pending."))
+        "selection uncertainty and sampling inference are unavailable;",
+        "Gaussian same-owner designs only and cross-owner designs are",
+        "unavailable."))
   add(c("ds.vertConfint", "ds.vert.confint", "ds.vertWald", "ds.vert.wald",
         "ds.vertContrast", "ds.vert.contrast"),
       "ds.vert inference helpers", "promoted",
