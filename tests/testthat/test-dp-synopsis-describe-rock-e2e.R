@@ -570,10 +570,25 @@ test_that("real cross-owner Synopsis contingency is plausible and Rock-replayabl
     expect_s3_class(inference, "ds.vertChisq")
     expect_true(isTRUE(inference$cross_owner))
     expect_identical(inference$source_dp_release, first)
-    expect_true(is.finite(inference$p_value) &&
-                inference$p_value >= 0 && inference$p_value <= 1)
-    expect_true(is.finite(inference$fisher_p) &&
-                inference$fisher_p >= 0 && inference$fisher_p <= 1)
+    if (isTRUE(inference$decision_available)) {
+      expect_true(is.finite(inference$p_value) &&
+                  inference$p_value >= 0 && inference$p_value <= 1)
+    } else {
+      expect_true(inference$status %in% c(
+        "not_tested_degenerate_dp_table",
+        "not_tested_minimum_expected_count"))
+      expect_true(is.na(inference$p_value))
+    }
+    if (is.finite(inference$fisher_p)) {
+      expect_true(inference$fisher_p >= 0 && inference$fisher_p <= 1)
+    } else {
+      expect_false(inference$fisher$decision_available)
+      expect_true(inference$fisher$status %in% c(
+        "not_tested_degenerate_dp_table",
+        "not_tested_minimum_expected_count",
+        "not_tested_degenerate_conditional_support"))
+      expect_true(is.na(inference$fisher$p_value))
+    }
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(2L, 2L))
 
