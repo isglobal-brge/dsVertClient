@@ -95,7 +95,8 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "ds.vertChisq", "ds.vert.chisq"))$release_contract ==
       "formal_sticky_synopsis_artifact"))
   expect_true(all(ds.vertMethodStatus(c(
-    "ds.vertFisher", "ds.vert.fisher"))$status == "provisional"))
+    "ds.vertChisq", "ds.vert.chisq",
+    "ds.vertFisher", "ds.vert.fisher"))$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertFisher", "ds.vert.fisher"))$release_contract ==
       "formal_sticky_synopsis_artifact"))

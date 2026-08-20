@@ -397,7 +397,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "arbitrary and directions without a mechanism-certified eigengap",
         "are not individually stable."))
   add(c("ds.vertChisq", "ds.vert.chisq"),
-      "ds.vertChisq", "provisional",
+      "ds.vertChisq", "promoted",
       paste(
         "DP-aware parametric-bootstrap inference over one signed sticky",
         "same-owner contingency Synopsis artifact."),
@@ -405,7 +405,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "The plug-in null is asymptotic rather than finite-sample conditional;",
         "mechanism and Monte Carlo uncertainty are reported separately."))
   add(c("ds.vertFisher", "ds.vert.fisher"),
-      "ds.vertFisher", "provisional",
+      "ds.vertFisher", "promoted",
       paste(
         "DP-aware conditional hypergeometric plug-in bootstrap over one",
         "signed sticky same-owner 2-by-2 contingency Synopsis artifact."),
