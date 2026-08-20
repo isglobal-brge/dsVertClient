@@ -271,26 +271,76 @@
 
 #' Dry-run one server-authoritative DP capsule
 #'
-#' Performs only the reusable-capsule status handshake and the three signed
-#' manifest phases (draft, global-schema signature, and byte-identical build).
-#' The selection is owned by custodian policy and signed workload
-#' specifications: this function has no analyst-controlled expansion input.
-#' It validates the current manifest, primitive-scope, coordinate-layout, and
-#' mechanism contracts, but never resolves a protected snapshot, materialises
-#' coordinates, invokes a producer, or creates a DP release.
+#' Performs only the signed no-lifetime Synopsis bootstrap and byte-identical
+#' manifest binding. The selection is owned by custodian policy and signed
+#' workload specifications: this function has no analyst-controlled expansion
+#' input. It never resolves a protected snapshot, materialises coordinates,
+#' invokes a producer, or creates a DP release.
 #'
 #' @param datasources Complete named DataSHIELD connection set. If `NULL`, use
 #'   the active connections.
 #' @param status Optional result from `ds.vertDPStatus()`. It is validated
 #'   again against `datasources`; if omitted, the handshake is performed.
 #' @return A compact `ds.vertDPCapsulePlan` object containing the signed
-#'   capsule identity, immutable primitive selection, projected coordinate and
-#'   sensitivity cost, family inventory, mechanism calibration, pinset, and
-#'   explicit zero-access/zero-release guarantees for this dry-run.
+#'   Synopsis identity, immutable workload and coordinate layout, pinset, and
+#'   explicit zero-access/zero-release/no-limit guarantees for this dry-run.
 #' @export
 ds.vertDPCapsulePlan <- function(datasources = NULL, status = NULL) {
-  .dsvert_dp_capsule_plan_impl(
+  .dsvert_dp_synopsis_plan_impl(
     datasources, status = status, .aggregate = DSI::datashield.aggregate)
+}
+
+.dsvert_dp_synopsis_plan_impl <- function(
+    datasources = NULL, status = NULL,
+    .aggregate = DSI::datashield.aggregate) {
+  bootstrap <- .dsvert_dp_synopsis_bootstrap_build_v1(
+    .dsvert_dp_datasources(datasources), status = status,
+    .aggregate = .aggregate)
+  trusted <- .dsvert_dp_synopsis_trusted_bundle_v1(
+    bootstrap$manifest_bundle, bootstrap$status)
+  bundle <- bootstrap$manifest_bundle
+  context <- trusted$context
+  manifest <- trusted$manifest
+  workload <- manifest$workload
+  layout <- bootstrap$layout
+  valid <- inherits(bootstrap, "dsvert_synopsis_bootstrap_v1") &&
+    is.list(bundle) && is.list(context) && is.list(manifest) &&
+    is.list(workload) && is.list(layout) &&
+    .dsvert_dp_is_string(workload$workload_version) &&
+    .dsvert_dp_is_string(workload$execution_state) &&
+    is.list(workload$capsule_mechanism) &&
+    is.character(context$servers) && is.character(context$designated) &&
+    is.list(context$policy) && is.list(layout)
+  if (!isTRUE(valid)) {
+    .dsvert_dp_capsule_plan_invalid("Synopsis bootstrap")
+  }
+  result <- list(
+    version = "dsvert-stateless-catalog-synopsis-plan-v1",
+    capsule = list(
+      capsule_id = bundle$capsule_id,
+      manifest_sha256 = bundle$manifest_sha256,
+      logical_snapshot = bundle$logical_snapshot),
+    workload = list(
+      version = workload$workload_version,
+      execution_state = workload$execution_state,
+      mechanism = workload$capsule_mechanism),
+    artifacts = list(
+      commitment_count = as.integer(bundle$artifact_commitment_count),
+      commitments_root = bundle$artifact_commitments_root,
+      coordinate_layout = list(
+        version = layout$version, sha256 = layout$sha256,
+        coordinate_count = as.integer(layout$coordinate_count))),
+    consortium = list(
+      K = as.integer(length(context$servers)), peers = context$servers,
+      designated_noise_peers = context$designated,
+      peer_pinset_sha256 = context$policy$peer_pinset_sha256),
+    guarantees = list(
+      data_access = FALSE, release_created = FALSE,
+      operation_limit = FALSE, request_limit = FALSE,
+      rate_limit = FALSE, catalog_limit = FALSE,
+      history_can_deny_operation = FALSE))
+  class(result) <- c("ds.vertDPCapsulePlan", "list")
+  result
 }
 
 .dsvert_dp_capsule_plan_impl <- function(
@@ -414,16 +464,13 @@ ds.vertDPCapsulePlan <- function(datasources = NULL, status = NULL) {
 
 #' @export
 print.ds.vertDPCapsulePlan <- function(x, ...) {
-  cat("dsVert DP capsule plan (dry-run; no data access; no release)\n")
+  cat("dsVert Synopsis plan (dry-run; no data access; no release)\n")
   cat("capsule:", x$capsule$capsule_id, "\n")
   cat("manifest:", x$capsule$manifest_sha256, "\n")
-  cat("scope:", x$primitive_scope$mode, "| coordinates:",
+  cat("workload:", x$workload$version, "| coordinates:",
       x$artifacts$coordinate_layout$coordinate_count, "\n")
-  cat("mechanism:", x$mechanism$mechanism, "| epsilon:",
-      format(x$calibration$epsilon), "| delta:",
-      format(x$calibration$allocated_delta), "\n")
   cat("peers:", x$consortium$K, "| pinset:",
       x$consortium$peer_pinset_sha256, "\n")
-  cat("planning privacy cost: epsilon=0, delta=0; limits/history gates: false\n")
+  cat("planning data/release cost: none; limits/history gates: false\n")
   invisible(x)
 }

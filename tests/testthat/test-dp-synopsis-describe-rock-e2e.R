@@ -381,6 +381,10 @@ test_that("real Synopsis Describe is plausible and Rock-replayable at K=2/3/5", 
                   inherits = FALSE)
   meanvar <- get(".dsvert_dp_meanvar_impl", asNamespace("dsVertClient"),
                  inherits = FALSE)
+  status_impl <- get(".dsvert_dp_status_impl", asNamespace("dsVertClient"),
+                     inherits = FALSE)
+  plan_impl <- get(".dsvert_dp_synopsis_plan_impl",
+                   asNamespace("dsVertClient"), inherits = FALSE)
   quantile <- get("ds.vertDPQuantile", asNamespace("dsVertClient"),
                   inherits = FALSE)
   median <- get("ds.vertDPMedian", asNamespace("dsVertClient"),
@@ -392,6 +396,19 @@ test_that("real Synopsis Describe is plausible and Rock-replayable at K=2/3/5", 
       structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
     }), fixture$peers)
     dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    status <- status_impl(conns, dispatch)
+    plan <- plan_impl(conns, status, dispatch)
+    expect_s3_class(status, "ds.vertDPStatus")
+    expect_s3_class(plan, "ds.vertDPCapsulePlan")
+    expect_identical(plan$consortium$K, as.integer(k))
+    expect_identical(plan$guarantees$data_access, FALSE)
+    expect_identical(plan$guarantees$release_created, FALSE)
+    expect_identical(plan$guarantees$operation_limit, FALSE)
+    expect_identical(plan$guarantees$request_limit, FALSE)
+    expect_identical(plan$guarantees$rate_limit, FALSE)
+    expect_identical(plan$guarantees$catalog_limit, FALSE)
+    expect_identical(fixture$state$source_prepare, 0L)
+    expect_identical(fixture$state$start, 0L)
     first <- describe("data_peer_a", "primary", 0.5, "peer_a", conns,
                       dispatch)
     expect_s3_class(first, "ds.vertDPDescribe")

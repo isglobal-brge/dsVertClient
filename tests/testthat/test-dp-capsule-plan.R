@@ -477,7 +477,7 @@ test_that("public capsule plan is plug-and-play and hides transport injection", 
   marker <- structure(list(ok = TRUE), class = "plan-wrapper-marker")
   result <- testthat::with_mocked_bindings(
     ds.vertDPCapsulePlan(status = "reusable-status"),
-    .dsvert_dp_capsule_plan_impl = function(
+    .dsvert_dp_synopsis_plan_impl = function(
         datasources, status, .aggregate) {
       observed <<- list(
         datasources = list(datasources), status = status,
@@ -494,4 +494,55 @@ test_that("public capsule plan is plug-and-play and hides transport injection", 
   active <- .dp_capsule_plan_run(fixture, active = TRUE)
   expect_s3_class(active, "ds.vertDPCapsulePlan")
   expect_null(fixture$state$normalizer_input[[1L]])
+})
+
+test_that("the public plan projects only an authenticated Synopsis bundle", {
+  peers <- c("site_a", "site_b", "site_c")
+  bootstrap <- structure(list(
+    status = structure(list(), class = c("ds.vertDPSynopsisStatus", "list")),
+    context = list(
+      servers = peers,
+      designated = c("site_a", "site_c"),
+      policy = list(peer_pinset_sha256 = paste(rep("a", 64L), collapse = ""))),
+    manifest_bundle = list(
+      capsule_id = paste(rep("b", 64L), collapse = ""),
+      manifest_sha256 = paste(rep("c", 64L), collapse = ""),
+      logical_snapshot = list(version = "snapshot-v1"),
+      artifact_commitment_count = 7L,
+      artifact_commitments_root = paste(rep("d", 64L), collapse = "")),
+    layout = list(
+      version = "layout-v1", sha256 = paste(rep("e", 64L), collapse = ""),
+      coordinate_count = 19L)),
+    class = c("dsvert_synopsis_bootstrap_v1", "list"))
+  manifest <- list(workload = list(
+    workload_version = "workload-v1", execution_state = "bound",
+    capsule_mechanism = list(selector = "fixed")))
+  result <- testthat::with_mocked_bindings(
+    .dsvert_dp_synopsis_plan_impl(list(site_a = "a", site_b = "b", site_c = "c")),
+    .dsvert_dp_synopsis_bootstrap_build_v1 = function(
+        datasources, status, .aggregate) bootstrap,
+    .dsvert_dp_synopsis_trusted_bundle_v1 = function(bundle, status) {
+      list(manifest = manifest, context = bootstrap$context)
+    },
+    .package = "dsVertClient")
+  expect_s3_class(result, "ds.vertDPCapsulePlan")
+  expect_identical(result$version, "dsvert-stateless-catalog-synopsis-plan-v1")
+  expect_identical(result$capsule$capsule_id,
+                   bootstrap$manifest_bundle$capsule_id)
+  expect_identical(result$artifacts$coordinate_layout,
+                   bootstrap$layout)
+  expect_identical(result$consortium$designated_noise_peers,
+                   bootstrap$context$designated)
+  expect_identical(result$guarantees, list(
+    data_access = FALSE, release_created = FALSE,
+    operation_limit = FALSE, request_limit = FALSE,
+    rate_limit = FALSE, catalog_limit = FALSE,
+    history_can_deny_operation = FALSE))
+  field_names <- function(value) {
+    if (!is.list(value)) return(character())
+    c(names(value), unlist(lapply(unname(value), field_names),
+                            use.names = FALSE))
+  }
+  expect_false(any(grepl("schema_json|manifest_json|peer_identity_pk",
+                         field_names(unclass(result)))))
 })

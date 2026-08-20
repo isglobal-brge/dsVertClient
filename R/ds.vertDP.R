@@ -6,56 +6,78 @@
 
 #' Differential-privacy policy status
 #'
-#' Queries the reusable capsule control plane on every connected server. It
-#' verifies the fixed per-capsule epsilon/delta, the authenticated lifetime
-#' privacy bound, adjacency, exact
-#' logical-name-to-Ed25519 pin map, privacy epoch, and the two designated noise
-#' peers. Exact replay is unlimited and there is no request counter or accuracy
-#' decay, while a new distinct capsule consumes one authenticated,
-#' non-refundable distinct-capsule reservation unit at allocator commit. This
-#' call releases no protected statistic and consumes no privacy allocation.
-#' Printing the result distinguishes the remaining reservation units from
-#' request quotas.
+#' Verifies the signed Synopsis bootstrap on every connected server. It binds
+#' the exact logical-name-to-Ed25519 pin map, the two designated noise peers,
+#' and the server-authoritative canonical workload before any protected-source
+#' access. This call releases no protected statistic and creates no release.
+#' It has no request, rate, catalog, or finite lifetime admission limit:
+#' repeated calls validate the same sticky artifact, while distinct canonical
+#' artifacts have their own scoped DP releases and compose accordingly.
 #'
 #' @param datasources DataSHIELD connections. If `NULL`, use the active set.
-#' @return A named list of server statuses with class `ds.vertDPStatus`.
+#' @return A reusable authenticated Synopsis bootstrap with class
+#'   `ds.vertDPStatus`.
 #' @export
 ds.vertDPStatus <- function(datasources = NULL) {
-  .dsvert_joint_dp_capsule_status_impl(
-    datasources, DSI::datashield.aggregate)
+  .dsvert_dp_status_impl(datasources, DSI::datashield.aggregate)
+}
+
+.dsvert_dp_status_impl <- function(
+    datasources = NULL, .aggregate = DSI::datashield.aggregate) {
+  bootstrap <- .dsvert_dp_synopsis_bootstrap_build_v1(
+    .dsvert_dp_datasources(datasources), .aggregate = .aggregate)
+  class(bootstrap) <- unique(c("ds.vertDPStatus", class(bootstrap)))
+  bootstrap
 }
 
 #' @export
 print.ds.vertDPStatus <- function(x, ...) {
-  reference <- x[[1L]]
-  designated <- reference$policy$designated_noise_peers
-  capsule <- x[[designated[[1L]]]]$composition_telemetry
-  release <- x[[designated[[1L]]]]$release_instance_telemetry
-  number <- function(value) {
-    format(value, digits = 8L, scientific = TRUE, trim = TRUE)
+  if (!inherits(x, "dsvert_synopsis_bootstrap_v1")) {
+    reference <- x[[1L]]
+    designated <- reference$policy$designated_noise_peers
+    capsule <- x[[designated[[1L]]]]$composition_telemetry
+    release <- x[[designated[[1L]]]]$release_instance_telemetry
+    number <- function(value) {
+      format(value, digits = 8L, scientific = TRUE, trim = TRUE)
+    }
+    cat("dsVert reusable joint-DP capsule status\n")
+    cat("peers:", length(x), "| designated noise peers:",
+        paste(designated, collapse = ", "), "\n")
+    cat("per capsule: epsilon=", number(reference$policy$capsule_epsilon),
+        ", delta=", number(reference$policy$capsule_delta),
+        " | adjacency: ", reference$policy$adjacency, "\n", sep = "")
+    cat("allocator-committed reservation units:",
+        number(capsule$capsules_created),
+        "| basic composition upper bound: epsilon=",
+        number(capsule$cumulative_epsilon_upper_bound), ", delta=",
+        number(capsule$cumulative_delta_upper_bound), "\n")
+    cat("published release instances:", number(release$releases_published),
+        "| basic composition upper bound: epsilon=",
+        number(release$cumulative_epsilon_upper_bound), ", delta=",
+        number(release$cumulative_delta_upper_bound), "\n")
+    cat("allocator-committed reservation units remaining:",
+        number(capsule$remaining_distinct_capsules), "of",
+        number(capsule$lifetime_max_distinct_capsules), "\n")
+    cat(paste(
+      "new-capsule admission gate: enforced; request quota: none; exact replay",
+      "of the same release is unlimited post-processing.\n"))
+    return(invisible(x))
   }
-
-  cat("dsVert reusable joint-DP capsule status\n")
-  cat("peers:", length(x), "| designated noise peers:",
+  context <- x$context
+  bundle <- x$manifest_bundle
+  designated <- unlist(context$policy$designated_noise_peers,
+                        use.names = FALSE)
+  if (!is.character(designated) || !length(designated)) {
+    designated <- context$designated
+  }
+  cat("dsVert signed Synopsis status\n")
+  cat("peers:", length(context$servers), "| designated noise peers:",
       paste(designated, collapse = ", "), "\n")
-  cat("per capsule: epsilon=", number(reference$policy$capsule_epsilon),
-      ", delta=", number(reference$policy$capsule_delta),
-      " | adjacency: ", reference$policy$adjacency, "\n", sep = "")
-  cat("allocator-committed reservation units:",
-      number(capsule$capsules_created),
-      "| basic composition upper bound: epsilon=",
-      number(capsule$cumulative_epsilon_upper_bound), ", delta=",
-      number(capsule$cumulative_delta_upper_bound), "\n")
-  cat("published release instances:", number(release$releases_published),
-      "| basic composition upper bound: epsilon=",
-      number(release$cumulative_epsilon_upper_bound), ", delta=",
-      number(release$cumulative_delta_upper_bound), "\n")
-  cat("allocator-committed reservation units remaining:",
-      number(capsule$remaining_distinct_capsules), "of",
-      number(capsule$lifetime_max_distinct_capsules), "\n")
+  cat("capsule:", bundle$capsule_id,
+      "| manifest:", bundle$manifest_sha256, "\n")
   cat(paste(
-    "new-capsule admission gate: enforced; request quota: none; exact replay",
-    "of the same release is unlimited post-processing.\n"))
+    "data access: none; release: none; request/rate/catalog limits: none;",
+    "sticky replay is deterministic and distinct artifacts compose.\n"))
   invisible(x)
 }
 

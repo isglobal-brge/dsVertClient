@@ -287,7 +287,7 @@ test_that("lifetime exhaustion does not redefine consortium readiness", {
   expect_false(any(grepl("Warning:", output, fixed = TRUE)))
 })
 
-test_that("the public security status uses only the joint capsule handshake", {
+test_that("the public security status uses only the Synopsis bootstrap", {
   namespace <- asNamespace("dsVertClient")
   walk <- function(name, seen = character()) {
     if (name %in% seen || !exists(name, namespace, inherits = FALSE)) {
@@ -307,6 +307,6 @@ test_that("the public security status uses only the joint capsule handshake", {
   }
 
   reachable <- walk("ds.vertSecurityStatus")
-  expect_true(".dsvert_joint_dp_capsule_status_impl" %in% reachable)
-  expect_false(".dsvert_dp_status_impl" %in% reachable)
+  expect_true(".dsvert_dp_status_impl" %in% reachable)
+  expect_false(".dsvert_joint_dp_capsule_status_impl" %in% reachable)
 })

@@ -97,18 +97,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "uncertainty."))
   add("ds.vertDPStatus", "ds.vertDPStatus", "promoted",
       paste(
-        "Read-only global cross-signed capsule handshake for immutable",
-        "privacy parameters, the exact pinned-peer set and publication",
-        "continuity."),
+        "Read-only signed Synopsis bootstrap for the immutable workload,",
+        "exact pinned-peer set and deterministic sticky-release continuity."),
       paste(
-        "New-capsule admission is gated by allocator-committed reservations;",
-        "exact replay is unlimited. The status cannot remotely attest a",
+        "No request, rate, or catalog limit is imposed; distinct artifacts",
+        "compose and exact replay is deterministic. The status cannot remotely attest a",
         "malicious host, simultaneous rollback of",
-        "every root/state copy, or all-peer collusion; external CAS is optional",
-        "rollback hardening, not an availability prerequisite."))
+        "every root/state copy, or all-peer collusion."))
   add("ds.vertDPCapsulePlan", "ds.vertDPCapsulePlan", "promoted",
       paste(
-        "Data-free, signed dry-run of the server-authoritative capsule",
+        "Data-free, signed dry-run of the server-authoritative Synopsis",
         "workload, coordinate layout, sensitivity and selected mechanism."),
       paste(
         "It creates no release and accesses no protected snapshot; utility",

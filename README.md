@@ -115,89 +115,23 @@ conflicting valid cells make the unit contribute zero, and missing or
 out-of-domain rows do not create a conflict. No exact exclusion count is
 released; studies should report the resulting concordant-unit estimand.
 
-The production target has one durable capsule-publication chain, not one
-epsilon ledger per peer or per user operation. Pinned peers cross-sign the
-immutable snapshot/workload capsule, creation sequence, opening and exact
-payload commitments; retry, restart and lost acknowledgement must replay the
-same durable capsule without resampling. Every supported method over that
-capsule is unlimited post-processing: it cannot advance the chain, reduce
-accuracy or be denied because of earlier operations. A previously unseen
-capsule consumes one non-refundable lifetime unit at allocator commit, before
-protected-source access or sampling. The server-owned maximum `N` defaults to
-one and is valid only when exact arithmetic proves `N * epsilon <= 8` and
-`N * delta < 1`. Once exhausted, the client receives only
-`[dsvert_dp_lifetime_budget_exhausted:v1]`; this is not a request quota.
-For privacy and compatibility, the same terminal token also covers a capsule
-that cannot safely advance the requested release instance because its
-irrevocable instance claim or sole publication slot is already bound and the
-exact instance cannot continue or replay. It is an opaque union: it does not
-imply `remaining_distinct_capsules == 0`, and separate cause-specific errors
-would reveal state.
+The public DP release plane is the signed Synopsis protocol, not an
+epsilon ledger per peer or per user operation. Pinned peers cross-sign each
+immutable canonical snapshot/workload artifact and its sticky publication
+state. Retry, restart and lost acknowledgement must replay the same durable
+artifact without resampling; corrupted or inconsistent durable state fails
+closed. Server secrets and authenticated ciphertext spools remain in
+owner-only Rock storage, and no analyst receives a root or derived seed.
 
-Each capsule may have at most one public release instance. PREPARE persists only
-an authenticated candidate, so sibling candidates may coexist before a claim.
-At each designated peer, the first valid START atomically and irrevocably
-claims one release instance before local staged-source access or sampling.
-Source transport may already have staged encrypted protected material, but no
-noised share or public output exists at that boundary. Rotation may select a
-different candidate only before the claim. Afterwards only that exact instance
-may progress, restore or replay; after publication, state loss must restore and
-replay it or fail closed. Matching bilateral receipts prevent split sibling
-claims from producing a release under the at-least-one-non-colluding-peer model.
-With at least one non-colluding
-designated peer retaining and using complete authenticated monotonic history, a
-divergent rollback is rejected. Simultaneous rollback of both designated
-histories is outside the claim without an external linearizable CAS. The claim is scoped to
-`at_most_N_immutable_snapshot_workload_capsules_per_stable_privacy_accountant_namespace`
-and additionally assumes
-`authenticated_history_retention_assumption=at_least_one_noncolluding_designated_noise_peer_retains_and_uses_complete_authenticated_monotonic_history`
-and
-`privacy_accountant_namespace_assumption=one_stable_unique_namespace_across_domain_cohort_policy_pinset_and_ledger_reconfiguration_per_protected_privacy_universe`.
-That namespace continuity is currently custodian-managed: neither package
-enforces global uniqueness or automatically migrates reservations across
-reconfiguration. The signed biomedical
-vector and its supported post-processors use this complete sequence; reserved
-artifact families still fail before protected payload access.
-
-Server secrets bootstrap automatically into owner-only persistent storage; no
-analyst receives a root or derived seed. All DP DSI calls suppress raw server
-errors and reject partial site responses. The bounded lifetime claim remains
-conditional on root secrecy, correct pinned-peer operation and authenticated
-ledger integrity—not protection after host/root compromise or simultaneous
-history rollback outside the stated model. Public results expose this boundary
-as `dsvert-capsule-security-claim-v3`.
-
-The biomedical vector ABI is frozen as a pre-release baseline: signed PREPARE
-receipts use v6; signed START, RESULT, RELEASE and ACK receipts use v5; the
-authenticated STORE schema uses v6; its claim row and authenticated claim-set
-state use `dsvert-joint-dp-vector-instance-claim-v1` and
-`dsvert-joint-dp-vector-instance-claim-state-v1`; replay uses v4. Every signed
-receipt and replay response carries exactly `history_gate=TRUE`,
-`request_limit=FALSE`, and `operation_limit=TRUE`. Neither package automatically
-migrates or re-signs
-legacy v4/v5 stores. Deployment requires empty DP capsule state or a future
-audited offline migration; legacy state fails closed. This is compatible with
-the previous Opal environments because `POLICY_READY=FALSE`, no DP capsule was
-published, and local K-site state was ephemeral.
-
-Exact COMMIT/RELEASE endpoint replay and sticky replay within a live session
-are O(1). Cold end-to-end reconstruction after process restart returns through
-AllocationProof and performs a complete O(N) allocator-journal audit before the
-proof is returned. It remains privacy-free replay: no lifetime unit, new noise
-or protected-source read is involved.
-
-The clean baseline additionally requires `dsvert-joint-dp-control-v3` and
-`dsvert-joint-dp-capsule-identity-v3`, which bind the lifetime fields and
-biomedical workload v7. V2 control/identity artifacts are legacy and fail
-closed; neither package migrates or re-signs them automatically. Deployment
-must use empty DP capsule state or a future audited offline migration.
-
-`ds.vertDPStatus()` accepts only joint-DP capsule status v5, cross-validates
-reservation and publication counts within the declared stable accountant
-namespace, and reports remaining distinct-capsule units separately from
-request limits. Exhaustion does not redefine consortium readiness; the status
-handshake is not proof that no second namespace exists for the same protected
-privacy universe.
+There is no request, rate, catalog, or finite lifetime admission limit. A
+supported canonical artifact has its own declared DP scope; a distinct
+artifact is a distinct analysis and may compose with it. We do not claim a
+finite global privacy bound across an unlimited set of different analyses.
+`ds.vertDPStatus()` and `ds.vertDPCapsulePlan()` are data-free signed Synopsis
+bootstraps: they bind the pinset, two designated authorities and immutable
+workload, but create neither a release nor a protected-source read. The retired
+vector-lifecycle ABI remains internal compatibility code and is not a public
+release route.
 
 `ds.vertSecurityStatus()` consumes security-profile schema v4 and reports
 readiness per route. Its top-level `ready` field, compatibility field
@@ -306,11 +240,9 @@ legacy DCF comparison survive only inside unregistered/quarantined
 implementations and retain their stated proof limitations. See
 [SECURITY.md](SECURITY.md) for the full threat model and non-claims.
 
-There is no request-count limit. Count and Frequency have no lifetime budget,
-accountant or history gate. The finite lifetime gate applies only to
-provisional capsule routes that still use the old capsule backend; exact replay
-of an existing capsule release remains free. Shape, byte, finite-range and storage caps are
-retained as separate resource and arithmetic-safety controls.
+There is no request-count or lifetime admission limit on active public Synopsis
+routes. Shape, byte, finite-range and storage caps remain separate resource and
+arithmetic-safety controls, never privacy budgets or expiring replay rights.
 
 ## DSI communication
 

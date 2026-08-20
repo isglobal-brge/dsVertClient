@@ -15,16 +15,13 @@ again against \code{datasources}; if omitted, the handshake is performed.}
 }
 \value{
 A compact \code{ds.vertDPCapsulePlan} object containing the signed
-capsule identity, immutable primitive selection, projected coordinate and
-sensitivity cost, family inventory, mechanism calibration, pinset, and
-explicit zero-access/zero-release guarantees for this dry-run.
+Synopsis identity, immutable workload and coordinate layout, pinset, and
+explicit zero-access/zero-release/no-limit guarantees for this dry-run.
 }
 \description{
-Performs only the reusable-capsule status handshake and the three signed
-manifest phases (draft, global-schema signature, and byte-identical build).
-The selection is owned by custodian policy and signed workload
-specifications: this function has no analyst-controlled expansion input.
-It validates the current manifest, primitive-scope, coordinate-layout, and
-mechanism contracts, but never resolves a protected snapshot, materialises
-coordinates, invokes a producer, or creates a DP release.
+Performs only the signed no-lifetime Synopsis bootstrap and byte-identical
+manifest binding. The selection is owned by custodian policy and signed
+workload specifications: this function has no analyst-controlled expansion
+input. It never resolves a protected snapshot, materialises coordinates,
+invokes a producer, or creates a DP release.
 }

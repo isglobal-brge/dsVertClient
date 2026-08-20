@@ -367,13 +367,14 @@ test_that("lifetime status uses exact decimal composition boundaries", {
     "8.0000000000000004")
 })
 
-test_that("the public DP status uses only the capsule handshake", {
+test_that("the public DP status uses only the signed Synopsis bootstrap", {
   conns <- list(site_a = "a", site_b = "b")
-  sentinel <- structure(list(ok = TRUE), class = "ds.vertDPStatus")
+  sentinel <- structure(list(ok = TRUE), class = c(
+    "ds.vertDPStatus", "dsvert_synopsis_bootstrap_v1", "list"))
   observed <- NULL
   value <- testthat::with_mocked_bindings(
     ds.vertDPStatus(conns),
-    .dsvert_joint_dp_capsule_status_impl = function(
+    .dsvert_dp_status_impl = function(
         datasources, .aggregate) {
       observed <<- datasources
       sentinel
