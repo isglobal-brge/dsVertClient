@@ -756,22 +756,17 @@
     "ds.vertLASSOProximal", "lasso_gaussian",
     c("admitted_count", "gaussian_sufficient_statistics_same_owner",
       "signed_gaussian_model_artifact",
-      "validated_gaussian_provenance_certificate",
-      "legacy_authorized_unpenalized_gaussian_fit"),
-    paste(
-      "Bound-normalized Gaussian LASSO on one signed projected DP moment",
-      "artifact; a historical ds.glm normal-equation route remains for",
-      "compatibility."),
+      "validated_gaussian_provenance_certificate"),
+    "Bound-normalized Gaussian LASSO on one signed projected DP moment artifact.",
     c("certificate_integrity_validation", "gaussian_only",
       "identifiability", "kkt_validation", "no_sampling_inference",
       "objective_scale_contract", "authentic_federation_e2e_validation"),
     "synopsis_release_implemented", character(),
     aliases = c("ds.vert.lasso_proximal" = "ds.vertLASSOProximal"),
-    current_route_status = "client_only_inherits_input",
+    current_route_status = "client_only_validated_synopsis_postprocess",
     artifact_implementation_state =
       "validated_same_owner_synopsis_adapter_implemented",
-    inference_implementation_state =
-      "dp_gaussian_lasso_with_legacy_compatibility_implemented")
+    inference_implementation_state = "dp_gaussian_lasso_path_implemented")
 
   add(
     c("ds.vertLASSOIter", "ds.vert.lasso_iter"), "ds.vertLASSOIter",
@@ -795,22 +790,19 @@
     "lasso_information_criterion",
     c("admitted_count", "gaussian_sufficient_statistics_same_owner",
       "signed_gaussian_model_artifact",
-      "validated_gaussian_provenance_certificate",
-      "legacy_authorized_fit_covariance_or_fisher"),
+      "validated_gaussian_provenance_certificate"),
     paste(
       "DP-projected pseudo-AIC/BIC/EBIC selection on one signed Gaussian",
-      "moment artifact, with the historical ds.glm quadratic-surrogate",
-      "selector retained; neither route is cross-validation."),
+      "moment artifact; it is not cross-validation."),
     c("certificate_integrity_validation", "estimand_label",
       "no_sampling_inference", "pseudo_information_criterion_label",
       "selection_uncertainty", "authentic_federation_e2e_validation"),
     "synopsis_release_implemented", character(),
     aliases = c("ds.vert.lasso_cv" = "ds.vertLASSOCV"),
-    current_route_status = "client_only_inherits_input",
+    current_route_status = "client_only_validated_synopsis_postprocess",
     artifact_implementation_state =
       "validated_same_owner_synopsis_adapter_implemented",
-    inference_implementation_state =
-      "dp_gaussian_pseudo_ic_with_legacy_compatibility_implemented")
+    inference_implementation_state = "dp_gaussian_pseudo_ic_implemented")
 
   add(
     c("ds.vertLR", "ds.vert.lr"), "ds.vertLR", "likelihood_ratio",
@@ -1425,8 +1417,7 @@
     "validated_same_owner_capsule_adapter_implemented")
   attr(out, "inference_implementation_state_levels") <- c(
     "dp_gaussian_lasso_path_implemented",
-    "dp_gaussian_lasso_with_legacy_compatibility_implemented",
-    "dp_gaussian_pseudo_ic_with_legacy_compatibility_implemented",
+    "dp_gaussian_pseudo_ic_implemented",
     "dp_aware_conditional_hypergeometric_bootstrap_implemented",
     "dp_aware_conditional_null_not_implemented",
     "dp_aware_null_distribution_not_implemented",

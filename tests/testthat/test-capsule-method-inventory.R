@@ -317,26 +317,14 @@ test_that("planned artifacts describe the actual biomedical contracts", {
   expect_contains(requirements_for(inventory, "ds.vertDPGaussian"),
                   "no_sampling_inference")
 
-  lasso_paths <- c("ds.vertLASSO", "ds.vertLASSO1Step")
+  lasso_paths <- c("ds.vertLASSO", "ds.vertLASSO1Step",
+                   "ds.vertLASSOProximal", "ds.vertLASSOCV")
   expect_true(all(vapply(lasso_paths, function(method) {
     all(c("admitted_count", "gaussian_sufficient_statistics_same_owner",
           "signed_gaussian_model_artifact",
           "validated_gaussian_provenance_certificate") %in%
           artifacts_for(inventory, method))
   }, logical(1L))))
-  expect_true(all(c(
-    "admitted_count", "gaussian_sufficient_statistics_same_owner",
-    "signed_gaussian_model_artifact",
-    "validated_gaussian_provenance_certificate",
-    "legacy_authorized_unpenalized_gaussian_fit") %in%
-      artifacts_for(inventory, "ds.vertLASSOProximal")))
-  expect_true(all(c(
-    "admitted_count", "gaussian_sufficient_statistics_same_owner",
-    "signed_gaussian_model_artifact",
-    "validated_gaussian_provenance_certificate",
-    "legacy_authorized_fit_covariance_or_fisher") %in%
-      artifacts_for(inventory, "ds.vertLASSOCV")))
-
   expect_true(all(c(
     "bounded_missingness_counts", "posterior_parameter_draws",
     "synthetic_imputation_draws") %in% artifacts_for(inventory, "ds.vertMI")))
@@ -498,26 +486,26 @@ test_that("implemented Synopsis producers and postprocessors are explicit", {
   lasso_proximal <- inventory$method %in% c(
     "ds.vertLASSOProximal", "ds.vert.lasso_proximal")
   expect_true(all(inventory$current_route_status[lasso_proximal] ==
-                    "client_only_inherits_input"))
+                    "client_only_validated_synopsis_postprocess"))
   expect_true(all(inventory$migration_feasibility[lasso_proximal] ==
                     "synopsis_release_implemented"))
   expect_true(all(inventory$artifact_implementation_state[lasso_proximal] ==
                     "validated_same_owner_synopsis_adapter_implemented"))
   expect_true(all(inventory$inference_implementation_state[lasso_proximal] ==
-                    "dp_gaussian_lasso_with_legacy_compatibility_implemented"))
+                    "dp_gaussian_lasso_path_implemented"))
   expect_true(all(vapply(
     inventory$legacy_remote_call_evidence[lasso_proximal],
     nrow, integer(1L)) == 0L))
   lasso_cv <- inventory$method %in% c(
     "ds.vertLASSOCV", "ds.vert.lasso_cv")
   expect_true(all(inventory$current_route_status[lasso_cv] ==
-                    "client_only_inherits_input"))
+                    "client_only_validated_synopsis_postprocess"))
   expect_true(all(inventory$migration_feasibility[lasso_cv] ==
                     "synopsis_release_implemented"))
   expect_true(all(inventory$artifact_implementation_state[lasso_cv] ==
                     "validated_same_owner_synopsis_adapter_implemented"))
   expect_true(all(inventory$inference_implementation_state[lasso_cv] ==
-                    "dp_gaussian_pseudo_ic_with_legacy_compatibility_implemented"))
+                    "dp_gaussian_pseudo_ic_implemented"))
   expect_true(all(vapply(inventory$legacy_remote_call_evidence[lasso_cv],
                          nrow, integer(1L)) == 0L))
   desc <- inventory$method %in% c("ds.vertDesc", "ds.vert.desc")

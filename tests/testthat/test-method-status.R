@@ -233,7 +233,7 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "cross-validation", lasso$principal_limitation[!proximal], fixed = TRUE)))
   expect_match(
     ds.vertMethodStatus("ds.vertLASSOProximal")$safe_scope,
-    "legacy compatibility")
+    "KKT", fixed = TRUE)
   expect_match(ds.vertMethodStatus("ds.vertLASSOCV")$safe_scope,
                "pseudo-AIC/BIC/EBIC")
   lasso_path <- ds.vertMethodStatus(c("ds.vertLASSO", "ds.vert.lasso"))
