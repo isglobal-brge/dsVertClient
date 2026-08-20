@@ -133,6 +133,27 @@
   fixture
 }
 
+.synopsis_frequency_real_e2e_fixture <- function(k, server_ns) {
+  fixture <- .synopsis_describe_real_e2e_fixture(k, server_ns)
+  scope <- list(
+    mode = "catalog_v1", numeric_moments = "x_peer_a",
+    categorical_marginals = "status", categorical_pairs = list(),
+    correlations = list())
+  for (peer in fixture$peers) {
+    policy <- fixture$policies[[peer]]
+    policy$capsule_workload_scope <- scope
+    if (identical(peer, "peer_a")) {
+      policy$categorical_levels <- list(status = c("case", "control"))
+      policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+        "x_peer_a", "status")
+    }
+    fixture$policies[[peer]] <- policy
+  }
+  fixture$snapshots$peer_a[["data_peer_a"]]$data$status <-
+    rep(c("case", "control"), each = 50L)
+  fixture
+}
+
 .synopsis_survival_real_e2e_fixture <- function(k, server_ns) {
   fixture <- .synopsis_describe_real_e2e_fixture(k, server_ns)
   policy <- fixture$policies$peer_a
@@ -369,6 +390,54 @@ test_that("real same-owner Synopsis contingency is plausible and Rock-replayable
     expect_identical(replay$table, first$table)
     expect_identical(replay$final_vector_root, first$final_vector_root)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5", {
+  server_ns <- .synopsis_describe_real_e2e_server()
+  frequency <- get(".dsvert_dp_frequency_impl",
+                   asNamespace("dsVertClient"), inherits = FALSE)
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .synopsis_frequency_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    first <- frequency("data_peer_a", "status", "peer_a", conns, dispatch)
+    expect_s3_class(first, "ds.vertDPFrequency")
+    expect_true(isTRUE(first$released))
+    expect_identical(first$proof$version,
+                     "dsvert-dp-frequency-synopsis-proof-v1")
+    expect_identical(first$levels, c("case", "control"))
+    expect_identical(fixture$state$source_prepare, 1L)
+    expect_identical(fixture$state$start, 2L)
+    expect_identical(first$release_provenance$designated_noise_peers,
+                     as.list(fixture$peers[1:2]))
+    expect_length(first$release_provenance$ordered_peer_pinset, k)
+    expect_true(all(is.finite(first$counts)))
+    expect_true(all(first$counts >= 0 & first$counts <= 200))
+    expect_gt(sum(first$counts), 0)
+    expect_true(all(first$mechanism_regions$lower >= 0))
+    expect_true(all(first$mechanism_regions$upper <= 200))
+
+    inference <- ds.vertDPFrequencyInference(first, level = 0.95)
+    expect_s3_class(inference, "ds.vertDPFrequencyInference")
+    expect_true(all(is.finite(inference$intervals)))
+    expect_true(all(inference$intervals >= 0 & inference$intervals <= 1))
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- frequency("data_peer_a", "status", "peer_a", conns, dispatch)
+    expect_identical(replay$counts, first$counts)
+    expect_identical(replay$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+
+    tampered <- first
+    tampered$counts[[1L]] <- tampered$counts[[1L]] + 1
+    expect_error(ds.vertDPFrequencyInference(tampered), "validated")
   }
 })
 

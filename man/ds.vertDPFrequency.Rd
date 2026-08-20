@@ -19,6 +19,7 @@ ds.vertDPFrequency(data_name, variable, server = NULL, datasources = NULL)
 A \code{ds.vertDPFrequency} object.
 }
 \description{
-Executes a sticky two-authority release and returns authenticated public
-values and proof. \code{server} is the required explicit source owner.
+Reads one signed categorical marginal from the durable canonical Synopsis.
+It performs no extra sampling or public opening; replay is post-processing
+of that same per-artifact release. \code{server} is the required source owner.
 }
