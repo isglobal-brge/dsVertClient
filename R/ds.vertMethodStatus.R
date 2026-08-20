@@ -506,9 +506,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "It omits cross-server predictors, returns exact per-round imputation",
         "counts and lacks a non-rerollable joint imputation artifact with valid",
         "between-imputation uncertainty."))
-  add(c("ds.vertLASSO", "ds.vert.lasso"), "ds.vertLASSO", "compatibility",
-      "Post-hoc sparsification sketch.",
-      "It is not an optimizer of the penalized likelihood.")
+  add(c("ds.vertLASSO", "ds.vert.lasso"), "ds.vertLASSO", "promoted",
+      paste(
+        "Gaussian L1 penalty path over one validated same-owner signed",
+        "Synopsis moment artifact; each member has a deterministic KKT",
+        "certificate and incurs no new private computation."),
+      paste(
+        "Gaussian same-owner designs only; no sampling inference or",
+        "coefficient regions are available, and the retired ds.glm",
+        "thresholding sketch is rejected."))
   add(c("ds.vertLASSO1Step", "ds.vert.lasso_1step"), "ds.vertLASSO1Step",
       "compatibility", "Local quadratic-surrogate exploration near a converged fit.",
       "It is not a general L1 estimator.")

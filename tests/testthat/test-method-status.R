@@ -236,13 +236,17 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "legacy compatibility")
   expect_match(ds.vertMethodStatus("ds.vertLASSOCV")$safe_scope,
                "pseudo-AIC/BIC/EBIC")
-  legacy_lasso <- ds.vertMethodStatus(c(
-    "ds.vertLASSO", "ds.vert.lasso",
+  lasso_path <- ds.vertMethodStatus(c("ds.vertLASSO", "ds.vert.lasso"))
+  expect_true(all(lasso_path$status == "promoted"))
+  expect_match(lasso_path$safe_scope[[1L]], "KKT", fixed = TRUE)
+  lasso_1step <- ds.vertMethodStatus(c(
     "ds.vertLASSO1Step", "ds.vert.lasso_1step"))
-  expect_true(all(legacy_lasso$status == "compatibility"))
-  expect_true(all(legacy_lasso$release_contract ==
+  expect_true(all(lasso_1step$status == "compatibility"))
+  expect_true(all(c(lasso_path$release_contract,
+                    lasso_1step$release_contract) ==
                     "postprocessing_inherits_input"))
-  expect_true(all(legacy_lasso$numeric_contract ==
+  expect_true(all(c(lasso_path$numeric_contract,
+                    lasso_1step$numeric_contract) ==
                     "inherits_input_contract"))
   expect_match(
     ds.vertMethodStatus("ds.vertDPCor")$principal_limitation,

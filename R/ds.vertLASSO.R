@@ -1,71 +1,138 @@
-#' @title Post-hoc soft-thresholded GLM coefficients (naive LASSO)
-#' @description Apply the LASSO soft-threshold operator
-#'   \eqn{\mathrm{sign}(\beta_j) \cdot \max(|\beta_j| - \alpha \lambda_1, 0)}
-#'   to the coefficient vector of a fitted \code{ds.glm} object, without
-#'   re-running the MPC iteration loop. This is the simplest possible
-#'   approximation to LASSO: it zeros coefficients whose magnitude falls
-#'   below the threshold but does not iteratively re-optimise under the
-#'   sparsity constraint.
+#' @title Gaussian LASSO path from one signed DP Synopsis
+#' @description Fits a deterministic, KKT-checked Gaussian LASSO path from
+#'   the projected moments in one validated sticky \code{ds.vertDPGaussian}
+#'   release. It performs no new DataSHIELD, MPC or privacy operation. The
+#'   retired \code{ds.glm} soft-thresholding sketch is rejected rather than
+#'   being represented as an L1-optimised estimator.
 #'
-#'   Useful for quick variable-selection sketches and for comparing with
-#'   the current product LASSO solvers. For an estimator that optimises the
-#'   L1 objective rather than only thresholding an already-fitted GLM, use
-#'   \code{\link{ds.vertLASSOProximal}} or \code{\link{ds.vertLASSOIter}}.
-#'
-#' @param fit          A \code{ds.glm} object from \code{ds.vertGLM}.
-#' @param lambda_1     L1 penalty magnitude.
-#' @param alpha_grid   Step-size multipliers to sweep (default 1, 0.5,
-#'   0.25, 0.125, 0.0625).
-#' @param keep_intercept  If TRUE (default) never threshold the intercept.
-#' @return List of class \code{ds.vertLASSO} containing the thresholded
-#'   coefficient vectors indexed by effective lambda = alpha * lambda_1.
+#' @param fit A validated \code{ds.vertDPGaussian} object.
+#' @param lambda_1 Base non-negative L1 penalty on the signed-bound normalized
+#'   Gaussian objective.
+#' @param alpha_grid Non-negative multipliers defining
+#'   \code{lambda_1 * alpha_grid} (default 1, 0.5, 0.25, 0.125, 0.0625).
+#' @param keep_intercept If TRUE (default), the intercept is not penalised.
+#' @param max_iter Positive bound on coordinate-descent iterations per path
+#'   member.
+#' @param tol Positive KKT and convergence tolerance.
+#' @param trusted_pinset Optional trusted named peer-to-Ed25519-public-key map
+#'   required to authenticate an offline saved Gaussian release; online
+#'   session-anchored releases use their cached pinset.
+#' @return A \code{ds.vertLASSO} / \code{ds.vertDPLASSOPath} object with one
+#'   KKT certificate per penalty, original- and normalized-scale paths and no
+#'   sampling inference or coefficient confidence regions.
+#' @section Disclosure budget:
+#' Every path member is deterministic post-processing of one authenticated
+#' sticky Synopsis: additional privacy cost is \code{(epsilon, delta) =
+#' (0, 0)} and no additional server calls occur.
 #' @export
 ds.vertLASSO <- function(fit, lambda_1,
                          alpha_grid = c(1, 0.5, 0.25, 0.125, 0.0625),
-                         keep_intercept = TRUE) {
-  if (!inherits(fit, "ds.glm")) {
-    stop("`fit` must be a ds.glm object", call. = FALSE)
+                         keep_intercept = TRUE,
+                         max_iter = 2000L, tol = 1e-9,
+                         trusted_pinset = NULL) {
+  if (!inherits(fit, "ds.vertDPGaussian")) {
+    stop(
+      "fit must be a validated ds.vertDPGaussian release; the retired ds.glm thresholding sketch is unavailable",
+      call. = FALSE)
   }
-  if (!is.numeric(lambda_1) || length(lambda_1) != 1L || lambda_1 < 0) {
-    stop("lambda_1 must be a non-negative scalar", call. = FALSE)
+  if (!is.numeric(lambda_1) || length(lambda_1) != 1L ||
+      !is.finite(lambda_1) || lambda_1 < 0) {
+    stop("lambda_1 must be one finite non-negative number", call. = FALSE)
+  }
+  if (!is.numeric(alpha_grid) || !length(alpha_grid) ||
+      any(!is.finite(alpha_grid)) || any(alpha_grid < 0)) {
+    stop("alpha_grid must contain finite non-negative values", call. = FALSE)
+  }
+  if (!is.logical(keep_intercept) || length(keep_intercept) != 1L ||
+      is.na(keep_intercept)) {
+    stop("keep_intercept must be TRUE or FALSE", call. = FALSE)
+  }
+  if (!is.numeric(max_iter) || length(max_iter) != 1L ||
+      !is.finite(max_iter) || max_iter < 1L || max_iter != floor(max_iter)) {
+    stop("max_iter must be one positive integer", call. = FALSE)
+  }
+  if (!is.numeric(tol) || length(tol) != 1L ||
+      !is.finite(tol) || tol <= 0) {
+    stop("tol must be one finite positive number", call. = FALSE)
   }
 
-  soft_threshold <- function(x, t) sign(x) * pmax(abs(x) - t, 0)
-
-  coef <- fit$coefficients
-  int_idx <- which(names(coef) == "(Intercept)")
-
-  paths <- list()
-  for (a in alpha_grid) {
-    thresh <- a * lambda_1
-    shrunk <- soft_threshold(coef, thresh)
-    if (keep_intercept && length(int_idx) == 1L) {
-      shrunk[int_idx] <- coef[int_idx]
-    }
-    paths[[sprintf("%.4f", thresh)]] <- shrunk
+  lambda_grid <- as.numeric(lambda_1) * as.numeric(alpha_grid)
+  source <- .dsvert_lasso_dp_source(fit, trusted_pinset = trusted_pinset)
+  if (!identical(source$artifact$implementation_state,
+                 "same_owner_materialized") ||
+      !identical(source$artifact$cross_owner_state,
+                 "reserved_not_materialized")) {
+    stop(
+      "ds.vertLASSO currently requires a validated same-owner Gaussian Synopsis",
+      call. = FALSE)
+  }
+  solutions <- .dsvert_lasso_dp_lambda_path(
+    source$moments$gram, source$moments$cross, lambda_grid,
+    max_iter = as.integer(max_iter), tol = as.numeric(tol),
+    keep_intercept = keep_intercept)
+  paths_normalized <- lapply(solutions, `[[`, "coefficients")
+  paths <- lapply(paths_normalized, .dsvert_lasso_dp_original_scale,
+                  artifact = source$artifact)
+  names(paths) <- names(paths_normalized) <- names(solutions)
+  zero_index <- which(lambda_grid == 0)
+  original_normalized <- if (length(zero_index)) {
+    paths_normalized[[zero_index[[1L]]]]
+  } else {
+    .dsvert_lasso_dp_solver(
+      source$moments$gram, source$moments$cross, lambda = 0,
+      max_iter = as.integer(max_iter), tol = as.numeric(tol),
+      keep_intercept = keep_intercept)$coefficients
   }
 
   out <- list(
-    lambda_grid = alpha_grid * lambda_1,
+    lambda_grid = lambda_grid,
     paths = paths,
-    original = coef,
+    paths_normalized = paths_normalized,
+    path_certificates = lapply(solutions, function(solution) {
+      list(kkt = solution$kkt, curvature = solution$curvature)
+    }),
+    original = .dsvert_lasso_dp_original_scale(
+      original_normalized, source$artifact),
     fit = fit,
-    notes = paste0(
-      "Naive post-hoc soft-thresholding: zero coefficients below ",
-      "|beta| < alpha*lambda_1 without iterative re-optimisation. ",
-      "Use ds.vertLASSOProximal or ds.vertLASSOIter for the current ",
-      "product L1 objective."))
-  class(out) <- c("ds.vertLASSO", "list")
+    family = "gaussian",
+    estimand = "bounded_normalized_DP_gaussian_lasso_path",
+    input_provenance = "signed_dp_gaussian_capsule",
+    source_certificate_validation = source$verification,
+    source_query_contract_sha256 = fit$query_contract_sha256,
+    source_release_contract_hash = fit$release_contract_hash,
+    inference = list(
+      classical_standard_errors = NULL, p_values = NULL,
+      confidence_intervals = NULL, sampling_inference_available = FALSE),
+    coefficient_regions_available = FALSE,
+    additional_server_calls_after_capsule = 0L,
+    additional_privacy_cost = c(epsilon = 0, delta = 0),
+    source_values_exposed = FALSE,
+    intermediate_values_exposed = FALSE,
+    disclosure_guard = list(
+      satisfied = TRUE,
+      basis = "deterministic_postprocessing_of_one_validated_DP_capsule"))
+  if (identical(source$verification$certificate$version,
+                .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION)) {
+    out$input_provenance <- "signed_dp_gaussian_synopsis"
+    out$source_query_contract_sha256 <- NULL
+    out$source_release_contract_hash <- NULL
+    out$source_contract_sha256 <- fit$contract_sha256
+    out$additional_server_calls_after_capsule <- NULL
+    out$additional_server_calls_after_synopsis <- 0L
+    out$disclosure_guard$basis <-
+      "deterministic_postprocessing_of_one_validated_DP_synopsis"
+  }
+  class(out) <- c("ds.vertLASSO", "ds.vertDPLASSOPath", "list")
   out
 }
 
 #' @export
 print.ds.vertLASSO <- function(x, ...) {
-  cat("dsVert naive post-hoc LASSO sketch\n")
-  cat("  (note: ", x$notes, ")\n\n", sep = "")
-  cat(sprintf("Threshold grid: %s\n",
+  cat("dsVert Gaussian LASSO path from a signed DP Synopsis\n")
+  cat(sprintf("  Penalty grid: %s\n",
               paste(sprintf("%.4f", x$lambda_grid), collapse = " ")))
-  cat("\nCoefficient paths:\n")
+  cat("  Extra DP cost: (0, 0); no sampling inference\n\n")
+  cat("Coefficient paths:\n")
   m <- do.call(cbind, x$paths)
   print(round(m, 5L))
   invisible(x)

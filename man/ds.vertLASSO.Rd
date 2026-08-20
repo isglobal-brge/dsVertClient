@@ -2,40 +2,52 @@
 % Please edit documentation in R/ds.vertLASSO.R
 \name{ds.vertLASSO}
 \alias{ds.vertLASSO}
-\title{Post-hoc soft-thresholded GLM coefficients (naive LASSO)}
+\title{Gaussian LASSO path from one signed DP Synopsis}
 \usage{
 ds.vertLASSO(
   fit,
   lambda_1,
   alpha_grid = c(1, 0.5, 0.25, 0.125, 0.0625),
-  keep_intercept = TRUE
+  keep_intercept = TRUE,
+  max_iter = 2000L,
+  tol = 1e-09,
+  trusted_pinset = NULL
 )
 }
 \arguments{
-\item{fit}{A \code{ds.glm} object from \code{ds.vertGLM}.}
+\item{fit}{A validated \code{ds.vertDPGaussian} object.}
 
-\item{lambda_1}{L1 penalty magnitude.}
+\item{lambda_1}{Base non-negative L1 penalty on the signed-bound normalized
+Gaussian objective.}
 
-\item{alpha_grid}{Step-size multipliers to sweep (default 1, 0.5,
-0.25, 0.125, 0.0625).}
+\item{alpha_grid}{Non-negative multipliers defining
+\code{lambda_1 * alpha_grid} (default 1, 0.5, 0.25, 0.125, 0.0625).}
 
-\item{keep_intercept}{If TRUE (default) never threshold the intercept.}
+\item{keep_intercept}{If TRUE (default), the intercept is not penalised.}
+
+\item{max_iter}{Positive bound on coordinate-descent iterations per path
+member.}
+
+\item{tol}{Positive KKT and convergence tolerance.}
+
+\item{trusted_pinset}{Optional trusted named peer-to-Ed25519-public-key map
+required to authenticate an offline saved Gaussian release; online
+session-anchored releases use their cached pinset.}
 }
 \value{
-List of class \code{ds.vertLASSO} containing the thresholded
-coefficient vectors indexed by effective lambda = alpha * lambda_1.
+An \code{ds.vertLASSO} / \code{ds.vertDPLASSOPath} object with one
+KKT certificate per penalty, original- and normalized-scale paths and no
+sampling inference or coefficient confidence regions.
 }
 \description{
-Apply the LASSO soft-threshold operator
-\eqn{\mathrm{sign}(\beta_j) \cdot \max(|\beta_j| - \alpha \lambda_1, 0)}
-to the coefficient vector of a fitted \code{ds.glm} object, without
-re-running the MPC iteration loop. This is the simplest possible
-approximation to LASSO: it zeros coefficients whose magnitude falls
-below the threshold but does not iteratively re-optimise under the
-sparsity constraint.
-
-Useful for quick variable-selection sketches and for comparing with
-the current product LASSO solvers. For an estimator that optimises the
-L1 objective rather than only thresholding an already-fitted GLM, use
-\code{\link{ds.vertLASSOProximal}} or \code{\link{ds.vertLASSOIter}}.
+Fits a deterministic, KKT-checked Gaussian LASSO path from the projected
+moments in one validated sticky \code{ds.vertDPGaussian} release. It performs
+no new DataSHIELD, MPC or privacy operation. The retired \code{ds.glm}
+soft-thresholding sketch is rejected rather than being represented as an
+L1-optimised estimator.
+}
+\section{Disclosure budget}{
+Every path member is deterministic post-processing of one authenticated
+sticky Synopsis: additional privacy cost is \code{(epsilon, delta) =
+(0, 0)} and no additional server calls occur.
 }

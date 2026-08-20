@@ -919,8 +919,12 @@ test_that("focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3
       .synopsis_describe_real_e2e_dispatch(fixture))
     selection <- ds.vertLASSOCV(
       fit, lambda_grid = c(0.1, 0.05, 0.01), criterion = "BIC")
+    path <- ds.vertLASSO(
+      fit, lambda_1 = 0.1, alpha_grid = c(1, 0.5, 0.1),
+      max_iter = 2000L, tol = 1e-10)
 
     expect_s3_class(selection, "ds.vertLASSOCV")
+    expect_s3_class(path, "ds.vertDPLASSOPath")
     expect_identical(fit$release_provenance$designated_noise_peers,
                      as.list(fixture$peers[1:2]))
     expect_length(fit$release_provenance$ordered_peer_pinset, k)
@@ -940,6 +944,15 @@ test_that("focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3
     expect_identical(selection$additional_server_calls_after_synopsis, 0L)
     expect_identical(selection$additional_privacy_cost,
                      c(epsilon = 0, delta = 0))
+    expect_identical(path$input_provenance,
+                     "signed_dp_gaussian_synopsis")
+    expect_true(all(vapply(path$path_certificates, function(value) {
+      isTRUE(value$kkt$satisfied)
+    }, logical(1L))), info = paste("K =", k))
+    expect_lt(path$paths[[1L]][["x_peer_a"]], -0.25)
+    expect_identical(path$additional_server_calls_after_synopsis, 0L)
+    expect_identical(path$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
 
     before <- c(fixture$state$source_prepare, fixture$state$start)
     fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
@@ -950,8 +963,13 @@ test_that("focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3
       .synopsis_describe_real_e2e_dispatch(fixture))
     replay_selection <- ds.vertLASSOCV(
       replay, lambda_grid = c(0.1, 0.05, 0.01), criterion = "BIC")
+    replay_path <- ds.vertLASSO(
+      replay, lambda_1 = 0.1, alpha_grid = c(1, 0.5, 0.1),
+      max_iter = 2000L, tol = 1e-10)
     expect_identical(serialize(replay_selection, NULL, version = 3L),
                      serialize(selection, NULL, version = 3L))
+    expect_identical(serialize(replay_path, NULL, version = 3L),
+                     serialize(path, NULL, version = 3L))
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      before)
   }
