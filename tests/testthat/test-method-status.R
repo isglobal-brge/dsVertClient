@@ -269,7 +269,12 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "not an accountant", fixed = TRUE)
   expect_identical(
     ds.vertMethodStatus("ds.vertGLM")$release_contract,
-    "formal_joint_dp_capsule_only_legacy_unavailable")
+    "formal_sticky_synopsis_artifact")
+  glm <- ds.vertMethodStatus(c("ds.vertGLM", "ds.vert.glm"))
+  expect_true(all(glm$status == "promoted"))
+  expect_match(glm$safe_scope[[1L]], "explicit dp_analysis_id", fixed = TRUE)
+  expect_match(glm$principal_limitation[[1L]], "Binomial and Poisson",
+               fixed = TRUE)
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertChisqCross", "ds.vert.chisq_cross"))$release_contract ==
       "formal_sticky_synopsis_artifact"))

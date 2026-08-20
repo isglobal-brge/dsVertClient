@@ -571,13 +571,49 @@
   fixture
 }
 
+# The algebraic and legacy-v3 certificate cases below deliberately start after
+# the current Synopsis reader.  The Synopsis reader itself is tested in
+# test-dp-gaussian-synopsis-release.R and the K=2/K=3/K=5 Rock E2E test; this
+# helper keeps the older certificate compatibility cases from pretending to
+# exercise a retired production runner.
+.dp_gaussian_legacy_released <- function(
+    fixture, data_name, analysis_id, server = NULL, datasources = NULL,
+    .aggregate = NULL) {
+  context <- .dsvert_dp_vector_context(fixture$run, allow_synopsis = FALSE)
+  metadata <- .dsvert_dp_vector_public_metadata(context)
+  count_block <- .dsvert_dp_capsule_single_block(
+    context$layout, "admitted_count",
+    description = "signed admitted-count capacity block")
+  capacity <- .dsvert_dp_vector_block_capacity(count_block)
+  artifact <- .dsvert_dp_gaussian_artifact(
+    context$manifest, data_name, analysis_id, server, context$adjacency,
+    as.numeric(context$lattice$output_lattice_scale), capacity)
+  blocks <- .dsvert_dp_capsule_vector_blocks(
+    context$layout, "gaussian_models", dataset = data_name,
+    owner_peer = artifact$owner_peer)
+  expect_length(blocks, 1L)
+  block <- blocks[[1L]]
+  coordinates <- .dsvert_dp_capsule_vector_values(context$release, block)
+  certificate <- .dsvert_dp_gaussian_certificate_build(
+    context, artifact, block, coordinates)
+  verification <- ds.validateDPGaussianCertificate(certificate)
+  list(
+    context = context, metadata = metadata, artifact = verification$artifact,
+    block = block, coordinates = coordinates,
+    moment = .dsvert_dp_gaussian_unpack(
+      coordinates, verification$artifact, capacity),
+    certificate = certificate, verification = verification,
+    scale = as.numeric(context$lattice$output_lattice_scale),
+    capacity = capacity)
+}
+
 test_that("DP Gaussian matches normalized and original-scale oracle", {
   fixture <- .dp_gaussian_fixture()
   calls <- 0L
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) {
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
       calls <<- calls + 1L
-      fixture$run
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = fixture), list(...)))
     },
     .dsvert_aggregate_strict = function(...) {
       stop("legacy aggregate route called", call. = FALSE)
@@ -608,7 +644,7 @@ test_that("DP Gaussian matches normalized and original-scale oracle", {
   expect_identical(fit$source_values_exposed, FALSE)
   expect_identical(fit$intermediate_values_exposed, FALSE)
   expect_identical(fit$legacy_fallback_called, FALSE)
-  expect_identical(fit$additional_server_calls_after_capsule, 0L)
+  expect_identical(fit$additional_server_calls_after_synopsis, 0L)
   expect_identical(
     fit$additional_privacy_cost, c(epsilon = 0, delta = 0))
   expect_false(fit$inference$sampling_inference_available)
@@ -622,7 +658,9 @@ test_that("DP Gaussian matches normalized and original-scale oracle", {
 test_that("Gaussian post-processing is deterministic for one sticky release", {
   fixture <- .dp_gaussian_fixture()
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) fixture$run,
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = fixture), list(...)))
+    },
     .package = "dsVertClient")
   first <- .dsvert_dp_gaussian_impl(
     "cohort", "gaussian_primary", 0, NULL, fixture$conns,
@@ -636,7 +674,9 @@ test_that("Gaussian post-processing is deterministic for one sticky release", {
 test_that("Gaussian provenance is offline-verifiable with calibrated trust", {
   fixture <- .dp_gaussian_fixture()
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) fixture$run,
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = fixture), list(...)))
+    },
     .package = "dsVertClient")
   fit <- .dsvert_dp_gaussian_impl(
     "cohort", "gaussian_primary", 0, NULL, fixture$conns,
@@ -694,9 +734,9 @@ test_that("one authentic Gaussian release supports LASSO and honest pseudo-IC", 
   fixture <- .dp_gaussian_recertify(fixture)
   capsule_calls <- 0L
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) {
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
       capsule_calls <<- capsule_calls + 1L
-      fixture$run
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = fixture), list(...)))
     },
     .dsvert_aggregate_strict = function(...) {
       stop("unexpected additional DSI call", call. = FALSE)
@@ -757,7 +797,9 @@ test_that("one authentic Gaussian release supports LASSO and honest pseudo-IC", 
 test_that("Gaussian provenance rejects tampering and forged signed evidence", {
   fixture <- .dp_gaussian_fixture()
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) fixture$run,
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = fixture), list(...)))
+    },
     .package = "dsVertClient")
   fit <- .dsvert_dp_gaussian_impl(
     "cohort", "gaussian_primary", 0, NULL, fixture$conns,
@@ -806,7 +848,9 @@ test_that("Gaussian count and intercept Gram coordinates are never averaged", {
   fixture$release$values[[3L]] <- 2.5
   fixture <- .dp_gaussian_recertify(fixture)
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) fixture$run,
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = fixture), list(...)))
+    },
     .package = "dsVertClient")
   fit <- .dsvert_dp_gaussian_impl(
     "cohort", "gaussian_primary", 0, NULL, fixture$conns,
@@ -830,7 +874,9 @@ test_that("Gaussian count and intercept Gram coordinates are never averaged", {
 test_that("singular Gaussian design needs explicit regularization", {
   fixture <- .dp_gaussian_fixture(singular = TRUE)
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) fixture$run,
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = fixture), list(...)))
+    },
     .package = "dsVertClient")
   condition <- tryCatch(
     .dsvert_dp_gaussian_impl(
@@ -852,15 +898,10 @@ test_that("singular Gaussian design needs explicit regularization", {
 
 test_that("Gaussian non-estimability failures are typed", {
   fixture <- .dp_gaussian_fixture()
-  fixture$release$values[[2L]] <- 0
-  fixture$run$release <- fixture$release
-  testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) fixture$run,
-    .package = "dsVertClient")
   count_condition <- tryCatch(
-    .dsvert_dp_gaussian_impl(
-      "cohort", "gaussian_primary", 0, NULL, fixture$conns,
-      function(...) NULL),
+    .dsvert_dp_gaussian_unpack(
+      c(0, fixture$release$values[-c(1L, 2L)]), fixture$artifact,
+      fixture$artifact$statistic_maximum[[1L]]),
     error = identity)
   expect_s3_class(count_condition, "non_identifiable")
   expect_identical(
@@ -882,7 +923,9 @@ test_that("Gaussian rejects descriptor tampering and wrong owner", {
   fixture <- .dp_gaussian_fixture()
   wrong_owner <- fixture
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) wrong_owner$run,
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = wrong_owner), list(...)))
+    },
     .package = "dsVertClient")
   expect_error(
     .dsvert_dp_gaussian_impl(
@@ -897,7 +940,9 @@ test_that("Gaussian rejects descriptor tampering and wrong owner", {
   tampered$run$release <- tampered$release
   tampered$run$layout <- .dsvert_dp_capsule_vector_layout(tampered$manifest)
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) tampered$run,
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = tampered), list(...)))
+    },
     .package = "dsVertClient")
   expect_error(
     .dsvert_dp_gaussian_impl(
@@ -914,31 +959,37 @@ test_that("Gaussian rejects descriptor tampering and wrong owner", {
   layout_tampered$run$layout$blocks[[gaussian_block]]$descriptor$
     outcome$lower <- 11
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) layout_tampered$run,
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = layout_tampered), list(...)))
+    },
     .package = "dsVertClient")
   expect_error(
     .dsvert_dp_gaussian_impl(
       "cohort", "gaussian_primary", 0, NULL, fixture$conns,
       function(...) NULL),
-    "does not match its vector layout")
+    "committed coordinate block")
 
   release_tampered <- fixture
   release_tampered$release$values[[2L]] <- 101
   release_tampered$run$release <- release_tampered$release
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) release_tampered$run,
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = release_tampered), list(...)))
+    },
     .package = "dsVertClient")
   expect_error(
     .dsvert_dp_gaussian_impl(
       "cohort", "gaussian_primary", 0, NULL, fixture$conns,
       function(...) NULL),
-    "violates its signed bounds")
+    "signed final DP vector")
 })
 
 test_that("ds.vertGLM Gaussian capsule adapter is explicit and legacy-free", {
   fixture <- .dp_gaussian_fixture()
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) fixture$run,
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = fixture), list(...)))
+    },
     .dsvert_aggregate_strict = function(...) {
       stop("column discovery or legacy aggregate called", call. = FALSE)
     },
@@ -990,7 +1041,8 @@ test_that("Gaussian front door cannot reach legacy model endpoints", {
     paste(deparse(body(get(name, namespace, inherits = FALSE))),
           collapse = "\n")
   }, character(1L)), collapse = "\n")
-  expect_contains(reachable, ".dsvert_dp_capsule_vector_run")
+  expect_contains(reachable, ".dsvert_dp_synopsis_vector_run")
+  expect_false(".dsvert_dp_capsule_vector_run" %in% reachable)
   expect_length(intersect(reachable, forbidden), 0L)
   for (endpoint in forbidden) {
     expect_false(grepl(endpoint, bodies, fixed = TRUE), info = endpoint)
@@ -1001,10 +1053,12 @@ test_that("cross-owner Gaussian K=3 is served by both public front doors", {
   fixture <- .dp_gaussian_cross_frontdoor_fixture()
   capsule_calls <- 0L
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(datasources, ...) {
+    .dsvert_dp_gaussian_synopsis_release = function(
+        data_name, analysis_id, server = NULL, datasources = NULL, .aggregate) {
       capsule_calls <<- capsule_calls + 1L
       expect_identical(names(datasources), c("site_a", "site_b", "site_c"))
-      fixture$run
+      .dp_gaussian_legacy_released(
+        fixture, data_name, analysis_id, server, datasources, .aggregate)
     },
     .dsvert_aggregate_strict = function(...) {
       stop("legacy aggregate route called", call. = FALSE)
@@ -1046,7 +1100,7 @@ test_that("cross-owner Gaussian K=3 is served by both public front doors", {
     expect_identical(fit$source_values_exposed, FALSE)
     expect_identical(fit$intermediate_values_exposed, FALSE)
     expect_identical(fit$legacy_fallback_called, FALSE)
-    expect_identical(fit$additional_server_calls_after_capsule, 0L)
+    expect_identical(fit$additional_server_calls_after_synopsis, 0L)
     expect_identical(fit$history_gate, TRUE)
     expect_identical(fit$request_limit, FALSE)
     expect_identical(fit$operation_limit, TRUE)
@@ -1088,10 +1142,12 @@ test_that("cross-owner Gaussian K=2 uses both owner-computation peers", {
   fixture <- .dp_gaussian_cross_frontdoor_fixture(k = 2L)
   capsule_calls <- 0L
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(datasources, ...) {
+    .dsvert_dp_gaussian_synopsis_release = function(
+        data_name, analysis_id, server = NULL, datasources = NULL, .aggregate) {
       capsule_calls <<- capsule_calls + 1L
       expect_identical(names(datasources), c("site_a", "site_b"))
-      fixture$run
+      .dp_gaussian_legacy_released(
+        fixture, data_name, analysis_id, server, datasources, .aggregate)
     },
     .dsvert_aggregate_strict = function(...) {
       stop("legacy aggregate route called", call. = FALSE)
@@ -1127,7 +1183,7 @@ test_that("cross-owner Gaussian K=2 uses both owner-computation peers", {
     expect_identical(
       fit$cross_owner_state, "exact_gc_to_joint_dp_vector_v1")
     expect_identical(fit$legacy_fallback_called, FALSE)
-    expect_identical(fit$additional_server_calls_after_capsule, 0L)
+    expect_identical(fit$additional_server_calls_after_synopsis, 0L)
     expect_identical(fit$history_gate, TRUE)
     expect_identical(fit$request_limit, FALSE)
     expect_identical(fit$operation_limit, TRUE)
@@ -1155,7 +1211,9 @@ test_that("cross-owner Gaussian K=2 uses both owner-computation peers", {
 test_that("cross-owner Gaussian front doors reject owner and signature tampering", {
   fixture <- .dp_gaussian_cross_frontdoor_fixture()
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) fixture$run,
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = fixture), list(...)))
+    },
     .dsvert_aggregate_strict = function(...) {
       stop("legacy fallback called", call. = FALSE)
     },
@@ -1171,7 +1229,9 @@ test_that("cross-owner Gaussian front doors reject owner and signature tampering
   forged$run$release$signed_provenance$release_receipts$site_a$
     request_limit <- TRUE
   testthat::local_mocked_bindings(
-    .dsvert_dp_capsule_vector_run = function(...) forged$run,
+    .dsvert_dp_gaussian_synopsis_release = function(...) {
+      do.call(.dp_gaussian_legacy_released, c(list(fixture = forged), list(...)))
+    },
     .package = "dsVertClient")
   expect_error(ds.vertDPGaussian(
     "outcome_data", "cross_model", server = "site_b",

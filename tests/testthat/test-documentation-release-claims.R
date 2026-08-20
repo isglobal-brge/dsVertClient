@@ -103,7 +103,7 @@ test_that("quarantined Roxygen and Rd describe only the zero-DSI frontdoor", {
   }
 })
 
-test_that("GLM help documents the capsule route matrix instead of legacy MPC", {
+test_that("GLM help documents the Synopsis route matrix instead of legacy MPC", {
   package_root <- dirname(.dsvert_client_source_root())
   source <- .dsvert_public_roxygen_text("ds.vertGLM.R", "ds.vertGLM")
   rd_path <- file.path(package_root, "man", "ds.vertGLM.Rd")
@@ -127,6 +127,10 @@ test_that("GLM help documents the capsule route matrix instead of legacy MPC", {
     expect_match(text, "No binomial or Poisson fit", fixed = TRUE)
     expect_false(grepl(forbidden, text, ignore.case = TRUE, perl = TRUE))
   }
+  glm_status <- ds.vertMethodStatus(c("ds.vertGLM", "ds.vert.glm"))
+  expect_true(all(glm_status$status == "promoted"))
+  expect_match(glm_status$principal_limitation[[1L]],
+               "Binomial and Poisson", fixed = TRUE)
 })
 
 test_that("security-status docs cannot promote sealed routes via top-level readiness", {

@@ -162,7 +162,7 @@ entry point.
 | **Record alignment** | `ds.psiAlign()`, `ds.isPsiAligned()`, `ds.getIdentityPks()` |
 | **Descriptive / 2nd-order** | `ds.vertDesc()`, `ds.vertCor()`, `ds.vertPCA()`, `ds.vertChisq()`, `ds.vertChisqCross()`, `ds.vertFisher()` |
 | **Differential privacy** | `ds.vertDPStatus()`, `ds.vertDPCapsulePlan()`, `ds.vertDPCalibrate()`, `ds.vertDPCount()`, `ds.vertDPContingency()`, `ds.vertDPFrequency()`, `ds.vertDPFrequencyInference()`, `ds.vertDPMeanVar()`, `ds.vertDPDescribe()`, `ds.vertDPQuantile()`, `ds.vertDPMedian()`, `ds.vertDPGaussian()`, `ds.vertDPSurvival()`, `ds.vertDPSurvivalQuantile()`, `ds.vertDPMedianSurvival()`, `ds.vertDPSurvivalContrast()`, `ds.vertDPRMSTContrast()`, `ds.vertDPEpi2x2()`, `ds.vertDPEpi2x2Inference()`, `ds.vertDPMantelHaenszel()`, `ds.vertDPDiagnostic2x2()`, `ds.vertDPDiagnostic2x2Inference()`, `ds.vertDPROC()`, `ds.vertDPDirectStandardizationInference()`, `ds.vertDPIndirectStandardizationInference()`, `ds.vertDPCausalStandardization()`, `ds.vertDPCausalStandardizationInference()` and the remaining direct/indirect standardisation, competing-risk, RMST, and RMTL post-processors |
-| **GLM** (gaussian / binomial / poisson) | `ds.vertGLM()` preserves the historical API. A compatible same- or cross-owner Gaussian request may delegate to `ds.vertDPGaussian()`; binomial/Poisson and other iterative routes stay gated until their formal capsule backends are production-ready. |
+| **GLM** (gaussian / binomial / poisson) | `ds.vertGLM()` / `ds.vert.glm()` are promoted only for a compatible same- or cross-owner Gaussian request with a custodian-configured `dp_analysis_id`; it delegates to the signed sticky `ds.vertDPGaussian()` artifact. Binomial/Poisson and other iterative routes stay gated until their formal capsule backends are production-ready. |
 | **Inference helpers** | `ds.vertConfint()`, `ds.vertContrast()`, `ds.vertWald()`, `ds.vertLR()` |
 | **Epidemiology from authorised aggregates** | `ds.vertEpi2x2()`, `ds.vertMantelHaenszel()`, `ds.vertDirectStandardization()`, `ds.vertIndirectStandardization()` |
 | **Survival** | Sticky fixed-grid DP survival artifacts and their Kaplan--Meier, Nelson--Aalen, competing-risk, survival-quantile, RMST and RMTL post-processors are available. Cox frontdoors are retained but quarantined and fail before DSI until the formal Cox capsule is production-ready. |
@@ -177,7 +177,7 @@ entry point.
 
 | Family | K=2 product route | K≥3 product route | Legacy / not offered |
 |---|---|---|---|
-| GLM (gauss / binom / poisson) | Compatible same- or cross-owner Gaussian capsule adapter only; binomial/Poisson gated | same, tested through K=5 | legacy iterative routes are not production claims |
+| GLM (gauss / binom / poisson) | Compatible same- or cross-owner Gaussian signed-Synopsis adapter only; binomial/Poisson gated | same, tested through K=5 | legacy iterative routes are not production claims |
 | Cox PH | Formal capsule under internal validation; public frontdoors gated | same | `legacy_rank`, `ds.vertCox.k3()` removed |
 | Negative binomial | Quarantined pending bounded NB2 capsule and joint inference | same | disclosive `variant = "full_reg"` removed |
 | Multinomial | Slope route unavailable pending signed `multinomial_design_grams` | same | unsafe local-moment/correlation Gram reconstruction and warm / OVR final-estimator route removed |
