@@ -70,14 +70,6 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add("ds.getIdentityPks", "ds.getIdentityPks", "promoted",
       "Public Ed25519 identity discovery.",
       "Deployment must still test rotation, restart persistence and pin mismatch.")
-  add("ds.vertPublishOpalMethods", "ds.vertPublishOpalMethods", "promoted",
-      paste(
-        "Administrative helper that reconciles one dedicated Opal profile",
-        "to the exact method allowlist of the dsVert package installed in",
-        "its Rock cluster and leaves that profile disabled and restricted."),
-      paste(
-        "It deliberately does not install packages, configure policy or ACLs,",
-        "or enable the profile; those remain custodian deployment steps."))
   add(c("ds.psiAlign", "ds.vert.align"), "ds.psiAlign", "promoted",
       paste(
         "Pinned ECDH-PSI with a server-owned fixed-capacity bucket, signed",

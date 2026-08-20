@@ -18,7 +18,6 @@
     "ds.validateDPGaussianCertificate",
     "ds.vertMethodStatus",
     "ds.vertNumericPreflight",
-    "ds.vertPublishOpalMethods",
     "ds.vertSecurityStatus"
   ), method = "radix")
 }

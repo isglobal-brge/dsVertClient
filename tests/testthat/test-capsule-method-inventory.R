@@ -54,7 +54,7 @@ test_that("inventory separates current, migration, artifact and inference state"
 
   expect_identical(names(inventory), expected_columns)
   expect_identical(attr(inventory, "schema_version"),
-                   "dsvert-capsule-method-inventory-v3")
+                   "dsvert-capsule-method-inventory-v4")
   expect_true(all(nzchar(inventory$canonical_method)))
   expect_true(all(nzchar(inventory$canonical_family)))
   expect_true(all(nzchar(inventory$estimand)))
@@ -81,28 +81,25 @@ test_that("inventory separates current, migration, artifact and inference state"
   expect_false(any(inventory$same_capsule_replay_history_can_deny))
 })
 
-test_that("only new capsule reservation can be denied by lifetime history", {
+test_that("sticky Synopsis artifacts never deny a canonical replay", {
   inventory <- .dsvert_capsule_method_inventory()
-  capsule_producers <- c(
+  synopsis_producers <- c(
     "ds.vertDPContingency", "ds.vertDPMeanVar",
     "ds.vertDPCor", "ds.vertDPDescribe", "ds.vertDPGaussian",
     "ds.vertDPSurvival")
   currently_deniable <- inventory$method[
     inventory$new_capsule_reservation_history_can_deny]
 
-  expect_setequal(
-    currently_deniable,
-    inventory$method[
-      inventory$current_route_status == "formal_joint_dp_capsule"])
+  expect_length(currently_deniable, 0L)
   expect_true(all(inventory$current_route_status[
-    inventory$method %in% capsule_producers] ==
-      "formal_joint_dp_capsule"))
+    inventory$method %in% synopsis_producers] ==
+      "formal_sticky_synopsis_artifact"))
   expect_true(all(inventory$migration_feasibility[
-    inventory$method %in% capsule_producers] ==
-      "capsule_release_implemented"))
+    inventory$method %in% synopsis_producers] ==
+      "synopsis_release_implemented"))
   expect_false(any(inventory$same_capsule_replay_history_can_deny))
-  expect_true(all(inventory$new_capsule_reservation_history_can_deny[
-    inventory$method %in% capsule_producers]))
+  expect_false(any(inventory$new_capsule_reservation_history_can_deny[
+    inventory$method %in% synopsis_producers]))
   count <- row_for(inventory, "ds.vertDPCount")
   expect_identical(count$current_route_status,
                    "formal_sticky_count_artifact")
@@ -314,7 +311,7 @@ test_that("planned artifacts describe the actual biomedical contracts", {
                   "categorical_pairs_cross_owner")
   expect_true(all(c(
     "complete_case_patient_collapse",
-    "gaussian_sufficient_statistics_same_and_cross_owner",
+    "gaussian_sufficient_statistics_same_owner",
     "signed_gaussian_model_artifact") %in%
       artifacts_for(inventory, "ds.vertDPGaussian")))
   expect_contains(requirements_for(inventory, "ds.vertDPGaussian"),
@@ -323,13 +320,13 @@ test_that("planned artifacts describe the actual biomedical contracts", {
   expect_setequal(artifacts_for(inventory, "ds.vertLASSO1Step"), c(
     "authorized_fit_coefficients", "authorized_fit_covariance_or_fisher"))
   expect_true(all(c(
-    "admitted_count", "gaussian_sufficient_statistics_same_and_cross_owner",
+    "admitted_count", "gaussian_sufficient_statistics_same_owner",
     "signed_gaussian_model_artifact",
     "validated_gaussian_provenance_certificate",
     "legacy_authorized_unpenalized_gaussian_fit") %in%
       artifacts_for(inventory, "ds.vertLASSOProximal")))
   expect_true(all(c(
-    "admitted_count", "gaussian_sufficient_statistics_same_and_cross_owner",
+    "admitted_count", "gaussian_sufficient_statistics_same_owner",
     "signed_gaussian_model_artifact",
     "validated_gaussian_provenance_certificate",
     "legacy_authorized_fit_covariance_or_fisher") %in%
@@ -425,9 +422,9 @@ test_that("estimands and inference requirements match implemented semantics", {
                   "weight_provenance_binding")
 })
 
-test_that("implemented capsule producers and postprocessors are explicit", {
+test_that("implemented Synopsis producers and postprocessors are explicit", {
   inventory <- .dsvert_capsule_method_inventory()
-  capsule_producers <- c(
+  synopsis_producers <- c(
     "ds.vertDPContingency", "ds.vertDPMeanVar",
     "ds.vertDPCor", "ds.vertDPDescribe", "ds.vertDPGaussian",
     "ds.vertDPSurvival")
@@ -446,26 +443,27 @@ test_that("implemented capsule producers and postprocessors are explicit", {
     "ds.vertDPIndirectStandardizationInference")
 
   expect_true(all(inventory$migration_feasibility[
-    inventory$method %in% capsule_producers] ==
-      "capsule_release_implemented"))
+    inventory$method %in% synopsis_producers] ==
+      "synopsis_release_implemented"))
   expect_true(all(inventory$current_route_status[
-    inventory$method %in% capsule_producers] ==
-      "formal_joint_dp_capsule"))
-  expect_true(all(inventory$new_capsule_reservation_history_can_deny[
-    inventory$method %in% capsule_producers]))
+    inventory$method %in% synopsis_producers] ==
+      "formal_sticky_synopsis_artifact"))
+  expect_false(any(inventory$new_capsule_reservation_history_can_deny[
+    inventory$method %in% synopsis_producers]))
   expect_false(any(inventory$same_capsule_replay_history_can_deny[
-    inventory$method %in% capsule_producers]))
+    inventory$method %in% synopsis_producers]))
   expect_true(all(inventory$artifact_implementation_state[
     inventory$method %in% setdiff(
-      capsule_producers, c("ds.vertDPCor", "ds.vertDPGaussian"))] ==
-      "joint_vector_release_implemented"))
+      synopsis_producers, c("ds.vertDPCor", "ds.vertDPDescribe",
+                             "ds.vertDPGaussian"))] ==
+      "validated_synopsis_adapter_implemented"))
   expect_identical(
     row_for(inventory, "ds.vertDPCor")$artifact_implementation_state,
-    "validated_same_owner_capsule_adapter_implemented")
+    "validated_synopsis_adapter_implemented")
   expect_identical(
     row_for(inventory, "ds.vertDPGaussian")$
       artifact_implementation_state,
-    "validated_same_and_cross_owner_capsule_adapter_implemented")
+    "validated_same_owner_synopsis_adapter_implemented")
   count <- row_for(inventory, "ds.vertDPCount")
   expect_identical(count$current_route_status,
                    "formal_sticky_count_artifact")
@@ -476,18 +474,18 @@ test_that("implemented capsule producers and postprocessors are explicit", {
     paste(unlist(count), collapse = " "), ignore.case = TRUE))
   chisq <- inventory$method %in% c("ds.vertChisq", "ds.vert.chisq")
   expect_true(all(inventory$current_route_status[chisq] ==
-                    "formal_joint_dp_capsule"))
+                    "formal_sticky_synopsis_artifact"))
   expect_true(all(inventory$artifact_implementation_state[chisq] ==
-                    "validated_capsule_adapter_implemented"))
+                    "validated_same_owner_synopsis_adapter_implemented"))
   expect_true(all(inventory$inference_implementation_state[chisq] ==
                     "dp_aware_parametric_bootstrap_implemented"))
   fisher <- inventory$method %in% c("ds.vertFisher", "ds.vert.fisher")
   expect_true(all(inventory$artifact_implementation_state[fisher] ==
-                    "validated_capsule_adapter_implemented"))
+                    "validated_same_owner_synopsis_adapter_implemented"))
   expect_true(all(inventory$current_route_status[fisher] ==
-                    "formal_joint_dp_capsule"))
+                    "formal_sticky_synopsis_artifact"))
   expect_true(all(inventory$migration_feasibility[fisher] ==
-                    "capsule_release_implemented"))
+                    "synopsis_release_implemented"))
   expect_true(all(inventory$inference_implementation_state[fisher] ==
                     "dp_aware_conditional_hypergeometric_bootstrap_implemented"))
   expect_true(all(vapply(inventory$legacy_remote_call_evidence[fisher],
@@ -497,9 +495,9 @@ test_that("implemented capsule producers and postprocessors are explicit", {
   expect_true(all(inventory$current_route_status[lasso_proximal] ==
                     "client_only_inherits_input"))
   expect_true(all(inventory$migration_feasibility[lasso_proximal] ==
-                    "capsule_release_implemented"))
+                    "synopsis_release_implemented"))
   expect_true(all(inventory$artifact_implementation_state[lasso_proximal] ==
-                    "validated_same_and_cross_owner_capsule_adapter_implemented"))
+                    "validated_same_owner_synopsis_adapter_implemented"))
   expect_true(all(inventory$inference_implementation_state[lasso_proximal] ==
                     "dp_gaussian_lasso_with_legacy_compatibility_implemented"))
   expect_true(all(vapply(
@@ -510,50 +508,51 @@ test_that("implemented capsule producers and postprocessors are explicit", {
   expect_true(all(inventory$current_route_status[lasso_cv] ==
                     "client_only_inherits_input"))
   expect_true(all(inventory$migration_feasibility[lasso_cv] ==
-                    "capsule_release_implemented"))
+                    "synopsis_release_implemented"))
   expect_true(all(inventory$artifact_implementation_state[lasso_cv] ==
-                    "validated_same_and_cross_owner_capsule_adapter_implemented"))
+                    "validated_same_owner_synopsis_adapter_implemented"))
   expect_true(all(inventory$inference_implementation_state[lasso_cv] ==
                     "dp_gaussian_pseudo_ic_with_legacy_compatibility_implemented"))
   expect_true(all(vapply(inventory$legacy_remote_call_evidence[lasso_cv],
                          nrow, integer(1L)) == 0L))
   desc <- inventory$method %in% c("ds.vertDesc", "ds.vert.desc")
   expect_true(all(inventory$migration_feasibility[desc] ==
-                    "capsule_release_implemented"))
+                    "synopsis_release_implemented"))
   expect_true(all(inventory$current_route_status[desc] ==
-                    "formal_joint_dp_capsule"))
+                    "formal_sticky_synopsis_artifact"))
   expect_true(all(inventory$artifact_implementation_state[desc] ==
-                    "validated_capsule_adapter_implemented"))
+                    "validated_synopsis_adapter_implemented"))
   expect_true(all(inventory$inference_implementation_state[desc] ==
-                    "capsule_postprocess_implemented"))
+                    "synopsis_postprocess_implemented"))
   expect_true(all(vapply(inventory$legacy_remote_call_evidence[desc],
                          nrow, integer(1L)) == 0L))
   expect_true(all(inventory$inference_implementation_state[
     inventory$method %in% setdiff(
-      capsule_producers, c("ds.vertDPCor", "ds.vertDPGaussian"))] ==
-      "formal_capsule_release_implemented"))
+      synopsis_producers, c("ds.vertDPCor", "ds.vertDPDescribe",
+                             "ds.vertDPGaussian"))] ==
+      "synopsis_postprocess_implemented"))
   expect_identical(
     row_for(inventory, "ds.vertDPCor")$inference_implementation_state,
     "pairwise_postprocess_and_explicit_psd_projection_implemented")
   expect_identical(
     row_for(inventory, "ds.vertDPGaussian")$
       inference_implementation_state,
-    "capsule_postprocess_implemented")
+    "synopsis_postprocess_implemented")
   expect_true(all(vapply(inventory$legacy_remote_call_evidence[
-    inventory$method %in% capsule_producers], nrow, integer(1L)) == 0L))
+    inventory$method %in% synopsis_producers], nrow, integer(1L)) == 0L))
 
   expect_true(all(inventory$migration_feasibility[
     inventory$method %in% postprocessors] ==
-      "capsule_release_implemented"))
+      "synopsis_release_implemented"))
   expect_true(all(inventory$current_route_status[
     inventory$method %in% postprocessors] ==
-      "client_only_validated_capsule_postprocess"))
+      "client_only_validated_synopsis_postprocess"))
   expect_true(all(inventory$artifact_implementation_state[
     inventory$method %in% postprocessors] ==
-      "validated_capsule_adapter_implemented"))
+      "validated_synopsis_adapter_implemented"))
   expect_true(all(inventory$inference_implementation_state[
     inventory$method %in% postprocessors] ==
-      "capsule_postprocess_implemented"))
+      "synopsis_postprocess_implemented"))
   expect_true(all(vapply(inventory$legacy_remote_call_evidence[
     inventory$method %in% postprocessors], nrow, integer(1L)) == 0L))
   expect_false(any(inventory$same_capsule_replay_history_can_deny))
@@ -587,11 +586,11 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
 
   expect_true(all(inventory$current_route_status[
     inventory$method %in% mixed] ==
-      "formal_capsule_variant_only_legacy_unavailable"))
+      "formal_same_owner_synopsis_variant_only_legacy_unavailable"))
   expect_true(all(inventory$current_route_status[
     inventory$method %in% c(
       "ds.vertChisqCross", "ds.vert.chisq_cross")] ==
-      "formal_joint_dp_capsule"))
+      "formal_sticky_synopsis_artifact"))
   expect_true(all(inventory$current_route_status[
     inventory$method %in% broken] ==
       "signed_workload_unavailable_quarantine"))
