@@ -7,6 +7,32 @@
   asNamespace("dsVert")
 }
 
+# The empty default runs the complete release battery.  A named family is a
+# developer focal gate and never changes the production route.
+.synopsis_real_e2e_family <- Sys.getenv(
+  "DSVERT_TEST_SYNOPSIS_E2E_FAMILY", unset = "")
+.synopsis_real_e2e_families <- c(
+  "describe", "same_owner_contingency", "cross_owner_contingency",
+  "frequency", "survival", "correlation", "gaussian",
+  "cross_owner_tamper", "gaussian_lasso_focal")
+if (nzchar(.synopsis_real_e2e_family) &&
+    !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
+  stop("unknown DSVERT_TEST_SYNOPSIS_E2E_FAMILY", call. = FALSE)
+}
+
+.synopsis_real_e2e_only <- function(family) {
+  if (nzchar(.synopsis_real_e2e_family) &&
+      !identical(.synopsis_real_e2e_family, family)) {
+    skip(paste("focused on", .synopsis_real_e2e_family))
+  }
+}
+
+.synopsis_real_e2e_focal_only <- function() {
+  if (!identical(.synopsis_real_e2e_family, "gaussian_lasso_focal")) {
+    skip("set DSVERT_TEST_SYNOPSIS_E2E_FAMILY=gaussian_lasso_focal")
+  }
+}
+
 .synopsis_describe_real_e2e_fixture <- function(k, server_ns) {
   get_server <- function(name) get(name, envir = server_ns, inherits = FALSE)
   b64url <- function(raw) chartr(
@@ -255,9 +281,13 @@
   fixture
 }
 
-.synopsis_gaussian_real_e2e_fixture <- function(k, server_ns) {
+.synopsis_gaussian_real_e2e_fixture <- function(k, server_ns, n = 10000L) {
   fixture <- .synopsis_correlation_real_e2e_fixture(k, server_ns)
-  n <- 10000L
+  if (!is.numeric(n) || length(n) != 1L || !is.finite(n) || n < 64L ||
+      n != as.integer(n)) {
+    stop("n must be one integer of at least 64", call. = FALSE)
+  }
+  n <- as.integer(n)
   for (peer in fixture$peers) {
     policy <- fixture$policies[[peer]]
     policy$unit_capacity <- n
@@ -345,6 +375,7 @@
 }
 
 test_that("real Synopsis Describe is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("describe")
   server_ns <- .synopsis_describe_real_e2e_server()
   describe <- get(".dsvert_dp_describe_impl", asNamespace("dsVertClient"),
                   inherits = FALSE)
@@ -448,6 +479,7 @@ test_that("real Synopsis Describe is plausible and Rock-replayable at K=2/3/5", 
 })
 
 test_that("real same-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("same_owner_contingency")
   server_ns <- .synopsis_describe_real_e2e_server()
   contingency <- get(".dsvert_dp_contingency_impl",
                      asNamespace("dsVertClient"), inherits = FALSE)
@@ -503,6 +535,7 @@ test_that("real same-owner Synopsis contingency is plausible and Rock-replayable
 })
 
 test_that("real cross-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("cross_owner_contingency")
   server_ns <- .synopsis_describe_real_e2e_server()
   contingency <- get(".dsvert_dp_contingency_impl",
                      asNamespace("dsVertClient"), inherits = FALSE)
@@ -558,6 +591,7 @@ test_that("real cross-owner Synopsis contingency is plausible and Rock-replayabl
 })
 
 test_that("real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("frequency")
   server_ns <- .synopsis_describe_real_e2e_server()
   frequency <- get(".dsvert_dp_frequency_impl",
                    asNamespace("dsVertClient"), inherits = FALSE)
@@ -606,6 +640,7 @@ test_that("real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5",
 })
 
 test_that("real Synopsis survival is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("survival")
   server_ns <- .synopsis_describe_real_e2e_server()
   survival <- get(".dsvert_dp_survival_impl", asNamespace("dsVertClient"),
                   inherits = FALSE)
@@ -669,6 +704,7 @@ test_that("real Synopsis survival is plausible and Rock-replayable at K=2/3/5", 
 })
 
 test_that("real same-owner Synopsis correlation is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("correlation")
   server_ns <- .synopsis_describe_real_e2e_server()
   correlation <- get(".dsvert_dp_cor_impl", asNamespace("dsVertClient"),
                      inherits = FALSE)
@@ -716,6 +752,7 @@ test_that("real same-owner Synopsis correlation is plausible and Rock-replayable
 })
 
 test_that("real same-owner Gaussian Synopsis and correlation are plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("gaussian")
   server_ns <- .synopsis_describe_real_e2e_server()
   gaussian <- get(".dsvert_dp_gaussian_impl", asNamespace("dsVertClient"),
                   inherits = FALSE)
@@ -811,7 +848,62 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
   }
 })
 
+test_that("focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3/5", {
+  .synopsis_real_e2e_focal_only()
+  server_ns <- .synopsis_describe_real_e2e_server()
+  gaussian <- get(".dsvert_dp_gaussian_impl", asNamespace("dsVertClient"),
+                  inherits = FALSE)
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .synopsis_gaussian_real_e2e_fixture(k, server_ns, n = 512L)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    fit <- gaussian(
+      "data_peer_a", "gaussian_primary", 0, "peer_a", conns,
+      .synopsis_describe_real_e2e_dispatch(fixture))
+    selection <- ds.vertLASSOCV(
+      fit, lambda_grid = c(0.1, 0.05, 0.01), criterion = "BIC")
+
+    expect_s3_class(selection, "ds.vertLASSOCV")
+    expect_identical(fit$release_provenance$designated_noise_peers,
+                     as.list(fixture$peers[1:2]))
+    expect_length(fit$release_provenance$ordered_peer_pinset, k)
+    expect_true(selection$selection_available, info = paste("K =", k))
+    expect_false(selection$cross_validation, info = paste("K =", k))
+    expect_false(selection$one_standard_error_rule, info = paste("K =", k))
+    expect_equal(selection$lambda.min, 0.01, tolerance = 1e-12,
+                 info = paste("K =", k))
+    expect_equal(selection$lambda.parsimonious, 0.01, tolerance = 1e-12,
+                 info = paste("K =", k))
+    expect_true(all(vapply(selection$path_certificates, function(value) {
+      isTRUE(value$kkt$satisfied)
+    }, logical(1L))), info = paste("K =", k))
+    expect_gt(selection$beta.min[["(Intercept)"]], 5)
+    expect_lt(selection$beta.min[["(Intercept)"]], 15)
+    expect_lt(selection$beta.min[["x_peer_a"]], -0.25)
+    expect_identical(selection$additional_server_calls_after_synopsis, 0L)
+    expect_identical(selection$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- gaussian(
+      "data_peer_a", "gaussian_primary", 0, "peer_a", conns,
+      .synopsis_describe_real_e2e_dispatch(fixture))
+    replay_selection <- ds.vertLASSOCV(
+      replay, lambda_grid = c(0.1, 0.05, 0.01), criterion = "BIC")
+    expect_identical(serialize(replay_selection, NULL, version = 3L),
+                     serialize(selection, NULL, version = 3L))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     before)
+  }
+})
+
 test_that("cross-owner Synopsis rejects a tampered witness before mutation", {
+  .synopsis_real_e2e_only("cross_owner_tamper")
   server_ns <- .synopsis_describe_real_e2e_server()
   contingency <- get(".dsvert_dp_contingency_impl",
                      asNamespace("dsVertClient"), inherits = FALSE)
