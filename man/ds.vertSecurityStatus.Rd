@@ -9,9 +9,10 @@ ds.vertSecurityStatus(datasources = NULL, require_ready = TRUE)
 \arguments{
 \item{datasources}{DataSHIELD connections; active connections by default.}
 
-\item{require_ready}{Fail if the custodian-attested remote surface or the
-biomedical joint-DP consortium policy/authenticated control plane is not
-ready. This is not a route-specific execution preflight and never
+\item{require_ready}{Fail if the custodian-attested remote surface or
+current sticky-artifact consortium policy is not ready. Historical
+capsule lifetime telemetry is not an admission gate. This is not a
+route-specific execution preflight and never
 promotes formal GLM or Cox.}
 }
 \value{
@@ -20,10 +21,7 @@ A \code{ds.vertSecurityStatus} object with explicit route readiness.
 \description{
 Checks that every connected server enforces dsVert's single disclosure-safe
 profile, a matching custodian-owned attestation of the dedicated logical
-dsVert surface and, by default, the coherent joint-capsule policy, pinset,
-privacy epoch and authenticated lifetime-budget control-plane handshake. The
-availability of a new capsule reservation is reported separately in the
-joint-DP status telemetry and does not redefine consortium readiness. The
+dsVert surface and the coherent signed Synopsis policy and pinset. The
 surface
 attestation is an
 administrative assertion, not live introspection: it must be renewed after

@@ -112,7 +112,7 @@
 .dsvert_security_status_impl <- function(
     datasources = NULL, require_ready = TRUE,
     .aggregate = DSI::datashield.aggregate,
-    .dp_status = .dsvert_joint_dp_capsule_status_impl) {
+    .dp_status = .dsvert_dp_status_impl) {
   datasources <- .dsvert_dp_datasources(datasources)
   if (!is.logical(require_ready) || length(require_ready) != 1L ||
       is.na(require_ready)) {
@@ -199,10 +199,7 @@
 #'
 #' Checks that every connected server enforces dsVert's single disclosure-safe
 #' profile, a matching custodian-owned attestation of the dedicated logical
-#' dsVert surface and the coherent current sticky-artifact policy and pinset.
-#' Historical joint-capsule lifetime fields may still be parsed as
-#' compatibility telemetry, but they never admit or deny a current public
-#' route and do not redefine consortium readiness. The
+#' dsVert surface and the coherent signed Synopsis policy and pinset. The
 #' surface
 #' attestation is an
 #' administrative assertion, not live introspection: it must be renewed after
@@ -231,7 +228,7 @@ ds.vertSecurityStatus <- function(datasources = NULL,
                                   require_ready = TRUE) {
   .dsvert_security_status_impl(
     datasources, require_ready,
-    DSI::datashield.aggregate, .dsvert_joint_dp_capsule_status_impl)
+    DSI::datashield.aggregate, .dsvert_dp_status_impl)
 }
 
 #' @export

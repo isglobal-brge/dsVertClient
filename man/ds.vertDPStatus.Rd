@@ -10,17 +10,15 @@ ds.vertDPStatus(datasources = NULL)
 \item{datasources}{DataSHIELD connections. If \code{NULL}, use the active set.}
 }
 \value{
-A named list of server statuses with class \code{ds.vertDPStatus}.
+A reusable authenticated Synopsis bootstrap with class
+\code{ds.vertDPStatus}.
 }
 \description{
-Queries the reusable capsule control plane on every connected server. It
-verifies the fixed per-capsule epsilon/delta, the authenticated lifetime
-privacy bound, adjacency, exact
-logical-name-to-Ed25519 pin map, privacy epoch, and the two designated noise
-peers. Exact replay is unlimited and there is no request counter or accuracy
-decay, while a new distinct capsule consumes one authenticated,
-non-refundable distinct-capsule reservation unit at allocator commit. This
-call releases no protected statistic and consumes no privacy allocation.
-Printing the result distinguishes the remaining reservation units from
-request quotas.
+Verifies the signed Synopsis bootstrap on every connected server. It binds
+the exact logical-name-to-Ed25519 pin map, the two designated noise peers,
+and the server-authoritative canonical workload before any protected-source
+access. This call releases no protected statistic and creates no release.
+It has no request, rate, catalog, or finite lifetime admission limit:
+repeated calls validate the same sticky artifact, while distinct canonical
+artifacts have their own scoped DP releases and compose accordingly.
 }

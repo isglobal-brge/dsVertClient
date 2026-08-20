@@ -352,15 +352,10 @@ test_that("known unsafe legacy routes are not presented as promoted", {
   expect_true(all(grepl(
     "causal", causal$principal_limitation, ignore.case = TRUE)))
   dp_status <- ds.vertMethodStatus("ds.vertDPStatus")
-  expect_match(dp_status$safe_scope, "global cross-signed")
+  expect_match(dp_status$safe_scope, "signed Synopsis")
   expect_match(dp_status$principal_limitation,
-               "New-capsule admission is gated")
-  expect_match(dp_status$principal_limitation, "exact replay is unlimited")
-  expect_false(grepl("never admission", dp_status$principal_limitation,
-                     fixed = TRUE))
-  expect_match(dp_status$principal_limitation, "external CAS is optional")
-  expect_false(grepl("required external", dp_status$principal_limitation,
-                     fixed = TRUE))
+               "No request, rate, or catalog limit")
+  expect_match(dp_status$principal_limitation, "distinct artifacts compose")
   capsule_plan <- ds.vertMethodStatus("ds.vertDPCapsulePlan")
   expect_identical(
     capsule_plan$release_contract,
