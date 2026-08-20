@@ -1,117 +1,12 @@
-make_gaussian_lasso_fit <- function(family = "gaussian", source_lambda = 0) {
-  coefficients <- c(`(Intercept)` = 1, x1 = 0.5, x2 = -0.25)
-  n <- 100L
-  gram <- diag(c(1, 2, 4))
-  dimnames(gram) <- list(names(coefficients), names(coefficients))
-  covariance_information <- solve(n * gram)
-  fit <- list(
-    coefficients = coefficients,
-    covariance = covariance_information,
-    covariance_information = covariance_information,
-    family = family,
-    lambda = source_lambda,
-    n_obs = n,
-    n_vars = length(coefficients),
-    deviance = n - length(coefficients)
-  )
-  class(fit) <- c("ds.glm", "list")
-  fit
-}
-
-test_that("LASSOProximal exposes and solves only the Gaussian LASSO target", {
-  fit <- make_gaussian_lasso_fit()
-  result <- ds.vertLASSOProximal(fit, lambda = 0)
-
-  expect_s3_class(result, "ds.vertLASSOProximal")
-  expect_equal(result$coefficients, fit$coefficients, tolerance = 1e-12)
-  expect_identical(result$family, "gaussian")
-  expect_identical(result$estimand, "gaussian_lasso")
-  expect_identical(result$solver, "coordinate_descent_normal_equations")
-  expect_equal(result$source_fit_penalty, 0)
-})
-
-test_that("LASSOProximal rejects other families and penalised source fits", {
-  expect_error(
-    ds.vertLASSOProximal(make_gaussian_lasso_fit("binomial"), lambda = 0.1),
-    "only the Gaussian LASSO"
-  )
-  expect_error(
-    ds.vertLASSOProximal(make_gaussian_lasso_fit("poisson"), lambda = 0.1),
-    "only the Gaussian LASSO"
-  )
-  fit <- make_gaussian_lasso_fit()
-  fit$family <- NULL
-  expect_error(ds.vertLASSOProximal(fit, lambda = 0.1),
-               "family='gaussian'")
-  expect_error(
-    ds.vertLASSOProximal(make_gaussian_lasso_fit(source_lambda = 1e-4),
-                         lambda = 0.1),
-    "fit\\$lambda = 0"
-  )
-  fit <- make_gaussian_lasso_fit()
-  fit$lambda <- NULL
-  expect_error(ds.vertLASSOProximal(fit, lambda = 0.1),
-               "fit\\$lambda = 0")
-})
-
-test_that("LASSOProximal validates optimization arguments before solving", {
-  fit <- make_gaussian_lasso_fit()
-  for (bad in list(-1, NA_real_, Inf, c(0, 1))) {
-    expect_error(ds.vertLASSOProximal(fit, lambda = bad),
-                 "finite non-negative")
-  }
-  for (bad in list(0, 1.5, NA_real_, Inf)) {
-    expect_error(ds.vertLASSOProximal(fit, lambda = 0.1, max_iter = bad),
-                 "positive integer")
-  }
-  for (bad in list(0, -1, NA_real_, Inf)) {
-    expect_error(ds.vertLASSOProximal(fit, lambda = 0.1, tol = bad),
-                 "finite positive")
-  }
-  expect_error(ds.vertLASSOProximal(fit, 0.1, keep_intercept = NA),
-               "keep_intercept")
-  expect_error(ds.vertLASSOProximal(fit, 0.1, accelerate = NA),
-               "accelerate")
-  expect_error(ds.vertLASSOProximal(fit, 0.1, warm_start = c(1, 2)),
-               "one value per coefficient")
-  expect_error(
-    ds.vertLASSOProximal(fit, 0.1,
-                         warm_start = c(`(Intercept)` = 1, x1 = 2, wrong = 3)),
-    "must match fit\\$coefficients"
-  )
-})
-
-test_that("LASSOProximal applies the requested intercept penalty policy", {
-  fit <- make_gaussian_lasso_fit()
-  kept <- ds.vertLASSOProximal(fit, lambda = 0.2,
-                               keep_intercept = TRUE)
-  penalised <- ds.vertLASSOProximal(fit, lambda = 0.2,
-                                    keep_intercept = FALSE)
-
-  expect_equal(unname(kept$coefficients["(Intercept)"]), 1,
-               tolerance = 1e-12)
-  expect_lt(abs(penalised$coefficients["(Intercept)"]),
-            abs(kept$coefficients["(Intercept)"]))
-})
-
-test_that("LASSOCV visibly identifies information-criterion selection", {
-  fit <- make_gaussian_lasso_fit()
-  result <- ds.vertLASSOCV(
-    fit, lambda_grid = c(0, 0.05, 0.2), criterion = "BIC",
-    se_threshold = 0.05
-  )
-
-  expect_identical(result$selection_method,
-                   "information_criterion_quadratic_surrogate")
-  expect_false(result$cross_validation)
-  expect_false(result$one_standard_error_rule)
-  expect_equal(result$relative_ic_tolerance, 0.05)
-  expect_equal(result$lambda.parsimonious, result$lambda.1se)
-  expect_equal(result$beta.parsimonious, result$beta.1se)
-  printed <- capture.output(print(result))
-  expect_true(any(grepl("no cross-validation", printed, fixed = TRUE)))
-  expect_true(any(grepl("not a sampling standard-error rule", printed,
-                        fixed = TRUE)))
+test_that("public LASSO post-processors reject unvalidated ds.glm inputs", {
+  legacy <- structure(
+    list(family = "gaussian", lambda = 0, covariance = diag(2),
+         n_obs = 10, coefficients = c("(Intercept)" = 0, x = 0)),
+    class = c("ds.glm", "list"))
+  expect_error(ds.vertLASSOProximal(legacy, lambda = 0.05),
+               "validated ds.vertDPGaussian")
+  expect_error(ds.vertLASSOCV(legacy, lambda_grid = c(0.1, 0)),
+               "validated ds.vertDPGaussian")
 })
 
 test_that("DP LASSO numerical core matches a normalized analytic oracle", {
@@ -348,7 +243,6 @@ test_that("public proximal LASSO post-processes one certified DP release", {
                c(epsilon = 0, delta = 0))
   expect_false(result$source_values_exposed)
   expect_false(result$intermediate_values_exposed)
-  expect_false(result$compatibility$legacy_ds_glm_route_used)
   expect_false(result$coefficient_regions_available)
   printed <- capture.output(print(result))
   expect_true(any(grepl("extra DP cost = (0, 0)", printed, fixed = TRUE)))
@@ -573,22 +467,6 @@ test_that("DP LASSO requires transport- or caller-anchored provenance", {
     ds.vertLASSOCV(
       fit, lambda_grid = c(0.1, 0), trusted_pinset = trusted),
     "ds.vertDPLASSOSelect")
-})
-
-test_that("trusted_pinset is not silently ignored by legacy LASSO routes", {
-  legacy <- structure(
-    list(family = "gaussian", lambda = 0, covariance = diag(2),
-         n_obs = 10, coefficients = c("(Intercept)" = 0, x = 0)),
-    class = c("ds.glm", "list"))
-  expect_error(
-    ds.vertLASSOProximal(
-      legacy, lambda = 0.05, trusted_pinset = list(site_a = "pin")),
-    "applies only")
-  expect_error(
-    ds.vertLASSOCV(
-      legacy, lambda_grid = c(0.1, 0),
-      trusted_pinset = list(site_a = "pin")),
-    "applies only")
 })
 
 test_that("DP LASSO coefficient scale transforms round-trip signed bounds", {

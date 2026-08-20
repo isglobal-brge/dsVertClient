@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertLASSOCV.R
 \name{ds.vertLASSOCV}
 \alias{ds.vertLASSOCV}
-\title{Client-side information-criterion selection for Gaussian LASSO}
+\title{DP-projected information-criterion selection for Gaussian LASSO}
 \usage{
 ds.vertLASSOCV(
   fit,
@@ -15,59 +15,37 @@ ds.vertLASSOCV(
 )
 }
 \arguments{
-\item{fit}{Preferably a \code{ds.vertDPGaussian} object. A historical
-\code{ds.glm} object with \code{fit$covariance} remains accepted.}
+\item{fit}{A validated same-owner \code{ds.vertDPGaussian} object.}
 
-\item{lambda_grid}{Numeric vector of candidate lambda values
-(default: a 50-point log-spaced grid from \code{lambda_max} to
-\code{lambda_max / 1000}).}
+\item{lambda_grid}{Numeric vector of candidate non-negative lambda values,
+or NULL for the signed-source default grid.}
 
 \item{criterion}{One of \code{"BIC"} (default), \code{"AIC"}, or
 \code{"EBIC"}.}
 
-\item{ebic_gamma}{Extended-BIC gamma parameter (default 0.5;
-effective only when \code{criterion = "EBIC"}).}
+\item{ebic_gamma}{Extended-BIC gamma parameter, used only for EBIC.}
 
-\item{keep_intercept}{Never penalise the intercept.}
+\item{keep_intercept}{If TRUE (default), the intercept is not penalised.}
 
-\item{se_threshold}{Relative IC tolerance for the parsimonious selection:
-retain the sparsest lambda whose IC is no more than
-\code{abs(IC_min) * se_threshold} above \code{IC_min}. The historical
-argument name is retained for compatibility; it is not a standard error.}
+\item{se_threshold}{Relative pseudo-IC tolerance for the parsimonious
+selection. The historical name does not denote a sampling standard error.}
 
-\item{trusted_pinset}{Optional trusted named peer-to-Ed25519-public-key map
-used to authenticate a saved or offline \code{ds.vertDPGaussian} release.
-Online releases created in the current session use their transport-
-anchored pinset cache. It is invalid for the legacy \code{ds.glm} route.}
+\item{trusted_pinset}{Optional trusted peer pinset for an offline release.}
 }
 \value{
-A \code{ds.vertLASSOCV} object: \code{lambda}, \code{ic},
-\code{df}, \code{lambda.min}, \code{lambda.parsimonious},
-compatibility aliases \code{lambda.1se}/\code{beta.1se}, and metadata
-explicitly identifying information-criterion selection without
-cross-validation.
+An \code{ds.vertLASSOCV} / \code{ds.vertDPLASSOSelect} object with the
+selected path, KKT certificates and metadata explicitly identifying
+information-criterion selection without cross-validation.
 }
 \description{
-Select an L1 penalty entirely client-side. With a
-same-owner no-lifetime Synopsis \code{ds.vertDPGaussian} input, each
-candidate is solved from the same
-validated projected DP moments and ranked by an explicitly labelled DP
-projected pseudo-AIC/BIC/EBIC. With a historical \code{ds.glm} input,
-the existing quadratic-surrogate selector is retained. Despite the
-historical function/class suffix \code{CV}, neither route performs
-cross-validation or resampling.
-
-For a DP source, the score uses the projected noisy residual moment and
-noisy effective count. It is therefore a deterministic model-selection
-heuristic, not a classical likelihood information criterion; selection
-is returned as unavailable when those released quantities cannot define
-it. For a legacy source, the score is the quadratic-surrogate misfit plus
-the requested degrees-of-freedom penalty. The preferred metadata name
-for the more parsimonious alternative is \code{lambda.parsimonious}; the
-historical \code{lambda.1se} slot is retained as an exact alias, but it
-is not a one-standard-error rule. It uses a relative IC tolerance set by
-\code{se_threshold} and involves no estimated sampling standard error.
-
-Candidate paths are reusable post-processing and never trigger K-fold
-refitting or repeated private releases.
+Selects an L1 penalty from the signed projected moments in one validated
+same-owner \code{ds.vertDPGaussian} Synopsis. Candidates are ranked by an
+explicitly labelled DP-projected pseudo-AIC/BIC/EBIC; the historical
+\code{CV} suffix does not mean cross-validation or resampling.
+Unauthenticated historical \code{ds.glm} covariance inputs are rejected.
+}
+\section{Disclosure budget}{
+Candidate paths are deterministic post-processing of one authenticated
+sticky Synopsis: additional privacy cost is \code{(epsilon, delta) =
+(0, 0)} and no additional server calls occur.
 }

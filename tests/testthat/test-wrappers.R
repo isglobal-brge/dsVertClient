@@ -17,15 +17,6 @@ mock_fit <- function(coefs = c(`(Intercept)` = 1, x1 = 0.5, x2 = -0.3, x3 = 0.05
   fit
 }
 
-mock_fit_with_cov <- function() {
-  coefs <- c(`(Intercept)` = 1, x1 = 0.5, x2 = -0.3, x3 = 0.05)
-  covariance <- diag(c(0.04, 0.01, 0.01, 0.01))
-  dimnames(covariance) <- list(names(coefs), names(coefs))
-  fit <- mock_fit(coefs)
-  fit$covariance <- covariance
-  fit
-}
-
 # =============================================================================
 # Legacy ds.vertLASSO boundary
 # =============================================================================
@@ -155,43 +146,9 @@ test_that("LASSO1Step rejects the retired quadratic-surrogate ds.glm route", {
 })
 
 # =============================================================================
-# ds.vertLASSOCV: information-criterion path selection
+# ds.vertLASSOCV legacy boundary
 # =============================================================================
-test_that("LASSOCV BIC recovers the true support on a simulated Gaussian", {
-  skip_if_not_installed("stats")
-  set.seed(2026)
-  n <- 400; p <- 10
-  X <- matrix(rnorm(n * p), n, p)
-  true_beta <- c(1.5, -1.0, 0.8, 0, 0, 0, 0.3, -0.2, 0, 0)
-  y <- as.numeric(X %*% true_beta + rnorm(n, 0, 0.5))
-  fit_r <- lm(y ~ X - 1)
-  fake <- list(coefficients = coef(fit_r), covariance = vcov(fit_r),
-               family = "gaussian", n_obs = n)
-  names(fake$coefficients) <- paste0("X", seq_len(p))
-  dimnames(fake$covariance) <- list(names(fake$coefficients),
-                                    names(fake$coefficients))
-  class(fake) <- c("ds.glm", "list")
-
-  bic <- ds.vertLASSOCV(fake, criterion = "BIC")
-  expect_s3_class(bic, "ds.vertLASSOCV")
-  # True support is {1,2,3,7,8}.
-  expect_setequal(which(abs(bic$beta.min) > 1e-6), c(1, 2, 3, 7, 8))
-  # lambda.min and lambda.1se are both finite.
-  expect_true(is.finite(bic$lambda.min))
-  expect_true(is.finite(bic$lambda.1se))
-  expect_true(bic$lambda.1se >= bic$lambda.min - 1e-10)
-})
-
-test_that("LASSOCV errors when covariance is missing", {
-  fit <- mock_fit_with_cov()
-  fit$covariance <- NULL
-  expect_error(ds.vertLASSOCV(fit), "does not expose covariance")
-})
-
-test_that("LASSOCV respects a user-supplied lambda_grid", {
-  fit <- mock_fit_with_cov()
-  lam <- c(0, 0.1, 1, 10)
-  cv <- ds.vertLASSOCV(fit, lambda_grid = lam, criterion = "AIC")
-  expect_equal(cv$lambda, lam)
-  expect_equal(length(cv$ic), length(lam))
+test_that("LASSOCV rejects the retired ds.glm covariance route", {
+  expect_error(ds.vertLASSOCV(mock_fit(), lambda_grid = c(0.1, 0)),
+               "validated ds.vertDPGaussian")
 })

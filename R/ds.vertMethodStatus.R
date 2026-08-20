@@ -530,13 +530,12 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "ds.vertLASSOProximal", "promoted",
       paste(
         "Preferred zero-call Gaussian LASSO post-processing of one validated",
-        "same-owner signed Synopsis moment artifact; the ds.glm",
-        "normal-equation path remains",
-        "as legacy compatibility."),
+        "same-owner signed Synopsis moment artifact; each result carries a",
+        "deterministic KKT certificate."),
       paste(
         "Gaussian only; no sampling inference or coefficient regions;",
-        "cross-owner designs are unavailable and the legacy ds.glm route",
-        "remains compatibility only."))
+        "cross-owner designs and unauthenticated legacy ds.glm inputs are",
+        "unavailable."))
   add(c("ds.vertLASSOIter", "ds.vert.lasso_iter"), "ds.vertLASSOIter",
       "quarantine", "Exact slope-binomial route fails closed pending its signed Gram.",
       paste(
@@ -548,14 +547,12 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "promoted",
       paste(
         "Preferred zero-call DP-projected pseudo-AIC/BIC/EBIC selection over",
-        "one validated same-owner signed Gaussian Synopsis LASSO path; the",
-        "legacy ds.glm quadratic-surrogate selector remains compatibility",
-        "only."),
+        "one validated same-owner signed Gaussian Synopsis LASSO path."),
       paste(
-        "Neither route is cross-validation or a one-standard-error rule;",
+        "It is not cross-validation or a one-standard-error rule;",
         "selection uncertainty and sampling inference are unavailable;",
         "Gaussian same-owner designs only and cross-owner designs are",
-        "unavailable."))
+        "unavailable; unauthenticated legacy ds.glm inputs are rejected."))
   add(c("ds.vertConfint", "ds.vert.confint", "ds.vertWald", "ds.vert.wald",
         "ds.vertContrast", "ds.vert.contrast"),
       "ds.vert inference helpers", "promoted",

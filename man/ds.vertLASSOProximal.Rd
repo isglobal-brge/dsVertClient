@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertLASSOProximal.R
 \name{ds.vertLASSOProximal}
 \alias{ds.vertLASSOProximal}
-\title{Gaussian LASSO via client-side coordinate descent}
+\title{Gaussian LASSO from one signed DP Synopsis}
 \usage{
 ds.vertLASSOProximal(
   fit,
@@ -16,66 +16,40 @@ ds.vertLASSOProximal(
 )
 }
 \arguments{
-\item{fit}{Preferably a \code{ds.vertDPGaussian} object. A historical
-unpenalised Gaussian \code{ds.glm} object with \code{$covariance} and
-\code{$n_obs} remains accepted for compatibility.}
+\item{fit}{A validated same-owner \code{ds.vertDPGaussian} object.}
 
-\item{lambda}{Numeric. L1 penalty magnitude (on the 1/n-normalised objective).}
+\item{lambda}{One finite non-negative L1 penalty on the signed-bound
+normalized Gaussian objective.}
 
-\item{max_iter}{Positive integer. Coordinate-descent passes (default 2000).}
+\item{max_iter}{Positive bound on coordinate-descent iterations.}
 
-\item{tol}{Numeric. Convergence tolerance on \eqn{\|\beta_{t+1} - \beta_t\|}
-(default 1e-9).}
+\item{tol}{Positive KKT and convergence tolerance.}
 
-\item{keep_intercept}{Logical. If TRUE, do NOT penalise the intercept.}
+\item{keep_intercept}{If TRUE (default), the intercept is not penalised.}
 
-\item{warm_start}{Numeric vector. For a \code{ds.vertDPGaussian} input this
-is an optional original-scale coefficient vector containing the intercept
-and every signed predictor. For a legacy \code{ds.glm}, it is beta_0.}
+\item{warm_start}{Optional original-scale coefficient vector with the
+signed intercept and predictor names.}
 
 \item{accelerate}{Compatibility argument retained for historical callers.
 The current solver is coordinate descent, so this value has no effect.}
 
-\item{trusted_pinset}{Optional trusted named peer-to-Ed25519-public-key map
-used to authenticate a saved or offline \code{ds.vertDPGaussian} release.
-Online releases created in the current session use their transport-
-anchored pinset cache. It is invalid for the legacy \code{ds.glm} route.}
+\item{trusted_pinset}{Optional trusted peer pinset for an offline release.}
 }
 \value{
-An object of class \code{ds.vertLASSOProximal} with the proximal-MLE
-coefficients, number of iterations, convergence flag, support, final
-objective value, and the reconstructed Gram matrix used. The slot
-\code{$comparison$coefficients_soft} reports the naive post-hoc
-soft-thresholded OLS for comparison.
+An \code{ds.vertLASSOProximal} / \code{ds.vertDPLASSO} object with
+original- and normalized-scale coefficients, a KKT certificate and no
+sampling inference or coefficient confidence regions.
 }
 \description{
-Solve the Gaussian LASSO objective entirely client-side. The
-preferred route accepts a validated same-owner no-lifetime Synopsis
-\code{ds.vertDPGaussian} release and
-optimises its signed, projected DP sufficient statistics without another
-DSI call or privacy cost. The historical \code{ds.glm} route is retained
-for compatibility with already-created fits.
-
-Normal equations: para Gaussian \eqn{y = X\beta + \varepsilon} el
-minimizador LASSO es
-\deqn{\beta^* = \arg\min_{\beta} \tfrac{1}{2n} \|y - X\beta\|^2 + \lambda \|\beta\|_1.}
-El gradiente de la parte cuadratica es
-\deqn{\nabla f(\beta) = \tfrac{1}{n} X^\top X \cdot (\beta - \hat\beta_{OLS}).}
-ds.vertGLM ya expone \eqn{\hat\beta_{OLS}} y \eqn{\mathrm{Cov}(\hat\beta) = \sigma^2 (X^\top X)^{-1}}.
-De ahi el cliente reconstruye
-\eqn{X^\top X / n = \mathrm{Cov}^{-1} \cdot \hat\sigma^2 / n}
-e itera proximal-gradient puramente en memoria:
-\eqn{\beta_{t+1} = S_{\lambda/L}(\beta_t - \eta \nabla f(\beta_t))}
-con \eqn{L \ge \lambda_{\max}(X^\top X / n)} (upper bound local) y
-\eqn{S_t(x) = \mathrm{sign}(x) \max(|x|-t, 0)} el operador soft-threshold.
+Fits one deterministic, KKT-checked Gaussian LASSO solution from the
+projected moments in a validated sticky \code{ds.vertDPGaussian} release.
+It performs no new DataSHIELD, MPC or privacy operation. Unauthenticated
+historical \code{ds.glm} normal-equation inputs are rejected.
 }
 \section{Disclosure budget}{
-
-Zero new DSI or MPC rounds. For a \code{ds.vertDPGaussian} input, every
-lambda and iteration is deterministic post-processing of the same sticky
-release and has additional privacy cost \code{(epsilon, delta) = (0, 0)}.
-No classical sampling inference or coefficient confidence region is
-implied by the projected noisy moments.
+The result is deterministic post-processing of one authenticated sticky
+Synopsis: additional privacy cost is \code{(epsilon, delta) = (0, 0)} and
+no additional server calls occur.
 }
 
 \seealso{

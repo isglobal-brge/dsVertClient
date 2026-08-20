@@ -57,7 +57,7 @@ test_that("empty contingency margins fail instead of using epsilon divisors", {
   expect_identical(err$reason, "degenerate_contingency_margins")
 })
 
-test_that("GLMM and LASSO singular systems do not acquire a ridge fallback", {
+test_that("GLMM and non-PSD DP LASSO systems do not acquire a repair", {
   glmm_err <- tryCatch(
     dsVertClient:::.ds_glmm_safe_solve(
       matrix(c(1, 1, 1, 1), 2L), c(1, 1)),
@@ -66,20 +66,16 @@ test_that("GLMM and LASSO singular systems do not acquire a ridge fallback", {
   expect_identical(glmm_err$reason,
                    "singular_glmm_fixed_effect_information")
 
-  fit <- list(
-    coefficients = c("(Intercept)" = 0, x = 0),
-    covariance = diag(2),
-    covariance_information = matrix(c(1, 1, 1, 1), 2L),
-    n_obs = 20L,
-    deviance = 10,
-    family = "gaussian",
-    lambda = 0)
-  class(fit) <- c("ds.glm", "list")
   lasso_err <- tryCatch(
-    ds.vertLASSOProximal(fit, lambda = 0.1),
+    dsVertClient:::.dsvert_lasso_dp_solver(
+      matrix(c(1, 0, 0, -1), 2L,
+             dimnames = list(c("(Intercept)", "x"),
+                             c("(Intercept)", "x"))),
+      c("(Intercept)" = 0, x = 0), lambda = 0.1,
+      max_iter = 100L, tol = 1e-10, keep_intercept = TRUE),
     error = identity)
   expect_s3_class(lasso_err, "non_identifiable")
-  expect_identical(lasso_err$reason, "rank_deficient_lasso_design")
+  expect_identical(lasso_err$reason, "non_psd_dp_lasso_information")
 })
 
 test_that("regularization and imputation alternatives require explicit input", {

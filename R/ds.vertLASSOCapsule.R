@@ -725,8 +725,7 @@
     implicit_ridge = FALSE,
     client_psd_projection_applied = FALSE,
     compatibility = list(
-      accelerate_argument = accelerate, accelerate_effective = FALSE,
-      legacy_ds_glm_route_used = FALSE),
+      accelerate_argument = accelerate, accelerate_effective = FALSE),
     comparison = list(
       coefficients_soft = NULL,
       note = "Naive soft-thresholding is not reported for DP moments"),
