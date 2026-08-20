@@ -610,6 +610,8 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
       simultaneous$implementation_tv_upper_bound,
     accuracy_additional_privacy_cost =
       simultaneous$additional_privacy_cost,
+    additional_server_calls_after_synopsis = 0L,
+    additional_privacy_cost = c(epsilon = 0, delta = 0),
     quantization_rule =
       "each_normalized_first_second_cross_moment_rounded_to_signed_grid",
     uncertainty_scope = paste(

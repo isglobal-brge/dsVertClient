@@ -126,10 +126,10 @@
     }
     fixture$policies[[peer]] <- policy
   }
-  data <- fixture$snapshots$peer_a$data
+  data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
   data$exposure <- rep(c("no", "yes", "no", "yes"), each = 25L)
   data$outcome <- rep(c("no", "no", "yes", "yes"), each = 25L)
-  fixture$snapshots$peer_a$data <- data
+  fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
   fixture
 }
 
@@ -166,27 +166,32 @@
     event = "status_peer_a", censor = "censor", time_grid = c(5, 10),
     entry = NULL)
   fixture$policies$peer_a <- policy
-  data <- fixture$snapshots$peer_a$data
+  data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
   data$time_peer_a <- rep(c(2, 8), each = 50L)
   data$status_peer_a <- rep(c("censor", "event"), each = 50L)
-  fixture$snapshots$peer_a$data <- data
+  fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
   fixture
 }
 
 .synopsis_correlation_real_e2e_fixture <- function(k, server_ns) {
   fixture <- .synopsis_describe_real_e2e_fixture(k, server_ns)
-  policy <- fixture$policies$peer_a
-  policy$numeric_bounds$y_peer_a <- c(0, 10)
-  policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
-    "x_peer_a", "y_peer_a")
-  policy$capsule_workload_scope <- list(
+  scope <- list(
     mode = "catalog_v1", numeric_moments = c("x_peer_a", "y_peer_a"),
     categorical_marginals = character(), categorical_pairs = list(),
     correlations = list(c("x_peer_a", "y_peer_a")))
-  fixture$policies$peer_a <- policy
-  data <- fixture$snapshots$peer_a$data
+  for (peer in fixture$peers) {
+    policy <- fixture$policies[[peer]]
+    policy$capsule_workload_scope <- scope
+    if (identical(peer, "peer_a")) {
+      policy$numeric_bounds$y_peer_a <- c(0, 10)
+      policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+        "x_peer_a", "y_peer_a")
+    }
+    fixture$policies[[peer]] <- policy
+  }
+  data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
   data$y_peer_a <- rep(c(10, 0), 50L)
-  fixture$snapshots$peer_a$data <- data
+  fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
   fixture
 }
 
@@ -529,7 +534,7 @@ test_that("real same-owner Synopsis correlation is plausible and Rock-replayable
                     first$correlation_raw_pairwise <= 1))
     expect_true(all(is.finite(first$correlation)))
     expect_equal(first$correlation, t(first$correlation), tolerance = 1e-12)
-    expect_equal(diag(first$correlation), c(1, 1), tolerance = 1e-12)
+    expect_equal(unname(diag(first$correlation)), c(1, 1), tolerance = 1e-12)
     expect_gte(min(eigen(first$correlation, symmetric = TRUE,
                          only.values = TRUE)$values), -1e-12)
     expect_identical(first$cross_owner_state, "reserved_not_materialized")
