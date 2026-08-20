@@ -586,13 +586,14 @@
     scale = scale, capacity = capacity)
 }
 
-#' Bounded Gaussian regression from the sticky DP capsule
+#' Bounded Gaussian regression from a canonical signed DP Synopsis
 #'
 #' Fits a descriptive Gaussian linear model from one signed sufficient-
 #' statistic artifact. Outcome and predictors are clipped to custodian-owned
 #' public bounds, collapsed once per admitted patient, normalized to `[0,1]`,
 #' and restricted to a fixed complete-case estimand. The function performs one
-#' sticky capsule retrieval and then only deterministic client post-processing.
+#' canonical Synopsis retrieval and then only deterministic client
+#' post-processing.
 #'
 #' @param data_name Signed protected dataset name.
 #' @param analysis_id Custodian-configured signed Gaussian artifact id.
@@ -606,8 +607,9 @@
 ds.vertDPGaussian <- function(
     data_name, analysis_id, ridge = 0, server = NULL,
     datasources = NULL) {
+  resolved <- .dsvert_federation_argument(data_name, datasources)
   .dsvert_dp_gaussian_impl(
-    data_name, analysis_id, ridge, server, datasources,
+    resolved$value, analysis_id, ridge, server, resolved$datasources,
     DSI::datashield.aggregate)
 }
 
@@ -622,41 +624,15 @@ ds.vertDPGaussian <- function(
     stop("ridge must be one finite non-negative number", call. = FALSE)
   }
   ridge <- as.numeric(ridge)
-  datasources <- .dsvert_dp_datasources(datasources)
-  if (!is.null(server)) server <- .dsvert_dp_server(server, datasources)
-  run <- .dsvert_dp_capsule_vector_run(
-    datasources, .aggregate = .aggregate)
-  context <- .dsvert_dp_vector_context(run)
-  scale <- as.numeric(context$lattice$output_lattice_scale)
-  count_block <- .dsvert_dp_capsule_single_block(
-    context$layout, "admitted_count",
-    description = "signed admitted-count capacity block")
-  capacity <- .dsvert_dp_vector_block_capacity(count_block)
-  artifact <- .dsvert_dp_gaussian_artifact(
-    context$manifest, data_name, analysis_id, server,
-    context$adjacency, scale, capacity)
-  blocks <- .dsvert_dp_capsule_vector_blocks(
-    context$layout, "gaussian_models", dataset = data_name,
-    owner_peer = artifact$owner_peer)
-  blocks <- blocks[vapply(
-    blocks, function(block) identical(block$key, analysis_id), logical(1L))]
-  signed_descriptor <- tryCatch(
-    context$manifest$workload$families$gaussian_models$artifacts[[analysis_id]],
-    error = function(error) NULL)
-  if (length(blocks) != 1L ||
-      !identical(
-        .dsvert_joint_dp_client_json(blocks[[1L]]$descriptor),
-        .dsvert_joint_dp_client_json(signed_descriptor))) {
-    stop("The signed Gaussian artifact does not match its vector layout",
-         call. = FALSE)
-  }
-  coordinates <- .dsvert_dp_capsule_vector_values(
-    context$release, blocks[[1L]])
-  if (length(coordinates) != artifact$coordinate_count ||
-      any(coordinates < 0) || any(coordinates > capacity)) {
-    stop("The released Gaussian block violates its signed bounds",
-         call. = FALSE)
-  }
+  released <- .dsvert_dp_gaussian_synopsis_release(
+    data_name, analysis_id, server, datasources, .aggregate)
+  context <- released$context
+  artifact <- released$artifact
+  coordinates <- released$coordinates
+  scale <- released$scale
+  capacity <- released$capacity
+  provenance_certificate <- released$certificate
+  provenance_verification <- released$verification
   simultaneous <- .dsvert_dp_vector_accuracy_radius(
     context$release, context$manifest,
     coordinate_count = artifact$coordinate_count,
@@ -679,23 +655,15 @@ ds.vertDPGaussian <- function(
     upper = pmin(
       n_interval[["upper"]],
       coordinates[-1L] + simultaneous$radius + quantization))
-  moment <- .dsvert_dp_gaussian_unpack(
-    coordinates, artifact, capacity)
+  moment <- released$moment
   fit <- .dsvert_dp_gaussian_solve(moment, artifact, ridge)
   original <- .dsvert_dp_gaussian_original_coefficients(
     fit$coefficients, artifact)
-  metadata <- .dsvert_dp_vector_public_metadata(context)
-  provenance_certificate <- .dsvert_dp_gaussian_certificate_build(
-    context, artifact, blocks[[1L]], coordinates)
-  result <- c(metadata, list(
+  result <- c(released$metadata, list(
     status = "ok", analysis_id = analysis_id,
-    cohort_id = provenance_certificate$artifact_commitment$context$cohort_id,
-    logical_snapshot =
-      provenance_certificate$artifact_commitment$context$logical_snapshot,
-    query_contract_sha256 =
-      provenance_certificate$query_contract_sha256,
-    release_contract_hash =
-      provenance_certificate$release_contract_hash,
+    cohort_id = provenance_verification$cohort_id,
+    logical_snapshot = provenance_verification$logical_snapshot,
+    certificate_sha256 = provenance_certificate$certificate_sha256,
     signed_artifact = artifact, server = artifact$owner_peer,
     participating_servers = if (is.null(artifact$participating_peers)) {
       artifact$owner_peer
@@ -765,7 +733,7 @@ ds.vertDPGaussian <- function(
       additional_privacy_cost = simultaneous$additional_privacy_cost,
       coefficient_regions_available = FALSE),
     uncertainty_scope = paste(
-      "The certificate covers simultaneous capsule-mechanism noise and",
+      "The certificate covers simultaneous Synopsis-mechanism noise and",
       "deterministic quantization of bounded finite-snapshot sufficient",
       "statistics; nonlinear coefficient regions and population sampling",
       "inference are not claimed"),
@@ -776,14 +744,14 @@ ds.vertDPGaussian <- function(
     intermediate_values_exposed = FALSE,
     individual_fitted_values_available = FALSE,
     individual_residuals_available = FALSE,
-    additional_server_calls_after_capsule = 0L,
+    additional_server_calls_after_synopsis = 0L,
     additional_privacy_cost = c(epsilon = 0, delta = 0),
     cross_owner_state = artifact$cross_owner_state,
     legacy_fallback_called = FALSE,
     provenance_certificate = provenance_certificate,
     disclosure_guard = list(
       satisfied = TRUE,
-      basis = "formal_joint_sticky_DP_capsule_postprocessing")))
+      basis = "formal_canonical_sticky_DP_synopsis_postprocessing")))
   class(result) <- c("ds.vertDPGaussian", "list")
   verified <- ds.validateDPGaussianCertificate(result)
   result$provenance_integrity <- verified$integrity_valid

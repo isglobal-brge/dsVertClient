@@ -179,6 +179,7 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "promoted")
   gaussian_synopsis <- ds.vertMethodStatus(c(
     "ds.vertDPGaussian", "ds.vertCor", "ds.vertPCA"))
+  expect_true(all(gaussian_synopsis$status == "promoted"))
   expect_true(all(gaussian_synopsis$release_contract ==
                     "formal_sticky_synopsis_artifact"))
   synopsis <- ds.vertMethodStatus(c(

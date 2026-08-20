@@ -380,7 +380,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add("ds.vertNumericPreflight", "ds.vertNumericPreflight", "promoted",
       "Data-free fail-closed selection and certification against custodian-owned numeric bounds.",
       "A backend is usable only after its advertised exact primitives pass end-to-end attestation.")
-  add(c("ds.vertCor", "ds.vert.cor"), "ds.vertCor", "provisional",
+  add(c("ds.vertCor", "ds.vert.cor"), "ds.vertCor", "promoted",
       paste(
         "Joint complete-case Pearson correlation from one signed same-owner",
         "Gaussian Synopsis artifact."),
@@ -388,7 +388,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "A signed analysis id and intercept are mandatory; mechanism regions",
         "exclude population-sampling uncertainty. Cross-owner descriptors",
         "are quarantined without a capsule fallback."))
-  add(c("ds.vertPCA", "ds.vert.pca"), "ds.vertPCA", "provisional",
+  add(c("ds.vertPCA", "ds.vert.pca"), "ds.vertPCA", "promoted",
       paste(
         "Client-only eigenstructure of the explicitly PSD-projected sticky DP",
         "joint complete-case Gaussian correlation artifact."),
@@ -423,7 +423,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "The plug-in reference laws are asymptotic rather than finite-sample",
         "exact; mechanism and Monte Carlo uncertainty are reported",
         "separately, and no malicious-peer security is claimed."))
-  add("ds.vertDPGaussian", "ds.vertDPGaussian", "provisional",
+  add("ds.vertDPGaussian", "ds.vertDPGaussian", "promoted",
       paste(
         "Bounded, clipped complete-case Gaussian coefficients from one signed",
         "no-lifetime Synopsis sufficient-statistic artifact for same-owner",
