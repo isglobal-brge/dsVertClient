@@ -241,7 +241,8 @@ test_that("known unsafe legacy routes are not presented as promoted", {
   expect_match(lasso_path$safe_scope[[1L]], "KKT", fixed = TRUE)
   lasso_1step <- ds.vertMethodStatus(c(
     "ds.vertLASSO1Step", "ds.vert.lasso_1step"))
-  expect_true(all(lasso_1step$status == "compatibility"))
+  expect_true(all(lasso_1step$status == "promoted"))
+  expect_match(lasso_1step$safe_scope[[1L]], "KKT", fixed = TRUE)
   expect_true(all(c(lasso_path$release_contract,
                     lasso_1step$release_contract) ==
                     "postprocessing_inherits_input"))

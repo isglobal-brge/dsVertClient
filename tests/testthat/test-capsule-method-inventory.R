@@ -317,8 +317,13 @@ test_that("planned artifacts describe the actual biomedical contracts", {
   expect_contains(requirements_for(inventory, "ds.vertDPGaussian"),
                   "no_sampling_inference")
 
-  expect_setequal(artifacts_for(inventory, "ds.vertLASSO1Step"), c(
-    "authorized_fit_coefficients", "authorized_fit_covariance_or_fisher"))
+  lasso_paths <- c("ds.vertLASSO", "ds.vertLASSO1Step")
+  expect_true(all(vapply(lasso_paths, function(method) {
+    all(c("admitted_count", "gaussian_sufficient_statistics_same_owner",
+          "signed_gaussian_model_artifact",
+          "validated_gaussian_provenance_certificate") %in%
+          artifacts_for(inventory, method))
+  }, logical(1L))))
   expect_true(all(c(
     "admitted_count", "gaussian_sufficient_statistics_same_owner",
     "signed_gaussian_model_artifact",
@@ -601,9 +606,10 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
     inventory$method %in% setdiff(broken, c(
       "ds.vertLASSOIter", "ds.vert.lasso_iter"))] ==
       "signed_multinomial_design_gram_not_materialized"))
+  expect_true(all(ds.vertMethodStatus(mixed)$status == "promoted"))
   expect_length(intersect(
     ds.vertMethodStatus(status = "promoted")$method,
-    c(mixed, broken)), 0L)
+    broken), 0L)
 })
 
 test_that("NB and mutating MI routes are explicitly quarantined", {
