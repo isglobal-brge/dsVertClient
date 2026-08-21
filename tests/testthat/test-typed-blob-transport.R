@@ -38,7 +38,7 @@
 test_that("typed transport does not advertise unimplemented source streaming", {
   model <- .dsvert_typed_blob_resource_model()
   expect_identical(
-    model$version, "dsvert-typed-blob-resource-model-v4")
+    model$version, "dsvert-typed-blob-resource-model-v5")
   expect_false(model$producer_source_streaming)
   expect_false(model$client_source_streaming)
   expect_true(model$producer_capabilities$mpcTypedSourceProbeDS$
@@ -49,6 +49,8 @@ test_that("typed transport does not advertise unimplemented source streaming", {
                  statistical_producer)
   expect_false(model$producer_capabilities$mpcTypedSourceProbeDS$
                  recipient_consumer_streaming)
+  expect_false("formal_cox_blockwise_control_v1" %in%
+                 names(model$producer_capabilities))
   capsule <- model$producer_capabilities$biomedical_capsule_source_v2
   expect_true(capsule$producer_source_streaming)
   expect_true(capsule$client_source_streaming)
