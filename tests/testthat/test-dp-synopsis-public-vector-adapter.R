@@ -18,6 +18,41 @@
   algo = "sha256", serialize = FALSE)
 }
 
+test_that("one-coordinate Synopsis reaches remote compilation at K=2/3/5", {
+  for (k in c(2L, 3L, 5L)) {
+    peers <- paste0("peer_", letters[seq_len(k)])
+    designated <- peers[1:2]
+    calls <- 0L
+    trusted <- list(
+      manifest = list(workload = list(
+        capsule_mechanism = list(mechanism = "discrete-laplace"))),
+      context = list(
+        servers = peers, designated = designated,
+        all_conns = stats::setNames(as.list(peers), peers),
+        conns = stats::setNames(as.list(designated), designated)))
+    testthat::local_mocked_bindings(
+      .dsvert_dp_datasources = function(value) value,
+      .dsvert_dp_synopsis_bootstrap_build_v1 = function(...) list(
+        status = list(), manifest_bundle = list(manifest_sha256 = "fixture")),
+      .dsvert_dp_synopsis_client_bundle = function(...) trusted,
+      .dsvert_dp_synopsis_supported_categorical_cross_v1 = function(...) FALSE,
+      .dsvert_dp_synopsis_runner_cross = function(...) FALSE,
+      .dsvert_dp_synopsis_publication_resume_v1 = function(...) NULL,
+      .dsvert_dp_capsule_vector_layout = function(...) list(
+        coordinate_count = 1L),
+      .dsvert_dp_synopsis_runner_compile = function(...) {
+        calls <<- calls + 1L
+        stop("compile reached")
+      },
+      .package = "dsVertClient")
+    expect_error(
+      .dsvert_dp_synopsis_vector_run(
+        stats::setNames(as.list(peers), peers), .aggregate = function(...) NULL),
+      "compile reached", fixed = TRUE, info = paste("K =", k))
+    expect_identical(calls, 1L, info = paste("K =", k))
+  }
+})
+
 .synopsis_public_fixture <- function(
     k = 3L, scaled_values = c("256", "512"), gaussian_artifact = NULL,
     .source = NULL, parent_authorization = NULL) {

@@ -31,6 +31,11 @@ test_that("real Synopsis Count is plausible and Rock-replayable at K=2/3/5", {
     first <- count("data_peer_a", "peer_b", conns, dispatch)
     expect_s3_class(first, "ds.vertDPCount")
     expect_true(isTRUE(first$released))
+    expect_true(isTRUE(first$one_joint_draw))
+    expect_identical(first$implementation,
+                     .DSVERT_CLIENT_VECTOR_EXACT_BACKEND)
+    expect_identical(first$backend_selection$backend,
+                     .DSVERT_CLIENT_VECTOR_EXACT_BACKEND)
     expect_identical(fixture$state$source_prepare, 1L)
     expect_identical(fixture$state$start, 2L)
     expect_identical(first$source_owner, "peer_a")
