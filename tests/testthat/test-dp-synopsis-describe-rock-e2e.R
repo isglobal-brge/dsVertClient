@@ -18,7 +18,7 @@
   "DSVERT_TEST_SYNOPSIS_E2E_FAMILY", unset = "")
 .synopsis_real_e2e_families <- c(
   "describe", "same_owner_contingency", "cross_owner_contingency",
-  "frequency", "survival", "correlation", "gaussian",
+  "stratified_epidemiology", "frequency", "survival", "correlation", "gaussian",
   "cross_owner_tamper", "gaussian_lasso_focal")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
@@ -160,6 +160,37 @@ if (nzchar(.synopsis_real_e2e_family) &&
   data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
   data$exposure <- rep(c("no", "yes", "no", "yes"), each = 25L)
   data$outcome <- rep(c("no", "no", "yes", "yes"), each = 25L)
+  fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
+  fixture
+}
+
+.synopsis_stratified_contingency_real_e2e_fixture <- function(k, server_ns) {
+  fixture <- .synopsis_describe_real_e2e_fixture(k, server_ns)
+  pair_scope <- list(
+    mode = "catalog_v1", numeric_moments = "x_peer_a",
+    categorical_marginals = character(),
+    categorical_pairs = list(c("stratum", "outcome")),
+    correlations = list())
+  for (peer in fixture$peers) {
+    policy <- fixture$policies[[peer]]
+    policy$capsule_workload_scope <- pair_scope
+    if (identical(peer, "peer_a")) {
+      policy$categorical_levels <- list(
+        stratum = c("young", "middle", "old"),
+        outcome = c("no", "yes"))
+      policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+        "x_peer_a", "stratum", "outcome")
+    }
+    fixture$policies[[peer]] <- policy
+  }
+  data <- data.frame(
+    patient_id = paste0("u", seq_len(120L)),
+    x_peer_a = rep(c(0, 10), length.out = 120L),
+    stratum = rep(c("young", "middle", "old"), each = 40L),
+    outcome = c(rep("no", 30L), rep("yes", 10L),
+                rep("no", 25L), rep("yes", 15L),
+                rep("no", 20L), rep("yes", 20L)),
+    stringsAsFactors = FALSE)
   fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
   fixture
 }
@@ -622,6 +653,94 @@ test_that("real same-owner Synopsis contingency is plausible and Rock-replayable
       new.env(parent = emptyenv())
     }), fixture$peers)
     replay <- contingency("data_peer_a", "exposure", "outcome", "peer_a",
+                          conns, dispatch)
+    expect_identical(replay$table, first$table)
+    expect_identical(replay$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real stratified Synopsis supports sticky standardisation at K=2/3/5", {
+  .synopsis_real_e2e_only("stratified_epidemiology")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  contingency <- get(".dsvert_dp_contingency_impl",
+                     asNamespace("dsVertClient"), inherits = FALSE)
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .synopsis_stratified_contingency_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    first <- contingency("data_peer_a", "stratum", "outcome", "peer_a",
+                         conns, dispatch)
+    expect_s3_class(first, "ds.vertDPContingency")
+    expect_true(isTRUE(first$released))
+    expect_identical(dim(first$table), c(3L, 2L))
+    expect_setequal(rownames(first$table), c("young", "middle", "old"))
+    expect_identical(colnames(first$table), c("no", "yes"))
+    expect_true(all(is.finite(first$table) & first$table >= 0))
+    expect_identical(fixture$state$source_prepare, 1L)
+    expect_identical(fixture$state$start, 2L)
+
+    direct <- ds.vertDPDirectStandardization(
+      first, c(young = 0.2, middle = 0.3, old = 0.5), event = "yes")
+    direct_inference <- ds.vertDPDirectStandardizationInference(
+      first, c(young = 0.2, middle = 0.3, old = 0.5), event = "yes")
+    indirect <- ds.vertDPIndirectStandardization(
+      first, c(young = 0.1, middle = 0.2, old = 0.4), event = "yes")
+    indirect_inference <- ds.vertDPIndirectStandardizationInference(
+      first, c(young = 0.1, middle = 0.2, old = 0.4), event = "yes")
+    for (result in list(direct, direct_inference, indirect,
+                        indirect_inference)) {
+      expect_identical(result$additional_server_calls, 0L)
+      expect_identical(result$additional_privacy_cost,
+                       c(epsilon = 0, delta = 0))
+    }
+    expect_equal(
+      direct$weights,
+      unname(c(young = 0.2, middle = 0.3, old = 0.5)[rownames(first$table)]),
+      tolerance = 0)
+    expect_equal(
+      indirect$expected_rates,
+      unname(c(young = 0.1, middle = 0.2, old = 0.4)[rownames(first$table)]),
+      tolerance = 0)
+    for (result in list(direct, direct_inference)) {
+      region <- if (inherits(result,
+                             "ds.vertDPDirectStandardizationInference")) {
+        result$combined_region
+      } else {
+        result$mechanism_region
+      }
+      expect_true(is.finite(result$estimate))
+      expect_gte(result$estimate, region[["lower"]] - 1e-12)
+      expect_lte(result$estimate, region[["upper"]] + 1e-12)
+      expect_gte(region[["lower"]], 0)
+      expect_lte(region[["upper"]], 1)
+      expect_gt(result$estimate, 0.1)
+      expect_lt(result$estimate, 0.75)
+    }
+    for (result in list(indirect, indirect_inference)) {
+      region <- if (inherits(result,
+                             "ds.vertDPIndirectStandardizationInference")) {
+        result$combined_region
+      } else {
+        result$mechanism_region
+      }
+      expect_true(is.finite(result$estimate))
+      expect_gte(result$estimate, region[["lower"]] - 1e-12)
+      expect_lte(result$estimate, region[["upper"]] + 1e-12)
+      expect_gte(region[["lower"]], 0)
+      expect_true(is.finite(region[["upper"]]))
+      expect_gt(result$estimate, 0.5)
+      expect_lt(result$estimate, 3)
+    }
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- contingency("data_peer_a", "stratum", "outcome", "peer_a",
                           conns, dispatch)
     expect_identical(replay$table, first$table)
     expect_identical(replay$final_vector_root, first$final_vector_root)
