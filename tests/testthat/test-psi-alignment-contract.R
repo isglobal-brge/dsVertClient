@@ -1,8 +1,8 @@
 .client_padded_attestation <- function(contract_hash = strrep("4", 64L)) {
   list(
-    attestation_version = 2L,
+    attestation_version = 3L,
     alignment_attested = TRUE,
-    alignment_protocol = "dsvert-pinned-padded-psi-v4",
+    alignment_protocol = "dsvert-pinned-padded-psi-v5",
     attestation_id = paste0("attest_", strrep("3", 64L)),
     contract_hash = contract_hash,
     policy_id = paste0("policy_", strrep("1", 64L)),
@@ -36,7 +36,7 @@ test_that("alignment status accepts only identical padded attestations", {
   expect_length(calls, 1L)
   expect_identical(as.character(calls[[1L]][[1L]]),
                    "psiPaddedAttestationDS")
-  expect_identical(as.character(calls[[1L]]$session_id), "")
+  expect_null(calls[[1L]]$session_id)
   expect_false(any(c("n", "hash", "token", "order_binding") %in%
                    names(result$manifests[[1L]])))
 })
@@ -64,6 +64,29 @@ test_that("alignment status fails closed for mismatch, legacy or absence", {
     "DA", datasources[1L], .aggregate = mismatch)$aligned)
 })
 
+test_that("PSI resolves scalar and complete per-site routing aliases", {
+  datasources <- list(site_a = list(), site_b = list(), site_c = list())
+  expect_identical(
+    dsVertClient:::.dsvert_site_character("D", datasources, "data_name"),
+    c(site_a = "D", site_b = "D", site_c = "D"))
+  expect_identical(
+    dsVertClient:::.dsvert_site_character(
+      c(site_c = "C", site_a = "A", site_b = "B"), datasources,
+      "data_name"),
+    c(site_a = "A", site_b = "B", site_c = "C"))
+  expect_identical(
+    dsVertClient:::.dsvert_site_character(
+      list(site_a = "id_a", site_b = "id_b", site_c = "id_c"),
+      datasources, "id_col"),
+    c(site_a = "id_a", site_b = "id_b", site_c = "id_c"))
+  expect_error(dsVertClient:::.dsvert_site_character(
+    c(site_a = "A", site_b = "B"), datasources, "data_name"),
+    "complete named")
+  expect_error(dsVertClient:::.dsvert_site_character(
+    c(site_a = "A", site_b = "", site_c = "C"), datasources,
+    "data_name"), "non-empty")
+})
+
 test_that("public PSI front door delegates only to padded orchestration", {
   datasources <- list(site_a = list(), site_b = list())
   expected <- .client_padded_attestation()
@@ -88,8 +111,9 @@ test_that("public PSI front door delegates only to padded orchestration", {
     "D", "patient_id", "DA", verbose = FALSE,
     datasources = datasources, na.action = "none")
   expect_identical(result, expected)
-  expect_identical(arguments$data_name, "D")
-  expect_identical(arguments$id_col, "patient_id")
+  expect_identical(arguments$data_name, c(site_a = "D", site_b = "D"))
+  expect_identical(arguments$id_col,
+                   c(site_a = "patient_id", site_b = "patient_id"))
   expect_identical(arguments$newobj, "DA")
   expect_identical(arguments$datasources, datasources)
   expect_true(reset)

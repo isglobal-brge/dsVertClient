@@ -18,38 +18,85 @@
   algo = "sha256", serialize = FALSE)
 }
 
-test_that("one-coordinate Synopsis rejects the unavailable exact-GC runner", {
+test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
   for (k in c(2L, 3L, 5L)) {
-    peers <- paste0("peer_", letters[seq_len(k)])
+    source <- .synopsis_public_helpers$.capsule_source_client_fixture(
+      k = k, coordinate_count = 1L)
+    peers <- source$peers
     designated <- peers[1:2]
-    calls <- 0L
-    trusted <- list(
-      manifest = list(workload = list(
-        capsule_mechanism = list(mechanism = "discrete-laplace"))),
-      context = list(
-        servers = peers, designated = designated,
-        all_conns = stats::setNames(as.list(peers), peers),
-        conns = stats::setNames(as.list(designated), designated)))
-    testthat::local_mocked_bindings(
-      .dsvert_dp_datasources = function(value) value,
-      .dsvert_dp_synopsis_bootstrap_build_v1 = function(...) list(
-        status = list(), manifest_bundle = list(manifest_sha256 = "fixture")),
-      .dsvert_dp_synopsis_client_bundle = function(...) trusted,
-      .dsvert_dp_synopsis_supported_categorical_cross_v1 = function(...) FALSE,
-      .dsvert_dp_synopsis_runner_cross = function(...) FALSE,
-      .dsvert_dp_synopsis_publication_resume_v1 = function(...) NULL,
-      .dsvert_dp_capsule_vector_layout = function(...) list(
-        coordinate_count = 1L),
-      .dsvert_dp_synopsis_runner_compile = function(...) {
-        calls <<- calls + 1L
-        stop("compile must not run")
-      },
-      .package = "dsVertClient")
-    expect_error(
-      .dsvert_dp_synopsis_vector_run(
-        stats::setNames(as.list(peers), peers), .aggregate = function(...) NULL),
-      "does not yet support exact-GC", fixed = TRUE, info = paste("K =", k))
-    expect_identical(calls, 0L, info = paste("K =", k))
+    artifact_key <- strrep("a", 64L)
+    execution <- list(
+      execution_id = strrep("b", 64L),
+      geometry = list(
+        coordinate_count = 1L, public_chunk_coordinates = 8192L,
+        public_chunk_count = 1L))
+    trusted <- list(context = list(pinset = source$pins))
+    compiled <- list(artifact = list(artifact_key = artifact_key))
+    receipt_for <- function(peer) {
+      role <- match(peer, designated)
+      unsigned <- list(
+        version = .DSVERT_CLIENT_SYNOPSIS_EXACT_START_VERSION,
+        phase = "synopsis_exact_gc_initialized",
+        execution_id = execution$execution_id, artifact_key = artifact_key,
+        contract_sha256 = strrep("c", 64L),
+        attempt_sha256 = strrep("d", 64L),
+        source_contract_sha256 = strrep("e", 64L),
+        local_authority = list(
+          peer_name = peer, identity_pk = unname(source$pins[[peer]]),
+          role = c("primary_noise_authority",
+                   "secondary_noise_authority")[[role]]),
+        chunk_index = 0L, coordinate_offset = 0L, coordinate_count = 1L,
+        backend_selection_sha256 = strrep("f", 64L),
+        worker_contract_sha256 = strrep("1", 64L),
+        binding_sha256 = strrep("2", 64L),
+        operation_id = paste0("op_", strrep("3", 32L)),
+        purpose = "joint-dp-vector-laplace-v3/fixture",
+        local_chunk_durable = FALSE,
+        intermediate_payload_exposed = FALSE,
+        source_share_exposed = FALSE, private_seed_exposed = FALSE,
+        preclamp_values_exposed = FALSE)
+      signature <- .synopsis_public_helpers$.capsule_source_client_b64url(
+        openssl::ed25519_sign(charToRaw(paste0(
+          .DSVERT_CLIENT_SYNOPSIS_EXACT_START_DOMAIN,
+          .dsvert_joint_dp_client_json(unsigned))), source$keys[[peer]]))
+      c(unsigned, list(signature = signature))
+    }
+    initialized <- stats::setNames(lapply(seq_along(designated), function(i) {
+      list(
+        capability_id = .DSVERT_CLIENT_EXACT_GC_CAPABILITY,
+        peer_id = paste0("dsv1_", strrep(as.character(i), 64L)),
+        peer_peer_id = paste0("dsv1_", strrep(as.character(3L - i), 64L)),
+        role = c("garbler", "evaluator")[[i]],
+        context_hash = strrep("4", 64L),
+        operation = "joint-dp-vector-laplace-v3",
+        output_kind = "joint-dp-vector-ring128-share-v1",
+        purpose = "joint-dp-vector-laplace-v3/fixture",
+        source_producer = "joint-dp-vector-capsule-v1",
+        ring_bits = 128L, frac_bits = 0L, vector_len = 1L,
+        threshold = "2", chunk_bytes = 16384L, ttl_seconds = 180L,
+        max_runtime_seconds = 21600L, worker_heartbeat = 1L,
+        state = "running", stored = FALSE)
+    }), designated)
+    responses <- stats::setNames(lapply(designated, function(peer) {
+      .dsvert_joint_dp_client_json(list(
+        version = .DSVERT_CLIENT_SYNOPSIS_EXACT_START_RESPONSE_VERSION,
+        receipt = receipt_for(peer), initialization = initialized[[peer]]))
+    }), designated)
+    accepted <- .dsvert_dp_synopsis_runner_exact_start_set(
+      responses, designated, trusted, compiled, execution, 0L)
+    expect_false(accepted$complete, info = paste("K =", k))
+    expect_identical(
+      accepted$receipts[[designated[[1L]]]]$operation_id,
+      paste0("op_", strrep("3", 32L)), info = paste("K =", k))
+    tampered <- responses
+    tampered[[designated[[1L]]]] <- .dsvert_joint_dp_client_json(list(
+      version = .DSVERT_CLIENT_SYNOPSIS_EXACT_START_RESPONSE_VERSION,
+      receipt = modifyList(receipt_for(designated[[1L]]), list(
+        purpose = "joint-dp-vector-laplace-v3/tampered")),
+      initialization = initialized[[designated[[1L]]]]))
+    expect_error(.dsvert_dp_synopsis_runner_exact_start_set(
+      tampered, designated, trusted, compiled, execution, 0L),
+      "signature", info = paste("K =", k))
   }
 })
 

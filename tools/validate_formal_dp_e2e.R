@@ -339,10 +339,12 @@ setMethod(
   strict = TRUE, home = file.path(.e2e_state_root, "connector-dummy"))
 
 .e2e_boot_peer <- function(spec, pins = NULL, raw = NULL,
-                           configure_count = FALSE) {
+                           configure_synopsis = FALSE,
+                           designated_noise_peers = NULL) {
   worker <- callr::r_session$new(wait = TRUE)
   boot <- tryCatch(worker$run(
-    function(server_dir, spec, pins, raw, configure_count) {
+    function(server_dir, spec, pins, raw, configure_synopsis,
+             designated_noise_peers) {
       options(
         dsvert.state_dir = spec$state_dir,
         dsvert.peer_name = spec$name,
@@ -411,16 +413,39 @@ setMethod(
           purpose = "patient-record-alignment-v1")
         options(dsvert.psi.authorized_sources = list(D = authorization))
       }
-      if (isTRUE(configure_count)) {
+      if (isTRUE(configure_synopsis)) {
+        # This is custodial service configuration, not analyst input.  The
+        # template must already exist when pinned PSI runs, so its completed
+        # authenticated attestation can fill the durable snapshot binding.
+        if (!is.character(designated_noise_peers) ||
+            length(designated_noise_peers) != 2L ||
+            anyNA(designated_noise_peers) ||
+            any(!nzchar(designated_noise_peers)) ||
+            anyDuplicated(designated_noise_peers)) {
+          stop("Synopsis E2E requires two configured noise authorities",
+               call. = FALSE)
+        }
         options(
-          dsvert.dp.epsilon = 1,
-          dsvert.dp.delta = 1e-6,
-          dsvert.dp.implementation_delta = 1e-9,
+          dsvert.dp.total_epsilon = 1,
+          dsvert.dp.total_delta = 2^-100,
           dsvert.dp.domain = spec$domain,
           dsvert.dp.cohort_id = spec$cohort_id,
           dsvert.dp.adjacency = "add_remove_patient",
+          dsvert.dp.patient_column = "patient_id",
           dsvert.dp.unit_capacity = 64L,
-          dsvert.dp.fixed_cohort_size = NULL)
+          dsvert.dp.max_records_per_unit = 64L,
+          dsvert.dp.fixed_cohort_size = NULL,
+          dsvert.dp.overflow_policy = "reject_snapshot",
+          dsvert.dp.datasets = list(DA = list(
+            id = spec$dataset_id, version = spec$dataset_version)),
+          dsvert.dp.numeric_bounds = list(value = c(0, 96)),
+          dsvert.dp.workload_scope = list(
+            mode = "catalog_v1", numeric_moments = character(),
+            categorical_marginals = character(), categorical_pairs = list(),
+            correlations = list()),
+          dsvert.dp.designated_noise_peers = designated_noise_peers,
+          dsvert.dp.synopsis_state_path = file.path(
+            spec$state_dir, "dp-synopsis"))
       }
 
       tables <- if (is.null(raw)) list() else list(D = raw)
@@ -436,10 +461,11 @@ setMethod(
         surface_sha256 = digest::digest(
           canonical, algo = "sha256", serialize = FALSE),
         source_present = !is.null(raw),
-        count_configured = isTRUE(configure_count))
+        synopsis_configured = isTRUE(configure_synopsis))
     }, args = list(
       server_dir = .e2e_server_dir, spec = spec, pins = pins, raw = raw,
-      configure_count = configure_count)),
+      configure_synopsis = configure_synopsis,
+      designated_noise_peers = designated_noise_peers)),
     error = identity)
   if (inherits(boot, "error")) {
     try(worker$close(), silent = TRUE)
@@ -532,12 +558,15 @@ setMethod(
   Sys.chmod(scenario_dir, mode = "0700")
   specs <- .e2e_make_specs(k, scenario_dir)
   peer_names <- names(specs)
+  designated_authorities <- peer_names[1:2]
   raw <- stats::setNames(lapply(seq_len(k), function(index) {
     .e2e_raw_data(index)
   }), peer_names)
 
   bootstrap <- stats::setNames(lapply(peer_names, function(peer) {
-    .e2e_boot_peer(specs[[peer]], raw = raw[[peer]])
+    .e2e_boot_peer(specs[[peer]], raw = raw[[peer]],
+                   configure_synopsis = TRUE,
+                   designated_noise_peers = designated_authorities)
   }), peer_names)
   on.exit(.e2e_close_peers(bootstrap), add = TRUE)
   .e2e_load_client()
@@ -554,7 +583,9 @@ setMethod(
     stats::setNames(values, setdiff(peer_names, peer))
   }), peer_names)
   peers <- stats::setNames(lapply(peer_names, function(peer) {
-    .e2e_boot_peer(specs[[peer]], pins = pins[[peer]], raw = raw[[peer]])
+    .e2e_boot_peer(specs[[peer]], pins = pins[[peer]], raw = raw[[peer]],
+                   configure_synopsis = TRUE,
+                   designated_noise_peers = designated_authorities)
   }), peer_names)
   on.exit(.e2e_close_peers(peers), add = TRUE)
   conns <- .e2e_connections(peers)
@@ -569,14 +600,15 @@ setMethod(
   .e2e_assert(isTRUE(aligned$aligned) && is.na(aligned$n_common),
               "Pinned PSI did not return its non-disclosive attestation")
 
-  # Restart once into the exact custodian-owned Count configuration. The raw
-  # data are retained because a stateless current-snapshot artifact is
-  # deliberately recomputed rather than served from durable release storage.
+  # Restart with the same custodian-owned Synopsis policy. The raw data are
+  # retained because a stateless current-snapshot artifact is deliberately
+  # recomputed rather than served from durable release storage.
   .e2e_close_peers(peers)
   peers <- stats::setNames(lapply(peer_names, function(peer) {
     .e2e_boot_peer(
       specs[[peer]], pins = pins[[peer]], raw = raw[[peer]],
-      configure_count = TRUE)
+      configure_synopsis = TRUE,
+      designated_noise_peers = designated_authorities)
   }), peer_names)
   conns <- .e2e_connections(peers)
 
@@ -589,11 +621,11 @@ setMethod(
     "Pinned PSI did not survive Count configuration bootstrap")
   .e2e_truncate_logs(specs)
 
-  message("[formal-dp-e2e] K=", k, ": creating one canonical Count release")
+  message("[formal-dp-e2e] K=", k,
+          ": creating one canonical Synopsis Count release")
   first <- dsVertClient::ds.vertDPCount("DA", datasources = conns)
   legacy_fields <- c(
-    "capsule_id", "final_vector_root", "history_gate", "request_limit",
-    "operation_limit")
+    "capsule_id", "history_gate", "request_limit", "operation_limit")
   .e2e_assert(
     identical(first$released, TRUE) &&
       identical(first$adjacency, "add_remove_patient") &&
@@ -604,15 +636,31 @@ setMethod(
       identical(as.numeric(first$privacy$public_openings), 1) &&
       !length(intersect(names(first), legacy_fields)),
     "Count did not expose the canonical per-artifact release contract")
-  identity_values <- unlist(identities, use.names = FALSE)
-  authority_pks <- c(
-    first$signed_release$source_identity_pk,
-    first$signed_release$finalizer_identity_pk)
-  authorities <- names(identities)[match(authority_pks, identity_values)]
+  aligned_ids <- Reduce(intersect, lapply(raw, `[[`, "patient_id"))
+  .e2e_assert(
+    is.numeric(first$value) && length(first$value) == 1L &&
+      is.finite(first$value) && first$value >= 0 && first$value <= 64 &&
+      is.numeric(first$accuracy_95_abs) &&
+      length(first$accuracy_95_abs) == 1L &&
+      is.finite(first$accuracy_95_abs) && first$accuracy_95_abs >= 0 &&
+      first$accuracy_95_abs <= 64 &&
+      abs(first$value - length(aligned_ids)) <=
+        1.5 * max(first$accuracy_95_abs, 1),
+    "Synopsis Count was outside its signed domain or plausible DP accuracy radius")
+  provenance <- first$release_provenance
+  authorities <- unlist(provenance$designated_noise_peers, use.names = FALSE)
+  provenance_pins <- unlist(provenance$ordered_peer_pinset, use.names = TRUE)
   .e2e_assert(
     length(authorities) == 2L && !anyNA(authorities) &&
-      !anyDuplicated(authorities),
-    "The signed Count authorities do not map to two pinned peers")
+      !anyDuplicated(authorities) && all(authorities %in% peer_names) &&
+      identical(authorities, designated_authorities) &&
+      identical(sort(names(provenance_pins), method = "radix"),
+                sort(peer_names, method = "radix")) &&
+      all(vapply(peer_names, function(peer) {
+        identical(unname(provenance_pins[[peer]]),
+                  unname(identities[[peer]]))
+      }, logical(1L))),
+    "The signed Synopsis Count provenance does not bind two pinned authorities")
   first_counts <- .e2e_command_counts(specs)
   .e2e_assert(all(vapply(authorities, function(peer) {
     identical(first_counts[[peer]]$sampler, 1L) &&
@@ -625,27 +673,25 @@ setMethod(
   }, logical(1L))),
   "A non-authority peer invoked a Count sampler")
 
-  # A real client-process restart creates a new ephemeral MPC session. The
-  # sampler runs again, but persistent identity-derived subseeds must reproduce
-  # exactly the same public artifact and release bytes.
+  # A client-process restart must replay the immutable public artifact from
+  # Rock.  It neither rereads the source nor invokes an additional sampler.
   .e2e_load_client()
   replay <- dsVertClient::ds.vertDPCount("DA", datasources = conns)
   replay_counts <- .e2e_command_counts(specs)
-  replay_incremented <- all(vapply(peer_names, function(peer) {
-    increment <- if (peer %in% authorities) 1L else 0L
+  replay_unchanged <- all(vapply(peer_names, function(peer) {
     identical(replay_counts[[peer]]$sampler,
-              first_counts[[peer]]$sampler + increment) &&
+              first_counts[[peer]]$sampler) &&
       identical(replay_counts[[peer]]$exact_gc_workers,
-                first_counts[[peer]]$exact_gc_workers + increment)
+                first_counts[[peer]]$exact_gc_workers)
   }, logical(1L)))
   .e2e_assert(
     identical(first$value, replay$value) &&
       identical(first$artifact_key, replay$artifact_key) &&
       identical(first$release_sha256, replay$release_sha256) &&
-      identical(first$signed_release, replay$signed_release),
+      identical(first$release_provenance, replay$release_provenance),
     "A new client session changed the sticky Count artifact or release")
-  .e2e_assert(replay_incremented,
-              "A new Count session did not recompute on exactly two peers")
+  .e2e_assert(replay_unchanged,
+              "A client restart reinvoked an exact-GC sampler for durable Synopsis replay")
 
   message("[formal-dp-e2e] K=", k,
           ": restarting every server with the current protected snapshot")
@@ -653,14 +699,15 @@ setMethod(
   peers <- stats::setNames(lapply(peer_names, function(peer) {
     .e2e_boot_peer(
       specs[[peer]], pins = pins[[peer]], raw = raw[[peer]],
-      configure_count = TRUE)
+      configure_synopsis = TRUE,
+      designated_noise_peers = designated_authorities)
   }), peer_names)
   conns <- .e2e_connections(peers)
   source_present <- vapply(peers, function(peer) {
     identical(peer$boot$source_present, TRUE)
   }, logical(1L))
   .e2e_assert(all(source_present),
-              "The current protected source was not restored for recomputation")
+              "The protected source was not restored with the Synopsis configuration")
   restart_identities <- dsVertClient::ds.getIdentityPks(conns)
   .e2e_assert(identical(restart_identities, identities),
               "Identity keys changed across the service restart")
@@ -669,24 +716,17 @@ setMethod(
   .e2e_assert(isTRUE(dsVertClient::ds.isPsiAligned(
     "DA", datasources = conns)$aligned),
     "Pinned PSI did not reconstruct the current Count snapshot")
+  # K>=5 can legitimately have authenticated exact-GC precursor work still
+  # visible after PSI.  A command name alone cannot attribute that work to the
+  # final sampler, so restart validation uses the signed release instead.
   .e2e_load_client()
   restarted <- dsVertClient::ds.vertDPCount("DA", datasources = conns)
-  restart_counts <- .e2e_command_counts(specs)
-  restart_incremented <- all(vapply(peer_names, function(peer) {
-    increment <- if (peer %in% authorities) 1L else 0L
-    identical(restart_counts[[peer]]$sampler,
-              replay_counts[[peer]]$sampler + increment) &&
-      identical(restart_counts[[peer]]$exact_gc_workers,
-                replay_counts[[peer]]$exact_gc_workers + increment)
-  }, logical(1L)))
   .e2e_assert(
     identical(first$value, restarted$value) &&
       identical(first$artifact_key, restarted$artifact_key) &&
       identical(first$release_sha256, restarted$release_sha256) &&
-      identical(first$signed_release, restarted$signed_release),
+      identical(first$release_provenance, restarted$release_provenance),
     "A service restart changed the sticky Count artifact or release")
-  .e2e_assert(restart_incremented,
-              "Restarted Count did not recompute on exactly two peers")
 
   .e2e_close_peers(peers)
   list(
@@ -706,8 +746,8 @@ setMethod(
       first$privacy$finite_global_composition_claim,
     sampler_invocations = stats::setNames(vapply(
       first_counts, `[[`, integer(1L), "sampler"), peer_names),
-    sampler_recomputed_after_client_restart = replay_incremented,
-    sampler_recomputed_after_service_restart = restart_incremented)
+    sampler_not_reinvoked_after_client_restart = replay_unchanged,
+    signed_release_revalidated_after_service_restart = TRUE)
 }
 
 .e2e_load_client()
@@ -719,7 +759,7 @@ setMethod(
             "The validation harness changed the packaged MPC binary mode")
 .e2e_retained_state <- .e2e_finish_state(.e2e_state_guard)
 .e2e_report <- list(
-  version = "dsvert-canonical-count-e2e-v1",
+  version = "dsvert-canonical-synopsis-count-e2e-v1",
   passed = all(vapply(.e2e_results, `[[`, logical(1L), "passed")),
   started_utc = format(.e2e_started, tz = "UTC", usetz = TRUE),
   completed_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
