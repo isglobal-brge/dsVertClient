@@ -543,6 +543,79 @@ test_that("real same-owner Synopsis contingency is plausible and Rock-replayable
       expect_identical(inference$additional_privacy_cost,
                        c(epsilon = 0, delta = 0))
     }
+
+    # These historical epidemiology views must all be deterministic
+    # post-processing of this one signed 2-by-2 release: no second query, no
+    # fresh noise, and no hidden privacy cost. The balanced fixture makes the
+    # resulting finite-snapshot quantities plausibly estimable at K=2, K=3,
+    # and K=5 without treating the DP result as a sampling claim.
+    epi <- ds.vertDPEpi2x2(first, exposed = "yes", event = "yes")
+    epi_inference <- ds.vertDPEpi2x2Inference(
+      first, exposed = "yes", event = "yes")
+    prevalence <- ds.vertDPPrevalenceRatio(
+      first, exposed = "yes", prevalent = "yes")
+    prevalence_inference <- ds.vertDPPrevalenceRatioInference(
+      first, exposed = "yes", prevalent = "yes")
+    diagnostic <- ds.vertDPDiagnostic2x2(
+      first, disease_positive = "yes", test_positive = "yes")
+    diagnostic_inference <- ds.vertDPDiagnostic2x2Inference(
+      first, disease_positive = "yes", test_positive = "yes")
+    direct <- ds.vertDPDirectStandardization(
+      first, standard_weights = c(no = 0.4, yes = 0.6), event = "yes")
+    direct_inference <- ds.vertDPDirectStandardizationInference(
+      first, standard_weights = c(no = 0.4, yes = 0.6), event = "yes")
+    indirect <- ds.vertDPIndirectStandardization(
+      first, expected_rates = c(no = 0.2, yes = 0.3), event = "yes")
+    indirect_inference <- ds.vertDPIndirectStandardizationInference(
+      first, expected_rates = c(no = 0.2, yes = 0.3), event = "yes")
+
+    for (value in list(
+      epi, epi_inference, prevalence, prevalence_inference,
+      diagnostic, diagnostic_inference, direct, direct_inference,
+      indirect, indirect_inference)) {
+      expect_identical(value$additional_server_calls, 0L)
+      expect_identical(value$additional_privacy_cost,
+                       c(epsilon = 0, delta = 0))
+    }
+    epi_risks <- unlist(epi$point_estimates[c(
+      "risk_exposed", "risk_unexposed", "population_risk")],
+      use.names = FALSE)
+    expect_true(all(is.finite(epi_risks)))
+    expect_true(all(epi_risks >= 0 & epi_risks <= 1))
+    expect_identical(prevalence$prevalence_point_estimates[[
+      "prevalence_ratio"]], epi$point_estimates[["risk_ratio"]])
+    expect_true(all(is.finite(diagnostic$estimates[c(
+      "sensitivity", "specificity", "accuracy", "balanced_accuracy")])))
+    expect_true(all(diagnostic$estimates[c(
+      "sensitivity", "specificity", "accuracy", "balanced_accuracy")] >= 0 &
+      diagnostic$estimates[c(
+        "sensitivity", "specificity", "accuracy", "balanced_accuracy")] <= 1))
+    for (result in list(direct, direct_inference)) {
+      region <- if (inherits(result,
+                             "ds.vertDPDirectStandardizationInference")) {
+        result$combined_region
+      } else {
+        result$mechanism_region
+      }
+      expect_true(is.finite(result$estimate))
+      expect_gte(result$estimate, region[["lower"]] - 1e-12)
+      expect_lte(result$estimate, region[["upper"]] + 1e-12)
+      expect_gte(region[["lower"]], 0)
+      expect_lte(region[["upper"]], 1)
+    }
+    for (result in list(indirect, indirect_inference)) {
+      region <- if (inherits(result,
+                             "ds.vertDPIndirectStandardizationInference")) {
+        result$combined_region
+      } else {
+        result$mechanism_region
+      }
+      expect_true(is.finite(result$estimate))
+      expect_gte(result$estimate, region[["lower"]] - 1e-12)
+      expect_lte(result$estimate, region[["upper"]] + 1e-12)
+      expect_gte(region[["lower"]], 0)
+      expect_true(is.finite(region[["upper"]]))
+    }
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
 
     fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
