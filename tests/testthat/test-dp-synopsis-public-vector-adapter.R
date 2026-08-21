@@ -18,7 +18,7 @@
   algo = "sha256", serialize = FALSE)
 }
 
-test_that("one-coordinate Synopsis reaches remote compilation at K=2/3/5", {
+test_that("one-coordinate Synopsis rejects the unavailable exact-GC runner", {
   for (k in c(2L, 3L, 5L)) {
     peers <- paste0("peer_", letters[seq_len(k)])
     designated <- peers[1:2]
@@ -42,14 +42,14 @@ test_that("one-coordinate Synopsis reaches remote compilation at K=2/3/5", {
         coordinate_count = 1L),
       .dsvert_dp_synopsis_runner_compile = function(...) {
         calls <<- calls + 1L
-        stop("compile reached")
+        stop("compile must not run")
       },
       .package = "dsVertClient")
     expect_error(
       .dsvert_dp_synopsis_vector_run(
         stats::setNames(as.list(peers), peers), .aggregate = function(...) NULL),
-      "compile reached", fixed = TRUE, info = paste("K =", k))
-    expect_identical(calls, 1L, info = paste("K =", k))
+      "does not yet support exact-GC", fixed = TRUE, info = paste("K =", k))
+    expect_identical(calls, 0L, info = paste("K =", k))
   }
 })
 

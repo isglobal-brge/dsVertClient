@@ -248,6 +248,24 @@
   }
   servers <- context$servers
   authorities <- context$designated
+  mechanism <- trusted$manifest$workload$capsule_mechanism
+  backend <- if (identical(
+      mechanism$mechanism, .DSVERT_CLIENT_VECTOR_GAUSSIAN_MECHANISM)) {
+    NULL
+  } else if (layout$coordinate_count <=
+             .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_MAX_PROMOTED_COORDINATES) {
+    .DSVERT_CLIENT_VECTOR_EXACT_BACKEND
+  } else {
+    .DSVERT_CLIENT_VECTOR_BACKEND
+  }
+  cold_profile <- .dsvert_vector_profile(
+    mechanism,
+    mechanism_selection = trusted$manifest$workload$mechanism_selection,
+    backend = backend)
+  if (isTRUE(cold_profile$exact_gc)) {
+    stop("The synopsis remote runner does not yet support exact-GC",
+         call. = FALSE)
+  }
   built <- .dsvert_dp_synopsis_runner_compile(
     context, manifest_bundle, trusted, layout, .aggregate)
   compiled <- built$compiled
