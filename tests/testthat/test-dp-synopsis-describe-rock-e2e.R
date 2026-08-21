@@ -1210,6 +1210,15 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_identical(pca$additional_server_calls_after_synopsis, 0L)
     expect_identical(pca$additional_privacy_cost,
                      c(epsilon = 0, delta = 0))
+    pca_alias <- ds.vert.pca(
+      cor_result = cor, n_components = 2L, verbose = FALSE)
+    expect_identical(pca_alias$frontdoor, "ds.vert.pca")
+    expect_identical(pca_alias$route, "ds.vertPCA")
+    expect_identical(pca_alias$eigenvalues, pca$eigenvalues)
+    expect_identical(pca_alias$loadings, pca$loadings)
+    expect_identical(pca_alias$additional_server_calls_after_synopsis, 0L)
+    expect_identical(pca_alias$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(1L, 2L))
 
