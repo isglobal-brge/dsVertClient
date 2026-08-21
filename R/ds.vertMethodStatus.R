@@ -122,9 +122,11 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add("ds.vertDPCount", "ds.vertDPCount", "promoted",
       paste(
         "A canonical current-snapshot Count artifact signed by all K peers:",
-        "two pinned authorities apply sticky discrete-Laplace noise inside",
-        "exact MPC for add/remove adjacency, while fixed-cohort adjacency",
-        "uses a signed public K-consensus value with zero sensitivity."),
+        "two pinned authorities contribute independent sticky",
+        "discrete-Laplace noise through the authenticated Ring128",
+        "convolution path for add/remove adjacency, while fixed-cohort",
+        "adjacency uses a signed public K-consensus value with zero",
+        "sensitivity."),
       paste(
         "The formal (epsilon, delta)-DP claim is per canonical signed",
         "artifact; distinct artifacts compose and no finite global",

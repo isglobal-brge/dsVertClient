@@ -110,9 +110,10 @@ test_that("known unsafe legacy routes are not presented as promoted", {
   expect_identical(ds.vertMethodStatus("ds.vertDesc")$status, "promoted")
   expect_match(ds.vertMethodStatus("ds.vertDesc")$principal_limitation,
                "explicit analysis_id")
-  expect_identical(
-    ds.vertMethodStatus("ds.vertDPCount")$status,
-    "promoted")
+  count <- ds.vertMethodStatus("ds.vertDPCount")
+  expect_identical(count$status, "promoted")
+  expect_match(count$safe_scope, "Ring128 convolution", fixed = TRUE)
+  expect_false(grepl("exact MPC", count$safe_scope, fixed = TRUE))
   frequency <- ds.vertMethodStatus("ds.vertDPFrequency")
   expect_identical(frequency$status, "promoted")
   expect_identical(frequency$release_contract,
