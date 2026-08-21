@@ -771,19 +771,20 @@
   add(
     c("ds.vertLASSOIter", "ds.vert.lasso_iter"), "ds.vertLASSOIter",
     "lasso_iterative",
-    c("admitted_count", "model_deviance", "model_score_hessian",
-      "numeric_cross_products_same_and_cross_owner", "numeric_moments",
-      "signed_binomial_lasso_design_gram"),
-    "Gaussian/binomial/Poisson penalized objective coefficients.",
-    c("convergence", "dp_aware_model_selection", "identifiability",
-      "kkt_validation"),
-    "requires_new_capsule_artifact",
-    c("getObsCountDS", "glmRing63DevianceSumsDS", "glmStandardizeDS",
-      "k2GradientR1DS", "k2GradientR2DS"),
+    c("admitted_count", "gaussian_sufficient_statistics_same_owner",
+      "signed_gaussian_model_artifact",
+      "validated_gaussian_provenance_certificate"),
+    "Gaussian L1 coefficient paths from one signed Synopsis artifact.",
+    c("gaussian_only", "identifiability", "kkt_validation",
+      "no_sampling_inference", "objective_scale_contract"),
+    "synopsis_release_implemented", character(),
     c("ds.vert.lasso_iter" = "ds.vertLASSOIter"),
-    current_route_status = "signed_workload_unavailable_quarantine",
+    current_route_status =
+      "formal_same_owner_synopsis_variant_only_legacy_unavailable",
+    artifact_implementation_state =
+      "validated_same_owner_synopsis_adapter_implemented",
     inference_implementation_state =
-      "signed_binomial_lasso_design_gram_not_materialized")
+      "dp_gaussian_lasso_path_implemented")
 
   add(
     c("ds.vertLASSOCV", "ds.vert.lasso_cv"), "ds.vertLASSOCV",

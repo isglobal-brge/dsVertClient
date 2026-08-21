@@ -2,6 +2,12 @@
 
 ### Estimators
 
+* `ds.vertLASSOIter()` now admits its Gaussian variant only when an explicit
+  `dp_analysis_id` selects a matching signed same-owner Gaussian Synopsis.
+  The returned L1 path is deterministic KKT-checked post-processing of that
+  sticky release; binomial and Poisson variants remain unavailable rather than
+  falling back to their retired score-MPC routes.
+
 * `ds.vertDPFrequency()` now uses the canonical fixed-domain sticky Frequency
   protocol rather than the biomedical capsule. It requires an explicit source
   owner, compiles one signed contract across K peers, executes only on the

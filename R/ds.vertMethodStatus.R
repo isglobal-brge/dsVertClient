@@ -537,12 +537,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "cross-owner designs and unauthenticated legacy ds.glm inputs are",
         "unavailable."))
   add(c("ds.vertLASSOIter", "ds.vert.lasso_iter"), "ds.vertLASSOIter",
-      "quarantine", "Exact slope-binomial route fails closed pending its signed Gram.",
+      "promoted",
       paste(
-        "The unsafe ds.vertCor fallback was removed: its clipped Gaussian",
-        "design is not the raw standardized design consumed by the score MPC.",
-        "A purpose-bound binomial_lasso_design_grams artifact is required;",
-        "Gaussian and Poisson still lack a whole-path capsule-bound KKT contract."))
+        "Gaussian L1 paths from one explicit signed same-owner Synopsis",
+        "artifact; each path member carries a deterministic KKT certificate",
+        "and creates no second private release."),
+      paste(
+        "Only family='gaussian' with dp_analysis_id is available. Binomial",
+        "and Poisson fail closed: their score designs lack a purpose-bound",
+        "signed Gram and their whole-path DP contracts are not implemented."))
   add(c("ds.vertLASSOCV", "ds.vert.lasso_cv"), "ds.vertLASSOCV",
       "promoted",
       paste(
@@ -631,7 +634,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertLASSOProximal", "ds.vert.lasso_proximal",
     "ds.vertLASSOCV", "ds.vert.lasso_cv")
   glm_synopsis_wrappers <- c(
-    "ds.vertGLM", "ds.vert.glm")
+    "ds.vertGLM", "ds.vert.glm",
+    "ds.vertLASSOIter", "ds.vert.lasso_iter")
   out$release_contract[out$method %in% synopsis_releases] <-
     "formal_sticky_synopsis_artifact"
   out$release_contract[out$method == "ds.vertDPCount"] <-

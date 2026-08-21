@@ -55,10 +55,10 @@
     replacement = "No disclosure-safe multiple-imputation replacement is released."),
   lasso_iter = list(
     method = "ds.vertLASSOIter",
-    state = "whole_path_lasso_capsule_unavailable",
+    state = "binomial_poisson_lasso_path_unavailable",
     replacement = paste0(
-      "For post-processing an authorized Gaussian fit, use ",
-      "ds.vertLASSOProximal(); no federated iterative replacement is released."))
+      "Only the signed Gaussian Synopsis path is released; binomial and ",
+      "Poisson require their purpose-bound score-design artifacts."))
 )
 
 .dsvert_block_retired_remote_route <- function(route) {

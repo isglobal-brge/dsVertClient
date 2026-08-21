@@ -213,6 +213,73 @@ make_dp_gaussian_lasso_fit <- function(integrity = TRUE) {
   fit
 }
 
+test_that("historical iterative LASSO admits only the signed Gaussian path", {
+  fit <- make_dp_gaussian_lasso_fit()
+  glm_call <- NULL
+  testthat::local_mocked_bindings(
+    ds.validateDPGaussianCertificate = function(...) {
+      list(
+        integrity_valid = TRUE,
+        authenticity = "session_transport_anchored",
+        anchor_source = "online_session")
+    },
+    ds.vertGLM = function(formula, data = NULL, family = "gaussian",
+                          dp_analysis_id = NULL, missing = NULL,
+                          verbose = TRUE, datasources = NULL, ...) {
+      glm_call <<- list(
+        formula = formula, data = data, family = family,
+        dp_analysis_id = dp_analysis_id, missing = missing,
+        verbose = verbose, datasources = datasources)
+      fit
+    },
+    .dsvert_quarantine_test_mode = function() FALSE,
+    .package = "dsVertClient")
+
+  expect_error(
+    ds.vertLASSOIter(
+      y ~ x, data = "cohort", family = "gaussian",
+      datasources = list(site_a = structure(list(), class = "mock_connection"))),
+    "dp_analysis_id is required")
+  expect_null(glm_call)
+
+  result <- ds.vertLASSOIter(
+    y ~ x, data = "cohort", family = "gaussian",
+    lambda = c(0.1, 0.05, 0), max_outer = 20L, tol = 1e-12,
+    dp_analysis_id = "gaussian-primary", verbose = FALSE,
+    datasources = list(site_a = structure(list(), class = "mock_connection")))
+
+  expect_s3_class(result, "ds.vertLASSOIter")
+  expect_s3_class(result, "ds.vertDPLASSOPath")
+  expect_identical(result$family, "gaussian")
+  expect_identical(result$input_provenance, "signed_dp_gaussian_capsule")
+  expect_identical(result$additional_privacy_cost,
+                   c(epsilon = 0, delta = 0))
+  expect_true(all(vapply(result$path_certificates, function(value) {
+    isTRUE(value$kkt$satisfied)
+  }, logical(1L))))
+  expect_identical(glm_call$data, "cohort")
+  expect_identical(glm_call$family, "gaussian")
+  expect_identical(glm_call$dp_analysis_id, "gaussian-primary")
+  expect_identical(glm_call$missing, "complete_case_capsule")
+  expect_false(glm_call$verbose)
+
+  alias_result <- ds.vert.lasso_iter(
+    y ~ x, data = "cohort", family = "gaussian", lambda = 0.1,
+    dp_analysis_id = "gaussian-primary", verbose = FALSE,
+    datasources = list(site_a = structure(list(), class = "mock_connection")))
+  expect_s3_class(alias_result, "ds.vertLASSOIter")
+  expect_identical(alias_result$frontdoor, "ds.vert.lasso_iter")
+  expect_identical(alias_result$route,
+                   "ds.vertLASSOIter(signed-gaussian-synopsis)")
+
+  expect_error(
+    ds.vertLASSOIter(
+      y ~ x, data = "cohort", family = "binomial",
+      dp_analysis_id = "gaussian-primary",
+      datasources = list(site_a = structure(list(), class = "mock_connection"))),
+    class = "dsvert_route_unavailable")
+})
+
 test_that("public proximal LASSO post-processes one certified DP release", {
   fit <- make_dp_gaussian_lasso_fit()
   testthat::local_mocked_bindings(

@@ -1,18 +1,21 @@
-#' @title Quarantined iterative-LASSO compatibility frontdoor
-#' @description This exported name is retained for API compatibility. It
-#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
-#'   call and computes or returns no coefficient path, score, Hessian,
-#'   selection result, or diagnostic. Retained iterative code after the gate
-#'   is unreachable through this public frontdoor and carries no disclosure,
-#'   DP, accuracy, model-selection, or availability claim.
-#' @details Promotion requires a signed bounded artifact over the exact score
-#'   design, a whole-path privacy contract, KKT validation and DP-aware
-#'   selection and inference.
+#' @title Gaussian LASSO path under the historical iterative name
+#' @description For \code{family = "gaussian"}, this compatibility frontdoor
+#'   validates one signed bounded Gaussian DP Synopsis through
+#'   \code{ds.vertGLM(..., dp_analysis_id = ...)} and computes a deterministic
+#'   KKT-certified L1 path. It creates no second private release. Binomial and
+#'   Poisson remain unavailable until their score-design artifacts are signed.
 #' @param formula,data,family,lambda,max_outer,tol,alpha,inner_iter,exact_non_gaussian,ring,lipschitz,fista_restart,binomial_sigmoid_intervals,poisson_damping,verbose,datasources,cor_analysis_id
-#'   Retained compatibility arguments. They are not evaluated because the
-#'   public frontdoor fails locally.
-#' @return No fitted object. The function raises
+#'   Historical compatibility arguments. The Gaussian route uses
+#'   \code{lambda}, \code{max_outer} and \code{tol}; controls specific to the
+#'   retired score-MPC routes do not alter its certified DP Synopsis estimand.
+#' @param dp_analysis_id Required signed Gaussian Synopsis artifact identifier
+#'   for \code{family = "gaussian"}.
+#' @return A \code{ds.vertLASSOIter} / \code{ds.vertDPLASSOPath} object for
+#'   the authenticated Gaussian route. Other families raise
 #'   \code{dsvert_route_unavailable} before DSI.
+#' @details The returned path is deterministic post-processing of one sticky
+#'   release: its additional privacy cost is \code{(epsilon, delta) = (0, 0)}.
+#'   It has no sampling inference or coefficient confidence regions.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertLASSOIter <- function(formula, data = NULL,
@@ -29,9 +32,47 @@ ds.vertLASSOIter <- function(formula, data = NULL,
                                 200L),
                               poisson_damping = 0.5,
                               verbose = TRUE, datasources = NULL,
-                              cor_analysis_id = NULL) {
-  .dsvert_block_retired_remote_route("lasso_iter")
+                              cor_analysis_id = NULL,
+                              dp_analysis_id = NULL) {
   family <- match.arg(family)
+  if (identical(family, "gaussian")) {
+    if (is.null(dp_analysis_id)) {
+      stop(
+        "dp_analysis_id is required for the signed Gaussian LASSO path",
+        call. = FALSE)
+    }
+    if (is.null(lambda)) lambda <- c(1e-3, 1e-2, 0.1, 0.5, 1.0)
+    lambda <- sort(as.numeric(lambda), decreasing = TRUE)
+    if (!length(lambda) || any(!is.finite(lambda)) || any(lambda < 0)) {
+      stop("lambda must contain finite non-negative values", call. = FALSE)
+    }
+    if (!is.numeric(max_outer) || length(max_outer) != 1L ||
+        !is.finite(max_outer) || max_outer < 1L ||
+        max_outer != floor(max_outer) || max_outer > .Machine$integer.max) {
+      stop("max_outer must be one positive integer", call. = FALSE)
+    }
+    if (!is.numeric(tol) || length(tol) != 1L || !is.finite(tol) ||
+        tol <= 0) {
+      stop("tol must be one finite positive number", call. = FALSE)
+    }
+    fit <- ds.vertGLM(
+      formula, data = data, family = "gaussian",
+      dp_analysis_id = dp_analysis_id, missing = "complete_case_capsule",
+      verbose = verbose, datasources = datasources)
+    path <- ds.vertLASSO(
+      fit, lambda_1 = 1, alpha_grid = lambda,
+      max_iter = max(2000L, as.integer(max_outer)), tol = tol)
+    path$lambda <- path$lambda_grid
+    path$final_fit <- fit
+    path$method <- "signed_dp_gaussian_lasso_path"
+    path$dp_analysis_id <- dp_analysis_id
+    path$legacy_iterative_estimand <- FALSE
+    path$cor_analysis_id <- NULL
+    class(path) <- unique(c("ds.vertLASSOIter", class(path)))
+    return(path)
+  }
+
+  .dsvert_block_retired_remote_route("lasso_iter")
   lipschitz <- match.arg(lipschitz)
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   if (is.null(lambda)) lambda <- c(1e-3, 1e-2, 0.1, 0.5, 1.0)
@@ -427,8 +468,12 @@ print.ds.vertLASSOIter <- function(x, ...) {
   cat(sprintf("  Method : %s\n", x$method))
   cat(sprintf("  Lambda : %s\n",
               paste(sprintf("%.4g", x$lambda), collapse = " ")))
-  cat(sprintf("  Solver iters : %s\n",
-              paste(x$n_outer, collapse = " ")))
+  if (!is.null(x$n_outer)) {
+    cat(sprintf("  Solver iters : %s\n",
+                paste(x$n_outer, collapse = " ")))
+  } else {
+    cat("  Solver : certified Synopsis coordinate descent\n")
+  }
   m <- do.call(cbind, x$paths)
   cat("\nCoefficient path:\n")
   print(round(m, 5L))

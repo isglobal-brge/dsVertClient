@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertLASSOIterative.R
 \name{ds.vertLASSOIter}
 \alias{ds.vertLASSOIter}
-\title{Quarantined iterative-LASSO compatibility frontdoor}
+\title{Gaussian LASSO path under the historical iterative name}
 \usage{
 ds.vertLASSOIter(
   formula,
@@ -21,29 +21,34 @@ ds.vertLASSOIter(
   poisson_damping = 0.5,
   verbose = TRUE,
   datasources = NULL,
-  cor_analysis_id = NULL
+  cor_analysis_id = NULL,
+  dp_analysis_id = NULL
 )
 }
 \arguments{
-\item{formula, data, family, lambda, max_outer, tol, alpha, inner_iter, exact_non_gaussian, ring, lipschitz, fista_restart, binomial_sigmoid_intervals, poisson_damping, verbose, datasources, cor_analysis_id}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+\item{formula, data, family, lambda, max_outer, tol, alpha, inner_iter, exact_non_gaussian, ring, lipschitz, fista_restart, binomial_sigmoid_intervals, poisson_damping, verbose, datasources, cor_analysis_id}{Historical compatibility arguments. The Gaussian route uses
+\code{lambda}, \code{max_outer} and \code{tol}; controls specific to the
+retired score-MPC routes do not alter its certified DP Synopsis estimand.}
+
+\item{dp_analysis_id}{Required signed Gaussian Synopsis artifact identifier
+for \code{family = "gaussian"}.}
 }
 \value{
-No fitted object. The function raises
+A \code{ds.vertLASSOIter} / \code{ds.vertDPLASSOPath} object for
+the authenticated Gaussian route. Other families raise
 \code{dsvert_route_unavailable} before DSI.
 }
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and computes or returns no coefficient path, score, Hessian,
-selection result, or diagnostic. Retained iterative code after the gate
-is unreachable through this public frontdoor and carries no disclosure,
-DP, accuracy, model-selection, or availability claim.
+For \code{family = "gaussian"}, this compatibility frontdoor
+validates one signed bounded Gaussian DP Synopsis through
+\code{ds.vertGLM(..., dp_analysis_id = ...)} and computes a deterministic
+KKT-certified L1 path. It creates no second private release. Binomial and
+Poisson remain unavailable until their score-design artifacts are signed.
 }
 \details{
-Promotion requires a signed bounded artifact over the exact score
-design, a whole-path privacy contract, KKT validation and DP-aware
-selection and inference.
+The returned path is deterministic post-processing of one sticky
+release: its additional privacy cost is \code{(epsilon, delta) = (0, 0)}.
+It has no sampling inference or coefficient confidence regions.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

@@ -1035,6 +1035,30 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(1L, 2L))
 
+    iterative <- testthat::with_mocked_bindings(
+      ds.vertDPGaussian = function(
+          data_name, analysis_id, ridge = 0, server = NULL,
+          datasources = NULL) {
+        gaussian(data_name, analysis_id, ridge, server, datasources, dispatch)
+      },
+      ds.vertLASSOIter(
+        y_peer_a ~ x_peer_a, data = "data_peer_a", family = "gaussian",
+        lambda = c(0.1, 0.05, 0.01), max_outer = 20L, tol = 1e-10,
+        dp_analysis_id = "gaussian_primary", verbose = FALSE,
+        datasources = conns),
+      .package = "dsVertClient")
+    expect_s3_class(iterative, "ds.vertLASSOIter")
+    expect_s3_class(iterative, "ds.vertDPLASSOPath")
+    expect_identical(iterative$input_provenance,
+                     "signed_dp_gaussian_synopsis")
+    expect_identical(iterative$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
+    expect_true(all(vapply(iterative$path_certificates, function(value) {
+      isTRUE(value$kkt$satisfied)
+    }, logical(1L))))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
     lasso <- ds.vertLASSOProximal(
       fit, lambda = 0.05, max_iter = 2000L, tol = 1e-10)
     expect_s3_class(lasso, "ds.vertLASSOProximal")
