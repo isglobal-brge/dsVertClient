@@ -3,8 +3,12 @@
     file.path(testthat::test_path(), "..", ".."),
     getwd(), file.path(getwd(), "..")),
     mustWork = FALSE))
-  selected <- candidates[file.exists(file.path(
-    candidates, "tools", "validate_formal_dp_e2e.R"))]
+  selected <- candidates[
+    file.exists(file.path(candidates, "tools", "validate_formal_dp_e2e.R")) &
+      basename(candidates) == "dsVertClient" &
+      file.exists(file.path(dirname(candidates), "dsVert", "DESCRIPTION")) &
+      file.exists(file.path(dirname(candidates), "dsVertClient",
+                            "DESCRIPTION"))]
   if (!length(selected)) return(NULL)
   selected[[1L]]
 }
@@ -44,11 +48,18 @@ test_that("formal DP E2E harness is source-only and has a safe help path", {
     "dsvert\\.dp\\.total_delta[[:space:]]*=[[:space:]]*0", code))
   expect_false(grepl("dsVert:::\\.dsvert_dp_policy\\(\\)", code))
   expect_false(grepl("ds\\.vertDPStatus|ds\\.vertDPCapsulePlan", code))
-  expect_false(grepl("noise_root|ledger_path|total_epsilon", code))
-  expect_match(code, "dsvert.dp.implementation_delta = 1e-9", fixed = TRUE)
+  expect_false(grepl("noise_root|ledger_path", code))
+  expect_match(code, "dsvert.dp.total_epsilon = 1", fixed = TRUE)
+  expect_match(code, "dsvert.dp.datasets = list(DA = list(", fixed = TRUE)
+  expect_match(code, "mode = \"catalog_v1\"", fixed = TRUE)
+  expect_match(code, "dsvert.dp.synopsis_state_path", fixed = TRUE)
+  expect_match(code, "dsvert.dp.designated_noise_peers", fixed = TRUE)
   expect_match(code, "first$artifact_key, replay$artifact_key", fixed = TRUE)
+  expect_match(code, "first$accuracy_95_abs", fixed = TRUE)
+  expect_match(code, "signed_release_revalidated_after_service_restart",
+               fixed = TRUE)
   expect_match(
-    code, "sampler_recomputed_after_service_restart", fixed = TRUE)
+    code, "sampler_not_reinvoked_after_client_restart", fixed = TRUE)
 
   result <- callr::rscript(
     script, "--help", stdout = "|", stderr = "|", show = FALSE,

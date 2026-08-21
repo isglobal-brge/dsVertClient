@@ -2,6 +2,13 @@
 # all private material on the pinned servers and relays only canonical,
 # artifact-bound protocol evidence.
 
+.DSVERT_CLIENT_SYNOPSIS_EXACT_START_RESPONSE_VERSION <-
+  "dsvert-stateless-catalog-synopsis-exact-gc-start-response-v1"
+.DSVERT_CLIENT_SYNOPSIS_EXACT_START_VERSION <-
+  "dsvert-stateless-catalog-synopsis-exact-gc-start-v1"
+.DSVERT_CLIENT_SYNOPSIS_EXACT_START_DOMAIN <-
+  "dsVert/stateless-catalog-synopsis/exact-gc-start/v1|"
+
 .dsvert_dp_synopsis_effective_cross_v1 <- function(manifest) {
   workload <- if (is.list(manifest)) manifest$workload else NULL
   vertical <- if (is.list(workload)) workload$vertical_crosses else NULL
@@ -82,6 +89,107 @@
       responses[[peer]], paste(what, "from", peer), maximum_bytes)
   }
   responses
+}
+
+.dsvert_dp_synopsis_runner_exact_start_set <- function(
+    responses, authorities, trusted, compiled, execution, chunk_index) {
+  response_json <- .dsvert_dp_synopsis_runner_json_set(
+    responses, authorities, "exact-GC START",
+    .DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES)
+  expected_offset <- as.integer(
+    chunk_index * execution$geometry$public_chunk_coordinates)
+  expected_count <- as.integer(min(
+    execution$geometry$public_chunk_coordinates,
+    execution$geometry$coordinate_count - expected_offset))
+  fields <- c(
+    "version", "phase", "execution_id", "artifact_key",
+    "contract_sha256", "attempt_sha256", "source_contract_sha256",
+    "local_authority", "chunk_index", "coordinate_offset",
+    "coordinate_count", "backend_selection_sha256",
+    "worker_contract_sha256", "binding_sha256", "operation_id",
+    "purpose", "local_chunk_durable", "intermediate_payload_exposed",
+    "source_share_exposed", "private_seed_exposed",
+    "preclamp_values_exposed", "signature")
+  decoded <- stats::setNames(lapply(authorities, function(peer) {
+    response <- .dsvert_dp_synopsis_client_json(
+      response_json[[peer]], paste("exact-GC START from", peer),
+      .DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES)
+    if (!.dsvert_dp_has_exact_names(
+          response, c("version", "receipt", "initialization")) ||
+        !identical(response$version,
+                   .DSVERT_CLIENT_SYNOPSIS_EXACT_START_RESPONSE_VERSION) ||
+        !is.list(response$receipt) || !is.list(response$initialization)) {
+      stop("Invalid exact-GC START response", call. = FALSE)
+    }
+    receipt <- response$receipt
+    role <- match(peer, authorities)
+    authority <- list(
+      peer_name = peer,
+      identity_pk = unname(trusted$context$pinset[[peer]]),
+      role = c("primary_noise_authority", "secondary_noise_authority")[[role]])
+    flags <- c("intermediate_payload_exposed", "source_share_exposed",
+               "private_seed_exposed", "preclamp_values_exposed")
+    valid <- .dsvert_dp_has_exact_names(receipt, fields) &&
+      identical(receipt$version, .DSVERT_CLIENT_SYNOPSIS_EXACT_START_VERSION) &&
+      identical(receipt$phase, "synopsis_exact_gc_initialized") &&
+      identical(receipt$execution_id, execution$execution_id) &&
+      identical(receipt$artifact_key, compiled$artifact$artifact_key) &&
+      identical(
+        .dsvert_joint_dp_client_json(receipt$local_authority),
+        .dsvert_joint_dp_client_json(authority)) &&
+      identical(as.numeric(receipt$chunk_index), as.numeric(chunk_index)) &&
+      identical(as.numeric(receipt$coordinate_offset),
+                as.numeric(expected_offset)) &&
+      identical(as.numeric(receipt$coordinate_count),
+                as.numeric(expected_count)) &&
+      all(vapply(receipt[c(
+        "contract_sha256", "attempt_sha256", "source_contract_sha256",
+        "backend_selection_sha256", "worker_contract_sha256",
+        "binding_sha256")], .dsvert_vector_hex, logical(1L))) &&
+      is.character(receipt$operation_id) && length(receipt$operation_id) == 1L &&
+      !is.na(receipt$operation_id) &&
+      grepl("^op_[0-9a-f]{32}$", receipt$operation_id) &&
+      is.character(receipt$purpose) && length(receipt$purpose) == 1L &&
+      !is.na(receipt$purpose) &&
+      grepl("^[a-z][a-z0-9_.:/-]*$", receipt$purpose) &&
+      identical(receipt$local_chunk_durable, FALSE) &&
+      all(vapply(flags, function(field) identical(receipt[[field]], FALSE),
+                 logical(1L)))
+    if (!isTRUE(valid)) stop("Invalid or misbound exact-GC START receipt",
+                             call. = FALSE)
+    unsigned <- receipt[setdiff(names(receipt), "signature")]
+    .dsvert_dp_synopsis_client_signature(
+      unsigned, receipt$signature, authority$identity_pk,
+      .DSVERT_CLIENT_SYNOPSIS_EXACT_START_DOMAIN, "exact-GC START")
+    initialization <- response$initialization
+    state_ok <- is.character(initialization$state) &&
+      length(initialization$state) == 1L &&
+      !is.na(initialization$state) &&
+      initialization$state %in% c("running", "complete") &&
+      is.logical(initialization$stored) && length(initialization$stored) == 1L &&
+      !is.na(initialization$stored) &&
+      identical(initialization$stored,
+                identical(initialization$state, "complete"))
+    if (!isTRUE(state_ok)) {
+      stop("Invalid exact-GC START initialization", call. = FALSE)
+    }
+    list(receipt = receipt, initialization = initialization)
+  }), authorities)
+  common <- setdiff(fields, c("local_authority", "signature"))
+  if (!identical(
+        .dsvert_joint_dp_client_json(decoded[[1L]]$receipt[common]),
+        .dsvert_joint_dp_client_json(decoded[[2L]]$receipt[common]))) {
+    stop("The exact-GC START receipts disagree", call. = FALSE)
+  }
+  states <- vapply(decoded, function(value) value$initialization$state,
+                   character(1L))
+  if (length(unique(states)) != 1L) {
+    stop("The exact-GC START peers disagree on liveness", call. = FALSE)
+  }
+  list(
+    receipts = lapply(decoded, `[[`, "receipt"),
+    initialized = lapply(decoded, `[[`, "initialization"),
+    complete = identical(unname(states[[1L]]), "complete"))
 }
 
 .dsvert_dp_synopsis_runner_count <- function(value, what) {
@@ -248,6 +356,12 @@
   }
   servers <- context$servers
   authorities <- context$designated
+  authority_indices <- match(authorities, servers)
+  if (length(authority_indices) != 2L || anyNA(authority_indices) ||
+      anyDuplicated(authority_indices)) {
+    stop("The synopsis authorities are absent from the pinned federation",
+         call. = FALSE)
+  }
   mechanism <- trusted$manifest$workload$capsule_mechanism
   backend <- if (identical(
       mechanism$mechanism, .DSVERT_CLIENT_VECTOR_GAUSSIAN_MECHANISM)) {
@@ -262,10 +376,6 @@
     mechanism,
     mechanism_selection = trusted$manifest$workload$mechanism_selection,
     backend = backend)
-  if (isTRUE(cold_profile$exact_gc)) {
-    stop("The synopsis remote runner does not yet support exact-GC",
-         call. = FALSE)
-  }
   built <- .dsvert_dp_synopsis_runner_compile(
     context, manifest_bundle, trusted, layout, .aggregate)
   compiled <- built$compiled
@@ -293,14 +403,24 @@
     name = "dsvertDPSynopsisResultDS", session_id = session_id,
     first_prepare_json = prepare_json[[authorities[[1L]]]],
     second_prepare_json = prepare_json[[authorities[[2L]]]])), authorities)
-  existing_result <- .dsvert_vector_try_phase(.dsvert_fanout_by_site(
-    context$conns, result_calls, operation = "stateless synopsis RESULT lookup",
-    .aggregate = .aggregate))
+  # A first RESULT is deliberately not probed over DSI.  The server's
+  # phase-not-ready condition is serialized by DataSHIELD as an opaque
+  # transport failure, so a probe cannot distinguish the normal pre-START
+  # state from a real failure.  START and RESULT are already durable,
+  # idempotent transitions; replaying START is the safe recovery path.
+  existing_result <- list(ok = FALSE, value = NULL)
   if (isTRUE(existing_result$ok)) {
     result_json <- .dsvert_dp_synopsis_runner_json_set(
       existing_result$value, authorities, "RESULT",
       .DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES)
   } else {
+    exact_transport_ready <- FALSE
+    if (isTRUE(cold_profile$exact_gc)) {
+      .dsvert_setup_exact_gc_transport(
+        context$all_conns, servers, authority_indices, session_id,
+        .aggregate = .aggregate)
+      exact_transport_ready <- TRUE
+    }
     source_manifest <- .dsvert_dp_synopsis_source_manifest_v1(
       trusted$manifest, context)
     source_binding <- list(
@@ -443,11 +563,33 @@
         first_prepare_json = prepare_json[[authorities[[1L]]]],
         second_prepare_json = prepare_json[[authorities[[2L]]]],
         chunk_index = as.integer(chunk_index))), authorities)
-      .dsvert_dp_synopsis_runner_json_set(.dsvert_fanout_by_site(
+      started_raw <- .dsvert_fanout_by_site(
         context$conns, start_calls,
         operation = "stateless synopsis START",
-        .aggregate = .aggregate), authorities, "START",
-        .DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES)
+        .aggregate = .aggregate)
+      if (isTRUE(cold_profile$exact_gc)) {
+        started <- .dsvert_dp_synopsis_runner_exact_start_set(
+          started_raw, authorities, trusted, compiled, execution,
+          chunk_index)
+        if (!isTRUE(started$complete)) {
+          receipt <- started$receipts[[1L]]
+          suffix <- sub("^op_", "", receipt$operation_id)
+          .dsvert_exact_gc_run(
+            datasources = context$all_conns, server_names = servers,
+            servers = authority_indices, session_id = session_id,
+            operation_id = receipt$operation_id,
+            source_key = paste0("exact_gc_in_", suffix),
+            output_key = paste0("exact_gc_out_", suffix),
+            operation = "joint-dp-vector-laplace-v3", ring = 128L,
+            frac_bits = 0L, vector_len = receipt$coordinate_count,
+            purpose = receipt$purpose, transport_ready = exact_transport_ready,
+            initialized = started$initialized, .aggregate = .aggregate)
+        }
+      } else {
+        .dsvert_dp_synopsis_runner_json_set(
+          started_raw, authorities, "START",
+          .DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES)
+      }
     }
     result_json <- .dsvert_dp_synopsis_runner_json_set(
       .dsvert_fanout_by_site(
@@ -471,15 +613,12 @@
       existing_release$value, authorities, "RELEASE",
       .DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES)
   } else {
-    authority_indices <- match(authorities, context$servers)
-    if (length(authority_indices) != 2L || anyNA(authority_indices) ||
-        anyDuplicated(authority_indices)) {
-      stop("The synopsis authorities are absent from the pinned federation",
-           call. = FALSE)
+    if (!exists("exact_transport_ready", inherits = FALSE) ||
+        !isTRUE(exact_transport_ready)) {
+      .dsvert_setup_exact_gc_transport(
+        context$all_conns, servers, authority_indices, session_id,
+        .aggregate = .aggregate)
     }
-    .dsvert_setup_exact_gc_transport(
-      context$all_conns, context$servers, authority_indices, session_id,
-      .aggregate = .aggregate)
     for (chunk_index in seq.int(0L, public_chunk_count - 1L)) {
       share_calls <- stats::setNames(lapply(authorities, function(peer) call(
         name = "dsvertDPSynopsisFinalShareDS", session_id = session_id,
