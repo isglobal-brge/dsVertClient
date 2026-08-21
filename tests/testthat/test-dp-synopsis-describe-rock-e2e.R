@@ -38,6 +38,30 @@ if (nzchar(.synopsis_real_e2e_family) &&
   }
 }
 
+# The default remains the complete K=2/K=3/K=5 release gate.  This selector
+# only lets a developer isolate one topology while diagnosing a slow failure.
+.synopsis_real_e2e_peer_counts <- function(
+    focused = Sys.getenv("DSVERT_TEST_SYNOPSIS_E2E_K", unset = "")) {
+  if (!is.character(focused) || length(focused) != 1L || is.na(focused)) {
+    stop("DSVERT_TEST_SYNOPSIS_E2E_K must be a string", call. = FALSE)
+  }
+  if (!nzchar(focused)) return(c(2L, 3L, 5L))
+  values <- suppressWarnings(as.integer(
+    strsplit(focused, ",", fixed = TRUE)[[1L]]))
+  if (!length(values) || anyNA(values) || anyDuplicated(values) ||
+      any(!values %in% c(2L, 3L, 5L))) {
+    stop("DSVERT_TEST_SYNOPSIS_E2E_K must be a unique subset of 2,3,5",
+         call. = FALSE)
+  }
+  values
+}
+
+test_that("the Synopsis real-E2E topology selector preserves the full gate", {
+  expect_identical(.synopsis_real_e2e_peer_counts(""), c(2L, 3L, 5L))
+  expect_identical(.synopsis_real_e2e_peer_counts("2,5"), c(2L, 5L))
+  expect_error(.synopsis_real_e2e_peer_counts("4"), "unique subset")
+})
+
 .synopsis_describe_real_e2e_fixture <- function(k, server_ns) {
   get_server <- function(name) get(name, envir = server_ns, inherits = FALSE)
   b64url <- function(raw) chartr(
@@ -425,7 +449,7 @@ test_that("real Synopsis Describe is plausible and Rock-replayable at K=2/3/5", 
                   inherits = FALSE)
   median <- get("ds.vertDPMedian", asNamespace("dsVertClient"),
                 inherits = FALSE)
-  for (k in c(2L, 3L, 5L)) {
+  for (k in .synopsis_real_e2e_peer_counts()) {
     fixture <- .synopsis_describe_real_e2e_fixture(k, server_ns)
     on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
     conns <- stats::setNames(lapply(fixture$peers, function(peer) {
@@ -536,7 +560,7 @@ test_that("real same-owner Synopsis contingency is plausible and Rock-replayable
   server_ns <- .synopsis_describe_real_e2e_server()
   contingency <- get(".dsvert_dp_contingency_impl",
                      asNamespace("dsVertClient"), inherits = FALSE)
-  for (k in c(2L, 3L, 5L)) {
+  for (k in .synopsis_real_e2e_peer_counts()) {
     fixture <- .synopsis_contingency_real_e2e_fixture(k, server_ns)
     on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
     conns <- stats::setNames(lapply(fixture$peers, function(peer) {
@@ -665,7 +689,7 @@ test_that("real stratified Synopsis supports sticky standardisation at K=2/3/5",
   server_ns <- .synopsis_describe_real_e2e_server()
   contingency <- get(".dsvert_dp_contingency_impl",
                      asNamespace("dsVertClient"), inherits = FALSE)
-  for (k in c(2L, 3L, 5L)) {
+  for (k in .synopsis_real_e2e_peer_counts()) {
     fixture <- .synopsis_stratified_contingency_real_e2e_fixture(k, server_ns)
     on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
     conns <- stats::setNames(lapply(fixture$peers, function(peer) {
@@ -753,7 +777,7 @@ test_that("real cross-owner Synopsis contingency is plausible and Rock-replayabl
   server_ns <- .synopsis_describe_real_e2e_server()
   contingency <- get(".dsvert_dp_contingency_impl",
                      asNamespace("dsVertClient"), inherits = FALSE)
-  for (k in c(2L, 3L, 5L)) {
+  for (k in .synopsis_real_e2e_peer_counts()) {
     fixture <- .synopsis_cross_contingency_real_e2e_fixture(k, server_ns)
     on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
     conns <- stats::setNames(lapply(fixture$peers, function(peer) {
@@ -824,7 +848,7 @@ test_that("real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5",
   server_ns <- .synopsis_describe_real_e2e_server()
   frequency <- get(".dsvert_dp_frequency_impl",
                    asNamespace("dsVertClient"), inherits = FALSE)
-  for (k in c(2L, 3L, 5L)) {
+  for (k in .synopsis_real_e2e_peer_counts()) {
     fixture <- .synopsis_frequency_real_e2e_fixture(k, server_ns)
     on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
     conns <- stats::setNames(lapply(fixture$peers, function(peer) {
@@ -873,7 +897,7 @@ test_that("real Synopsis survival is plausible and Rock-replayable at K=2/3/5", 
   server_ns <- .synopsis_describe_real_e2e_server()
   survival <- get(".dsvert_dp_survival_impl", asNamespace("dsVertClient"),
                   inherits = FALSE)
-  for (k in c(2L, 3L, 5L)) {
+  for (k in .synopsis_real_e2e_peer_counts()) {
     fixture <- .synopsis_survival_real_e2e_fixture(k, server_ns)
     on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
     conns <- stats::setNames(lapply(fixture$peers, function(peer) {
@@ -937,7 +961,7 @@ test_that("real same-owner Synopsis correlation is plausible and Rock-replayable
   server_ns <- .synopsis_describe_real_e2e_server()
   correlation <- get(".dsvert_dp_cor_impl", asNamespace("dsVertClient"),
                      inherits = FALSE)
-  for (k in c(2L, 3L, 5L)) {
+  for (k in .synopsis_real_e2e_peer_counts()) {
     fixture <- .synopsis_correlation_real_e2e_fixture(k, server_ns)
     on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
     conns <- stats::setNames(lapply(fixture$peers, function(peer) {
@@ -987,7 +1011,7 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
                   inherits = FALSE)
   correlation <- get(".dsvert_dp_cor_gaussian_impl", asNamespace("dsVertClient"),
                      inherits = FALSE)
-  for (k in c(2L, 3L, 5L)) {
+  for (k in .synopsis_real_e2e_peer_counts()) {
     fixture <- .synopsis_gaussian_real_e2e_fixture(k, server_ns)
     on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
     conns <- stats::setNames(lapply(fixture$peers, function(peer) {
@@ -1129,7 +1153,7 @@ test_that("focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3
   server_ns <- .synopsis_describe_real_e2e_server()
   gaussian <- get(".dsvert_dp_gaussian_impl", asNamespace("dsVertClient"),
                   inherits = FALSE)
-  for (k in c(2L, 3L, 5L)) {
+  for (k in .synopsis_real_e2e_peer_counts()) {
     fixture <- .synopsis_gaussian_real_e2e_fixture(k, server_ns, n = 512L)
     on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
     conns <- stats::setNames(lapply(fixture$peers, function(peer) {
@@ -1220,7 +1244,9 @@ test_that("cross-owner Synopsis rejects a tampered witness before mutation", {
   server_ns <- .synopsis_describe_real_e2e_server()
   contingency <- get(".dsvert_dp_contingency_impl",
                      asNamespace("dsVertClient"), inherits = FALSE)
-  for (k in c(3L, 5L)) {
+  peer_counts <- intersect(.synopsis_real_e2e_peer_counts(), c(3L, 5L))
+  if (!length(peer_counts)) skip("cross-owner witness tamper requires K=3 or K=5")
+  for (k in peer_counts) {
     fixture <- .synopsis_cross_contingency_real_e2e_fixture(k, server_ns)
     on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
     witness <- fixture$peers[[3L]]
