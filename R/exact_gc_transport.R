@@ -531,7 +531,9 @@
   } else if (operation %in% c(
       "compare-signed", "truncate-floor", "clamp-count"))
     "ring-share" else if (identical(operation, "mul-truncate-checked"))
-      "checked-ring-share" else "xor-bit-share"
+      "checked-ring-share" else if (identical(
+        operation, "categorical-product-ring128"))
+          "checked-ring-share" else "xor-bit-share"
   for (server in server_names) {
     value <- states[[server]]
     if (!is.list(value) || !all(required %in% names(value)) ||
@@ -565,7 +567,8 @@
       stop("An exact MPC peer returned invalid protocol context.",
            call. = FALSE)
     }
-    if (identical(operation, "mul-truncate-checked")) {
+    if (operation %in% c(
+        "mul-truncate-checked", "categorical-product-ring128")) {
       if (!is.list(mul_contract) ||
           !identical(value$mul_plan_id, mul_contract$plan_id) ||
           !identical(value$mul_backend, mul_contract$backend) ||
@@ -810,6 +813,7 @@
   if (is.null(output_key)) {
     output_key <- .dsvert_exact_gc_vecmul_keys(batch)$destination
   }
+  categorical_product <- FALSE
   if (is.null(input_manifests)) {
     .dsvert_block_retired_remote_route("legacy_glm")
     bound <- .dsvert_aggregate_strict(
@@ -825,6 +829,20 @@
         anyDuplicated(names(input_manifests)) ||
         !setequal(names(input_manifests), selected_names)) {
       stop("Exact MPC multiplication requires one producer manifest per peer.",
+           call. = FALSE)
+    }
+    producers <- vapply(selected_names, function(server) {
+      manifest <- input_manifests[[server]]
+      if (!is.character(manifest$producer) || length(manifest$producer) != 1L ||
+          is.na(manifest$producer)) return(NA_character_)
+      manifest$producer
+    }, character(1L))
+    categorical_product <- length(producers) == length(selected_names) &&
+      all(!is.na(producers)) &&
+      all(producers == "dp.categorical-cross.v1")
+    if (any(producers == "dp.categorical-cross.v1", na.rm = TRUE) &&
+        !isTRUE(categorical_product)) {
+      stop("Exact MPC producer manifests disagree on multiplication shape.",
            call. = FALSE)
     }
     requests <- stats::setNames(lapply(selected_names, function(server) {
@@ -933,6 +951,15 @@
     bound_x = bounds_x[[1L]], bound_y = bounds_y[[1L]],
     ring_bits = ring_bits[[1L]], frac_bits = frac_bits[[1L]],
     max_chunk = max_chunks[[1L]])
+  if (isTRUE(categorical_product)) {
+    expected_bound <- format(2^plan$frac_bits, scientific = FALSE, trim = TRUE)
+    if (plan$ring_bits != 128L || plan$frac_bits < 8L ||
+        plan$frac_bits > 18L || !identical(plan$backend, "direct-wide") ||
+        !identical(plan$bound_x, expected_bound) ||
+        !identical(plan$bound_y, expected_bound)) {
+      stop("Exact MPC categorical product plan is invalid.", call. = FALSE)
+    }
+  }
   chunk_size <- plan$max_chunk
   chunk_count <- as.integer(ceiling(total_n / chunk_size))
   for (index in seq_len(chunk_count)) {
@@ -950,6 +977,32 @@
       conns, as.call(c(list(as.name("exactGCVecmulStartDS")), common)),
       operation = "exact MPC checked multiplication start",
       .aggregate = .aggregate)
+    started_operations <- vapply(selected_names, function(server) {
+      value <- started[[server]]
+      if (!is.list(value) || !is.character(value$operation) ||
+          length(value$operation) != 1L || is.na(value$operation)) {
+        # Older unit doubles did not project the public state operation. A
+        # production server always does; keep those doubles on the historical
+        # contract while real server responses remain authoritative.
+        return(if (isTRUE(categorical_product)) {
+          "categorical-product-ring128"
+        } else {
+          "mul-truncate-checked"
+        })
+      }
+      value$operation
+    }, character(1L))
+    if (length(unique(started_operations)) != 1L ||
+        is.na(started_operations[[1L]]) ||
+        !started_operations[[1L]] %in% if (isTRUE(categorical_product)) {
+          c("mul-truncate-checked", "categorical-product-ring128")
+        } else {
+          "mul-truncate-checked"
+        }) {
+      stop("Exact MPC multiplication selected an invalid server operation.",
+           call. = FALSE)
+    }
+    operation <- started_operations[[1L]]
     keys <- .dsvert_exact_gc_vecmul_keys(operation_id)
     purpose <- paste0(
       "k2.vecmul.mul-truncate.v3.p-", policy_id,
@@ -959,7 +1012,7 @@
       conns, server_names = selected_names, servers = 1:2,
       session_id = session_id, operation_id = operation_id,
       source_key = keys$source, output_key = keys$output,
-      operation = "mul-truncate-checked", ring = plan$ring_bits,
+      operation = operation, ring = plan$ring_bits,
       frac_bits = plan$frac_bits,
       vector_len = n, purpose = purpose, transport_ready = TRUE,
       timeout_seconds = timeout_seconds, initialized = started,
@@ -1065,6 +1118,7 @@
   vector_len <- suppressWarnings(as.numeric(vector_len))
   allowed_operations <- c(
       "compare-signed", "truncate-floor", "mul-truncate-checked",
+      "categorical-product-ring128",
       "count-guard", "clamp-count", "joint-dp-vector-laplace-v3",
       "alignment-mask-ring128", "formal-glm-phase19-schedule-v1")
   if (!is.null(analysis)) {
@@ -1123,7 +1177,8 @@
     NULL
   }
   container_bits <- .dsvert_exact_gc_container_bits(ring)
-  if (identical(operation, "mul-truncate-checked")) {
+  if (operation %in% c(
+      "mul-truncate-checked", "categorical-product-ring128")) {
     plan_max_chunk <- if (is.list(mul_contract)) {
       suppressWarnings(as.numeric(mul_contract$max_chunk))
     } else {
@@ -1144,9 +1199,20 @@
         vector_len > plan_max_chunk) {
       stop("Invalid exact MPC multiplication shape.", call. = FALSE)
     }
+    if (identical(operation, "categorical-product-ring128")) {
+      expected_bound <- format(2^frac_bits, scientific = FALSE, trim = TRUE)
+      if (ring != 128L || frac_bits < 8L || frac_bits > 18L ||
+          !identical(mul_contract$backend, "direct-wide") ||
+          !identical(mul_contract$bound_x, expected_bound) ||
+          !identical(mul_contract$bound_y, expected_bound)) {
+        stop("Invalid exact MPC categorical product shape.", call. = FALSE)
+      }
+    }
   }
   input_containers <- if (identical(operation, "mul-truncate-checked")) {
     7L * vector_len + 1L
+  } else if (identical(operation, "categorical-product-ring128")) {
+    5L * vector_len + 1L
   } else if (identical(operation, "alignment-mask-ring128")) {
     3L * vector_len + 4L * alignment_k + 1L
   } else if (identical(operation, "count-guard")) {

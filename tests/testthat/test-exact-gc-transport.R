@@ -786,6 +786,61 @@ test_that("direct exact vecmul uses checked chunks and no Beaver relay", {
     "k2BeaverVecmulR1DS", "k2BeaverVecmulR2DS", "mpcStoreBlobDS")))
 })
 
+test_that("categorical producer manifests select the scaled-indicator circuit", {
+  servers <- c("site_a", "site_b")
+  conns <- stats::setNames(list(structure(list(), class = "mock"),
+                                structure(list(), class = "mock")), servers)
+  operation <- NULL
+  policy <- strrep("a", 64L)
+  plan <- strrep("c", 64L)
+  aggregate <- function(conns, expr, ...) {
+    per_site <- is.list(expr) && !is.call(expr)
+    expressions <- if (per_site) expr[names(conns)] else
+      stats::setNames(rep(list(expr), length(conns)), names(conns))
+    commands <- vapply(
+      expressions, function(value) as.character(value[[1L]]), character(1L))
+    expect_length(unique(commands), 1L)
+    command <- commands[[1L]]
+    stats::setNames(lapply(names(conns), function(server) {
+      switch(command,
+        exactGCVecmulClaimInputsDS = list(
+          capability_id = "exact_gc_v1", state = "claimed", stored = TRUE,
+          context_hash = strrep("b", 64L), policy_id = policy,
+          plan_id = plan, backend = "direct-wide", bound_x = "256",
+          bound_y = "256", ring_bits = 128L, frac_bits = 8L,
+          max_chunk = 64L),
+        exactGCVecmulStartDS = list(
+          capability_id = "exact_gc_v1", state = "running",
+          operation = "categorical-product-ring128"),
+        exactGCVecmulValidityDS = list(
+          capability_id = "exact_gc_v1", state = "sealed",
+          peer_blob = if (identical(server, "site_a")) "QQ" else "Qg"),
+        exactGCVecmulValidityReceiveDS = list(
+          capability_id = "exact_gc_v1", state = "checked", stored = TRUE),
+        exactGCVecmulCommitDS = list(
+          capability_id = "exact_gc_v1", state = "committed", stored = TRUE),
+        stop("unexpected exact vecmul endpoint: ", command))
+    }), names(conns))
+  }
+  manifests <- stats::setNames(lapply(servers, function(server) list(
+    manifest_handle = paste0(substr(server, 1L, 1L), strrep("a", 42L)),
+    total_n = 1L, producer = "dp.categorical-cross.v1")), servers)
+  testthat::with_mocked_bindings(
+    .dsvert_exact_gc_vecmul_run(
+      conns, server_names = servers, servers = 1:2,
+      session_id = "12345678-1234-4234-9234-123456789abc", total_n = 1L,
+      input_manifests = manifests, transport_ready = TRUE,
+      .aggregate = aggregate),
+    .dsvert_exact_gc_new_context = function(...) list(
+      operation_id = "op_99999999999999999999999999999999"),
+    .dsvert_exact_gc_run = function(..., operation) {
+      operation <<- operation
+      invisible(list(capability_id = "exact_gc_v1"))
+    },
+    .package = "dsVertClient")
+  expect_identical(operation, "categorical-product-ring128")
+})
+
 test_that("exact vecmul rejects a partial validity fan-out before commit", {
   withr::local_options(list(dsvert.dsi.retry_deadline_seconds = 0.001))
   servers <- c("site_a", "site_b")
