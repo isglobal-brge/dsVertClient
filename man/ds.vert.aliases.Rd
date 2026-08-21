@@ -187,6 +187,9 @@ is unavailable, and the reserved binomial/Poisson
 \code{formal_analysis_id} route also fails before DSI in this release.
 No alias re-enables a retired remote endpoint or weakens the signed-artifact
 and custodian-owned policy gates of an available backend.
+For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied
+through \code{...}; it is local post-processing of that signed release and
+does not require a DataSHIELD connection or create a new DP release.
 \code{ds.vert.align()} returns a credential-free
 \code{ds.vertFederation}. Pass that object as \code{data_name} (or
 \code{data} for Gaussian GLM) to reuse the aligned symbol. Each consumer
