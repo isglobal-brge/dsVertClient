@@ -17,11 +17,23 @@ for (.count_synopsis_e2e_expression in .count_synopsis_e2e_code) {
 rm(.count_synopsis_e2e_code, .count_synopsis_e2e_expression,
    .count_synopsis_e2e_name)
 
+.count_synopsis_e2e_peer_counts <- function() {
+  focused <- Sys.getenv("DSVERT_TEST_SYNOPSIS_E2E_K", unset = "")
+  if (!nzchar(focused)) return(c(2L, 3L, 5L))
+  values <- suppressWarnings(as.integer(strsplit(focused, ",", fixed = TRUE)[[1L]]))
+  if (!length(values) || anyNA(values) || anyDuplicated(values) ||
+      any(!values %in% c(2L, 3L, 5L))) {
+    stop("DSVERT_TEST_SYNOPSIS_E2E_K must be a unique subset of 2,3,5",
+         call. = FALSE)
+  }
+  values
+}
+
 test_that("real Synopsis Count is plausible and Rock-replayable at K=2/3/5", {
   server_ns <- .synopsis_describe_real_e2e_server()
   count <- get(".dsvert_dp_count_impl", asNamespace("dsVertClient"),
                inherits = FALSE)
-  for (k in c(2L, 3L, 5L)) {
+  for (k in .count_synopsis_e2e_peer_counts()) {
     fixture <- .synopsis_describe_real_e2e_fixture(k, server_ns)
     on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
     conns <- stats::setNames(lapply(fixture$peers, function(peer) {
