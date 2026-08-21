@@ -1059,6 +1059,26 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(1L, 2L))
 
+    legacy_glm <- testthat::with_mocked_bindings(
+      ds.vertDPGaussian = function(
+          data_name, analysis_id, ridge = 0, server = NULL,
+          datasources = NULL) {
+        gaussian(data_name, analysis_id, ridge, server, datasources, dispatch)
+      },
+      ds.vert.glm(
+        y_peer_a ~ x_peer_a, data = "data_peer_a", family = "gaussian",
+        dp_analysis_id = "gaussian_primary",
+        missing = "complete_case_capsule", verbose = FALSE,
+        datasources = conns),
+      .package = "dsVertClient")
+    expect_s3_class(legacy_glm, "ds.vertDPGaussian")
+    expect_identical(legacy_glm$frontdoor, "ds.vert.glm")
+    expect_identical(legacy_glm$route, "ds.vertGLM")
+    expect_equal(legacy_glm$coefficients_original_scale,
+                 fit$coefficients_original_scale, tolerance = 0)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
     iterative <- testthat::with_mocked_bindings(
       ds.vertDPGaussian = function(
           data_name, analysis_id, ridge = 0, server = NULL,
@@ -1080,6 +1100,26 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_true(all(vapply(iterative$path_certificates, function(value) {
       isTRUE(value$kkt$satisfied)
     }, logical(1L))))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    iterative_alias <- testthat::with_mocked_bindings(
+      ds.vertDPGaussian = function(
+          data_name, analysis_id, ridge = 0, server = NULL,
+          datasources = NULL) {
+        gaussian(data_name, analysis_id, ridge, server, datasources, dispatch)
+      },
+      ds.vert.lasso_iter(
+        y_peer_a ~ x_peer_a, data = "data_peer_a", family = "gaussian",
+        lambda = c(0.1, 0.05, 0.01), max_outer = 20L, tol = 1e-10,
+        dp_analysis_id = "gaussian_primary", verbose = FALSE,
+        datasources = conns),
+      .package = "dsVertClient")
+    expect_s3_class(iterative_alias, "ds.vertDPLASSOPath")
+    expect_identical(iterative_alias$frontdoor, "ds.vert.lasso_iter")
+    expect_identical(iterative_alias$route,
+                     "ds.vertLASSOIter(signed-gaussian-synopsis)")
+    expect_equal(iterative_alias$paths, iterative$paths, tolerance = 1e-12)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(1L, 2L))
 
@@ -1113,6 +1153,33 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_identical(selection$additional_server_calls_after_synopsis, 0L)
     expect_identical(selection$additional_privacy_cost,
                      c(epsilon = 0, delta = 0))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    lasso_path <- ds.vertLASSO(
+      fit, lambda_1 = 0.05, alpha_grid = c(1, 0.5, 0.1),
+      max_iter = 2000L, tol = 1e-10)
+    one_step <- ds.vertLASSO1Step(
+      fit, lambda = c(0.1, 0.05, 0.01), max_iter = 2000L, tol = 1e-10)
+    lasso_alias <- ds.vert.lasso(
+      fit, lambda_1 = 0.05, alpha_grid = c(1, 0.5, 0.1),
+      max_iter = 2000L, tol = 1e-10)
+    proximal_alias <- ds.vert.lasso_proximal(
+      fit, lambda = 0.05, max_iter = 2000L, tol = 1e-10)
+    one_step_alias <- ds.vert.lasso_1step(
+      fit, lambda = c(0.1, 0.05, 0.01), max_iter = 2000L, tol = 1e-10)
+    selection_alias <- ds.vert.lasso_cv(
+      fit, lambda_grid = c(0.1, 0.05, 0.01), criterion = "BIC")
+    expect_identical(lasso_alias$frontdoor, "ds.vert.lasso")
+    expect_identical(proximal_alias$frontdoor, "ds.vert.lasso_proximal")
+    expect_identical(one_step_alias$frontdoor, "ds.vert.lasso_1step")
+    expect_identical(selection_alias$frontdoor, "ds.vert.lasso_cv")
+    expect_equal(lasso_alias$paths, lasso_path$paths, tolerance = 1e-12)
+    expect_equal(proximal_alias$coefficients, lasso$coefficients,
+                 tolerance = 1e-12)
+    expect_equal(one_step_alias$paths, one_step$paths, tolerance = 1e-12)
+    expect_equal(selection_alias$lambda.min, selection$lambda.min,
+                 tolerance = 1e-12)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(1L, 2L))
 
