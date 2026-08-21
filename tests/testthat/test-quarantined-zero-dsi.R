@@ -13,8 +13,7 @@
   gee = c("ds.vertGEE", "ds.vert.gee"),
   glmm = c("ds.vertGLMM", "ds.vert.glmm"),
   ipw = c("ds.vertIPW", "ds.vert.ipw"),
-  mi = c("ds.vertMI", "ds.vert.mi"),
-  lasso_iter = c("ds.vertLASSOIter", "ds.vert.lasso_iter")
+  mi = c("ds.vertMI", "ds.vert.mi")
 )
 
 test_that("every retired analytic frontdoor fails locally before DSI", {

@@ -183,7 +183,7 @@ test_that("the retired consumer audit names only preserved public frontdoors", {
   expect_setequal(
     names(routes),
     c("legacy_glm", "cox", "negative_binomial", "multinomial", "ordinal",
-      "lmm", "gee", "glmm", "ipw", "mi", "lasso_iter"))
+      "lmm", "gee", "glmm", "ipw", "mi"))
 })
 
 test_that("the only dynamic call name is closed before DSI expression construction", {

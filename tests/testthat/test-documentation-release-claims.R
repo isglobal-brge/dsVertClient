@@ -12,8 +12,7 @@ quarantined_doc_sources <- c(
   "ds.vertGEE.R",
   "ds.vertGLMM.R",
   "ds.vertIPW.R",
-  "ds.vertMI.R",
-  "ds.vertLASSOIterative.R")
+  "ds.vertMI.R")
 
 quarantined_doc_topics <- c(
   "ds.vertCox" = "ds.vertCox.R",
@@ -32,8 +31,7 @@ quarantined_doc_topics <- c(
   "ds.vertGEE" = "ds.vertGEE.R",
   "ds.vertGLMM" = "ds.vertGLMM.R",
   "ds.vertIPW" = "ds.vertIPW.R",
-  "ds.vertMI" = "ds.vertMI.R",
-  "ds.vertLASSOIter" = "ds.vertLASSOIterative.R")
+  "ds.vertMI" = "ds.vertMI.R")
 
 .dsvert_public_roxygen_text <- function(filename, function_name) {
   lines <- readLines(.dsvert_client_source_file(filename), warn = FALSE)
@@ -285,18 +283,17 @@ test_that("README maturity and numeric claims match the runtime registry", {
       "ds.vertLASSOIter", "ds.vertLASSO", "ds.vertLASSO1Step",
       "ds.vertLASSOProximal", "ds.vertLASSOCV")],
     c(
-      ds.vertLASSOIter = "quarantine",
+      ds.vertLASSOIter = "promoted",
       ds.vertLASSO = "promoted",
       ds.vertLASSO1Step = "promoted",
       ds.vertLASSOProximal = "promoted",
       ds.vertLASSOCV = "promoted"))
   expect_match(
     readme,
-    paste0("`ds.vertLASSOIter()` is quarantined; ",
-           "`ds.vertLASSO()` and `ds.vertLASSO1Step()` are promoted Gaussian ",
-           "Synopsis paths; the ",
-           "same-owner Gaussian Synopsis post-processors ",
-           "`ds.vertLASSOProximal()` and the information-criterion"),
+    paste0("`ds.vertLASSOIter()`, `ds.vertLASSO()` and ",
+           "`ds.vertLASSO1Step()` are promoted Gaussian Synopsis paths ",
+           "when an explicit signed `dp_analysis_id` selects the ",
+           "same-owner artifact"),
     fixed = TRUE)
 
   registry <- ds.vertMethodStatus()

@@ -255,7 +255,7 @@ test_that("verified legacy disclosure evidence cannot regress to omission", {
     "ds.vertGLM", "ds.vertNBFullRegTheta",
     "ds.vertMultinomJointNewton", "ds.vertOrdinalJointNewton",
     "ds.vertLMM", "ds.vertGEE", "ds.vertGLMM", "ds.vertIPW",
-    "ds.vertMI", "ds.vertLASSOIter")
+    "ds.vertMI")
   expect_true(all(vapply(standardized_families, function(method) {
     has_evidence(inventory, method, "glmStandardizeDS",
                  "plaintext_exact_aggregate")
@@ -574,8 +574,7 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
   mixed <- c("ds.vertGLM", "ds.vert.glm")
   broken <- c(
     "ds.vertMultinom", "ds.vertMultinomJoint",
-    "ds.vertMultinomJointNewton", "ds.vert.multinom",
-    "ds.vertLASSOIter", "ds.vert.lasso_iter")
+    "ds.vertMultinomJointNewton", "ds.vert.multinom")
 
   expect_true(all(inventory$current_route_status[
     inventory$method %in% mixed] ==
@@ -588,16 +587,21 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
     inventory$method %in% broken] ==
       "signed_workload_unavailable_quarantine"))
   expect_true(all(inventory$inference_implementation_state[
-    inventory$method %in% c("ds.vertLASSOIter", "ds.vert.lasso_iter")] ==
-      "signed_binomial_lasso_design_gram_not_materialized"))
-  expect_true(all(inventory$inference_implementation_state[
-    inventory$method %in% setdiff(broken, c(
-      "ds.vertLASSOIter", "ds.vert.lasso_iter"))] ==
+    inventory$method %in% broken] ==
       "signed_multinomial_design_gram_not_materialized"))
+  lasso_iter <- inventory[inventory$method %in%
+    c("ds.vertLASSOIter", "ds.vert.lasso_iter"), , drop = FALSE]
+  expect_true(all(lasso_iter$current_route_status ==
+                    "formal_same_owner_synopsis_variant_only_legacy_unavailable"))
+  expect_true(all(lasso_iter$artifact_implementation_state ==
+                    "validated_same_owner_synopsis_adapter_implemented"))
+  expect_true(all(lasso_iter$inference_implementation_state ==
+                    "dp_gaussian_lasso_path_implemented"))
   expect_true(all(ds.vertMethodStatus(mixed)$status == "promoted"))
-  expect_length(intersect(
-    ds.vertMethodStatus(status = "promoted")$method,
-    broken), 0L)
+  expect_true(all(ds.vertMethodStatus(c(
+    "ds.vertLASSOIter", "ds.vert.lasso_iter"))$status == "promoted"))
+  expect_length(intersect(ds.vertMethodStatus(status = "promoted")$method,
+                          broken), 0L)
 })
 
 test_that("NB and mutating MI routes are explicitly quarantined", {

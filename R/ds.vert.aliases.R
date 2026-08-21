@@ -473,16 +473,17 @@ ds.vert.lasso <- function(fit, lambda_1, ...) {
 ds.vert.lasso_iter <- function(formula, data = NULL,
                                method = c("auto", "accurate", "fast"),
                                ...) {
-  .dsvert_block_retired_remote_route("lasso_iter")
   method <- match.arg(method)
   args <- c(list(formula = formula, data = data), list(...))
   if (is.null(args$exact_non_gaussian)) {
     args$exact_non_gaussian <- !identical(method, "fast")
   }
-  route <- if (isTRUE(args$exact_non_gaussian)) {
-    "ds.vertLASSOIter(aggregate-score)"
+  route <- if (identical(args$family %||% "gaussian", "gaussian")) {
+    "ds.vertLASSOIter(signed-gaussian-synopsis)"
+  } else if (isTRUE(args$exact_non_gaussian)) {
+    "ds.vertLASSOIter(aggregate-score-unavailable)"
   } else {
-    "ds.vertLASSOIter(one-step-surrogate)"
+    "ds.vertLASSOIter(one-step-surrogate-unavailable)"
   }
   out <- .dsvert_route_result(do.call(ds.vertLASSOIter, args),
                               "ds.vert.lasso_iter", route)
