@@ -1,7 +1,12 @@
 .synopsis_describe_real_e2e_server <- function() {
   skip_if_not_installed("pkgload")
-  server_path <- normalizePath(file.path(
-    test_path(), "..", "..", "..", "dsVert"), mustWork = FALSE)
+  configured_server <- Sys.getenv("DSVERT_SERVER_SOURCE", unset = "")
+  server_path <- if (nzchar(configured_server)) {
+    normalizePath(configured_server, mustWork = FALSE)
+  } else {
+    normalizePath(file.path(
+      test_path(), "..", "..", "..", "dsVert"), mustWork = FALSE)
+  }
   skip_if_not(dir.exists(server_path), "requires the sibling dsVert source")
   pkgload::load_all(server_path, quiet = TRUE)
   asNamespace("dsVert")
