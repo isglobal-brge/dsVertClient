@@ -732,7 +732,10 @@
   if (is.null(envelope)) {
     return(list(
       delivery_offset = 0,
-      delivery_chunk_bytes = 0))
+      delivery_chunk_bytes = 0,
+      delivery_payload_hash = "",
+      delivery_payload = "",
+      delivery_signature = ""))
   }
   required <- c(
     "version", "capability_id", "session_id", "operation_id",
@@ -1226,9 +1229,21 @@
            call. = FALSE)
     }
     requests <- list()
-    had_pending <- any(!vapply(pending, is.null, logical(1L)))
+    pending_sources <- unname(peer_ids)[!vapply(
+      pending[unname(peer_ids)], is.null, logical(1L))]
+    had_pending <- length(pending_sources) > 0L
+    # A recipient's reply is the only event that can acknowledge the one
+    # pending source envelope. Polling that source in the same cycle can only
+    # return its cached duplicate because its read offset has not advanced.
+    # Avoid the redundant authenticated DSI call, but retain the full fan-out
+    # when both directions have an outstanding envelope.
+    polled_peers <- if (length(pending_sources) == 1L) {
+      setdiff(unname(peer_ids), pending_sources)
+    } else {
+      unname(peer_ids)
+    }
     preferred_before <- preferred_peer
-    for (target in unname(peer_ids)) {
+    for (target in polled_peers) {
       source <- setdiff(unname(peer_ids), target)
       server <- server_for_peer[[target]]
       fields <- .dsvert_exact_gc_delivery_fields(pending[[source]])
@@ -1243,7 +1258,8 @@
         list(as.name("exactGCExchangeDS")), arguments))
     }
     cycle <- .dsvert_fanout_cycle(
-      conns, requests, operation = "exact MPC byte exchange",
+      conns[unname(server_for_peer[polled_peers])], requests,
+      operation = "exact MPC byte exchange",
       .aggregate = .aggregate)
     if (identical(cycle$state, "unavailable")) {
       # State and offsets remain unchanged: the next iteration is an exact
@@ -1253,7 +1269,7 @@
     }
     response <- cycle$result
     validated <- list()
-    for (peer in unname(peer_ids)) {
+    for (peer in polled_peers) {
       server <- server_for_peer[[peer]]
       validated[[peer]] <- .dsvert_exact_gc_validate_exchange(
         response[[server]], peer)
@@ -1264,7 +1280,7 @@
     # A fixed-cadence, server-verified worker heartbeat is valid progress. An
     # unchanged counter (including any number of successful empty relay polls)
     # never renews this client-side inactivity deadline.
-    for (peer in unname(peer_ids)) {
+    for (peer in polled_peers) {
       heartbeat <- validated[[peer]]$worker_heartbeat
       if (heartbeat < heartbeat_seen[[peer]]) {
         stop("An exact MPC peer rolled back its worker heartbeat.",
@@ -1277,7 +1293,7 @@
     }
 
     # A target acknowledges the one pending envelope emitted by its peer.
-    for (target in unname(peer_ids)) {
+    for (target in polled_peers) {
       source <- setdiff(unname(peer_ids), target)
       acknowledgment <- validated[[target]]$inbound_size
       if (acknowledgment < inbound_seen[[target]]) {
@@ -1300,7 +1316,7 @@
 
     # Capture at most one new source envelope.  If an acknowledgment advanced
     # the offset in this same fan-out cycle, its cached duplicate is ignored.
-    for (source in unname(peer_ids)) {
+    for (source in polled_peers) {
       target <- setdiff(unname(peer_ids), source)
       envelope <- validated[[source]]$outbound
       if (is.null(envelope)) next
@@ -1334,7 +1350,7 @@
       preferred_peer <- NULL
     }
     complete_before <- complete
-    for (peer in unname(peer_ids)) {
+    for (peer in polled_peers) {
       complete[[peer]] <- identical(validated[[peer]]$state, "complete") &&
         isTRUE(validated[[peer]]$stored)
     }

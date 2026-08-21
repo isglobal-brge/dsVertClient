@@ -155,6 +155,89 @@ test_that("exact client pump retries identical fan-out requests without a quota"
   expect_false(any(grepl("share|result", names(result), ignore.case = TRUE)))
 })
 
+test_that("exact client pump does not poll the sender while one delivery waits for its recipient", {
+  peer_a <- paste0("dsv1_", strrep("a", 64L))
+  peer_b <- paste0("dsv1_", strrep("b", 64L))
+  session_id <- "12345678-1234-4234-9234-123456789abc"
+  operation_id <- "op_44444444444444444444444444444444"
+  servers <- c("site_a", "site_b")
+  conns <- stats::setNames(list(structure(list(), class = "mock"),
+                                structure(list(), class = "mock")), servers)
+  peers <- c(site_a = peer_a, site_b = peer_b)
+  other <- c(site_a = peer_b, site_b = peer_a)
+  inbound <- c(site_a = 0, site_b = 0)
+  output_bytes <- c(site_a = 1, site_b = 0)
+  delivery_widths <- integer()
+  clock <- 0
+  initialized <- stats::setNames(lapply(servers, function(server) list(
+    capability_id = "exact_gc_v1", peer_id = peers[[server]],
+    peer_peer_id = other[[server]],
+    role = if (server == "site_a") "garbler" else "evaluator",
+    context_hash = strrep("c", 64L), operation = "truncate-floor",
+    output_kind = "ring-share", purpose = "test.directed-pump",
+    source_producer = "test.vecmul", ring_bits = 127L, frac_bits = 2L,
+    vector_len = 1L, threshold = "", chunk_bytes = 65536L,
+    ttl_seconds = 10L, max_runtime_seconds = 120L,
+    worker_heartbeat = 1L, state = "running", stored = FALSE)), servers)
+
+  aggregate <- function(conns, expr, ...) {
+    clock <<- clock + 0.1
+    calls <- if (is.list(expr) && !is.call(expr)) expr else
+      stats::setNames(rep(list(expr), length(conns)), names(conns))
+    if (all(vapply(calls, function(call) {
+      identical(as.character(call[[1L]]), "exactGCAbortDS")
+    }, logical(1L)))) {
+      return(stats::setNames(as.list(rep(TRUE, length(conns))), names(conns)))
+    }
+    delivery <- vapply(calls, function(call) {
+      nzchar(call$delivery_payload)
+    }, logical(1L))
+    if (any(delivery)) {
+      delivery_widths <<- c(delivery_widths, length(conns))
+    }
+    stats::setNames(lapply(names(conns), function(server) {
+      call <- calls[[server]]
+      if (nzchar(call$delivery_payload)) {
+        inbound[[server]] <<- call$delivery_offset +
+          call$delivery_chunk_bytes
+      }
+      offset <- as.numeric(call$read_offset)
+      outbound <- if (identical(server, "site_a") && offset == 0) {
+        list(
+          version = "dsvert-exact-gc-envelope-v1",
+          capability_id = "exact_gc_v1", session_id = session_id,
+          operation_id = operation_id, context_hash = strrep("c", 64L),
+          sender_peer_id = peer_a, recipient_peer_id = peer_b,
+          offset = 0, chunk_bytes = 1, payload_hash = strrep("d", 64L),
+          payload = "AQ", signature = "opaque-signature")
+      } else NULL
+      done <- offset >= output_bytes[[server]] &&
+        inbound[[server]] >= output_bytes[[setdiff(servers, server)]]
+      list(
+        capability_id = "exact_gc_v1", peer_id = peers[[server]],
+        state = if (done) "complete" else "running", stored = done,
+        inbound_size = inbound[[server]], outbound = outbound,
+        worker_heartbeat = as.numeric(floor(clock * 10) + 1L))
+    }), names(conns))
+  }
+
+  testthat::with_mocked_bindings(
+    .dsvert_exact_gc_run(
+      conns, server_names = servers, servers = 1:2,
+      session_id = session_id, operation_id = operation_id,
+      source_key = "exact_gc_in_44444444444444444444444444444444",
+      output_key = "exact_gc_out_44444444444444444444444444444444",
+      operation = "truncate-floor", ring = 127L, frac_bits = 2L,
+      vector_len = 1L, purpose = "test.directed-pump",
+      transport_ready = TRUE, timeout_seconds = 10L, initialized = initialized,
+      .aggregate = aggregate),
+    .dsvert_exact_gc_monotonic_seconds = function() clock,
+    .dsvert_exact_gc_sleep = function(seconds) {
+      clock <<- clock + min(seconds, 0.01)
+    }, .package = "dsVertClient")
+  expect_identical(delivery_widths, 1L)
+})
+
 .client_exact_gc_analysis_identity_pk <- function(index) {
   encoded <- jsonlite::base64_enc(as.raw(rep(as.integer(index), 32L)))
   chartr("+/", "-_", sub("=+$", "", encoded))
