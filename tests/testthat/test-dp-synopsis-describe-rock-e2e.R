@@ -1045,6 +1045,13 @@ test_that("real Synopsis survival is plausible and Rock-replayable at K=2/3/5", 
     rmtl <- ds.vertDPRMTL(first)
     quantiles <- ds.vertDPSurvivalQuantile(first, c(0.25, 0.5, 0.75))
     median <- ds.vertDPMedianSurvival(first)
+    # A self-contrast retains the one signed artifact's simultaneous
+    # mechanism event; it is not a second release or an independence claim.
+    survival_contrast <- ds.vertDPSurvivalContrast(
+      first, first, comparison_label = "same", reference_label = "baseline")
+    rmst_contrast <- ds.vertDPRMSTContrast(
+      first, first, tau = c(5, 10), comparison_label = "same",
+      reference_label = "baseline")
     expect_true(all(is.finite(kaplan_meier$kaplan_meier)))
     expect_true(all(is.finite(nelson_aalen$nelson_aalen)))
     expect_true(all(is.finite(cumulative_incidence$cumulative_incidence)))
@@ -1062,6 +1069,22 @@ test_that("real Synopsis survival is plausible and Rock-replayable at K=2/3/5", 
       expect_identical(attr(view, "additional_privacy_cost"),
                        c(epsilon = 0, delta = 0))
     }
+    for (contrast in list(survival_contrast, rmst_contrast)) {
+      expect_identical(attr(contrast, "additional_server_calls"), 0L)
+      expect_identical(attr(contrast, "additional_privacy_cost"),
+                       c(epsilon = 0, delta = 0))
+      expect_identical(attr(contrast, "joint_event"),
+                       "same_signed_survival_artifact")
+    }
+    expect_equal(survival_contrast$survival_difference,
+                 rep(0, nrow(survival_contrast)), tolerance = 0)
+    finite_survival_ratios <- is.finite(survival_contrast$survival_ratio)
+    expect_true(all(survival_contrast$survival_ratio[
+      finite_survival_ratios] == 1))
+    expect_equal(rmst_contrast$rmst_difference,
+                 rep(0, nrow(rmst_contrast)), tolerance = 0)
+    finite_rmst_ratios <- is.finite(rmst_contrast$rmst_ratio)
+    expect_true(all(rmst_contrast$rmst_ratio[finite_rmst_ratios] == 1))
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
 
     fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
