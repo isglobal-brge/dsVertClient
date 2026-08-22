@@ -26,27 +26,6 @@ ds.vertCox <- function(formula, data = NULL,
                        debug_trace = FALSE,
                        verbose = TRUE, datasources = NULL) {
   .dsvert_block_retired_remote_route("cox")
-  fit <- ds.vertCoxProfileNonDisclosive(
-    formula = formula,
-    data = data,
-    max_event_times = max_event_times,
-    max_iter = max_iter,
-    tol = tol,
-    newton = newton,
-    ridge_eps = ridge_eps,
-    debug_trace = debug_trace,
-    verbose = verbose,
-    datasources = datasources)
-  fit$method <- "profile_nd"
-  fit$iterations <- fit$n_iter %||% fit$iterations %||% NA_integer_
-  fit$std_errors <- fit$std_errors %||%
-    stats::setNames(rep(NA_real_, length(fit$coefficients)),
-                    names(fit$coefficients))
-  fit$covariance <- fit$covariance %||% NULL
-  fit$loglik <- fit$loglik %||% NA_real_
-  fit$call <- match.call()
-  class(fit) <- unique(c("ds.vertCox", class(fit), "list"))
-  fit
 }
 
 #' @export
