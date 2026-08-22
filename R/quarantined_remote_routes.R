@@ -58,7 +58,21 @@
     state = "binomial_poisson_lasso_path_unavailable",
     replacement = paste0(
       "Only the signed Gaussian Synopsis path is released; binomial and ",
-      "Poisson require their purpose-bound score-design artifacts."))
+      "Poisson require their purpose-bound score-design artifacts.")),
+  legacy_joint_dp_capsule = list(
+    method = "legacy joint-DP capsule lifecycle",
+    state = "lifetime_admission_route_removed",
+    replacement = paste0(
+      "Use the per-artifact sticky Synopsis lifecycle; it has no lifetime ",
+      "admission gate and replays one authenticated release.")),
+  formal_finalizer_handoff = list(
+    method = "formal finalizer handoff relay",
+    state = "unregistered_source_route_removed",
+    replacement = "No public handoff relay is released."),
+  formal_glm_control = list(
+    method = "formal GLM control relay",
+    state = "unregistered_source_route_removed",
+    replacement = "No public GLM control relay is released.")
 )
 
 .dsvert_block_retired_remote_route <- function(route) {

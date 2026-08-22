@@ -517,6 +517,7 @@
 
 .dsvert_joint_dp_capsule_status_impl <- function(
     datasources = NULL, .aggregate = DSI::datashield.aggregate) {
+  .dsvert_block_retired_remote_route("legacy_joint_dp_capsule")
   datasources <- .dsvert_dp_datasources(datasources)
   result <- .dsvert_aggregate_strict(
     conns = datasources,

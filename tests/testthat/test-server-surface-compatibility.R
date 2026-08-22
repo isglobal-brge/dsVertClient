@@ -53,6 +53,14 @@
 }
 
 .companion_description <- function() {
+  configured_root <- Sys.getenv("DSVERT_SERVER_SOURCE", unset = "")
+  configured <- if (nzchar(configured_root)) {
+    file.path(normalizePath(configured_root, mustWork = FALSE), "DESCRIPTION")
+  } else {
+    ""
+  }
+  if (file.exists(configured)) return(configured)
+
   source_tree <- testthat::test_path("..", "..", "..", "dsVert",
                                      "DESCRIPTION")
   if (file.exists(source_tree)) return(source_tree)
@@ -63,6 +71,15 @@
 }
 
 .companion_surface_inventory <- function() {
+  configured_root <- Sys.getenv("DSVERT_SERVER_SOURCE", unset = "")
+  configured <- if (nzchar(configured_root)) {
+    file.path(normalizePath(configured_root, mustWork = FALSE), "inst", "docs",
+              "remote_surface_classification.json")
+  } else {
+    ""
+  }
+  if (file.exists(configured)) return(configured)
+
   source_tree <- testthat::test_path(
     "..", "..", "..", "dsVert", "inst", "docs",
     "remote_surface_classification.json")
@@ -73,6 +90,23 @@
   if (nzchar(installed) && file.exists(installed)) return(installed)
   testthat::skip("the companion dsVert remote-surface inventory is unavailable")
 }
+
+test_that("an explicit companion server source takes precedence", {
+  root <- withr::local_tempdir(pattern = "dsvert-companion-source-")
+  dir.create(file.path(root, "inst", "docs"), recursive = TRUE)
+  writeLines("Package: dsVert", file.path(root, "DESCRIPTION"))
+  writeLines("{}", file.path(root, "inst", "docs",
+                               "remote_surface_classification.json"))
+  withr::local_envvar(c(DSVERT_SERVER_SOURCE = root))
+  expected_root <- normalizePath(root, mustWork = TRUE)
+
+  expect_identical(.companion_description(),
+                   file.path(expected_root, "DESCRIPTION"))
+  expect_identical(
+    .companion_surface_inventory(),
+    file.path(expected_root, "inst", "docs",
+              "remote_surface_classification.json"))
+})
 
 .client_source_nodes <- function() {
   r_dir <- testthat::test_path("..", "..", "R")
@@ -139,13 +173,18 @@ test_that("client DSI expressions are registered or locally quarantined", {
     constructions$literal, constructions$as_name, dynamic_allowed)))
   retired <- sort(unique(unlist(
     inventory$retired_registered_surface, use.names = FALSE)))
+  locally_quarantined <- sort(unique(unlist(
+    inventory$client_ast_resolution$locally_quarantined_unregistered_endpoints,
+    use.names = FALSE)))
 
   expect_false("dsvertHistogramDS" %in% constructions$literal)
   expect_false("dsvertHistogramDS" %in% registered_ds)
   expect_false("dsvertContingencyDS" %in% constructions$literal)
   expect_false("dsvertContingencyDS" %in% registered_ds)
 
-  expect_setequal(setdiff(resolved, registered_ds), retired)
+  expect_setequal(
+    setdiff(resolved, registered_ds),
+    sort(unique(c(retired, locally_quarantined))))
   expect_setequal(setdiff(registered_ds, resolved), character())
   expect_identical(
     length(constructions$literal),
@@ -162,7 +201,11 @@ test_that("client DSI expressions are registered or locally quarantined", {
     use.names = FALSE)
   expect_setequal(classified, registered_ds)
   expect_identical(anyDuplicated(classified), 0L)
-  expect_length(retired, 94L)
+  expect_length(retired, 105L)
+  expect_setequal(
+    locally_quarantined,
+    c("dsvertFormalFinalizerHandoffSourceDS",
+      "dsvertFormalGLMControlSourceDS", "dsvertJointDPCapsuleStatusDS"))
   expect_identical(anyDuplicated(retired), 0L)
   expect_false(any(retired %in% registered_ds))
   expect_length(
