@@ -617,6 +617,11 @@ test_that("real same-owner Synopsis contingency is plausible and Rock-replayable
     epi <- ds.vertDPEpi2x2(first, exposed = "yes", event = "yes")
     epi_inference <- ds.vertDPEpi2x2Inference(
       first, exposed = "yes", event = "yes")
+    # The historical frontdoor must recognise a validated DP contingency
+    # result and delegate to the same zero-call, mechanism-aware view rather
+    # than applying an ordinary Wald calculation to noisy cells.
+    epi_historical <- ds.vertEpi2x2(
+      chisq, exposed = "yes", event = "yes")
     prevalence <- ds.vertDPPrevalenceRatio(
       first, exposed = "yes", prevalent = "yes")
     prevalence_inference <- ds.vertDPPrevalenceRatioInference(
@@ -635,13 +640,17 @@ test_that("real same-owner Synopsis contingency is plausible and Rock-replayable
       first, expected_rates = c(no = 0.2, yes = 0.3), event = "yes")
 
     for (value in list(
-      epi, epi_inference, prevalence, prevalence_inference,
+      epi, epi_inference, epi_historical, prevalence, prevalence_inference,
       diagnostic, diagnostic_inference, direct, direct_inference,
       indirect, indirect_inference)) {
       expect_identical(value$additional_server_calls, 0L)
       expect_identical(value$additional_privacy_cost,
                        c(epsilon = 0, delta = 0))
     }
+    expect_s3_class(epi_historical, "ds.vertDPEpi2x2")
+    expect_identical(epi_historical$point_estimates, epi$point_estimates)
+    expect_identical(epi_historical$mechanism_regions,
+                     epi$mechanism_regions)
     epi_risks <- unlist(epi$point_estimates[c(
       "risk_exposed", "risk_unexposed", "population_risk")],
       use.names = FALSE)
