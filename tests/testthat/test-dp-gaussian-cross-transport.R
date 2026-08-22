@@ -1,7 +1,8 @@
 .gaussian_alignment_complete <- function(
     manifest_json, context, layout, source_receipt, session_id, .aggregate) {
   source_count <- length(unlist(layout$source_peers))
-  total <- as.numeric(layout$transport_coordinate_count)
+  total <- .dsvert_dp_alignment_mask_private_projection_client(
+    layout)$coordinate_count
   list(
     capability_id = .DSVERT_CLIENT_EXACT_GC_CAPABILITY,
     state = "complete",
@@ -20,6 +21,20 @@
     "+/", "-_", gsub("[\r\n]", "", jsonlite::base64_enc(value))),
     perl = TRUE)
 }
+
+test_that("cross Gaussian references bind an optional public owner", {
+  qualified <- .dsvert_dp_gaussian_reference("site_02$age")
+  expect_identical(qualified$server, "site_02")
+  expect_identical(qualified$column, "age")
+  expect_identical(.dsvert_dp_gaussian_reference("age")$server, NULL)
+  expect_null(.dsvert_dp_gaussian_reference("site_02$other$age"))
+  expect_null(.dsvert_dp_gaussian_reference("$age"))
+  descriptor <- list(owner_peer = "site_02", column = "age")
+  expect_true(.dsvert_dp_gaussian_reference_matches(
+    "site_02$age", descriptor))
+  expect_false(.dsvert_dp_gaussian_reference_matches(
+    "site_03$age", descriptor))
+})
 
 .gaussian_cross_client_fixture <- function(bind_state = "bound", k = 3L) {
   stopifnot(k %in% 3:5)
