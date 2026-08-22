@@ -54,6 +54,15 @@ test_that("every retired analytic frontdoor fails locally before DSI", {
   }
 })
 
+test_that("the quarantined Cox frontdoor has no unreachable exact-profile fallback", {
+  body_text <- paste(deparse(body(ds.vertCox)), collapse = "\n")
+  expect_match(
+    body_text,
+    '.dsvert_block_retired_remote_route("cox")',
+    fixed = TRUE)
+  expect_false(grepl("ds.vertCoxProfileNonDisclosive", body_text, fixed = TRUE))
+})
+
 test_that("the explicit Gaussian DP adapter remains reachable", {
   observed <- NULL
   testthat::local_mocked_bindings(
