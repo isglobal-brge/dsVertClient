@@ -1029,6 +1029,18 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   sqrt(max(0, 1 - min(1, abs(sum(estimate * truth)))^2))
 }
 
+.dv_spectral_pca <- function(correlation) {
+  # This numerical harness constructs a synthetic local Gaussian release; it
+  # deliberately exercises PCA postprocessing without claiming that the
+  # fixture satisfies the public, signed Synopsis provenance contract.
+  .dv_get(".dsvert_dp_pca_postprocess")(
+    cor_result = correlation, verbose = FALSE,
+    synopsis_read_performed = FALSE,
+    verification = list(
+      integrity_valid = TRUE,
+      authenticity = "caller_anchored"))
+}
+
 .dv_run_spectral <- function(replicates) {
   seed <- 20260806L
   set.seed(seed)
@@ -1036,8 +1048,7 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   oracle_decomposition <- eigen(fixture$correlation, symmetric = TRUE)
   no_noise <- .dv_spectral_release(
     fixture$coordinates, fixture, radius = 0)
-  no_noise_pca <- .dv_get("ds.vertPCA")(
-    cor_result = no_noise$correlation, verbose = FALSE)
+  no_noise_pca <- .dv_spectral_pca(no_noise$correlation)
   oracle_error <- max(
     abs(no_noise$correlation$correlation_raw_complete_case -
           fixture$correlation),
@@ -1062,8 +1073,7 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
         fixture$contract$radius + .dv_numeric_tolerance)
     released <- .dv_spectral_release(
       noisy, fixture, fixture$contract$radius)
-    pca <- .dv_get("ds.vertPCA")(
-      cor_result = released$correlation, verbose = FALSE)
+    pca <- .dv_spectral_pca(released$correlation)
     identity_error <- max(
       identity_error,
       abs(sum(pca$eigenvalues) - nrow(fixture$correlation)),
