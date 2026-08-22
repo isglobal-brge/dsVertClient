@@ -30,9 +30,18 @@ make_cor_result <- function(R, n = 100L) {
   out
 }
 
+.pca_fixture_postprocess <- function(cor_result, n_components = NULL) {
+  .dsvert_dp_pca_postprocess(
+    cor_result = cor_result, n_components = n_components, verbose = FALSE,
+    synopsis_read_performed = FALSE,
+    verification = list(
+      integrity_valid = TRUE,
+      authenticity = "caller_anchored"))
+}
+
 test_that("PCA clamps only quantization-scale negative eigenvalues", {
   R <- matrix(c(1, 1 + 1e-14, 1 + 1e-14, 1), 2L)
-  fit <- ds.vertPCA(cor_result = make_cor_result(R), verbose = FALSE)
+  fit <- .pca_fixture_postprocess(make_cor_result(R))
 
   expect_equal(min(fit$eigenvalues), 0)
   expect_identical(fit$psd_diagnostic$tiny_negative_eigenvalues_clamped, 1L)
@@ -43,33 +52,33 @@ test_that("PCA clamps only quantization-scale negative eigenvalues", {
 test_that("PCA rejects materially indefinite or malformed correlations", {
   indefinite <- matrix(c(1, 1.2, 1.2, 1), 2L)
   expect_error(
-    ds.vertPCA(cor_result = make_cor_result(indefinite), verbose = FALSE),
+    .pca_fixture_postprocess(make_cor_result(indefinite)),
     "PSD certificate"
   )
 
   asymmetric <- matrix(c(1, 0.1, 0.2, 1), 2L)
   expect_error(
-    ds.vertPCA(cor_result = make_cor_result(asymmetric), verbose = FALSE),
+    .pca_fixture_postprocess(make_cor_result(asymmetric)),
     "signed DP correlation matrix is invalid"
   )
 
   nonfinite <- diag(2)
   nonfinite[1, 2] <- nonfinite[2, 1] <- NA_real_
   expect_error(
-    ds.vertPCA(cor_result = make_cor_result(nonfinite), verbose = FALSE),
+    .pca_fixture_postprocess(make_cor_result(nonfinite)),
     "signed DP correlation matrix is invalid"
   )
 })
 
 test_that("PCA component count is explicit and bounded", {
   cor <- make_cor_result(diag(3))
-  expect_error(ds.vertPCA(cor_result = cor, n_components = 0,
-                          verbose = FALSE), "n_components")
-  expect_error(ds.vertPCA(cor_result = cor, n_components = 4,
-                          verbose = FALSE), "n_components")
-  expect_equal(ncol(ds.vertPCA(cor_result = cor, n_components = 2,
-                               verbose = FALSE)$loadings), 2L)
-  tied <- ds.vertPCA(cor_result = cor, n_components = 2, verbose = FALSE)
+  expect_error(.pca_fixture_postprocess(cor, n_components = 0),
+               "n_components")
+  expect_error(.pca_fixture_postprocess(cor, n_components = 4),
+               "n_components")
+  expect_equal(ncol(.pca_fixture_postprocess(cor, n_components = 2)$loadings),
+               2L)
+  tied <- .pca_fixture_postprocess(cor, n_components = 2)
   expect_false(tied$loading_identifiability$individual_directions_identifiable)
   expect_true(
     tied$loading_identifiability$tied_or_unresolved_eigenspaces_identifiable)

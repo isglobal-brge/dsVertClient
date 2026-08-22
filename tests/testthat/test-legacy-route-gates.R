@@ -54,7 +54,7 @@ test_that("discarded route arguments fail as removed, not gated", {
 
 test_that("user-facing wrappers dispatch only to product routes", {
   cox_src <- paste(deparse(body(ds.vertCox)), collapse = "\n")
-  expect_true(any(grepl("ds.vertCoxProfileNonDisclosive", cox_src,
+  expect_true(any(grepl(".dsvert_block_retired_remote_route", cox_src,
                         fixed = TRUE)))
   expect_false(any(grepl(".ds.vertCoxLegacyRank", cox_src, fixed = TRUE)))
 

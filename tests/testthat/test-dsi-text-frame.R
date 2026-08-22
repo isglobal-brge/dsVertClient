@@ -40,9 +40,9 @@ test_that("DSV1 package generations fail closed in both directions and mixed", {
   expect_false(protected_access_started)
 })
 
-test_that("promoted DSI JSON map is exactly 27 methods and 54 formals", {
-  expect_length(.DSVERT_DSI_TEXT_REMOTE_FORMALS, 27L)
-  expect_identical(sum(lengths(.DSVERT_DSI_TEXT_REMOTE_FORMALS)), 54L)
+test_that("promoted DSI JSON map is exactly 46 methods and 91 formals", {
+  expect_length(.DSVERT_DSI_TEXT_REMOTE_FORMALS, 46L)
+  expect_identical(sum(lengths(.DSVERT_DSI_TEXT_REMOTE_FORMALS)), 91L)
   expect_false("exactGCExchangeDS" %in%
                  names(.DSVERT_DSI_TEXT_REMOTE_FORMALS))
   expect_false("psiPaddedFilterDS" %in%

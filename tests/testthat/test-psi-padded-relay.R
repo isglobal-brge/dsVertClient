@@ -28,7 +28,7 @@ test_that("padded PSI client journal resumes frozen frames after a lost delivery
     contract_hash = strrep("c", 64L), relay_frame_bytes = 16L * 1024L)
   descriptor <- list(
     version = "dsvert-psi-padded-relay-v4",
-    protocol = "dsvert-pinned-padded-psi-v4",
+    protocol = "dsvert-pinned-padded-psi-v5",
     contract_hash = contract$contract_hash,
     operation_id = paste0("op_", strrep("d", 32L)),
     capability_id = "psi.padded.v4",

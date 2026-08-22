@@ -1,7 +1,7 @@
 .psi_padded_client_contract <- function(peers, session_id, operation_id,
                                         capacity = 64L) {
   list(
-    protocol = "dsvert-pinned-padded-psi-v4",
+    protocol = "dsvert-pinned-padded-psi-v5",
     session_id = session_id, operation_id = operation_id,
     policy_id = paste0("policy_", strrep("1", 64L)),
     alignment_purpose = "patient-record-alignment-v1",
@@ -82,7 +82,7 @@ test_that("padded PSI client follows one fixed K/B-dependent DSI schedule", {
             transport = "inline", envelope = paste0("final-", target),
             relay = NULL)), setdiff(peers, contract$reference_peer))),
         psiPaddedAttestationDS = list(
-          attestation_version = 2L, alignment_attested = TRUE,
+          attestation_version = 3L, alignment_attested = TRUE,
           alignment_protocol = contract$protocol,
           attestation_id = contract$attestation_id,
           contract_hash = contract$contract_hash,
@@ -157,6 +157,6 @@ test_that("padded PSI client rejects one substituted contract before matching", 
   bound$gamma$contract <- substituted
   expect_error(
     .dsvert_psi_padded_contract(
-      bound, peers, session_id, operation_id, "patient_id"),
+      bound, peers, session_id, operation_id),
     "did not agree")
 })

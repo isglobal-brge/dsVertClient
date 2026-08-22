@@ -242,7 +242,7 @@ test_that("Frequency accepts the real convolution planner rational bounds", {
     dataset_id = "cohort_table", dataset_version = "v1",
     id_column = "patient_id")
   claim_unsigned <- .dsvert_dp_analysis_client_canonical_value_v1(list(
-    version = "dsvert-dp-frequency-factor-claim-v1",
+    version = "dsvert-dp-frequency-factor-claim-v2",
     source_peer_name = source_peer,
     source_identity_pk = unname(pins[[source_peer]]),
     psi_run_sha256 = strrep("1", 64L),
@@ -260,11 +260,11 @@ test_that("Frequency accepts the real convolution planner rational bounds", {
     factor_entry_sha256 = .dsvert_dp_frequency_client_factor_hash_v1(factor)))
   claim <- .dsvert_dp_analysis_client_canonical_value_v1(c(
     claim_unsigned, list(signature = .frequency_client_sign(charToRaw(paste0(
-      "dsVert/dp-frequency/factor-claim/v1|",
+      "dsVert/dp-frequency/factor-claim/v2|",
       .dsvert_joint_dp_client_json(claim_unsigned))),
       keys$private[[source_peer]]))))
   config <- .dsvert_dp_frequency_client_config_v1(list(
-    version = "dsvert-dp-frequency-config-v1", domain = "study-domain",
+    version = "dsvert-dp-frequency-config-v2", domain = "study-domain",
     cohort_id = "cohort-v1", dataset_id = source$dataset_id,
     dataset_version = source$dataset_version,
     privacy_unit_column = source$id_column,
@@ -275,8 +275,8 @@ test_that("Frequency accepts the real convolution planner rational bounds", {
     factor_domain = factor, factor_entry_sha256 = claim$factor_entry_sha256,
     coordinate_upper_bound = 1000L, max_records_per_unit = 1L,
     repeated_record_policy =
-      "psi_v4_first_eligible_source_record_per_privacy_unit_v1",
-    overflow_policy = "clip_to_psi_v4_first_eligible_source_record_v1",
+      "psi_v5_first_eligible_source_record_per_privacy_unit_v1",
+    overflow_policy = "clip_to_psi_v5_first_eligible_source_record_v1",
     missingness_policy = "missing_or_out_of_domain_rows_are_ignored",
     privacy = list(
       adjacency = "add_remove_patient", epsilon = 1, delta = 0.01),

@@ -255,7 +255,7 @@
       levels = as.list(levels),
       dimension = dimension,
       repeated_record_policy =
-        "psi_v4_first_eligible_source_record_per_privacy_unit_v1",
+        "psi_v5_first_eligible_source_record_per_privacy_unit_v1",
       missingness_policy = "missing_or_out_of_domain_rows_are_ignored",
       coordinate_bounds = list(lower = 0, upper = 1000),
       sampler_plan = list(
@@ -281,17 +281,17 @@
         backend_selection = selection)))
   contract$semantic$privacy$adjacency <- "add_remove_patient"
   contract$semantic$privacy$contribution$overflow_policy <-
-    "clip_to_psi_v4_first_eligible_source_record_v1"
+    "clip_to_psi_v5_first_eligible_source_record_v1"
   contract$semantic$privacy$contribution$constraints$policy_sha256 <-
     .dsvert_dp_analysis_frequency_hash_v1(
       "dsVert/dp-frequency/contribution/v1|", list(
-        alignment_protocol = "dsvert-pinned-padded-psi-v4",
+        alignment_protocol = "dsvert-pinned-padded-psi-v5",
         duplicate_policy = "first",
         repeated_record_policy =
-          "psi_v4_first_eligible_source_record_per_privacy_unit_v1",
+          "psi_v5_first_eligible_source_record_per_privacy_unit_v1",
         max_records_per_unit = 1,
         overflow_policy =
-          "clip_to_psi_v4_first_eligible_source_record_v1"))
+          "clip_to_psi_v5_first_eligible_source_record_v1"))
   contract$semantic$privacy$mechanism <- list(
     family = if (convolution) "discrete_laplace" else "gaussian",
     version = mechanism_version,
@@ -352,17 +352,17 @@ test_that("client validates fixed categorical Frequency contracts for K=2,3,5", 
     stats::setNames(vapply(gaussian_contracts, `[[`, character(1L),
                            "artifact_key"), paste0("gaussian_k", ks))), c(
       convolution_k2 =
-        "7e7931ccc08c7803483d6ad0ce6b78250b68cf365408badc58bf62509cd48d41",
+        "be89712d03c411d9e879f82ac5cebda3ca80dabff6ccd2a2503ce39b68735fb9",
       convolution_k3 =
-        "dd2f7e4b69426ba27210ef0c9adc3fe33768ac39495d785e6fa9d947ed070150",
+        "d7997bbe4b0a257e4a00794326438a68797b599e73c3654a83fb84a66cfda761",
       convolution_k5 =
-        "bf4fe8d228deeee2d7236a7f0fbc1b635cda3d312b1ab01d2cc04ef5049c795d",
+        "6a3d269725933c7a65e817fef83926c8f60c7950cc349062420ebca29fb266b5",
       gaussian_k2 =
-        "2248ade285d4125d1a27989296c72595a34cad3eb7d0b79825996f48abb3d019",
+        "dd75be7ae34b34414073d5a4397f306d124588d8b679413e3cb4c403d8718034",
       gaussian_k3 =
-        "15c906ce50e29adeb6e7356533538f83cc92932f00e193afa57a7ec561697609",
+        "126e064538a3f89fd9c1810bef29693e92dc899bcdf9d2e512dea784de896bec",
       gaussian_k5 =
-        "e9d02fca22487596f22e72f1dc060cd8e94f180436aa290c865182ba16bd50e5"))
+        "dda267059a63030bbe45797b2f39218fcbd41da0ce004debc9346fd98e3cab1c"))
 
   singleton <- .dsvert_dp_analysis_contract_validate_v1(
     .client_analysis_frequency_contract_fixture(

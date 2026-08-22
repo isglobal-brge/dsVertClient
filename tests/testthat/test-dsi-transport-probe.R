@@ -86,12 +86,12 @@ test_that("completed remote probe rejection descends without poisoning login", {
       }
       probe_ack(job$expr)
     },
-    dsIsCompleted = function(...) stop("synchronous probe must not poll"),
-    dsKeepAlive = function(...) stop("synchronous probe must not keep alive"),
+    dsIsCompleted = function(...) TRUE,
+    dsKeepAlive = function(...) stop("completed probe must not keep alive"),
     .package = "DSI")
 
   expect_identical(attempts, c(4096, 2048, 1024))
-  expect_identical(async_flags, rep(FALSE, 3L))
+  expect_identical(async_flags, rep(TRUE, 3L))
   expect_true(all(vapply(
     observed_fields, identical, logical(1L),
     c("", "nonce", "padding", "padding_sha256"))))
@@ -472,7 +472,7 @@ test_that("only the measured DSLite release receives a class-derived hint", {
   candidates <- .DSVERT_DSI_PROBE_CANDIDATES
   expect_identical(.dsvert_dsi_known_probe_hint(
     conns, candidates, .package_version = function(package) "1.4.1"),
-    as.numeric(640 * 1024))
+    as.numeric(688 * 1024))
   expect_null(.dsvert_dsi_known_probe_hint(
     conns, candidates, .package_version = function(package) "1.5.0"))
   expect_null(.dsvert_dsi_known_probe_hint(
@@ -594,11 +594,12 @@ test_that("production candidate ladder and expression reserve are bounded", {
   expect_identical(
     .DSVERT_DSI_PROBE_CANDIDATES,
     as.numeric(c(
-      8 * 1024^2, 4 * 1024^2, 2 * 1024^2, 1024^2,
-      640 * 1024, 320 * 1024, 160 * 1024, 80 * 1024,
-      32 * 1024, 16 * 1024)))
+      688 * 1024, 640 * 1024, 320 * 1024, 160 * 1024,
+      80 * 1024, 32 * 1024, 16 * 1024)))
   expect_true(all(diff(.DSVERT_DSI_PROBE_CANDIDATES) < 0))
-  expect_lte(max(.DSVERT_DSI_PROBE_CANDIDATES), 8 * 1024^2)
+  expect_lte(
+    max(.DSVERT_DSI_PROBE_CANDIDATES) + .DSVERT_DSI_PROBE_EXPRESSION_RESERVE,
+    .DSVERT_DSI_PORTABLE_EXPRESSION_BYTES)
   expect_gte(.DSVERT_DSI_PROBE_EXPRESSION_RESERVE, 32 * 1024L)
   expect_identical(class(.dsvert_dsi_probe_hash("public")), "character")
   withr::local_options(list(dsvert.chunk_size = 8 * 1024^2 + 1))
