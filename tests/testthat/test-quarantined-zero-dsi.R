@@ -72,6 +72,17 @@ test_that("the quarantined IPW frontdoor has no unreachable GLM fallback", {
   expect_false(grepl("ds.vertGLM", body_text, fixed = TRUE))
 })
 
+test_that("the quarantined MI frontdoor has no unreachable imputation fallback", {
+  body_text <- paste(deparse(body(ds.vertMI)), collapse = "\n")
+  expect_match(
+    body_text,
+    '.dsvert_block_retired_remote_route("mi")',
+    fixed = TRUE)
+  expect_false(grepl("dsvertImputeColumnDS", body_text, fixed = TRUE))
+  expect_false(grepl(".dsvert_aggregate_strict", body_text, fixed = TRUE))
+  expect_false(grepl("ds.vertGLM", body_text, fixed = TRUE))
+})
+
 test_that("unregistered internal routes are blocked before DSI", {
   testthat::local_mocked_bindings(
     .dsvert_quarantine_test_mode = function() FALSE,
