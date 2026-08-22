@@ -14,6 +14,37 @@
   stop("reserved_not_materialized: ", message, call. = FALSE)
 }
 
+.dsvert_dp_gaussian_reference <- function(value) {
+  if (!is.character(value) || length(value) != 1L || is.na(value)) {
+    return(NULL)
+  }
+  value <- enc2utf8(value)
+  separator <- regexpr("$", value, fixed = TRUE)[[1L]]
+  if (separator > 0L && grepl(
+        "$", substring(value, separator + 1L), fixed = TRUE)) {
+    return(NULL)
+  }
+  parts <- if (separator < 0L) value else c(
+    substring(value, 1L, separator - 1L),
+    substring(value, separator + 1L))
+  if (!length(parts) %in% 1:2 ||
+      any(!grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", parts))) {
+    return(NULL)
+  }
+  list(reference = value,
+       server = if (length(parts) == 2L) parts[[1L]] else NULL,
+       column = parts[[length(parts)]])
+}
+
+.dsvert_dp_gaussian_reference_matches <- function(value, descriptor,
+                                                   default_owner = NULL) {
+  reference <- .dsvert_dp_gaussian_reference(value)
+  owner <- descriptor$owner_peer %||% default_owner
+  !is.null(reference) && is.list(descriptor) &&
+    identical(reference$column, descriptor$column) &&
+    (is.null(reference$server) || identical(reference$server, owner))
+}
+
 .dsvert_dp_gaussian_bound <- function(value, what) {
   required <- c("column", "lower", "upper")
   if (!is.list(value) || is.null(names(value)) || anyNA(names(value)) ||
