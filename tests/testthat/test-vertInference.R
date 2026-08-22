@@ -142,6 +142,20 @@ test_that("inference refuses failed fits and invalid standard errors", {
   expect_error(ds.vertConfint(invalid), "finite, positive")
 })
 
+test_that("current public DP GLM releases fail closed for sampling inference", {
+  gaussian <- structure(list(), class = c("ds.vertDPGaussian", "list"))
+  formal <- structure(list(), class = c("dsvert_formal_dp_glm", "list"))
+
+  expect_error(ds.vertConfint(gaussian),
+               class = "dsvert_inference_unavailable")
+  expect_error(ds.vertWald(gaussian, "x"),
+               class = "dsvert_inference_unavailable")
+  expect_error(ds.vertContrast(gaussian, matrix(1)),
+               class = "dsvert_inference_unavailable")
+  expect_error(ds.vertLR(formal, formal),
+               class = "dsvert_inference_unavailable")
+})
+
 # =============================================================================
 # ds.vertWald
 # =============================================================================

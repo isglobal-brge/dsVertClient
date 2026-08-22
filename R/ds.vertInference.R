@@ -20,9 +20,14 @@
 #'   available only for converged, unpenalized binomial or Poisson fits on the
 #'   same analysis cohort. Gaussian nested-model inference requires an F test
 #'   with a valid dispersion estimate and is therefore not represented as an
-#'   LR chi-square test here.
+#'   LR chi-square test here. The currently promoted public DP GLM releases
+#'   deliberately contain neither a sampling covariance nor an attested
+#'   deviance, so they fail closed here until a joint inference artifact is
+#'   available.
 #' @export
 ds.vertLR <- function(reduced, full) {
+  .dsvert_reject_unavailable_public_inference(reduced)
+  .dsvert_reject_unavailable_public_inference(full)
   if (!inherits(reduced, "ds.glm")) {
     stop("`reduced` must be a ds.glm object (from ds.vertGLM)", call. = FALSE)
   }
@@ -110,8 +115,25 @@ ds.vertLR <- function(reduced, full) {
   out
 }
 
+.dsvert_reject_unavailable_public_inference <- function(fit) {
+  if (!inherits(fit, "ds.vertDPGaussian") &&
+      !inherits(fit, "dsvert_formal_dp_glm")) {
+    return(invisible(NULL))
+  }
+  stop(structure(
+    list(
+      message = paste(
+        "sampling inference is unavailable for this public DP GLM release;",
+        "it has no attested sampling covariance or deviance. A future joint",
+        "inference artifact is required."),
+      call = NULL,
+      reason = "joint_glm_inference_artifact_required"),
+    class = c("dsvert_inference_unavailable", "error", "condition")))
+}
+
 .dsvert_validate_inference_fit <- function(fit, require_se = TRUE,
                                             require_covariance = FALSE) {
+  .dsvert_reject_unavailable_public_inference(fit)
   if (!inherits(fit, "ds.glm")) {
     stop("`fit` must be a ds.glm object", call. = FALSE)
   }
@@ -208,7 +230,9 @@ print.ds.vertLR <- function(x, ...) {
 #'   errors already stored in a ds.glm object. Gaussian fits use a Student t
 #'   reference with residual degrees of freedom; binomial and Poisson fits use
 #'   the asymptotic normal reference. Observation-level quantities are never
-#'   touched; this is a scalar client-side transformation.
+#'   touched; this is a scalar client-side transformation. Current public DP
+#'   GLM releases do not carry an attested sampling covariance and are rejected
+#'   until a joint inference artifact is available.
 #'
 #' @param fit A ds.glm object.
 #' @param parm Optional character vector of coefficient names to report;
@@ -266,7 +290,9 @@ ds.vertConfint <- function(fit, parm = NULL, level = 0.95) {
 #' @description Test H0: beta_j = null against a two-sided alternative using
 #'   the diagonal statistic (estimate - null) / SE. Gaussian fits use Student t
 #'   with residual degrees of freedom; binomial and Poisson fits use the
-#'   asymptotic normal reference.
+#'   asymptotic normal reference. Current public DP GLM releases do not carry
+#'   an attested sampling covariance and are rejected until a joint inference
+#'   artifact is available.
 #'
 #' @param fit A ds.glm object.
 #' @param parm Single coefficient name.
@@ -335,7 +361,9 @@ print.ds.vertWald <- function(x, ...) {
 #'   W = (K * beta_hat - m)^T inv(K * Cov * K^T) (K * beta_hat - m),
 #'   using F = W / rank(K) for Gaussian fits with residual degrees of freedom,
 #'   and the asymptotic chi-square reference otherwise. Requires the fit's full
-#'   covariance matrix.
+#'   covariance matrix. Current public DP GLM releases do not carry an
+#'   attested sampling covariance and are rejected until a joint inference
+#'   artifact is available.
 #'
 #' @param fit A ds.glm object with a non-NULL `covariance` slot.
 #' @param K   Contrast matrix: numeric matrix with ncol equal to the

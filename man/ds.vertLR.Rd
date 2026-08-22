@@ -32,5 +32,8 @@ is performed and no observation-level information is exposed. It is
 available only for converged, unpenalized binomial or Poisson fits on the
 same analysis cohort. Gaussian nested-model inference requires an F test
 with a valid dispersion estimate and is therefore not represented as an
-LR chi-square test here.
+LR chi-square test here. The currently promoted public DP GLM releases
+deliberately contain neither a sampling covariance nor an attested
+deviance, so they fail closed here until a joint inference artifact is
+available.
 }

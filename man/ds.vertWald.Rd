@@ -22,5 +22,7 @@ Gaussian results include \code{t} and \code{df}, other families include
 Test H0: beta_j = null against a two-sided alternative using
 the diagonal statistic (estimate - null) / SE. Gaussian fits use Student t
 with residual degrees of freedom; binomial and Poisson fits use the
-asymptotic normal reference.
+asymptotic normal reference. Current public DP GLM releases do not carry
+an attested sampling covariance and are rejected until a joint inference
+artifact is available.
 }

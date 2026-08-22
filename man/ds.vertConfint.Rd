@@ -24,5 +24,7 @@ Return Wald-type confidence intervals using the standard
 errors already stored in a ds.glm object. Gaussian fits use a Student t
 reference with residual degrees of freedom; binomial and Poisson fits use
 the asymptotic normal reference. Observation-level quantities are never
-touched; this is a scalar client-side transformation.
+touched; this is a scalar client-side transformation. Current public DP
+GLM releases do not carry an attested sampling covariance and are rejected
+until a joint inference artifact is available.
 }
