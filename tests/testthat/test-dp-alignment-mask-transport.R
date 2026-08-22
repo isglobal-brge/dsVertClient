@@ -6,6 +6,21 @@
     all_conns = stats::setNames(as.list(seq_along(servers)), servers))
 }
 
+test_that("client alignment projects only the signed private suffix", {
+  layout <- list(
+    enabled = TRUE, private_start = 8193L,
+    transport_coordinate_count = 8288L,
+    blocks = list(
+      left = list(start = 8193L, end = 8240L, length = 48L),
+      right = list(start = 8241L, end = 8288L, length = 48L)))
+  projection <- .dsvert_dp_alignment_mask_private_projection_client(layout)
+  expect_identical(projection$source_offset, 8192)
+  expect_identical(projection$coordinate_count, 96)
+  layout$blocks[[2L]]$start <- 8242L
+  expect_error(.dsvert_dp_alignment_mask_private_projection_client(layout),
+               "contiguous")
+})
+
 test_that("private alignment gate uses one fixed K-aware transcript", {
   for (k in c(2L, 3L, 5L)) {
     context <- .alignment_mask_client_context(k)

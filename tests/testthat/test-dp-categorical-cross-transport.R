@@ -1,7 +1,8 @@
 .categorical_alignment_complete <- function(
     manifest_json, context, layout, source_receipt, session_id, .aggregate) {
   source_count <- length(unlist(layout$source_peers))
-  total <- as.numeric(layout$transport_coordinate_count)
+  total <- .dsvert_dp_alignment_mask_private_projection_client(
+    layout)$coordinate_count
   list(
     capability_id = .DSVERT_CLIENT_EXACT_GC_CAPABILITY,
     state = "complete",

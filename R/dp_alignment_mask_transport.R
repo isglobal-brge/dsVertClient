@@ -25,6 +25,53 @@
   as.integer(min(size, 4096L))
 }
 
+.dsvert_dp_alignment_mask_private_projection_client <- function(layout) {
+  blocks <- layout$blocks
+  start <- suppressWarnings(as.numeric(layout$private_start))
+  total <- suppressWarnings(as.numeric(layout$transport_coordinate_count))
+  # Internal unit seams historically supplied only the full transport shape.
+  # Real cross layouts are always explicit, signed layouts and take the
+  # strict private-suffix branch below.
+  if (is.null(layout$enabled) && is.null(layout$private_start) &&
+      is.null(layout$blocks)) {
+    if (length(total) != 1L || is.na(total) || !is.finite(total) ||
+        total != floor(total) || total < 1L) {
+      stop("Invalid private alignment-mask projection", call. = FALSE)
+    }
+    return(list(source_offset = 0, coordinate_count = total))
+  }
+  if (!isTRUE(layout$enabled) || !is.list(blocks) || !length(blocks) ||
+      length(start) != 1L || is.na(start) || !is.finite(start) ||
+      start != floor(start) || start < 2 || length(total) != 1L ||
+      is.na(total) || !is.finite(total) || total != floor(total) ||
+      total < start) {
+    stop("Invalid private alignment-mask projection", call. = FALSE)
+  }
+  ordered <- blocks[order(vapply(blocks, function(block) {
+    suppressWarnings(as.numeric(block$start))
+  }, numeric(1L)), method = "radix")]
+  expected <- start
+  for (block in ordered) {
+    first <- suppressWarnings(as.numeric(block$start))
+    last <- suppressWarnings(as.numeric(block$end))
+    size <- suppressWarnings(as.numeric(block$length))
+    if (length(first) != 1L || is.na(first) || !is.finite(first) ||
+        first != expected || length(last) != 1L || is.na(last) ||
+        !is.finite(last) || last < first || length(size) != 1L ||
+        is.na(size) || !is.finite(size) || size != last - first + 1) {
+      stop("The private alignment-mask blocks are not contiguous",
+           call. = FALSE)
+    }
+    expected <- last + 1
+  }
+  if (!identical(as.numeric(expected - 1), total)) {
+    stop("The private alignment-mask projection is incomplete",
+         call. = FALSE)
+  }
+  list(source_offset = as.numeric(start - 1),
+       coordinate_count = as.numeric(total - start + 1))
+}
+
 .dsvert_dp_alignment_mask_operation_client <- function(
     batch_operation_id, contract_hash, chunk_index, chunk_count) {
   if (!is.character(batch_operation_id) ||
@@ -111,12 +158,16 @@
   peers <- context$designated
   sources <- unname(unlist(layout$source_peers))
   source_count <- length(sources)
-  total <- suppressWarnings(as.numeric(layout$transport_coordinate_count))
+  projection <- .dsvert_dp_alignment_mask_private_projection_client(layout)
+  total <- projection$coordinate_count
   contract_hash <- source_receipt$contract_hash
   if (length(peers) != 2L || anyDuplicated(peers) ||
       source_count < 2L || source_count > 64L || anyDuplicated(sources) ||
       length(total) != 1L || is.na(total) || !is.finite(total) ||
       total != floor(total) || total < 1 || total > 2^53 ||
+      (!is.null(source_receipt$coordinate_count) &&
+       !identical(as.numeric(source_receipt$coordinate_count),
+                  as.numeric(layout$transport_coordinate_count))) ||
       !.dsvert_dp_capsule_source_hex(contract_hash) ||
       !is.function(.run)) {
     stop("Invalid private alignment-mask orchestration contract",
