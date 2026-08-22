@@ -275,6 +275,13 @@ test_that("known unsafe legacy routes are not presented as promoted", {
   expect_identical(
     ds.vertMethodStatus("ds.vertGLM")$release_contract,
     "formal_sticky_synopsis_artifact")
+  cox <- ds.vertMethodStatus(c(
+    "ds.vertCox", "ds.vertCoxProfileNonDisclosive", "ds.vert.coxph"))
+  expect_true(all(cox$status == "quarantine"))
+  expect_false(any(grepl("still opens legacy", cox$principal_limitation,
+                         fixed = TRUE)))
+  expect_true(all(grepl("unreachable from the public API",
+                        cox$principal_limitation, fixed = TRUE)))
   glm <- ds.vertMethodStatus(c("ds.vertGLM", "ds.vert.glm"))
   expect_true(all(glm$status == "promoted"))
   expect_match(glm$safe_scope[[1L]], "explicit dp_analysis_id", fixed = TRUE)
