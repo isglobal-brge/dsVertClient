@@ -31,9 +31,7 @@ No fitted object. The function raises
 This exported name is retained for API compatibility. It
 raises a typed \code{dsvert_route_unavailable} condition before any DSI
 call and mutates no server data, draws no imputation, and returns no
-coefficients, counts, covariance, or diagnostic. Retained implementation
-code after the gate is unreachable through this public frontdoor and
-carries no disclosure, DP, accuracy, or availability claim.
+coefficients, counts, covariance, or diagnostic.
 }
 \details{
 Promotion requires a signed bounded imputation contract,
