@@ -219,6 +219,13 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "disclosure_safe_protocol_no_statistic")
   expect_match(validator$safe_scope, "without DSI")
   expect_match(validator$principal_limitation, "trusted pinset")
+  inference_helpers <- ds.vertMethodStatus(c(
+    "ds.vertConfint", "ds.vert.confint", "ds.vertWald", "ds.vert.wald",
+    "ds.vertContrast", "ds.vert.contrast"))
+  expect_true(all(inference_helpers$status == "provisional"))
+  expect_true(all(grepl(
+    "joint inference artifact", inference_helpers$principal_limitation,
+    fixed = TRUE)))
   lasso <- ds.vertMethodStatus(c(
     "ds.vertLASSOProximal", "ds.vert.lasso_proximal",
     "ds.vertLASSOCV", "ds.vert.lasso_cv"))

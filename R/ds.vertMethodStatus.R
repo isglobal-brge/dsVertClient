@@ -560,9 +560,14 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "unavailable; unauthenticated legacy ds.glm inputs are rejected."))
   add(c("ds.vertConfint", "ds.vert.confint", "ds.vertWald", "ds.vert.wald",
         "ds.vertContrast", "ds.vert.contrast"),
-      "ds.vert inference helpers", "promoted",
-      "Pure client algebra conditional on a converged unpenalized fit with valid covariance.",
-      "Validity cannot exceed that of the supplied fit/covariance.")
+      "ds.vert inference helpers", "provisional",
+      paste(
+        "Pure client algebra reserved for a future attested converged",
+        "unpenalized fit with valid sampling covariance. Current public DP",
+        "GLM releases fail closed before inference."),
+      paste(
+        "No public signed joint inference artifact exists yet; a DP point",
+        "release cannot be promoted to a sampling covariance or p-value."))
   add(c("ds.vertLR", "ds.vert.lr"), "ds.vertLR", "provisional",
       paste(
         "Pure client post-processing of two attested, nested, unweighted",

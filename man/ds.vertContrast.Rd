@@ -26,5 +26,7 @@ Test H0: K * beta = m using the multivariate Wald statistic
 W = (K * beta_hat - m)^T inv(K * Cov * K^T) (K * beta_hat - m),
 using F = W / rank(K) for Gaussian fits with residual degrees of freedom,
 and the asymptotic chi-square reference otherwise. Requires the fit's full
-covariance matrix.
+covariance matrix. Current public DP GLM releases do not carry an
+attested sampling covariance and are rejected until a joint inference
+artifact is available.
 }
