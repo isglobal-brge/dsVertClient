@@ -131,6 +131,26 @@ test_that("GLM help documents the Synopsis route matrix instead of legacy MPC", 
                "Binomial and Poisson", fixed = TRUE)
 })
 
+test_that("Describe help matches the cold Synopsis execution and replay route", {
+  package_root <- dirname(.dsvert_client_source_root())
+  source <- .dsvert_public_roxygen_text("ds.vertDPDescribe.R",
+                                        "ds.vertDPDescribe")
+  rd_path <- file.path(package_root, "man", "ds.vertDPDescribe.Rd")
+  if (!file.exists(rd_path)) {
+    testthat::fail("generated ds.vertDPDescribe help is unavailable")
+  }
+  rd <- paste(readLines(rd_path, warn = FALSE), collapse = "\n")
+
+  for (text in list(source, rd)) {
+    normalized <- gsub("[[:space:]]+", " ", text)
+    expect_match(normalized, "cold exact-GC Synopsis execution performs",
+                 fixed = TRUE)
+    expect_match(normalized, "durable publication fast path", fixed = TRUE)
+    expect_false(grepl("fails before Claim or Compile", normalized,
+                       fixed = TRUE))
+  }
+})
+
 test_that("security-status docs cannot promote sealed routes via top-level readiness", {
   source <- .dsvert_public_roxygen_text(
     "ds.vertSecurityStatus.R", "ds.vertSecurityStatus")

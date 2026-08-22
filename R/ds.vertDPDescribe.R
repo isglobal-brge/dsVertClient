@@ -616,9 +616,10 @@
 #'   without rerunning source work.
 #'
 #'   This release currently supports same-owner Describe artifacts. A cold
-#'   exact-GC Synopsis execution fails before Claim or Compile; an already
-#'   published exact artifact may still be replayed through the publication
-#'   fast path.
+#'   exact-GC Synopsis execution performs the authenticated Claim, Compile,
+#'   source-transfer and two-authority protocol. Once published, an exact
+#'   replay uses the durable publication fast path without rerunning source
+#'   work.
 #' @export
 ds.vertDPDescribe <- function(data_name, analysis_id,
                               probs = c(0.25, 0.5, 0.75),
