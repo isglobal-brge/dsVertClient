@@ -73,8 +73,9 @@ identities and replays the durable publication without rerunning Claim,
 Compile, source transfer or session execution.
 
 This release currently supports same-owner Describe artifacts. A cold exact-GC
-Synopsis execution fails before Claim or Compile; an already published exact
-artifact may still be replayed through the publication fast path.
+Synopsis execution performs authenticated Claim, Compile, source transfer and
+the two-authority protocol. Once published, an exact replay uses the durable
+publication fast path without rerunning source work.
 
 The client uses a fail-closed DSI aggregate contract: partial or null results
 and transport callbacks are rejected, remote error text is not propagated, and
