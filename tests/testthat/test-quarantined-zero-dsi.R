@@ -63,6 +63,32 @@ test_that("the quarantined Cox frontdoor has no unreachable exact-profile fallba
   expect_false(grepl("ds.vertCoxProfileNonDisclosive", body_text, fixed = TRUE))
 })
 
+test_that("unregistered internal routes are blocked before DSI", {
+  testthat::local_mocked_bindings(
+    .dsvert_quarantine_test_mode = function() FALSE,
+    .dsvert_aggregate_strict = function(...) {
+      stop("test observed a remote operation", call. = FALSE)
+    },
+    .package = "dsVertClient")
+  routes <- list(
+    legacy_joint_dp_capsule = ".dsvert_joint_dp_capsule_status_impl",
+    formal_finalizer_handoff = ".dsvert_relay_formal_finalizer_handoff_v1",
+    formal_glm_control = ".dsvert_relay_formal_glm_control_v1")
+  for (route in names(routes)) {
+    impl <- get(routes[[route]], envir = asNamespace("dsVertClient"),
+                inherits = FALSE)
+    condition <- tryCatch(do.call(impl, list()),
+                          dsvert_route_unavailable = identity)
+    expect_s3_class(condition, "dsvert_route_unavailable")
+    expected_state <- if (identical(route, "legacy_joint_dp_capsule")) {
+      "lifetime_admission_route_removed"
+    } else {
+      "unregistered_source_route_removed"
+    }
+    expect_identical(condition$state, expected_state, info = route)
+  }
+})
+
 test_that("the explicit Gaussian DP adapter remains reachable", {
   observed <- NULL
   testthat::local_mocked_bindings(

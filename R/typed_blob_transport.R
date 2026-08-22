@@ -788,6 +788,7 @@
 .dsvert_relay_formal_finalizer_handoff_v1 <- function(
     producer_conn, recipient_conn, recipient_pk, session_id,
     .aggregate = DSI::datashield.aggregate) {
+  .dsvert_block_retired_remote_route("formal_finalizer_handoff")
   named_peer <- function(conn) {
     is.list(conn) && length(conn) == 1L && !is.null(names(conn)) &&
       is.character(names(conn)) && length(names(conn)) == 1L &&
@@ -846,6 +847,7 @@
 .dsvert_relay_formal_glm_control_v1 <- function(
     producer_conn, recipient_conn, recipient_pk, session_id,
     .aggregate = DSI::datashield.aggregate) {
+  .dsvert_block_retired_remote_route("formal_glm_control")
   named_peer <- function(conn) {
     is.list(conn) && length(conn) == 1L && !is.null(names(conn)) &&
       is.character(names(conn)) && length(names(conn)) == 1L &&

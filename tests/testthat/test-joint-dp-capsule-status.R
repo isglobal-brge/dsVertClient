@@ -1,3 +1,13 @@
+.dsvert_joint_dp_capsule_status_impl <- function(...) {
+  impl <- get(
+    ".dsvert_joint_dp_capsule_status_impl",
+    envir = asNamespace("dsVertClient"), inherits = FALSE)
+  testthat::with_mocked_bindings(
+    impl(...),
+    .dsvert_block_retired_remote_route = function(...) invisible(FALSE),
+    .package = "dsVertClient")
+}
+
 .capsule_status_pk <- function(offset) {
   chartr("+/", "-_", sub(
     "=+$", "",
