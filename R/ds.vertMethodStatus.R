@@ -449,11 +449,11 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "values is returned."))
   add(c("ds.vertCox", "ds.vertCoxProfileNonDisclosive", "ds.vert.coxph"),
       "ds.vertCoxProfileNonDisclosive", "quarantine",
-      "Cox PH point coefficients on the tested profile route.",
+      "Cox PH has no released compatibility route; the retained frontdoor fails before DSI.",
       paste(
-        "The route still opens legacy exact profile aggregates and has no",
-        "capsule-bound DP release; covariance, ties/strata and partial",
-        "likelihood inference are also incomplete."))
+        "The historical exact-profile implementation is unreachable from the",
+        "public API. A capsule-bound DP release, covariance, ties/strata and",
+        "partial-likelihood inference remain incomplete."))
   add(c("ds.vertCoxDiscreteNonDisclosive"),
       "ds.vertCoxDiscreteNonDisclosive", "quarantine",
       "Discrete-time pooled logistic hazard model.",
