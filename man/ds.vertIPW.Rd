@@ -29,9 +29,9 @@ No fitted object. The function raises
 This exported name is retained for API compatibility. It
 raises a typed \code{dsvert_route_unavailable} condition before any DSI
 call and computes or returns no propensity model, weights, effect
-estimate, or diagnostic. Retained two-stage code after the gate is
-unreachable through this public frontdoor and carries no disclosure, DP,
-causal-identification, accuracy, or availability claim.
+estimate, or diagnostic. The former two-stage implementation was removed:
+it could not establish a signed treatment/outcome binding, bounded weights,
+or a non-rerollable causal release.
 }
 \details{
 Promotion requires signed treatment/outcome binding, a complete

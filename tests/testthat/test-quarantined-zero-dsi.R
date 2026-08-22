@@ -63,6 +63,15 @@ test_that("the quarantined Cox frontdoor has no unreachable exact-profile fallba
   expect_false(grepl("ds.vertCoxProfileNonDisclosive", body_text, fixed = TRUE))
 })
 
+test_that("the quarantined IPW frontdoor has no unreachable GLM fallback", {
+  body_text <- paste(deparse(body(ds.vertIPW)), collapse = "\n")
+  expect_match(
+    body_text,
+    '.dsvert_block_retired_remote_route("ipw")',
+    fixed = TRUE)
+  expect_false(grepl("ds.vertGLM", body_text, fixed = TRUE))
+})
+
 test_that("unregistered internal routes are blocked before DSI", {
   testthat::local_mocked_bindings(
     .dsvert_quarantine_test_mode = function() FALSE,
