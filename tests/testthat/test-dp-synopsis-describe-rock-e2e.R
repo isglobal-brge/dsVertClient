@@ -18,8 +18,9 @@
   "DSVERT_TEST_SYNOPSIS_E2E_FAMILY", unset = "")
 .synopsis_real_e2e_families <- c(
   "describe", "same_owner_contingency", "cross_owner_contingency",
-  "stratified_epidemiology", "frequency", "survival", "correlation", "gaussian",
-  "cross_owner_tamper", "gaussian_lasso_focal")
+  "stratified_epidemiology", "causal_standardization", "frequency",
+  "survival", "correlation", "gaussian", "cross_owner_tamper",
+  "gaussian_lasso_focal")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
   stop("unknown DSVERT_TEST_SYNOPSIS_E2E_FAMILY", call. = FALSE)
@@ -216,6 +217,38 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
                 rep("no", 20L), rep("yes", 20L)),
     stringsAsFactors = FALSE)
   fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
+  fixture
+}
+
+.synopsis_causal_contingency_real_e2e_fixture <- function(k, server_ns) {
+  fixture <- .synopsis_describe_real_e2e_fixture(k, server_ns)
+  arms <- c("young_control", "young_treated", "middle_control",
+            "middle_treated", "old_control", "old_treated")
+  for (peer in fixture$peers) {
+    policy <- fixture$policies[[peer]]
+    policy$unit_capacity <- 256L
+    policy$capsule_workload_scope <- list(
+      mode = "catalog_v1", numeric_moments = "x_peer_a",
+      categorical_marginals = character(),
+      categorical_pairs = list(c("arm", "outcome")),
+      correlations = list())
+    if (identical(peer, "peer_a")) {
+      policy$categorical_levels <- list(
+        arm = arms, outcome = c("no", "yes"))
+      policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+        "x_peer_a", "arm", "outcome")
+    }
+    fixture$policies[[peer]] <- policy
+  }
+  events <- c(8L, 16L, 10L, 20L, 12L, 24L)
+  arm <- rep(arms, each = 40L)
+  outcome <- unlist(lapply(events, function(event_count) c(
+    rep("yes", event_count), rep("no", 40L - event_count))),
+    use.names = FALSE)
+  fixture$snapshots$peer_a[["data_peer_a"]]$data <- data.frame(
+    patient_id = paste0("u", seq_along(arm)),
+    x_peer_a = rep(c(0, 10), length.out = length(arm)),
+    arm = arm, outcome = outcome, stringsAsFactors = FALSE)
   fixture
 }
 
@@ -784,6 +817,72 @@ test_that("real stratified Synopsis supports sticky standardisation at K=2/3/5",
       new.env(parent = emptyenv())
     }), fixture$peers)
     replay <- contingency("data_peer_a", "stratum", "outcome", "peer_a",
+                          conns, dispatch)
+    expect_identical(replay$table, first$table)
+    expect_identical(replay$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real Synopsis causal standardisation is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("causal_standardization")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  contingency <- get(".dsvert_dp_contingency_impl",
+                     asNamespace("dsVertClient"), inherits = FALSE)
+  strata <- c("young", "young", "middle", "middle", "old", "old")
+  treatment <- rep(c("control", "treated"), 3L)
+  weights <- c(young = 0.2, middle = 0.3, old = 0.5)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_causal_contingency_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    first <- contingency("data_peer_a", "arm", "outcome", "peer_a",
+                         conns, dispatch)
+    expect_s3_class(first, "ds.vertDPContingency")
+    expect_true(isTRUE(first$released))
+    expect_identical(dim(first$table), c(6L, 2L))
+    expect_identical(rownames(first$table), c(
+      "young_control", "young_treated", "middle_control",
+      "middle_treated", "old_control", "old_treated"))
+    expect_identical(colnames(first$table), c("no", "yes"))
+    expect_true(all(is.finite(first$table) & first$table >= 0 &
+                    first$table <= 256))
+    expect_identical(fixture$state$source_prepare, 1L)
+    expect_identical(fixture$state$start, 2L)
+
+    causal <- ds.vertDPCausalStandardization(
+      first, strata = strata, treatment = treatment, treated = "treated",
+      standard_weights = weights, event = "yes")
+    causal_inference <- ds.vertDPCausalStandardizationInference(
+      first, strata = strata, treatment = treatment, treated = "treated",
+      standard_weights = weights, event = "yes")
+    expect_s3_class(causal, "ds.vertDPCausalStandardization")
+    expect_s3_class(causal_inference,
+                    "ds.vertDPCausalStandardizationInference")
+    for (result in list(causal, causal_inference)) {
+      expect_identical(result$additional_server_calls, 0L)
+      expect_identical(result$additional_privacy_cost,
+                       c(epsilon = 0, delta = 0))
+      expect_equal(result$standard_weights, weights, tolerance = 0)
+    }
+    for (name in c("risk_treated", "risk_control")) {
+      expect_true(all(is.finite(causal$mechanism_regions[[name]])))
+      expect_true(all(causal$mechanism_regions[[name]] >= 0 &
+                      causal$mechanism_regions[[name]] <= 1))
+      expect_true(all(is.finite(causal_inference$combined_regions[[name]])))
+      expect_true(all(causal_inference$combined_regions[[name]] >= 0 &
+                      causal_inference$combined_regions[[name]] <= 1))
+    }
+    expect_identical(causal_inference$coverage_lower_bound, 0.95)
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- contingency("data_peer_a", "arm", "outcome", "peer_a",
                           conns, dispatch)
     expect_identical(replay$table, first$table)
     expect_identical(replay$final_vector_root, first$final_vector_root)
