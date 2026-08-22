@@ -93,7 +93,8 @@
     "gate_share_exposed", "fixed_transcript")
   sources <- unname(unlist(layout$source_peers))
   source_count <- length(sources)
-  total <- as.numeric(layout$transport_coordinate_count)
+  total <- .dsvert_dp_alignment_mask_private_projection_client(
+    layout)$coordinate_count
   chunk_size <- .dsvert_dp_alignment_mask_chunk_size_client(source_count)
   chunk_count <- as.integer(ceiling(total / chunk_size))
   valid <- .dsvert_dp_has_exact_names(alignment, fields) &&
@@ -177,7 +178,8 @@
     "family_operation_domains")
   bindings <- .dsvert_dp_cross_shared_bindings(context, layout)
   expected_chunks <- ceiling(
-    as.numeric(layout$transport_coordinate_count) /
+    .dsvert_dp_alignment_mask_private_projection_client(
+      layout)$coordinate_count /
       .dsvert_dp_alignment_mask_chunk_size_client(length(bindings$sources)))
   valid <- .dsvert_dp_has_exact_names(shared, fields) &&
     identical(shared$version,
