@@ -64,7 +64,7 @@ test_that("known unsafe legacy routes are not presented as promoted", {
   quarantined <- ds.vertMethodStatus(status = "quarantine")$method
   unsafe_server_routes <- "ds.vertOrdinalJointNewton"
   newly_quarantined <- c(
-    "ds.vertNBFullRegTheta", "ds.vert.nb", "ds.vertMI", "ds.vert.mi",
+    "ds.vertMI", "ds.vert.mi",
     "ds.vertMultinomJoint", "ds.vertMultinomJointNewton")
   expect_true(all(c(
     "ds.vertLMM", "ds.vertGLMM", "ds.vertIPW",
@@ -82,6 +82,11 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "ds.vertOrdinal", "ds.vert.ordinal"))$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertOrdinal", "ds.vert.ordinal"))$release_contract ==
+      "postprocessing_inherits_input"))
+  expect_true(all(ds.vertMethodStatus(c(
+    "ds.vertNBFullRegTheta", "ds.vert.nb"))$status == "promoted"))
+  expect_true(all(ds.vertMethodStatus(c(
+    "ds.vertNBFullRegTheta", "ds.vert.nb"))$release_contract ==
       "postprocessing_inherits_input"))
   expect_length(intersect(
     ds.vertMethodStatus(status = "promoted")$method,
@@ -335,7 +340,7 @@ test_that("known unsafe legacy routes are not presented as promoted", {
                "exact per-round imputation counts", fixed = TRUE)
   expect_match(ds.vertMethodStatus("ds.vertNBFullRegTheta")$
                  principal_limitation,
-               "exact outcome/profile aggregates", fixed = TRUE)
+               "bounded non-negative integer y ~ 1", fixed = TRUE)
   expect_identical(
     ds.vertMethodStatus("ds.psiAlign")$release_contract,
     "disclosure_safe_protocol_no_statistic")

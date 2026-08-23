@@ -1,5 +1,4 @@
 quarantined_doc_sources <- c(
-  "ds.vertNBFullRegTheta.R",
   "ds.vertMultinomJoint.R",
   "ds.vertMultinomJointNewton.R",
   "ds.vertOrdinalJointNewton.R",
@@ -10,7 +9,6 @@ quarantined_doc_sources <- c(
   "ds.vertMI.R")
 
 quarantined_doc_topics <- c(
-  "ds.vertNBFullRegTheta" = "ds.vertNBFullRegTheta.R",
   "ds.vertMultinomJoint" = "ds.vertMultinomJoint.R",
   "ds.vertMultinomJointNewton" = "ds.vertMultinomJointNewton.R",
   "ds.vertOrdinalJointNewton" = "ds.vertOrdinalJointNewton.R",
@@ -135,6 +133,27 @@ test_that("multinomial help limits Frequency post-processing to y ~ 1", {
     expect_match(text, "Jeffreys", fixed = TRUE)
     expect_match(text, "never starts a new analysis", fixed = TRUE)
     expect_match(text, "joint softmax", ignore.case = TRUE)
+    expect_match(text, "standard errors", ignore.case = TRUE)
+  }
+})
+
+test_that("NB2 help limits Frequency post-processing to bounded y ~ 1 counts", {
+  package_root <- dirname(.dsvert_client_source_root())
+  source <- .dsvert_public_roxygen_text(
+    "ds.vertNBFullRegTheta.R", "ds.vertNBFullRegTheta")
+  rd_path <- file.path(package_root, "man", "ds.vertNBFullRegTheta.Rd")
+  if (!file.exists(rd_path)) {
+    testthat::fail("generated ds.vertNBFullRegTheta help is unavailable")
+  }
+  rd <- paste(readLines(rd_path, warn = FALSE), collapse = "\n")
+
+  for (text in list(source, rd)) {
+    expect_match(text, "ds.vertDPFrequency", fixed = TRUE)
+    expect_match(text, "y ~ 1", fixed = TRUE)
+    expect_match(text, "non-negative integer", fixed = TRUE)
+    expect_match(text, "method-of-moments", fixed = TRUE)
+    expect_match(text, "never starts a new analysis", fixed = TRUE)
+    expect_match(text, "covariance", ignore.case = TRUE)
     expect_match(text, "standard errors", ignore.case = TRUE)
   }
 })

@@ -549,33 +549,21 @@
 
   add(
     c("ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",
-    "negative_binomial",
-    c("admitted_count", "nb2_beta_score_information",
-      "nb2_beta_theta_cross_information", "nb2_deviance",
-      "nb2_theta_score_information", "numeric_cross_products",
-      "numeric_moments"),
-    "NB2 log-link regression coefficients and size/dispersion theta.",
-    c("convergence", "dp_aware_joint_beta_theta_covariance",
-      "identifiability", "nb2_parameterization", "theta_link",
-      "theta_uncertainty"),
-    "requires_new_secure_protocol",
-    c("dsvertGEEInterceptShareDS", "dsvertLocalMomentsDS",
-      "dsvertNBEtaShareConfirmDS", "dsvertNBEtaShareDS",
-      "dsvertNBEtaTotalReceiveDS", "dsvertNBProfileSumsDS",
-      "dsvertNBPsiAggregateDS", "dsvertNBYThetaShareDS",
-      "dsvertNBYThetaShareReceiveDS", "getObsCountDS",
-      "glmRing63DevianceSumsDS", "glmRing63ExportOwnShareDS",
-      "glmRing63ReceiveExtraShareDS", "glmRing63ReorderXFullDS",
-      "glmRing63ShareExtraInputDS", "glmRing63TransportInitDS",
-      "glmStandardizeDS", "k2BeaverExtractColumnDS",
-      "k2BeaverSumShareDS", "k2ComputeEtaShareDS", "k2GradientR1DS",
-      "k2GradientR2DS", "k2ReceiveShareDS",
-      "k2Ring127AffineCombineDS", "k2ShareInputDS",
-      "mpcStoreTransportKeysDS"),
+    "negative_binomial_intercept_frequency",
+    c("validated_sticky_frequency_artifact",
+      "bounded_nonnegative_integer_domain", "zero_call_postprocessing"),
+    paste(
+      "Intercept-only NB2 mean and method-of-moments dispersion from one",
+      "validated sticky count Frequency release."),
+    c("bounded_nonnegative_integer_domain", "validated_frequency_provenance",
+      "no_covariates", "no_covariance_or_inference"),
+    "frequency_operation_implemented",
+    character(),
     c("ds.vert.nb" = "ds.vertNBFullRegTheta"),
-    current_route_status = "legacy_granular_release_quarantine",
-    inference_implementation_state =
-      "nb2_joint_beta_theta_inference_not_implemented")
+    current_route_status = "client_only_validated_capsule_postprocess",
+    artifact_implementation_state =
+      "validated_frequency_artifact_adapter_implemented",
+    inference_implementation_state = "frequency_postprocess_implemented")
 
   add(
     c("ds.vertMultinom", "ds.vert.multinom"),

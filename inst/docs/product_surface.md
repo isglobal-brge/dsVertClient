@@ -77,8 +77,8 @@ Formal capsule descriptives/correlation/PCA/contingency methods, the explicit
 Gaussian GLM capsule adapter and selected client post-processing remain
 provisional. Pinned fixed-capacity PSI
 alignment and its count-free persistent attestation are promoted non-statistical
-protocols. Multinomial,
-ordinal, local MI and the iterative LASSO route remain quarantined. Their
+protocols. Covariate multinomial and ordinal regression, local MI and the
+iterative LASSO route remain quarantined. Their
 precise supported scope and limitation are returned by
 `ds.vertMethodStatus()`.
 
@@ -94,8 +94,8 @@ historical behaviour. Quarantined distributed names remain exported for API
 discovery, but their legacy server endpoints are unregistered and unexported;
 they fail locally with a stable migration error before connection discovery or
 DSI submission. Current quarantined families include legacy Cox computation,
-NB2, multinomial, ordinal, LMM, clustered GEE, GLMM-PQL, MI, iterative LASSO and the legacy
-`ds.vertIPW()` contract. Use
+covariate NB2, multinomial and ordinal regression, LMM, clustered GEE,
+GLMM-PQL, MI, iterative LASSO and the legacy `ds.vertIPW()` contract. Use
 `ds.vertMethodStatus(status = "quarantine")` for the authoritative list.
 
 In particular:
@@ -104,6 +104,9 @@ In particular:
   derive propensity weights end-to-end.
 - current LMM/GLMM and clustered GEE paths use cluster-granular intermediate
   aggregates and do not yet meet the intended disclosure-safe output contract;
+- `ds.vertNBFullRegTheta(y ~ 1, frequency = ...)` post-processes one signed
+  bounded count Frequency release into a no-inference NB2 method-of-moments
+  result; covariate NB2 remains unavailable;
 - multinomial and ordinal warm-start covariance, standard errors and tests are
   retained only under a clearly labelled `warm_start` diagnostic field and are
   never presented as inference for the final joint estimator;

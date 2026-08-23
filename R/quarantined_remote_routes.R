@@ -23,7 +23,10 @@
   negative_binomial = list(
     method = "ds.vertNBFullRegTheta",
     state = "legacy_nb2_route_quarantined",
-    replacement = "No disclosure-safe NB2 replacement is released."),
+    replacement = paste0(
+      "For a bounded non-negative integer y ~ 1 domain, pass a validated ",
+      "ds.vertDPFrequency object to ds.vertNBFullRegTheta(..., frequency = ",
+      "...); covariate NB2 regression remains unavailable.")),
   multinomial = list(
     method = "ds.vertMultinomJointNewton",
     state = "multinomial_design_capsule_unavailable",

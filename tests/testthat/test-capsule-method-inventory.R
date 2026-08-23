@@ -251,26 +251,13 @@ test_that("retired legacy DP endpoints are absent from public route evidence", {
 test_that("verified legacy disclosure evidence cannot regress to omission", {
   inventory <- .dsvert_capsule_method_inventory()
   standardized_families <- c(
-    "ds.vertGLM", "ds.vertNBFullRegTheta",
-    "ds.vertMultinomJointNewton", "ds.vertOrdinalJointNewton",
+    "ds.vertGLM", "ds.vertMultinomJointNewton", "ds.vertOrdinalJointNewton",
     "ds.vertLMM", "ds.vertGLMM", "ds.vertIPW",
     "ds.vertMI")
   expect_true(all(vapply(standardized_families, function(method) {
     has_evidence(inventory, method, "glmStandardizeDS",
                  "plaintext_exact_aggregate")
   }, logical(1L))))
-
-  expect_true(has_evidence(
-    inventory, "ds.vertNBFullRegTheta", "dsvertLocalMomentsDS",
-    "plaintext_exact_aggregate"))
-  expect_true(has_evidence(
-    inventory, "ds.vertNBFullRegTheta", "dsvertNBProfileSumsDS",
-    "plaintext_exact_aggregate"))
-  expect_true(has_evidence(
-    inventory, "ds.vertNBFullRegTheta", "dsvertNBPsiAggregateDS",
-    "plaintext_exact_aggregate"))
-  expect_gte(length(unique(evidence_for(
-    inventory, "ds.vertNBFullRegTheta")$call)), 20L)
 
   expect_true(has_evidence(
     inventory, "ds.vertLMM", "dsvertClusterZtZDS",
@@ -336,8 +323,8 @@ test_that("planned artifacts describe the actual biomedical contracts", {
     "bounded_missingness_counts", "posterior_parameter_draws",
     "synthetic_imputation_draws") %in% artifacts_for(inventory, "ds.vertMI")))
   expect_true(all(c(
-    "nb2_beta_score_information", "nb2_theta_score_information",
-    "nb2_beta_theta_cross_information") %in%
+    "validated_sticky_frequency_artifact",
+    "bounded_nonnegative_integer_domain", "zero_call_postprocessing") %in%
       artifacts_for(inventory, "ds.vertNBFullRegTheta")))
   expect_true(all(c(
     "propensity_score_information", "outcome_score_information",
@@ -577,7 +564,7 @@ test_that("quarantine labels require secure redesign and concrete evidence", {
                     "secure_artifact_not_implemented"))
   expect_true(all(lengths(quarantined$legacy_remote_call_evidence) > 0L))
   expect_true(all(quarantined$canonical_family %in% c(
-    "linear_mixed_model", "glmm", "ipw", "negative_binomial")))
+    "linear_mixed_model", "glmm", "ipw")))
   expect_true(all(quarantined$method %in%
                     getNamespaceExports("dsVertClient")))
 })
@@ -588,6 +575,7 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
   broken <- c("ds.vertMultinomJoint", "ds.vertMultinomJointNewton")
   frequency_multinom <- c("ds.vertMultinom", "ds.vert.multinom")
   frequency_ordinal <- c("ds.vertOrdinal", "ds.vert.ordinal")
+  frequency_nb2 <- c("ds.vertNBFullRegTheta", "ds.vert.nb")
 
   expect_true(all(inventory$current_route_status[
     inventory$method %in% mixed] ==
@@ -614,6 +602,12 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
   expect_true(all(inventory$inference_implementation_state[
     inventory$method %in% frequency_ordinal] ==
       "frequency_postprocess_implemented"))
+  expect_true(all(inventory$current_route_status[
+    inventory$method %in% frequency_nb2] ==
+      "client_only_validated_capsule_postprocess"))
+  expect_true(all(inventory$inference_implementation_state[
+    inventory$method %in% frequency_nb2] ==
+      "frequency_postprocess_implemented"))
   lasso_iter <- inventory[inventory$method %in%
     c("ds.vertLASSOIter", "ds.vert.lasso_iter"), , drop = FALSE]
   expect_true(all(lasso_iter$current_route_status ==
@@ -627,19 +621,21 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
     "ds.vertLASSOIter", "ds.vert.lasso_iter"))$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(frequency_multinom)$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(frequency_ordinal)$status == "promoted"))
+  expect_true(all(ds.vertMethodStatus(frequency_nb2)$status == "promoted"))
   expect_length(intersect(ds.vertMethodStatus(status = "promoted")$method,
                           broken), 0L)
 })
 
-test_that("NB and mutating MI routes are explicitly quarantined", {
+test_that("NB2 slope and mutating MI routes remain explicitly quarantined", {
   inventory <- .dsvert_capsule_method_inventory()
   expect_true(all(inventory$current_route_status[
     inventory$method %in% c("ds.vertNBFullRegTheta", "ds.vert.nb")] ==
-      "legacy_granular_release_quarantine"))
+      "client_only_validated_capsule_postprocess"))
   expect_true(all(inventory$current_route_status[
     inventory$method %in% c("ds.vertMI", "ds.vert.mi")] ==
       "legacy_mutating_release_quarantine"))
   expect_true(all(ds.vertMethodStatus(c(
-    "ds.vertNBFullRegTheta", "ds.vert.nb", "ds.vertMI", "ds.vert.mi"))$
+    "ds.vertNBFullRegTheta", "ds.vert.nb"))$status == "promoted"))
+  expect_true(all(ds.vertMethodStatus(c("ds.vertMI", "ds.vert.mi"))$
       status == "quarantine"))
 })

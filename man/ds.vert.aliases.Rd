@@ -205,6 +205,9 @@ controls and cannot create another release.
 \code{ds.vert.ordinal(..., frequency = x)} likewise returns only
 intercept-only cumulative-logit thresholds from the same kind of release;
 its complete ordered category domain must be explicit.
+\code{ds.vert.nb(..., frequency = x)} returns only an intercept-only NB2
+method-of-moments fit for a bounded non-negative integer frequency domain;
+it has no covariates or inference and cannot create another release.
 No alias re-enables a retired remote endpoint or weakens the signed-artifact
 and custodian-owned policy gates of an available backend.
 For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied

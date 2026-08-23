@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertNBFullRegTheta.R
 \name{ds.vertNBFullRegTheta}
 \alias{ds.vertNBFullRegTheta}
-\title{Quarantined negative-binomial compatibility frontdoor}
+\title{Sticky-DP intercept-only NB2 frontdoor}
 \usage{
 ds.vertNBFullRegTheta(
   formula,
@@ -17,30 +17,39 @@ ds.vertNBFullRegTheta(
   compute_covariance = TRUE,
   verbose = TRUE,
   datasources = NULL,
-  ...
+  ...,
+  frequency = NULL
 )
 }
 \arguments{
 \item{formula, data, theta, joint, theta_max_iter, theta_tol, variant, beta_max_iter, beta_tol, compute_covariance, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+public frontdoor fails locally. With \code{frequency}, only
+\code{formula}, \code{data}, \code{verbose}, and \code{frequency} are
+accepted; all legacy NB2 controls fail locally.}
+
+\item{frequency}{A released, validated \code{ds.vertDPFrequency} object for
+a bounded count outcome. It enables only an intercept-only, no-inference
+NB2 method-of-moments result.}
 
 \item{...}{Retained compatibility arguments; not evaluated.}
 }
-\value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
-}
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and computes or returns no fit or dispersion estimate. Retained
-implementation code after the gate is unreachable through this public
-frontdoor and carries no disclosure, DP, accuracy, or availability claim.
+With a released, validated \code{ds.vertDPFrequency} object
+whose signed domain is bounded non-negative integer counts, this frontdoor
+fits \code{y ~ 1} by deterministic NB2 method-of-moments post-processing.
+It never starts a new analysis or DataSHIELD request.
 }
 \details{
-Promotion requires a bounded NB2 score/information capsule, joint
-beta/theta inference, certified deviance and covariance, and independent
-multi-host validation.
+This is deliberately narrower than NB2 regression. Predictors,
+likelihood optimization, covariance, standard errors and inference remain
+unavailable until a protected beta/theta score-and-information artifact is
+implemented. A frequency release with variance no greater than its mean is
+reported as the Poisson-limit boundary rather than as a finite NB2 fit.
+}
+\value{
+With \code{frequency}, a coefficient-only \code{ds.vertNBFullRegTheta}
+object. Otherwise the function raises \code{dsvert_route_unavailable}
+before DSI.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

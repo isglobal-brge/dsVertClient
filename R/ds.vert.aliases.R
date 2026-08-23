@@ -16,6 +16,9 @@
 #' \code{ds.vert.ordinal(..., frequency = x)} likewise returns only
 #' intercept-only cumulative-logit thresholds from the same kind of release;
 #' its complete ordered category domain must be explicit.
+#' \code{ds.vert.nb(..., frequency = x)} returns only an intercept-only NB2
+#' method-of-moments fit for a bounded non-negative integer frequency domain;
+#' it has no covariates or inference and cannot create another release.
 #' No alias re-enables a retired remote endpoint or weakens the signed-artifact
 #' and custodian-owned policy gates of an available backend.
 #' For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied
@@ -375,6 +378,19 @@ ds.vert.coxph <- function(formula, data = NULL, method = "profile",
 ds.vert.nb <- function(formula, data = NULL,
                        method = "accurate",
                        datasources = NULL, ...) {
+  extras <- list(...)
+  if (!is.null(extras$frequency)) {
+    if ("datasources" %in% names(match.call())[-1L]) {
+      stop("Frequency-backed NB2 does not accept datasources", call. = FALSE)
+    }
+    if (!identical(method, "accurate")) {
+      stop("Frequency-backed NB2 does not accept method", call. = FALSE)
+    }
+    out <- do.call(ds.vertNBFullRegTheta, c(
+      list(formula = formula, data = data), extras))
+    return(.dsvert_set_frontdoor(out, "ds.vert.nb",
+                                 "ds.vertNBFullRegTheta", NULL))
+  }
   .dsvert_block_retired_remote_route("negative_binomial")
   method <- match.arg(method, "accurate")
   datasources <- .dsvert_datasources(datasources)

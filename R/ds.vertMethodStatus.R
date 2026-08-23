@@ -485,11 +485,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "No method selector, no covariance, p-values or new run is available",
         "on the formal route; method='discrete' remains unavailable."))
   add(c("ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",
-      "quarantine", "Quarantined NB2 research route only.",
+      "promoted",
       paste(
-        "The route repeatedly exposes exact outcome/profile aggregates and",
-        "has no validated joint beta-theta covariance; it is not a promoted",
-        "biomedical inference path."))
+        "Read-only intercept-only NB2 method-of-moments fit from one",
+        "validated sticky DP Frequency release; it performs no new DSI call",
+        "or opening."),
+      paste(
+        "Only a bounded non-negative integer y ~ 1 domain is available.",
+        "Covariates, likelihood optimization, covariance, standard errors",
+        "and inference remain unavailable until a protected NB2",
+        "score-and-information artifact exists."))
   add(c("ds.vertMultinom", "ds.vert.multinom"),
       "ds.vertMultinom", "promoted",
       paste(
@@ -684,7 +689,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertLASSOCV", "ds.vert.lasso_cv")
   inherited_postprocessing <- c(
     inherited_postprocessing, "ds.vertMultinom", "ds.vert.multinom",
-    "ds.vertOrdinal", "ds.vert.ordinal")
+    "ds.vertOrdinal", "ds.vert.ordinal",
+    "ds.vertNBFullRegTheta", "ds.vert.nb")
   glm_synopsis_wrappers <- c(
     "ds.vertGLM", "ds.vert.glm",
     "ds.vertLASSOIter", "ds.vert.lasso_iter")
