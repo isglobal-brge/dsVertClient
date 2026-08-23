@@ -48,10 +48,6 @@
       "For an independence-working binomial/Poisson point estimate, use ",
       "ds.vertGEE(..., corstr='independence', formal_analysis_id=...); ",
       "clustered GEE remains unavailable.")),
-  glmm = list(
-    method = "ds.vertGLMM",
-    state = "cluster_granular_glmm_route_quarantined",
-    replacement = "No disclosure-safe GLMM replacement is released."),
   ipw = list(
     method = "ds.vertIPW",
     state = "legacy_ipw_route_quarantined",

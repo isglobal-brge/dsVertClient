@@ -63,7 +63,9 @@ test_that("no public route may report a result numeric certificate", {
 test_that("known unsafe legacy routes are not presented as promoted", {
   quarantined <- ds.vertMethodStatus(status = "quarantine")$method
   newly_quarantined <- c("ds.vertMI", "ds.vert.mi")
-  expect_true(all(c("ds.vertGLMM", newly_quarantined) %in% quarantined))
+  expect_true(all(newly_quarantined %in% quarantined))
+  expect_true(all(ds.vertMethodStatus(c("ds.vertGLMM", "ds.vert.glmm"))$
+                  status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertLMM", "ds.vert.lmm"))$
                   status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertIPW", "ds.vert.ipw"))$

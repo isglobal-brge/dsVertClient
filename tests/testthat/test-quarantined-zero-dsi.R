@@ -10,7 +10,6 @@
   ordinal = c(
     "ds.vertOrdinal", "ds.vertOrdinalJointNewton", "ds.vert.ordinal"),
   gee = c("ds.vertGEE", "ds.vert.gee"),
-  glmm = c("ds.vertGLMM", "ds.vert.glmm"),
   mi = c("ds.vertMI", "ds.vert.mi")
 )
 

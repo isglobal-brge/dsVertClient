@@ -22,6 +22,9 @@
 #' \code{ds.vert.lmm(..., analysis_id = x)} is limited to the signed
 #' \code{outcome ~ 1} random-intercept method-of-moments artifact. It has no
 #' ML/REML, random slopes, covariance, standard errors or classical inference.
+#' \code{ds.vert.glmm(..., analysis_id = x)} reads that artifact only for a
+#' binary \code{outcome ~ 1} population-average log-odds and observed-scale
+#' ICC; it is not the retired PQL route.
 #' No alias re-enables a retired remote endpoint or weakens the signed-artifact
 #' and custodian-owned policy gates of an available backend.
 #' For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied
@@ -44,8 +47,8 @@
 #'   sites or a complete named per-site character/list map.
 #' @param variables,var1,var2 Column selections for descriptive / bivariate routes.
 #' @param cluster_col Grouping column for the mixed-model routes.
-#' @param analysis_id Custodian-configured signed random-intercept LMM artifact
-#'   id. It is required by \code{ds.vert.lmm()}.
+#' @param analysis_id Custodian-configured signed random-intercept artifact
+#'   id. It is required by \code{ds.vert.lmm()} and \code{ds.vert.glmm()}.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag.
 #' @param formal_analysis_id Custodian-owned selector for an already completed
@@ -514,13 +517,13 @@ ds.vert.gee <- function(formula, data = NULL,
 #' @rdname ds.vert.aliases
 #' @export
 ds.vert.glmm <- function(formula, data = NULL, cluster_col,
-                         method = "pql",
+                         analysis_id = NULL,
+                         method = "moment",
                          datasources = NULL, ...) {
-  .dsvert_block_retired_remote_route("glmm")
-  method <- match.arg(method, "pql")
+  method <- match.arg(method, "moment")
   datasources <- .dsvert_datasources(datasources)
   out <- ds.vertGLMM(formula = formula, data = data,
-                     cluster_col = cluster_col,
+                     cluster_col = cluster_col, analysis_id = analysis_id,
                      datasources = datasources, ...)
   out <- .dsvert_set_frontdoor(out, "ds.vert.glmm", "ds.vertGLMM",
                                length(datasources))

@@ -62,8 +62,8 @@ test_that("lowercase ds.vert aliases are exported", {
                          inherits = FALSE)))
 })
 
-test_that("GLMM frontdoor exposes the validated PQL product method", {
-  expect_identical(formals(ds.vert.glmm)$method, "pql")
+test_that("GLMM frontdoor exposes the signed binary moment method", {
+  expect_identical(formals(ds.vert.glmm)$method, "moment")
   expect_false("ds.vert.glmer" %in% getNamespaceExports("dsVertClient"))
   expect_false("ds.vertGLMMLaplace" %in% getNamespaceExports("dsVertClient"))
 })

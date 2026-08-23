@@ -254,7 +254,7 @@ test_that("retired legacy DP endpoints are absent from public route evidence", {
 
 test_that("verified legacy disclosure evidence cannot regress to omission", {
   inventory <- .dsvert_capsule_method_inventory()
-  standardized_families <- c("ds.vertGLM", "ds.vertGLMM", "ds.vertMI")
+  standardized_families <- c("ds.vertGLM", "ds.vertMI")
   expect_true(all(vapply(standardized_families, function(method) {
     has_evidence(inventory, method, "glmStandardizeDS",
                  "plaintext_exact_aggregate")
@@ -269,6 +269,12 @@ test_that("verified legacy disclosure evidence cannot regress to omission", {
   expect_true(has_evidence(
     inventory, "ds.vertMI", "dsvertImputeColumnDS",
     "plaintext_exact_aggregate", "imputation_counts"))
+  glmm <- row_for(inventory, "ds.vertGLMM")
+  expect_identical(glmm$current_route_status,
+                   "client_only_validated_synopsis_postprocess")
+  expect_identical(glmm$migration_feasibility,
+                   "synopsis_release_implemented")
+  expect_identical(nrow(glmm$legacy_remote_call_evidence[[1L]]), 0L)
   ipw <- row_for(inventory, "ds.vertIPW")
   expect_identical(ipw$current_route_status,
                    "client_only_validated_synopsis_postprocess")
@@ -565,7 +571,7 @@ test_that("implemented Synopsis producers and postprocessors are explicit", {
 test_that("quarantine labels require secure redesign and concrete evidence", {
   inventory <- .dsvert_capsule_method_inventory()
   quarantined <- inventory[
-    inventory$current_route_status == "legacy_granular_release_quarantine",
+    inventory$current_route_status == "legacy_mutating_release_quarantine",
     , drop = FALSE]
 
   expect_gt(nrow(quarantined), 0L)
@@ -574,8 +580,8 @@ test_that("quarantine labels require secure redesign and concrete evidence", {
   expect_true(all(quarantined$artifact_implementation_state ==
                     "secure_artifact_not_implemented"))
   expect_true(all(lengths(quarantined$legacy_remote_call_evidence) > 0L))
-  expect_true(all(quarantined$canonical_family %in% c(
-    "linear_mixed_model", "glmm")))
+  expect_true(all(quarantined$canonical_family %in%
+                    "multiple_imputation"))
   expect_true(all(quarantined$method %in%
                     getNamespaceExports("dsVertClient")))
 })

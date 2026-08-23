@@ -653,17 +653,22 @@
 
   add(
     c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "glmm",
-    c("bounded_cluster_moments", "glmm_working_score_information",
-      "numeric_cross_products_same_and_cross_owner"),
-    "Conditional binomial random-intercept PQL coefficients and variance.",
-    c("cluster_contribution_bounds", "convergence", "dp_aware_covariance",
-      "identifiability", "target_estimator_validation"),
-    "requires_new_secure_protocol",
-    c("dsvertClusterSizesDS", "dsvertPerClusterSumShareDS",
-      "getObsCountDS", "glmStandardizeDS", "k2GradientR1DS",
-      "k2GradientR2DS"),
+    c("signed_random_intercept_synopsis", "binary_outcome_bounds",
+      "bounded_cluster_contributions", "validated_synopsis_provenance"),
+    paste(
+      "Binary outcome ~ 1 population-average log-odds and observed-scale",
+      "ICC from the signed same-owner random-intercept Synopsis, with a",
+      "declared logistic latent-scale variance approximation."),
+    c("binary_outcome_bounds", "fixed_random_intercept_scope",
+      "identifiability", "sticky_dp_projection", "no_pql_or_likelihood",
+      "no_covariates_or_sampling_inference"),
+    "synopsis_release_implemented",
+    character(),
     c("ds.vert.glmm" = "ds.vertGLMM"),
-    current_route_status = "legacy_granular_release_quarantine")
+    current_route_status = "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state =
+      "validated_same_owner_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     c("ds.vertIPW", "ds.vert.ipw"), "ds.vertIPW", "ipw",

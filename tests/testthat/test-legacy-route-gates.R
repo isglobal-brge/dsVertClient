@@ -72,9 +72,9 @@ test_that("user-facing wrappers dispatch only to product routes", {
   expect_false(any(grepl(".ds_vertOrdinalWarm", ord_src, fixed = TRUE)))
 
   glmm_src <- paste(deparse(body(ds.vertGLMM)), collapse = "\n")
-  expect_true(any(grepl(".ds_glmm_pql_aggregate_loop", glmm_src,
-                        fixed = TRUE)))
-  expect_false(any(grepl("legacy", glmm_src, fixed = TRUE)))
+  expect_true(any(grepl("ds.vertDPLMM", glmm_src, fixed = TRUE)))
+  expect_false(any(grepl(".ds_glmm_pql_aggregate_loop", glmm_src,
+                         fixed = TRUE)))
 })
 
 test_that("internal warm starts remain internal helpers for joint methods", {

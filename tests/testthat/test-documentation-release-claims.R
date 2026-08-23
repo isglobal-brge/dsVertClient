@@ -1,10 +1,6 @@
-quarantined_doc_sources <- c(
-  "ds.vertGLMM.R",
-  "ds.vertMI.R")
+quarantined_doc_sources <- c("ds.vertMI.R")
 
-quarantined_doc_topics <- c(
-  "ds.vertGLMM" = "ds.vertGLMM.R",
-  "ds.vertMI" = "ds.vertMI.R")
+quarantined_doc_topics <- c("ds.vertMI" = "ds.vertMI.R")
 
 .dsvert_public_roxygen_text <- function(filename, function_name) {
   lines <- readLines(.dsvert_client_source_file(filename), warn = FALSE)
@@ -104,6 +100,26 @@ test_that("GLM help documents the Synopsis route matrix instead of legacy MPC", 
   expect_true(all(glm_status$status == "promoted"))
   expect_match(glm_status$principal_limitation[[1L]],
                "Binomial and Poisson", fixed = TRUE)
+})
+
+test_that("GLMM help names the signed binary moment scope", {
+  package_root <- dirname(.dsvert_client_source_root())
+  source <- .dsvert_public_roxygen_text("ds.vertGLMM.R", "ds.vertGLMM")
+  rd_path <- file.path(package_root, "man", "ds.vertGLMM.Rd")
+  if (!file.exists(rd_path)) {
+    testthat::fail("generated ds.vertGLMM help is unavailable")
+  }
+  rd <- paste(readLines(rd_path, warn = FALSE), collapse = "\n")
+  for (text in list(source, rd)) {
+    expect_match(text, "signed", ignore.case = TRUE)
+    expect_match(text, "outcome ~ 1", fixed = TRUE)
+    expect_match(text, "population-average", fixed = TRUE)
+    expect_match(text, "PQL", fixed = TRUE)
+    expect_match(text, "standard errors", ignore.case = TRUE)
+    expect_false(grepl("dsvert_route_unavailable", text, fixed = TRUE))
+  }
+  expect_true(all(ds.vertMethodStatus(c("ds.vertGLMM", "ds.vert.glmm"))$
+                  status == "promoted"))
 })
 
 test_that("multinomial help limits Frequency post-processing to y ~ 1", {

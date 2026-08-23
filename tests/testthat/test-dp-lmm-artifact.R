@@ -189,3 +189,63 @@ test_that("historical LMM names only admit the signed moment estimand", {
       y ~ 1, "protected", "site", "lmm_a", reml = FALSE),
     "does not match the signed LMM artifact")
 })
+
+test_that("historical GLMM names admit only signed binary moment postprocessing", {
+  release <- structure(list(
+    status = "ok", coefficient = c("(Intercept)" = 0.65),
+    coefficients = c("(Intercept)" = 0.65), sigma2 = 0.18,
+    sigma_b2 = 0.04, icc = 0.2, n_obs = 100,
+    signed_artifact = list(
+      outcome = list(column = "y", lower = 0, upper = 1),
+      cluster = list(column = "site"),
+      estimation_scope =
+        "bounded_random_intercept_method_of_moments_no_fixed_covariates_v1")),
+    class = c("ds.vertDPLMM", "list"))
+  testthat::local_mocked_bindings(
+    ds.vertDPLMM = function(...) release,
+    .package = "dsVertClient")
+
+  fit <- ds.vertGLMM(
+    y ~ 1, data = "protected", cluster_col = "site",
+    analysis_id = "binary_random_intercept")
+  expect_s3_class(fit, "ds.vertGLMM")
+  expect_identical(fit$family, "binomial")
+  expect_identical(
+    fit$estimand,
+    "binary_random_intercept_population_average_moment_approximation")
+  expect_equal(fit$marginal_probability, 0.65)
+  expect_equal(fit$coefficients, c("(Intercept)" = stats::qlogis(0.65)))
+  expect_equal(fit$icc_observed, 0.2)
+  expect_equal(fit$sigma_b2, pi^2 * 0.2 / (3 * 0.8))
+  expect_null(fit$standard_errors)
+  expect_null(fit$cluster_sizes)
+  expect_false(fit$legacy_fallback_called)
+
+  alias <- ds.vert.glmm(
+    y ~ 1, data = "protected", cluster_col = "site",
+    analysis_id = "binary_random_intercept",
+    datasources = list(site_a = list(), site_b = list()))
+  expect_s3_class(alias, "ds.vertGLMM")
+  expect_identical(alias$frontdoor, "ds.vert.glmm")
+  expect_identical(alias$method_frontdoor, "moment")
+
+  expect_error(
+    ds.vertGLMM(y ~ x, "protected", "site", "binary_random_intercept"),
+    "only an outcome ~ 1 formula")
+  expect_error(
+    ds.vertGLMM(y ~ 1, "protected", "site", "binary_random_intercept",
+                compute_se = TRUE),
+    "compute_se=FALSE")
+
+  release$signed_artifact$outcome$upper <- 2
+  expect_error(
+    ds.vertGLMM(y ~ 1, "protected", "site", "binary_random_intercept"),
+    "binary \\[0, 1\\] outcome bounds")
+
+  release$signed_artifact$outcome$upper <- 1
+  release$coefficient <- release$coefficients <- c("(Intercept)" = 0)
+  projected <- ds.vertGLMM(
+    y ~ 1, "protected", "site", "binary_random_intercept")
+  expect_equal(projected$marginal_probability, 1 / 200)
+  expect_true(projected$probability_projection_applied)
+})

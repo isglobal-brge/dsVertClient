@@ -517,6 +517,17 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
   fixture
 }
 
+.synopsis_glmm_real_e2e_fixture <- function(k, server_ns, n = 10000L) {
+  fixture <- .synopsis_lmm_real_e2e_fixture(k, server_ns, n = n)
+  sites <- fixture$policies$peer_a$categorical_levels$site_peer_a
+  within_site <- rep(seq_len(100L), length(sites))
+  probability <- rep(seq(0.20, 0.80, length.out = length(sites)), each = 100L)
+  fixture$policies$peer_a$numeric_bounds$y_peer_a <- c(0, 1)
+  fixture$snapshots$peer_a[["data_peer_a"]]$data$y_peer_a <- as.numeric(
+    within_site <= round(100 * probability))
+  fixture
+}
+
 .synopsis_describe_real_e2e_dispatch <- function(fixture) {
   get_server <- function(name) get(name, envir = fixture$server_ns,
                                    inherits = FALSE)
@@ -1900,6 +1911,67 @@ test_that("real random-intercept LMM Synopsis is plausible and Rock-replayable a
     replay <- lmm("data_peer_a", "lmm_primary", "peer_a", conns, dispatch)
     expect_identical(replay$coefficients, fit$coefficients)
     expect_identical(replay$final_vector_root, fit$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real binary random-intercept GLMM moment route is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("lmm")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  lmm <- get(".dsvert_dp_lmm_impl", asNamespace("dsVertClient"),
+             inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_glmm_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    route_lmm <- function(data_name, analysis_id, server = NULL,
+                          datasources = NULL, .aggregate) {
+      lmm(data_name, analysis_id, server, datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_lmm_impl = route_lmm,
+      list(
+        direct = ds.vertGLMM(
+          y_peer_a ~ 1, data = "data_peer_a", cluster_col = "site_peer_a",
+          analysis_id = "lmm_primary", datasources = conns),
+        alias = ds.vert.glmm(
+          y_peer_a ~ 1, data = "data_peer_a", cluster_col = "site_peer_a",
+          analysis_id = "lmm_primary", datasources = conns)),
+      .package = "dsVertClient")
+    fit <- public$direct
+    expect_s3_class(fit, "ds.vertGLMM")
+    expect_identical(fit$family, "binomial")
+    expect_identical(
+      fit$estimand,
+      "binary_random_intercept_population_average_moment_approximation")
+    expect_true(is.finite(fit$coefficients[["(Intercept)"]]))
+    expect_true(fit$marginal_probability > 0.40 &&
+                fit$marginal_probability < 0.60)
+    expect_true(fit$icc_observed > 0 && fit$icc_observed < 1)
+    expect_true(is.finite(fit$sigma_b2) && fit$sigma_b2 > 0)
+    expect_null(fit$standard_errors)
+    expect_null(fit$cluster_sizes)
+    expect_identical(public$alias$coefficients, fit$coefficients)
+    expect_identical(public$alias$frontdoor, "ds.vert.glmm")
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- testthat::with_mocked_bindings(
+      .dsvert_dp_lmm_impl = route_lmm,
+      ds.vertGLMM(
+        y_peer_a ~ 1, data = "data_peer_a", cluster_col = "site_peer_a",
+        analysis_id = "lmm_primary", datasources = conns),
+      .package = "dsVertClient")
+    expect_identical(replay$coefficients, fit$coefficients)
+    expect_identical(replay$provenance_certificate$certificate_sha256,
+                     fit$provenance_certificate$certificate_sha256)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
   }
 })

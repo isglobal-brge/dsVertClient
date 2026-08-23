@@ -2,12 +2,13 @@
 % Please edit documentation in R/ds.vertGLMM.R
 \name{ds.vertGLMM}
 \alias{ds.vertGLMM}
-\title{Quarantined generalized-linear mixed-model frontdoor}
+\title{Signed binary random-intercept moment GLMM}
 \usage{
 ds.vertGLMM(
   formula,
   data = NULL,
   cluster_col,
+  analysis_id = NULL,
   max_outer = 30L,
   inner_iter = 50L,
   tol = 1e-04,
@@ -19,24 +20,41 @@ ds.vertGLMM(
 )
 }
 \arguments{
-\item{formula, data, cluster_col, max_outer, inner_iter, tol, lambda, compute_se, ring, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+\item{formula}{A formula exactly of the form \code{outcome ~ 1}.}
+
+\item{data}{Signed protected dataset name or federation.}
+
+\item{cluster_col}{Cluster column required to match the signed artifact.}
+
+\item{analysis_id}{Custodian-configured signed random-intercept artifact id.}
+
+\item{max_outer, inner_iter, tol, ring, verbose}{Retained compatibility controls;
+they do not alter the signed moment estimand.}
+
+\item{lambda}{Must be zero.}
+
+\item{compute_se}{Must be \code{FALSE}.}
+
+\item{datasources}{DataSHIELD connections.}
 }
 \value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
+A \code{ds.vertGLMM} object containing the certified public DP
+moment projection and no cluster-level statistics.
 }
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and computes or returns no GLMM coefficient, random effect, variance
-component, cluster statistic, or diagnostic. Retained implementation code
-after the gate is unreachable through this public frontdoor and carries
-no disclosure, DP, accuracy, or availability claim.
+Admits a deliberately narrow, non-iterative GLMM-compatible
+estimand: a binary \code{outcome ~ 1} population-average log-odds and an
+observed-scale intracluster correlation from one signed, sticky
+random-intercept Synopsis. It never calls the retired PQL endpoints or
+exposes cluster-level statistics.
 }
 \details{
-Promotion requires bounded cluster contributions, a precisely
-specified target estimator and validated covariance and diagnostics.
+The signed outcome bounds must be exactly \code{[0, 1]}. The
+reported \code{sigma_b2} is the conventional logistic latent-scale
+approximation \code{pi^2 * rho / (3 * (1 - rho))}; it is not a
+conditional-likelihood, PQL, Laplace, ML or REML variance estimate.
+Covariates, random slopes, standard errors, p-values and sampling
+inference are unavailable.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

@@ -543,9 +543,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "exchangeable/AR(1) correlations, sandwich covariance, standard",
         "errors and inference remain unavailable until a protected cluster",
         "score-and-meat artifact is implemented."))
-  add(c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "quarantine",
-      "Experimental PQL point estimation only.",
-      "Cluster working moments are too granular and standard errors are unavailable.")
+  add(c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "promoted",
+      paste(
+        "Binary outcome ~ 1 population-average log-odds and observed-scale",
+        "ICC from one validated sticky random-intercept Synopsis; no new",
+        "private computation occurs after the signed release."),
+      paste(
+        "Only a same-owner binary random-intercept moment approximation is",
+        "available. It is not PQL, Laplace, ML or REML and has no covariates,",
+        "random slopes, standard errors, p-values or sampling inference."))
   add(c("ds.vertIPW", "ds.vert.ipw"), "ds.vertIPW", "promoted",
       paste(
         "Exact binary intercept-only ATE IPW identity from one validated",

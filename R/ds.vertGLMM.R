@@ -1,94 +1,129 @@
-#' @title Quarantined generalized-linear mixed-model frontdoor
-#' @description This exported name is retained for API compatibility. It
-#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
-#'   call and computes or returns no GLMM coefficient, random effect, variance
-#'   component, cluster statistic, or diagnostic. Retained implementation code
-#'   after the gate is unreachable through this public frontdoor and carries
-#'   no disclosure, DP, accuracy, or availability claim.
-#' @details Promotion requires bounded cluster contributions, a precisely
-#'   specified target estimator and validated covariance and diagnostics.
-#' @param formula,data,cluster_col,max_outer,inner_iter,tol,lambda,compute_se,ring,verbose,datasources
-#'   Retained compatibility arguments. They are not evaluated because the
-#'   public frontdoor fails locally.
-#' @return No fitted object. The function raises
-#'   \code{dsvert_route_unavailable} before DSI.
+#' @title Signed binary random-intercept moment GLMM
+#' @description Admits a deliberately narrow, non-iterative GLMM-compatible
+#'   estimand: a binary \code{outcome ~ 1} population-average log-odds and an
+#'   observed-scale intracluster correlation from one signed, sticky
+#'   random-intercept Synopsis. It never calls the retired PQL endpoints or
+#'   exposes cluster-level statistics.
+#' @details The signed outcome bounds must be exactly \code{[0, 1]}. The
+#'   reported \code{sigma_b2} is the conventional logistic latent-scale
+#'   approximation \code{pi^2 * rho / (3 * (1 - rho))}; it is not a
+#'   conditional-likelihood, PQL, Laplace, ML or REML variance estimate.
+#'   Covariates, random slopes, standard errors, p-values and sampling
+#'   inference are unavailable.
+#' @param formula A formula exactly of the form \code{outcome ~ 1}.
+#' @param data Signed protected dataset name or federation.
+#' @param cluster_col Cluster column required to match the signed artifact.
+#' @param analysis_id Custodian-configured signed random-intercept artifact id.
+#' @param max_outer,inner_iter,tol,ring,verbose Retained compatibility controls;
+#'   they do not alter the signed moment estimand.
+#' @param lambda Must be zero and \code{compute_se} must be \code{FALSE}.
+#' @param datasources DataSHIELD connections.
+#' @return A \code{ds.vertGLMM} object containing the certified public DP
+#'   moment projection and no cluster-level statistics.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertGLMM <- function(formula, data = NULL, cluster_col,
+                        analysis_id = NULL,
                         max_outer = 30L, inner_iter = 50L,
                         tol = 1e-4, lambda = 0,
                         compute_se = FALSE,
                         ring = NULL,
                         verbose = TRUE,
                         datasources = NULL) {
-  .dsvert_block_retired_remote_route("glmm")
-  if (is.null(ring)) ring <- 127L
-  ring <- as.integer(ring)
-  if (!ring %in% c(63L, 127L)) stop("ring must be 63 or 127", call. = FALSE)
-  if (ring != 127L) {
-    stop("ds.vertGLMM aggregate PQL currently requires ring=127",
+  if (!inherits(formula, "formula") || length(formula) != 3L ||
+      !is.symbol(formula[[2L]]) ||
+      length(attr(stats::terms(formula), "term.labels")) != 0L ||
+      !identical(attr(stats::terms(formula), "intercept"), 1L)) {
+    stop("ds.vertGLMM currently supports only an outcome ~ 1 formula",
          call. = FALSE)
   }
-  if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
-  server_names <- names(datasources)
-  y_var <- .ds_gee_extract_lhs(formula)
-  y_srv <- .ds_gee_find_server_holding(datasources, server_names,
-                                        data, y_var)
-  clust_srv <- .ds_gee_find_server_holding(datasources, server_names,
-                                            data, cluster_col)
-  if (is.null(y_srv) || clust_srv != y_srv) {
-    stop("cluster_col must live on the outcome server", call. = FALSE)
+  if (!is.character(cluster_col) || length(cluster_col) != 1L ||
+      !nzchar(cluster_col) || !is.character(analysis_id) ||
+      length(analysis_id) != 1L || !nzchar(analysis_id)) {
+    stop("ds.vertGLMM requires cluster_col and signed analysis_id strings",
+         call. = FALSE)
   }
-
-  # Prime with a straight binomial fit ignoring random effects.
-  if (verbose) message("[ds.vertGLMM] prime: binomial ds.vertGLM")
-  fit <- ds.vertGLM(formula = formula, data = data, family = "binomial",
-                    max_iter = inner_iter, tol = tol, lambda = lambda,
-                    ring = ring,
-                    compute_se = isTRUE(compute_se),
-                    verbose = isTRUE(verbose),
-                    datasources = datasources,
-                    keep_session = TRUE)
-
-  # Cluster sizes + per-cluster residuals (all aggregates).
-  clust_info <- .dsvert_aggregate_strict(
-    datasources[which(server_names == y_srv)],
-    call(name = "dsvertClusterSizesDS", data_name = data,
-         cluster_col = cluster_col),
-    operation = "GLMM protected cluster-size release")[[1L]]
-  n_i <- as.integer(clust_info$sizes)
-  n_clusters <- length(n_i)
-
-  .ds_glmm_pql_aggregate_loop(
-    fit = fit, data = data, cluster_col = cluster_col,
-    n_i = n_i, n_clusters = n_clusters, max_outer = max_outer,
-    tol = tol, compute_se = compute_se,
-    datasources = datasources, server_names = server_names,
-    y_srv = y_srv, verbose = verbose, call = match.call())
+  if (!is.numeric(lambda) || length(lambda) != 1L || is.na(lambda) ||
+      !is.finite(lambda) || lambda != 0 || !identical(compute_se, FALSE)) {
+    stop(paste(
+      "ds.vertGLMM supports only the signed binary random-intercept",
+      "moment route: lambda=0 and compute_se=FALSE"), call. = FALSE)
+  }
+  signed <- ds.vertDPLMM(
+    data_name = data, analysis_id = analysis_id, datasources = datasources)
+  artifact <- signed$signed_artifact
+  outcome <- as.character(formula[[2L]])
+  if (!is.list(artifact) || !is.list(artifact$outcome) ||
+      !is.list(artifact$cluster) ||
+      !identical(artifact$outcome$column, outcome) ||
+      !identical(artifact$cluster$column, cluster_col) ||
+      !isTRUE(all.equal(as.numeric(artifact$outcome$lower), 0)) ||
+      !isTRUE(all.equal(as.numeric(artifact$outcome$upper), 1))) {
+    stop(paste(
+      "formula, cluster_col and binary [0, 1] outcome bounds must match",
+      "the signed random-intercept artifact"), call. = FALSE)
+  }
+  if (!identical(signed$status, "ok")) {
+    signed$family <- "binomial"
+    signed$estimand <- "binary_random_intercept_moment_non_identifiable"
+    signed$coefficients <- signed$coefficient <- NULL
+    signed$sigma2 <- signed$sigma_b2 <- signed$icc <- NULL
+    signed$standard_errors <- NULL
+    signed$legacy_fallback_called <- FALSE
+    class(signed) <- unique(c("ds.vertGLMM", class(signed)))
+    return(signed)
+  }
+  probability <- as.numeric(signed$coefficients[["(Intercept)"]])
+  n_obs <- as.numeric(signed$n_obs)
+  rho <- as.numeric(signed$icc)
+  if (!is.finite(probability) || !is.finite(n_obs) || n_obs < 2 ||
+      !is.finite(rho)) {
+    stop("The signed binary random-intercept projection is invalid",
+         call. = FALSE)
+  }
+  floor_probability <- 1 / (2 * n_obs)
+  marginal_probability <- min(
+    max(probability, floor_probability), 1 - floor_probability)
+  observed_icc <- min(max(rho, 0), 1 - 1 / n_obs)
+  latent_sigma_b2 <- if (observed_icc == 0) 0 else {
+    pi^2 * observed_icc / (3 * (1 - observed_icc))
+  }
+  signed$family <- "binomial"
+  signed$estimand <-
+    "binary_random_intercept_population_average_moment_approximation"
+  signed$coefficients <- signed$coefficient <- stats::setNames(
+    stats::qlogis(marginal_probability), "(Intercept)")
+  signed$marginal_probability <- marginal_probability
+  signed$probability_projection_applied <-
+    !isTRUE(all.equal(probability, marginal_probability, tolerance = 1e-12))
+  signed$icc <- signed$icc_observed <- observed_icc
+  signed$icc_scale <- "observed_pair_correlation"
+  signed$sigma2 <- NULL
+  signed$sigma_b2 <- signed$latent_sigma_b2_approx <- latent_sigma_b2
+  signed$random_effect_scale <- "latent_logit_approximation"
+  signed$standard_errors <- signed$p_values <- NULL
+  signed$cluster_sizes <- NULL
+  signed$iterations <- 0L
+  signed$converged <- TRUE
+  signed$legacy_fallback_called <- FALSE
+  class(signed) <- unique(c("ds.vertGLMM", class(signed)))
+  signed
 }
 
 #' @export
 print.ds.vertGLMM <- function(x, ...) {
-  cat("dsVert binomial GLMM-PQL (aggregate weighted LMM)\n")
-  n_obs <- if (!is.null(x$n_obs)) x$n_obs else sum(x$cluster_sizes %||% 0L)
-  cat(sprintf("  Clusters = %d    N = %d\n",
-              x$n_clusters, n_obs))
-  cat(sprintf("  sigma_b^2 = %.4g    ICC (latent) = %.3f\n",
-              x$sigma_b2, x$icc))
-  cat(sprintf("  Converged: %s (%d outer iters)\n",
-              x$converged, x$iterations))
-  if (!is.null(x$quality$status)) {
-    cat(sprintf("  Quality: %s\n", x$quality$status))
-    if (length(x$quality$warnings)) {
-      for (w in x$quality$warnings) cat("  - ", w, "\n", sep = "")
-    }
+  cat("dsVert signed binary random-intercept moment approximation\n")
+  if (!identical(x$status, "ok")) {
+    cat("  Status: ", x$status %||% "non_identifiable", "\n", sep = "")
+    return(invisible(x))
   }
-  cat("\nFixed effects (log-odds):\n")
-  z <- x$coefficients / x$std_errors
-  print(round(data.frame(
-    Estimate = x$coefficients, SE = x$std_errors,
-    z = z, p = 2 * stats::pnorm(-abs(z)),
-    check.names = FALSE), 5L))
+  cat(sprintf("  Population-average event probability = %.5f\n",
+              x$marginal_probability))
+  cat(sprintf("  Observed ICC = %.4f    latent-scale sigma_b^2 = %.4g\n",
+              x$icc_observed, x$latent_sigma_b2_approx))
+  cat("  Intercept (population-average log-odds):\n")
+  print(round(x$coefficients, 5L))
+  cat("  Standard errors and sampling inference are unavailable.\n")
   invisible(x)
 }
 
