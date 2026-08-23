@@ -198,6 +198,10 @@ typed \code{dsvert_route_unavailable} condition before any DSI call.
 is unavailable. A binomial/Poisson \code{formal_analysis_id} reads a
 completed custodian-signed public certificate; it does not run the retired
 iterative route.
+\code{ds.vert.multinom(..., frequency = x)} is likewise limited to
+intercept-only log-odds post-processed from one validated sticky Frequency
+release. It accepts no DataSHIELD connections, covariates or inference
+controls and cannot create another release.
 No alias re-enables a retired remote endpoint or weakens the signed-artifact
 and custodian-owned policy gates of an available backend.
 For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied

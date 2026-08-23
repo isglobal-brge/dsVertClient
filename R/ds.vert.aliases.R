@@ -9,6 +9,10 @@
 #' is unavailable. A binomial/Poisson \code{formal_analysis_id} reads a
 #' completed custodian-signed public certificate; it does not run the retired
 #' iterative route.
+#' \code{ds.vert.multinom(..., frequency = x)} is likewise limited to
+#' intercept-only log-odds post-processed from one validated sticky Frequency
+#' release. It accepts no DataSHIELD connections, covariates or inference
+#' controls and cannot create another release.
 #' No alias re-enables a retired remote endpoint or weakens the signed-artifact
 #' and custodian-owned policy gates of an available backend.
 #' For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied
@@ -384,6 +388,16 @@ ds.vert.nb <- function(formula, data = NULL,
 #' @export
 ds.vert.multinom <- function(formula, data = NULL,
                              datasources = NULL, ...) {
+  extras <- list(...)
+  if (!is.null(extras$frequency)) {
+    if ("datasources" %in% names(match.call())[-1L]) {
+      stop("Frequency-backed multinomial does not accept datasources", call. = FALSE)
+    }
+    out <- do.call(ds.vertMultinom, c(
+      list(formula = formula, data = data), extras))
+    return(.dsvert_set_frontdoor(out, "ds.vert.multinom",
+                                 "ds.vertMultinom", NULL))
+  }
   .dsvert_block_retired_remote_route("multinomial")
   datasources <- .dsvert_datasources(datasources)
   out <- ds.vertMultinom(formula = formula, data = data,

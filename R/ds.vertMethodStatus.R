@@ -490,8 +490,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "The route repeatedly exposes exact outcome/profile aggregates and",
         "has no validated joint beta-theta covariance; it is not a promoted",
         "biomedical inference path."))
-  add(c("ds.vertMultinom", "ds.vertMultinomJoint",
-      "ds.vertMultinomJointNewton", "ds.vert.multinom"),
+  add(c("ds.vertMultinom", "ds.vert.multinom"),
+      "ds.vertMultinom", "promoted",
+      paste(
+        "Read-only intercept-only multinomial log-odds from one validated",
+        "sticky DP Frequency release; it performs no new DSI call or opening."),
+      paste(
+        "Only y ~ 1 is available, with deterministic Jeffreys smoothing.",
+        "Covariates, joint softmax, covariance, standard errors and inference",
+        "remain unavailable until a protected score artifact exists."))
+  add(c("ds.vertMultinomJoint", "ds.vertMultinomJointNewton"),
       "ds.vertMultinomJointNewton", "quarantine",
       "Slope route fails closed until its signed raw-design Gram exists.",
       paste(
@@ -666,6 +674,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertLASSO1Step", "ds.vert.lasso_1step",
     "ds.vertLASSOProximal", "ds.vert.lasso_proximal",
     "ds.vertLASSOCV", "ds.vert.lasso_cv")
+  inherited_postprocessing <- c(
+    inherited_postprocessing, "ds.vertMultinom", "ds.vert.multinom")
   glm_synopsis_wrappers <- c(
     "ds.vertGLM", "ds.vert.glm",
     "ds.vertLASSOIter", "ds.vert.lasso_iter")

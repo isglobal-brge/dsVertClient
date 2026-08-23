@@ -161,17 +161,16 @@ test_that("aliases and wrappers retain honest routing semantics", {
     "ds.vert.lmm" = "ds.vertLMM",
     "ds.vert.lr" = "ds.vertLR",
     "ds.vert.mi" = "ds.vertMI",
-    "ds.vert.multinom" = "ds.vertMultinomJointNewton",
+    "ds.vert.multinom" = "ds.vertMultinom",
     "ds.vert.nb" = "ds.vertNBFullRegTheta",
     "ds.vert.ordinal" = "ds.vertOrdinalJointNewton",
     "ds.vert.pca" = "ds.vertPCA",
     "ds.vert.wald" = "ds.vertWald",
-    "ds.vertMultinom" = "ds.vertMultinomJointNewton",
     "ds.vertMultinomJoint" = "ds.vertMultinomJointNewton",
     "ds.vertOrdinal" = "ds.vertOrdinalJointNewton")
   wrappers <- c(
     "ds.vert.cox", "ds.vert.coxph", "ds.vertCoxProfileNonDisclosive",
-    "ds.vertMultinom", "ds.vertMultinomJoint",
+    "ds.vertMultinomJoint",
     "ds.vertOrdinal")
   inventory <- .dsvert_capsule_method_inventory()
   actual <- inventory$alias_of
@@ -588,9 +587,8 @@ test_that("quarantine labels require secure redesign and concrete evidence", {
 test_that("mixed variants and unavailable signed workloads cannot look promoted", {
   inventory <- .dsvert_capsule_method_inventory()
   mixed <- c("ds.vertGLM", "ds.vert.glm")
-  broken <- c(
-    "ds.vertMultinom", "ds.vertMultinomJoint",
-    "ds.vertMultinomJointNewton", "ds.vert.multinom")
+  broken <- c("ds.vertMultinomJoint", "ds.vertMultinomJointNewton")
+  frequency_multinom <- c("ds.vertMultinom", "ds.vert.multinom")
 
   expect_true(all(inventory$current_route_status[
     inventory$method %in% mixed] ==
@@ -605,6 +603,12 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
   expect_true(all(inventory$inference_implementation_state[
     inventory$method %in% broken] ==
       "signed_multinomial_design_gram_not_materialized"))
+  expect_true(all(inventory$current_route_status[
+    inventory$method %in% frequency_multinom] ==
+      "client_only_validated_capsule_postprocess"))
+  expect_true(all(inventory$inference_implementation_state[
+    inventory$method %in% frequency_multinom] ==
+      "frequency_postprocess_implemented"))
   lasso_iter <- inventory[inventory$method %in%
     c("ds.vertLASSOIter", "ds.vert.lasso_iter"), , drop = FALSE]
   expect_true(all(lasso_iter$current_route_status ==
@@ -616,6 +620,7 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
   expect_true(all(ds.vertMethodStatus(mixed)$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertLASSOIter", "ds.vert.lasso_iter"))$status == "promoted"))
+  expect_true(all(ds.vertMethodStatus(frequency_multinom)$status == "promoted"))
   expect_length(intersect(ds.vertMethodStatus(status = "promoted")$method,
                           broken), 0L)
 })

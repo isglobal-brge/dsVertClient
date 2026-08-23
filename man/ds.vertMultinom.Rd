@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertMultinom.R
 \name{ds.vertMultinom}
 \alias{ds.vertMultinom}
-\title{Quarantined multinomial compatibility frontdoor}
+\title{Sticky-DP intercept-only multinomial frontdoor}
 \usage{
 ds.vertMultinom(
   formula,
@@ -19,29 +19,37 @@ ds.vertMultinom(
   verbose = TRUE,
   datasources = NULL,
   ...,
-  design_analysis_id = NULL
+  design_analysis_id = NULL,
+  frequency = NULL
 )
 }
 \arguments{
 \item{formula, data, classes, reference, indicator_template, max_iter, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources, design_analysis_id}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+public joint-softmax frontdoor fails locally. With a validated
+\code{frequency} object, only \code{y ~ 1} is available and it returns
+the sticky-DP categorical intercept fit.}
+
+\item{frequency}{A released, validated \code{ds.vertDPFrequency} object for
+the outcome. This enables only intercept-only multinomial coefficients;
+it never starts another analysis or reveals a raw category count.}
 
 \item{...}{Retained compatibility arguments; not evaluated.}
 }
-\value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
-}
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and computes or returns no multinomial fit. Retained one-vs-rest and
-joint-softmax code after the gate is unreachable through this public
-frontdoor and carries no disclosure, DP, accuracy, or availability claim.
+With a released, validated \code{ds.vertDPFrequency} object,
+this frontdoor fits \code{y ~ 1} by deterministic post-processing of that
+one sticky categorical release. It returns Jeffreys-smoothed intercept
+log-odds and never starts a new analysis or DSI request.
 }
 \details{
-Promotion requires a signed bounded joint-softmax artifact over
-the exact score design plus validated joint covariance and inference.
+This is deliberately narrower than a covariate multinomial model:
+predictors, joint softmax, covariance, standard errors and inference stay
+unavailable until a signed score-design artifact exists. Calls without
+\code{frequency} retain the local zero-DSI quarantine gate.
+}
+\value{
+With \code{frequency}, a coefficient-only \code{ds.vertMultinom} object.
+Otherwise the function raises \code{dsvert_route_unavailable} before DSI.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

@@ -1,6 +1,5 @@
 quarantined_doc_sources <- c(
   "ds.vertNBFullRegTheta.R",
-  "ds.vertMultinom.R",
   "ds.vertMultinomJoint.R",
   "ds.vertMultinomJointNewton.R",
   "ds.vertOrdinal.R",
@@ -13,7 +12,6 @@ quarantined_doc_sources <- c(
 
 quarantined_doc_topics <- c(
   "ds.vertNBFullRegTheta" = "ds.vertNBFullRegTheta.R",
-  "ds.vertMultinom" = "ds.vertMultinom.R",
   "ds.vertMultinomJoint" = "ds.vertMultinomJoint.R",
   "ds.vertMultinomJointNewton" = "ds.vertMultinomJointNewton.R",
   "ds.vertOrdinal" = "ds.vertOrdinal.R",
@@ -122,6 +120,25 @@ test_that("GLM help documents the Synopsis route matrix instead of legacy MPC", 
   expect_true(all(glm_status$status == "promoted"))
   expect_match(glm_status$principal_limitation[[1L]],
                "Binomial and Poisson", fixed = TRUE)
+})
+
+test_that("multinomial help limits Frequency post-processing to y ~ 1", {
+  package_root <- dirname(.dsvert_client_source_root())
+  source <- .dsvert_public_roxygen_text("ds.vertMultinom.R", "ds.vertMultinom")
+  rd_path <- file.path(package_root, "man", "ds.vertMultinom.Rd")
+  if (!file.exists(rd_path)) {
+    testthat::fail("generated ds.vertMultinom help is unavailable")
+  }
+  rd <- paste(readLines(rd_path, warn = FALSE), collapse = "\n")
+
+  for (text in list(source, rd)) {
+    expect_match(text, "ds.vertDPFrequency", fixed = TRUE)
+    expect_match(text, "y ~ 1", fixed = TRUE)
+    expect_match(text, "Jeffreys", fixed = TRUE)
+    expect_match(text, "never starts a new analysis", fixed = TRUE)
+    expect_match(text, "joint softmax", ignore.case = TRUE)
+    expect_match(text, "standard errors", ignore.case = TRUE)
+  }
 })
 
 test_that("discrete-hazard help limits the completed formal release", {

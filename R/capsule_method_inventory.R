@@ -578,8 +578,25 @@
       "nb2_joint_beta_theta_inference_not_implemented")
 
   add(
-    c("ds.vertMultinom", "ds.vertMultinomJoint",
-      "ds.vertMultinomJointNewton", "ds.vert.multinom"),
+    c("ds.vertMultinom", "ds.vert.multinom"),
+    "ds.vertMultinom", "multinomial_intercept_frequency",
+    c("validated_sticky_frequency_artifact", "fixed_category_domain",
+      "zero_call_postprocessing"),
+    paste(
+      "Intercept-only multinomial log-odds with deterministic Jeffreys",
+      "smoothing of one validated sticky categorical Frequency release."),
+    c("fixed_category_domain", "validated_frequency_provenance",
+      "no_covariates", "no_covariance_or_inference"),
+    "frequency_operation_implemented",
+    character(),
+    c("ds.vert.multinom" = "ds.vertMultinom"),
+    current_route_status = "client_only_validated_capsule_postprocess",
+    artifact_implementation_state =
+      "validated_frequency_artifact_adapter_implemented",
+    inference_implementation_state = "frequency_postprocess_implemented")
+
+  add(
+    c("ds.vertMultinomJoint", "ds.vertMultinomJointNewton"),
     "ds.vertMultinomJointNewton", "multinomial_regression",
     c("admitted_count", "categorical_outcome_domain",
       "model_score_hessian", "numeric_cross_products_same_and_cross_owner",
@@ -590,12 +607,8 @@
     "requires_new_capsule_artifact",
     c("dsvertLocalMomentsDS", "dsvertOutcomeLevelsDS", "getObsCountDS",
       "glmStandardizeDS", "k2GradientR1DS", "k2GradientR2DS"),
-    c("ds.vertMultinom" = "ds.vertMultinomJointNewton",
-      "ds.vertMultinomJoint" = "ds.vertMultinomJointNewton",
-      "ds.vert.multinom" = "ds.vertMultinomJointNewton"),
-    alias_kinds = c(
-      "ds.vertMultinom" = "compatibility_wrapper",
-      "ds.vertMultinomJoint" = "compatibility_wrapper"),
+    c("ds.vertMultinomJoint" = "ds.vertMultinomJointNewton"),
+    alias_kinds = c("ds.vertMultinomJoint" = "compatibility_wrapper"),
     current_route_status = "signed_workload_unavailable_quarantine",
     inference_implementation_state =
       "signed_multinomial_design_gram_not_materialized")

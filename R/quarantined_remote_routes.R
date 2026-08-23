@@ -27,7 +27,10 @@
   multinomial = list(
     method = "ds.vertMultinomJointNewton",
     state = "multinomial_design_capsule_unavailable",
-    replacement = "No disclosure-safe multinomial replacement is released."),
+    replacement = paste0(
+      "For y ~ 1, pass a validated ds.vertDPFrequency object to ",
+      "ds.vertMultinom(..., frequency = ...); covariate softmax models ",
+      "remain unavailable.")),
   ordinal = list(
     method = "ds.vertOrdinalJointNewton",
     state = "ordinal_score_capsule_unavailable",
