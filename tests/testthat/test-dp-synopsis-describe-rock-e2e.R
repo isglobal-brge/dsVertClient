@@ -597,6 +597,18 @@ test_that("real Synopsis Describe is plausible and Rock-replayable at K=2/3/5", 
     expect_true(is.finite(first$descriptives$variance[[1L]]))
     expect_gte(first$descriptives$variance[[1L]], 0)
     expect_lte(first$descriptives$variance[[1L]], 25)
+    source_values <- fixture$snapshots$peer_a$data_peer_a$data$x_peer_a
+    source_mean <- mean(source_values)
+    source_variance <- mean((source_values - source_mean)^2)
+    describe_row <- first$descriptives[1L, , drop = FALSE]
+    expect_lte(describe_row$n_simultaneous_95_lower, length(source_values))
+    expect_gte(
+      describe_row$n_dp + describe_row$count_noise_radius_simultaneous_95,
+      length(source_values))
+    expect_lte(describe_row$mean_mechanism_grid_lower_95, source_mean)
+    expect_gte(describe_row$mean_mechanism_grid_upper_95, source_mean)
+    expect_lte(describe_row$variance_mechanism_grid_lower_95, source_variance)
+    expect_gte(describe_row$variance_mechanism_grid_upper_95, source_variance)
 
     route_describe <- function(data_name, analysis_id, probs,
                                server = NULL, datasources = NULL,
