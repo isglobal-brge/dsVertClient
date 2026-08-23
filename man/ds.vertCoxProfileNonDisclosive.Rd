@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertCoxDiscreteNonDisclosive.R
 \name{ds.vertCoxProfileNonDisclosive}
 \alias{ds.vertCoxProfileNonDisclosive}
-\title{Quarantined Cox-profile compatibility frontdoor}
+\title{Formal Cox-profile public-release compatibility frontdoor}
 \usage{
 ds.vertCoxProfileNonDisclosive(
   formula,
@@ -14,22 +14,30 @@ ds.vertCoxProfileNonDisclosive(
   ridge_eps = 1e-06,
   debug_trace = FALSE,
   verbose = FALSE,
-  datasources = NULL
+  datasources = NULL,
+  formal_analysis_id = NULL
 )
 }
 \arguments{
-\item{formula, data, max_event_times, max_iter, tol, newton, ridge_eps, debug_trace, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+\item{formula, data}{Explicit formula and aligned data name selecting the
+custodian-configured completed release.}
+
+\item{formal_analysis_id}{Custodian-owned selector for an already completed
+formal Cox public certificate. It cannot create a new release.}
+
+\item{max_event_times, max_iter, tol, newton, ridge_eps, debug_trace, verbose, datasources}{Legacy compatibility arguments. They are rejected with a formal id and
+otherwise the route fails before DSI.}
 }
 \value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
+With \code{formal_analysis_id}, a coefficient-only
+\code{dsvert_formal_dp_cox} object. Otherwise a typed unavailable error.
 }
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and returns no Cox fit. The word \dQuote{NonDisclosive} is a
-historical name, not a current security or differential-privacy claim.
+With \code{formal_analysis_id}, reads the same already completed
+two-authority-signed formal Cox certificate as \code{ds.vertCox()}. It never
+starts a Cox computation. Without that selector, this historical name fails
+before any DSI call; the word \dQuote{NonDisclosive} is not a current security
+claim.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

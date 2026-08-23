@@ -16,8 +16,6 @@ quarantined_doc_sources <- c(
 quarantined_doc_topics <- c(
   "ds.vertCoxDiscreteNonDisclosive" =
     "ds.vertCoxDiscreteNonDisclosive.R",
-  "ds.vertCoxProfileNonDisclosive" =
-    "ds.vertCoxDiscreteNonDisclosive.R",
   "ds.vertNBFullRegTheta" = "ds.vertNBFullRegTheta.R",
   "ds.vertMultinom" = "ds.vertMultinom.R",
   "ds.vertMultinomJoint" = "ds.vertMultinomJoint.R",

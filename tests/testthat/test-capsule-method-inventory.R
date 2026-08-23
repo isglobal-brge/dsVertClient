@@ -146,6 +146,7 @@ test_that("aliases and wrappers retain honest routing semantics", {
     "ds.vert.cor" = "ds.vertCor",
     "ds.vert.cox" = "ds.vertCox",
     "ds.vert.coxph" = "ds.vertCox",
+    "ds.vertCoxProfileNonDisclosive" = "ds.vertCox",
     "ds.vert.desc" = "ds.vertDesc",
     "ds.vert.fisher" = "ds.vertFisher",
     "ds.vert.gee" = "ds.vertGEE",
@@ -169,7 +170,8 @@ test_that("aliases and wrappers retain honest routing semantics", {
     "ds.vertMultinomJoint" = "ds.vertMultinomJointNewton",
     "ds.vertOrdinal" = "ds.vertOrdinalJointNewton")
   wrappers <- c(
-    "ds.vert.cox", "ds.vert.coxph", "ds.vertMultinom", "ds.vertMultinomJoint",
+    "ds.vert.cox", "ds.vert.coxph", "ds.vertCoxProfileNonDisclosive",
+    "ds.vertMultinom", "ds.vertMultinomJoint",
     "ds.vertOrdinal")
   inventory <- .dsvert_capsule_method_inventory()
   actual <- inventory$alias_of
@@ -337,12 +339,13 @@ test_that("planned artifacts describe the actual biomedical contracts", {
     "treatment_outcome_binding", "bounded_weight_distribution") %in%
       artifacts_for(inventory, "ds.vertIPW")))
   expect_true(all(c(
-    "cox_partial_likelihood", "cox_score_hessian", "cox_baseline_hazard") %in%
-      artifacts_for(inventory, "ds.vertCoxProfileNonDisclosive")))
-  expect_true(all(c(
     "formal_cox_public_certificate", "formal_cox_sticky_opening",
     "formal_cox_two_authority_signatures") %in%
       artifacts_for(inventory, "ds.vertCox")))
+  expect_true(all(c(
+    "formal_cox_public_certificate", "formal_cox_sticky_opening",
+    "formal_cox_two_authority_signatures") %in%
+      artifacts_for(inventory, "ds.vertCoxProfileNonDisclosive")))
   expect_contains(artifacts_for(inventory, "ds.vertDPDescribe"),
                   "fixed_numeric_histograms")
 })
@@ -409,7 +412,8 @@ test_that("estimands and inference requirements match implemented semantics", {
     "converged_unpenalized_fits", "same_cohort_missingness_and_offset") %in%
       requirements_for(inventory, "ds.vertLR")))
   expect_true(all(c(
-    "ties_method", "strata_contract", "delayed_entry_contract") %in%
+    "canonical_certificate_validation", "completed_release_only",
+    "two_authority_signatures") %in%
       requirements_for(inventory, "ds.vertCoxProfileNonDisclosive")))
   expect_true(all(c(
     "cryptographic_non_rerollable_draw_stream", "rubin_small_sample_df",

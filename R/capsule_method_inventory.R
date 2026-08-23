@@ -508,7 +508,8 @@
       "formal_same_owner_synopsis_variant_only_legacy_unavailable")
 
   add(
-    c("ds.vertCox", "ds.vert.cox", "ds.vert.coxph"),
+    c("ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
+      "ds.vertCoxProfileNonDisclosive"),
     "ds.vertCox", "cox_formal_public_release",
     c("formal_cox_public_certificate", "formal_cox_sticky_opening",
       "formal_cox_two_authority_signatures"),
@@ -519,25 +520,15 @@
       "no_covariance_or_sampling_inference", "two_authority_signatures"),
     "formal_public_certificate_implemented",
     aliases = c("ds.vert.cox" = "ds.vertCox",
-                "ds.vert.coxph" = "ds.vertCox"),
+                "ds.vert.coxph" = "ds.vertCox",
+                "ds.vertCoxProfileNonDisclosive" = "ds.vertCox"),
     alias_kinds = c("ds.vert.cox" = "compatibility_wrapper",
-                    "ds.vert.coxph" = "compatibility_wrapper"),
+                    "ds.vert.coxph" = "compatibility_wrapper",
+                    "ds.vertCoxProfileNonDisclosive" =
+                      "compatibility_wrapper"),
     current_route_status = "formal_completed_public_certificate_only",
     artifact_implementation_state =
       "validated_formal_cox_public_certificate_adapter_implemented")
-
-  add(
-    "ds.vertCoxProfileNonDisclosive", "ds.vertCoxProfileNonDisclosive",
-    "cox_profile",
-    c("admitted_count", "cox_baseline_hazard", "cox_partial_likelihood",
-      "cox_risk_sets", "cox_score_hessian", "discrete_hazard_grid",
-      "numeric_cross_products"),
-    "Historical exact Cox-profile coefficients.",
-    c("convergence", "delayed_entry_contract", "dp_aware_covariance",
-      "identifiability", "strata_contract", "ties_method"),
-    "requires_new_capsule_artifact",
-    c("dsvertCoxDiscreteExpandXDS", "dsvertCoxEventTimeShareMaskDS",
-      "k2BeaverSumShareDS"))
 
   add(
     "ds.vertCoxDiscreteNonDisclosive", "ds.vertCoxDiscreteNonDisclosive",

@@ -17,9 +17,10 @@ read-only result boundary as
 authorize a new Cox analysis.
 
 Without `formal_analysis_id`, the compatibility frontdoors fail before any DSI
-call. `ds.vertCoxProfileNonDisclosive()` and
-`ds.vertCoxDiscreteNonDisclosive()` remain quarantined, and their legacy server
-endpoints are absent from the registered `AggregateMethods` allowlist.
+call. `ds.vertCoxProfileNonDisclosive()` accepts the same read-only certificate
+selector for compatibility; `ds.vertCoxDiscreteNonDisclosive()` remains
+quarantined because it is a distinct pooled-logistic estimand. Their legacy
+server endpoints are absent from the registered `AggregateMethods` allowlist.
 
 ## Why new Cox computation remains unavailable
 

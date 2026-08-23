@@ -460,9 +460,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "standard errors, p-values, baseline hazard, prediction, residual or",
         "sampling inference artifact."))
   add(c("ds.vertCoxProfileNonDisclosive"),
-      "ds.vertCoxProfileNonDisclosive", "quarantine",
-      "The historical exact-profile implementation remains unreachable before DSI.",
-      "Use only ds.vertCox(..., formal_analysis_id=...) for a completed public certificate; no new Cox run is released.")
+      "ds.vertCox", "promoted",
+      paste(
+        "Read-only coefficients and hazard-ratio ranges from one completed",
+        "two-authority-signed sticky formal Cox opening selected by",
+        "formal_analysis_id; no legacy Cox computation is reachable."),
+      paste(
+        "This route cannot start a Cox analysis and returns no covariance,",
+        "standard errors, p-values, baseline hazard, prediction, residual or",
+        "sampling inference artifact."))
   add(c("ds.vertCoxDiscreteNonDisclosive"),
       "ds.vertCoxDiscreteNonDisclosive", "quarantine",
       "Discrete-time pooled logistic hazard model.",
@@ -664,7 +670,9 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "postprocessing_inherits_input"
   out$release_contract[out$method %in% glm_synopsis_wrappers] <-
     "formal_sticky_synopsis_artifact"
-  formal_cox_public <- c("ds.vertCox", "ds.vert.cox", "ds.vert.coxph")
+  formal_cox_public <- c(
+    "ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
+    "ds.vertCoxProfileNonDisclosive")
   out$release_contract[out$method %in% formal_cox_public] <-
     "formal_completed_public_certificate"
 

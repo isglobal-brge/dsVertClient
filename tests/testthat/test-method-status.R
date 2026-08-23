@@ -63,7 +63,7 @@ test_that("no public route may report a result numeric certificate", {
 test_that("known unsafe legacy routes are not presented as promoted", {
   quarantined <- ds.vertMethodStatus(status = "quarantine")$method
   unsafe_server_routes <- c(
-    "ds.vertCoxProfileNonDisclosive", "ds.vertCoxDiscreteNonDisclosive",
+    "ds.vertCoxDiscreteNonDisclosive",
     "ds.vertOrdinal", "ds.vertOrdinalJointNewton", "ds.vert.ordinal")
   newly_quarantined <- c(
     "ds.vertNBFullRegTheta", "ds.vert.nb", "ds.vertMI", "ds.vert.mi",
@@ -283,7 +283,8 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     ds.vertMethodStatus("ds.vertGLM")$release_contract,
     "formal_sticky_synopsis_artifact")
   cox_public <- ds.vertMethodStatus(c(
-    "ds.vertCox", "ds.vert.cox", "ds.vert.coxph"))
+    "ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
+    "ds.vertCoxProfileNonDisclosive"))
   expect_true(all(cox_public$status == "promoted"))
   expect_true(all(cox_public$release_contract ==
                     "formal_completed_public_certificate"))
@@ -291,10 +292,10 @@ test_that("known unsafe legacy routes are not presented as promoted", {
                         fixed = TRUE)))
   expect_true(all(grepl("no covariance", cox_public$principal_limitation,
                         fixed = TRUE)))
-  cox_legacy <- ds.vertMethodStatus("ds.vertCoxProfileNonDisclosive")
+  cox_legacy <- ds.vertMethodStatus("ds.vertCoxDiscreteNonDisclosive")
   expect_identical(cox_legacy$status, "quarantine")
-  expect_match(cox_legacy$safe_scope,
-               "unreachable before DSI", fixed = TRUE)
+  expect_match(cox_legacy$principal_limitation,
+               "not a Cox proportional-hazards estimand", fixed = TRUE)
   glm <- ds.vertMethodStatus(c("ds.vertGLM", "ds.vert.glm"))
   expect_true(all(glm$status == "promoted"))
   expect_match(glm$safe_scope[[1L]], "explicit dp_analysis_id", fixed = TRUE)

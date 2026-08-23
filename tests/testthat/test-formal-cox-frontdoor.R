@@ -98,4 +98,13 @@ test_that("formal Cox aliases preserve the certified release route", {
     stats::as.formula("Surv(time, status) ~ x"), data = "study",
     formal_analysis_id = "primary_cox", method = "discrete"),
     "does not accept method")
+
+  profile <- ds.vertCoxProfileNonDisclosive(
+    stats::as.formula("Surv(time, status) ~ x + z"), data = "study",
+    formal_analysis_id = "primary_cox", verbose = FALSE,
+    datasources = list(site_a = structure(list(), class = "mock")))
+  expect_s3_class(profile, "dsvert_formal_dp_cox")
+  expect_error(ds.vertCoxProfileNonDisclosive(
+    stats::as.formula("Surv(time, status) ~ x"), data = "study",
+    formal_analysis_id = "primary_cox", max_iter = 2L), "max_iter")
 })
