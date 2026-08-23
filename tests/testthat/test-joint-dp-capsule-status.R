@@ -316,29 +316,29 @@ test_that("vacuous lifetime policies fail before becoming client admission", {
     "invalid reusable")
 })
 
-test_that("DP status print summarizes the non-vacuous lifetime gate", {
-  values <- .capsule_status_fixture(capsules = 7)
-  conns <- lapply(names(values), function(value) structure(1, class = "fake"))
-  names(conns) <- names(values)
-  status <- .dsvert_joint_dp_capsule_status_impl(
-    conns, .capsule_status_aggregate(values))
+test_that("DP status print rejects retired lifetime-gated objects", {
+  retired <- structure(
+    list(),
+    class = c("ds.vertDPStatus", "ds.vertJointDPCapsuleStatus", "list"))
+  expect_error(print(retired), "legacy joint-DP capsule statuses are retired")
+})
+
+test_that("DP status print describes the no-limit Synopsis bootstrap", {
+  status <- structure(
+    list(
+      context = list(
+        servers = c("site_a", "site_b", "site_c"),
+        policy = list(designated_noise_peers = c("site_a", "site_c"))),
+      manifest_bundle = list(
+        capsule_id = "artifact-1", manifest_sha256 = "manifest-1")),
+    class = c("ds.vertDPStatus", "dsvert_synopsis_bootstrap_v1", "list"))
 
   output <- capture.output(returned <- print(status))
-
   expect_identical(returned, status)
-  expect_true(any(grepl("peers: 3", output, fixed = TRUE)))
+  expect_true(any(grepl("dsVert signed Synopsis status", output, fixed = TRUE)))
   expect_true(any(grepl(
-    "designated noise peers: site_a, site_c", output, fixed = TRUE)))
-  expect_true(any(grepl(
-    "allocator-committed reservation units: 7e+00", output, fixed = TRUE)))
-  expect_true(any(grepl(
-    "published release instances: 2e+00", output, fixed = TRUE)))
-  expect_false(any(grepl("WARNING", output, fixed = TRUE)))
-  expect_true(any(grepl(
-    "allocator-committed reservation units remaining: 1e+00",
-    output, fixed = TRUE)))
-  expect_true(any(grepl(
-    "request quota: none", output, fixed = TRUE)))
+    "request/rate/catalog limits: none", output, fixed = TRUE)))
+  expect_false(any(grepl("lifetime|admission gate", output, ignore.case = TRUE)))
 })
 
 test_that("lifetime status uses exact decimal composition boundaries", {

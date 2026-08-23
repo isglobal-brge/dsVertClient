@@ -33,35 +33,12 @@ ds.vertDPStatus <- function(datasources = NULL) {
 #' @export
 print.ds.vertDPStatus <- function(x, ...) {
   if (!inherits(x, "dsvert_synopsis_bootstrap_v1")) {
-    reference <- x[[1L]]
-    designated <- reference$policy$designated_noise_peers
-    capsule <- x[[designated[[1L]]]]$composition_telemetry
-    release <- x[[designated[[1L]]]]$release_instance_telemetry
-    number <- function(value) {
-      format(value, digits = 8L, scientific = TRUE, trim = TRUE)
-    }
-    cat("dsVert reusable joint-DP capsule status\n")
-    cat("peers:", length(x), "| designated noise peers:",
-        paste(designated, collapse = ", "), "\n")
-    cat("per capsule: epsilon=", number(reference$policy$capsule_epsilon),
-        ", delta=", number(reference$policy$capsule_delta),
-        " | adjacency: ", reference$policy$adjacency, "\n", sep = "")
-    cat("allocator-committed reservation units:",
-        number(capsule$capsules_created),
-        "| basic composition upper bound: epsilon=",
-        number(capsule$cumulative_epsilon_upper_bound), ", delta=",
-        number(capsule$cumulative_delta_upper_bound), "\n")
-    cat("published release instances:", number(release$releases_published),
-        "| basic composition upper bound: epsilon=",
-        number(release$cumulative_epsilon_upper_bound), ", delta=",
-        number(release$cumulative_delta_upper_bound), "\n")
-    cat("allocator-committed reservation units remaining:",
-        number(capsule$remaining_distinct_capsules), "of",
-        number(capsule$lifetime_max_distinct_capsules), "\n")
-    cat(paste(
-      "new-capsule admission gate: enforced; request quota: none; exact replay",
-      "of the same release is unlimited post-processing.\n"))
-    return(invisible(x))
+    stop(
+      paste(
+        "Unsupported ds.vertDPStatus object: legacy joint-DP capsule",
+        "statuses are retired. Call ds.vertDPStatus() to verify the signed",
+        "Synopsis bootstrap."),
+      call. = FALSE)
   }
   context <- x$context
   bundle <- x$manifest_bundle
