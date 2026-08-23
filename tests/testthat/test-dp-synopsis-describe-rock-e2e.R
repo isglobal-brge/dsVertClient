@@ -19,7 +19,7 @@
 .synopsis_real_e2e_families <- c(
   "describe", "same_owner_contingency", "cross_owner_contingency",
   "stratified_epidemiology", "causal_standardization", "frequency",
-  "survival", "correlation", "gaussian", "cross_owner_tamper",
+  "mantel_haenszel", "survival", "correlation", "gaussian", "cross_owner_tamper",
   "gaussian_lasso_focal")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
@@ -217,6 +217,48 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
                 rep("no", 20L), rep("yes", 20L)),
     stringsAsFactors = FALSE)
   fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
+  fixture
+}
+
+.synopsis_mantel_haenszel_real_e2e_fixture <- function(k, server_ns) {
+  fixture <- .synopsis_describe_real_e2e_fixture(k, server_ns)
+  cells <- c(
+    "exposed_event", "exposed_nonevent",
+    "unexposed_event", "unexposed_nonevent")
+  pair_scope <- list(
+    mode = "catalog_v1", numeric_moments = "x_peer_a",
+    categorical_marginals = character(),
+    categorical_pairs = list(c("stratum", "cell")),
+    correlations = list())
+  for (peer in fixture$peers) {
+    policy <- fixture$policies[[peer]]
+    policy$unit_capacity <- 200L
+    policy$capsule_workload_scope <- pair_scope
+    if (identical(peer, "peer_a")) {
+      policy$categorical_levels <- list(
+        stratum = c("young", "middle", "old"), cell = cells)
+      policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+        "x_peer_a", "stratum", "cell")
+    }
+    fixture$policies[[peer]] <- policy
+  }
+  counts <- matrix(
+    c(16L, 8L, 6L, 10L,
+      20L, 10L, 8L, 12L,
+      12L, 16L, 4L, 18L),
+    nrow = 3L, byrow = TRUE,
+    dimnames = list(c("young", "middle", "old"), cells))
+  rows <- lapply(rownames(counts), function(stratum) {
+    data.frame(
+      stratum = rep(stratum, sum(counts[stratum, ])),
+      cell = rep(colnames(counts), counts[stratum, ]),
+      stringsAsFactors = FALSE)
+  })
+  data <- do.call(rbind, rows)
+  data$patient_id <- paste0("u", seq_len(nrow(data)))
+  data$x_peer_a <- rep(c(0, 10), length.out = nrow(data))
+  fixture$snapshots$peer_a[["data_peer_a"]]$data <-
+    data[, c("patient_id", "x_peer_a", "stratum", "cell")]
   fixture
 }
 
@@ -817,6 +859,60 @@ test_that("real stratified Synopsis supports sticky standardisation at K=2/3/5",
       new.env(parent = emptyenv())
     }), fixture$peers)
     replay <- contingency("data_peer_a", "stratum", "outcome", "peer_a",
+                          conns, dispatch)
+    expect_identical(replay$table, first$table)
+    expect_identical(replay$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real Synopsis Mantel-Haenszel is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("mantel_haenszel")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  contingency <- get(".dsvert_dp_contingency_impl",
+                     asNamespace("dsVertClient"), inherits = FALSE)
+  cells <- c(
+    "exposed_event", "exposed_nonevent",
+    "unexposed_event", "unexposed_nonevent")
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_mantel_haenszel_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    first <- contingency("data_peer_a", "stratum", "cell", "peer_a",
+                         conns, dispatch)
+    expect_s3_class(first, "ds.vertDPContingency")
+    expect_true(isTRUE(first$released))
+    expect_identical(dim(first$table), c(3L, 4L))
+    expect_identical(rownames(first$table),
+                     sort(c("young", "middle", "old")))
+    expect_identical(colnames(first$table), cells)
+    expect_identical(first$unit_aggregation_policy,
+                     "consistent_joint_cell_else_exclude_v1")
+    expect_equal(first$artifact_l1_sensitivity, 1, tolerance = 0)
+    expect_true(all(is.finite(first$table) & first$table >= 0))
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fit <- ds.vertDPMantelHaenszel(first)
+    expect_s3_class(fit, "ds.vertDPMantelHaenszel")
+    expect_identical(fit$status, "ok")
+    expect_identical(fit$estimate_type, "finite")
+    expect_true(is.finite(fit$estimate) && fit$estimate > 0)
+    expect_true(is.finite(fit$mechanism_region[["lower"]]))
+    expect_false(is.na(fit$mechanism_region[["upper"]]))
+    expect_lte(fit$mechanism_region[["lower"]], fit$estimate)
+    expect_gte(fit$mechanism_region[["upper"]], fit$estimate)
+    expect_identical(fit$additional_server_calls, 0L)
+    expect_identical(fit$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- contingency("data_peer_a", "stratum", "cell", "peer_a",
                           conns, dispatch)
     expect_identical(replay$table, first$table)
     expect_identical(replay$final_vector_root, first$final_vector_root)
