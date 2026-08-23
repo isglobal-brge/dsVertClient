@@ -725,6 +725,22 @@ test_that("real same-owner Synopsis contingency is plausible and Rock-replayable
     expect_true(all(first$table >= 0 & first$table <= 200))
     expect_gt(sum(first$table), 0)
 
+    route_contingency <- function(data_name, row_var, col_var, server = NULL,
+                                  datasources = NULL, .aggregate) {
+      contingency(data_name, row_var, col_var, server, datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_contingency_impl = route_contingency,
+      ds.vertDPContingency(
+        "data_peer_a", "exposure", "outcome", server = "peer_a",
+        datasources = conns),
+      .package = "dsVertClient")
+    expect_s3_class(public, "ds.vertDPContingency")
+    expect_identical(public$table, first$table)
+    expect_identical(public$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
     before <- c(fixture$state$source_prepare, fixture$state$start)
     chisq <- ds.vertChisq(first, simulations = 128L)
     fisher <- ds.vertFisher(first, simulations = 128L)
