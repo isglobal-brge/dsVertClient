@@ -1192,6 +1192,20 @@ test_that("real cross-owner Synopsis contingency is plausible and Rock-replayabl
         "not_tested_degenerate_conditional_support"))
       expect_true(is.na(inference$fisher$p_value))
     }
+
+    historical <- ds.vert.chisq_cross(
+      first, correct = TRUE, fisher = TRUE, simulations = 128L,
+      verbose = FALSE)
+    expect_s3_class(historical, "ds.vertChisq")
+    expect_identical(historical$frontdoor, "ds.vert.chisq_cross")
+    expect_identical(historical$route, "ds.vertChisqCross")
+    expect_identical(historical$statistic, inference$statistic)
+    expect_identical(historical$p_value, inference$p_value)
+    expect_identical(historical$fisher_p, inference$fisher_p)
+    expect_identical(historical$source_dp_release, first)
+    expect_identical(historical$additional_server_calls, 0L)
+    expect_identical(historical$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(2L, 2L))
 
