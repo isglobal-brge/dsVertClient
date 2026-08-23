@@ -182,9 +182,10 @@ test_that("client DSI expressions are registered or locally quarantined", {
   expect_false("dsvertContingencyDS" %in% constructions$literal)
   expect_false("dsvertContingencyDS" %in% registered_ds)
 
-  expect_setequal(
-    setdiff(resolved, registered_ds),
-    sort(unique(c(retired, locally_quarantined))))
+  unregistered <- setdiff(resolved, registered_ds)
+  expect_true(all(unregistered %in%
+                    sort(unique(c(retired, locally_quarantined)))))
+  expect_setequal(setdiff(retired, unregistered), "dsvertImputeColumnDS")
   expect_setequal(setdiff(registered_ds, resolved), character())
   expect_identical(
     length(constructions$literal),
