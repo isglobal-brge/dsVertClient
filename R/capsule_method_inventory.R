@@ -566,7 +566,8 @@
     inference_implementation_state = "frequency_postprocess_implemented")
 
   add(
-    c("ds.vertMultinom", "ds.vert.multinom"),
+    c("ds.vertMultinom", "ds.vert.multinom", "ds.vertMultinomJoint",
+      "ds.vertMultinomJointNewton"),
     "ds.vertMultinom", "multinomial_intercept_frequency",
     c("validated_sticky_frequency_artifact", "fixed_category_domain",
       "zero_call_postprocessing"),
@@ -577,32 +578,19 @@
       "no_covariates", "no_covariance_or_inference"),
     "frequency_operation_implemented",
     character(),
-    c("ds.vert.multinom" = "ds.vertMultinom"),
+    c("ds.vert.multinom" = "ds.vertMultinom",
+      "ds.vertMultinomJoint" = "ds.vertMultinom",
+      "ds.vertMultinomJointNewton" = "ds.vertMultinom"),
+    alias_kinds = c(
+      "ds.vertMultinomJoint" = "compatibility_wrapper",
+      "ds.vertMultinomJointNewton" = "compatibility_wrapper"),
     current_route_status = "client_only_validated_capsule_postprocess",
     artifact_implementation_state =
       "validated_frequency_artifact_adapter_implemented",
     inference_implementation_state = "frequency_postprocess_implemented")
 
   add(
-    c("ds.vertMultinomJoint", "ds.vertMultinomJointNewton"),
-    "ds.vertMultinomJointNewton", "multinomial_regression",
-    c("admitted_count", "categorical_outcome_domain",
-      "model_score_hessian", "numeric_cross_products_same_and_cross_owner",
-      "numeric_moments", "signed_multinomial_design_gram"),
-    "Joint softmax log-odds coefficients relative to the declared reference class.",
-    c("convergence", "dp_aware_covariance", "identifiability",
-      "outcome_domain"),
-    "requires_new_capsule_artifact",
-    c("dsvertLocalMomentsDS", "dsvertOutcomeLevelsDS", "getObsCountDS",
-      "glmStandardizeDS", "k2GradientR1DS", "k2GradientR2DS"),
-    c("ds.vertMultinomJoint" = "ds.vertMultinomJointNewton"),
-    alias_kinds = c("ds.vertMultinomJoint" = "compatibility_wrapper"),
-    current_route_status = "signed_workload_unavailable_quarantine",
-    inference_implementation_state =
-      "signed_multinomial_design_gram_not_materialized")
-
-  add(
-    c("ds.vertOrdinal", "ds.vert.ordinal"),
+    c("ds.vertOrdinal", "ds.vert.ordinal", "ds.vertOrdinalJointNewton"),
     "ds.vertOrdinal", "ordinal_intercept_frequency",
     c("validated_sticky_frequency_artifact", "fixed_category_domain",
       "caller_declared_ordinal_order", "zero_call_postprocessing"),
@@ -614,23 +602,14 @@
       "no_covariance_or_inference"),
     "frequency_operation_implemented",
     character(),
-    c("ds.vert.ordinal" = "ds.vertOrdinal"),
+    c("ds.vert.ordinal" = "ds.vertOrdinal",
+      "ds.vertOrdinalJointNewton" = "ds.vertOrdinal"),
+    alias_kinds = c(
+      "ds.vertOrdinalJointNewton" = "compatibility_wrapper"),
     current_route_status = "client_only_validated_capsule_postprocess",
     artifact_implementation_state =
       "validated_frequency_artifact_adapter_implemented",
     inference_implementation_state = "frequency_postprocess_implemented")
-
-  add(
-    "ds.vertOrdinalJointNewton", "ds.vertOrdinalJointNewton", "ordinal_regression",
-    c("admitted_count", "categorical_outcome_domain",
-      "model_score_hessian", "numeric_cross_products_same_and_cross_owner"),
-    "Joint proportional-odds thresholds and slopes.",
-    c("convergence", "dp_aware_covariance", "identifiability",
-      "ordered_outcome_domain", "proportional_odds_diagnostics"),
-    "requires_new_capsule_artifact",
-    c("dsvertOrdinalShareClassMasksDS", "getObsCountDS",
-      "glmStandardizeDS", "k2GradientR1DS", "k2GradientR2DS"),
-    character())
 
   add(
     c("ds.vertLMM", "ds.vert.lmm"), "ds.vertLMM",

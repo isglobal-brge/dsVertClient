@@ -99,3 +99,35 @@ test_that("formal ordinal fails closed on an invalid Frequency and alias", {
                                frequency = frequency, datasources = list()),
                "does not accept datasources")
 })
+
+test_that("historical ordinal Newton name retains only the Frequency y ~ 1 route", {
+  testthat::local_mocked_bindings(
+    .dsvert_dp_frequency_contract = function(x) x,
+    .package = "dsVertClient")
+
+  frequency <- .formal_ordinal_frequency()
+  levels <- c("none", "mild", "severe")
+  direct <- ds.vertOrdinal(
+    severity ~ 1, data = "study", levels_ordered = levels,
+    frequency = frequency)
+  joint <- ds.vertOrdinalJointNewton(
+    severity ~ 1, data = "study", levels_ordered = levels,
+    frequency = frequency)
+
+  expect_s3_class(joint, "dsvert_dp_frequency_ordinal")
+  expect_identical(joint$thresholds, direct$thresholds)
+  expect_identical(joint$probabilities, direct$probabilities)
+  expect_identical(joint$additional_privacy_cost, c(epsilon = 0, delta = 0))
+  expect_false(joint$source_values_exposed)
+  expect_false(joint$production_ready)
+  expect_identical(joint$called_via, "ds.vertOrdinalJointNewton_frequency")
+  expect_error(ds.vertOrdinalJointNewton(
+    severity ~ x, levels_ordered = levels, frequency = frequency),
+    "intercept-only")
+  expect_error(ds.vertOrdinalJointNewton(
+    severity ~ 1, levels_ordered = levels, max_outer = 2L,
+    frequency = frequency), "legacy controls")
+  expect_error(ds.vertOrdinalJointNewton(
+    severity ~ 1, levels_ordered = levels, frequency = frequency,
+    datasources = list()), "legacy controls")
+})

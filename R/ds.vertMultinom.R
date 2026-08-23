@@ -175,6 +175,26 @@ ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
   result
 }
 
+.dsvert_formal_multinom_joint_frequency_adapter <- function(
+    method, explicit_arguments, formula, data, levels, frequency) {
+  allowed <- c("formula", "data", "levels", "verbose", "frequency")
+  unexpected <- setdiff(explicit_arguments, allowed)
+  if (length(unexpected)) {
+    stop(paste(
+      "Frequency-backed", method,
+      "does not accept legacy controls:",
+      paste(sort(unexpected, method = "radix"), collapse = ", ")),
+      call. = FALSE)
+  }
+  fit <- ds.vertMultinom(
+    formula = formula, data = data, classes = levels,
+    reference = if (is.null(levels)) NULL else levels[[1L]],
+    frequency = frequency)
+  fit$called_via <- paste0(method, "_frequency")
+  fit$requested_method <- method
+  fit
+}
+
 #' @keywords internal
 .ds_vertMultinomWarm <- function(formula, data = NULL, classes = NULL,
                                  reference = NULL,

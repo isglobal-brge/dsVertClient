@@ -44,30 +44,43 @@
       "sufficient."))
 }
 
-#' @title Quarantined joint-softmax Newton compatibility frontdoor
-#' @description This exported name is retained for API compatibility. It
-#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
-#'   call and returns no multinomial fit. Retained Newton/MPC code after the
-#'   gate is unreachable through this public frontdoor and carries no
-#'   disclosure, DP, accuracy, or availability claim.
-#' @details Promotion requires a purpose-bound signed
-#'   \code{multinomial_design_grams} artifact over the exact bounded score
-#'   design and a validated joint-softmax inference contract.
+#' @title Sticky-DP intercept-only multinomial Newton compatibility frontdoor
+#' @description The historical Newton name supports only \code{y ~ 1} when
+#'   supplied a released, validated \code{ds.vertDPFrequency} object. It
+#'   returns the same deterministic Jeffreys-smoothed log-odds as
+#'   \code{ds.vertMultinom()} without a DSI call or a new opening.
+#' @details This is a compatibility route, not a joint-softmax Newton fit.
+#'   Covariates, iterative controls, covariance, standard errors and inference
+#'   remain unavailable until a purpose-bound signed
+#'   \code{multinomial_design_grams} artifact exists. Calls without
+#'   \code{frequency} fail locally before DSI.
 #' @param formula,data,levels,indicator_template,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources,design_analysis_id
-#'   Retained compatibility arguments. They are not evaluated because the
-#'   public frontdoor fails locally.
-#' @return No fitted object. The function raises
-#'   \code{dsvert_route_unavailable} before DSI.
+#'   With \code{frequency}, only \code{formula}, \code{data}, \code{levels}
+#'   and \code{verbose} are accepted. The optional levels must equal the signed
+#'   category order; its first entry is the reference.
+#' @param frequency A released, validated \code{ds.vertDPFrequency} object for
+#'   the outcome. It enables only intercept-only post-processing.
+#' @return With \code{frequency}, a coefficient-only \code{ds.vertMultinom}
+#'   result. Otherwise the function raises \code{dsvert_route_unavailable}
+#'   before DSI.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
-ds.vertMultinomJointNewton <- function(formula, data = NULL, levels,
+ds.vertMultinomJointNewton <- function(formula, data = NULL, levels = NULL,
                                         indicator_template = "%s_ind",
                                         max_outer = 20L, tol = 1e-5,
                                         warm_max_iter = NULL,
                                         warm_tol = NULL,
                                         binomial_sigmoid_intervals = NULL,
                                         verbose = TRUE, datasources = NULL,
-                                        design_analysis_id = NULL) {
+                                        design_analysis_id = NULL,
+                                        frequency = NULL) {
+  if (!is.null(frequency)) {
+    return(.dsvert_formal_multinom_joint_frequency_adapter(
+      method = "ds.vertMultinomJointNewton",
+      explicit_arguments = names(match.call())[-1L],
+      formula = if (missing(formula)) NULL else formula,
+      data = data, levels = levels, frequency = frequency))
+  }
   .dsvert_block_retired_remote_route("multinomial")
   if (is.null(datasources)) datasources <- DSI::datashield.connections_find()
   if (!inherits(formula, "formula"))

@@ -2,12 +2,12 @@
 % Please edit documentation in R/ds.vertOrdinalJointNewton.R
 \name{ds.vertOrdinalJointNewton}
 \alias{ds.vertOrdinalJointNewton}
-\title{Quarantined proportional-odds Newton compatibility frontdoor}
+\title{Sticky-DP intercept-only ordinal Newton compatibility frontdoor}
 \usage{
 ds.vertOrdinalJointNewton(
   formula,
   data = NULL,
-  levels_ordered,
+  levels_ordered = NULL,
   cumulative_template = "\%s_leq",
   max_outer = 20L,
   tol = 1e-05,
@@ -15,23 +15,35 @@ ds.vertOrdinalJointNewton(
   warm_tol = NULL,
   binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  frequency = NULL
 )
 }
 \arguments{
-\item{formula, data, levels_ordered, cumulative_template, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+\item{formula, data, levels_ordered, cumulative_template, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources}{With \code{frequency}, only \code{formula}, \code{data},
+\code{levels_ordered} and \code{verbose} are accepted. The complete
+signed clinical category order remains required.}
+
+\item{frequency}{A released, validated \code{ds.vertDPFrequency} object for
+the outcome. It enables only threshold-only post-processing.}
 }
 \value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
+With \code{frequency}, a threshold-only \code{ds.vertOrdinal}
+result. Otherwise the function raises \code{dsvert_route_unavailable}
+before DSI.
 }
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and returns no ordinal fit. Retained Newton/MPC code after the gate
-is unreachable through this public frontdoor and carries no disclosure,
-DP, accuracy, or availability claim.
+The historical proportional-odds Newton name supports only
+\code{y ~ 1} when supplied a released, validated
+\code{ds.vertDPFrequency} object. It returns the same deterministic
+Jeffreys-smoothed cumulative-logit thresholds as \code{ds.vertOrdinal()}
+without a DSI call or a new opening.
+}
+\details{
+This is a compatibility route, not an iterative proportional-odds
+fit. Covariates, iterative controls, covariance, standard errors and
+inference remain unavailable until a protected ordinal score/information
+artifact exists. Calls without \code{frequency} fail locally before DSI.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

@@ -152,6 +152,25 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered = NULL,
   result
 }
 
+.dsvert_formal_ordinal_joint_frequency_adapter <- function(
+    method, explicit_arguments, formula, data, levels_ordered, frequency) {
+  allowed <- c("formula", "data", "levels_ordered", "verbose", "frequency")
+  unexpected <- setdiff(explicit_arguments, allowed)
+  if (length(unexpected)) {
+    stop(paste(
+      "Frequency-backed", method,
+      "does not accept legacy controls:",
+      paste(sort(unexpected, method = "radix"), collapse = ", ")),
+      call. = FALSE)
+  }
+  fit <- ds.vertOrdinal(
+    formula = formula, data = data, levels_ordered = levels_ordered,
+    frequency = frequency)
+  fit$called_via <- paste0(method, "_frequency")
+  fit$requested_method <- method
+  fit
+}
+
 #' @keywords internal
 .ds_vertOrdinalWarm <- function(formula, data = NULL, levels_ordered,
                                 cumulative_template = "%s_leq",

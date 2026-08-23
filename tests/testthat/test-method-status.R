@@ -62,26 +62,24 @@ test_that("no public route may report a result numeric certificate", {
 
 test_that("known unsafe legacy routes are not presented as promoted", {
   quarantined <- ds.vertMethodStatus(status = "quarantine")$method
-  unsafe_server_routes <- "ds.vertOrdinalJointNewton"
-  newly_quarantined <- c(
-    "ds.vertMI", "ds.vert.mi",
-    "ds.vertMultinomJoint", "ds.vertMultinomJointNewton")
+  newly_quarantined <- c("ds.vertMI", "ds.vert.mi")
   expect_true(all(c(
     "ds.vertLMM", "ds.vertGLMM", "ds.vertIPW",
-    newly_quarantined, unsafe_server_routes) %in% quarantined))
+    newly_quarantined) %in% quarantined))
   expect_true(all(ds.vertMethodStatus(c("ds.vertGEE", "ds.vert.gee"))$
                   status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertGEE", "ds.vert.gee"))$
                   release_contract == "formal_completed_public_certificate"))
-  expect_true(all(ds.vertMethodStatus(c(
-    "ds.vertMultinom", "ds.vert.multinom"))$status == "promoted"))
-  expect_true(all(ds.vertMethodStatus(c(
-    "ds.vertMultinom", "ds.vert.multinom"))$release_contract ==
+  frequency_multinom <- c(
+    "ds.vertMultinom", "ds.vert.multinom", "ds.vertMultinomJoint",
+    "ds.vertMultinomJointNewton")
+  expect_true(all(ds.vertMethodStatus(frequency_multinom)$status == "promoted"))
+  expect_true(all(ds.vertMethodStatus(frequency_multinom)$release_contract ==
       "postprocessing_inherits_input"))
-  expect_true(all(ds.vertMethodStatus(c(
-    "ds.vertOrdinal", "ds.vert.ordinal"))$status == "promoted"))
-  expect_true(all(ds.vertMethodStatus(c(
-    "ds.vertOrdinal", "ds.vert.ordinal"))$release_contract ==
+  frequency_ordinal <- c(
+    "ds.vertOrdinal", "ds.vert.ordinal", "ds.vertOrdinalJointNewton")
+  expect_true(all(ds.vertMethodStatus(frequency_ordinal)$status == "promoted"))
+  expect_true(all(ds.vertMethodStatus(frequency_ordinal)$release_contract ==
       "postprocessing_inherits_input"))
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertNBFullRegTheta", "ds.vert.nb"))$status == "promoted"))
@@ -326,9 +324,12 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "ds.vertChisqCross", "ds.vert.chisq_cross"))$status == "promoted"))
   expect_match(ds.vertMethodStatus("ds.vertChisqCross")$principal_limitation,
                "finite-sample")
-  expect_match(ds.vertMethodStatus("ds.vertMultinomJointNewton")$
-                 principal_limitation,
-               "multinomial_design_grams", fixed = TRUE)
+  joint_frequency <- ds.vertMethodStatus(c(
+    "ds.vertMultinomJoint", "ds.vertMultinomJointNewton",
+    "ds.vertOrdinalJointNewton"))
+  expect_true(all(joint_frequency$status == "promoted"))
+  expect_true(all(grepl("intercept", joint_frequency$safe_scope,
+                        ignore.case = TRUE)))
   lasso_iter <- ds.vertMethodStatus(c(
     "ds.vertLASSOIter", "ds.vert.lasso_iter"))
   expect_true(all(lasso_iter$status == "promoted"))

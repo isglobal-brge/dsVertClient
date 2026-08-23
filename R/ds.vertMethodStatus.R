@@ -495,38 +495,28 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "Covariates, likelihood optimization, covariance, standard errors",
         "and inference remain unavailable until a protected NB2",
         "score-and-information artifact exists."))
-  add(c("ds.vertMultinom", "ds.vert.multinom"),
+  add(c("ds.vertMultinom", "ds.vert.multinom", "ds.vertMultinomJoint",
+        "ds.vertMultinomJointNewton"),
       "ds.vertMultinom", "promoted",
       paste(
         "Read-only intercept-only multinomial log-odds from one validated",
-        "sticky DP Frequency release; it performs no new DSI call or opening."),
+        "sticky DP Frequency release, including the historical joint names;",
+        "it performs no new DSI call or opening."),
       paste(
         "Only y ~ 1 is available, with deterministic Jeffreys smoothing.",
         "Covariates, joint softmax, covariance, standard errors and inference",
-        "remain unavailable until a protected score artifact exists."))
-  add(c("ds.vertMultinomJoint", "ds.vertMultinomJointNewton"),
-      "ds.vertMultinomJointNewton", "quarantine",
-      "Slope route fails closed until its signed raw-design Gram exists.",
-      paste(
-        "The legacy local-moment/local-correlation reconstruction was removed.",
-        "A gaussian_models correlation capsule cannot certify the raw design",
-        "used by the score MPC; a purpose-bound multinomial_design_grams",
-        "artifact with identical mask, snapshot, scaling and order is required."))
-  add(c("ds.vertOrdinal", "ds.vert.ordinal"), "ds.vertOrdinal", "promoted",
+        "remain unavailable until a purpose-bound protected score/design",
+        "artifact exists."))
+  add(c("ds.vertOrdinal", "ds.vert.ordinal", "ds.vertOrdinalJointNewton"),
+      "ds.vertOrdinal", "promoted",
       paste(
         "Read-only intercept-only cumulative-logit thresholds from one",
-        "validated sticky DP Frequency release; it performs no new DSI call",
-        "or opening."),
+        "validated sticky DP Frequency release, including the historical",
+        "Newton name; it performs no new DSI call or opening."),
       paste(
         "The caller must give the complete signed category domain in clinical",
         "order. Covariates, protected score/information, covariance, standard",
         "errors and inference remain unavailable."))
-  add("ds.vertOrdinalJointNewton", "ds.vertOrdinalJointNewton", "quarantine",
-      "Joint proportional-odds point estimates only.",
-      paste(
-        "The score route is a legacy exact release rather than a formal",
-        "capsule; final-estimator covariance and proportional-odds tests are",
-        "unavailable."))
   add(c("ds.vertLMM", "ds.vert.lmm"), "ds.vertLMM", "quarantine",
       "Research diagnostics only with explicit acknowledgement.",
       "ML/REML, random slopes and K>=3 estimands are incomplete; cluster aggregates are too granular.")
@@ -689,7 +679,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertLASSOCV", "ds.vert.lasso_cv")
   inherited_postprocessing <- c(
     inherited_postprocessing, "ds.vertMultinom", "ds.vert.multinom",
-    "ds.vertOrdinal", "ds.vert.ordinal",
+    "ds.vertMultinomJoint", "ds.vertMultinomJointNewton",
+    "ds.vertOrdinal", "ds.vert.ordinal", "ds.vertOrdinalJointNewton",
     "ds.vertNBFullRegTheta", "ds.vert.nb")
   glm_synopsis_wrappers <- c(
     "ds.vertGLM", "ds.vert.glm",

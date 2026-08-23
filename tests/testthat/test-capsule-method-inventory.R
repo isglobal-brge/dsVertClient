@@ -38,7 +38,7 @@ test_that("capsule migration inventory covers the complete public surface", {
   expect_length(intersect(inventory$method, non_inference), 0L)
   expect_setequal(c(inventory$method, non_inference), exports)
   expect_setequal(c(inventory$method, non_inference),
-                  .dsvert_method_registry()$method)
+                  ds.vertMethodStatus()$method)
 })
 
 test_that("inventory separates current, migration, artifact and inference state", {
@@ -162,14 +162,17 @@ test_that("aliases and wrappers retain honest routing semantics", {
     "ds.vert.lr" = "ds.vertLR",
     "ds.vert.mi" = "ds.vertMI",
     "ds.vert.multinom" = "ds.vertMultinom",
+    "ds.vertMultinomJoint" = "ds.vertMultinom",
+    "ds.vertMultinomJointNewton" = "ds.vertMultinom",
     "ds.vert.nb" = "ds.vertNBFullRegTheta",
     "ds.vert.ordinal" = "ds.vertOrdinal",
+    "ds.vertOrdinalJointNewton" = "ds.vertOrdinal",
     "ds.vert.pca" = "ds.vertPCA",
-    "ds.vert.wald" = "ds.vertWald",
-    "ds.vertMultinomJoint" = "ds.vertMultinomJointNewton")
+    "ds.vert.wald" = "ds.vertWald")
   wrappers <- c(
     "ds.vert.cox", "ds.vert.coxph", "ds.vertCoxProfileNonDisclosive",
-    "ds.vertMultinomJoint")
+    "ds.vertMultinomJoint", "ds.vertMultinomJointNewton",
+    "ds.vertOrdinalJointNewton")
   inventory <- .dsvert_capsule_method_inventory()
   actual <- inventory$alias_of
   names(actual) <- inventory$method
@@ -251,9 +254,7 @@ test_that("retired legacy DP endpoints are absent from public route evidence", {
 test_that("verified legacy disclosure evidence cannot regress to omission", {
   inventory <- .dsvert_capsule_method_inventory()
   standardized_families <- c(
-    "ds.vertGLM", "ds.vertMultinomJointNewton", "ds.vertOrdinalJointNewton",
-    "ds.vertLMM", "ds.vertGLMM", "ds.vertIPW",
-    "ds.vertMI")
+    "ds.vertGLM", "ds.vertLMM", "ds.vertGLMM", "ds.vertIPW", "ds.vertMI")
   expect_true(all(vapply(standardized_families, function(method) {
     has_evidence(inventory, method, "glmStandardizeDS",
                  "plaintext_exact_aggregate")
@@ -569,12 +570,14 @@ test_that("quarantine labels require secure redesign and concrete evidence", {
                     getNamespaceExports("dsVertClient")))
 })
 
-test_that("mixed variants and unavailable signed workloads cannot look promoted", {
+test_that("mixed variants and Frequency compatibility names have explicit scopes", {
   inventory <- .dsvert_capsule_method_inventory()
   mixed <- c("ds.vertGLM", "ds.vert.glm")
-  broken <- c("ds.vertMultinomJoint", "ds.vertMultinomJointNewton")
-  frequency_multinom <- c("ds.vertMultinom", "ds.vert.multinom")
-  frequency_ordinal <- c("ds.vertOrdinal", "ds.vert.ordinal")
+  frequency_multinom <- c(
+    "ds.vertMultinom", "ds.vert.multinom", "ds.vertMultinomJoint",
+    "ds.vertMultinomJointNewton")
+  frequency_ordinal <- c(
+    "ds.vertOrdinal", "ds.vert.ordinal", "ds.vertOrdinalJointNewton")
   frequency_nb2 <- c("ds.vertNBFullRegTheta", "ds.vert.nb")
 
   expect_true(all(inventory$current_route_status[
@@ -584,12 +587,6 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
     inventory$method %in% c(
       "ds.vertChisqCross", "ds.vert.chisq_cross")] ==
       "formal_sticky_synopsis_artifact"))
-  expect_true(all(inventory$current_route_status[
-    inventory$method %in% broken] ==
-      "signed_workload_unavailable_quarantine"))
-  expect_true(all(inventory$inference_implementation_state[
-    inventory$method %in% broken] ==
-      "signed_multinomial_design_gram_not_materialized"))
   expect_true(all(inventory$current_route_status[
     inventory$method %in% frequency_multinom] ==
       "client_only_validated_capsule_postprocess"))
@@ -622,8 +619,6 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
   expect_true(all(ds.vertMethodStatus(frequency_multinom)$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(frequency_ordinal)$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(frequency_nb2)$status == "promoted"))
-  expect_length(intersect(ds.vertMethodStatus(status = "promoted")$method,
-                          broken), 0L)
 })
 
 test_that("NB2 slope and mutating MI routes remain explicitly quarantined", {

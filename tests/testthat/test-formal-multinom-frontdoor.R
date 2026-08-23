@@ -88,3 +88,39 @@ test_that("formal multinomial fails closed on an invalid Frequency and alias", {
                                 datasources = list()),
                "does not accept datasources")
 })
+
+test_that("historical joint multinomial names retain only the Frequency y ~ 1 route", {
+  testthat::local_mocked_bindings(
+    .dsvert_dp_frequency_contract = function(x) x,
+    .package = "dsVertClient")
+
+  frequency <- .formal_multinom_frequency()
+  direct <- ds.vertMultinom(
+    status ~ 1, data = "study", classes = frequency$levels,
+    reference = "control", frequency = frequency)
+  joint <- ds.vertMultinomJoint(
+    status ~ 1, data = "study", levels = frequency$levels,
+    frequency = frequency)
+  newton <- ds.vertMultinomJointNewton(
+    status ~ 1, data = "study", levels = frequency$levels,
+    frequency = frequency)
+
+  for (fit in list(joint, newton)) {
+    expect_s3_class(fit, "dsvert_dp_frequency_multinom")
+    expect_identical(fit$coefficients, direct$coefficients)
+    expect_identical(fit$probabilities, direct$probabilities)
+    expect_identical(fit$additional_privacy_cost, c(epsilon = 0, delta = 0))
+    expect_false(fit$source_values_exposed)
+    expect_false(fit$production_ready)
+  }
+  expect_identical(joint$called_via, "ds.vertMultinomJoint_frequency")
+  expect_identical(newton$called_via, "ds.vertMultinomJointNewton_frequency")
+  expect_error(ds.vertMultinomJoint(status ~ x, frequency = frequency),
+               "intercept-only")
+  expect_error(ds.vertMultinomJointNewton(
+    status ~ 1, levels = frequency$levels, max_outer = 2L,
+    frequency = frequency), "legacy controls")
+  expect_error(ds.vertMultinomJoint(
+    status ~ 1, levels = frequency$levels, frequency = frequency,
+    datasources = list()), "legacy controls")
+})

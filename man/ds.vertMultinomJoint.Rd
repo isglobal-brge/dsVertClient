@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertMultinomJoint.R
 \name{ds.vertMultinomJoint}
 \alias{ds.vertMultinomJoint}
-\title{Quarantined joint-multinomial compatibility frontdoor}
+\title{Sticky-DP intercept-only multinomial compatibility frontdoor}
 \usage{
 ds.vertMultinomJoint(
   formula,
@@ -12,23 +12,34 @@ ds.vertMultinomJoint(
   tol = 1e-04,
   verbose = TRUE,
   datasources = NULL,
-  design_analysis_id = NULL
+  design_analysis_id = NULL,
+  frequency = NULL
 )
 }
 \arguments{
-\item{formula, data, levels, max_iter, tol, verbose, datasources, design_analysis_id}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+\item{formula, data, levels, max_iter, tol, verbose, datasources, design_analysis_id}{With \code{frequency}, only \code{formula}, \code{data}, \code{levels}
+and \code{verbose} are accepted. The optional levels must be exactly the
+signed category order; its first category is the reference.}
+
+\item{frequency}{A released, validated \code{ds.vertDPFrequency} object for
+the outcome. It enables only the intercept-only post-processing route.}
 }
 \value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
+With \code{frequency}, a coefficient-only \code{ds.vertMultinom}
+result. Otherwise the function raises \code{dsvert_route_unavailable}
+before DSI.
 }
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and returns no joint-softmax fit. Retained code after the gate is
-unreachable through this public frontdoor and carries no disclosure, DP,
-accuracy, or availability claim.
+The historical joint-multinomial name supports only \code{y ~ 1}
+when given a released, validated \code{ds.vertDPFrequency} object. It
+delegates to the same deterministic Jeffreys-smoothed log-odds
+post-processing as \code{ds.vertMultinom()} and makes no DSI request.
+}
+\details{
+This does not re-enable the joint-softmax Newton estimator.
+Covariates, iterative controls, covariance, standard errors and inference
+remain unavailable until a purpose-bound protected score/design artifact
+exists. Calls without \code{frequency} fail locally before DSI.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

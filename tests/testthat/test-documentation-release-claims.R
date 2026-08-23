@@ -1,7 +1,4 @@
 quarantined_doc_sources <- c(
-  "ds.vertMultinomJoint.R",
-  "ds.vertMultinomJointNewton.R",
-  "ds.vertOrdinalJointNewton.R",
   "ds.vertLMM.R",
   "ds.vertLMM.k3.R",
   "ds.vertGLMM.R",
@@ -9,9 +6,6 @@ quarantined_doc_sources <- c(
   "ds.vertMI.R")
 
 quarantined_doc_topics <- c(
-  "ds.vertMultinomJoint" = "ds.vertMultinomJoint.R",
-  "ds.vertMultinomJointNewton" = "ds.vertMultinomJointNewton.R",
-  "ds.vertOrdinalJointNewton" = "ds.vertOrdinalJointNewton.R",
   "ds.vertLMM" = "ds.vertLMM.R",
   "ds.vertLMM.k3" = "ds.vertLMM.k3.R",
   "ds.vertGLMM" = "ds.vertGLMM.R",
@@ -134,6 +128,27 @@ test_that("multinomial help limits Frequency post-processing to y ~ 1", {
     expect_match(text, "never starts a new analysis", fixed = TRUE)
     expect_match(text, "joint softmax", ignore.case = TRUE)
     expect_match(text, "standard errors", ignore.case = TRUE)
+  }
+})
+
+test_that("historical joint compatibility help keeps the Frequency-only boundary", {
+  package_root <- dirname(.dsvert_client_source_root())
+  topics <- c(
+    "ds.vertMultinomJoint" = "ds.vertMultinomJoint.R",
+    "ds.vertMultinomJointNewton" = "ds.vertMultinomJointNewton.R",
+    "ds.vertOrdinalJointNewton" = "ds.vertOrdinalJointNewton.R")
+  for (topic in names(topics)) {
+    source <- .dsvert_public_roxygen_text(topics[[topic]], topic)
+    rd_path <- file.path(package_root, "man", paste0(topic, ".Rd"))
+    if (!file.exists(rd_path)) testthat::fail(paste("missing help:", topic))
+    rd <- paste(readLines(rd_path, warn = FALSE), collapse = "\n")
+    for (text in list(source, rd)) {
+      expect_match(text, "ds.vertDPFrequency", fixed = TRUE)
+      expect_match(text, "y ~ 1", fixed = TRUE)
+      expect_match(text, "Covariates", fixed = TRUE)
+      expect_match(text, "standard errors", ignore.case = TRUE)
+      expect_match(text, "before DSI", fixed = TRUE)
+    }
   }
 })
 
