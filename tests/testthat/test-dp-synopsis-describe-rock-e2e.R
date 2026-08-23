@@ -1437,6 +1437,24 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_equal(fit$coefficients_original_scale,
                  c(`(Intercept)` = 10, x_peer_a = -1), tolerance = 0.1)
 
+    route_gaussian <- function(data_name, analysis_id, ridge = 0,
+                               server = NULL, datasources = NULL,
+                               .aggregate) {
+      gaussian(data_name, analysis_id, ridge, server, datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_gaussian_impl = route_gaussian,
+      ds.vertDPGaussian(
+        "data_peer_a", "gaussian_primary", ridge = 0, server = "peer_a",
+        datasources = conns),
+      .package = "dsVertClient")
+    expect_s3_class(public, "ds.vertDPGaussian")
+    expect_identical(public$coefficients_original_scale,
+                     fit$coefficients_original_scale)
+    expect_identical(public$final_vector_root, fit$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
     adapter <- testthat::with_mocked_bindings(
       ds.vertDPGaussian = function(
           data_name, analysis_id, ridge = 0, server = NULL,
