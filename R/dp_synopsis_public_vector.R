@@ -270,7 +270,12 @@
       already_scaled <- identical(
         block$descriptor$source_coordinate_scaling,
         "all_coordinates_already_on_common_numeric_lattice_v1")
-      shifts[indices] <- if (already_scaled) rep(0L, length(indices)) else
+      random_intercept <- identical(
+        block$descriptor$version,
+        "bounded-normalized-random-intercept-moments-v1")
+      shifts[indices] <- if (random_intercept) {
+        c(rep(bits, 3L), rep(0L, length(indices) - 3L))
+      } else if (already_scaled) rep(0L, length(indices)) else
         c(bits, rep(0L, length(indices) - 1L))
       bound <- as.numeric(block$descriptor$statistic_maximum)
       vector_bound <- TRUE

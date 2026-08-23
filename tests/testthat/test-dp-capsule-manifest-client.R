@@ -315,6 +315,20 @@ test_that("client accepts only the signed Gaussian fragment grammar", {
   expect_error(
     .dsvert_dp_capsule_manifest_fragments(invalid),
     "invalid custodian workload specification")
+
+  random_intercept <- list(
+    describe = list(), survival = list(), vertical_cross = list(),
+    gaussian = list(lmm_primary = list(
+      version = "random_intercept_v1", dataset = "cohort", outcome = "y",
+      cluster = "site", max_patients_per_cluster = 20L)))
+  normalized_random_intercept <- .dsvert_dp_capsule_manifest_fragments(
+    random_intercept)
+  expect_identical(
+    normalized_random_intercept$gaussian$lmm_primary$cluster, "site")
+  random_intercept$gaussian$lmm_primary$max_patients_per_cluster <- 1L
+  expect_error(
+    .dsvert_dp_capsule_manifest_fragments(random_intercept),
+    "invalid custodian workload specification")
 })
 
 test_that("draft tampering, owner conflicts and divergent builds are rejected", {

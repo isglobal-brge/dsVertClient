@@ -384,21 +384,32 @@
           valid <- all(diff(grid) > 0)
         }
       } else if (identical(family, "gaussian")) {
-        expected <- c(
-          "version", "dataset", "outcome", "predictors", "intercept")
-        valid <- setequal(names(spec), expected) &&
-          identifier(spec$version) && identifier(spec$dataset) &&
-          column_reference(spec$outcome) &&
-          is.logical(spec$intercept) && length(spec$intercept) == 1L &&
-          !is.na(spec$intercept)
-        predictors <- if (isTRUE(valid)) {
-          tryCatch(.dsvert_dp_capsule_manifest_string_array(
-            spec$predictors, "Gaussian predictors"),
-          error = function(error) character())
-        } else character()
-        valid <- isTRUE(valid) && length(predictors) > 0L &&
-          all(vapply(predictors, column_reference, logical(1L))) &&
-          !spec$outcome %in% predictors
+        if (identical(spec$version, "random_intercept_v1")) {
+          expected <- c(
+            "version", "dataset", "outcome", "cluster",
+            "max_patients_per_cluster")
+          valid <- setequal(names(spec), expected) &&
+            identifier(spec$dataset) && column_reference(spec$outcome) &&
+            column_reference(spec$cluster) &&
+            !identical(spec$outcome, spec$cluster) &&
+            .dsvert_dp_is_integer(spec$max_patients_per_cluster, 2L)
+        } else {
+          expected <- c(
+            "version", "dataset", "outcome", "predictors", "intercept")
+          valid <- setequal(names(spec), expected) &&
+            identifier(spec$version) && identifier(spec$dataset) &&
+            column_reference(spec$outcome) &&
+            is.logical(spec$intercept) && length(spec$intercept) == 1L &&
+            !is.na(spec$intercept)
+          predictors <- if (isTRUE(valid)) {
+            tryCatch(.dsvert_dp_capsule_manifest_string_array(
+              spec$predictors, "Gaussian predictors"),
+            error = function(error) character())
+          } else character()
+          valid <- isTRUE(valid) && length(predictors) > 0L &&
+            all(vapply(predictors, column_reference, logical(1L))) &&
+            !spec$outcome %in% predictors
+        }
       } else {
         expected <- c(
           "version", "left_dataset", "right_dataset", "left", "right",

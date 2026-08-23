@@ -20,7 +20,7 @@
   "describe", "same_owner_contingency", "cross_owner_contingency",
   "stratified_epidemiology", "causal_standardization", "frequency",
   "mantel_haenszel", "roc", "survival", "correlation", "gaussian", "cross_owner_tamper",
-  "gaussian_lasso_focal")
+  "gaussian_lasso_focal", "lmm")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
   stop("unknown DSVERT_TEST_SYNOPSIS_E2E_FAMILY", call. = FALSE)
@@ -474,6 +474,46 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
     x_peer_a = rep(c(0, 10), length.out = n),
     y_peer_a = rep(c(10, 0), length.out = n),
     stringsAsFactors = FALSE)
+  fixture
+}
+
+.synopsis_lmm_real_e2e_fixture <- function(k, server_ns, n = 10000L) {
+  fixture <- .synopsis_describe_real_e2e_fixture(k, server_ns)
+  if (!is.numeric(n) || length(n) != 1L || !is.finite(n) || n < 400L ||
+      n != as.integer(n) || n %% 100L != 0L) {
+    stop("n must be an integer multiple of 100 of at least 400", call. = FALSE)
+  }
+  n <- as.integer(n)
+  sites <- sprintf("site_%03d", seq_len(n %/% 100L))
+  for (peer in fixture$peers) {
+    policy <- fixture$policies[[peer]]
+    policy$unit_capacity <- n
+    policy$capsule_workload_scope <- list(
+      mode = "catalog_v1", numeric_moments = character(),
+      categorical_marginals = character(), categorical_pairs = list(),
+      correlations = list())
+    policy$capsule_workload_specs$describe <- list()
+    policy$capsule_workload_specs$survival <- list()
+    if (identical(peer, "peer_a")) {
+      policy$numeric_bounds$y_peer_a <- c(0, 10)
+      policy$categorical_levels$site_peer_a <- sites
+      policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+        "x_peer_a", "y_peer_a", "site_peer_a")
+      policy$capsule_workload_specs$gaussian$lmm_primary <- list(
+        version = "random_intercept_v1", dataset = "data_peer_a",
+        outcome = "y_peer_a", cluster = "site_peer_a",
+        max_patients_per_cluster = 100L)
+    }
+    fixture$policies[[peer]] <- policy
+  }
+  site <- rep(sites, each = 100L)
+  effect <- rep(seq(1.5, 8.5, length.out = length(sites)), each = 100L)
+  within <- rep(c(-0.30, -0.10, 0.10, 0.30), length.out = n)
+  fixture$snapshots$peer_a[["data_peer_a"]]$data <- data.frame(
+    patient_id = paste0("u", seq_len(n)),
+    x_peer_a = rep(c(0, 10), length.out = n),
+    y_peer_a = pmin(10, pmax(0, effect + within)),
+    site_peer_a = site, stringsAsFactors = FALSE)
   fixture
 }
 
@@ -1780,6 +1820,63 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
       "data_peer_a", "gaussian_primary", 0, "peer_a", conns, dispatch)
     expect_identical(serialize(replay, NULL, version = 3L),
                      serialize(fit, NULL, version = 3L))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real random-intercept LMM Synopsis is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("lmm")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  lmm <- get(".dsvert_dp_lmm_impl", asNamespace("dsVertClient"),
+             inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_lmm_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    fit <- lmm("data_peer_a", "lmm_primary", "peer_a", conns, dispatch)
+
+    expect_s3_class(fit, "ds.vertDPLMM")
+    expect_identical(fixture$state$source_prepare, 1L)
+    expect_identical(fixture$state$start, 2L)
+    expect_identical(fit$cross_owner_state, "reserved_not_materialized")
+    expect_identical(fit$additional_server_calls_after_synopsis, 0L)
+    expect_identical(fit$additional_privacy_cost, c(epsilon = 0, delta = 0))
+    expect_identical(fit$status, "ok")
+    expect_true(all(is.finite(c(fit$coefficients, fit$sigma2,
+                                fit$sigma_b2, fit$icc))))
+    expect_true(fit$coefficients[["(Intercept)"]] > 3 &&
+                fit$coefficients[["(Intercept)"]] < 7)
+    expect_true(fit$sigma2 >= 0 && fit$sigma_b2 >= 0 &&
+                fit$icc >= 0 && fit$icc <= 1)
+    expect_true(isTRUE(fit$provenance_certificate$
+      public_dp_coordinates_only))
+
+    route_lmm <- function(data_name, analysis_id, server = NULL,
+                          datasources = NULL, .aggregate) {
+      lmm(data_name, analysis_id, server, datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_lmm_impl = route_lmm,
+      ds.vertDPLMM(
+        "data_peer_a", "lmm_primary", server = "peer_a",
+        datasources = conns),
+      .package = "dsVertClient")
+    expect_s3_class(public, "ds.vertDPLMM")
+    expect_identical(public$coefficients, fit$coefficients)
+    expect_identical(public$final_vector_root, fit$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- lmm("data_peer_a", "lmm_primary", "peer_a", conns, dispatch)
+    expect_identical(replay$coefficients, fit$coefficients)
+    expect_identical(replay$final_vector_root, fit$final_vector_root)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
   }
 })

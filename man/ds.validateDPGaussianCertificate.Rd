@@ -2,7 +2,7 @@
 % Please edit documentation in R/dp_gaussian_certificate.R
 \name{ds.validateDPGaussianCertificate}
 \alias{ds.validateDPGaussianCertificate}
-\title{Verify a bounded Gaussian capsule certificate without DSI}
+\title{Verify a bounded Gaussian provenance certificate without DSI}
 \usage{
 ds.validateDPGaussianCertificate(x, trusted_pinset = NULL)
 }
@@ -16,9 +16,10 @@ A verified public provenance view with separate \code{integrity_valid}
 and \code{authenticity} fields.
 }
 \description{
-Revalidates the signed schema, manifest build commitments, pinned-peer
-vector receipts, Gaussian artifact membership and the intersecting public
-DP chunks required by the current Merkle layout. A self-contained
+Dispatches between the same-owner no-lifetime Synopsis provenance
+certificate v1 and the byte-compatible legacy capsule certificate v3. It
+revalidates the signed schema/manifest, pinned-peer receipts, Gaussian
+descriptor and exact released DP block before algebra. A self-contained
 certificate proves internal integrity. Strong
 peer authenticity additionally requires a caller-supplied trusted pinset or
 the ephemeral pinset cache populated by an online fit in this R session.
