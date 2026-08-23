@@ -1517,6 +1517,50 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
                      c(1L, 2L))
 
     pca <- ds.vertPCA(cor_result = cor, n_components = 2L, verbose = FALSE)
+
+    # Exercise the user-facing correlation and PCA calls over the same real
+    # Synopsis artifact.  The harness supplies its authenticated test
+    # dispatch at the DSI boundary; the public functions must not create a
+    # second release or route through a legacy correlation implementation.
+    route_correlation <- function(data_name, analysis_id, variables = NULL,
+                                  server = NULL, datasources = NULL,
+                                  .aggregate) {
+      correlation(data_name, analysis_id, variables, server, datasources,
+                  dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_cor_gaussian_impl = route_correlation,
+      list(
+        cor = ds.vertCor(
+          "data_peer_a", c("x_peer_a", "y_peer_a"),
+          analysis_id = "gaussian_primary", verbose = FALSE,
+          datasources = conns),
+        cor_alias = ds.vert.cor(
+          "data_peer_a", c("x_peer_a", "y_peer_a"),
+          analysis_id = "gaussian_primary", verbose = FALSE,
+          datasources = conns),
+        pca = ds.vertPCA(
+          "data_peer_a", c("x_peer_a", "y_peer_a"), n_components = 2L,
+          analysis_id = "gaussian_primary", verbose = FALSE,
+          datasources = conns),
+        pca_alias = ds.vert.pca(
+          "data_peer_a", c("x_peer_a", "y_peer_a"), n_components = 2L,
+          analysis_id = "gaussian_primary", verbose = FALSE,
+          datasources = conns)),
+      .package = "dsVertClient")
+    expect_s3_class(public$cor, "ds.vertDPCor")
+    expect_identical(public$cor$correlation, cor$correlation)
+    expect_identical(public$cor_alias$frontdoor, "ds.vert.cor")
+    expect_identical(public$cor_alias$route, "ds.vertCor")
+    expect_identical(public$cor_alias$correlation, cor$correlation)
+    expect_s3_class(public$pca, "ds.pca")
+    expect_identical(public$pca$eigenvalues, pca$eigenvalues)
+    expect_identical(public$pca_alias$frontdoor, "ds.vert.pca")
+    expect_identical(public$pca_alias$route, "ds.vertPCA")
+    expect_identical(public$pca_alias$eigenvalues, public$pca$eigenvalues)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
     expect_s3_class(pca, "ds.pca")
     expect_true(all(is.finite(pca$eigenvalues) & pca$eigenvalues >= 0))
     expect_gt(pca$variance_pct[[1L]], 95)
