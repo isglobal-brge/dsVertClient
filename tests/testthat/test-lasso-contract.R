@@ -263,6 +263,27 @@ test_that("historical iterative LASSO admits only the signed Gaussian path", {
   expect_identical(glm_call$missing, "complete_case_capsule")
   expect_false(glm_call$verbose)
 
+  requested_iterations <- integer()
+  testthat::with_mocked_bindings(
+    ds.vertLASSO = function(fit, lambda_1, alpha_grid, max_iter, tol) {
+      requested_iterations <<- c(requested_iterations, as.integer(max_iter))
+      list()
+    },
+    {
+      ds.vertLASSOIter(
+        y ~ x, data = "cohort", family = "gaussian", lambda = 0.1,
+        max_outer = 20L, dp_analysis_id = "gaussian-primary",
+        verbose = FALSE,
+        datasources = list(site_a = structure(list(), class = "mock_connection")))
+      ds.vertLASSOIter(
+        y ~ x, data = "cohort", family = "gaussian", lambda = 0.1,
+        max_outer = 501L, dp_analysis_id = "gaussian-primary",
+        verbose = FALSE,
+        datasources = list(site_a = structure(list(), class = "mock_connection")))
+    },
+    .package = "dsVertClient")
+  expect_identical(requested_iterations, c(500L, 501L))
+
   alias_result <- ds.vert.lasso_iter(
     y ~ x, data = "cohort", family = "gaussian", lambda = 0.1,
     dp_analysis_id = "gaussian-primary", verbose = FALSE,

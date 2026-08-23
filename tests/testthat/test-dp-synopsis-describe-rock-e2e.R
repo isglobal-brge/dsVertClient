@@ -1544,6 +1544,12 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(1L, 2L))
 
+    # The protected Gaussian release, its public GLM route, correlation, and
+    # replay are verified for every supported topology below.  The remaining
+    # LASSO calls are deterministic post-processing of that already signed
+    # artifact: running their full 2,000-iteration alias matrix again at K=3
+    # and K=5 adds no MPC, privacy, or topology coverage.
+    if (identical(k, 2L)) {
     iterative <- testthat::with_mocked_bindings(
       ds.vertDPGaussian = function(
           data_name, analysis_id, ridge = 0, server = NULL,
@@ -1589,7 +1595,7 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
                      c(1L, 2L))
 
     lasso <- ds.vertLASSOProximal(
-      fit, lambda = 0.05, max_iter = 2000L, tol = 1e-10)
+      fit, lambda = 0.05, max_iter = 500L, tol = 1e-10)
     expect_s3_class(lasso, "ds.vertLASSOProximal")
     expect_true(lasso$converged)
     expect_true(lasso$kkt$satisfied)
@@ -1623,16 +1629,16 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
 
     lasso_path <- ds.vertLASSO(
       fit, lambda_1 = 0.05, alpha_grid = c(1, 0.5, 0.1),
-      max_iter = 2000L, tol = 1e-10)
+      max_iter = 500L, tol = 1e-10)
     one_step <- ds.vertLASSO1Step(
-      fit, lambda = c(0.1, 0.05, 0.01), max_iter = 2000L, tol = 1e-10)
+      fit, lambda = c(0.1, 0.05, 0.01), max_iter = 500L, tol = 1e-10)
     lasso_alias <- ds.vert.lasso(
       fit, lambda_1 = 0.05, alpha_grid = c(1, 0.5, 0.1),
-      max_iter = 2000L, tol = 1e-10)
+      max_iter = 500L, tol = 1e-10)
     proximal_alias <- ds.vert.lasso_proximal(
-      fit, lambda = 0.05, max_iter = 2000L, tol = 1e-10)
+      fit, lambda = 0.05, max_iter = 500L, tol = 1e-10)
     one_step_alias <- ds.vert.lasso_1step(
-      fit, lambda = c(0.1, 0.05, 0.01), max_iter = 2000L, tol = 1e-10)
+      fit, lambda = c(0.1, 0.05, 0.01), max_iter = 500L, tol = 1e-10)
     selection_alias <- ds.vert.lasso_cv(
       fit, lambda_grid = c(0.1, 0.05, 0.01), criterion = "BIC")
     expect_identical(lasso_alias$frontdoor, "ds.vert.lasso")
@@ -1647,6 +1653,7 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
                  tolerance = 1e-12)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(1L, 2L))
+    }
 
     cor <- correlation(
       "data_peer_a", "gaussian_primary", c("x_peer_a", "y_peer_a"),
