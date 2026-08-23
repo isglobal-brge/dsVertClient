@@ -1076,8 +1076,8 @@ test_that("real Synopsis causal standardisation is plausible and Rock-replayable
     expect_true(isTRUE(first$released))
     expect_identical(dim(first$table), c(6L, 2L))
     expect_identical(rownames(first$table), c(
-      "young_control", "young_treated", "middle_control",
-      "middle_treated", "old_control", "old_treated"))
+      "middle_control", "middle_treated", "old_control",
+      "old_treated", "young_control", "young_treated"))
     expect_identical(colnames(first$table), c("no", "yes"))
     expect_true(all(is.finite(first$table) & first$table >= 0 &
                     first$table <= 256))
