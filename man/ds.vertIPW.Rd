@@ -2,43 +2,66 @@
 % Please edit documentation in R/ds.vertIPW.R
 \name{ds.vertIPW}
 \alias{ds.vertIPW}
-\title{Quarantined IPW compatibility frontdoor}
+\title{Sticky intercept-only inverse-probability weighting}
 \usage{
 ds.vertIPW(
   outcome_formula,
   propensity_formula,
   data = NULL,
   weights_column = "ipw",
-  outcome_family = "gaussian",
+  outcome_family = "binomial",
+  treated = NULL,
+  event = 2L,
+  level = 0.95,
+  server = NULL,
   verbose = TRUE,
   datasources = NULL,
   ...
 )
 }
 \arguments{
-\item{outcome_formula, propensity_formula, data, weights_column, outcome_family, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+\item{outcome_formula}{A formula exactly of the form \code{outcome ~ treatment}.}
 
-\item{...}{Retained compatibility arguments; not evaluated.}
+\item{propensity_formula}{A formula exactly of the form \code{treatment ~ 1}.}
+
+\item{data}{Protected data frame name or a version-2 \code{ds.vertFederation}.}
+
+\item{weights_column}{Retained for compatibility and must be \code{"ipw"}.}
+
+\item{outcome_family}{Must be \code{"binomial"}.}
+
+\item{treated}{Explicit treated level from the signed binary treatment domain.}
+
+\item{event}{Event outcome column name or index in the signed binary outcome domain.}
+
+\item{level}{DP-mechanism and combined-region coverage level.}
+
+\item{server}{Optional same-owner assertion for the signed table artifact.}
+
+\item{verbose}{Print a short route message.}
+
+\item{datasources}{DataSHIELD connections.}
+
+\item{...}{No additional controls are accepted.}
 }
 \value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
+A \code{ds.vertIPW} object with the intercept-only ATE, conservative
+DP-mechanism and combined DP-plus-sampling regions, and no released
+individual weights or propensity fit.
 }
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and computes or returns no propensity model, weights, effect
-estimate, or diagnostic. The former two-stage implementation was removed:
-it could not establish a signed treatment/outcome binding, bounded weights,
-or a non-rerollable causal release.
+Computes the binary, intercept-only ATE IPW identity from one signed sticky DP
+contingency release. With an intercept-only propensity model, IPW is exactly
+the treated-minus-control risk difference, so no weights, source rows,
+propensity fit, or second private computation is exposed.
 }
 \details{
-Promotion requires signed treatment/outcome binding, a complete
-propensity and outcome workflow, bounded weights and contributions,
-explicit estimand and identification assumptions, and validated
-uncertainty.
+This is the exact intercept-only IPW special case, not a covariate-adjusted
+IPW implementation. The release is one canonical treatment-by-outcome DP table;
+unlimited retries return the same sticky release and do not create another draw.
+Covariate-adjusted IPW, ATT/ATC, continuous outcomes and weighted outcome
+regression remain unavailable.
 }
 \seealso{
-\code{\link{ds.vertMethodStatus}}
+\code{\link{ds.vertDPCausalStandardization}}
 }

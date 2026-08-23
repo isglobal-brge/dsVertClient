@@ -64,8 +64,12 @@ test_that("known unsafe legacy routes are not presented as promoted", {
   quarantined <- ds.vertMethodStatus(status = "quarantine")$method
   newly_quarantined <- c("ds.vertMI", "ds.vert.mi")
   expect_true(all(c(
-    "ds.vertLMM", "ds.vertGLMM", "ds.vertIPW",
+    "ds.vertLMM", "ds.vertGLMM",
     newly_quarantined) %in% quarantined))
+  expect_true(all(ds.vertMethodStatus(c("ds.vertIPW", "ds.vert.ipw"))$
+                  status == "promoted"))
+  expect_true(all(ds.vertMethodStatus(c("ds.vertIPW", "ds.vert.ipw"))$
+                  release_contract == "postprocessing_inherits_input"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertGEE", "ds.vert.gee"))$
                   status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertGEE", "ds.vert.gee"))$

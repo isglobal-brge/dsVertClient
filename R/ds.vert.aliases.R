@@ -531,16 +531,15 @@ ds.vert.glmm <- function(formula, data = NULL, cluster_col,
 ds.vert.ipw <- function(outcome_formula, propensity_formula, data = NULL,
                         precision = c("auto", "high", "fast"),
                         datasources = NULL, ...) {
-  .dsvert_block_retired_remote_route("ipw")
   precision <- match.arg(precision)
+  if (!identical(precision, "auto")) {
+    stop("intercept-only IPW has no precision control", call. = FALSE)
+  }
   datasources <- .dsvert_datasources(datasources)
-  args <- .dsvert_apply_binomial_precision(
-    c(list(outcome_formula = outcome_formula,
-           propensity_formula = propensity_formula,
-           data = data, datasources = datasources),
-      list(...)),
-    precision = precision,
-    force_binomial = TRUE)
+  args <- c(list(outcome_formula = outcome_formula,
+                 propensity_formula = propensity_formula,
+                 data = data, datasources = datasources),
+            list(...))
   out <- do.call(ds.vertIPW, args)
   out <- .dsvert_set_frontdoor(out, "ds.vert.ipw", "ds.vertIPW",
                                length(datasources))

@@ -678,22 +678,22 @@
 
   add(
     c("ds.vertIPW", "ds.vert.ipw"), "ds.vertIPW", "ipw",
-    c("bounded_weight_distribution", "outcome_score_information",
-      "propensity_score_information", "treatment_outcome_binding"),
+    c("validated_sticky_categorical_pair_artifact",
+      "binary_treatment_outcome_domain",
+      "intercept_only_propensity_identity", "zero_call_postprocessing"),
     paste(
-      "Declared ATE, ATT or ATC marginal effect under a bound propensity",
-      "and outcome-model contract."),
-    c("consistency_assumption", "dp_aware_covariance",
-      "exchangeability_assumption", "positivity", "stabilization_contract",
-      "treatment_outcome_contract", "weight_clipping_and_bounds",
-      "weight_provenance_binding"),
-    "requires_new_secure_protocol",
-    c("getObsCountDS", "glmRing63DevianceSumsDS", "glmStandardizeDS",
-      "k2GradientR1DS", "k2GradientR2DS", "k2ShareWeightsDS"),
+      "Binary ATE risk difference in the exact treatment ~ 1 IPW identity",
+      "from one signed treatment-by-outcome contingency artifact."),
+    c("binary_treatment_domain", "binary_outcome_domain",
+      "intercept_only_propensity_model", "treated_level_binding",
+      "mechanism_and_sampling_regions", "no_individual_weights"),
+    "synopsis_release_implemented",
+    character(),
     c("ds.vert.ipw" = "ds.vertIPW"),
-    current_route_status = "legacy_granular_release_quarantine",
+    current_route_status = "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
     inference_implementation_state =
-      "propensity_to_weight_estimand_pipeline_not_implemented")
+      "synopsis_postprocess_implemented")
 
   add(
     c("ds.vertMI", "ds.vert.mi"), "ds.vertMI", "multiple_imputation",

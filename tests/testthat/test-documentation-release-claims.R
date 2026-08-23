@@ -2,14 +2,12 @@ quarantined_doc_sources <- c(
   "ds.vertLMM.R",
   "ds.vertLMM.k3.R",
   "ds.vertGLMM.R",
-  "ds.vertIPW.R",
   "ds.vertMI.R")
 
 quarantined_doc_topics <- c(
   "ds.vertLMM" = "ds.vertLMM.R",
   "ds.vertLMM.k3" = "ds.vertLMM.k3.R",
   "ds.vertGLMM" = "ds.vertGLMM.R",
-  "ds.vertIPW" = "ds.vertIPW.R",
   "ds.vertMI" = "ds.vertMI.R")
 
 .dsvert_public_roxygen_text <- function(filename, function_name) {

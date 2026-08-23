@@ -536,9 +536,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add(c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "quarantine",
       "Experimental PQL point estimation only.",
       "Cluster working moments are too granular and standard errors are unavailable.")
-  add(c("ds.vertIPW", "ds.vert.ipw"), "ds.vertIPW", "quarantine",
-      "Known-weight weighted GLM compatibility only.",
-      "The current route does not derive propensity weights end-to-end.")
+  add(c("ds.vertIPW", "ds.vert.ipw"), "ds.vertIPW", "promoted",
+      paste(
+        "Exact binary intercept-only ATE IPW identity from one validated",
+        "sticky treatment-by-outcome DP contingency artifact; it releases",
+        "no individual weights or propensity fit."),
+      paste(
+        "Only outcome ~ treatment with treatment ~ 1 is available.",
+        "Covariates, ATT/ATC, weighting, outcome regression, standard errors",
+        "and p-values remain unavailable pending a purpose-bound causal",
+        "artifact."))
   add(c("ds.vertMI", "ds.vert.mi"), "ds.vertMI", "quarantine",
       "Quarantined mutating server-local imputation research route.",
       paste(
@@ -662,6 +669,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertDPDirectStandardizationInference",
     "ds.vertDPCausalStandardization",
     "ds.vertDPCausalStandardizationInference",
+    "ds.vertIPW", "ds.vert.ipw",
     "ds.vertDPIndirectStandardization",
     "ds.vertDPIndirectStandardizationInference",
     "ds.vertDPKaplanMeier", "ds.vertDPNelsonAalen",

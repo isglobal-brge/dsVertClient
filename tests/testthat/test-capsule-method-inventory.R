@@ -254,7 +254,7 @@ test_that("retired legacy DP endpoints are absent from public route evidence", {
 test_that("verified legacy disclosure evidence cannot regress to omission", {
   inventory <- .dsvert_capsule_method_inventory()
   standardized_families <- c(
-    "ds.vertGLM", "ds.vertLMM", "ds.vertGLMM", "ds.vertIPW", "ds.vertMI")
+    "ds.vertGLM", "ds.vertLMM", "ds.vertGLMM", "ds.vertMI")
   expect_true(all(vapply(standardized_families, function(method) {
     has_evidence(inventory, method, "glmStandardizeDS",
                  "plaintext_exact_aggregate")
@@ -266,9 +266,12 @@ test_that("verified legacy disclosure evidence cannot regress to omission", {
   expect_true(has_evidence(
     inventory, "ds.vertMI", "dsvertImputeColumnDS",
     "plaintext_exact_aggregate", "imputation_counts"))
-  expect_true(has_evidence(
-    inventory, "ds.vertIPW", "k2ShareWeightsDS",
-    "opaque_peer_ciphertext", "weight_share_blobs"))
+  ipw <- row_for(inventory, "ds.vertIPW")
+  expect_identical(ipw$current_route_status,
+                   "client_only_validated_synopsis_postprocess")
+  expect_identical(ipw$migration_feasibility,
+                   "synopsis_release_implemented")
+  expect_identical(nrow(ipw$legacy_remote_call_evidence[[1L]]), 0L)
   gee <- row_for(inventory, "ds.vertGEE")
   expect_identical(gee$current_route_status,
                    "formal_completed_public_certificate_only")
@@ -328,8 +331,9 @@ test_that("planned artifacts describe the actual biomedical contracts", {
     "bounded_nonnegative_integer_domain", "zero_call_postprocessing") %in%
       artifacts_for(inventory, "ds.vertNBFullRegTheta")))
   expect_true(all(c(
-    "propensity_score_information", "outcome_score_information",
-    "treatment_outcome_binding", "bounded_weight_distribution") %in%
+    "validated_sticky_categorical_pair_artifact",
+    "binary_treatment_outcome_domain",
+    "intercept_only_propensity_identity", "zero_call_postprocessing") %in%
       artifacts_for(inventory, "ds.vertIPW")))
   expect_true(all(c(
     "formal_cox_public_certificate", "formal_cox_sticky_opening",
@@ -412,8 +416,10 @@ test_that("estimands and inference requirements match implemented semantics", {
     "cryptographic_non_rerollable_draw_stream", "rubin_small_sample_df",
     "posterior_parameter_uncertainty") %in%
       requirements_for(inventory, "ds.vertMI")))
-  expect_contains(requirements_for(inventory, "ds.vertIPW"),
-                  "weight_provenance_binding")
+  expect_true(all(c(
+    "intercept_only_propensity_model", "treated_level_binding",
+    "mechanism_and_sampling_regions", "no_individual_weights") %in%
+      requirements_for(inventory, "ds.vertIPW")))
 })
 
 test_that("implemented Synopsis producers and postprocessors are explicit", {
@@ -434,7 +440,8 @@ test_that("implemented Synopsis producers and postprocessors are explicit", {
     "ds.vertDPDirectStandardization",
     "ds.vertDPDirectStandardizationInference",
     "ds.vertDPIndirectStandardization",
-    "ds.vertDPIndirectStandardizationInference")
+    "ds.vertDPIndirectStandardizationInference",
+    "ds.vertIPW", "ds.vert.ipw")
 
   expect_true(all(inventory$migration_feasibility[
     inventory$method %in% synopsis_producers] ==
@@ -565,7 +572,7 @@ test_that("quarantine labels require secure redesign and concrete evidence", {
                     "secure_artifact_not_implemented"))
   expect_true(all(lengths(quarantined$legacy_remote_call_evidence) > 0L))
   expect_true(all(quarantined$canonical_family %in% c(
-    "linear_mixed_model", "glmm", "ipw")))
+    "linear_mixed_model", "glmm")))
   expect_true(all(quarantined$method %in%
                     getNamespaceExports("dsVertClient")))
 })

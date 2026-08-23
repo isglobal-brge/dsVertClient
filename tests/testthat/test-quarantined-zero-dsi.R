@@ -12,7 +12,6 @@
   lmm = c("ds.vertLMM", "ds.vertLMM.k3", "ds.vert.lmm"),
   gee = c("ds.vertGEE", "ds.vert.gee"),
   glmm = c("ds.vertGLMM", "ds.vert.glmm"),
-  ipw = c("ds.vertIPW", "ds.vert.ipw"),
   mi = c("ds.vertMI", "ds.vert.mi")
 )
 
@@ -61,15 +60,6 @@ test_that("the quarantined Cox frontdoor has no unreachable exact-profile fallba
     '.dsvert_block_retired_remote_route("cox")',
     fixed = TRUE)
   expect_false(grepl("ds.vertCoxProfileNonDisclosive", body_text, fixed = TRUE))
-})
-
-test_that("the quarantined IPW frontdoor has no unreachable GLM fallback", {
-  body_text <- paste(deparse(body(ds.vertIPW)), collapse = "\n")
-  expect_match(
-    body_text,
-    '.dsvert_block_retired_remote_route("ipw")',
-    fixed = TRUE)
-  expect_false(grepl("ds.vertGLM", body_text, fixed = TRUE))
 })
 
 test_that("the quarantined MI frontdoor has no unreachable imputation fallback", {
