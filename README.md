@@ -170,7 +170,7 @@ entry point.
 | **Negative binomial** | Historical names are retained but quarantined; no NB2 estimator is advertised as disclosure-safe until a complete bounded score/information capsule and validated joint inference are available. |
 | **Multinomial** | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` are quarantined; slope models fail closed before DSI until a signed raw-design Gram workload exists |
 | **Ordinal (proportional odds)** | Historical joint-Newton names are retained but quarantined and fail before DSI pending a formal bounded proportional-odds capsule. |
-| **Mixed / clustered models** | Historical LMM, GEE and GLMM routes; every public frontdoor is currently quarantined and fails before DSI as reported by `ds.vertMethodStatus()` |
+| **Mixed / clustered models** | `ds.vertGEE()` / `ds.vert.gee()` can read a completed formal binomial/Poisson GLM certificate as an independence-working GEE point estimate. Clustered GEE, LMM and GLMM remain quarantined until their protected cluster artifacts are available. |
 | **Causal / robustness** | `ds.vertIPW()` and `ds.vertMI()` are quarantined compatibility names; their retained implementations are respectively a known-weight workflow and server-local MI, not promoted end-to-end methods |
 | **Penalised regression** | `ds.vertLASSOIter()`, `ds.vertLASSO()` and `ds.vertLASSO1Step()` are promoted Gaussian Synopsis paths when an explicit signed `dp_analysis_id` selects the same-owner artifact; binomial and Poisson iterative paths remain unavailable. The same-owner Gaussian Synopsis post-processors `ds.vertLASSOProximal()` and the information-criterion (not cross-validation) selector `ds.vertLASSOCV()` are promoted without sampling inference |
 
@@ -185,7 +185,7 @@ entry point.
 | Multinomial | Slope route unavailable pending signed `multinomial_design_grams` | same | unsafe local-moment/correlation Gram reconstruction and warm / OVR final-estimator route removed |
 | Ordinal | Quarantined pending a formal proportional-odds capsule | same | warm final-estimator and patient-level joint reconstruction routes removed from the exported API |
 | LMM | Historical K=2 route, quarantined | Historical K>=3 profile, quarantined; `ds.vertLMM.k3()` deprecated | confirmatory inference not supported |
-| GEE | All working-correlation modes are quarantined and fail before DSI | same zero-DSI boundary | robust cluster meat must remain entirely in MPC before promotion |
+| GEE | Completed formal binomial/Poisson certificate, independence working correlation and point coefficients only | same read-only certificate route | no cluster IDs, robust covariance, standard errors, exchangeable/AR(1) correlation or inference |
 | GLMM | Experimental PQL/Laplace routes, quarantined | same maturity boundary | valid final covariance/SE and safer cluster aggregation are incomplete |
 | IPW / MI / LASSO / Cor / PCA / Chisq / Desc | mixed maturity; query `ds.vertMethodStatus()` | same | exact legacy outputs remain subject to composition risk; signed capsule routes retain their explicit formal-DP contract |
 

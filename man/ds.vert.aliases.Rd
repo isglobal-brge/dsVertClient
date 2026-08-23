@@ -98,6 +98,7 @@ ds.vert.gee(
   data = NULL,
   precision = c("auto", "high", "fast"),
   datasources = NULL,
+  formal_analysis_id = NULL,
   ...
 )
 
@@ -168,9 +169,10 @@ sites or a complete named per-site character/list map.}
 estimator/route selector, fixed-point ring, and progress flag.}
 
 \item{formal_analysis_id}{Custodian-owned selector for an already completed
-formal Cox profile or discrete-time public certificate. It cannot start a Cox
-computation; the discrete selector remains a distinct fixed-grid
-pooled-logistic estimand.}
+formal Cox profile, binomial/Poisson GLM certificate, or discrete-time
+public certificate. It cannot start a computation; the GEE adapter accepts
+only the formal GLM independence-working point-estimate scope, and the
+discrete selector remains a distinct fixed-grid pooled-logistic estimand.}
 
 \item{cluster_col}{Grouping column for the mixed-model routes.}
 

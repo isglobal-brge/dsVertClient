@@ -7,7 +7,6 @@ quarantined_doc_sources <- c(
   "ds.vertOrdinalJointNewton.R",
   "ds.vertLMM.R",
   "ds.vertLMM.k3.R",
-  "ds.vertGEE.R",
   "ds.vertGLMM.R",
   "ds.vertIPW.R",
   "ds.vertMI.R")
@@ -21,7 +20,6 @@ quarantined_doc_topics <- c(
   "ds.vertOrdinalJointNewton" = "ds.vertOrdinalJointNewton.R",
   "ds.vertLMM" = "ds.vertLMM.R",
   "ds.vertLMM.k3" = "ds.vertLMM.k3.R",
-  "ds.vertGEE" = "ds.vertGEE.R",
   "ds.vertGLMM" = "ds.vertGLMM.R",
   "ds.vertIPW" = "ds.vertIPW.R",
   "ds.vertMI" = "ds.vertMI.R")
@@ -304,12 +302,15 @@ test_that("README maturity and numeric claims match the runtime registry", {
   numeric <- paste(readLines(paths[[2L]], warn = FALSE), collapse = "\n")
 
   gee <- ds.vertMethodStatus(c("ds.vertGEE", "ds.vert.gee"))
-  expect_true(all(gee$status == "quarantine"))
+  expect_true(all(gee$status == "promoted"))
   expect_match(
     readme,
-    "All working-correlation modes are quarantined and fail before DSI",
+    "independence-working GEE point estimate",
     fixed = TRUE)
-  expect_false(grepl("Independence is provisional", readme, fixed = TRUE))
+  expect_match(
+    numeric,
+    "Read-only independence-working point adapter",
+    fixed = TRUE)
 
   penalised <- ds.vertMethodStatus(c(
     "ds.vertLASSOIter", "ds.vertLASSO", "ds.vertLASSO1Step",
@@ -341,6 +342,22 @@ test_that("README maturity and numeric claims match the runtime registry", {
     numeric, "currently_numerically_certified = FALSE", fixed = TRUE)
   expect_false(grepl(
     "permitted to report `numerically_certified`", numeric, fixed = TRUE))
+})
+
+test_that("formal GEE help states its narrow certified-reader contract", {
+  package_root <- dirname(.dsvert_client_source_root())
+  source <- .dsvert_public_roxygen_text("ds.vertGEE.R", "ds.vertGEE")
+  rd_path <- file.path(package_root, "man", "ds.vertGEE.Rd")
+  expect_true(file.exists(rd_path))
+  rd <- paste(readLines(rd_path, warn = FALSE), collapse = "\n")
+
+  for (text in list(source, rd)) {
+    expect_match(text, "formal_analysis_id", fixed = TRUE)
+    expect_match(text, "independence", fixed = TRUE)
+    expect_match(text, "two-authority", fixed = TRUE)
+    expect_match(text, "sandwich covariance", fixed = TRUE)
+    expect_match(text, "failing locally before DSI", fixed = TRUE)
+  }
 })
 
 test_that("the installed single-mode plan cannot describe a live dual profile", {

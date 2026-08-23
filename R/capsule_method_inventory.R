@@ -653,17 +653,18 @@
 
   add(
     c("ds.vertGEE", "ds.vert.gee"), "ds.vertGEE", "gee",
-    c("bounded_cluster_score_meat", "cluster_working_correlation",
-      "model_score_hessian", "numeric_cross_products_same_and_cross_owner"),
-    "Population-average GEE coefficients and robust covariance.",
-    c("cluster_contribution_bounds", "convergence", "dp_aware_covariance",
-      "identifiability", "working_correlation_contract"),
-    "requires_new_secure_protocol",
-    c("dsvertGEEAR1OrderBroadcastDS", "dsvertPearsonR2ColDS",
-      "dsvertPerClusterSumShareDS", "getObsCountDS", "glmStandardizeDS",
-      "k2GradientR1DS", "k2GradientR2DS"),
+    c("formal_glm_public_certificate", "formal_glm_sticky_opening",
+      "formal_glm_two_authority_signatures"),
+    paste(
+      "Binomial/Poisson independence-working GEE point coefficients from",
+      "one completed formal GLM certificate."),
+    c("canonical_certificate_validation", "completed_release_only",
+      "independence_working_correlation", "no_cluster_covariance_or_inference",
+      "two_authority_signatures"),
+    "formal_public_certificate_implemented",
+    character(),
     c("ds.vert.gee" = "ds.vertGEE"),
-    current_route_status = "legacy_granular_release_quarantine")
+    current_route_status = "formal_completed_public_certificate_only")
 
   add(
     c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "glmm",

@@ -256,7 +256,7 @@ test_that("verified legacy disclosure evidence cannot regress to omission", {
   standardized_families <- c(
     "ds.vertGLM", "ds.vertNBFullRegTheta",
     "ds.vertMultinomJointNewton", "ds.vertOrdinalJointNewton",
-    "ds.vertLMM", "ds.vertGEE", "ds.vertGLMM", "ds.vertIPW",
+    "ds.vertLMM", "ds.vertGLMM", "ds.vertIPW",
     "ds.vertMI")
   expect_true(all(vapply(standardized_families, function(method) {
     has_evidence(inventory, method, "glmStandardizeDS",
@@ -284,9 +284,17 @@ test_that("verified legacy disclosure evidence cannot regress to omission", {
   expect_true(has_evidence(
     inventory, "ds.vertIPW", "k2ShareWeightsDS",
     "opaque_peer_ciphertext", "weight_share_blobs"))
-  expect_true(has_evidence(
-    inventory, "ds.vertGEE", "dsvertGEEAR1OrderBroadcastDS",
-    "opaque_peer_ciphertext", "peer_blob"))
+  gee <- row_for(inventory, "ds.vertGEE")
+  expect_identical(gee$current_route_status,
+                   "formal_completed_public_certificate_only")
+  expect_identical(gee$migration_feasibility,
+                   "formal_public_certificate_implemented")
+  expect_true(all(c(
+    "formal_glm_public_certificate", "formal_glm_sticky_opening",
+    "formal_glm_two_authority_signatures") %in% gee$artifact_requirements[[1L]]))
+  # The retired implementation remains inventoried as historical disclosure
+  # evidence, but it is not a current route for this narrow certificate reader.
+  expect_gte(length(gee$legacy_remote_call_evidence[[1L]]), 1L)
   expect_true(has_evidence(
     inventory, "ds.vertGLM", "k2GradientR1DS",
     "opaque_peer_ciphertext", "encrypted_peer_round"))
@@ -572,7 +580,7 @@ test_that("quarantine labels require secure redesign and concrete evidence", {
                     "secure_artifact_not_implemented"))
   expect_true(all(lengths(quarantined$legacy_remote_call_evidence) > 0L))
   expect_true(all(quarantined$canonical_family %in% c(
-    "linear_mixed_model", "gee", "glmm", "ipw", "negative_binomial")))
+    "linear_mixed_model", "glmm", "ipw", "negative_binomial")))
   expect_true(all(quarantined$method %in%
                     getNamespaceExports("dsVertClient")))
 })

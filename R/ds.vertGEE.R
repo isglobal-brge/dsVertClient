@@ -1,18 +1,25 @@
-#' @title Quarantined GEE compatibility frontdoor
-#' @description This exported name is retained for API compatibility. It
-#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
-#'   call and computes or returns no GEE coefficient, working correlation,
-#'   sandwich covariance, cluster statistic, or diagnostic. Retained
-#'   implementation code after the gate is unreachable through this public
-#'   frontdoor and carries no disclosure, DP, accuracy, or availability claim.
-#' @details Promotion requires contribution-bounded cluster score/meat
-#'   artifacts, a protected working-correlation contract and validated robust
-#'   covariance.
-#' @param formula,data,family,id_col,order_col,corstr,max_iter,tol,lambda,working_max_iter,ring,binomial_sigmoid_intervals,verbose,datasources
-#'   Retained compatibility arguments. They are not evaluated because the
-#'   public frontdoor fails locally.
-#' @return No fitted object. The function raises
-#'   \code{dsvert_route_unavailable} before DSI.
+#' @title Formal independent-working GEE point estimate
+#' @description With a custodian-configured \code{formal_analysis_id}, this
+#'   frontdoor returns the completed, two-authority-certified binomial or
+#'   Poisson GLM point estimate under an independence working correlation.
+#'   The estimating equation is identical to the corresponding independent
+#'   GEE score. It never starts a computation, chooses privacy controls, or
+#'   exposes a cluster statistic.
+#' @details This is deliberately narrower than a general GEE: cluster ids,
+#'   exchangeable and AR(1) correlations, sandwich covariance, standard errors
+#'   and inference remain unavailable until their contribution-bounded,
+#'   protected artifacts exist. Calls without \code{formal_analysis_id} keep
+#'   failing locally before DSI.
+#' @param formula,data,family,corstr,verbose,datasources Formula, registered
+#'   data name, binomial/Poisson family, working correlation, progress flag and
+#'   DataSHIELD connections. Only \code{corstr = "independence"} is available.
+#' @param formal_analysis_id Custodian-configured completed formal GLM
+#'   certificate selector.
+#' @param id_col,order_col,max_iter,tol,lambda,working_max_iter,ring,binomial_sigmoid_intervals
+#'   Retained clustered-GEE controls. They are unavailable with a formal point
+#'   release and are never silently ignored.
+#' @return A \code{ds.vertGEE} point-estimate object without covariance,
+#'   standard errors, working-correlation estimate or inference.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertGEE <- function(formula, data = NULL,
@@ -24,7 +31,17 @@ ds.vertGEE <- function(formula, data = NULL,
                        working_max_iter = NULL,
                        ring = 63L,
                        binomial_sigmoid_intervals = NULL,
-                       verbose = TRUE, datasources = NULL) {
+                       verbose = TRUE, datasources = NULL,
+                       formal_analysis_id = NULL) {
+  if (!is.null(formal_analysis_id)) {
+    corstr <- match.arg(corstr)
+    return(.dsvert_formal_gee_independence_adapter(
+      explicit_arguments = names(match.call())[-1L],
+      formula = if (missing(formula)) NULL else formula,
+      data = data, family = family, id_col = id_col, order_col = order_col,
+      corstr = corstr, verbose = verbose, datasources = datasources,
+      formal_analysis_id = formal_analysis_id))
+  }
   .dsvert_block_retired_remote_route("gee")
   family <- match.arg(family)
   corstr <- match.arg(corstr)
@@ -425,6 +442,70 @@ ds.vertGEE <- function(formula, data = NULL,
     call               = match.call())
   class(out) <- c("ds.vertGEE", "list")
   out
+}
+
+.dsvert_formal_gee_independence_adapter <- function(
+    explicit_arguments, formula, data, family, id_col, order_col, corstr,
+    verbose, datasources, formal_analysis_id) {
+  if (!is.character(family) || length(family) != 1L || is.na(family) ||
+      !family %in% c("binomial", "poisson")) {
+    stop(paste(
+      "formal_analysis_id GEE supports only family='binomial' or",
+      "family='poisson'"), call. = FALSE)
+  }
+  if (!is.character(corstr) || length(corstr) != 1L || is.na(corstr) ||
+      !identical(corstr, "independence")) {
+    stop(paste(
+      "formal_analysis_id GEE supports only corstr='independence';",
+      "cluster working correlations remain unavailable"), call. = FALSE)
+  }
+  if (!is.null(id_col) || !is.null(order_col)) {
+    stop(paste(
+      "formal_analysis_id GEE does not accept cluster id_col or order_col;",
+      "robust clustered covariance remains unavailable"), call. = FALSE)
+  }
+  allowed <- c("formula", "data", "family", "corstr", "verbose",
+               "datasources", "formal_analysis_id")
+  unexpected <- setdiff(explicit_arguments, allowed)
+  if (length(unexpected)) {
+    stop(paste(
+      "formal_analysis_id GEE does not accept legacy controls:",
+      paste(sort(unexpected, method = "radix"), collapse = ", ")),
+      call. = FALSE)
+  }
+  fit <- ds.vertGLM(
+    formula = formula, data = data, family = family, verbose = verbose,
+    datasources = datasources, formal_analysis_id = formal_analysis_id)
+  if (!inherits(fit, "dsvert_formal_dp_glm") ||
+      !identical(fit$family, family) ||
+      !is.numeric(fit$coefficients) || !length(fit$coefficients) ||
+      is.null(names(fit$coefficients)) || any(!is.finite(fit$coefficients)) ||
+      !is.null(fit$covariance) || !is.null(fit$std_errors) ||
+      !isTRUE(fit$source_values_exposed == FALSE) ||
+      !isTRUE(fit$intermediate_values_exposed == FALSE)) {
+    stop("formal GLM point release cannot support formal independent GEE",
+         call. = FALSE)
+  }
+  result <- list(
+    status = "public_certified_independence_gee_point_estimate",
+    family = family,
+    corstr = "independence",
+    coefficients = fit$coefficients,
+    artifact_id = fit$artifact_id,
+    certificate_sha256 = fit$certificate_sha256,
+    formal_analysis_id = fit$formal_analysis_id,
+    formula_sha256 = fit$formula_sha256,
+    robust_covariance = NULL,
+    std_errors = NULL,
+    cluster_correlation_estimated = FALSE,
+    cluster_columns = NULL,
+    source_values_exposed = FALSE,
+    intermediate_values_exposed = FALSE,
+    production_ready = FALSE,
+    inference = "unavailable_without_protected_cluster_score_and_meat",
+    called_via = "ds.vertGEE_formal_analysis_id")
+  class(result) <- c("dsvert_formal_dp_gee", "ds.vertGEE", "list")
+  result
 }
 
 #' @keywords internal
@@ -3074,6 +3155,13 @@ ds.vertGEE <- function(formula, data = NULL,
 
 #' @export
 print.ds.vertGEE <- function(x, ...) {
+  if (inherits(x, "dsvert_formal_dp_gee")) {
+    cat("dsVert formal independent-working GEE point estimate\n")
+    cat("  Family :", x$family, "\n")
+    print(x$coefficients)
+    cat("  No robust covariance, standard errors or inference are released.\n")
+    return(invisible(x))
+  }
   cat("dsVert GEE (", x$corstr, " working correlation)\n", sep = "")
   cat(sprintf("  Family: %s   N = %d\n", x$family, x$n_obs))
   if (!is.null(x$estimand)) {

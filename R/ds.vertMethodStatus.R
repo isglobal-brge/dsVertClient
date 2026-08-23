@@ -512,9 +512,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add("ds.vertLMM.k3", "ds.vertLMM.k3", "quarantine",
       "Deprecated compatibility wrapper only.",
       "Inherits approximate K>=3 LMM and cluster-disclosure limitations.")
-  add(c("ds.vertGEE", "ds.vert.gee"), "ds.vertGEE", "quarantine",
-      "Research diagnostics only.",
-      "Cluster score matrices are reconstructed client-side; robust meat must move into MPC.")
+  add(c("ds.vertGEE", "ds.vert.gee"), "ds.vertGEE", "promoted",
+      paste(
+        "A completed two-authority formal binomial/Poisson GLM certificate",
+        "can be read as an independence-working GEE point estimate; the",
+        "score equation is the same and no new private computation occurs."),
+      paste(
+        "Only corstr='independence' is available. Cluster identifiers,",
+        "exchangeable/AR(1) correlations, sandwich covariance, standard",
+        "errors and inference remain unavailable until a protected cluster",
+        "score-and-meat artifact is implemented."))
   add(c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "quarantine",
       "Experimental PQL point estimation only.",
       "Cluster working moments are too granular and standard errors are unavailable.")
@@ -677,7 +684,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   formal_cox_public <- c(
     "ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
     "ds.vertCoxProfileNonDisclosive",
-    "ds.vertCoxDiscreteNonDisclosive")
+    "ds.vertCoxDiscreteNonDisclosive",
+    "ds.vertGEE", "ds.vert.gee")
   out$release_contract[out$method %in% formal_cox_public] <-
     "formal_completed_public_certificate"
 

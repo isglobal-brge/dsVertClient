@@ -34,9 +34,10 @@
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag.
 #' @param formal_analysis_id Custodian-owned selector for an already completed
-#'   formal Cox profile or discrete-time public certificate. It cannot start a
-#'   Cox computation; the discrete selector remains a distinct fixed-grid
-#'   pooled-logistic estimand.
+#'   formal Cox profile, binomial/Poisson GLM certificate, or discrete-time
+#'   public certificate. It cannot start a computation; the GEE adapter accepts
+#'   only the formal GLM independence-working point-estimate scope, and the
+#'   discrete selector remains a distinct fixed-grid pooled-logistic estimand.
 #' @param max_iter,inner_iter,max_outer,tol Iteration caps and convergence
 #'   tolerance for the iterative fits.
 #' @param outcome_formula,propensity_formula Outcome and propensity models (IPW).
@@ -438,7 +439,21 @@ ds.vert.lmm <- function(formula, data = NULL, cluster_col,
 #' @export
 ds.vert.gee <- function(formula, data = NULL,
                         precision = c("auto", "high", "fast"),
-                        datasources = NULL, ...) {
+                        datasources = NULL, formal_analysis_id = NULL, ...) {
+  if (!is.null(formal_analysis_id)) {
+    explicit_arguments <- names(match.call())[-1L]
+    if ("precision" %in% explicit_arguments) {
+      stop(paste(
+        "formal_analysis_id GEE does not accept legacy controls:",
+        "precision"), call. = FALSE)
+    }
+    out <- do.call(ds.vertGEE, c(
+      list(formula = formula, data = data, datasources = datasources,
+           formal_analysis_id = formal_analysis_id),
+      list(...)))
+    return(.dsvert_set_frontdoor(out, "ds.vert.gee", "ds.vertGEE",
+                                 length(datasources)))
+  }
   .dsvert_block_retired_remote_route("gee")
   precision <- match.arg(precision)
   datasources <- .dsvert_datasources(datasources)

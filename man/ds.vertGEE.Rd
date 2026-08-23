@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertGEE.R
 \name{ds.vertGEE}
 \alias{ds.vertGEE}
-\title{Quarantined GEE compatibility frontdoor}
+\title{Formal independent-working GEE point estimate}
 \usage{
 ds.vertGEE(
   formula,
@@ -18,29 +18,39 @@ ds.vertGEE(
   ring = 63L,
   binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  formal_analysis_id = NULL
 )
 }
 \arguments{
-\item{formula, data, family, id_col, order_col, corstr, max_iter, tol, lambda, working_max_iter, ring, binomial_sigmoid_intervals, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+\item{formula, data, family, corstr, verbose, datasources}{Formula, registered
+data name, binomial/Poisson family, working correlation, progress flag and
+DataSHIELD connections. Only \code{corstr = "independence"} is available.}
+
+\item{id_col, order_col, max_iter, tol, lambda, working_max_iter, ring, binomial_sigmoid_intervals}{Retained clustered-GEE controls. They are unavailable with a formal point
+release and are never silently ignored.}
+
+\item{formal_analysis_id}{Custodian-configured completed formal GLM
+certificate selector.}
 }
 \value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
+A \code{ds.vertGEE} point-estimate object without covariance,
+standard errors, working-correlation estimate or inference.
 }
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and computes or returns no GEE coefficient, working correlation,
-sandwich covariance, cluster statistic, or diagnostic. Retained
-implementation code after the gate is unreachable through this public
-frontdoor and carries no disclosure, DP, accuracy, or availability claim.
+With a custodian-configured \code{formal_analysis_id}, this
+frontdoor returns the completed, two-authority-certified binomial or
+Poisson GLM point estimate under an independence working correlation.
+The estimating equation is identical to the corresponding independent
+GEE score. It never starts a computation, chooses privacy controls, or
+exposes a cluster statistic.
 }
 \details{
-Promotion requires contribution-bounded cluster score/meat
-artifacts, a protected working-correlation contract and validated robust
-covariance.
+This is deliberately narrower than a general GEE: cluster ids,
+exchangeable and AR(1) correlations, sandwich covariance, standard errors
+and inference remain unavailable until their contribution-bounded,
+protected artifacts exist. Calls without \code{formal_analysis_id} keep
+failing locally before DSI.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}
