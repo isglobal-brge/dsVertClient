@@ -2,12 +2,13 @@
 % Please edit documentation in R/ds.vertLMM.k3.R
 \name{ds.vertLMM.k3}
 \alias{ds.vertLMM.k3}
-\title{Quarantined deprecated K>=3 LMM frontdoor}
+\title{Signed random-intercept LMM K>=3 compatibility frontdoor}
 \usage{
 ds.vertLMM.k3(
   formula,
   data,
   cluster_col,
+  analysis_id = NULL,
   rho_lo = 0.001,
   rho_hi = 0.999,
   tol = 1e-04,
@@ -18,19 +19,26 @@ ds.vertLMM.k3(
 )
 }
 \arguments{
-\item{formula, data, cluster_col, rho_lo, rho_hi, tol, max_outer, ring, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+\item{formula}{A formula exactly of the form \code{outcome ~ 1}.}
+
+\item{data}{Signed protected dataset name or federation.}
+
+\item{cluster_col}{Cluster column required to match the signed artifact.}
+
+\item{analysis_id}{Custodian-configured signed random-intercept artifact id.}
+
+\item{rho_lo, rho_hi, tol, max_outer, ring, verbose}{Retained compatibility
+controls; they do not alter the signed Synopsis estimand.}
+
+\item{datasources}{At least three DataSHIELD connections.}
 }
 \value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
+A \code{ds.vertLMM} / \code{ds.vertDPLMM} object.
 }
 \description{
-This exported deprecated name is retained for API
-compatibility. It raises a typed \code{dsvert_route_unavailable}
-condition before any DSI call and returns no mixed model. Retained K>=3
-implementation code after the gate is unreachable through this public
-frontdoor and carries no disclosure, DP, accuracy, or availability claim.
+This historical K>=3 name delegates only to the signed
+random-intercept method-of-moments Synopsis route. It does not activate
+the retired K>=3 profile/REML implementation.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

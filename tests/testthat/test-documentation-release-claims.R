@@ -1,10 +1,8 @@
 quarantined_doc_sources <- c(
-  "ds.vertLMM.k3.R",
   "ds.vertGLMM.R",
   "ds.vertMI.R")
 
 quarantined_doc_topics <- c(
-  "ds.vertLMM.k3" = "ds.vertLMM.k3.R",
   "ds.vertGLMM" = "ds.vertGLMM.R",
   "ds.vertMI" = "ds.vertMI.R")
 

@@ -41,12 +41,6 @@
       "For y ~ 1, pass a validated ds.vertDPFrequency object and a complete ",
       "clinical category order to ds.vertOrdinal(..., frequency = ...); ",
       "covariate proportional-odds models remain unavailable.")),
-  lmm_k3 = list(
-    method = "ds.vertLMM.k3",
-    state = "legacy_k3_lmm_route_quarantined",
-    replacement = paste0(
-      "Use ds.vertLMM(..., analysis_id = ...) for the signed ",
-      "random-intercept method-of-moments route; K>=3 ML/REML remains unavailable.")),
   gee = list(
     method = "ds.vertGEE",
     state = "cluster_granular_gee_route_quarantined",

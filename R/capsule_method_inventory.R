@@ -613,7 +613,8 @@
     inference_implementation_state = "frequency_postprocess_implemented")
 
   add(
-    c("ds.vertDPLMM", "ds.vertLMM", "ds.vert.lmm"), "ds.vertDPLMM",
+    c("ds.vertDPLMM", "ds.vertLMM", "ds.vert.lmm", "ds.vertLMM.k3"),
+    "ds.vertDPLMM",
     "linear_mixed_model",
     c("admitted_count", "bounded_random_intercept_moments",
       "public_cluster_size_cap", "signed_lmm_artifact",
@@ -627,30 +628,13 @@
       "no_sampling_inference"),
     "synopsis_release_implemented", character(),
     c("ds.vertLMM" = "ds.vertDPLMM",
-      "ds.vert.lmm" = "ds.vertDPLMM"),
+      "ds.vert.lmm" = "ds.vertDPLMM",
+      "ds.vertLMM.k3" = "ds.vertDPLMM"),
+    alias_kinds = c("ds.vertLMM.k3" = "compatibility_wrapper"),
     current_route_status = "formal_sticky_synopsis_artifact",
     artifact_implementation_state =
       "validated_same_owner_synopsis_adapter_implemented",
     inference_implementation_state = "synopsis_postprocess_implemented")
-
-  add(
-    "ds.vertLMM.k3", "ds.vertLMM", "linear_mixed_model",
-    c("bounded_cluster_cross_products", "bounded_cluster_moments",
-      "cluster_random_effect_design", "lmm_score_information"),
-    paste(
-      "Deprecated K>=3 subroute for random-intercept or declared",
-      "random-slope LMM fixed effects and variance components."),
-    c("cluster_contribution_bounds", "dp_aware_covariance",
-      "identifiability", "k_ge_3_only", "ml_reml_contract",
-      "random_effects_contract"),
-    "requires_new_secure_protocol",
-    c("dsvertClusterResidualsDS", "dsvertClusterSizesDS",
-      "dsvertClusterZtZDS", "dsvertLMMPerClusterSumDS",
-      "dsvertLMMVarianceComponentsDS", "dsvertPerClusterSumShareDS",
-      "getObsCountDS", "glmStandardizeDS", "k2GradientR1DS",
-      "k2GradientR2DS"),
-    alias_kinds = c("ds.vertLMM.k3" = "deprecated_subroute"),
-    current_route_status = "legacy_granular_release_quarantine")
 
   add(
     c("ds.vertGEE", "ds.vert.gee"), "ds.vertGEE", "gee",

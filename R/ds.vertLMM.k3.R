@@ -1,29 +1,33 @@
-#' @title Quarantined deprecated K>=3 LMM frontdoor
-#' @description This exported deprecated name is retained for API
-#'   compatibility. It raises a typed \code{dsvert_route_unavailable}
-#'   condition before any DSI call and returns no mixed model. Retained K>=3
-#'   implementation code after the gate is unreachable through this public
-#'   frontdoor and carries no disclosure, DP, accuracy, or availability claim.
-#' @param formula,data,cluster_col,rho_lo,rho_hi,tol,max_outer,ring,verbose,datasources
-#'   Retained compatibility arguments. They are not evaluated because the
-#'   public frontdoor fails locally.
-#' @return No fitted object. The function raises
-#'   \code{dsvert_route_unavailable} before DSI.
+#' @title Signed random-intercept LMM K>=3 compatibility frontdoor
+#' @description This historical K>=3 name delegates only to the signed
+#'   random-intercept method-of-moments Synopsis route. It does not activate
+#'   the retired K>=3 profile/REML implementation.
+#' @param formula A formula exactly of the form \code{outcome ~ 1}.
+#' @param data Signed protected dataset name or federation.
+#' @param cluster_col Cluster column required to match the signed artifact.
+#' @param analysis_id Custodian-configured signed random-intercept artifact id.
+#' @param rho_lo,rho_hi,tol,max_outer,ring,verbose Retained compatibility
+#'   controls; they do not alter the signed Synopsis estimand.
+#' @param datasources At least three DataSHIELD connections.
+#' @return A \code{ds.vertLMM} / \code{ds.vertDPLMM} object.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertLMM.k3 <- function(formula, data, cluster_col,
+                           analysis_id = NULL,
                            rho_lo = 0.001, rho_hi = 0.999,
                            tol = 1e-4, max_outer = 30L,
                            ring = c("ring127", "ring63"),
                            verbose = TRUE, datasources = NULL) {
-  .dsvert_block_retired_remote_route("lmm_k3")
-  .Deprecated("ds.vertLMM", package = "dsVertClient",
-              msg = paste("ds.vertLMM.k3() is deprecated; call ds.vertLMM(),",
-                          "which dispatches to the K>=3 algorithm automatically."))
-  .ds_vertLMM_k3_impl(formula = formula, data = data, cluster_col = cluster_col,
-                      rho_lo = rho_lo, rho_hi = rho_hi, tol = tol,
-                      max_outer = max_outer, ring = ring, verbose = verbose,
-                      datasources = datasources)
+  datasources <- .dsvert_datasources(datasources)
+  if (length(datasources) < 3L) {
+    stop("ds.vertLMM.k3 requires at least three DataSHIELD connections",
+         call. = FALSE)
+  }
+  fit <- ds.vertLMM(
+    formula = formula, data = data, cluster_col = cluster_col,
+    analysis_id = analysis_id, reml = FALSE, max_iter = max_outer,
+    tol = tol, ring = ring, verbose = verbose, datasources = datasources)
+  .dsvert_set_frontdoor(fit, "ds.vertLMM.k3", "ds.vertLMM", length(datasources))
 }
 
 #' @keywords internal

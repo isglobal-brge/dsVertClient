@@ -160,6 +160,7 @@ test_that("aliases and wrappers retain honest routing semantics", {
     "ds.vert.lasso_proximal" = "ds.vertLASSOProximal",
     "ds.vertLMM" = "ds.vertDPLMM",
     "ds.vert.lmm" = "ds.vertDPLMM",
+    "ds.vertLMM.k3" = "ds.vertDPLMM",
     "ds.vert.lr" = "ds.vertLR",
     "ds.vert.mi" = "ds.vertMI",
     "ds.vert.multinom" = "ds.vertMultinom",
@@ -173,7 +174,7 @@ test_that("aliases and wrappers retain honest routing semantics", {
   wrappers <- c(
     "ds.vert.cox", "ds.vert.coxph", "ds.vertCoxProfileNonDisclosive",
     "ds.vertMultinomJoint", "ds.vertMultinomJointNewton",
-    "ds.vertOrdinalJointNewton")
+    "ds.vertOrdinalJointNewton", "ds.vertLMM.k3")
   inventory <- .dsvert_capsule_method_inventory()
   actual <- inventory$alias_of
   names(actual) <- inventory$method
@@ -189,10 +190,9 @@ test_that("aliases and wrappers retain honest routing semantics", {
       "compatibility_alias"))
 
   k3 <- row_for(inventory, "ds.vertLMM.k3")
-  expect_identical(k3$canonical_method, "ds.vertLMM")
-  expect_true(is.na(k3$alias_of))
-  expect_identical(k3$alias_kind, "deprecated_subroute")
-  expect_contains(k3$inference_requirements[[1L]], "k_ge_3_only")
+  expect_identical(k3$canonical_method, "ds.vertDPLMM")
+  expect_identical(k3$alias_of, "ds.vertDPLMM")
+  expect_identical(k3$alias_kind, "compatibility_wrapper")
 
   contract_columns <- c(
     "canonical_method", "canonical_family", "artifact_requirements",

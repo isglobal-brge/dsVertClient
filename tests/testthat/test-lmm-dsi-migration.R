@@ -15,7 +15,7 @@ test_that("LMM orchestrators have no direct DSI aggregate surface", {
   expect_true(grepl(".dsvert_cleanup_best_effort", source, fixed = TRUE))
 })
 
-test_that("LMM help distinguishes the signed moment route from quarantined K>=3", {
+test_that("LMM help keeps both historical names on the signed moment route", {
   main <- paste(.lmm_client_source("ds.vertLMM.R"), collapse = "\n")
   k3 <- paste(.lmm_client_source("ds.vertLMM.k3.R"), collapse = "\n")
 
@@ -23,11 +23,9 @@ test_that("LMM help distinguishes the signed moment route from quarantined K>=3"
   expect_match(main, "method-of-moments", fixed = TRUE)
   expect_match(main, "slopes, ML/REML", fixed = TRUE)
   expect_match(main, "@return A \\code{ds.vertLMM}", fixed = TRUE)
-  expect_match(k3, "raises a typed \\code{dsvert_route_unavailable}",
-               fixed = TRUE)
-  expect_match(k3, "before any DSI call", fixed = TRUE)
-  expect_match(k3, "public frontdoor fails locally", fixed = TRUE)
-  expect_match(k3, "@return No fitted object", fixed = TRUE)
+  expect_match(k3, "signed random-intercept", fixed = TRUE)
+  expect_match(k3, "method-of-moments", fixed = TRUE)
+  expect_match(k3, "@return A \\code{ds.vertLMM}", fixed = TRUE)
   expect_false(grepl("individual observations are not revealed to the client",
                      main, fixed = TRUE))
   expect_false(grepl("analyst client never", k3, fixed = TRUE))
@@ -63,7 +61,7 @@ test_that("K>=3 LMM diagnostics never label the route as exactly K=3", {
   expect_match(printed[[1L]], "K>=3", fixed = TRUE)
   expect_false(any(grepl("K=3", printed, fixed = TRUE)))
   source <- paste(.lmm_client_source("ds.vertLMM.k3.R"), collapse = "\n")
-  expect_match(source, "requires K>=3 connections", fixed = TRUE)
+  expect_match(source, "at least three DataSHIELD connections", fixed = TRUE)
   expect_false(grepl("DataSHIELD K=3 connections", source, fixed = TRUE))
 })
 

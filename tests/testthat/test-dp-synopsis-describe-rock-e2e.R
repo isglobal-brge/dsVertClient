@@ -1869,7 +1869,10 @@ test_that("real random-intercept LMM Synopsis is plausible and Rock-replayable a
           analysis_id = "lmm_primary", reml = FALSE, datasources = conns),
         alias = ds.vert.lmm(
           y_peer_a ~ 1, data = "data_peer_a", cluster_col = "site_peer_a",
-          analysis_id = "lmm_primary", datasources = conns)),
+          analysis_id = "lmm_primary", datasources = conns),
+        k3 = if (length(conns) >= 3L) ds.vertLMM.k3(
+          y_peer_a ~ 1, data = "data_peer_a", cluster_col = "site_peer_a",
+          analysis_id = "lmm_primary", datasources = conns) else NULL),
       .package = "dsVertClient")
     expect_s3_class(public$typed, "ds.vertDPLMM")
     expect_s3_class(public$legacy, "ds.vertLMM")
@@ -1880,6 +1883,13 @@ test_that("real random-intercept LMM Synopsis is plausible and Rock-replayable a
     expect_identical(public$typed$final_vector_root, fit$final_vector_root)
     expect_identical(public$legacy$reml, FALSE)
     expect_identical(public$legacy$cluster_sizes, NULL)
+    if (k >= 3L) {
+      expect_s3_class(public$k3, "ds.vertLMM")
+      expect_identical(public$k3$coefficients, fit$coefficients)
+      expect_identical(public$k3$frontdoor, "ds.vertLMM.k3")
+    } else {
+      expect_null(public$k3)
+    }
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(1L, 2L))
 

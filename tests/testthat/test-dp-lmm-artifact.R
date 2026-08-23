@@ -166,6 +166,16 @@ test_that("historical LMM names only admit the signed moment estimand", {
     analysis_id = "lmm_a")
   expect_s3_class(alias, "ds.vertLMM")
   expect_identical(alias$frontdoor, "ds.vert.lmm")
+  k3_conns <- stats::setNames(vector("list", 3L), paste0("site", 1:3))
+  k3 <- ds.vertLMM.k3(
+    y ~ 1, data = "protected", cluster_col = "site",
+    analysis_id = "lmm_a", datasources = k3_conns)
+  expect_s3_class(k3, "ds.vertLMM")
+  expect_identical(k3$frontdoor, "ds.vertLMM.k3")
+  expect_error(
+    ds.vertLMM.k3(
+      y ~ 1, "protected", "site", "lmm_a", datasources = k3_conns[1:2]),
+    "at least three DataSHIELD connections")
   expect_error(
     ds.vertLMM(y ~ x, "protected", "site", "lmm_a", reml = FALSE),
     "only an outcome ~ 1 formula")

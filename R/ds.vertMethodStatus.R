@@ -530,9 +530,9 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "The caller must give the complete signed category domain in clinical",
         "order. Covariates, protected score/information, covariance, standard",
         "errors and inference remain unavailable."))
-  add("ds.vertLMM.k3", "ds.vertLMM.k3", "quarantine",
-      "Deprecated compatibility wrapper only.",
-      "Inherits approximate K>=3 LMM and cluster-disclosure limitations.")
+  add("ds.vertLMM.k3", "ds.vertDPLMM", "promoted",
+      "K>=3 compatibility wrapper for the signed random-intercept method-of-moments Synopsis.",
+      "It accepts no K>=3 profile/REML, random slopes, covariance, standard errors or classical inference.")
   add(c("ds.vertGEE", "ds.vert.gee"), "ds.vertGEE", "promoted",
       paste(
         "A completed two-authority formal binomial/Poisson GLM certificate",
@@ -656,6 +656,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertDesc", "ds.vert.desc", "ds.vertDPDescribe",
     "ds.vertDPMeanVar", "ds.vertDPCor", "ds.vertDPSurvival",
     "ds.vertDPGaussian", "ds.vertDPLMM", "ds.vertLMM", "ds.vert.lmm",
+    "ds.vertLMM.k3",
     "ds.vertCor", "ds.vert.cor",
     "ds.vertPCA", "ds.vert.pca",
     "ds.vertDPContingency", "ds.vertChisq", "ds.vert.chisq",
