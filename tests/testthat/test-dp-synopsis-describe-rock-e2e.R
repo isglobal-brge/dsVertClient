@@ -19,7 +19,7 @@
 .synopsis_real_e2e_families <- c(
   "describe", "same_owner_contingency", "cross_owner_contingency",
   "stratified_epidemiology", "causal_standardization", "frequency",
-  "mantel_haenszel", "survival", "correlation", "gaussian", "cross_owner_tamper",
+  "mantel_haenszel", "roc", "survival", "correlation", "gaussian", "cross_owner_tamper",
   "gaussian_lasso_focal")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
@@ -259,6 +259,42 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
   data$x_peer_a <- rep(c(0, 10), length.out = nrow(data))
   fixture$snapshots$peer_a[["data_peer_a"]]$data <-
     data[, c("patient_id", "x_peer_a", "stratum", "cell")]
+  fixture
+}
+
+.synopsis_roc_real_e2e_fixture <- function(k, server_ns) {
+  fixture <- .synopsis_describe_real_e2e_fixture(k, server_ns)
+  bins <- c("low", "mid_low", "mid_high", "high")
+  pair_scope <- list(
+    mode = "catalog_v1", numeric_moments = "x_peer_a",
+    categorical_marginals = character(),
+    categorical_pairs = list(c("disease", "score_bin")),
+    correlations = list())
+  for (peer in fixture$peers) {
+    policy <- fixture$policies[[peer]]
+    policy$unit_capacity <- 200L
+    policy$capsule_workload_scope <- pair_scope
+    if (identical(peer, "peer_a")) {
+      policy$categorical_levels <- list(
+        disease = c("case", "control"), score_bin = bins)
+      policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+        "x_peer_a", "disease", "score_bin")
+    }
+    fixture$policies[[peer]] <- policy
+  }
+  counts <- rbind(case = c(5L, 10L, 20L, 35L),
+                  control = c(35L, 20L, 10L, 5L))
+  rows <- lapply(rownames(counts), function(disease) {
+    data.frame(
+      disease = rep(disease, sum(counts[disease, ])),
+      score_bin = rep(bins, counts[disease, ]),
+      stringsAsFactors = FALSE)
+  })
+  data <- do.call(rbind, rows)
+  data$patient_id <- paste0("u", seq_len(nrow(data)))
+  data$x_peer_a <- rep(c(0, 10), length.out = nrow(data))
+  fixture$snapshots$peer_a[["data_peer_a"]]$data <-
+    data[, c("patient_id", "x_peer_a", "disease", "score_bin")]
   fixture
 }
 
@@ -913,6 +949,57 @@ test_that("real Synopsis Mantel-Haenszel is plausible and Rock-replayable at K=2
       new.env(parent = emptyenv())
     }), fixture$peers)
     replay <- contingency("data_peer_a", "stratum", "cell", "peer_a",
+                          conns, dispatch)
+    expect_identical(replay$table, first$table)
+    expect_identical(replay$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real Synopsis ROC is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("roc")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  contingency <- get(".dsvert_dp_contingency_impl",
+                     asNamespace("dsVertClient"), inherits = FALSE)
+  bins <- c("low", "mid_low", "mid_high", "high")
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_roc_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    first <- contingency("data_peer_a", "disease", "score_bin", "peer_a",
+                         conns, dispatch)
+    expect_s3_class(first, "ds.vertDPContingency")
+    expect_true(isTRUE(first$released))
+    expect_identical(dim(first$table), c(2L, 4L))
+    expect_setequal(rownames(first$table), c("case", "control"))
+    expect_setequal(colnames(first$table), bins)
+    expect_true(all(is.finite(first$table) & first$table >= 0))
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fit <- ds.vertDPROC(first, disease_positive = "case", score_order = bins,
+                        direction = "higher")
+    expect_s3_class(fit, "ds.vertDPROC")
+    expect_identical(fit$status, "ok")
+    expect_true(is.finite(fit$auc) && fit$auc >= 0 && fit$auc <= 1)
+    expect_equal(nrow(fit$curve), length(bins) + 1L)
+    expect_true(all(is.finite(as.matrix(fit$curve[, c(
+      "sensitivity", "specificity", "false_positive_rate")]))))
+    expect_true(all(fit$curve$sensitivity >= 0 & fit$curve$sensitivity <= 1))
+    expect_true(all(fit$curve$specificity >= 0 & fit$curve$specificity <= 1))
+    expect_lte(fit$auc_mechanism_region[["lower"]], fit$auc)
+    expect_gte(fit$auc_mechanism_region[["upper"]], fit$auc)
+    expect_identical(fit$additional_server_calls, 0L)
+    expect_identical(fit$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- contingency("data_peer_a", "disease", "score_bin", "peer_a",
                           conns, dispatch)
     expect_identical(replay$table, first$table)
     expect_identical(replay$final_vector_root, first$final_vector_root)
