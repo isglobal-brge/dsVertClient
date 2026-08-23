@@ -533,14 +533,19 @@
   add(
     "ds.vertCoxDiscreteNonDisclosive", "ds.vertCoxDiscreteNonDisclosive",
     "discrete_time_hazard",
-    c("admitted_count", "discrete_hazard_grid", "discrete_risk_masks",
-      "model_score_hessian", "numeric_cross_products"),
-    "Discrete-time pooled-logistic hazard coefficients (not a Cox estimand).",
-    c("convergence", "dp_aware_covariance", "estimand_label",
-      "fixed_time_grid", "identifiability"),
-    "requires_new_capsule_artifact",
-    c("dsvertCoxDiscreteExpandXDS", "dsvertCoxEventTimeShareMaskDS",
-      "k2BeaverSumShareDS"))
+    c("formal_binomial_public_certificate", "fixed_time_grid_binding",
+      "source_surv_formula_binding", "two_authority_signatures"),
+    paste(
+      "Read-only discrete-time pooled-logistic hazard coefficients from one",
+      "completed formal binomial release bound to a custodian fixed grid;",
+      "this is not a Cox proportional-hazards estimand."),
+    c("completed_release_only", "fixed_time_grid_binding",
+      "no_covariance_or_sampling_inference", "two_authority_signatures"),
+    "formal_public_certificate_implemented",
+    aliases = character(),
+    current_route_status = "formal_completed_public_certificate_only",
+    artifact_implementation_state =
+      "validated_formal_public_certificate_adapter_implemented")
 
   add(
     c("ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",

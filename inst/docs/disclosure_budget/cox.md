@@ -18,9 +18,14 @@ authorize a new Cox analysis.
 
 Without `formal_analysis_id`, the compatibility frontdoors fail before any DSI
 call. `ds.vertCoxProfileNonDisclosive()` accepts the same read-only certificate
-selector for compatibility; `ds.vertCoxDiscreteNonDisclosive()` remains
-quarantined because it is a distinct pooled-logistic estimand. Their legacy
-server endpoints are absent from the registered `AggregateMethods` allowlist.
+selector for compatibility. `ds.vertCoxDiscreteNonDisclosive()` and
+`ds.vert.cox(method = "discrete")` accept a different, custodian-configured
+selector only to read a completed two-authority binomial certificate bound to
+the supplied `Surv()` formula and one fixed pooled-logistic time grid. That
+reader has no caller-controlled grid, expansion, optimisation or privacy
+parameter; it cannot start a new release and returns no covariance or sampling
+inference. It is never an interchangeable Cox partial-likelihood result. The
+legacy calculation endpoints remain absent from `AggregateMethods`.
 
 ## Why new Cox computation remains unavailable
 
@@ -31,9 +36,10 @@ authentication, but they do not turn deliberate exact analyst openings into a
 contribution-bounded DP release. Repeated or adaptive exact model aggregates
 also have no non-reconstruction guarantee.
 
-The discrete-time compatibility implementation targets a pooled-logistic
-hazard estimand, not a Cox partial-likelihood estimand, and therefore cannot be
-presented as an interchangeable fallback.
+The discrete-time public reader targets a fixed-grid pooled-logistic hazard
+estimand, not a Cox partial-likelihood estimand, and therefore cannot be
+presented as an interchangeable fallback. A fresh discrete-time computation
+remains unavailable.
 
 ## Remaining promotion gate
 

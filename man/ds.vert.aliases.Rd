@@ -167,6 +167,11 @@ sites or a complete named per-site character/list map.}
 \item{precision, method, ring, verbose}{Binomial-sigmoid precision preset,
 estimator/route selector, fixed-point ring, and progress flag.}
 
+\item{formal_analysis_id}{Custodian-owned selector for an already completed
+formal Cox profile or discrete-time public certificate. It cannot start a Cox
+computation; the discrete selector remains a distinct fixed-grid
+pooled-logistic estimand.}
+
 \item{cluster_col}{Grouping column for the mixed-model routes.}
 
 \item{max_iter, inner_iter, max_outer, tol}{Iteration caps and convergence

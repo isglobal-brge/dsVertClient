@@ -34,7 +34,9 @@
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag.
 #' @param formal_analysis_id Custodian-owned selector for an already completed
-#'   formal Cox public certificate. It cannot start a Cox computation.
+#'   formal Cox profile or discrete-time public certificate. It cannot start a
+#'   Cox computation; the discrete selector remains a distinct fixed-grid
+#'   pooled-logistic estimand.
 #' @param max_iter,inner_iter,max_outer,tol Iteration caps and convergence
 #'   tolerance for the iterative fits.
 #' @param outcome_formula,propensity_formula Outcome and propensity models (IPW).
@@ -307,14 +309,18 @@ ds.vert.cox <- function(formula, data = NULL,
                         method = c("profile", "discrete"),
                         datasources = NULL, formal_analysis_id = NULL, ...) {
   if (!is.null(formal_analysis_id)) {
-    if (!missing(method)) {
-      stop("formal_analysis_id does not accept method", call. = FALSE)
+    selected <- if (missing(method)) "profile" else match.arg(method)
+    out <- if (identical(selected, "discrete")) {
+      ds.vertCoxDiscreteNonDisclosive(
+        formula = formula, data = data, datasources = datasources,
+        formal_analysis_id = formal_analysis_id, ...)
+    } else {
+      ds.vertCox(
+        formula = formula, data = data, datasources = datasources,
+        formal_analysis_id = formal_analysis_id, ...)
     }
-    out <- ds.vertCox(
-      formula = formula, data = data, datasources = datasources,
-      formal_analysis_id = formal_analysis_id, ...)
     return(.dsvert_set_frontdoor(
-      out, "ds.vert.cox", "ds.vertCox.formal",
+      out, "ds.vert.cox", paste0("ds.vertCox.", selected, ".formal"),
       if (is.null(datasources)) NULL else length(datasources)))
   }
   .dsvert_block_retired_remote_route("cox")

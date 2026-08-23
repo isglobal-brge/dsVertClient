@@ -1,5 +1,4 @@
 quarantined_doc_sources <- c(
-  "ds.vertCoxDiscreteNonDisclosive.R",
   "ds.vertNBFullRegTheta.R",
   "ds.vertMultinom.R",
   "ds.vertMultinomJoint.R",
@@ -14,8 +13,6 @@ quarantined_doc_sources <- c(
   "ds.vertMI.R")
 
 quarantined_doc_topics <- c(
-  "ds.vertCoxDiscreteNonDisclosive" =
-    "ds.vertCoxDiscreteNonDisclosive.R",
   "ds.vertNBFullRegTheta" = "ds.vertNBFullRegTheta.R",
   "ds.vertMultinom" = "ds.vertMultinom.R",
   "ds.vertMultinomJoint" = "ds.vertMultinomJoint.R",
@@ -127,6 +124,27 @@ test_that("GLM help documents the Synopsis route matrix instead of legacy MPC", 
   expect_true(all(glm_status$status == "promoted"))
   expect_match(glm_status$principal_limitation[[1L]],
                "Binomial and Poisson", fixed = TRUE)
+})
+
+test_that("discrete-hazard help limits the completed formal release", {
+  package_root <- dirname(.dsvert_client_source_root())
+  source <- .dsvert_public_roxygen_text(
+    "ds.vertCoxDiscreteNonDisclosive.R",
+    "ds.vertCoxDiscreteNonDisclosive")
+  rd_path <- file.path(package_root, "man",
+                     "ds.vertCoxDiscreteNonDisclosive.Rd")
+  if (!file.exists(rd_path)) {
+    testthat::fail("generated discrete-hazard help is unavailable")
+  }
+  rd <- paste(readLines(rd_path, warn = FALSE), collapse = "\n")
+  for (text in list(source, rd)) {
+    expect_match(text, "two-authority-signed", fixed = TRUE)
+    expect_match(text, "fixed time grid", fixed = TRUE)
+    expect_match(text, "distinct from Cox proportional hazards",
+                 ignore.case = TRUE, perl = TRUE)
+    expect_match(text, "never starts expansion", fixed = TRUE)
+    expect_match(text, "Covariance, standard errors, p-values", fixed = TRUE)
+  }
 })
 
 test_that("Describe help matches the cold Synopsis execution and replay route", {

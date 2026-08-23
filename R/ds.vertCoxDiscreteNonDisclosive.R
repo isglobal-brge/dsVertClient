@@ -4,22 +4,28 @@
   opt || env %in% c("1", "true", "yes")
 }
 
-#' @title Quarantined discrete-hazard compatibility frontdoor
-#' @description This exported name is retained for API compatibility. It
-#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
-#'   call and computes or returns no model, statistic, diagnostic, or
-#'   patient-derived metadata. The retained pooled-logistic research code is
-#'   unreachable through this public frontdoor and is not a Cox fallback or a
-#'   public disclosure, DP, accuracy, or availability claim.
+#' @title Formal discrete-time hazard public-release frontdoor
+#' @description With \code{formal_analysis_id}, reads one already completed
+#'   two-authority-signed binomial formal-GLM release over a custodian-owned
+#'   person-period design. The signed server registry binds that release to the
+#'   supplied \code{Surv()} formula and fixed time grid. It returns only
+#'   coefficient-level discrete-hazard output; it never starts expansion or
+#'   pooled-logistic MPC. Without the selector, this historical name fails
+#'   locally before any DSI call.
 #'
-#' @details A future discrete-time route must use its own signed bounded
-#'   hazard estimand and must remain explicitly distinct from Cox partial
-#'   likelihood.
-#' @param formula,data,J,bin_breaks,target,max_event_times,max_iter,tol,newton,ridge_eps,debug_trace,verbose,datasources
-#'   Retained compatibility arguments. They are not evaluated because the
-#'   public frontdoor fails locally.
-#' @return No fitted object. The function raises
-#'   \code{dsvert_route_unavailable} before DSI.
+#' @details This remains distinct from Cox proportional hazards. The formal
+#'   route has no analyst-controlled bins, optimisation, privacy parameters or
+#'   source/MPC controls. Covariance, standard errors, p-values, baseline
+#'   hazards, predictions, residuals and a new analysis run remain unavailable.
+#' @param formula,data Explicit \code{Surv()} formula and aligned data name.
+#' @param formal_analysis_id Custodian-owned selector for an already completed
+#'   discrete-time public release.
+#' @param J,bin_breaks,target,max_event_times,max_iter,tol,newton,ridge_eps,debug_trace,verbose,datasources
+#'   Legacy compatibility arguments. They are rejected with a formal id and
+#'   otherwise the route fails before DSI.
+#' @return With a valid \code{formal_analysis_id}, a coefficient-only
+#'   \code{dsvert_formal_dp_cox_discrete} object. Otherwise a typed unavailable
+#'   error.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertCoxDiscreteNonDisclosive <- function(formula,
@@ -35,7 +41,13 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
                                              ridge_eps  = 1e-6,
                                              debug_trace = FALSE,
                                              verbose    = FALSE,
-                                             datasources = NULL) {
+                                             datasources = NULL,
+                                             formal_analysis_id = NULL) {
+  explicit <- names(match.call(expand.dots = FALSE))[-1L]
+  if (!is.null(formal_analysis_id)) {
+    return(.dsvert_formal_cox_discrete_frontdoor_adapter(
+      explicit, formula, data, verbose, datasources, formal_analysis_id))
+  }
   .dsvert_block_retired_remote_route("cox")
   if (is.null(datasources))
     datasources <- DSI::datashield.connections_find()

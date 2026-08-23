@@ -470,11 +470,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "standard errors, p-values, baseline hazard, prediction, residual or",
         "sampling inference artifact."))
   add(c("ds.vertCoxDiscreteNonDisclosive"),
-      "ds.vertCoxDiscreteNonDisclosive", "quarantine",
-      "Discrete-time pooled logistic hazard model.",
+      "ds.vertCoxDiscreteNonDisclosive", "promoted",
       paste(
-        "This is not a Cox proportional-hazards estimand and its legacy",
-        "risk-set/score route is not a formal capsule release."))
+        "Read-only discrete-time pooled-logistic coefficients from one",
+        "completed two-authority-signed binomial formal release selected by",
+        "formal_analysis_id and bound to a fixed custodian time grid."),
+      paste(
+        "This is not a Cox proportional-hazards estimand and cannot start",
+        "person-period expansion or a new DP release. Covariance, p-values,",
+        "baseline hazards and predictions are unavailable."))
   add("ds.vert.cox", "ds.vertCox", "promoted",
       "Alias for the completed formal Cox public certificate when formal_analysis_id is supplied.",
       paste(
@@ -672,7 +676,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "formal_sticky_synopsis_artifact"
   formal_cox_public <- c(
     "ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
-    "ds.vertCoxProfileNonDisclosive")
+    "ds.vertCoxProfileNonDisclosive",
+    "ds.vertCoxDiscreteNonDisclosive")
   out$release_contract[out$method %in% formal_cox_public] <-
     "formal_completed_public_certificate"
 
