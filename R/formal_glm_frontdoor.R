@@ -143,11 +143,14 @@
       stop("A server returned an invalid formal GLM coefficient.",
            call. = FALSE)
     }
+    value <- .dsvert_formal_lattice_value(
+      coefficient$signed_steps, coefficient$output_lattice_bits,
+      coefficient$value, "formal GLM coefficient")
     list(
       coefficient = enc2utf8(coefficient$coefficient),
       signed_steps = coefficient$signed_steps,
       output_lattice_bits = as.integer(coefficient$output_lattice_bits),
-      value = as.numeric(coefficient$value))
+      value = value)
   })
   names(coefficients) <- NULL
   names <- vapply(coefficients, `[[`, character(1L), "coefficient")

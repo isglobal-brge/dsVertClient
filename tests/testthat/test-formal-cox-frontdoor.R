@@ -66,6 +66,16 @@ test_that("formal Cox rejects a cross-site certificate mismatch", {
     datasources = conns), "different formal Cox public releases")
 })
 
+test_that("formal Cox rejects a decimal that disagrees with signed lattice steps", {
+  request <- .dsvert_formal_cox_frontdoor_request(
+    "primary_cox", "study", stats::as.formula("Surv(time, status) ~ x + z"))$value
+  release <- .formal_cox_public_release(request)
+  release$coefficients[[1L]]$beta <- 0.5
+  expect_error(
+    .dsvert_formal_cox_frontdoor_public_response(release, request),
+    "does not match its signed lattice steps")
+})
+
 test_that("formal Cox permits only registered public selectors", {
   first <- .dsvert_formal_cox_frontdoor_request(
     "primary_cox", "study", stats::as.formula("Surv(time, status) ~ x + z"))

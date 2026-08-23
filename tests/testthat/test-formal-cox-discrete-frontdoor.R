@@ -81,6 +81,16 @@ test_that("formal discrete-time Cox rejects cross-site and legacy-selector misma
     "target")
 })
 
+test_that("formal discrete-time Cox rejects a decimal that disagrees with signed lattice steps", {
+  request <- .dsvert_formal_cox_discrete_frontdoor_request(
+    "primary_discrete", "study", stats::as.formula("Surv(time, status) ~ x"))$value
+  release <- .formal_cox_discrete_public_release(request)
+  release$coefficients[[2L]]$value <- 0.5
+  expect_error(
+    .dsvert_formal_cox_discrete_frontdoor_response(release, request),
+    "does not match its signed lattice steps")
+})
+
 test_that("formal discrete-time Cox requests are deterministic and minimal", {
   first <- .dsvert_formal_cox_discrete_frontdoor_request(
     "primary_discrete", "study", stats::as.formula("Surv(time, status) ~ x"))

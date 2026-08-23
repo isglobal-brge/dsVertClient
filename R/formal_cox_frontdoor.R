@@ -101,11 +101,14 @@
       stop("A server returned an invalid formal Cox coefficient.",
            call. = FALSE)
     }
+    beta <- .dsvert_formal_lattice_value(
+      coefficient$beta_steps, coefficient$fraction_bits, coefficient$beta,
+      "formal Cox coefficient")
     list(
       coefficient = enc2utf8(coefficient$coefficient),
       beta_steps = coefficient$beta_steps,
       fraction_bits = as.integer(coefficient$fraction_bits),
-      beta = as.numeric(coefficient$beta),
+      beta = beta,
       hazard_ratio_lower = as.numeric(coefficient$hazard_ratio_lower),
       hazard_ratio_upper = as.numeric(coefficient$hazard_ratio_upper),
       hazard_ratio_midpoint = as.numeric(coefficient$hazard_ratio_midpoint))

@@ -63,6 +63,28 @@ test_that("formal GLM rejects a mismatched public certificate before a fit", {
     "different formal GLM public releases")
 })
 
+test_that("formal GLM rejects a decimal that disagrees with signed lattice steps", {
+  request <- .dsvert_formal_glm_frontdoor_request(
+    "primary_logit", "study", "binomial", y ~ x)$value
+  release <- .formal_glm_public_release(request)
+  release$coefficients[[1L]]$value <- 0.75
+  expect_error(
+    .dsvert_formal_glm_frontdoor_public_response(release, request),
+    "does not match its signed lattice steps")
+})
+
+test_that("formal lattice projection stays within the signed Ring128 domain", {
+  expect_equal(.dsvert_formal_lattice_value(
+    "170141183460469231731687303715884105727", 127L, 1,
+    "formal GLM coefficient"), 1)
+  expect_equal(.dsvert_formal_lattice_value(
+    "-170141183460469231731687303715884105728", 127L, -1,
+    "formal GLM coefficient"), -1)
+  expect_error(.dsvert_formal_lattice_value(
+    "170141183460469231731687303715884105728", 127L, 1,
+    "formal GLM coefficient"), "lattice coordinate")
+})
+
 test_that("formal GLM request carries selectors and no privacy controls", {
   first <- .dsvert_formal_glm_frontdoor_request(
     "primary_count", "study", "poisson", y ~ z + x)

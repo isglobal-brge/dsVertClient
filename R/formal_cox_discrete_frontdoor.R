@@ -85,11 +85,14 @@
       stop("A server returned an invalid formal discrete-time coefficient.",
            call. = FALSE)
     }
+    value <- .dsvert_formal_lattice_value(
+      coefficient$signed_steps, coefficient$output_lattice_bits,
+      coefficient$value, "formal discrete-time coefficient")
     list(
       coefficient = enc2utf8(coefficient$coefficient),
       signed_steps = coefficient$signed_steps,
       output_lattice_bits = as.integer(coefficient$output_lattice_bits),
-      value = as.numeric(coefficient$value))
+      value = value)
   })
   names <- vapply(coefficients, `[[`, character(1L), "coefficient")
   if (anyDuplicated(names)) {
