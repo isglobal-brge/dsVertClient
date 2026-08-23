@@ -53,6 +53,20 @@ test_that("real Synopsis Count is plausible and Rock-replayable at K=2/3/5", {
     expect_lte(abs(first$value - true_count),
                1.5 * max(first$accuracy_95_abs, 1))
 
+    route_count <- function(data_name, server = NULL, datasources = NULL,
+                            .aggregate) {
+      count(data_name, server, datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_count_impl = route_count,
+      ds.vertDPCount("data_peer_a", "peer_b", conns),
+      .package = "dsVertClient")
+    expect_s3_class(public, "ds.vertDPCount")
+    expect_identical(public$value, first$value)
+    expect_identical(public$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
     before <- c(fixture$state$source_prepare, fixture$state$start)
     fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
       new.env(parent = emptyenv())
