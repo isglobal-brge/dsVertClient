@@ -1173,6 +1173,20 @@ test_that("real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5",
     expect_true(all(first$mechanism_regions$lower >= 0))
     expect_true(all(first$mechanism_regions$upper <= 200))
 
+    route_frequency <- function(data_name, variable, server = NULL,
+                                datasources = NULL, .aggregate) {
+      frequency(data_name, variable, server, datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_frequency_impl = route_frequency,
+      ds.vertDPFrequency("data_peer_a", "status", "peer_a", conns),
+      .package = "dsVertClient")
+    expect_s3_class(public, "ds.vertDPFrequency")
+    expect_identical(public$counts, first$counts)
+    expect_identical(public$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
     inference <- ds.vertDPFrequencyInference(first, level = 0.95)
     expect_s3_class(inference, "ds.vertDPFrequencyInference")
     expect_true(all(is.finite(inference$intervals)))
