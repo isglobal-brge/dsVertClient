@@ -83,6 +83,7 @@ ds.vert.lmm(
   formula,
   data = NULL,
   cluster_col,
+  analysis_id = NULL,
   max_iter = 30L,
   inner_iter = 50L,
   max_outer = 30L,
@@ -176,6 +177,9 @@ discrete selector remains a distinct fixed-grid pooled-logistic estimand.}
 
 \item{cluster_col}{Grouping column for the mixed-model routes.}
 
+\item{analysis_id}{Custodian-configured signed random-intercept LMM artifact
+id. It is required by \code{ds.vert.lmm()}.}
+
 \item{max_iter, inner_iter, max_outer, tol}{Iteration caps and convergence
 tolerance for the iterative fits.}
 
@@ -208,6 +212,9 @@ its complete ordered category domain must be explicit.
 \code{ds.vert.nb(..., frequency = x)} returns only an intercept-only NB2
 method-of-moments fit for a bounded non-negative integer frequency domain;
 it has no covariates or inference and cannot create another release.
+\code{ds.vert.lmm(..., analysis_id = x)} is limited to the signed
+\code{outcome ~ 1} random-intercept method-of-moments artifact. It has no
+ML/REML, random slopes, covariance, standard errors or classical inference.
 No alias re-enables a retired remote endpoint or weakens the signed-artifact
 and custodian-owned policy gates of an available backend.
 For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied

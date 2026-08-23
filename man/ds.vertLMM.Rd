@@ -2,14 +2,15 @@
 % Please edit documentation in R/ds.vertLMM.R
 \name{ds.vertLMM}
 \alias{ds.vertLMM}
-\title{Quarantined linear-mixed-model compatibility frontdoor}
+\title{Bounded random-intercept LMM compatibility frontdoor}
 \usage{
 ds.vertLMM(
   formula,
   data = NULL,
   cluster_col,
+  analysis_id = NULL,
   random_slopes = NULL,
-  reml = TRUE,
+  reml = FALSE,
   max_iter = 30L,
   inner_iter = 50L,
   tol = 1e-04,
@@ -21,26 +22,42 @@ ds.vertLMM(
 )
 }
 \arguments{
-\item{formula, data, cluster_col, random_slopes, reml, max_iter, inner_iter, tol, exact_cross_server, sigma_b2_override, ring, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+\item{formula}{A formula exactly of the form \code{outcome ~ 1}.}
+
+\item{data}{Signed protected dataset name or federation.}
+
+\item{cluster_col}{Cluster column required to match the signed artifact.}
+
+\item{analysis_id}{Custodian-configured signed random-intercept artifact id.}
+
+\item{random_slopes}{Must be \code{NULL}.}
+
+\item{reml}{Must be \code{FALSE}; ML/REML is not implemented.}
+
+\item{max_iter, inner_iter, tol, ring, verbose}{Retained compatibility controls;
+they do not alter the signed Synopsis estimand.}
+
+\item{exact_cross_server}{Must be \code{TRUE}; outcome projection is not
+available.}
+
+\item{sigma_b2_override}{Must be \code{NULL}.}
+
+\item{datasources}{DataSHIELD connections.}
 }
 \value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
+A \code{ds.vertLMM} / \code{ds.vertDPLMM} object containing only the
+certified public DP moment projection.
 }
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and computes or returns no mixed model, variance component,
-cluster statistic, or diagnostic. Retained LMM implementation code after
-the gate is unreachable through this public frontdoor and carries no
-disclosure, DP, accuracy, or availability claim.
+Admits only the signed \code{y ~ 1} random-intercept method-of-moments
+estimand. It uses one existing canonical DP Synopsis; it neither calls the
+retired mixed-model endpoints nor exposes cluster statistics.
 }
 \details{
-Promotion requires contribution-bounded cluster statistics,
-private cluster handling, certified ML/REML and random-effects semantics,
-covariance and identifiability certificates, and independent multi-host
-validation.
+\code{analysis_id} selects the custodian-signed artifact. Random slopes,
+ML/REML, covariance estimates, standard errors and classical inference are
+unavailable. The returned variances are DP-projected method-of-moments
+components, not an ML/REML fit.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

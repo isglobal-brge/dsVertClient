@@ -16,7 +16,7 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
                            tol = 1e-4, max_outer = 30L,
                            ring = c("ring127", "ring63"),
                            verbose = TRUE, datasources = NULL) {
-  .dsvert_block_retired_remote_route("lmm")
+  .dsvert_block_retired_remote_route("lmm_k3")
   .Deprecated("ds.vertLMM", package = "dsVertClient",
               msg = paste("ds.vertLMM.k3() is deprecated; call ds.vertLMM(),",
                           "which dispatches to the K>=3 algorithm automatically."))

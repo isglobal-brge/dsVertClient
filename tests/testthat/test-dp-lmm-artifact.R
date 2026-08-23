@@ -137,3 +137,45 @@ test_that("random-intercept LMM Synopsis release validates its signed block", {
       .aggregate = function(...) stop("unexpected aggregate", call. = FALSE)),
     "violates its signed bounds")
 })
+
+test_that("historical LMM names only admit the signed moment estimand", {
+  release <- structure(list(
+    status = "ok", coefficient = c("(Intercept)" = 4.5),
+    coefficients = c("(Intercept)" = 4.5), sigma2 = 1,
+    sigma_b2 = 0.5, icc = 1 / 3, cluster_count = 3,
+    n_obs = 24, signed_artifact = list(
+      outcome = list(column = "y"),
+      cluster = list(column = "site"),
+      estimation_scope =
+        "bounded_random_intercept_method_of_moments_no_fixed_covariates_v1")),
+    class = c("ds.vertDPLMM", "list"))
+  testthat::local_mocked_bindings(
+    ds.vertDPLMM = function(...) release,
+    .package = "dsVertClient")
+
+  fit <- ds.vertLMM(
+    y ~ 1, data = "protected", cluster_col = "site",
+    analysis_id = "lmm_a", reml = FALSE)
+  expect_s3_class(fit, "ds.vertLMM")
+  expect_identical(fit$coefficients, c("(Intercept)" = 4.5))
+  expect_identical(fit$reml, FALSE)
+  expect_null(fit$cluster_sizes)
+
+  alias <- ds.vert.lmm(
+    y ~ 1, data = "protected", cluster_col = "site",
+    analysis_id = "lmm_a")
+  expect_s3_class(alias, "ds.vertLMM")
+  expect_identical(alias$frontdoor, "ds.vert.lmm")
+  expect_error(
+    ds.vertLMM(y ~ x, "protected", "site", "lmm_a", reml = FALSE),
+    "only an outcome ~ 1 formula")
+  expect_error(
+    ds.vertLMM(y ~ 1, "protected", "site", "lmm_a", reml = TRUE),
+    "reml=FALSE")
+
+  release$signed_artifact$cluster$column <- "other_site"
+  expect_error(
+    ds.vertLMM(
+      y ~ 1, "protected", "site", "lmm_a", reml = FALSE),
+    "does not match the signed LMM artifact")
+})

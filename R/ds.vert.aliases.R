@@ -19,6 +19,9 @@
 #' \code{ds.vert.nb(..., frequency = x)} returns only an intercept-only NB2
 #' method-of-moments fit for a bounded non-negative integer frequency domain;
 #' it has no covariates or inference and cannot create another release.
+#' \code{ds.vert.lmm(..., analysis_id = x)} is limited to the signed
+#' \code{outcome ~ 1} random-intercept method-of-moments artifact. It has no
+#' ML/REML, random slopes, covariance, standard errors or classical inference.
 #' No alias re-enables a retired remote endpoint or weakens the signed-artifact
 #' and custodian-owned policy gates of an available backend.
 #' For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied
@@ -41,6 +44,8 @@
 #'   sites or a complete named per-site character/list map.
 #' @param variables,var1,var2 Column selections for descriptive / bivariate routes.
 #' @param cluster_col Grouping column for the mixed-model routes.
+#' @param analysis_id Custodian-configured signed random-intercept LMM artifact
+#'   id. It is required by \code{ds.vert.lmm()}.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag.
 #' @param formal_analysis_id Custodian-owned selector for an already completed
@@ -450,10 +455,10 @@ ds.vert.ordinal <- function(formula, data = NULL,
 #' @rdname ds.vert.aliases
 #' @export
 ds.vert.lmm <- function(formula, data = NULL, cluster_col,
+                        analysis_id = NULL,
                         max_iter = 30L, inner_iter = 50L,
                         max_outer = 30L, tol = NULL, ring = NULL,
                         verbose = TRUE, datasources = NULL, ...) {
-  .dsvert_block_retired_remote_route("lmm")
   extra <- list(...)
   if (length(extra)) {
     arg_names <- names(extra)
@@ -461,21 +466,17 @@ ds.vert.lmm <- function(formula, data = NULL, cluster_col,
     stop("unused argument(s): ", paste(arg_names, collapse = ", "),
          call. = FALSE)
   }
-  datasources <- .dsvert_datasources(datasources)
-  K <- length(datasources)
-  # ds.vertLMM now self-dispatches on K (K=2 closed-form, K>=3 profile), so this
-  # alias forwards to it for every K. The K>=3 outer-iteration budget maps onto
-  # ds.vertLMM's max_iter (the shared outer-loop cap).
   fit <- ds.vertLMM(formula = formula, data = data,
                     cluster_col = cluster_col,
-                    max_iter = if (K >= 3L) max_outer else max_iter,
+                    analysis_id = analysis_id,
+                    reml = FALSE,
+                    max_iter = max_iter,
                     inner_iter = inner_iter,
                     tol = tol %||% 1e-4,
-                    ring = ring %||% (if (K >= 3L) "ring127" else "ring63"),
+                    ring = ring %||% "ring63",
                     verbose = verbose,
                     datasources = datasources)
-  backend <- if (K >= 3L) "ds.vertLMM.k3" else "ds.vertLMM"
-  .dsvert_set_frontdoor(fit, "ds.vert.lmm", backend, K)
+  .dsvert_set_frontdoor(fit, "ds.vert.lmm", "ds.vertLMM", NULL)
 }
 
 #' @rdname ds.vert.aliases

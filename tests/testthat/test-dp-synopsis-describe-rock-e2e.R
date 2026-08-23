@@ -1860,13 +1860,26 @@ test_that("real random-intercept LMM Synopsis is plausible and Rock-replayable a
     }
     public <- testthat::with_mocked_bindings(
       .dsvert_dp_lmm_impl = route_lmm,
-      ds.vertDPLMM(
-        "data_peer_a", "lmm_primary", server = "peer_a",
-        datasources = conns),
+      list(
+        typed = ds.vertDPLMM(
+          "data_peer_a", "lmm_primary", server = "peer_a",
+          datasources = conns),
+        legacy = ds.vertLMM(
+          y_peer_a ~ 1, data = "data_peer_a", cluster_col = "site_peer_a",
+          analysis_id = "lmm_primary", reml = FALSE, datasources = conns),
+        alias = ds.vert.lmm(
+          y_peer_a ~ 1, data = "data_peer_a", cluster_col = "site_peer_a",
+          analysis_id = "lmm_primary", datasources = conns)),
       .package = "dsVertClient")
-    expect_s3_class(public, "ds.vertDPLMM")
-    expect_identical(public$coefficients, fit$coefficients)
-    expect_identical(public$final_vector_root, fit$final_vector_root)
+    expect_s3_class(public$typed, "ds.vertDPLMM")
+    expect_s3_class(public$legacy, "ds.vertLMM")
+    expect_s3_class(public$alias, "ds.vertLMM")
+    expect_identical(public$typed$coefficients, fit$coefficients)
+    expect_identical(public$legacy$coefficients, fit$coefficients)
+    expect_identical(public$alias$coefficients, fit$coefficients)
+    expect_identical(public$typed$final_vector_root, fit$final_vector_root)
+    expect_identical(public$legacy$reml, FALSE)
+    expect_identical(public$legacy$cluster_sizes, NULL)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(1L, 2L))
 

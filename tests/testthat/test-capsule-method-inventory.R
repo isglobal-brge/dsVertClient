@@ -30,8 +30,8 @@ test_that("capsule migration inventory covers the complete public surface", {
   non_inference <- .dsvert_capsule_non_inference_exports()
   exports <- getNamespaceExports("dsVertClient")
 
-  expect_equal(nrow(inventory), 95L)
-  expect_equal(length(non_inference), 12L)
+  expect_equal(nrow(inventory), 96L)
+  expect_equal(length(non_inference), 13L)
   expect_contains(non_inference, "ds.validateDPGaussianCertificate")
   expect_contains(non_inference, "ds.vertDPCapsulePlan")
   expect_identical(anyDuplicated(inventory$method), 0L)
@@ -158,7 +158,8 @@ test_that("aliases and wrappers retain honest routing semantics", {
     "ds.vert.lasso_cv" = "ds.vertLASSOCV",
     "ds.vert.lasso_iter" = "ds.vertLASSOIter",
     "ds.vert.lasso_proximal" = "ds.vertLASSOProximal",
-    "ds.vert.lmm" = "ds.vertLMM",
+    "ds.vertLMM" = "ds.vertDPLMM",
+    "ds.vert.lmm" = "ds.vertDPLMM",
     "ds.vert.lr" = "ds.vertLR",
     "ds.vert.mi" = "ds.vertMI",
     "ds.vert.multinom" = "ds.vertMultinom",
@@ -253,16 +254,18 @@ test_that("retired legacy DP endpoints are absent from public route evidence", {
 
 test_that("verified legacy disclosure evidence cannot regress to omission", {
   inventory <- .dsvert_capsule_method_inventory()
-  standardized_families <- c(
-    "ds.vertGLM", "ds.vertLMM", "ds.vertGLMM", "ds.vertMI")
+  standardized_families <- c("ds.vertGLM", "ds.vertGLMM", "ds.vertMI")
   expect_true(all(vapply(standardized_families, function(method) {
     has_evidence(inventory, method, "glmStandardizeDS",
                  "plaintext_exact_aggregate")
   }, logical(1L))))
 
-  expect_true(has_evidence(
-    inventory, "ds.vertLMM", "dsvertClusterZtZDS",
-    "plaintext_exact_aggregate", "per_cluster_ztz_sizes_and_levels"))
+  lmm <- row_for(inventory, "ds.vertDPLMM")
+  expect_identical(lmm$current_route_status,
+                   "formal_sticky_synopsis_artifact")
+  expect_identical(lmm$migration_feasibility,
+                   "synopsis_release_implemented")
+  expect_identical(nrow(lmm$legacy_remote_call_evidence[[1L]]), 0L)
   expect_true(has_evidence(
     inventory, "ds.vertMI", "dsvertImputeColumnDS",
     "plaintext_exact_aggregate", "imputation_counts"))

@@ -16,6 +16,7 @@
     "ds.vertDPCapsulePlan",
     "ds.vertDPStatus",
     "ds.validateDPGaussianCertificate",
+    "ds.validateDPLMMCertificate",
     "ds.vertMethodStatus",
     "ds.vertNumericPreflight",
     "ds.vertSecurityStatus"
@@ -612,21 +613,25 @@
     inference_implementation_state = "frequency_postprocess_implemented")
 
   add(
-    c("ds.vertLMM", "ds.vert.lmm"), "ds.vertLMM",
+    c("ds.vertDPLMM", "ds.vertLMM", "ds.vert.lmm"), "ds.vertDPLMM",
     "linear_mixed_model",
-    c("bounded_cluster_cross_products", "bounded_cluster_moments",
-      "cluster_random_effect_design", "lmm_score_information"),
-    "Random-intercept or declared random-slope LMM fixed effects and variance components.",
-    c("cluster_contribution_bounds", "dp_aware_covariance",
-      "identifiability", "ml_reml_contract", "random_effects_contract"),
-    "requires_new_secure_protocol",
-    c("dsvertClusterResidualsDS", "dsvertClusterSizesDS",
-      "dsvertClusterZtZDS", "dsvertLMMPerClusterSumDS",
-      "dsvertLMMVarianceComponentsDS", "dsvertPerClusterSumShareDS",
-      "getObsCountDS", "glmStandardizeDS", "k2GradientR1DS",
-      "k2GradientR2DS"),
-    c("ds.vert.lmm" = "ds.vertLMM"),
-    current_route_status = "legacy_granular_release_quarantine")
+    c("admitted_count", "bounded_random_intercept_moments",
+      "public_cluster_size_cap", "signed_lmm_artifact",
+      "validated_synopsis_provenance"),
+    paste(
+      "Bounded outcome ~ 1 random-intercept method-of-moments components",
+      "from six jointly released same-owner DP coordinates; the historical",
+      "names require the same signed artifact and cluster column."),
+    c("cluster_contribution_bounds", "fixed_random_intercept_scope",
+      "identifiability", "mechanism_uncertainty", "no_ml_reml",
+      "no_sampling_inference"),
+    "synopsis_release_implemented", character(),
+    c("ds.vertLMM" = "ds.vertDPLMM",
+      "ds.vert.lmm" = "ds.vertDPLMM"),
+    current_route_status = "formal_sticky_synopsis_artifact",
+    artifact_implementation_state =
+      "validated_same_owner_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertLMM.k3", "ds.vertLMM", "linear_mixed_model",

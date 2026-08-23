@@ -15,15 +15,14 @@ test_that("LMM orchestrators have no direct DSI aggregate surface", {
   expect_true(grepl(".dsvert_cleanup_best_effort", source, fixed = TRUE))
 })
 
-test_that("LMM help states the local typed quarantine", {
+test_that("LMM help distinguishes the signed moment route from quarantined K>=3", {
   main <- paste(.lmm_client_source("ds.vertLMM.R"), collapse = "\n")
   k3 <- paste(.lmm_client_source("ds.vertLMM.k3.R"), collapse = "\n")
 
-  expect_match(main, "raises a typed \\code{dsvert_route_unavailable}",
-               fixed = TRUE)
-  expect_match(main, "condition before any DSI", fixed = TRUE)
-  expect_match(main, "public frontdoor fails locally", fixed = TRUE)
-  expect_match(main, "@return No fitted object", fixed = TRUE)
+  expect_match(main, "signed random-intercept", fixed = TRUE)
+  expect_match(main, "method-of-moments", fixed = TRUE)
+  expect_match(main, "slopes, ML/REML", fixed = TRUE)
+  expect_match(main, "@return A \\code{ds.vertLMM}", fixed = TRUE)
   expect_match(k3, "raises a typed \\code{dsvert_route_unavailable}",
                fixed = TRUE)
   expect_match(k3, "before any DSI call", fixed = TRUE)

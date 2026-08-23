@@ -35,7 +35,7 @@ test_that("method maturity registry covers every public analysis entry point", {
                  grep("^export\\(", namespace, value = TRUE))
   public <- exports[grepl(paste0(
     "^(ds[.]vert|ds[.]psiAlign$|ds[.]isPsiAligned$|",
-    "ds[.]getIdentityPks$|ds[.]validateDPGaussianCertificate$)"),
+    "ds[.]getIdentityPks$|ds[.]validateDP(Gaussian|LMM)Certificate$)"),
                           exports)]
   expect_setequal(registry$method, public)
 })
@@ -63,9 +63,9 @@ test_that("no public route may report a result numeric certificate", {
 test_that("known unsafe legacy routes are not presented as promoted", {
   quarantined <- ds.vertMethodStatus(status = "quarantine")$method
   newly_quarantined <- c("ds.vertMI", "ds.vert.mi")
-  expect_true(all(c(
-    "ds.vertLMM", "ds.vertGLMM",
-    newly_quarantined) %in% quarantined))
+  expect_true(all(c("ds.vertGLMM", newly_quarantined) %in% quarantined))
+  expect_true(all(ds.vertMethodStatus(c("ds.vertLMM", "ds.vert.lmm"))$
+                  status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertIPW", "ds.vert.ipw"))$
                   status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertIPW", "ds.vert.ipw"))$

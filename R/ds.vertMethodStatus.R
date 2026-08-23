@@ -425,6 +425,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "implemented on this route; singular released designs require an",
         "explicit ridge that changes the estimand. Cross-owner descriptors",
         "fail closed without capsule fallback."))
+  add(c("ds.vertDPLMM", "ds.vertLMM", "ds.vert.lmm"),
+      "ds.vertDPLMM", "promoted",
+      paste(
+        "Bounded random-intercept method-of-moments components from one",
+        "signed same-owner sticky Synopsis artifact; the compatibility names",
+        "require outcome ~ 1, signed analysis_id and matching cluster column."),
+      paste(
+        "This is not ML/REML: random slopes, covariance estimates, standard",
+        "errors, p-values and population-sampling inference are unavailable."))
   add("ds.validateDPGaussianCertificate",
       "ds.validateDPGaussianCertificate", "provisional",
       paste(
@@ -436,6 +445,10 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "peer authenticity requires a caller/session-anchored trusted pinset,",
         "and it certifies the release mechanism rather than population-",
         "sampling validity."))
+  add("ds.validateDPLMMCertificate", "ds.validateDPLMMCertificate",
+      "provisional",
+      "Client-only revalidation of a signed random-intercept LMM Synopsis certificate without DSI.",
+      "It verifies artifact and release integrity, not ML/REML or population-sampling validity.")
   add(c("ds.vertGLM", "ds.vert.glm"), "ds.vertGLM", "promoted",
       paste(
         "Gaussian GLM uses an explicit dp_analysis_id selecting a bounded",
@@ -517,9 +530,6 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "The caller must give the complete signed category domain in clinical",
         "order. Covariates, protected score/information, covariance, standard",
         "errors and inference remain unavailable."))
-  add(c("ds.vertLMM", "ds.vert.lmm"), "ds.vertLMM", "quarantine",
-      "Research diagnostics only with explicit acknowledgement.",
-      "ML/REML, random slopes and K>=3 estimands are incomplete; cluster aggregates are too granular.")
   add("ds.vertLMM.k3", "ds.vertLMM.k3", "quarantine",
       "Deprecated compatibility wrapper only.",
       "Inherits approximate K>=3 LMM and cluster-disclosure limitations.")
@@ -645,7 +655,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   synopsis_releases <- c(
     "ds.vertDesc", "ds.vert.desc", "ds.vertDPDescribe",
     "ds.vertDPMeanVar", "ds.vertDPCor", "ds.vertDPSurvival",
-    "ds.vertDPGaussian", "ds.vertCor", "ds.vert.cor",
+    "ds.vertDPGaussian", "ds.vertDPLMM", "ds.vertLMM", "ds.vert.lmm",
+    "ds.vertCor", "ds.vert.cor",
     "ds.vertPCA", "ds.vert.pca",
     "ds.vertDPContingency", "ds.vertChisq", "ds.vert.chisq",
     "ds.vertFisher", "ds.vert.fisher",
@@ -656,6 +667,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.isPsiAligned", "ds.vert.is_aligned", "ds.vertDPStatus",
     "ds.vertDPCapsulePlan",
     "ds.vertDPCalibrate", "ds.validateDPGaussianCertificate",
+    "ds.validateDPLMMCertificate",
     "ds.vertSecurityStatus", "ds.vertNumericPreflight",
     "ds.vertMethodStatus")
   inherited_postprocessing <- c(
