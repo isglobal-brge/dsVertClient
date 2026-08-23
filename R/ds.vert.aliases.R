@@ -33,6 +33,8 @@
 #' @param cluster_col Grouping column for the mixed-model routes.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag.
+#' @param formal_analysis_id Custodian-owned selector for an already completed
+#'   formal Cox public certificate. It cannot start a Cox computation.
 #' @param max_iter,inner_iter,max_outer,tol Iteration caps and convergence
 #'   tolerance for the iterative fits.
 #' @param outcome_formula,propensity_formula Outcome and propensity models (IPW).
@@ -303,7 +305,18 @@ ds.vert.glm <- function(formula, data = NULL,
 #' @export
 ds.vert.cox <- function(formula, data = NULL,
                         method = c("profile", "discrete"),
-                        datasources = NULL, ...) {
+                        datasources = NULL, formal_analysis_id = NULL, ...) {
+  if (!is.null(formal_analysis_id)) {
+    if (!missing(method)) {
+      stop("formal_analysis_id does not accept method", call. = FALSE)
+    }
+    out <- ds.vertCox(
+      formula = formula, data = data, datasources = datasources,
+      formal_analysis_id = formal_analysis_id, ...)
+    return(.dsvert_set_frontdoor(
+      out, "ds.vert.cox", "ds.vertCox.formal",
+      if (is.null(datasources)) NULL else length(datasources)))
+  }
   .dsvert_block_retired_remote_route("cox")
   method <- match.arg(method)
   datasources <- .dsvert_datasources(datasources)
@@ -324,7 +337,18 @@ ds.vert.cox <- function(formula, data = NULL,
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.coxph <- function(formula, data = NULL, method = "profile", ...) {
+ds.vert.coxph <- function(formula, data = NULL, method = "profile",
+                          formal_analysis_id = NULL, ...) {
+  if (!is.null(formal_analysis_id)) {
+    if (!identical(method, "profile")) {
+      stop("formal_analysis_id does not accept method", call. = FALSE)
+    }
+    out <- ds.vert.cox(
+      formula = formula, data = data,
+      formal_analysis_id = formal_analysis_id, ...)
+    if (is.list(out)) out$frontdoor <- "ds.vert.coxph"
+    return(out)
+  }
   .dsvert_block_retired_remote_route("cox")
   method <- match.arg(method, "profile")
   out <- ds.vert.cox(formula = formula, data = data, method = method, ...)

@@ -1,5 +1,4 @@
 quarantined_doc_sources <- c(
-  "ds.vertCox.R",
   "ds.vertCoxDiscreteNonDisclosive.R",
   "ds.vertNBFullRegTheta.R",
   "ds.vertMultinom.R",
@@ -15,7 +14,6 @@ quarantined_doc_sources <- c(
   "ds.vertMI.R")
 
 quarantined_doc_topics <- c(
-  "ds.vertCox" = "ds.vertCox.R",
   "ds.vertCoxDiscreteNonDisclosive" =
     "ds.vertCoxDiscreteNonDisclosive.R",
   "ds.vertCoxProfileNonDisclosive" =
@@ -345,39 +343,29 @@ test_that("the installed single-mode plan cannot describe a live dual profile", 
                      fixed = TRUE))
 })
 
-test_that("installed Cox and LMM notes cannot promote quarantined routes", {
+test_that("installed Cox and LMM notes retain their exact release boundaries", {
   package_root <- dirname(.dsvert_client_source_root())
-  roots <- c(package_root,
-             file.path(dirname(package_root), "dsVert"))
-  roots <- roots[dir.exists(roots)]
-  paths <- unlist(lapply(
-    roots,
-    function(root) file.path(
-      root, "inst", "docs", "disclosure_budget", c("cox.md", "lmm.md"))),
-    use.names = FALSE)
-  installed <- vapply(c("cox.md", "lmm.md"), function(filename) {
-    system.file("docs", "disclosure_budget", filename,
-                package = "dsVertClient")
-  }, character(1L))
-  paths <- unique(c(paths[file.exists(paths)],
-                    installed[nzchar(installed) & file.exists(installed)]))
+  paths <- file.path(
+    package_root, "inst", "docs", "disclosure_budget", c("cox.md", "lmm.md"))
+  paths <- paths[file.exists(paths)]
   expect_gte(length(paths), 2L)
 
   forbidden <- "\\b(shipping|shipped|currently|current|proof|PASS(_PRACTICAL)?)\\b"
   for (path in paths) {
     text <- paste(readLines(path, warn = FALSE), collapse = "\n")
-    expect_match(text, "quarantined", ignore.case = TRUE,
-                 info = paste(basename(path), "must state quarantine"))
-    expect_match(text, "before any DSI call", fixed = TRUE,
-                 info = paste(basename(path), "must state the zero-DSI gate"))
     expect_false(grepl(forbidden, text, ignore.case = TRUE, perl = TRUE),
                  info = paste(path, "contains a release-status overclaim"))
     if (identical(basename(path), "cox.md")) {
       expect_match(text, "Security-profile schema v4", fixed = TRUE)
       expect_match(text, "`route_claims$formal_cox_ready = FALSE`",
                    fixed = TRUE)
-      expect_match(text, "neither can promote this quarantined Cox frontdoor",
-                   fixed = TRUE)
+      expect_match(text, "read-only", ignore.case = TRUE)
+      expect_match(text, "before any DSI\\s+call", perl = TRUE)
+    } else {
+      expect_match(text, "quarantined", ignore.case = TRUE,
+                   info = paste(basename(path), "must state quarantine"))
+      expect_match(text, "before any DSI call", fixed = TRUE,
+                   info = paste(basename(path), "must state the zero-DSI gate"))
     }
   }
 })

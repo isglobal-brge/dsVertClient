@@ -308,6 +308,10 @@
         route = "formal_sticky_synopsis_artifact",
         artifact = "signed_synopsis_describe_artifact_implemented",
         inference = "formal_synopsis_describe_release_implemented"),
+      formal_public_certificate_implemented = list(
+        route = "formal_completed_public_certificate_only",
+        artifact = "validated_formal_public_certificate_adapter_implemented",
+        inference = "coefficient_point_and_range_only"),
       capsule_release_implemented = list(
         route = "legacy_joint_dp_capsule_incompatible",
         artifact = "joint_vector_release_implemented",
@@ -504,33 +508,33 @@
       "formal_same_owner_synopsis_variant_only_legacy_unavailable")
 
   add(
-    c("ds.vertCox", "ds.vertCoxProfileNonDisclosive", "ds.vert.coxph"),
-    "ds.vertCoxProfileNonDisclosive", "cox_profile",
-    c("admitted_count", "cox_baseline_hazard", "cox_partial_likelihood",
-      "cox_risk_sets", "cox_score_hessian", "numeric_cross_products"),
+    c("ds.vertCox", "ds.vert.cox", "ds.vert.coxph"),
+    "ds.vertCox", "cox_formal_public_release",
+    c("formal_cox_public_certificate", "formal_cox_sticky_opening",
+      "formal_cox_two_authority_signatures"),
     paste(
-      "Cox proportional-hazards log hazard ratios under an explicit",
-      "ties, strata and delayed-entry contract."),
-    c("baseline_hazard_contract", "convergence", "delayed_entry_contract",
-      "dp_aware_covariance", "identifiability", "strata_contract",
-      "ties_method"),
-    "requires_new_capsule_artifact",
-    c("dsvertCoxEventTimeShareMaskDS", "k2BeaverSumShareDS"),
-    c("ds.vertCox" = "ds.vertCoxProfileNonDisclosive",
-      "ds.vert.coxph" = "ds.vertCoxProfileNonDisclosive"),
-    alias_kinds = c(
-      "ds.vertCox" = "compatibility_wrapper",
-      "ds.vert.coxph" = "compatibility_wrapper"))
+      "Certified bounded log-hazard-ratio lattice point estimates and",
+      "hazard-ratio ranges from one completed two-authority sticky opening."),
+    c("canonical_certificate_validation", "completed_release_only",
+      "no_covariance_or_sampling_inference", "two_authority_signatures"),
+    "formal_public_certificate_implemented",
+    aliases = c("ds.vert.cox" = "ds.vertCox",
+                "ds.vert.coxph" = "ds.vertCox"),
+    alias_kinds = c("ds.vert.cox" = "compatibility_wrapper",
+                    "ds.vert.coxph" = "compatibility_wrapper"),
+    current_route_status = "formal_completed_public_certificate_only",
+    artifact_implementation_state =
+      "validated_formal_cox_public_certificate_adapter_implemented")
 
   add(
-    "ds.vert.cox", "ds.vert.cox", "cox_dispatch",
+    "ds.vertCoxProfileNonDisclosive", "ds.vertCoxProfileNonDisclosive",
+    "cox_profile",
     c("admitted_count", "cox_baseline_hazard", "cox_partial_likelihood",
       "cox_risk_sets", "cox_score_hessian", "discrete_hazard_grid",
       "numeric_cross_products"),
-    "Route-selected Cox PH or explicitly labelled discrete-time hazard coefficients.",
+    "Historical exact Cox-profile coefficients.",
     c("convergence", "delayed_entry_contract", "dp_aware_covariance",
-      "estimand_label", "identifiability", "strata_contract",
-      "ties_method"),
+      "identifiability", "strata_contract", "ties_method"),
     "requires_new_capsule_artifact",
     c("dsvertCoxDiscreteExpandXDS", "dsvertCoxEventTimeShareMaskDS",
       "k2BeaverSumShareDS"))
@@ -1384,6 +1388,7 @@
     "formal_sticky_count_artifact",
     "formal_sticky_frequency_artifact",
     "formal_sticky_synopsis_artifact",
+    "formal_completed_public_certificate_only",
     "legacy_joint_dp_capsule_incompatible", "known_broken_route_quarantine",
     "legacy_exact_release_not_capsule_safe",
     "legacy_granular_release_not_capsule_safe",
@@ -1397,6 +1402,7 @@
     "count_operation_implemented",
     "frequency_operation_implemented",
     "synopsis_release_implemented",
+    "formal_public_certificate_implemented",
     "capsule_release_implemented",
     "client_only_requires_attested_input",
     "requires_new_capsule_artifact", "requires_new_secure_protocol")
@@ -1406,6 +1412,8 @@
     "signed_count_artifact_implemented",
     "signed_frequency_artifact_implemented",
     "signed_synopsis_describe_artifact_implemented",
+    "validated_formal_public_certificate_adapter_implemented",
+    "validated_formal_cox_public_certificate_adapter_implemented",
     "planned_no_materializer", "reserved_not_materialized",
     "secure_artifact_not_implemented",
     "validated_capsule_adapter_implemented",
@@ -1428,6 +1436,7 @@
     "formal_count_release_implemented",
     "formal_frequency_release_implemented",
     "formal_synopsis_describe_release_implemented",
+    "coefficient_point_and_range_only",
     "frequency_postprocess_implemented",
     "implemented_client_algebra_inherits_input",
     "capsule_postprocess_implemented",

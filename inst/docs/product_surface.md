@@ -93,8 +93,8 @@ Compatibility names for client-only post-processing retain their documented
 historical behaviour. Quarantined distributed names remain exported for API
 discovery, but their legacy server endpoints are unregistered and unexported;
 they fail locally with a stable migration error before connection discovery or
-DSI submission. Current quarantined families include Cox, NB2, multinomial,
-ordinal, LMM, clustered GEE, GLMM-PQL, MI, iterative LASSO and the legacy
+DSI submission. Current quarantined families include legacy Cox computation,
+NB2, multinomial, ordinal, LMM, clustered GEE, GLMM-PQL, MI, iterative LASSO and the legacy
 `ds.vertIPW()` contract. Use
 `ds.vertMethodStatus(status = "quarantine")` for the authoritative list.
 

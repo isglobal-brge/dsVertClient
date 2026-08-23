@@ -61,10 +61,17 @@ ds.vert.cox(
   data = NULL,
   method = c("profile", "discrete"),
   datasources = NULL,
+  formal_analysis_id = NULL,
   ...
 )
 
-ds.vert.coxph(formula, data = NULL, method = "profile", ...)
+ds.vert.coxph(
+  formula,
+  data = NULL,
+  method = "profile",
+  formal_analysis_id = NULL,
+  ...
+)
 
 ds.vert.nb(formula, data = NULL, method = "accurate", datasources = NULL, ...)
 

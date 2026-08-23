@@ -17,8 +17,9 @@
     method = "ds.vertCox",
     state = "legacy_cox_route_quarantined",
     replacement = paste0(
-      "No Cox-regression drop-in is released; ds.vertDPSurvival() is ",
-      "available only for its documented nonparametric survival estimands.")),
+      "A completed formal Cox certificate can be read with ",
+      "ds.vertCox(..., formal_analysis_id=...); it cannot start a new ",
+      "Cox analysis or provide classical inference.")),
   negative_binomial = list(
     method = "ds.vertNBFullRegTheta",
     state = "legacy_nb2_route_quarantined",

@@ -449,24 +449,31 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "are read-only completed releases: they cannot start source work or",
         "a new DP opening. Neither route returns sampling inference or",
         "individual fitted values."))
-  add(c("ds.vertCox", "ds.vertCoxProfileNonDisclosive", "ds.vert.coxph"),
-      "ds.vertCoxProfileNonDisclosive", "quarantine",
-      "Cox PH has no released compatibility route; the retained frontdoor fails before DSI.",
+  add(c("ds.vertCox", "ds.vert.coxph"),
+      "ds.vertCox", "promoted",
       paste(
-        "The historical exact-profile implementation is unreachable from the",
-        "public API. A capsule-bound DP release, covariance, ties/strata and",
-        "partial-likelihood inference remain incomplete."))
+        "Read-only coefficients and hazard-ratio ranges from one completed",
+        "two-authority-signed sticky formal Cox opening selected by",
+        "formal_analysis_id; no legacy Cox computation is reachable."),
+      paste(
+        "This route cannot start a Cox analysis and returns no covariance,",
+        "standard errors, p-values, baseline hazard, prediction, residual or",
+        "sampling inference artifact."))
+  add(c("ds.vertCoxProfileNonDisclosive"),
+      "ds.vertCoxProfileNonDisclosive", "quarantine",
+      "The historical exact-profile implementation remains unreachable before DSI.",
+      "Use only ds.vertCox(..., formal_analysis_id=...) for a completed public certificate; no new Cox run is released.")
   add(c("ds.vertCoxDiscreteNonDisclosive"),
       "ds.vertCoxDiscreteNonDisclosive", "quarantine",
       "Discrete-time pooled logistic hazard model.",
       paste(
         "This is not a Cox proportional-hazards estimand and its legacy",
         "risk-set/score route is not a formal capsule release."))
-  add("ds.vert.cox", "ds.vert.cox", "quarantine",
-      "Profile Cox coefficients when method='profile'.",
+  add("ds.vert.cox", "ds.vertCox", "promoted",
+      "Alias for the completed formal Cox public certificate when formal_analysis_id is supplied.",
       paste(
-        "Both selectable routes retain legacy exact/granular releases;",
-        "method='discrete' is also a distinct compatibility estimand."))
+        "No method selector, no covariance, p-values or new run is available",
+        "on the formal route; method='discrete' remains unavailable."))
   add(c("ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",
       "quarantine", "Quarantined NB2 research route only.",
       paste(
@@ -657,6 +664,9 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "postprocessing_inherits_input"
   out$release_contract[out$method %in% glm_synopsis_wrappers] <-
     "formal_sticky_synopsis_artifact"
+  formal_cox_public <- c("ds.vertCox", "ds.vert.cox", "ds.vert.coxph")
+  out$release_contract[out$method %in% formal_cox_public] <-
+    "formal_completed_public_certificate"
 
   # Numeric certification is a separate axis from statistical maturity and
   # disclosure release status.  Keep it explicit so a newly promoted method
@@ -681,7 +691,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "formal_joint_dp_capsule_only_legacy_unavailable",
     "formal_sticky_count_artifact",
     "formal_sticky_frequency_artifact",
-    "formal_sticky_synopsis_artifact")
+    "formal_sticky_synopsis_artifact",
+    "formal_completed_public_certificate")
   out$numeric_contract[dp_release] <- "separate_integer_dp_contract"
   out$numeric_blocker[dp_release] <- paste(
     "Covered by the DP mechanism/accountant contract, not the Ring numeric",

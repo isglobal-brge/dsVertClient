@@ -4,7 +4,8 @@
     "biomedical_joint_dp_capsule_profile_surface_eligible",
     "biomedical_joint_dp_capsule_runtime_readiness",
     "formal_glm_ready", "formal_glm_state",
-    "formal_cox_ready", "formal_cox_state")
+    "formal_cox_ready", "formal_cox_state",
+    "formal_cox_public_result_ready", "formal_cox_public_result_state")
   is.list(value) && identical(sort(names(value)), sort(required)) &&
     is.numeric(value$schema_version) &&
     length(value$schema_version) == 1L &&
@@ -30,7 +31,13 @@
     identical(
       value$formal_cox_state,
       paste0("sealed_no_recipient_encrypted_r_dsi_lifecycle_or_",
-             "end_to_end_numeric_certificate"))
+             "end_to_end_numeric_certificate")) &&
+    is.logical(value$formal_cox_public_result_ready) &&
+    length(value$formal_cox_public_result_ready) == 1L &&
+    !is.na(value$formal_cox_public_result_ready) &&
+    identical(value$formal_cox_public_result_state,
+              paste0("read_only_completed_two_authority_signed_sticky_",
+                     "opening_certificate"))
 }
 
 .dsvert_security_profile_validate <- function(value, server) {
@@ -97,6 +104,7 @@
           "biomedical_joint_dp_capsule_profile_surface_eligible"]]) ||
       isTRUE(value$route_claims$formal_glm_ready) ||
       isTRUE(value$route_claims$formal_cox_ready) ||
+      !isTRUE(value$route_claims$formal_cox_public_result_ready) ||
       !identical(
         value$deployment_surface_attested,
         identical(value$remote_surface_attestation_state,
@@ -149,7 +157,7 @@
       "biomedical_joint_dp_capsule_profile_surface_eligible"]]
   }, logical(1L)))
   route_readiness <- list(
-    schema_version = 2L,
+    schema_version = 3L,
     biomedical_joint_dp_capsule_profile_surface_eligible =
       biomedical_profile_eligible,
     biomedical_joint_dp_capsule_runtime_policy_consortium_ready = dp_ready,
@@ -160,7 +168,10 @@
     formal_glm_ready = FALSE,
     formal_glm_state = profiles[[1L]]$route_claims$formal_glm_state,
     formal_cox_ready = FALSE,
-    formal_cox_state = profiles[[1L]]$route_claims$formal_cox_state)
+    formal_cox_state = profiles[[1L]]$route_claims$formal_cox_state,
+    formal_cox_public_result_ready = TRUE,
+    formal_cox_public_result_state =
+      profiles[[1L]]$route_claims$formal_cox_public_result_state)
   ready <- route_readiness$biomedical_joint_dp_capsule_ready
   warnings <- character()
   if (!surface_ready) {
@@ -242,6 +253,8 @@ print.ds.vertSecurityStatus <- function(x, ...) {
     if (isTRUE(routes$biomedical_joint_dp_capsule_ready)) "yes" else "no",
     "| formal GLM:", if (isTRUE(routes$formal_glm_ready)) "yes" else "no",
     "| formal Cox:", if (isTRUE(routes$formal_cox_ready)) "yes" else "no",
+    "| formal Cox completed public result:",
+    if (isTRUE(routes$formal_cox_public_result_ready)) "yes" else "no",
     "\n")
   cat("Execution readiness:", routes$execution_readiness, "\n")
   if (!is.null(x$warning)) cat("Warning:", x$warning, "\n")

@@ -24,7 +24,11 @@
       formal_cox_ready = FALSE,
       formal_cox_state = paste0(
         "sealed_no_recipient_encrypted_r_dsi_lifecycle_or_",
-        "end_to_end_numeric_certificate")),
+        "end_to_end_numeric_certificate"),
+      formal_cox_public_result_ready = TRUE,
+      formal_cox_public_result_state = paste0(
+        "read_only_completed_two_authority_signed_sticky_",
+        "opening_certificate")),
     unconditional_non_reconstruction_guarantee = FALSE,
     mpc_transport_is_opaque_to_analyst = TRUE,
     caveat = "test caveat")
@@ -55,12 +59,13 @@ test_that("security status requires the single profile and DP readiness", {
       "biomedical_joint_dp_capsule_runtime_policy_consortium_ready"]])
   expect_true(
     result$route_readiness$biomedical_joint_dp_capsule_ready)
-  expect_identical(result$route_readiness$schema_version, 2L)
+  expect_identical(result$route_readiness$schema_version, 3L)
   expect_identical(
     result$route_readiness$execution_readiness,
     "not_evaluated_requires_route_specific_preflight")
   expect_false(result$route_readiness$formal_glm_ready)
   expect_false(result$route_readiness$formal_cox_ready)
+  expect_true(result$route_readiness$formal_cox_public_result_ready)
   expect_identical(result$release_mode, "disclosure_safe")
   expect_null(result$warning)
   printed <- capture.output(print(result))
@@ -73,6 +78,8 @@ test_that("security status requires the single profile and DP readiness", {
     "biomedical joint-DP capsules: yes", printed, fixed = TRUE)))
   expect_true(any(grepl("formal GLM: no", printed, fixed = TRUE)))
   expect_true(any(grepl("formal Cox: no", printed, fixed = TRUE)))
+  expect_true(any(grepl("formal Cox completed public result: yes", printed,
+                        fixed = TRUE)))
 })
 
 test_that("Armadillo readiness carries no client attestation input", {

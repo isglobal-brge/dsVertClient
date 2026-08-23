@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertCox.R
 \name{ds.vertCox}
 \alias{ds.vertCox}
-\title{Quarantined Cox compatibility frontdoor}
+\title{Formal Cox public-release frontdoor}
 \usage{
 ds.vertCox(
   formula,
@@ -14,31 +14,38 @@ ds.vertCox(
   ridge_eps = 1e-06,
   debug_trace = FALSE,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  formal_analysis_id = NULL
 )
 }
 \arguments{
-\item{formula, data, max_iter, tol, max_event_times, newton, ridge_eps, debug_trace, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+\item{formula, data}{Explicit formula and aligned data name selecting the
+custodian-configured completed release.}
+
+\item{formal_analysis_id}{Custodian-configured formal Cox public certificate
+selector. It is read-only and cannot create a new release.}
+
+\item{max_iter, tol, max_event_times, newton, ridge_eps, debug_trace, verbose, datasources}{Legacy compatibility arguments. They are rejected when a formal id is
+supplied; without it the route fails before DSI.}
 }
 \value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
+With a valid \code{formal_analysis_id}, a coefficient-only
+\code{dsvert_formal_dp_cox} object. Otherwise a typed unavailable error.
 }
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and computes or returns no model, statistic, diagnostic, or
-patient-derived metadata. Retained implementation code after the local
-migration gate is unreachable through this frontdoor and is not evidence
-of disclosure safety, differential privacy, numerical accuracy, or
-availability.
+With \code{formal_analysis_id}, reads an already completed,
+two-authority-signed sticky formal Cox certificate. It returns only the
+certified coefficient and hazard-ratio point/range values; it never starts
+a Cox computation or exposes source records, shares or intermediate state.
+Without \code{formal_analysis_id}, this compatibility name remains
+unavailable before any DSI call.
 }
 \details{
-Promotion requires a purpose-bound contribution-limited Cox
-capsule, private risk-set evaluation, certified ties/strata/delayed-entry
-semantics, covariance and identifiability certificates, and independent
-multi-host validation.
+The read-only formal route needs an explicit formula, data name and
+custodian-owned analysis id. It has no analyst-owned privacy parameters,
+ring, retry, source or MPC settings. Covariance, standard errors, p-values,
+baseline hazards, residuals, individual predictions and new analysis runs
+remain unavailable until separately attested artifacts exist.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

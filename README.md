@@ -142,7 +142,8 @@ that a particular dataset passes admission, that its manifest can be built,
 that a route's numeric runtime is available, or that a live release will
 complete. The route map says
 `execution_readiness = "not_evaluated_requires_route_specific_preflight"` and
-separately reports formal GLM and formal Cox as not ready.
+separately reports formal GLM and formal Cox as not ready for new computation;
+it also reports whether a completed formal Cox public certificate can be read.
 
 The surface token is connector-neutral and is provisioned only by server
 administrators after an exact effective-inventory check. Opal stores it in the
@@ -165,7 +166,7 @@ entry point.
 | **GLM** (gaussian / binomial / poisson) | `ds.vertGLM()` / `ds.vert.glm()` are promoted only for a compatible same- or cross-owner Gaussian request with a custodian-configured `dp_analysis_id`; it delegates to the signed sticky `ds.vertDPGaussian()` artifact. Binomial/Poisson and other iterative routes stay gated until their formal capsule backends are production-ready. |
 | **Inference helpers** | `ds.vertConfint()`, `ds.vertContrast()`, `ds.vertWald()` and `ds.vertLR()` are retained as provisional client algebra for a future attested fit. Current public DP GLM releases deliberately lack sampling covariance/deviance and fail closed rather than fabricate inference. |
 | **Epidemiology from authorised aggregates** | `ds.vertEpi2x2()`, `ds.vertMantelHaenszel()`, `ds.vertDirectStandardization()`, `ds.vertIndirectStandardization()` |
-| **Survival** | Sticky fixed-grid DP survival artifacts and their Kaplan--Meier, Nelson--Aalen, competing-risk, survival-quantile, RMST and RMTL post-processors are available. Cox frontdoors are retained but quarantined and fail before DSI until the formal Cox capsule is production-ready. |
+| **Survival** | Sticky fixed-grid DP survival artifacts and their Kaplan--Meier, Nelson--Aalen, competing-risk, survival-quantile, RMST and RMTL post-processors are available. `ds.vertCox()` / `ds.vert.cox()` / `ds.vert.coxph()` can read a completed dual-signed formal Cox certificate selected by `formal_analysis_id`; they cannot start a Cox run or provide classical inference. |
 | **Negative binomial** | Historical names are retained but quarantined; no NB2 estimator is advertised as disclosure-safe until a complete bounded score/information capsule and validated joint inference are available. |
 | **Multinomial** | `ds.vertMultinom()` / `ds.vertMultinomJointNewton()` are quarantined; slope models fail closed before DSI until a signed raw-design Gram workload exists |
 | **Ordinal (proportional odds)** | Historical joint-Newton names are retained but quarantined and fail before DSI pending a formal bounded proportional-odds capsule. |
@@ -178,7 +179,7 @@ entry point.
 | Family | K=2 product route | K≥3 product route | Legacy / not offered |
 |---|---|---|---|
 | GLM (gauss / binom / poisson) | Compatible same- or cross-owner Gaussian signed-Synopsis adapter only; binomial/Poisson gated | same, tested through K=5 | legacy iterative routes are not production claims |
-| Cox PH | Formal capsule under internal validation; public frontdoors gated | same | `legacy_rank`, `ds.vertCox.k3()` removed |
+| Cox PH | Read-only completed dual-signed certificate route; new computation gated | same | no covariance, p-values, baseline hazard or `legacy_rank` route |
 | Negative binomial | Quarantined pending bounded NB2 capsule and joint inference | same | disclosive `variant = "full_reg"` removed |
 | Multinomial | Slope route unavailable pending signed `multinomial_design_grams` | same | unsafe local-moment/correlation Gram reconstruction and warm / OVR final-estimator route removed |
 | Ordinal | Quarantined pending a formal proportional-odds capsule | same | warm final-estimator and patient-level joint reconstruction routes removed from the exported API |

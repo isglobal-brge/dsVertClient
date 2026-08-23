@@ -144,7 +144,8 @@ test_that("aliases and wrappers retain honest routing semantics", {
     "ds.vert.confint" = "ds.vertConfint",
     "ds.vert.contrast" = "ds.vertContrast",
     "ds.vert.cor" = "ds.vertCor",
-    "ds.vert.coxph" = "ds.vertCoxProfileNonDisclosive",
+    "ds.vert.cox" = "ds.vertCox",
+    "ds.vert.coxph" = "ds.vertCox",
     "ds.vert.desc" = "ds.vertDesc",
     "ds.vert.fisher" = "ds.vertFisher",
     "ds.vert.gee" = "ds.vertGEE",
@@ -164,12 +165,11 @@ test_that("aliases and wrappers retain honest routing semantics", {
     "ds.vert.ordinal" = "ds.vertOrdinalJointNewton",
     "ds.vert.pca" = "ds.vertPCA",
     "ds.vert.wald" = "ds.vertWald",
-    "ds.vertCox" = "ds.vertCoxProfileNonDisclosive",
     "ds.vertMultinom" = "ds.vertMultinomJointNewton",
     "ds.vertMultinomJoint" = "ds.vertMultinomJointNewton",
     "ds.vertOrdinal" = "ds.vertOrdinalJointNewton")
   wrappers <- c(
-    "ds.vertCox", "ds.vert.coxph", "ds.vertMultinom", "ds.vertMultinomJoint",
+    "ds.vert.cox", "ds.vert.coxph", "ds.vertMultinom", "ds.vertMultinomJoint",
     "ds.vertOrdinal")
   inventory <- .dsvert_capsule_method_inventory()
   actual <- inventory$alias_of
@@ -339,6 +339,10 @@ test_that("planned artifacts describe the actual biomedical contracts", {
   expect_true(all(c(
     "cox_partial_likelihood", "cox_score_hessian", "cox_baseline_hazard") %in%
       artifacts_for(inventory, "ds.vertCoxProfileNonDisclosive")))
+  expect_true(all(c(
+    "formal_cox_public_certificate", "formal_cox_sticky_opening",
+    "formal_cox_two_authority_signatures") %in%
+      artifacts_for(inventory, "ds.vertCox")))
   expect_contains(artifacts_for(inventory, "ds.vertDPDescribe"),
                   "fixed_numeric_histograms")
 })
