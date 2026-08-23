@@ -1234,6 +1234,20 @@ test_that("real Synopsis survival is plausible and Rock-replayable at K=2/3/5", 
     expect_true(all(is.finite(first$curve$nelson_aalen)))
     expect_true(all(first$curve$nelson_aalen >= 0))
 
+    route_survival <- function(data_name, analysis_id, server = NULL,
+                               datasources = NULL, .aggregate) {
+      survival(data_name, analysis_id, server, datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_survival_impl = route_survival,
+      ds.vertDPSurvival("data_peer_a", "primary", "peer_a", conns),
+      .package = "dsVertClient")
+    expect_s3_class(public, "ds.vertDPSurvival")
+    expect_identical(public$curve, first$curve)
+    expect_identical(public$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
     before <- c(fixture$state$source_prepare, fixture$state$start)
     kaplan_meier <- ds.vertDPKaplanMeier(first)
     nelson_aalen <- ds.vertDPNelsonAalen(first)
