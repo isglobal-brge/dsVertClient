@@ -202,6 +202,9 @@ iterative route.
 intercept-only log-odds post-processed from one validated sticky Frequency
 release. It accepts no DataSHIELD connections, covariates or inference
 controls and cannot create another release.
+\code{ds.vert.ordinal(..., frequency = x)} likewise returns only
+intercept-only cumulative-logit thresholds from the same kind of release;
+its complete ordered category domain must be explicit.
 No alias re-enables a retired remote endpoint or weakens the signed-artifact
 and custodian-owned policy gates of an available backend.
 For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied

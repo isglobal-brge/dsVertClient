@@ -2,12 +2,12 @@
 % Please edit documentation in R/ds.vertOrdinal.R
 \name{ds.vertOrdinal}
 \alias{ds.vertOrdinal}
-\title{Quarantined ordinal-regression compatibility frontdoor}
+\title{Sticky-DP intercept-only ordinal frontdoor}
 \usage{
 ds.vertOrdinal(
   formula,
   data = NULL,
-  levels_ordered,
+  levels_ordered = NULL,
   cumulative_template = "\%s_leq",
   max_iter = NULL,
   max_outer = 20L,
@@ -17,29 +17,37 @@ ds.vertOrdinal(
   binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
   datasources = NULL,
-  ...
+  ...,
+  frequency = NULL
 )
 }
 \arguments{
 \item{formula, data, levels_ordered, cumulative_template, max_iter, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+public frontdoor fails locally. With a validated \code{frequency} object,
+only \code{y ~ 1} is available.}
+
+\item{frequency}{A released, validated \code{ds.vertDPFrequency} object for
+the outcome. The supplied \code{levels_ordered} must be a complete
+permutation of its signed category domain.}
 
 \item{...}{Retained compatibility arguments; not evaluated.}
 }
-\value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
-}
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and returns no ordinal fit. Retained cumulative-binomial and
-proportional-odds code after the gate is unreachable through this public
-frontdoor and carries no disclosure, DP, accuracy, or availability claim.
+With a released, validated \code{ds.vertDPFrequency} object,
+this frontdoor fits \code{y ~ 1} by deterministic post-processing of one
+sticky categorical release. The caller supplies the complete clinical
+category order; the result contains Jeffreys-smoothed cumulative-logit
+thresholds and never starts a new analysis or DSI request.
 }
 \details{
-Promotion requires a signed bounded proportional-odds artifact,
-protected score/information and validated covariance and diagnostics.
+This is deliberately narrower than a proportional-odds regression:
+covariates, protected score/information, covariance, standard errors and
+inference remain unavailable. Calls without \code{frequency} retain the
+local zero-DSI quarantine gate.
+}
+\value{
+With \code{frequency}, a threshold-only \code{ds.vertOrdinal} object.
+Otherwise the function raises \code{dsvert_route_unavailable} before DSI.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

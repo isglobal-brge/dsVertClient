@@ -507,8 +507,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "A gaussian_models correlation capsule cannot certify the raw design",
         "used by the score MPC; a purpose-bound multinomial_design_grams",
         "artifact with identical mask, snapshot, scaling and order is required."))
-  add(c("ds.vertOrdinal", "ds.vertOrdinalJointNewton", "ds.vert.ordinal"),
-      "ds.vertOrdinalJointNewton", "quarantine",
+  add(c("ds.vertOrdinal", "ds.vert.ordinal"), "ds.vertOrdinal", "promoted",
+      paste(
+        "Read-only intercept-only cumulative-logit thresholds from one",
+        "validated sticky DP Frequency release; it performs no new DSI call",
+        "or opening."),
+      paste(
+        "The caller must give the complete signed category domain in clinical",
+        "order. Covariates, protected score/information, covariance, standard",
+        "errors and inference remain unavailable."))
+  add("ds.vertOrdinalJointNewton", "ds.vertOrdinalJointNewton", "quarantine",
       "Joint proportional-odds point estimates only.",
       paste(
         "The score route is a legacy exact release rather than a formal",
@@ -675,7 +683,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertLASSOProximal", "ds.vert.lasso_proximal",
     "ds.vertLASSOCV", "ds.vert.lasso_cv")
   inherited_postprocessing <- c(
-    inherited_postprocessing, "ds.vertMultinom", "ds.vert.multinom")
+    inherited_postprocessing, "ds.vertMultinom", "ds.vert.multinom",
+    "ds.vertOrdinal", "ds.vert.ordinal")
   glm_synopsis_wrappers <- c(
     "ds.vertGLM", "ds.vert.glm",
     "ds.vertLASSOIter", "ds.vert.lasso_iter")

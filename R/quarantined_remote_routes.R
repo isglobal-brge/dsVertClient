@@ -34,7 +34,10 @@
   ordinal = list(
     method = "ds.vertOrdinalJointNewton",
     state = "ordinal_score_capsule_unavailable",
-    replacement = "No disclosure-safe ordinal replacement is released."),
+    replacement = paste0(
+      "For y ~ 1, pass a validated ds.vertDPFrequency object and a complete ",
+      "clinical category order to ds.vertOrdinal(..., frequency = ...); ",
+      "covariate proportional-odds models remain unavailable.")),
   lmm = list(
     method = "ds.vertLMM",
     state = "cluster_granular_lmm_route_quarantined",

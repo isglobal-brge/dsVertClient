@@ -614,8 +614,26 @@
       "signed_multinomial_design_gram_not_materialized")
 
   add(
-    c("ds.vertOrdinal", "ds.vertOrdinalJointNewton", "ds.vert.ordinal"),
-    "ds.vertOrdinalJointNewton", "ordinal_regression",
+    c("ds.vertOrdinal", "ds.vert.ordinal"),
+    "ds.vertOrdinal", "ordinal_intercept_frequency",
+    c("validated_sticky_frequency_artifact", "fixed_category_domain",
+      "caller_declared_ordinal_order", "zero_call_postprocessing"),
+    paste(
+      "Intercept-only cumulative-logit thresholds with deterministic Jeffreys",
+      "smoothing of one validated sticky categorical Frequency release."),
+    c("fixed_category_domain", "caller_declared_ordinal_order",
+      "validated_frequency_provenance", "no_covariates",
+      "no_covariance_or_inference"),
+    "frequency_operation_implemented",
+    character(),
+    c("ds.vert.ordinal" = "ds.vertOrdinal"),
+    current_route_status = "client_only_validated_capsule_postprocess",
+    artifact_implementation_state =
+      "validated_frequency_artifact_adapter_implemented",
+    inference_implementation_state = "frequency_postprocess_implemented")
+
+  add(
+    "ds.vertOrdinalJointNewton", "ds.vertOrdinalJointNewton", "ordinal_regression",
     c("admitted_count", "categorical_outcome_domain",
       "model_score_hessian", "numeric_cross_products_same_and_cross_owner"),
     "Joint proportional-odds thresholds and slopes.",
@@ -624,9 +642,7 @@
     "requires_new_capsule_artifact",
     c("dsvertOrdinalShareClassMasksDS", "getObsCountDS",
       "glmStandardizeDS", "k2GradientR1DS", "k2GradientR2DS"),
-    c("ds.vertOrdinal" = "ds.vertOrdinalJointNewton",
-      "ds.vert.ordinal" = "ds.vertOrdinalJointNewton"),
-    alias_kinds = c("ds.vertOrdinal" = "compatibility_wrapper"))
+    character())
 
   add(
     c("ds.vertLMM", "ds.vert.lmm"), "ds.vertLMM",

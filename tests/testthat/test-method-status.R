@@ -62,8 +62,7 @@ test_that("no public route may report a result numeric certificate", {
 
 test_that("known unsafe legacy routes are not presented as promoted", {
   quarantined <- ds.vertMethodStatus(status = "quarantine")$method
-  unsafe_server_routes <- c(
-    "ds.vertOrdinal", "ds.vertOrdinalJointNewton", "ds.vert.ordinal")
+  unsafe_server_routes <- "ds.vertOrdinalJointNewton"
   newly_quarantined <- c(
     "ds.vertNBFullRegTheta", "ds.vert.nb", "ds.vertMI", "ds.vert.mi",
     "ds.vertMultinomJoint", "ds.vertMultinomJointNewton")
@@ -78,6 +77,11 @@ test_that("known unsafe legacy routes are not presented as promoted", {
     "ds.vertMultinom", "ds.vert.multinom"))$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertMultinom", "ds.vert.multinom"))$release_contract ==
+      "postprocessing_inherits_input"))
+  expect_true(all(ds.vertMethodStatus(c(
+    "ds.vertOrdinal", "ds.vert.ordinal"))$status == "promoted"))
+  expect_true(all(ds.vertMethodStatus(c(
+    "ds.vertOrdinal", "ds.vert.ordinal"))$release_contract ==
       "postprocessing_inherits_input"))
   expect_length(intersect(
     ds.vertMethodStatus(status = "promoted")$method,

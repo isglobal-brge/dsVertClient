@@ -13,6 +13,9 @@
 #' intercept-only log-odds post-processed from one validated sticky Frequency
 #' release. It accepts no DataSHIELD connections, covariates or inference
 #' controls and cannot create another release.
+#' \code{ds.vert.ordinal(..., frequency = x)} likewise returns only
+#' intercept-only cumulative-logit thresholds from the same kind of release;
+#' its complete ordered category domain must be explicit.
 #' No alias re-enables a retired remote endpoint or weakens the signed-artifact
 #' and custodian-owned policy gates of an available backend.
 #' For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied
@@ -410,6 +413,16 @@ ds.vert.multinom <- function(formula, data = NULL,
 #' @export
 ds.vert.ordinal <- function(formula, data = NULL,
                             datasources = NULL, ...) {
+  extras <- list(...)
+  if (!is.null(extras$frequency)) {
+    if ("datasources" %in% names(match.call())[-1L]) {
+      stop("Frequency-backed ordinal does not accept datasources", call. = FALSE)
+    }
+    out <- do.call(ds.vertOrdinal, c(
+      list(formula = formula, data = data), extras))
+    return(.dsvert_set_frontdoor(out, "ds.vert.ordinal",
+                                 "ds.vertOrdinal", NULL))
+  }
   .dsvert_block_retired_remote_route("ordinal")
   datasources <- .dsvert_datasources(datasources)
   out <- ds.vertOrdinal(formula = formula, data = data,

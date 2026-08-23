@@ -1,25 +1,38 @@
-#' @title Quarantined ordinal-regression compatibility frontdoor
-#' @description This exported name is retained for API compatibility. It
-#'   raises a typed \code{dsvert_route_unavailable} condition before any DSI
-#'   call and returns no ordinal fit. Retained cumulative-binomial and
-#'   proportional-odds code after the gate is unreachable through this public
-#'   frontdoor and carries no disclosure, DP, accuracy, or availability claim.
-#' @details Promotion requires a signed bounded proportional-odds artifact,
-#'   protected score/information and validated covariance and diagnostics.
+#' @title Sticky-DP intercept-only ordinal frontdoor
+#' @description With a released, validated \code{ds.vertDPFrequency} object,
+#'   this frontdoor fits \code{y ~ 1} by deterministic post-processing of one
+#'   sticky categorical release. The caller supplies the complete clinical
+#'   category order; the result contains Jeffreys-smoothed cumulative-logit
+#'   thresholds and never starts a new analysis or DSI request.
+#' @details This is deliberately narrower than a proportional-odds regression:
+#'   covariates, protected score/information, covariance, standard errors and
+#'   inference remain unavailable. Calls without \code{frequency} retain the
+#'   local zero-DSI quarantine gate.
 #' @param formula,data,levels_ordered,cumulative_template,max_iter,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources
-#'   Retained compatibility arguments. They are not evaluated because the
-#'   public frontdoor fails locally.
+#'   Retained compatibility arguments. With a validated \code{frequency}
+#'   object, only \code{y ~ 1} is available.
+#' @param frequency A released, validated \code{ds.vertDPFrequency} object for
+#'   the outcome. The supplied \code{levels_ordered} must be a complete
+#'   permutation of its signed category domain.
 #' @param ... Retained compatibility arguments; not evaluated.
-#' @return No fitted object. The function raises
+#' @return With \code{frequency}, a threshold-only \code{ds.vertOrdinal}
+#'   object. Otherwise the function raises
 #'   \code{dsvert_route_unavailable} before DSI.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
-ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
+ds.vertOrdinal <- function(formula, data = NULL, levels_ordered = NULL,
                            cumulative_template = "%s_leq",
                            max_iter = NULL, max_outer = 20L, tol = NULL,
                            warm_max_iter = NULL, warm_tol = NULL,
                            binomial_sigmoid_intervals = NULL,
-                           verbose = TRUE, datasources = NULL, ...) {
+                           verbose = TRUE, datasources = NULL, ...,
+                           frequency = NULL) {
+  if (!is.null(frequency)) {
+    return(.dsvert_formal_ordinal_frequency_adapter(
+      explicit_arguments = names(match.call())[-1L],
+      formula = if (missing(formula)) NULL else formula,
+      data = data, levels_ordered = levels_ordered, frequency = frequency))
+  }
   .dsvert_block_retired_remote_route("ordinal")
   extra <- list(...)
   if (length(extra) > 0L) {
@@ -56,6 +69,87 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
     binomial_sigmoid_intervals = binomial_sigmoid_intervals,
     verbose = verbose,
     datasources = datasources)
+}
+
+.dsvert_formal_ordinal_frequency_adapter <- function(
+    explicit_arguments, formula, data, levels_ordered, frequency) {
+  allowed <- c("formula", "data", "levels_ordered", "verbose", "frequency")
+  unexpected <- setdiff(explicit_arguments, allowed)
+  if (length(unexpected)) {
+    stop(paste(
+      "Frequency-backed ordinal does not accept legacy controls:",
+      paste(sort(unexpected, method = "radix"), collapse = ", ")),
+      call. = FALSE)
+  }
+  if (!inherits(formula, "formula") || length(formula) != 3L ||
+      !is.symbol(formula[[2L]])) {
+    stop("Frequency-backed ordinal requires a simple outcome formula",
+         call. = FALSE)
+  }
+  terms <- stats::terms(formula)
+  if (!identical(as.integer(attr(terms, "intercept")), 1L) ||
+      length(attr(terms, "term.labels")) != 0L) {
+    stop("Frequency-backed ordinal supports only an intercept-only y ~ 1 formula",
+         call. = FALSE)
+  }
+  frequency <- .dsvert_dp_frequency_contract(frequency)
+  levels <- frequency$levels
+  counts <- frequency$counts
+  if (!is.character(levels) || length(levels) < 3L || anyNA(levels) ||
+      any(!nzchar(levels)) || anyDuplicated(levels) ||
+      !is.numeric(counts) || length(counts) != length(levels) ||
+      is.null(names(counts)) || !identical(names(counts), levels) ||
+      any(!is.finite(counts)) || any(counts < 0) || sum(counts) <= 0) {
+    stop("Frequency-backed ordinal requires a non-empty signed categorical release",
+         call. = FALSE)
+  }
+  outcome <- as.character(formula[[2L]])
+  if (!identical(outcome, frequency$variable)) {
+    stop("Frequency-backed ordinal outcome does not match the signed frequency variable",
+         call. = FALSE)
+  }
+  descriptor <- frequency$coordinate_descriptor
+  dataset <- if (is.list(descriptor)) descriptor$dataset else NULL
+  if (!is.null(data) && (!is.character(data) || length(data) != 1L ||
+                         is.na(data) || !identical(data, dataset))) {
+    stop("Frequency-backed ordinal data does not match the signed frequency release",
+         call. = FALSE)
+  }
+  if (!is.character(levels_ordered) || length(levels_ordered) != length(levels) ||
+      anyNA(levels_ordered) || any(!nzchar(levels_ordered)) ||
+      anyDuplicated(levels_ordered) || !setequal(levels_ordered, levels)) {
+    stop("Frequency-backed ordinal levels_ordered must be a complete permutation of the signed category domain",
+         call. = FALSE)
+  }
+  counts <- counts[levels_ordered]
+  alpha <- 0.5
+  probabilities <- (counts + alpha) / (sum(counts) + alpha * length(counts))
+  cumulative <- cumsum(probabilities)[-length(probabilities)]
+  names(cumulative) <- head(levels_ordered, -1L)
+  result <- list(
+    status = "public_certified_intercept_only_ordinal",
+    family = "ordinal_intercept_only_frequency_postprocessing",
+    levels = levels_ordered,
+    thresholds = stats::qlogis(cumulative),
+    probabilities = probabilities,
+    cumulative_probabilities = cumulative,
+    dp_counts = counts,
+    effective_count_dp = sum(counts),
+    smoothing = list(method = "Jeffreys_dirichlet_half", alpha = alpha),
+    frequency_release_sha256 = frequency$release_sha256,
+    sticky_noise = TRUE,
+    sticky_replay = TRUE,
+    additional_privacy_cost = c(epsilon = 0, delta = 0),
+    beta_po = NULL,
+    covariance_po = NULL,
+    std_errors_po = NULL,
+    source_values_exposed = FALSE,
+    intermediate_values_exposed = FALSE,
+    production_ready = FALSE,
+    inference = "unavailable_without_a_protected_ordinal_score_artifact",
+    called_via = "ds.vertOrdinal_frequency")
+  class(result) <- c("dsvert_dp_frequency_ordinal", "ds.vertOrdinal", "list")
+  result
 }
 
 #' @keywords internal
@@ -259,6 +353,12 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered,
 
 #' @export
 print.ds.vertOrdinal <- function(x, ...) {
+  if (inherits(x, "dsvert_dp_frequency_ordinal")) {
+    cat("dsVert sticky-DP intercept-only ordinal fit\n")
+    print(round(x$thresholds, 4L))
+    cat("  No covariates, covariance, standard errors or inference are released.\n")
+    return(invisible(x))
+  }
   cat(sprintf("dsVert ordinal logistic regression (%d levels)\n",
               length(x$levels)))
   cat(sprintf("  N = %d\n\n", x$n_obs))

@@ -163,15 +163,13 @@ test_that("aliases and wrappers retain honest routing semantics", {
     "ds.vert.mi" = "ds.vertMI",
     "ds.vert.multinom" = "ds.vertMultinom",
     "ds.vert.nb" = "ds.vertNBFullRegTheta",
-    "ds.vert.ordinal" = "ds.vertOrdinalJointNewton",
+    "ds.vert.ordinal" = "ds.vertOrdinal",
     "ds.vert.pca" = "ds.vertPCA",
     "ds.vert.wald" = "ds.vertWald",
-    "ds.vertMultinomJoint" = "ds.vertMultinomJointNewton",
-    "ds.vertOrdinal" = "ds.vertOrdinalJointNewton")
+    "ds.vertMultinomJoint" = "ds.vertMultinomJointNewton")
   wrappers <- c(
     "ds.vert.cox", "ds.vert.coxph", "ds.vertCoxProfileNonDisclosive",
-    "ds.vertMultinomJoint",
-    "ds.vertOrdinal")
+    "ds.vertMultinomJoint")
   inventory <- .dsvert_capsule_method_inventory()
   actual <- inventory$alias_of
   names(actual) <- inventory$method
@@ -589,6 +587,7 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
   mixed <- c("ds.vertGLM", "ds.vert.glm")
   broken <- c("ds.vertMultinomJoint", "ds.vertMultinomJointNewton")
   frequency_multinom <- c("ds.vertMultinom", "ds.vert.multinom")
+  frequency_ordinal <- c("ds.vertOrdinal", "ds.vert.ordinal")
 
   expect_true(all(inventory$current_route_status[
     inventory$method %in% mixed] ==
@@ -609,6 +608,12 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
   expect_true(all(inventory$inference_implementation_state[
     inventory$method %in% frequency_multinom] ==
       "frequency_postprocess_implemented"))
+  expect_true(all(inventory$current_route_status[
+    inventory$method %in% frequency_ordinal] ==
+      "client_only_validated_capsule_postprocess"))
+  expect_true(all(inventory$inference_implementation_state[
+    inventory$method %in% frequency_ordinal] ==
+      "frequency_postprocess_implemented"))
   lasso_iter <- inventory[inventory$method %in%
     c("ds.vertLASSOIter", "ds.vert.lasso_iter"), , drop = FALSE]
   expect_true(all(lasso_iter$current_route_status ==
@@ -621,6 +626,7 @@ test_that("mixed variants and unavailable signed workloads cannot look promoted"
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertLASSOIter", "ds.vert.lasso_iter"))$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(frequency_multinom)$status == "promoted"))
+  expect_true(all(ds.vertMethodStatus(frequency_ordinal)$status == "promoted"))
   expect_length(intersect(ds.vertMethodStatus(status = "promoted")$method,
                           broken), 0L)
 })

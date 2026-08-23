@@ -2,7 +2,6 @@ quarantined_doc_sources <- c(
   "ds.vertNBFullRegTheta.R",
   "ds.vertMultinomJoint.R",
   "ds.vertMultinomJointNewton.R",
-  "ds.vertOrdinal.R",
   "ds.vertOrdinalJointNewton.R",
   "ds.vertLMM.R",
   "ds.vertLMM.k3.R",
@@ -14,7 +13,6 @@ quarantined_doc_topics <- c(
   "ds.vertNBFullRegTheta" = "ds.vertNBFullRegTheta.R",
   "ds.vertMultinomJoint" = "ds.vertMultinomJoint.R",
   "ds.vertMultinomJointNewton" = "ds.vertMultinomJointNewton.R",
-  "ds.vertOrdinal" = "ds.vertOrdinal.R",
   "ds.vertOrdinalJointNewton" = "ds.vertOrdinalJointNewton.R",
   "ds.vertLMM" = "ds.vertLMM.R",
   "ds.vertLMM.k3" = "ds.vertLMM.k3.R",
@@ -137,6 +135,26 @@ test_that("multinomial help limits Frequency post-processing to y ~ 1", {
     expect_match(text, "Jeffreys", fixed = TRUE)
     expect_match(text, "never starts a new analysis", fixed = TRUE)
     expect_match(text, "joint softmax", ignore.case = TRUE)
+    expect_match(text, "standard errors", ignore.case = TRUE)
+  }
+})
+
+test_that("ordinal help requires an explicit order and limits output to thresholds", {
+  package_root <- dirname(.dsvert_client_source_root())
+  source <- .dsvert_public_roxygen_text("ds.vertOrdinal.R", "ds.vertOrdinal")
+  rd_path <- file.path(package_root, "man", "ds.vertOrdinal.Rd")
+  if (!file.exists(rd_path)) {
+    testthat::fail("generated ds.vertOrdinal help is unavailable")
+  }
+  rd <- paste(readLines(rd_path, warn = FALSE), collapse = "\n")
+
+  for (text in list(source, rd)) {
+    expect_match(text, "ds.vertDPFrequency", fixed = TRUE)
+    expect_match(text, "y ~ 1", fixed = TRUE)
+    expect_match(text, "complete clinical", ignore.case = TRUE)
+    expect_match(text, "cumulative-logit", fixed = TRUE)
+    expect_match(text, "never starts a new analysis", fixed = TRUE)
+    expect_match(text, "covariates", ignore.case = TRUE)
     expect_match(text, "standard errors", ignore.case = TRUE)
   }
 })
