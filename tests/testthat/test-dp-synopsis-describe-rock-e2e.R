@@ -598,6 +598,38 @@ test_that("real Synopsis Describe is plausible and Rock-replayable at K=2/3/5", 
     expect_gte(first$descriptives$variance[[1L]], 0)
     expect_lte(first$descriptives$variance[[1L]], 25)
 
+    route_describe <- function(data_name, analysis_id, probs,
+                               server = NULL, datasources = NULL,
+                               .aggregate, resume = NULL) {
+      describe(data_name, analysis_id, probs, server, datasources, dispatch,
+               resume = resume)
+    }
+    public_describe <- testthat::with_mocked_bindings(
+      .dsvert_dp_describe_impl = route_describe,
+      ds.vertDPDescribe(
+        "data_peer_a", "primary", probs = 0.5, server = "peer_a",
+        datasources = conns),
+      .package = "dsVertClient")
+    expect_s3_class(public_describe, "ds.vertDPDescribe")
+    expect_identical(public_describe$statistics, first$statistics)
+    expect_identical(public_describe$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    route_meanvar <- function(data_name, variable, server = NULL,
+                              datasources = NULL, .aggregate) {
+      meanvar(data_name, variable, server, datasources, dispatch)
+    }
+    public_meanvar <- testthat::with_mocked_bindings(
+      .dsvert_dp_meanvar_impl = route_meanvar,
+      ds.vertDPMeanVar("data_peer_a", "x_peer_a", "peer_a", conns),
+      .package = "dsVertClient")
+    expect_s3_class(public_meanvar, "ds.vertDPMeanVar")
+    expect_true(is.finite(public_meanvar$mean))
+    expect_true(is.finite(public_meanvar$variance))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
     postprocess_before <- c(fixture$state$source_prepare, fixture$state$start)
     quantiles <- quantile(first, probs = c(0.25, 0.5, 0.75))
     medians <- median(first)
