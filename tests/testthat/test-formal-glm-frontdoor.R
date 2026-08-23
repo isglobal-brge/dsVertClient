@@ -1,35 +1,66 @@
-.formal_glm_condition <- function(expr) {
-  tryCatch(expr, error = function(error) error)
+.formal_glm_public_release <- function(request) {
+  list(
+    version = "dsvert-formal-glm-public-result-v1",
+    analysis_id = request$analysis_id,
+    artifact_id = digest::digest("artifact", algo = "sha256", serialize = FALSE),
+    certificate_sha256 = digest::digest(
+      "certificate", algo = "sha256", serialize = FALSE),
+    family = request$family, formula_sha256 = request$formula_sha256,
+    coefficients = list(
+      list(coefficient = "(Intercept)", signed_steps = "524288",
+           output_lattice_bits = 20, value = 0.5),
+      list(coefficient = "x", signed_steps = "-262144",
+           output_lattice_bits = 20, value = -0.25)),
+    production_ready = FALSE)
 }
 
-test_that("formal GLM is sealed before datasource forcing or DSI", {
-  datasource_forced <- FALSE
-  condition <- .formal_glm_condition(ds.vertGLM(
+test_that("formal GLM reads the same certified public release at every site", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"))
+  calls <- 0L
+  testthat::local_mocked_bindings(
+    .dsvert_aggregate_strict = function(conns, expr, operation, .aggregate) {
+      calls <<- calls + 1L
+      expect_identical(operation, "formal GLM public-result retrieval")
+      expect_identical(as.character(expr[[1L]]),
+                       "dsvertFormalGLMPublicResultDS")
+      request <- as.list(expr[-1L])
+      expected <- .formal_glm_public_release(request)
+      stats::setNames(list(expected, expected), names(conns))
+    },
+    .package = "dsVertClient")
+  fit <- ds.vertGLM(
     y ~ x, data = "study", family = "binomial",
     formal_analysis_id = "primary_logit", verbose = FALSE,
-    datasources = {
-      datasource_forced <<- TRUE
-      stop("datasource promise was forced", call. = FALSE)
-    }))
+    datasources = conns)
+  expect_identical(calls, 1L)
+  expect_s3_class(fit, "dsvert_formal_dp_glm")
+  expect_s3_class(fit, "ds.glm")
+  expect_equal(fit$coefficients, c("(Intercept)" = 0.5, x = -0.25))
+  expect_identical(fit$coefficient_lattice_steps[["x"]], "-262144")
+  expect_false(fit$production_ready)
+  expect_false(fit$source_values_exposed)
+  expect_error(ds.vertLR(fit, fit), class = "dsvert_inference_unavailable")
+})
 
-  expect_s3_class(condition, "dsvert_formal_glm_frontdoor_unavailable")
-  expect_identical(
-    condition$code,
-    "formal_glm_phase19_durable_r_dsi_release_bridge_not_promoted")
-  expect_identical(condition$dsi_calls, 0L)
-  expect_identical(condition$openings_performed, 0L)
-  expect_false(condition$operation_limit)
-  expect_false(condition$request_limit)
-  expect_false(condition$history_can_deny_operation)
-  expect_false(condition$production_ready)
-  expect_false(datasource_forced)
-  expect_identical(length(condition$missing), 5L)
-  expect_true(
-    "registered_r_dsi_lifecycle_for_phase18_source_materialization_v1" %in%
-      condition$missing)
-  expect_false(any(grepl(
-    "phase18_registry_to_materializer", condition$missing, fixed = TRUE)))
-  expect_match(condition$request_sha256, "^[0-9a-f]{64}$")
+test_that("formal GLM rejects a mismatched public certificate before a fit", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"))
+  testthat::local_mocked_bindings(
+    .dsvert_aggregate_strict = function(conns, expr, operation, .aggregate) {
+      request <- as.list(expr[-1L])
+      left <- .formal_glm_public_release(request)
+      right <- left
+      right$certificate_sha256 <- digest::digest(
+        "other certificate", algo = "sha256", serialize = FALSE)
+      stats::setNames(list(left, right), names(conns))
+    },
+    .package = "dsVertClient")
+  expect_error(ds.vertGLM(
+    y ~ x, data = "study", family = "binomial",
+    formal_analysis_id = "primary_logit", verbose = FALSE,
+    datasources = conns),
+    "different formal GLM public releases")
 })
 
 test_that("formal GLM request carries selectors and no privacy controls", {
@@ -90,20 +121,21 @@ test_that("formal GLM rejects analyst-owned legacy knobs", {
     "mutually exclusive")
 })
 
-test_that("formal GLM alias preserves the zero-DSI gate", {
+test_that("formal GLM alias preserves the certified-release route", {
   testthat::local_mocked_bindings(
     .dsvert_quarantine_test_mode = function() FALSE,
+    .dsvert_aggregate_strict = function(conns, expr, operation, .aggregate) {
+      request <- as.list(expr[-1L])
+      stats::setNames(
+        list(.formal_glm_public_release(request)), names(conns))
+    },
     .package = "dsVertClient")
-  datasource_forced <- FALSE
-  condition <- .formal_glm_condition(ds.vert.glm(
+  fit <- ds.vert.glm(
     y ~ x, data = "study", family = "poisson",
     formal_analysis_id = "primary_count", verbose = FALSE,
-    datasources = {
-      datasource_forced <<- TRUE
-      stop("datasource promise was forced", call. = FALSE)
-    }))
-  expect_s3_class(condition, "dsvert_formal_glm_frontdoor_unavailable")
-  expect_false(datasource_forced)
+    datasources = list(site_a = structure(list(), class = "mock")))
+  expect_s3_class(fit, "dsvert_formal_dp_glm")
+  expect_identical(fit$family, "poisson")
 
   expect_error(ds.vert.glm(
     y ~ x, data = "study", family = "binomial", precision = "high",

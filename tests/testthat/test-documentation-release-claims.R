@@ -115,14 +115,16 @@ test_that("GLM help documents the Synopsis route matrix instead of legacy MPC", 
     "No observation-level data is ever disclosed",
     "Only p-dimensional aggregate gradients are revealed"), collapse = "|")
   for (text in list(source, rd)) {
-    expect_match(text, "(one|only) available analysis route",
+    expect_match(text, "two available routes",
                  ignore.case = TRUE, perl = TRUE)
     expect_match(text, "dp_analysis_id", fixed = TRUE)
     expect_match(text, "ds.vertDPGaussian", fixed = TRUE)
+    expect_match(text, "formal_analysis_id", fixed = TRUE)
+    expect_match(text, "completed public", ignore.case = TRUE)
+    expect_match(text, "coefficient-only", fixed = TRUE)
     expect_match(text,
-                 "without[\\s\\S]*dp_analysis_id[\\s\\S]*before any DSI call",
+                 "without[\\s\\S]*signed-analysis id[\\s\\S]*before any DSI call",
                  ignore.case = TRUE, perl = TRUE)
-    expect_match(text, "No binomial or Poisson fit", fixed = TRUE)
     expect_false(grepl(forbidden, text, ignore.case = TRUE, perl = TRUE))
   }
   glm_status <- ds.vertMethodStatus(c("ds.vertGLM", "ds.vert.glm"))

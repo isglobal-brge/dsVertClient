@@ -438,15 +438,17 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "sampling validity."))
   add(c("ds.vertGLM", "ds.vert.glm"), "ds.vertGLM", "promoted",
       paste(
-        "Preferred Gaussian GLM frontdoor when an explicit dp_analysis_id",
-        "selects a bounded signed Synopsis artifact. Same- and cross-owner",
-        "artifacts are accepted only when their formula and ownership match;",
-        "the legacy estimator is unreachable."),
+        "Gaussian GLM uses an explicit dp_analysis_id selecting a bounded",
+        "signed Synopsis artifact.",
+        "Binomial/Poisson formal_analysis_id reads an already completed",
+        "two-authority-signed public certificate. Same- and cross-owner",
+        "artifacts must match the requested formula; the legacy estimator",
+        "is unreachable."),
       paste(
-        "Only family='gaussian' with a matching complete-case artifact is",
-        "available. Binomial and Poisson variants have no released",
-        "replacement, and neither sampling inference nor individual fitted",
-        "values is returned."))
+        "Gaussian needs a matching complete-case artifact. Binomial and Poisson",
+        "are read-only completed releases: they cannot start source work or",
+        "a new DP opening. Neither route returns sampling inference or",
+        "individual fitted values."))
   add(c("ds.vertCox", "ds.vertCoxProfileNonDisclosive", "ds.vert.coxph"),
       "ds.vertCoxProfileNonDisclosive", "quarantine",
       "Cox PH has no released compatibility route; the retained frontdoor fails before DSI.",

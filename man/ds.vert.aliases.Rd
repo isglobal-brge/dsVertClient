@@ -151,9 +151,7 @@ Model formulas may qualify ambiguous columns as
 
 \item{id_col, newobj}{Record-identifier column and output symbol for alignment.
 \code{data_name} and \code{id_col} may each be one string broadcast to all
-sites or a complete named per-site character/list map. Per-site identifier
-columns are local routing aliases bound by custodian policy to one common
-semantic \code{privacy_unit_id}.}
+sites or a complete named per-site character/list map.}
 
 \item{...}{Further arguments forwarded to the backend.}
 
@@ -183,8 +181,9 @@ not by the presence of an alias. Aliases for quarantined families raise a
 typed \code{dsvert_route_unavailable} condition before any DSI call.
 \code{ds.vert.glm()} can delegate an explicit Gaussian
 \code{dp_analysis_id} to \code{ds.vertDPGaussian()}; its no-id legacy route
-is unavailable, and the reserved binomial/Poisson
-\code{formal_analysis_id} route also fails before DSI in this release.
+is unavailable. A binomial/Poisson \code{formal_analysis_id} reads a
+completed custodian-signed public certificate; it does not run the retired
+iterative route.
 No alias re-enables a retired remote endpoint or weakens the signed-artifact
 and custodian-owned policy gates of an available backend.
 For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied

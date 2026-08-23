@@ -91,18 +91,16 @@
   )
 }
 
-#' @title Sticky-Synopsis Gaussian GLM frontdoor
-#' @description This public frontdoor has one available analysis route:
+#' @title Sticky-DP GLM frontdoor
+#' @description This public frontdoor has two available routes:
 #'   an explicit \code{dp_analysis_id} with \code{family = "gaussian"}
 #'   delegates to \code{ds.vertDPGaussian()} and returns that signed,
 #'   contribution-bounded sticky joint-DP Synopsis estimand. A call without
-#'   \code{dp_analysis_id} raises a typed \code{dsvert_route_unavailable}
+#'   either signed-analysis id raises a typed \code{dsvert_route_unavailable}
 #'   condition before any DSI call. An explicit \code{formal_analysis_id} for
-#'   binomial or Poisson also fails before DSI until its durable worker and
-#'   single common joint-DP opening are promoted. The retained iterative
-#'   Ring/Beaver code below the local gate is unreachable through this
-#'   frontdoor and carries no public disclosure, accuracy, or availability
-#'   claim.
+#'   binomial or Poisson reads a completed, two-authority-signed public DP
+#'   certificate configured by the custodians. It never starts the retained
+#'   iterative Ring/Beaver code.
 #'
 #' @details
 #' \strong{Available route.} Supply an additive formula, an aligned data name,
@@ -112,36 +110,45 @@
 #' ownership. The adapter accepts only arguments that describe that bounded
 #' Gaussian estimand; it never falls back to the retired iterative GLM.
 #'
+#' \strong{Formal binomial/Poisson route.} Supply an additive formula,
+#' \code{family = "binomial"} or \code{"poisson"}, and a registered
+#' \code{formal_analysis_id}. Every server verifies the same completed public
+#' certificate, and the client accepts it only when all responses are
+#' canonically identical. The resulting coefficient-only DP fit has no
+#' sampling covariance, deviance, fitted values, residuals or classical
+#' inference. It reads an existing release and never starts source work or a
+#' new DP opening.
+#'
 #' \strong{Unavailable routes.} Default/no-id calls and all legacy iterative
-#' routes stop locally with zero DSI calls. The \code{formal_analysis_id}
-#' selector is reserved for binomial/logit and Poisson/log models but is also
-#' sealed locally in this release. No binomial or Poisson fit is therefore
-#' returned by this function.
+#' routes stop locally. A formal selector without a matching completed
+#' custodian certificate fails closed.
 #'
 #' @param formula,data,x_vars,y_server Additive model specification, aligned
 #'   data name and optional signed-artifact ownership checks for the Gaussian
 #'   Synopsis route.
-#' @param family Must be \code{"gaussian"} with \code{dp_analysis_id}.
-#'   Binomial and Poisson are not available through the public frontdoor.
+#' @param family Must be \code{"gaussian"} with \code{dp_analysis_id}, or
+#'   \code{"binomial"}/\code{"poisson"} with \code{formal_analysis_id}.
 #' @param lambda,no_intercept,data_name,y_var,missing Gaussian Synopsis
 #'   estimand selectors. \code{lambda} is the explicit non-negative ridge
 #'   penalty; \code{missing}, when supplied, must be
 #'   \code{"complete_case_capsule"}.
 #' @param verbose,datasources Progress flag and DataSHIELD connections used
-#'   only after the Gaussian signed-artifact request has passed local checks.
+#'   after the selected signed-artifact request has passed local checks.
 #' @param dp_analysis_id Custodian-configured signed bounded Gaussian artifact
 #'   id. This is required for the available route.
-#' @param formal_analysis_id Reserved custodian-configured binomial/Poisson
-#'   selector. Supplying it returns a typed
-#'   \code{dsvert_formal_glm_frontdoor_unavailable} condition before DSI.
+#' @param formal_analysis_id Custodian-configured binomial/Poisson public
+#'   certificate selector. It is read-only: it cannot request a new analysis,
+#'   choose privacy parameters, or activate the legacy iterative route.
 #' @param max_iter,tol,log_n,offset,weights,ring,binomial_sigmoid_intervals,eta_privacy,keep_session,std_mode,start,compute_se,compute_deviance,gradient_only,numeric_backend
 #'   Retained legacy arguments. They are rejected when explicitly supplied to
-#'   the Gaussian Synopsis adapter, and the no-id legacy route is unavailable.
+#'   either signed-artifact adapter, and the no-id legacy route is unavailable.
 #' @return With a valid Gaussian \code{dp_analysis_id}, a
 #'   \code{ds.vertDPGaussian} object containing bounded noisy sufficient-
-#'   statistic regression output and no classical standard errors, p-values,
-#'   individual fitted values, residuals or scores. All other routes raise a
-#'   typed condition before DSI and return no fitted object.
+#'   statistic regression output. With a valid formal binomial/Poisson id, a
+#'   coefficient-only \code{dsvert_formal_dp_glm} object from the completed
+#'   public certificate. Neither route exposes classical standard errors,
+#'   p-values, individual fitted values, residuals or scores. All other routes
+#'   raise a typed condition and return no fitted object.
 #' @seealso \code{\link{ds.vertDPGaussian}},
 #'   \code{\link{ds.vertMethodStatus}}
 #' @examples
