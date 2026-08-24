@@ -2115,7 +2115,7 @@ test_that("focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3
   gaussian <- get(".dsvert_dp_gaussian_impl", asNamespace("dsVertClient"),
                   inherits = FALSE)
   for (k in .synopsis_real_e2e_peer_counts()) {
-    fixture <- .synopsis_gaussian_real_e2e_fixture(k, server_ns, n = 512L)
+    fixture <- .synopsis_gaussian_real_e2e_fixture(k, server_ns, n = 10000L)
     on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
     conns <- stats::setNames(lapply(fixture$peers, function(peer) {
       structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
