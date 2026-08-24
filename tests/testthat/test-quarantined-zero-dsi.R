@@ -60,6 +60,7 @@ test_that("the quarantined Cox frontdoor has no unreachable exact-profile fallba
 })
 
 test_that("the promoted GEE frontdoor contains no retired exact worker", {
+  namespace <- asNamespace("dsVertClient")
   body_text <- paste(deparse(body(ds.vertGEE)), collapse = "\n")
   expect_match(
     body_text,
@@ -67,6 +68,14 @@ test_that("the promoted GEE frontdoor contains no retired exact worker", {
     fixed = TRUE)
   expect_false(grepl(".ds_gee_secure_", body_text, fixed = TRUE))
   expect_false(grepl("keep_session", body_text, fixed = TRUE))
+  expect_false(exists(".ds_gee_secure_gaussian_ar1", envir = namespace,
+                      inherits = FALSE))
+  expect_false(exists(".ds_gee_secure_gaussian_exchangeable", envir = namespace,
+                      inherits = FALSE))
+  expect_false(exists(".ds_gee_secure_poisson_exchangeable", envir = namespace,
+                      inherits = FALSE))
+  expect_false(exists(".ds_gee_secure_hc0", envir = namespace,
+                      inherits = FALSE))
 })
 
 test_that("unregistered internal routes are blocked before DSI", {
