@@ -633,14 +633,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "to the released design. type='sampling' still requires an attested",
         "sampling covariance."))
   add(c("ds.vertWald", "ds.vert.wald", "ds.vertContrast", "ds.vert.contrast"),
-      "ds.vert inference helpers", "provisional",
+      "ds.vert inference helpers", "promoted",
       paste(
-        "Pure client algebra reserved for a future attested converged",
-        "unpenalized fit with valid sampling covariance. Current public DP",
-        "GLM releases fail closed before inference."),
+        "For a current signed same-owner Gaussian Synopsis, type='mechanism'",
+        "returns deterministic simultaneous DP-mechanism null regions for",
+        "a coefficient or declared linear contrasts without another release."),
       paste(
-        "No public signed joint inference artifact exists yet; a DP point",
-        "release cannot be promoted to a sampling covariance or p-value."))
+        "These are not Wald statistics, p-values, sampling covariance or",
+        "population inference. type='sampling' still requires an attested",
+        "joint covariance artifact."))
   add(c("ds.vertLR", "ds.vert.lr"), "ds.vertLR", "provisional",
       paste(
         "Pure client post-processing of two attested, nested, unweighted",

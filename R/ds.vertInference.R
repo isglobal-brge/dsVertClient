@@ -459,33 +459,61 @@ ds.vertConfint <- function(fit, parm = NULL, level = 0.95,
 }
 
 
-#' @title Univariate Wald test for a single ds.vertGLM coefficient
-#' @description Test H0: beta_j = null against a two-sided alternative using
-#'   the diagonal statistic (estimate - null) / SE. Gaussian fits use Student t
-#'   with residual degrees of freedom; binomial and Poisson fits use the
-#'   asymptotic normal reference. Current public DP GLM releases do not carry
-#'   an attested sampling covariance and are rejected until a joint inference
-#'   artifact is available.
+#' @title Univariate Wald test or signed DP-mechanism null region
+#' @description `type = "sampling"` tests H0: beta_j = null from an attested
+#'   sampling standard error. `type = "mechanism"` instead uses the current
+#'   signed Gaussian Synopsis to determine whether its simultaneous DP
+#'   mechanism region excludes the null. It is deterministic post-processing,
+#'   not a Wald statistic, p-value, or population-sampling test.
 #'
-#' @param fit A ds.glm object.
+#' @param fit A ds.glm object for sampling inference, or a signed
+#'   ds.vertDPGaussian result for a mechanism region.
 #' @param parm Single coefficient name.
 #' @param null Null value (default 0).
+#' @param type Either `"sampling"` (default) or `"mechanism"`.
+#' @param level Simultaneous mechanism confidence. The current signed
+#'   Gaussian Synopsis supports its certified level only (0.95).
 #'
-#' @return List with estimate, SE, statistic, distribution, p_value and null;
-#'   Gaussian results include \code{t} and \code{df}, other families include
-#'   \code{z}.
+#' @return For `type = "sampling"`, a list with estimate, SE, statistic,
+#'   distribution, p_value and null. For `type = "mechanism"`, a list with
+#'   the certified outer interval and whether it excludes the null; it has no
+#'   sampling standard error, statistic or p-value.
 #' @export
-ds.vertWald <- function(fit, parm, null = 0) {
-  .dsvert_validate_inference_fit(fit, require_se = TRUE)
-  reference <- .dsvert_inference_reference(fit)
-  if (!is.character(parm) || length(parm) != 1L) {
+ds.vertWald <- function(fit, parm, null = 0,
+                        type = c("sampling", "mechanism"), level = 0.95) {
+  type <- match.arg(type)
+  if (!is.character(parm) || length(parm) != 1L || is.na(parm) ||
+      !nzchar(parm)) {
     stop("`parm` must be a single coefficient name", call. = FALSE)
-  }
-  if (!parm %in% names(fit$coefficients)) {
-    stop("Coefficient '", parm, "' not in fit", call. = FALSE)
   }
   if (!is.numeric(null) || length(null) != 1L || !is.finite(null)) {
     stop("`null` must be one finite number", call. = FALSE)
+  }
+  if (identical(type, "mechanism")) {
+    region <- ds.vertConfint(fit, parm = parm, level = level,
+                             type = "mechanism")
+    lower <- unname(region[parm, "lower"])
+    upper <- unname(region[parm, "upper"])
+    out <- list(
+      parm = parm,
+      estimate = unname(region[parm, "estimate"]),
+      null = null,
+      lower = lower,
+      upper = upper,
+      mechanism_radius = unname(region[parm, "mechanism_radius"]),
+      null_excluded = isTRUE(null < lower || null > upper),
+      distribution = "simultaneous_dp_mechanism_region",
+      level = attr(region, "level"),
+      sampling_inference = FALSE,
+      additional_server_calls = 0L,
+      additional_privacy_cost = c(epsilon = 0, delta = 0))
+    class(out) <- c("ds.vertWald", "list")
+    return(out)
+  }
+  .dsvert_validate_inference_fit(fit, require_se = TRUE)
+  reference <- .dsvert_inference_reference(fit)
+  if (!parm %in% names(fit$coefficients)) {
+    stop("Coefficient '", parm, "' not in fit", call. = FALSE)
   }
   est <- as.numeric(fit$coefficients[parm])
   se <- as.numeric(fit$std_errors[parm])
@@ -516,6 +544,14 @@ ds.vertWald <- function(fit, parm, null = 0) {
 
 #' @export
 print.ds.vertWald <- function(x, ...) {
+  if (identical(x$distribution, "simultaneous_dp_mechanism_region")) {
+    cat(sprintf("dsVert signed DP-mechanism null region: %s = %g\n",
+                x$parm, x$null))
+    cat(sprintf("  certified region = [%.6f, %.6f]\n", x$lower, x$upper))
+    cat(sprintf("  null excluded = %s; no sampling p-value\n",
+                if (isTRUE(x$null_excluded)) "yes" else "no"))
+    return(invisible(x))
+  }
   cat(sprintf("dsVert Wald test: H0: %s = %g  vs  two-sided\n",
               x$parm, x$null))
   statistic_label <- if (identical(x$distribution, "t")) "t" else "z"
@@ -529,27 +565,37 @@ print.ds.vertWald <- function(x, ...) {
 }
 
 
-#' @title Multi-coefficient Wald test via linear contrast K*beta
-#' @description Test H0: K * beta = m using the multivariate Wald statistic
-#'   W = (K * beta_hat - m)^T inv(K * Cov * K^T) (K * beta_hat - m),
-#'   using F = W / rank(K) for Gaussian fits with residual degrees of freedom,
-#'   and the asymptotic chi-square reference otherwise. Requires the fit's full
-#'   covariance matrix. Current public DP GLM releases do not carry an
-#'   attested sampling covariance and are rejected until a joint inference
-#'   artifact is available.
+#' @title Multi-coefficient Wald test or signed DP-mechanism contrast region
+#' @description `type = "sampling"` tests H0: K * beta = m with an attested
+#'   covariance. `type = "mechanism"` propagates the one signed simultaneous
+#'   Gaussian coefficient region through K. It can prove that individual
+#'   contrast components exclude their nulls, but it is not a Wald statistic,
+#'   p-value, or population-sampling test.
 #'
-#' @param fit A ds.glm object with a non-NULL `covariance` slot.
+#' @param fit A ds.glm object with a non-NULL `covariance` slot for sampling
+#'   inference, or a signed ds.vertDPGaussian result for a mechanism region.
 #' @param K   Contrast matrix: numeric matrix with ncol equal to the
 #'   number of coefficients. Rows define the contrasts under test.
 #'   Alternatively a named-coef character vector (treated as indicator
 #'   rows) or a character RHS parsed against the coefficient names.
 #' @param m   Null vector (length nrow(K)); default zero.
+#' @param type Either `"sampling"` (default) or `"mechanism"`.
+#' @param level Simultaneous mechanism confidence. The current signed
+#'   Gaussian Synopsis supports its certified level only (0.95).
 #'
-#' @return A list of class ds.vertContrast with estimates, variance,
-#'   reference \code{statistic}, raw \code{wald_statistic},
-#'   \code{distribution}, degrees of freedom and \code{p_value}.
+#' @return For `type = "sampling"`, a list of class ds.vertContrast with
+#'   covariance-derived statistics and a p-value. For `type = "mechanism"`,
+#'   a list with componentwise certified outer bounds and null-exclusion flags;
+#'   it contains no sampling covariance, statistic or p-value.
 #' @export
-ds.vertContrast <- function(fit, K, m = NULL) {
+ds.vertContrast <- function(fit, K, m = NULL,
+                            type = c("sampling", "mechanism"),
+                            level = 0.95) {
+  type <- match.arg(type)
+  if (identical(type, "mechanism")) {
+    return(.dsvert_dp_gaussian_mechanism_contrast(
+      fit = fit, K = K, m = m, level = level))
+  }
   .dsvert_validate_inference_fit(fit, require_se = TRUE,
                                  require_covariance = TRUE)
   reference <- .dsvert_inference_reference(fit)
@@ -623,8 +669,70 @@ ds.vertContrast <- function(fit, K, m = NULL) {
   out
 }
 
+.dsvert_dp_gaussian_mechanism_contrast <- function(fit, K, m, level) {
+  region <- ds.vertConfint(fit, level = level, type = "mechanism")
+  coefficients <- rownames(region)
+  if (is.character(K)) {
+    missing_coefficients <- setdiff(K, coefficients)
+    if (length(missing_coefficients)) {
+      stop("Unknown coefficient(s) in K: ",
+           paste(missing_coefficients, collapse = ", "), call. = FALSE)
+    }
+    Kmat <- matrix(0, nrow = length(K), ncol = length(coefficients),
+                   dimnames = list(K, coefficients))
+    for (index in seq_along(K)) Kmat[index, K[index]] <- 1
+    K <- Kmat
+  } else if (is.vector(K)) {
+    K <- matrix(K, nrow = 1L, dimnames = list(NULL, coefficients))
+  }
+  K <- as.matrix(K)
+  if (!is.numeric(K) || any(!is.finite(K)) || nrow(K) < 1L) {
+    stop("K must be a non-empty finite numeric contrast matrix",
+         call. = FALSE)
+  }
+  if (ncol(K) != length(coefficients)) {
+    stop("ncol(K) = ", ncol(K), " must equal number of coefficients (",
+         length(coefficients), ")", call. = FALSE)
+  }
+  if (is.null(m)) m <- rep(0, nrow(K))
+  if (!is.numeric(m) || length(m) != nrow(K) || any(!is.finite(m))) {
+    stop("length(m) must equal nrow(K)", call. = FALSE)
+  }
+  estimate <- drop(K %*% as.numeric(region$estimate)) - m
+  radius <- drop(abs(K) %*% as.numeric(region$mechanism_radius))
+  lower <- estimate - radius
+  upper <- estimate + radius
+  if (any(!is.finite(c(estimate, radius, lower, upper))) || any(radius < 0)) {
+    stop("The signed Gaussian mechanism contrast is not finite", call. = FALSE)
+  }
+  out <- list(
+    estimate = estimate,
+    lower = lower,
+    upper = upper,
+    mechanism_radius = radius,
+    null = m,
+    null_excluded = lower > 0 | upper < 0,
+    all_null_components_excluded = all(lower > 0 | upper < 0),
+    K = K,
+    distribution = "simultaneous_dp_mechanism_region",
+    level = attr(region, "level"),
+    sampling_inference = FALSE,
+    additional_server_calls = 0L,
+    additional_privacy_cost = c(epsilon = 0, delta = 0))
+  class(out) <- c("ds.vertContrast", "list")
+  out
+}
+
 #' @export
 print.ds.vertContrast <- function(x, ...) {
+  if (identical(x$distribution, "simultaneous_dp_mechanism_region")) {
+    cat("dsVert signed DP-mechanism linear contrast region\n")
+    cat("  componentwise null exclusion (not a sampling test):\n")
+    print(data.frame(estimate = x$estimate, lower = x$lower, upper = x$upper,
+                     null_excluded = x$null_excluded,
+                     check.names = FALSE))
+    return(invisible(x))
+  }
   cat(sprintf("dsVert multi-coefficient Wald / linear contrast test\n"))
   if (identical(x$distribution, "F")) {
     cat(sprintf("  F = %.4f on %d and %d df,  p-value = %s\n",

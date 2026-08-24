@@ -1641,6 +1641,28 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_true(all(mechanism_region$mechanism_radius >= 0))
     expect_identical(
       ds.vertConfint(fit, type = "mechanism"), mechanism_region)
+    mechanism_wald <- ds.vertWald(
+      fit, parm = "x_peer_a", null = 0, type = "mechanism")
+    expect_identical(mechanism_wald$distribution,
+                     "simultaneous_dp_mechanism_region")
+    expect_false(mechanism_wald$sampling_inference)
+    expect_null(mechanism_wald$p_value)
+    expect_equal(mechanism_wald$lower,
+                 mechanism_region["x_peer_a", "lower"])
+    expect_equal(mechanism_wald$upper,
+                 mechanism_region["x_peer_a", "upper"])
+    mechanism_contrast <- ds.vertContrast(
+      fit, K = c(0, 1), type = "mechanism")
+    expect_identical(mechanism_contrast$distribution,
+                     "simultaneous_dp_mechanism_region")
+    expect_false(mechanism_contrast$sampling_inference)
+    expect_null(mechanism_contrast$p_value)
+    expect_equal(mechanism_contrast$estimate,
+                 mechanism_region["x_peer_a", "estimate"])
+    expect_equal(mechanism_contrast$lower,
+                 mechanism_region["x_peer_a", "lower"])
+    expect_equal(mechanism_contrast$upper,
+                 mechanism_region["x_peer_a", "upper"])
 
     route_gaussian <- function(data_name, analysis_id, ridge = 0,
                                server = NULL, datasources = NULL,

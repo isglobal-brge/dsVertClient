@@ -2,12 +2,19 @@
 % Please edit documentation in R/ds.vertInference.R
 \name{ds.vertContrast}
 \alias{ds.vertContrast}
-\title{Multi-coefficient Wald test via linear contrast K*beta}
+\title{Multi-coefficient Wald test or signed DP-mechanism contrast region}
 \usage{
-ds.vertContrast(fit, K, m = NULL)
+ds.vertContrast(
+  fit,
+  K,
+  m = NULL,
+  type = c("sampling", "mechanism"),
+  level = 0.95
+)
 }
 \arguments{
-\item{fit}{A ds.glm object with a non-NULL \code{covariance} slot.}
+\item{fit}{A ds.glm object with a non-NULL \code{covariance} slot for sampling
+inference, or a signed ds.vertDPGaussian result for a mechanism region.}
 
 \item{K}{Contrast matrix: numeric matrix with ncol equal to the
 number of coefficients. Rows define the contrasts under test.
@@ -15,18 +22,22 @@ Alternatively a named-coef character vector (treated as indicator
 rows) or a character RHS parsed against the coefficient names.}
 
 \item{m}{Null vector (length nrow(K)); default zero.}
+
+\item{type}{Either \code{"sampling"} (default) or \code{"mechanism"}.}
+
+\item{level}{Simultaneous mechanism confidence. The current signed
+Gaussian Synopsis supports its certified level only (0.95).}
 }
 \value{
-A list of class ds.vertContrast with estimates, variance,
-reference \code{statistic}, raw \code{wald_statistic},
-\code{distribution}, degrees of freedom and \code{p_value}.
+For \code{type = "sampling"}, a list of class ds.vertContrast with
+covariance-derived statistics and a p-value. For \code{type = "mechanism"},
+a list with componentwise certified outer bounds and null-exclusion flags;
+it contains no sampling covariance, statistic or p-value.
 }
 \description{
-Test H0: K * beta = m using the multivariate Wald statistic
-W = (K * beta_hat - m)^T inv(K * Cov * K^T) (K * beta_hat - m),
-using F = W / rank(K) for Gaussian fits with residual degrees of freedom,
-and the asymptotic chi-square reference otherwise. Requires the fit's full
-covariance matrix. Current public DP GLM releases do not carry an
-attested sampling covariance and are rejected until a joint inference
-artifact is available.
+\code{type = "sampling"} tests H0: K * beta = m with an attested covariance.
+\code{type = "mechanism"} propagates the one signed simultaneous Gaussian
+coefficient region through K. It can prove that individual contrast components
+exclude their nulls, but it is not a Wald statistic, p-value, or
+population-sampling test.
 }

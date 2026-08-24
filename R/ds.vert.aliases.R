@@ -634,14 +634,19 @@ ds.vert.confint <- function(fit, parm = NULL, level = 0.95,
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.wald <- function(fit, parm, null = 0) {
-  .dsvert_set_frontdoor(ds.vertWald(fit = fit, parm = parm, null = null),
+ds.vert.wald <- function(fit, parm, null = 0,
+                         type = c("sampling", "mechanism"), level = 0.95) {
+  .dsvert_set_frontdoor(ds.vertWald(
+    fit = fit, parm = parm, null = null, type = type, level = level),
                         "ds.vert.wald", "ds.vertWald")
 }
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.contrast <- function(fit, K, m = NULL) {
-  .dsvert_set_frontdoor(ds.vertContrast(fit = fit, K = K, m = m),
+ds.vert.contrast <- function(fit, K, m = NULL,
+                             type = c("sampling", "mechanism"),
+                             level = 0.95) {
+  .dsvert_set_frontdoor(ds.vertContrast(
+    fit = fit, K = K, m = m, type = type, level = level),
                         "ds.vert.contrast", "ds.vertContrast")
 }

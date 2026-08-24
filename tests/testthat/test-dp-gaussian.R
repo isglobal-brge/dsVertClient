@@ -715,6 +715,44 @@ test_that("Gaussian mechanism regions are certificate-bound post-processing", {
   expect_identical(aliased$estimate, region$estimate)
   expect_identical(aliased$mechanism_radius, region$mechanism_radius)
 
+  wald <- ds.vertWald(fit, parm = "x", null = 0, type = "mechanism")
+  expect_identical(wald$distribution, "simultaneous_dp_mechanism_region")
+  expect_false(wald$sampling_inference)
+  expect_null(wald$p_value)
+  expect_equal(wald$lower, region["x", "lower"])
+  expect_equal(wald$upper, region["x", "upper"])
+  expect_identical(wald$null_excluded,
+                   isTRUE(0 < wald$lower || 0 > wald$upper))
+  expect_identical(
+    ds.vert.wald(fit, parm = "x", null = 0, type = "mechanism")$lower,
+    wald$lower)
+
+  contrast_matrix <- matrix(c(1, -2), nrow = 1L)
+  contrast <- ds.vertContrast(
+    fit, K = contrast_matrix, m = 0, type = "mechanism")
+  expected_estimate <- region["(Intercept)", "estimate"] -
+    2 * region["x", "estimate"]
+  expected_radius <- region["(Intercept)", "mechanism_radius"] +
+    2 * region["x", "mechanism_radius"]
+  expect_identical(contrast$distribution,
+                   "simultaneous_dp_mechanism_region")
+  expect_false(contrast$sampling_inference)
+  expect_null(contrast$p_value)
+  expect_equal(contrast$estimate, expected_estimate)
+  expect_equal(contrast$mechanism_radius, expected_radius)
+  expect_equal(contrast$lower, expected_estimate - expected_radius)
+  expect_equal(contrast$upper, expected_estimate + expected_radius)
+  expect_identical(contrast$null_excluded,
+                   contrast$lower > 0 || contrast$upper < 0)
+  expect_equal(
+    ds.vert.contrast(fit, K = contrast_matrix, type = "mechanism")$upper,
+    contrast$upper)
+  expect_error(ds.vertWald(fit, parm = "missing", type = "mechanism"),
+               "Unknown coefficient")
+  expect_error(ds.vertContrast(fit, K = matrix(1, nrow = 1L, ncol = 1L),
+                               type = "mechanism"),
+               "ncol\\(K\\)")
+
   tampered_accuracy <- fit
   tampered_accuracy$accuracy$simultaneous_abs_mechanism_radius <- 0
   expect_identical(

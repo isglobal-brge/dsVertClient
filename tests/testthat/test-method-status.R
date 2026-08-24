@@ -246,9 +246,9 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
                         fixed = TRUE)))
   inference_helpers <- ds.vertMethodStatus(c(
     "ds.vertWald", "ds.vert.wald", "ds.vertContrast", "ds.vert.contrast"))
-  expect_true(all(inference_helpers$status == "provisional"))
+  expect_true(all(inference_helpers$status == "promoted"))
   expect_true(all(grepl(
-    "joint inference artifact", inference_helpers$principal_limitation,
+    "not Wald statistics", inference_helpers$principal_limitation,
     fixed = TRUE)))
   lasso <- ds.vertMethodStatus(c(
     "ds.vertLASSOProximal", "ds.vert.lasso_proximal",

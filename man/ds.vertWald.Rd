@@ -2,27 +2,33 @@
 % Please edit documentation in R/ds.vertInference.R
 \name{ds.vertWald}
 \alias{ds.vertWald}
-\title{Univariate Wald test for a single ds.vertGLM coefficient}
+\title{Univariate Wald test or signed DP-mechanism null region}
 \usage{
-ds.vertWald(fit, parm, null = 0)
+ds.vertWald(fit, parm, null = 0, type = c("sampling", "mechanism"), level = 0.95)
 }
 \arguments{
-\item{fit}{A ds.glm object.}
+\item{fit}{A ds.glm object for sampling inference, or a signed
+ds.vertDPGaussian result for a mechanism region.}
 
 \item{parm}{Single coefficient name.}
 
 \item{null}{Null value (default 0).}
+
+\item{type}{Either \code{"sampling"} (default) or \code{"mechanism"}.}
+
+\item{level}{Simultaneous mechanism confidence. The current signed
+Gaussian Synopsis supports its certified level only (0.95).}
 }
 \value{
-List with estimate, SE, statistic, distribution, p_value and null;
-Gaussian results include \code{t} and \code{df}, other families include
-\code{z}.
+For \code{type = "sampling"}, a list with estimate, SE, statistic,
+distribution, p_value and null. For \code{type = "mechanism"}, a list with
+the certified outer interval and whether it excludes the null; it has no
+sampling standard error, statistic or p-value.
 }
 \description{
-Test H0: beta_j = null against a two-sided alternative using
-the diagonal statistic (estimate - null) / SE. Gaussian fits use Student t
-with residual degrees of freedom; binomial and Poisson fits use the
-asymptotic normal reference. Current public DP GLM releases do not carry
-an attested sampling covariance and are rejected until a joint inference
-artifact is available.
+\code{type = "sampling"} tests H0: beta_j = null from an attested sampling
+standard error. \code{type = "mechanism"} instead uses the current signed
+Gaussian Synopsis to determine whether its simultaneous DP mechanism region
+excludes the null. It is deterministic post-processing, not a Wald statistic,
+p-value, or population-sampling test.
 }

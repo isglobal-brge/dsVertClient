@@ -832,21 +832,32 @@
 
   add(
     c("ds.vertWald", "ds.vert.wald"), "ds.vertWald", "wald_test",
-    c("authorized_fit_coefficients", "authorized_fit_covariance"),
-    "Wald test for declared fitted-model parameters.",
-    c("authorized_fit_provenance", "valid_covariance"),
-    "client_only_requires_attested_input",
-    aliases = c("ds.vert.wald" = "ds.vertWald"))
+    c("signed_same_owner_gaussian_synopsis",
+      "simultaneous_coordinate_error_certificate"),
+    "Simultaneous DP-mechanism null region for one declared coefficient.",
+    c("certificate_revalidation", "finite_inverse_norm_margin",
+      "explicit_non_sampling_interpretation"),
+    "synopsis_release_implemented",
+    aliases = c("ds.vert.wald" = "ds.vertWald"),
+    current_route_status = "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state =
+      "validated_same_owner_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     c("ds.vertContrast", "ds.vert.contrast"), "ds.vertContrast",
     "linear_contrast",
-    c("authorized_fit_coefficients", "authorized_fit_covariance"),
-    "Linear contrasts of authorized fitted-model coefficients.",
-    c("authorized_fit_provenance", "estimable_contrast",
-      "valid_covariance"),
-    "client_only_requires_attested_input",
-    aliases = c("ds.vert.contrast" = "ds.vertContrast"))
+    c("signed_same_owner_gaussian_synopsis",
+      "simultaneous_coordinate_error_certificate"),
+    "Simultaneous DP-mechanism outer regions for declared linear contrasts.",
+    c("certificate_revalidation", "finite_inverse_norm_margin",
+      "explicit_non_sampling_interpretation"),
+    "synopsis_release_implemented",
+    aliases = c("ds.vert.contrast" = "ds.vertContrast"),
+    current_route_status = "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state =
+      "validated_same_owner_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     "ds.vertEpi2x2", "ds.vertEpi2x2", "epi_2x2",

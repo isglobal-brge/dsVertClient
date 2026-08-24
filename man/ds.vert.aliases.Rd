@@ -154,9 +154,21 @@ ds.vert.confint(
   type = c("sampling", "mechanism")
 )
 
-ds.vert.wald(fit, parm, null = 0)
+ds.vert.wald(
+  fit,
+  parm,
+  null = 0,
+  type = c("sampling", "mechanism"),
+  level = 0.95
+)
 
-ds.vert.contrast(fit, K, m = NULL)
+ds.vert.contrast(
+  fit,
+  K,
+  m = NULL,
+  type = c("sampling", "mechanism"),
+  level = 0.95
+)
 }
 \arguments{
 \item{data_name, data, formula, datasources}{Aligned data-frame symbol, reusable
@@ -197,7 +209,9 @@ tolerance for the iterative fits.}
 (fitted object, nested models, parameter, confidence level, interval type,
 null value, class count). For \code{ds.vert.confint},
 \code{type = "mechanism"} requests the signed Gaussian DP-mechanism region;
-it is not a sampling confidence interval.}
+it is not a sampling confidence interval. The same type for
+\code{ds.vert.wald} and \code{ds.vert.contrast} returns an outer
+DP-mechanism null region, never a sampling test or p-value.}
 
 \item{lambda, lambda_1, lambda_grid}{Penalty or penalty grid for the LASSO routes.}
 }
