@@ -37,7 +37,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   }
   rownames(registry) <- NULL
   class(registry) <- c("ds.vertMethodStatus", class(registry))
-  attr(registry, "audit_date") <- "2026-08-21"
+  attr(registry, "audit_date") <- "2026-08-24"
   attr(registry, "threat_model") <- paste(
     "pinned honest-but-curious peers; untrusted analyst/relay;",
     "privacy and composition follow each row's release contract; Count is",
@@ -678,7 +678,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertDesc", "ds.vert.desc", "ds.vertDPDescribe",
     "ds.vertDPMeanVar", "ds.vertDPCor", "ds.vertDPSurvival",
     "ds.vertDPGaussian", "ds.vertDPLMM", "ds.vertLMM", "ds.vert.lmm",
-    "ds.vertLMM.k3",
+    "ds.vertLMM.k3", "ds.vertGLMM", "ds.vert.glmm",
+    "ds.vertMI", "ds.vert.mi",
     "ds.vertCor", "ds.vert.cor",
     "ds.vertPCA", "ds.vert.pca",
     "ds.vertDPContingency", "ds.vertChisq", "ds.vert.chisq",

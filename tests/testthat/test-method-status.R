@@ -65,8 +65,12 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
   readmitted_mi <- c("ds.vertMI", "ds.vert.mi")
   expect_false(any(readmitted_mi %in% quarantined))
   expect_true(all(ds.vertMethodStatus(readmitted_mi)$status == "promoted"))
+  expect_true(all(ds.vertMethodStatus(readmitted_mi)$release_contract ==
+                  "formal_sticky_synopsis_artifact"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertGLMM", "ds.vert.glmm"))$
                   status == "promoted"))
+  expect_true(all(ds.vertMethodStatus(c("ds.vertGLMM", "ds.vert.glmm"))$
+                  release_contract == "formal_sticky_synopsis_artifact"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertLMM", "ds.vert.lmm"))$
                   status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertIPW", "ds.vert.ipw"))$
