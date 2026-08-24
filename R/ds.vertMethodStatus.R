@@ -621,8 +621,18 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "selection uncertainty and sampling inference are unavailable;",
         "Gaussian same-owner designs only and cross-owner designs are",
         "unavailable; unauthenticated legacy ds.glm inputs are rejected."))
-  add(c("ds.vertConfint", "ds.vert.confint", "ds.vertWald", "ds.vert.wald",
-        "ds.vertContrast", "ds.vert.contrast"),
+  add(c("ds.vertConfint", "ds.vert.confint"), "ds.vertConfint", "promoted",
+      paste(
+        "For a current signed same-owner Gaussian Synopsis,",
+        "type='mechanism' returns a certificate-revalidated simultaneous",
+        "mechanism region for the bounded complete-case ridge estimator",
+        "without another server call or release."),
+      paste(
+        "This is not a population-sampling confidence interval and it can",
+        "fail closed when the certified perturbation is too large relative",
+        "to the released design. type='sampling' still requires an attested",
+        "sampling covariance."))
+  add(c("ds.vertWald", "ds.vert.wald", "ds.vertContrast", "ds.vert.contrast"),
       "ds.vert inference helpers", "provisional",
       paste(
         "Pure client algebra reserved for a future attested converged",

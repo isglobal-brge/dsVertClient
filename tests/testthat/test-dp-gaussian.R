@@ -671,6 +671,76 @@ test_that("Gaussian post-processing is deterministic for one sticky release", {
   expect_identical(second, first)
 })
 
+test_that("Gaussian mechanism regions are certificate-bound post-processing", {
+  fixture <- .dp_gaussian_fixture()
+  artifact <- fixture$artifact
+  capacity <- artifact$statistic_maximum[[1L]]
+  coordinates <- fixture$release$values[-1L]
+  moment <- .dsvert_dp_gaussian_unpack(coordinates, artifact, capacity)
+  ridge <- 1000
+  normalized <- .dsvert_dp_gaussian_solve(moment, artifact, ridge)$coefficients
+  original <- .dsvert_dp_gaussian_original_coefficients(normalized, artifact)
+  verified <- list(
+    integrity_valid = TRUE,
+    authenticity = "session_transport_anchored",
+    artifact = artifact,
+    validated_moment = moment,
+    accuracy_simultaneous_95 = list(confidence = 0.95, radius = 0.01),
+    output_lattice_scale = 256,
+    coordinate_capacity = capacity,
+    coordinates = coordinates)
+  fit <- structure(list(
+    ridge = ridge,
+    coefficients_normalized = normalized,
+    coefficients_original_scale = original,
+    coefficients = original,
+    accuracy = list(simultaneous_abs_mechanism_radius = 100)),
+    class = c("ds.vertDPGaussian", "list"))
+  testthat::local_mocked_bindings(
+    ds.validateDPGaussianCertificate = function(...) verified,
+    .package = "dsVertClient")
+
+  region <- ds.vertConfint(fit, type = "mechanism")
+  expect_s3_class(region, "data.frame")
+  expect_identical(attr(region, "interval_scope"),
+                   "simultaneous_dp_mechanism")
+  expect_identical(attr(region, "sampling_inference"), FALSE)
+  expect_true(all(is.finite(as.matrix(region))))
+  expect_true(all(region$lower <= region$estimate))
+  expect_true(all(region$estimate <= region$upper))
+  expect_true(all(region$mechanism_radius >= 0))
+  selected <- ds.vertConfint(fit, parm = "x", type = "mechanism")
+  expect_identical(rownames(selected), "x")
+  aliased <- ds.vert.confint(fit, type = "mechanism")
+  expect_identical(aliased$estimate, region$estimate)
+  expect_identical(aliased$mechanism_radius, region$mechanism_radius)
+
+  tampered_accuracy <- fit
+  tampered_accuracy$accuracy$simultaneous_abs_mechanism_radius <- 0
+  expect_identical(
+    ds.vertConfint(tampered_accuracy, type = "mechanism"), region)
+  expect_error(ds.vertConfint(fit, type = "mechanism", level = 0.9),
+               "current signed Synopsis certificate")
+  tampered_coefficients <- fit
+  tampered_coefficients$coefficients[[1L]] <-
+    tampered_coefficients$coefficients[[1L]] + 1
+  expect_error(ds.vertConfint(tampered_coefficients, type = "mechanism"),
+               "does not match its signed sufficient statistics")
+  expect_error(ds.vertConfint(fit, parm = "missing", type = "mechanism"),
+               "Unknown coefficient")
+
+  too_wide <- verified
+  too_wide$accuracy_simultaneous_95$radius <- capacity
+  condition <- tryCatch(
+    testthat::with_mocked_bindings(
+      ds.validateDPGaussianCertificate = function(...) too_wide,
+      ds.vertConfint(fit, type = "mechanism"),
+      .package = "dsVertClient"),
+    non_identifiable = function(error) error)
+  expect_s3_class(condition, "non_identifiable")
+  expect_identical(condition$reason, "dp_mechanism_region_not_identifiable")
+})
+
 test_that("Gaussian provenance is offline-verifiable with calibrated trust", {
   fixture <- .dp_gaussian_fixture()
   testthat::local_mocked_bindings(

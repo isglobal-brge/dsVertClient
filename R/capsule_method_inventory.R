@@ -813,11 +813,22 @@
   add(
     c("ds.vertConfint", "ds.vert.confint"), "ds.vertConfint",
     "confidence_interval",
-    c("authorized_fit_coefficients", "authorized_fit_covariance"),
-    "Wald confidence intervals for an authorized fitted model.",
-    c("authorized_fit_provenance", "valid_covariance"),
-    "client_only_requires_attested_input",
-    aliases = c("ds.vert.confint" = "ds.vertConfint"))
+    c("signed_same_owner_gaussian_synopsis",
+      "simultaneous_coordinate_error_certificate"),
+    paste(
+      "Simultaneous DP-mechanism outer region for the bounded",
+      "complete-case Gaussian ridge estimator, or Wald confidence intervals",
+      "when a separately attested sampling covariance exists."),
+    c("certificate_revalidation", "finite_inverse_norm_margin",
+      "explicit_non_sampling_interpretation"),
+    "synopsis_release_implemented",
+    aliases = c("ds.vert.confint" = "ds.vertConfint"),
+    current_route_status =
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state =
+      "validated_same_owner_synopsis_adapter_implemented",
+    inference_implementation_state =
+      "synopsis_postprocess_implemented")
 
   add(
     c("ds.vertWald", "ds.vert.wald"), "ds.vertWald", "wald_test",

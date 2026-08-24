@@ -1631,6 +1631,16 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_true(all(is.finite(fit$coefficients_original_scale)))
     expect_equal(fit$coefficients_original_scale,
                  c(`(Intercept)` = 10, x_peer_a = -1), tolerance = 0.1)
+    mechanism_region <- ds.vertConfint(fit, type = "mechanism")
+    expect_identical(attr(mechanism_region, "interval_scope"),
+                     "simultaneous_dp_mechanism")
+    expect_identical(attr(mechanism_region, "sampling_inference"), FALSE)
+    expect_true(all(is.finite(as.matrix(mechanism_region))))
+    expect_true(all(mechanism_region$lower <= mechanism_region$estimate))
+    expect_true(all(mechanism_region$estimate <= mechanism_region$upper))
+    expect_true(all(mechanism_region$mechanism_radius >= 0))
+    expect_identical(
+      ds.vertConfint(fit, type = "mechanism"), mechanism_region)
 
     route_gaussian <- function(data_name, analysis_id, ridge = 0,
                                server = NULL, datasources = NULL,

@@ -2,29 +2,45 @@
 % Please edit documentation in R/ds.vertInference.R
 \name{ds.vertConfint}
 \alias{ds.vertConfint}
-\title{Wald confidence intervals for ds.vertGLM coefficients}
+\title{Wald confidence intervals and DP-mechanism regions for coefficients}
 \usage{
-ds.vertConfint(fit, parm = NULL, level = 0.95)
+ds.vertConfint(
+  fit,
+  parm = NULL,
+  level = 0.95,
+  type = c("sampling", "mechanism")
+)
 }
 \arguments{
-\item{fit}{A ds.glm object.}
+\item{fit}{A fitted model object; \code{type = "mechanism"} requires a
+signed \code{ds.vertDPGaussian} result.}
 
 \item{parm}{Optional character vector of coefficient names to report;
 default all.}
 
 \item{level}{Confidence level, default 0.95.}
+
+\item{type}{Either \code{"sampling"} (the default Wald interval for an
+attested fit with sampling covariance) or \code{"mechanism"}. The latter is
+available only for a signed \code{ds.vertDPGaussian} result and returns a
+simultaneous DP-mechanism region, not a population-sampling interval.}
 }
 \value{
-A data frame with columns \code{estimate}, \code{std_error},
-\code{lower}, \code{upper}; row names are coefficient names. Attributes
-\code{distribution} and \code{df} record the reference distribution.
+For \code{type = "sampling"}, a data frame with columns
+\code{estimate}, \code{std_error}, \code{lower}, \code{upper}; row
+names are coefficient names. For \code{type = "mechanism"}, a data frame
+with \code{estimate}, \code{lower}, \code{upper} and
+\code{mechanism_radius}, carrying explicit attributes that rule out a
+sampling-inference interpretation.
 }
 \description{
-Return Wald-type confidence intervals using the standard
-errors already stored in a ds.glm object. Gaussian fits use a Student t
-reference with residual degrees of freedom; binomial and Poisson fits use
-the asymptotic normal reference. Observation-level quantities are never
-touched; this is a scalar client-side transformation. Current public DP
-GLM releases do not carry an attested sampling covariance and are rejected
-until a joint inference artifact is available.
+\code{type = "sampling"} returns Wald-type confidence intervals
+from a fit carrying an attested sampling covariance. For a current signed
+Gaussian Synopsis, \code{type = "mechanism"} derives a simultaneous outer
+region from the certificate's DP coordinate radius, quantisation bound,
+projection distance and the released system's inverse-norm margin. It is
+deterministic client post-processing: it performs no new server call,
+exposes no source statistic and must not be interpreted as sampling
+inference. Binomial and Poisson sampling inference remain unavailable
+until a joint signed inference artifact exists.
 }

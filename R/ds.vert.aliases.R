@@ -61,8 +61,11 @@
 #' @param outcome_formula,propensity_formula Outcome and propensity models (IPW).
 #' @param impute_columns,m Columns to impute and number of imputations (MI).
 #' @param lambda,lambda_1,lambda_grid Penalty or penalty grid for the LASSO routes.
-#' @param fit,reduced,full,parm,level,null,K Inference-helper inputs (fitted
-#'   object, nested models, parameter, confidence level, null value, class count).
+#' @param fit,reduced,full,parm,level,type,null,K Inference-helper inputs
+#'   (fitted object, nested models, parameter, confidence level, interval type,
+#'   null value, class count). For code{ds.vert.confint()},
+#'   code{type = "mechanism"} requests the signed Gaussian DP-mechanism
+#'   region; it is not a sampling confidence interval.
 #' @param ... Further arguments forwarded to the backend.
 #' @name ds.vert.aliases
 NULL
@@ -622,8 +625,10 @@ ds.vert.lr <- function(reduced, full) {
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.confint <- function(fit, parm = NULL, level = 0.95) {
-  .dsvert_set_frontdoor(ds.vertConfint(fit = fit, parm = parm, level = level),
+ds.vert.confint <- function(fit, parm = NULL, level = 0.95,
+                            type = c("sampling", "mechanism")) {
+  .dsvert_set_frontdoor(ds.vertConfint(
+    fit = fit, parm = parm, level = level, type = type),
                         "ds.vert.confint", "ds.vertConfint")
 }
 

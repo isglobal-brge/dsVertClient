@@ -225,25 +225,40 @@ print.ds.vertLR <- function(x, ...) {
 }
 
 
-#' @title Wald confidence intervals for ds.vertGLM coefficients
-#' @description Return Wald-type confidence intervals using the standard
-#'   errors already stored in a ds.glm object. Gaussian fits use a Student t
-#'   reference with residual degrees of freedom; binomial and Poisson fits use
-#'   the asymptotic normal reference. Observation-level quantities are never
-#'   touched; this is a scalar client-side transformation. Current public DP
-#'   GLM releases do not carry an attested sampling covariance and are rejected
-#'   until a joint inference artifact is available.
+#' @title Wald confidence intervals and DP-mechanism regions for coefficients
+#' @description `type = "sampling"` returns Wald-type confidence intervals
+#'   from a fit carrying an attested sampling covariance. For a current signed
+#'   Gaussian Synopsis, `type = "mechanism"` derives a simultaneous outer
+#'   region from the certificate's DP coordinate radius, quantisation bound,
+#'   projection distance and the released system's inverse-norm margin. It is
+#'   deterministic client post-processing: it performs no new server call,
+#'   exposes no source statistic and must not be interpreted as sampling
+#'   inference. Binomial and Poisson sampling inference remain unavailable
+#'   until a joint signed inference artifact exists.
 #'
-#' @param fit A ds.glm object.
+#' @param fit A fitted model object; `type = "mechanism"` requires a signed
+#'   `ds.vertDPGaussian` result.
 #' @param parm Optional character vector of coefficient names to report;
 #'   default all.
 #' @param level Confidence level, default 0.95.
+#' @param type Either `"sampling"` (the default Wald interval for an
+#'   attested fit with sampling covariance) or `"mechanism"`. The latter is
+#'   available only for a signed `ds.vertDPGaussian` result and returns a
+#'   simultaneous DP-mechanism region, not a population-sampling interval.
 #'
-#' @return A data frame with columns \code{estimate}, \code{std_error},
-#'   \code{lower}, \code{upper}; row names are coefficient names. Attributes
-#'   \code{distribution} and \code{df} record the reference distribution.
+#' @return For `type = "sampling"`, a data frame with columns
+#'   \code{estimate}, \code{std_error}, \code{lower}, \code{upper}; row
+#'   names are coefficient names. For `type = "mechanism"`, a data frame
+#'   with \code{estimate}, \code{lower}, \code{upper} and
+#'   \code{mechanism_radius}, carrying explicit attributes that rule out a
+#'   sampling-inference interpretation.
 #' @export
-ds.vertConfint <- function(fit, parm = NULL, level = 0.95) {
+ds.vertConfint <- function(fit, parm = NULL, level = 0.95,
+                           type = c("sampling", "mechanism")) {
+  type <- match.arg(type)
+  if (identical(type, "mechanism")) {
+    return(.dsvert_dp_gaussian_mechanism_region(fit, parm, level))
+  }
   .dsvert_validate_inference_fit(fit, require_se = TRUE)
   reference <- .dsvert_inference_reference(fit)
   if (!is.numeric(level) || length(level) != 1L || !is.finite(level) ||
@@ -282,6 +297,164 @@ ds.vertConfint <- function(fit, parm = NULL, level = 0.95) {
   attr(out, "level") <- level
   attr(out, "distribution") <- reference$coefficient
   attr(out, "df") <- reference$df_residual
+  out
+}
+
+.dsvert_dp_gaussian_mechanism_region <- function(fit, parm, level) {
+  if (!inherits(fit, "ds.vertDPGaussian")) {
+    stop("type='mechanism' is available only for ds.vertDPGaussian",
+         call. = FALSE)
+  }
+  if (!is.numeric(level) || length(level) != 1L || !is.finite(level) ||
+      level <= 0 || level >= 1) {
+    stop("`level` must be in (0, 1)", call. = FALSE)
+  }
+  verified <- ds.validateDPGaussianCertificate(fit)
+  if (!isTRUE(verified$integrity_valid) ||
+      !identical(verified$authenticity, "session_transport_anchored")) {
+    stop("The Gaussian mechanism region requires a transport-anchored certificate",
+         call. = FALSE)
+  }
+  artifact <- verified$artifact
+  moment <- verified$validated_moment
+  accuracy <- verified$accuracy_simultaneous_95
+  confidence <- suppressWarnings(as.numeric(accuracy$confidence))
+  if (length(confidence) != 1L || !is.finite(confidence) ||
+      abs(level - confidence) > sqrt(.Machine$double.eps) *
+        max(1, abs(level), abs(confidence))) {
+    stop(paste0(
+      "type='mechanism' requires a current signed Synopsis certificate at ",
+      "its simultaneous mechanism confidence"), call. = FALSE)
+  }
+  radius <- suppressWarnings(as.numeric(accuracy$radius))
+  if (length(radius) != 1L || !is.finite(radius) || radius < 0) {
+    stop("The Gaussian certificate has an invalid simultaneous mechanism radius",
+         call. = FALSE)
+  }
+  ridge <- suppressWarnings(as.numeric(fit$ridge))
+  if (length(ridge) != 1L || !is.finite(ridge) || ridge < 0) {
+    stop("The Gaussian result has an invalid ridge value", call. = FALSE)
+  }
+  recomputed <- .dsvert_dp_gaussian_solve(moment, artifact, ridge)
+  original <- .dsvert_dp_gaussian_original_coefficients(
+    recomputed$coefficients, artifact)
+  if (!isTRUE(all.equal(fit$coefficients_normalized,
+                        recomputed$coefficients, tolerance = 0)) ||
+      !isTRUE(all.equal(fit$coefficients_original_scale, original,
+                        tolerance = 0)) ||
+      !isTRUE(all.equal(fit$coefficients, original, tolerance = 0))) {
+    stop("The Gaussian result does not match its signed sufficient statistics",
+         call. = FALSE)
+  }
+
+  scale <- suppressWarnings(as.numeric(verified$output_lattice_scale))
+  capacity <- suppressWarnings(as.numeric(verified$coordinate_capacity))
+  coordinates <- verified$coordinates
+  if (length(scale) != 1L || !is.finite(scale) || scale <= 0 ||
+      length(capacity) != 1L || !is.finite(capacity) || capacity <= 0 ||
+      !is.numeric(coordinates) || !length(coordinates) ||
+      any(!is.finite(coordinates))) {
+    stop("The Gaussian certificate has invalid mechanism geometry",
+         call. = FALSE)
+  }
+  count_upper <- min(capacity, max(0, coordinates[[1L]] + radius))
+  quantization <- if (identical(
+      artifact$version, .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)) {
+    suppressWarnings(as.numeric(
+      artifact$quantization_contract$per_sum_max_abs_error_lattice_steps)) /
+      scale
+  } else {
+    0.5 * count_upper / scale
+  }
+  projection <- suppressWarnings(as.numeric(
+    moment$projection$frobenius_distance))
+  if (length(quantization) != 1L || !is.finite(quantization) ||
+      quantization < 0 || length(projection) != 1L ||
+      !is.finite(projection) || projection < 0) {
+    stop("The Gaussian certificate has invalid deterministic error bounds",
+         call. = FALSE)
+  }
+
+  dimension <- length(recomputed$coefficients)
+  coordinate_error <- radius + quantization
+  gram_error <- projection + dimension * coordinate_error
+  cross_error <- projection + sqrt(dimension) * coordinate_error
+  penalty <- rep(1, dimension)
+  if (isTRUE(artifact$intercept)) penalty[[1L]] <- 0
+  system <- moment$gram + diag(ridge * penalty, dimension)
+  eigenvalues <- eigen(system, symmetric = TRUE, only.values = TRUE)$values
+  minimum <- min(eigenvalues)
+  tolerance <- 256 * .Machine$double.eps * max(1, max(abs(eigenvalues))) *
+    dimension
+  inverse_norm <- if (minimum > tolerance) 1 / minimum else Inf
+  denominator <- 1 - inverse_norm * gram_error
+  if (!is.finite(inverse_norm) || !is.finite(denominator) ||
+      denominator <= sqrt(.Machine$double.eps)) {
+    .dsvert_stop_non_identifiable(
+      paste(
+        "The certified simultaneous DP perturbation is too large to identify",
+        "a finite Gaussian mechanism region for this fitted system."),
+      reason = "dp_mechanism_region_not_identifiable")
+  }
+  normalized_radius <- inverse_norm * (
+    cross_error + gram_error * sqrt(sum(recomputed$coefficients^2))) /
+    denominator
+
+  outcome_range <- artifact$outcome$upper - artifact$outcome$lower
+  predictor_order <- artifact$predictor_order
+  transform <- matrix(
+    0, nrow = length(original), ncol = dimension,
+    dimnames = list(names(original), names(recomputed$coefficients)))
+  if (isTRUE(artifact$intercept)) {
+    transform["(Intercept)", "(Intercept)"] <- outcome_range
+  }
+  for (predictor in predictor_order) {
+    bounds <- artifact$predictors[[predictor]]
+    predictor_range <- bounds$upper - bounds$lower
+    if (!is.finite(predictor_range) || predictor_range <= 0) {
+      stop("The Gaussian certificate has invalid predictor bounds",
+           call. = FALSE)
+    }
+    slope_scale <- outcome_range / predictor_range
+    transform[predictor, predictor] <- slope_scale
+    transform["(Intercept)", predictor] <-
+      transform["(Intercept)", predictor] - slope_scale * bounds$lower
+  }
+  mechanism_radius <- sqrt(rowSums(transform^2)) * normalized_radius
+  if (any(!is.finite(mechanism_radius)) || any(mechanism_radius < 0)) {
+    stop("The Gaussian mechanism region is not finite", call. = FALSE)
+  }
+  if (is.null(parm)) {
+    selected <- names(original)
+  } else {
+    if (!is.character(parm) || anyNA(parm) || any(!nzchar(parm))) {
+      stop("`parm` must contain non-empty coefficient names", call. = FALSE)
+    }
+    selected <- parm
+    unknown <- setdiff(selected, names(original))
+    if (length(unknown)) {
+      stop("Unknown coefficient(s): ", paste(unknown, collapse = ", "),
+           call. = FALSE)
+    }
+  }
+  estimate <- original[selected]
+  selected_radius <- mechanism_radius[selected]
+  out <- data.frame(
+    estimate = as.numeric(estimate),
+    lower = as.numeric(estimate - selected_radius),
+    upper = as.numeric(estimate + selected_radius),
+    mechanism_radius = as.numeric(selected_radius),
+    stringsAsFactors = FALSE,
+    row.names = selected)
+  attr(out, "level") <- confidence
+  attr(out, "interval_scope") <- "simultaneous_dp_mechanism"
+  attr(out, "sampling_inference") <- FALSE
+  attr(out, "estimand") <- paste(
+    "bounded complete-case Gaussian ridge estimator from the signed",
+    "sufficient-statistic artifact")
+  attr(out, "normalized_l2_radius") <- normalized_radius
+  attr(out, "additional_server_calls") <- 0L
+  attr(out, "additional_privacy_cost") <- c(epsilon = 0, delta = 0)
   out
 }
 

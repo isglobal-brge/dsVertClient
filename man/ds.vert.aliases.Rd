@@ -147,7 +147,12 @@ ds.vert.lasso_cv(fit, lambda_grid = NULL, ...)
 
 ds.vert.lr(reduced, full)
 
-ds.vert.confint(fit, parm = NULL, level = 0.95)
+ds.vert.confint(
+  fit,
+  parm = NULL,
+  level = 0.95,
+  type = c("sampling", "mechanism")
+)
 
 ds.vert.wald(fit, parm, null = 0)
 
@@ -188,8 +193,11 @@ tolerance for the iterative fits.}
 
 \item{impute_columns, m}{Columns to impute and number of imputations (MI).}
 
-\item{fit, reduced, full, parm, level, null, K}{Inference-helper inputs (fitted
-object, nested models, parameter, confidence level, null value, class count).}
+\item{fit, reduced, full, parm, level, type, null, K}{Inference-helper inputs
+(fitted object, nested models, parameter, confidence level, interval type,
+null value, class count). For \code{ds.vert.confint},
+\code{type = "mechanism"} requests the signed Gaussian DP-mechanism region;
+it is not a sampling confidence interval.}
 
 \item{lambda, lambda_1, lambda_grid}{Penalty or penalty grid for the LASSO routes.}
 }

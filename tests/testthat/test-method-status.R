@@ -239,9 +239,13 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
     "disclosure_safe_protocol_no_statistic")
   expect_match(validator$safe_scope, "without DSI")
   expect_match(validator$principal_limitation, "trusted pinset")
+  mechanism_intervals <- ds.vertMethodStatus(c(
+    "ds.vertConfint", "ds.vert.confint"))
+  expect_true(all(mechanism_intervals$status == "promoted"))
+  expect_true(all(grepl("mechanism", mechanism_intervals$safe_scope,
+                        fixed = TRUE)))
   inference_helpers <- ds.vertMethodStatus(c(
-    "ds.vertConfint", "ds.vert.confint", "ds.vertWald", "ds.vert.wald",
-    "ds.vertContrast", "ds.vert.contrast"))
+    "ds.vertWald", "ds.vert.wald", "ds.vertContrast", "ds.vert.contrast"))
   expect_true(all(inference_helpers$status == "provisional"))
   expect_true(all(grepl(
     "joint inference artifact", inference_helpers$principal_limitation,

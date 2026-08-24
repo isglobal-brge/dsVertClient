@@ -16,7 +16,8 @@ the authoritative maturity classification.
 | Route | Defensible scope | Important condition |
 |---|---|---|
 | `ds.getIdentityPks()` | Public Ed25519 identity discovery | Deployment must validate persistence, rotation and pin mismatch handling |
-| `ds.vertConfint()`, `ds.vertWald()`, `ds.vertContrast()` | Client-only algebra | The supplied fit must be converged, unpenalised and expose a valid covariance matrix |
+| `ds.vertConfint(type = "mechanism")` | Certificate-revalidated client post-processing | A current signed same-owner Gaussian Synopsis has a finite inverse-norm margin; the result is a simultaneous DP-mechanism region, never a sampling interval |
+| `ds.vertWald()`, `ds.vertContrast()` | Client-only algebra | The supplied fit must be converged, unpenalised and expose a valid covariance matrix |
 | `ds.vertEpi2x2()` | Client-only measures from an authorised 2-by-2 table | Caller-supplied matrices have no DataSHIELD provenance |
 | `ds.vertMantelHaenszel()` | Client-only common odds ratio and classical MH inference from authorised stratified 2-by-2 aggregates | Bare inputs are caller-attested; orientation, strata and common-odds-ratio assumptions must be valid |
 | `ds.vertDirectStandardization()` | Client-only directly standardised rates | Inputs must already be disclosure-authorised aggregates with compatible strata |
