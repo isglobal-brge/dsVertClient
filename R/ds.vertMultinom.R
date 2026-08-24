@@ -1,22 +1,25 @@
 #' @title Sticky-DP intercept-only multinomial frontdoor
 #' @description With a released, validated \code{ds.vertDPFrequency} object,
+#'   or an explicit \code{server} from which it can be read,
 #'   this frontdoor fits \code{y ~ 1} by deterministic post-processing of that
 #'   one sticky categorical release. It returns Jeffreys-smoothed intercept
 #'   log-odds and never starts a new analysis or DSI request.
 #' @details This is deliberately narrower than a covariate multinomial model:
 #'   predictors, joint softmax, covariance, standard errors and inference stay
 #'   unavailable until a signed score-design artifact exists. Calls without
-#'   \code{frequency} retain the local zero-DSI quarantine gate.
+#'   \code{frequency} or \code{server} retain the local zero-DSI quarantine gate.
 #' @param formula,data,classes,reference,indicator_template,max_iter,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources,design_analysis_id
 #'   Retained compatibility arguments. They are not evaluated because the
 #'   public joint-softmax frontdoor fails locally. With a validated
 #'   \code{frequency} object, only \code{y ~ 1} is available and it returns
 #'   the sticky-DP categorical intercept fit.
+#' @param server Required source-owner when \code{frequency} is absent. The
+#'   frontdoor reads the canonical signed Frequency artifact for the outcome.
 #' @param frequency A released, validated \code{ds.vertDPFrequency} object for
 #'   the outcome. This enables only intercept-only multinomial coefficients;
 #'   it never starts another analysis or reveals a raw category count.
 #' @param ... Retained compatibility arguments; not evaluated.
-#' @return With \code{frequency}, a coefficient-only
+#' @return With \code{frequency} or \code{server}, a coefficient-only
 #'   \code{ds.vertMultinom} object. Otherwise the function raises
 #'   \code{dsvert_route_unavailable} before DSI.
 #' @seealso \code{\link{ds.vertMethodStatus}}
@@ -27,10 +30,24 @@ ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
                             warm_max_iter = NULL, warm_tol = NULL,
                             binomial_sigmoid_intervals = NULL,
                             verbose = TRUE, datasources = NULL, ...,
-                            design_analysis_id = NULL, frequency = NULL) {
+                            design_analysis_id = NULL, frequency = NULL,
+                            server = NULL) {
+  explicit_arguments <- names(match.call())[-1L]
+  if (is.null(frequency) && (!is.null(server) ||
+                             (!missing(formula) &&
+                              .dsvert_dp_frequency_intercept_formula(formula)))) {
+    frequency <- .dsvert_dp_frequency_intercept_artifact(
+      formula = if (missing(formula)) NULL else formula, data = data,
+      server = server, datasources = datasources, method = "multinomial")
+    return(.dsvert_formal_multinom_frequency_adapter(
+      explicit_arguments = setdiff(explicit_arguments, c("server", "datasources")),
+      formula = if (missing(formula)) NULL else formula,
+      data = data, classes = classes, reference = reference,
+      frequency = frequency))
+  }
   if (!is.null(frequency)) {
     return(.dsvert_formal_multinom_frequency_adapter(
-      explicit_arguments = names(match.call())[-1L],
+      explicit_arguments = explicit_arguments,
       formula = if (missing(formula)) NULL else formula,
       data = data, classes = classes, reference = reference,
       frequency = frequency))

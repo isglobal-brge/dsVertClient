@@ -43,6 +43,46 @@ test_that("intercept-only multinomial post-processes a validated Frequency", {
   expect_identical(fit$additional_privacy_cost, c(epsilon = 0, delta = 0))
 })
 
+test_that("intercept-only multinomial resolves its signed Frequency by source owner", {
+  calls <- list()
+  frequency <- .formal_multinom_frequency()
+  testthat::local_mocked_bindings(
+    ds.vertDPFrequency = function(data_name, variable, server = NULL,
+                                  datasources = NULL) {
+      calls <<- c(calls, list(list(
+        data_name = data_name, variable = variable, server = server,
+        datasources = datasources)))
+      frequency
+    },
+    .dsvert_dp_frequency_contract = function(x) x,
+    .package = "dsVertClient")
+
+  conns <- list(peer_a = structure(list(), class = "mock_connection"))
+  direct <- ds.vertMultinom(
+    status ~ 1, data = "study", reference = "control",
+    server = "peer_a", datasources = conns)
+  alias <- ds.vert.multinom(
+    status ~ 1, data = "study", reference = "control",
+    server = "peer_a", datasources = conns)
+
+  expect_s3_class(direct, "dsvert_dp_frequency_multinom")
+  expect_identical(alias$coefficients, direct$coefficients)
+  expect_identical(calls, rep(list(list(
+    data_name = "study", variable = "status", server = "peer_a",
+    datasources = conns)), 2L))
+  expect_error(ds.vertMultinom(
+    status ~ x, data = "study", server = "peer_a", datasources = conns),
+    "intercept-only")
+  expect_length(calls, 2L)
+  expect_error(ds.vertMultinom(status ~ 1, data = "study", datasources = conns),
+               "requires an explicit source owner")
+  expect_length(calls, 2L)
+  expect_error(ds.vertMultinom(
+    status ~ 1, frequency = frequency, server = "peer_a"),
+    "legacy controls")
+  expect_length(calls, 2L)
+})
+
 test_that("formal multinomial rejects unsupported designs before Frequency", {
   calls <- 0L
   testthat::local_mocked_bindings(

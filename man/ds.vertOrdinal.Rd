@@ -18,22 +18,31 @@ ds.vertOrdinal(
   verbose = TRUE,
   datasources = NULL,
   ...,
-  frequency = NULL
+  frequency = NULL,
+  server = NULL
 )
 }
 \arguments{
-\item{formula, data, levels_ordered, cumulative_template, max_iter, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally. With a validated \code{frequency} object,
-only \code{y ~ 1} is available.}
+\item{formula, data, levels_ordered, cumulative_template, max_iter, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources}{Retained compatibility arguments. With a validated \code{frequency}
+object, only \code{y ~ 1} is available.}
+
+\item{...}{Retained compatibility arguments; not evaluated.}
 
 \item{frequency}{A released, validated \code{ds.vertDPFrequency} object for
 the outcome. The supplied \code{levels_ordered} must be a complete
 permutation of its signed category domain.}
 
-\item{...}{Retained compatibility arguments; not evaluated.}
+\item{server}{Required source-owner when \code{frequency} is absent. The
+frontdoor reads the canonical signed Frequency artifact for the outcome.}
+}
+\value{
+With \code{frequency} or \code{server}, a threshold-only \code{ds.vertOrdinal}
+object. Otherwise the function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
 With a released, validated \code{ds.vertDPFrequency} object,
+or an explicit \code{server} from which it can be read,
 this frontdoor fits \code{y ~ 1} by deterministic post-processing of one
 sticky categorical release. The caller supplies the complete clinical
 category order; the result contains Jeffreys-smoothed cumulative-logit
@@ -42,12 +51,8 @@ thresholds and never starts a new analysis or DSI request.
 \details{
 This is deliberately narrower than a proportional-odds regression:
 covariates, protected score/information, covariance, standard errors and
-inference remain unavailable. Calls without \code{frequency} retain the
-local zero-DSI quarantine gate.
-}
-\value{
-With \code{frequency}, a threshold-only \code{ds.vertOrdinal} object.
-Otherwise the function raises \code{dsvert_route_unavailable} before DSI.
+inference remain unavailable. Calls without \code{frequency} or
+\code{server} retain the local zero-DSI quarantine gate.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

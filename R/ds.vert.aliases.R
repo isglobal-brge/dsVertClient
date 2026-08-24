@@ -11,11 +11,12 @@
 #' iterative route.
 #' \code{ds.vert.multinom(..., frequency = x)} is likewise limited to
 #' intercept-only log-odds post-processed from one validated sticky Frequency
-#' release. It accepts no DataSHIELD connections, covariates or inference
-#' controls and cannot create another release.
+#' release. Supplying \code{server} instead reads that canonical release;
+#' covariates and inference controls remain unavailable.
 #' \code{ds.vert.ordinal(..., frequency = x)} likewise returns only
 #' intercept-only cumulative-logit thresholds from the same kind of release;
-#' its complete ordered category domain must be explicit.
+#' its complete ordered category domain must be explicit. It can likewise read
+#' the artifact by \code{server}.
 #' \code{ds.vert.nb(..., frequency = x)} returns only an intercept-only NB2
 #' method-of-moments fit for a bounded non-negative integer frequency domain;
 #' it has no covariates or inference and cannot create another release.
@@ -42,6 +43,8 @@
 #'   \code{ds.vertFederation}, model \code{formula}, and DataSHIELD connections.
 #'   Model formulas may qualify ambiguous columns as
 #'   \code{site_name$column}; the expression is parsed, never evaluated.
+#' @param server Required source-owner when an intercept-only multinomial or
+#'   ordinal alias resolves its canonical signed Frequency artifact itself.
 #' @param id_col,newobj Record-identifier column and output symbol for alignment.
 #'   \code{data_name} and \code{id_col} may each be one string broadcast to all
 #'   sites or a complete named per-site character/list map.
@@ -416,15 +419,22 @@ ds.vert.nb <- function(formula, data = NULL,
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.multinom <- function(formula, data = NULL,
+ds.vert.multinom <- function(formula, data = NULL, server = NULL,
                              datasources = NULL, ...) {
   extras <- list(...)
   if (!is.null(extras$frequency)) {
-    if ("datasources" %in% names(match.call())[-1L]) {
-      stop("Frequency-backed multinomial does not accept datasources", call. = FALSE)
+    if ("datasources" %in% names(match.call())[-1L] || !is.null(server)) {
+      stop("Frequency-backed multinomial does not accept datasources or server", call. = FALSE)
     }
     out <- do.call(ds.vertMultinom, c(
       list(formula = formula, data = data), extras))
+    return(.dsvert_set_frontdoor(out, "ds.vert.multinom",
+                                 "ds.vertMultinom", NULL))
+  }
+  if (!is.null(server)) {
+    out <- do.call(ds.vertMultinom, c(
+      list(formula = formula, data = data, server = server,
+           datasources = datasources), extras))
     return(.dsvert_set_frontdoor(out, "ds.vert.multinom",
                                  "ds.vertMultinom", NULL))
   }
@@ -438,15 +448,22 @@ ds.vert.multinom <- function(formula, data = NULL,
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.ordinal <- function(formula, data = NULL,
+ds.vert.ordinal <- function(formula, data = NULL, server = NULL,
                             datasources = NULL, ...) {
   extras <- list(...)
   if (!is.null(extras$frequency)) {
-    if ("datasources" %in% names(match.call())[-1L]) {
-      stop("Frequency-backed ordinal does not accept datasources", call. = FALSE)
+    if ("datasources" %in% names(match.call())[-1L] || !is.null(server)) {
+      stop("Frequency-backed ordinal does not accept datasources or server", call. = FALSE)
     }
     out <- do.call(ds.vertOrdinal, c(
       list(formula = formula, data = data), extras))
+    return(.dsvert_set_frontdoor(out, "ds.vert.ordinal",
+                                 "ds.vertOrdinal", NULL))
+  }
+  if (!is.null(server)) {
+    out <- do.call(ds.vertOrdinal, c(
+      list(formula = formula, data = data, server = server,
+           datasources = datasources), extras))
     return(.dsvert_set_frontdoor(out, "ds.vert.ordinal",
                                  "ds.vertOrdinal", NULL))
   }

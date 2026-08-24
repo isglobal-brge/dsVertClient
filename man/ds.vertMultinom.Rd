@@ -20,7 +20,8 @@ ds.vertMultinom(
   datasources = NULL,
   ...,
   design_analysis_id = NULL,
-  frequency = NULL
+  frequency = NULL,
+  server = NULL
 )
 }
 \arguments{
@@ -29,14 +30,23 @@ public joint-softmax frontdoor fails locally. With a validated
 \code{frequency} object, only \code{y ~ 1} is available and it returns
 the sticky-DP categorical intercept fit.}
 
+\item{...}{Retained compatibility arguments; not evaluated.}
+
 \item{frequency}{A released, validated \code{ds.vertDPFrequency} object for
 the outcome. This enables only intercept-only multinomial coefficients;
 it never starts another analysis or reveals a raw category count.}
 
-\item{...}{Retained compatibility arguments; not evaluated.}
+\item{server}{Required source-owner when \code{frequency} is absent. The
+frontdoor reads the canonical signed Frequency artifact for the outcome.}
+}
+\value{
+With \code{frequency} or \code{server}, a coefficient-only
+\code{ds.vertMultinom} object. Otherwise the function raises
+\code{dsvert_route_unavailable} before DSI.
 }
 \description{
 With a released, validated \code{ds.vertDPFrequency} object,
+or an explicit \code{server} from which it can be read,
 this frontdoor fits \code{y ~ 1} by deterministic post-processing of that
 one sticky categorical release. It returns Jeffreys-smoothed intercept
 log-odds and never starts a new analysis or DSI request.
@@ -45,11 +55,7 @@ log-odds and never starts a new analysis or DSI request.
 This is deliberately narrower than a covariate multinomial model:
 predictors, joint softmax, covariance, standard errors and inference stay
 unavailable until a signed score-design artifact exists. Calls without
-\code{frequency} retain the local zero-DSI quarantine gate.
-}
-\value{
-With \code{frequency}, a coefficient-only \code{ds.vertMultinom} object.
-Otherwise the function raises \code{dsvert_route_unavailable} before DSI.
+\code{frequency} or \code{server} retain the local zero-DSI quarantine gate.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

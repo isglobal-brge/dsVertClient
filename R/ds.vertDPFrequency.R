@@ -225,6 +225,41 @@ ds.vertDPFrequency <- function(data_name, variable, server = NULL,
     DSI::datashield.aggregate)
 }
 
+.dsvert_dp_frequency_intercept_formula <- function(formula) {
+  inherits(formula, "formula") && length(formula) == 3L &&
+    is.symbol(formula[[2L]]) && {
+      terms <- stats::terms(formula)
+      identical(as.integer(attr(terms, "intercept")), 1L) &&
+        length(attr(terms, "term.labels")) == 0L
+    }
+}
+
+.dsvert_dp_frequency_intercept_artifact <- function(
+    formula, data, server, datasources, method) {
+  if (!inherits(formula, "formula") || length(formula) != 3L ||
+      !is.symbol(formula[[2L]])) {
+    stop("Automatic Frequency-backed ", method,
+         " requires a simple outcome formula", call. = FALSE)
+  }
+  terms <- stats::terms(formula)
+  if (!identical(as.integer(attr(terms, "intercept")), 1L) ||
+      length(attr(terms, "term.labels")) != 0L) {
+    stop("Automatic Frequency-backed ", method,
+         " supports only an intercept-only y ~ 1 formula", call. = FALSE)
+  }
+  if (!is.character(data) || length(data) != 1L || is.na(data) ||
+      !nzchar(data)) {
+    stop("Automatic Frequency-backed ", method,
+         " requires one non-empty data name", call. = FALSE)
+  }
+  if (is.null(server)) {
+    stop("Automatic Frequency-backed ", method,
+         " requires an explicit source owner", call. = FALSE)
+  }
+  ds.vertDPFrequency(data, as.character(formula[[2L]]), server = server,
+                     datasources = datasources)
+}
+
 .dsvert_dp_frequency_synopsis_accuracy_v1 <- function(x, confidence) {
   table <- x
   table$table <- unname(x$counts)

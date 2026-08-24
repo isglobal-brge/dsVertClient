@@ -75,9 +75,9 @@ ds.vert.coxph(
 
 ds.vert.nb(formula, data = NULL, method = "accurate", datasources = NULL, ...)
 
-ds.vert.multinom(formula, data = NULL, datasources = NULL, ...)
+ds.vert.multinom(formula, data = NULL, server = NULL, datasources = NULL, ...)
 
-ds.vert.ordinal(formula, data = NULL, datasources = NULL, ...)
+ds.vert.ordinal(formula, data = NULL, server = NULL, datasources = NULL, ...)
 
 ds.vert.lmm(
   formula,
@@ -176,6 +176,9 @@ ds.vert.contrast(
 Model formulas may qualify ambiguous columns as
 \code{site_name$column}; the expression is parsed, never evaluated.}
 
+\item{server}{Required source-owner when an intercept-only multinomial or
+ordinal alias resolves its canonical signed Frequency artifact itself.}
+
 \item{id_col, newobj}{Record-identifier column and output symbol for alignment.
 \code{data_name} and \code{id_col} may each be one string broadcast to all
 sites or a complete named per-site character/list map.}
@@ -230,11 +233,12 @@ completed custodian-signed public certificate; it does not run the retired
 iterative route.
 \code{ds.vert.multinom(..., frequency = x)} is likewise limited to
 intercept-only log-odds post-processed from one validated sticky Frequency
-release. It accepts no DataSHIELD connections, covariates or inference
-controls and cannot create another release.
+release. Supplying \code{server} instead reads that canonical release;
+covariates and inference controls remain unavailable.
 \code{ds.vert.ordinal(..., frequency = x)} likewise returns only
 intercept-only cumulative-logit thresholds from the same kind of release;
-its complete ordered category domain must be explicit.
+its complete ordered category domain must be explicit. It can likewise read
+the artifact by \code{server}.
 \code{ds.vert.nb(..., frequency = x)} returns only an intercept-only NB2
 method-of-moments fit for a bounded non-negative integer frequency domain;
 it has no covariates or inference and cannot create another release.

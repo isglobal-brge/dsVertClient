@@ -1,21 +1,24 @@
 #' @title Sticky-DP intercept-only ordinal frontdoor
 #' @description With a released, validated \code{ds.vertDPFrequency} object,
+#'   or an explicit \code{server} from which it can be read,
 #'   this frontdoor fits \code{y ~ 1} by deterministic post-processing of one
 #'   sticky categorical release. The caller supplies the complete clinical
 #'   category order; the result contains Jeffreys-smoothed cumulative-logit
 #'   thresholds and never starts a new analysis or DSI request.
 #' @details This is deliberately narrower than a proportional-odds regression:
 #'   covariates, protected score/information, covariance, standard errors and
-#'   inference remain unavailable. Calls without \code{frequency} retain the
-#'   local zero-DSI quarantine gate.
+#'   inference remain unavailable. Calls without \code{frequency} or
+#'   \code{server} retain the local zero-DSI quarantine gate.
 #' @param formula,data,levels_ordered,cumulative_template,max_iter,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources
 #'   Retained compatibility arguments. With a validated \code{frequency}
 #'   object, only \code{y ~ 1} is available.
+#' @param server Required source-owner when \code{frequency} is absent. The
+#'   frontdoor reads the canonical signed Frequency artifact for the outcome.
 #' @param frequency A released, validated \code{ds.vertDPFrequency} object for
 #'   the outcome. The supplied \code{levels_ordered} must be a complete
 #'   permutation of its signed category domain.
 #' @param ... Retained compatibility arguments; not evaluated.
-#' @return With \code{frequency}, a threshold-only \code{ds.vertOrdinal}
+#' @return With \code{frequency} or \code{server}, a threshold-only \code{ds.vertOrdinal}
 #'   object. Otherwise the function raises
 #'   \code{dsvert_route_unavailable} before DSI.
 #' @seealso \code{\link{ds.vertMethodStatus}}
@@ -26,10 +29,22 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered = NULL,
                            warm_max_iter = NULL, warm_tol = NULL,
                            binomial_sigmoid_intervals = NULL,
                            verbose = TRUE, datasources = NULL, ...,
-                           frequency = NULL) {
+                           frequency = NULL, server = NULL) {
+  explicit_arguments <- names(match.call())[-1L]
+  if (is.null(frequency) && (!is.null(server) ||
+                             (!missing(formula) &&
+                              .dsvert_dp_frequency_intercept_formula(formula)))) {
+    frequency <- .dsvert_dp_frequency_intercept_artifact(
+      formula = if (missing(formula)) NULL else formula, data = data,
+      server = server, datasources = datasources, method = "ordinal")
+    return(.dsvert_formal_ordinal_frequency_adapter(
+      explicit_arguments = setdiff(explicit_arguments, c("server", "datasources")),
+      formula = if (missing(formula)) NULL else formula,
+      data = data, levels_ordered = levels_ordered, frequency = frequency))
+  }
   if (!is.null(frequency)) {
     return(.dsvert_formal_ordinal_frequency_adapter(
-      explicit_arguments = names(match.call())[-1L],
+      explicit_arguments = explicit_arguments,
       formula = if (missing(formula)) NULL else formula,
       data = data, levels_ordered = levels_ordered, frequency = frequency))
   }
