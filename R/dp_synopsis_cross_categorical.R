@@ -381,7 +381,9 @@
     datasets = datasets))
   scope <- .dsvert_joint_dp_client_canonical(list(
     mode = "catalog_v1", numeric_moments = character(),
-    categorical_marginals = character(), categorical_pairs = list(),
+    categorical_marginals = character(),
+    strict_missing_categorical = character(),
+    categorical_pairs = list(),
     correlations = list()))
   projected_policy <- context$policy
   projected_policy$primitive_scope <- scope

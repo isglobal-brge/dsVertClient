@@ -37,3 +37,27 @@ test_that("local categorical manifest comparison canonicalizes JSON scalars", {
   expect_error(.dsvert_dp_synopsis_local_pair_manifest_v1(
     manifest, selector), "local categorical Synopsis projection")
 })
+
+test_that("local categorical projection commits strict-missing scope", {
+  schema <- list(unsigned = list(
+    datasets = list(cohort = list(
+      dataset_id = "cohort-v1", dataset_version = "v1",
+      schema_version = "test-v1", alignment_group = "cohort",
+      patient_keys = list(site_a = "patient_id"),
+      columns = list(
+        disease = list(kind = "categorical", owner_peer = "site_a",
+                       levels = c("no", "yes")),
+        exposure = list(kind = "categorical", owner_peer = "site_a",
+                        levels = c("unexposed", "exposed")))))),
+    logical_snapshot = list(
+      logical_snapshot_id = "cohort", version = "schema-v1-parent",
+      alignment_protocol_version = 1L))
+  context <- list(policy = list(
+    domain = "test-domain", cohort_id = "cohort",
+    peer_pinset_sha256 = strrep("a", 64L), primitive_scope = list()))
+
+  projection <- .dsvert_dp_synopsis_local_pair_project_components_v1(
+    schema, "cohort", "site_a", c("disease", "exposure"), context)
+  expect_identical(projection$primitive_scope$strict_missing_categorical,
+                   character())
+})
