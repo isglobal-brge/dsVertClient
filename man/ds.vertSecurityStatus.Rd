@@ -13,7 +13,7 @@ ds.vertSecurityStatus(datasources = NULL, require_ready = TRUE)
 current sticky-artifact consortium policy is not ready. Historical
 capsule lifetime telemetry is not an admission gate. This is not a
 route-specific execution preflight and never
-promotes formal GLM or Cox.}
+promotes formal GLM or Cox compute.}
 }
 \value{
 A \code{ds.vertSecurityStatus} object with explicit route readiness.
@@ -29,12 +29,14 @@ an administrator changes the effective callable surface. Opal and
 Armadillo/Rock use the same logical contract and token; connector-specific
 admin tooling provisions it in the server profile or server/container
 environment only. This client sends no attestation option, token or claim in
-the DSI expression. Under security-profile schema v4, the
+the DSI expression. Under security-profile schema v5, the
 returned route map reports biomedical joint-DP profile eligibility and
 authenticated control-plane readiness separately. It explicitly does not
 evaluate route-specific dataset admission, manifest construction, numeric
 runtime capabilities, or a live release. The top-level \code{ready} value and
 server compatibility alias \code{formal_dp_claim_eligible} apply only to that
-biomedical route; they never promote formal GLM or formal Cox, whose
-route-specific \code{ready} fields remain false while sealed.
+biomedical route; they never promote formal GLM or formal Cox compute,
+whose route-specific \code{ready} fields remain false while sealed. It does
+report the separate read-only route for a completed two-authority GLM or
+Cox certificate.
 }

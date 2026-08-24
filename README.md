@@ -133,7 +133,7 @@ workload, but create neither a release nor a protected-source read. The retired
 vector-lifecycle ABI remains internal compatibility code and is not a public
 release route.
 
-`ds.vertSecurityStatus()` consumes security-profile schema v4 and reports
+`ds.vertSecurityStatus()` consumes security-profile schema v5 and reports
 readiness per route. Its top-level `ready` field, compatibility field
 `biomedical_joint_dp_capsule_ready`, and server alias
 `formal_dp_claim_eligible` refer only to the custodian-attested surface plus
@@ -143,7 +143,8 @@ that a route's numeric runtime is available, or that a live release will
 complete. The route map says
 `execution_readiness = "not_evaluated_requires_route_specific_preflight"` and
 separately reports formal GLM and formal Cox as not ready for new computation;
-it also reports whether a completed formal Cox public certificate can be read.
+it also reports whether a completed formal GLM or Cox public certificate can
+be read.
 
 The surface token is connector-neutral and is provisioned only by server
 administrators after an exact effective-inventory check. Opal stores it in the

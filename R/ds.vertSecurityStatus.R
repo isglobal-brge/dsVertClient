@@ -4,6 +4,7 @@
     "biomedical_joint_dp_capsule_profile_surface_eligible",
     "biomedical_joint_dp_capsule_runtime_readiness",
     "formal_glm_ready", "formal_glm_state",
+    "formal_glm_public_result_ready", "formal_glm_public_result_state",
     "formal_cox_ready", "formal_cox_state",
     "formal_cox_public_result_ready", "formal_cox_public_result_state")
   is.list(value) && identical(sort(names(value)), sort(required)) &&
@@ -25,6 +26,12 @@
     identical(
       value$formal_glm_state,
       "sealed_no_registered_r_dsi_joint_dp_release_lifecycle") &&
+    is.logical(value$formal_glm_public_result_ready) &&
+    length(value$formal_glm_public_result_ready) == 1L &&
+    !is.na(value$formal_glm_public_result_ready) &&
+    identical(value$formal_glm_public_result_state,
+              paste0("read_only_completed_two_authority_signed_public_",
+                     "certificate")) &&
     is.logical(value$formal_cox_ready) &&
     length(value$formal_cox_ready) == 1L &&
     !is.na(value$formal_cox_ready) &&
@@ -64,7 +71,7 @@
   valid <- is.list(value) && identical(sort(names(value)), sort(required)) &&
     is.numeric(value$schema_version) && length(value$schema_version) == 1L &&
     is.finite(value$schema_version) &&
-    identical(as.numeric(value$schema_version), 4) &&
+    identical(as.numeric(value$schema_version), 5) &&
     is.character(value$release_mode) && length(value$release_mode) == 1L &&
     identical(value$release_mode, "disclosure_safe") &&
     all(vapply(logical_fields, function(field) {
@@ -104,6 +111,7 @@
           "biomedical_joint_dp_capsule_profile_surface_eligible"]]) ||
       isTRUE(value$route_claims$formal_glm_ready) ||
       isTRUE(value$route_claims$formal_cox_ready) ||
+      !isTRUE(value$route_claims$formal_glm_public_result_ready) ||
       !isTRUE(value$route_claims$formal_cox_public_result_ready) ||
       !identical(
         value$deployment_surface_attested,
@@ -167,6 +175,9 @@
       "not_evaluated_requires_route_specific_preflight",
     formal_glm_ready = FALSE,
     formal_glm_state = profiles[[1L]]$route_claims$formal_glm_state,
+    formal_glm_public_result_ready = TRUE,
+    formal_glm_public_result_state =
+      profiles[[1L]]$route_claims$formal_glm_public_result_state,
     formal_cox_ready = FALSE,
     formal_cox_state = profiles[[1L]]$route_claims$formal_cox_state,
     formal_cox_public_result_ready = TRUE,
@@ -218,21 +229,23 @@
 #' Armadillo/Rock use the same logical contract and token; connector-specific
 #' admin tooling provisions it in the server profile or server/container
 #' environment only. This client sends no attestation option, token or claim in
-#' the DSI expression. Under security-profile schema v4, the
+#' the DSI expression. Under security-profile schema v5, the
 #' returned route map reports biomedical joint-DP profile eligibility and
 #' authenticated control-plane readiness separately. It explicitly does not
 #' evaluate route-specific dataset admission, manifest construction, numeric
 #' runtime capabilities, or a live release. The top-level `ready` value and
 #' server compatibility alias `formal_dp_claim_eligible` apply only to that
-#' biomedical route; they never promote formal GLM or formal Cox, whose
-#' route-specific `ready` fields remain false while sealed.
+#' biomedical route; they never promote formal GLM or formal Cox compute,
+#' whose route-specific `ready` fields remain false while sealed. It does
+#' report the separate read-only route for a completed two-authority GLM or
+#' Cox certificate.
 #'
 #' @param datasources DataSHIELD connections; active connections by default.
 #' @param require_ready Fail if the custodian-attested remote surface or
 #'   current sticky-artifact consortium policy is not ready. Historical
 #'   capsule lifetime telemetry is not an admission gate. This is not a
 #'   route-specific execution preflight and never
-#'   promotes formal GLM or Cox.
+#'   promotes formal GLM or Cox compute.
 #' @return A `ds.vertSecurityStatus` object with explicit route readiness.
 #' @export
 ds.vertSecurityStatus <- function(datasources = NULL,
@@ -252,6 +265,8 @@ print.ds.vertSecurityStatus <- function(x, ...) {
     "Routes: biomedical policy/control-plane:",
     if (isTRUE(routes$biomedical_joint_dp_capsule_ready)) "yes" else "no",
     "| formal GLM:", if (isTRUE(routes$formal_glm_ready)) "yes" else "no",
+    "| formal GLM completed public result:",
+    if (isTRUE(routes$formal_glm_public_result_ready)) "yes" else "no",
     "| formal Cox:", if (isTRUE(routes$formal_cox_ready)) "yes" else "no",
     "| formal Cox completed public result:",
     if (isTRUE(routes$formal_cox_public_result_ready)) "yes" else "no",

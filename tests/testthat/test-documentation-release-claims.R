@@ -250,7 +250,7 @@ test_that("security-status docs cannot promote sealed routes via top-level readi
                   collapse = "\n")
 
   for (text in list(source, readme)) {
-    expect_match(text, "security-profile schema v4", fixed = TRUE)
+    expect_match(text, "security-profile schema v5", fixed = TRUE)
     expect_match(text, "top-level `ready`", fixed = TRUE)
     expect_match(text, "`formal_dp_claim_eligible`", fixed = TRUE)
     expect_match(
@@ -466,7 +466,7 @@ test_that("installed Cox and LMM notes retain their exact release boundaries", {
     expect_false(grepl(forbidden, text, ignore.case = TRUE, perl = TRUE),
                  info = paste(path, "contains a release-status overclaim"))
     if (identical(basename(path), "cox.md")) {
-      expect_match(text, "Security-profile schema v4", fixed = TRUE)
+      expect_match(text, "Security-profile schema v5", fixed = TRUE)
       expect_match(text, "`route_claims$formal_cox_ready = FALSE`",
                    fixed = TRUE)
       expect_match(text, "read-only", ignore.case = TRUE)

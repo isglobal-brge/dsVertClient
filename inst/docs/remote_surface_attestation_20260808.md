@@ -67,4 +67,5 @@ must correct that surface rather than set the token.
   framed, data-free manifest phase; it is not a compatibility window.
 - `verified_custodian_attestation` establishes local surface eligibility only.
   Consortium policy/pinset readiness and route-specific dataset/numeric
-  preflight remain separate checks; formal GLM and Cox remain not ready.
+  preflight remain separate checks; formal GLM and Cox computation remain not
+  ready, while their completed-certificate read-only routes are separate.

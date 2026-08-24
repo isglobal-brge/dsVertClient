@@ -3,7 +3,7 @@
     state = if (isTRUE(attested)) "verified_custodian_attestation" else
       "missing_custodian_attestation") {
   list(
-    schema_version = 4L,
+    schema_version = 5L,
     release_mode = "disclosure_safe",
     exact_adaptive_releases_enabled = FALSE,
     disclosure_safe_gate_active = TRUE,
@@ -21,6 +21,10 @@
       formal_glm_ready = FALSE,
       formal_glm_state =
         "sealed_no_registered_r_dsi_joint_dp_release_lifecycle",
+      formal_glm_public_result_ready = TRUE,
+      formal_glm_public_result_state = paste0(
+        "read_only_completed_two_authority_signed_public_",
+        "certificate"),
       formal_cox_ready = FALSE,
       formal_cox_state = paste0(
         "sealed_no_recipient_encrypted_r_dsi_lifecycle_or_",
@@ -64,6 +68,7 @@ test_that("security status requires the single profile and DP readiness", {
     result$route_readiness$execution_readiness,
     "not_evaluated_requires_route_specific_preflight")
   expect_false(result$route_readiness$formal_glm_ready)
+  expect_true(result$route_readiness$formal_glm_public_result_ready)
   expect_false(result$route_readiness$formal_cox_ready)
   expect_true(result$route_readiness$formal_cox_public_result_ready)
   expect_identical(result$release_mode, "disclosure_safe")
@@ -77,6 +82,8 @@ test_that("security status requires the single profile and DP readiness", {
   expect_false(any(grepl(
     "biomedical joint-DP capsules: yes", printed, fixed = TRUE)))
   expect_true(any(grepl("formal GLM: no", printed, fixed = TRUE)))
+  expect_true(any(grepl("formal GLM completed public result: yes", printed,
+                        fixed = TRUE)))
   expect_true(any(grepl("formal Cox: no", printed, fixed = TRUE)))
   expect_true(any(grepl("formal Cox completed public result: yes", printed,
                         fixed = TRUE)))
@@ -161,6 +168,17 @@ test_that("security status rejects obsolete or contradictory profiles", {
     .dsvert_security_status_impl(conns, FALSE, overstated_route, identity),
     "contradictory")
 
+  missing_glm_public_route <- function(
+      conns, expr, error = NULL, errors.print = TRUE, ...) {
+    value <- .security_profile_fixture()
+    value$route_claims$formal_glm_public_result_ready <- FALSE
+    list(a = value, b = value)
+  }
+  expect_error(
+    .dsvert_security_status_impl(
+      conns, FALSE, missing_glm_public_route, identity),
+    "contradictory")
+
   stale_claim <- function(
       conns, expr, error = NULL, errors.print = TRUE, ...) {
     value <- .security_profile_fixture()
@@ -230,6 +248,7 @@ test_that("missing or stale custodian surface attestation prevents readiness", {
   expect_false(
     result$route_readiness$biomedical_joint_dp_capsule_ready)
   expect_false(result$route_readiness$formal_glm_ready)
+  expect_true(result$route_readiness$formal_glm_public_result_ready)
   expect_false(result$route_readiness$formal_cox_ready)
   expect_s3_class(result$dp_status, "ds.vertDPStatus")
   expect_match(
@@ -264,6 +283,7 @@ test_that("readiness can be inspected without weakening the gate", {
   expect_false(
     result$route_readiness$biomedical_joint_dp_capsule_ready)
   expect_false(result$route_readiness$formal_glm_ready)
+  expect_true(result$route_readiness$formal_glm_public_result_ready)
   expect_false(result$route_readiness$formal_cox_ready)
   expect_match(result$warning, "DP ledger unavailable")
 })
