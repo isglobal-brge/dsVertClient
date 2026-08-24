@@ -2,9 +2,10 @@
 #
 # The public request contains selectors only.  It cannot carry epsilon, delta,
 # bounds, contribution caps, random seeds, MPC roles or a numeric backend.  The
-# route verifies an already completed public certificate remotely. It cannot
-# request source materialisation, start the durable worker, or cause another
-# joint-DP opening; those lifecycle stages remain outside this frontdoor.
+# route verifies an already completed public certificate or durable Phase21
+# terminal remotely. It cannot request source materialisation, start the
+# durable worker, or cause another joint-DP opening; those lifecycle stages
+# remain outside this frontdoor.
 
 .DSVERT_FORMAL_GLM_FRONTDOOR_REQUEST_VERSION <-
   "dsvert-formal-glm-frontdoor-request-v1"

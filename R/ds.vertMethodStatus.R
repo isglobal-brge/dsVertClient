@@ -454,7 +454,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "Gaussian GLM uses an explicit dp_analysis_id selecting a bounded",
         "signed Synopsis artifact.",
         "Binomial/Poisson formal_analysis_id reads an already completed",
-        "two-authority-signed public certificate. Same- and cross-owner",
+        "two-authority-signed public certificate or durable Phase21 terminal.",
+        "Same- and cross-owner",
         "artifacts must match the requested formula; the legacy estimator",
         "is unreachable."),
       paste(

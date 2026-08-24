@@ -99,8 +99,9 @@
 #'   either signed-analysis id raises a typed \code{dsvert_route_unavailable}
 #'   condition before any DSI call. An explicit \code{formal_analysis_id} for
 #'   binomial or Poisson reads a completed, two-authority-signed public DP
-#'   certificate configured by the custodians. It never starts the retained
-#'   iterative Ring/Beaver code.
+#'   certificate configured by the custodians, including the equivalent
+#'   publication rehydrated from a completed durable Phase21 terminal. It
+#'   never starts the retained iterative Ring/Beaver code.
 #'
 #' @details
 #' \strong{Available route.} Supply an additive formula, an aligned data name,
@@ -113,8 +114,9 @@
 #' \strong{Formal binomial/Poisson route.} Supply an additive formula,
 #' \code{family = "binomial"} or \code{"poisson"}, and a registered
 #' \code{formal_analysis_id}. Every server verifies the same completed public
-#' certificate, and the client accepts it only when all responses are
-#' canonically identical. The resulting coefficient-only DP fit has no
+#' certificate or durable terminal publication, and the client accepts it only
+#' when all responses are canonically identical. The resulting coefficient-only
+#' DP fit has no
 #' sampling covariance, deviance, fitted values, residuals or classical
 #' inference. It reads an existing release and never starts source work or a
 #' new DP opening.
@@ -137,7 +139,7 @@
 #' @param dp_analysis_id Custodian-configured signed bounded Gaussian artifact
 #'   id. This is required for the available route.
 #' @param formal_analysis_id Custodian-configured binomial/Poisson public
-#'   certificate selector. It is read-only: it cannot request a new analysis,
+#'   publication selector. It is read-only: it cannot request a new analysis,
 #'   choose privacy parameters, or activate the legacy iterative route.
 #' @param max_iter,tol,log_n,offset,weights,ring,binomial_sigmoid_intervals,eta_privacy,keep_session,std_mode,start,compute_se,compute_deviance,gradient_only,numeric_backend
 #'   Retained legacy arguments. They are rejected when explicitly supplied to
@@ -146,7 +148,8 @@
 #'   \code{ds.vertDPGaussian} object containing bounded noisy sufficient-
 #'   statistic regression output. With a valid formal binomial/Poisson id, a
 #'   coefficient-only \code{dsvert_formal_dp_glm} object from the completed
-#'   public certificate. Neither route exposes classical standard errors,
+#'   public certificate or durable terminal publication. Neither route exposes
+#'   classical standard errors,
 #'   p-values, individual fitted values, residuals or scores. All other routes
 #'   raise a typed condition and return no fitted object.
 #' @seealso \code{\link{ds.vertDPGaussian}},
