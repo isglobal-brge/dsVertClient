@@ -8,7 +8,15 @@
       test_path(), "..", "..", "..", "dsVert"), mustWork = FALSE)
   }
   skip_if_not(dir.exists(server_path), "requires the sibling dsVert source")
-  pkgload::load_all(server_path, quiet = TRUE)
+  pkgload::load_all(server_path, quiet = TRUE, reset = TRUE)
+  loaded_path <- tryCatch(
+    normalizePath(getNamespaceInfo(asNamespace("dsVert"), "path"),
+                  mustWork = TRUE),
+    error = function(error) "")
+  if (!identical(loaded_path, server_path)) {
+    stop("loaded dsVert source does not match DSVERT_SERVER_SOURCE",
+         call. = FALSE)
+  }
   asNamespace("dsVert")
 }
 
