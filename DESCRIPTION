@@ -17,9 +17,11 @@ Description: Client-side DataSHIELD functions for privacy-aware analysis
     correlation, PCA and selected Gaussian and penalised research workflows
     over the companion dsVert server package. Public names for Cox PH and
     selected negative-binomial, multinomial and ordinal intercept-only
-    post-processors remain available over validated sticky artifacts; their
-    unavailable covariate routes, LMM, GLMM, IPW, multiple imputation and
-    other historical workflows fail locally before DSI. An audited
+    post-processors remain available over validated sticky artifacts. The
+    LMM, GLMM, IPW and categorical multiple-imputation compatibility names
+    likewise expose only their documented signed-artifact scopes; covariate,
+    REML/PQL, clustered-inference, weighting and chained-imputation variants
+    fail locally before DSI. An audited
     maturity registry distinguishes conditional promoted methods, provisional
     research routes, historical compatibility helpers and quarantined
     estimators. Peer pinning and MPC protect protocol intermediates.

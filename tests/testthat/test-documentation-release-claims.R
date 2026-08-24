@@ -23,6 +23,21 @@ test_that("no generated help topic remains classified as quarantined", {
   expect_length(quarantined_doc_topics, 0L)
 })
 
+test_that("package description distinguishes readmitted scopes from retired variants", {
+  package_root <- dirname(.dsvert_client_source_root())
+  description <- paste(readLines(file.path(package_root, "DESCRIPTION"),
+                                  warn = FALSE), collapse = "\n")
+
+  expect_match(description, "LMM, GLMM, IPW and categorical", fixed = TRUE)
+  expect_match(description, "signed-artifact scopes", fixed = TRUE)
+  expect_match(description,
+               "REML/PQL, clustered-inference, weighting and chained-imputation",
+               fixed = TRUE)
+  expect_false(grepl(
+    "LMM, GLMM, IPW, multiple imputation and[[:space:]]+other historical",
+    description, perl = TRUE))
+})
+
 test_that("no Roxygen or Rd topic remains in the zero-DSI quarantine", {
   expect_length(quarantined_doc_topics, 0L)
   package_root <- dirname(.dsvert_client_source_root())
