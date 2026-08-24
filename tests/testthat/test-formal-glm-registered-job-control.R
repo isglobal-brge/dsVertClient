@@ -84,3 +84,136 @@ test_that("registered formal GLM control fails closed before and after DSI", {
     "unsafe registered formal GLM control reply")
   expect_identical(calls, 1L)
 })
+
+.formal_glm_registered_job_control_reply <- function(action, payload) {
+  list(
+    version = "dsvert-formal-glm-registered-phase20-job-control-response-v1",
+    action = action, payload = payload, production_ready = FALSE)
+}
+
+.formal_glm_registered_job_control_ref <- function() {
+  list(
+    artifact_id = strrep("a", 64L), receipt_set_sha256 = strrep("b", 64L),
+    attempt_id = strrep("c", 64L), job_sha256 = strrep("d", 64L),
+    transport_sha256 = strrep("e", 64L), production_ready = FALSE)
+}
+
+test_that("registered formal GLM job driver completes the closed two-host lifecycle", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"))
+  receipts <- list(site_a = .formal_glm_registered_job_control_receipt(),
+                   site_b = utils::modifyList(
+                     .formal_glm_registered_job_control_receipt(),
+                     list(peer = "site_b")))
+  ref <- .formal_glm_registered_job_control_ref()
+  polls <- c(site_a = 0L, site_b = 0L)
+  relays <- list()
+  testthat::local_mocked_bindings(
+    .dsvert_formal_glm_registered_job_control_call = function(
+        conn, receipt, action, payload, .aggregate) {
+      site <- names(conn)[[1L]]
+      if (identical(action, "negotiate")) {
+        outbound <- if (identical(site, "site_a") && !nzchar(payload$inbound)) {
+          "cHJvcG9zYWw="
+        } else if (identical(site, "site_b")) {
+          "YWNjZXB0"
+        } else {
+          ""
+        }
+        return(.formal_glm_registered_job_control_reply(action, list(
+          state = "negotiating", outbound = outbound, inspect_only = FALSE,
+          production_ready = FALSE)))
+      }
+      if (identical(action, "start")) {
+        return(.formal_glm_registered_job_control_reply(action, list(
+          state = "running", outbound = "", inspect_only = FALSE,
+          production_ready = FALSE)))
+      }
+      if (identical(action, "job_ref")) {
+        return(.formal_glm_registered_job_control_reply(action, list(
+          ref = ref, claim = if (identical(site, "site_a")) "YQ==" else "Yg==")))
+      }
+      if (action %in% c("bind", "heartbeat")) {
+        return(.formal_glm_registered_job_control_reply(
+          action, structure(list(), names = character())))
+      }
+      if (identical(action, "poll")) {
+        polls[[site]] <<- polls[[site]] + 1L
+        chunk <- if (polls[[site]] == 1L) list(
+          job_sha256 = ref$job_sha256, transport_sha256 = ref$transport_sha256,
+          offset = 0, payload_sha256 = strrep("f", 64L),
+          payload = if (identical(site, "site_a")) "QQ==" else "Qg==") else NULL
+        payload <- list(state = "running", accepted_through = payload$acknowledged,
+                        production_ready = FALSE)
+        if (!is.null(chunk)) payload$relay_chunk <- chunk
+        return(.formal_glm_registered_job_control_reply(action, payload))
+      }
+      if (identical(action, "relay")) {
+        relays[[length(relays) + 1L]] <<- list(site = site, payload = payload)
+        return(.formal_glm_registered_job_control_reply(action, list(accepted = 1)))
+      }
+      if (action %in% c("compute_start", "terminal_start")) {
+        return(.formal_glm_registered_job_control_reply(action, list(
+          state = "running", production_ready = FALSE)))
+      }
+      if (identical(action, "compute_status")) {
+        return(.formal_glm_registered_job_control_reply(action, list(
+          state = "complete", production_ready = FALSE)))
+      }
+      if (identical(action, "terminal_status")) {
+        return(.formal_glm_registered_job_control_reply(action, list(
+          state = "complete", commit = list(
+            SHA256 = strrep("1", 64L), Bytes = 64, Replayed = FALSE),
+          production_ready = FALSE)))
+      }
+      stop("unexpected action", call. = FALSE)
+    },
+    .package = "dsVertClient")
+  result <- .dsvert_formal_glm_registered_job_run(
+    conns, receipts, .aggregate = identity, max_cycles = 4L)
+  expect_identical(result$state, "terminal_complete")
+  expect_false(result$production_ready)
+  expect_length(relays, 2L)
+  expect_true(all(vapply(relays, function(value)
+    identical(value$payload$ref, ref), logical(1L))))
+})
+
+test_that("registered formal GLM job driver rejects mismatched peer identities before bind", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"))
+  receipts <- list(site_a = .formal_glm_registered_job_control_receipt(),
+                   site_b = utils::modifyList(
+                     .formal_glm_registered_job_control_receipt(),
+                     list(peer = "site_b")))
+  calls <- character()
+  testthat::local_mocked_bindings(
+    .dsvert_formal_glm_registered_job_control_call = function(
+        conn, receipt, action, payload, .aggregate) {
+      site <- names(conn)[[1L]]
+      calls <<- c(calls, action)
+      if (identical(action, "negotiate")) {
+        return(.formal_glm_registered_job_control_reply(action, list(
+          state = "negotiating",
+          outbound = if (identical(site, "site_a") && !nzchar(payload$inbound)) {
+            "cHJvcG9zYWw="
+          } else if (identical(site, "site_b")) "YWNjZXB0" else "",
+          inspect_only = FALSE, production_ready = FALSE)))
+      }
+      if (identical(action, "start")) {
+        return(.formal_glm_registered_job_control_reply(action, list(
+          state = "running", outbound = "", inspect_only = FALSE,
+          production_ready = FALSE)))
+      }
+      if (identical(action, "job_ref")) {
+        ref <- .formal_glm_registered_job_control_ref()
+        if (identical(site, "site_b")) ref$job_sha256 <- strrep("9", 64L)
+        return(.formal_glm_registered_job_control_reply(action,
+          list(ref = ref, claim = "YQ==")))
+      }
+      stop("unexpected action", call. = FALSE)
+    },
+    .package = "dsVertClient")
+  expect_error(.dsvert_formal_glm_registered_job_run(
+    conns, receipts, .aggregate = identity), "different job references")
+  expect_false("bind" %in% calls)
+})
