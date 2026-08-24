@@ -254,6 +254,8 @@ test_that("historical iterative LASSO admits only the signed Gaussian path", {
   expect_identical(result$input_provenance, "signed_dp_gaussian_capsule")
   expect_identical(result$additional_privacy_cost,
                    c(epsilon = 0, delta = 0))
+  expect_identical(result$requested_max_outer, 20L)
+  expect_true(result$certification_retry)
   expect_true(all(vapply(result$path_certificates, function(value) {
     isTRUE(value$kkt$satisfied)
   }, logical(1L))))
@@ -282,7 +284,7 @@ test_that("historical iterative LASSO admits only the signed Gaussian path", {
         datasources = list(site_a = structure(list(), class = "mock_connection")))
     },
     .package = "dsVertClient")
-  expect_identical(requested_iterations, c(500L, 501L))
+  expect_identical(requested_iterations, c(20L, 501L))
 
   alias_result <- ds.vert.lasso_iter(
     y ~ x, data = "cohort", family = "gaussian", lambda = 0.1,

@@ -26,11 +26,11 @@ ds.vertLASSOIter(
 )
 }
 \arguments{
-\item{formula, data, family, lambda, max_outer, tol, alpha, inner_iter, exact_non_gaussian, ring, lipschitz, fista_restart, binomial_sigmoid_intervals, poisson_damping, verbose, datasources, cor_analysis_id}{Historical compatibility arguments. The Gaussian route uses
-\code{lambda}, \code{max_outer} and \code{tol}. It uses at least 500
-coordinate-descent sweeps and fails closed if the requested KKT certificate is
-not reached; controls specific to the retired score-MPC routes do not alter its
-certified DP Synopsis estimand.}
+\item{formula, data, family, lambda, max_outer, tol, alpha, inner_iter, exact_non_gaussian, ring, lipschitz, fista_restart, binomial_sigmoid_intervals, poisson_damping, verbose, datasources, cor_analysis_id}{Historical compatibility arguments. The Gaussian route first uses
+\code{max_outer} as its coordinate-descent budget. For legacy requests below
+500 sweeps, one KKT-only retry at 500 sweeps preserves historical compatibility
+when the short certified attempt is insufficient; controls specific to the
+retired score-MPC routes do not alter its certified DP Synopsis estimand.}
 
 \item{dp_analysis_id}{Required signed Gaussian Synopsis artifact identifier
 for \code{family = "gaussian"}.}
