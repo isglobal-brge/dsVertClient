@@ -1,5 +1,6 @@
 #' @title Sticky-DP intercept-only NB2 frontdoor
-#' @description With a released, validated \code{ds.vertDPFrequency} object
+#' @description With a released, validated \code{ds.vertDPFrequency} object,
+#'   or an explicit \code{server} from which it can be read,
 #'   whose signed domain is bounded non-negative integer counts, this frontdoor
 #'   fits \code{y ~ 1} by deterministic NB2 method-of-moments post-processing.
 #'   It never starts a new analysis or DataSHIELD request.
@@ -12,11 +13,13 @@
 #'   Retained compatibility arguments. With \code{frequency}, only
 #'   \code{formula}, \code{data}, \code{verbose}, and \code{frequency} are
 #'   accepted; all legacy NB2 controls fail locally.
+#' @param server Required source-owner when \code{frequency} is absent. The
+#'   frontdoor reads the canonical signed Frequency artifact for the outcome.
 #' @param frequency A released, validated \code{ds.vertDPFrequency} object for
 #'   a bounded count outcome. It enables only an intercept-only, no-inference
 #'   NB2 method-of-moments result.
 #' @param ... Retained compatibility arguments; not evaluated.
-#' @return With \code{frequency}, a coefficient-only
+#' @return With \code{frequency} or \code{server}, a coefficient-only
 #'   \code{ds.vertNBFullRegTheta} object. Otherwise the function raises
 #'   \code{dsvert_route_unavailable} before DSI.
 #' @seealso \code{\link{ds.vertMethodStatus}}
@@ -27,10 +30,22 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                                   beta_max_iter = 2L, beta_tol = 1e-4,
                                   compute_covariance = TRUE,
                                   verbose = TRUE, datasources = NULL, ...,
-                                  frequency = NULL) {
+                                  frequency = NULL, server = NULL) {
+  explicit_arguments <- names(match.call())[-1L]
+  if (is.null(frequency) && (!is.null(server) ||
+                             (!missing(formula) &&
+                              .dsvert_dp_frequency_intercept_formula(formula)))) {
+    frequency <- .dsvert_dp_frequency_intercept_artifact(
+      formula = if (missing(formula)) NULL else formula, data = data,
+      server = server, datasources = datasources, method = "NB2")
+    return(.dsvert_formal_nb2_frequency_adapter(
+      explicit_arguments = setdiff(explicit_arguments, c("server", "datasources")),
+      formula = if (missing(formula)) NULL else formula,
+      data = data, frequency = frequency))
+  }
   if (!is.null(frequency)) {
     return(.dsvert_formal_nb2_frequency_adapter(
-      explicit_arguments = names(match.call())[-1L],
+      explicit_arguments = explicit_arguments,
       formula = if (missing(formula)) NULL else formula,
       data = data, frequency = frequency))
   }

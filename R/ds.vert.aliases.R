@@ -43,8 +43,8 @@
 #'   \code{ds.vertFederation}, model \code{formula}, and DataSHIELD connections.
 #'   Model formulas may qualify ambiguous columns as
 #'   \code{site_name$column}; the expression is parsed, never evaluated.
-#' @param server Required source-owner when an intercept-only multinomial or
-#'   ordinal alias resolves its canonical signed Frequency artifact itself.
+#' @param server Required source-owner when an intercept-only NB2, multinomial,
+#'   or ordinal alias resolves its canonical signed Frequency artifact itself.
 #' @param id_col,newobj Record-identifier column and output symbol for alignment.
 #'   \code{data_name} and \code{id_col} may each be one string broadcast to all
 #'   sites or a complete named per-site character/list map.
@@ -389,19 +389,29 @@ ds.vert.coxph <- function(formula, data = NULL, method = "profile",
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.nb <- function(formula, data = NULL,
+ds.vert.nb <- function(formula, data = NULL, server = NULL,
                        method = "accurate",
                        datasources = NULL, ...) {
   extras <- list(...)
   if (!is.null(extras$frequency)) {
-    if ("datasources" %in% names(match.call())[-1L]) {
-      stop("Frequency-backed NB2 does not accept datasources", call. = FALSE)
+    if ("datasources" %in% names(match.call())[-1L] || !is.null(server)) {
+      stop("Frequency-backed NB2 does not accept datasources or server", call. = FALSE)
     }
     if (!identical(method, "accurate")) {
       stop("Frequency-backed NB2 does not accept method", call. = FALSE)
     }
     out <- do.call(ds.vertNBFullRegTheta, c(
       list(formula = formula, data = data), extras))
+    return(.dsvert_set_frontdoor(out, "ds.vert.nb",
+                                 "ds.vertNBFullRegTheta", NULL))
+  }
+  if (!is.null(server)) {
+    if (!identical(method, "accurate")) {
+      stop("Frequency-backed NB2 does not accept method", call. = FALSE)
+    }
+    out <- do.call(ds.vertNBFullRegTheta, c(
+      list(formula = formula, data = data, server = server,
+           datasources = datasources), extras))
     return(.dsvert_set_frontdoor(out, "ds.vert.nb",
                                  "ds.vertNBFullRegTheta", NULL))
   }

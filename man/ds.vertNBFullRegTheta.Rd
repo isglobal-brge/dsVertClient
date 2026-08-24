@@ -18,7 +18,8 @@ ds.vertNBFullRegTheta(
   verbose = TRUE,
   datasources = NULL,
   ...,
-  frequency = NULL
+  frequency = NULL,
+  server = NULL
 )
 }
 \arguments{
@@ -31,10 +32,14 @@ accepted; all legacy NB2 controls fail locally.}
 a bounded count outcome. It enables only an intercept-only, no-inference
 NB2 method-of-moments result.}
 
+\item{server}{Required source-owner when \code{frequency} is absent. The
+frontdoor reads the canonical signed Frequency artifact for the outcome.}
+
 \item{...}{Retained compatibility arguments; not evaluated.}
 }
 \description{
-With a released, validated \code{ds.vertDPFrequency} object
+With a released, validated \code{ds.vertDPFrequency} object,
+or an explicit \code{server} from which it can be read,
 whose signed domain is bounded non-negative integer counts, this frontdoor
 fits \code{y ~ 1} by deterministic NB2 method-of-moments post-processing.
 It never starts a new analysis or DataSHIELD request.
@@ -47,7 +52,7 @@ implemented. A frequency release with variance no greater than its mean is
 reported as the Poisson-limit boundary rather than as a finite NB2 fit.
 }
 \value{
-With \code{frequency}, a coefficient-only \code{ds.vertNBFullRegTheta}
+With \code{frequency} or \code{server}, a coefficient-only \code{ds.vertNBFullRegTheta}
 object. Otherwise the function raises \code{dsvert_route_unavailable}
 before DSI.
 }

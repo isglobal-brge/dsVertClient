@@ -73,7 +73,7 @@ ds.vert.coxph(
   ...
 )
 
-ds.vert.nb(formula, data = NULL, method = "accurate", datasources = NULL, ...)
+ds.vert.nb(formula, data = NULL, server = NULL, method = "accurate", datasources = NULL, ...)
 
 ds.vert.multinom(formula, data = NULL, server = NULL, datasources = NULL, ...)
 
@@ -176,8 +176,8 @@ ds.vert.contrast(
 Model formulas may qualify ambiguous columns as
 \code{site_name$column}; the expression is parsed, never evaluated.}
 
-\item{server}{Required source-owner when an intercept-only multinomial or
-ordinal alias resolves its canonical signed Frequency artifact itself.}
+\item{server}{Required source-owner when an intercept-only NB2, multinomial,
+or ordinal alias resolves its canonical signed Frequency artifact itself.}
 
 \item{id_col, newobj}{Record-identifier column and output symbol for alignment.
 \code{data_name} and \code{id_col} may each be one string broadcast to all
