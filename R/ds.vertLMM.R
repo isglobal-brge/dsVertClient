@@ -83,7 +83,7 @@ print.ds.vertLMM <- function(x, ...) {
   cat(sprintf("  sigma^2 = %.4g    sigma_b^2 = %.4g    ICC = %.3f\n",
               x$sigma2, x$sigma_b2, x$icc))
   cat("  Estimation: signed DP method of moments; no ML/REML inference\n")
-  cat("\nFixed effect:\n")
+  cat("\nFixed effects:\n")
   print(round(data.frame(Estimate = x$coefficients,
                          check.names = FALSE), 5L))
   invisible(x)
