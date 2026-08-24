@@ -618,8 +618,10 @@ ds.vert.lasso_cv <- function(fit, lambda_grid = NULL, ...) {
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.lr <- function(reduced, full) {
-  .dsvert_set_frontdoor(ds.vertLR(reduced = reduced, full = full),
+ds.vert.lr <- function(reduced, full,
+                       type = c("sampling", "mechanism"), level = 0.95) {
+  .dsvert_set_frontdoor(ds.vertLR(
+    reduced = reduced, full = full, type = type, level = level),
                         "ds.vert.lr", "ds.vertLR")
 }
 

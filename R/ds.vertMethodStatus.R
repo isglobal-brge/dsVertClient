@@ -642,13 +642,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "These are not Wald statistics, p-values, sampling covariance or",
         "population inference. type='sampling' still requires an attested",
         "joint covariance artifact."))
-  add(c("ds.vertLR", "ds.vert.lr"), "ds.vertLR", "provisional",
+  add(c("ds.vertLR", "ds.vert.lr"), "ds.vertLR", "promoted",
       paste(
-        "Pure client post-processing of two attested, nested, unweighted",
-        "lambda=0 binomial/Poisson fits with matching cohort IDs."),
+        "For one current signed unpenalized Gaussian Synopsis,",
+        "type='mechanism' returns a simultaneous outer region for the",
+        "nested bounded normalized RSS reduction without another release."),
       paste(
-        "No formally attested binomial/Poisson capsule fit exists yet;",
-        "Gaussian LR and non-canonical/weighted deviances are rejected."))
+        "This is not a likelihood-ratio statistic, chi-square reference,",
+        "p-value or population inference. type='sampling' still requires",
+        "two attested binomial/Poisson fits with canonical deviance."))
   add("ds.vertEpi2x2", "ds.vertEpi2x2", "promoted",
       "Client-only measures from an already-authorized 2x2 table.",
       "Arbitrary matrices carry no DataSHIELD provenance; small-sample Wald intervals are approximate.")

@@ -419,8 +419,8 @@ test_that("estimands and inference requirements match implemented semantics", {
         inventory, "ds.vertDPDirectStandardizationInference")))
 
   expect_true(all(c(
-    "binomial_or_poisson_only", "canonical_unweighted_deviance",
-    "converged_unpenalized_fits", "same_cohort_missingness_and_offset") %in%
+    "certificate_revalidation", "stable_full_and_reduced_gram_inverse",
+    "explicit_non_sampling_interpretation") %in%
       requirements_for(inventory, "ds.vertLR")))
   expect_true(all(c(
     "canonical_certificate_validation", "completed_release_only",

@@ -799,16 +799,19 @@
 
   add(
     c("ds.vertLR", "ds.vert.lr"), "ds.vertLR", "likelihood_ratio",
-    c("authorized_full_fit", "authorized_reduced_fit",
-      "canonical_unweighted_deviance"),
+    c("signed_same_owner_gaussian_synopsis",
+      "simultaneous_coordinate_error_certificate"),
     paste(
-      "Likelihood-ratio comparison of compatible nested, converged,",
-      "unpenalized binomial or Poisson models."),
-    c("authorized_fit_provenance", "binomial_or_poisson_only",
-      "canonical_unweighted_deviance", "converged_unpenalized_fits",
-      "nested_model_contract", "same_cohort_missingness_and_offset"),
-    "client_only_requires_attested_input",
-    aliases = c("ds.vert.lr" = "ds.vertLR"))
+      "Simultaneous DP-mechanism outer region for a declared strict",
+      "Gaussian submodel's normalized RSS reduction."),
+    c("certificate_revalidation", "stable_full_and_reduced_gram_inverse",
+      "explicit_non_sampling_interpretation"),
+    "synopsis_release_implemented",
+    aliases = c("ds.vert.lr" = "ds.vertLR"),
+    current_route_status = "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state =
+      "validated_same_owner_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     c("ds.vertConfint", "ds.vert.confint"), "ds.vertConfint",

@@ -145,7 +145,7 @@ ds.vert.lasso_1step(fit, lambda, ...)
 
 ds.vert.lasso_cv(fit, lambda_grid = NULL, ...)
 
-ds.vert.lr(reduced, full)
+ds.vert.lr(reduced, full, type = c("sampling", "mechanism"), level = 0.95)
 
 ds.vert.confint(
   fit,
@@ -211,7 +211,10 @@ null value, class count). For \code{ds.vert.confint},
 \code{type = "mechanism"} requests the signed Gaussian DP-mechanism region;
 it is not a sampling confidence interval. The same type for
 \code{ds.vert.wald} and \code{ds.vert.contrast} returns an outer
-DP-mechanism null region, never a sampling test or p-value.}
+DP-mechanism null region, never a sampling test or p-value. For
+\code{ds.vert.lr}, it accepts retained Gaussian terms and returns a bounded
+normalized RSS-reduction region from the same signed release, never a
+likelihood-ratio statistic, chi-square reference or p-value.}
 
 \item{lambda, lambda_1, lambda_grid}{Penalty or penalty grid for the LASSO routes.}
 }

@@ -245,11 +245,13 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
   expect_true(all(grepl("mechanism", mechanism_intervals$safe_scope,
                         fixed = TRUE)))
   inference_helpers <- ds.vertMethodStatus(c(
-    "ds.vertWald", "ds.vert.wald", "ds.vertContrast", "ds.vert.contrast"))
+    "ds.vertWald", "ds.vert.wald", "ds.vertContrast", "ds.vert.contrast",
+    "ds.vertLR", "ds.vert.lr"))
   expect_true(all(inference_helpers$status == "promoted"))
-  expect_true(all(grepl(
-    "not Wald statistics", inference_helpers$principal_limitation,
-    fixed = TRUE)))
+  expect_true(all(grepl("not ", inference_helpers$principal_limitation,
+                        fixed = TRUE)))
+  expect_true(all(grepl("statistic", inference_helpers$principal_limitation,
+                        fixed = TRUE)))
   lasso <- ds.vertMethodStatus(c(
     "ds.vertLASSOProximal", "ds.vert.lasso_proximal",
     "ds.vertLASSOCV", "ds.vert.lasso_cv"))
@@ -397,8 +399,7 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
     "ds.vertLR", "ds.vert.lr"))$release_contract ==
       "postprocessing_inherits_input"))
   expect_match(ds.vertMethodStatus("ds.vertLR")$principal_limitation,
-               "No formally attested binomial/Poisson capsule fit",
-               fixed = TRUE)
+               "not a likelihood-ratio statistic", fixed = TRUE)
   indirect <- ds.vertMethodStatus(c(
     "ds.vertDPIndirectStandardization",
     "ds.vertDPIndirectStandardizationInference"))

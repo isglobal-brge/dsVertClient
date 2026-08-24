@@ -1663,6 +1663,17 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
                  mechanism_region["x_peer_a", "lower"])
     expect_equal(mechanism_contrast$upper,
                  mechanism_region["x_peer_a", "upper"])
+    mechanism_lr <- ds.vertLR(
+      reduced = "(Intercept)", full = fit, type = "mechanism")
+    expect_identical(mechanism_lr$distribution,
+                     "simultaneous_dp_mechanism_rss_reduction")
+    expect_false(mechanism_lr$sampling_inference)
+    expect_null(mechanism_lr$p_value)
+    expect_true(is.finite(mechanism_lr$lower))
+    expect_true(is.finite(mechanism_lr$upper))
+    expect_gte(mechanism_lr$lower, 0)
+    expect_lte(mechanism_lr$lower, mechanism_lr$statistic)
+    expect_gte(mechanism_lr$upper, mechanism_lr$statistic)
 
     route_gaussian <- function(data_name, analysis_id, ridge = 0,
                                server = NULL, datasources = NULL,

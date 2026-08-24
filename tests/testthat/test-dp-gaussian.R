@@ -753,6 +753,38 @@ test_that("Gaussian mechanism regions are certificate-bound post-processing", {
                                type = "mechanism"),
                "ncol\\(K\\)")
 
+  zero_solution <- .dsvert_dp_gaussian_solve(moment, artifact, ridge = 0)
+  zero_original <- .dsvert_dp_gaussian_original_coefficients(
+    zero_solution$coefficients, artifact)
+  zero_fit <- fit
+  zero_fit$ridge <- 0
+  zero_fit$coefficients_normalized <- zero_solution$coefficients
+  zero_fit$coefficients_original_scale <- zero_original
+  zero_fit$coefficients <- zero_original
+  reduction <- ds.vertLR(
+    reduced = "(Intercept)", full = zero_fit, type = "mechanism")
+  expected_reduced <- sum(moment$cross["(Intercept)"]^2 /
+                            moment$gram["(Intercept)", "(Intercept)"])
+  expected_full <- sum(zero_solution$coefficients * moment$cross)
+  expect_identical(reduction$distribution,
+                   "simultaneous_dp_mechanism_rss_reduction")
+  expect_false(reduction$sampling_inference)
+  expect_null(reduction$p_value)
+  expect_equal(reduction$statistic, expected_full - expected_reduced)
+  expect_true(is.finite(reduction$lower))
+  expect_true(is.finite(reduction$upper))
+  expect_gte(reduction$lower, 0)
+  expect_lte(reduction$lower, reduction$statistic)
+  expect_gte(reduction$upper, reduction$statistic)
+  expect_equal(
+    ds.vert.lr(reduced = "(Intercept)", full = zero_fit,
+               type = "mechanism")$upper,
+    reduction$upper)
+  expect_error(ds.vertLR("(Intercept)", fit, type = "mechanism"),
+               "unpenalized")
+  expect_error(ds.vertLR("unknown", zero_fit, type = "mechanism"),
+               "Unknown reduced-model")
+
   tampered_accuracy <- fit
   tampered_accuracy$accuracy$simultaneous_abs_mechanism_radius <- 0
   expect_identical(

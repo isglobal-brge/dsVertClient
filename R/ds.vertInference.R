@@ -1,20 +1,33 @@
-#' @title Likelihood-ratio test on two nested ds.vertGLM fits
-#' @description Compute the standard LR chi-square statistic between a reduced
-#'   and a full ds.vertGLM fit. Both fits must be on the same cohort and
-#'   the reduced model must be nested within the full model.
+#' @title Likelihood-ratio test or signed Gaussian RSS-reduction region
+#' @description `type = "sampling"` computes the standard LR chi-square
+#'   statistic between two nested attested ds.vertGLM fits. `type =
+#'   "mechanism"` computes a bounded Gaussian residual-sum-of-squares
+#'   reduction for a declared submodel from one signed Gaussian Synopsis. It
+#'   is a simultaneous DP-mechanism region, not a likelihood-ratio statistic,
+#'   p-value, or population-sampling test.
 #'
-#' @param reduced ds.glm object with fewer coefficients.
-#' @param full ds.glm object with more coefficients.
+#' @param reduced A ds.glm object with fewer coefficients for `type =
+#'   "sampling"`, or a character vector of retained reduced-model terms for
+#'   `type = "mechanism"`.
+#' @param full A ds.glm object with more coefficients for `type = "sampling"`,
+#'   or an unpenalized signed ds.vertDPGaussian result for `type =
+#'   "mechanism"`.
+#' @param type Either `"sampling"` (default) or `"mechanism"`.
+#' @param level Simultaneous mechanism confidence. The current signed Gaussian
+#'   Synopsis supports its certified level only (0.95).
 #'
-#' @return A list with:
+#' @return For `type = "sampling"`, a list with:
 #'   \itemize{
 #'     \item \code{statistic}: reduced$deviance - full$deviance
 #'     \item \code{df}: full$n_vars - reduced$n_vars
 #'     \item \code{p_value}: upper-tail chi-square p-value
 #'     \item \code{deviance_reduced}, \code{deviance_full}
 #'   }
+#'   For `type = "mechanism"`, a list with the bounded normalized RSS
+#'   reduction and its simultaneous outer interval, but no p-value or
+#'   likelihood-ratio reference distribution.
 #'
-#' @details This is a pure client-side computation over the scalar
+#' @details The sampling route is a pure client-side computation over the scalar
 #'   deviances already returned by ds.vertGLM; no additional MPC round
 #'   is performed and no observation-level information is exposed. It is
 #'   available only for converged, unpenalized binomial or Poisson fits on the
@@ -23,9 +36,18 @@
 #'   LR chi-square test here. The currently promoted public DP GLM releases
 #'   deliberately contain neither a sampling covariance nor an attested
 #'   deviance, so they fail closed here until a joint inference artifact is
-#'   available.
+#'   available. The mechanism route instead resolves both nested Gaussian
+#'   least-squares reductions from exactly one signed sufficient-statistic vector.
+#'   It proves an outer region for that bounded, normalized RSS reduction only;
+#'   it deliberately returns no chi-square reference or p-value.
 #' @export
-ds.vertLR <- function(reduced, full) {
+ds.vertLR <- function(reduced, full,
+                      type = c("sampling", "mechanism"), level = 0.95) {
+  type <- match.arg(type)
+  if (identical(type, "mechanism")) {
+    return(.dsvert_dp_gaussian_mechanism_lr(
+      reduced = reduced, full = full, level = level))
+  }
   .dsvert_reject_unavailable_public_inference(reduced)
   .dsvert_reject_unavailable_public_inference(full)
   if (!inherits(reduced, "ds.glm")) {
@@ -111,6 +133,143 @@ ds.vertLR <- function(reduced, full) {
     deviance_full = as.numeric(full$deviance),
     family = full$family,
     n_obs = full$n_obs)
+  class(out) <- c("ds.vertLR", "list")
+  out
+}
+
+.dsvert_dp_gaussian_mechanism_lr <- function(reduced, full, level) {
+  if (!inherits(full, "ds.vertDPGaussian")) {
+    stop("type='mechanism' requires full to be ds.vertDPGaussian",
+         call. = FALSE)
+  }
+  if (!is.character(reduced) || !length(reduced) || anyNA(reduced) ||
+      any(!nzchar(reduced)) || anyDuplicated(reduced)) {
+    stop(paste0("type='mechanism' requires reduced to be a non-empty ",
+                "unique character vector of retained terms"), call. = FALSE)
+  }
+  ridge <- suppressWarnings(as.numeric(full$ridge))
+  if (length(ridge) != 1L || !is.finite(ridge) || ridge != 0) {
+    stop("type='mechanism' requires an unpenalized Gaussian fit (ridge = 0)",
+         call. = FALSE)
+  }
+
+  region <- .dsvert_dp_gaussian_mechanism_region(full, parm = NULL,
+                                                   level = level)
+  verified <- ds.validateDPGaussianCertificate(full)
+  artifact <- verified$artifact
+  moment <- verified$validated_moment
+  terms <- artifact$design_terms
+  missing_terms <- setdiff(reduced, terms)
+  if (length(missing_terms)) {
+    stop("Unknown reduced-model term(s): ",
+         paste(missing_terms, collapse = ", "), call. = FALSE)
+  }
+  if (length(reduced) >= length(terms)) {
+    stop(paste0("The mechanism LR comparison requires a strict reduced ",
+                "submodel"), call. = FALSE)
+  }
+  reduced_index <- match(reduced, terms)
+
+  scale <- suppressWarnings(as.numeric(verified$output_lattice_scale))
+  capacity <- suppressWarnings(as.numeric(verified$coordinate_capacity))
+  coordinates <- verified$coordinates
+  radius <- suppressWarnings(as.numeric(
+    verified$accuracy_simultaneous_95$radius))
+  if (length(scale) != 1L || !is.finite(scale) || scale <= 0 ||
+      length(capacity) != 1L || !is.finite(capacity) || capacity <= 0 ||
+      !is.numeric(coordinates) || !length(coordinates) ||
+      any(!is.finite(coordinates)) || length(radius) != 1L ||
+      !is.finite(radius) || radius < 0) {
+    stop("The Gaussian certificate has invalid mechanism geometry",
+         call. = FALSE)
+  }
+  count_upper <- min(capacity, max(0, coordinates[[1L]] + radius))
+  quantization <- if (identical(
+      artifact$version, .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)) {
+    suppressWarnings(as.numeric(
+      artifact$quantization_contract$per_sum_max_abs_error_lattice_steps)) /
+      scale
+  } else {
+    0.5 * count_upper / scale
+  }
+  projection <- suppressWarnings(as.numeric(
+    moment$projection$frobenius_distance))
+  if (length(quantization) != 1L || !is.finite(quantization) ||
+      quantization < 0 || length(projection) != 1L ||
+      !is.finite(projection) || projection < 0) {
+    stop("The Gaussian certificate has invalid deterministic error bounds",
+         call. = FALSE)
+  }
+  coordinate_error <- radius + quantization
+
+  quadratic <- function(gram, cross, label) {
+    dimension <- nrow(gram)
+    eigenvalues <- eigen(gram, symmetric = TRUE, only.values = TRUE)$values
+    tolerance <- 256 * .Machine$double.eps *
+      max(1, max(abs(eigenvalues))) * dimension
+    minimum <- min(eigenvalues)
+    gram_error <- projection + dimension * coordinate_error
+    cross_error <- projection + sqrt(dimension) * coordinate_error
+    if (!is.finite(minimum) || minimum <= tolerance + gram_error) {
+      .dsvert_stop_non_identifiable(
+        paste0("The signed Gaussian ", label,
+               " design is not stably invertible under its simultaneous ",
+               "DP-mechanism region."),
+        reason = "dp_mechanism_lr_not_identifiable")
+    }
+    inverse_norm <- 1 / minimum
+    true_inverse_norm <- 1 / (minimum - gram_error)
+    cross_norm <- sqrt(sum(cross^2))
+    true_cross_norm <- cross_norm + cross_error
+    coefficients <- as.numeric(solve(gram, cross))
+    list(
+      value = sum(coefficients * cross),
+      error = cross_error * true_inverse_norm * true_cross_norm +
+        cross_norm * true_inverse_norm * inverse_norm * gram_error *
+        true_cross_norm + cross_norm * inverse_norm * cross_error)
+  }
+  full_quadratic <- quadratic(moment$gram, moment$cross, "full-model")
+  reduced_quadratic <- quadratic(
+    moment$gram[reduced_index, reduced_index, drop = FALSE],
+    moment$cross[reduced_index], "reduced-model")
+  statistic <- full_quadratic$value - reduced_quadratic$value
+  numerical_tolerance <- 1024 * .Machine$double.eps * max(
+    1, abs(full_quadratic$value), abs(reduced_quadratic$value))
+  if (!is.finite(statistic) || statistic < -numerical_tolerance) {
+    .dsvert_stop_non_identifiable(
+      "The signed Gaussian nested-model reduction is not numerically ordered.",
+      reason = "dp_mechanism_lr_not_identifiable")
+  }
+  statistic <- max(0, statistic)
+  mechanism_radius <- full_quadratic$error + reduced_quadratic$error
+  if (!is.finite(mechanism_radius) || mechanism_radius < 0) {
+    .dsvert_stop_non_identifiable(
+      "The signed Gaussian nested-model mechanism radius is not finite.",
+      reason = "dp_mechanism_lr_not_identifiable")
+  }
+  lower <- max(0, statistic - mechanism_radius)
+  upper <- statistic + mechanism_radius
+  if (!is.finite(lower) || !is.finite(upper)) {
+    .dsvert_stop_non_identifiable(
+      "The signed Gaussian nested-model mechanism region is not finite.",
+      reason = "dp_mechanism_lr_not_identifiable")
+  }
+  out <- list(
+    statistic = statistic,
+    lower = lower,
+    upper = upper,
+    mechanism_radius = mechanism_radius,
+    df = as.integer(length(terms) - length(reduced)),
+    reduced_terms = reduced,
+    full_terms = terms,
+    distribution = "simultaneous_dp_mechanism_rss_reduction",
+    level = attr(region, "level"),
+    sampling_inference = FALSE,
+    additional_server_calls = 0L,
+    additional_privacy_cost = c(epsilon = 0, delta = 0),
+    estimand = paste(
+      "bounded normalized Gaussian nested-model residual-sum-of-squares",
+      "reduction from one signed sufficient-statistic release"))
   class(out) <- c("ds.vertLR", "list")
   out
 }
@@ -214,6 +373,14 @@ ds.vertLR <- function(reduced, full) {
 
 #' @export
 print.ds.vertLR <- function(x, ...) {
+  if (identical(x$distribution,
+                "simultaneous_dp_mechanism_rss_reduction")) {
+    cat("dsVert signed DP-mechanism Gaussian RSS-reduction region\n")
+    cat(sprintf("  reduction = %.6f, certified region = [%.6f, %.6f]\n",
+                x$statistic, x$lower, x$upper))
+    cat("  no likelihood-ratio reference or sampling p-value\n")
+    return(invisible(x))
+  }
   cat("dsVert likelihood-ratio test\n")
   cat(sprintf("  Family : %s\n", x$family))
   cat(sprintf("  N      : %d\n", x$n_obs))

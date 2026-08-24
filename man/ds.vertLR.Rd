@@ -2,31 +2,46 @@
 % Please edit documentation in R/ds.vertInference.R
 \name{ds.vertLR}
 \alias{ds.vertLR}
-\title{Likelihood-ratio test on two nested ds.vertGLM fits}
+\title{Likelihood-ratio test or signed Gaussian RSS-reduction region}
 \usage{
-ds.vertLR(reduced, full)
+ds.vertLR(reduced, full, type = c("sampling", "mechanism"), level = 0.95)
 }
 \arguments{
-\item{reduced}{ds.glm object with fewer coefficients.}
+\item{reduced}{A ds.glm object with fewer coefficients for \code{type =
+"sampling"}, or a character vector of retained reduced-model terms for
+\code{type = "mechanism"}.}
 
-\item{full}{ds.glm object with more coefficients.}
+\item{full}{A ds.glm object with more coefficients for \code{type = "sampling"},
+or an unpenalized signed ds.vertDPGaussian result for \code{type =
+"mechanism"}.}
+
+\item{type}{Either \code{"sampling"} (default) or \code{"mechanism"}.}
+
+\item{level}{Simultaneous mechanism confidence. The current signed Gaussian
+Synopsis supports its certified level only (0.95).}
 }
 \value{
-A list with:
+For \code{type = "sampling"}, a list with:
 \itemize{
 \item \code{statistic}: reduced$deviance - full$deviance
 \item \code{df}: full$n_vars - reduced$n_vars
 \item \code{p_value}: upper-tail chi-square p-value
 \item \code{deviance_reduced}, \code{deviance_full}
 }
+For \code{type = "mechanism"}, a list with the bounded normalized RSS
+reduction and its simultaneous outer interval, but no p-value or
+likelihood-ratio reference distribution.
 }
 \description{
-Compute the standard LR chi-square statistic between a reduced
-and a full ds.vertGLM fit. Both fits must be on the same cohort and
-the reduced model must be nested within the full model.
+\code{type = "sampling"} computes the standard LR chi-square statistic
+between a reduced and a full ds.vertGLM fit. \code{type = "mechanism"}
+computes a bounded Gaussian residual-sum-of-squares reduction for a declared
+submodel from one signed Gaussian Synopsis. It is a simultaneous DP-mechanism
+region, not a likelihood-ratio statistic, p-value, or population-sampling
+test.
 }
 \details{
-This is a pure client-side computation over the scalar
+The sampling route is a pure client-side computation over the scalar
 deviances already returned by ds.vertGLM; no additional MPC round
 is performed and no observation-level information is exposed. It is
 available only for converged, unpenalized binomial or Poisson fits on the
@@ -35,5 +50,8 @@ with a valid dispersion estimate and is therefore not represented as an
 LR chi-square test here. The currently promoted public DP GLM releases
 deliberately contain neither a sampling covariance nor an attested
 deviance, so they fail closed here until a joint inference artifact is
-available.
+available. The mechanism route instead resolves both nested Gaussian
+least-squares reductions from exactly one signed sufficient-statistic vector.
+It proves an outer region for that bounded, normalized RSS reduction only;
+it deliberately returns no chi-square reference or p-value.
 }
