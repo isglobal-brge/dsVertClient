@@ -411,6 +411,15 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
   fixture
 }
 
+.synopsis_frequency_compatibility_real_e2e_fixture <- function(k, server_ns) {
+  fixture <- .synopsis_frequency_real_e2e_fixture(k, server_ns)
+  levels <- as.character(0:3)
+  fixture$policies$peer_a$categorical_levels <- list(status = levels)
+  fixture$snapshots$peer_a[["data_peer_a"]]$data$status <- rep(
+    levels, c(50L, 7L, 8L, 35L))
+  fixture
+}
+
 .synopsis_mi_real_e2e_fixture <- function(k, server_ns) {
   fixture <- .synopsis_frequency_real_e2e_fixture(k, server_ns)
   fixture$snapshots$peer_a[["data_peer_a"]]$data$status <- c(
@@ -1386,6 +1395,116 @@ test_that("real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5",
     tampered <- first
     tampered$counts[[1L]] <- tampered$counts[[1L]] + 1
     expect_error(ds.vertDPFrequencyInference(tampered), "validated")
+  }
+})
+
+test_that("Frequency safely readmits NB2, multinomial and ordinal y ~ 1 at K=2/3/5", {
+  .synopsis_real_e2e_only("frequency")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  frequency <- get(".dsvert_dp_frequency_impl",
+                   asNamespace("dsVertClient"), inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_frequency_compatibility_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    first <- frequency("data_peer_a", "status", "peer_a", conns, dispatch)
+    expect_identical(first$levels, as.character(0:3))
+    expect_true(all(first$counts >= 0))
+    expect_gt(sum(first$counts), 0)
+    expected_source_counts <- c(`0` = 50L, `1` = 7L, `2` = 8L, `3` = 35L)
+    expect_true(all(first$mechanism_regions$lower <= expected_source_counts))
+    expect_true(all(first$mechanism_regions$upper >= expected_source_counts))
+
+    nb2 <- ds.vertNBFullRegTheta(
+      status ~ 1, data = "data_peer_a", frequency = first, verbose = FALSE)
+    multinom <- ds.vertMultinom(
+      status ~ 1, data = "data_peer_a", classes = first$levels,
+      reference = "0", frequency = first, verbose = FALSE)
+    ordinal <- ds.vertOrdinal(
+      status ~ 1, data = "data_peer_a", levels_ordered = first$levels,
+      frequency = first, verbose = FALSE)
+
+    support <- as.numeric(first$levels)
+    probabilities <- first$counts / sum(first$counts)
+    expected_mean <- sum(probabilities * support)
+    expected_variance <- sum(probabilities * (support - expected_mean)^2)
+    expected_multinom <- (first$counts + 0.5) /
+      (sum(first$counts) + 0.5 * length(first$counts))
+    expected_ordinal <- cumsum(expected_multinom)[-length(expected_multinom)]
+
+    expect_s3_class(nb2, "dsvert_dp_frequency_nb2")
+    expect_equal(nb2$mean, expected_mean)
+    expect_equal(nb2$variance, expected_variance)
+    expect_equal(nb2$coefficients[["(Intercept)"]], log(expected_mean))
+    expect_true(is.finite(nb2$theta) || is.infinite(nb2$theta))
+    expect_identical(nb2$dp_counts, first$counts)
+    expect_s3_class(multinom, "dsvert_dp_frequency_multinom")
+    expect_equal(multinom$probabilities, expected_multinom)
+    expect_equal(drop(multinom$coefficients),
+                 log(expected_multinom[c("1", "2", "3")] /
+                     expected_multinom[["0"]]))
+    expect_s3_class(ordinal, "dsvert_dp_frequency_ordinal")
+    expect_equal(ordinal$probabilities, expected_multinom)
+    expect_equal(ordinal$thresholds, stats::qlogis(expected_ordinal))
+    expect_true(all(is.finite(ordinal$thresholds)))
+    for (fit in list(nb2, multinom, ordinal)) {
+      expect_false(fit$source_values_exposed)
+      expect_false(fit$intermediate_values_exposed)
+      expect_false(fit$production_ready)
+      expect_identical(fit$additional_privacy_cost,
+                       c(epsilon = 0, delta = 0))
+      expect_identical(fit$frequency_release_sha256, first$release_sha256)
+    }
+
+    route_frequency <- function(data_name, variable, server = NULL,
+                                datasources = NULL, .aggregate) {
+      frequency(data_name, variable, server, datasources, dispatch)
+    }
+    from_server <- testthat::with_mocked_bindings(
+      .dsvert_dp_frequency_impl = route_frequency,
+      list(
+        nb2 = ds.vertNBFullRegTheta(
+          status ~ 1, data = "data_peer_a", server = "peer_a",
+          datasources = conns, verbose = FALSE),
+        multinom = ds.vertMultinom(
+          status ~ 1, data = "data_peer_a", classes = first$levels,
+          reference = "0", server = "peer_a", datasources = conns,
+          verbose = FALSE),
+        ordinal = ds.vertOrdinal(
+          status ~ 1, data = "data_peer_a", levels_ordered = first$levels,
+          server = "peer_a", datasources = conns, verbose = FALSE)),
+      .package = "dsVertClient")
+    expect_identical(from_server$nb2$coefficients, nb2$coefficients)
+    expect_identical(from_server$multinom$coefficients, multinom$coefficients)
+    expect_identical(from_server$ordinal$thresholds, ordinal$thresholds)
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- frequency("data_peer_a", "status", "peer_a", conns, dispatch)
+    expect_identical(replay$counts, first$counts)
+    expect_identical(replay$release_sha256, first$release_sha256)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+    expect_identical(ds.vertNBFullRegTheta(
+      status ~ 1, data = "data_peer_a", frequency = replay,
+      verbose = FALSE)$coefficients, nb2$coefficients)
+
+    tampered <- first
+    tampered$counts[[1L]] <- tampered$counts[[1L]] + 1
+    expect_error(ds.vertNBFullRegTheta(
+      status ~ 1, data = "data_peer_a", frequency = tampered,
+      verbose = FALSE), "released, validated")
+    expect_error(ds.vertMultinom(
+      status ~ 1, data = "data_peer_a", classes = first$levels,
+      reference = "0", frequency = tampered, verbose = FALSE),
+      "released, validated")
+    expect_error(ds.vertOrdinal(
+      status ~ 1, data = "data_peer_a", levels_ordered = first$levels,
+      frequency = tampered, verbose = FALSE), "released, validated")
   }
 })
 
