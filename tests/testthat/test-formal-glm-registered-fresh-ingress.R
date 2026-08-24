@@ -102,3 +102,34 @@ test_that("registered fresh GLM ingress fails before tickets on incompatible sou
     "incompatible source shapes")
   expect_identical(calls, c("shape", "shape"))
 })
+
+test_that("registered fresh GLM run composes ingress with only the designated hosts", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"),
+                site_c = structure(list(), class = "mock"))
+  ingress <- list(
+    artifact_id = strrep("b", 64L), source_contract_sha256 = strrep("c", 64L),
+    total_blocks = 3L, compute_peers = c("site_a", "site_c"),
+    hosts = list(site_a = .formal_glm_registered_fresh_ingress_host("site_a"),
+                 site_c = .formal_glm_registered_fresh_ingress_host("site_c")),
+    production_ready = FALSE)
+  seen <- NULL
+  testthat::local_mocked_bindings(
+    .dsvert_formal_glm_registered_fresh_ingress = function(
+        conns, selector, .aggregate) ingress,
+    .dsvert_formal_glm_registered_job_run = function(
+        conns, receipts, .aggregate, max_cycles) {
+      seen <<- list(conns = conns, receipts = receipts, max_cycles = max_cycles)
+      list(state = "terminal_complete", production_ready = FALSE)
+    },
+    .package = "dsVertClient")
+  result <- .dsvert_formal_glm_registered_fresh_run(
+    conns, .formal_glm_registered_fresh_ingress_selector(), .aggregate = identity,
+    max_cycles = 4L)
+  expect_identical(names(seen$conns), c("site_a", "site_c"))
+  expect_identical(names(seen$receipts), c("site_a", "site_c"))
+  expect_identical(seen$max_cycles, 4L)
+  expect_identical(result, list(
+    artifact_id = strrep("b", 64L), total_blocks = 3L,
+    state = "phase21_publication_pending", production_ready = FALSE))
+})

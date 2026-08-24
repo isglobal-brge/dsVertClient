@@ -272,3 +272,45 @@
        total_blocks = reference_shape$total_blocks,
        compute_peers = compute_peers, hosts = hosts, production_ready = FALSE)
 }
+
+#' Run configured fresh formal-GLM ingress through its durable Phase20 handoff
+#'
+#' This remains internal until the Phase21 two-authority publication is wired
+#' to a public result. Its return value deliberately says only that publication
+#' is pending; it never carries a model result or a private lifecycle record.
+.dsvert_formal_glm_registered_fresh_run <- function(
+    conns, selector, .aggregate = DSI::datashield.aggregate, max_cycles = NULL) {
+  ingress <- .dsvert_formal_glm_registered_fresh_ingress(
+    conns, selector, .aggregate = .aggregate)
+  fields <- c("artifact_id", "source_contract_sha256", "total_blocks",
+              "compute_peers", "hosts", "production_ready")
+  valid <- is.list(ingress) && !is.null(names(ingress)) && !anyNA(names(ingress)) &&
+    !anyDuplicated(names(ingress)) && setequal(names(ingress), fields) &&
+    .dsvert_formal_glm_registered_fresh_ingress_sha256(ingress$artifact_id) &&
+    .dsvert_formal_glm_registered_fresh_ingress_sha256(ingress$source_contract_sha256) &&
+    is.character(ingress$compute_peers) && length(ingress$compute_peers) == 2L &&
+    !anyNA(ingress$compute_peers) && !anyDuplicated(ingress$compute_peers) &&
+    identical(names(ingress$hosts), ingress$compute_peers) &&
+    all(vapply(ingress$hosts, function(host)
+      !is.null(.dsvert_formal_glm_registered_job_receipt(host)), logical(1L))) &&
+    .dsvert_formal_glm_registered_fresh_ingress_flag(ingress$production_ready)
+  if (!isTRUE(valid)) {
+    stop("Registered fresh GLM ingress returned an invalid host set.", call. = FALSE)
+  }
+  blocks <- .dsvert_formal_glm_registered_fresh_ingress_integer(
+    ingress$total_blocks, "block count")
+  if (blocks < 1L || any(!ingress$compute_peers %in% names(conns))) {
+    stop("Registered fresh GLM ingress returned an invalid host set.", call. = FALSE)
+  }
+  phase20 <- .dsvert_formal_glm_registered_job_run(
+    conns[ingress$compute_peers], ingress$hosts,
+    .aggregate = .aggregate, max_cycles = max_cycles)
+  if (!is.list(phase20) || !identical(names(phase20), c("state", "production_ready")) ||
+      !identical(phase20$state, "terminal_complete") ||
+      !identical(phase20$production_ready, FALSE)) {
+    stop("Registered fresh GLM hosts did not complete their durable handoff.",
+         call. = FALSE)
+  }
+  list(artifact_id = ingress$artifact_id, total_blocks = blocks,
+       state = "phase21_publication_pending", production_ready = FALSE)
+}
