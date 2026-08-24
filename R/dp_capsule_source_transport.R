@@ -309,7 +309,10 @@
     "version", "mode", "authority", "analyst_expandable",
     "client_query_can_add_coordinates", "consensus", "mismatch_behavior",
     "compatibility_default", "recommended_deployment_mode",
-    "selection_sha256", "selection", "projected_cost")
+    "strict_missing_categorical", "selection_sha256", "selection",
+    "projected_cost")
+  legacy_scope_fields <- setdiff(
+    scope_fields, "strict_missing_categorical")
   selection_fields <- c(
     "mode", "explicit_catalog", "referenced_by_signed_specs", "included")
   explicit_fields <- c(
@@ -341,7 +344,8 @@
                  .DSVERT_CLIENT_DP_CAPSULE_WORKLOAD_VERSION) ||
       !.dsvert_dp_is_integer(workload$coordinate_count, 1,
                              .DSVERT_DP_MAX_COORDINATES) ||
-      !.dsvert_dp_has_exact_names(scope, scope_fields) ||
+      (!.dsvert_dp_has_exact_names(scope, scope_fields) &&
+       !.dsvert_dp_has_exact_names(scope, legacy_scope_fields)) ||
       !.dsvert_dp_has_exact_names(scope$selection, selection_fields) ||
       !identical(names(scope$selection),
                  sort(selection_fields, method = "radix")) ||
@@ -425,6 +429,12 @@
       "signed vertical-cross references", allow_null = TRUE)),
     error = function(error) NULL)
   if (is.null(included) || is.null(explicit) || is.null(references)) invalid()
+  strict_missing <- tryCatch(.dsvert_dp_capsule_scope_strings(
+    scope$strict_missing_categorical, "strict-missing categorical",
+    allow_null = TRUE),
+    error = function(error) NULL)
+  if (is.null(strict_missing) ||
+      any(!strict_missing %in% included$categorical)) invalid()
   pair_keys <- function(value) vapply(
     value, function(pair) .dsvert_joint_dp_client_json(as.list(pair)),
     character(1L))

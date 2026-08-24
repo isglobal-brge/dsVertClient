@@ -303,8 +303,26 @@
 .dsvert_dp_synopsis_manifest_policy_scope_v1 <- function(manifest) {
   scope <- tryCatch(
     manifest$workload$primitive_scope, error = function(error) NULL)
+  string_array <- function(value) {
+    if (is.null(value)) return(character())
+    if (is.character(value)) return(unname(value))
+    if (is.list(value) && !length(value)) return(character())
+    if (is.list(value) && is.null(names(value)) &&
+        all(vapply(value, .dsvert_dp_is_string, logical(1L)))) {
+      return(unname(unlist(value, use.names = FALSE)))
+    }
+    value
+  }
+  strict_missing <- string_array(scope$strict_missing_categorical)
+  if (!is.character(strict_missing) || anyNA(strict_missing) ||
+      any(!nzchar(strict_missing)) || anyDuplicated(strict_missing)) {
+    stop("The bound synopsis has an invalid strict-missing policy scope",
+         call. = FALSE)
+  }
   if (is.list(scope) && identical(scope$mode, "all_schema")) {
-    return(list(mode = "all_schema"))
+    return(list(
+      mode = "all_schema",
+      strict_missing_categorical = strict_missing))
   }
   explicit <- tryCatch(
     scope$selection$explicit_catalog, error = function(error) NULL)
@@ -316,16 +334,6 @@
     stop("The bound synopsis has an invalid projected policy scope",
          call. = FALSE)
   }
-  string_array <- function(value) {
-    if (is.null(value)) return(character())
-    if (is.character(value)) return(unname(value))
-    if (is.list(value) && !length(value)) return(character())
-    if (is.list(value) && is.null(names(value)) &&
-        all(vapply(value, .dsvert_dp_is_string, logical(1L)))) {
-      return(unname(unlist(value, use.names = FALSE)))
-    }
-    value
-  }
   explicit$numeric_moments <- string_array(explicit$numeric_moments)
   explicit$categorical_marginals <-
     string_array(explicit$categorical_marginals)
@@ -334,7 +342,8 @@
   explicit$correlations <- unname(lapply(
     unname(explicit$correlations), string_array))
   .dsvert_joint_dp_client_canonical(c(
-    list(mode = "catalog_v1"), explicit[fields]))
+    list(mode = "catalog_v1", strict_missing_categorical = strict_missing),
+    explicit[fields]))
 }
 
 .dsvert_dp_synopsis_manifest_value_v1 <- function(

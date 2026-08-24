@@ -9,8 +9,7 @@
     "ds.vertMultinomJointNewton", "ds.vert.multinom"),
   ordinal = c(
     "ds.vertOrdinal", "ds.vertOrdinalJointNewton", "ds.vert.ordinal"),
-  gee = c("ds.vertGEE", "ds.vert.gee"),
-  mi = c("ds.vertMI", "ds.vert.mi")
+  gee = c("ds.vertGEE", "ds.vert.gee")
 )
 
 test_that("every retired analytic frontdoor fails locally before DSI", {
@@ -58,17 +57,6 @@ test_that("the quarantined Cox frontdoor has no unreachable exact-profile fallba
     '.dsvert_block_retired_remote_route("cox")',
     fixed = TRUE)
   expect_false(grepl("ds.vertCoxProfileNonDisclosive", body_text, fixed = TRUE))
-})
-
-test_that("the quarantined MI frontdoor has no unreachable imputation fallback", {
-  body_text <- paste(deparse(body(ds.vertMI)), collapse = "\n")
-  expect_match(
-    body_text,
-    '.dsvert_block_retired_remote_route("mi")',
-    fixed = TRUE)
-  expect_false(grepl("dsvertImputeColumnDS", body_text, fixed = TRUE))
-  expect_false(grepl(".dsvert_aggregate_strict", body_text, fixed = TRUE))
-  expect_false(grepl("ds.vertGLM", body_text, fixed = TRUE))
 })
 
 test_that("unregistered internal routes are blocked before DSI", {

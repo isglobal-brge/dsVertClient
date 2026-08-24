@@ -691,22 +691,23 @@
 
   add(
     c("ds.vertMI", "ds.vert.mi"), "ds.vertMI", "multiple_imputation",
-    c("bounded_missingness_counts", "imputation_model_sufficient_statistics",
-      "posterior_parameter_draws", "synthetic_imputation_draws"),
-    "Rubin-pooled regression coefficients under the declared imputation model.",
-    c("between_imputation_variance", "chained_equation_predictor_contract",
-      "cryptographic_non_rerollable_draw_stream",
-      "imputation_model_validity", "missingness_mechanism_assumption",
-      "posterior_parameter_uncertainty", "rubin_small_sample_df",
-      "synthetic_release_provenance"),
-    "requires_new_secure_protocol",
-    c("dsvertColNamesDS", "dsvertImputeColumnDS", "getObsCountDS",
-      "glmRing63DevianceSumsDS", "glmStandardizeDS", "k2GradientR1DS",
-      "k2GradientR2DS"),
+    c("admitted_count", "strict_missing_categorical_marginal",
+      "signed_synopsis_release_provenance",
+      "deterministic_release_bound_completion_draws"),
+    paste(
+      "Categorical MCAR outcome ~ 1 completion probabilities from one",
+      "validated strict-missing signed Synopsis release."),
+    c("outcome_intercept_only", "categorical_domain_at_least_two_levels",
+      "strict_missingness_contract", "mcar_assumption",
+      "no_covariates_or_chained_equations", "no_rubin_sampling_inference",
+      "no_analyst_seed"),
+    "synopsis_release_implemented",
+    character(),
     c("ds.vert.mi" = "ds.vertMI"),
-    current_route_status = "legacy_mutating_release_quarantine",
+    current_route_status = "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
     inference_implementation_state =
-      "multiple_imputation_protocol_and_inference_require_redesign")
+      "categorical_mcar_completion_without_sampling_inference")
 
   add(
     c("ds.vertLASSO", "ds.vert.lasso"), "ds.vertLASSO",
@@ -1434,6 +1435,7 @@
     "legacy_inference_requires_secure_redesign",
     "signed_binomial_lasso_design_gram_not_materialized",
     "signed_multinomial_design_gram_not_materialized",
+    "categorical_mcar_completion_without_sampling_inference",
     "multiple_imputation_protocol_and_inference_require_redesign",
     "nb2_joint_beta_theta_inference_not_implemented",
     "propensity_to_weight_estimand_pipeline_not_implemented",

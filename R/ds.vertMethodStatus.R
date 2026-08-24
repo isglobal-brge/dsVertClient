@@ -562,12 +562,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "Covariates, ATT/ATC, weighting, outcome regression, standard errors",
         "and p-values remain unavailable pending a purpose-bound causal",
         "artifact."))
-  add(c("ds.vertMI", "ds.vert.mi"), "ds.vertMI", "quarantine",
-      "Quarantined mutating server-local imputation research route.",
+  add(c("ds.vertMI", "ds.vert.mi"), "ds.vertMI", "promoted",
       paste(
-        "It omits cross-server predictors, returns exact per-round imputation",
-        "counts and lacks a non-rerollable joint imputation artifact with valid",
-        "between-imputation uncertainty."))
+        "Categorical outcome ~ 1 MCAR completion from one strict-missing",
+        "signed sticky Synopsis release; deterministic completion draws are",
+        "post-processing and add no privacy cost."),
+      paste(
+        "Only binomial or multinomial intercept-only categorical outcomes are",
+        "available. Covariates, chained equations, analyst seeds, standard",
+        "errors, p-values, and Rubin sampling inference remain unavailable."))
   add(c("ds.vertLASSO", "ds.vert.lasso"), "ds.vertLASSO", "promoted",
       paste(
         "Gaussian L1 penalty path over one validated same-owner signed",

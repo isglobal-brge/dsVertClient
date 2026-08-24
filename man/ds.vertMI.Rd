@@ -2,41 +2,53 @@
 % Please edit documentation in R/ds.vertMI.R
 \name{ds.vertMI}
 \alias{ds.vertMI}
-\title{Quarantined multiple-imputation compatibility frontdoor}
+\title{Signed categorical multiple-imputation compatibility route}
 \usage{
 ds.vertMI(
   formula,
   data = NULL,
   impute_columns = NULL,
   m = 20L,
-  family = "gaussian",
+  family = c("auto", "binomial", "multinomial"),
   max_iter = 50L,
   tol = 1e-04,
   lambda = 0,
-  intercept_only = c("error", "aggregate"),
+  intercept_only = "aggregate",
   verbose = TRUE,
   datasources = NULL,
-  seed = 1L
+  seed = NULL
 )
 }
 \arguments{
-\item{formula, data, impute_columns, m, family, max_iter, tol, lambda, intercept_only, verbose, datasources, seed}{Retained compatibility arguments. They are not evaluated because the
-public frontdoor fails locally.}
+\item{formula}{Outcome formula exactly of the form \code{outcome ~ 1}.}
+
+\item{data}{Signed protected dataset name or federation.}
+
+\item{impute_columns}{Must be omitted or exactly the outcome name.}
+
+\item{m}{Number of deterministic categorical completion draws, from 2 to 100.}
+
+\item{family}{One of \code{"auto"}, \code{"binomial"}, or \code{"multinomial"}.}
+
+\item{max_iter, tol, lambda, intercept_only, verbose, seed}{Compatibility controls.
+Only \code{lambda = 0}, \code{intercept_only = "aggregate"}, the default
+iteration values, and \code{seed = NULL} are supported.}
+
+\item{datasources}{DataSHIELD connections.}
 }
 \value{
-No fitted object. The function raises
-\code{dsvert_route_unavailable} before DSI.
+A \code{ds.vertMI} object with DP-projected completed-category probabilities
+and no classical or Rubin sampling inference.
 }
 \description{
-This exported name is retained for API compatibility. It
-raises a typed \code{dsvert_route_unavailable} condition before any DSI
-call and mutates no server data, draws no imputation, and returns no
-coefficients, counts, covariance, or diagnostic.
+Returns an intercept-only categorical MCAR completion from one signed sticky
+Synopsis release. It never mutates source tables and its deterministic
+completion draws are post-processing of the released vector.
 }
 \details{
-Promotion requires a signed bounded imputation contract,
-non-rerollable cryptographic randomness, no exact per-round count release,
-and validated Rubin-rule inference.
+The outcome must use a custodian-signed strict missingness categorical
+marginal. Covariates, chained equations, analyst-controlled seeds, standard
+errors, p-values, and Rubin-rule sampling inference are unavailable.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

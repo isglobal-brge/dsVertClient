@@ -254,7 +254,7 @@ test_that("retired legacy DP endpoints are absent from public route evidence", {
 
 test_that("verified legacy disclosure evidence cannot regress to omission", {
   inventory <- .dsvert_capsule_method_inventory()
-  standardized_families <- c("ds.vertGLM", "ds.vertMI")
+  standardized_families <- "ds.vertGLM"
   expect_true(all(vapply(standardized_families, function(method) {
     has_evidence(inventory, method, "glmStandardizeDS",
                  "plaintext_exact_aggregate")
@@ -266,9 +266,12 @@ test_that("verified legacy disclosure evidence cannot regress to omission", {
   expect_identical(lmm$migration_feasibility,
                    "synopsis_release_implemented")
   expect_identical(nrow(lmm$legacy_remote_call_evidence[[1L]]), 0L)
-  expect_true(has_evidence(
-    inventory, "ds.vertMI", "dsvertImputeColumnDS",
-    "plaintext_exact_aggregate", "imputation_counts"))
+  mi <- row_for(inventory, "ds.vertMI")
+  expect_identical(mi$current_route_status,
+                   "client_only_validated_synopsis_postprocess")
+  expect_identical(mi$migration_feasibility,
+                   "synopsis_release_implemented")
+  expect_identical(nrow(mi$legacy_remote_call_evidence[[1L]]), 0L)
   glmm <- row_for(inventory, "ds.vertGLMM")
   expect_identical(glmm$current_route_status,
                    "client_only_validated_synopsis_postprocess")
@@ -333,8 +336,10 @@ test_that("planned artifacts describe the actual biomedical contracts", {
           artifacts_for(inventory, method))
   }, logical(1L))))
   expect_true(all(c(
-    "bounded_missingness_counts", "posterior_parameter_draws",
-    "synthetic_imputation_draws") %in% artifacts_for(inventory, "ds.vertMI")))
+    "admitted_count", "strict_missing_categorical_marginal",
+    "signed_synopsis_release_provenance",
+    "deterministic_release_bound_completion_draws") %in%
+      artifacts_for(inventory, "ds.vertMI")))
   expect_true(all(c(
     "validated_sticky_frequency_artifact",
     "bounded_nonnegative_integer_domain", "zero_call_postprocessing") %in%
@@ -422,8 +427,8 @@ test_that("estimands and inference requirements match implemented semantics", {
     "two_authority_signatures") %in%
       requirements_for(inventory, "ds.vertCoxProfileNonDisclosive")))
   expect_true(all(c(
-    "cryptographic_non_rerollable_draw_stream", "rubin_small_sample_df",
-    "posterior_parameter_uncertainty") %in%
+    "outcome_intercept_only", "strict_missingness_contract",
+    "mcar_assumption", "no_rubin_sampling_inference") %in%
       requirements_for(inventory, "ds.vertMI")))
   expect_true(all(c(
     "intercept_only_propensity_model", "treated_level_binding",
@@ -568,22 +573,17 @@ test_that("implemented Synopsis producers and postprocessors are explicit", {
   expect_false(any(inventory$same_capsule_replay_history_can_deny))
 })
 
-test_that("quarantine labels require secure redesign and concrete evidence", {
+test_that("MI is a scoped Synopsis postprocessor, not the retired mutating route", {
   inventory <- .dsvert_capsule_method_inventory()
-  quarantined <- inventory[
-    inventory$current_route_status == "legacy_mutating_release_quarantine",
-    , drop = FALSE]
-
-  expect_gt(nrow(quarantined), 0L)
-  expect_true(all(quarantined$migration_feasibility ==
-                    "requires_new_secure_protocol"))
-  expect_true(all(quarantined$artifact_implementation_state ==
-                    "secure_artifact_not_implemented"))
-  expect_true(all(lengths(quarantined$legacy_remote_call_evidence) > 0L))
-  expect_true(all(quarantined$canonical_family %in%
-                    "multiple_imputation"))
-  expect_true(all(quarantined$method %in%
-                    getNamespaceExports("dsVertClient")))
+  mi <- inventory[inventory$method %in% c("ds.vertMI", "ds.vert.mi"), ]
+  expect_true(all(mi$current_route_status ==
+                    "client_only_validated_synopsis_postprocess"))
+  expect_true(all(mi$migration_feasibility ==
+                    "synopsis_release_implemented"))
+  expect_true(all(mi$artifact_implementation_state ==
+                    "validated_synopsis_adapter_implemented"))
+  expect_true(all(vapply(mi$legacy_remote_call_evidence,
+                         nrow, integer(1L)) == 0L))
 })
 
 test_that("mixed variants and Frequency compatibility names have explicit scopes", {
@@ -637,16 +637,16 @@ test_that("mixed variants and Frequency compatibility names have explicit scopes
   expect_true(all(ds.vertMethodStatus(frequency_nb2)$status == "promoted"))
 })
 
-test_that("NB2 slope and mutating MI routes remain explicitly quarantined", {
+test_that("NB2 slope and categorical MI compatibility routes retain explicit scopes", {
   inventory <- .dsvert_capsule_method_inventory()
   expect_true(all(inventory$current_route_status[
     inventory$method %in% c("ds.vertNBFullRegTheta", "ds.vert.nb")] ==
       "client_only_validated_capsule_postprocess"))
   expect_true(all(inventory$current_route_status[
     inventory$method %in% c("ds.vertMI", "ds.vert.mi")] ==
-      "legacy_mutating_release_quarantine"))
+      "client_only_validated_synopsis_postprocess"))
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertNBFullRegTheta", "ds.vert.nb"))$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertMI", "ds.vert.mi"))$
-      status == "quarantine"))
+      status == "promoted"))
 })

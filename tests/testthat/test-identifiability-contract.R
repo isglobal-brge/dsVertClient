@@ -81,8 +81,7 @@ test_that("GLMM and non-PSD DP LASSO systems do not acquire a repair", {
 test_that("regularization and imputation alternatives require explicit input", {
   expect_identical(formals(ds.vertGEE)$lambda, 0)
   expect_identical(formals(ds.vertMI)$lambda, 0)
-  expect_identical(eval(formals(ds.vertMI)$intercept_only),
-                   c("error", "aggregate"))
+  expect_identical(eval(formals(ds.vertMI)$intercept_only), "aggregate")
 })
 
 test_that("statistical routes contain no automatic estimator-changing solve", {

@@ -1,6 +1,6 @@
-quarantined_doc_sources <- c("ds.vertMI.R")
+quarantined_doc_sources <- character()
 
-quarantined_doc_topics <- c("ds.vertMI" = "ds.vertMI.R")
+quarantined_doc_topics <- character()
 
 .dsvert_public_roxygen_text <- function(filename, function_name) {
   lines <- readLines(.dsvert_client_source_file(filename), warn = FALSE)
@@ -15,32 +15,16 @@ quarantined_doc_topics <- c("ds.vertMI" = "ds.vertMI.R")
   paste(sub("^#'[[:space:]]?", "", block), collapse = "\n")
 }
 
-test_that("quarantined frontdoors describe their release status candidly", {
-  for (filename in quarantined_doc_sources) {
-    text <- paste(readLines(.dsvert_client_source_file(filename), warn = FALSE),
-                  collapse = "\n")
-    expect_match(
-      text, "quarantin", ignore.case = TRUE,
-      info = paste(filename, "must identify the route as quarantined"))
-  }
+test_that("no active frontdoor remains classified as quarantined", {
+  expect_length(quarantined_doc_sources, 0L)
 })
 
-test_that("generated help preserves quarantine warnings", {
-  package_root <- dirname(.dsvert_client_source_root())
-  topics <- names(quarantined_doc_topics)
-  paths <- file.path(package_root, "man", paste0(topics, ".Rd"))
-  if (!all(file.exists(paths))) {
-    skip("generated Rd source is unavailable for the release-claim audit")
-  }
-  for (i in seq_along(paths)) {
-    text <- paste(readLines(paths[[i]], warn = FALSE), collapse = "\n")
-    expect_match(
-      text, "quarantin", ignore.case = TRUE,
-      info = paste(topics[[i]], "generated help lost its quarantine warning"))
-  }
+test_that("no generated help topic remains classified as quarantined", {
+  expect_length(quarantined_doc_topics, 0L)
 })
 
-test_that("quarantined Roxygen and Rd describe only the zero-DSI frontdoor", {
+test_that("no Roxygen or Rd topic remains in the zero-DSI quarantine", {
+  expect_length(quarantined_doc_topics, 0L)
   package_root <- dirname(.dsvert_client_source_root())
   forbidden <- paste(c(
     "No observation-level data is (ever )?disclosed",
@@ -67,6 +51,20 @@ test_that("quarantined Roxygen and Rd describe only the zero-DSI frontdoor", {
       expect_false(grepl(forbidden, text, ignore.case = TRUE, perl = TRUE),
                    info = paste(topic, "contains an active legacy claim"))
     }
+  }
+})
+
+test_that("MI help states its strict categorical MCAR scope", {
+  package_root <- dirname(.dsvert_client_source_root())
+  source <- .dsvert_public_roxygen_text("ds.vertMI.R", "ds.vertMI")
+  rd_path <- file.path(package_root, "man", "ds.vertMI.Rd")
+  if (!file.exists(rd_path)) testthat::fail("generated ds.vertMI help is unavailable")
+  rd <- paste(readLines(rd_path, warn = FALSE), collapse = "\n")
+  for (text in list(source, rd)) {
+    expect_match(text, "categorical MCAR", fixed = TRUE)
+    expect_match(text, "outcome ~ 1", fixed = TRUE)
+    expect_match(text, "Rubin", fixed = TRUE)
+    expect_match(text, "never mutates source", fixed = TRUE)
   }
 })
 

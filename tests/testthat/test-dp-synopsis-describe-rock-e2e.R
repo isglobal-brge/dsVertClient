@@ -19,7 +19,7 @@
 .synopsis_real_e2e_families <- c(
   "describe", "same_owner_contingency", "cross_owner_contingency",
   "stratified_epidemiology", "causal_standardization", "frequency",
-  "mantel_haenszel", "roc", "survival", "correlation", "gaussian", "cross_owner_tamper",
+  "mi", "mantel_haenszel", "roc", "survival", "correlation", "gaussian", "cross_owner_tamper",
   "gaussian_lasso_focal", "lmm")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
@@ -395,7 +395,7 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
   scope <- list(
     mode = "catalog_v1", numeric_moments = "x_peer_a",
     categorical_marginals = "status", categorical_pairs = list(),
-    correlations = list())
+    correlations = list(), strict_missing_categorical = "status")
   for (peer in fixture$peers) {
     policy <- fixture$policies[[peer]]
     policy$capsule_workload_scope <- scope
@@ -408,6 +408,13 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
   }
   fixture$snapshots$peer_a[["data_peer_a"]]$data$status <-
     rep(c("case", "control"), each = 50L)
+  fixture
+}
+
+.synopsis_mi_real_e2e_fixture <- function(k, server_ns) {
+  fixture <- .synopsis_frequency_real_e2e_fixture(k, server_ns)
+  fixture$snapshots$peer_a[["data_peer_a"]]$data$status <- c(
+    rep("case", 45L), rep("control", 45L), rep(NA_character_, 10L))
   fixture
 }
 
@@ -1377,6 +1384,53 @@ test_that("real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5",
     tampered <- first
     tampered$counts[[1L]] <- tampered$counts[[1L]] + 1
     expect_error(ds.vertDPFrequencyInference(tampered), "validated")
+  }
+})
+
+test_that("real Synopsis categorical MI is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("mi")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  mi <- get(".dsvert_mi_synopsis_result_v1",
+            asNamespace("dsVertClient"), inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_mi_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    run <- function(datasources, .aggregate) {
+      dsVertClient:::.dsvert_dp_synopsis_vector_run(
+        datasources, .aggregate = dispatch)
+    }
+    first <- mi(
+      status ~ 1, "data_peer_a", NULL, 8L, "binomial", conns, dispatch,
+      .run = run)
+    expect_s3_class(first, "ds.vertMI")
+    expect_identical(first$status, "ok")
+    expect_identical(first$family, "binomial")
+    expect_identical(first$outcome_levels, c("case", "control"))
+    expect_true(is.finite(first$coefficients[["(Intercept)"]]))
+    expect_true(all(is.finite(first$probabilities)))
+    expect_equal(sum(first$probabilities), 1, tolerance = 1e-12)
+    expect_gte(first$completed_count_dp, first$admitted_count_dp)
+    expect_gte(first$missing_count_dp, 0)
+    expect_false("completed_counts" %in% names(first))
+    expect_identical(first$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- mi(
+      status ~ 1, "data_peer_a", NULL, 8L, "binomial", conns, dispatch,
+      .run = run)
+    expect_identical(replay$completed_draws_sha256,
+                     first$completed_draws_sha256)
+    expect_identical(replay$final_vector_root, first$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
   }
 })
 

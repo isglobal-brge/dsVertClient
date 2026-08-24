@@ -554,7 +554,6 @@ ds.vert.ipw <- function(outcome_formula, propensity_formula, data = NULL,
 #' @export
 ds.vert.mi <- function(formula, data = NULL, impute_columns = NULL,
                        datasources = NULL, ...) {
-  .dsvert_block_retired_remote_route("mi")
   datasources <- .dsvert_datasources(datasources)
   out <- ds.vertMI(formula = formula, data = data,
                    impute_columns = impute_columns,

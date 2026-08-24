@@ -60,10 +60,11 @@ test_that("no public route may report a result numeric certificate", {
                info = paste(names(offenders)[offenders], collapse = ", "))
 })
 
-test_that("known unsafe legacy routes are not presented as promoted", {
+test_that("readmitted MI and existing Synopsis routes are presented honestly", {
   quarantined <- ds.vertMethodStatus(status = "quarantine")$method
-  newly_quarantined <- c("ds.vertMI", "ds.vert.mi")
-  expect_true(all(newly_quarantined %in% quarantined))
+  readmitted_mi <- c("ds.vertMI", "ds.vert.mi")
+  expect_false(any(readmitted_mi %in% quarantined))
+  expect_true(all(ds.vertMethodStatus(readmitted_mi)$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertGLMM", "ds.vert.glmm"))$
                   status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertLMM", "ds.vert.lmm"))$
@@ -92,9 +93,8 @@ test_that("known unsafe legacy routes are not presented as promoted", {
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertNBFullRegTheta", "ds.vert.nb"))$release_contract ==
       "postprocessing_inherits_input"))
-  expect_length(intersect(
-    ds.vertMethodStatus(status = "promoted")$method,
-    newly_quarantined), 0L)
+  expect_true(all(readmitted_mi %in%
+                    ds.vertMethodStatus(status = "promoted")$method))
   psi <- ds.vertMethodStatus(c(
     "ds.psiAlign", "ds.vert.align",
     "ds.isPsiAligned", "ds.vert.is_aligned"))
@@ -344,7 +344,7 @@ test_that("known unsafe legacy routes are not presented as promoted", {
   expect_match(lasso_iter$principal_limitation[[1L]],
                "Binomial and Poisson", fixed = TRUE)
   expect_match(ds.vertMethodStatus("ds.vertMI")$principal_limitation,
-               "exact per-round imputation counts", fixed = TRUE)
+               "intercept-only categorical outcomes", fixed = TRUE)
   expect_match(ds.vertMethodStatus("ds.vertNBFullRegTheta")$
                  principal_limitation,
                "bounded non-negative integer y ~ 1", fixed = TRUE)
