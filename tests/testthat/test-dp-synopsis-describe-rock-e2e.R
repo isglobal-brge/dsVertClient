@@ -1350,8 +1350,10 @@ test_that("real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5",
     expect_true(all(first$mechanism_regions$upper <= 200))
     source_levels <- fixture$snapshots$peer_a$data_peer_a$data$status
     source_counts <- table(factor(source_levels, levels = first$levels))
-    expect_lte(first$mechanism_regions$lower, as.numeric(source_counts))
-    expect_gte(first$mechanism_regions$upper, as.numeric(source_counts))
+    expect_true(all(first$mechanism_regions$lower <=
+                    as.numeric(source_counts)))
+    expect_true(all(first$mechanism_regions$upper >=
+                    as.numeric(source_counts)))
 
     route_frequency <- function(data_name, variable, server = NULL,
                                 datasources = NULL, .aggregate) {
