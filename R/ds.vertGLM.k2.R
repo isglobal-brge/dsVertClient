@@ -1,10 +1,3 @@
-#' @title K=2 Beaver L-BFGS Pipeline
-#' @description Secure K=2 GLM with L-BFGS optimizer.
-#'   Gaussian: identity link, constant Fisher, L-BFGS (2 rounds/iter).
-#'   Binomial/Poisson: wide spline sigmoid/exp, L-BFGS (6 rounds/iter, no Fisher).
-#' @name k2-beaver-lbfgs-client
-NULL
-
 #' L-BFGS two-loop recursion (Nocedal & Wright, Algorithm 7.4)
 #' @keywords internal
 .lbfgs_direction <- function(grad, s_hist, y_hist) {

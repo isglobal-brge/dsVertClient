@@ -23,6 +23,16 @@ test_that("no generated help topic remains classified as quarantined", {
   expect_length(quarantined_doc_topics, 0L)
 })
 
+test_that("internal K2 GLM engine has no public help topic", {
+  package_root <- dirname(.dsvert_client_source_root())
+  source <- paste(readLines(file.path(package_root, "R", "ds.vertGLM.k2.R"),
+                       warn = FALSE), collapse = "\n")
+
+  expect_false(file.exists(file.path(package_root, "man",
+                                      "k2-beaver-lbfgs-client.Rd")))
+  expect_false(grepl("@name k2-beaver-lbfgs-client", source, fixed = TRUE))
+})
+
 test_that("package description distinguishes readmitted scopes from retired variants", {
   package_root <- dirname(.dsvert_client_source_root())
   description <- paste(readLines(file.path(package_root, "DESCRIPTION"),
