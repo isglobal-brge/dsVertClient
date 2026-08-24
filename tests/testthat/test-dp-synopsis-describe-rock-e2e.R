@@ -1,13 +1,26 @@
 .synopsis_describe_real_e2e_server <- function() {
   skip_if_not_installed("pkgload")
   configured_server <- Sys.getenv("DSVERT_SERVER_SOURCE", unset = "")
-  server_path <- if (nzchar(configured_server)) {
+  explicit_server <- nzchar(configured_server)
+  server_path <- if (explicit_server) {
     normalizePath(configured_server, mustWork = FALSE)
   } else {
     normalizePath(file.path(
       test_path(), "..", "..", "..", "dsVert"), mustWork = FALSE)
   }
   skip_if_not(dir.exists(server_path), "requires the sibling dsVert source")
+  if (!explicit_server) {
+    git_root <- tryCatch(suppressWarnings(
+      system2("git", c("-C", server_path, "rev-parse",
+                        "--is-inside-work-tree"),
+              stdout = TRUE, stderr = FALSE)),
+      error = function(error) character())
+    if (!identical(git_root, "true")) {
+      skip(paste(
+        "requires a readable sibling dsVert worktree; set",
+        "DSVERT_SERVER_SOURCE for an explicit server source"))
+    }
+  }
   pkgload::load_all(server_path, quiet = TRUE, reset = TRUE)
   loaded_path <- tryCatch(
     normalizePath(getNamespaceInfo(asNamespace("dsVert"), "path"),
