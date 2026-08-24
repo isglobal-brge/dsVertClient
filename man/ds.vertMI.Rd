@@ -20,15 +20,19 @@ ds.vertMI(
 )
 }
 \arguments{
-\item{formula}{Outcome formula exactly of the form \code{outcome ~ 1}.}
+\item{formula}{An intercept-only categorical response formula exactly of the
+form \code{outcome ~ 1} or \code{cbind(outcome1, outcome2, ...) ~ 1}.}
 
 \item{data}{Signed protected dataset name or federation.}
 
-\item{impute_columns}{Must be omitted or exactly the outcome name.}
+\item{impute_columns}{Must be omitted or exactly match the response columns
+in formula order.}
 
 \item{m}{Number of deterministic categorical completion draws, from 2 to 100.}
 
-\item{family}{One of \code{"auto"}, \code{"binomial"}, or \code{"multinomial"}.}
+\item{family}{One of \code{"auto"}, \code{"binomial"}, or \code{"multinomial"}.
+The multivariable route requires \code{"auto"} so each signed marginal
+determines whether it is binary or multinomial.}
 
 \item{max_iter, tol, lambda, intercept_only, verbose, seed}{Compatibility controls.
 Only \code{lambda = 0}, \code{intercept_only = "aggregate"}, the default
@@ -38,17 +42,22 @@ iteration values, and \code{seed = NULL} are supported.}
 }
 \value{
 A \code{ds.vertMI} object with DP-projected completed-category probabilities
-and no classical or Rubin sampling inference.
+and no classical or Rubin sampling inference. Multi-response calls return one
+protected marginal completion per named response, not a completed joint
+microdata set.
 }
 \description{
-Returns an intercept-only categorical MCAR completion from one signed sticky
-Synopsis release. It never mutates source tables and its deterministic
-completion draws are post-processing of the released vector.
+Returns categorical MCAR completions from one signed sticky Synopsis release.
+It accepts either \code{outcome ~ 1} or \code{cbind(outcome1, outcome2, ...)
+~ 1}; the multivariable form completes signed marginals independently and
+never claims a joint model. It never mutates source tables and its
+deterministic completion draws are post-processing of the released vector.
 }
 \details{
-The outcome must use a custodian-signed strict missingness categorical
-marginal. Covariates, chained equations, analyst-controlled seeds, standard
-errors, p-values, and Rubin-rule sampling inference are unavailable.
+Every response must use a custodian-signed strict missingness categorical
+marginal from the same Synopsis release. Covariates, chained equations,
+joint imputation, analyst-controlled seeds, standard errors, p-values, and
+Rubin-rule sampling inference are unavailable.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

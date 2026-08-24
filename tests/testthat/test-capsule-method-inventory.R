@@ -427,8 +427,9 @@ test_that("estimands and inference requirements match implemented semantics", {
     "two_authority_signatures") %in%
       requirements_for(inventory, "ds.vertCoxProfileNonDisclosive")))
   expect_true(all(c(
-    "outcome_intercept_only", "strict_missingness_contract",
-    "mcar_assumption", "no_rubin_sampling_inference") %in%
+    "intercept_only_response_columns", "strict_missingness_contract",
+    "mcar_assumption", "independent_marginals_not_joint_imputation",
+    "no_rubin_sampling_inference") %in%
       requirements_for(inventory, "ds.vertMI")))
   expect_true(all(c(
     "intercept_only_propensity_model", "treated_level_binding",

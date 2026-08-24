@@ -62,9 +62,15 @@ test_that("categorical MI completion accepts lattice counts and rejects invalid 
   frequency <- function(data_name, variable, source, datasources,
                         .aggregate, .run) {
     .run(datasources, .aggregate = .aggregate)
+    marginal <- switch(variable,
+      outcome = list(levels = c("control", "case"),
+                     counts = c(control = 30, case = 10)),
+      exposure = list(levels = c("unexposed", "exposed", "unknown"),
+                      counts = c(unexposed = 24, exposed = 12, unknown = 4)),
+      stop("unknown fixture marginal", call. = FALSE))
     c(binding, list(
       source_owner = source, variable = variable,
-      levels = c("control", "case"), counts = c(control = 30, case = 10),
+      levels = marginal$levels, counts = marginal$counts,
       missingness_policy =
         dsVertClient:::.dsvert_mi_strict_missingness_policy_v1,
       coordinate_descriptor = list(
@@ -92,6 +98,50 @@ test_that("MI frontdoor consumes one strict signed Synopsis release", {
   expect_null(fit$covariance)
   expect_false("completed_counts" %in% names(fit))
   expect_identical(fit$additional_privacy_cost, c(epsilon = 0, delta = 0))
+})
+
+test_that("MI completes multiple categorical marginals without claiming a joint model", {
+  fixture <- .mi_synopsis_adapter_fixture()
+  first <- dsVertClient:::.dsvert_mi_synopsis_result_v1(
+    cbind(outcome, exposure) ~ 1, "protected", NULL, 6L, "auto",
+    list(peer_a = NULL), identity, .run = fixture$run,
+    .count = fixture$count, .frequency = fixture$frequency)
+  second <- dsVertClient:::.dsvert_mi_synopsis_result_v1(
+    cbind(outcome, exposure) ~ 1, "protected", NULL, 6L, "auto",
+    list(peer_a = NULL), identity, .run = fixture$run,
+    .count = fixture$count, .frequency = fixture$frequency)
+
+  expect_s3_class(first, "ds.vertMI")
+  expect_identical(first$method,
+                   "signed_categorical_mcar_independent_marginals_v2")
+  expect_identical(first$joint_model,
+                   "independent_marginal_completion_no_joint_imputation_v1")
+  expect_identical(names(first$variables), c("outcome", "exposure"))
+  expect_identical(first$variables$outcome$family, "binomial")
+  expect_identical(first$variables$exposure$family, "multinomial")
+  expect_true(all(is.finite(first$variables$outcome$probabilities)))
+  expect_true(all(is.finite(first$variables$exposure$probabilities)))
+  expect_equal(sum(first$variables$outcome$probabilities), 1, tolerance = 1e-12)
+  expect_equal(sum(first$variables$exposure$probabilities), 1, tolerance = 1e-12)
+  expect_identical(first$variables$outcome$completed_draws_sha256,
+                   second$variables$outcome$completed_draws_sha256)
+  expect_identical(first$variables$exposure$completed_draws_sha256,
+                   second$variables$exposure$completed_draws_sha256)
+  expect_false("completed_counts" %in% names(first$variables$outcome))
+  expect_false("completed_counts" %in% names(first$variables$exposure))
+  expect_identical(first$additional_privacy_cost, c(epsilon = 0, delta = 0))
+  expect_identical(fixture$state$runs, 2L)
+
+  expect_error(dsVertClient:::.dsvert_mi_synopsis_result_v1(
+    cbind(outcome, exposure) ~ 1, "protected", c("exposure", "outcome"),
+    6L, "auto", list(peer_a = NULL), identity, .run = fixture$run,
+    .count = fixture$count, .frequency = fixture$frequency),
+    "formula order")
+  expect_error(dsVertClient:::.dsvert_mi_synopsis_result_v1(
+    cbind(outcome, exposure) ~ 1, "protected", NULL, 6L, "binomial",
+    list(peer_a = NULL), identity, .run = fixture$run,
+    .count = fixture$count, .frequency = fixture$frequency),
+    "family = 'auto'")
 })
 
 test_that("MI frontdoor rejects an unbound or non-strict marginal", {

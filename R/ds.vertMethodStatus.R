@@ -565,13 +565,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "artifact."))
   add(c("ds.vertMI", "ds.vert.mi"), "ds.vertMI", "promoted",
       paste(
-        "Categorical outcome ~ 1 MCAR completion from one strict-missing",
-        "signed sticky Synopsis release; deterministic completion draws are",
-        "post-processing and add no privacy cost."),
+        "Categorical MCAR completion for one or more intercept-only signed",
+        "marginals from one strict-missing sticky Synopsis release;",
+        "multivariable draws are deterministic post-processing and add no",
+        "privacy cost."),
       paste(
-        "Only binomial or multinomial intercept-only categorical outcomes are",
-        "available. Covariates, chained equations, analyst seeds, standard",
-        "errors, p-values, and Rubin sampling inference remain unavailable."))
+        "Only independent binomial or multinomial intercept-only categorical",
+        "marginals are available. Covariates, joint/chained equations,",
+        "analyst seeds, standard errors, p-values, and Rubin sampling",
+        "inference remain unavailable."))
   add(c("ds.vertLASSO", "ds.vert.lasso"), "ds.vertLASSO", "promoted",
       paste(
         "Gaussian L1 penalty path over one validated same-owner signed",
