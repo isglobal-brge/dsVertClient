@@ -6,6 +6,8 @@
 
 .DSVERT_FORMAL_GLM_REGISTERED_SOURCE_REPLY_VERSION <-
   "dsvert-formal-glm-registered-phase18-source-response-v1"
+.DSVERT_FORMAL_GLM_REGISTERED_FRESH_SOURCE_REPLY_VERSION <-
+  "dsvert-formal-glm-registered-fresh-source-response-v1"
 .DSVERT_FORMAL_GLM_REGISTERED_SOURCE_MAX_BYTES <- 4L * 1024L * 1024L
 
 .dsvert_formal_glm_registered_source_payload <- function(action, payload) {
@@ -130,4 +132,70 @@
     operation = "registered formal GLM source relay",
     .aggregate = .aggregate)
   .dsvert_formal_glm_registered_source_reply(replies[[1L]], action)
+}
+
+.dsvert_formal_glm_registered_fresh_source_selector <- function(
+    analysis_id, data_name, family, formula_sha256) {
+  valid_label <- function(value) {
+    is.character(value) && length(value) == 1L && !is.na(value) &&
+      grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", value)
+  }
+  if (!valid_label(analysis_id) || !valid_label(data_name) ||
+      !is.character(family) || length(family) != 1L || is.na(family) ||
+      !family %in% c("binomial", "poisson") ||
+      !is.character(formula_sha256) || length(formula_sha256) != 1L ||
+      is.na(formula_sha256) || !grepl("^[0-9a-f]{64}$", formula_sha256)) {
+    stop("Registered fresh GLM source requires one fixed analysis selector.",
+         call. = FALSE)
+  }
+  list(
+    analysis_id = enc2utf8(analysis_id), data_name = enc2utf8(data_name),
+    family = family, formula_sha256 = formula_sha256)
+}
+
+.dsvert_formal_glm_registered_fresh_source_call <- function(
+    conn, selector, action, payload,
+    .aggregate = DSI::datashield.aggregate) {
+  if (!is.list(conn) || length(conn) != 1L || is.null(names(conn)) ||
+      !is.character(names(conn)) || length(names(conn)) != 1L ||
+      is.na(names(conn)) || !nzchar(names(conn))) {
+    stop("Registered fresh GLM source requires one named server.",
+         call. = FALSE)
+  }
+  if (!is.list(selector) || !identical(
+      names(selector), c("analysis_id", "data_name", "family", "formula_sha256"))) {
+    stop("Registered fresh GLM source requires one fixed analysis selector.",
+         call. = FALSE)
+  }
+  selector <- .dsvert_formal_glm_registered_fresh_source_selector(
+    selector$analysis_id, selector$data_name, selector$family,
+    selector$formula_sha256)
+  actions <- c("ticket", "ticket_set", "seal_block", "chunk", "import_chunk",
+               "local_receipt", "receipt_commit", "receipt_set", "binding",
+               "host_provision")
+  if (!is.character(action) || length(action) != 1L || is.na(action) ||
+      !action %in% actions) {
+    stop("Registered fresh GLM source requires one closed action.",
+         call. = FALSE)
+  }
+  payload <- .dsvert_formal_glm_registered_source_payload(action, payload)
+  replies <- .dsvert_aggregate_strict(
+    conns = conn,
+    expr = call(
+      name = "dsvertFormalGLMRegisteredFreshSourceDS",
+      analysis_id = selector$analysis_id, data_name = selector$data_name,
+      family = selector$family, formula_sha256 = selector$formula_sha256,
+      action = action, payload = payload),
+    operation = "registered fresh formal GLM source relay",
+    .aggregate = .aggregate)
+  value <- replies[[1L]]
+  if (!is.list(value) || !identical(names(value),
+      c("version", "action", "payload", "production_ready")) ||
+      !identical(value$version,
+                 .DSVERT_FORMAL_GLM_REGISTERED_FRESH_SOURCE_REPLY_VERSION)) {
+    stop("A server returned an invalid registered fresh GLM source reply.",
+         call. = FALSE)
+  }
+  value$version <- .DSVERT_FORMAL_GLM_REGISTERED_SOURCE_REPLY_VERSION
+  .dsvert_formal_glm_registered_source_reply(value, action)
 }
