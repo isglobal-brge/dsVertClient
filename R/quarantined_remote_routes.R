@@ -86,8 +86,10 @@
     replacement = "No public GLM control relay is released.")
 )
 
-.dsvert_block_retired_remote_route <- function(route) {
-  if (isTRUE(.dsvert_quarantine_test_mode())) return(invisible(FALSE))
+.dsvert_block_retired_remote_route <- function(route, .allow_test = TRUE) {
+  if (isTRUE(.allow_test) && isTRUE(.dsvert_quarantine_test_mode())) {
+    return(invisible(FALSE))
+  }
   contract <- .DSVERT_RETIRED_REMOTE_ROUTES[[route]]
   if (!is.list(contract) ||
       !identical(sort(names(contract)),

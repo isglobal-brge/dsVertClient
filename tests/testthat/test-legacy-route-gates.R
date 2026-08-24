@@ -101,28 +101,13 @@ test_that("internal warm starts remain internal helpers for joint methods", {
   expect_true(any(grepl(".ds_vertOrdinalWarm", secure_src, fixed = TRUE)))
 })
 
-test_that("GEE AR1 requires guarded order metadata", {
+test_that("clustered GEE remains unavailable before DSI", {
   expect_error(
     ds.vertGEE(y ~ x, data = "D", family = "gaussian", corstr = "ar1",
                datasources = list()),
-    "requires id_col")
-  expect_error(
-    ds.vertGEE(y ~ x, data = "D", family = "gaussian", corstr = "ar1",
-               id_col = "id", datasources = list()),
-    "requires order_col")
-  expect_error(
-    ds.vertGEE(y ~ x, data = "D", family = "poisson", corstr = "ar1",
-               datasources = list()),
-    "requires id_col")
-  expect_error(
-    ds.vertGEE(y ~ x, data = "D", family = "binomial", corstr = "ar1",
-               id_col = "id", datasources = list()),
-    "requires order_col")
-
+    class = "dsvert_route_unavailable")
   src <- paste(deparse(body(ds.vertGEE)), collapse = "\n")
-  expect_true(any(grepl("corstr = \"ar1\"", src, fixed = TRUE)))
-  expect_true(any(grepl(".ds_gee_secure_poisson_exchangeable", src,
+  expect_true(any(grepl(".dsvert_block_retired_remote_route", src,
                         fixed = TRUE)))
-  expect_false(any(grepl("currently implemented only for family='gaussian'",
-                         src, fixed = TRUE)))
+  expect_false(any(grepl(".ds_gee_secure_", src, fixed = TRUE)))
 })

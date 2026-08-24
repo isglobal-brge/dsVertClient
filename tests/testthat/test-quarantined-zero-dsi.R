@@ -59,6 +59,16 @@ test_that("the quarantined Cox frontdoor has no unreachable exact-profile fallba
   expect_false(grepl("ds.vertCoxProfileNonDisclosive", body_text, fixed = TRUE))
 })
 
+test_that("the promoted GEE frontdoor contains no retired exact worker", {
+  body_text <- paste(deparse(body(ds.vertGEE)), collapse = "\n")
+  expect_match(
+    body_text,
+    '.dsvert_block_retired_remote_route("gee", .allow_test = FALSE)',
+    fixed = TRUE)
+  expect_false(grepl(".ds_gee_secure_", body_text, fixed = TRUE))
+  expect_false(grepl("keep_session", body_text, fixed = TRUE))
+})
+
 test_that("unregistered internal routes are blocked before DSI", {
   testthat::local_mocked_bindings(
     .dsvert_quarantine_test_mode = function() FALSE,
