@@ -27,4 +27,9 @@ test_that("every original dsVertClient analysis export remains available", {
     exists(name, envir = asNamespace("dsVertClient"), mode = "function",
            inherits = FALSE)
   }, logical(1L))))
+
+  maturity <- ds.vertMethodStatus()
+  status <- maturity$status[match(original_exports, maturity$method)]
+  expect_false(anyNA(status))
+  expect_true(all(status == "promoted"))
 })
