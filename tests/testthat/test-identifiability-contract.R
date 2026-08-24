@@ -57,15 +57,7 @@ test_that("empty contingency margins fail instead of using epsilon divisors", {
   expect_identical(err$reason, "degenerate_contingency_margins")
 })
 
-test_that("GLMM and non-PSD DP LASSO systems do not acquire a repair", {
-  glmm_err <- tryCatch(
-    dsVertClient:::.ds_glmm_safe_solve(
-      matrix(c(1, 1, 1, 1), 2L), c(1, 1)),
-    error = identity)
-  expect_s3_class(glmm_err, "non_identifiable")
-  expect_identical(glmm_err$reason,
-                   "singular_glmm_fixed_effect_information")
-
+test_that("non-PSD DP LASSO systems do not acquire a repair", {
   lasso_err <- tryCatch(
     dsVertClient:::.dsvert_lasso_dp_solver(
       matrix(c(1, 0, 0, -1), 2L,
@@ -94,7 +86,8 @@ test_that("statistical routes contain no automatic estimator-changing solve", {
 
   lmm_src <- src(ds.vertLMM)
   expect_false(grepl("fit <- ols_ref", lmm_src, fixed = TRUE))
-  expect_match(lmm_src, "No OLS fallback was applied", fixed = TRUE)
+  expect_match(lmm_src, "ds.vertDPLMM", fixed = TRUE)
+  expect_match(lmm_src, "legacy_fallback_called <- FALSE", fixed = TRUE)
 
   cox_src <- src(ds.vertCoxDiscreteNonDisclosive)
   expect_false(grepl("ridge bumped", cox_src, fixed = TRUE))

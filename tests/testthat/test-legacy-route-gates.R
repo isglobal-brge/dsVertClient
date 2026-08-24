@@ -87,6 +87,18 @@ test_that("user-facing wrappers dispatch only to product routes", {
   expect_false(any(grepl("std_errors", print_lmm_src, fixed = TRUE)))
 })
 
+test_that("retired GLMM PQL implementation is not retained", {
+  glmm_source <- paste(
+    readLines(.dsvert_client_source_file("ds.vertGLMM.R"), warn = FALSE),
+    collapse = "\n")
+
+  expect_false(grepl(".ds_glmm_pql_aggregate_loop", glmm_source,
+                     fixed = TRUE))
+  expect_false(grepl(".ds_glmm_pql_solve_components", glmm_source,
+                     fixed = TRUE))
+  expect_false(grepl("k2SetOffsetDS", glmm_source, fixed = TRUE))
+})
+
 test_that("internal warm starts remain internal helpers for joint methods", {
   ns <- asNamespace("dsVertClient")
   expect_false(".ds_vertMultinomWarm" %in% getNamespaceExports(ns))

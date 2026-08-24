@@ -4,8 +4,8 @@
 #'
 #'   This is an internal development route for an explicit
 #'   \code{glmer}-like likelihood target. The public \code{ds.vert.glmm()}
-#'   frontdoor uses the aggregate PQL route because it is the validated GLMM
-#'   surface. The Laplace target is the random-intercept binomial
+#'   frontdoor instead exposes only the signed non-iterative moment
+#'   projection. The Laplace target is the random-intercept binomial
 #'   approximation used by
 #'   \code{lme4::glmer(..., family = binomial(), nAGQ = 1)}. The default
 #'   estimator uses one protected Newton mode step per objective evaluation;
