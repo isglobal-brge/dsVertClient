@@ -46,3 +46,26 @@ test_that("registered fresh GLM source rejects widened selectors and replies", {
     structure(list(), names = character())),
     "invalid registered fresh GLM source reply")
 })
+
+test_that("registered fresh GLM source accepts the fixed public shape action", {
+  selector <- list(
+    analysis_id = "fresh_binomial", data_name = "D", family = "binomial",
+    formula_sha256 = paste(rep("a", 64L), collapse = ""))
+  testthat::local_mocked_bindings(
+    .dsvert_aggregate_strict = function(...) list(server_a = list(
+      version = "dsvert-formal-glm-registered-fresh-source-response-v1",
+      action = "shape", payload = list(
+        version = "dsvert-formal-glm-registered-fresh-source-shape-v1",
+        artifact_id = paste(rep("b", 64L), collapse = ""),
+        source_contract_sha256 = paste(rep("c", 64L), collapse = ""),
+        source = "server_a", custodian_peers = c("server_a", "server_b"),
+        designated_compute_peers = c("server_a", "server_b"),
+        total_blocks = 1L, production_ready = FALSE),
+      production_ready = FALSE)),
+    .package = "dsVertClient")
+  reply <- .dsvert_formal_glm_registered_fresh_source_call(
+    list(server_a = "connection"), selector, "shape",
+    structure(list(), names = character()))
+  expect_identical(reply$action, "shape")
+  expect_identical(reply$payload$total_blocks, 1L)
+})

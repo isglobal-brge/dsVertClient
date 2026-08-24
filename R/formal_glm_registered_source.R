@@ -20,7 +20,8 @@
   fields <- names(payload)
   if (is.null(fields)) fields <- character()
   expected <- switch(action,
-    ticket = character(), receipt_set = character(), host_provision = character(),
+    shape = character(), ticket = character(), receipt_set = character(),
+    host_provision = character(),
     ticket_set = "recipient_tickets", seal_block = c("recipient_tickets", "block_index"),
     chunk = c("recipient_tickets", "block_index", "offset"),
     import_chunk = c("recipient_tickets", "chunk_receipt", "pair_chunk_base64"),
@@ -170,7 +171,7 @@
   selector <- .dsvert_formal_glm_registered_fresh_source_selector(
     selector$analysis_id, selector$data_name, selector$family,
     selector$formula_sha256)
-  actions <- c("ticket", "ticket_set", "seal_block", "chunk", "import_chunk",
+  actions <- c("shape", "ticket", "ticket_set", "seal_block", "chunk", "import_chunk",
                "local_receipt", "receipt_commit", "receipt_set", "binding",
                "host_provision")
   if (!is.character(action) || length(action) != 1L || is.na(action) ||
