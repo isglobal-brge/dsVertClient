@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertGEE.R
 \name{ds.vertGEE}
 \alias{ds.vertGEE}
-\title{Formal independent-working GEE point estimate}
+\title{Signed independent-working GEE point estimate}
 \usage{
 ds.vertGEE(
   formula,
@@ -19,12 +19,13 @@ ds.vertGEE(
   binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
   datasources = NULL,
-  formal_analysis_id = NULL
+  formal_analysis_id = NULL,
+  dp_analysis_id = NULL
 )
 }
 \arguments{
 \item{formula, data, family, corstr, verbose, datasources}{Formula, registered
-data name, binomial/Poisson family, working correlation, progress flag and
+data name, Gaussian/binomial/Poisson family, working correlation, progress flag and
 DataSHIELD connections. Only \code{corstr = "independence"} is available.}
 
 \item{id_col, order_col, max_iter, tol, lambda, working_max_iter, ring, binomial_sigmoid_intervals}{Retained clustered-GEE controls. They are unavailable with a formal point
@@ -32,6 +33,9 @@ release and are never silently ignored.}
 
 \item{formal_analysis_id}{Custodian-configured completed formal GLM
 certificate selector.}
+
+\item{dp_analysis_id}{Custodian-configured signed Gaussian Synopsis
+artifact selector. It is mutually exclusive with \code{formal_analysis_id}.}
 }
 \value{
 A \code{ds.vertGEE} point-estimate object without covariance,
@@ -41,16 +45,16 @@ standard errors, working-correlation estimate or inference.
 With a custodian-configured \code{formal_analysis_id}, this
 frontdoor returns the completed, two-authority-certified binomial or
 Poisson GLM point estimate under an independence working correlation.
-The estimating equation is identical to the corresponding independent
-GEE score. It never starts a computation, chooses privacy controls, or
+With \code{dp_analysis_id}, it reads the signed Gaussian Synopsis fit
+under that same score equation. Neither route chooses privacy controls or
 exposes a cluster statistic.
 }
 \details{
 This is deliberately narrower than a general GEE: cluster ids,
 exchangeable and AR(1) correlations, sandwich covariance, standard errors
 and inference remain unavailable until their contribution-bounded,
-protected artifacts exist. Calls without \code{formal_analysis_id} keep
-failing locally before DSI.
+protected artifacts exist. Calls without \code{formal_analysis_id} or
+\code{dp_analysis_id} keep failing locally before DSI.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

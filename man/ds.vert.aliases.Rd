@@ -100,6 +100,7 @@ ds.vert.gee(
   precision = c("auto", "high", "fast"),
   datasources = NULL,
   formal_analysis_id = NULL,
+  dp_analysis_id = NULL,
   ...
 )
 
@@ -196,10 +197,12 @@ public certificate. It cannot start a computation; the GEE adapter accepts
 only the formal GLM independence-working point-estimate scope, and the
 discrete selector remains a distinct fixed-grid pooled-logistic estimand.}
 
-\item{cluster_col}{Grouping column for the mixed-model routes.}
+\item{analysis_id, dp_analysis_id}{Custodian-configured signed random-intercept
+or Gaussian artifact id. \code{analysis_id} is required by
+\code{ds.vert.lmm()} and \code{ds.vert.glmm()}; \code{dp_analysis_id}
+enables only independent Gaussian GEE post-processing.}
 
-\item{analysis_id}{Custodian-configured signed random-intercept artifact
-id. It is required by \code{ds.vert.lmm()} and \code{ds.vert.glmm()}.}
+\item{cluster_col}{Grouping column for the mixed-model routes.}
 
 \item{max_iter, inner_iter, max_outer, tol}{Iteration caps and convergence
 tolerance for the iterative fits.}

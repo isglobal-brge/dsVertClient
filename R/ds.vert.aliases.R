@@ -50,8 +50,10 @@
 #'   sites or a complete named per-site character/list map.
 #' @param variables,var1,var2 Column selections for descriptive / bivariate routes.
 #' @param cluster_col Grouping column for the mixed-model routes.
-#' @param analysis_id Custodian-configured signed random-intercept artifact
-#'   id. It is required by \code{ds.vert.lmm()} and \code{ds.vert.glmm()}.
+#' @param analysis_id,dp_analysis_id Custodian-configured signed random-intercept
+#'   or Gaussian artifact id. \code{analysis_id} is required by
+#'   \code{ds.vert.lmm()} and \code{ds.vert.glmm()}; \code{dp_analysis_id}
+#'   enables only independent Gaussian GEE post-processing.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag.
 #' @param formal_analysis_id Custodian-owned selector for an already completed
@@ -516,18 +518,26 @@ ds.vert.lmm <- function(formula, data = NULL, cluster_col,
 #' @export
 ds.vert.gee <- function(formula, data = NULL,
                         precision = c("auto", "high", "fast"),
-                        datasources = NULL, formal_analysis_id = NULL, ...) {
-  if (!is.null(formal_analysis_id)) {
+                        datasources = NULL, formal_analysis_id = NULL,
+                        dp_analysis_id = NULL, ...) {
+  if (!is.null(formal_analysis_id) && !is.null(dp_analysis_id)) {
+    stop("formal_analysis_id and dp_analysis_id are mutually exclusive",
+         call. = FALSE)
+  }
+  if (!is.null(formal_analysis_id) || !is.null(dp_analysis_id)) {
     explicit_arguments <- names(match.call())[-1L]
     if ("precision" %in% explicit_arguments) {
       stop(paste(
-        "formal_analysis_id GEE does not accept legacy controls:",
+        "signed-artifact GEE does not accept legacy controls:",
         "precision"), call. = FALSE)
     }
-    out <- do.call(ds.vertGEE, c(
-      list(formula = formula, data = data, datasources = datasources,
-           formal_analysis_id = formal_analysis_id),
-      list(...)))
+    arguments <- list(formula = formula, data = data, datasources = datasources)
+    if (!is.null(formal_analysis_id)) {
+      arguments$formal_analysis_id <- formal_analysis_id
+    } else {
+      arguments$dp_analysis_id <- dp_analysis_id
+    }
+    out <- do.call(ds.vertGEE, c(arguments, list(...)))
     return(.dsvert_set_frontdoor(out, "ds.vert.gee", "ds.vertGEE",
                                  length(datasources)))
   }

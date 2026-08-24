@@ -1,20 +1,22 @@
-#' @title Formal independent-working GEE point estimate
+#' @title Signed independent-working GEE point estimate
 #' @description With a custodian-configured \code{formal_analysis_id}, this
 #'   frontdoor returns the completed, two-authority-certified binomial or
 #'   Poisson GLM point estimate under an independence working correlation.
-#'   The estimating equation is identical to the corresponding independent
-#'   GEE score. It never starts a computation, chooses privacy controls, or
+#'   With \code{dp_analysis_id}, it reads the signed Gaussian Synopsis fit
+#'   under that same score equation. Neither route chooses privacy controls or
 #'   exposes a cluster statistic.
 #' @details This is deliberately narrower than a general GEE: cluster ids,
 #'   exchangeable and AR(1) correlations, sandwich covariance, standard errors
 #'   and inference remain unavailable until their contribution-bounded,
-#'   protected artifacts exist. Calls without \code{formal_analysis_id} keep
-#'   failing locally before DSI.
+#'   protected artifacts exist. Calls without \code{formal_analysis_id} or
+#'   \code{dp_analysis_id} keep failing locally before DSI.
 #' @param formula,data,family,corstr,verbose,datasources Formula, registered
-#'   data name, binomial/Poisson family, working correlation, progress flag and
+#'   data name, Gaussian/binomial/Poisson family, working correlation, progress flag and
 #'   DataSHIELD connections. Only \code{corstr = "independence"} is available.
 #' @param formal_analysis_id Custodian-configured completed formal GLM
 #'   certificate selector.
+#' @param dp_analysis_id Custodian-configured signed Gaussian Synopsis
+#'   artifact selector. It is mutually exclusive with \code{formal_analysis_id}.
 #' @param id_col,order_col,max_iter,tol,lambda,working_max_iter,ring,binomial_sigmoid_intervals
 #'   Retained clustered-GEE controls. They are unavailable with a formal point
 #'   release and are never silently ignored.
@@ -32,7 +34,21 @@ ds.vertGEE <- function(formula, data = NULL,
                        ring = 63L,
                        binomial_sigmoid_intervals = NULL,
                        verbose = TRUE, datasources = NULL,
-                       formal_analysis_id = NULL) {
+                       formal_analysis_id = NULL, dp_analysis_id = NULL) {
+  if (!is.null(formal_analysis_id) && !is.null(dp_analysis_id)) {
+    stop("formal_analysis_id and dp_analysis_id are mutually exclusive",
+         call. = FALSE)
+  }
+  if (!is.null(dp_analysis_id)) {
+    family <- match.arg(family)
+    corstr <- match.arg(corstr)
+    return(.dsvert_gaussian_gee_independence_adapter(
+      explicit_arguments = names(match.call())[-1L],
+      formula = if (missing(formula)) NULL else formula,
+      data = data, family = family, id_col = id_col, order_col = order_col,
+      corstr = corstr, verbose = verbose, datasources = datasources,
+      dp_analysis_id = dp_analysis_id))
+  }
   if (!is.null(formal_analysis_id)) {
     corstr <- match.arg(corstr)
     return(.dsvert_formal_gee_independence_adapter(
@@ -442,6 +458,71 @@ ds.vertGEE <- function(formula, data = NULL,
     call               = match.call())
   class(out) <- c("ds.vertGEE", "list")
   out
+}
+
+.dsvert_gaussian_gee_independence_adapter <- function(
+    explicit_arguments, formula, data, family, id_col, order_col, corstr,
+    verbose, datasources, dp_analysis_id) {
+  if (!identical(family, "gaussian")) {
+    stop("dp_analysis_id GEE supports only family='gaussian'", call. = FALSE)
+  }
+  if (!identical(corstr, "independence")) {
+    stop(paste(
+      "dp_analysis_id GEE supports only corstr='independence';",
+      "cluster working correlations remain unavailable"), call. = FALSE)
+  }
+  if (!is.null(id_col) || !is.null(order_col)) {
+    stop(paste(
+      "dp_analysis_id GEE does not accept cluster id_col or order_col;",
+      "robust clustered covariance remains unavailable"), call. = FALSE)
+  }
+  allowed <- c("formula", "data", "family", "corstr", "verbose",
+               "datasources", "dp_analysis_id")
+  unexpected <- setdiff(explicit_arguments, allowed)
+  if (length(unexpected)) {
+    stop(paste(
+      "dp_analysis_id GEE does not accept legacy controls:",
+      paste(sort(unexpected, method = "radix"), collapse = ", ")),
+      call. = FALSE)
+  }
+  fit <- ds.vertGLM(
+    formula = formula, data = data, family = "gaussian", verbose = verbose,
+    datasources = datasources, dp_analysis_id = dp_analysis_id)
+  if (!inherits(fit, "ds.vertDPGaussian") ||
+      !identical(fit$family, "gaussian") ||
+      !identical(fit$analysis_id, dp_analysis_id) ||
+      !is.character(fit$certificate_sha256) ||
+      length(fit$certificate_sha256) != 1L || is.na(fit$certificate_sha256) ||
+      !grepl("^[0-9a-f]{64}$", fit$certificate_sha256) ||
+      !is.numeric(fit$coefficients) || !length(fit$coefficients) ||
+      is.null(names(fit$coefficients)) || any(!is.finite(fit$coefficients)) ||
+      !isTRUE(fit$source_values_exposed == FALSE) ||
+      !isTRUE(fit$intermediate_values_exposed == FALSE) ||
+      !identical(fit$additional_server_calls_after_synopsis, 0L) ||
+      !identical(fit$additional_privacy_cost, c(epsilon = 0, delta = 0))) {
+    stop("signed Gaussian release cannot support independent GEE", call. = FALSE)
+  }
+  result <- list(
+    status = "public_certified_independence_gee_gaussian",
+    family = "gaussian",
+    corstr = "independence",
+    coefficients = fit$coefficients,
+    analysis_id = fit$analysis_id,
+    dp_analysis_id = dp_analysis_id,
+    certificate_sha256 = fit$certificate_sha256,
+    robust_covariance = NULL,
+    std_errors = NULL,
+    cluster_correlation_estimated = FALSE,
+    cluster_columns = NULL,
+    source_values_exposed = FALSE,
+    intermediate_values_exposed = FALSE,
+    production_ready = FALSE,
+    additional_server_calls_after_synopsis = 0L,
+    additional_privacy_cost = c(epsilon = 0, delta = 0),
+    inference = "unavailable_without_protected_cluster_score_and_meat",
+    called_via = "ds.vertGEE_dp_analysis_id")
+  class(result) <- c("dsvert_dp_gaussian_gee", "ds.vertGEE", "list")
+  result
 }
 
 .dsvert_formal_gee_independence_adapter <- function(

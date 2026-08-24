@@ -1718,6 +1718,40 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(1L, 2L))
 
+    gee <- testthat::with_mocked_bindings(
+      ds.vertDPGaussian = function(
+          data_name, analysis_id, ridge = 0, server = NULL,
+          datasources = NULL) {
+        gaussian(data_name, analysis_id, ridge, server, datasources, dispatch)
+      },
+      ds.vertGEE(
+        y_peer_a ~ x_peer_a, data = "data_peer_a", family = "gaussian",
+        corstr = "independence", dp_analysis_id = "gaussian_primary",
+        verbose = FALSE, datasources = conns),
+      .package = "dsVertClient")
+    gee_alias <- testthat::with_mocked_bindings(
+      ds.vertDPGaussian = function(
+          data_name, analysis_id, ridge = 0, server = NULL,
+          datasources = NULL) {
+        gaussian(data_name, analysis_id, ridge, server, datasources, dispatch)
+      },
+      ds.vert.gee(
+        y_peer_a ~ x_peer_a, data = "data_peer_a",
+        dp_analysis_id = "gaussian_primary", verbose = FALSE,
+        datasources = conns),
+      .package = "dsVertClient")
+    expect_s3_class(gee, "dsvert_dp_gaussian_gee")
+    expect_identical(gee_alias$coefficients, gee$coefficients)
+    expect_equal(gee$coefficients, fit$coefficients, tolerance = 0)
+    expect_null(gee$robust_covariance)
+    expect_null(gee$std_errors)
+    expect_false(gee$cluster_correlation_estimated)
+    expect_identical(gee$additional_server_calls_after_synopsis, 0L)
+    expect_identical(gee$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
     legacy_glm <- testthat::with_mocked_bindings(
       ds.vertDPGaussian = function(
           data_name, analysis_id, ridge = 0, server = NULL,
