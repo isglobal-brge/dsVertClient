@@ -88,6 +88,8 @@ test_that("user-facing wrappers dispatch only to product routes", {
 })
 
 test_that("retired GLMM PQL implementation is not retained", {
+  expect_false(file.exists(file.path(
+    .dsvert_client_source_root(), "ds.vertGLMMLaplace.R")))
   glmm_source <- paste(
     readLines(.dsvert_client_source_file("ds.vertGLMM.R"), warn = FALSE),
     collapse = "\n")
