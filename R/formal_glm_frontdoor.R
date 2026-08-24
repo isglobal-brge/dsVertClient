@@ -1,23 +1,13 @@
-# Explicit client gate for read-only formal binomial/Poisson GLM releases.
+# Client adapter for read-only formal binomial/Poisson GLM releases.
 #
 # The public request contains selectors only.  It cannot carry epsilon, delta,
 # bounds, contribution caps, random seeds, MPC roles or a numeric backend.  The
 # route verifies an already completed public certificate remotely. It cannot
 # request source materialisation, start the durable worker, or cause another
-# joint-DP opening; those lifecycle stages remain unavailable through this
-# frontdoor. The legacy GLM surface remains unreachable.
+# joint-DP opening; those lifecycle stages remain outside this frontdoor.
 
 .DSVERT_FORMAL_GLM_FRONTDOOR_REQUEST_VERSION <-
   "dsvert-formal-glm-frontdoor-request-v1"
-.DSVERT_FORMAL_GLM_FRONTDOOR_BLOCKER <-
-  "formal_glm_phase19_durable_r_dsi_release_bridge_not_promoted"
-.DSVERT_FORMAL_GLM_FRONTDOOR_MISSING <- c(
-  "registered_r_dsi_lifecycle_for_phase18_source_materialization_v1",
-  "r_dsi_wrapper_for_phase19_full_durable_schedule_v1",
-  "phase19_dp_shares_to_durable_common_one_draw_release_v1",
-  "signed_public_release_adapter_bound_to_phase19_validity_v1",
-  "local_multiprocess_dsi_e2e_restart_tamper_k2_k3_k4_k5_v1"
-)
 
 .dsvert_formal_glm_frontdoor_id <- function(value, what) {
   if (!is.character(value) || length(value) != 1L || is.na(value) ||
@@ -77,25 +67,6 @@
       paste0("dsVert/formal-glm/frontdoor-request/v1|",
              .dsvert_joint_dp_client_json(request)),
       algo = "sha256", serialize = FALSE))
-}
-
-.dsvert_formal_glm_frontdoor_unavailable <- function(request) {
-  stop(structure(list(
-    message = paste(
-      "The formal binomial/Poisson GLM remains sealed before DSI:",
-      "its internal durable Phase-1.9 worker is not yet connected through",
-      "the registered R/DSI lifecycle to its single common sticky joint-DP",
-      "release."),
-    call = NULL,
-    code = .DSVERT_FORMAL_GLM_FRONTDOOR_BLOCKER,
-    missing = .DSVERT_FORMAL_GLM_FRONTDOOR_MISSING,
-    request_sha256 = request$sha256,
-    dsi_calls = 0L, openings_performed = 0L,
-    operation_limit = FALSE, request_limit = FALSE,
-    history_can_deny_operation = FALSE,
-    production_ready = FALSE),
-    class = c("dsvert_formal_glm_frontdoor_unavailable",
-              "error", "condition")))
 }
 
 .dsvert_formal_glm_frontdoor_public_response <- function(value, request) {
