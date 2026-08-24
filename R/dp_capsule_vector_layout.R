@@ -4,95 +4,6 @@
 
 .DSVERT_CLIENT_DP_CAPSULE_LAYOUT_VERSION <-
   "dsvert-biomedical-capsule-coordinate-layout-v4"
-.DSVERT_CLIENT_DP_CAPSULE_RELEASE_CACHE_VERSION <-
-  "dsvert-biomedical-capsule-public-release-cache-v1"
-.DSVERT_CLIENT_DP_CAPSULE_RELEASE_CACHE_MAX_ENTRIES <- 4L
-.DSVERT_CLIENT_DP_CAPSULE_RELEASE_CACHE_MAX_BYTES <- 64L * 1024L^2
-.dsvert_dp_capsule_release_cache <- new.env(parent = emptyenv())
-.dsvert_dp_capsule_release_cache$entries <- list()
-
-.dsvert_dp_capsule_release_cache_clear <- function() {
-  .dsvert_dp_capsule_release_cache$entries <- list()
-  invisible(TRUE)
-}
-
-.dsvert_dp_capsule_release_cache_key <- function(
-    datasources, status, manifest_bundle) {
-  if (!is.list(datasources) || !length(datasources) ||
-      is.null(names(datasources)) || anyNA(names(datasources)) ||
-      any(!nzchar(names(datasources))) || anyDuplicated(names(datasources)) ||
-      !is.list(status) || is.null(names(status)) || anyNA(names(status)) ||
-      any(!nzchar(names(status))) || anyDuplicated(names(status)) ||
-      !setequal(names(status), names(datasources)) ||
-      !is.list(manifest_bundle) ||
-      !.dsvert_vector_hex(manifest_bundle$manifest_sha256) ||
-      !.dsvert_vector_hex(manifest_bundle$capsule_id)) {
-    return(NULL)
-  }
-  servers <- sort(names(datasources), method = "radix")
-  stable_fields <- c(
-    "version", "enabled", "privacy_contract", "policy", "noise_root",
-    "release_domain", "role")
-  status_fields <- c(
-    stable_fields, "composition_telemetry", "release_instance_telemetry")
-  status <- unclass(status)[servers]
-  if (!all(vapply(status, function(entry) {
-        .dsvert_dp_has_exact_names(unclass(entry), status_fields)
-      }, logical(1L)))) return(NULL)
-  stable_status <- lapply(status, function(entry) {
-    unclass(entry)[stable_fields]
-  })
-  tryCatch(.dsvert_vector_hash(list(
-    version = .DSVERT_CLIENT_DP_CAPSULE_RELEASE_CACHE_VERSION,
-    servers = as.list(servers),
-    stable_control_plane_status = stable_status,
-    manifest_sha256 = manifest_bundle$manifest_sha256,
-    capsule_id = manifest_bundle$capsule_id)),
-    error = function(error) NULL)
-}
-
-.dsvert_dp_capsule_release_cache_get <- function(key) {
-  if (!is.character(key) || length(key) != 1L || is.na(key) ||
-      !grepl("^[0-9a-f]{64}$", key)) return(NULL)
-  entries <- .dsvert_dp_capsule_release_cache$entries
-  index <- which(vapply(entries, function(entry) {
-    identical(entry$key, key)
-  }, logical(1L)))
-  if (length(index) != 1L) return(NULL)
-  entry <- entries[[index]]
-  .dsvert_dp_capsule_release_cache$entries <- c(
-    list(entry), entries[-index])
-  entry$value
-}
-
-.dsvert_dp_capsule_release_cache_put <- function(
-    key, value,
-    .max_entries = .DSVERT_CLIENT_DP_CAPSULE_RELEASE_CACHE_MAX_ENTRIES,
-    .max_bytes = .DSVERT_CLIENT_DP_CAPSULE_RELEASE_CACHE_MAX_BYTES) {
-  valid_limits <- is.numeric(.max_entries) && length(.max_entries) == 1L &&
-    !is.na(.max_entries) && is.finite(.max_entries) && .max_entries >= 1 &&
-    .max_entries == floor(.max_entries) &&
-    is.numeric(.max_bytes) && length(.max_bytes) == 1L &&
-    !is.na(.max_bytes) && is.finite(.max_bytes) && .max_bytes >= 1
-  if (!isTRUE(valid_limits) || !is.character(key) || length(key) != 1L ||
-      is.na(key) || !grepl("^[0-9a-f]{64}$", key) || !is.list(value) ||
-      !is.list(value$manifest_bundle)) return(invisible(FALSE))
-  cached <- value
-  cached$manifest_bundle$context <- NULL
-  bytes <- as.numeric(utils::object.size(cached))
-  if (!is.finite(bytes) || bytes > .max_bytes) return(invisible(FALSE))
-  entries <- .dsvert_dp_capsule_release_cache$entries
-  entries <- entries[!vapply(entries, function(entry) {
-    identical(entry$key, key)
-  }, logical(1L))]
-  entries <- c(list(list(key = key, bytes = bytes, value = cached)), entries)
-  while (length(entries) > .max_entries ||
-         sum(vapply(entries, `[[`, numeric(1L), "bytes")) > .max_bytes) {
-    entries <- entries[-length(entries)]
-  }
-  .dsvert_dp_capsule_release_cache$entries <- entries
-  invisible(TRUE)
-}
 
 .dsvert_dp_capsule_sorted_artifact_names <- function(value) {
   if (!length(value)) character() else sort(names(value), method = "radix")
@@ -365,37 +276,7 @@
 
 .dsvert_dp_capsule_vector_run <- function(
     datasources, status = NULL, .aggregate = DSI::datashield.aggregate) {
-  datasources <- .dsvert_dp_datasources(datasources)
-  if (is.null(status)) {
-    status <- .dsvert_joint_dp_capsule_status_impl(datasources, .aggregate)
-  }
-  manifest_bundle <- .dsvert_dp_capsule_manifest_build(
-    datasources, status = status, .aggregate = .aggregate)
-  cache_key <- .dsvert_dp_capsule_release_cache_key(
-    datasources, status, manifest_bundle)
-  cached <- .dsvert_dp_capsule_release_cache_get(cache_key)
-  if (!is.null(cached)) {
-    cached$status <- status
-    cached$manifest_bundle <- manifest_bundle
-    return(cached)
-  }
-  release <- .dsvert_joint_dp_vector_capsule(
-    datasources, status = status, manifest_bundle = manifest_bundle,
-    .aggregate = .aggregate)
-  layout <- .dsvert_dp_capsule_vector_layout(release$manifest)
-  if (!identical(as.numeric(layout$coordinate_count),
-                 as.numeric(release$coordinate_count)) ||
-      length(release$values) != layout$coordinate_count ||
-      (!is.null(release$coordinate_order_sha256) &&
-       !identical(release$coordinate_order_sha256, layout$sha256))) {
-    stop("The released DP vector does not match its signed coordinate order",
-         call. = FALSE)
-  }
-  result <- list(
-    release = release, layout = layout, status = status,
-    manifest_bundle = manifest_bundle)
-  .dsvert_dp_capsule_release_cache_put(cache_key, result)
-  result
+  .dsvert_block_retired_remote_route("legacy_joint_dp_vector")
 }
 
 .dsvert_dp_capsule_single_block <- function(

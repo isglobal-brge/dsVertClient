@@ -68,6 +68,7 @@ test_that("unregistered internal routes are blocked before DSI", {
     .package = "dsVertClient")
   routes <- list(
     legacy_joint_dp_capsule = ".dsvert_joint_dp_capsule_status_impl",
+    legacy_joint_dp_vector = ".dsvert_dp_capsule_vector_run",
     formal_finalizer_handoff = ".dsvert_relay_formal_finalizer_handoff_v1",
     formal_glm_control = ".dsvert_relay_formal_glm_control_v1")
   for (route in names(routes)) {
@@ -76,7 +77,8 @@ test_that("unregistered internal routes are blocked before DSI", {
     condition <- tryCatch(do.call(impl, list()),
                           dsvert_route_unavailable = identity)
     expect_s3_class(condition, "dsvert_route_unavailable")
-    expected_state <- if (identical(route, "legacy_joint_dp_capsule")) {
+    expected_state <- if (route %in% c(
+        "legacy_joint_dp_capsule", "legacy_joint_dp_vector")) {
       "lifetime_admission_route_removed"
     } else {
       "unregistered_source_route_removed"

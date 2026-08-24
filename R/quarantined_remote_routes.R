@@ -70,6 +70,12 @@
     replacement = paste0(
       "Use the per-artifact sticky Synopsis lifecycle; it has no lifetime ",
       "admission gate and replays one authenticated release.")),
+  legacy_joint_dp_vector = list(
+    method = "legacy joint-DP vector runner",
+    state = "lifetime_admission_route_removed",
+    replacement = paste0(
+      "Use the per-artifact sticky Synopsis lifecycle; it has no lifetime ",
+      "admission gate and replays one authenticated release.")),
   formal_finalizer_handoff = list(
     method = "formal finalizer handoff relay",
     state = "unregistered_source_route_removed",
