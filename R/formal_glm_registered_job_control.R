@@ -66,7 +66,9 @@
   }
   receipt <- .dsvert_formal_glm_registered_job_receipt(receipt)
   actions <- c("negotiate", "start", "health", "job_ref", "bind",
-               "heartbeat", "poll", "relay", "compute", "terminal")
+               "heartbeat", "poll", "relay", "compute", "terminal",
+               "compute_start", "compute_status", "terminal_start",
+               "terminal_status")
   if (!is.character(action) || length(action) != 1L || is.na(action) ||
       !action %in% actions || !is.list(payload)) {
     stop("Registered formal GLM job control requires one closed action and payload.",

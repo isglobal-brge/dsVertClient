@@ -36,6 +36,32 @@ test_that("registered formal GLM control uses the closed server relay", {
   expect_false(reply$production_ready)
 })
 
+test_that("registered formal GLM control admits opaque task actions", {
+  conn <- list(site_a = structure(list(), class = "mock"))
+  receipt <- .formal_glm_registered_job_control_receipt()
+  seen <- NULL
+  testthat::local_mocked_bindings(
+    .dsvert_aggregate_strict = function(conns, expr, operation, .aggregate) {
+      seen <<- list(conns = conns, expr = expr, operation = operation)
+      list(site_a = list(
+        version = "dsvert-formal-glm-registered-phase20-job-control-response-v1",
+        action = "terminal_status",
+        payload = list(state = "running", production_ready = FALSE),
+        production_ready = FALSE))
+    },
+    .package = "dsVertClient")
+  reply <- .dsvert_formal_glm_registered_job_control_call(
+    conn, receipt, "terminal_status", structure(list(), names = character()),
+    .aggregate = identity)
+  expect_identical(as.character(seen$expr[[1L]]),
+                   "dsvertFormalGLMRegisteredJobControlDS")
+  expect_identical(as.list(seen$expr[-1L]), list(
+    receipt = receipt, action = "terminal_status",
+    payload = structure(list(), names = character())))
+  expect_identical(reply$payload, list(state = "running", production_ready = FALSE))
+  expect_false(reply$production_ready)
+})
+
 test_that("registered formal GLM control fails closed before and after DSI", {
   conn <- list(site_a = structure(list(), class = "mock"))
   receipt <- .formal_glm_registered_job_control_receipt()
