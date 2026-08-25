@@ -176,6 +176,26 @@ test_that("fixed-effect random-intercept LMM validates and solves GLS coordinate
   expect_identical(names(fit$coefficients), c("(Intercept)", "x"))
   expect_true(all(is.finite(c(fit$coefficients, fit$sigma2,
                               fit$sigma_b2, fit$icc))))
+  expect_equal(fit$coefficients[["(Intercept)"]],
+               artifact$outcome$lower +
+                 (artifact$outcome$upper - artifact$outcome$lower) *
+                 fit$normalized_coefficients[["(Intercept)"]])
+  expect_equal(fit$coefficients[["x"]],
+               (artifact$outcome$upper - artifact$outcome$lower) *
+                 fit$normalized_coefficients[["x"]] /
+                 (artifact$predictors$x$upper - artifact$predictors$x$lower))
+  shifted <- artifact
+  shifted$predictors$x <- list(column = "x", lower = 2, upper = 12)
+  shifted_fit <- dsVertClient:::.dsvert_dp_lmm_fixed_moments(
+    coordinates, shifted)
+  shifted_slope <- (shifted$outcome$upper - shifted$outcome$lower) *
+    shifted_fit$normalized_coefficients[["x"]] / 10
+  expect_equal(shifted_fit$coefficients[["(Intercept)"]],
+               shifted$outcome$lower +
+                 (shifted$outcome$upper - shifted$outcome$lower) *
+                 shifted_fit$normalized_coefficients[["(Intercept)"]] -
+                 shifted_slope * 2)
+  expect_equal(shifted_fit$coefficients[["x"]], shifted_slope)
   expect_true(fit$icc >= 0 && fit$icc <= 1)
   wire <- fixture$manifest
   wire$workload$families$gaussian_models$artifacts$lmm_fixed$

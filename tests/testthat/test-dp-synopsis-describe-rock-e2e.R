@@ -2231,6 +2231,85 @@ test_that("real random-intercept LMM Synopsis is plausible and Rock-replayable a
   }
 })
 
+test_that("real fixed-effect random-intercept LMM is source-scale plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("lmm")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  lmm <- get(".dsvert_dp_lmm_impl", asNamespace("dsVertClient"),
+             inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_lmm_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    sites <- sprintf("s%04x", seq_len(5000L))
+    policy <- fixture$policies$peer_a
+    policy$categorical_levels$site_peer_a <- sites
+    policy$capsule_workload_specs$gaussian$lmm_primary <- list(
+      version = "random_intercept_fixed_v2", dataset = "data_peer_a",
+      outcome = "y_peer_a", cluster = "site_peer_a", predictors = "x_peer_a",
+      intercept = TRUE, max_patients_per_cluster = 2L,
+      variance_ratio_grid = c(0, 0.5, 2))
+    fixture$policies$peer_a <- policy
+    data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
+    data$site_peer_a <- rep(sites, each = 2L)
+    site_effect <- rep(seq(1.25, 2.75, length.out = length(sites)), each = 2L)
+    within <- rep(c(-0.30, 0.30), length.out = nrow(data))
+    data$y_peer_a <- pmin(10, pmax(0, 2 + 0.45 * data$x_peer_a +
+      site_effect + within))
+    fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    fit <- lmm("data_peer_a", "lmm_primary", "peer_a", conns, dispatch)
+
+    expect_identical(fit$status, "ok")
+    expect_identical(fit$signed_artifact$spec_version,
+                     "random_intercept_fixed_v2")
+    expect_true(all(is.finite(c(fit$coefficients, fit$sigma2,
+                                fit$sigma_b2, fit$icc))))
+    expect_true(fit$coefficients[["(Intercept)"]] > 3 &&
+                fit$coefficients[["(Intercept)"]] < 5)
+    expect_true(fit$coefficients[["x_peer_a"]] > 0.25 &&
+                fit$coefficients[["x_peer_a"]] < 0.65)
+    expect_true(fit$sigma2 >= 0 && fit$sigma_b2 >= 0 &&
+                fit$icc >= 0 && fit$icc <= 1)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    route_lmm <- function(data_name, analysis_id, server = NULL,
+                          datasources = NULL, .aggregate) {
+      lmm(data_name, analysis_id, server, datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_lmm_impl = route_lmm,
+      list(
+        lmm = ds.vertLMM(
+          y_peer_a ~ x_peer_a, data = "data_peer_a",
+          cluster_col = "site_peer_a", analysis_id = "lmm_primary",
+          reml = FALSE, datasources = conns),
+        k3 = if (k >= 3L) ds.vertLMM.k3(
+          y_peer_a ~ x_peer_a, data = "data_peer_a",
+          cluster_col = "site_peer_a", analysis_id = "lmm_primary",
+          datasources = conns) else NULL),
+      .package = "dsVertClient")
+    expect_identical(public$lmm$coefficients, fit$coefficients)
+    if (k >= 3L) {
+      expect_identical(public$k3$coefficients, fit$coefficients)
+      expect_identical(public$k3$frontdoor, "ds.vertLMM.k3")
+    } else {
+      expect_null(public$k3)
+    }
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- lmm("data_peer_a", "lmm_primary", "peer_a", conns, dispatch)
+    expect_identical(replay$coefficients, fit$coefficients)
+    expect_identical(replay$final_vector_root, fit$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
 test_that("real binary random-intercept GLMM moment route is plausible and Rock-replayable at K=2/3/5", {
   .synopsis_real_e2e_only("lmm")
   server_ns <- .synopsis_describe_real_e2e_server()

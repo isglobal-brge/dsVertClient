@@ -264,16 +264,17 @@
       slope * bound$lower
     original[[variable]] <- slope
   }
-  c(fit, list(
-    normalized_coefficients = coefficient,
-    coefficients = original,
-    sigma2 = fit$sigma2 * y_span^2,
-    sigma_b2 = fit$sigma_b2 * y_span^2,
-    n_obs = n, cluster_count = sum(counts),
-    projected_summary = list(n = n, cluster_counts = counts,
-                             coordinate_projection_applied =
-                               !isTRUE(all.equal(projected, coordinates,
-                                                 tolerance = 0)))))
+  fit$normalized_coefficients <- coefficient
+  fit$coefficients <- original
+  fit$sigma2 <- fit$sigma2 * y_span^2
+  fit$sigma_b2 <- fit$sigma_b2 * y_span^2
+  fit$n_obs <- n
+  fit$cluster_count <- sum(counts)
+  fit$projected_summary <- list(
+    n = n, cluster_counts = counts,
+    coordinate_projection_applied = !isTRUE(all.equal(
+      projected, coordinates, tolerance = 0)))
+  fit
 }
 
 .dsvert_dp_lmm_any_artifact <- function(

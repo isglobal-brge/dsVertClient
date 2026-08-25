@@ -2,7 +2,8 @@
 #' @description This historical K>=3 name delegates only to the signed
 #'   random-intercept method-of-moments Synopsis route. It does not activate
 #'   the retired K>=3 profile/REML implementation.
-#' @param formula A formula exactly of the form \code{outcome ~ 1}.
+#' @param formula An intercept-only or additive fixed-effect formula matching
+#'   the signed random-intercept artifact.
 #' @param data Signed protected dataset name or federation.
 #' @param cluster_col Cluster column required to match the signed artifact.
 #' @param analysis_id Custodian-configured signed random-intercept artifact id.
@@ -41,7 +42,7 @@ print.ds.vertLMM.k3 <- function(x, ...) {
               x$cluster_count, x$n_obs))
   cat(sprintf("  sigma^2 = %.4g    sigma_b^2 = %.4g    ICC = %.3f\n",
               x$sigma2, x$sigma_b2, x$icc))
-  cat("  Estimation: signed DP method of moments; no K>=3 REML/profile fit\n")
+  cat("  Estimation: signed DP moment projection or fixed signed grid; no unrestricted K>=3 REML/profile fit\n")
   cat("\nFixed effects:\n")
   print(round(x$coefficients, 5L))
   invisible(x)
