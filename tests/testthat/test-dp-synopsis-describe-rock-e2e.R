@@ -446,13 +446,14 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
   for (peer in fixture$peers) {
     policy <- fixture$policies[[peer]]
     policy$capsule_workload_scope$categorical_marginals <-
-      c("status", "exposure")
+      c("status", "exposure", "region")
     policy$capsule_workload_scope$strict_missing_categorical <-
-      c("status", "exposure")
+      c("status", "exposure", "region")
     if (identical(peer, "peer_a")) {
       policy$categorical_levels$exposure <- c("low", "medium", "high")
+      policy$categorical_levels$region <- c("north", "south", "west")
       policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
-        "x_peer_a", "status", "exposure")
+        "x_peer_a", "status", "exposure", "region")
     }
     fixture$policies[[peer]] <- policy
   }
@@ -461,6 +462,9 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
     rep("case", 45L), rep("control", 45L), rep(NA_character_, 10L))
   data$exposure <- c(
     rep("low", 35L), rep("medium", 30L), rep("high", 25L),
+    rep(NA_character_, 10L))
+  data$region <- c(
+    rep("north", 30L), rep("south", 30L), rep("west", 30L),
     rep(NA_character_, 10L))
   fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
   fixture
@@ -1581,14 +1585,16 @@ test_that("real Synopsis categorical MI is plausible and Rock-replayable at K=2/
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(1L, 2L))
     multivariable <- mi(
-      cbind(status, exposure) ~ 1, "data_peer_a", NULL, 8L, "auto",
+      cbind(status, exposure, region) ~ 1, "data_peer_a", NULL, 8L, "auto",
       conns, dispatch, .run = run)
     expect_s3_class(multivariable, "ds.vertMI")
     expect_identical(multivariable$method,
                      "signed_categorical_mcar_independent_marginals_v2")
-    expect_identical(names(multivariable$variables), c("status", "exposure"))
+    expect_identical(names(multivariable$variables),
+                     c("status", "exposure", "region"))
     expect_identical(multivariable$variables$status$family, "binomial")
     expect_identical(multivariable$variables$exposure$family, "multinomial")
+    expect_identical(multivariable$variables$region$family, "multinomial")
     expect_true(all(vapply(multivariable$variables, function(variable) {
       is.numeric(variable$probabilities) && all(is.finite(variable$probabilities)) &&
         isTRUE(all.equal(sum(variable$probabilities), 1, tolerance = 1e-12))
@@ -1609,7 +1615,7 @@ test_that("real Synopsis categorical MI is plausible and Rock-replayable at K=2/
     expect_identical(replay$final_vector_root, first$final_vector_root)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
     multivariable_replay <- mi(
-      cbind(status, exposure) ~ 1, "data_peer_a", NULL, 8L, "auto",
+      cbind(status, exposure, region) ~ 1, "data_peer_a", NULL, 8L, "auto",
       conns, dispatch, .run = run)
     expect_identical(multivariable_replay$completed_draws_sha256,
                      multivariable$completed_draws_sha256)
