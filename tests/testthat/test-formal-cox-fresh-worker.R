@@ -171,6 +171,84 @@ test_that("configured fresh Cox worker returns only matching share-free opening 
     .aggregate = identity), "unsafe opening header")
 })
 
+test_that("configured fresh Cox worker relays only a finalizer ticket and ciphertext envelopes", {
+  workers <- list(site_a = .formal_cox_fresh_worker_selector(),
+                  site_b = utils::modifyList(.formal_cox_fresh_worker_selector(),
+                                              list(peer_name = "site_b")))
+  completion <- list(
+    version = "dsvert-formal-cox-blockwise-completion-v1",
+    plan_sha256 = strrep("a", 64L), transcript_sha256 = strrep("b", 64L),
+    final_commit_sha256 = strrep("c", 64L), schedule_steps = 12L,
+    fixed_schedule_complete = TRUE, output_kind = "sealed_private_result_v1",
+    production_ready = FALSE, completion_sha256 = strrep("d", 64L))
+  header <- function(peer, role, local_sha) list(
+    version = "dsvert-formal-cox-blockwise-sticky-opening-v1",
+    purpose = "formal_cox_one_public_beta_validity_opening_v1",
+    artifact_id = strrep("e", 64L), plan_sha256 = strrep("a", 64L),
+    run_id = strrep("f", 64L), pinset_sha256 = strrep("0", 64L),
+    final_cursor = list(schedule_index = 11L), completion = completion,
+    final_receipt = list(version = "receipt"), peer_name = peer,
+    peer_id = paste0(peer, "-id"), role = role, coefficient_count = 2L,
+    ring_bits = 127L, fraction_bits = 40L,
+    local_beta_validity_sha256 = local_sha,
+    signature = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=")
+  ticket <- list(
+    version = "dsvert-typed-finalizer-handoff-ticket-v1", family = "formal_cox",
+    purpose = "formal_cox_blockwise_sticky_opening_v1", artifact_id = strrep("e", 64L),
+    final_pair_root_sha256 = strrep("1", 64L), plan_sha256 = strrep("a", 64L),
+    pinset_sha256 = strrep("0", 64L), finalizer_peer_name = "site_a",
+    finalizer_peer_id = "site_a-id", finalizer_role = "garbler",
+    recipient_x25519_public_key = strrep("A", 44L), transport_key_sha256 = strrep("2", 64L),
+    issuer_peer_name = "site_a", issuer_peer_id = "site_a-id", signature = strrep("A", 88L))
+  calls <- character()
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_worker_call = function(conn, worker, action, payload,
+                                                     .aggregate) {
+      calls <<- c(calls, paste(worker$peer_name, action, sep = ":"))
+      role <- if (identical(worker$peer_name, "site_a")) "garbler" else "evaluator"
+      if (identical(action, "opening")) {
+        return(list(payload = list(header = header(worker$peer_name, role,
+                                                    if (role == "garbler") strrep("3", 64L) else strrep("4", 64L)),
+                                   replayed = FALSE)))
+      }
+      if (identical(action, "finalizer_ticket")) {
+        expect_identical(worker$peer_name, "site_a")
+        expect_null(names(payload$headers))
+        return(list(payload = list(ticket = ticket, replayed = FALSE)))
+      }
+      if (identical(action, "finalizer_seal")) {
+        expect_identical(payload$ticket, ticket)
+        sender <- header(worker$peer_name, role,
+                         if (role == "garbler") strrep("3", 64L) else strrep("4", 64L))
+        envelope <- list(
+          version = "dsvert-typed-finalizer-handoff-envelope-v1", family = "formal_cox",
+          purpose = ticket$purpose, artifact_id = ticket$artifact_id,
+          final_pair_root_sha256 = ticket$final_pair_root_sha256,
+          plan_sha256 = ticket$plan_sha256, pinset_sha256 = ticket$pinset_sha256,
+          ticket_sha256 = strrep("5", 64L), finalizer_peer_name = ticket$finalizer_peer_name,
+          finalizer_peer_id = ticket$finalizer_peer_id,
+          recipient_transport_key_sha256 = ticket$transport_key_sha256,
+          sender_peer_name = sender$peer_name, sender_peer_id = sender$peer_id,
+          sender_role = sender$role, payload_kind = "formal_cox_opening_local_output_v1",
+          payload_sha256 = strrep("6", 64L), ciphertext_sha256 = strrep("7", 64L),
+          ciphertext = strrep("A", 80L), signature = strrep("A", 88L))
+        return(list(payload = list(envelope = envelope, replayed = FALSE)))
+      }
+      stop("unexpected action", call. = FALSE)
+    },
+    .package = "dsVertClient")
+  handoff <- .dsvert_formal_cox_fresh_worker_finalizer_handoff(
+    list(site_a = "connection", site_b = "connection"), workers, completion,
+    .aggregate = identity)
+  expect_false(handoff$production_ready)
+  expect_identical(names(handoff$envelopes), names(workers))
+  expect_identical(calls, c("site_a:opening", "site_b:opening",
+                            "site_a:finalizer_ticket", "site_a:finalizer_seal",
+                            "site_b:finalizer_seal"))
+  expect_false(any(grepl("share|secret|storage|path|source", names(handoff),
+                         ignore.case = TRUE)))
+})
+
 test_that("configured fresh Cox worker relays one K2 schedule without outputs", {
   workers <- list(site_a = .formal_cox_fresh_worker_selector(),
                   site_b = utils::modifyList(.formal_cox_fresh_worker_selector(),

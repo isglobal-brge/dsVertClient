@@ -5,7 +5,7 @@
 .DSVERT_FORMAL_COX_WORKER_CONTROL_MAX_BYTES <- 2L * 1024L * 1024L
 .DSVERT_FORMAL_COX_WORKER_CONTROL_ACTIONS <- c(
   "host_start", "bind", "offer", "accept", "confirm", "poll", "relay", "result",
-  "completion", "opening", "commit")
+  "completion", "opening", "finalizer_ticket", "finalizer_seal", "commit")
 
 .dsvert_formal_cox_fresh_worker_sha256 <- function(value) {
   is.character(value) && length(value) == 1L && !is.na(value) &&
@@ -54,6 +54,20 @@
          .DSVERT_FORMAL_COX_WORKER_CONTROL_MAX_BYTES ||
        !grepl("^[A-Za-z0-9+/]+={0,2}$", payload$frame))) {
     stop("Configured fresh Cox worker requires a bounded opaque frame.",
+         call. = FALSE)
+  }
+  if (identical(action, "finalizer_ticket") &&
+      (!identical(fields, "headers") || !is.list(payload$headers) ||
+       length(payload$headers) != 2L || any(vapply(payload$headers, is.null,
+                                                    logical(1L))))) {
+    stop("Configured fresh Cox worker requires two finalizer headers.",
+         call. = FALSE)
+  }
+  if (identical(action, "finalizer_seal") &&
+      (!identical(fields, c("ticket", "headers")) || !is.list(payload$ticket) ||
+       !is.list(payload$headers) || length(payload$headers) != 2L ||
+       any(vapply(payload$headers, is.null, logical(1L))))) {
+    stop("Configured fresh Cox worker requires one ticket and two finalizer headers.",
          call. = FALSE)
   }
   if (!identical(action, "host_start")) {
@@ -293,6 +307,106 @@
   }
   names(openings) <- names(workers)
   openings
+}
+
+.dsvert_formal_cox_fresh_worker_base64 <- function(value, min_bytes, max_bytes) {
+  is.character(value) && length(value) == 1L && !is.na(value) &&
+    nchar(value, type = "bytes") >= min_bytes &&
+    nchar(value, type = "bytes") <= max_bytes &&
+    grepl("^[A-Za-z0-9+/]+={0,2}$", value)
+}
+
+# Continue a completed fresh worker only as far as the encrypted finalizer
+# handoff.  The return value has signed headers, a public ticket and opaque
+# ciphertext envelopes; it is deliberately not a Cox estimate or certificate.
+.dsvert_formal_cox_fresh_worker_finalizer_handoff <- function(
+    conns, workers, completion, .aggregate = DSI::datashield.aggregate) {
+  openings <- .dsvert_formal_cox_fresh_worker_openings(
+    conns, workers, completion, .aggregate = .aggregate)
+  roles <- vapply(openings, `[[`, character(1L), "role")
+  finalizer_index <- which(roles == "garbler")
+  if (length(finalizer_index) != 1L) {
+    stop("Configured fresh Cox headers have no designated finalizer.", call. = FALSE)
+  }
+  headers <- unname(openings)
+  ticket_reply <- .dsvert_formal_cox_fresh_worker_call(
+    conns[[finalizer_index]], workers[[finalizer_index]], "finalizer_ticket",
+    list(headers = headers), .aggregate = .aggregate)$payload
+  ticket_fields <- c(
+    "version", "family", "purpose", "artifact_id", "final_pair_root_sha256",
+    "plan_sha256", "pinset_sha256", "finalizer_peer_name", "finalizer_peer_id",
+    "finalizer_role", "recipient_x25519_public_key", "transport_key_sha256",
+    "issuer_peer_name", "issuer_peer_id", "signature")
+  finalizer <- openings[[finalizer_index]]
+  valid_ticket <- is.list(ticket_reply) && identical(names(ticket_reply),
+                                                       c("ticket", "replayed")) &&
+    is.list(ticket_reply$ticket) && !is.null(names(ticket_reply$ticket)) &&
+    identical(names(ticket_reply$ticket), ticket_fields) &&
+    is.logical(ticket_reply$replayed) && length(ticket_reply$replayed) == 1L &&
+    !is.na(ticket_reply$replayed) && identical(ticket_reply$ticket$version,
+                                                "dsvert-typed-finalizer-handoff-ticket-v1") &&
+    identical(ticket_reply$ticket$family, "formal_cox") &&
+    identical(ticket_reply$ticket$purpose, "formal_cox_blockwise_sticky_opening_v1") &&
+    identical(ticket_reply$ticket$artifact_id, finalizer$artifact_id) &&
+    identical(ticket_reply$ticket$plan_sha256, finalizer$plan_sha256) &&
+    identical(ticket_reply$ticket$pinset_sha256, finalizer$pinset_sha256) &&
+    identical(ticket_reply$ticket$finalizer_peer_name, finalizer$peer_name) &&
+    identical(ticket_reply$ticket$finalizer_peer_id, finalizer$peer_id) &&
+    identical(ticket_reply$ticket$finalizer_role, "garbler") &&
+    identical(ticket_reply$ticket$issuer_peer_name, finalizer$peer_name) &&
+    identical(ticket_reply$ticket$issuer_peer_id, finalizer$peer_id) &&
+    all(vapply(c("final_pair_root_sha256", "transport_key_sha256"), function(field)
+      .dsvert_formal_cox_fresh_worker_sha256(ticket_reply$ticket[[field]]), logical(1L))) &&
+    .dsvert_formal_cox_fresh_worker_base64(
+      ticket_reply$ticket$recipient_x25519_public_key, 40L, 48L) &&
+    .dsvert_formal_cox_fresh_worker_base64(ticket_reply$ticket$signature, 80L, 96L)
+  if (!isTRUE(valid_ticket)) {
+    stop("Configured fresh Cox worker returned an invalid finalizer ticket.",
+         call. = FALSE)
+  }
+  ticket <- ticket_reply$ticket
+  envelope_fields <- c(
+    "version", "family", "purpose", "artifact_id", "final_pair_root_sha256",
+    "plan_sha256", "pinset_sha256", "ticket_sha256", "finalizer_peer_name",
+    "finalizer_peer_id", "recipient_transport_key_sha256", "sender_peer_name",
+    "sender_peer_id", "sender_role", "payload_kind", "payload_sha256",
+    "ciphertext_sha256", "ciphertext", "signature")
+  envelopes <- Map(function(conn, worker, header) {
+    reply <- .dsvert_formal_cox_fresh_worker_call(
+      conn, worker, "finalizer_seal", list(ticket = ticket, headers = headers),
+      .aggregate = .aggregate)$payload
+    valid <- is.list(reply) && identical(names(reply), c("envelope", "replayed")) &&
+      is.list(reply$envelope) && !is.null(names(reply$envelope)) &&
+      identical(names(reply$envelope), envelope_fields) &&
+      is.logical(reply$replayed) && length(reply$replayed) == 1L && !is.na(reply$replayed) &&
+      identical(reply$envelope$version, "dsvert-typed-finalizer-handoff-envelope-v1") &&
+      identical(reply$envelope$family, ticket$family) &&
+      identical(reply$envelope$purpose, ticket$purpose) &&
+      identical(reply$envelope$artifact_id, ticket$artifact_id) &&
+      identical(reply$envelope$final_pair_root_sha256, ticket$final_pair_root_sha256) &&
+      identical(reply$envelope$plan_sha256, ticket$plan_sha256) &&
+      identical(reply$envelope$pinset_sha256, ticket$pinset_sha256) &&
+      identical(reply$envelope$finalizer_peer_name, ticket$finalizer_peer_name) &&
+      identical(reply$envelope$finalizer_peer_id, ticket$finalizer_peer_id) &&
+      identical(reply$envelope$recipient_transport_key_sha256, ticket$transport_key_sha256) &&
+      identical(reply$envelope$sender_peer_name, header$peer_name) &&
+      identical(reply$envelope$sender_peer_id, header$peer_id) &&
+      identical(reply$envelope$sender_role, header$role) &&
+      identical(reply$envelope$payload_kind, "formal_cox_opening_local_output_v1") &&
+      all(vapply(c("ticket_sha256", "payload_sha256", "ciphertext_sha256"), function(field)
+        .dsvert_formal_cox_fresh_worker_sha256(reply$envelope[[field]]), logical(1L))) &&
+      .dsvert_formal_cox_fresh_worker_base64(reply$envelope$ciphertext, 80L,
+                                              .DSVERT_FORMAL_COX_WORKER_CONTROL_MAX_BYTES) &&
+      .dsvert_formal_cox_fresh_worker_base64(reply$envelope$signature, 80L, 96L)
+    if (!isTRUE(valid)) {
+      stop("Configured fresh Cox worker returned an invalid finalizer envelope.",
+           call. = FALSE)
+    }
+    reply$envelope
+  }, conns, workers, openings)
+  names(envelopes) <- names(workers)
+  list(headers = openings, ticket = ticket, envelopes = envelopes,
+       production_ready = FALSE)
 }
 
 # Run the fixed two-peer schedule by forwarding only authenticated opaque
