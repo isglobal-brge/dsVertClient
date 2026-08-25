@@ -236,7 +236,8 @@
 }
 
 .dsvert_dp_capsule_manifest_string_array <- function(value, what) {
-  valid <- (is.character(value) && length(value) == 1L && !is.na(value)) ||
+  valid <- (is.character(value) && length(value) > 0L &&
+              is.null(names(value)) && !anyNA(value)) ||
     (is.list(value) && is.null(names(value)) && length(value) > 0L &&
        all(vapply(value, .dsvert_dp_is_string, logical(1L))))
   result <- if (isTRUE(valid)) {
@@ -281,7 +282,8 @@
 }
 
 .dsvert_dp_capsule_manifest_number_array <- function(value, what) {
-  result <- if (is.numeric(value) && length(value) == 1L) {
+  result <- if (is.numeric(value) && length(value) > 0L &&
+               is.null(names(value))) {
     as.numeric(value)
   } else if (is.list(value) && is.null(names(value)) && length(value) > 0L &&
              all(vapply(value, .dsvert_dp_is_number, logical(1L)))) {
@@ -397,12 +399,15 @@
             .dsvert_dp_capsule_manifest_string_array(
               spec$predictors, "LMM fixed predictors"),
             error = function(error) character()) else character()
-          grid <- suppressWarnings(as.numeric(spec$variance_ratio_grid))
+          grid <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_number_array(
+              spec$variance_ratio_grid, "LMM fixed variance-ratio grid"),
+            error = function(error) numeric()) else numeric()
           valid <- isTRUE(valid) && length(predictors) &&
             !anyDuplicated(predictors) && !spec$outcome %in% predictors &&
             !spec$cluster %in% predictors && all(vapply(
               predictors, column_reference, logical(1L))) &&
-            is.numeric(spec$variance_ratio_grid) && length(grid) &&
+            length(grid) &&
             !anyNA(grid) && all(is.finite(grid)) && all(grid >= 0) &&
             identical(grid[[1L]], 0) && all(diff(grid) > 0)
         } else if (identical(spec$version, "random_intercept_v1")) {
@@ -446,6 +451,11 @@
       if (!isTRUE(valid)) {
         stop("A peer returned an invalid custodian workload specification",
              call. = FALSE)
+      }
+      if (identical(family, "gaussian") &&
+          identical(spec$version, "random_intercept_fixed_v2")) {
+        spec$predictors <- predictors
+        spec$variance_ratio_grid <- grid
       }
       normalized[[analysis_id]] <- spec
     }

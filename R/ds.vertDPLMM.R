@@ -57,6 +57,9 @@
   predictor_order <- tryCatch(.dsvert_dp_capsule_manifest_string_array(
     artifact$predictor_order, "LMM predictor order"),
     error = function(error) character())
+  design_terms <- tryCatch(.dsvert_dp_capsule_manifest_string_array(
+    artifact$design_terms, "LMM design terms"),
+    error = function(error) character())
   predictors <- artifact$predictors
   predictors_valid <- is.list(predictors) && !is.null(names(predictors)) &&
     !anyNA(names(predictors)) && !anyDuplicated(names(predictors)) &&
@@ -71,8 +74,10 @@
       predictors, function(value) !identical(value$column, outcome$column) &&
         !identical(value$column, cluster$column), logical(1L)))
   }
-  grid <- suppressWarnings(as.numeric(artifact$variance_ratio_grid))
-  grid_valid <- is.numeric(artifact$variance_ratio_grid) && length(grid) &&
+  grid <- tryCatch(.dsvert_dp_capsule_manifest_number_array(
+    artifact$variance_ratio_grid, "LMM fixed variance-ratio grid"),
+    error = function(error) numeric())
+  grid_valid <- length(grid) &&
     !anyNA(grid) && all(is.finite(grid)) && all(grid >= 0) &&
     identical(grid[[1L]], 0) && all(diff(grid) > 0)
   bits <- suppressWarnings(as.numeric(artifact$numeric_grid_bits))
@@ -109,7 +114,7 @@
     .dsvert_dp_is_integer(artifact$observation_capacity, capacity, capacity) &&
     .dsvert_dp_is_integer(cluster_capacity, 2L, capacity) &&
     isTRUE(grid_valid) && isTRUE(artifact$intercept) &&
-    identical(artifact$design_terms, c("(Intercept)", predictor_order)) &&
+    identical(design_terms, c("(Intercept)", predictor_order)) &&
     .dsvert_dp_is_integer(artifact$coordinate_count,
                           coordinate_count, coordinate_count) &&
     identical(artifact$coordinate_order, paste(
@@ -162,6 +167,7 @@
   artifact$predictors <- predictors
   artifact$predictor_order <- predictor_order
   artifact$design_terms <- c("(Intercept)", predictor_order)
+  artifact$variance_ratio_grid <- grid
   artifact$coordinate_count <- as.integer(coordinate_count)
   artifact
 }

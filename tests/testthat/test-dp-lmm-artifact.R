@@ -177,6 +177,16 @@ test_that("fixed-effect random-intercept LMM validates and solves GLS coordinate
   expect_true(all(is.finite(c(fit$coefficients, fit$sigma2,
                               fit$sigma_b2, fit$icc))))
   expect_true(fit$icc >= 0 && fit$icc <= 1)
+  wire <- fixture$manifest
+  wire$workload$families$gaussian_models$artifacts$lmm_fixed$
+    design_terms <- list("(Intercept)", "x")
+  wire$workload$families$gaussian_models$artifacts$lmm_fixed$
+    variance_ratio_grid <- as.list(c(0, 0.5, 2))
+  normalized_wire <- dsVertClient:::.dsvert_dp_lmm_fixed_artifact(
+    wire, "protected", "lmm_fixed", "server_a", "add_remove_patient", 256,
+    20)
+  expect_identical(normalized_wire$design_terms, c("(Intercept)", "x"))
+  expect_identical(normalized_wire$variance_ratio_grid, c(0, 0.5, 2))
   tampered <- fixture$manifest
   tampered$workload$families$gaussian_models$artifacts$lmm_fixed$
     variance_ratio_grid <- c(0.1, 1)
