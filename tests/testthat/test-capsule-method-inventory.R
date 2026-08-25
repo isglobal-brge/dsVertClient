@@ -268,13 +268,13 @@ test_that("verified legacy disclosure evidence cannot regress to omission", {
   expect_identical(nrow(lmm$legacy_remote_call_evidence[[1L]]), 0L)
   mi <- row_for(inventory, "ds.vertMI")
   expect_identical(mi$current_route_status,
-                   "client_only_validated_synopsis_postprocess")
+                   "formal_sticky_synopsis_artifact")
   expect_identical(mi$migration_feasibility,
                    "synopsis_release_implemented")
   expect_identical(nrow(mi$legacy_remote_call_evidence[[1L]]), 0L)
   glmm <- row_for(inventory, "ds.vertGLMM")
   expect_identical(glmm$current_route_status,
-                   "client_only_validated_synopsis_postprocess")
+                   "formal_sticky_synopsis_artifact")
   expect_identical(glmm$migration_feasibility,
                    "synopsis_release_implemented")
   expect_identical(nrow(glmm$legacy_remote_call_evidence[[1L]]), 0L)
@@ -578,7 +578,7 @@ test_that("MI is a scoped Synopsis postprocessor, not the retired mutating route
   inventory <- .dsvert_capsule_method_inventory()
   mi <- inventory[inventory$method %in% c("ds.vertMI", "ds.vert.mi"), ]
   expect_true(all(mi$current_route_status ==
-                    "client_only_validated_synopsis_postprocess"))
+                    "formal_sticky_synopsis_artifact"))
   expect_true(all(mi$migration_feasibility ==
                     "synopsis_release_implemented"))
   expect_true(all(mi$artifact_implementation_state ==
@@ -654,7 +654,7 @@ test_that("NB2 slope and categorical MI compatibility routes retain explicit sco
       "client_only_validated_capsule_postprocess"))
   expect_true(all(inventory$current_route_status[
     inventory$method %in% c("ds.vertMI", "ds.vert.mi")] ==
-      "client_only_validated_synopsis_postprocess"))
+      "formal_sticky_synopsis_artifact"))
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertNBFullRegTheta", "ds.vert.nb"))$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertMI", "ds.vert.mi"))$

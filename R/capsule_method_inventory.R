@@ -671,7 +671,7 @@
     "synopsis_release_implemented",
     character(),
     c("ds.vert.glmm" = "ds.vertGLMM"),
-    current_route_status = "client_only_validated_synopsis_postprocess",
+    current_route_status = "formal_sticky_synopsis_artifact",
     artifact_implementation_state =
       "validated_same_owner_synopsis_adapter_implemented",
     inference_implementation_state = "synopsis_postprocess_implemented")
@@ -712,7 +712,7 @@
     "synopsis_release_implemented",
     character(),
     c("ds.vert.mi" = "ds.vertMI"),
-    current_route_status = "client_only_validated_synopsis_postprocess",
+    current_route_status = "formal_sticky_synopsis_artifact",
     artifact_implementation_state = "validated_synopsis_adapter_implemented",
     inference_implementation_state =
       "categorical_mcar_completion_without_sampling_inference")
