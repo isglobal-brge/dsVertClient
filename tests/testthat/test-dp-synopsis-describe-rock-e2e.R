@@ -2231,7 +2231,7 @@ test_that("real random-intercept LMM Synopsis is plausible and Rock-replayable a
   }
 })
 
-test_that("real fixed-effect random-intercept LMM is source-scale plausible and Rock-replayable at K=2/3/5", {
+test_that("real additive fixed-effect random-intercept LMM is source-scale plausible and Rock-replayable at K=2/3/5", {
   .synopsis_real_e2e_only("lmm")
   server_ns <- .synopsis_describe_real_e2e_server()
   lmm <- get(".dsvert_dp_lmm_impl", asNamespace("dsVertClient"),
@@ -2244,16 +2244,21 @@ test_that("real fixed-effect random-intercept LMM is source-scale plausible and 
     policy$categorical_levels$site_peer_a <- sites
     policy$capsule_workload_specs$gaussian$lmm_primary <- list(
       version = "random_intercept_fixed_v2", dataset = "data_peer_a",
-      outcome = "y_peer_a", cluster = "site_peer_a", predictors = "x_peer_a",
+      outcome = "y_peer_a", cluster = "site_peer_a",
+      predictors = c("x_peer_a", "z_peer_a"),
       intercept = TRUE, max_patients_per_cluster = 2L,
       variance_ratio_grid = c(0, 0.5, 2))
+    policy$numeric_bounds$z_peer_a <- c(-2, 2)
+    policy$capsule_workload_scope$numeric_moments <- c(
+      "x_peer_a", "z_peer_a")
     fixture$policies$peer_a <- policy
     data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
     data$site_peer_a <- rep(sites, each = 2L)
     site_effect <- rep(seq(1.25, 2.75, length.out = length(sites)), each = 2L)
     within <- rep(c(-0.30, 0.30), length.out = nrow(data))
+    data$z_peer_a <- rep(c(-2, -2, 2, 2), length.out = nrow(data))
     data$y_peer_a <- pmin(10, pmax(0, 2 + 0.45 * data$x_peer_a +
-      site_effect + within))
+      0.35 * data$z_peer_a + site_effect + within))
     fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
     conns <- stats::setNames(lapply(fixture$peers, function(peer) {
       structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
@@ -2270,6 +2275,8 @@ test_that("real fixed-effect random-intercept LMM is source-scale plausible and 
                 fit$coefficients[["(Intercept)"]] < 5)
     expect_true(fit$coefficients[["x_peer_a"]] > 0.25 &&
                 fit$coefficients[["x_peer_a"]] < 0.65)
+    expect_true(fit$coefficients[["z_peer_a"]] > 0.15 &&
+                fit$coefficients[["z_peer_a"]] < 0.55)
     expect_true(fit$sigma2 >= 0 && fit$sigma_b2 >= 0 &&
                 fit$icc >= 0 && fit$icc <= 1)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
@@ -2283,11 +2290,11 @@ test_that("real fixed-effect random-intercept LMM is source-scale plausible and 
       .dsvert_dp_lmm_impl = route_lmm,
       list(
         lmm = ds.vertLMM(
-          y_peer_a ~ x_peer_a, data = "data_peer_a",
+          y_peer_a ~ x_peer_a + z_peer_a, data = "data_peer_a",
           cluster_col = "site_peer_a", analysis_id = "lmm_primary",
           reml = FALSE, datasources = conns),
         k3 = if (k >= 3L) ds.vertLMM.k3(
-          y_peer_a ~ x_peer_a, data = "data_peer_a",
+          y_peer_a ~ x_peer_a + z_peer_a, data = "data_peer_a",
           cluster_col = "site_peer_a", analysis_id = "lmm_primary",
           datasources = conns) else NULL),
       .package = "dsVertClient")
