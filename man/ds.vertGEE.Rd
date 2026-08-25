@@ -20,6 +20,7 @@ ds.vertGEE(
   verbose = TRUE,
   datasources = NULL,
   formal_analysis_id = NULL,
+  fresh_formal_analysis_id = NULL,
   dp_analysis_id = NULL
 )
 }
@@ -34,8 +35,12 @@ release and are never silently ignored.}
 \item{formal_analysis_id}{Custodian-configured completed formal GLM
 certificate selector.}
 
+\item{fresh_formal_analysis_id}{Custodian-configured binomial/Poisson
+durable GLM selector. It is mutually exclusive with the completed
+certificate and Gaussian Synopsis selectors.}
+
 \item{dp_analysis_id}{Custodian-configured signed Gaussian Synopsis
-artifact selector. It is mutually exclusive with \code{formal_analysis_id}.}
+artifact selector. It is mutually exclusive with both formal selectors.}
 }
 \value{
 A \code{ds.vertGEE} point-estimate object without covariance,
@@ -45,6 +50,8 @@ standard errors, working-correlation estimate or inference.
 With a custodian-configured \code{formal_analysis_id}, this
 frontdoor returns the completed, two-authority-certified binomial or
 Poisson GLM point estimate under an independence working correlation.
+\code{fresh_formal_analysis_id} first completes that same configured
+durable GLM analysis, then consumes its public result.
 With \code{dp_analysis_id}, it reads the signed Gaussian Synopsis fit
 under that same score equation. Neither route chooses privacy controls or
 exposes a cluster statistic.
@@ -53,8 +60,7 @@ exposes a cluster statistic.
 This is deliberately narrower than a general GEE: cluster ids,
 exchangeable and AR(1) correlations, sandwich covariance, standard errors
 and inference remain unavailable until their contribution-bounded,
-protected artifacts exist. Calls without \code{formal_analysis_id} or
-\code{dp_analysis_id} keep failing locally before DSI.
+protected artifacts exist. Calls without a configured selector keep failing locally before DSI.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

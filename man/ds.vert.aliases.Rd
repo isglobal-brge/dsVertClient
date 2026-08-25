@@ -100,6 +100,7 @@ ds.vert.gee(
   precision = c("auto", "high", "fast"),
   datasources = NULL,
   formal_analysis_id = NULL,
+  fresh_formal_analysis_id = NULL,
   dp_analysis_id = NULL,
   ...
 )
@@ -193,11 +194,11 @@ estimator/route selector, fixed-point ring, and progress flag.}
 
 \item{formal_analysis_id, fresh_formal_analysis_id}{Custodian-owned selector
 for an already completed formal Cox profile, binomial/Poisson GLM certificate,
-or discrete-time public certificate. The fresh GLM selector is accepted only
-by \code{ds.vert.glm()} and only runs its configured durable analysis. The
-GEE adapter accepts only the formal GLM independence-working point-estimate
-scope, and the discrete selector remains a distinct fixed-grid pooled-logistic
-estimand.}
+or discrete-time public certificate. The fresh GLM selector is accepted by
+\code{ds.vert.glm()} and \code{ds.vert.gee()} only to run its configured
+durable analysis. The GEE adapter remains limited to the GLM
+independence-working point-estimate scope, and the discrete selector remains a
+distinct fixed-grid pooled-logistic estimand.}
 
 \item{analysis_id, dp_analysis_id}{Custodian-configured signed random-intercept
 or Gaussian artifact id. \code{analysis_id} is required by

@@ -540,8 +540,10 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add(c("ds.vertGEE", "ds.vert.gee"), "ds.vertGEE", "promoted",
       paste(
         "A completed two-authority formal binomial/Poisson GLM certificate",
-        "can be read as an independence-working GEE point estimate; the",
-        "score equation is the same and no new private computation occurs."),
+        "or the matching configured fresh durable GLM analysis can be read",
+        "as an independence-working GEE point estimate; the",
+        "score equation is the same and GEE adds no private computation",
+        "beyond that configured GLM analysis."),
       paste(
         "Only corstr='independence' is available. Cluster identifiers,",
         "exchangeable/AR(1) correlations, sandwich covariance, standard",

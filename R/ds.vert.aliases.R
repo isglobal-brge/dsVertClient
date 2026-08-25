@@ -61,9 +61,9 @@
 #' @param formal_analysis_id,fresh_formal_analysis_id Custodian-owned selector
 #'   for an already completed formal Cox profile, binomial/Poisson GLM
 #'   certificate, or discrete-time public certificate. The fresh GLM selector
-#'   is accepted only by \code{ds.vert.glm()} and only runs its configured
-#'   durable analysis. The GEE adapter accepts only the formal GLM
-#'   independence-working point-estimate scope, and the discrete selector
+#'   is accepted by \code{ds.vert.glm()} and \code{ds.vert.gee()} only to run
+#'   its configured durable analysis. The GEE adapter remains limited to the
+#'   GLM independence-working point-estimate scope, and the discrete selector
 #'   remains a distinct fixed-grid pooled-logistic estimand.
 #' @param max_iter,inner_iter,max_outer,tol Iteration caps and convergence
 #'   tolerance for the iterative fits.
@@ -525,12 +525,18 @@ ds.vert.lmm <- function(formula, data = NULL, cluster_col,
 ds.vert.gee <- function(formula, data = NULL,
                         precision = c("auto", "high", "fast"),
                         datasources = NULL, formal_analysis_id = NULL,
+                        fresh_formal_analysis_id = NULL,
                         dp_analysis_id = NULL, ...) {
-  if (!is.null(formal_analysis_id) && !is.null(dp_analysis_id)) {
-    stop("formal_analysis_id and dp_analysis_id are mutually exclusive",
+  selected_analysis_ids <- sum(!vapply(
+    list(formal_analysis_id, fresh_formal_analysis_id, dp_analysis_id),
+    is.null, logical(1L)))
+  if (selected_analysis_ids > 1L) {
+    stop(paste(
+      "formal_analysis_id, fresh_formal_analysis_id and dp_analysis_id are",
+      "mutually exclusive"),
          call. = FALSE)
   }
-  if (!is.null(formal_analysis_id) || !is.null(dp_analysis_id)) {
+  if (selected_analysis_ids == 1L) {
     explicit_arguments <- names(match.call())[-1L]
     if ("precision" %in% explicit_arguments) {
       stop(paste(
@@ -540,6 +546,8 @@ ds.vert.gee <- function(formula, data = NULL,
     arguments <- list(formula = formula, data = data, datasources = datasources)
     if (!is.null(formal_analysis_id)) {
       arguments$formal_analysis_id <- formal_analysis_id
+    } else if (!is.null(fresh_formal_analysis_id)) {
+      arguments$fresh_formal_analysis_id <- fresh_formal_analysis_id
     } else {
       arguments$dp_analysis_id <- dp_analysis_id
     }

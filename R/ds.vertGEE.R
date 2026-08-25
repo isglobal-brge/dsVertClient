@@ -2,21 +2,26 @@
 #' @description With a custodian-configured \code{formal_analysis_id}, this
 #'   frontdoor returns the completed, two-authority-certified binomial or
 #'   Poisson GLM point estimate under an independence working correlation.
+#'   \code{fresh_formal_analysis_id} first completes that same configured
+#'   durable GLM analysis, then consumes its public result.
 #'   With \code{dp_analysis_id}, it reads the signed Gaussian Synopsis fit
 #'   under that same score equation. Neither route chooses privacy controls or
 #'   exposes a cluster statistic.
 #' @details This is deliberately narrower than a general GEE: cluster ids,
 #'   exchangeable and AR(1) correlations, sandwich covariance, standard errors
 #'   and inference remain unavailable until their contribution-bounded,
-#'   protected artifacts exist. Calls without \code{formal_analysis_id} or
-#'   \code{dp_analysis_id} keep failing locally before DSI.
+#'   protected artifacts exist. Calls without a configured selector keep
+#'   failing locally before DSI.
 #' @param formula,data,family,corstr,verbose,datasources Formula, registered
 #'   data name, Gaussian/binomial/Poisson family, working correlation, progress flag and
 #'   DataSHIELD connections. Only \code{corstr = "independence"} is available.
 #' @param formal_analysis_id Custodian-configured completed formal GLM
 #'   certificate selector.
+#' @param fresh_formal_analysis_id Custodian-configured binomial/Poisson
+#'   durable GLM selector. It is mutually exclusive with the completed
+#'   certificate and Gaussian Synopsis selectors.
 #' @param dp_analysis_id Custodian-configured signed Gaussian Synopsis
-#'   artifact selector. It is mutually exclusive with \code{formal_analysis_id}.
+#'   artifact selector. It is mutually exclusive with both formal selectors.
 #' @param id_col,order_col,max_iter,tol,lambda,working_max_iter,ring,binomial_sigmoid_intervals
 #'   Retained clustered-GEE controls. They are unavailable with a formal point
 #'   release and are never silently ignored.
@@ -34,9 +39,16 @@ ds.vertGEE <- function(formula, data = NULL,
                        ring = 63L,
                        binomial_sigmoid_intervals = NULL,
                        verbose = TRUE, datasources = NULL,
-                       formal_analysis_id = NULL, dp_analysis_id = NULL) {
-  if (!is.null(formal_analysis_id) && !is.null(dp_analysis_id)) {
-    stop("formal_analysis_id and dp_analysis_id are mutually exclusive",
+                       formal_analysis_id = NULL,
+                       fresh_formal_analysis_id = NULL,
+                       dp_analysis_id = NULL) {
+  selected_analysis_ids <- sum(!vapply(
+    list(formal_analysis_id, fresh_formal_analysis_id, dp_analysis_id),
+    is.null, logical(1L)))
+  if (selected_analysis_ids > 1L) {
+    stop(paste(
+      "formal_analysis_id, fresh_formal_analysis_id and dp_analysis_id are",
+      "mutually exclusive"),
          call. = FALSE)
   }
   if (!is.null(dp_analysis_id)) {
@@ -56,7 +68,17 @@ ds.vertGEE <- function(formula, data = NULL,
       formula = if (missing(formula)) NULL else formula,
       data = data, family = family, id_col = id_col, order_col = order_col,
       corstr = corstr, verbose = verbose, datasources = datasources,
-      formal_analysis_id = formal_analysis_id))
+      analysis_id = formal_analysis_id))
+  }
+  if (!is.null(fresh_formal_analysis_id)) {
+    corstr <- match.arg(corstr)
+    return(.dsvert_formal_gee_independence_adapter(
+      explicit_arguments = names(match.call())[-1L],
+      formula = if (missing(formula)) NULL else formula,
+      data = data, family = family, id_col = id_col, order_col = order_col,
+      corstr = corstr, verbose = verbose, datasources = datasources,
+      analysis_id = fresh_formal_analysis_id,
+      selector_name = "fresh_formal_analysis_id"))
   }
   return(.dsvert_block_retired_remote_route("gee", .allow_test = FALSE))
 }
@@ -128,43 +150,53 @@ ds.vertGEE <- function(formula, data = NULL,
 
 .dsvert_formal_gee_independence_adapter <- function(
     explicit_arguments, formula, data, family, id_col, order_col, corstr,
-    verbose, datasources, formal_analysis_id) {
+    verbose, datasources, analysis_id,
+    selector_name = "formal_analysis_id") {
+  selector_name <- match.arg(
+    selector_name, c("formal_analysis_id", "fresh_formal_analysis_id"))
   if (!is.character(family) || length(family) != 1L || is.na(family) ||
       !family %in% c("binomial", "poisson")) {
     stop(paste(
-      "formal_analysis_id GEE supports only family='binomial' or",
+      selector_name, "GEE supports only family='binomial' or",
       "family='poisson'"), call. = FALSE)
   }
   if (!is.character(corstr) || length(corstr) != 1L || is.na(corstr) ||
       !identical(corstr, "independence")) {
     stop(paste(
-      "formal_analysis_id GEE supports only corstr='independence';",
+      selector_name, "GEE supports only corstr='independence';",
       "cluster working correlations remain unavailable"), call. = FALSE)
   }
   if (!is.null(id_col) || !is.null(order_col)) {
     stop(paste(
-      "formal_analysis_id GEE does not accept cluster id_col or order_col;",
+      selector_name, "GEE does not accept cluster id_col or order_col;",
       "robust clustered covariance remains unavailable"), call. = FALSE)
   }
   allowed <- c("formula", "data", "family", "corstr", "verbose",
-               "datasources", "formal_analysis_id")
+               "datasources", selector_name)
   unexpected <- setdiff(explicit_arguments, allowed)
   if (length(unexpected)) {
     stop(paste(
-      "formal_analysis_id GEE does not accept legacy controls:",
+      selector_name, "GEE does not accept legacy controls:",
       paste(sort(unexpected, method = "radix"), collapse = ", ")),
       call. = FALSE)
   }
-  fit <- ds.vertGLM(
+  glm_arguments <- list(
     formula = formula, data = data, family = family, verbose = verbose,
-    datasources = datasources, formal_analysis_id = formal_analysis_id)
+    datasources = datasources)
+  glm_arguments[[selector_name]] <- analysis_id
+  fit <- do.call(ds.vertGLM, glm_arguments)
+  expected_called_via <- if (identical(
+    selector_name, "fresh_formal_analysis_id")) {
+    "ds.vertGLM_fresh_formal_analysis_id"
+  } else "ds.vertGLM_formal_analysis_id"
   if (!inherits(fit, "dsvert_formal_dp_glm") ||
       !identical(fit$family, family) ||
       !is.numeric(fit$coefficients) || !length(fit$coefficients) ||
       is.null(names(fit$coefficients)) || any(!is.finite(fit$coefficients)) ||
       !is.null(fit$covariance) || !is.null(fit$std_errors) ||
       !isTRUE(fit$source_values_exposed == FALSE) ||
-      !isTRUE(fit$intermediate_values_exposed == FALSE)) {
+      !isTRUE(fit$intermediate_values_exposed == FALSE) ||
+      !identical(fit$called_via, expected_called_via)) {
     stop("formal GLM point release cannot support formal independent GEE",
          call. = FALSE)
   }
@@ -175,7 +207,11 @@ ds.vertGEE <- function(formula, data = NULL,
     coefficients = fit$coefficients,
     artifact_id = fit$artifact_id,
     certificate_sha256 = fit$certificate_sha256,
-    formal_analysis_id = fit$formal_analysis_id,
+    formal_analysis_id = if (identical(selector_name, "formal_analysis_id")) {
+      fit$formal_analysis_id
+    } else NULL,
+    fresh_formal_analysis_id = if (identical(
+      selector_name, "fresh_formal_analysis_id")) analysis_id else NULL,
     formula_sha256 = fit$formula_sha256,
     robust_covariance = NULL,
     std_errors = NULL,
@@ -185,7 +221,7 @@ ds.vertGEE <- function(formula, data = NULL,
     intermediate_values_exposed = FALSE,
     production_ready = FALSE,
     inference = "unavailable_without_protected_cluster_score_and_meat",
-    called_via = "ds.vertGEE_formal_analysis_id")
+    called_via = paste0("ds.vertGEE_", selector_name))
   class(result) <- c("dsvert_formal_dp_gee", "ds.vertGEE", "list")
   result
 }
