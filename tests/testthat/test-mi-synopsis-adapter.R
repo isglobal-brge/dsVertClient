@@ -144,6 +144,43 @@ test_that("MI completes multiple categorical marginals without claiming a joint 
     "family = 'auto'")
 })
 
+test_that("the MI aliases forward one multivariable categorical request", {
+  seen <- NULL
+  response <- structure(list(
+    status = "ok",
+    method = "signed_categorical_mcar_independent_marginals_v2",
+    variables = list(), source_values_exposed = FALSE,
+    intermediate_values_exposed = FALSE, production_ready = FALSE),
+    class = c("ds.vertMI", "list"))
+  testthat::local_mocked_bindings(
+    .dsvert_datasources = function(value) value,
+    .dsvert_federation_argument = function(value, datasources) {
+      list(value = value, datasources = datasources)
+    },
+    .dsvert_mi_synopsis_result_v1 = function(
+        formula, data_name, impute_columns, m, family, datasources, .aggregate) {
+      seen <<- list(
+        formula = formula, data_name = data_name,
+        impute_columns = impute_columns, m = m, family = family,
+        datasources = datasources)
+      response
+    },
+    .package = "dsVertClient")
+
+  fit <- ds.vert.mi(
+    cbind(outcome, exposure) ~ 1, data = "protected",
+    impute_columns = c("outcome", "exposure"), m = 6L,
+    family = "auto", datasources = list(site_a = structure(list(), class = "mock")))
+
+  expect_s3_class(fit, "ds.vertMI")
+  expect_identical(fit$frontdoor, "ds.vert.mi")
+  expect_identical(seen$data_name, "protected")
+  expect_identical(seen$impute_columns, c("outcome", "exposure"))
+  expect_identical(seen$m, 6L)
+  expect_identical(seen$family, "auto")
+  expect_identical(seen$formula, cbind(outcome, exposure) ~ 1)
+})
+
 test_that("MI frontdoor rejects an unbound or non-strict marginal", {
   fixture <- .mi_synopsis_adapter_fixture()
   bad_frequency <- function(...) {

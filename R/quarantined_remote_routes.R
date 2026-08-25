@@ -57,7 +57,10 @@
   mi = list(
     method = "ds.vertMI",
     state = "legacy_mutating_imputation_route_quarantined",
-    replacement = "No disclosure-safe multiple-imputation replacement is released."),
+    replacement = paste0(
+      "Use ds.vertMI(..., cbind(outcome1, outcome2, ...) ~ 1) for ",
+      "signed categorical MCAR independent-marginal completions; joint or ",
+      "chained imputation remains unavailable.")),
   lasso_iter = list(
     method = "ds.vertLASSOIter",
     state = "binomial_poisson_lasso_path_unavailable",
