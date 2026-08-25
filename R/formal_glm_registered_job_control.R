@@ -81,7 +81,10 @@
                "phase21_authorization_import", "phase21_publication",
                "phase21_commit", "phase21_commit_import", "phase21_ack",
                "phase21_ack_import", "phase21_cleanup",
-               "phase21_cleanup_import")
+               "phase21_cleanup_import",
+               "phase16_postselected_commitment", "phase16_postselected_proposal",
+               "phase16_postselected_attestation", "phase16_postselected_sign",
+               "phase16_postselected_finalize")
   if (!is.character(action) || length(action) != 1L || is.na(action) ||
       !action %in% actions || !is.list(payload)) {
     stop("Registered formal GLM job control requires one closed action and payload.",
@@ -93,6 +96,32 @@
            call. = FALSE)
     }
     payload$frame <- .dsvert_formal_glm_registered_job_base64(payload$frame)
+  }
+  if (startsWith(action, "phase16_postselected_")) {
+    commitment <- identical(action, "phase16_postselected_commitment")
+    expected <- switch(action,
+      phase16_postselected_commitment = character(),
+      phase16_postselected_proposal = 2L,
+      phase16_postselected_attestation = 3L,
+      phase16_postselected_sign = 5L,
+      phase16_postselected_finalize = NA_integer_)
+    valid <- if (commitment) {
+      identical(names(payload), character())
+    } else {
+      is.list(payload) && identical(names(payload), "frames") &&
+        is.character(payload$frames) && is.null(names(payload$frames)) &&
+        !anyNA(payload$frames) &&
+        (is.na(expected) && length(payload$frames) >= 7L ||
+         !is.na(expected) && length(payload$frames) == expected)
+    }
+    if (!isTRUE(valid)) {
+      stop("Registered formal GLM post-Selected control requires bounded opaque frames.",
+           call. = FALSE)
+    }
+    if (!commitment) {
+      payload$frames <- unname(vapply(payload$frames,
+        .dsvert_formal_glm_registered_job_base64, character(1L)))
+    }
   }
   replies <- .dsvert_aggregate_strict(
     conns = conn,

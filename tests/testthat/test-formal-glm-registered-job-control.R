@@ -88,6 +88,38 @@ test_that("registered formal GLM control relays only opaque Phase21 frames", {
     "one opaque frame")
 })
 
+test_that("registered formal GLM control relays bounded post-Selected frames", {
+  conn <- list(site_a = structure(list(), class = "mock"))
+  receipt <- .formal_glm_registered_job_control_receipt()
+  seen <- NULL
+  testthat::local_mocked_bindings(
+    .dsvert_aggregate_strict = function(conns, expr, operation, .aggregate) {
+      seen <<- list(expr = expr, operation = operation)
+      list(site_a = list(
+        version = "dsvert-formal-glm-registered-phase20-job-control-response-v1",
+        action = "phase16_postselected_proposal",
+        payload = list(frame = "eyJwdWJsaWMiOnRydWV9"),
+        production_ready = FALSE))
+    },
+    .package = "dsVertClient")
+  reply <- .dsvert_formal_glm_registered_job_control_call(
+    conn, receipt, "phase16_postselected_proposal",
+    list(frames = unname(rep("e30=", 2L))), .aggregate = identity)
+  expect_identical(seen$operation, "registered formal GLM job control relay")
+  expect_identical(as.list(seen$expr[-1L]), list(
+    receipt = receipt, action = "phase16_postselected_proposal",
+    payload = list(frames = unname(rep("e30=", 2L)))))
+  expect_identical(reply$payload, list(frame = "eyJwdWJsaWMiOnRydWV9"))
+  expect_error(.dsvert_formal_glm_registered_job_control_call(
+    conn, receipt, "phase16_postselected_sign",
+    list(frames = unname(rep("e30=", 4L))), .aggregate = identity),
+    "bounded opaque frames")
+  expect_error(.dsvert_formal_glm_registered_job_control_call(
+    conn, receipt, "phase16_postselected_finalize",
+    list(frames = unname(c(rep("e30=", 6L), "not-base64"))), .aggregate = identity),
+    "invalid opaque frame")
+})
+
 test_that("registered formal GLM Phase21 driver preserves the signed lifecycle order", {
   conns <- list(site_a = structure(list(), class = "mock"),
                 site_b = structure(list(), class = "mock"))
