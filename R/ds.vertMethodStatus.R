@@ -430,7 +430,9 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       paste(
         "Bounded random-intercept method-of-moments components from one",
         "signed same-owner sticky Synopsis artifact; the compatibility names",
-        "require outcome ~ 1, signed analysis_id and matching cluster column."),
+        "require a signed analysis_id and matching cluster column. The",
+        "artifact may define outcome ~ 1 or one canonical additive",
+        "fixed-effect formula with its signed finite variance-ratio grid."),
       paste(
         "This is not ML/REML: random slopes, covariance estimates, standard",
         "errors, p-values and population-sampling inference are unavailable."))

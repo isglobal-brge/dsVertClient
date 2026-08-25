@@ -73,6 +73,9 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
                   release_contract == "formal_sticky_synopsis_artifact"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertLMM", "ds.vert.lmm"))$
                   status == "promoted"))
+  expect_match(
+    ds.vertMethodStatus("ds.vertLMM")$safe_scope,
+    "fixed-effect formula", fixed = TRUE)
   expect_true(all(ds.vertMethodStatus(c("ds.vertIPW", "ds.vert.ipw"))$
                   status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertIPW", "ds.vert.ipw"))$
