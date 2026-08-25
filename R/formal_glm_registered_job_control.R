@@ -68,11 +68,31 @@
   actions <- c("negotiate", "start", "health", "job_ref", "bind",
                "heartbeat", "poll", "relay", "compute", "terminal",
                "compute_start", "compute_status", "terminal_start",
-               "terminal_status")
+               "terminal_status",
+               "phase21_preflight", "phase21_preflight_bind",
+               "phase21_stage_start", "phase21_stage_status",
+               "phase21_stage_record", "phase21_stage_poll",
+               "phase21_stage_relay", "phase21_stage_import",
+               "phase21_ticket", "phase21_ticket_import", "phase21_seal",
+               "phase21_seal_import", "phase21_candidate",
+               "phase21_candidate_import", "phase21_candidate_verify",
+               "phase21_local_release_import", "phase21_base_certificate",
+               "phase21_base_certificate_import", "phase21_authorization",
+               "phase21_authorization_import", "phase21_publication",
+               "phase21_commit", "phase21_commit_import", "phase21_ack",
+               "phase21_ack_import", "phase21_cleanup",
+               "phase21_cleanup_import")
   if (!is.character(action) || length(action) != 1L || is.na(action) ||
       !action %in% actions || !is.list(payload)) {
     stop("Registered formal GLM job control requires one closed action and payload.",
          call. = FALSE)
+  }
+  if (startsWith(action, "phase21_")) {
+    if (!identical(names(payload), "frame")) {
+      stop("Registered formal GLM Phase21 control requires one opaque frame.",
+           call. = FALSE)
+    }
+    payload$frame <- .dsvert_formal_glm_registered_job_base64(payload$frame)
   }
   replies <- .dsvert_aggregate_strict(
     conns = conn,

@@ -62,6 +62,32 @@ test_that("registered formal GLM control admits opaque task actions", {
   expect_false(reply$production_ready)
 })
 
+test_that("registered formal GLM control relays only opaque Phase21 frames", {
+  conn <- list(site_a = structure(list(), class = "mock"))
+  receipt <- .formal_glm_registered_job_control_receipt()
+  seen <- NULL
+  testthat::local_mocked_bindings(
+    .dsvert_aggregate_strict = function(conns, expr, operation, .aggregate) {
+      seen <<- list(expr = expr, operation = operation)
+      list(site_a = list(
+        version = "dsvert-formal-glm-registered-phase20-job-control-response-v1",
+        action = "phase21_ticket",
+        payload = list(frame = "eyJyZWNvcmQiOnt9fQ=="),
+        production_ready = FALSE))
+    },
+    .package = "dsVertClient")
+  reply <- .dsvert_formal_glm_registered_job_control_call(
+    conn, receipt, "phase21_ticket", list(frame = "e30="),
+    .aggregate = identity)
+  expect_identical(seen$operation, "registered formal GLM job control relay")
+  expect_identical(as.list(seen$expr[-1L]), list(
+    receipt = receipt, action = "phase21_ticket", payload = list(frame = "e30=")))
+  expect_identical(reply$payload, list(frame = "eyJyZWNvcmQiOnt9fQ=="))
+  expect_error(.dsvert_formal_glm_registered_job_control_call(
+    conn, receipt, "phase21_ticket", structure(list(), names = character())),
+    "one opaque frame")
+})
+
 test_that("registered formal GLM control fails closed before and after DSI", {
   conn <- list(site_a = structure(list(), class = "mock"))
   receipt <- .formal_glm_registered_job_control_receipt()
