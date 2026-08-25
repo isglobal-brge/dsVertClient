@@ -122,6 +122,16 @@ test_that("the explicit Gaussian DP adapter remains reachable", {
   expect_identical(observed$family, "gaussian")
 })
 
+test_that("retired GLM guidance names the certified binomial and Poisson routes", {
+  contract <- get(
+    ".DSVERT_RETIRED_REMOTE_ROUTES", envir = asNamespace("dsVertClient"),
+    inherits = FALSE)$legacy_glm
+  expect_match(contract$replacement, "formal_analysis_id", fixed = TRUE)
+  expect_match(contract$replacement, "fresh_formal_analysis_id", fixed = TRUE)
+  expect_false(grepl("no released binomial/Poisson", contract$replacement,
+                     fixed = TRUE))
+})
+
 test_that("generic exact-GLM helpers are production-blocked before DSI", {
   testthat::local_mocked_bindings(
     .dsvert_quarantine_test_mode = function() FALSE,

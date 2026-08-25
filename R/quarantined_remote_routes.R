@@ -12,7 +12,10 @@
     state = "legacy_exact_glm_route_removed",
     replacement = paste0(
       "For Gaussian models use ds.vertGLM(..., dp_analysis_id=...) or ",
-      "ds.vertDPGaussian(); no released binomial/Poisson replacement exists.")),
+      "ds.vertDPGaussian(). For binomial/Poisson use ds.vertGLM(..., ",
+      "formal_analysis_id=...) to read a completed certificate, or ",
+      "fresh_formal_analysis_id=...) to resume its one custodian-configured ",
+      "durable analysis.")),
   cox = list(
     method = "ds.vertCox",
     state = "legacy_cox_route_quarantined",
