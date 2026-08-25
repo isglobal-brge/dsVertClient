@@ -270,6 +270,7 @@
   list(artifact_id = reference_shape$artifact_id,
        source_contract_sha256 = reference_shape$source_contract_sha256,
        total_blocks = reference_shape$total_blocks,
+       custodian_peers = reference_shape$custodian_peers,
        compute_peers = compute_peers, hosts = hosts, production_ready = FALSE)
 }
 
@@ -283,11 +284,14 @@
   ingress <- .dsvert_formal_glm_registered_fresh_ingress(
     conns, selector, .aggregate = .aggregate)
   fields <- c("artifact_id", "source_contract_sha256", "total_blocks",
-              "compute_peers", "hosts", "production_ready")
+              "custodian_peers", "compute_peers", "hosts", "production_ready")
   valid <- is.list(ingress) && !is.null(names(ingress)) && !anyNA(names(ingress)) &&
     !anyDuplicated(names(ingress)) && setequal(names(ingress), fields) &&
     .dsvert_formal_glm_registered_fresh_ingress_sha256(ingress$artifact_id) &&
     .dsvert_formal_glm_registered_fresh_ingress_sha256(ingress$source_contract_sha256) &&
+    is.character(ingress$custodian_peers) && length(ingress$custodian_peers) >= 2L &&
+    !anyNA(ingress$custodian_peers) && !anyDuplicated(ingress$custodian_peers) &&
+    identical(ingress$custodian_peers, names(conns)) &&
     is.character(ingress$compute_peers) && length(ingress$compute_peers) == 2L &&
     !anyNA(ingress$compute_peers) && !anyDuplicated(ingress$compute_peers) &&
     identical(names(ingress$hosts), ingress$compute_peers) &&
@@ -311,6 +315,9 @@
     stop("Registered fresh GLM hosts did not complete their durable handoff.",
          call. = FALSE)
   }
+  .dsvert_formal_glm_registered_phase16_postselected_run(
+    conns, ingress$hosts, selector, ingress$custodian_peers,
+    .aggregate = .aggregate)
   phase21 <- .dsvert_formal_glm_registered_phase21_run(
     conns[ingress$compute_peers], ingress$hosts,
     .aggregate = .aggregate, max_cycles = max_cycles)

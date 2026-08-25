@@ -437,6 +437,99 @@
   list(frame = .dsvert_formal_glm_registered_job_base64(value$frame))
 }
 
+# The post-Selected admission relay is deliberately frame-only.  The two
+# compute hosts reconstruct and verify every signed record in Rock; the client
+# merely preserves canonical, opaque order between the designated hosts and
+# any K>2 witnesses.
+.dsvert_formal_glm_registered_phase16_postselected_frame <- function(value) {
+  .dsvert_formal_glm_registered_phase21_frame(value, "post-Selected")$frame
+}
+
+.dsvert_formal_glm_registered_phase16_postselected_signature <- function(value) {
+  fields <- c("signature_pair_base64", "replayed")
+  valid <- is.list(value) && !is.null(names(value)) && !anyNA(names(value)) &&
+    !anyDuplicated(names(value)) && setequal(names(value), fields) &&
+    is.logical(value$replayed) && length(value$replayed) == 1L &&
+    !is.na(value$replayed)
+  if (!isTRUE(valid)) {
+    stop("A registered formal GLM witness returned an invalid post-Selected signature.",
+         call. = FALSE)
+  }
+  .dsvert_formal_glm_registered_job_base64(value$signature_pair_base64)
+}
+
+#' Relay K-of-K public Phase16 admission after Phase20 Selected
+#'
+#' The proposal is generated independently by both designated compute peers;
+#' witnesses see only that public candidate and the two compute attestations.
+#' This remains an internal continuation of the fresh route and never returns
+#' a fitted result, Phase20 evidence, or a DP share.
+.dsvert_formal_glm_registered_phase16_postselected_run <- function(
+    conns, receipts, selector, custodian_peers,
+    .aggregate = DSI::datashield.aggregate) {
+  peers <- names(receipts)
+  valid <- is.list(conns) && !is.null(names(conns)) &&
+    is.list(receipts) && is.character(peers) && length(peers) == 2L &&
+    !anyNA(peers) && !anyDuplicated(peers) && all(nzchar(peers)) &&
+    all(peers %in% names(conns)) &&
+    is.character(custodian_peers) && length(custodian_peers) >= 2L &&
+    !anyNA(custodian_peers) && !anyDuplicated(custodian_peers) &&
+    identical(custodian_peers, names(conns)) && all(peers %in% custodian_peers)
+  if (!isTRUE(valid)) {
+    stop("Registered formal GLM post-Selected admission requires canonical custodians.",
+         call. = FALSE)
+  }
+  lapply(receipts, .dsvert_formal_glm_registered_job_receipt)
+  call <- function(peer, action, payload) {
+    reply <- .dsvert_formal_glm_registered_job_control_call(
+      conns[peer], receipts[peer], action, payload, .aggregate = .aggregate)
+    .dsvert_formal_glm_registered_phase16_postselected_frame(
+      .dsvert_formal_glm_registered_job_control_reply(reply, action)$payload)
+  }
+  commitments <- vapply(peers, function(peer) call(
+    peer, "phase16_postselected_commitment", structure(list(), names = character())),
+    character(1L))
+  proposals <- vapply(peers, function(peer) call(
+    peer, "phase16_postselected_proposal", list(frames = unname(commitments))),
+    character(1L))
+  if (!all(proposals == proposals[[1L]])) {
+    stop("Registered formal GLM hosts proposed different post-Selected admissions.",
+         call. = FALSE)
+  }
+  proposal <- proposals[[1L]]
+  admitted <- c(proposal, unname(commitments))
+  attestations <- vapply(peers, function(peer) call(
+    peer, "phase16_postselected_attestation", list(frames = admitted)), character(1L))
+  signed <- c(admitted, unname(attestations))
+  signatures <- vapply(peers, function(peer) call(
+    peer, "phase16_postselected_sign", list(frames = signed)), character(1L))
+  witnesses <- setdiff(custodian_peers, peers)
+  if (length(witnesses)) {
+    witness_signatures <- vapply(witnesses, function(peer) {
+      reply <- .dsvert_formal_glm_registered_fresh_source_call(
+        conns[peer], selector, "postselected_sign", list(
+          proposal_base64 = proposal, attestation_frames = unname(attestations)),
+        .aggregate = .aggregate)
+      .dsvert_formal_glm_registered_phase16_postselected_signature(
+        .dsvert_formal_glm_registered_source_reply(reply, "postselected_sign")$payload)
+    }, character(1L))
+    signatures <- c(signatures, unname(witness_signatures))
+  }
+  final_frames <- c(signed, unname(signatures))
+  for (peer in peers) {
+    reply <- .dsvert_formal_glm_registered_job_control_call(
+      conns[peer], receipts[peer], "phase16_postselected_finalize",
+      list(frames = final_frames), .aggregate = .aggregate)
+    payload <- .dsvert_formal_glm_registered_job_control_reply(
+      reply, "phase16_postselected_finalize")$payload
+    if (!identical(payload, structure(list(), names = character()))) {
+      stop("A registered formal GLM host returned an invalid post-Selected finalization.",
+           call. = FALSE)
+    }
+  }
+  invisible(NULL)
+}
+
 .dsvert_formal_glm_registered_phase21_status <- function(frame) {
   raw <- tryCatch(jsonlite::base64_dec(frame), error = function(error) raw())
   canonical <- gsub("[\\r\\n]", "", jsonlite::base64_enc(raw))

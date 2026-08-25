@@ -74,6 +74,7 @@ test_that("registered fresh GLM ingress seals K source blocks and provisions two
   expect_identical(names(ingress$hosts), c("site_a", "site_b"))
   expect_identical(ingress$artifact_id, strrep("b", 64L))
   expect_identical(ingress$total_blocks, 1L)
+  expect_identical(ingress$custodian_peers, c("site_a", "site_b"))
   expect_false(ingress$production_ready)
   expect_identical(sum(vapply(calls, function(value)
     identical(value$action, "import_chunk"), logical(1L))), 4L)
@@ -109,7 +110,8 @@ test_that("registered fresh GLM run composes ingress with only the designated ho
                 site_c = structure(list(), class = "mock"))
   ingress <- list(
     artifact_id = strrep("b", 64L), source_contract_sha256 = strrep("c", 64L),
-    total_blocks = 3L, compute_peers = c("site_a", "site_c"),
+    total_blocks = 3L, custodian_peers = c("site_a", "site_b", "site_c"),
+    compute_peers = c("site_a", "site_c"),
     hosts = list(site_a = .formal_glm_registered_fresh_ingress_host("site_a"),
                  site_c = .formal_glm_registered_fresh_ingress_host("site_c")),
     production_ready = FALSE)
@@ -121,6 +123,13 @@ test_that("registered fresh GLM run composes ingress with only the designated ho
         conns, receipts, .aggregate, max_cycles) {
       seen <<- list(conns = conns, receipts = receipts, max_cycles = max_cycles)
       list(state = "terminal_complete", production_ready = FALSE)
+    },
+    .dsvert_formal_glm_registered_phase16_postselected_run = function(
+        conns, receipts, selector, custodian_peers, .aggregate) {
+      expect_identical(names(conns), c("site_a", "site_b", "site_c"))
+      expect_identical(names(receipts), c("site_a", "site_c"))
+      expect_identical(custodian_peers, c("site_a", "site_b", "site_c"))
+      expect_identical(selector, .formal_glm_registered_fresh_ingress_selector())
     },
     .dsvert_formal_glm_registered_phase21_run = function(
         conns, receipts, .aggregate, max_cycles) {
@@ -139,4 +148,73 @@ test_that("registered fresh GLM run composes ingress with only the designated ho
   expect_identical(result, list(
     artifact_id = strrep("b", 64L), total_blocks = 3L,
     state = "public_terminal_complete", production_ready = FALSE))
+})
+
+test_that("registered fresh GLM post-Selected relay gathers every K-of-K signature", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"),
+                site_c = structure(list(), class = "mock"))
+  receipts <- list(site_a = .formal_glm_registered_fresh_ingress_host("site_a"),
+                   site_b = .formal_glm_registered_fresh_ingress_host("site_b"))
+  control <- list()
+  source <- list()
+  testthat::local_mocked_bindings(
+    .dsvert_formal_glm_registered_job_control_call = function(
+        conn, receipt, action, payload, .aggregate) {
+      control[[length(control) + 1L]] <<- list(
+        peer = names(conn)[[1L]], action = action, payload = payload)
+      payload <- if (identical(action, "phase16_postselected_finalize")) {
+        structure(list(), names = character())
+      } else {
+        list(frame = "e30=")
+      }
+      list(version = "dsvert-formal-glm-registered-phase20-job-control-response-v1",
+           action = action, payload = payload, production_ready = FALSE)
+    },
+    .dsvert_formal_glm_registered_fresh_source_call = function(
+        conn, selector, action, payload, .aggregate) {
+      source[[length(source) + 1L]] <<- list(
+        peer = names(conn)[[1L]], action = action, payload = payload)
+      .formal_glm_registered_fresh_ingress_reply(action, list(
+        signature_pair_base64 = "e30=", replayed = FALSE))
+    },
+    .package = "dsVertClient")
+  expect_null(.dsvert_formal_glm_registered_phase16_postselected_run(
+    conns, receipts, .formal_glm_registered_fresh_ingress_selector(), names(conns),
+    .aggregate = identity))
+  expect_identical(vapply(control, `[[`, character(1L), "action"), c(
+    "phase16_postselected_commitment", "phase16_postselected_commitment",
+    "phase16_postselected_proposal", "phase16_postselected_proposal",
+    "phase16_postselected_attestation", "phase16_postselected_attestation",
+    "phase16_postselected_sign", "phase16_postselected_sign",
+    "phase16_postselected_finalize", "phase16_postselected_finalize"))
+  expect_identical(source, list(list(
+    peer = "site_c", action = "postselected_sign",
+    payload = list(proposal_base64 = "e30=", attestation_frames = unname(rep("e30=", 2L))))))
+  finalize <- Filter(function(value) identical(value$action,
+                                                "phase16_postselected_finalize"), control)
+  expect_true(all(vapply(finalize, function(value)
+    identical(value$payload$frames, unname(rep("e30=", 8L))), logical(1L))))
+})
+
+test_that("registered fresh GLM post-Selected relay rejects mixed proposals before witnesses", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"))
+  receipts <- list(site_a = .formal_glm_registered_fresh_ingress_host("site_a"),
+                   site_b = .formal_glm_registered_fresh_ingress_host("site_b"))
+  calls <- 0L
+  testthat::local_mocked_bindings(
+    .dsvert_formal_glm_registered_job_control_call = function(
+        conn, receipt, action, payload, .aggregate) {
+      calls <<- calls + 1L
+      frame <- if (identical(action, "phase16_postselected_proposal") &&
+                   identical(names(conn), "site_b")) "QQ==" else "e30="
+      list(version = "dsvert-formal-glm-registered-phase20-job-control-response-v1",
+           action = action, payload = list(frame = frame), production_ready = FALSE)
+    },
+    .package = "dsVertClient")
+  expect_error(.dsvert_formal_glm_registered_phase16_postselected_run(
+    conns, receipts, .formal_glm_registered_fresh_ingress_selector(), names(conns),
+    .aggregate = identity), "different post-Selected admissions")
+  expect_identical(calls, 4L)
 })

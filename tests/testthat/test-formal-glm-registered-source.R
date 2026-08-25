@@ -64,3 +64,39 @@ test_that("registered formal GLM source client fails closed", {
     "unsafe registered formal GLM source reply")
   expect_identical(calls, 1L)
 })
+
+test_that("registered fresh GLM witness client relays only its signed public frames", {
+  conn <- list(site_c = structure(list(), class = "mock"))
+  selector <- list(
+    analysis_id = "fresh_binomial", data_name = "D", family = "binomial",
+    formula_sha256 = strrep("a", 64L))
+  seen <- NULL
+  testthat::local_mocked_bindings(
+    .dsvert_aggregate_strict = function(conns, expr, operation, .aggregate) {
+      seen <<- list(conns = conns, expr = expr, operation = operation)
+      list(site_c = list(
+        version = "dsvert-formal-glm-registered-fresh-source-response-v1",
+        action = "postselected_sign", payload = list(
+          signature_pair_base64 = "e30=", replayed = FALSE),
+        production_ready = FALSE))
+    },
+    .package = "dsVertClient")
+  reply <- .dsvert_formal_glm_registered_fresh_source_call(
+    conn, selector, "postselected_sign", list(
+      proposal_base64 = "e30=", attestation_frames = unname(rep("e30=", 2L))),
+    .aggregate = identity)
+  expect_identical(seen$operation, "registered fresh formal GLM source relay")
+  expect_identical(as.character(seen$expr[[1L]]),
+                   "dsvertFormalGLMRegisteredFreshSourceDS")
+  expect_identical(as.list(seen$expr[-1L]), list(
+    analysis_id = "fresh_binomial", data_name = "D", family = "binomial",
+    formula_sha256 = strrep("a", 64L), action = "postselected_sign",
+    payload = list(proposal_base64 = "e30=",
+                   attestation_frames = unname(rep("e30=", 2L)))))
+  expect_identical(reply$payload,
+                   list(signature_pair_base64 = "e30=", replayed = FALSE))
+  expect_error(.dsvert_formal_glm_registered_source_call(
+    conn, "{\"contract\":\"registered\"}", "postselected_sign", list(
+      proposal_base64 = "e30=", attestation_frames = unname(rep("e30=", 2L))),
+    .aggregate = identity), "closed action")
+})

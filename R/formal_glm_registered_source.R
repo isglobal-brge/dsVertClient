@@ -22,6 +22,7 @@
   expected <- switch(action,
     shape = character(), ticket = character(), receipt_set = character(),
     host_provision = character(),
+    postselected_sign = c("proposal_base64", "attestation_frames"),
     ticket_set = "recipient_tickets", seal_block = c("recipient_tickets", "block_index"),
     chunk = c("recipient_tickets", "block_index", "offset"),
     import_chunk = c("recipient_tickets", "chunk_receipt", "pair_chunk_base64"),
@@ -51,6 +52,22 @@
        payload$offset < 0 || payload$offset != floor(payload$offset))) {
     stop("Registered formal GLM source requires one non-negative chunk offset.",
          call. = FALSE)
+  }
+  if (identical(action, "postselected_sign")) {
+    valid_frames <- is.character(payload$proposal_base64) &&
+      length(payload$proposal_base64) == 1L && !is.na(payload$proposal_base64) &&
+      is.character(payload$attestation_frames) &&
+      length(payload$attestation_frames) == 2L && !anyNA(payload$attestation_frames) &&
+      is.null(names(payload$attestation_frames))
+    if (!isTRUE(valid_frames)) {
+      stop("Registered formal GLM source requires exactly two post-Selected attestations.",
+           call. = FALSE)
+    }
+    frames <- c(payload$proposal_base64, payload$attestation_frames)
+    canonical <- vapply(frames, .dsvert_formal_glm_registered_job_base64,
+                        character(1L))
+    payload$proposal_base64 <- canonical[[1L]]
+    payload$attestation_frames <- unname(canonical[-1L])
   }
   payload
 }
@@ -173,7 +190,7 @@
     selector$formula_sha256)
   actions <- c("shape", "ticket", "ticket_set", "seal_block", "chunk", "import_chunk",
                "local_receipt", "receipt_commit", "receipt_set", "binding",
-               "host_provision")
+               "host_provision", "postselected_sign")
   if (!is.character(action) || length(action) != 1L || is.na(action) ||
       !action %in% actions) {
     stop("Registered fresh GLM source requires one closed action.",
