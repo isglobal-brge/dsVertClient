@@ -105,6 +105,72 @@ test_that("configured fresh Cox worker accepts only one matching K2 completion",
     .aggregate = identity), "different completion")
 })
 
+test_that("configured fresh Cox worker returns only matching share-free opening headers", {
+  workers <- list(site_a = .formal_cox_fresh_worker_selector(),
+                  site_b = utils::modifyList(.formal_cox_fresh_worker_selector(),
+                                              list(peer_name = "site_b")))
+  completion <- list(
+    version = "dsvert-formal-cox-blockwise-completion-v1",
+    plan_sha256 = strrep("a", 64L), transcript_sha256 = strrep("b", 64L),
+    final_commit_sha256 = strrep("c", 64L), schedule_steps = 12L,
+    fixed_schedule_complete = TRUE, output_kind = "sealed_private_result_v1",
+    production_ready = FALSE, completion_sha256 = strrep("d", 64L))
+  header <- function(peer, role, local_sha) list(
+    version = "dsvert-formal-cox-blockwise-sticky-opening-v1",
+    purpose = "formal_cox_one_public_beta_validity_opening_v1",
+    artifact_id = strrep("e", 64L), plan_sha256 = strrep("a", 64L),
+    run_id = strrep("f", 64L), pinset_sha256 = strrep("0", 64L),
+    final_cursor = list(schedule_index = 11L), completion = completion,
+    final_receipt = list(version = "receipt"), peer_name = peer,
+    peer_id = paste0(peer, "-id"), role = role, coefficient_count = 2L,
+    ring_bits = 127L, fraction_bits = 40L,
+    local_beta_validity_sha256 = local_sha,
+    signature = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=")
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_worker_call = function(conn, worker, action, payload,
+                                                     .aggregate) {
+      expect_identical(action, "opening")
+      expect_identical(payload, structure(list(), names = character()))
+      list(payload = list(
+        header = header(worker$peer_name,
+                        if (identical(worker$peer_name, "site_a")) "garbler" else "evaluator",
+                        if (identical(worker$peer_name, "site_a")) strrep("1", 64L) else strrep("2", 64L)),
+        replayed = FALSE))
+    },
+    .package = "dsVertClient")
+  openings <- .dsvert_formal_cox_fresh_worker_openings(
+    list(site_a = "connection", site_b = "connection"), workers, completion,
+    .aggregate = identity)
+  expect_identical(names(openings), names(workers))
+  expect_false(any(grepl("share|secret|source|storage|path", names(openings[[1L]]),
+                         ignore.case = TRUE)))
+
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_worker_call = function(conn, worker, action, payload,
+                                                     .aggregate) {
+      value <- header(worker$peer_name, "garbler", strrep("1", 64L))
+      list(payload = list(header = value, replayed = FALSE))
+    },
+    .package = "dsVertClient")
+  expect_error(.dsvert_formal_cox_fresh_worker_openings(
+    list(site_a = "connection", site_b = "connection"), workers, completion,
+    .aggregate = identity), "incompatible opening headers")
+
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_worker_call = function(conn, worker, action, payload,
+                                                     .aggregate) {
+      value <- header(worker$peer_name,
+                      if (identical(worker$peer_name, "site_a")) "garbler" else "evaluator",
+                      strrep("1", 64L))
+      value$final_receipt$coefficient_shares <- "unsafe"
+      list(payload = list(header = value, replayed = FALSE))
+    },
+    .package = "dsVertClient")
+  expect_error(.dsvert_formal_cox_fresh_worker_openings(
+    list(site_a = "connection", site_b = "connection"), workers, completion,
+    .aggregate = identity), "unsafe opening header")
+})
+
 test_that("configured fresh Cox worker relays one K2 schedule without outputs", {
   workers <- list(site_a = .formal_cox_fresh_worker_selector(),
                   site_b = utils::modifyList(.formal_cox_fresh_worker_selector(),

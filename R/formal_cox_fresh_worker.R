@@ -5,7 +5,7 @@
 .DSVERT_FORMAL_COX_WORKER_CONTROL_MAX_BYTES <- 2L * 1024L * 1024L
 .DSVERT_FORMAL_COX_WORKER_CONTROL_ACTIONS <- c(
   "host_start", "bind", "offer", "accept", "confirm", "poll", "relay", "result",
-  "completion", "commit")
+  "completion", "opening", "commit")
 
 .dsvert_formal_cox_fresh_worker_sha256 <- function(value) {
   is.character(value) && length(value) == 1L && !is.na(value) &&
@@ -42,7 +42,7 @@
   fields <- names(payload)
   if (is.null(fields)) fields <- character()
   if (anyNA(fields) || anyDuplicated(fields) ||
-      (action %in% c("host_start", "offer", "completion") && length(fields))) {
+      (action %in% c("host_start", "offer", "completion", "opening") && length(fields))) {
     stop("Configured fresh Cox worker requires a closed action payload.",
          call. = FALSE)
   }
@@ -202,6 +202,97 @@
          call. = FALSE)
   }
   values[[1L]]
+}
+
+# Read the two share-free opening headers after both workers have committed
+# their fixed schedule.  The headers are an internal handoff to the configured
+# finalizer: they contain commitments and signatures, never coefficient or
+# validity shares.  The finalizer remains the authority which verifies those
+# signatures and may perform the single public opening.
+.dsvert_formal_cox_fresh_worker_openings <- function(
+    conns, workers, completion, .aggregate = DSI::datashield.aggregate) {
+  valid_shape <- is.list(conns) && is.list(workers) && length(conns) == 2L &&
+    length(workers) == 2L && !is.null(names(conns)) && !is.null(names(workers)) &&
+    !anyNA(names(conns)) && !anyNA(names(workers)) && !anyDuplicated(names(conns)) &&
+    !anyDuplicated(names(workers)) && identical(names(conns), names(workers))
+  if (!isTRUE(valid_shape)) {
+    stop("Configured fresh Cox openings require both named compute peers.",
+         call. = FALSE)
+  }
+  completion_json <- tryCatch(.dsvert_joint_dp_client_json(completion),
+                              error = function(error) NULL)
+  if (!is.character(completion_json) || length(completion_json) != 1L ||
+      is.na(completion_json)) {
+    stop("Configured fresh Cox openings require one canonical completion.",
+         call. = FALSE)
+  }
+  header_fields <- c(
+    "version", "purpose", "artifact_id", "plan_sha256", "run_id",
+    "pinset_sha256", "final_cursor", "completion", "final_receipt",
+    "peer_name", "peer_id", "role", "coefficient_count", "ring_bits",
+    "fraction_bits", "local_beta_validity_sha256", "signature")
+  valid_header <- function(value, worker) {
+    encoded <- tryCatch(.dsvert_joint_dp_client_json(value),
+                        error = function(error) NULL)
+    hashes <- c("artifact_id", "plan_sha256", "run_id", "pinset_sha256",
+                "local_beta_validity_sha256")
+    valid <- is.list(value) && !is.null(names(value)) && !anyNA(names(value)) &&
+      !anyDuplicated(names(value)) && setequal(names(value), header_fields) &&
+      identical(value$version, "dsvert-formal-cox-blockwise-sticky-opening-v1") &&
+      identical(value$purpose, "formal_cox_one_public_beta_validity_opening_v1") &&
+      all(vapply(hashes, function(field)
+        .dsvert_formal_cox_fresh_worker_sha256(value[[field]]), logical(1L))) &&
+      identical(value$peer_name, worker$peer_name) &&
+      is.character(value$peer_id) && length(value$peer_id) == 1L &&
+      !is.na(value$peer_id) && nzchar(value$peer_id) &&
+      is.character(value$role) && length(value$role) == 1L &&
+      !is.na(value$role) && value$role %in% c("garbler", "evaluator") &&
+      is.numeric(value$coefficient_count) && length(value$coefficient_count) == 1L &&
+      is.finite(value$coefficient_count) && value$coefficient_count >= 1L &&
+      value$coefficient_count == floor(value$coefficient_count) &&
+      is.numeric(value$ring_bits) && length(value$ring_bits) == 1L &&
+      value$ring_bits %in% c(63L, 127L) &&
+      is.numeric(value$fraction_bits) && length(value$fraction_bits) == 1L &&
+      is.finite(value$fraction_bits) && value$fraction_bits >= 0L &&
+      value$fraction_bits < value$ring_bits &&
+      is.character(value$signature) && length(value$signature) == 1L &&
+      !is.na(value$signature) && nchar(value$signature, type = "bytes") >= 32L &&
+      nchar(value$signature, type = "bytes") <= 128L &&
+      grepl("^[A-Za-z0-9+/]+={0,2}$", value$signature) &&
+      !is.null(encoded) && !grepl(
+        "\\\"(?:[^\\\"]*(?:share|secret|storage|path|source|value)[^\\\"]*|coefficient_shares)\\\"\\s*:",
+        encoded, perl = TRUE, ignore.case = TRUE) &&
+      identical(tryCatch(.dsvert_joint_dp_client_json(value$completion),
+                         error = function(error) NULL), completion_json)
+    if (!isTRUE(valid)) {
+      stop("A configured fresh Cox worker returned an unsafe opening header.",
+           call. = FALSE)
+    }
+    value
+  }
+  openings <- Map(function(conn, worker) {
+    reply <- .dsvert_formal_cox_fresh_worker_call(
+      conn, worker, "opening", structure(list(), names = character()),
+      .aggregate = .aggregate)$payload
+    if (!is.list(reply) || !identical(names(reply), c("header", "replayed")) ||
+        !is.list(reply$header) || !is.logical(reply$replayed) ||
+        length(reply$replayed) != 1L || is.na(reply$replayed)) {
+      stop("A configured fresh Cox worker returned an invalid opening reply.",
+           call. = FALSE)
+    }
+    valid_header(reply$header, worker)
+  }, conns, workers)
+  shared <- c("version", "purpose", "artifact_id", "plan_sha256", "run_id",
+              "pinset_sha256", "coefficient_count", "ring_bits", "fraction_bits")
+  shared_equal <- vapply(shared, function(field)
+    identical(openings[[1L]][[field]], openings[[2L]][[field]]), logical(1L))
+  roles <- unname(sort(vapply(openings, `[[`, character(1L), "role")))
+  if (!all(shared_equal) || !identical(roles, c("evaluator", "garbler"))) {
+    stop("Configured fresh Cox workers returned incompatible opening headers.",
+         call. = FALSE)
+  }
+  names(openings) <- names(workers)
+  openings
 }
 
 # Run the fixed two-peer schedule by forwarding only authenticated opaque
