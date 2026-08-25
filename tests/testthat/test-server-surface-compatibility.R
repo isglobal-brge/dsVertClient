@@ -185,7 +185,10 @@ test_that("client DSI expressions are registered or locally quarantined", {
   unregistered <- setdiff(resolved, registered_ds)
   expect_true(all(unregistered %in%
                     sort(unique(c(retired, locally_quarantined)))))
-  expect_setequal(setdiff(retired, unregistered), "dsvertImputeColumnDS")
+  expect_setequal(
+    setdiff(retired, unregistered),
+    unlist(inventory$client_ast_resolution$retired_without_client_call,
+           use.names = FALSE))
   expect_setequal(setdiff(registered_ds, resolved), character())
   expect_identical(
     length(constructions$literal),
