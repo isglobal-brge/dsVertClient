@@ -126,3 +126,80 @@
     .aggregate = .aggregate)
   .dsvert_formal_cox_fresh_worker_reply(replies[[1L]], action)
 }
+
+# The completion marker is an internal barrier before the two-authority
+# opening.  It intentionally returns no sealed output, coefficient or share.
+.dsvert_formal_cox_fresh_worker_completion <- function(
+    conns, workers, .aggregate = DSI::datashield.aggregate) {
+  valid <- is.list(conns) && is.list(workers) && length(conns) == 2L &&
+    length(workers) == 2L && !is.null(names(conns)) && !is.null(names(workers)) &&
+    !anyNA(names(conns)) && !anyNA(names(workers)) && !anyDuplicated(names(conns)) &&
+    !anyDuplicated(names(workers)) && identical(names(conns), names(workers))
+  if (!isTRUE(valid)) {
+    stop("Configured fresh Cox completion requires both named compute peers.",
+         call. = FALSE)
+  }
+  parse <- function(reply) {
+    payload <- if (is.list(reply)) reply$payload else NULL
+    fields <- if (is.list(payload)) names(payload) else NULL
+    if (!is.list(payload) || is.null(fields) || anyNA(fields) ||
+        anyDuplicated(fields) || !is.logical(payload$complete) ||
+        length(payload$complete) != 1L || is.na(payload$complete)) {
+      stop("A configured fresh Cox worker returned an invalid completion.",
+           call. = FALSE)
+    }
+    if (!isTRUE(payload$complete)) {
+      if (!identical(fields, "complete")) {
+        stop("A configured fresh Cox worker returned an invalid completion.",
+             call. = FALSE)
+      }
+      return(NULL)
+    }
+    completion <- payload$completion
+    expected <- c(
+      "version", "plan_sha256", "transcript_sha256", "final_commit_sha256",
+      "schedule_steps", "fixed_schedule_complete", "output_kind",
+      "production_ready", "completion_sha256")
+    hashes <- c("plan_sha256", "transcript_sha256", "final_commit_sha256",
+                "completion_sha256")
+    if (!identical(fields, c("complete", "completion")) ||
+        !is.list(completion) || is.null(names(completion)) ||
+        anyNA(names(completion)) || anyDuplicated(names(completion)) ||
+        !identical(names(completion), expected) ||
+        !identical(completion$version,
+                   "dsvert-formal-cox-blockwise-completion-v1") ||
+        !all(vapply(hashes, function(field)
+          .dsvert_formal_cox_fresh_worker_sha256(completion[[field]]),
+          logical(1L))) ||
+        !is.numeric(completion$schedule_steps) ||
+        length(completion$schedule_steps) != 1L ||
+        is.na(completion$schedule_steps) || !is.finite(completion$schedule_steps) ||
+        completion$schedule_steps < 1L ||
+        completion$schedule_steps > .Machine$integer.max ||
+        completion$schedule_steps != floor(completion$schedule_steps) ||
+        !identical(completion$fixed_schedule_complete, TRUE) ||
+        !identical(completion$output_kind, "sealed_private_result_v1") ||
+        !identical(completion$production_ready, FALSE)) {
+      stop("A configured fresh Cox worker returned an invalid completion.",
+           call. = FALSE)
+    }
+    completion$schedule_steps <- as.integer(completion$schedule_steps)
+    completion
+  }
+  values <- Map(function(conn, worker) {
+    parse(.dsvert_formal_cox_fresh_worker_call(
+      conn, worker, "completion", structure(list(), names = character()),
+      .aggregate = .aggregate))
+  }, conns, workers)
+  if (xor(is.null(values[[1L]]), is.null(values[[2L]]))) {
+    stop("Configured fresh Cox workers disagree about completion.", call. = FALSE)
+  }
+  if (is.null(values[[1L]])) return(NULL)
+  left <- .dsvert_joint_dp_client_json(values[[1L]])
+  right <- .dsvert_joint_dp_client_json(values[[2L]])
+  if (!identical(left, right)) {
+    stop("Configured fresh Cox workers returned different completion records.",
+         call. = FALSE)
+  }
+  values[[1L]]
+}

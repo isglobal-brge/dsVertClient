@@ -55,6 +55,56 @@ test_that("configured fresh Cox worker permits only an empty completion query", 
     "closed action payload")
 })
 
+test_that("configured fresh Cox worker accepts only one matching K2 completion", {
+  workers <- list(site_a = .formal_cox_fresh_worker_selector(),
+                  site_b = utils::modifyList(.formal_cox_fresh_worker_selector(),
+                                              list(peer_name = "site_b")))
+  completion <- list(
+    version = "dsvert-formal-cox-blockwise-completion-v1",
+    plan_sha256 = strrep("a", 64L), transcript_sha256 = strrep("b", 64L),
+    final_commit_sha256 = strrep("c", 64L), schedule_steps = 12L,
+    fixed_schedule_complete = TRUE, output_kind = "sealed_private_result_v1",
+    production_ready = FALSE, completion_sha256 = strrep("d", 64L))
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_worker_call = function(conn, worker, action, payload,
+                                                     .aggregate) {
+      expect_identical(action, "completion")
+      expect_identical(payload, structure(list(), names = character()))
+      list(payload = list(complete = TRUE, completion = completion))
+    },
+    .package = "dsVertClient")
+  observed <- .dsvert_formal_cox_fresh_worker_completion(
+    list(site_a = "connection", site_b = "connection"), workers,
+    .aggregate = identity)
+  expect_identical(observed, completion)
+
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_worker_call = function(...) {
+      list(payload = list(complete = FALSE))
+    },
+    .package = "dsVertClient")
+  expect_null(.dsvert_formal_cox_fresh_worker_completion(
+    list(site_a = "connection", site_b = "connection"), workers,
+    .aggregate = identity))
+
+  bad <- completion
+  bad$final_commit_sha256 <- strrep("e", 64L)
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_worker_call = function(conn, worker, action, payload,
+                                                     .aggregate) {
+      list(payload = list(complete = TRUE,
+                          completion = if (identical(worker$peer_name, "site_a")) {
+                            completion
+                          } else {
+                            bad
+                          }))
+    },
+    .package = "dsVertClient")
+  expect_error(.dsvert_formal_cox_fresh_worker_completion(
+    list(site_a = "connection", site_b = "connection"), workers,
+    .aggregate = identity), "different completion")
+})
+
 test_that("configured fresh Cox worker rejects cross-server, widened and unsafe frames", {
   worker <- .formal_cox_fresh_worker_selector()
   expect_error(.dsvert_formal_cox_fresh_worker_call(
