@@ -492,21 +492,27 @@
 
   add(
     c("ds.vertGLM", "ds.vert.glm"), "ds.vertGLM", "glm",
-    c("admitted_count", "model_deviance", "model_score_hessian",
-      "numeric_cross_products_same_and_cross_owner", "numeric_moments"),
+    c("admitted_count", "formal_glm_public_certificate",
+      "formal_glm_registered_fresh_terminal", "formal_glm_sticky_opening",
+      "formal_glm_two_authority_signatures", "model_deviance",
+      "model_score_hessian", "numeric_cross_products_same_and_cross_owner",
+      "numeric_moments"),
     paste(
-      "Bounded Gaussian coefficients only when explicit dp_analysis_id selects",
-      "the same-owner Synopsis adapter; cross-owner, identifier-free,",
-      "binomial, and Poisson calls fail closed without capsule fallback;",
-      "the unsupported variants fail before protected analysis."),
+      "Bounded Gaussian coefficients use an explicit same-owner Synopsis",
+      "artifact. Binomial and Poisson use either a completed two-authority",
+      "formal public certificate or one custodian-configured registered",
+      "durable analysis; identifier-free and legacy iterative calls fail",
+      "closed before protected analysis."),
     c("convergence", "dp_aware_covariance", "identifiability",
       "numeric_certificate"),
-    "requires_new_capsule_artifact",
+    "formal_public_certificate_implemented",
     c("getObsCountDS", "glmRing63DevianceSumsDS", "glmStandardizeDS",
       "k2GradientR1DS", "k2GradientR2DS"),
     c("ds.vert.glm" = "ds.vertGLM"),
     current_route_status =
-      "formal_same_owner_synopsis_variant_only_legacy_unavailable")
+      "formal_completed_public_certificate_or_registered_fresh",
+    artifact_implementation_state =
+      "validated_formal_public_certificate_adapter_implemented")
 
   add(
     c("ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
@@ -1404,6 +1410,7 @@
     "formal_sticky_frequency_artifact",
     "formal_sticky_synopsis_artifact",
     "formal_completed_public_certificate_only",
+    "formal_completed_public_certificate_or_registered_fresh",
     "legacy_joint_dp_capsule_incompatible", "known_broken_route_quarantine",
     "legacy_exact_release_not_capsule_safe",
     "legacy_granular_release_not_capsule_safe",

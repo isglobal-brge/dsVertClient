@@ -599,7 +599,16 @@ test_that("mixed variants and Frequency compatibility names have explicit scopes
 
   expect_true(all(inventory$current_route_status[
     inventory$method %in% mixed] ==
-      "formal_same_owner_synopsis_variant_only_legacy_unavailable"))
+      "formal_completed_public_certificate_or_registered_fresh"))
+  expect_true(all(inventory$migration_feasibility[
+    inventory$method %in% mixed] ==
+      "formal_public_certificate_implemented"))
+  expect_true(all(vapply(inventory$artifact_requirements[
+    inventory$method %in% mixed], function(requirements) {
+      all(c("formal_glm_public_certificate",
+            "formal_glm_registered_fresh_terminal",
+            "formal_glm_two_authority_signatures") %in% requirements)
+    }, logical(1L))))
   expect_true(all(inventory$current_route_status[
     inventory$method %in% c(
       "ds.vertChisqCross", "ds.vert.chisq_cross")] ==
