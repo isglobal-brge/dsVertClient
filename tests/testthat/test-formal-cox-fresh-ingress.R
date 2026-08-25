@@ -118,3 +118,106 @@ test_that("fresh Cox ingress binds the source analysis before tickets", {
     "incompatible source shapes")
   expect_identical(calls, c("shape", "shape"))
 })
+
+test_that("fresh Cox run stages its finalizer without returning a private result", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"),
+                site_c = structure(list(), class = "mock"))
+  ingress <- list(
+    analysis_id = "fresh_cox", schema_sha256 = strrep("b", 64L),
+    total_blocks = 2L, compute_peers = c("site_a", "site_c"),
+    workers = list(site_a = .formal_cox_fresh_ingress_worker("site_a"),
+                   site_c = .formal_cox_fresh_ingress_worker("site_c")),
+    production_ready = FALSE)
+  completion <- list(
+    version = "dsvert-formal-cox-blockwise-completion-v1",
+    plan_sha256 = strrep("d", 64L), transcript_sha256 = strrep("e", 64L),
+    final_commit_sha256 = strrep("f", 64L), schedule_steps = 4L,
+    fixed_schedule_complete = TRUE, output_kind = "sealed_private_result_v1",
+    production_ready = FALSE, completion_sha256 = strrep("1", 64L))
+  handoff <- list(headers = list(list(role = "garbler"), list(role = "evaluator")),
+                  ticket = list(version = "ticket"),
+                  envelopes = list(list(version = "envelope"), list(version = "envelope")),
+                  production_ready = FALSE)
+  expected_handoff <- handoff
+  prepared <- list(
+    intent = list(
+      version = "dsvert-formal-cox-blockwise-sticky-opening-v1",
+      purpose = "formal_cox_one_public_beta_validity_opening_v1",
+      artifact_id = strrep("2", 64L), candidate_sha256 = strrep("3", 64L),
+      final_pair_root_sha256 = strrep("4", 64L),
+      opening_mode = "dual_authority_additive_ring_and_xor_validity_v1",
+      exp_postprocess_mode = "certified_dyadic_interval_midpoint_v1"),
+    finalized = FALSE, certificate_sha256 = "", replayed = FALSE,
+    production_ready = FALSE)
+  calls <- character()
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_ingress = function(conns, selector, .aggregate) {
+      calls <<- c(calls, "ingress")
+      expect_identical(names(conns), c("site_a", "site_b", "site_c"))
+      expect_identical(selector, .formal_cox_fresh_ingress_selector())
+      ingress
+    },
+    .dsvert_formal_cox_fresh_worker_run = function(conns, workers, .aggregate) {
+      calls <<- c(calls, "worker")
+      expect_identical(names(conns), c("site_a", "site_c"))
+      expect_identical(names(workers), c("site_a", "site_c"))
+      completion
+    },
+    .dsvert_formal_cox_fresh_worker_finalizer_handoff = function(
+        conns, workers, completion, .aggregate) {
+      calls <<- c(calls, "handoff")
+      expect_identical(names(conns), c("site_a", "site_c"))
+      expect_identical(completion$completion_sha256, strrep("1", 64L))
+      handoff
+    },
+    .dsvert_formal_cox_fresh_worker_prepare_finalizer = function(
+        conns, workers, handoff, .aggregate) {
+      calls <<- c(calls, "prepare")
+      expect_identical(handoff, expected_handoff)
+      prepared
+    },
+    .package = "dsVertClient")
+
+  result <- .dsvert_formal_cox_fresh_run(
+    conns, .formal_cox_fresh_ingress_selector(), .aggregate = identity)
+  expect_identical(calls, c("ingress", "worker", "handoff", "prepare"))
+  expect_identical(result, list(
+    analysis_id = "fresh_cox", schema_sha256 = strrep("b", 64L),
+    total_blocks = 2L, state = "finalizer_prepared",
+    production_ready = FALSE))
+  expect_false(any(grepl("intent|candidate|certificate|envelope|header|ticket",
+                         names(result), ignore.case = TRUE)))
+})
+
+test_that("fresh Cox run fails closed on an unsafe finalizer state", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"))
+  ingress <- list(
+    analysis_id = "fresh_cox", schema_sha256 = strrep("b", 64L),
+    total_blocks = 1L, compute_peers = c("site_a", "site_b"),
+    workers = list(site_a = .formal_cox_fresh_ingress_worker("site_a"),
+                   site_b = .formal_cox_fresh_ingress_worker("site_b")),
+    production_ready = FALSE)
+  called_prepare <- FALSE
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_ingress = function(...) ingress,
+    .dsvert_formal_cox_fresh_worker_run = function(...) list(
+      version = "dsvert-formal-cox-blockwise-completion-v1",
+      plan_sha256 = strrep("d", 64L), transcript_sha256 = strrep("e", 64L),
+      final_commit_sha256 = strrep("f", 64L), schedule_steps = 1L,
+      fixed_schedule_complete = TRUE, output_kind = "sealed_private_result_v1",
+      production_ready = FALSE, completion_sha256 = strrep("1", 64L)),
+    .dsvert_formal_cox_fresh_worker_finalizer_handoff = function(...) list(
+      headers = list(), ticket = list(), envelopes = list(), production_ready = FALSE),
+    .dsvert_formal_cox_fresh_worker_prepare_finalizer = function(...) {
+      called_prepare <<- TRUE
+      list(intent = list(), finalized = FALSE, certificate_sha256 = "unsafe",
+           replayed = FALSE, production_ready = FALSE)
+    },
+    .package = "dsVertClient")
+  expect_error(.dsvert_formal_cox_fresh_run(
+    conns, .formal_cox_fresh_ingress_selector(), .aggregate = identity),
+    "invalid finalizer state")
+  expect_true(called_prepare)
+})

@@ -227,3 +227,98 @@
        total_blocks = reference$total_blocks, compute_peers = compute_peers,
        workers = workers, production_ready = FALSE)
 }
+
+# Complete the private fresh-Cox path only through the durable finalizer
+# preparation boundary.  The resulting public opening remains a separate
+# two-authority lifecycle: this helper deliberately returns neither an intent,
+# a certificate, nor any model result.
+.dsvert_formal_cox_fresh_run <- function(
+    conns, selector, .aggregate = DSI::datashield.aggregate) {
+  ingress <- .dsvert_formal_cox_fresh_ingress(
+    conns, selector, .aggregate = .aggregate)
+  fields <- c("analysis_id", "schema_sha256", "total_blocks", "compute_peers",
+              "workers", "production_ready")
+  valid_conns <- is.list(conns) && !is.null(names(conns)) &&
+    length(conns) >= 2L && !anyNA(names(conns)) && !anyDuplicated(names(conns)) &&
+    all(nzchar(names(conns)))
+  valid_analysis <- is.character(ingress$analysis_id) &&
+    length(ingress$analysis_id) == 1L && !is.na(ingress$analysis_id) &&
+    grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", ingress$analysis_id)
+  valid_compute_peers <- is.character(ingress$compute_peers) &&
+    length(ingress$compute_peers) == 2L && !anyNA(ingress$compute_peers) &&
+    !anyDuplicated(ingress$compute_peers) &&
+    all(grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", ingress$compute_peers))
+  valid_ingress <- is.list(ingress) && !is.null(names(ingress)) &&
+    !anyNA(names(ingress)) && !anyDuplicated(names(ingress)) &&
+    setequal(names(ingress), fields) &&
+    valid_analysis &&
+    .dsvert_formal_cox_fresh_ingress_sha256(ingress$schema_sha256) &&
+    is.numeric(ingress$total_blocks) && length(ingress$total_blocks) == 1L &&
+    !is.na(ingress$total_blocks) && is.finite(ingress$total_blocks) &&
+    ingress$total_blocks >= 1L && ingress$total_blocks == floor(ingress$total_blocks) &&
+    valid_compute_peers &&
+    identical(names(ingress$workers), ingress$compute_peers) &&
+    all(ingress$compute_peers %in% names(conns)) &&
+    .dsvert_formal_cox_fresh_ingress_flag(ingress$production_ready)
+  if (!isTRUE(valid_conns) || !isTRUE(valid_ingress)) {
+    stop("Configured fresh Cox ingress returned an invalid worker set.",
+         call. = FALSE)
+  }
+  for (peer in ingress$compute_peers) {
+    .dsvert_formal_cox_fresh_ingress_worker(ingress$workers[[peer]], peer)
+  }
+
+  compute_conns <- conns[ingress$compute_peers]
+  completion <- .dsvert_formal_cox_fresh_worker_run(
+    compute_conns, ingress$workers, .aggregate = .aggregate)
+  handoff <- .dsvert_formal_cox_fresh_worker_finalizer_handoff(
+    compute_conns, ingress$workers, completion, .aggregate = .aggregate)
+  prepared <- .dsvert_formal_cox_fresh_worker_prepare_finalizer(
+    compute_conns, ingress$workers, handoff, .aggregate = .aggregate)
+
+  prepared_fields <- c("intent", "finalized", "certificate_sha256", "replayed",
+                       "production_ready")
+  valid_prepared <- is.list(prepared) && !is.null(names(prepared)) &&
+    !anyNA(names(prepared)) && !anyDuplicated(names(prepared)) &&
+    setequal(names(prepared), prepared_fields) &&
+    is.logical(prepared$finalized) && length(prepared$finalized) == 1L &&
+    !is.na(prepared$finalized) && is.logical(prepared$replayed) &&
+    length(prepared$replayed) == 1L && !is.na(prepared$replayed) &&
+    is.character(prepared$certificate_sha256) &&
+    length(prepared$certificate_sha256) == 1L && !is.na(prepared$certificate_sha256) &&
+    .dsvert_formal_cox_fresh_ingress_flag(prepared$production_ready)
+  if (isTRUE(valid_prepared) && isTRUE(prepared$finalized)) {
+    valid_prepared <- is.null(prepared$intent) &&
+      .dsvert_formal_cox_fresh_ingress_sha256(prepared$certificate_sha256)
+  } else if (isTRUE(valid_prepared)) {
+    intent_fields <- c("version", "purpose", "artifact_id", "candidate_sha256",
+                       "final_pair_root_sha256", "opening_mode", "exp_postprocess_mode")
+    valid_prepared <- is.list(prepared$intent) && !is.null(names(prepared$intent)) &&
+      !anyNA(names(prepared$intent)) && !anyDuplicated(names(prepared$intent)) &&
+      setequal(names(prepared$intent), intent_fields) &&
+      identical(prepared$intent$version,
+                "dsvert-formal-cox-blockwise-sticky-opening-v1") &&
+      identical(prepared$intent$purpose,
+                "formal_cox_one_public_beta_validity_opening_v1") &&
+      all(vapply(c("artifact_id", "candidate_sha256", "final_pair_root_sha256"),
+                 function(field) .dsvert_formal_cox_fresh_ingress_sha256(
+                   prepared$intent[[field]]), logical(1L))) &&
+      identical(prepared$intent$opening_mode,
+                "dual_authority_additive_ring_and_xor_validity_v1") &&
+      identical(prepared$intent$exp_postprocess_mode,
+                "certified_dyadic_interval_midpoint_v1") &&
+      identical(prepared$certificate_sha256, "")
+  }
+  if (!isTRUE(valid_prepared)) {
+    stop("Configured fresh Cox run returned an invalid finalizer state.",
+         call. = FALSE)
+  }
+  list(analysis_id = ingress$analysis_id, schema_sha256 = ingress$schema_sha256,
+       total_blocks = as.integer(ingress$total_blocks),
+       state = if (isTRUE(prepared$finalized)) {
+         "finalizer_already_public"
+       } else {
+         "finalizer_prepared"
+       },
+       production_ready = FALSE)
+}
