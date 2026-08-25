@@ -42,6 +42,12 @@ test_that("configured fresh Cox worker rejects cross-server, widened and unsafe 
     list(site_a = "connection"), worker, "host_start", list(extra = TRUE)),
     "closed action payload")
   expect_error(.dsvert_formal_cox_fresh_worker_call(
+    list(site_a = "connection"), worker, "root_claim", list()),
+    "closed action")
+  expect_error(.dsvert_formal_cox_fresh_worker_call(
+    list(site_a = "connection"), worker, "accept", list(step = 0L)),
+    "bounded opaque frame")
+  expect_error(.dsvert_formal_cox_fresh_worker_call(
     list(site_a = "connection"), worker, "relay", list(private_key = "x")),
     "bounded opaque frame")
   testthat::local_mocked_bindings(
