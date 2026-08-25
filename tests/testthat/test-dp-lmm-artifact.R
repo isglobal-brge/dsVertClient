@@ -217,6 +217,26 @@ test_that("fixed-effect random-intercept LMM validates and solves GLS coordinate
     "descriptor is invalid")
 })
 
+test_that("fixed-effect LMM records its DP-only PSD fallback", {
+  fixture <- .lmm_fixed_artifact_fixture()
+  artifact <- dsVertClient:::.dsvert_dp_lmm_fixed_artifact(
+    fixture$manifest, "protected", "lmm_fixed", "server_a",
+    "add_remove_patient", 256, 20)
+  global <- c(4, 4, 2, 1.68, 2.1, 1.52, 0)
+  size_one <- c(0, rep(0, 6L))
+  size_two <- c(2, 8, 4, 3.28, 4.2, 2.98, 2.81)
+  coordinates <- c(global, size_one, size_two, rep(0, 14L))
+
+  fit <- dsVertClient:::.dsvert_dp_lmm_fixed_moments(coordinates, artifact)
+
+  expect_identical(fit$status, "ok")
+  expect_identical(fit$reason, "dp_psd_projected_zero_variance_profile")
+  expect_true(isTRUE(fit$projection_applied))
+  expect_true(isTRUE(
+    fit$projected_summary$algebraic_psd_projection_applied))
+  expect_identical(fit$variance_ratio, 0)
+})
+
 test_that("fixed-effect LMM publishes coefficients on the source scale", {
   artifact <- .lmm_fixed_artifact_fixture()$artifact
   release <- list(

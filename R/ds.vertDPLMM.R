@@ -203,6 +203,32 @@
   counts
 }
 
+.dsvert_dp_lmm_fixed_psd_global <- function(global) {
+  dimension <- nrow(global$xtx)
+  augmented <- rbind(
+    cbind(global$xtx, global$xty),
+    c(global$xty, global$yty))
+  augmented <- (augmented + t(augmented)) / 2
+  decomposition <- eigen(augmented, symmetric = TRUE)
+  scale <- max(1, max(abs(augmented)))
+  floor <- 128 * .Machine$double.eps * scale
+  values <- pmax(decomposition$values, floor)
+  projected <- tcrossprod(
+    decomposition$vectors * rep(values, each = nrow(decomposition$vectors)),
+    decomposition$vectors)
+  projected <- (projected + t(projected)) / 2
+  terms <- colnames(global$xtx) %||% paste0("x", seq_len(dimension))
+  dimnames(projected) <- list(c(terms, ".outcome"),
+                              c(terms, ".outcome"))
+  list(
+    n = global$n,
+    xtx = projected[seq_len(dimension), seq_len(dimension), drop = FALSE],
+    xty = stats::setNames(
+      projected[seq_len(dimension), dimension + 1L], terms),
+    yty = projected[[dimension + 1L, dimension + 1L]],
+    applied = !isTRUE(all.equal(augmented, projected, tolerance = 0)))
+}
+
 .dsvert_dp_lmm_fixed_moments <- function(coordinates, artifact) {
   upper <- .dsvert_dp_lmm_fixed_coordinate_upper(artifact)
   if (!is.numeric(coordinates) || length(coordinates) != length(upper) ||
@@ -250,6 +276,18 @@
   fit <- .dsvert_lmm_random_intercept_gls(
     global[c("n", "xtx", "xty", "yty")], by_size,
     artifact$variance_ratio_grid)
+  algebraic_projection <- FALSE
+  if (!identical(fit$status, "ok")) {
+    stabilized <- .dsvert_dp_lmm_fixed_psd_global(
+      global[c("n", "xtx", "xty", "yty")])
+    fallback <- .dsvert_lmm_random_intercept_gls(
+      stabilized[c("n", "xtx", "xty", "yty")], by_size, 0)
+    if (identical(fallback$status, "ok")) {
+      fallback$reason <- "dp_psd_projected_zero_variance_profile"
+      fit <- fallback
+      algebraic_projection <- isTRUE(stabilized$applied)
+    }
+  }
   if (!identical(fit$status, "ok")) return(fit)
   y_span <- artifact$outcome$upper - artifact$outcome$lower
   coefficient <- fit$coefficients
@@ -273,7 +311,11 @@
   fit$projected_summary <- list(
     n = n, cluster_counts = counts,
     coordinate_projection_applied = !isTRUE(all.equal(
-      projected, coordinates, tolerance = 0)))
+      projected, coordinates, tolerance = 0)),
+    algebraic_psd_projection_applied = algebraic_projection)
+  fit$projection_applied <- isTRUE(
+    fit$projected_summary$coordinate_projection_applied) ||
+    algebraic_projection
   fit
 }
 

@@ -692,6 +692,14 @@
   list(steps = unname(steps), finite_support = FALSE)
 }
 
+.dsvert_dp_vector_l2_lattice_consistent <- function(
+    integer_steps, natural_sensitivity, scale) {
+  is.finite(integer_steps) && is.finite(natural_sensitivity) &&
+    is.finite(scale) && scale > 0 && isTRUE(all.equal(
+      integer_steps, natural_sensitivity * scale,
+      tolerance = 128 * .Machine$double.eps))
+}
+
 .dsvert_dp_vector_accuracy_radius <- function(
     release, manifest, coordinate_count = 1L, confidence = 0.95,
     maximum_error = Inf) {
@@ -720,8 +728,8 @@
       !is.finite(sensitivity) || sensitivity <= 0 ||
       !is.finite(scale) || scale <= 0 ||
       !identical(as.numeric(lattice$output_lattice_bits), log2(scale)) ||
-      !identical(as.numeric(sensitivity),
-                 natural_sensitivity * scale) ||
+      !.dsvert_dp_vector_l2_lattice_consistent(
+        sensitivity, natural_sensitivity, scale) ||
       !identical(release$mechanism, profile$release_mechanism)) {
     stop("Invalid signed vector accuracy contract", call. = FALSE)
   }

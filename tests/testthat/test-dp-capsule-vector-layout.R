@@ -164,6 +164,16 @@ test_that("two-peer vector accuracy uses the exact convolution tail", {
   expect_identical(clamped$radius, 7)
 })
 
+test_that("L2 lattice validation tolerates only binary scale round-off", {
+  integer_steps <- 6596.6585480835238
+  natural_sensitivity <- 25.76819745345108
+  expect_false(identical(integer_steps, natural_sensitivity * 256))
+  expect_true(.dsvert_dp_vector_l2_lattice_consistent(
+    integer_steps, natural_sensitivity, 256))
+  expect_false(.dsvert_dp_vector_l2_lattice_consistent(
+    integer_steps + 1e-6, natural_sensitivity, 256))
+})
+
 test_that("one-draw accuracy follows the signed dyadic law and separate TV", {
   denominator <- "1267650600228229401496703205376"
   plan <- list(
