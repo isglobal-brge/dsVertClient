@@ -4,7 +4,8 @@
   "dsvert-formal-cox-worker-control-response-v1"
 .DSVERT_FORMAL_COX_WORKER_CONTROL_MAX_BYTES <- 2L * 1024L * 1024L
 .DSVERT_FORMAL_COX_WORKER_CONTROL_ACTIONS <- c(
-  "host_start", "bind", "offer", "accept", "confirm", "poll", "relay", "result", "commit")
+  "host_start", "bind", "offer", "accept", "confirm", "poll", "relay", "result",
+  "completion", "commit")
 
 .dsvert_formal_cox_fresh_worker_sha256 <- function(value) {
   is.character(value) && length(value) == 1L && !is.na(value) &&
@@ -41,7 +42,7 @@
   fields <- names(payload)
   if (is.null(fields)) fields <- character()
   if (anyNA(fields) || anyDuplicated(fields) ||
-      (action %in% c("host_start", "offer") && length(fields))) {
+      (action %in% c("host_start", "offer", "completion") && length(fields))) {
     stop("Configured fresh Cox worker requires a closed action payload.",
          call. = FALSE)
   }

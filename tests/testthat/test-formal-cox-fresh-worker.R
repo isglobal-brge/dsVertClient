@@ -33,6 +33,28 @@ test_that("configured fresh Cox worker sends only its provisioned selector", {
   expect_identical(result$payload$version, "status")
 })
 
+test_that("configured fresh Cox worker permits only an empty completion query", {
+  worker <- .formal_cox_fresh_worker_selector()
+  seen <- NULL
+  testthat::local_mocked_bindings(
+    .dsvert_aggregate_strict = function(conns, expr, operation, .aggregate) {
+      seen <<- expr
+      list(site_a = .formal_cox_fresh_worker_reply(
+        "completion", list(complete = FALSE)))
+    },
+    .package = "dsVertClient")
+  result <- .dsvert_formal_cox_fresh_worker_call(
+    list(site_a = "connection"), worker, "completion",
+    structure(list(), names = character()), .aggregate = identity)
+  expect_identical(as.character(seen[[1L]]),
+                   "dsvertFormalCoxWorkerControlDS")
+  expect_identical(seen$action, "completion")
+  expect_identical(result$payload, list(complete = FALSE))
+  expect_error(.dsvert_formal_cox_fresh_worker_call(
+    list(site_a = "connection"), worker, "completion", list(extra = TRUE)),
+    "closed action payload")
+})
+
 test_that("configured fresh Cox worker rejects cross-server, widened and unsafe frames", {
   worker <- .formal_cox_fresh_worker_selector()
   expect_error(.dsvert_formal_cox_fresh_worker_call(
