@@ -22,7 +22,8 @@ ds.vertLMM(
 )
 }
 \arguments{
-\item{formula}{A formula exactly of the form \code{outcome ~ 1}.}
+\item{formula}{A formula matching the signed intercept-only or fixed-effect
+random-intercept artifact.}
 
 \item{data}{Signed protected dataset name or federation.}
 
@@ -49,15 +50,18 @@ A \code{ds.vertLMM} / \code{ds.vertDPLMM} object containing only the
 certified public DP moment projection.
 }
 \description{
-Admits only the signed \code{y ~ 1} random-intercept method-of-moments
-estimand. It uses one existing canonical DP Synopsis; it neither calls the
-retired mixed-model endpoints nor exposes cluster statistics.
+Admits a signed random-intercept artifact: either the legacy
+\code{y ~ 1} moment estimand or a fixed-effect finite-grid GLS estimand.
+It uses one existing canonical DP Synopsis;
+it neither calls the retired mixed-model endpoints nor exposes cluster
+statistics.
 }
 \details{
-\code{analysis_id} selects the custodian-signed artifact. Random slopes,
-ML/REML, covariance estimates, standard errors and classical inference are
-unavailable. The returned variances are DP-projected method-of-moments
-components, not an ML/REML fit.
+\code{analysis_id} selects the custodian-signed artifact. Random
+slopes, ML/REML, covariance estimates, standard errors and classical
+inference are unavailable. The intercept-only artifact returns a
+method-of-moments projection; the fixed-effect artifact evaluates its
+signed finite variance-ratio grid by ML-profile post-processing.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

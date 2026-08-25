@@ -1,13 +1,16 @@
 #' @title Bounded random-intercept LMM compatibility frontdoor
-#' @description Admits only the signed \code{y ~ 1} random-intercept
-#'   method-of-moments estimand. It uses one existing canonical DP Synopsis;
+#' @description Admits a signed random-intercept artifact: either the legacy
+#'   \code{y ~ 1} moment estimand or a fixed-effect finite-grid GLS estimand.
+#'   It uses one existing canonical DP Synopsis;
 #'   it neither calls the retired mixed-model endpoints nor exposes cluster
 #'   statistics.
 #' @details \code{analysis_id} selects the custodian-signed artifact. Random
 #'   slopes, ML/REML, covariance estimates, standard errors and classical
-#'   inference are unavailable. The returned variances are DP-projected
-#'   method-of-moments components, not an ML/REML fit.
-#' @param formula A formula exactly of the form \code{outcome ~ 1}.
+#'   inference are unavailable. The intercept-only artifact returns a
+#'   method-of-moments projection; the fixed-effect artifact evaluates its
+#'   signed finite variance-ratio grid by ML-profile post-processing.
+#' @param formula A formula matching the signed intercept-only or fixed-effect
+#'   random-intercept artifact.
 #' @param data Signed protected dataset name or federation.
 #' @param cluster_col Cluster column required to match the signed artifact.
 #' @param analysis_id Custodian-configured signed random-intercept artifact id.
@@ -32,11 +35,13 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
                        sigma_b2_override = NULL,
                        ring = c("ring63", "ring127"),
                        verbose = TRUE, datasources = NULL) {
+  terms <- if (inherits(formula, "formula")) stats::terms(formula) else NULL
+  labels <- if (is.null(terms)) character() else attr(terms, "term.labels")
   if (!inherits(formula, "formula") || length(formula) != 3L ||
       !is.symbol(formula[[2L]]) ||
-      length(attr(stats::terms(formula), "term.labels")) != 0L ||
-      !identical(attr(stats::terms(formula), "intercept"), 1L)) {
-    stop("ds.vertLMM currently supports only an outcome ~ 1 formula",
+      !identical(attr(terms, "intercept"), 1L) ||
+      any(grepl("[:*^|()]", labels))) {
+    stop("ds.vertLMM requires an intercept-only or additive fixed-effect formula",
          call. = FALSE)
   }
   if (!is.character(cluster_col) || length(cluster_col) != 1L ||
@@ -57,6 +62,17 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
     data_name = data, analysis_id = analysis_id, datasources = datasources)
   outcome <- as.character(formula[[2L]])
   artifact <- signed$signed_artifact
+  fixed <- identical(
+    artifact$version,
+    .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)
+  expected_labels <- if (fixed) artifact$predictor_order else character()
+  if (!identical(sort(labels, method = "radix"), expected_labels)) {
+    stop(if (fixed) {
+      "formula does not match the signed fixed-effect LMM artifact"
+    } else {
+      "ds.vertLMM currently supports only an outcome ~ 1 formula"
+    }, call. = FALSE)
+  }
   if (!identical(artifact$outcome$column, outcome) ||
       !identical(artifact$cluster$column, cluster_col)) {
     stop("formula or cluster_col does not match the signed LMM artifact",
@@ -66,7 +82,7 @@ ds.vertLMM <- function(formula, data = NULL, cluster_col,
   signed$reml <- FALSE
   signed$random_slopes <- NULL
   signed$converged <- identical(signed$status, "ok")
-  signed$iterations <- 0L
+  signed$iterations <- if (fixed) 1L else 0L
   signed$n_clusters <- signed$cluster_count
   signed$cluster_sizes <- NULL
   signed$estimation_scope <- artifact$estimation_scope

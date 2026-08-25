@@ -924,7 +924,10 @@
       identical(artifact$spec_version, "v1")) ||
     (identical(artifact$version,
                .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION) &&
-       identical(artifact$spec_version, "random_intercept_v1"))
+       identical(artifact$spec_version, "random_intercept_v1")) ||
+    (identical(artifact$version,
+               .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION) &&
+       identical(artifact$spec_version, "random_intercept_fixed_v2"))
   if (!isTRUE(context$synopsis) || !is.list(bundle) || !is.list(compilation) ||
       !is.list(provenance) || !all(required_provenance %in% names(provenance)) ||
       !identical(
@@ -1309,6 +1312,10 @@
     scaled, compiled$lattice$output_lattice_scale)
   coordinate_upper <- if (identical(
         artifact$version,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+    .dsvert_dp_lmm_fixed_coordinate_upper(artifact)
+  } else if (identical(
+        artifact$version,
         .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION)) {
     c(capacity, capacity,
       capacity * artifact$max_patients_per_cluster,
@@ -1349,6 +1356,61 @@
       sufficient_statistics_dp = list(
         projected_summary = moment$projected_summary),
       n_obs = moment$projected_summary[["n"]],
+      cohort_id = trusted$status[[trusted$context$servers[[1L]]]]$policy$cohort_id,
+      logical_snapshot = trusted$manifest$logical_snapshot,
+      analysis_id = certificate$analysis_id,
+      manifest_sha256 = certificate$manifest_sha256,
+      artifact_key = certificate$artifact_key,
+      execution_id = certificate$execution_id,
+      contract_sha256 = certificate$contract_sha256,
+      attempt_sha256 = certificate$attempt_sha256,
+      source_contract_sha256 = certificate$source_contract_sha256,
+      result_set_sha256 = certificate$result_set_sha256,
+      final_vector_root = certificate$final_vector_root,
+      coordinate_order_sha256 = certificate$coordinate_order_sha256,
+      mechanism_plan = compiled$physical$full_plan,
+      plan_sha256 = certificate$plan_sha256,
+      backend = certificate$backend, sampler = certificate$sampler,
+      mechanism = certificate$mechanism,
+      epsilon = certificate$epsilon, delta = certificate$delta,
+      implementation_delta = certificate$implementation_delta,
+      privacy = list(
+        version = "dsvert-per-synopsis-dp-v1",
+        per_artifact_epsilon = certificate$epsilon,
+        per_artifact_delta = certificate$delta,
+        unlimited_replay = TRUE,
+        replay_is_postprocessing = TRUE,
+        finite_global_composition_claim = FALSE),
+      certificate = certificate))
+  }
+  if (identical(artifact$version,
+                .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+    moment <- .dsvert_dp_lmm_fixed_moments(coordinates, artifact)
+    accuracy_release <- list(
+      manifest_sha256 = certificate$manifest_sha256,
+      epsilon = certificate$epsilon,
+      mechanism = certificate$mechanism,
+      implementation_delta = certificate$implementation_delta,
+      mechanism_plan = compiled$physical$full_plan,
+      plan_sha256 = certificate$plan_sha256,
+      backend = certificate$backend)
+    accuracy_simultaneous_95 <- .dsvert_dp_vector_accuracy_radius(
+      accuracy_release, trusted$manifest,
+      coordinate_count = artifact$coordinate_count,
+      confidence = 0.95, maximum_error = max(coordinate_upper))
+    return(list(
+      integrity_valid = TRUE, authenticity = authenticity,
+      artifact = artifact,
+      bounds = list(outcome = artifact$outcome, cluster = artifact$cluster,
+                    predictors = artifact$predictors),
+      design_terms = artifact$design_terms, coordinates = coordinates,
+      validated_moment = moment,
+      coordinate_capacity = capacity,
+      output_lattice_scale = compiled$lattice$output_lattice_scale,
+      accuracy_simultaneous_95 = accuracy_simultaneous_95,
+      sufficient_statistics_dp = list(
+        projected_summary = moment$projected_summary),
+      n_obs = moment$n_obs %||% NULL,
       cohort_id = trusted$status[[trusted$context$servers[[1L]]]]$policy$cohort_id,
       logical_snapshot = trusted$manifest$logical_snapshot,
       analysis_id = certificate$analysis_id,
@@ -1627,8 +1689,17 @@ ds.validateDPGaussianCertificate <- function(x, trusted_pinset = NULL) {
   artifact <- .dsvert_dp_gaussian_artifact(
     pseudo_manifest, certificate$dataset, certificate$analysis_id,
     certificate$owner_peer, index_context$adjacency, scale, capacity)
+  coordinate_upper <- if (identical(
+        artifact$version,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+    .dsvert_dp_lmm_fixed_coordinate_upper(artifact)
+  } else if (identical(artifact$version,
+                       .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION)) {
+    c(capacity, capacity, capacity * artifact$max_patients_per_cluster,
+      rep(capacity, 3L))
+  } else rep(capacity, artifact$coordinate_count)
   if (length(coordinates) != artifact$coordinate_count ||
-      any(coordinates < 0) || any(coordinates > capacity)) {
+      any(coordinates < 0) || any(coordinates > coordinate_upper)) {
     stop("The certified Gaussian block violates its signed bounds",
          call. = FALSE)
   }

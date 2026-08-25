@@ -58,6 +58,74 @@
       gaussian_models = list(artifacts = list(lmm_a = artifact))))))
 }
 
+.lmm_fixed_artifact_fixture <- function() {
+  capacity <- 20
+  scale <- 256
+  cluster_capacity <- 4
+  dimension <- 2
+  summary_count <- dimension * (dimension + 1) / 2 + dimension + 1
+  raw_l1 <- (3 + summary_count * (1 + 2 * cluster_capacity^2)) * scale
+  raw_l2 <- sqrt(
+    (3 + summary_count * (1 + 4 * cluster_capacity^4)) * scale^2)
+  artifact <- list(
+    version = "bounded-normalized-random-intercept-fixed-sufficient-statistics-v2",
+    spec_version = "random_intercept_fixed_v2", analysis_id = "lmm_fixed",
+    dataset = "protected", owner_peer = "server_a",
+    outcome = list(column = "y", lower = -2, upper = 6),
+    cluster = list(column = "site", levels = c("a", "b", "c")),
+    predictors = list(x = list(column = "x", lower = 0, upper = 10)),
+    predictor_order = "x", intercept = TRUE,
+    design_terms = c("(Intercept)", "x"),
+    observation_capacity = capacity,
+    max_patients_per_cluster = cluster_capacity,
+    variance_ratio_grid = c(0, 0.5, 2),
+    numeric_grid_bits = 8L,
+    coordinate_count = as.integer((cluster_capacity + 1L) *
+                                  (summary_count + 1L)),
+    coordinate_order = paste(
+      "n_then_global_xtx_upper_xty_yty_then_each_cluster_size_from_1",
+      "through_C_as_count_xtx_upper_xty_yty_v2", sep = "_"),
+    source_coordinate_scaling =
+      "counts_left_shifted_to_common_numeric_lattice_v1",
+    repeated_record_policy = paste(
+      "clip_finite_complete_outcome_predictor_rows_then_mean_once_per",
+      "admitted_patient_and_require_one_consistent_public_cluster_level_v2",
+      sep = "_"),
+    missingness_policy = paste(
+      "missing_or_nonfinite_outcome_predictor_or_missing_or_inconsistent",
+      "cluster_excludes_the_patient_from_every_LMM_coordinate_v2",
+      sep = "_"),
+    contribution_domain = paste(
+      "one_bounded_patient_vector_and_one_consistent_cluster_with",
+      "public_cluster_size_cap_v2", sep = "_"),
+    quantization_contract = list(
+      version = "random-intercept-fixed-common-lattice-quantization-v1",
+      input_rounding = "nearest_integer_ties_to_even_r_v1",
+      common_lattice = "numeric_grid_v1"),
+    statistic_maximum = c(
+      capacity, rep(capacity * scale, summary_count),
+      rep(c(capacity, rep(capacity * cluster_capacity * scale,
+                         summary_count)), cluster_capacity)),
+    source_raw_l1_sensitivity = raw_l1,
+    source_raw_l2_sensitivity = raw_l2,
+    natural_l1_sensitivity = raw_l1 / scale,
+    natural_l2_sensitivity = raw_l2 / scale,
+    adjacency = "add_remove_patient",
+    adjacency_sensitivity_basis = paste(
+      "one_patient_changes_n_and_at_most_two_cluster_size_bins_and",
+      "bounded_squared_grid_cluster_summaries_with_replace_one_as",
+      "two_add_remove_changes_v2", sep = "_"),
+    estimation_scope = paste(
+      "bounded_random_intercept_GLS_fixed_effects_finite_signed",
+      "variance_ratio_grid_ML_profile_v1", sep = "_"),
+    implementation_state = "same_owner_materialized",
+    cross_owner_state = "reserved_not_materialized")
+  list(
+    artifact = artifact,
+    manifest = list(workload = list(families = list(
+      gaussian_models = list(artifacts = list(lmm_fixed = artifact))))))
+}
+
 test_that("random-intercept LMM artifacts validate their full signed contract", {
   fixture <- .lmm_artifact_fixture()
   artifact <- dsVertClient:::.dsvert_dp_lmm_artifact(
@@ -89,6 +157,52 @@ test_that("random-intercept LMM post-processing only consumes DP coordinates", {
   expect_true(all(is.finite(c(result$coefficient, result$sigma2,
                               result$sigma_b2, result$icc))))
   expect_true(result$icc >= 0 && result$icc <= 1)
+})
+
+test_that("fixed-effect random-intercept LMM validates and solves GLS coordinates", {
+  fixture <- .lmm_fixed_artifact_fixture()
+  artifact <- dsVertClient:::.dsvert_dp_lmm_fixed_artifact(
+    fixture$manifest, "protected", "lmm_fixed", "server_a",
+    "add_remove_patient", 256, 20)
+  global <- c(4, 4, 2, 1.68, 2.1, 1.52, 1.43)
+  size_one <- c(0, rep(0, 6L))
+  size_two <- c(2, 8, 4, 3.28, 4.2, 2.98, 2.81)
+  coordinates <- c(global, size_one, size_two, rep(0, 14L))
+  fit <- dsVertClient:::.dsvert_dp_lmm_fixed_moments(coordinates, artifact)
+
+  expect_identical(artifact$coordinate_count, 35L)
+  expect_identical(artifact$design_terms, c("(Intercept)", "x"))
+  expect_identical(fit$status, "ok")
+  expect_identical(names(fit$coefficients), c("(Intercept)", "x"))
+  expect_true(all(is.finite(c(fit$coefficients, fit$sigma2,
+                              fit$sigma_b2, fit$icc))))
+  expect_true(fit$icc >= 0 && fit$icc <= 1)
+  tampered <- fixture$manifest
+  tampered$workload$families$gaussian_models$artifacts$lmm_fixed$
+    variance_ratio_grid <- c(0.1, 1)
+  expect_error(
+    dsVertClient:::.dsvert_dp_lmm_fixed_artifact(
+      tampered, "protected", "lmm_fixed", "server_a",
+      "add_remove_patient", 256, 20),
+    "descriptor is invalid")
+})
+
+test_that("LMM frontdoor admits signed fixed-effect artifacts only", {
+  artifact <- .lmm_fixed_artifact_fixture()$artifact
+  release <- structure(list(
+    status = "ok", coefficient = c("(Intercept)" = 1, x = 0.5),
+    coefficients = c("(Intercept)" = 1, x = 0.5), sigma2 = 2,
+    sigma_b2 = 1, icc = 1 / 3, cluster_count = 2, n_obs = 4,
+    signed_artifact = artifact), class = c("ds.vertDPLMM", "list"))
+  testthat::local_mocked_bindings(
+    ds.vertDPLMM = function(...) release,
+    .package = "dsVertClient")
+  fit <- ds.vertLMM(
+    y ~ x, data = "protected", cluster_col = "site",
+    analysis_id = "lmm_fixed", reml = FALSE)
+
+  expect_s3_class(fit, "ds.vertLMM")
+  expect_identical(fit$coefficients, c("(Intercept)" = 1, x = 0.5))
 })
 
 test_that("random-intercept LMM Synopsis release validates its signed block", {

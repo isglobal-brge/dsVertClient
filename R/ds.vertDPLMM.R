@@ -4,6 +4,288 @@
 
 .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION <-
   "bounded-normalized-random-intercept-moments-v1"
+.DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION <-
+  "bounded-normalized-random-intercept-fixed-sufficient-statistics-v2"
+
+.dsvert_dp_lmm_fixed_artifact <- function(
+    manifest, data_name, analysis_id, owner_peer, adjacency, scale,
+    capacity) {
+  artifact <- tryCatch(
+    manifest$workload$families$gaussian_models$artifacts[[analysis_id]],
+    error = function(error) NULL)
+  required <- c(
+    "version", "spec_version", "analysis_id", "dataset", "owner_peer",
+    "outcome", "cluster", "predictors", "predictor_order", "intercept",
+    "design_terms", "observation_capacity", "max_patients_per_cluster",
+    "variance_ratio_grid", "numeric_grid_bits", "coordinate_count",
+    "coordinate_order", "source_coordinate_scaling",
+    "repeated_record_policy", "missingness_policy", "contribution_domain",
+    "quantization_contract", "statistic_maximum",
+    "source_raw_l1_sensitivity", "source_raw_l2_sensitivity",
+    "natural_l1_sensitivity", "natural_l2_sensitivity", "adjacency",
+    "adjacency_sensitivity_basis", "estimation_scope",
+    "implementation_state", "cross_owner_state")
+  basic <- .dsvert_dp_has_exact_names(artifact, required) &&
+    identical(artifact$version,
+              .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION) &&
+    identical(artifact$spec_version, "random_intercept_fixed_v2") &&
+    identical(artifact$analysis_id, analysis_id) &&
+    identical(artifact$dataset, data_name) &&
+    .dsvert_dp_is_string(artifact$owner_peer) &&
+    (is.null(owner_peer) || identical(artifact$owner_peer, owner_peer)) &&
+    identical(artifact$implementation_state, "same_owner_materialized") &&
+    identical(artifact$cross_owner_state, "reserved_not_materialized")
+  if (!isTRUE(basic)) {
+    .dsvert_dp_gaussian_reserved(paste0(
+      "the signed capsule has no valid fixed-effect random-intercept LMM ",
+      "artifact '", analysis_id, "' for dataset '", data_name, "'"))
+  }
+  outcome <- .dsvert_dp_gaussian_bound(artifact$outcome, "LMM outcome")
+  cluster <- artifact$cluster
+  levels <- cluster$levels
+  if (is.character(levels) && length(levels) &&
+      all(vapply(levels, .dsvert_dp_is_string, logical(1L)))) {
+    levels <- enc2utf8(unname(levels))
+  } else {
+    levels <- tryCatch(.dsvert_dp_capsule_manifest_string_array(
+      levels, "LMM cluster levels"), error = function(error) character())
+  }
+  cluster_valid <- .dsvert_dp_has_exact_names(cluster, c("column", "levels")) &&
+    .dsvert_dp_is_string(cluster$column) && length(levels) >= 2L &&
+    !anyDuplicated(levels) && all(nzchar(trimws(levels))) &&
+    !identical(cluster$column, outcome$column)
+  predictor_order <- tryCatch(.dsvert_dp_capsule_manifest_string_array(
+    artifact$predictor_order, "LMM predictor order"),
+    error = function(error) character())
+  predictors <- artifact$predictors
+  predictors_valid <- is.list(predictors) && !is.null(names(predictors)) &&
+    !anyNA(names(predictors)) && !anyDuplicated(names(predictors)) &&
+    identical(names(predictors), predictor_order) && length(predictor_order) &&
+    !outcome$column %in% predictor_order && !cluster$column %in% predictor_order
+  if (isTRUE(predictors_valid)) {
+    predictors <- tryCatch(stats::setNames(lapply(
+      predictor_order, function(variable) {
+        .dsvert_dp_gaussian_bound(predictors[[variable]], "LMM predictor")
+      }), predictor_order), error = function(error) NULL)
+    predictors_valid <- !is.null(predictors) && all(vapply(
+      predictors, function(value) !identical(value$column, outcome$column) &&
+        !identical(value$column, cluster$column), logical(1L)))
+  }
+  grid <- suppressWarnings(as.numeric(artifact$variance_ratio_grid))
+  grid_valid <- is.numeric(artifact$variance_ratio_grid) && length(grid) &&
+    !anyNA(grid) && all(is.finite(grid)) && all(grid >= 0) &&
+    identical(grid[[1L]], 0) && all(diff(grid) > 0)
+  bits <- suppressWarnings(as.numeric(artifact$numeric_grid_bits))
+  cluster_capacity <- suppressWarnings(
+    as.numeric(artifact$max_patients_per_cluster))
+  design_count <- 1L + length(predictor_order)
+  gram_count <- design_count * (design_count + 1L) / 2L
+  summary_count <- gram_count + design_count + 1L
+  coordinate_count <- (cluster_capacity + 1L) * (summary_count + 1L)
+  maximum <- tryCatch(.dsvert_dp_capsule_manifest_numbers(
+    artifact$statistic_maximum, "LMM statistic maxima"),
+    error = function(error) numeric())
+  multiplier <- if (identical(adjacency, "replace_one_fixed_cohort")) {
+    2
+  } else if (identical(adjacency, "add_remove_patient")) {
+    1
+  } else {
+    NA_real_
+  }
+  raw_l1 <- if (is.finite(cluster_capacity) && is.finite(bits)) {
+    multiplier * (3 + summary_count * (1 + 2 * cluster_capacity^2)) * scale
+  } else NA_real_
+  raw_l2_lower <- if (is.finite(cluster_capacity) && is.finite(bits)) {
+    multiplier * sqrt(3 + summary_count * (1 + 4 * cluster_capacity^4)) *
+      scale
+  } else NA_real_
+  expected_maximum <- if (is.finite(cluster_capacity)) c(
+    capacity, rep(capacity * scale, summary_count),
+    rep(c(capacity, rep(capacity * cluster_capacity * scale,
+                       summary_count)), cluster_capacity)) else numeric()
+  quantization <- artifact$quantization_contract
+  valid <- cluster_valid && isTRUE(predictors_valid) &&
+    .dsvert_dp_is_integer(bits, 8L, 18L) && identical(2^bits, scale) &&
+    .dsvert_dp_is_integer(artifact$observation_capacity, capacity, capacity) &&
+    .dsvert_dp_is_integer(cluster_capacity, 2L, capacity) &&
+    isTRUE(grid_valid) && isTRUE(artifact$intercept) &&
+    identical(artifact$design_terms, c("(Intercept)", predictor_order)) &&
+    .dsvert_dp_is_integer(artifact$coordinate_count,
+                          coordinate_count, coordinate_count) &&
+    identical(artifact$coordinate_order, paste(
+      "n_then_global_xtx_upper_xty_yty_then_each_cluster_size_from_1",
+      "through_C_as_count_xtx_upper_xty_yty_v2", sep = "_")) &&
+    identical(artifact$source_coordinate_scaling,
+              "counts_left_shifted_to_common_numeric_lattice_v1") &&
+    identical(artifact$repeated_record_policy, paste(
+      "clip_finite_complete_outcome_predictor_rows_then_mean_once_per",
+      "admitted_patient_and_require_one_consistent_public_cluster_level_v2",
+      sep = "_")) &&
+    identical(artifact$missingness_policy, paste(
+      "missing_or_nonfinite_outcome_predictor_or_missing_or_inconsistent",
+      "cluster_excludes_the_patient_from_every_LMM_coordinate_v2",
+      sep = "_")) &&
+    identical(artifact$contribution_domain, paste(
+      "one_bounded_patient_vector_and_one_consistent_cluster_with",
+      "public_cluster_size_cap_v2", sep = "_")) &&
+    .dsvert_dp_has_exact_names(quantization, c(
+      "version", "input_rounding", "common_lattice")) &&
+    identical(quantization$version,
+              "random-intercept-fixed-common-lattice-quantization-v1") &&
+    identical(quantization$input_rounding,
+              "nearest_integer_ties_to_even_r_v1") &&
+    identical(quantization$common_lattice, "numeric_grid_v1") &&
+    identical(maximum, expected_maximum) &&
+    identical(as.numeric(artifact$source_raw_l1_sensitivity), raw_l1) &&
+    is.finite(as.numeric(artifact$source_raw_l2_sensitivity)) &&
+    as.numeric(artifact$source_raw_l2_sensitivity) >= raw_l2_lower &&
+    as.numeric(artifact$source_raw_l2_sensitivity) <= raw_l2_lower *
+      (1 + 1e-8) &&
+    identical(as.numeric(artifact$natural_l1_sensitivity), raw_l1 / scale) &&
+    isTRUE(all.equal(as.numeric(artifact$natural_l2_sensitivity),
+                     as.numeric(artifact$source_raw_l2_sensitivity) / scale,
+                     tolerance = 1e-12)) &&
+    identical(artifact$adjacency, adjacency) &&
+    identical(artifact$adjacency_sensitivity_basis, paste(
+      "one_patient_changes_n_and_at_most_two_cluster_size_bins_and",
+      "bounded_squared_grid_cluster_summaries_with_replace_one_as",
+      "two_add_remove_changes_v2", sep = "_")) &&
+    identical(artifact$estimation_scope, paste(
+      "bounded_random_intercept_GLS_fixed_effects_finite_signed",
+      "variance_ratio_grid_ML_profile_v1", sep = "_"))
+  if (!isTRUE(valid)) {
+    stop("The signed fixed-effect random-intercept LMM descriptor is invalid",
+         call. = FALSE)
+  }
+  artifact$outcome <- outcome
+  artifact$cluster <- list(column = enc2utf8(cluster$column), levels = levels)
+  artifact$predictors <- predictors
+  artifact$predictor_order <- predictor_order
+  artifact$design_terms <- c("(Intercept)", predictor_order)
+  artifact$coordinate_count <- as.integer(coordinate_count)
+  artifact
+}
+
+.dsvert_dp_lmm_fixed_coordinate_upper <- function(artifact) {
+  dimension <- length(artifact$design_terms)
+  summary_count <- dimension * (dimension + 1L) / 2L + dimension + 1L
+  capacity <- as.numeric(artifact$observation_capacity)
+  cluster_capacity <- as.numeric(artifact$max_patients_per_cluster)
+  c(capacity, rep(capacity, summary_count),
+    rep(c(capacity, rep(capacity * cluster_capacity, summary_count)),
+        cluster_capacity))
+}
+
+.dsvert_dp_lmm_fixed_counts <- function(n, observed, cluster_capacity) {
+  n <- as.integer(round(n))
+  if (!is.finite(n) || n < 2L) return(NULL)
+  counts <- pmax(0L, as.integer(floor(observed + 0.5)))
+  if (length(counts) != cluster_capacity || anyNA(counts)) return(NULL)
+  total <- sum(counts * seq_len(cluster_capacity))
+  if (total > n) {
+    excess <- total - n
+    for (size in rev(seq_len(cluster_capacity))) {
+      removable <- min(counts[[size]], excess %/% size)
+      counts[[size]] <- counts[[size]] - removable
+      excess <- excess - removable * size
+    }
+    if (excess != 0L) counts[] <- 0L
+  }
+  total <- sum(counts * seq_len(cluster_capacity))
+  if (total > n) return(NULL)
+  counts[[1L]] <- counts[[1L]] + n - total
+  counts
+}
+
+.dsvert_dp_lmm_fixed_moments <- function(coordinates, artifact) {
+  upper <- .dsvert_dp_lmm_fixed_coordinate_upper(artifact)
+  if (!is.numeric(coordinates) || length(coordinates) != length(upper) ||
+      anyNA(coordinates) || any(!is.finite(coordinates))) {
+    stop("The released fixed-effect random-intercept LMM coordinates are invalid",
+         call. = FALSE)
+  }
+  projected <- pmin(upper, pmax(0, coordinates))
+  dimension <- length(artifact$design_terms)
+  summary_count <- dimension * (dimension + 1L) / 2L + dimension + 1L
+  n <- as.integer(round(projected[[1L]]))
+  n <- min(as.integer(artifact$observation_capacity), max(0L, n))
+  count_positions <- 1L + summary_count +
+    (seq_len(artifact$max_patients_per_cluster) - 1L) *
+      (summary_count + 1L) + 1L
+  counts <- .dsvert_dp_lmm_fixed_counts(
+    n, projected[count_positions], artifact$max_patients_per_cluster)
+  if (is.null(counts)) {
+    return(.dsvert_lmm_gls_non_identifiable("inconsistent_cluster_counts"))
+  }
+  unpack <- function(values) {
+    cursor <- 1L
+    xtx <- matrix(0, dimension, dimension,
+                  dimnames = list(artifact$design_terms,
+                                  artifact$design_terms))
+    for (right in seq_len(dimension)) {
+      for (left in seq_len(right)) {
+        xtx[left, right] <- xtx[right, left] <- values[[cursor]]
+        cursor <- cursor + 1L
+      }
+    }
+    list(xtx = xtx,
+         xty = stats::setNames(values[seq.int(cursor, cursor + dimension - 1L)],
+                               artifact$design_terms),
+         yty = values[[cursor + dimension]])
+  }
+  global <- unpack(projected[seq.int(2L, summary_count + 1L)])
+  global$n <- n
+  by_size <- vector("list", artifact$max_patients_per_cluster)
+  for (size in seq_along(by_size)) {
+    start <- count_positions[[size]] + 1L
+    item <- unpack(projected[seq.int(start, start + summary_count - 1L)])
+    by_size[[size]] <- c(list(count = counts[[size]]), item)
+  }
+  fit <- .dsvert_lmm_random_intercept_gls(
+    global[c("n", "xtx", "xty", "yty")], by_size,
+    artifact$variance_ratio_grid)
+  if (!identical(fit$status, "ok")) return(fit)
+  y_span <- artifact$outcome$upper - artifact$outcome$lower
+  coefficient <- fit$coefficients
+  original <- coefficient
+  original[["(Intercept)"]] <- artifact$outcome$lower + y_span *
+    coefficient[["(Intercept)"]]
+  for (variable in artifact$predictor_order) {
+    bound <- artifact$predictors[[variable]]
+    x_span <- bound$upper - bound$lower
+    slope <- y_span * coefficient[[variable]] / x_span
+    original[["(Intercept)"]] <- original[["(Intercept)"]] -
+      slope * bound$lower
+    original[[variable]] <- slope
+  }
+  c(fit, list(
+    normalized_coefficients = coefficient,
+    coefficients = original,
+    sigma2 = fit$sigma2 * y_span^2,
+    sigma_b2 = fit$sigma_b2 * y_span^2,
+    n_obs = n, cluster_count = sum(counts),
+    projected_summary = list(n = n, cluster_counts = counts,
+                             coordinate_projection_applied =
+                               !isTRUE(all.equal(projected, coordinates,
+                                                 tolerance = 0)))))
+}
+
+.dsvert_dp_lmm_any_artifact <- function(
+    manifest, data_name, analysis_id, owner_peer, adjacency, scale,
+    capacity) {
+  artifact <- tryCatch(
+    manifest$workload$families$gaussian_models$artifacts[[analysis_id]],
+    error = function(error) NULL)
+  if (is.list(artifact) && identical(
+        artifact$version,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+    return(.dsvert_dp_lmm_fixed_artifact(
+      manifest, data_name, analysis_id, owner_peer, adjacency, scale,
+      capacity))
+  }
+  .dsvert_dp_lmm_artifact(
+    manifest, data_name, analysis_id, owner_peer, adjacency, scale, capacity)
+}
 
 .dsvert_dp_lmm_artifact <- function(
     manifest, data_name, analysis_id, owner_peer, adjacency, scale,
@@ -184,7 +466,7 @@
     context$layout, "admitted_count",
     description = "signed admitted-count capacity block")
   capacity <- .dsvert_dp_vector_block_capacity(count_block)
-  artifact <- .dsvert_dp_lmm_artifact(
+  artifact <- .dsvert_dp_lmm_any_artifact(
     context$manifest, data_name, analysis_id, server,
     context$adjacency, scale, capacity)
   blocks <- .dsvert_dp_capsule_vector_blocks(
@@ -203,7 +485,11 @@
   }
   coordinates <- .dsvert_dp_capsule_vector_values(
     context$release, blocks[[1L]])
-  coordinate_upper <- c(
+  coordinate_upper <- if (identical(
+        artifact$version,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+    .dsvert_dp_lmm_fixed_coordinate_upper(artifact)
+  } else c(
     capacity, capacity, capacity * artifact$max_patients_per_cluster,
     rep(capacity, 3L))
   if (length(coordinates) != artifact$coordinate_count ||
@@ -218,8 +504,9 @@
   if (!identical(verification$integrity_valid, TRUE) ||
       !identical(verification$authenticity,
                  "session_transport_anchored") ||
-      !identical(verification$artifact$version,
-                 .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION)) {
+      !verification$artifact$version %in% c(
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
     stop("The random-intercept LMM Synopsis certificate is not transport-anchored",
          call. = FALSE)
   }
@@ -248,15 +535,16 @@
     certificate_sha256 = released$certificate$certificate_sha256,
     signed_artifact = artifact, server = artifact$owner_peer,
     family = "gaussian_random_intercept",
-    estimand = "bounded_random_intercept_method_of_moments",
-    coefficient = moment$coefficient,
-    coefficients = moment$coefficient,
+    estimand = artifact$estimation_scope,
+    coefficient = moment$coefficient %||% moment$coefficients,
+    coefficients = moment$coefficient %||% moment$coefficients,
     sigma2 = moment$sigma2 %||% NULL,
     sigma_b2 = moment$sigma_b2 %||% NULL,
     icc = moment$icc %||% NULL,
     effective_cluster_size = moment$effective_cluster_size %||% NULL,
-    n_obs = moment$projected_summary[["n"]],
-    cluster_count = moment$projected_summary[["clusters"]],
+    n_obs = moment$n_obs %||% moment$projected_summary[["n"]],
+    cluster_count = moment$cluster_count %||%
+      moment$projected_summary[["clusters"]],
     projected_moments = moment$projected_summary,
     moment_projection_applied = moment$projection_applied,
     identifiability_reason = moment$reason %||% NULL,
@@ -265,10 +553,7 @@
       simultaneous_abs_mechanism_radius =
         released$verification$accuracy_simultaneous_95$radius,
       coordinate_count = artifact$coordinate_count,
-      max_abs_quantization_normalized = artifact$quantization_contract[c(
-        "sum_y_max_abs_error_normalized",
-        "sum_y_sq_max_abs_error_normalized",
-        "cluster_mean_sq_max_abs_error_normalized")],
+      max_abs_quantization_normalized = artifact$quantization_contract,
       additional_privacy_cost = c(epsilon = 0, delta = 0)),
     inference = list(
       classical_standard_errors = NULL, p_values = NULL,
@@ -326,8 +611,9 @@ ds.validateDPLMMCertificate <- function(x, trusted_pinset = NULL) {
   }
   verified <- ds.validateDPGaussianCertificate(
     certificate, trusted_pinset = trusted_pinset)
-  if (!identical(verified$artifact$version,
-                .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION)) {
+  if (!verified$artifact$version %in% c(
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
     stop("The certificate is not a random-intercept LMM artifact",
          call. = FALSE)
   }

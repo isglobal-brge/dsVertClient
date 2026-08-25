@@ -384,7 +384,28 @@
           valid <- all(diff(grid) > 0)
         }
       } else if (identical(family, "gaussian")) {
-        if (identical(spec$version, "random_intercept_v1")) {
+        if (identical(spec$version, "random_intercept_fixed_v2")) {
+          expected <- c(
+            "version", "dataset", "outcome", "cluster", "predictors",
+            "intercept", "max_patients_per_cluster", "variance_ratio_grid")
+          valid <- setequal(names(spec), expected) &&
+            identifier(spec$dataset) && column_reference(spec$outcome) &&
+            column_reference(spec$cluster) && !identical(
+              spec$outcome, spec$cluster) && isTRUE(spec$intercept) &&
+            .dsvert_dp_is_integer(spec$max_patients_per_cluster, 2L)
+          predictors <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$predictors, "LMM fixed predictors"),
+            error = function(error) character()) else character()
+          grid <- suppressWarnings(as.numeric(spec$variance_ratio_grid))
+          valid <- isTRUE(valid) && length(predictors) &&
+            !anyDuplicated(predictors) && !spec$outcome %in% predictors &&
+            !spec$cluster %in% predictors && all(vapply(
+              predictors, column_reference, logical(1L))) &&
+            is.numeric(spec$variance_ratio_grid) && length(grid) &&
+            !anyNA(grid) && all(is.finite(grid)) && all(grid >= 0) &&
+            identical(grid[[1L]], 0) && all(diff(grid) > 0)
+        } else if (identical(spec$version, "random_intercept_v1")) {
           expected <- c(
             "version", "dataset", "outcome", "cluster",
             "max_patients_per_cluster")
