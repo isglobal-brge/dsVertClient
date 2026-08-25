@@ -534,6 +534,11 @@
     data_name, analysis_id, server, datasources, .aggregate)
   moment <- released$moment
   artifact <- released$artifact
+  coefficients <- if (identical(
+        artifact$version,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+    moment$coefficients
+  } else moment$coefficient %||% moment$coefficients
   result <- c(released$metadata, list(
     status = moment$status, analysis_id = analysis_id,
     cohort_id = released$verification$cohort_id,
@@ -542,8 +547,8 @@
     signed_artifact = artifact, server = artifact$owner_peer,
     family = "gaussian_random_intercept",
     estimand = artifact$estimation_scope,
-    coefficient = moment$coefficient %||% moment$coefficients,
-    coefficients = moment$coefficient %||% moment$coefficients,
+    coefficient = coefficients,
+    coefficients = coefficients,
     sigma2 = moment$sigma2 %||% NULL,
     sigma_b2 = moment$sigma_b2 %||% NULL,
     icc = moment$icc %||% NULL,

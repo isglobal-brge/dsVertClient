@@ -197,6 +197,26 @@ test_that("fixed-effect random-intercept LMM validates and solves GLS coordinate
     "descriptor is invalid")
 })
 
+test_that("fixed-effect LMM publishes coefficients on the source scale", {
+  artifact <- .lmm_fixed_artifact_fixture()$artifact
+  release <- list(
+    metadata = list(), artifact = artifact,
+    moment = list(
+      status = "ok", coefficient = c("(Intercept)" = 0.4, x = 0.5),
+      coefficients = c("(Intercept)" = 4, x = 0.5),
+      sigma2 = 2, sigma_b2 = 1, icc = 1 / 3,
+      n_obs = 4L, cluster_count = 2L,
+      projected_summary = list(n = 4L, cluster_counts = c(0L, 2L))),
+    verification = list(), certificate = list())
+  testthat::local_mocked_bindings(
+    .dsvert_dp_lmm_synopsis_release = function(...) release,
+    .package = "dsVertClient")
+  result <- dsVertClient:::.dsvert_dp_lmm_impl(
+    "protected", "lmm_fixed", "server_a", list(), identity)
+  expect_identical(result$coefficient, c("(Intercept)" = 4, x = 0.5))
+  expect_identical(result$coefficients, c("(Intercept)" = 4, x = 0.5))
+})
+
 test_that("LMM frontdoor admits signed fixed-effect artifacts only", {
   artifact <- .lmm_fixed_artifact_fixture()$artifact
   release <- structure(list(
