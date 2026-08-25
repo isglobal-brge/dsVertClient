@@ -386,10 +386,14 @@
           valid <- all(diff(grid) > 0)
         }
       } else if (identical(family, "gaussian")) {
-        if (identical(spec$version, "random_intercept_fixed_v2")) {
+        if (spec$version %in% c("random_intercept_fixed_v2",
+                                "random_intercept_fixed_v3")) {
           expected <- c(
             "version", "dataset", "outcome", "cluster", "predictors",
             "intercept", "max_patients_per_cluster", "variance_ratio_grid")
+          if (identical(spec$version, "random_intercept_fixed_v3")) {
+            expected <- c(expected, "estimation_profile")
+          }
           valid <- setequal(names(spec), expected) &&
             identifier(spec$dataset) && column_reference(spec$outcome) &&
             column_reference(spec$cluster) && !identical(
@@ -410,6 +414,11 @@
             length(grid) &&
             !anyNA(grid) && all(is.finite(grid)) && all(grid >= 0) &&
             identical(grid[[1L]], 0) && all(diff(grid) > 0)
+          if (identical(spec$version, "random_intercept_fixed_v3")) {
+            valid <- isTRUE(valid) && .dsvert_dp_is_string(
+              spec$estimation_profile) && spec$estimation_profile %in%
+              c("ml", "reml")
+          }
         } else if (identical(spec$version, "random_intercept_v1")) {
           expected <- c(
             "version", "dataset", "outcome", "cluster",
@@ -452,8 +461,8 @@
         stop("A peer returned an invalid custodian workload specification",
              call. = FALSE)
       }
-      if (identical(family, "gaussian") &&
-          identical(spec$version, "random_intercept_fixed_v2")) {
+      if (identical(family, "gaussian") && spec$version %in% c(
+            "random_intercept_fixed_v2", "random_intercept_fixed_v3")) {
         spec$predictors <- predictors
         spec$variance_ratio_grid <- grid
       }

@@ -33,7 +33,8 @@ random-intercept artifact.}
 
 \item{random_slopes}{Must be \code{NULL}.}
 
-\item{reml}{Must be \code{FALSE}; ML/REML is not implemented.}
+\item{reml}{Must match the signed fixed-effect artifact profile. The
+intercept-only moment artifact requires \code{FALSE}.}
 
 \item{max_iter, inner_iter, tol, ring, verbose}{Retained compatibility controls;
 they do not alter the signed Synopsis estimand.}
@@ -58,10 +59,10 @@ statistics.
 }
 \details{
 \code{analysis_id} selects the custodian-signed artifact. Random
-slopes, ML/REML, covariance estimates, standard errors and classical
-inference are unavailable. The intercept-only artifact returns a
-method-of-moments projection; the fixed-effect artifact evaluates its
-signed finite variance-ratio grid by ML-profile post-processing.
+slopes, unrestricted profile optimisation, covariance estimates, standard
+errors and classical inference are unavailable. The intercept-only artifact
+returns a method-of-moments projection; the fixed-effect artifact evaluates
+its signed finite variance-ratio grid by the signed ML or REML profile.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

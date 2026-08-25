@@ -13,13 +13,15 @@ ds.vertLMM.k3(
   rho_hi = 0.999,
   tol = 1e-04,
   max_outer = 30L,
+  reml = FALSE,
   ring = c("ring127", "ring63"),
   verbose = TRUE,
   datasources = NULL
 )
 }
 \arguments{
-\item{formula}{A formula exactly of the form \code{outcome ~ 1}.}
+\item{formula}{An intercept-only or additive fixed-effect formula matching
+the signed random-intercept artifact.}
 
 \item{data}{Signed protected dataset name or federation.}
 
@@ -30,15 +32,17 @@ ds.vertLMM.k3(
 \item{rho_lo, rho_hi, tol, max_outer, ring, verbose}{Retained compatibility
 controls; they do not alter the signed Synopsis estimand.}
 
+\item{reml}{Must match the signed fixed-effect artifact profile.}
+
 \item{datasources}{At least three DataSHIELD connections.}
 }
 \value{
 A \code{ds.vertLMM} / \code{ds.vertDPLMM} object.
 }
 \description{
-This historical K>=3 name delegates only to the signed
-random-intercept method-of-moments Synopsis route. It does not activate
-the retired K>=3 profile/REML implementation.
+This historical K>=3 name delegates to the signed random-intercept Synopsis
+route, including a custodian-signed finite-grid ML or REML profile for
+additive fixed effects.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

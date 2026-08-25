@@ -925,9 +925,13 @@
     (identical(artifact$version,
                .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "random_intercept_v1")) ||
-    (identical(artifact$version,
-               .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION) &&
-       identical(artifact$spec_version, "random_intercept_fixed_v2"))
+    ((identical(artifact$version,
+                .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION) &&
+        identical(artifact$spec_version, "random_intercept_fixed_v2")) ||
+     (identical(artifact$version,
+                .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION) &&
+        identical(artifact$spec_version, "random_intercept_fixed_v3") &&
+        identical(artifact$estimation_profile, "reml")))
   if (!isTRUE(context$synopsis) || !is.list(bundle) || !is.list(compilation) ||
       !is.list(provenance) || !all(required_provenance %in% names(provenance)) ||
       !identical(
@@ -1310,9 +1314,9 @@
   }
   coordinates <- .dsvert_vector_scaled_to_double(
     scaled, compiled$lattice$output_lattice_scale)
-  coordinate_upper <- if (identical(
-        artifact$version,
-        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+  coordinate_upper <- if (artifact$version %in% c(
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
     .dsvert_dp_lmm_fixed_coordinate_upper(artifact)
   } else if (identical(
         artifact$version,
@@ -1383,8 +1387,9 @@
         finite_global_composition_claim = FALSE),
       certificate = certificate))
   }
-  if (identical(artifact$version,
-                .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+  if (artifact$version %in% c(
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
     moment <- .dsvert_dp_lmm_fixed_moments(coordinates, artifact)
     accuracy_release <- list(
       manifest_sha256 = certificate$manifest_sha256,
@@ -1689,9 +1694,9 @@ ds.validateDPGaussianCertificate <- function(x, trusted_pinset = NULL) {
   artifact <- .dsvert_dp_gaussian_artifact(
     pseudo_manifest, certificate$dataset, certificate$analysis_id,
     certificate$owner_peer, index_context$adjacency, scale, capacity)
-  coordinate_upper <- if (identical(
-        artifact$version,
-        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+  coordinate_upper <- if (artifact$version %in% c(
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
     .dsvert_dp_lmm_fixed_coordinate_upper(artifact)
   } else if (identical(artifact$version,
                        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION)) {

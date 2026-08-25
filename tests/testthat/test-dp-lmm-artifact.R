@@ -126,6 +126,22 @@
       gaussian_models = list(artifacts = list(lmm_fixed = artifact))))))
 }
 
+.lmm_fixed_reml_artifact_fixture <- function() {
+  fixture <- .lmm_fixed_artifact_fixture()
+  artifact <- fixture$artifact
+  artifact$version <-
+    "bounded-normalized-random-intercept-fixed-sufficient-statistics-v3"
+  artifact$spec_version <- "random_intercept_fixed_v3"
+  artifact$estimation_profile <- "reml"
+  artifact$estimation_scope <- paste(
+    "bounded_random_intercept_GLS_fixed_effects_finite_signed",
+    "variance_ratio_grid_REML_profile_v1", sep = "_")
+  fixture$artifact <- artifact
+  fixture$manifest$workload$families$gaussian_models$artifacts$lmm_fixed <-
+    artifact
+  fixture
+}
+
 test_that("random-intercept LMM artifacts validate their full signed contract", {
   fixture <- .lmm_artifact_fixture()
   artifact <- dsVertClient:::.dsvert_dp_lmm_artifact(
@@ -217,6 +233,35 @@ test_that("fixed-effect random-intercept LMM validates and solves GLS coordinate
     "descriptor is invalid")
 })
 
+test_that("signed fixed-effect REML artifacts bind the profile", {
+  fixture <- .lmm_fixed_reml_artifact_fixture()
+  dispatched <- dsVertClient:::.dsvert_dp_gaussian_artifact(
+    fixture$manifest, "protected", "lmm_fixed", "server_a",
+    "add_remove_patient", 256, 20)
+  artifact <- dsVertClient:::.dsvert_dp_lmm_fixed_artifact(
+    fixture$manifest, "protected", "lmm_fixed", "server_a",
+    "add_remove_patient", 256, 20)
+  global <- c(4, 4, 2, 1.68, 2.1, 1.52, 1.43)
+  size_one <- c(0, rep(0, 6L))
+  size_two <- c(2, 8, 4, 3.28, 4.2, 2.98, 2.81)
+  coordinates <- c(global, size_one, size_two, rep(0, 14L))
+
+  fit <- dsVertClient:::.dsvert_dp_lmm_fixed_moments(coordinates, artifact)
+  expect_identical(dispatched$estimation_profile, "reml")
+  expect_identical(artifact$estimation_profile, "reml")
+  expect_identical(fit$estimation_profile, "reml")
+  expect_identical(fit$status, "ok")
+
+  tampered <- fixture$manifest
+  tampered$workload$families$gaussian_models$artifacts$lmm_fixed$
+    estimation_profile <- "ml"
+  expect_error(
+    dsVertClient:::.dsvert_dp_lmm_fixed_artifact(
+      tampered, "protected", "lmm_fixed", "server_a",
+      "add_remove_patient", 256, 20),
+    "descriptor is invalid")
+})
+
 test_that("fixed-effect LMM records its DP-only PSD fallback", {
   fixture <- .lmm_fixed_artifact_fixture()
   artifact <- dsVertClient:::.dsvert_dp_lmm_fixed_artifact(
@@ -273,6 +318,17 @@ test_that("LMM frontdoor admits signed fixed-effect artifacts only", {
 
   expect_s3_class(fit, "ds.vertLMM")
   expect_identical(fit$coefficients, c("(Intercept)" = 1, x = 0.5))
+
+  release$signed_artifact <- .lmm_fixed_reml_artifact_fixture()$artifact
+  reml_fit <- ds.vertLMM(
+    y ~ x, data = "protected", cluster_col = "site",
+    analysis_id = "lmm_fixed", reml = TRUE)
+  expect_s3_class(reml_fit, "ds.vertLMM")
+  expect_true(reml_fit$reml)
+  expect_error(
+    ds.vertLMM(y ~ x, data = "protected", cluster_col = "site",
+               analysis_id = "lmm_fixed", reml = FALSE),
+    "reml=TRUE")
 })
 
 test_that("random-intercept LMM Synopsis release validates its signed block", {

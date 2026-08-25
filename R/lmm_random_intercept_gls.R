@@ -41,14 +41,17 @@
 #'
 #' @keywords internal
 .dsvert_lmm_random_intercept_gls <- function(
-    global, by_cluster_size, variance_ratio_grid) {
+    global, by_cluster_size, variance_ratio_grid,
+    estimation_profile = "ml") {
   required_global <- c("n", "xtx", "xty", "yty")
   required_size <- c("count", "xtx", "xty", "yty")
   if (!is.list(global) || !identical(names(global), required_global) ||
       !is.list(by_cluster_size) || !length(by_cluster_size) ||
       !is.numeric(variance_ratio_grid) || !length(variance_ratio_grid) ||
       anyNA(variance_ratio_grid) || any(!is.finite(variance_ratio_grid)) ||
-      any(variance_ratio_grid < 0) || any(diff(variance_ratio_grid) <= 0)) {
+      any(variance_ratio_grid < 0) || any(diff(variance_ratio_grid) <= 0) ||
+      !is.character(estimation_profile) || length(estimation_profile) != 1L ||
+      is.na(estimation_profile) || !estimation_profile %in% c("ml", "reml")) {
     stop("The signed random-intercept GLS synopsis is invalid.", call. = FALSE)
   }
   n <- suppressWarnings(as.integer(global$n))
@@ -58,6 +61,7 @@
     stop("The signed random-intercept GLS cohort is invalid.", call. = FALSE)
   }
   dimension <- nrow(global$xtx)
+  residual_degrees <- n - dimension
   xtx <- .dsvert_lmm_gls_square(global$xtx, dimension, "global information")
   xty <- .dsvert_lmm_gls_vector(global$xty, dimension, "global score")
   yty <- suppressWarnings(as.numeric(global$yty))
@@ -112,9 +116,21 @@
     residual <- sumsq - 2 * sum(coefficients * score) +
       drop(crossprod(coefficients, information %*% coefficients))
     if (!is.finite(residual) || residual <= 0) next
-    sigma2 <- residual / n
+    divisor <- if (identical(estimation_profile, "reml")) {
+      residual_degrees
+    } else {
+      n
+    }
+    if (divisor < 1L) next
+    sigma2 <- residual / divisor
     if (!is.finite(sigma2) || sigma2 <= 0) next
-    objective <- sum(counts * log1p(ratio * sizes)) + n * log(sigma2)
+    objective <- sum(counts * log1p(ratio * sizes)) + divisor * log(sigma2)
+    if (identical(estimation_profile, "reml")) {
+      log_determinant <- determinant(information, logarithm = TRUE)
+      if (isTRUE(log_determinant$sign <= 0) ||
+          !is.finite(as.numeric(log_determinant$modulus))) next
+      objective <- objective + as.numeric(log_determinant$modulus)
+    }
     if (!is.finite(objective)) next
     candidates[[index]] <- list(
       variance_ratio = ratio, objective = objective,
@@ -138,6 +154,7 @@
     sigma_b2 = ratio * selected$sigma2,
     icc = ratio / (1 + ratio),
     variance_ratio = ratio,
+    estimation_profile = estimation_profile,
     objective = selected$objective),
     class = c("dsvert_lmm_gls_summary", "list"))
 }

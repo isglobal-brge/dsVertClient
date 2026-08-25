@@ -2237,7 +2237,7 @@ test_that("real random-intercept LMM Synopsis is plausible and Rock-replayable a
   }
 })
 
-test_that("real additive fixed-effect random-intercept LMM is source-scale plausible and Rock-replayable at K=2/3/5", {
+test_that("real additive fixed-effect random-intercept REML is source-scale plausible and Rock-replayable at K=2/3/5", {
   .synopsis_real_e2e_only("lmm")
   server_ns <- .synopsis_describe_real_e2e_server()
   lmm <- get(".dsvert_dp_lmm_impl", asNamespace("dsVertClient"),
@@ -2255,11 +2255,11 @@ test_that("real additive fixed-effect random-intercept LMM is source-scale plaus
     policy <- fixture$policies$peer_a
     policy$categorical_levels$site_peer_a <- sites
     policy$capsule_workload_specs$gaussian$lmm_primary <- list(
-      version = "random_intercept_fixed_v2", dataset = "data_peer_a",
+      version = "random_intercept_fixed_v3", dataset = "data_peer_a",
       outcome = "y_peer_a", cluster = "site_peer_a",
       predictors = c("x_peer_a", "z_peer_a"),
       intercept = TRUE, max_patients_per_cluster = 2L,
-      variance_ratio_grid = c(0, 0.5, 2))
+      variance_ratio_grid = c(0, 0.5, 2), estimation_profile = "reml")
     policy$numeric_bounds$z_peer_a <- c(-2, 2)
     policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
       "x_peer_a", "y_peer_a", "site_peer_a", "z_peer_a")
@@ -2280,7 +2280,8 @@ test_that("real additive fixed-effect random-intercept LMM is source-scale plaus
 
     expect_identical(fit$status, "ok")
     expect_identical(fit$signed_artifact$spec_version,
-                     "random_intercept_fixed_v2")
+                     "random_intercept_fixed_v3")
+    expect_identical(fit$signed_artifact$estimation_profile, "reml")
     expect_true(all(is.finite(c(fit$coefficients, fit$sigma2,
                                 fit$sigma_b2, fit$icc))))
     expect_true(fit$coefficients[["(Intercept)"]] > 3 &&
@@ -2306,13 +2307,14 @@ test_that("real additive fixed-effect random-intercept LMM is source-scale plaus
         lmm = ds.vertLMM(
           y_peer_a ~ x_peer_a + z_peer_a, data = "data_peer_a",
           cluster_col = "site_peer_a", analysis_id = "lmm_primary",
-          reml = FALSE, datasources = conns),
+          reml = TRUE, datasources = conns),
         k3 = if (k >= 3L) ds.vertLMM.k3(
           y_peer_a ~ x_peer_a + z_peer_a, data = "data_peer_a",
           cluster_col = "site_peer_a", analysis_id = "lmm_primary",
-          datasources = conns) else NULL),
+          reml = TRUE, datasources = conns) else NULL),
       .package = "dsVertClient")
     expect_identical(public$lmm$coefficients, fit$coefficients)
+    expect_true(public$lmm$reml)
     if (k >= 3L) {
       expect_identical(public$k3$coefficients, fit$coefficients)
       expect_identical(public$k3$frontdoor, "ds.vertLMM.k3")

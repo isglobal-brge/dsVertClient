@@ -273,9 +273,9 @@
       random_intercept <- identical(
         block$descriptor$version,
         "bounded-normalized-random-intercept-moments-v1")
-      random_intercept_fixed <- identical(
-        block$descriptor$version,
-        "bounded-normalized-random-intercept-fixed-sufficient-statistics-v2")
+      random_intercept_fixed <- block$descriptor$version %in% c(
+        "bounded-normalized-random-intercept-fixed-sufficient-statistics-v2",
+        "bounded-normalized-random-intercept-fixed-sufficient-statistics-v3")
       shifts[indices] <- if (random_intercept) {
         c(rep(bits, 3L), rep(0L, length(indices) - 3L))
       } else if (random_intercept_fixed) {

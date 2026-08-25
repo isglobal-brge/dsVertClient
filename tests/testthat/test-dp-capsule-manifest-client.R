@@ -341,6 +341,16 @@ test_that("client accepts only the signed Gaussian fragment grammar", {
   expect_identical(
     normalized_fixed$gaussian$lmm_fixed$variance_ratio_grid,
     c(0, 0.5, 2))
+  fixed_reml <- fixed_random_intercept
+  fixed_reml$gaussian$lmm_fixed$version <- "random_intercept_fixed_v3"
+  fixed_reml$gaussian$lmm_fixed$estimation_profile <- "reml"
+  normalized_reml <- .dsvert_dp_capsule_manifest_fragments(fixed_reml)
+  expect_identical(
+    normalized_reml$gaussian$lmm_fixed$estimation_profile, "reml")
+  fixed_reml$gaussian$lmm_fixed$estimation_profile <- "unrestricted"
+  expect_error(
+    .dsvert_dp_capsule_manifest_fragments(fixed_reml),
+    "invalid custodian workload specification")
   fixed_random_intercept$gaussian$lmm_fixed$predictors <- list("x")
   fixed_random_intercept$gaussian$lmm_fixed$variance_ratio_grid <-
     as.list(c(0, 0.5, 2))

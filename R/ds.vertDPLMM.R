@@ -6,6 +6,8 @@
   "bounded-normalized-random-intercept-moments-v1"
 .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION <-
   "bounded-normalized-random-intercept-fixed-sufficient-statistics-v2"
+.DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION <-
+  "bounded-normalized-random-intercept-fixed-sufficient-statistics-v3"
 
 .dsvert_dp_lmm_fixed_artifact <- function(
     manifest, data_name, analysis_id, owner_peer, adjacency, scale,
@@ -13,6 +15,11 @@
   artifact <- tryCatch(
     manifest$workload$families$gaussian_models$artifacts[[analysis_id]],
     error = function(error) NULL)
+  version <- if (is.list(artifact)) artifact$version else NULL
+  fixed_ml <- identical(
+    version, .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)
+  fixed_reml <- identical(
+    version, .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)
   required <- c(
     "version", "spec_version", "analysis_id", "dataset", "owner_peer",
     "outcome", "cluster", "predictors", "predictor_order", "intercept",
@@ -25,10 +32,14 @@
     "natural_l1_sensitivity", "natural_l2_sensitivity", "adjacency",
     "adjacency_sensitivity_basis", "estimation_scope",
     "implementation_state", "cross_owner_state")
+  if (fixed_reml) required <- c(required, "estimation_profile")
   basic <- .dsvert_dp_has_exact_names(artifact, required) &&
-    identical(artifact$version,
-              .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION) &&
-    identical(artifact$spec_version, "random_intercept_fixed_v2") &&
+    (fixed_ml || fixed_reml) &&
+    identical(artifact$spec_version, if (fixed_reml) {
+      "random_intercept_fixed_v3"
+    } else {
+      "random_intercept_fixed_v2"
+    }) &&
     identical(artifact$analysis_id, analysis_id) &&
     identical(artifact$dataset, data_name) &&
     .dsvert_dp_is_string(artifact$owner_peer) &&
@@ -40,6 +51,7 @@
       "the signed capsule has no valid fixed-effect random-intercept LMM ",
       "artifact '", analysis_id, "' for dataset '", data_name, "'"))
   }
+  estimation_profile <- if (fixed_reml) artifact$estimation_profile else "ml"
   outcome <- .dsvert_dp_gaussian_bound(artifact$outcome, "LMM outcome")
   cluster <- artifact$cluster
   levels <- cluster$levels
@@ -110,6 +122,8 @@
                        summary_count)), cluster_capacity)) else numeric()
   quantization <- artifact$quantization_contract
   valid <- cluster_valid && isTRUE(predictors_valid) &&
+    is.character(estimation_profile) && length(estimation_profile) == 1L &&
+    !is.na(estimation_profile) && estimation_profile %in% c("ml", "reml") &&
     .dsvert_dp_is_integer(bits, 8L, 18L) && identical(2^bits, scale) &&
     .dsvert_dp_is_integer(artifact$observation_capacity, capacity, capacity) &&
     .dsvert_dp_is_integer(cluster_capacity, 2L, capacity) &&
@@ -157,7 +171,8 @@
       "two_add_remove_changes_v2", sep = "_")) &&
     identical(artifact$estimation_scope, paste(
       "bounded_random_intercept_GLS_fixed_effects_finite_signed",
-      "variance_ratio_grid_ML_profile_v1", sep = "_"))
+      "variance_ratio_grid", toupper(estimation_profile),
+      "profile_v1", sep = "_"))
   if (!isTRUE(valid)) {
     stop("The signed fixed-effect random-intercept LMM descriptor is invalid",
          call. = FALSE)
@@ -168,6 +183,7 @@
   artifact$predictor_order <- predictor_order
   artifact$design_terms <- c("(Intercept)", predictor_order)
   artifact$variance_ratio_grid <- grid
+  artifact$estimation_profile <- estimation_profile
   artifact$coordinate_count <- as.integer(coordinate_count)
   artifact
 }
@@ -275,13 +291,14 @@
   }
   fit <- .dsvert_lmm_random_intercept_gls(
     global[c("n", "xtx", "xty", "yty")], by_size,
-    artifact$variance_ratio_grid)
+    artifact$variance_ratio_grid, artifact$estimation_profile)
   algebraic_projection <- FALSE
   if (!identical(fit$status, "ok")) {
     stabilized <- .dsvert_dp_lmm_fixed_psd_global(
       global[c("n", "xtx", "xty", "yty")])
     fallback <- .dsvert_lmm_random_intercept_gls(
-      stabilized[c("n", "xtx", "xty", "yty")], by_size, 0)
+      stabilized[c("n", "xtx", "xty", "yty")], by_size, 0,
+      artifact$estimation_profile)
     if (identical(fallback$status, "ok")) {
       fallback$reason <- "dp_psd_projected_zero_variance_profile"
       fit <- fallback
@@ -325,9 +342,9 @@
   artifact <- tryCatch(
     manifest$workload$families$gaussian_models$artifacts[[analysis_id]],
     error = function(error) NULL)
-  if (is.list(artifact) && identical(
-        artifact$version,
-        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+  if (is.list(artifact) && artifact$version %in% c(
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
     return(.dsvert_dp_lmm_fixed_artifact(
       manifest, data_name, analysis_id, owner_peer, adjacency, scale,
       capacity))
@@ -534,9 +551,9 @@
   }
   coordinates <- .dsvert_dp_capsule_vector_values(
     context$release, blocks[[1L]])
-  coordinate_upper <- if (identical(
-        artifact$version,
-        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+  coordinate_upper <- if (artifact$version %in% c(
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
     .dsvert_dp_lmm_fixed_coordinate_upper(artifact)
   } else c(
     capacity, capacity, capacity * artifact$max_patients_per_cluster,
@@ -555,7 +572,8 @@
                  "session_transport_anchored") ||
       !verification$artifact$version %in% c(
         .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION,
-        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
     stop("The random-intercept LMM Synopsis certificate is not transport-anchored",
          call. = FALSE)
   }
@@ -577,9 +595,9 @@
     data_name, analysis_id, server, datasources, .aggregate)
   moment <- released$moment
   artifact <- released$artifact
-  coefficients <- if (identical(
-        artifact$version,
-        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+  coefficients <- if (artifact$version %in% c(
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
     moment$coefficients
   } else moment$coefficient %||% moment$coefficients
   result <- c(released$metadata, list(
@@ -666,8 +684,9 @@ ds.validateDPLMMCertificate <- function(x, trusted_pinset = NULL) {
   verified <- ds.validateDPGaussianCertificate(
     certificate, trusted_pinset = trusted_pinset)
   if (!verified$artifact$version %in% c(
-        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION,
-        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION)) {
+      .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION,
+      .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
+      .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
     stop("The certificate is not a random-intercept LMM artifact",
          call. = FALSE)
   }

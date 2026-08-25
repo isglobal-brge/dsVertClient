@@ -43,6 +43,27 @@ explicit_lmm_gls <- function(y, x, cluster, ratio) {
          length(y) * log(residual / length(y)))
 }
 
+explicit_lmm_reml <- function(y, x, cluster, ratio) {
+  design <- cbind("(Intercept)" = 1, x = x)
+  covariance <- diag(length(y))
+  for (level in unique(cluster)) {
+    rows <- which(cluster == level)
+    covariance[rows, rows] <- covariance[rows, rows] + ratio
+  }
+  inverse <- solve(covariance)
+  information <- crossprod(design, inverse %*% design)
+  score <- crossprod(design, inverse %*% y)
+  coefficients <- drop(solve(information, score))
+  residual <- drop(crossprod(y - design %*% coefficients,
+                             inverse %*% (y - design %*% coefficients)))
+  degrees <- length(y) - ncol(design)
+  sigma2 <- residual / degrees
+  list(coefficients = coefficients, sigma2 = sigma2,
+       objective = determinant(covariance, logarithm = TRUE)$modulus +
+         determinant(information, logarithm = TRUE)$modulus +
+         degrees * log(sigma2))
+}
+
 test_that("random-intercept GLS uses only cluster sufficient statistics", {
   y <- c(1.0, 1.4, 2.7, 3.1, 2.8, 4.2, 4.7)
   x <- c(0.1, 0.5, 0.2, 0.6, 0.9, 0.3, 0.8)
@@ -56,6 +77,26 @@ test_that("random-intercept GLS uses only cluster sufficient statistics", {
   candidates <- lapply(grid, explicit_lmm_gls, y = y, x = x, cluster = cluster)
   objectives <- vapply(candidates, `[[`, numeric(1L), "objective")
   selected <- candidates[[which.min(objectives)]]
+  expect_equal(fit$variance_ratio, grid[[which.min(objectives)]])
+  expect_equal(unname(fit$coefficients), unname(selected$coefficients),
+               tolerance = 1e-10)
+  expect_equal(fit$sigma2, selected$sigma2, tolerance = 1e-10)
+})
+
+test_that("random-intercept GLS supports signed finite-grid REML", {
+  y <- c(1.0, 1.4, 2.7, 3.1, 2.8, 4.2, 4.7)
+  x <- c(0.1, 0.5, 0.2, 0.6, 0.9, 0.3, 0.8)
+  cluster <- c(1L, 1L, 2L, 2L, 2L, 3L, 3L)
+  aggregate <- make_lmm_gls_summary(y, x, cluster)
+  grid <- c(0, 0.25, 1, 4)
+
+  fit <- dsVertClient:::.dsvert_lmm_random_intercept_gls(
+    aggregate$global, aggregate$by_size, grid, estimation_profile = "reml")
+  expect_identical(fit$status, "ok")
+  candidates <- lapply(grid, explicit_lmm_reml, y = y, x = x, cluster = cluster)
+  objectives <- vapply(candidates, `[[`, numeric(1L), "objective")
+  selected <- candidates[[which.min(objectives)]]
+  expect_identical(fit$estimation_profile, "reml")
   expect_equal(fit$variance_ratio, grid[[which.min(objectives)]])
   expect_equal(unname(fit$coefficients), unname(selected$coefficients),
                tolerance = 1e-10)
