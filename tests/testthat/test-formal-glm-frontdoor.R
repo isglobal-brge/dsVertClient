@@ -141,6 +141,87 @@ test_that("formal GLM rejects analyst-owned legacy knobs", {
     y ~ x, data = "study", family = "binomial",
     dp_analysis_id = "gaussian", formal_analysis_id = "primary_logit"),
     "mutually exclusive")
+  expect_error(ds.vertGLM(
+    y ~ x, data = "study", family = "binomial",
+    formal_analysis_id = "primary_logit",
+    fresh_formal_analysis_id = "configured_logit"), "mutually exclusive")
+})
+
+test_that("fresh formal GLM runs one configured durable analysis then reads it", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"))
+  observed <- character()
+  testthat::local_mocked_bindings(
+    .dsvert_formal_glm_registered_fresh_run = function(conns, selector) {
+      observed <<- c(observed, "fresh")
+      expect_identical(names(conns), c("site_a", "site_b"))
+      expect_identical(selector$analysis_id, "configured_logit")
+      expect_identical(selector$data_name, "study")
+      expect_identical(selector$family, "binomial")
+      list(artifact_id = digest::digest("artifact", algo = "sha256", serialize = FALSE),
+           total_blocks = 2L, state = "public_terminal_complete",
+           production_ready = FALSE)
+    },
+    .dsvert_formal_glm_frontdoor_public_result = function(request, datasources) {
+      observed <<- c(observed, "public")
+      expect_identical(names(datasources), c("site_a", "site_b"))
+      .dsvert_formal_glm_frontdoor_public_response(
+        .formal_glm_public_release(request), request)
+    },
+    .package = "dsVertClient")
+  fit <- ds.vertGLM(
+    y ~ x, data = "study", family = "binomial",
+    fresh_formal_analysis_id = "configured_logit", verbose = FALSE,
+    datasources = conns)
+  expect_identical(observed, c("fresh", "public"))
+  expect_identical(fit$called_via, "ds.vertGLM_fresh_formal_analysis_id")
+  expect_equal(fit$coefficients, c("(Intercept)" = 0.5, x = -0.25))
+  expect_false(fit$production_ready)
+})
+
+test_that("fresh formal GLM fails closed before public retrieval", {
+  called_public <- FALSE
+  testthat::local_mocked_bindings(
+    .dsvert_formal_glm_registered_fresh_run = function(...) {
+      list(artifact_id = strrep("a", 64L), total_blocks = 0L,
+           state = "public_terminal_complete", production_ready = FALSE)
+    },
+    .dsvert_formal_glm_frontdoor_public_result = function(...) {
+      called_public <<- TRUE
+      stop("must not retrieve", call. = FALSE)
+    },
+    .package = "dsVertClient")
+  expect_error(ds.vertGLM(
+    y ~ x, data = "study", family = "poisson",
+    fresh_formal_analysis_id = "configured_count",
+    datasources = list(site_a = structure(list(), class = "mock"),
+                       site_b = structure(list(), class = "mock"))),
+    "did not finish safely")
+  expect_false(called_public)
+  expect_error(ds.vertGLM(
+    y ~ x, data = "study", family = "binomial", lambda = 1,
+    fresh_formal_analysis_id = "configured_logit"), "lambda")
+})
+
+test_that("fresh formal GLM rejects a publication for another artifact", {
+  testthat::local_mocked_bindings(
+    .dsvert_formal_glm_registered_fresh_run = function(...) {
+      list(artifact_id = digest::digest("fresh artifact", algo = "sha256",
+                                        serialize = FALSE),
+           total_blocks = 1L, state = "public_terminal_complete",
+           production_ready = FALSE)
+    },
+    .dsvert_formal_glm_frontdoor_public_result = function(request, datasources) {
+      .dsvert_formal_glm_frontdoor_public_response(
+        .formal_glm_public_release(request), request)
+    },
+    .package = "dsVertClient")
+  expect_error(ds.vertGLM(
+    y ~ x, data = "study", family = "binomial",
+    fresh_formal_analysis_id = "configured_logit",
+    datasources = list(site_a = structure(list(), class = "mock"),
+                       site_b = structure(list(), class = "mock"))),
+    "does not match its source artifact")
 })
 
 test_that("formal GLM alias preserves the certified-release route", {
@@ -169,6 +250,29 @@ test_that("formal GLM alias preserves the certified-release route", {
     y ~ x, data = "study",
     datasources = stop("must not be forced", call. = FALSE)),
     class = "dsvert_route_unavailable")
+})
+
+test_that("formal GLM alias preserves the configured fresh route", {
+  received <- NULL
+  testthat::local_mocked_bindings(
+    ds.vertGLM = function(formula, data, datasources, ...) {
+      received <<- list(...)
+      structure(list(coefficients = c("(Intercept)" = 0.5),
+                     production_ready = FALSE),
+                class = c("dsvert_formal_dp_glm", "ds.glm", "list"))
+    },
+    .package = "dsVertClient")
+  fit <- ds.vert.glm(
+    y ~ x, data = "study", family = "binomial",
+    fresh_formal_analysis_id = "configured_logit", verbose = FALSE,
+    datasources = list(site_a = structure(list(), class = "mock"),
+                       site_b = structure(list(), class = "mock")))
+  expect_identical(received$fresh_formal_analysis_id, "configured_logit")
+  expect_identical(fit$route, "ds.vertGLM.fresh_formal")
+  expect_identical(fit$precision_frontdoor, "server-owned")
+  expect_error(ds.vert.glm(
+    y ~ x, data = "study", family = "binomial", precision = "high",
+    fresh_formal_analysis_id = "configured_logit"), "server-owned")
 })
 
 test_that("formal GLM formula contract is narrow and canonical", {

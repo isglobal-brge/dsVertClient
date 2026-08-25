@@ -33,7 +33,8 @@ ds.vertGLM(
   missing = "fail",
   numeric_backend = "auto",
   dp_analysis_id = NULL,
-  formal_analysis_id = NULL
+  formal_analysis_id = NULL,
+  fresh_formal_analysis_id = NULL
 )
 }
 \arguments{
@@ -42,7 +43,8 @@ data name and optional signed-artifact ownership checks for the Gaussian
 Synopsis route.}
 
 \item{family}{Must be \code{"gaussian"} with \code{dp_analysis_id}, or
-\code{"binomial"}/\code{"poisson"} with \code{formal_analysis_id}.}
+\code{"binomial"}/\code{"poisson"} with \code{formal_analysis_id} or
+\code{fresh_formal_analysis_id}.}
 
 \item{max_iter, tol, log_n, offset, weights, ring, binomial_sigmoid_intervals, eta_privacy, keep_session, std_mode, start, compute_se, compute_deviance, gradient_only, numeric_backend}{Retained legacy arguments. They are rejected when explicitly supplied to
 either signed-artifact adapter, and the no-id legacy route is unavailable.}
@@ -61,6 +63,11 @@ id. This is required for the available route.}
 \item{formal_analysis_id}{Custodian-configured binomial/Poisson public
 certificate selector. It is read-only: it cannot request a new analysis,
 choose privacy parameters, or activate the legacy iterative route.}
+
+\item{fresh_formal_analysis_id}{Custodian-configured binomial/Poisson fresh
+analysis selector. It is mutually exclusive with the other analysis ids,
+carries no numerical or privacy controls, and may only resume its one durable
+registered analysis before reading its public publication.}
 }
 \value{
 With a valid Gaussian \code{dp_analysis_id}, a
@@ -79,8 +86,10 @@ contribution-bounded sticky joint-DP Synopsis estimand. A call without
 either signed-analysis id raises a typed \code{dsvert_route_unavailable}
 condition before any DSI call. An explicit \code{formal_analysis_id} for
 binomial or Poisson reads a completed, two-authority-signed public DP
-certificate configured by the custodians. It never starts the retained
-iterative Ring/Beaver code.
+certificate configured by the custodians. An explicit
+\code{fresh_formal_analysis_id} runs one preconfigured durable formal
+analysis and then reads that same publication. Neither selector starts the
+retained iterative Ring/Beaver code.
 }
 \details{
 \strong{Available route.} Supply an additive formula, an aligned data name,
@@ -98,6 +107,14 @@ canonically identical. The resulting coefficient-only DP fit has no
 sampling covariance, deviance, fitted values, residuals or classical
 inference. It reads an existing release and never starts source work or a
 new DP opening.
+
+\strong{Fresh formal binomial/Poisson route.} A
+\code{fresh_formal_analysis_id} names a source, contract, compute pair and
+public-terminal configuration fixed by custodians. It accepts no numerical,
+privacy or MPC controls. The client relays only authenticated opaque records,
+then reads the resulting public certificate and checks that it belongs to the
+source artifact. Retrying this selector resumes the durable analysis; it does
+not request another release.
 
 \strong{Unavailable routes.} Default/no-id calls and all legacy iterative
 routes stop locally. A formal selector without a matching completed

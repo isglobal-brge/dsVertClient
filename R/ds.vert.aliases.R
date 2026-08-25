@@ -7,7 +7,9 @@
 #' \code{ds.vert.glm()} can delegate an explicit Gaussian
 #' \code{dp_analysis_id} to \code{ds.vertDPGaussian()}; its no-id legacy route
 #' is unavailable. A binomial/Poisson \code{formal_analysis_id} reads a
-#' completed custodian-signed public certificate; it does not run the retired
+#' completed custodian-signed public certificate; a
+#' \code{fresh_formal_analysis_id} runs only the corresponding
+#' custodian-configured durable formal analysis. Neither runs the retired
 #' iterative route.
 #' \code{ds.vert.multinom(..., frequency = x)} is likewise limited to
 #' intercept-only log-odds post-processed from one validated sticky Frequency
@@ -56,11 +58,13 @@
 #'   enables only independent Gaussian GEE post-processing.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag.
-#' @param formal_analysis_id Custodian-owned selector for an already completed
-#'   formal Cox profile, binomial/Poisson GLM certificate, or discrete-time
-#'   public certificate. It cannot start a computation; the GEE adapter accepts
-#'   only the formal GLM independence-working point-estimate scope, and the
-#'   discrete selector remains a distinct fixed-grid pooled-logistic estimand.
+#' @param formal_analysis_id,fresh_formal_analysis_id Custodian-owned selector
+#'   for an already completed formal Cox profile, binomial/Poisson GLM
+#'   certificate, or discrete-time public certificate. The fresh GLM selector
+#'   is accepted only by \code{ds.vert.glm()} and only runs its configured
+#'   durable analysis. The GEE adapter accepts only the formal GLM
+#'   independence-working point-estimate scope, and the discrete selector
+#'   remains a distinct fixed-grid pooled-logistic estimand.
 #' @param max_iter,inner_iter,max_outer,tol Iteration caps and convergence
 #'   tolerance for the iterative fits.
 #' @param outcome_formula,propensity_formula Outcome and propensity models (IPW).
@@ -297,15 +301,16 @@ ds.vert.glm <- function(formula, data = NULL,
   dots_call <- match.call(expand.dots = FALSE)$...
   dots_names <- if (is.null(dots_call)) character() else names(dots_call)
   formal <- "formal_analysis_id" %in% dots_names
+  fresh <- "fresh_formal_analysis_id" %in% dots_names
   gaussian_dp <- "dp_analysis_id" %in% dots_names
-  if (!formal && !gaussian_dp) {
+  if (!formal && !fresh && !gaussian_dp) {
     .dsvert_block_retired_remote_route("legacy_glm")
   }
   precision <- match.arg(precision)
-  if (formal) {
+  if (formal || fresh) {
     if (!missing(precision) && !identical(precision, "auto")) {
       stop(paste(
-        "precision is server-owned for formal_analysis_id;",
+        "precision is server-owned for formal GLM selectors;",
         "omit it or use precision='auto'"), call. = FALSE)
     }
     # Direct promise forwarding is intentional: the sealed formal adapter
@@ -314,7 +319,8 @@ ds.vert.glm <- function(formula, data = NULL,
     out <- ds.vertGLM(
       formula = formula, data = data, datasources = datasources, ...)
     out <- .dsvert_set_frontdoor(
-      out, "ds.vert.glm", "ds.vertGLM.formal",
+      out, "ds.vert.glm",
+      if (fresh) "ds.vertGLM.fresh_formal" else "ds.vertGLM.formal",
       if (is.null(datasources)) NULL else length(datasources))
     return(.dsvert_add_policy(out, precision = "server-owned"))
   }

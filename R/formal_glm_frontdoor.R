@@ -156,7 +156,8 @@
   checked[[1L]]
 }
 
-.dsvert_formal_glm_frontdoor_fit <- function(release, request) {
+.dsvert_formal_glm_frontdoor_fit <- function(
+    release, request, called_via = "ds.vertGLM_formal_analysis_id") {
   coefficient_names <- vapply(
     release$coefficients, `[[`, character(1L), "coefficient")
   coefficients <- stats::setNames(
@@ -186,7 +187,7 @@
     intermediate_values_exposed = FALSE,
     production_ready = FALSE,
     inference = "unavailable_without_a_separate_attested_joint_artifact",
-    called_via = "ds.vertGLM_formal_analysis_id")
+    called_via = called_via)
   class(result) <- c("dsvert_formal_dp_glm", "ds.glm", "list")
   result
 }
@@ -221,4 +222,62 @@
   release <- .dsvert_formal_glm_frontdoor_public_result(
     request$value, resolved$datasources)
   .dsvert_formal_glm_frontdoor_fit(release, request$value)
+}
+
+.dsvert_formal_glm_fresh_frontdoor_adapter <- function(
+    explicit_arguments, formula, data, family, verbose, datasources,
+    analysis_id) {
+  allowed <- c(
+    "formula", "data", "family", "verbose", "datasources",
+    "fresh_formal_analysis_id")
+  unsupported <- setdiff(explicit_arguments, allowed)
+  if (length(unsupported)) {
+    stop(paste0(
+      "fresh_formal_analysis_id does not accept analyst-controlled legacy GLM ",
+      "arguments: ", paste(sort(unsupported, method = "radix"),
+                            collapse = ", ")),
+      call. = FALSE)
+  }
+  if (!is.logical(verbose) || length(verbose) != 1L || is.na(verbose)) {
+    stop("verbose must be one non-missing logical value", call. = FALSE)
+  }
+  if (is.null(formula) || is.null(data)) {
+    stop(paste(
+      "fresh_formal_analysis_id requires an explicit additive formula and",
+      "aligned data name"), call. = FALSE)
+  }
+  request <- .dsvert_formal_glm_frontdoor_request(
+    analysis_id = analysis_id, data = data, family = family,
+    formula = formula)
+  datasources <- .dsvert_dp_datasources(datasources)
+  resolved <- .dsvert_federation_argument(data, datasources)
+  selector <- list(
+    analysis_id = request$value$analysis_id,
+    data_name = request$value$data_name,
+    family = request$value$family,
+    formula_sha256 = request$value$formula_sha256)
+  fresh <- .dsvert_formal_glm_registered_fresh_run(
+    resolved$datasources, selector = selector)
+  valid_fresh <- is.list(fresh) && identical(
+    names(fresh), c("artifact_id", "total_blocks", "state", "production_ready")) &&
+    is.character(fresh$artifact_id) && length(fresh$artifact_id) == 1L &&
+    !is.na(fresh$artifact_id) && grepl("^[0-9a-f]{64}$", fresh$artifact_id) &&
+    is.numeric(fresh$total_blocks) && length(fresh$total_blocks) == 1L &&
+    !is.na(fresh$total_blocks) && is.finite(fresh$total_blocks) &&
+    fresh$total_blocks >= 1L && fresh$total_blocks == floor(fresh$total_blocks) &&
+    identical(fresh$state, "public_terminal_complete") &&
+    identical(fresh$production_ready, FALSE)
+  if (!isTRUE(valid_fresh)) {
+    stop("The configured fresh formal GLM analysis did not finish safely.",
+         call. = FALSE)
+  }
+  release <- .dsvert_formal_glm_frontdoor_public_result(
+    request$value, resolved$datasources)
+  if (!identical(release$artifact_id, fresh$artifact_id)) {
+    stop("The fresh formal GLM publication does not match its source artifact.",
+         call. = FALSE)
+  }
+  .dsvert_formal_glm_frontdoor_fit(
+    release, request$value,
+    called_via = "ds.vertGLM_fresh_formal_analysis_id")
 }
