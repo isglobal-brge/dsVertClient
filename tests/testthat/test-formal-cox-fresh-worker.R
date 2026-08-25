@@ -200,6 +200,13 @@ test_that("configured fresh Cox worker relays only a finalizer ticket and cipher
     finalizer_peer_id = "site_a-id", finalizer_role = "garbler",
     recipient_x25519_public_key = strrep("A", 44L), transport_key_sha256 = strrep("2", 64L),
     issuer_peer_name = "site_a", issuer_peer_id = "site_a-id", signature = strrep("A", 88L))
+  intent <- list(
+    version = "dsvert-formal-cox-blockwise-sticky-opening-v1",
+    purpose = "formal_cox_one_public_beta_validity_opening_v1",
+    artifact_id = strrep("e", 64L), candidate_sha256 = strrep("8", 64L),
+    final_pair_root_sha256 = strrep("1", 64L),
+    opening_mode = "dual_authority_additive_ring_and_xor_validity_v1",
+    exp_postprocess_mode = "certified_dyadic_interval_midpoint_v1")
   calls <- character()
   testthat::local_mocked_bindings(
     .dsvert_formal_cox_fresh_worker_call = function(conn, worker, action, payload,
@@ -234,6 +241,14 @@ test_that("configured fresh Cox worker relays only a finalizer ticket and cipher
           ciphertext = strrep("A", 80L), signature = strrep("A", 88L))
         return(list(payload = list(envelope = envelope, replayed = FALSE)))
       }
+      if (identical(action, "finalizer_prepare")) {
+        expect_identical(worker$peer_name, "site_a")
+        expect_identical(payload$ticket, ticket)
+        expect_null(names(payload$headers))
+        expect_null(names(payload$envelopes))
+        return(list(payload = list(intent = intent, finalized = FALSE,
+                                   certificate_sha256 = "", replayed = FALSE)))
+      }
       stop("unexpected action", call. = FALSE)
     },
     .package = "dsVertClient")
@@ -242,9 +257,15 @@ test_that("configured fresh Cox worker relays only a finalizer ticket and cipher
     .aggregate = identity)
   expect_false(handoff$production_ready)
   expect_identical(names(handoff$envelopes), names(workers))
+  prepared <- .dsvert_formal_cox_fresh_worker_prepare_finalizer(
+    list(site_a = "connection", site_b = "connection"), workers, handoff,
+    .aggregate = identity)
+  expect_false(prepared$production_ready)
+  expect_false(prepared$finalized)
+  expect_identical(prepared$intent, intent)
   expect_identical(calls, c("site_a:opening", "site_b:opening",
                             "site_a:finalizer_ticket", "site_a:finalizer_seal",
-                            "site_b:finalizer_seal"))
+                            "site_b:finalizer_seal", "site_a:finalizer_prepare"))
   expect_false(any(grepl("share|secret|storage|path|source", names(handoff),
                          ignore.case = TRUE)))
 })

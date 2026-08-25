@@ -5,7 +5,8 @@
 .DSVERT_FORMAL_COX_WORKER_CONTROL_MAX_BYTES <- 2L * 1024L * 1024L
 .DSVERT_FORMAL_COX_WORKER_CONTROL_ACTIONS <- c(
   "host_start", "bind", "offer", "accept", "confirm", "poll", "relay", "result",
-  "completion", "opening", "finalizer_ticket", "finalizer_seal", "commit")
+  "completion", "opening", "finalizer_ticket", "finalizer_seal", "finalizer_prepare",
+  "commit")
 
 .dsvert_formal_cox_fresh_worker_sha256 <- function(value) {
   is.character(value) && length(value) == 1L && !is.na(value) &&
@@ -68,6 +69,16 @@
        !is.list(payload$headers) || length(payload$headers) != 2L ||
        any(vapply(payload$headers, is.null, logical(1L))))) {
     stop("Configured fresh Cox worker requires one ticket and two finalizer headers.",
+         call. = FALSE)
+  }
+  if (identical(action, "finalizer_prepare") &&
+      (!identical(fields, c("ticket", "headers", "envelopes")) ||
+       !is.list(payload$ticket) || !is.list(payload$headers) ||
+       !is.list(payload$envelopes) || length(payload$headers) != 2L ||
+       length(payload$envelopes) != 2L ||
+       any(vapply(payload$headers, is.null, logical(1L))) ||
+       any(vapply(payload$envelopes, is.null, logical(1L))))) {
+    stop("Configured fresh Cox worker requires one ticket, two headers and two envelopes.",
          call. = FALSE)
   }
   if (!identical(action, "host_start")) {
@@ -407,6 +418,81 @@
   names(envelopes) <- names(workers)
   list(headers = openings, ticket = ticket, envelopes = envelopes,
        production_ready = FALSE)
+}
+
+# Persist the finalizer's candidate intent from two opaque handoffs. This is
+# still not a Cox estimate or public certificate: the sole return is a
+# share-free intent bound to the ticket, or a digest of an already-public
+# certificate on durable replay.
+.dsvert_formal_cox_fresh_worker_prepare_finalizer <- function(
+    conns, workers, handoff, .aggregate = DSI::datashield.aggregate) {
+  expected_handoff <- c("headers", "ticket", "envelopes", "production_ready")
+  valid_handoff <- is.list(handoff) && !is.null(names(handoff)) &&
+    identical(names(handoff), expected_handoff) && is.list(handoff$headers) &&
+    is.list(handoff$ticket) && is.list(handoff$envelopes) &&
+    length(handoff$headers) == 2L && length(handoff$envelopes) == 2L &&
+    identical(handoff$production_ready, FALSE)
+  if (!isTRUE(valid_handoff) || !is.list(conns) || !is.list(workers) ||
+      length(conns) != 2L || length(workers) != 2L ||
+      !identical(names(conns), names(workers))) {
+    stop("Configured fresh Cox finalizer preparation requires one validated handoff.",
+         call. = FALSE)
+  }
+  roles <- vapply(handoff$headers, function(header) {
+    if (is.list(header)) header$role else NA_character_
+  }, character(1L))
+  finalizer_index <- which(roles == "garbler")
+  if (length(finalizer_index) != 1L ||
+      !identical(handoff$ticket$finalizer_peer_name,
+                 workers[[finalizer_index]]$peer_name) ||
+      !identical(handoff$ticket$finalizer_role, "garbler")) {
+    stop("Configured fresh Cox handoff has no designated finalizer.", call. = FALSE)
+  }
+  payload <- .dsvert_formal_cox_fresh_worker_call(
+    conns[[finalizer_index]], workers[[finalizer_index]], "finalizer_prepare",
+    list(ticket = handoff$ticket, headers = unname(handoff$headers),
+         envelopes = unname(handoff$envelopes)), .aggregate = .aggregate)$payload
+  fields <- c("intent", "finalized", "certificate_sha256", "replayed")
+  valid_common <- is.list(payload) && identical(names(payload), fields) &&
+    is.logical(payload$finalized) && length(payload$finalized) == 1L &&
+    !is.na(payload$finalized) && is.logical(payload$replayed) &&
+    length(payload$replayed) == 1L && !is.na(payload$replayed) &&
+    is.character(payload$certificate_sha256) &&
+    length(payload$certificate_sha256) == 1L && !is.na(payload$certificate_sha256)
+  if (!isTRUE(valid_common)) {
+    stop("Configured fresh Cox worker returned an invalid finalizer preparation.",
+         call. = FALSE)
+  }
+  if (isTRUE(payload$finalized)) {
+    if (!is.null(payload$intent) ||
+        !.dsvert_formal_cox_fresh_worker_sha256(payload$certificate_sha256)) {
+      stop("Configured fresh Cox worker returned an invalid finalizer replay.",
+           call. = FALSE)
+    }
+  } else {
+    intent_fields <- c("version", "purpose", "artifact_id", "candidate_sha256",
+                       "final_pair_root_sha256", "opening_mode", "exp_postprocess_mode")
+    intent <- payload$intent
+    valid_intent <- is.list(intent) && !is.null(names(intent)) &&
+      identical(names(intent), intent_fields) &&
+      identical(intent$version, "dsvert-formal-cox-blockwise-sticky-opening-v1") &&
+      identical(intent$purpose, "formal_cox_one_public_beta_validity_opening_v1") &&
+      identical(intent$artifact_id, handoff$ticket$artifact_id) &&
+      identical(intent$final_pair_root_sha256,
+                handoff$ticket$final_pair_root_sha256) &&
+      .dsvert_formal_cox_fresh_worker_sha256(intent$candidate_sha256) &&
+      identical(intent$opening_mode, "dual_authority_additive_ring_and_xor_validity_v1") &&
+      identical(intent$exp_postprocess_mode,
+                "certified_dyadic_interval_midpoint_v1") &&
+      identical(payload$certificate_sha256, "")
+    if (!isTRUE(valid_intent)) {
+      stop("Configured fresh Cox worker returned an invalid finalizer intent.",
+           call. = FALSE)
+    }
+  }
+  list(intent = payload$intent, finalized = payload$finalized,
+       certificate_sha256 = payload$certificate_sha256,
+       replayed = payload$replayed, production_ready = FALSE)
 }
 
 # Run the fixed two-peer schedule by forwarding only authenticated opaque
