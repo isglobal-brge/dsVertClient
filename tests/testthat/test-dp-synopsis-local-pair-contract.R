@@ -60,4 +60,12 @@ test_that("local categorical projection commits strict-missing scope", {
     schema, "cohort", "site_a", c("disease", "exposure"), context)
   expect_identical(projection$primitive_scope$strict_missing_categorical,
                    character())
+
+  context$policy$primitive_scope$strict_missing_categorical <-
+    list("disease", "exposure")
+  strict_projection <- .dsvert_dp_synopsis_local_pair_project_components_v1(
+    schema, "cohort", "site_a", c("disease", "exposure"), context)
+  expect_identical(
+    strict_projection$primitive_scope$strict_missing_categorical,
+    c("disease", "exposure"))
 })

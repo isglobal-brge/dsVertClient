@@ -31,8 +31,8 @@ in formula order.}
 \item{m}{Number of deterministic categorical completion draws, from 2 to 100.}
 
 \item{family}{One of \code{"auto"}, \code{"binomial"}, or \code{"multinomial"}.
-The multivariable route requires \code{"auto"} so each signed marginal
-determines whether it is binary or multinomial.}
+Multi-response routes require \code{"auto"}; the two-response route derives
+both domains from its signed pair.}
 
 \item{max_iter, tol, lambda, intercept_only, verbose, seed}{Compatibility controls.
 Only \code{lambda = 0}, \code{intercept_only = "aggregate"}, the default
@@ -42,22 +42,27 @@ iteration values, and \code{seed = NULL} are supported.}
 }
 \value{
 A \code{ds.vertMI} object with DP-projected completed-category probabilities
-and no classical or Rubin sampling inference. Multi-response calls return one
-protected marginal completion per named response, not a completed joint
-microdata set.
+and no classical or Rubin sampling inference. A two-response call returns a
+joint categorical-probability completion only when the signed Synopsis
+contains the matching strict-missing contingency artifact. Calls with three or
+more responses return protected marginal completions, not a joint microdata
+set.
 }
 \description{
 Returns categorical MCAR completions from one signed sticky Synopsis release.
 It accepts either \code{outcome ~ 1} or \code{cbind(outcome1, outcome2, ...)
-~ 1}; the multivariable form completes signed marginals independently and
-never claims a joint model. It never mutates source tables and its
-deterministic completion draws are post-processing of the released vector.
+~ 1}. For exactly two responses, it requires and post-processes one matching
+strict-missing signed DP contingency table, retaining the released joint
+categorical dependence. Three or more responses complete signed marginals
+independently and never claim a joint model. It never mutates source tables and
+its deterministic completion draws are post-processing of released vectors.
 }
 \details{
-Every response must use a custodian-signed strict missingness categorical
-marginal from the same Synopsis release. Covariates, chained equations,
-joint imputation, analyst-controlled seeds, standard errors, p-values, and
-Rubin-rule sampling inference are unavailable.
+Every response must use a custodian-signed strict-missingness categorical
+marginal. A two-response joint completion instead requires one matching
+strict-missing categorical-pair release. Covariates, chained equations,
+joint models with three or more responses, analyst-controlled seeds, standard
+errors, p-values, and Rubin-rule sampling inference are unavailable.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

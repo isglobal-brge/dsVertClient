@@ -74,6 +74,115 @@
   "nonmissing_values_reject_before_release_v1", sep = "_")
 
 #' @keywords internal
+.dsvert_mi_strict_joint_missingness_policy_v1 <- paste(
+  "missing_values_have_no_joint_cell_and_unknown_or_conflicting",
+  "nonmissing_values_reject_before_release_v1", sep = "_")
+
+#' @keywords internal
+.dsvert_mi_complete_joint_counts_v1 <- function(
+    observed_table, admitted_count, m, release_sha256) {
+  valid_table <- is.matrix(observed_table) && is.numeric(observed_table) &&
+    nrow(observed_table) >= 2L && ncol(observed_table) >= 2L &&
+    !is.null(rownames(observed_table)) && !is.null(colnames(observed_table)) &&
+    !anyNA(rownames(observed_table)) && !anyNA(colnames(observed_table)) &&
+    all(nzchar(rownames(observed_table))) && all(nzchar(colnames(observed_table))) &&
+    !anyDuplicated(rownames(observed_table)) && !anyDuplicated(colnames(observed_table)) &&
+    !anyNA(observed_table) && all(is.finite(observed_table)) &&
+    all(observed_table >= 0)
+  if (!isTRUE(valid_table)) {
+    stop("observed_table must be a named non-negative DP joint table",
+         call. = FALSE)
+  }
+  completed <- .dsvert_mi_complete_counts_v1(
+    stats::setNames(as.numeric(observed_table),
+                    sprintf("cell-%08d", seq_len(length(observed_table)))),
+    admitted_count, m, release_sha256)
+  draws <- array(
+    completed$completed_counts,
+    dim = c(nrow(completed$completed_counts), nrow(observed_table),
+            ncol(observed_table)),
+    dimnames = list(NULL, rownames(observed_table), colnames(observed_table)))
+  pooled <- matrix(
+    completed$pooled_probabilities, nrow = nrow(observed_table),
+    ncol = ncol(observed_table),
+    dimnames = dimnames(observed_table))
+  list(
+    observed_table_dp = observed_table,
+    admitted_count_dp = completed$admitted_count_dp,
+    missing_count_dp = completed$missing_count_dp,
+    completed_count_dp = completed$completed_count_dp,
+    missing_count_projection = completed$missing_count_projection,
+    pooled_joint_probabilities = pooled,
+    draws_sha256 = digest::digest(
+      list(version = "dsvert-mi-categorical-joint-pair-draws-v1",
+           release_sha256 = release_sha256, completed_counts = draws),
+      algo = "sha256", serialize = TRUE, serializeVersion = 3L))
+}
+
+#' @keywords internal
+.dsvert_mi_joint_pair_result_v1 <- function(
+    formula, data_name, outcomes, m, datasources, .aggregate, .contingency) {
+  release <- .contingency(
+    data_name, outcomes[[1L]], outcomes[[2L]], NULL, datasources, .aggregate)
+  binding_fields <- c(
+    "artifact_key", "execution_id", "manifest_sha256", "contract_sha256",
+    "attempt_sha256", "source_contract_sha256", "result_set_sha256",
+    "final_vector_root", "coordinate_order_sha256", "release_sha256")
+  binding_ok <- is.list(release) &&
+    all(vapply(binding_fields, function(field) {
+      is.character(release[[field]]) && length(release[[field]]) == 1L &&
+        grepl("^[0-9a-f]{64}$", release[[field]])
+    }, logical(1L))) &&
+    identical(release$row_var, outcomes[[1L]]) &&
+    identical(release$col_var, outcomes[[2L]]) &&
+    identical(release$missingness_policy,
+              .dsvert_mi_strict_joint_missingness_policy_v1) &&
+    is.numeric(release$admitted_count_dp) && length(release$admitted_count_dp) == 1L &&
+    !is.na(release$admitted_count_dp) && is.finite(release$admitted_count_dp) &&
+    release$admitted_count_dp >= 0
+  if (!isTRUE(binding_ok)) {
+    stop("The signed categorical pair is not bound to strict missingness",
+         call. = FALSE)
+  }
+  completion <- .dsvert_mi_complete_joint_counts_v1(
+    release$table, release$admitted_count_dp, as.integer(m),
+    release$release_sha256)
+  status <- if (completion$completed_count_dp > 0) "ok" else
+    "dp_effective_count_zero"
+  variables <- stats::setNames(list(
+    list(levels = rownames(completion$pooled_joint_probabilities),
+         probabilities = rowSums(completion$pooled_joint_probabilities)),
+    list(levels = colnames(completion$pooled_joint_probabilities),
+         probabilities = colSums(completion$pooled_joint_probabilities))), outcomes)
+  result <- c(list(
+    status = status,
+    method = "signed_categorical_mcar_joint_pair_v3",
+    joint_model = "strict_missing_signed_joint_pair_completion_v1",
+    formula = stats::as.formula(formula), impute_columns = outcomes,
+    variables = variables,
+    joint_probabilities = completion$pooled_joint_probabilities,
+    observed_joint_table_dp = completion$observed_table_dp,
+    admitted_count_dp = completion$admitted_count_dp,
+    missing_count_dp = completion$missing_count_dp,
+    completed_count_dp = completion$completed_count_dp,
+    missing_count_projection = completion$missing_count_projection,
+    completed_draws_sha256 = completion$draws_sha256,
+    m = as.integer(m)), release[binding_fields])
+  result <- c(result, list(
+    sticky_replay = TRUE,
+    additional_privacy_cost = c(epsilon = 0, delta = 0),
+    assumption = paste(
+      "MCAR pair missingness under the signed strict-joint-missingness",
+      "contract; the released joint categorical dependence is retained"),
+    inference_scope = "No classical or Rubin sampling inference is provided",
+    standard_errors = NULL, covariance = NULL, p_values = NULL,
+    source_values_exposed = FALSE, intermediate_values_exposed = FALSE,
+    production_ready = FALSE))
+  class(result) <- c("ds.vertMI", "list")
+  result
+}
+
+#' @keywords internal
 .dsvert_mi_response_columns_v1 <- function(formula) {
   valid_formula <- inherits(formula, "formula") && length(formula) == 3L &&
     length(attr(stats::terms(formula), "term.labels")) == 0L &&
@@ -114,7 +223,8 @@
     formula, data_name, impute_columns, m, family, datasources, .aggregate,
     .run = .dsvert_dp_synopsis_vector_run,
     .count = .dsvert_dp_count_synopsis_result_v1,
-    .frequency = .dsvert_dp_frequency_synopsis_result_v1) {
+    .frequency = .dsvert_dp_frequency_synopsis_result_v1,
+    .contingency = .dsvert_dp_contingency_impl) {
   outcomes <- .dsvert_mi_response_columns_v1(formula)
   if (!is.character(data_name) || length(data_name) != 1L ||
       is.na(data_name) || !nzchar(data_name)) {
@@ -138,6 +248,13 @@
       "multivariable categorical MI requires family = 'auto' because",
       "each signed marginal determines its own binary or multinomial domain"),
          call. = FALSE)
+  }
+  if (length(outcomes) == 2L) {
+    if (!is.function(.contingency)) {
+      stop("Invalid categorical MI joint-pair dependency", call. = FALSE)
+    }
+    return(.dsvert_mi_joint_pair_result_v1(
+      formula, data_name, outcomes, m, datasources, .aggregate, .contingency))
   }
   if (!is.function(.run) || !is.function(.count) || !is.function(.frequency)) {
     stop("Invalid categorical MI Synopsis dependency", call. = FALSE)
@@ -266,12 +383,12 @@
 }
 
 #' @title Signed categorical multiple-imputation compatibility route
-#' @description Returns categorical MCAR completions from one signed sticky
-#'   Synopsis release. It accepts either \code{outcome ~ 1} or
-#'   \code{cbind(outcome1, outcome2, ...) ~ 1}; the multivariable form
-#'   completes signed marginals independently and never claims a joint model.
-#'   It never mutates source tables and its deterministic completion draws are
-#'   post-processing of the released vector.
+#' @description Returns categorical MCAR completions from signed sticky
+#'   Synopsis releases. It accepts either \code{outcome ~ 1} or
+#'   \code{cbind(outcome1, outcome2, ...) ~ 1}. The two-response form requires
+#'   one strict-missing signed joint pair; larger response sets complete signed
+#'   marginals independently. It never mutates source tables and its
+#'   deterministic completion draws are post-processing of released vectors.
 #' @param formula An intercept-only categorical response formula exactly of the
 #'   form \code{outcome ~ 1} or \code{cbind(outcome1, outcome2, ...) ~ 1}.
 #' @param data Signed protected dataset name or federation.
@@ -279,16 +396,16 @@
 #'   in formula order.
 #' @param m Number of deterministic categorical completion draws, from 2 to 100.
 #' @param family One of \code{"auto"}, \code{"binomial"}, or
-#'   \code{"multinomial"}. The multivariable route requires \code{"auto"}
-#'   so each signed marginal determines whether it is binary or multinomial.
+#'   \code{"multinomial"}. Multi-response routes require \code{"auto"}; the
+#'   two-response route derives both domains from its signed pair.
 #' @param max_iter,tol,lambda,intercept_only,verbose,seed Compatibility controls.
 #'   Only \code{lambda = 0}, \code{intercept_only = "aggregate"}, the default
 #'   iteration values, and \code{seed = NULL} are supported.
 #' @param datasources DataSHIELD connections.
 #' @return A \code{ds.vertMI} object with DP-projected completed-category
-#'   probabilities and no classical or Rubin sampling inference. Multi-response
-#'   calls return one protected marginal completion per named response, not a
-#'   completed joint microdata set.
+#'   probabilities and no classical or Rubin sampling inference. Two-response
+#'   calls return a joint categorical probability table; larger response sets
+#'   return protected marginal completions, not joint microdata.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
@@ -315,7 +432,11 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
 #' @export
 print.ds.vertMI <- function(x, ...) {
   cat("dsVert signed categorical MCAR completion\n")
-  if (is.list(x$variables)) {
+  if (identical(x$method, "signed_categorical_mcar_joint_pair_v3")) {
+    cat("  Joint signed pair:", paste(x$impute_columns, collapse = " × "),
+        "| missing (DP):", x$missing_count_dp, "\n")
+    cat("  No joint microdata or Rubin inference is released.\n")
+  } else if (is.list(x$variables)) {
     cat("  Independent signed marginals:",
         paste(names(x$variables), collapse = ", "), "\n")
     for (name in names(x$variables)) {

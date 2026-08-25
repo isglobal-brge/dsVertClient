@@ -545,10 +545,24 @@
     logical_snapshot = logical_snapshot,
     peer_pinset_sha256 = context$policy$peer_pinset_sha256,
     datasets = datasets))
+  parent_scope <- context$policy$primitive_scope
+  strict_values <- if (is.list(parent_scope)) {
+    parent_scope$strict_missing_categorical
+  } else NULL
+  if (is.list(strict_values) && is.null(names(strict_values)) &&
+      all(vapply(strict_values, .dsvert_dp_is_string, logical(1L)))) {
+    strict_values <- unname(unlist(strict_values, use.names = FALSE))
+  }
+  strict_missing <- if (is.character(strict_values)) {
+    sort(intersect(references, strict_values),
+         method = "radix")
+  } else {
+    character()
+  }
   scope <- .dsvert_joint_dp_client_canonical(list(
     mode = "catalog_v1", numeric_moments = character(),
     categorical_marginals = character(),
-    strict_missing_categorical = character(),
+    strict_missing_categorical = strict_missing,
     categorical_pairs = list(references), correlations = list()))
   projected_policy <- context$policy
   projected_policy$primitive_scope <- scope

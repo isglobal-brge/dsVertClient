@@ -1230,6 +1230,13 @@ ds.vertDPContingency <- function(data_name, row_var, col_var, server = NULL,
     context$layout, "admitted_count",
     description = "signed admitted-count capacity block")
   capacity <- .dsvert_dp_vector_block_capacity(count_block)
+  admitted_count <- .dsvert_dp_capsule_vector_values(
+    context$release, count_block)
+  if (length(admitted_count) != 1L || !is.finite(admitted_count) ||
+      admitted_count < 0 || admitted_count > capacity) {
+    stop("The released admitted-count block violates its signed domain",
+         call. = FALSE)
+  }
   if (length(counts) != expected || any(counts < 0) ||
       any(counts > capacity)) {
     stop("The released contingency block violates its signed domain",
@@ -1277,6 +1284,8 @@ ds.vertDPContingency <- function(data_name, row_var, col_var, server = NULL,
     col_levels = unname(colnames(table)),
     nrow = as.integer(nrow(table)), ncol = as.integer(ncol(table)),
     counts = unname(as.numeric(table)), table = table,
+    admitted_count_dp = unname(admitted_count),
+    release_sha256 = context$release$final_vector_root,
     coordinate_maximum = capacity,
     unit_aggregation_policy = descriptor$repeated_record_policy,
     missingness_policy = descriptor$missingness_policy,

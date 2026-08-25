@@ -42,14 +42,14 @@ test_that("categorical MI completion accepts lattice counts and rejects invalid 
 .mi_synopsis_adapter_fixture <- function() {
   root <- paste(rep("c", 64L), collapse = "")
   binding <- list(
-    artifact_key = paste0("artifact_", root),
-    execution_id = paste0("execution_", root),
+    artifact_key = root, execution_id = root,
     manifest_sha256 = root, contract_sha256 = root,
     attempt_sha256 = root, source_contract_sha256 = root,
     result_set_sha256 = root, final_vector_root = root,
     coordinate_order_sha256 = root, release_sha256 = root)
   state <- new.env(parent = emptyenv())
   state$runs <- 0L
+  state$contingencies <- 0L
   run <- function(...) {
     state$runs <- state$runs + 1L
     list(root = root)
@@ -67,6 +67,8 @@ test_that("categorical MI completion accepts lattice counts and rejects invalid 
                      counts = c(control = 30, case = 10)),
       exposure = list(levels = c("unexposed", "exposed", "unknown"),
                       counts = c(unexposed = 24, exposed = 12, unknown = 4)),
+      region = list(levels = c("north", "south", "west"),
+                    counts = c(north = 20, south = 12, west = 8)),
       stop("unknown fixture marginal", call. = FALSE))
     c(binding, list(
       source_owner = source, variable = variable,
@@ -77,7 +79,24 @@ test_that("categorical MI completion accepts lattice counts and rejects invalid 
         missingness_policy =
           dsVertClient:::.dsvert_mi_strict_missingness_policy_v1)))
   }
-  list(state = state, run = run, count = count, frequency = frequency)
+  contingency <- function(data_name, row_var, col_var, server, datasources,
+                          .aggregate) {
+    state$contingencies <- state$contingencies + 1L
+    if (!identical(data_name, "protected") || !identical(row_var, "outcome") ||
+        !identical(col_var, "exposure") || !is.null(server)) {
+      stop("unexpected fixture joint pair", call. = FALSE)
+    }
+    c(binding, list(
+      row_var = row_var, col_var = col_var,
+      missingness_policy =
+        dsVertClient:::.dsvert_mi_strict_joint_missingness_policy_v1,
+      admitted_count_dp = 60,
+      table = matrix(c(18, 6, 8, 2, 5, 1), nrow = 2L,
+                     dimnames = list(c("control", "case"),
+                                     c("unexposed", "exposed", "unknown")))))
+  }
+  list(state = state, run = run, count = count, frequency = frequency,
+       contingency = contingency)
 }
 
 test_that("MI frontdoor consumes one strict signed Synopsis release", {
@@ -100,48 +119,73 @@ test_that("MI frontdoor consumes one strict signed Synopsis release", {
   expect_identical(fit$additional_privacy_cost, c(epsilon = 0, delta = 0))
 })
 
-test_that("MI completes multiple categorical marginals without claiming a joint model", {
+test_that("MI completes one strict categorical pair jointly", {
   fixture <- .mi_synopsis_adapter_fixture()
   first <- dsVertClient:::.dsvert_mi_synopsis_result_v1(
     cbind(outcome, exposure) ~ 1, "protected", NULL, 6L, "auto",
     list(peer_a = NULL), identity, .run = fixture$run,
-    .count = fixture$count, .frequency = fixture$frequency)
+    .count = fixture$count, .frequency = fixture$frequency,
+    .contingency = fixture$contingency)
   second <- dsVertClient:::.dsvert_mi_synopsis_result_v1(
     cbind(outcome, exposure) ~ 1, "protected", NULL, 6L, "auto",
     list(peer_a = NULL), identity, .run = fixture$run,
-    .count = fixture$count, .frequency = fixture$frequency)
+    .count = fixture$count, .frequency = fixture$frequency,
+    .contingency = fixture$contingency)
 
   expect_s3_class(first, "ds.vertMI")
-  expect_identical(first$method,
-                   "signed_categorical_mcar_independent_marginals_v2")
+  expect_identical(first$method, "signed_categorical_mcar_joint_pair_v3")
   expect_identical(first$joint_model,
-                   "independent_marginal_completion_no_joint_imputation_v1")
+                   "strict_missing_signed_joint_pair_completion_v1")
   expect_identical(names(first$variables), c("outcome", "exposure"))
-  expect_identical(first$variables$outcome$family, "binomial")
-  expect_identical(first$variables$exposure$family, "multinomial")
   expect_true(all(is.finite(first$variables$outcome$probabilities)))
   expect_true(all(is.finite(first$variables$exposure$probabilities)))
   expect_equal(sum(first$variables$outcome$probabilities), 1, tolerance = 1e-12)
   expect_equal(sum(first$variables$exposure$probabilities), 1, tolerance = 1e-12)
-  expect_identical(first$variables$outcome$completed_draws_sha256,
-                   second$variables$outcome$completed_draws_sha256)
-  expect_identical(first$variables$exposure$completed_draws_sha256,
-                   second$variables$exposure$completed_draws_sha256)
-  expect_false("completed_counts" %in% names(first$variables$outcome))
-  expect_false("completed_counts" %in% names(first$variables$exposure))
+  expect_equal(sum(first$joint_probabilities), 1, tolerance = 1e-12)
+  expect_identical(first$completed_draws_sha256, second$completed_draws_sha256)
+  expect_identical(first$observed_joint_table_dp, second$observed_joint_table_dp)
   expect_identical(first$additional_privacy_cost, c(epsilon = 0, delta = 0))
-  expect_identical(fixture$state$runs, 2L)
+  expect_identical(fixture$state$runs, 0L)
+  expect_identical(fixture$state$contingencies, 2L)
 
+  bad_pair <- function(...) {
+    value <- fixture$contingency(...)
+    value$missingness_policy <- "missing_or_out_of_domain_rows_are_ignored"
+    value
+  }
+  expect_error(dsVertClient:::.dsvert_mi_synopsis_result_v1(
+    cbind(outcome, exposure) ~ 1, "protected", NULL, 6L, "auto",
+    list(peer_a = NULL), identity, .contingency = bad_pair),
+    "strict missingness")
   expect_error(dsVertClient:::.dsvert_mi_synopsis_result_v1(
     cbind(outcome, exposure) ~ 1, "protected", c("exposure", "outcome"),
     6L, "auto", list(peer_a = NULL), identity, .run = fixture$run,
-    .count = fixture$count, .frequency = fixture$frequency),
+    .count = fixture$count, .frequency = fixture$frequency,
+    .contingency = fixture$contingency),
     "formula order")
   expect_error(dsVertClient:::.dsvert_mi_synopsis_result_v1(
     cbind(outcome, exposure) ~ 1, "protected", NULL, 6L, "binomial",
     list(peer_a = NULL), identity, .run = fixture$run,
-    .count = fixture$count, .frequency = fixture$frequency),
+    .count = fixture$count, .frequency = fixture$frequency,
+    .contingency = fixture$contingency),
     "family = 'auto'")
+})
+
+test_that("MI completes three categorical marginals without claiming a joint model", {
+  fixture <- .mi_synopsis_adapter_fixture()
+  fit <- dsVertClient:::.dsvert_mi_synopsis_result_v1(
+    cbind(outcome, exposure, region) ~ 1, "protected", NULL, 6L, "auto",
+    list(peer_a = NULL), identity, .run = fixture$run,
+    .count = fixture$count, .frequency = fixture$frequency)
+  expect_identical(fit$method,
+                   "signed_categorical_mcar_independent_marginals_v2")
+  expect_identical(names(fit$variables), c("outcome", "exposure", "region"))
+  expect_identical(fixture$state$runs, 1L)
+  expect_error(dsVertClient:::.dsvert_mi_synopsis_result_v1(
+    cbind(outcome, exposure, region) ~ 1, "protected",
+    c("exposure", "outcome", "region"), 6L, "auto",
+    list(peer_a = NULL), identity, .run = fixture$run,
+    .count = fixture$count, .frequency = fixture$frequency), "formula order")
 })
 
 test_that("the MI aliases forward one multivariable categorical request", {
