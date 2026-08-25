@@ -76,4 +76,11 @@ test_that("random-intercept GLS fails closed on malformed or singular summaries"
   fit <- dsVertClient:::.dsvert_lmm_random_intercept_gls(
     singular$global, singular$by_size, c(0, 1))
   expect_identical(fit$status, "non_identifiable")
+
+  incomplete <- make_lmm_gls_summary(y, x, c(1L, 1L, 2L, 2L))
+  incomplete$by_size[[2L]]$count <- 0L
+  fit <- dsVertClient:::.dsvert_lmm_random_intercept_gls(
+    incomplete$global, incomplete$by_size, c(0, 1))
+  expect_identical(fit$status, "non_identifiable")
+  expect_identical(fit$reason, "inconsistent_cluster_counts")
 })

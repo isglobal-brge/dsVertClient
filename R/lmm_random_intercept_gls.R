@@ -90,7 +90,7 @@
       stop("The signed LMM cluster sum of squares is invalid.", call. = FALSE)
     }
   }
-  if (sum(counts * sizes) > n || !any(counts > 0L)) {
+  if (sum(counts * sizes) != n || !any(counts > 0L)) {
     return(.dsvert_lmm_gls_non_identifiable("inconsistent_cluster_counts"))
   }
 
