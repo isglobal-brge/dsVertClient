@@ -88,6 +88,58 @@ test_that("registered formal GLM control relays only opaque Phase21 frames", {
     "one opaque frame")
 })
 
+test_that("registered formal GLM Phase21 driver preserves the signed lifecycle order", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"))
+  receipts <- list(site_a = .formal_glm_registered_job_control_receipt(),
+                   site_b = utils::modifyList(
+                     .formal_glm_registered_job_control_receipt(),
+                     list(peer = "site_b")))
+  calls <- list()
+  complete_status <- "eyJzdGF0ZSI6ImNvbXBsZXRlIiwicHJvZHVjdGlvbl9yZWFkeSI6ZmFsc2V9"
+  testthat::local_mocked_bindings(
+    .dsvert_formal_glm_registered_job_control_call = function(
+        conn, receipt, action, payload, .aggregate) {
+      calls[[length(calls) + 1L]] <<- list(
+        peer = names(conn)[[1L]], action = action, payload = payload)
+      frame <- if (identical(action, "phase21_stage_status")) {
+        complete_status
+      } else {
+        "eyJyZWNvcmQiOnt9fQ=="
+      }
+      list(
+        version = "dsvert-formal-glm-registered-phase20-job-control-response-v1",
+        action = action, payload = list(frame = frame), production_ready = FALSE)
+    },
+    .package = "dsVertClient")
+  result <- .dsvert_formal_glm_registered_phase21_run(
+    conns, receipts, .aggregate = identity, max_cycles = 2L)
+  expect_identical(result, list(
+    state = "public_terminal_complete", production_ready = FALSE))
+  expect_identical(vapply(calls, `[[`, character(1L), "action"), c(
+    "phase21_preflight", "phase21_preflight",
+    "phase21_preflight_bind", "phase21_preflight_bind",
+    "phase21_stage_start", "phase21_stage_start",
+    "phase21_stage_status", "phase21_stage_status",
+    "phase21_stage_record", "phase21_stage_record",
+    "phase21_stage_import", "phase21_stage_import",
+    "phase21_ticket", "phase21_ticket_import",
+    "phase21_seal", "phase21_seal",
+    "phase21_seal_import", "phase21_seal_import",
+    "phase21_candidate", "phase21_candidate_import",
+    "phase21_candidate_verify", "phase21_candidate_verify",
+    "phase21_local_release_import", "phase21_local_release_import",
+    "phase21_base_certificate", "phase21_base_certificate_import",
+    "phase21_authorization", "phase21_authorization_import",
+    "phase21_authorization", "phase21_authorization_import",
+    "phase21_publication", "phase21_commit", "phase21_commit",
+    "phase21_commit_import", "phase21_ack", "phase21_ack_import",
+    "phase21_cleanup", "phase21_cleanup", "phase21_cleanup_import"))
+  expect_true(all(vapply(calls, function(call) {
+    identical(names(call$payload), "frame")
+  }, logical(1L))))
+})
+
 test_that("registered formal GLM control fails closed before and after DSI", {
   conn <- list(site_a = structure(list(), class = "mock"))
   receipt <- .formal_glm_registered_job_control_receipt()

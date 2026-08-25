@@ -390,3 +390,140 @@
   }
   list(state = "terminal_complete", production_ready = FALSE)
 }
+
+# The Phase21 relay carries only base64-encoded canonical command frames. R
+# may inspect the small Stage status needed to drive polling, but it never
+# returns a lifecycle record or a private share to the caller.
+.dsvert_formal_glm_registered_phase21_empty <- function() {
+  list(frame = "e30=")
+}
+
+.dsvert_formal_glm_registered_phase21_frame <- function(value, action) {
+  fields <- names(value)
+  if (!is.list(value) || is.null(fields) || anyNA(fields) ||
+      anyDuplicated(fields) || !identical(fields, "frame")) {
+    stop("A registered formal GLM host returned an invalid Phase21 frame.",
+         call. = FALSE)
+  }
+  list(frame = .dsvert_formal_glm_registered_job_base64(value$frame))
+}
+
+.dsvert_formal_glm_registered_phase21_status <- function(frame) {
+  raw <- tryCatch(jsonlite::base64_dec(frame), error = function(error) raw())
+  canonical <- gsub("[\\r\\n]", "", jsonlite::base64_enc(raw))
+  text <- tryCatch(rawToChar(raw), error = function(error) NA_character_)
+  value <- tryCatch(jsonlite::fromJSON(text, simplifyVector = FALSE),
+                    error = function(error) NULL)
+  if (length(raw)) raw[] <- as.raw(0L)
+  fields <- if (is.list(value)) names(value) else NULL
+  valid <- identical(canonical, frame) && is.list(value) && !is.null(fields) &&
+    !anyNA(fields) && !anyDuplicated(fields) &&
+    all(fields %in% c("state", "stage", "production_ready")) &&
+    is.character(value$state) && length(value$state) == 1L &&
+    value$state %in% c("running", "complete", "failed") &&
+    is.logical(value$production_ready) && length(value$production_ready) == 1L &&
+    !is.na(value$production_ready) && identical(value$production_ready, FALSE)
+  if (!isTRUE(valid)) {
+    stop("A registered formal GLM host returned an invalid Phase21 status.",
+         call. = FALSE)
+  }
+  value$state
+}
+
+#' Drive the private, durable Phase21 finalizer relay for two host receipts
+#'
+#' This is an internal continuation of the configured fresh GLM path.  The
+#' resulting public terminal is retrieved separately through the ordinary
+#' formal GLM public-result adapter; this function never returns its contents.
+.dsvert_formal_glm_registered_phase21_run <- function(
+    conns, receipts, .aggregate = DSI::datashield.aggregate, max_cycles = NULL) {
+  valid_conns <- is.list(conns) && length(conns) == 2L && !is.null(names(conns)) &&
+    !anyNA(names(conns)) && !anyDuplicated(names(conns)) && all(nzchar(names(conns)))
+  valid_receipts <- is.list(receipts) && identical(names(receipts), names(conns))
+  if (!isTRUE(valid_conns) || !isTRUE(valid_receipts)) {
+    stop("Registered formal GLM Phase21 requires exactly two named hosts.",
+         call. = FALSE)
+  }
+  if (!is.null(max_cycles) && (!is.numeric(max_cycles) || length(max_cycles) != 1L ||
+      is.na(max_cycles) || !is.finite(max_cycles) || max_cycles < 1L ||
+      max_cycles != floor(max_cycles))) {
+    stop("Registered formal GLM Phase21 received an invalid test cycle limit.",
+         call. = FALSE)
+  }
+  lapply(receipts, .dsvert_formal_glm_registered_job_receipt)
+  peers <- names(conns)
+  call <- function(peer, action, payload = .dsvert_formal_glm_registered_phase21_empty()) {
+    reply <- .dsvert_formal_glm_registered_job_control_call(
+      conns[peer], receipts[peer], action, payload, .aggregate = .aggregate)
+    .dsvert_formal_glm_registered_phase21_frame(
+      .dsvert_formal_glm_registered_job_control_reply(reply, action)$payload, action)
+  }
+  exchange <- function(action, import_action) {
+    records <- lapply(peers, function(peer) call(peer, action))
+    names(records) <- peers
+    for (index in seq_along(peers)) {
+      call(peers[[index]], import_action, records[[peers[[3L - index]]]])
+    }
+    records
+  }
+
+  preflight <- exchange("phase21_preflight", "phase21_preflight_bind")
+  rm(preflight)
+  for (peer in peers) call(peer, "phase21_stage_start")
+  acknowledgements <- stats::setNames(rep("e30=", 2L), peers)
+  cycle <- 0L
+  repeat {
+    states <- vapply(peers, function(peer) {
+      .dsvert_formal_glm_registered_phase21_status(
+        call(peer, "phase21_stage_status")$frame)
+    }, character(1L))
+    if (any(states == "failed")) {
+      stop("A registered formal GLM Phase21 Stage worker failed.", call. = FALSE)
+    }
+    if (all(states == "complete")) break
+    progress <- FALSE
+    for (index in seq_along(peers)) {
+      peer <- peers[[index]]
+      other <- peers[[3L - index]]
+      offered <- call(peer, "phase21_stage_poll", list(frame = acknowledgements[[peer]]))
+      acknowledgements[[peer]] <- "e30="
+      if (!identical(offered$frame, "e30=")) {
+        acknowledgements[[peer]] <- call(other, "phase21_stage_relay", offered)$frame
+        progress <- TRUE
+      }
+    }
+    cycle <- cycle + 1L
+    if (!is.null(max_cycles) && cycle >= max_cycles) {
+      stop("Registered formal GLM Phase21 Stage did not finish in test cycles.",
+           call. = FALSE)
+    }
+    if (!progress) Sys.sleep(0.01)
+  }
+  stage <- exchange("phase21_stage_record", "phase21_stage_import")
+  rm(stage)
+
+  ticket <- call(peers[[1L]], "phase21_ticket")
+  call(peers[[2L]], "phase21_ticket_import", ticket)
+  seals <- exchange("phase21_seal", "phase21_seal_import")
+  rm(seals)
+  candidate <- call(peers[[1L]], "phase21_candidate")
+  call(peers[[2L]], "phase21_candidate_import", candidate)
+  releases <- exchange("phase21_candidate_verify", "phase21_local_release_import")
+  rm(releases)
+  certificate <- call(peers[[1L]], "phase21_base_certificate")
+  call(peers[[2L]], "phase21_base_certificate_import", certificate)
+  authorization <- call(peers[[1L]], "phase21_authorization")
+  call(peers[[2L]], "phase21_authorization_import", authorization)
+  authorization <- call(peers[[2L]], "phase21_authorization")
+  call(peers[[1L]], "phase21_authorization_import", authorization)
+  publication <- call(peers[[1L]], "phase21_publication")
+  commits <- lapply(peers, function(peer) call(peer, "phase21_commit", publication))
+  names(commits) <- peers
+  call(peers[[1L]], "phase21_commit_import", commits[[peers[[2L]]]])
+  acknowledgement <- call(peers[[1L]], "phase21_ack")
+  call(peers[[2L]], "phase21_ack_import", acknowledgement)
+  cleanups <- lapply(peers, function(peer) call(peer, "phase21_cleanup", publication))
+  names(cleanups) <- peers
+  call(peers[[1L]], "phase21_cleanup_import", cleanups[[peers[[2L]]]])
+  list(state = "public_terminal_complete", production_ready = FALSE)
+}

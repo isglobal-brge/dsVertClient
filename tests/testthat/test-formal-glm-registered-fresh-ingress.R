@@ -122,6 +122,13 @@ test_that("registered fresh GLM run composes ingress with only the designated ho
       seen <<- list(conns = conns, receipts = receipts, max_cycles = max_cycles)
       list(state = "terminal_complete", production_ready = FALSE)
     },
+    .dsvert_formal_glm_registered_phase21_run = function(
+        conns, receipts, .aggregate, max_cycles) {
+      expect_identical(names(conns), c("site_a", "site_c"))
+      expect_identical(names(receipts), c("site_a", "site_c"))
+      expect_identical(max_cycles, 4L)
+      list(state = "public_terminal_complete", production_ready = FALSE)
+    },
     .package = "dsVertClient")
   result <- .dsvert_formal_glm_registered_fresh_run(
     conns, .formal_glm_registered_fresh_ingress_selector(), .aggregate = identity,
@@ -131,5 +138,5 @@ test_that("registered fresh GLM run composes ingress with only the designated ho
   expect_identical(seen$max_cycles, 4L)
   expect_identical(result, list(
     artifact_id = strrep("b", 64L), total_blocks = 3L,
-    state = "phase21_publication_pending", production_ready = FALSE))
+    state = "public_terminal_complete", production_ready = FALSE))
 })

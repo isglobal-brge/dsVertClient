@@ -275,9 +275,9 @@
 
 #' Run configured fresh formal-GLM ingress through its durable Phase20 handoff
 #'
-#' This remains internal until the Phase21 two-authority publication is wired
-#' to a public result. Its return value deliberately says only that publication
-#' is pending; it never carries a model result or a private lifecycle record.
+#' This remains internal until the ordinary frontdoor invokes it for a
+#' server-configured source. It completes the two-authority publication but
+#' never carries a model result or a private lifecycle record.
 .dsvert_formal_glm_registered_fresh_run <- function(
     conns, selector, .aggregate = DSI::datashield.aggregate, max_cycles = NULL) {
   ingress <- .dsvert_formal_glm_registered_fresh_ingress(
@@ -311,6 +311,14 @@
     stop("Registered fresh GLM hosts did not complete their durable handoff.",
          call. = FALSE)
   }
+  phase21 <- .dsvert_formal_glm_registered_phase21_run(
+    conns[ingress$compute_peers], ingress$hosts,
+    .aggregate = .aggregate, max_cycles = max_cycles)
+  if (!is.list(phase21) || !identical(phase21, list(
+      state = "public_terminal_complete", production_ready = FALSE))) {
+    stop("Registered fresh GLM hosts did not complete their durable publication.",
+         call. = FALSE)
+  }
   list(artifact_id = ingress$artifact_id, total_blocks = blocks,
-       state = "phase21_publication_pending", production_ready = FALSE)
+       state = "public_terminal_complete", production_ready = FALSE)
 }
