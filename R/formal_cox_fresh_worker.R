@@ -203,3 +203,133 @@
   }
   values[[1L]]
 }
+
+# Run the fixed two-peer schedule by forwarding only authenticated opaque
+# frames.  The client never decodes MPC payloads or turns the completion
+# marker into a public result; the opening lifecycle owns that later boundary.
+.dsvert_formal_cox_fresh_worker_run <- function(
+    conns, workers, .aggregate = DSI::datashield.aggregate) {
+  valid <- is.list(conns) && is.list(workers) && length(conns) == 2L &&
+    length(workers) == 2L && !is.null(names(conns)) && !is.null(names(workers)) &&
+    !anyNA(names(conns)) && !anyNA(names(workers)) && !anyDuplicated(names(conns)) &&
+    !anyDuplicated(names(workers)) && identical(names(conns), names(workers))
+  if (!isTRUE(valid)) {
+    stop("Configured fresh Cox execution requires both named compute peers.",
+         call. = FALSE)
+  }
+  empty <- structure(list(), names = character())
+  call <- function(index, action, payload) {
+    .dsvert_formal_cox_fresh_worker_call(
+      conns[index], workers[[index]], action, payload, .aggregate = .aggregate)
+  }
+  payload <- function(reply, expected, action) {
+    value <- if (is.list(reply)) reply$payload else NULL
+    fields <- if (is.list(value)) names(value) else NULL
+    if (is.null(fields)) fields <- character()
+    if (!is.list(value) || is.null(fields) || anyNA(fields) ||
+        anyDuplicated(fields) || !identical(fields, expected)) {
+      stop(paste0("A configured fresh Cox worker returned an invalid ", action,
+                  " reply."), call. = FALSE)
+    }
+    value
+  }
+  offset <- function(value, field) {
+    valid_offset <- is.character(value) && length(value) == 1L && !is.na(value) &&
+      grepl("^(0|[1-9][0-9]{0,18})$", value) &&
+      (nchar(value, type = "bytes") < 19L || value <= "9223372036854775807")
+    if (!isTRUE(valid_offset)) {
+      stop(paste0("A configured fresh Cox worker returned an invalid ", field,
+                  "."), call. = FALSE)
+    }
+    value
+  }
+  frame <- function(reply, action) {
+    value <- payload(reply, "frame", action)$frame
+    valid_frame <- is.character(value) && length(value) == 1L && !is.na(value) &&
+      nchar(value, type = "bytes") >= 4L &&
+      nchar(value, type = "bytes") <= .DSVERT_FORMAL_COX_WORKER_CONTROL_MAX_BYTES &&
+      grepl("^[A-Za-z0-9+/]+={0,2}$", value)
+    if (!isTRUE(valid_frame)) {
+      stop("A configured fresh Cox worker returned an invalid root frame.",
+           call. = FALSE)
+    }
+    value
+  }
+  poll <- function(reply) {
+    value <- payload(reply, c("chunk", "accepted"), "poll")
+    value$accepted <- offset(value$accepted, "poll acknowledgement")
+    if (is.null(value$chunk)) return(value)
+    chunk <- value$chunk
+    expected <- c("sender", "offset", "payload_sha256", "payload")
+    valid_chunk <- is.list(chunk) && !is.null(names(chunk)) &&
+      !anyNA(names(chunk)) && !anyDuplicated(names(chunk)) &&
+      identical(names(chunk), expected) && is.character(chunk$sender) &&
+      length(chunk$sender) == 1L && !is.na(chunk$sender) &&
+      grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", chunk$sender) &&
+      .dsvert_formal_cox_fresh_worker_sha256(chunk$payload_sha256) &&
+      is.character(chunk$payload) && length(chunk$payload) == 1L &&
+      !is.na(chunk$payload) && nchar(chunk$payload, type = "bytes") >= 4L &&
+      nchar(chunk$payload, type = "bytes") <=
+        .DSVERT_FORMAL_COX_WORKER_CONTROL_MAX_BYTES &&
+      grepl("^[A-Za-z0-9+/]+={0,2}$", chunk$payload)
+    if (!isTRUE(valid_chunk)) {
+      stop("A configured fresh Cox worker returned an invalid relay chunk.",
+           call. = FALSE)
+    }
+    chunk$offset <- offset(chunk$offset, "relay offset")
+    value$chunk <- chunk
+    value
+  }
+  relay <- function(reply) {
+    offset(payload(reply, "accepted", "relay")$accepted, "relay acknowledgement")
+  }
+  result <- function(reply) {
+    value <- payload(reply, c("receipt", "done"), "result")
+    if (!is.logical(value$done) || length(value$done) != 1L || is.na(value$done) ||
+        (!isTRUE(value$done) && !isFALSE(value$done)) ||
+        !is.list(value$receipt)) {
+      stop("A configured fresh Cox worker returned an invalid worker result.",
+           call. = FALSE)
+    }
+    value
+  }
+  for (index in seq_along(workers)) call(index, "host_start", empty)
+  for (index in seq_along(workers)) {
+    other <- names(workers)[[3L - index]]
+    payload(call(index, "bind", list(peer = other)), character(), "bind")
+  }
+  acknowledgements <- c("0", "0")
+  repeat {
+    completion <- .dsvert_formal_cox_fresh_worker_completion(
+      conns, workers, .aggregate = .aggregate)
+    if (!is.null(completion)) return(completion)
+    offer <- frame(call(1L, "offer", empty), "offer")
+    accept <- frame(call(2L, "accept", list(frame = offer)), "accept")
+    payload(call(1L, "confirm", list(frame = accept)), character(), "confirm")
+    done <- c(FALSE, FALSE)
+    receipts <- vector("list", 2L)
+    repeat {
+      for (direction in list(c(1L, 2L), c(2L, 1L))) {
+        sent <- poll(call(direction[[1L]], "poll",
+                          list(acknowledged = acknowledgements[[direction[[1L]]]])))
+        if (!is.null(sent$chunk)) {
+          acknowledgements[[direction[[1L]]]] <- relay(call(
+            direction[[2L]], "relay", list(chunk = sent$chunk)))
+        }
+      }
+      for (index in seq_along(workers)) {
+        observed <- result(call(index, "result", empty))
+        if (isTRUE(observed$done)) {
+          receipts[[index]] <- observed$receipt
+          done[[index]] <- TRUE
+        }
+      }
+      if (all(done)) break
+      Sys.sleep(0.01)
+    }
+    for (index in seq_along(workers)) {
+      payload(call(index, "commit", list(receipts = unname(receipts))),
+              character(), "commit")
+    }
+  }
+}

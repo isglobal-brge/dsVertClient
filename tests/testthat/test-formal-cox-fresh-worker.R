@@ -105,6 +105,116 @@ test_that("configured fresh Cox worker accepts only one matching K2 completion",
     .aggregate = identity), "different completion")
 })
 
+test_that("configured fresh Cox worker relays one K2 schedule without outputs", {
+  workers <- list(site_a = .formal_cox_fresh_worker_selector(),
+                  site_b = utils::modifyList(.formal_cox_fresh_worker_selector(),
+                                              list(peer_name = "site_b")))
+  completion <- list(
+    version = "dsvert-formal-cox-blockwise-completion-v1",
+    plan_sha256 = strrep("a", 64L), transcript_sha256 = strrep("b", 64L),
+    final_commit_sha256 = strrep("c", 64L), schedule_steps = 1L,
+    fixed_schedule_complete = TRUE, output_kind = "sealed_private_result_v1",
+    production_ready = FALSE, completion_sha256 = strrep("d", 64L))
+  calls <- character()
+  committed <- FALSE
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_worker_call = function(conn, worker, action, payload,
+                                                     .aggregate) {
+      calls <<- c(calls, paste(worker$peer_name, action, sep = ":"))
+      reply <- switch(action,
+        host_start = list(version = "status", replayed = FALSE),
+        bind = list(),
+        completion = if (committed) {
+          list(complete = TRUE, completion = completion)
+        } else {
+          list(complete = FALSE)
+        },
+        offer = list(frame = "AQ=="),
+        accept = list(frame = "Ag=="),
+        confirm = list(),
+        poll = list(chunk = NULL, accepted = "0"),
+        result = list(receipt = list(version = "receipt", peer = worker$peer_name),
+                      done = TRUE),
+        commit = {
+          committed <<- TRUE
+          list()
+        },
+        stop("unexpected action", call. = FALSE))
+      list(payload = reply)
+    },
+    .package = "dsVertClient")
+  observed <- .dsvert_formal_cox_fresh_worker_run(
+    list(site_a = "connection", site_b = "connection"), workers,
+    .aggregate = identity)
+  expect_identical(observed, completion)
+  expect_identical(calls, c(
+    "site_a:host_start", "site_b:host_start", "site_a:bind", "site_b:bind",
+    "site_a:completion", "site_b:completion", "site_a:offer", "site_b:accept",
+    "site_a:confirm", "site_a:poll", "site_b:poll", "site_a:result",
+    "site_b:result", "site_a:commit", "site_b:commit", "site_a:completion",
+    "site_b:completion"))
+  expect_false(any(grepl("coefficient|share|secret|source", names(observed),
+                         ignore.case = TRUE)))
+})
+
+test_that("configured fresh Cox worker relays offsets above 2^53 as strings", {
+  workers <- list(site_a = .formal_cox_fresh_worker_selector(),
+                  site_b = utils::modifyList(.formal_cox_fresh_worker_selector(),
+                                              list(peer_name = "site_b")))
+  completion <- list(
+    version = "dsvert-formal-cox-blockwise-completion-v1",
+    plan_sha256 = strrep("a", 64L), transcript_sha256 = strrep("b", 64L),
+    final_commit_sha256 = strrep("c", 64L), schedule_steps = 1L,
+    fixed_schedule_complete = TRUE, output_kind = "sealed_private_result_v1",
+    production_ready = FALSE, completion_sha256 = strrep("d", 64L))
+  committed <- FALSE
+  poll_a <- 0L
+  relayed <- NULL
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_worker_call = function(conn, worker, action, payload,
+                                                     .aggregate) {
+      reply <- switch(action,
+        host_start = list(version = "status", replayed = FALSE),
+        bind = list(),
+        completion = if (committed) {
+          list(complete = TRUE, completion = completion)
+        } else {
+          list(complete = FALSE)
+        },
+        offer = list(frame = "AQ=="),
+        accept = list(frame = "Ag=="),
+        confirm = list(),
+        poll = {
+          if (identical(worker$peer_name, "site_a") && poll_a == 0L) {
+            poll_a <<- poll_a + 1L
+            list(chunk = list(sender = "site_a", offset = "9007199254740993",
+                              payload_sha256 = strrep("e", 64L), payload = "AQID"),
+                 accepted = "0")
+          } else {
+            list(chunk = NULL, accepted = "0")
+          }
+        },
+        relay = {
+          relayed <<- payload$chunk
+          list(accepted = "9007199254740996")
+        },
+        result = list(receipt = list(version = "receipt", peer = worker$peer_name),
+                      done = TRUE),
+        commit = {
+          committed <<- TRUE
+          list()
+        },
+        stop("unexpected action", call. = FALSE))
+      list(payload = reply)
+    },
+    .package = "dsVertClient")
+  .dsvert_formal_cox_fresh_worker_run(
+    list(site_a = "connection", site_b = "connection"), workers,
+    .aggregate = identity)
+  expect_identical(relayed$offset, "9007199254740993")
+  expect_false(is.numeric(relayed$offset))
+})
+
 test_that("configured fresh Cox worker rejects cross-server, widened and unsafe frames", {
   worker <- .formal_cox_fresh_worker_selector()
   expect_error(.dsvert_formal_cox_fresh_worker_call(
