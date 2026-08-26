@@ -434,8 +434,10 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "artifact may define outcome ~ 1 or one canonical additive",
         "fixed-effect formula with its signed finite variance-ratio grid."),
       paste(
-        "This is not ML/REML: random slopes, covariance estimates, standard",
-        "errors, p-values and population-sampling inference are unavailable."))
+        "Only the signed finite ML or REML variance-ratio grid for one",
+        "random-intercept covariance is available. Random slopes,",
+        "unstructured covariance, standard errors, p-values and population-",
+        "sampling inference are unavailable."))
   add("ds.validateDPGaussianCertificate",
       "ds.validateDPGaussianCertificate", "provisional",
       paste(
@@ -550,8 +552,9 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "order. Covariates, protected score/information, covariance, standard",
         "errors and inference remain unavailable."))
   add("ds.vertLMM.k3", "ds.vertDPLMM", "promoted",
-      "K>=3 compatibility wrapper for the signed random-intercept method-of-moments Synopsis.",
-      "It accepts no K>=3 profile/REML, random slopes, covariance, standard errors or classical inference.")
+      paste("K>=3 compatibility wrapper for the signed random-intercept",
+            "Synopsis, including a matching signed finite ML/REML grid."),
+      "It accepts no random slopes, unstructured covariance, standard errors or classical inference.")
   add(c("ds.vertGEE", "ds.vert.gee"), "ds.vertGEE", "promoted",
       paste(
         "A completed two-authority formal binomial/Poisson GLM certificate",
