@@ -289,7 +289,7 @@
 
 .dp_cor_gaussian_cross_artifact <- function(k = 3L, capacity = 100,
                                             scale = 256) {
-  stopifnot(k %in% c(2L, 3L, 5L))
+  stopifnot(k %in% 2:3)
   predictor_owner <- if (k == 2L) "site_a" else "site_c"
   computation <- c("site_a", "site_b")
   coordinate_count <- 7L
@@ -370,7 +370,7 @@
 }
 
 .dp_cor_complete_case_fixture <- function(k = 1L, intercept = TRUE) {
-  stopifnot(k %in% c(1L, 2L, 3L, 5L))
+  stopifnot(k %in% 1:3)
   capacity <- 100
   scale <- 256
   artifact <- if (k == 1L) {
@@ -378,8 +378,7 @@
   } else {
     .dp_cor_gaussian_cross_artifact(k, capacity, scale)
   }
-  peers <- c("site_a", "site_b", "site_c", "site_d", "site_e")[
-    seq_len(max(2L, k))]
+  peers <- c("site_a", "site_b", "site_c")[seq_len(max(2L, k))]
   count <- list(
     owner_peer = "site_a", dataset = "count_data",
     statistic_maximum = capacity, l1_sensitivity = 1)
@@ -491,30 +490,20 @@
 
 .with_dp_cor_complete_case_mocks <- function(fixture, code) {
   calls <- 0L
-  prepared_source <- function() {
-    source <- fixture$source
-    if (identical(fixture$artifact$spec_version, "v2")) {
-      artifact <- .dsvert_dp_gaussian_cross_artifact(
-        fixture$artifact, "outcome_data", "cross_cor", NULL,
-        "add_remove_patient", source$scale, source$capacity)
-      source$artifact <- artifact
-      source$moment <- .dsvert_dp_gaussian_unpack(
-        source$coordinates, artifact, source$capacity)
-      source$verification$artifact <- artifact
-      source$verification$validated_moment <- source$moment
-    }
-    source
-  }
   testthat::local_mocked_bindings(
     .dsvert_dp_gaussian_synopsis_release = function(...) {
       calls <<- calls + 1L
-      prepared_source()
+      if (!identical(fixture$artifact$spec_version, "v1")) {
+        stop("reserved_not_materialized: cross-owner Gaussian Synopsis",
+             call. = FALSE)
+      }
+      fixture$source
     },
     .dsvert_dp_capsule_vector_run = function(...) {
       stop("legacy capsule runner reached", call. = FALSE)
     },
     ds.validateDPGaussianCertificate = function(...) {
-      prepared_source()$verification
+      fixture$source$verification
     },
     .dsvert_dp_vector_accuracy_radius = function(...) list(
       radius = 0.01, confidence = 0.95, method = "fixture_exact_radius",
@@ -789,34 +778,19 @@ test_that("complete-case correlation requires signed intercept sums", {
     condition$reason, "pearson_requires_intercept_marginal_sums")
 })
 
-test_that("cross-owner complete-case Cor is certified at K2/3/5", {
-  for (k in c(2L, 3L, 5L)) {
+test_that("cross-owner complete-case Cor is quarantined for K2 and K3", {
+  for (k in 2:3) {
     fixture <- .dp_cor_complete_case_fixture(k)
     owners <- if (k == 2L) {
       list(site_a = "x", site_b = "y")
     } else {
       list(site_c = "x", site_b = "y")
     }
-    result <- .with_dp_cor_complete_case_mocks(fixture, {
-      correlation <- ds.vertCor(
-        "outcome_data", owners, analysis_id = "cross_cor", verbose = FALSE,
-        datasources = fixture$conns)
-      list(correlation = correlation)
-    })
-    correlation <- result$correlation
-    expect_identical(attr(result, "synopsis_calls"), 1L)
-    expect_identical(correlation$cross_owner_state,
-                     "exact_gc_to_joint_dp_vector_v1")
-    expect_identical(correlation$estimand_missingness, "complete_case_joint")
-    expect_identical(
-      correlation$participating_servers,
-      unname(unlist(fixture$artifact$participating_peers, use.names = FALSE)))
-    expect_identical(
-      correlation$computation_servers,
-      unname(unlist(fixture$artifact$computation_peers, use.names = FALSE)))
-    expect_true(all(is.finite(correlation$correlation)))
-    expect_equal(unname(diag(correlation$correlation)), rep(1, 2L),
-                 tolerance = 1e-12)
+    expect_error(.with_dp_cor_complete_case_mocks(
+      fixture, .dsvert_dp_cor_gaussian_impl(
+        "outcome_data", "cross_cor", owners, NULL,
+        fixture$conns, function(...) stop("raw DSI call", call. = FALSE))),
+      "reserved_not_materialized|cross-owner")
   }
 })
 

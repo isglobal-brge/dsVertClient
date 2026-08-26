@@ -30,9 +30,7 @@ A \code{ds.vertDPCor}/\code{ds.cor} object.
 }
 \description{
 This existing name consumes only a signed \code{gaussian_models} sufficient-
-statistic Synopsis artifact. A signed \code{analysis_id} is mandatory. The
-same-owner artifact and the fixed exact-GC cross-owner artifact both yield
-a complete-case correlation; the latter is available only when its signed
-artifact names the two computation peers and every requested owner exactly.
-There is no fallback to pairwise moments or a legacy capsule.
+statistic Synopsis artifact. A signed \code{analysis_id} is mandatory and every
+requested variable must be same-owner. Cross-owner descriptors fail closed;
+there is no silent fallback to either pairwise moments or a legacy capsule.
 }

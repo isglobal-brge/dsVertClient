@@ -1271,17 +1271,6 @@ test_that("cross-owner Gaussian K=3 and K=5 are served by both public front door
         function(receipt) identical(receipt$request_limit, FALSE) &&
           identical(receipt$operation_limit, FALSE), logical(1L))))
     }
-    correlation <- ds.vertCor(
-      "outcome_data", list(site_c = "x", site_b = "y"),
-      analysis_id = "cross_model", verbose = FALSE, datasources = fixture$conns)
-    expect_identical(capsule_calls, 3L)
-    expect_identical(correlation$cross_owner_state,
-                     "exact_gc_to_joint_dp_vector_v1")
-    expect_identical(correlation$var_names, c("x", "y"))
-    expect_true(all(is.finite(correlation$correlation)))
-    expect_equal(unname(diag(correlation$correlation)), rep(1, 2L),
-                 tolerance = 1e-12)
-
     expect_identical(adapted$called_via,
                      "ds.vertGLM_explicit_dp_analysis_id")
     expect_identical(adapted$legacy_glm_estimand, FALSE)
@@ -1353,16 +1342,6 @@ test_that("cross-owner Gaussian K=2 uses both owner-computation peers", {
       names(verified$certificate$signed_evidence$vector_release_receipts),
       c("site_a", "site_b"))
   }
-  correlation <- ds.vertCor(
-    "outcome_data", list(site_a = "x", site_b = "y"),
-    analysis_id = "cross_model", verbose = FALSE, datasources = fixture$conns)
-  expect_identical(capsule_calls, 3L)
-  expect_identical(correlation$cross_owner_state,
-                   "exact_gc_to_joint_dp_vector_v1")
-  expect_identical(correlation$var_names, c("x", "y"))
-  expect_true(all(is.finite(correlation$correlation)))
-  expect_equal(unname(diag(correlation$correlation)), rep(1, 2L),
-               tolerance = 1e-12)
   expect_identical(adapted$called_via,
                    "ds.vertGLM_explicit_dp_analysis_id")
   expect_identical(adapted$legacy_glm_estimand, FALSE)
