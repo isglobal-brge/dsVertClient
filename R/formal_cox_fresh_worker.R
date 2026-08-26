@@ -495,6 +495,57 @@
        replayed = payload$replayed, production_ready = FALSE)
 }
 
+# Stage the already prepared finalizer records at both compute authorities.
+# This is still not an opening: it verifies only the role-local, share-free
+# record each worker persisted in Rock and returns no candidate to the caller.
+.dsvert_formal_cox_fresh_worker_stage_finalizer <- function(
+    conns, workers, handoff, prepared, .aggregate = DSI::datashield.aggregate) {
+  expected_handoff <- c("headers", "ticket", "envelopes", "production_ready")
+  expected_prepared <- c("intent", "finalized", "certificate_sha256", "replayed",
+                         "production_ready")
+  valid <- is.list(conns) && is.list(workers) && length(conns) == 2L &&
+    length(workers) == 2L && identical(names(conns), names(workers)) &&
+    is.list(handoff) && identical(names(handoff), expected_handoff) &&
+    is.list(handoff$headers) && length(handoff$headers) == 2L &&
+    is.list(handoff$ticket) && is.list(handoff$envelopes) &&
+    length(handoff$envelopes) == 2L &&
+    identical(handoff$production_ready, FALSE) &&
+    is.list(prepared) && identical(names(prepared), expected_prepared) &&
+    identical(prepared$finalized, FALSE) && is.list(prepared$intent) &&
+    .dsvert_formal_cox_fresh_worker_sha256(prepared$intent$artifact_id) &&
+    .dsvert_formal_cox_fresh_worker_sha256(prepared$intent$candidate_sha256) &&
+    identical(prepared$intent$artifact_id, handoff$ticket$artifact_id)
+  if (!isTRUE(valid)) {
+    stop("Configured fresh Cox finalizer staging requires one prepared handoff.",
+         call. = FALSE)
+  }
+  stages <- Map(function(conn, worker, header) {
+    payload <- .dsvert_formal_cox_fresh_worker_call(
+      conn, worker, "finalizer_stage",
+      list(ticket = handoff$ticket, headers = unname(handoff$headers),
+           envelopes = unname(handoff$envelopes)), .aggregate = .aggregate)$payload
+    fields <- c("artifact_id", "candidate_sha256", "local_role", "production_ready")
+    valid_stage <- is.list(payload) && identical(names(payload), fields) &&
+      identical(payload$artifact_id, prepared$intent$artifact_id) &&
+      identical(payload$local_role, header$role) &&
+      identical(payload$production_ready, FALSE) &&
+      is.character(payload$candidate_sha256) && length(payload$candidate_sha256) == 1L &&
+      !is.na(payload$candidate_sha256) &&
+      if (identical(header$role, "garbler")) {
+        identical(payload$candidate_sha256, prepared$intent$candidate_sha256)
+      } else {
+        identical(header$role, "evaluator") && identical(payload$candidate_sha256, "")
+      }
+    if (!isTRUE(valid_stage)) {
+      stop("Configured fresh Cox worker returned an invalid finalizer stage.",
+           call. = FALSE)
+    }
+    payload
+  }, conns, workers, handoff$headers)
+  names(stages) <- names(workers)
+  list(artifact_id = prepared$intent$artifact_id, production_ready = FALSE)
+}
+
 # Run the fixed two-peer schedule by forwarding only authenticated opaque
 # frames.  The client never decodes MPC payloads or turns the completion
 # marker into a public result; the opening lifecycle owns that later boundary.

@@ -208,6 +208,7 @@ test_that("configured fresh Cox worker relays only a finalizer ticket and cipher
     opening_mode = "dual_authority_additive_ring_and_xor_validity_v1",
     exp_postprocess_mode = "certified_dyadic_interval_midpoint_v1")
   calls <- character()
+  bad_stage <- FALSE
   testthat::local_mocked_bindings(
     .dsvert_formal_cox_fresh_worker_call = function(conn, worker, action, payload,
                                                      .aggregate) {
@@ -249,6 +250,19 @@ test_that("configured fresh Cox worker relays only a finalizer ticket and cipher
         return(list(payload = list(intent = intent, finalized = FALSE,
                                    certificate_sha256 = "", replayed = FALSE)))
       }
+      if (identical(action, "finalizer_stage")) {
+        expect_identical(payload$ticket, ticket)
+        expect_null(names(payload$headers))
+        expect_null(names(payload$envelopes))
+        return(list(payload = list(
+          artifact_id = intent$artifact_id,
+          candidate_sha256 = if (identical(role, "garbler")) {
+            if (isTRUE(bad_stage)) strrep("9", 64L) else intent$candidate_sha256
+          } else {
+            ""
+          },
+          local_role = role, production_ready = FALSE)))
+      }
       stop("unexpected action", call. = FALSE)
     },
     .package = "dsVertClient")
@@ -263,9 +277,20 @@ test_that("configured fresh Cox worker relays only a finalizer ticket and cipher
   expect_false(prepared$production_ready)
   expect_false(prepared$finalized)
   expect_identical(prepared$intent, intent)
+  staged <- .dsvert_formal_cox_fresh_worker_stage_finalizer(
+    list(site_a = "connection", site_b = "connection"), workers, handoff,
+    prepared, .aggregate = identity)
+  expect_identical(staged, list(
+    artifact_id = intent$artifact_id, production_ready = FALSE))
+  bad_stage <- TRUE
+  expect_error(.dsvert_formal_cox_fresh_worker_stage_finalizer(
+    list(site_a = "connection", site_b = "connection"), workers, handoff,
+    prepared, .aggregate = identity), "invalid finalizer stage")
   expect_identical(calls, c("site_a:opening", "site_b:opening",
                             "site_a:finalizer_ticket", "site_a:finalizer_seal",
-                            "site_b:finalizer_seal", "site_a:finalizer_prepare"))
+                            "site_b:finalizer_seal", "site_a:finalizer_prepare",
+                            "site_a:finalizer_stage", "site_b:finalizer_stage",
+                            "site_a:finalizer_stage"))
   expect_false(any(grepl("share|secret|storage|path|source", names(handoff),
                          ignore.case = TRUE)))
 })

@@ -228,10 +228,10 @@
        workers = workers, production_ready = FALSE)
 }
 
-# Complete the private fresh-Cox path only through the durable finalizer
-# preparation boundary.  The resulting public opening remains a separate
-# two-authority lifecycle: this helper deliberately returns neither an intent,
-# a certificate, nor any model result.
+# Complete the private fresh-Cox path through durable finalizer staging.  The
+# resulting public opening remains a separate two-authority lifecycle: this
+# helper deliberately returns neither an intent, a certificate, nor any model
+# result.
 .dsvert_formal_cox_fresh_run <- function(
     conns, selector, .aggregate = DSI::datashield.aggregate) {
   ingress <- .dsvert_formal_cox_fresh_ingress(
@@ -313,12 +313,16 @@
     stop("Configured fresh Cox run returned an invalid finalizer state.",
          call. = FALSE)
   }
+  if (!isTRUE(prepared$finalized)) {
+    .dsvert_formal_cox_fresh_worker_stage_finalizer(
+      compute_conns, ingress$workers, handoff, prepared, .aggregate = .aggregate)
+  }
   list(analysis_id = ingress$analysis_id, schema_sha256 = ingress$schema_sha256,
        total_blocks = as.integer(ingress$total_blocks),
        state = if (isTRUE(prepared$finalized)) {
          "finalizer_already_public"
        } else {
-         "finalizer_prepared"
+         "finalizer_staged"
        },
        production_ready = FALSE)
 }
