@@ -375,11 +375,12 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add(c("ds.vertCor", "ds.vert.cor"), "ds.vertCor", "promoted",
       paste(
         "Joint complete-case Pearson correlation from one signed same-owner",
-        "Gaussian Synopsis artifact."),
+        "or fixed exact-GC cross-owner Gaussian Synopsis artifact."),
       paste(
         "A signed analysis id and intercept are mandatory; mechanism regions",
-        "exclude population-sampling uncertainty. Cross-owner descriptors",
-        "are quarantined without a capsule fallback."))
+        "exclude population-sampling uncertainty. Cross-owner input ownership",
+        "and the two computation peers are fixed by the artifact; there is",
+        "no capsule or legacy fallback."))
   add(c("ds.vertPCA", "ds.vert.pca"), "ds.vertPCA", "promoted",
       paste(
         "Client-only eigenstructure of the explicitly PSD-projected sticky DP",
