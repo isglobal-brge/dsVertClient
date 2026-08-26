@@ -479,6 +479,12 @@
     c("claim_set_json", "compilation_json"),
   dsvertDPSynopsisCategoricalCrossFinalizeDS =
     c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisGaussianCrossBindDS =
+    c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisGaussianCrossFinalizeDS =
+    c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisGaussianCrossEvidenceDS =
+    c("claim_set_json", "compilation_json"),
   dsvertDPSynopsisAlignmentMaskStartDS =
     c("claim_set_json", "compilation_json"),
   dsvertDPSynopsisAlignmentMaskStoreDS =

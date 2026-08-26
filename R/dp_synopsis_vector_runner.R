@@ -340,15 +340,18 @@
   status <- bootstrap$status
   manifest_bundle <- bootstrap$manifest_bundle
   trusted <- .dsvert_dp_synopsis_client_bundle(manifest_bundle, status)
-  cross <- .dsvert_dp_synopsis_supported_categorical_cross_v1(
+  categorical_cross <- .dsvert_dp_synopsis_supported_categorical_cross_v1(
     trusted$manifest)
+  gaussian_cross <- .dsvert_dp_synopsis_supported_gaussian_cross_v1(
+    trusted$manifest)
+  cross <- isTRUE(categorical_cross) || isTRUE(gaussian_cross)
   if (.dsvert_dp_synopsis_runner_cross(trusted$manifest) &&
       !isTRUE(cross)) {
     stop("Cross-owner synopsis catalogs are not supported", call. = FALSE)
   }
   published <- .dsvert_dp_synopsis_publication_resume_v1(
     bootstrap, .aggregate = .aggregate)
-  if (!is.null(published)) return(published)
+  if (!is.null(published) && !isTRUE(gaussian_cross)) return(published)
   layout <- .dsvert_dp_capsule_vector_layout(trusted$manifest)
   context <- trusted$context
   valid_context <- is.list(context) && is.character(context$servers) &&
@@ -389,6 +392,30 @@
   built <- .dsvert_dp_synopsis_runner_compile(
     context, manifest_bundle, trusted, layout, .aggregate)
   compiled <- built$compiled
+  gaussian_evidence <- function(value) {
+    if (!isTRUE(gaussian_cross)) return(NULL)
+    remote_context <- list(
+      manifest_sha256 = manifest_bundle$manifest_sha256,
+      claim_set_json = .dsvert_joint_dp_client_json(built$claim_set),
+      compilation_json = .dsvert_joint_dp_client_json(built$compilation))
+    artifacts <- .dsvert_dp_gaussian_cross_artifacts_client(trusted$manifest)
+    stats::setNames(lapply(names(artifacts), function(analysis_id) {
+      calls <- stats::setNames(lapply(authorities, function(peer) {
+        .dsvert_dp_synopsis_gaussian_cross_evidence_call_v1(
+          remote_context, analysis_id)
+      }), authorities)
+      .dsvert_dp_gaussian_cross_public_evidence_set(
+        .dsvert_fanout_by_site(
+          context$conns, calls,
+          operation = "cross-owner Gaussian public evidence",
+          .aggregate = .aggregate),
+        context, trusted$manifest, analysis_id, value$release)
+    }), names(artifacts))
+  }
+  if (!is.null(published)) {
+    published$cross_gaussian_evidence <- gaussian_evidence(published)
+    return(published)
+  }
   execution <- .dsvert_dp_synopsis_client_execution(compiled)
   public_chunk_count <- .dsvert_dp_synopsis_runner_count(
     execution$geometry$public_chunk_count, "public chunk count")
@@ -554,7 +581,7 @@
         manifest_sha256 = manifest_bundle$manifest_sha256,
         claim_set_json = claim_set_json,
         compilation_json = compilation_json)
-      cross_receipt <- .dsvert_dp_categorical_cross_orchestrate(
+      cross_receipt <- .dsvert_dp_cross_orchestrate(
         manifest_bundle$manifest_json, cross_manifest, context,
         source_receipt, .aggregate, .remote_context = remote_context)
       if (!is.list(cross_receipt) ||
@@ -675,5 +702,6 @@
     stop("The durable synopsis publication was not available after RELEASE",
          call. = FALSE)
   }
+  published$cross_gaussian_evidence <- gaussian_evidence(published)
   published
 }

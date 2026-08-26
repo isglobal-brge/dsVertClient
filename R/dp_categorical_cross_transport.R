@@ -448,7 +448,8 @@
 .dsvert_dp_cross_orchestrate <- function(
     manifest_json, manifest, context, source_receipt, .aggregate,
     .setup_exact = .dsvert_setup_exact_gc_transport,
-    .alignment_mask = .dsvert_dp_alignment_mask_run) {
+    .alignment_mask = .dsvert_dp_alignment_mask_run,
+    .remote_context = NULL) {
   categorical <- .dsvert_dp_categorical_cross_artifacts_client(manifest)
   gaussian <- .dsvert_dp_gaussian_cross_artifacts_client(manifest)
   completed <- list()
@@ -500,13 +501,13 @@
     completed$categorical <- .dsvert_dp_categorical_cross_orchestrate(
       manifest_json, manifest, context, source_receipt, .aggregate,
       .setup_exact = .setup_exact, .alignment_mask = .alignment_mask,
-      .shared_exact = shared_exact)
+      .shared_exact = shared_exact, .remote_context = .remote_context)
   }
   if (length(gaussian)) {
     completed$gaussian <- .dsvert_dp_gaussian_cross_orchestrate(
       manifest_json, manifest, context, source_receipt, .aggregate,
       .setup_exact = .setup_exact, .alignment_mask = .alignment_mask,
-      .shared_exact = shared_exact)
+      .shared_exact = shared_exact, .remote_context = .remote_context)
   }
   if (!length(completed)) {
     if (!identical(source_receipt$sampler_handoff_ready, TRUE)) {

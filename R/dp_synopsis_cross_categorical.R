@@ -755,6 +755,17 @@
     isTRUE(other_empty)
 }
 
+.dsvert_dp_synopsis_supported_gaussian_cross_v1 <- function(manifest) {
+  artifacts <- .dsvert_dp_gaussian_cross_artifacts_client(manifest)
+  length(artifacts) > 0L && all(vapply(artifacts, function(artifact) {
+    identical(artifact$spec_version, "v2") &&
+      identical(artifact$implementation_state,
+                "cross_owner_exact_gc_materialized") &&
+      identical(artifact$cross_owner_state,
+                "exact_gc_to_joint_dp_vector_v1")
+  }, logical(1L)))
+}
+
 .dsvert_dp_synopsis_categorical_cross_remote_context_v1 <- function(value) {
   fields <- c("manifest_sha256", "claim_set_json", "compilation_json")
   if (!is.list(value) || !.dsvert_dp_has_exact_names(value, fields) ||

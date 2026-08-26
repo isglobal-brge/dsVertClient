@@ -13,6 +13,8 @@
   "dsvert-cross-gaussian-exact-stage-v1"
 .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_RECEIPT_VERSION <-
   "dsvert-cross-gaussian-result-receipt-v1"
+.DSVERT_CLIENT_DP_GAUSSIAN_CROSS_PUBLIC_EVIDENCE_VERSION <-
+  "dsvert-cross-gaussian-public-result-evidence-v1"
 .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_PRODUCER <- "dp.gaussian-cross.v1"
 .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_MAX_TRANSPORT_COORDINATES <-
   64L * 1024L^2
@@ -516,12 +518,127 @@
   receipts
 }
 
+.dsvert_dp_synopsis_gaussian_cross_remote_context_v1 <- function(value) {
+  fields <- c("manifest_sha256", "claim_set_json", "compilation_json")
+  if (!is.list(value) || !.dsvert_dp_has_exact_names(value, fields) ||
+      !.dsvert_vector_hex(value$manifest_sha256) ||
+      !all(vapply(value[c("claim_set_json", "compilation_json")],
+                  .dsvert_dp_is_string, logical(1L)))) {
+    stop("Invalid Gaussian cross Synopsis remote context", call. = FALSE)
+  }
+  value
+}
+
+.dsvert_dp_synopsis_gaussian_cross_bind_call_v1 <- function(
+    context, analysis_id, session_id) {
+  context <- .dsvert_dp_synopsis_gaussian_cross_remote_context_v1(context)
+  call(
+    name = "dsvertDPSynopsisGaussianCrossBindDS",
+    manifest_sha256 = context$manifest_sha256,
+    claim_set_json = context$claim_set_json,
+    compilation_json = context$compilation_json,
+    analysis_id = analysis_id, session_id = session_id)
+}
+
+.dsvert_dp_synopsis_gaussian_cross_finalize_call_v1 <- function(
+    context, analysis_id, session_id) {
+  context <- .dsvert_dp_synopsis_gaussian_cross_remote_context_v1(context)
+  call(
+    name = "dsvertDPSynopsisGaussianCrossFinalizeDS",
+    manifest_sha256 = context$manifest_sha256,
+    claim_set_json = context$claim_set_json,
+    compilation_json = context$compilation_json,
+    analysis_id = analysis_id, session_id = session_id)
+}
+
+.dsvert_dp_synopsis_gaussian_cross_evidence_call_v1 <- function(
+    context, analysis_id) {
+  context <- .dsvert_dp_synopsis_gaussian_cross_remote_context_v1(context)
+  call(
+    name = "dsvertDPSynopsisGaussianCrossEvidenceDS",
+    manifest_sha256 = context$manifest_sha256,
+    claim_set_json = context$claim_set_json,
+    compilation_json = context$compilation_json,
+    analysis_id = analysis_id)
+}
+
+.dsvert_dp_gaussian_cross_public_evidence_set <- function(
+    responses, context, manifest, analysis_id, release) {
+  peers <- context$designated
+  artifact <- .dsvert_dp_gaussian_cross_artifacts_client(manifest)[[analysis_id]]
+  layout <- .dsvert_dp_capsule_vector_layout(manifest)
+  block <- layout$blocks[[paste("gaussian_models", analysis_id, sep = "::")]]
+  fields <- c(
+    "version", "phase", "analysis_id", "peer_name", "peer_identity_pk",
+    "artifact_sha256", "source_contract_sha256", "private_layout_sha256",
+    "transcript_sha256", "numeric_certificate_sha256",
+    "exact_transcript_sha256", "coordinate_count", "public_start",
+    "public_end", "public_coordinate_order_sha256", "ring_bits", "frac_bits",
+    "state", "fixed_transcript", "private_result_exposed",
+    "exact_intermediates_exposed", "alignment_hash_exposed", "signature")
+  if (!is.list(artifact) || !is.list(block) || !is.list(release) ||
+      !is.list(responses) || !setequal(names(responses), peers)) {
+    stop("The cross-owner Gaussian public evidence is incomplete",
+         call. = FALSE)
+  }
+  evidence <- stats::setNames(lapply(peers, function(peer) {
+    value <- .dsvert_joint_dp_client_decode(
+      responses[[peer]], "cross-owner Gaussian public evidence",
+      .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_MAX_RECEIPT_BYTES)
+    value <- .dsvert_dp_gaussian_cross_verify_signed(
+      value, "cross-gaussian-synopsis-evidence", peer, context, fields)
+    valid <- identical(
+        value$version, .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_PUBLIC_EVIDENCE_VERSION) &&
+      identical(value$phase, "cross_gaussian_public_result_evidence") &&
+      identical(value$analysis_id, analysis_id) &&
+      identical(value$peer_name, peer) &&
+      identical(value$peer_identity_pk, unname(context$pinset[[peer]])) &&
+      identical(value$artifact_sha256,
+                .dsvert_dp_capsule_source_hash(artifact)) &&
+      identical(value$source_contract_sha256,
+                release$source_contract_sha256) &&
+      identical(value$private_layout_sha256,
+                .dsvert_dp_gaussian_cross_layout_client(
+                  manifest)$transport_coordinate_order_sha256) &&
+      identical(value$transcript_sha256,
+                .dsvert_dp_capsule_source_hash(artifact$transcript)) &&
+      identical(value$numeric_certificate_sha256,
+                .dsvert_dp_capsule_source_hash(artifact$numeric_certificate)) &&
+      .dsvert_dp_capsule_source_hex(value$exact_transcript_sha256) &&
+      identical(as.numeric(value$coordinate_count), as.numeric(block$length)) &&
+      identical(as.numeric(value$public_start), as.numeric(block$start)) &&
+      identical(as.numeric(value$public_end), as.numeric(block$end)) &&
+      identical(value$public_coordinate_order_sha256, layout$sha256) &&
+      identical(as.numeric(value$ring_bits), 128) &&
+      identical(as.numeric(value$frac_bits),
+                as.numeric(artifact$numeric_grid_bits)) &&
+      identical(value$state, "complete") &&
+      identical(value$fixed_transcript, TRUE) &&
+      identical(value$private_result_exposed, FALSE) &&
+      identical(value$exact_intermediates_exposed, FALSE) &&
+      identical(value$alignment_hash_exposed, FALSE)
+    if (!isTRUE(valid)) {
+      stop("A computation peer returned invalid Gaussian public evidence",
+           call. = FALSE)
+    }
+    value
+  }), peers)
+  stable <- setdiff(fields, c("peer_name", "peer_identity_pk", "signature"))
+  if (length(unique(vapply(evidence, function(value) {
+        .dsvert_joint_dp_client_json(value[stable])
+      }, character(1L)))) != 1L) {
+    stop("The computation peers disagree on Gaussian public evidence",
+         call. = FALSE)
+  }
+  evidence
+}
+
 .dsvert_dp_gaussian_cross_orchestrate <- function(
     manifest_json, manifest, context, source_receipt, .aggregate,
     .setup_exact = .dsvert_setup_exact_gc_transport,
     .vecmul = .dsvert_exact_gc_vecmul_run,
     .alignment_mask = .dsvert_dp_alignment_mask_run,
-    .shared_exact = NULL) {
+    .shared_exact = NULL, .remote_context = NULL) {
   artifacts <- .dsvert_dp_gaussian_cross_artifacts_client(manifest)
   if (!length(artifacts)) {
     if (!identical(source_receipt$sampler_handoff_ready, TRUE)) {
@@ -537,6 +654,11 @@
   }
   layout <- .dsvert_dp_gaussian_cross_layout_client(manifest)
   peers <- context$designated
+  synopsis <- !is.null(.remote_context)
+  if (isTRUE(synopsis)) {
+    .remote_context <- .dsvert_dp_synopsis_gaussian_cross_remote_context_v1(
+      .remote_context)
+  }
   expected_source_purpose <- if (length(
       .dsvert_dp_categorical_cross_artifacts_client(manifest))) {
     .DSVERT_CLIENT_DP_CAPSULE_SOURCE_CATEGORICAL_CROSS_PURPOSE
@@ -568,9 +690,16 @@
     on.exit(.dsvert_dp_cross_exact_cleanup(
       context$conns, session_id, setup_result, .aggregate, .setup_exact),
       add = TRUE)
-    alignment <- .alignment_mask(
-      manifest_json, context, layout, source_receipt,
-      session_id, .aggregate)
+    alignment <- if (isTRUE(synopsis) && identical(
+        .alignment_mask, .dsvert_dp_alignment_mask_run)) {
+      .alignment_mask(
+        manifest_json, context, layout, source_receipt,
+        session_id, .aggregate, .remote_context = .remote_context)
+    } else {
+      .alignment_mask(
+        manifest_json, context, layout, source_receipt,
+        session_id, .aggregate)
+    }
     .shared_exact <- .dsvert_dp_cross_shared_exact_build(
       manifest_json, manifest, context, layout, source_receipt,
       session_id, alignment)
@@ -582,10 +711,15 @@
   }
   completed <- list()
   for (analysis_id in names(artifacts)) {
-    bind_calls <- stats::setNames(lapply(peers, function(peer) call(
-      name = "dsvertDPGaussianCrossBindDS",
-      manifest_json = manifest_json, analysis_id = analysis_id,
-      session_id = session_id)), peers)
+    bind_calls <- stats::setNames(lapply(peers, function(peer) {
+      if (isTRUE(synopsis)) {
+        .dsvert_dp_synopsis_gaussian_cross_bind_call_v1(
+          .remote_context, analysis_id, session_id)
+      } else call(
+        name = "dsvertDPGaussianCrossBindDS",
+        manifest_json = manifest_json, analysis_id = analysis_id,
+        session_id = session_id)
+    }), peers)
     binding <- .dsvert_dp_gaussian_cross_bind_set(
       .dsvert_fanout_by_site(
         context$conns, bind_calls,
@@ -630,10 +764,15 @@
           transport_ready = TRUE, .aggregate = .aggregate)
       }
     }
-    finalize_calls <- stats::setNames(lapply(peers, function(peer) call(
-      name = "dsvertDPGaussianCrossFinalizeDS",
-      manifest_json = manifest_json, analysis_id = analysis_id,
-      session_id = session_id)), peers)
+    finalize_calls <- stats::setNames(lapply(peers, function(peer) {
+      if (isTRUE(synopsis)) {
+        .dsvert_dp_synopsis_gaussian_cross_finalize_call_v1(
+          .remote_context, analysis_id, session_id)
+      } else call(
+        name = "dsvertDPGaussianCrossFinalizeDS",
+        manifest_json = manifest_json, analysis_id = analysis_id,
+        session_id = session_id)
+    }), peers)
     completed[[analysis_id]] <- .dsvert_dp_gaussian_cross_result_set(
       .dsvert_fanout_by_site(
         context$conns, finalize_calls,

@@ -956,6 +956,14 @@
     (identical(artifact$version,
                .DSVERT_CLIENT_DP_ORDINAL_GRID_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "ordinal_grid_v1"))
+  cross_owner_artifact <- identical(
+    artifact$version, .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION) &&
+    identical(artifact$spec_version, "v2") &&
+    identical(artifact$implementation_state,
+              "cross_owner_exact_gc_materialized") &&
+    identical(artifact$cross_owner_state, "exact_gc_to_joint_dp_vector_v1")
+  cross_evidence <- context$cross_gaussian_evidence[[artifact$analysis_id]] %||%
+    NULL
   if (!isTRUE(context$synopsis) || !is.list(bundle) || !is.list(compilation) ||
       !is.list(provenance) || !all(required_provenance %in% names(provenance)) ||
       !identical(
@@ -966,10 +974,15 @@
       !identical(provenance$source_values_included, FALSE) ||
       !identical(provenance$intermediate_payload_exposed, FALSE) ||
       !identical(provenance$durable_replay, TRUE) ||
-      !isTRUE(same_owner_artifact) ||
-      !identical(artifact$implementation_state, "same_owner_materialized") ||
-      !identical(artifact$cross_owner_state, "reserved_not_materialized")) {
-    stop("The Gaussian result lacks closed same-owner Synopsis provenance",
+      !(isTRUE(same_owner_artifact) || isTRUE(cross_owner_artifact)) ||
+      (isTRUE(same_owner_artifact) &&
+       (!identical(artifact$implementation_state, "same_owner_materialized") ||
+        !identical(artifact$cross_owner_state,
+                   "reserved_not_materialized"))) ||
+      (isTRUE(cross_owner_artifact) &&
+       (!is.list(cross_evidence) ||
+        !identical(names(cross_evidence), artifact$analysis_id)))) {
+    stop("The Gaussian result lacks closed Synopsis provenance",
          call. = FALSE)
   }
   if (!all(vapply(required_roots, function(field) {
@@ -1029,6 +1042,11 @@
     replay_set_json =
       .dsvert_dp_gaussian_synopsis_evidence_json(
         provenance$replay_responses, "replay set"))
+  if (isTRUE(cross_owner_artifact)) {
+    evidence$cross_gaussian_evidence_json <-
+      .dsvert_dp_gaussian_synopsis_evidence_json(
+        cross_evidence, "cross-owner Gaussian evidence")
+  }
   unsigned <- list(
     version = .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION,
     analysis_id = artifact$analysis_id,
@@ -1170,11 +1188,13 @@
     "public_dp_coordinates_only", "protected_shares_included",
     "preclamp_values_included", "patient_derived_identifiers_included",
     "certificate_sha256")
+  cross_owner <- identical(
+    certificate$cross_owner_state, "exact_gc_to_joint_dp_vector_v1")
   if (!.dsvert_dp_has_exact_names(certificate, required) ||
       !identical(certificate$version,
                  .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION) ||
-      !identical(certificate$cross_owner_state,
-                 "reserved_not_materialized") ||
+      !certificate$cross_owner_state %in% c(
+        "reserved_not_materialized", "exact_gc_to_joint_dp_vector_v1") ||
       !identical(certificate$public_dp_coordinates_only, TRUE) ||
       !identical(certificate$protected_shares_included, FALSE) ||
       !identical(certificate$preclamp_values_included, FALSE) ||
@@ -1190,6 +1210,9 @@
   evidence_fields <- c(
     "version", "federation_state_json", "manifest_bundle_json",
     "compilation_json", "release_set_json", "replay_set_json")
+  if (isTRUE(cross_owner)) {
+    evidence_fields <- c(evidence_fields, "cross_gaussian_evidence_json")
+  }
   if (!.dsvert_dp_has_exact_names(certificate$peer_context, peer_fields) ||
       !.dsvert_dp_has_exact_names(
         certificate$signed_evidence, evidence_fields) ||
@@ -1326,6 +1349,72 @@
       !identical(.dsvert_dp_gaussian_certificate_hash(
         certificate$descriptor), certificate$descriptor_sha256)) {
     stop("The Gaussian Synopsis descriptor or layout changed", call. = FALSE)
+  }
+  if (isTRUE(cross_owner)) {
+    public <- .dsvert_dp_gaussian_synopsis_evidence_decode(
+      certificate$signed_evidence$cross_gaussian_evidence_json,
+      "cross-owner Gaussian evidence")
+    receipts <- if (is.list(public)) public[[certificate$analysis_id]] else NULL
+    fields <- c(
+      "version", "phase", "analysis_id", "peer_name", "peer_identity_pk",
+      "artifact_sha256", "source_contract_sha256", "private_layout_sha256",
+      "transcript_sha256", "numeric_certificate_sha256",
+      "exact_transcript_sha256", "coordinate_count", "public_start",
+      "public_end", "public_coordinate_order_sha256", "ring_bits", "frac_bits",
+      "state", "fixed_transcript", "private_result_exposed",
+      "exact_intermediates_exposed", "alignment_hash_exposed", "signature")
+    if (!is.list(public) || !identical(names(public), certificate$analysis_id) ||
+        !is.list(receipts) || !identical(names(receipts), designated)) {
+      stop("The Gaussian certificate lacks both cross-owner attestations",
+           call. = FALSE)
+    }
+    receipts <- lapply(designated, function(peer) {
+      value <- receipts[[peer]]
+      valid <- .dsvert_dp_has_exact_names(value, fields) &&
+        identical(value$version,
+                  .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_PUBLIC_EVIDENCE_VERSION) &&
+        identical(value$phase, "cross_gaussian_public_result_evidence") &&
+        identical(value$analysis_id, certificate$analysis_id) &&
+        identical(value$peer_name, peer) &&
+        identical(value$peer_identity_pk, unname(pinset[[peer]])) &&
+        identical(value$artifact_sha256,
+                  .dsvert_dp_capsule_source_hash(artifact)) &&
+        identical(value$source_contract_sha256,
+                  certificate$source_contract_sha256) &&
+        identical(value$private_layout_sha256,
+                  .dsvert_dp_gaussian_cross_layout_client(
+                    trusted$manifest)$transport_coordinate_order_sha256) &&
+        identical(value$transcript_sha256,
+                  .dsvert_dp_capsule_source_hash(artifact$transcript)) &&
+        identical(value$numeric_certificate_sha256,
+                  .dsvert_dp_capsule_source_hash(artifact$numeric_certificate)) &&
+        .dsvert_dp_capsule_source_hex(value$exact_transcript_sha256) &&
+        identical(as.numeric(value$coordinate_count), as.numeric(block$length)) &&
+        identical(as.numeric(value$public_start), as.numeric(block$start)) &&
+        identical(as.numeric(value$public_end), as.numeric(block$end)) &&
+        identical(value$public_coordinate_order_sha256, compiled$layout$sha256) &&
+        identical(as.numeric(value$ring_bits), 128) &&
+        identical(as.numeric(value$frac_bits),
+                  as.numeric(artifact$numeric_grid_bits)) &&
+        identical(value$state, "complete") &&
+        identical(value$fixed_transcript, TRUE) &&
+        identical(value$private_result_exposed, FALSE) &&
+        identical(value$exact_intermediates_exposed, FALSE) &&
+        identical(value$alignment_hash_exposed, FALSE) &&
+        .dsvert_dp_capsule_source_verify(
+          value, "cross-gaussian-synopsis-evidence", peer,
+          list(pinset = pinset))
+      if (!isTRUE(valid)) {
+        stop("A Gaussian cross-owner attestation is invalid", call. = FALSE)
+      }
+      value
+    })
+    stable <- setdiff(fields, c("peer_name", "peer_identity_pk", "signature"))
+    if (length(unique(vapply(receipts, function(value) {
+          .dsvert_joint_dp_client_json(value[stable])
+        }, character(1L)))) != 1L) {
+      stop("The Gaussian cross-owner attestations disagree", call. = FALSE)
+    }
   }
   scaled <- replay$scaled[seq.int(block$start, block$end)]
   block_hash <- .dsvert_dp_gaussian_certificate_hash(list(

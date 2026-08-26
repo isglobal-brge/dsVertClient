@@ -587,6 +587,7 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
   list(release = run$release, layout = run$layout, status = run$status,
        manifest_bundle = run$manifest_bundle,
        verification_compilation = run$verification_compilation,
+       cross_gaussian_evidence = run$cross_gaussian_evidence %||% NULL,
        manifest = run$release$manifest, lattice = lattice,
        adjacency = adjacency, synopsis = synopsis)
 }

@@ -202,6 +202,24 @@ test_that("cross Gaussian references bind an optional public owner", {
       alignment_hash_exposed_to_computation_peers = FALSE),
       peer, "cross-gaussian-result"))
   }), designated)
+  public_evidence <- stats::setNames(lapply(designated, function(peer) {
+    .dsvert_joint_dp_client_json(sign_value(list(
+      version = .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_PUBLIC_EVIDENCE_VERSION,
+      phase = "cross_gaussian_public_result_evidence",
+      analysis_id = "cross_model", peer_name = peer,
+      peer_identity_pk = unname(pins[[peer]]),
+      artifact_sha256 = artifact_hash, source_contract_sha256 = source_hash,
+      private_layout_sha256 = layout$transport_coordinate_order_sha256,
+      transcript_sha256 = transcript_hash,
+      numeric_certificate_sha256 = certificate_hash,
+      exact_transcript_sha256 = exact_hash,
+      coordinate_count = coordinate_count, public_start = 2,
+      public_end = 8, public_coordinate_order_sha256 = release_layout$sha256,
+      ring_bits = 128, frac_bits = 8, state = "complete",
+      fixed_transcript = TRUE, private_result_exposed = FALSE,
+      exact_intermediates_exposed = FALSE, alignment_hash_exposed = FALSE),
+      peer, "cross-gaussian-synopsis-evidence"))
+  }), designated)
   stage_response <- function(peer, expression) {
     stage <- as.character(expression$stage)
     index <- as.integer(expression$stage_index)
@@ -239,6 +257,9 @@ test_that("cross Gaussian references bind an optional public owner", {
         dsvertDPGaussianCrossBindDS = bind[[peer]],
         dsvertDPGaussianCrossPrepareDS = stage_response(peer, expression),
         dsvertDPGaussianCrossFinalizeDS = result[[peer]],
+        dsvertDPSynopsisGaussianCrossBindDS = bind[[peer]],
+        dsvertDPSynopsisGaussianCrossFinalizeDS = result[[peer]],
+        dsvertDPSynopsisGaussianCrossEvidenceDS = public_evidence[[peer]],
         mpcCleanupDS = TRUE,
         stop("unexpected cross Gaussian client command: ", command))
     }), names(conns))
@@ -258,9 +279,40 @@ test_that("cross Gaussian references bind an optional public owner", {
     artifact = artifact, bind = bind, result = result)
 }
 
+test_that("cross Gaussian public evidence is K2-only, signed and redacted", {
+  for (k in 3:5) {
+    fixture <- .gaussian_cross_client_fixture(k = k)
+    release <- list(source_contract_sha256 = fixture$source_receipt$contract_hash)
+    calls <- stats::setNames(lapply(fixture$context$designated, function(peer) {
+      .dsvert_dp_synopsis_gaussian_cross_evidence_call_v1(list(
+        manifest_sha256 = strrep("a", 64L), claim_set_json = "{}",
+        compilation_json = "{}"), "cross_model")
+    }), fixture$context$designated)
+    evidence <- .dsvert_dp_gaussian_cross_public_evidence_set(
+      fixture$aggregate(fixture$context$conns, calls), fixture$context,
+      fixture$manifest, "cross_model", release)
+    expect_identical(names(evidence), fixture$context$designated)
+    expect_false(any(grepl(
+      "capsule|share|receipt|result_b64|path|key|value",
+      names(evidence[[1L]]))))
+    tampered <- fixture$aggregate(fixture$context$conns, calls)
+    parsed <- .dsvert_joint_dp_client_decode(
+      tampered[[fixture$context$designated[[1L]]]], "tampered public evidence",
+      .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_MAX_RECEIPT_BYTES)
+    parsed$public_end <- parsed$public_end + 1L
+    tampered[[fixture$context$designated[[1L]]]] <-
+      .dsvert_joint_dp_client_json(parsed)
+    expect_error(.dsvert_dp_gaussian_cross_public_evidence_set(
+      tampered, fixture$context, fixture$manifest, "cross_model", release),
+      "signature|invalid")
+  }
+})
+
 test_that("cross Gaussian K=3 through K=5 separates owners and compute peers", {
   for (k in 3:5) {
     fixture <- .gaussian_cross_client_fixture(k = k)
+    expect_true(.dsvert_dp_synopsis_supported_gaussian_cross_v1(
+      fixture$manifest))
     expect_length(fixture$context$all_conns, k)
     expect_true(fixture$layout$enabled)
     expect_identical(fixture$layout$release_coordinate_count, 8L)
@@ -331,6 +383,29 @@ test_that("cross Gaussian K=3 through K=5 uses one fixed typed transcript", {
     expect_false("exactGCVecmulBindInputsDS" %in% fixture$state$commands)
     expect_identical(sum(
       fixture$state$commands == "dsvertDPGaussianCrossPrepareDS"), 6L)
+  }
+})
+
+test_that("cross Gaussian Synopsis uses only the sealed remote ABI", {
+  for (k in 3:5) {
+    fixture <- .gaussian_cross_client_fixture(k = k)
+    receipt <- .dsvert_dp_gaussian_cross_orchestrate(
+      "canonical-cross-manifest", fixture$manifest, fixture$context,
+      fixture$source_receipt, .aggregate = fixture$aggregate,
+      .setup_exact = function(...) invisible(list()),
+      .vecmul = function(...) invisible(list()),
+      .alignment_mask = .gaussian_alignment_complete,
+      .remote_context = list(
+        manifest_sha256 = strrep("a", 64L), claim_set_json = "{}",
+        compilation_json = "{}"))
+    expect_true(receipt$sampler_handoff_ready)
+    expect_true(all(c(
+      "dsvertDPSynopsisGaussianCrossBindDS",
+      "dsvertDPSynopsisGaussianCrossFinalizeDS") %in%
+      fixture$state$commands))
+    expect_false(any(c(
+      "dsvertDPGaussianCrossBindDS", "dsvertDPGaussianCrossFinalizeDS") %in%
+      fixture$state$commands))
   }
 })
 
