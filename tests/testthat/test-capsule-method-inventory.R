@@ -342,7 +342,8 @@ test_that("planned artifacts describe the actual biomedical contracts", {
       artifacts_for(inventory, "ds.vertMI")))
   expect_true(all(c(
     "validated_sticky_frequency_artifact",
-    "bounded_nonnegative_integer_domain", "zero_call_postprocessing") %in%
+    "bounded_nonnegative_integer_domain",
+    "signed_finite_beta_theta_grid") %in%
       artifacts_for(inventory, "ds.vertNBFullRegTheta")))
   expect_true(all(c(
     "validated_sticky_categorical_pair_artifact",
@@ -630,10 +631,10 @@ test_that("mixed variants and Frequency compatibility names have explicit scopes
       "frequency_postprocess_implemented"))
   expect_true(all(inventory$current_route_status[
     inventory$method %in% frequency_nb2] ==
-      "client_only_validated_capsule_postprocess"))
+      "formal_sticky_synopsis_artifact"))
   expect_true(all(inventory$inference_implementation_state[
     inventory$method %in% frequency_nb2] ==
-      "frequency_postprocess_implemented"))
+      "frequency_and_finite_grid_postprocess_implemented"))
   lasso_iter <- inventory[inventory$method %in%
     c("ds.vertLASSOIter", "ds.vert.lasso_iter"), , drop = FALSE]
   expect_true(all(lasso_iter$current_route_status ==
@@ -654,7 +655,7 @@ test_that("NB2 slope and categorical MI compatibility routes retain explicit sco
   inventory <- .dsvert_capsule_method_inventory()
   expect_true(all(inventory$current_route_status[
     inventory$method %in% c("ds.vertNBFullRegTheta", "ds.vert.nb")] ==
-      "client_only_validated_capsule_postprocess"))
+      "formal_sticky_synopsis_artifact"))
   expect_true(all(inventory$current_route_status[
     inventory$method %in% c("ds.vertMI", "ds.vert.mi")] ==
       "formal_sticky_synopsis_artifact"))

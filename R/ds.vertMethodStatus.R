@@ -521,14 +521,14 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add(c("ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",
       "promoted",
       paste(
-        "Read-only intercept-only NB2 method-of-moments fit from one",
-        "validated sticky DP Frequency release; it performs no new DSI call",
-        "or opening."),
+        "An intercept-only NB2 method-of-moments postprocess from one",
+        "validated sticky Frequency release, or an additive covariate fit",
+        "selected from one same-owner signed sticky DP beta/theta grid."),
       paste(
-        "Only a bounded non-negative integer y ~ 1 domain is available.",
-        "Covariates, likelihood optimization, covariance, standard errors",
-        "and inference remain unavailable until a protected NB2",
-        "score-and-information artifact exists."))
+        "The covariate route is limited to a bounded integer outcome and",
+        "custodian-signed finite beta/theta candidates. It is not an",
+        "unconstrained optimizer and returns no covariance, standard errors,",
+        "p-values or sampling inference."))
   add(c("ds.vertMultinom", "ds.vert.multinom", "ds.vertMultinomJoint",
         "ds.vertMultinomJointNewton"),
       "ds.vertMultinom", "promoted",

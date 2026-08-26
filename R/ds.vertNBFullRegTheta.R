@@ -1,27 +1,32 @@
-#' @title Sticky-DP intercept-only NB2 frontdoor
+#' @title Sticky-DP NB2 frontdoor
 #' @description With a released, validated \code{ds.vertDPFrequency} object,
 #'   or an explicit \code{server} from which it can be read,
 #'   whose signed domain is bounded non-negative integer counts, this frontdoor
 #'   fits \code{y ~ 1} by deterministic NB2 method-of-moments post-processing.
-#'   It never starts a new analysis or DataSHIELD request.
-#' @details This is deliberately narrower than NB2 regression. Predictors,
-#'   likelihood optimization, covariance, standard errors and inference remain
-#'   unavailable until a protected beta/theta score-and-information artifact is
-#'   implemented. A frequency release with variance no greater than its mean is
-#'   reported as the Poisson-limit boundary rather than as a finite NB2 fit.
+#'   With \code{analysis_id}, additive bare predictors select one candidate from
+#'   a signed sticky-DP finite \eqn{(beta, theta)} likelihood grid.
+#' @details The Frequency route is intercept-only, never starts a new analysis,
+#' and has no covariance or standard errors. The grid route requires a same-owner
+#' signed artifact with bounded integer outcomes, finite beta and theta grids,
+#' and public predictor bounds. Neither route runs iterative remote likelihood
+#' calculations or returns sampling inference.
 #' @param formula,data,theta,joint,theta_max_iter,theta_tol,variant,beta_max_iter,beta_tol,compute_covariance,verbose,datasources
 #'   Retained compatibility arguments. With \code{frequency}, only
 #'   \code{formula}, \code{data}, \code{verbose}, and \code{frequency} are
 #'   accepted; all legacy NB2 controls fail locally.
-#' @param server Required source-owner when \code{frequency} is absent. The
-#'   frontdoor reads the canonical signed Frequency artifact for the outcome.
+#' @param server Required source-owner when the Frequency route resolves its
+#'   canonical signed Frequency artifact for the outcome.
 #' @param frequency A released, validated \code{ds.vertDPFrequency} object for
 #'   a bounded count outcome. It enables only an intercept-only, no-inference
 #'   NB2 method-of-moments result.
 #' @param ... Retained compatibility arguments; not evaluated.
-#' @return With \code{frequency} or \code{server}, a coefficient-only
-#'   \code{ds.vertNBFullRegTheta} object. Otherwise the function raises
-#'   \code{dsvert_route_unavailable} before DSI.
+#' @param analysis_id Custodian-configured signed NB2 likelihood-grid id for an
+#'   additive covariate formula.
+#' @return With \code{frequency} or \code{server}, an intercept-only
+#'   coefficient-only \code{ds.vertNBFullRegTheta} object. With
+#'   \code{analysis_id}, an additive finite-grid NB2 object with coefficients
+#'   and \code{theta}, but no covariance or sampling inference. Otherwise the
+#'   function raises \code{dsvert_route_unavailable} before DSI.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
@@ -30,8 +35,31 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
                                   beta_max_iter = 2L, beta_tol = 1e-4,
                                   compute_covariance = TRUE,
                                   verbose = TRUE, datasources = NULL, ...,
-                                  frequency = NULL, server = NULL) {
+                                  frequency = NULL, server = NULL,
+                                  analysis_id = NULL) {
   explicit_arguments <- names(match.call())[-1L]
+  if (!is.null(analysis_id)) {
+    if (!is.null(frequency) || !is.null(server) ||
+        !is.character(analysis_id) || length(analysis_id) != 1L ||
+        is.na(analysis_id) || !nzchar(analysis_id) ||
+        !identical(variant, "full_reg_nd") || !isTRUE(joint) ||
+        !is.null(theta) || !identical(compute_covariance, TRUE)) {
+      stop("The signed NB2 grid requires analysis_id with default compatibility controls",
+           call. = FALSE)
+    }
+    terms <- if (inherits(formula, "formula")) stats::terms(formula) else NULL
+    predictors <- if (is.null(terms)) character() else attr(terms, "term.labels")
+    if (!inherits(formula, "formula") || length(formula) != 3L ||
+        !is.symbol(formula[[2L]]) || !identical(attr(terms, "intercept"), 1L) ||
+        !length(predictors) || any(!grepl("^[A-Za-z.][A-Za-z0-9._]*$", predictors))) {
+      stop("The signed NB2 grid requires an intercept and additive bare column names",
+           call. = FALSE)
+    }
+    resolved <- .dsvert_federation_argument(data, datasources)
+    return(.dsvert_dp_nb_grid_impl(
+      formula, resolved$value, analysis_id, datasources = resolved$datasources,
+      .aggregate = DSI::datashield.aggregate))
+  }
   if (is.null(frequency) && (!is.null(server) ||
                              (!missing(formula) &&
                               .dsvert_dp_frequency_intercept_formula(formula)))) {
@@ -56,6 +84,16 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
 }
 #' @export
 print.ds.vertNBFullRegTheta <- function(x, ...) {
+  if (inherits(x, "dsvert_dp_nb2_grid")) {
+    cat("dsVert signed finite-grid NB2 regression\n")
+    cat(sprintf("  Selected signed candidate = %d   theta = %.6g\n",
+                x$selected_candidate, x$theta))
+    cat(sprintf("  DP negative log likelihood = %.5f\n",
+                x$selected_dp_negative_log_likelihood))
+    print(round(x$coefficients, 5L))
+    cat("  Covariance, standard errors and sampling inference are unavailable.\n")
+    return(invisible(x))
+  }
   if (inherits(x, "dsvert_dp_frequency_nb2")) {
     cat("dsVert sticky-DP NB2 intercept-only method-of-moments fit\n")
     cat(sprintf("  DP effective count = %.6g   mean = %.6g   variance = %.6g\n",

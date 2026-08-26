@@ -556,21 +556,23 @@
 
   add(
     c("ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",
-    "negative_binomial_intercept_frequency",
+    "negative_binomial_frequency_or_finite_grid",
     c("validated_sticky_frequency_artifact",
-      "bounded_nonnegative_integer_domain", "zero_call_postprocessing"),
+      "bounded_nonnegative_integer_domain", "signed_finite_beta_theta_grid"),
     paste(
       "Intercept-only NB2 mean and method-of-moments dispersion from one",
-      "validated sticky count Frequency release."),
+      "validated sticky count Frequency release, or additive coefficients and",
+      "dispersion from one same-owner signed finite likelihood grid."),
     c("bounded_nonnegative_integer_domain", "validated_frequency_provenance",
-      "no_covariates", "no_covariance_or_inference"),
-    "frequency_operation_implemented",
+      "finite_signed_beta_theta_grid", "no_covariance_or_inference"),
+    "synopsis_release_implemented",
     character(),
     c("ds.vert.nb" = "ds.vertNBFullRegTheta"),
-    current_route_status = "client_only_validated_capsule_postprocess",
+    current_route_status = "formal_sticky_synopsis_artifact",
     artifact_implementation_state =
-      "validated_frequency_artifact_adapter_implemented",
-    inference_implementation_state = "frequency_postprocess_implemented")
+      "validated_frequency_and_finite_grid_artifact_adapters_implemented",
+    inference_implementation_state =
+      "frequency_and_finite_grid_postprocess_implemented")
 
   add(
     c("ds.vertMultinom", "ds.vert.multinom", "ds.vertMultinomJoint",
@@ -1450,6 +1452,7 @@
     "secure_artifact_not_implemented",
     "validated_capsule_adapter_implemented",
     "validated_frequency_artifact_adapter_implemented",
+    "validated_frequency_and_finite_grid_artifact_adapters_implemented",
     "validated_synopsis_adapter_implemented",
     "validated_complete_case_gaussian_synopsis_adapter_implemented",
     "validated_same_owner_synopsis_adapter_implemented",
@@ -1470,6 +1473,7 @@
     "formal_synopsis_describe_release_implemented",
     "coefficient_point_and_range_only",
     "frequency_postprocess_implemented",
+    "frequency_and_finite_grid_postprocess_implemented",
     "implemented_client_algebra_inherits_input",
     "capsule_postprocess_implemented",
     "synopsis_postprocess_implemented",

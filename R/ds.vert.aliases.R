@@ -19,9 +19,11 @@
 #' intercept-only cumulative-logit thresholds from the same kind of release;
 #' its complete ordered category domain must be explicit. It can likewise read
 #' the artifact by \code{server}.
-#' \code{ds.vert.nb(..., frequency = x)} returns only an intercept-only NB2
-#' method-of-moments fit for a bounded non-negative integer frequency domain;
-#' it has no covariates or inference and cannot create another release.
+#' \code{ds.vert.nb(..., frequency = x)} returns an intercept-only NB2
+#' method-of-moments fit for a bounded non-negative integer frequency domain.
+#' With a signed \code{analysis_id}, it also selects additive coefficients and
+#' dispersion from one finite sticky-DP likelihood grid; it has no covariance
+#' or sampling inference and cannot create another release.
 #' \code{ds.vert.lmm(..., analysis_id = x)} is limited to the signed
 #' \code{outcome ~ 1} random-intercept method-of-moments artifact. It has no
 #' ML/REML, random slopes, covariance, standard errors or classical inference.
@@ -53,10 +55,11 @@
 #'   sites or a complete named per-site character/list map.
 #' @param variables,var1,var2 Column selections for descriptive / bivariate routes.
 #' @param cluster_col Grouping column for the mixed-model routes.
-#' @param analysis_id,dp_analysis_id Custodian-configured signed random-intercept
-#'   or Gaussian artifact id. \code{analysis_id} is required by
-#'   \code{ds.vert.lmm()} and \code{ds.vert.glmm()}; \code{dp_analysis_id}
-#'   enables only independent Gaussian GEE post-processing.
+#' @param analysis_id,dp_analysis_id Custodian-configured signed random-intercept,
+#'   Gaussian, or NB2 finite-grid artifact id. \code{analysis_id} is required
+#'   by \code{ds.vert.lmm()} and \code{ds.vert.glmm()} and enables the
+#'   finite-grid NB2 alias; \code{dp_analysis_id} enables only independent
+#'   Gaussian GEE post-processing.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag. For
 #'   code{ds.vert.glmm()}, code{method = "auto"} selects the signed
@@ -440,6 +443,16 @@ ds.vert.nb <- function(formula, data = NULL, server = NULL,
                        method = "accurate",
                        datasources = NULL, ...) {
   extras <- list(...)
+  if (!is.null(extras$analysis_id)) {
+    if (!is.null(server) || !identical(method, "accurate")) {
+      stop("The signed NB2 grid does not accept server or a non-default method",
+           call. = FALSE)
+    }
+    out <- do.call(ds.vertNBFullRegTheta, c(
+      list(formula = formula, data = data, datasources = datasources), extras))
+    return(.dsvert_set_frontdoor(out, "ds.vert.nb",
+                                 "ds.vertNBFullRegTheta", NULL))
+  }
   if (!is.null(extras$frequency)) {
     if ("datasources" %in% names(match.call())[-1L] || !is.null(server)) {
       stop("Frequency-backed NB2 does not accept datasources or server", call. = FALSE)

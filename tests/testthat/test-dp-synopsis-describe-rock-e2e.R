@@ -41,7 +41,7 @@
   "describe", "same_owner_contingency", "cross_owner_contingency",
   "stratified_epidemiology", "causal_standardization", "frequency",
   "mi", "mantel_haenszel", "roc", "survival", "correlation", "gaussian", "cross_owner_tamper",
-  "gaussian_lasso_focal", "lmm")
+  "gaussian_lasso_focal", "lmm", "nb2")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
   stop("unknown DSVERT_TEST_SYNOPSIS_E2E_FAMILY", call. = FALSE)
@@ -586,6 +586,38 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
   fixture$policies$peer_a$numeric_bounds$y_peer_a <- c(0, 1)
   fixture$snapshots$peer_a[["data_peer_a"]]$data$y_peer_a <- as.numeric(
     within_site <= round(100 * probability))
+  fixture
+}
+
+.synopsis_nb2_real_e2e_fixture <- function(k, server_ns, n = 400L) {
+  fixture <- .synopsis_gaussian_real_e2e_fixture(k, server_ns, n = n)
+  for (peer in fixture$peers) {
+    policy <- fixture$policies[[peer]]
+    policy$capsule_workload_scope <- list(
+      mode = "catalog_v1", numeric_moments = character(),
+      categorical_marginals = character(), categorical_pairs = list(),
+      correlations = list())
+    policy$capsule_workload_specs$describe <- list()
+    policy$capsule_workload_specs$survival <- list()
+    if (identical(peer, "peer_a")) {
+      policy$numeric_bounds$y_peer_a <- c(0, 8)
+      policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+        "x_peer_a", "y_peer_a")
+      policy$capsule_workload_specs$gaussian$nb2_primary <- list(
+        version = "negative_binomial_grid_v1", dataset = "data_peer_a",
+        outcome = "y_peer_a", predictors = "x_peer_a", intercept = TRUE,
+        max_outcome = 8L,
+        beta_grid = list(c(-1, 0), c(-1, 1), c(0, 0), c(0, 1)),
+        theta_grid = c(0.5, 2, 8))
+    }
+    fixture$policies[[peer]] <- policy
+  }
+  x <- rep(c(0, 10), length.out = n)
+  y <- ifelse(x == 0, rep(c(0, 1), length.out = n),
+              rep(c(2, 4), length.out = n))
+  fixture$snapshots$peer_a[["data_peer_a"]]$data <- data.frame(
+    patient_id = paste0("u", seq_len(n)), x_peer_a = x, y_peer_a = y,
+    stringsAsFactors = FALSE)
   fixture
 }
 
@@ -2518,6 +2550,67 @@ test_that("real additive binary GLMM finite grid is plausible and Rock-replayabl
     }), fixture$peers)
     replay <- glmm(y_peer_a ~ x_peer_a, "data_peer_a", "site_peer_a",
                    "lmm_primary", "peer_a", conns, dispatch)
+    expect_identical(replay$coefficients, fit$coefficients)
+    expect_identical(replay$provenance_certificate$certificate_sha256,
+                     fit$provenance_certificate$certificate_sha256)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real additive NB2 finite grid is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("nb2")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  nb2 <- get(".dsvert_dp_nb_grid_impl", asNamespace("dsVertClient"),
+             inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_nb2_real_e2e_fixture(k, server_ns, n = 400L)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    fit <- nb2(y_peer_a ~ x_peer_a, "data_peer_a", "nb2_primary",
+               "peer_a", conns, dispatch)
+
+    expect_s3_class(fit, "ds.vertNBFullRegTheta")
+    expect_identical(fit$family, "negative_binomial_finite_grid")
+    expect_identical(fit$signed_artifact$spec_version,
+                     "negative_binomial_grid_v1")
+    expect_identical(fit$signed_artifact$design_terms,
+                     c("(Intercept)", "x_peer_a"))
+    expect_true(all(is.finite(fit$coefficients)))
+    expect_true(fit$coefficients[["x_peer_a"]] %in% c(0, 0.1))
+    expect_true(fit$theta %in% c(0.5, 2, 8))
+    expect_true(fit$selected_candidate %in% seq_len(12L))
+    expect_null(fit$covariance)
+    expect_null(fit$std_errors)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    route_nb2 <- function(formula, data_name, analysis_id, server = NULL,
+                          datasources = NULL, .aggregate) {
+      nb2(formula, data_name, analysis_id, server, datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_nb_grid_impl = route_nb2,
+      list(
+        direct = ds.vertNBFullRegTheta(
+          y_peer_a ~ x_peer_a, data = "data_peer_a",
+          analysis_id = "nb2_primary", datasources = conns),
+        alias = ds.vert.nb(
+          y_peer_a ~ x_peer_a, data = "data_peer_a",
+          analysis_id = "nb2_primary", datasources = conns)),
+      .package = "dsVertClient")
+    expect_identical(public$direct$coefficients, fit$coefficients)
+    expect_identical(public$alias$coefficients, fit$coefficients)
+    expect_identical(public$alias$frontdoor, "ds.vert.nb")
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- nb2(y_peer_a ~ x_peer_a, "data_peer_a", "nb2_primary",
+                  "peer_a", conns, dispatch)
     expect_identical(replay$coefficients, fit$coefficients)
     expect_identical(replay$provenance_certificate$certificate_sha256,
                      fit$provenance_certificate$certificate_sha256)

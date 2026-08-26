@@ -364,7 +364,7 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
                "intercept-only categorical", fixed = TRUE)
   expect_match(ds.vertMethodStatus("ds.vertNBFullRegTheta")$
                  principal_limitation,
-               "bounded non-negative integer y ~ 1", fixed = TRUE)
+               "finite beta/theta candidates", fixed = TRUE)
   expect_identical(
     ds.vertMethodStatus("ds.psiAlign")$release_contract,
     "disclosure_safe_protocol_no_statistic")

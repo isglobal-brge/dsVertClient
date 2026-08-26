@@ -207,10 +207,11 @@ The GEE adapter remains limited to the GLM independence-working point-estimate
 scope, and the discrete selector remains a distinct fixed-grid pooled-logistic
 estimand.}
 
-\item{analysis_id, dp_analysis_id}{Custodian-configured signed random-intercept
-or Gaussian artifact id. \code{analysis_id} is required by
-\code{ds.vert.lmm()} and \code{ds.vert.glmm()}; \code{dp_analysis_id}
-enables only independent Gaussian GEE post-processing.}
+\item{analysis_id, dp_analysis_id}{Custodian-configured signed random-intercept,
+Gaussian, or NB2 finite-grid artifact id. \code{analysis_id} is required
+by \code{ds.vert.lmm()} and \code{ds.vert.glmm()} and enables the
+finite-grid NB2 alias; \code{dp_analysis_id} enables only independent
+Gaussian GEE post-processing.}
 
 \item{cluster_col}{Grouping column for the mixed-model routes.}
 
@@ -254,9 +255,11 @@ covariates and inference controls remain unavailable.
 intercept-only cumulative-logit thresholds from the same kind of release;
 its complete ordered category domain must be explicit. It can likewise read
 the artifact by \code{server}.
-\code{ds.vert.nb(..., frequency = x)} returns only an intercept-only NB2
-method-of-moments fit for a bounded non-negative integer frequency domain;
-it has no covariates or inference and cannot create another release.
+\code{ds.vert.nb(..., frequency = x)} returns an intercept-only NB2
+method-of-moments fit for a bounded non-negative integer frequency domain.
+With a signed \code{analysis_id}, it also selects additive coefficients and
+dispersion from one finite sticky-DP likelihood grid; it has no covariance
+or sampling inference and cannot create another release.
 \code{ds.vert.lmm(..., analysis_id = x)} is limited to the signed
 \code{outcome ~ 1} random-intercept method-of-moments artifact. It has no
 ML/REML, random slopes, covariance, standard errors or classical inference.
