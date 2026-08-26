@@ -2762,6 +2762,118 @@ test_that("real Gaussian two-random-slope LMM grid is plausible and Rock-replaya
   }
 })
 
+test_that("real Gaussian three-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_lmm_random_slope_only()
+  server_ns <- .synopsis_describe_real_e2e_server()
+  lmm <- get(".dsvert_dp_lmm_impl", asNamespace("dsVertClient"),
+             inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_lmm_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    sites <- fixture$policies$peer_a$categorical_levels$site_peer_a
+    for (peer in fixture$peers) {
+      policy <- fixture$policies[[peer]]
+      policy$capsule_workload_scope$numeric_moments <- c(
+        "x_peer_a", "z_peer_a", "w_peer_a")
+      fixture$policies[[peer]] <- policy
+    }
+    policy <- fixture$policies$peer_a
+    policy$numeric_bounds$z_peer_a <- c(0, 10)
+    policy$numeric_bounds$w_peer_a <- c(0, 10)
+    policy$capsule_workload_specs$gaussian$lmm_primary <- list(
+      version = "gaussian_random_slope_grid_v1", dataset = "data_peer_a",
+      outcome = "y_peer_a", cluster = "site_peer_a",
+      predictors = c("x_peer_a", "z_peer_a", "w_peer_a"),
+      random_slopes = c("x_peer_a", "z_peer_a", "w_peer_a"), intercept = TRUE,
+      max_patients_per_cluster = 100L,
+      candidate_grid = list(
+        list(beta = c(0.25, 0.15, 0.10, 0.05), sigma2 = 1,
+             covariance = c(
+               0.25, 0, 0, 0, 0, 0.25, 0, 0,
+               0, 0, 0.25, 0, 0, 0, 0, 0.25)),
+        list(beta = c(0.35, 0.30, 0.20, 0.15), sigma2 = 1,
+             covariance = c(
+               0.5, 0.1, 0.05, 0.02, 0.1, 0.5, 0.05, 0.02,
+               0.05, 0.05, 0.5, 0.02, 0.02, 0.02, 0.02, 0.5)),
+        list(beta = c(0.45, 0.45, 0.35, 0.25), sigma2 = 2,
+             covariance = c(
+               1, 0.2, 0.1, 0.05, 0.2, 1, 0.1, 0.05,
+               0.1, 0.1, 1, 0.05, 0.05, 0.05, 0.05, 1))))
+    policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+      "x_peer_a", "y_peer_a", "z_peer_a", "w_peer_a", "site_peer_a")
+    fixture$policies$peer_a <- policy
+    data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
+    data$x_peer_a <- rep(c(0, 10), length.out = nrow(data))
+    data$z_peer_a <- rep(c(0, 0, 10, 10), length.out = nrow(data))
+    data$w_peer_a <- rep(c(0, 10, 0, 10), length.out = nrow(data))
+    random_intercept <- rep(seq(0.5, 2, length.out = length(sites)), each = 100L)
+    random_x <- rep(seq(-0.12, 0.12, length.out = length(sites)), each = 100L)
+    random_z <- rep(seq(0.10, -0.10, length.out = length(sites)), each = 100L)
+    random_w <- rep(seq(-0.08, 0.08, length.out = length(sites)), each = 100L)
+    data$y_peer_a <- pmin(10, pmax(0,
+      2 + 0.35 * data$x_peer_a + 0.20 * data$z_peer_a +
+        0.15 * data$w_peer_a + random_intercept +
+        random_x * data$x_peer_a + random_z * data$z_peer_a +
+        random_w * data$w_peer_a))
+    fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    fit <- lmm("data_peer_a", "lmm_primary", "peer_a", conns, dispatch)
+
+    expect_identical(fit$status, "ok")
+    expect_identical(fit$family, "gaussian_random_slope")
+    expect_identical(fit$random_effect_order,
+                     c("(Intercept)", "w_peer_a", "x_peer_a", "z_peer_a"))
+    expect_identical(dim(fit$random_effect_covariance), c(4L, 4L))
+    expect_true(all(is.finite(c(fit$coefficients, fit$sigma2,
+                                fit$random_effect_covariance))))
+    expect_true(all(eigen(fit$random_effect_covariance,
+                          symmetric = TRUE, only.values = TRUE)$values >= -1e-10))
+    expect_true(all(abs(fit$coefficients[c(
+      "w_peer_a", "x_peer_a", "z_peer_a")]) <= 1))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    route_lmm <- function(data_name, analysis_id, server = NULL,
+                          datasources = NULL, .aggregate) {
+      lmm(data_name, analysis_id, server, datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_lmm_impl = route_lmm,
+      list(
+        lmm = ds.vertLMM(
+          y_peer_a ~ x_peer_a + z_peer_a + w_peer_a, data = "data_peer_a",
+          cluster_col = "site_peer_a", analysis_id = "lmm_primary",
+          random_slopes = c("z_peer_a", "x_peer_a", "w_peer_a"),
+          datasources = conns),
+        k3 = if (k >= 3L) ds.vertLMM.k3(
+          y_peer_a ~ x_peer_a + z_peer_a + w_peer_a, data = "data_peer_a",
+          cluster_col = "site_peer_a", analysis_id = "lmm_primary",
+          random_slopes = c("w_peer_a", "z_peer_a", "x_peer_a"),
+          datasources = conns) else NULL),
+      .package = "dsVertClient")
+    expect_identical(public$lmm$coefficients, fit$coefficients)
+    expect_identical(public$lmm$random_slopes,
+                     c("w_peer_a", "x_peer_a", "z_peer_a"))
+    if (k >= 3L) {
+      expect_identical(public$k3$coefficients, fit$coefficients)
+      expect_identical(public$k3$frontdoor, "ds.vertLMM.k3")
+    } else expect_null(public$k3)
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- lmm("data_peer_a", "lmm_primary", "peer_a", conns, dispatch)
+    expect_identical(replay$coefficients, fit$coefficients)
+    expect_identical(replay$random_effect_covariance,
+                     fit$random_effect_covariance)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
 test_that("real binary random-intercept GLMM moment route is plausible and Rock-replayable at K=2/3/5", {
   .synopsis_real_e2e_only("lmm")
   server_ns <- .synopsis_describe_real_e2e_server()
