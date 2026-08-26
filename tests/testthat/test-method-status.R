@@ -321,8 +321,10 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
   expect_true(all(cox_public$status == "promoted"))
   expect_true(all(cox_public$release_contract ==
                     "formal_completed_public_certificate"))
-  expect_true(all(grepl("completed", cox_public$safe_scope,
-                        fixed = TRUE)))
+  expect_match(ds.vertMethodStatus("ds.vertCox")$safe_scope,
+               "fresh_formal_analysis_id", fixed = TRUE)
+  expect_true(all(grepl("completed", cox_public$safe_scope[
+    cox_public$method != "ds.vertCox"], fixed = TRUE)))
   expect_true(all(grepl("no covariance", cox_public$principal_limitation,
                         fixed = TRUE)))
   cox_discrete <- ds.vertMethodStatus("ds.vertCoxDiscreteNonDisclosive")

@@ -468,16 +468,26 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "they cannot choose source work or a new DP opening. Neither route",
         "returns sampling inference or",
         "individual fitted values."))
-  add(c("ds.vertCox", "ds.vert.coxph"),
-      "ds.vertCox", "promoted",
+  add("ds.vertCox", "ds.vertCox", "promoted",
+      paste(
+        "Read-only coefficients and hazard-ratio ranges from one completed",
+        "two-authority-signed sticky formal Cox opening selected by",
+        "formal_analysis_id, or the matching custodian-configured durable",
+        "fresh analysis selected by fresh_formal_analysis_id."),
+      paste(
+        "The fresh route cannot choose source work or a new opening and",
+        "returns no covariance,",
+        "standard errors, p-values, baseline hazard, prediction, residual or",
+        "sampling inference artifact."))
+  add("ds.vert.coxph", "ds.vertCox", "promoted",
       paste(
         "Read-only coefficients and hazard-ratio ranges from one completed",
         "two-authority-signed sticky formal Cox opening selected by",
         "formal_analysis_id; no legacy Cox computation is reachable."),
       paste(
-        "This route cannot start a Cox analysis and returns no covariance,",
-        "standard errors, p-values, baseline hazard, prediction, residual or",
-        "sampling inference artifact."))
+        "This compatibility route cannot start a Cox analysis and returns no",
+        "covariance, standard errors, p-values, baseline hazard, prediction,",
+        "residual or sampling inference artifact."))
   add(c("ds.vertCoxProfileNonDisclosive"),
       "ds.vertCox", "promoted",
       paste(
