@@ -6,7 +6,9 @@
 .DSVERT_FORMAL_COX_WORKER_CONTROL_ACTIONS <- c(
   "host_start", "bind", "offer", "accept", "confirm", "poll", "relay", "result",
   "completion", "opening", "finalizer_ticket", "finalizer_seal", "finalizer_prepare",
-  "finalizer_stage", "commit")
+  "finalizer_stage", "finalizer_advance", "finalizer_relay_recipient",
+  "finalizer_relay_source", "finalizer_relay_import", "finalizer_relay_delivery",
+  "commit")
 
 .dsvert_formal_cox_fresh_worker_sha256 <- function(value) {
   is.character(value) && length(value) == 1L && !is.na(value) &&
@@ -79,6 +81,54 @@
        any(vapply(payload$headers, is.null, logical(1L))) ||
        any(vapply(payload$envelopes, is.null, logical(1L))))) {
     stop("Configured fresh Cox worker requires one ticket, two headers and two envelopes.",
+         call. = FALSE)
+  }
+  if (action %in% c("finalizer_advance", "finalizer_relay_recipient") &&
+      (!identical(fields, "headers") || !is.list(payload$headers) ||
+       length(payload$headers) != 2L ||
+       any(vapply(payload$headers, is.null, logical(1L))))) {
+    stop("Configured fresh Cox worker requires two finalizer headers.",
+         call. = FALSE)
+  }
+  if (identical(action, "finalizer_relay_source") &&
+      (!identical(fields, c("headers", "recipient_transport_public",
+                             "recipient_transport_signature")) ||
+       !is.list(payload$headers) || length(payload$headers) != 2L ||
+       any(vapply(payload$headers, is.null, logical(1L))) ||
+       !is.character(payload$recipient_transport_public) ||
+       length(payload$recipient_transport_public) != 1L ||
+       is.na(payload$recipient_transport_public) ||
+       nchar(payload$recipient_transport_public, type = "bytes") < 40L ||
+       nchar(payload$recipient_transport_public, type = "bytes") > 48L ||
+       !grepl("^[A-Za-z0-9+/]+={0,2}$", payload$recipient_transport_public) ||
+       !is.character(payload$recipient_transport_signature) ||
+       length(payload$recipient_transport_signature) != 1L ||
+       is.na(payload$recipient_transport_signature) ||
+       nchar(payload$recipient_transport_signature, type = "bytes") < 80L ||
+       nchar(payload$recipient_transport_signature, type = "bytes") > 96L ||
+       !grepl("^[A-Za-z0-9+/]+={0,2}$", payload$recipient_transport_signature))) {
+    stop("Configured fresh Cox worker requires one signed recipient key.",
+         call. = FALSE)
+  }
+  if (identical(action, "finalizer_relay_import") &&
+      (!identical(fields, c("headers", "envelope_base64url")) ||
+       !is.list(payload$headers) || length(payload$headers) != 2L ||
+       any(vapply(payload$headers, is.null, logical(1L))) ||
+       !is.character(payload$envelope_base64url) ||
+       length(payload$envelope_base64url) != 1L || is.na(payload$envelope_base64url) ||
+       nchar(payload$envelope_base64url, type = "bytes") < 80L ||
+       nchar(payload$envelope_base64url, type = "bytes") >
+         .DSVERT_FORMAL_COX_WORKER_CONTROL_MAX_BYTES ||
+       !grepl("^[A-Za-z0-9_-]+$", payload$envelope_base64url))) {
+    stop("Configured fresh Cox worker requires one opaque finalizer envelope.",
+         call. = FALSE)
+  }
+  if (identical(action, "finalizer_relay_delivery") &&
+      (!identical(fields, c("headers", "receipt")) ||
+       !is.list(payload$headers) || length(payload$headers) != 2L ||
+       any(vapply(payload$headers, is.null, logical(1L))) ||
+       !is.list(payload$receipt))) {
+    stop("Configured fresh Cox worker requires one signed relay receipt.",
          call. = FALSE)
   }
   if (!identical(action, "host_start")) {
@@ -544,6 +594,199 @@
   }, conns, workers, handoff$headers)
   names(stages) <- names(workers)
   list(artifact_id = prepared$intent$artifact_id, production_ready = FALSE)
+}
+
+.dsvert_formal_cox_fresh_worker_relay_once <- function(
+    conns, workers, headers, producer, consumer, record_type,
+    .aggregate = DSI::datashield.aggregate) {
+  expected_headers <- c("version", "purpose", "artifact_id", "plan_sha256", "run_id",
+                        "pinset_sha256", "final_cursor", "completion", "final_receipt",
+                        "peer_name", "peer_id", "role", "coefficient_count", "ring_bits",
+                        "fraction_bits", "local_beta_validity_sha256", "signature")
+  valid <- is.list(conns) && is.list(workers) && is.list(headers) &&
+    length(conns) == 2L && length(workers) == 2L && length(headers) == 2L &&
+    identical(names(conns), names(workers)) &&
+    producer %in% seq_along(workers) && consumer %in% seq_along(workers) &&
+    producer != consumer &&
+    is.character(record_type) && length(record_type) == 1L && !is.na(record_type) &&
+    all(vapply(headers, function(header) {
+      is.list(header) && !is.null(names(header)) && !anyNA(names(header)) &&
+        !anyDuplicated(names(header)) && setequal(names(header), expected_headers)
+    }, logical(1L)))
+  if (!isTRUE(valid)) {
+    stop("Configured fresh Cox finalizer relay has an invalid local context.",
+         call. = FALSE)
+  }
+  producer_header <- headers[[producer]]
+  consumer_header <- headers[[consumer]]
+  recipient <- .dsvert_formal_cox_fresh_worker_call(
+    conns[[consumer]], workers[[consumer]], "finalizer_relay_recipient",
+    list(headers = unname(headers)), .aggregate = .aggregate)$payload
+  valid_recipient <- is.list(recipient) && identical(names(recipient), c(
+    "transport_public", "transport_signature", "production_ready")) &&
+    .dsvert_formal_cox_fresh_worker_base64(recipient$transport_public, 40L, 48L) &&
+    .dsvert_formal_cox_fresh_worker_base64(recipient$transport_signature, 80L, 96L) &&
+    identical(recipient$production_ready, FALSE)
+  if (!isTRUE(valid_recipient)) {
+    stop("Configured fresh Cox worker returned an invalid relay recipient.",
+         call. = FALSE)
+  }
+  source <- .dsvert_formal_cox_fresh_worker_call(
+    conns[[producer]], workers[[producer]], "finalizer_relay_source",
+    list(headers = unname(headers),
+         recipient_transport_public = recipient$transport_public,
+         recipient_transport_signature = recipient$transport_signature),
+    .aggregate = .aggregate)$payload
+  valid_source <- is.list(source) && identical(names(source), c(
+    "available", "envelope_base64url", "envelope_sha256", "production_ready")) &&
+    identical(source$available, TRUE) &&
+    is.character(source$envelope_base64url) && length(source$envelope_base64url) == 1L &&
+    !is.na(source$envelope_base64url) &&
+    nchar(source$envelope_base64url, type = "bytes") >= 80L &&
+    nchar(source$envelope_base64url, type = "bytes") <=
+      .DSVERT_FORMAL_COX_WORKER_CONTROL_MAX_BYTES &&
+    grepl("^[A-Za-z0-9_-]+$", source$envelope_base64url) &&
+    .dsvert_formal_cox_fresh_worker_sha256(source$envelope_sha256) &&
+    identical(source$production_ready, FALSE)
+  if (!isTRUE(valid_source)) {
+    stop("Configured fresh Cox finalizer relay has no expected record.",
+         call. = FALSE)
+  }
+  receipt <- .dsvert_formal_cox_fresh_worker_call(
+    conns[[consumer]], workers[[consumer]], "finalizer_relay_import",
+    list(headers = unname(headers), envelope_base64url = source$envelope_base64url),
+    .aggregate = .aggregate)$payload
+  receipt_fields <- c(
+    "version", "artifact_id", "execution_sha256", "record_type", "sender_role",
+    "record_sha256", "envelope_sha256", "recipient_peer_name", "recipient_peer_id",
+    "recipient_role", "signature", "production_ready")
+  valid_receipt <- is.list(receipt) && identical(names(receipt), receipt_fields) &&
+    identical(receipt$version, "dsvert-formal-cox-control-relay-receipt-v1") &&
+    identical(receipt$artifact_id, producer_header$artifact_id) &&
+    .dsvert_formal_cox_fresh_worker_sha256(receipt$execution_sha256) &&
+    identical(receipt$record_type, record_type) &&
+    identical(receipt$sender_role, producer_header$role) &&
+    .dsvert_formal_cox_fresh_worker_sha256(receipt$record_sha256) &&
+    identical(receipt$envelope_sha256, source$envelope_sha256) &&
+    identical(receipt$recipient_peer_name, consumer_header$peer_name) &&
+    identical(receipt$recipient_peer_id, consumer_header$peer_id) &&
+    identical(receipt$recipient_role, consumer_header$role) &&
+    .dsvert_formal_cox_fresh_worker_base64(receipt$signature, 80L, 96L) &&
+    identical(receipt$production_ready, FALSE)
+  if (!isTRUE(valid_receipt)) {
+    stop("Configured fresh Cox worker returned an invalid relay receipt.",
+         call. = FALSE)
+  }
+  delivered <- .dsvert_formal_cox_fresh_worker_call(
+    conns[[producer]], workers[[producer]], "finalizer_relay_delivery",
+    list(headers = unname(headers), receipt = receipt),
+    .aggregate = .aggregate)$payload
+  valid_delivery <- is.list(delivered) && identical(names(delivered), c(
+    "version", "state", "artifact_id", "record_type", "envelope_sha256", "replayed")) &&
+    identical(delivered$version, "dsvert-formal-cox-control-delivery-v1") &&
+    identical(delivered$state, "delivered") &&
+    identical(delivered$artifact_id, producer_header$artifact_id) &&
+    identical(delivered$record_type, record_type) &&
+    identical(delivered$envelope_sha256, source$envelope_sha256) &&
+    is.logical(delivered$replayed) && length(delivered$replayed) == 1L &&
+    !is.na(delivered$replayed)
+  if (!isTRUE(valid_delivery)) {
+    stop("Configured fresh Cox worker returned an invalid relay delivery.",
+         call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+.dsvert_formal_cox_fresh_worker_advance_finalizer <- function(
+    conn, worker, headers, expected_state, certificate_sha256 = "",
+    .aggregate = DSI::datashield.aggregate) {
+  reply <- .dsvert_formal_cox_fresh_worker_call(
+    conn, worker, "finalizer_advance", list(headers = unname(headers)),
+    .aggregate = .aggregate)$payload
+  valid <- is.list(reply) && identical(names(reply), c(
+    "artifact_id", "state", "certificate_sha256", "production_ready")) &&
+    identical(reply$artifact_id, headers[[1L]]$artifact_id) &&
+    identical(reply$state, expected_state) &&
+    identical(reply$production_ready, FALSE) &&
+    is.character(reply$certificate_sha256) && length(reply$certificate_sha256) == 1L &&
+    !is.na(reply$certificate_sha256)
+  if (is.null(certificate_sha256)) {
+    valid <- isTRUE(valid) &&
+      .dsvert_formal_cox_fresh_worker_sha256(reply$certificate_sha256)
+  } else if (identical(certificate_sha256, "")) {
+    valid <- isTRUE(valid) && identical(reply$certificate_sha256, "")
+  } else {
+    valid <- isTRUE(valid) &&
+      identical(reply$certificate_sha256, certificate_sha256) &&
+      .dsvert_formal_cox_fresh_worker_sha256(reply$certificate_sha256)
+  }
+  if (!isTRUE(valid)) {
+    stop("Configured fresh Cox worker returned an invalid finalizer advance.",
+         call. = FALSE)
+  }
+  reply$certificate_sha256
+}
+
+# The control ordering is fixed by the signed opening protocol.  The client
+# carries public recipient keys and opaque envelopes only; every transition is
+# selected, authenticated and durably recorded by the worker authority.
+.dsvert_formal_cox_fresh_worker_finish_finalizer <- function(
+    conns, workers, handoff, .aggregate = DSI::datashield.aggregate) {
+  valid <- is.list(conns) && is.list(workers) && length(conns) == 2L &&
+    length(workers) == 2L && identical(names(conns), names(workers)) &&
+    is.list(handoff) && identical(names(handoff), c(
+      "headers", "ticket", "envelopes", "production_ready")) &&
+    is.list(handoff$headers) && length(handoff$headers) == 2L &&
+    identical(handoff$production_ready, FALSE)
+  if (!isTRUE(valid)) {
+    stop("Configured fresh Cox finalizer requires one validated handoff.",
+         call. = FALSE)
+  }
+  roles <- vapply(handoff$headers, function(header) {
+    if (is.list(header)) header$role else NA_character_
+  }, character(1L))
+  garbler <- which(roles == "garbler")
+  evaluator <- which(roles == "evaluator")
+  if (length(garbler) != 1L || length(evaluator) != 1L ||
+      !identical(handoff$headers[[garbler]]$artifact_id,
+                 handoff$headers[[evaluator]]$artifact_id)) {
+    stop("Configured fresh Cox finalizer has incompatible authorities.",
+         call. = FALSE)
+  }
+  relay <- function(producer, consumer, record_type) {
+    .dsvert_formal_cox_fresh_worker_relay_once(
+      conns, workers, handoff$headers, producer, consumer, record_type,
+      .aggregate = .aggregate)
+  }
+  relay(garbler, evaluator, "preflight")
+  relay(evaluator, garbler, "preflight")
+  relay(garbler, evaluator, "header")
+  relay(evaluator, garbler, "header")
+  relay(garbler, evaluator, "ticket")
+  relay(evaluator, garbler, "envelope")
+  relay(garbler, evaluator, "candidate")
+  .dsvert_formal_cox_fresh_worker_advance_finalizer(
+    conns[[garbler]], workers[[garbler]], handoff$headers,
+    "awaiting_evaluator_authorization", .aggregate = .aggregate)
+  relay(garbler, evaluator, "authorization")
+  .dsvert_formal_cox_fresh_worker_advance_finalizer(
+    conns[[evaluator]], workers[[evaluator]], handoff$headers,
+    "awaiting_publication", .aggregate = .aggregate)
+  relay(evaluator, garbler, "authorization")
+  certificate_sha256 <- .dsvert_formal_cox_fresh_worker_advance_finalizer(
+    conns[[garbler]], workers[[garbler]], handoff$headers,
+    "publication_ready", certificate_sha256 = NULL, .aggregate = .aggregate)
+  if (!.dsvert_formal_cox_fresh_worker_sha256(certificate_sha256)) {
+    stop("Configured fresh Cox finalizer returned an invalid certificate.",
+         call. = FALSE)
+  }
+  relay(garbler, evaluator, "publication")
+  .dsvert_formal_cox_fresh_worker_advance_finalizer(
+    conns[[evaluator]], workers[[evaluator]], handoff$headers,
+    "commit_ready", certificate_sha256, .aggregate = .aggregate)
+  relay(evaluator, garbler, "commit")
+  relay(garbler, evaluator, "ack")
+  list(certificate_sha256 = certificate_sha256, production_ready = FALSE)
 }
 
 # Run the fixed two-peer schedule by forwarding only authenticated opaque

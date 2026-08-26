@@ -315,6 +315,92 @@ test_that("configured fresh Cox worker relays only a finalizer ticket and cipher
                          ignore.case = TRUE)))
 })
 
+test_that("configured fresh Cox worker commits a staged finalizer through opaque relays", {
+  workers <- list(site_a = .formal_cox_fresh_worker_selector(),
+                  site_b = utils::modifyList(.formal_cox_fresh_worker_selector(),
+                                              list(peer_name = "site_b")))
+  header <- function(peer, role) list(
+    version = "dsvert-formal-cox-blockwise-sticky-opening-v1",
+    purpose = "formal_cox_one_public_beta_validity_opening_v1",
+    artifact_id = strrep("a", 64L), plan_sha256 = strrep("b", 64L),
+    run_id = strrep("c", 64L), pinset_sha256 = strrep("d", 64L),
+    final_cursor = list(schedule_index = 1L), completion = list(version = "complete"),
+    final_receipt = list(version = "receipt"), peer_name = peer,
+    peer_id = paste0(peer, "-id"), role = role, coefficient_count = 1L,
+    ring_bits = 127L, fraction_bits = 40L,
+    local_beta_validity_sha256 = strrep("e", 64L), signature = "AQ==")
+  headers <- list(header("site_a", "garbler"), header("site_b", "evaluator"))
+  handoff <- list(headers = headers, ticket = list(), envelopes = list(),
+                  production_ready = FALSE)
+  relay_records <- c(
+    "preflight", "preflight", "header", "header", "ticket", "envelope",
+    "candidate", "authorization", "authorization", "publication", "commit", "ack")
+  producers <- c("site_a", "site_b", "site_a", "site_b", "site_a", "site_b",
+                 "site_a", "site_a", "site_b", "site_a", "site_b", "site_a")
+  consumers <- c("site_b", "site_a", "site_b", "site_a", "site_b", "site_a",
+                 "site_b", "site_b", "site_a", "site_b", "site_a", "site_b")
+  relay_index <- 0L
+  advance_index <- 0L
+  advance_states <- c("awaiting_evaluator_authorization", "awaiting_publication",
+                      "publication_ready", "commit_ready")
+  advance_peers <- c("site_a", "site_b", "site_a", "site_b")
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_worker_call = function(conn, worker, action, payload,
+                                                     .aggregate) {
+      role <- if (identical(worker$peer_name, "site_a")) "garbler" else "evaluator"
+      if (identical(action, "finalizer_relay_recipient")) {
+        expect_identical(worker$peer_name, consumers[[relay_index + 1L]])
+        return(list(payload = list(
+          transport_public = paste0(strrep("A", 43L), "="),
+          transport_signature = paste0(strrep("A", 86L), "=="),
+          production_ready = FALSE)))
+      }
+      if (identical(action, "finalizer_relay_source")) {
+        relay_index <<- relay_index + 1L
+        expect_identical(worker$peer_name, producers[[relay_index]])
+        return(list(payload = list(
+          available = TRUE, envelope_base64url = strrep("A", 80L),
+          envelope_sha256 = strrep("f", 64L), production_ready = FALSE)))
+      }
+      if (identical(action, "finalizer_relay_import")) {
+        expect_identical(worker$peer_name, consumers[[relay_index]])
+        return(list(payload = list(
+          version = "dsvert-formal-cox-control-relay-receipt-v1",
+          artifact_id = strrep("a", 64L), execution_sha256 = strrep("1", 64L),
+          record_type = relay_records[[relay_index]], sender_role = if (
+            identical(producers[[relay_index]], "site_a")) "garbler" else "evaluator",
+          record_sha256 = strrep("2", 64L), envelope_sha256 = strrep("f", 64L),
+          recipient_peer_name = worker$peer_name,
+          recipient_peer_id = paste0(worker$peer_name, "-id"), recipient_role = role,
+          signature = paste0(strrep("A", 86L), "=="), production_ready = FALSE)))
+      }
+      if (identical(action, "finalizer_relay_delivery")) {
+        expect_identical(worker$peer_name, producers[[relay_index]])
+        return(list(payload = list(
+          version = "dsvert-formal-cox-control-delivery-v1", state = "delivered",
+          artifact_id = strrep("a", 64L), record_type = relay_records[[relay_index]],
+          envelope_sha256 = strrep("f", 64L), replayed = FALSE)))
+      }
+      if (identical(action, "finalizer_advance")) {
+        advance_index <<- advance_index + 1L
+        expect_identical(worker$peer_name, advance_peers[[advance_index]])
+        return(list(payload = list(
+          artifact_id = strrep("a", 64L), state = advance_states[[advance_index]],
+          certificate_sha256 = if (advance_index < 3L) "" else strrep("f", 64L),
+          production_ready = FALSE)))
+      }
+      stop("unexpected action", call. = FALSE)
+    },
+    .package = "dsVertClient")
+  finalizer <- .dsvert_formal_cox_fresh_worker_finish_finalizer(
+    list(site_a = "connection", site_b = "connection"), workers, handoff,
+    .aggregate = identity)
+  expect_identical(finalizer, list(
+    certificate_sha256 = strrep("f", 64L), production_ready = FALSE))
+  expect_identical(relay_index, length(relay_records))
+  expect_identical(advance_index, length(advance_states))
+})
+
 test_that("configured fresh Cox worker relays one K2 schedule without outputs", {
   workers <- list(site_a = .formal_cox_fresh_worker_selector(),
                   site_b = utils::modifyList(.formal_cox_fresh_worker_selector(),
@@ -442,6 +528,14 @@ test_that("configured fresh Cox worker rejects cross-server, widened and unsafe 
   expect_error(.dsvert_formal_cox_fresh_worker_call(
     list(site_a = "connection"), worker, "relay", list(private_key = "x")),
     "bounded opaque frame")
+  expect_error(.dsvert_formal_cox_fresh_worker_call(
+    list(site_a = "connection"), worker, "finalizer_relay_source",
+    list(headers = list(list(), list()), recipient_transport_public = "unsafe",
+         recipient_transport_signature = "unsafe")), "signed recipient key")
+  expect_error(.dsvert_formal_cox_fresh_worker_call(
+    list(site_a = "connection"), worker, "finalizer_relay_import",
+    list(headers = list(list(), list()), envelope_base64url = "unsafe")),
+  "opaque finalizer envelope")
   testthat::local_mocked_bindings(
     .dsvert_aggregate_strict = function(...) list(site_a =
       .formal_cox_fresh_worker_reply("result", list(storage_root = "unsafe"))),

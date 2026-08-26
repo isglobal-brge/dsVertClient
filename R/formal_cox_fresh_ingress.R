@@ -228,10 +228,10 @@
        workers = workers, production_ready = FALSE)
 }
 
-# Complete the private fresh-Cox path through durable finalizer staging.  The
-# resulting public opening remains a separate two-authority lifecycle: this
-# helper deliberately returns neither an intent, a certificate, nor any model
-# result.
+# Complete the private fresh-Cox path through the two-authority finalizer
+# commit. The resulting public opening remains a separate registry lifecycle:
+# this helper deliberately returns neither an intent, a certificate, nor any
+# model result.
 .dsvert_formal_cox_fresh_run <- function(
     conns, selector, .aggregate = DSI::datashield.aggregate) {
   ingress <- .dsvert_formal_cox_fresh_ingress(
@@ -313,16 +313,27 @@
     stop("Configured fresh Cox run returned an invalid finalizer state.",
          call. = FALSE)
   }
+  finalizer <- NULL
   if (!isTRUE(prepared$finalized)) {
     .dsvert_formal_cox_fresh_worker_stage_finalizer(
       compute_conns, ingress$workers, handoff, prepared, .aggregate = .aggregate)
+    finalizer <- .dsvert_formal_cox_fresh_worker_finish_finalizer(
+      compute_conns, ingress$workers, handoff, .aggregate = .aggregate)
+    valid_finalizer <- is.list(finalizer) && identical(names(finalizer), c(
+      "certificate_sha256", "production_ready")) &&
+      .dsvert_formal_cox_fresh_ingress_sha256(finalizer$certificate_sha256) &&
+      identical(finalizer$production_ready, FALSE)
+    if (!isTRUE(valid_finalizer)) {
+      stop("Configured fresh Cox run returned an invalid finalizer commit.",
+           call. = FALSE)
+    }
   }
   list(analysis_id = ingress$analysis_id, schema_sha256 = ingress$schema_sha256,
        total_blocks = as.integer(ingress$total_blocks),
        state = if (isTRUE(prepared$finalized)) {
          "finalizer_already_public"
        } else {
-         "finalizer_staged"
+         "finalizer_committed"
        },
        production_ready = FALSE)
 }

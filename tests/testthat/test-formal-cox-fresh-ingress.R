@@ -186,14 +186,21 @@ test_that("fresh Cox run stages its finalizer without returning a private result
       expect_identical(prepared$intent$candidate_sha256, strrep("3", 64L))
       staged
     },
+    .dsvert_formal_cox_fresh_worker_finish_finalizer = function(
+        conns, workers, handoff, .aggregate) {
+      calls <<- c(calls, "finish")
+      expect_identical(names(conns), c("site_a", "site_c"))
+      expect_identical(handoff, expected_handoff)
+      list(certificate_sha256 = strrep("4", 64L), production_ready = FALSE)
+    },
     .package = "dsVertClient")
 
   result <- .dsvert_formal_cox_fresh_run(
     conns, .formal_cox_fresh_ingress_selector(), .aggregate = identity)
-  expect_identical(calls, c("ingress", "worker", "handoff", "prepare", "stage"))
+  expect_identical(calls, c("ingress", "worker", "handoff", "prepare", "stage", "finish"))
   expect_identical(result, list(
     analysis_id = "fresh_cox", schema_sha256 = strrep("b", 64L),
-    total_blocks = 2L, state = "finalizer_staged",
+    total_blocks = 2L, state = "finalizer_committed",
     production_ready = FALSE))
   expect_false(any(grepl("intent|candidate|certificate|envelope|header|ticket",
                          names(result), ignore.case = TRUE)))
