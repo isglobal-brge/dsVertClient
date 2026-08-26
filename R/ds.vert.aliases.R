@@ -33,8 +33,9 @@
 #' errors or classical inference.
 #' \code{ds.vert.glmm(..., analysis_id = x)} reads either that binary
 #' \code{outcome ~ 1} population-average moment artifact or a custodian-signed
-#' finite random-intercept likelihood grid for additive bare covariates; it is
-#' not the retired PQL route and has no unconstrained optimisation or inference.
+#' finite random-intercept or one-or-two-random-slope likelihood grid for
+#' additive bare covariates; it is not the retired PQL route and has no
+#' unconstrained optimisation or inference.
 #' No alias re-enables a retired remote endpoint or weakens the signed-artifact
 #' and custodian-owned policy gates of an available backend.
 #' For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied

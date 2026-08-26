@@ -8,16 +8,17 @@
 #'   intercept-only formula, \code{sigma_b2} is the conventional logistic
 #'   latent-scale approximation to the released observed ICC. For additive
 #'   covariates, it is the selected value from a custodian-signed finite random
-#'   intercept variance grid or a two-effect covariance grid. Neither route
-#'   supplies standard errors, p-values or sampling inference; a named random slope is available only when it
-#'   exactly matches a signed finite two-effect grid. Interactions and
+#'   intercept variance grid or a signed covariance grid with one or two
+#'   random slopes. Neither route supplies standard errors, p-values or
+#'   sampling inference; named random slopes are available only when they
+#'   exactly match a signed finite grid. Interactions and
 #'   unconstrained likelihood optimisation remain unavailable.
 #' @param formula An intercept-only formula or additive bare column names.
 #' @param data Signed protected dataset name or federation.
 #' @param cluster_col Cluster column required to match the signed artifact.
 #' @param analysis_id Custodian-configured signed random-intercept artifact id.
-#' @param random_slopes Optional bare predictor name for a signed finite-grid
-#'   random-slope artifact; it must match the artifact exactly.
+#' @param random_slopes Optional one or two bare predictor names for a signed
+#'   finite-grid random-slope artifact; they must match the artifact exactly.
 #' @param max_outer,inner_iter,tol,ring,verbose Retained compatibility controls;
 #'   they do not alter the signed estimand.
 #' @param lambda Must be zero.
@@ -53,9 +54,10 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
          call. = FALSE)
   }
   if (!is.null(random_slopes) && (!is.character(random_slopes) ||
-      length(random_slopes) != 1L || is.na(random_slopes) ||
-      !grepl("^[A-Za-z.][A-Za-z0-9._]*$", random_slopes))) {
-    stop("random_slopes must be one bare signed predictor name or NULL",
+      length(random_slopes) < 1L || length(random_slopes) > 2L ||
+      anyNA(random_slopes) || anyDuplicated(random_slopes) ||
+      any(!grepl("^[A-Za-z.][A-Za-z0-9._]*$", random_slopes)))) {
+    stop("random_slopes must be one or two unique bare signed predictor names or NULL",
          call. = FALSE)
   }
   if (!is.numeric(lambda) || length(lambda) != 1L || is.na(lambda) ||
@@ -70,7 +72,9 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
       formula, resolved$value, cluster_col, analysis_id,
       datasources = resolved$datasources, .aggregate = DSI::datashield.aggregate)
     signed_slopes <- result$signed_artifact$random_effect_order[-1L] %||% character()
-    if (!identical(signed_slopes, random_slopes %||% character())) {
+    supplied_slopes <- if (is.null(random_slopes)) character() else
+      sort(enc2utf8(random_slopes), method = "radix")
+    if (!identical(signed_slopes, supplied_slopes)) {
       stop("random_slopes must exactly match the signed GLMM artifact", call. = FALSE)
     }
     return(result)

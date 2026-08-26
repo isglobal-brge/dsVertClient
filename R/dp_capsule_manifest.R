@@ -673,7 +673,8 @@
           valid <- isTRUE(valid) && length(predictors) && !anyDuplicated(predictors) &&
             !spec$outcome %in% predictors && !spec$cluster %in% predictors &&
             all(vapply(predictors, column_reference, logical(1L))) &&
-            length(random_slopes) == 1L && random_slopes %in% predictors
+            length(random_slopes) >= 1L && length(random_slopes) <= 2L &&
+            all(random_slopes %in% predictors)
           effects <- c("(Intercept)", sort(random_slopes, method = "radix"))
           candidates <- if (isTRUE(valid)) .dsvert_dp_glmm_random_slope_candidates(
             spec$candidate_grid, 1L + length(predictors), effects) else list()

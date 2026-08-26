@@ -7,11 +7,21 @@
   "bounded-binary-random-slope-likelihood-grid-v1"
 .DSVERT_CLIENT_DP_GLMM_GRID_MAX_GH_NODE <- 3.19099320178153
 
+.dsvert_dp_glmm_random_slope_quadrature_rule_v1 <- function(effect_count) {
+  if (!is.numeric(effect_count) || length(effect_count) != 1L ||
+      is.na(effect_count) || effect_count != floor(effect_count) ||
+      effect_count < 2L || effect_count > 3L) return(NA_character_)
+  paste0("gauss_hermite_", paste(rep.int("9", effect_count), collapse = "x"),
+         "_standard_normal_v1")
+}
+
 .dsvert_dp_glmm_random_slope_candidates <- function(candidate_grid, dimension,
                                                      random_effect_order) {
   if (!is.list(candidate_grid) || !length(candidate_grid) ||
-      !is.null(names(candidate_grid)) || length(random_effect_order) != 2L ||
+      !is.null(names(candidate_grid)) || length(random_effect_order) < 2L ||
+      length(random_effect_order) > 3L ||
       !identical(random_effect_order[[1L]], "(Intercept)")) return(list())
+  effect_count <- length(random_effect_order)
   candidates <- lapply(candidate_grid, function(candidate) {
     if (!.dsvert_dp_has_exact_names(candidate, c("beta", "covariance"))) return(NULL)
     beta <- tryCatch(.dsvert_dp_capsule_manifest_number_array(
@@ -20,9 +30,10 @@
       candidate$covariance, "GLMM random-slope covariance"),
       error = function(error) numeric())
     if (length(beta) != dimension || anyNA(beta) || any(!is.finite(beta)) ||
-        any(abs(beta) > 8) || length(covariance) != 4L || anyNA(covariance) ||
+        any(abs(beta) > 8) || length(covariance) != effect_count^2 ||
+        anyNA(covariance) ||
         any(!is.finite(covariance)) || any(abs(covariance) > 16)) return(NULL)
-    covariance <- matrix(covariance, 2L, 2L, byrow = TRUE)
+    covariance <- matrix(covariance, effect_count, effect_count, byrow = TRUE)
     if (!isTRUE(all.equal(covariance, t(covariance), tolerance = 0)) ||
         any(diag(covariance) < 0) ||
         any(eigen(covariance, symmetric = TRUE, only.values = TRUE)$values < -1e-10)) {
@@ -101,8 +112,9 @@
   }
   bits <- suppressWarnings(as.numeric(artifact$numeric_grid_bits))
   cluster_capacity <- suppressWarnings(as.numeric(artifact$max_patients_per_cluster))
-  effects_valid <- identical(effects[[1L]], "(Intercept)") && length(effects) == 2L &&
-    effects[[2L]] %in% predictor_order && !anyDuplicated(effects)
+  effects_valid <- length(effects) >= 2L && length(effects) <= 3L &&
+    identical(effects[[1L]], "(Intercept)") &&
+    all(effects[-1L] %in% predictor_order) && !anyDuplicated(effects)
   candidates <- if (isTRUE(effects_valid)) .dsvert_dp_glmm_random_slope_candidates(
     artifact$candidate_grid, 1L + length(predictor_order), effects) else list()
   loss_bounds <- if (length(candidates)) vapply(candidates, `[[`, numeric(1L), "loss_bound") else numeric()
@@ -123,7 +135,8 @@
     outcome$lower == 0 && outcome$upper == 1 && isTRUE(artifact$intercept) &&
     isTRUE(effects_valid) && length(candidates) && length(candidates) <= 128L &&
     identical(design_terms, c("(Intercept)", predictor_order)) &&
-    identical(artifact$quadrature_rule, "gauss_hermite_9x9_standard_normal_v1") &&
+    identical(artifact$quadrature_rule,
+              .dsvert_dp_glmm_random_slope_quadrature_rule_v1(length(effects))) &&
     identical(artifact$candidate_order, "canonical_signed_candidate_grid_v1") &&
     length(observed_loss_bounds) == length(candidates) &&
     isTRUE(all.equal(observed_loss_bounds, loss_bounds, tolerance = 1e-12)) &&
@@ -183,10 +196,18 @@
   names(slopes) <- artifact$predictor_order
   intercept <- candidate$beta[[1L]] - sum(slopes * vapply(
     artifact$predictors, `[[`, numeric(1L), "lower"))
-  slope <- artifact$random_effect_order[[2L]]
-  span <- artifact$predictors[[slope]]$upper - artifact$predictors[[slope]]$lower
-  transform <- matrix(c(1, -artifact$predictors[[slope]]$lower / span, 0, 1 / span),
-                      2L, 2L, byrow = TRUE)
+  random_slopes <- artifact$random_effect_order[-1L]
+  spans <- vapply(random_slopes, function(slope) {
+    artifact$predictors[[slope]]$upper - artifact$predictors[[slope]]$lower
+  }, numeric(1L))
+  lowers <- vapply(random_slopes, function(slope) {
+    artifact$predictors[[slope]]$lower
+  }, numeric(1L))
+  effect_count <- length(artifact$random_effect_order)
+  transform <- diag(effect_count)
+  transform[1L, -1L] <- -lowers / spans
+  transform[cbind(seq.int(2L, effect_count), seq.int(2L, effect_count))] <-
+    1 / spans
   covariance <- transform %*% candidate$covariance %*% t(transform)
   dimnames(covariance) <- list(artifact$random_effect_order,
                                artifact$random_effect_order)
