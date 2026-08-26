@@ -112,7 +112,7 @@ ds.vert.glmm(
   data = NULL,
   cluster_col,
   analysis_id = NULL,
-  method = "moment",
+  method = c("auto", "moment", "finite_grid"),
   datasources = NULL,
   ...
 )
@@ -192,7 +192,10 @@ sites or a complete named per-site character/list map.}
 \item{variables, var1, var2}{Column selections for descriptive / bivariate routes.}
 
 \item{precision, method, ring, verbose}{Binomial-sigmoid precision preset,
-estimator/route selector, fixed-point ring, and progress flag.}
+estimator/route selector, fixed-point ring, and progress flag. For
+\code{ds.vert.glmm()}, \code{method = "auto"} selects the signed
+intercept-only moment or additive finite-grid artifact from the formula;
+the explicit values must agree with that formula.}
 
 \item{formal_analysis_id, fresh_formal_analysis_id}{Custodian-owned selector
 for an already completed formal Cox profile, binomial/Poisson GLM certificate,
@@ -257,9 +260,10 @@ it has no covariates or inference and cannot create another release.
 \code{ds.vert.lmm(..., analysis_id = x)} is limited to the signed
 \code{outcome ~ 1} random-intercept method-of-moments artifact. It has no
 ML/REML, random slopes, covariance, standard errors or classical inference.
-\code{ds.vert.glmm(..., analysis_id = x)} reads that artifact only for a
-binary \code{outcome ~ 1} population-average log-odds and observed-scale
-ICC; it is not the retired PQL route.
+\code{ds.vert.glmm(..., analysis_id = x)} reads either that binary
+\code{outcome ~ 1} population-average moment artifact or a custodian-signed
+finite random-intercept likelihood grid for additive bare covariates; it is
+not the retired PQL route and has no unconstrained optimisation or inference.
 No alias re-enables a retired remote endpoint or weakens the signed-artifact
 and custodian-owned policy gates of an available backend.
 For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied

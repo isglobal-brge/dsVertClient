@@ -569,13 +569,14 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "score-and-meat artifact is implemented."))
   add(c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "promoted",
       paste(
-        "Binary outcome ~ 1 population-average log-odds and observed-scale",
-        "ICC from one validated sticky random-intercept Synopsis; no new",
-        "private computation occurs after the signed release."),
+        "A binary outcome ~ 1 population-average moment projection or an",
+        "additive fixed-covariate finite marginal-likelihood grid from one",
+        "validated sticky same-owner random-intercept Synopsis."),
       paste(
-        "Only a same-owner binary random-intercept moment approximation is",
-        "available. It is not PQL, Laplace, ML or REML and has no covariates,",
-        "random slopes, standard errors, p-values or sampling inference."))
+        "The covariate route selects only among custodian-signed finite",
+        "Gauss-Hermite marginal-likelihood candidates. It is not PQL, an",
+        "unconstrained optimizer, random slopes, interactions, standard",
+        "errors, p-values or sampling inference."))
   add(c("ds.vertIPW", "ds.vert.ipw"), "ds.vertIPW", "promoted",
       paste(
         "Exact binary intercept-only ATE IPW identity from one validated",

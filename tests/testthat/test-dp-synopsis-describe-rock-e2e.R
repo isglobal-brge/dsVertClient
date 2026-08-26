@@ -2446,6 +2446,85 @@ test_that("real binary random-intercept GLMM moment route is plausible and Rock-
   }
 })
 
+test_that("real additive binary GLMM finite grid is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("lmm")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  glmm <- get(".dsvert_dp_glmm_grid_impl", asNamespace("dsVertClient"),
+              inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_glmm_real_e2e_fixture(k, server_ns, n = 400L)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    policy <- fixture$policies$peer_a
+    policy$capsule_workload_specs$gaussian$lmm_primary <- list(
+      version = "binary_random_intercept_grid_v1", dataset = "data_peer_a",
+      outcome = "y_peer_a", cluster = "site_peer_a", predictors = "x_peer_a",
+      intercept = TRUE, max_patients_per_cluster = 100L,
+      beta_grid = list(c(-1, 0), c(-1, 2), c(0, 0), c(0, 2)),
+      variance_grid = c(0, 0.5))
+    fixture$policies$peer_a <- policy
+    data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
+    site_effect <- rep(seq(-0.45, 0.45, length.out =
+      length(policy$categorical_levels$site_peer_a)), each = 100L)
+    rank_within_site <- rep(seq_len(100L), length(site_effect) %/% 100L)
+    probability <- stats::plogis(-1 + 2 * data$x_peer_a / 10 + site_effect)
+    data$y_peer_a <- as.numeric(
+      (rank_within_site - 0.5) / 100 < probability)
+    fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    fit <- glmm(y_peer_a ~ x_peer_a, "data_peer_a", "site_peer_a",
+                 "lmm_primary", "peer_a", conns, dispatch)
+
+    expect_s3_class(fit, "ds.vertGLMM")
+    expect_identical(fit$family, "binomial_random_intercept")
+    expect_identical(fit$signed_artifact$spec_version,
+                     "binary_random_intercept_grid_v1")
+    expect_identical(fit$signed_artifact$design_terms,
+                     c("(Intercept)", "x_peer_a"))
+    expect_true(all(is.finite(fit$coefficients)))
+    expect_true(fit$coefficients[["x_peer_a"]] %in% c(0, 0.2))
+    expect_true(fit$sigma_b2 %in% c(0, 0.5))
+    expect_true(fit$selected_candidate %in% seq_len(8L))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    route_glmm <- function(formula, data_name, cluster_col, analysis_id,
+                           server = NULL, datasources = NULL, .aggregate) {
+      glmm(formula, data_name, cluster_col, analysis_id, server,
+           datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_glmm_grid_impl = route_glmm,
+      list(
+        direct = ds.vertGLMM(
+          y_peer_a ~ x_peer_a, data = "data_peer_a",
+          cluster_col = "site_peer_a", analysis_id = "lmm_primary",
+          datasources = conns),
+        alias = ds.vert.glmm(
+          y_peer_a ~ x_peer_a, data = "data_peer_a",
+          cluster_col = "site_peer_a", analysis_id = "lmm_primary",
+          datasources = conns)),
+      .package = "dsVertClient")
+    expect_identical(public$direct$coefficients, fit$coefficients)
+    expect_identical(public$alias$coefficients, fit$coefficients)
+    expect_identical(public$alias$frontdoor, "ds.vert.glmm")
+    expect_identical(public$alias$method, "finite_grid")
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- glmm(y_peer_a ~ x_peer_a, "data_peer_a", "site_peer_a",
+                   "lmm_primary", "peer_a", conns, dispatch)
+    expect_identical(replay$coefficients, fit$coefficients)
+    expect_identical(replay$provenance_certificate$certificate_sha256,
+                     fit$provenance_certificate$certificate_sha256)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
 test_that("focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3/5", {
   .synopsis_real_e2e_focal_only()
   server_ns <- .synopsis_describe_real_e2e_server()

@@ -125,7 +125,7 @@ test_that("GLM help documents the Synopsis route matrix instead of legacy MPC", 
                "Binomial and Poisson", fixed = TRUE)
 })
 
-test_that("GLMM help names the signed binary moment scope", {
+test_that("GLMM help names the signed binary moment and finite-grid scopes", {
   package_root <- dirname(.dsvert_client_source_root())
   source <- .dsvert_public_roxygen_text("ds.vertGLMM.R", "ds.vertGLMM")
   rd_path <- file.path(package_root, "man", "ds.vertGLMM.Rd")
@@ -135,8 +135,9 @@ test_that("GLMM help names the signed binary moment scope", {
   rd <- paste(readLines(rd_path, warn = FALSE), collapse = "\n")
   for (text in list(source, rd)) {
     expect_match(text, "signed", ignore.case = TRUE)
-    expect_match(text, "outcome ~ 1", fixed = TRUE)
-    expect_match(text, "population-average", fixed = TRUE)
+    expect_match(text, "intercept-only", fixed = TRUE)
+    expect_match(text, "finite", ignore.case = TRUE)
+    expect_match(text, "grid", ignore.case = TRUE)
     expect_match(text, "PQL", fixed = TRUE)
     expect_match(text, "standard errors", ignore.case = TRUE)
     expect_false(grepl("dsvert_route_unavailable", text, fixed = TRUE))

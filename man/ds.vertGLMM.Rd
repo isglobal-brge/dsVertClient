@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertGLMM.R
 \name{ds.vertGLMM}
 \alias{ds.vertGLMM}
-\title{Signed binary random-intercept moment GLMM}
+\title{Signed binary random-intercept GLMM}
 \usage{
 ds.vertGLMM(
   formula,
@@ -20,7 +20,7 @@ ds.vertGLMM(
 )
 }
 \arguments{
-\item{formula}{A formula exactly of the form \code{outcome ~ 1}.}
+\item{formula}{An intercept-only formula or additive bare column names.}
 
 \item{data}{Signed protected dataset name or federation.}
 
@@ -29,7 +29,7 @@ ds.vertGLMM(
 \item{analysis_id}{Custodian-configured signed random-intercept artifact id.}
 
 \item{max_outer, inner_iter, tol, ring, verbose}{Retained compatibility controls;
-they do not alter the signed moment estimand.}
+they do not alter the signed estimand.}
 
 \item{lambda}{Must be zero.}
 
@@ -39,22 +39,23 @@ they do not alter the signed moment estimand.}
 }
 \value{
 A \code{ds.vertGLMM} object containing the certified public DP
-moment projection and no cluster-level statistics.
+moment or finite-grid projection and no cluster-level statistics.
 }
 \description{
-Admits a deliberately narrow, non-iterative GLMM-compatible
-estimand: a binary \code{outcome ~ 1} population-average log-odds and an
-observed-scale intracluster correlation from one signed, sticky
-random-intercept Synopsis. It never calls the retired PQL endpoints or
-exposes cluster-level statistics.
+Fits a binary random-intercept model from one signed, sticky
+Synopsis.  The intercept-only call retains its historical moment
+projection. Additive covariate calls select the minimum from the signed
+finite marginal-likelihood grid; they never call PQL or expose
+cluster-level statistics.
 }
 \details{
-The signed outcome bounds must be exactly \code{[0, 1]}. The
-reported \code{sigma_b2} is the conventional logistic latent-scale
-approximation \code{pi^2 * rho / (3 * (1 - rho))}; it is not a
-conditional-likelihood, PQL, Laplace, ML or REML variance estimate.
-Covariates, random slopes, standard errors, p-values and sampling
-inference are unavailable.
+The signed outcome bounds must be exactly \code{[0, 1]}. For an
+intercept-only formula, \code{sigma_b2} is the conventional logistic
+latent-scale approximation to the released observed ICC. For additive
+covariates, it is the selected value from a custodian-signed finite random
+intercept variance grid. Neither route supplies standard errors, p-values
+or sampling inference; random slopes, interactions and unconstrained
+likelihood optimisation remain unavailable.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

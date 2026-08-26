@@ -25,9 +25,10 @@
 #' \code{ds.vert.lmm(..., analysis_id = x)} is limited to the signed
 #' \code{outcome ~ 1} random-intercept method-of-moments artifact. It has no
 #' ML/REML, random slopes, covariance, standard errors or classical inference.
-#' \code{ds.vert.glmm(..., analysis_id = x)} reads that artifact only for a
-#' binary \code{outcome ~ 1} population-average log-odds and observed-scale
-#' ICC; it is not the retired PQL route.
+#' \code{ds.vert.glmm(..., analysis_id = x)} reads either that binary
+#' \code{outcome ~ 1} population-average moment artifact or a custodian-signed
+#' finite random-intercept likelihood grid for additive bare covariates; it is
+#' not the retired PQL route and has no unconstrained optimisation or inference.
 #' No alias re-enables a retired remote endpoint or weakens the signed-artifact
 #' and custodian-owned policy gates of an available backend.
 #' For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied
@@ -57,7 +58,10 @@
 #'   \code{ds.vert.lmm()} and \code{ds.vert.glmm()}; \code{dp_analysis_id}
 #'   enables only independent Gaussian GEE post-processing.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
-#'   estimator/route selector, fixed-point ring, and progress flag.
+#'   estimator/route selector, fixed-point ring, and progress flag. For
+#'   code{ds.vert.glmm()}, code{method = "auto"} selects the signed
+#'   intercept-only moment or additive finite-grid artifact from the formula;
+#'   the explicit values must agree with that formula.
 #' @param formal_analysis_id,fresh_formal_analysis_id Custodian-owned selector
 #'   for an already completed formal Cox profile, binomial/Poisson GLM
 #'   certificate, or discrete-time public certificate. The fresh GLM selector
@@ -607,16 +611,23 @@ ds.vert.gee <- function(formula, data = NULL,
 #' @export
 ds.vert.glmm <- function(formula, data = NULL, cluster_col,
                          analysis_id = NULL,
-                         method = "moment",
+                         method = c("auto", "moment", "finite_grid"),
                          datasources = NULL, ...) {
-  method <- match.arg(method, "moment")
+  method <- match.arg(method)
+  terms <- if (inherits(formula, "formula")) {
+    attr(stats::terms(formula), "term.labels")
+  } else character()
+  resolved_method <- if (length(terms)) "finite_grid" else "moment"
+  if (!identical(method, "auto") && !identical(method, resolved_method)) {
+    stop("method does not match the GLMM formula scope", call. = FALSE)
+  }
   datasources <- .dsvert_datasources(datasources)
   out <- ds.vertGLMM(formula = formula, data = data,
                      cluster_col = cluster_col, analysis_id = analysis_id,
                      datasources = datasources, ...)
   out <- .dsvert_set_frontdoor(out, "ds.vert.glmm", "ds.vertGLMM",
                                length(datasources))
-  .dsvert_add_policy(out, method = method)
+  .dsvert_add_policy(out, method = resolved_method)
 }
 
 #' @rdname ds.vert.aliases

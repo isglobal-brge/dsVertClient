@@ -62,8 +62,9 @@ test_that("lowercase ds.vert aliases are exported", {
                          inherits = FALSE)))
 })
 
-test_that("GLMM frontdoor exposes the signed binary moment method", {
-  expect_identical(formals(ds.vert.glmm)$method, "moment")
+test_that("GLMM frontdoor exposes the signed moment and finite-grid scopes", {
+  expect_identical(formals(ds.vert.glmm)$method,
+                   quote(c("auto", "moment", "finite_grid")))
   expect_false("ds.vert.glmer" %in% getNamespaceExports("dsVertClient"))
   expect_false("ds.vertGLMMLaplace" %in% getNamespaceExports("dsVertClient"))
 })

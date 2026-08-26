@@ -142,6 +142,65 @@
   fixture
 }
 
+.glmm_grid_artifact_fixture <- function() {
+  capacity <- 20
+  scale <- 256
+  beta_grid <- list(c(0, 0), c(0, 1))
+  variance_grid <- c(0, 0.5)
+  loss_bounds <- unlist(lapply(variance_grid, function(variance) {
+    vapply(beta_grid, function(beta) {
+      log1p(exp(sum(abs(beta)) + sqrt(2 * variance) *
+                    dsVertClient:::.DSVERT_CLIENT_DP_GLMM_GRID_MAX_GH_NODE))
+    }, numeric(1L))
+  }), use.names = FALSE)
+  raw <- ceiling(loss_bounds * scale)
+  artifact <- list(
+    version = "bounded-binary-random-intercept-likelihood-grid-v1",
+    spec_version = "binary_random_intercept_grid_v1", analysis_id = "glmm_grid",
+    dataset = "protected", owner_peer = "server_a",
+    outcome = list(column = "y", lower = 0, upper = 1),
+    cluster = list(column = "site", levels = c("a", "b", "c")),
+    predictors = list(x = list(column = "x", lower = 0, upper = 10)),
+    predictor_order = "x", intercept = TRUE,
+    design_terms = c("(Intercept)", "x"), observation_capacity = capacity,
+    max_patients_per_cluster = 4L, beta_grid = beta_grid,
+    variance_grid = variance_grid,
+    quadrature_rule = "gauss_hermite_9_standard_normal_v1",
+    candidate_order = "variance_grid_then_beta_grid_v1",
+    candidate_loss_bounds = as.list(loss_bounds), numeric_grid_bits = 8L,
+    coordinate_count = 4L,
+    coordinate_order = paste(
+      "variance_grid_then_beta_grid_cluster_marginal_negative_log",
+      "likelihood_v1", sep = "_"),
+    source_coordinate_scaling =
+      "all_coordinates_already_on_common_numeric_lattice_v1",
+    repeated_record_policy = paste(
+      "require_one_binary_outcome_and_mean_once_per_admitted_patient",
+      "with_one_consistent_public_cluster_level_v1", sep = "_"),
+    missingness_policy = paste(
+      "nonbinary_or_missing_outcome_or_missing_or_nonfinite_predictor",
+      "or_missing_or_inconsistent_cluster_excludes_patient_v1", sep = "_"),
+    contribution_domain = paste(
+      "one_bounded_patient_binary_log_likelihood_contribution_in_one",
+      "consistent_cluster_for_every_signed_candidate_v1", sep = "_"),
+    statistic_maximum = as.list(capacity * raw),
+    source_raw_l1_sensitivity = sum(raw),
+    source_raw_l2_sensitivity = sqrt(sum(raw^2)),
+    natural_l1_sensitivity = sum(raw) / scale,
+    natural_l2_sensitivity = sqrt(sum(raw^2)) / scale,
+    adjacency = "add_remove_patient",
+    adjacency_sensitivity_basis = paste(
+      "one_patient_changes_one_cluster_marginal_log_likelihood_by_at",
+      "most_its_signed_candidate_loss_bound_v1", sep = "_"),
+    estimation_scope = paste(
+      "bounded_binary_random_intercept_marginal_likelihood_fixed",
+      "covariates_finite_signed_parameter_grid_v1", sep = "_"),
+    implementation_state = "same_owner_materialized",
+    cross_owner_state = "reserved_not_materialized")
+  list(artifact = artifact, manifest = list(workload = list(families = list(
+    gaussian_models = list(artifacts = list(glmm_grid = artifact))))))
+}
+
 test_that("random-intercept LMM artifacts validate their full signed contract", {
   fixture <- .lmm_artifact_fixture()
   artifact <- dsVertClient:::.dsvert_dp_lmm_artifact(
@@ -159,6 +218,34 @@ test_that("random-intercept LMM artifacts validate their full signed contract", 
       tampered,
       "protected", "lmm_a", "server_a", "add_remove_patient", 256, 20),
     "descriptor is invalid")
+})
+
+test_that("binary random-intercept GLMM grid validates and selects one signed candidate", {
+  fixture <- .glmm_grid_artifact_fixture()
+  artifact <- dsVertClient:::.dsvert_dp_glmm_grid_artifact(
+    fixture$manifest, "protected", "glmm_grid", "server_a",
+    "add_remove_patient", 256, 20)
+  fit <- dsVertClient:::.dsvert_dp_glmm_grid_moment(
+    c(100, 90, 95, 80), artifact)
+
+  expect_identical(artifact$coordinate_count, 4L)
+  expect_identical(fit$status, "ok")
+  expect_identical(fit$selected_candidate, 4L)
+  expect_equal(fit$coefficients, c(`(Intercept)` = 0, x = 0.1))
+  expect_equal(fit$random_intercept_variance, 0.5)
+  printable <- c(fit, list(
+    sigma_b2 = fit$random_intercept_variance,
+    selected_dp_negative_log_likelihood =
+      fit$selected_dp_negative_log_likelihood))
+  class(printable) <- c("ds.vertGLMM", "list")
+  expect_match(paste(capture.output(print(printable)), collapse = "\n"),
+               "finite-grid", fixed = TRUE)
+  tampered <- fixture$manifest
+  tampered$workload$families$gaussian_models$artifacts$glmm_grid$
+    candidate_loss_bounds[[1L]] <- 0
+  expect_error(dsVertClient:::.dsvert_dp_glmm_grid_artifact(
+    tampered, "protected", "glmm_grid", "server_a",
+    "add_remove_patient", 256, 20), "descriptor is invalid")
 })
 
 test_that("random-intercept LMM post-processing only consumes DP coordinates", {
@@ -560,9 +647,19 @@ test_that("historical GLMM names admit only signed binary moment postprocessing"
   expect_identical(alias$frontdoor, "ds.vert.glmm")
   expect_identical(alias$method_frontdoor, "moment")
 
-  expect_error(
-    ds.vertGLMM(y ~ x, "protected", "site", "binary_random_intercept"),
-    "only an outcome ~ 1 formula")
+  grid <- structure(list(
+    status = "ok", family = "binomial_random_intercept",
+    coefficients = c(`(Intercept)` = -1, x = 0.5),
+    sigma_b2 = 0.5, selected_candidate = 2L,
+    legacy_fallback_called = FALSE), class = c("ds.vertGLMM", "list"))
+  testthat::local_mocked_bindings(
+    .dsvert_dp_glmm_grid_impl = function(...) grid,
+    .package = "dsVertClient")
+  grid_fit <- ds.vertGLMM(
+    y ~ x, "protected", "site", "binary_random_intercept",
+    datasources = list(site_a = list(), site_b = list()))
+  expect_s3_class(grid_fit, "ds.vertGLMM")
+  expect_identical(grid_fit$coefficients, c(`(Intercept)` = -1, x = 0.5))
   expect_error(
     ds.vertGLMM(y ~ 1, "protected", "site", "binary_random_intercept",
                 compute_se = TRUE),

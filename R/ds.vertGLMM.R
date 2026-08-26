@@ -1,25 +1,27 @@
-#' @title Signed binary random-intercept moment GLMM
-#' @description Admits a deliberately narrow, non-iterative GLMM-compatible
-#'   estimand: a binary \code{outcome ~ 1} population-average log-odds and an
-#'   observed-scale intracluster correlation from one signed, sticky
-#'   random-intercept Synopsis. It never calls the retired PQL endpoints or
-#'   exposes cluster-level statistics.
-#' @details The signed outcome bounds must be exactly \code{[0, 1]}. The
-#'   reported \code{sigma_b2} is the conventional logistic latent-scale
-#'   approximation \code{pi^2 * rho / (3 * (1 - rho))}; it is not a
-#'   conditional-likelihood, PQL, Laplace, ML or REML variance estimate.
-#'   Covariates, random slopes, standard errors, p-values and sampling
-#'   inference are unavailable.
-#' @param formula A formula exactly of the form \code{outcome ~ 1}.
+#' @title Signed binary random-intercept GLMM
+#' @description Fits a binary random-intercept model from one signed, sticky
+#'   Synopsis.  The intercept-only call retains its historical moment
+#'   projection. Additive covariate calls select the minimum from the signed
+#'   finite marginal-likelihood grid; they never call PQL or expose
+#'   cluster-level statistics.
+#' @details The signed outcome bounds must be exactly \code{[0, 1]}. For an
+#'   intercept-only formula, \code{sigma_b2} is the conventional logistic
+#'   latent-scale approximation to the released observed ICC. For additive
+#'   covariates, it is the selected value from a custodian-signed finite random
+#'   intercept variance grid. Neither route supplies standard errors, p-values
+#'   or sampling inference; random slopes, interactions and unconstrained
+#'   likelihood optimisation remain unavailable.
+#' @param formula An intercept-only formula or additive bare column names.
 #' @param data Signed protected dataset name or federation.
 #' @param cluster_col Cluster column required to match the signed artifact.
 #' @param analysis_id Custodian-configured signed random-intercept artifact id.
 #' @param max_outer,inner_iter,tol,ring,verbose Retained compatibility controls;
-#'   they do not alter the signed moment estimand.
-#' @param lambda Must be zero and \code{compute_se} must be \code{FALSE}.
+#'   they do not alter the signed estimand.
+#' @param lambda Must be zero.
+#' @param compute_se Must be \code{FALSE}.
 #' @param datasources DataSHIELD connections.
 #' @return A \code{ds.vertGLMM} object containing the certified public DP
-#'   moment projection and no cluster-level statistics.
+#'   moment or finite-grid projection and no cluster-level statistics.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertGLMM <- function(formula, data = NULL, cluster_col,
@@ -30,11 +32,14 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         ring = NULL,
                         verbose = TRUE,
                         datasources = NULL) {
+  terms <- if (inherits(formula, "formula")) stats::terms(formula) else NULL
+  predictors <- if (is.null(terms)) character() else
+    attr(terms, "term.labels")
   if (!inherits(formula, "formula") || length(formula) != 3L ||
       !is.symbol(formula[[2L]]) ||
-      length(attr(stats::terms(formula), "term.labels")) != 0L ||
-      !identical(attr(stats::terms(formula), "intercept"), 1L)) {
-    stop("ds.vertGLMM currently supports only an outcome ~ 1 formula",
+      !identical(attr(terms, "intercept"), 1L) ||
+      any(!grepl("^[A-Za-z.][A-Za-z0-9._]*$", predictors))) {
+    stop("ds.vertGLMM requires an intercept and additive bare column names",
          call. = FALSE)
   }
   if (!is.character(cluster_col) || length(cluster_col) != 1L ||
@@ -46,8 +51,14 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
   if (!is.numeric(lambda) || length(lambda) != 1L || is.na(lambda) ||
       !is.finite(lambda) || lambda != 0 || !identical(compute_se, FALSE)) {
     stop(paste(
-      "ds.vertGLMM supports only the signed binary random-intercept",
-      "moment route: lambda=0 and compute_se=FALSE"), call. = FALSE)
+      "ds.vertGLMM supports only signed binary random-intercept routes:",
+      "lambda=0 and compute_se=FALSE"), call. = FALSE)
+  }
+  if (length(predictors)) {
+    resolved <- .dsvert_federation_argument(data, datasources)
+    return(.dsvert_dp_glmm_grid_impl(
+      formula, resolved$value, cluster_col, analysis_id,
+      datasources = resolved$datasources, .aggregate = DSI::datashield.aggregate))
   }
   signed <- ds.vertDPLMM(
     data_name = data, analysis_id = analysis_id, datasources = datasources)
@@ -112,11 +123,23 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
 
 #' @export
 print.ds.vertGLMM <- function(x, ...) {
-  cat("dsVert signed binary random-intercept moment approximation\n")
   if (!identical(x$status, "ok")) {
+    cat("dsVert signed binary random-intercept GLMM\n")
     cat("  Status: ", x$status %||% "non_identifiable", "\n", sep = "")
     return(invisible(x))
   }
+  if (!is.null(x$selected_candidate)) {
+    cat("dsVert signed binary random-intercept finite-grid GLMM\n")
+    cat(sprintf("  Selected signed candidate = %d\n", x$selected_candidate))
+    cat(sprintf("  Random-intercept variance = %.5g\n", x$sigma_b2))
+    cat(sprintf("  DP negative log likelihood = %.5f\n",
+                x$selected_dp_negative_log_likelihood))
+    cat("  Coefficients:\n")
+    print(round(x$coefficients, 5L))
+    cat("  Standard errors and sampling inference are unavailable.\n")
+    return(invisible(x))
+  }
+  cat("dsVert signed binary random-intercept moment approximation\n")
   cat(sprintf("  Population-average event probability = %.5f\n",
               x$marginal_probability))
   cat(sprintf("  Observed ICC = %.4f    latent-scale sigma_b^2 = %.4g\n",
