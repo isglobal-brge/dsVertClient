@@ -933,6 +933,9 @@
         identical(artifact$spec_version, "random_intercept_fixed_v3") &&
         identical(artifact$estimation_profile, "reml"))) ||
     (identical(artifact$version,
+               .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION) &&
+       identical(artifact$spec_version, "gaussian_random_slope_grid_v1")) ||
+    (identical(artifact$version,
                .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "binary_random_intercept_grid_v1")) ||
     (identical(artifact$version,
@@ -1339,6 +1342,9 @@
   } else if (identical(artifact$version,
                        .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION)) {
     as.numeric(artifact$statistic_maximum)
+  } else if (identical(artifact$version,
+                       .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+    as.numeric(artifact$statistic_maximum)
   } else if (artifact$version %in%
              unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS)) {
     as.numeric(artifact$statistic_maximum)
@@ -1476,9 +1482,13 @@
         finite_global_composition_claim = FALSE),
       certificate = certificate))
   }
-  if (identical(artifact$version,
-                .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION)) {
-    moment <- .dsvert_dp_glmm_grid_moment(coordinates, artifact)
+  if (artifact$version %in% c(
+        .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+    moment <- if (identical(artifact$version,
+                            .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+      .dsvert_dp_lmm_random_slope_grid_moment(coordinates, artifact)
+    } else .dsvert_dp_glmm_grid_moment(coordinates, artifact)
     accuracy_release <- list(
       manifest_sha256 = certificate$manifest_sha256,
       epsilon = certificate$epsilon,
@@ -1934,6 +1944,14 @@ ds.validateDPGaussianCertificate <- function(x, trusted_pinset = NULL) {
                        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION)) {
     c(capacity, capacity, capacity * artifact$max_patients_per_cluster,
       rep(capacity, 3L))
+  } else if (artifact$version %in% c(
+        .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
+        unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS),
+        .DSVERT_CLIENT_DP_NB_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_MULTINOM_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_ORDINAL_GRID_ARTIFACT_VERSION)) {
+    as.numeric(artifact$statistic_maximum)
   } else rep(capacity, artifact$coordinate_count)
   if (length(coordinates) != artifact$coordinate_count ||
       any(coordinates < 0) || any(coordinates > coordinate_upper)) {

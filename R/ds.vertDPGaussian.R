@@ -90,6 +90,13 @@
       capacity))
   }
   if (is.list(artifact) && identical(
+        artifact$version,
+        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+    return(.dsvert_dp_lmm_random_slope_grid_artifact(
+      manifest, data_name, analysis_id, owner_peer, adjacency, scale,
+      capacity))
+  }
+  if (is.list(artifact) && identical(
         artifact$version, .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION)) {
     return(.dsvert_dp_glmm_grid_artifact(
       manifest, data_name, analysis_id, owner_peer, adjacency, scale,
@@ -715,8 +722,9 @@ ds.vertDPGaussian <- function(
                 .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION) ||
       artifact$version %in% c(
         .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
-        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
-    stop("The signed artifact is a random-intercept LMM; use ds.vertDPLMM",
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+    stop("The signed artifact is an LMM; use ds.vertDPLMM",
          call. = FALSE)
   }
   simultaneous <- .dsvert_dp_vector_accuracy_radius(

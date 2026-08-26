@@ -431,13 +431,14 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "Bounded random-intercept method-of-moments components from one",
         "signed same-owner sticky Synopsis artifact; the compatibility names",
         "require a signed analysis_id and matching cluster column. The",
-        "artifact may define outcome ~ 1 or one canonical additive",
-        "fixed-effect formula with its signed finite variance-ratio grid."),
+      "artifact may define outcome ~ 1 or one canonical additive",
+        "fixed-effect formula with its signed finite variance-ratio grid, or",
+        "a signed Gaussian random-slope candidate grid."),
       paste(
-        "Only the signed finite ML or REML variance-ratio grid for one",
-        "random-intercept covariance is available. Random slopes,",
-        "unstructured covariance, standard errors, p-values and population-",
-        "sampling inference are unavailable."))
+        "The random-slope route is a same-owner finite signed candidate grid",
+        "with a positive-definite Gaussian covariance and no continuous",
+        "optimisation. Unstructured arbitrary covariance, standard errors,",
+        "p-values and population-sampling inference are unavailable."))
   add("ds.validateDPGaussianCertificate",
       "ds.validateDPGaussianCertificate", "provisional",
       paste(
@@ -562,8 +563,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "inference."))
   add("ds.vertLMM.k3", "ds.vertDPLMM", "promoted",
       paste("K>=3 compatibility wrapper for the signed random-intercept",
-            "Synopsis, including a matching signed finite ML/REML grid."),
-      "It accepts no random slopes, unstructured covariance, standard errors or classical inference.")
+            "Synopsis, including matching finite fixed-effect or random-slope grids."),
+      "It accepts only the exact signed random-slope set, not arbitrary covariance, standard errors or classical inference.")
   add(c("ds.vertGEE", "ds.vert.gee"), "ds.vertGEE", "promoted",
       paste(
         "A signed finite binomial/Poisson likelihood-grid Synopsis, a",

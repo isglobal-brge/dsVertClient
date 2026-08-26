@@ -1,12 +1,13 @@
-#' @title Signed random-intercept LMM K>=3 compatibility frontdoor
+#' @title Signed LMM K>=3 compatibility frontdoor
 #' @description This historical K>=3 name delegates to the signed
-#'   random-intercept Synopsis route, including a custodian-signed finite-grid
-#'   ML or REML profile for additive fixed effects.
-#' @param formula An intercept-only or additive fixed-effect formula matching
-#'   the signed random-intercept artifact.
+#'   LMM Synopsis route, including a custodian-signed finite-grid
+#'   ML/REML profile or Gaussian random-slope candidate grid.
+#' @param formula An intercept-only or additive formula matching the signed
+#'   LMM artifact.
 #' @param data Signed protected dataset name or federation.
 #' @param cluster_col Cluster column required to match the signed artifact.
-#' @param analysis_id Custodian-configured signed random-intercept artifact id.
+#' @param analysis_id Custodian-configured signed LMM artifact id.
+#' @param random_slopes Optional exact signed random-slope set.
 #' @param rho_lo,rho_hi,tol,max_outer,ring,verbose Retained compatibility
 #'   controls; they do not alter the signed Synopsis estimand.
 #' @param reml Must match the signed fixed-effect artifact profile.
@@ -16,6 +17,7 @@
 #' @export
 ds.vertLMM.k3 <- function(formula, data, cluster_col,
                            analysis_id = NULL,
+                           random_slopes = NULL,
                            rho_lo = 0.001, rho_hi = 0.999,
                            tol = 1e-4, max_outer = 30L, reml = FALSE,
                            ring = c("ring127", "ring63"),
@@ -27,13 +29,18 @@ ds.vertLMM.k3 <- function(formula, data, cluster_col,
   }
   fit <- ds.vertLMM(
     formula = formula, data = data, cluster_col = cluster_col,
-    analysis_id = analysis_id, reml = reml, max_iter = max_outer,
+    analysis_id = analysis_id, random_slopes = random_slopes,
+    reml = reml, max_iter = max_outer,
     tol = tol, ring = ring, verbose = verbose, datasources = datasources)
   .dsvert_set_frontdoor(fit, "ds.vertLMM.k3", "ds.vertLMM", length(datasources))
 }
 
 #' @export
 print.ds.vertLMM.k3 <- function(x, ...) {
+  if (!is.null(x$random_effect_covariance)) {
+    class(x) <- unique(c("ds.vertLMM", setdiff(class(x), "ds.vertLMM.k3")))
+    return(print.ds.vertLMM(x, ...))
+  }
   cat("dsVert signed random-intercept LMM compatibility result (K>=3)\n")
   if (!identical(x$status, "ok")) {
     cat("  Status: ", x$status %||% "unavailable", "\n", sep = "")

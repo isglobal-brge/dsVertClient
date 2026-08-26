@@ -2,13 +2,14 @@
 % Please edit documentation in R/ds.vertLMM.k3.R
 \name{ds.vertLMM.k3}
 \alias{ds.vertLMM.k3}
-\title{Signed random-intercept LMM K>=3 compatibility frontdoor}
+\title{Signed LMM K>=3 compatibility frontdoor}
 \usage{
 ds.vertLMM.k3(
   formula,
   data,
   cluster_col,
   analysis_id = NULL,
+  random_slopes = NULL,
   rho_lo = 0.001,
   rho_hi = 0.999,
   tol = 1e-04,
@@ -20,14 +21,16 @@ ds.vertLMM.k3(
 )
 }
 \arguments{
-\item{formula}{An intercept-only or additive fixed-effect formula matching
-the signed random-intercept artifact.}
+\item{formula}{An intercept-only or additive formula matching the signed
+LMM artifact.}
 
 \item{data}{Signed protected dataset name or federation.}
 
 \item{cluster_col}{Cluster column required to match the signed artifact.}
 
-\item{analysis_id}{Custodian-configured signed random-intercept artifact id.}
+\item{analysis_id}{Custodian-configured signed LMM artifact id.}
+
+\item{random_slopes}{Optional exact signed random-slope set.}
 
 \item{rho_lo, rho_hi, tol, max_outer, ring, verbose}{Retained compatibility
 controls; they do not alter the signed Synopsis estimand.}
@@ -40,9 +43,9 @@ controls; they do not alter the signed Synopsis estimand.}
 A \code{ds.vertLMM} / \code{ds.vertDPLMM} object.
 }
 \description{
-This historical K>=3 name delegates to the signed random-intercept Synopsis
-route, including a custodian-signed finite-grid ML or REML profile for
-additive fixed effects.
+This historical K>=3 name delegates to the signed LMM Synopsis route,
+including a custodian-signed finite-grid
+ML/REML profile or Gaussian random-slope candidate grid.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

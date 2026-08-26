@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertLMM.R
 \name{ds.vertLMM}
 \alias{ds.vertLMM}
-\title{Bounded random-intercept LMM compatibility frontdoor}
+\title{Bounded signed LMM compatibility frontdoor}
 \usage{
 ds.vertLMM(
   formula,
@@ -22,16 +22,17 @@ ds.vertLMM(
 )
 }
 \arguments{
-\item{formula}{A formula matching the signed intercept-only or fixed-effect
-random-intercept artifact.}
+\item{formula}{A formula matching the signed LMM artifact.}
 
 \item{data}{Signed protected dataset name or federation.}
 
 \item{cluster_col}{Cluster column required to match the signed artifact.}
 
-\item{analysis_id}{Custodian-configured signed random-intercept artifact id.}
+\item{analysis_id}{Custodian-configured signed LMM artifact id.}
 
-\item{random_slopes}{Must be \code{NULL}.}
+\item{random_slopes}{Optional bare predictor names for a signed finite-grid
+Gaussian random-slope artifact. They must match the signed artifact
+exactly; arbitrary random-effect formulas are not evaluated.}
 
 \item{reml}{Must match the signed fixed-effect artifact profile. The
 intercept-only moment artifact requires \code{FALSE}.}
@@ -48,7 +49,7 @@ available.}
 }
 \value{
 A \code{ds.vertLMM} / \code{ds.vertDPLMM} object containing only the
-certified public DP moment projection.
+certified public DP projection.
 }
 \description{
 Admits a signed random-intercept artifact: either the legacy
@@ -58,11 +59,13 @@ it neither calls the retired mixed-model endpoints nor exposes cluster
 statistics.
 }
 \details{
-\code{analysis_id} selects the custodian-signed artifact. Random
-slopes, unrestricted profile optimisation, covariance estimates, standard
-errors and classical inference are unavailable. The intercept-only artifact
-returns a method-of-moments projection; the fixed-effect artifact evaluates
-its signed finite variance-ratio grid by the signed ML or REML profile.
+\code{analysis_id} selects the custodian-signed artifact. The
+random-slope route accepts only its signed finite candidate grid and
+returns its selected Gaussian covariance; unrestricted profile
+optimisation, standard errors and classical inference are unavailable.
+The intercept-only artifact returns a method-of-moments projection; the
+fixed-effect artifact evaluates its signed finite variance-ratio grid by
+the signed ML or REML profile.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

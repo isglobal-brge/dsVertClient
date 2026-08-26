@@ -349,6 +349,13 @@
       manifest, data_name, analysis_id, owner_peer, adjacency, scale,
       capacity))
   }
+  if (is.list(artifact) && identical(
+        artifact$version,
+        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+    return(.dsvert_dp_lmm_random_slope_grid_artifact(
+      manifest, data_name, analysis_id, owner_peer, adjacency, scale,
+      capacity))
+  }
   .dsvert_dp_lmm_artifact(
     manifest, data_name, analysis_id, owner_peer, adjacency, scale, capacity)
 }
@@ -555,6 +562,9 @@
         .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
     .dsvert_dp_lmm_fixed_coordinate_upper(artifact)
+  } else if (identical(artifact$version,
+                       .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+    as.numeric(artifact$statistic_maximum)
   } else c(
     capacity, capacity, capacity * artifact$max_patients_per_cluster,
     rep(capacity, 3L))
@@ -573,7 +583,8 @@
       !verification$artifact$version %in% c(
         .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
-        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
     stop("The random-intercept LMM Synopsis certificate is not transport-anchored",
          call. = FALSE)
   }
@@ -597,7 +608,8 @@
   artifact <- released$artifact
   coefficients <- if (artifact$version %in% c(
         .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
-        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
+        .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
     moment$coefficients
   } else moment$coefficient %||% moment$coefficients
   result <- c(released$metadata, list(
@@ -606,12 +618,20 @@
     logical_snapshot = released$verification$logical_snapshot,
     certificate_sha256 = released$certificate$certificate_sha256,
     signed_artifact = artifact, server = artifact$owner_peer,
-    family = "gaussian_random_intercept",
+    family = if (identical(artifact$version,
+                           .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+      "gaussian_random_slope"
+    } else "gaussian_random_intercept",
     estimand = artifact$estimation_scope,
     coefficient = coefficients,
     coefficients = coefficients,
     sigma2 = moment$sigma2 %||% NULL,
     sigma_b2 = moment$sigma_b2 %||% NULL,
+    random_effect_covariance = moment$random_effect_covariance %||% NULL,
+    random_effect_order = moment$random_effect_order %||% NULL,
+    selected_candidate = moment$selected_candidate %||% NULL,
+    selected_dp_negative_log_likelihood =
+      moment$selected_dp_negative_log_likelihood %||% NULL,
     icc = moment$icc %||% NULL,
     effective_cluster_size = moment$effective_cluster_size %||% NULL,
     n_obs = moment$n_obs %||% moment$projected_summary[["n"]],
@@ -686,8 +706,9 @@ ds.validateDPLMMCertificate <- function(x, trusted_pinset = NULL) {
   if (!verified$artifact$version %in% c(
       .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION,
       .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
-      .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)) {
-    stop("The certificate is not a random-intercept LMM artifact",
+      .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION,
+      .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+    stop("The certificate is not a signed LMM artifact",
          call. = FALSE)
   }
   verified

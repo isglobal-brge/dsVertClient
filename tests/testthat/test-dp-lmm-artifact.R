@@ -201,6 +201,61 @@
     gaussian_models = list(artifacts = list(glmm_grid = artifact))))))
 }
 
+.lmm_random_slope_grid_artifact_fixture <- function() {
+  capacity <- 20
+  scale <- 256
+  candidate_grid <- list(
+    list(beta = c(0, 0), sigma2 = 1,
+         covariance = c(0.5, 0.1, 0.1, 0.5)),
+    list(beta = c(0.2, 0.8), sigma2 = 1,
+         covariance = c(0.75, 0.2, 0.2, 0.75)))
+  candidates <- dsVertClient:::.dsvert_dp_lmm_random_slope_candidates(
+    candidate_grid, 2L, c("(Intercept)", "x"), 4L)
+  loss_bounds <- vapply(candidates, `[[`, numeric(1L), "loss_bound")
+  raw <- ceiling(loss_bounds * scale)
+  artifact <- list(
+    version = "bounded-gaussian-random-slope-likelihood-grid-v1",
+    spec_version = "gaussian_random_slope_grid_v1", analysis_id = "lmm_slope",
+    dataset = "protected", owner_peer = "server_a",
+    outcome = list(column = "y", lower = -2, upper = 6),
+    cluster = list(column = "site", levels = c("a", "b", "c")),
+    predictors = list(x = list(column = "x", lower = 0, upper = 10)),
+    predictor_order = "x", intercept = TRUE,
+    design_terms = c("(Intercept)", "x"),
+    random_effect_order = c("(Intercept)", "x"),
+    observation_capacity = capacity, max_patients_per_cluster = 4L,
+    candidate_grid = lapply(candidates, function(candidate) list(
+      beta = candidate$beta, sigma2 = candidate$sigma2,
+      covariance = as.vector(t(candidate$covariance)))),
+    candidate_order = "canonical_signed_candidate_grid_v1",
+    candidate_loss_bounds = as.list(loss_bounds), numeric_grid_bits = 8L,
+    coordinate_count = 2L,
+    coordinate_order =
+      "signed_candidate_grid_clipped_cluster_gaussian_negative_log_likelihood_v1",
+    source_coordinate_scaling =
+      "all_coordinates_already_on_common_numeric_lattice_v1",
+    repeated_record_policy =
+      "require_one_complete_bounded_row_per_admitted_patient_with_one_consistent_public_cluster_level_v1",
+    missingness_policy =
+      "missing_or_nonfinite_outcome_predictor_or_missing_or_inconsistent_cluster_excludes_patient_v1",
+    contribution_domain =
+      "one_bounded_patient_changes_one_clipped_cluster_gaussian_loss_per_signed_candidate_v1",
+    statistic_maximum = as.list(capacity * raw),
+    source_raw_l1_sensitivity = sum(raw),
+    source_raw_l2_sensitivity = sqrt(sum(raw^2)),
+    natural_l1_sensitivity = sum(raw) / scale,
+    natural_l2_sensitivity = sqrt(sum(raw^2)) / scale,
+    adjacency = "add_remove_patient",
+    adjacency_sensitivity_basis =
+      "one_patient_can_change_one_entire_clipped_cluster_loss_by_at_most_its_signed_bound_v1",
+    estimation_scope =
+      "bounded_gaussian_random_slope_marginal_likelihood_finite_signed_parameter_grid_v1",
+    implementation_state = "same_owner_materialized",
+    cross_owner_state = "reserved_not_materialized")
+  list(artifact = artifact, manifest = list(workload = list(families = list(
+    gaussian_models = list(artifacts = list(lmm_slope = artifact))))))
+}
+
 test_that("random-intercept LMM artifacts validate their full signed contract", {
   fixture <- .lmm_artifact_fixture()
   artifact <- dsVertClient:::.dsvert_dp_lmm_artifact(
@@ -245,6 +300,33 @@ test_that("binary random-intercept GLMM grid validates and selects one signed ca
     candidate_loss_bounds[[1L]] <- 0
   expect_error(dsVertClient:::.dsvert_dp_glmm_grid_artifact(
     tampered, "protected", "glmm_grid", "server_a",
+    "add_remove_patient", 256, 20), "descriptor is invalid")
+})
+
+test_that("Gaussian random-slope LMM grid validates, transforms and fails closed", {
+  fixture <- .lmm_random_slope_grid_artifact_fixture()
+  artifact <- dsVertClient:::.dsvert_dp_lmm_random_slope_grid_artifact(
+    fixture$manifest, "protected", "lmm_slope", "server_a",
+    "add_remove_patient", 256, 20)
+  fit <- dsVertClient:::.dsvert_dp_lmm_random_slope_grid_moment(
+    c(200, 100), artifact)
+
+  expect_identical(artifact$coordinate_count, 2L)
+  expect_identical(fit$selected_candidate, 2L)
+  expect_identical(fit$random_effect_order, c("(Intercept)", "x"))
+  expect_true(all(is.finite(c(fit$coefficients, fit$sigma2,
+                              fit$random_effect_covariance))))
+  expect_equal(fit$coefficients[["x"]], 8 * 0.8 / 10)
+  expect_equal(fit$random_effect_covariance[[2L, 2L]], 64 * 0.75 / 100)
+  printable <- c(fit, list(cluster_count = NULL, n_obs = NULL))
+  class(printable) <- c("ds.vertLMM", "list")
+  expect_match(paste(capture.output(print(printable)), collapse = "\n"),
+               "random-slope finite-grid", fixed = TRUE)
+  tampered <- fixture$manifest
+  tampered$workload$families$gaussian_models$artifacts$lmm_slope$
+    random_effect_order <- c("x", "(Intercept)")
+  expect_error(dsVertClient:::.dsvert_dp_lmm_random_slope_grid_artifact(
+    tampered, "protected", "lmm_slope", "server_a",
     "add_remove_patient", 256, 20), "descriptor is invalid")
 })
 
