@@ -202,3 +202,57 @@
     request$value, resolved$datasources)
   .dsvert_formal_cox_frontdoor_fit(release, request$value)
 }
+
+.dsvert_formal_cox_fresh_frontdoor_adapter <- function(
+    explicit_arguments, formula, data, verbose, datasources, analysis_id) {
+  allowed <- c("formula", "data", "verbose", "datasources",
+               "fresh_formal_analysis_id")
+  unsupported <- setdiff(explicit_arguments, allowed)
+  if (length(unsupported) || !is.logical(verbose) || length(verbose) != 1L ||
+      is.na(verbose) || is.null(formula) || is.null(data)) {
+    stop(paste(
+      "fresh_formal_analysis_id requires an explicit formula, aligned data",
+      "name, one non-missing logical verbose value, and no legacy controls"),
+         call. = FALSE)
+  }
+  request <- .dsvert_formal_cox_frontdoor_request(analysis_id, data, formula)
+  datasources <- .dsvert_dp_datasources(datasources)
+  resolved <- .dsvert_federation_argument(data, datasources)
+  fresh <- .dsvert_formal_cox_fresh_run(
+    resolved$datasources, request$value, .aggregate = DSI::datashield.aggregate)
+  terms <- attr(stats::terms(formula), "term.labels")
+  public <- if (is.list(fresh)) fresh$public_result else NULL
+  fields <- c("version", "artifact_id", "certificate_sha256", "valid",
+              "coefficients", "production_ready")
+  valid <- is.list(fresh) && is.list(public) &&
+    identical(names(public), fields) &&
+    identical(public$version, "dsvert-formal-cox-public-result-v1") &&
+    identical(public$valid, TRUE) && identical(public$production_ready, FALSE) &&
+    is.list(public$coefficients) && length(public$coefficients) == length(terms) &&
+    all(vapply(seq_along(public$coefficients), function(index) {
+      coefficient <- public$coefficients[[index]]
+      is.list(coefficient) && is.numeric(coefficient$index) &&
+        length(coefficient$index) == 1L && !is.na(coefficient$index) &&
+        is.finite(coefficient$index) && coefficient$index == index - 1L
+    }, logical(1L)))
+  if (!isTRUE(valid)) {
+    stop("Configured fresh Cox analysis did not produce one public release.",
+         call. = FALSE)
+  }
+  coefficients <- Map(function(value, name) {
+    list(coefficient = name, beta_steps = value$beta_steps,
+         fraction_bits = value$fraction_bits, beta = value$beta,
+         hazard_ratio_lower = value$hazard_ratio_lower,
+         hazard_ratio_upper = value$hazard_ratio_upper,
+         hazard_ratio_midpoint = value$hazard_ratio_midpoint)
+  }, public$coefficients, terms)
+  release <- .dsvert_formal_cox_frontdoor_public_response(list(
+    version = public$version, analysis_id = request$value$analysis_id,
+    artifact_id = public$artifact_id,
+    certificate_sha256 = public$certificate_sha256,
+    formula_sha256 = request$value$formula_sha256,
+    coefficients = coefficients, production_ready = FALSE), request$value)
+  fit <- .dsvert_formal_cox_frontdoor_fit(release, request$value)
+  fit$called_via <- "ds.vertCox_fresh_formal_analysis_id"
+  fit
+}

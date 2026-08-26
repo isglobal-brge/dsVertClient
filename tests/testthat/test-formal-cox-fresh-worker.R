@@ -389,6 +389,15 @@ test_that("configured fresh Cox worker commits a staged finalizer through opaque
           certificate_sha256 = if (advance_index < 3L) "" else strrep("f", 64L),
           production_ready = FALSE)))
       }
+      if (identical(action, "finalizer_public")) {
+        return(list(payload = list(
+          version = "dsvert-formal-cox-public-result-v1",
+          artifact_id = strrep("a", 64L), certificate_sha256 = strrep("f", 64L),
+          valid = TRUE, coefficients = list(list(
+            index = 0L, beta_steps = "64", fraction_bits = 8L, beta = 0.25,
+            hazard_ratio_lower = 1.2, hazard_ratio_upper = 1.3,
+            hazard_ratio_midpoint = 1.25)), production_ready = FALSE)))
+      }
       stop("unexpected action", call. = FALSE)
     },
     .package = "dsVertClient")
@@ -396,7 +405,14 @@ test_that("configured fresh Cox worker commits a staged finalizer through opaque
     list(site_a = "connection", site_b = "connection"), workers, handoff,
     .aggregate = identity)
   expect_identical(finalizer, list(
-    certificate_sha256 = strrep("f", 64L), production_ready = FALSE))
+    certificate_sha256 = strrep("f", 64L), public = list(
+      version = "dsvert-formal-cox-public-result-v1",
+      artifact_id = strrep("a", 64L), certificate_sha256 = strrep("f", 64L),
+      valid = TRUE, coefficients = list(list(
+        index = 0L, beta_steps = "64", fraction_bits = 8L, beta = 0.25,
+        hazard_ratio_lower = 1.2, hazard_ratio_upper = 1.3,
+        hazard_ratio_midpoint = 1.25)), production_ready = FALSE),
+    production_ready = FALSE))
   expect_identical(relay_index, length(relay_records))
   expect_identical(advance_index, length(advance_states))
 })

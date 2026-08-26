@@ -47,6 +47,38 @@ test_that("formal Cox reads one certified public release at every site", {
   expect_null(fit$std_errors)
 })
 
+test_that("fresh formal Cox projects only one final committed public release", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"))
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_run = function(conns, selector, .aggregate) {
+      expect_identical(names(conns), c("site_a", "site_b"))
+      list(
+        analysis_id = selector$analysis_id, schema_sha256 = strrep("a", 64L),
+        total_blocks = 1L, state = "finalizer_committed",
+        public_result = list(
+          version = "dsvert-formal-cox-public-result-v1",
+          artifact_id = strrep("b", 64L), certificate_sha256 = strrep("c", 64L),
+          valid = TRUE, coefficients = list(list(
+            index = 0L, beta_steps = "64", fraction_bits = 8L, beta = 0.25,
+            hazard_ratio_lower = 1.2, hazard_ratio_upper = 1.3,
+            hazard_ratio_midpoint = 1.25)), production_ready = FALSE),
+        production_ready = FALSE)
+    }, .package = "dsVertClient")
+  fit <- ds.vertCox(
+    stats::as.formula("Surv(time, status) ~ x"), data = "study",
+    fresh_formal_analysis_id = "fresh_cox", verbose = FALSE,
+    datasources = conns)
+  expect_s3_class(fit, "ds.vertCox")
+  expect_identical(fit$called_via, "ds.vertCox_fresh_formal_analysis_id")
+  expect_equal(fit$coefficients, c(x = 0.25))
+  expect_false(fit$production_ready)
+  expect_error(ds.vertCox(
+    stats::as.formula("Surv(time, status) ~ x"), data = "study",
+    formal_analysis_id = "stored", fresh_formal_analysis_id = "fresh_cox",
+    datasources = conns), "mutually exclusive")
+})
+
 test_that("formal Cox rejects a cross-site certificate mismatch", {
   conns <- list(site_a = structure(list(), class = "mock"),
                 site_b = structure(list(), class = "mock"))

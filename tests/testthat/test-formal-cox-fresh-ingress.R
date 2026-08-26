@@ -191,7 +191,14 @@ test_that("fresh Cox run stages its finalizer without returning a private result
       calls <<- c(calls, "finish")
       expect_identical(names(conns), c("site_a", "site_c"))
       expect_identical(handoff, expected_handoff)
-      list(certificate_sha256 = strrep("4", 64L), production_ready = FALSE)
+      list(certificate_sha256 = strrep("4", 64L), public = list(
+        version = "dsvert-formal-cox-public-result-v1",
+        artifact_id = strrep("2", 64L), certificate_sha256 = strrep("4", 64L),
+        valid = TRUE, coefficients = list(list(
+          index = 0L, beta_steps = "64", fraction_bits = 8L, beta = 0.25,
+          hazard_ratio_lower = 1.2, hazard_ratio_upper = 1.3,
+          hazard_ratio_midpoint = 1.25)), production_ready = FALSE),
+        production_ready = FALSE)
     },
     .package = "dsVertClient")
 
@@ -201,9 +208,74 @@ test_that("fresh Cox run stages its finalizer without returning a private result
   expect_identical(result, list(
     analysis_id = "fresh_cox", schema_sha256 = strrep("b", 64L),
     total_blocks = 2L, state = "finalizer_committed",
+    public_result = list(
+      version = "dsvert-formal-cox-public-result-v1",
+      artifact_id = strrep("2", 64L), certificate_sha256 = strrep("4", 64L),
+      valid = TRUE, coefficients = list(list(
+        index = 0L, beta_steps = "64", fraction_bits = 8L, beta = 0.25,
+        hazard_ratio_lower = 1.2, hazard_ratio_upper = 1.3,
+        hazard_ratio_midpoint = 1.25)), production_ready = FALSE),
     production_ready = FALSE))
-  expect_false(any(grepl("intent|candidate|certificate|envelope|header|ticket",
+  expect_false(any(grepl("intent|candidate|envelope|header|ticket",
                          names(result), ignore.case = TRUE)))
+})
+
+test_that("fresh Cox replay loads the committed public result without re-finalizing", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"))
+  ingress <- list(
+    analysis_id = "fresh_cox", schema_sha256 = strrep("b", 64L),
+    total_blocks = 1L, compute_peers = c("site_a", "site_b"),
+    workers = list(site_a = .formal_cox_fresh_ingress_worker("site_a"),
+                   site_b = .formal_cox_fresh_ingress_worker("site_b")),
+    production_ready = FALSE)
+  handoff <- list(headers = list(list(role = "garbler"), list(role = "evaluator")),
+                  ticket = list(version = "ticket"),
+                  envelopes = list(list(version = "envelope"), list(version = "envelope")),
+                  production_ready = FALSE)
+  prepared <- list(intent = NULL, finalized = TRUE,
+                   certificate_sha256 = strrep("4", 64L), replayed = TRUE,
+                   production_ready = FALSE)
+  public <- list(version = "dsvert-formal-cox-public-result-v1",
+                 artifact_id = strrep("2", 64L), certificate_sha256 = strrep("4", 64L),
+                 valid = TRUE, coefficients = list(list(
+                   index = 0L, beta_steps = "64", fraction_bits = 8L, beta = 0.25,
+                   hazard_ratio_lower = 1.2, hazard_ratio_upper = 1.3,
+                   hazard_ratio_midpoint = 1.25)), production_ready = FALSE)
+  calls <- character()
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_ingress = function(...) ingress,
+    .dsvert_formal_cox_fresh_worker_run = function(...) {
+      calls <<- c(calls, "worker")
+      list(version = "completion")
+    },
+    .dsvert_formal_cox_fresh_worker_finalizer_handoff = function(...) {
+      calls <<- c(calls, "handoff")
+      handoff
+    },
+    .dsvert_formal_cox_fresh_worker_prepare_finalizer = function(...) {
+      calls <<- c(calls, "prepare")
+      prepared
+    },
+    .dsvert_formal_cox_fresh_worker_committed_public_result = function(
+        conns, workers, handoff, certificate_sha256, .aggregate) {
+      calls <<- c(calls, "public")
+      expect_identical(certificate_sha256, prepared$certificate_sha256)
+      public
+    },
+    .dsvert_formal_cox_fresh_worker_stage_finalizer = function(...) {
+      stop("replay must not stage", call. = FALSE)
+    },
+    .dsvert_formal_cox_fresh_worker_finish_finalizer = function(...) {
+      stop("replay must not advance", call. = FALSE)
+    },
+    .package = "dsVertClient")
+
+  result <- .dsvert_formal_cox_fresh_run(
+    conns, .formal_cox_fresh_ingress_selector(), .aggregate = identity)
+  expect_identical(calls, c("worker", "handoff", "prepare", "public"))
+  expect_identical(result$state, "finalizer_already_public")
+  expect_identical(result$public_result, public)
 })
 
 test_that("fresh Cox run fails closed on an unsafe finalizer state", {

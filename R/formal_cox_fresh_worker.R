@@ -6,7 +6,7 @@
 .DSVERT_FORMAL_COX_WORKER_CONTROL_ACTIONS <- c(
   "host_start", "bind", "offer", "accept", "confirm", "poll", "relay", "result",
   "completion", "opening", "finalizer_ticket", "finalizer_seal", "finalizer_prepare",
-  "finalizer_stage", "finalizer_advance", "finalizer_relay_recipient",
+  "finalizer_stage", "finalizer_advance", "finalizer_public", "finalizer_relay_recipient",
   "finalizer_relay_source", "finalizer_relay_import", "finalizer_relay_delivery",
   "commit")
 
@@ -83,7 +83,7 @@
     stop("Configured fresh Cox worker requires one ticket, two headers and two envelopes.",
          call. = FALSE)
   }
-  if (action %in% c("finalizer_advance", "finalizer_relay_recipient") &&
+  if (action %in% c("finalizer_advance", "finalizer_public", "finalizer_relay_recipient") &&
       (!identical(fields, "headers") || !is.list(payload$headers) ||
        length(payload$headers) != 2L ||
        any(vapply(payload$headers, is.null, logical(1L))))) {
@@ -727,6 +727,84 @@
   reply$certificate_sha256
 }
 
+.dsvert_formal_cox_fresh_worker_public_result <- function(
+    conn, worker, headers, certificate_sha256,
+    .aggregate = DSI::datashield.aggregate) {
+  value <- .dsvert_formal_cox_fresh_worker_call(
+    conn, worker, "finalizer_public", list(headers = unname(headers)),
+    .aggregate = .aggregate)$payload
+  fields <- c("version", "artifact_id", "certificate_sha256", "valid",
+              "coefficients", "production_ready")
+  coefficient_fields <- c("index", "beta_steps", "fraction_bits", "beta",
+                          "hazard_ratio_lower", "hazard_ratio_upper",
+                          "hazard_ratio_midpoint")
+  valid_coefficient <- function(coefficient, index) {
+    is.list(coefficient) && identical(names(coefficient), coefficient_fields) &&
+      is.numeric(coefficient$index) && length(coefficient$index) == 1L &&
+      !is.na(coefficient$index) && is.finite(coefficient$index) &&
+      coefficient$index == index - 1L &&
+      is.character(coefficient$beta_steps) && length(coefficient$beta_steps) == 1L &&
+      !is.na(coefficient$beta_steps) &&
+      grepl("^(0|-[1-9][0-9]*|[1-9][0-9]*)$", coefficient$beta_steps) &&
+      is.numeric(coefficient$fraction_bits) && length(coefficient$fraction_bits) == 1L &&
+      !is.na(coefficient$fraction_bits) && is.finite(coefficient$fraction_bits) &&
+      coefficient$fraction_bits >= 8L && coefficient$fraction_bits <= 60L &&
+      coefficient$fraction_bits == floor(coefficient$fraction_bits) &&
+      all(vapply(c("beta", "hazard_ratio_lower", "hazard_ratio_upper",
+                   "hazard_ratio_midpoint"), function(field) {
+        is.numeric(coefficient[[field]]) && length(coefficient[[field]]) == 1L &&
+          !is.na(coefficient[[field]]) && is.finite(coefficient[[field]])
+      }, logical(1L))) && coefficient$hazard_ratio_lower > 0 &&
+      coefficient$hazard_ratio_upper >= coefficient$hazard_ratio_lower &&
+      coefficient$hazard_ratio_midpoint >= coefficient$hazard_ratio_lower &&
+      coefficient$hazard_ratio_midpoint <= coefficient$hazard_ratio_upper
+  }
+  valid <- is.list(value) && !is.null(names(value)) && !anyNA(names(value)) &&
+    !anyDuplicated(names(value)) && identical(names(value), fields) &&
+    identical(value$version, "dsvert-formal-cox-public-result-v1") &&
+    .dsvert_formal_cox_fresh_worker_sha256(value$artifact_id) &&
+    identical(value$certificate_sha256, certificate_sha256) &&
+    identical(value$valid, TRUE) && identical(value$production_ready, FALSE) &&
+    is.list(value$coefficients) && length(value$coefficients) > 0L &&
+    all(vapply(seq_along(value$coefficients), function(index)
+      valid_coefficient(value$coefficients[[index]], index), logical(1L)))
+  if (!isTRUE(valid)) {
+    stop("Configured fresh Cox worker returned an invalid public release.",
+         call. = FALSE)
+  }
+  value
+}
+
+# Read the already committed public opening from both designated authorities.
+# This is replay-only: it neither advances the finalizer nor touches source
+# data, so a restarted client receives the same sticky public result.
+.dsvert_formal_cox_fresh_worker_committed_public_result <- function(
+    conns, workers, handoff, certificate_sha256,
+    .aggregate = DSI::datashield.aggregate) {
+  valid <- is.list(conns) && is.list(workers) && length(conns) == 2L &&
+    length(workers) == 2L && identical(names(conns), names(workers)) &&
+    is.list(handoff) && identical(names(handoff), c(
+      "headers", "ticket", "envelopes", "production_ready")) &&
+    is.list(handoff$headers) && length(handoff$headers) == 2L &&
+    identical(handoff$production_ready, FALSE) &&
+    .dsvert_formal_cox_fresh_worker_sha256(certificate_sha256)
+  if (!isTRUE(valid)) {
+    stop("Configured fresh Cox public replay requires one committed handoff.",
+         call. = FALSE)
+  }
+  public <- Map(function(conn, worker) {
+    .dsvert_formal_cox_fresh_worker_public_result(
+      conn, worker, handoff$headers, certificate_sha256,
+      .aggregate = .aggregate)
+  }, conns, workers)
+  canonical <- vapply(public, .dsvert_joint_dp_client_json, character(1L))
+  if (length(unique(canonical)) != 1L) {
+    stop("Configured fresh Cox authorities returned different public releases.",
+         call. = FALSE)
+  }
+  public[[1L]]
+}
+
 # The control ordering is fixed by the signed opening protocol.  The client
 # carries public recipient keys and opaque envelopes only; every transition is
 # selected, authenticated and durably recorded by the worker authority.
@@ -786,7 +864,10 @@
     "commit_ready", certificate_sha256, .aggregate = .aggregate)
   relay(evaluator, garbler, "commit")
   relay(garbler, evaluator, "ack")
-  list(certificate_sha256 = certificate_sha256, production_ready = FALSE)
+  list(certificate_sha256 = certificate_sha256,
+       public = .dsvert_formal_cox_fresh_worker_committed_public_result(
+         conns, workers, handoff, certificate_sha256, .aggregate = .aggregate),
+       production_ready = FALSE)
 }
 
 # Run the fixed two-peer schedule by forwarding only authenticated opaque

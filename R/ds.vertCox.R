@@ -3,8 +3,10 @@
 #'   two-authority-signed sticky formal Cox certificate. It returns only the
 #'   certified coefficient and hazard-ratio point/range values; it never starts
 #'   a Cox computation or exposes source records, shares or intermediate state.
-#'   Without \code{formal_analysis_id}, this compatibility name remains
-#'   unavailable before any DSI call.
+#'   \code{fresh_formal_analysis_id} instead runs only the matching
+#'   custodian-configured durable analysis and projects it after both
+#'   authorities committed and acknowledged one certificate. Without either
+#'   selector, this compatibility name remains unavailable before any DSI call.
 #'
 #' @details The read-only formal route needs an explicit formula, data name and
 #'   custodian-owned analysis id. It has no analyst-owned privacy parameters,
@@ -15,6 +17,8 @@
 #'   custodian-configured completed release.
 #' @param formal_analysis_id Custodian-configured formal Cox public certificate
 #'   selector. It is read-only and cannot create a new release.
+#' @param fresh_formal_analysis_id Custodian-configured fresh Cox selector. It
+#'   cannot choose source work, privacy settings, opening or retry randomness.
 #' @param max_iter,tol,max_event_times,newton,ridge_eps,debug_trace,verbose,datasources
 #'   Legacy compatibility arguments. They are rejected when a formal id is
 #'   supplied; without it the route fails before DSI.
@@ -28,11 +32,20 @@ ds.vertCox <- function(formula, data = NULL,
                        newton = TRUE,
                        ridge_eps = 1e-6,
                        debug_trace = FALSE, verbose = TRUE,
-                       datasources = NULL, formal_analysis_id = NULL) {
+                       datasources = NULL, formal_analysis_id = NULL,
+                       fresh_formal_analysis_id = NULL) {
   explicit <- names(match.call(expand.dots = FALSE))[-1L]
+  if (!is.null(formal_analysis_id) && !is.null(fresh_formal_analysis_id)) {
+    stop("formal_analysis_id and fresh_formal_analysis_id are mutually exclusive",
+         call. = FALSE)
+  }
   if (!is.null(formal_analysis_id)) {
     return(.dsvert_formal_cox_frontdoor_adapter(
       explicit, formula, data, verbose, datasources, formal_analysis_id))
+  }
+  if (!is.null(fresh_formal_analysis_id)) {
+    return(.dsvert_formal_cox_fresh_frontdoor_adapter(
+      explicit, formula, data, verbose, datasources, fresh_formal_analysis_id))
   }
   .dsvert_block_retired_remote_route("cox")
 }
