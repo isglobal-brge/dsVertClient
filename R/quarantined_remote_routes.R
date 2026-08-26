@@ -20,9 +20,10 @@
     method = "ds.vertCox",
     state = "legacy_cox_route_quarantined",
     replacement = paste0(
-      "A completed formal Cox certificate can be read with ",
-      "ds.vertCox(..., formal_analysis_id=...); it cannot start a new ",
-      "Cox analysis or provide classical inference.")),
+      "Use ds.vertCox(..., analysis_id=...) to run or resume its one ",
+      "custodian-configured durable Cox analysis, or formal_analysis_id=... ",
+      "to read a completed certificate. Classical inference remains ",
+      "unavailable.")),
   negative_binomial = list(
     method = "ds.vertNBFullRegTheta",
     state = "legacy_nb2_route_quarantined",
