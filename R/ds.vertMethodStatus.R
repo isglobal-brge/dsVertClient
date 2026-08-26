@@ -433,7 +433,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "require a signed analysis_id and matching cluster column. The",
       "artifact may define outcome ~ 1 or one canonical additive",
         "fixed-effect formula with its signed finite variance-ratio grid, or",
-        "a signed Gaussian random-slope candidate grid."),
+        "a signed Gaussian one-or-more-random-slope candidate grid."),
       paste(
         "The random-slope route is a same-owner finite signed candidate grid",
         "with a positive-definite Gaussian covariance and no continuous",
@@ -563,7 +563,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "inference."))
   add("ds.vertLMM.k3", "ds.vertDPLMM", "promoted",
       paste("K>=3 compatibility wrapper for the signed random-intercept",
-            "Synopsis, including matching finite fixed-effect or random-slope grids."),
+            "Synopsis, including matching finite fixed-effect or one-or-more",
+            "random-slope grids."),
       "It accepts only the exact signed random-slope set, not arbitrary covariance, standard errors or classical inference.")
   add(c("ds.vertGEE", "ds.vert.gee"), "ds.vertGEE", "promoted",
       paste(

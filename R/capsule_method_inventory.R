@@ -641,7 +641,7 @@
     paste(
       "Bounded random-intercept outcome ~ 1 components or one signed",
       "additive fixed-effect design with a finite ML/REML variance-ratio",
-      "grid, or a signed finite Gaussian random-slope candidate grid; the",
+      "grid, or a signed finite Gaussian one-or-more-random-slope candidate grid; the",
       "historical names require the matching signed artifact and cluster",
       "column."),
     c("cluster_contribution_bounds", "fixed_random_intercept_scope",

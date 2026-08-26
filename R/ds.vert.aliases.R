@@ -27,9 +27,10 @@
 #' With a signed \code{analysis_id}, it also selects additive coefficients and
 #' dispersion from one finite sticky-DP likelihood grid; it has no covariance
 #' or sampling inference and cannot create another release.
-#' \code{ds.vert.lmm(..., analysis_id = x)} is limited to the signed
-#' \code{outcome ~ 1} random-intercept method-of-moments artifact. It has no
-#' ML/REML, random slopes, covariance, standard errors or classical inference.
+#' \code{ds.vert.lmm(..., analysis_id = x)} reads the matching signed
+#' random-intercept, finite ML/REML, or finite one-or-more-random-slope grid.
+#' It has no arbitrary random-effect formula, continuous optimisation, standard
+#' errors or classical inference.
 #' \code{ds.vert.glmm(..., analysis_id = x)} reads either that binary
 #' \code{outcome ~ 1} population-average moment artifact or a custodian-signed
 #' finite random-intercept likelihood grid for additive bare covariates; it is
