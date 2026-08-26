@@ -980,8 +980,7 @@
         !identical(artifact$cross_owner_state,
                    "reserved_not_materialized"))) ||
       (isTRUE(cross_owner_artifact) &&
-       (!is.list(cross_evidence) ||
-        !identical(names(cross_evidence), artifact$analysis_id)))) {
+       (!is.list(cross_evidence) || !length(cross_evidence)))) {
     stop("The Gaussian result lacks closed Synopsis provenance",
          call. = FALSE)
   }
@@ -1354,7 +1353,7 @@
     public <- .dsvert_dp_gaussian_synopsis_evidence_decode(
       certificate$signed_evidence$cross_gaussian_evidence_json,
       "cross-owner Gaussian evidence")
-    receipts <- if (is.list(public)) public[[certificate$analysis_id]] else NULL
+    receipts <- public
     fields <- c(
       "version", "phase", "analysis_id", "peer_name", "peer_identity_pk",
       "artifact_sha256", "source_contract_sha256", "private_layout_sha256",
@@ -1363,8 +1362,7 @@
       "public_end", "public_coordinate_order_sha256", "ring_bits", "frac_bits",
       "state", "fixed_transcript", "private_result_exposed",
       "exact_intermediates_exposed", "alignment_hash_exposed", "signature")
-    if (!is.list(public) || !identical(names(public), certificate$analysis_id) ||
-        !is.list(receipts) || !identical(names(receipts), designated)) {
+    if (!is.list(receipts) || !identical(names(receipts), designated)) {
       stop("The Gaussian certificate lacks both cross-owner attestations",
            call. = FALSE)
     }

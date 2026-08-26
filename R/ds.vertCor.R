@@ -679,6 +679,12 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
 
 .dsvert_dp_cor_gaussian_certificate_match <- function(result, verification) {
   artifact <- verification$artifact
+  expected_cross_owner_state <- if (identical(
+      artifact$version, .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)) {
+    "exact_gc_to_joint_dp_vector_v1"
+  } else {
+    "reserved_not_materialized"
+  }
   variables <- result$var_names
   all_variables <- if (is.list(artifact)) {
     c(artifact$predictor_order, artifact$outcome$column)
@@ -707,7 +713,7 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
               verification$coordinate_order_sha256) &&
     identical(result$provenance_certificate$certificate_sha256,
               verification$certificate$certificate_sha256) &&
-    identical(result$cross_owner_state, "reserved_not_materialized") &&
+    identical(result$cross_owner_state, expected_cross_owner_state) &&
     scalar_equal(as.numeric(result$epsilon),
                  as.numeric(verification$epsilon)) &&
     scalar_equal(as.numeric(result$delta),
