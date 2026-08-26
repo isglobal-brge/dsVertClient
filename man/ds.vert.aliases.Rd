@@ -61,6 +61,7 @@ ds.vert.cox(
   data = NULL,
   method = c("profile", "discrete"),
   datasources = NULL,
+  analysis_id = NULL,
   formal_analysis_id = NULL,
   fresh_formal_analysis_id = NULL,
   ...
@@ -70,6 +71,7 @@ ds.vert.coxph(
   formula,
   data = NULL,
   method = "profile",
+  analysis_id = NULL,
   formal_analysis_id = NULL,
   fresh_formal_analysis_id = NULL,
   ...
@@ -212,9 +214,9 @@ the explicit values must agree with that formula.}
 for an already completed formal Cox profile, binomial/Poisson GLM
 certificate, or discrete-time public certificate. The fresh GLM selector
 is accepted by \code{ds.vert.glm()} and \code{ds.vert.gee()} only to run
-its configured durable analysis. The fresh Cox selector is accepted by
-\code{ds.vert.cox()} and \code{ds.vert.coxph()} only for the profile
-route. The GEE adapter remains limited to the GLM independence-working
+its configured durable analysis. For Cox, \code{analysis_id} is the
+standard profile selector and \code{fresh_formal_analysis_id} remains an
+alias. The GEE adapter remains limited to the GLM independence-working
 point-estimate scope, and the discrete selector remains a distinct
 fixed-grid pooled-logistic estimand.}
 
@@ -222,10 +224,11 @@ fixed-grid pooled-logistic estimand.}
 or ordinal alias resolves its canonical signed Frequency artifact itself.}
 
 \item{analysis_id, dp_analysis_id}{Custodian-configured signed random-intercept,
-Gaussian, NB2, multinomial, or ordinal finite-grid artifact id. \code{analysis_id}
-is required by \code{ds.vert.lmm()} and \code{ds.vert.glmm()} and enables
-finite-grid NB2, multinomial and ordinal aliases; \code{dp_analysis_id} enables only
-independent Gaussian GEE post-processing.}
+binomial/Poisson, Gaussian, NB2, multinomial, ordinal, or durable Cox
+analysis id. \code{analysis_id} is required by \code{ds.vert.lmm()} and
+\code{ds.vert.glmm()}, enables finite-grid NB2, multinomial and ordinal
+aliases, and selects the profile Cox analysis; \code{dp_analysis_id} enables
+only independent Gaussian GEE post-processing.}
 
 \item{cluster_col}{Grouping column for the mixed-model routes.}
 
@@ -251,7 +254,8 @@ not by the presence of an alias. Aliases for quarantined families raise a
 typed \code{dsvert_route_unavailable} condition before any DSI call.
 \code{ds.vert.glm()} can delegate an explicit Gaussian
 \code{dp_analysis_id} to \code{ds.vertDPGaussian()}; its no-id legacy route
-is unavailable. A binomial/Poisson \code{formal_analysis_id} reads a
+is unavailable. A binomial/Poisson \code{analysis_id} opens one signed finite
+likelihood-grid Synopsis; \code{formal_analysis_id} reads a
 completed custodian-signed public certificate; a
 \code{fresh_formal_analysis_id} runs only the corresponding
 custodian-configured durable formal analysis. Neither runs the retired

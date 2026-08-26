@@ -79,6 +79,52 @@ test_that("fresh formal Cox projects only one final committed public release", {
     datasources = conns), "mutually exclusive")
 })
 
+test_that("Cox analysis_id is the standard fresh-analysis selector", {
+  conns <- list(site_a = structure(list(), class = "mock"),
+                site_b = structure(list(), class = "mock"))
+  testthat::local_mocked_bindings(
+    .dsvert_formal_cox_fresh_run = function(conns, selector, .aggregate) {
+      expect_identical(names(conns), c("site_a", "site_b"))
+      expect_identical(selector$analysis_id, "cox_standard")
+      list(
+        analysis_id = selector$analysis_id, schema_sha256 = strrep("a", 64L),
+        total_blocks = 1L, state = "finalizer_committed",
+        public_result = list(
+          version = "dsvert-formal-cox-public-result-v1",
+          artifact_id = strrep("b", 64L), certificate_sha256 = strrep("c", 64L),
+          valid = TRUE, coefficients = list(list(
+            index = 0L, beta_steps = "64", fraction_bits = 8L, beta = 0.25,
+            hazard_ratio_lower = 1.2, hazard_ratio_upper = 1.3,
+            hazard_ratio_midpoint = 1.25)), production_ready = FALSE),
+        production_ready = FALSE)
+    }, .package = "dsVertClient")
+  fit <- ds.vertCox(
+    stats::as.formula("Surv(time, status) ~ x"), data = "study",
+    analysis_id = "cox_standard", verbose = FALSE, datasources = conns)
+  expect_s3_class(fit, "ds.vertCox")
+  expect_identical(fit$called_via, "ds.vertCox_analysis_id")
+  expect_equal(fit$coefficients, c(x = 0.25))
+  cox <- ds.vert.cox(
+    stats::as.formula("Surv(time, status) ~ x"), data = "study",
+    analysis_id = "cox_standard", verbose = FALSE, datasources = conns)
+  coxph <- ds.vert.coxph(
+    stats::as.formula("Surv(time, status) ~ x"), data = "study",
+    analysis_id = "cox_standard", verbose = FALSE, datasources = conns)
+  profile <- ds.vertCoxProfileNonDisclosive(
+    stats::as.formula("Surv(time, status) ~ x"), data = "study",
+    analysis_id = "cox_standard", verbose = FALSE, datasources = conns)
+  expect_identical(cox$frontdoor, "ds.vert.cox")
+  expect_identical(coxph$frontdoor, "ds.vert.coxph")
+  expect_equal(cox$coefficients, c(x = 0.25))
+  expect_equal(coxph$coefficients, c(x = 0.25))
+  expect_identical(profile$called_via,
+                   "ds.vertCoxProfileNonDisclosive_analysis_id")
+  expect_error(ds.vertCox(
+    stats::as.formula("Surv(time, status) ~ x"), data = "study",
+    analysis_id = "cox_standard", fresh_formal_analysis_id = "old",
+    datasources = conns), "mutually exclusive")
+})
+
 test_that("fresh formal Cox aliases retain the profile-only committed route", {
   conns <- list(site_a = structure(list(), class = "mock"),
                 site_b = structure(list(), class = "mock"))

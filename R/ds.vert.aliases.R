@@ -59,10 +59,11 @@
 #' @param variables,var1,var2 Column selections for descriptive / bivariate routes.
 #' @param cluster_col Grouping column for the mixed-model routes.
 #' @param analysis_id,dp_analysis_id Custodian-configured signed random-intercept,
-#'   binomial/Poisson, Gaussian, NB2, multinomial, or ordinal finite-grid artifact id. \code{analysis_id}
-#'   is required by \code{ds.vert.lmm()} and \code{ds.vert.glmm()} and enables
-#'   finite-grid NB2, multinomial and ordinal aliases; \code{dp_analysis_id} enables only
-#'   independent Gaussian GEE post-processing.
+#'   binomial/Poisson, Gaussian, NB2, multinomial, ordinal, or durable Cox
+#'   analysis id. \code{analysis_id} is required by \code{ds.vert.lmm()} and
+#'   \code{ds.vert.glmm()}, enables finite-grid NB2, multinomial and ordinal
+#'   aliases, and selects the profile Cox analysis; \code{dp_analysis_id}
+#'   enables only independent Gaussian GEE post-processing.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag. For
 #'   code{ds.vert.glmm()}, code{method = "auto"} selects the signed
@@ -72,9 +73,9 @@
 #'   for an already completed formal Cox profile, binomial/Poisson GLM
 #'   certificate, or discrete-time public certificate. The fresh GLM selector
 #'   is accepted by \code{ds.vert.glm()} and \code{ds.vert.gee()} only to run
-#'   its configured durable analysis. The fresh Cox selector is accepted by
-#'   \code{ds.vert.cox()} and \code{ds.vert.coxph()} only for the profile
-#'   route. The GEE adapter remains limited to the GLM independence-working
+#'   its configured durable analysis. For Cox, \code{analysis_id} is the
+#'   standard profile selector and \code{fresh_formal_analysis_id} remains an
+#'   alias. The GEE adapter remains limited to the GLM independence-working
 #'   point-estimate scope, and the discrete selector remains a distinct
 #'   fixed-grid pooled-logistic estimand.
 #' @param max_iter,inner_iter,max_outer,tol Iteration caps and convergence
@@ -357,11 +358,27 @@ ds.vert.glm <- function(formula, data = NULL,
 #' @export
 ds.vert.cox <- function(formula, data = NULL,
                         method = c("profile", "discrete"),
-                        datasources = NULL, formal_analysis_id = NULL,
+                        datasources = NULL, analysis_id = NULL,
+                        formal_analysis_id = NULL,
                         fresh_formal_analysis_id = NULL, ...) {
-  if (!is.null(formal_analysis_id) && !is.null(fresh_formal_analysis_id)) {
-    stop("formal_analysis_id and fresh_formal_analysis_id are mutually exclusive",
+  if (sum(!vapply(list(analysis_id, formal_analysis_id,
+                       fresh_formal_analysis_id), is.null, logical(1L))) > 1L) {
+    stop(paste(
+      "analysis_id, formal_analysis_id and fresh_formal_analysis_id are",
+      "mutually exclusive"),
          call. = FALSE)
+  }
+  if (!is.null(analysis_id)) {
+    selected <- if (missing(method)) "profile" else match.arg(method)
+    if (!identical(selected, "profile")) {
+      stop("analysis_id does not accept method='discrete'", call. = FALSE)
+    }
+    out <- ds.vertCox(
+      formula = formula, data = data, datasources = datasources,
+      analysis_id = analysis_id, ...)
+    return(.dsvert_set_frontdoor(
+      out, "ds.vert.cox", "ds.vertCox.profile.analysis",
+      if (is.null(datasources)) NULL else length(datasources)))
   }
   if (!is.null(fresh_formal_analysis_id)) {
     selected <- if (missing(method)) "profile" else match.arg(method)
@@ -412,11 +429,24 @@ ds.vert.cox <- function(formula, data = NULL,
 #' @rdname ds.vert.aliases
 #' @export
 ds.vert.coxph <- function(formula, data = NULL, method = "profile",
+                          analysis_id = NULL,
                           formal_analysis_id = NULL,
                           fresh_formal_analysis_id = NULL, ...) {
-  if (!is.null(formal_analysis_id) && !is.null(fresh_formal_analysis_id)) {
-    stop("formal_analysis_id and fresh_formal_analysis_id are mutually exclusive",
+  if (sum(!vapply(list(analysis_id, formal_analysis_id,
+                       fresh_formal_analysis_id), is.null, logical(1L))) > 1L) {
+    stop(paste(
+      "analysis_id, formal_analysis_id and fresh_formal_analysis_id are",
+      "mutually exclusive"),
          call. = FALSE)
+  }
+  if (!is.null(analysis_id)) {
+    if (!identical(method, "profile")) {
+      stop("analysis_id does not accept method", call. = FALSE)
+    }
+    out <- ds.vert.cox(
+      formula = formula, data = data, analysis_id = analysis_id, ...)
+    if (is.list(out)) out$frontdoor <- "ds.vert.coxph"
+    return(out)
   }
   if (!is.null(fresh_formal_analysis_id)) {
     if (!identical(method, "profile")) {

@@ -15,6 +15,7 @@ ds.vertCox(
   debug_trace = FALSE,
   verbose = TRUE,
   datasources = NULL,
+  analysis_id = NULL,
   formal_analysis_id = NULL,
   fresh_formal_analysis_id = NULL
 )
@@ -26,6 +27,8 @@ custodian-configured completed release.}
 \item{max_iter, tol, max_event_times, newton, ridge_eps, debug_trace, verbose, datasources}{Legacy compatibility arguments. They are rejected when a formal id is
 supplied; without it the route fails before DSI.}
 
+\item{analysis_id}{Custodian-configured durable Cox analysis selector.}
+
 \item{formal_analysis_id}{Custodian-configured formal Cox public certificate
 selector. It is read-only and cannot create a new release.}
 
@@ -33,17 +36,18 @@ selector. It is read-only and cannot create a new release.}
 cannot choose source work, privacy settings, opening or retry randomness.}
 }
 \value{
-With a valid \code{formal_analysis_id}, a coefficient-only
+With a valid \code{analysis_id} or \code{formal_analysis_id}, a coefficient-only
 \code{dsvert_formal_dp_cox} object. Otherwise a typed unavailable error.
 }
 \description{
-With \code{formal_analysis_id}, reads an already completed,
-two-authority-signed sticky formal Cox certificate. It returns only the
-certified coefficient and hazard-ratio point/range values; it never starts
-a Cox computation or exposes source records, shares or intermediate state.
+With \code{analysis_id}, runs or resumes the matching custodian-configured
+durable Cox analysis. With \code{formal_analysis_id}, reads an already completed,
+two-authority-signed sticky formal Cox certificate. Both routes return only
+the certified coefficient and hazard-ratio point/range values and never expose
+source records, shares or intermediate state.
 \code{fresh_formal_analysis_id} instead runs only the matching
 custodian-configured durable analysis and projects it after both
-authorities committed and acknowledged one certificate. Without either
+authorities committed and acknowledged one certificate. Without any
 selector, this compatibility name remains unavailable before any DSI call.
 }
 \details{

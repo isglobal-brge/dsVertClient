@@ -477,7 +477,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "Read-only coefficients and hazard-ratio ranges from one completed",
         "two-authority-signed sticky formal Cox opening selected by",
         "formal_analysis_id, or the matching custodian-configured durable",
-        "fresh analysis selected by fresh_formal_analysis_id."),
+        "analysis selected by analysis_id (the older",
+        "fresh_formal_analysis_id remains an alias)."),
       paste(
         "The fresh route cannot choose source work or a new opening and",
         "returns no covariance,",
@@ -516,7 +517,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       paste(
         "Alias for the completed formal Cox public certificate when",
         "formal_analysis_id is supplied, or the matching fresh durable Cox",
-        "analysis when fresh_formal_analysis_id is supplied."),
+        "analysis when analysis_id is supplied (with",
+        "fresh_formal_analysis_id retained as an alias)."),
       paste(
         "Fresh analysis is available only for method='profile'; no covariance,",
         "p-values or analyst-selected source work or opening is available."))

@@ -1171,19 +1171,24 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
 }
 
 #' @title Formal Cox-profile public-release compatibility frontdoor
-#' @description With \code{formal_analysis_id}, reads the same already
+#' @description With \code{analysis_id}, runs or resumes the matching
+#'   custodian-configured durable Cox profile analysis. With
+#'   \code{formal_analysis_id}, reads the same already
 #'   completed two-authority-signed formal Cox certificate as
-#'   \code{ds.vertCox()}. It never starts a Cox computation. Without that
-#'   selector, this historical name fails before any DSI call; the word
+#'   \code{ds.vertCox()}. \code{fresh_formal_analysis_id} remains available
+#'   through \code{ds.vertCox()}. Without a selector, this historical name
+#'   fails before any DSI call; the word
 #'   \dQuote{NonDisclosive} is not a current security claim.
 #' @param formula,data Explicit formula and aligned data name selecting the
 #'   custodian-configured completed release.
+#' @param analysis_id Custodian-configured durable Cox analysis selector.
 #' @param formal_analysis_id Custodian-owned selector for an already completed
 #'   formal Cox public certificate. It cannot create a new release.
 #' @param max_event_times,max_iter,tol,newton,ridge_eps,debug_trace,verbose,datasources
 #'   Legacy compatibility arguments. They are rejected with a formal id and
 #'   otherwise the route fails before DSI.
-#' @return With \code{formal_analysis_id}, a coefficient-only
+#' @return With \code{analysis_id} or \code{formal_analysis_id}, a
+#'   coefficient-only
 #'   \code{dsvert_formal_dp_cox} object. Otherwise a typed unavailable error.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
@@ -1197,8 +1202,22 @@ ds.vertCoxProfileNonDisclosive <- function(formula,
                                            debug_trace = FALSE,
                                            verbose = FALSE,
                                            datasources = NULL,
+                                           analysis_id = NULL,
                                            formal_analysis_id = NULL) {
   explicit <- names(match.call(expand.dots = FALSE))[-1L]
+  if (!is.null(analysis_id) && !is.null(formal_analysis_id)) {
+    stop("analysis_id and formal_analysis_id are mutually exclusive",
+         call. = FALSE)
+  }
+  if (!is.null(analysis_id)) {
+    fresh_explicit <- explicit
+    fresh_explicit[fresh_explicit == "analysis_id"] <-
+      "fresh_formal_analysis_id"
+    fit <- .dsvert_formal_cox_fresh_frontdoor_adapter(
+      fresh_explicit, formula, data, verbose, datasources, analysis_id)
+    fit$called_via <- "ds.vertCoxProfileNonDisclosive_analysis_id"
+    return(fit)
+  }
   if (!is.null(formal_analysis_id)) {
     return(.dsvert_formal_cox_frontdoor_adapter(
       explicit, formula, data, verbose, datasources, formal_analysis_id))
