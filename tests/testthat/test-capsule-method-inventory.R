@@ -39,6 +39,8 @@ test_that("capsule migration inventory covers the complete public surface", {
   expect_setequal(c(inventory$method, non_inference), exports)
   expect_setequal(c(inventory$method, non_inference),
                   ds.vertMethodStatus()$method)
+  analysis_status <- ds.vertMethodStatus(inventory$method)
+  expect_true(all(analysis_status$status == "promoted"))
 })
 
 test_that("inventory separates current, migration, artifact and inference state", {
