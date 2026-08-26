@@ -1,6 +1,8 @@
 #' @title Signed independent-working GEE point estimate
-#' @description With a custodian-configured \code{formal_analysis_id}, this
-#'   frontdoor returns the completed, two-authority-certified binomial or
+#' @description With a custodian-configured \code{analysis_id}, this frontdoor
+#'   consumes one signed finite binomial/Poisson likelihood-grid Synopsis under
+#'   an independence working correlation. With \code{formal_analysis_id}, it
+#'   returns the completed, two-authority-certified binomial or
 #'   Poisson GLM point estimate under an independence working correlation.
 #'   \code{fresh_formal_analysis_id} first completes that same configured
 #'   durable GLM analysis, then consumes its public result.
@@ -17,6 +19,9 @@
 #'   DataSHIELD connections. Only \code{corstr = "independence"} is available.
 #' @param formal_analysis_id Custodian-configured completed formal GLM
 #'   certificate selector.
+#' @param analysis_id Custodian-configured signed finite binomial/Poisson
+#'   likelihood-grid selector. It is mutually exclusive with every other
+#'   analysis selector.
 #' @param fresh_formal_analysis_id Custodian-configured binomial/Poisson
 #'   durable GLM selector. It is mutually exclusive with the completed
 #'   certificate and Gaussian Synopsis selectors.
@@ -39,17 +44,30 @@ ds.vertGEE <- function(formula, data = NULL,
                        ring = 63L,
                        binomial_sigmoid_intervals = NULL,
                        verbose = TRUE, datasources = NULL,
+                       analysis_id = NULL,
                        formal_analysis_id = NULL,
                        fresh_formal_analysis_id = NULL,
                        dp_analysis_id = NULL) {
   selected_analysis_ids <- sum(!vapply(
-    list(formal_analysis_id, fresh_formal_analysis_id, dp_analysis_id),
+    list(analysis_id, formal_analysis_id, fresh_formal_analysis_id,
+         dp_analysis_id),
     is.null, logical(1L)))
   if (selected_analysis_ids > 1L) {
     stop(paste(
-      "formal_analysis_id, fresh_formal_analysis_id and dp_analysis_id are",
+      "analysis_id, formal_analysis_id, fresh_formal_analysis_id and",
+      "dp_analysis_id are",
       "mutually exclusive"),
          call. = FALSE)
+  }
+  if (!is.null(analysis_id)) {
+    family <- match.arg(family)
+    corstr <- match.arg(corstr)
+    return(.dsvert_dp_glm_grid_gee_independence_adapter(
+      explicit_arguments = names(match.call())[-1L],
+      formula = if (missing(formula)) NULL else formula,
+      data = data, family = family, id_col = id_col, order_col = order_col,
+      corstr = corstr, verbose = verbose, datasources = datasources,
+      analysis_id = analysis_id))
   }
   if (!is.null(dp_analysis_id)) {
     family <- match.arg(family)
@@ -81,6 +99,75 @@ ds.vertGEE <- function(formula, data = NULL,
       selector_name = "fresh_formal_analysis_id"))
   }
   return(.dsvert_block_retired_remote_route("gee", .allow_test = FALSE))
+}
+
+.dsvert_dp_glm_grid_gee_independence_adapter <- function(
+    explicit_arguments, formula, data, family, id_col, order_col, corstr,
+    verbose, datasources, analysis_id) {
+  if (!identical(family, "binomial") && !identical(family, "poisson")) {
+    stop("analysis_id GEE supports only family='binomial' or family='poisson'",
+         call. = FALSE)
+  }
+  if (!identical(corstr, "independence")) {
+    stop(paste(
+      "analysis_id GEE supports only corstr='independence';",
+      "cluster working correlations remain unavailable"), call. = FALSE)
+  }
+  if (!is.null(id_col) || !is.null(order_col)) {
+    stop(paste(
+      "analysis_id GEE does not accept cluster id_col or order_col;",
+      "robust clustered covariance remains unavailable"), call. = FALSE)
+  }
+  allowed <- c("formula", "data", "family", "corstr", "verbose",
+               "datasources", "analysis_id")
+  unexpected <- setdiff(explicit_arguments, allowed)
+  if (length(unexpected)) {
+    stop(paste(
+      "analysis_id GEE does not accept legacy controls:",
+      paste(sort(unexpected, method = "radix"), collapse = ", ")),
+         call. = FALSE)
+  }
+  fit <- ds.vertGLM(
+    formula = formula, data = data, family = family, verbose = verbose,
+    datasources = datasources, analysis_id = analysis_id)
+  expected_version <- .DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS[[family]]
+  if (!inherits(fit, "dsvert_dp_glm_grid") ||
+      !identical(fit$family, paste0(family, "_finite_grid")) ||
+      !identical(fit$analysis_id, analysis_id) ||
+      !is.list(fit$signed_artifact) ||
+      !identical(fit$signed_artifact$version, expected_version) ||
+      !is.character(fit$certificate_sha256) ||
+      length(fit$certificate_sha256) != 1L || is.na(fit$certificate_sha256) ||
+      !grepl("^[0-9a-f]{64}$", fit$certificate_sha256) ||
+      !is.numeric(fit$coefficients) || !length(fit$coefficients) ||
+      is.null(names(fit$coefficients)) || any(!is.finite(fit$coefficients)) ||
+      !is.null(fit$covariance) || !is.null(fit$std_errors) ||
+      !isTRUE(fit$source_values_exposed == FALSE) ||
+      !isTRUE(fit$intermediate_values_exposed == FALSE) ||
+      !identical(fit$additional_server_calls_after_synopsis, 0L) ||
+      !identical(fit$additional_privacy_cost, c(epsilon = 0, delta = 0))) {
+    stop("signed finite GLM grid cannot support independent GEE", call. = FALSE)
+  }
+  result <- list(
+    status = "public_certified_independence_gee_finite_grid",
+    family = family,
+    corstr = "independence",
+    coefficients = fit$coefficients,
+    analysis_id = analysis_id,
+    certificate_sha256 = fit$certificate_sha256,
+    robust_covariance = NULL,
+    std_errors = NULL,
+    cluster_correlation_estimated = FALSE,
+    cluster_columns = NULL,
+    source_values_exposed = FALSE,
+    intermediate_values_exposed = FALSE,
+    production_ready = FALSE,
+    additional_server_calls_after_synopsis = 0L,
+    additional_privacy_cost = c(epsilon = 0, delta = 0),
+    inference = "unavailable_without_protected_cluster_score_and_meat",
+    called_via = "ds.vertGEE_analysis_id")
+  class(result) <- c("dsvert_dp_glm_grid_gee", "ds.vertGEE", "list")
+  result
 }
 
 .dsvert_gaussian_gee_independence_adapter <- function(

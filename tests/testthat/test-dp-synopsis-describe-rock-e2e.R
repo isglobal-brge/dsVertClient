@@ -2910,11 +2910,25 @@ test_that("real additive binomial and Poisson grids are plausible and Rock-repla
             analysis_id = "glm_primary", datasources = conns),
           alias = ds.vert.glm(
             y_peer_a ~ x_peer_a, data = "data_peer_a", family = family,
+            analysis_id = "glm_primary", datasources = conns),
+          gee = ds.vertGEE(
+            y_peer_a ~ x_peer_a, data = "data_peer_a", family = family,
+            corstr = "independence", analysis_id = "glm_primary",
+            datasources = conns),
+          gee_alias = ds.vert.gee(
+            y_peer_a ~ x_peer_a, data = "data_peer_a", family = family,
             analysis_id = "glm_primary", datasources = conns)),
-        .package = "dsVertClient")
-      expect_identical(public$direct$coefficients, fit$coefficients)
-      expect_identical(public$alias$coefficients, fit$coefficients)
-      expect_identical(public$alias$frontdoor, "ds.vert.glm")
+      .package = "dsVertClient")
+    expect_identical(public$direct$coefficients, fit$coefficients)
+    expect_identical(public$alias$coefficients, fit$coefficients)
+    expect_identical(public$alias$frontdoor, "ds.vert.glm")
+    expect_s3_class(public$gee, "dsvert_dp_glm_grid_gee")
+    expect_identical(public$gee$coefficients, fit$coefficients)
+    expect_null(public$gee$robust_covariance)
+    expect_null(public$gee$std_errors)
+    expect_false(public$gee$cluster_correlation_estimated)
+    expect_identical(public$gee_alias$coefficients, fit$coefficients)
+    expect_identical(public$gee_alias$frontdoor, "ds.vert.gee")
 
       before <- c(fixture$state$source_prepare, fixture$state$start)
       fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {

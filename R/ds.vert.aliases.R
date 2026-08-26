@@ -606,13 +606,15 @@ ds.vert.gee <- function(formula, data = NULL,
                         precision = c("auto", "high", "fast"),
                         datasources = NULL, formal_analysis_id = NULL,
                         fresh_formal_analysis_id = NULL,
-                        dp_analysis_id = NULL, ...) {
+                        dp_analysis_id = NULL, analysis_id = NULL, ...) {
   selected_analysis_ids <- sum(!vapply(
-    list(formal_analysis_id, fresh_formal_analysis_id, dp_analysis_id),
+    list(formal_analysis_id, fresh_formal_analysis_id, dp_analysis_id,
+         analysis_id),
     is.null, logical(1L)))
   if (selected_analysis_ids > 1L) {
     stop(paste(
-      "formal_analysis_id, fresh_formal_analysis_id and dp_analysis_id are",
+      "formal_analysis_id, fresh_formal_analysis_id, dp_analysis_id and",
+      "analysis_id are",
       "mutually exclusive"),
          call. = FALSE)
   }
@@ -628,8 +630,10 @@ ds.vert.gee <- function(formula, data = NULL,
       arguments$formal_analysis_id <- formal_analysis_id
     } else if (!is.null(fresh_formal_analysis_id)) {
       arguments$fresh_formal_analysis_id <- fresh_formal_analysis_id
-    } else {
+    } else if (!is.null(dp_analysis_id)) {
       arguments$dp_analysis_id <- dp_analysis_id
+    } else {
+      arguments$analysis_id <- analysis_id
     }
     out <- do.call(ds.vertGEE, c(arguments, list(...)))
     return(.dsvert_set_frontdoor(out, "ds.vert.gee", "ds.vertGEE",

@@ -658,18 +658,23 @@
 
   add(
     c("ds.vertGEE", "ds.vert.gee"), "ds.vertGEE", "gee",
-    c("formal_glm_public_certificate", "formal_glm_sticky_opening",
+    c("bounded_binomial_poisson_likelihood_grid",
+      "formal_glm_public_certificate", "formal_glm_sticky_opening",
       "formal_glm_two_authority_signatures"),
     paste(
-      "Binomial/Poisson independence-working GEE point coefficients from",
-      "one completed formal GLM certificate."),
-    c("canonical_certificate_validation", "completed_release_only",
+      "Binomial/Poisson independence-working GEE point coefficients from a",
+      "signed finite likelihood-grid Synopsis or one completed formal GLM",
+      "certificate."),
+    c("canonical_certificate_validation", "signed_finite_grid",
       "independence_working_correlation", "no_cluster_covariance_or_inference",
       "two_authority_signatures"),
-    "formal_public_certificate_implemented",
+    "synopsis_release_implemented",
     character(),
     c("ds.vert.gee" = "ds.vertGEE"),
-    current_route_status = "formal_completed_public_certificate_only")
+    current_route_status =
+      "signed_finite_grid_synopsis_or_formal_completed_public_certificate",
+    artifact_implementation_state =
+      "validated_signed_finite_grid_and_formal_public_certificate_adapters_implemented")
 
   add(
     c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "glmm",
@@ -1433,6 +1438,7 @@
     "formal_completed_public_certificate_only",
     "formal_completed_public_certificate_or_registered_fresh",
     "signed_finite_grid_synopsis_or_formal_completed_public_certificate_or_registered_fresh",
+    "signed_finite_grid_synopsis_or_formal_completed_public_certificate",
     "legacy_joint_dp_capsule_incompatible", "known_broken_route_quarantine",
     "legacy_exact_release_not_capsule_safe",
     "legacy_granular_release_not_capsule_safe",

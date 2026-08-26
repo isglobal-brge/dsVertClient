@@ -19,6 +19,7 @@ ds.vertGEE(
   binomial_sigmoid_intervals = NULL,
   verbose = TRUE,
   datasources = NULL,
+  analysis_id = NULL,
   formal_analysis_id = NULL,
   fresh_formal_analysis_id = NULL,
   dp_analysis_id = NULL
@@ -35,6 +36,10 @@ release and are never silently ignored.}
 \item{formal_analysis_id}{Custodian-configured completed formal GLM
 certificate selector.}
 
+\item{analysis_id}{Custodian-configured signed finite binomial/Poisson
+likelihood-grid selector. It is mutually exclusive with every other analysis
+selector.}
+
 \item{fresh_formal_analysis_id}{Custodian-configured binomial/Poisson
 durable GLM selector. It is mutually exclusive with the completed
 certificate and Gaussian Synopsis selectors.}
@@ -47,8 +52,10 @@ A \code{ds.vertGEE} point-estimate object without covariance,
 standard errors, working-correlation estimate or inference.
 }
 \description{
-With a custodian-configured \code{formal_analysis_id}, this
-frontdoor returns the completed, two-authority-certified binomial or
+With a custodian-configured \code{analysis_id}, this frontdoor
+consumes one signed finite binomial/Poisson likelihood-grid Synopsis under
+an independence working correlation. With \code{formal_analysis_id}, it
+returns the completed, two-authority-certified binomial or
 Poisson GLM point estimate under an independence working correlation.
 \code{fresh_formal_analysis_id} first completes that same configured
 durable GLM analysis, then consumes its public result.

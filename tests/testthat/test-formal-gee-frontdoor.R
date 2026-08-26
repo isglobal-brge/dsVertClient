@@ -37,6 +37,24 @@
     class = c("ds.vertDPGaussian", "list"))
 }
 
+.formal_gee_grid_fit <- function(...) {
+  arguments <- list(...)
+  structure(list(
+    family = paste0(arguments$family, "_finite_grid"),
+    coefficients = c("(Intercept)" = 0.25, x = 0.5),
+    analysis_id = arguments$analysis_id,
+    signed_artifact = list(
+      version = dsVertClient:::.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS[[
+        arguments$family]]),
+    certificate_sha256 = paste(rep("e", 64L), collapse = ""),
+    covariance = NULL, std_errors = NULL,
+    source_values_exposed = FALSE,
+    intermediate_values_exposed = FALSE,
+    additional_server_calls_after_synopsis = 0L,
+    additional_privacy_cost = c(epsilon = 0, delta = 0)),
+    class = c("dsvert_dp_glm_grid", "ds.glm", "list"))
+}
+
 test_that("formal independent GEE consumes one certified GLM point release", {
   seen <- NULL
   testthat::local_mocked_bindings(
@@ -142,6 +160,48 @@ test_that("independent Gaussian GEE consumes one signed Gaussian Synopsis", {
     y ~ x, data = "study", family = "gaussian", id_col = "patient",
     dp_analysis_id = "gee-gaussian", datasources = conns), "cluster")
   expect_length(calls, 2L)
+})
+
+test_that("independent binomial and Poisson GEE consumes one signed finite grid", {
+  calls <- list()
+  testthat::local_mocked_bindings(
+    ds.vertGLM = function(...) {
+      calls <<- c(calls, list(list(...)))
+      .formal_gee_grid_fit(...)
+    },
+    .package = "dsVertClient")
+
+  conns <- list(site_a = structure(list(), class = "mock"))
+  direct <- ds.vertGEE(
+    y ~ x, data = "study", family = "binomial",
+    analysis_id = "gee-grid", datasources = conns, verbose = FALSE)
+  alias <- ds.vert.gee(
+    y ~ x, data = "study", family = "poisson",
+    analysis_id = "gee-grid-poisson", datasources = conns)
+
+  expect_s3_class(direct, "dsvert_dp_glm_grid_gee")
+  expect_s3_class(alias, "ds.vertGEE")
+  expect_identical(direct$coefficients, c("(Intercept)" = 0.25, x = 0.5))
+  expect_identical(alias$coefficients, direct$coefficients)
+  expect_identical(direct$analysis_id, "gee-grid")
+  expect_identical(alias$analysis_id, "gee-grid-poisson")
+  expect_identical(calls[[1L]]$analysis_id, "gee-grid")
+  expect_identical(calls[[2L]]$analysis_id, "gee-grid-poisson")
+  expect_null(direct$robust_covariance)
+  expect_null(direct$std_errors)
+  expect_false(direct$cluster_correlation_estimated)
+  expect_false(direct$source_values_exposed)
+  expect_identical(direct$additional_privacy_cost, c(epsilon = 0, delta = 0))
+
+  expect_error(ds.vertGEE(
+    y ~ x, data = "study", family = "gaussian", analysis_id = "gee-grid",
+    datasources = conns), "binomial.*poisson")
+  expect_error(ds.vertGEE(
+    y ~ x, data = "study", family = "binomial", analysis_id = "gee-grid",
+    id_col = "patient", datasources = conns), "does not accept cluster")
+  expect_error(ds.vertGEE(
+    y ~ x, data = "study", family = "binomial", analysis_id = "gee-grid",
+    lambda = 0, datasources = conns), "does not accept legacy controls")
 })
 
 test_that("formal independent GEE rejects cluster and legacy controls before GLM", {

@@ -560,9 +560,10 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "It accepts no random slopes, unstructured covariance, standard errors or classical inference.")
   add(c("ds.vertGEE", "ds.vert.gee"), "ds.vertGEE", "promoted",
       paste(
-        "A completed two-authority formal binomial/Poisson GLM certificate",
-        "or the matching configured fresh durable GLM analysis can be read",
-        "as an independence-working GEE point estimate; the",
+        "A signed finite binomial/Poisson likelihood-grid Synopsis, a",
+        "completed two-authority formal GLM certificate, or the matching",
+        "configured fresh durable GLM analysis can be read as an",
+        "independence-working GEE point estimate; the",
         "score equation is the same and GEE adds no private computation",
         "beyond that configured GLM analysis."),
       paste(
