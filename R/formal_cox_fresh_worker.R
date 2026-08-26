@@ -6,7 +6,7 @@
 .DSVERT_FORMAL_COX_WORKER_CONTROL_ACTIONS <- c(
   "host_start", "bind", "offer", "accept", "confirm", "poll", "relay", "result",
   "completion", "opening", "finalizer_ticket", "finalizer_seal", "finalizer_prepare",
-  "commit")
+  "finalizer_stage", "commit")
 
 .dsvert_formal_cox_fresh_worker_sha256 <- function(value) {
   is.character(value) && length(value) == 1L && !is.na(value) &&
@@ -71,7 +71,7 @@
     stop("Configured fresh Cox worker requires one ticket and two finalizer headers.",
          call. = FALSE)
   }
-  if (identical(action, "finalizer_prepare") &&
+  if (action %in% c("finalizer_prepare", "finalizer_stage") &&
       (!identical(fields, c("ticket", "headers", "envelopes")) ||
        !is.list(payload$ticket) || !is.list(payload$headers) ||
        !is.list(payload$envelopes) || length(payload$headers) != 2L ||

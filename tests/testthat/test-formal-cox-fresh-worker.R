@@ -55,6 +55,26 @@ test_that("configured fresh Cox worker permits only an empty completion query", 
     "closed action payload")
 })
 
+test_that("configured fresh Cox worker admits the closed finalizer-stage action", {
+  worker <- .formal_cox_fresh_worker_selector()
+  testthat::local_mocked_bindings(
+    .dsvert_aggregate_strict = function(conns, expr, operation, .aggregate) {
+      expect_identical(expr$action, "finalizer_stage")
+      list(site_a = .formal_cox_fresh_worker_reply(
+        "finalizer_stage", list(artifact_id = strrep("a", 64L))))
+    },
+    .package = "dsVertClient")
+  result <- .dsvert_formal_cox_fresh_worker_call(
+    list(site_a = "connection"), worker, "finalizer_stage",
+    list(ticket = list(version = "ticket"), headers = list(list(), list()),
+         envelopes = list(list(), list())), .aggregate = identity)
+  expect_identical(result$action, "finalizer_stage")
+  expect_error(.dsvert_formal_cox_fresh_worker_call(
+    list(site_a = "connection"), worker, "finalizer_stage",
+    list(ticket = list(version = "ticket"), headers = list(list(), list())),
+    .aggregate = identity), "one ticket, two headers and two envelopes")
+})
+
 test_that("configured fresh Cox worker accepts only one matching K2 completion", {
   workers <- list(site_a = .formal_cox_fresh_worker_selector(),
                   site_b = utils::modifyList(.formal_cox_fresh_worker_selector(),
