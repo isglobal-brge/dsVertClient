@@ -62,9 +62,11 @@
 #'   for an already completed formal Cox profile, binomial/Poisson GLM
 #'   certificate, or discrete-time public certificate. The fresh GLM selector
 #'   is accepted by \code{ds.vert.glm()} and \code{ds.vert.gee()} only to run
-#'   its configured durable analysis. The GEE adapter remains limited to the
-#'   GLM independence-working point-estimate scope, and the discrete selector
-#'   remains a distinct fixed-grid pooled-logistic estimand.
+#'   its configured durable analysis. The fresh Cox selector is accepted by
+#'   \code{ds.vert.cox()} and \code{ds.vert.coxph()} only for the profile
+#'   route. The GEE adapter remains limited to the GLM independence-working
+#'   point-estimate scope, and the discrete selector remains a distinct
+#'   fixed-grid pooled-logistic estimand.
 #' @param max_iter,inner_iter,max_outer,tol Iteration caps and convergence
 #'   tolerance for the iterative fits.
 #' @param outcome_formula,propensity_formula Outcome and propensity models (IPW).
@@ -340,7 +342,25 @@ ds.vert.glm <- function(formula, data = NULL,
 #' @export
 ds.vert.cox <- function(formula, data = NULL,
                         method = c("profile", "discrete"),
-                        datasources = NULL, formal_analysis_id = NULL, ...) {
+                        datasources = NULL, formal_analysis_id = NULL,
+                        fresh_formal_analysis_id = NULL, ...) {
+  if (!is.null(formal_analysis_id) && !is.null(fresh_formal_analysis_id)) {
+    stop("formal_analysis_id and fresh_formal_analysis_id are mutually exclusive",
+         call. = FALSE)
+  }
+  if (!is.null(fresh_formal_analysis_id)) {
+    selected <- if (missing(method)) "profile" else match.arg(method)
+    if (!identical(selected, "profile")) {
+      stop("fresh_formal_analysis_id does not accept method='discrete'",
+           call. = FALSE)
+    }
+    out <- ds.vertCox(
+      formula = formula, data = data, datasources = datasources,
+      fresh_formal_analysis_id = fresh_formal_analysis_id, ...)
+    return(.dsvert_set_frontdoor(
+      out, "ds.vert.cox", "ds.vertCox.profile.fresh",
+      if (is.null(datasources)) NULL else length(datasources)))
+  }
   if (!is.null(formal_analysis_id)) {
     selected <- if (missing(method)) "profile" else match.arg(method)
     out <- if (identical(selected, "discrete")) {
@@ -377,7 +397,22 @@ ds.vert.cox <- function(formula, data = NULL,
 #' @rdname ds.vert.aliases
 #' @export
 ds.vert.coxph <- function(formula, data = NULL, method = "profile",
-                          formal_analysis_id = NULL, ...) {
+                          formal_analysis_id = NULL,
+                          fresh_formal_analysis_id = NULL, ...) {
+  if (!is.null(formal_analysis_id) && !is.null(fresh_formal_analysis_id)) {
+    stop("formal_analysis_id and fresh_formal_analysis_id are mutually exclusive",
+         call. = FALSE)
+  }
+  if (!is.null(fresh_formal_analysis_id)) {
+    if (!identical(method, "profile")) {
+      stop("fresh_formal_analysis_id does not accept method", call. = FALSE)
+    }
+    out <- ds.vert.cox(
+      formula = formula, data = data,
+      fresh_formal_analysis_id = fresh_formal_analysis_id, ...)
+    if (is.list(out)) out$frontdoor <- "ds.vert.coxph"
+    return(out)
+  }
   if (!is.null(formal_analysis_id)) {
     if (!identical(method, "profile")) {
       stop("formal_analysis_id does not accept method", call. = FALSE)

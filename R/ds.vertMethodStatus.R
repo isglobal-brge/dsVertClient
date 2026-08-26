@@ -509,10 +509,13 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "person-period expansion or a new DP release. Covariance, p-values,",
         "baseline hazards and predictions are unavailable."))
   add("ds.vert.cox", "ds.vertCox", "promoted",
-      "Alias for the completed formal Cox public certificate when formal_analysis_id is supplied.",
       paste(
-        "No method selector, no covariance, p-values or new run is available",
-        "on the formal route; method='discrete' remains unavailable."))
+        "Alias for the completed formal Cox public certificate when",
+        "formal_analysis_id is supplied, or the matching fresh durable Cox",
+        "analysis when fresh_formal_analysis_id is supplied."),
+      paste(
+        "Fresh analysis is available only for method='profile'; no covariance,",
+        "p-values or analyst-selected source work or opening is available."))
   add(c("ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",
       "promoted",
       paste(

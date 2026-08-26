@@ -62,6 +62,7 @@ ds.vert.cox(
   method = c("profile", "discrete"),
   datasources = NULL,
   formal_analysis_id = NULL,
+  fresh_formal_analysis_id = NULL,
   ...
 )
 
@@ -70,6 +71,7 @@ ds.vert.coxph(
   data = NULL,
   method = "profile",
   formal_analysis_id = NULL,
+  fresh_formal_analysis_id = NULL,
   ...
 )
 
@@ -196,9 +198,11 @@ estimator/route selector, fixed-point ring, and progress flag.}
 for an already completed formal Cox profile, binomial/Poisson GLM certificate,
 or discrete-time public certificate. The fresh GLM selector is accepted by
 \code{ds.vert.glm()} and \code{ds.vert.gee()} only to run its configured
-durable analysis. The GEE adapter remains limited to the GLM
-independence-working point-estimate scope, and the discrete selector remains a
-distinct fixed-grid pooled-logistic estimand.}
+durable analysis. The fresh Cox selector is accepted by
+\code{ds.vert.cox()} and \code{ds.vert.coxph()} only for the profile route.
+The GEE adapter remains limited to the GLM independence-working point-estimate
+scope, and the discrete selector remains a distinct fixed-grid pooled-logistic
+estimand.}
 
 \item{analysis_id, dp_analysis_id}{Custodian-configured signed random-intercept
 or Gaussian artifact id. \code{analysis_id} is required by
