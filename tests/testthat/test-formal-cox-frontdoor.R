@@ -16,9 +16,7 @@
     production_ready = FALSE)
 }
 
-test_that("formal Cox reads one certified public release at every site", {
-  conns <- list(site_a = structure(list(), class = "mock"),
-                site_b = structure(list(), class = "mock"))
+test_that("formal Cox reads one certified public release at K=2/3/5", {
   calls <- 0L
   testthat::local_mocked_bindings(
     .dsvert_aggregate_strict = function(conns, expr, operation, .aggregate) {
@@ -28,23 +26,31 @@ test_that("formal Cox reads one certified public release at every site", {
                        "dsvertFormalCoxPublicResultDS")
       request <- as.list(expr[-1L])
       expected <- .formal_cox_public_release(request)
-      stats::setNames(list(expected, expected), names(conns))
+      stats::setNames(rep(list(expected), length(conns)), names(conns))
     },
     .package = "dsVertClient")
-  fit <- ds.vertCox(
-    stats::as.formula("Surv(time, status) ~ x + z"), data = "study",
-    formal_analysis_id = "primary_cox", verbose = FALSE,
-    datasources = conns)
-  expect_identical(calls, 1L)
-  expect_s3_class(fit, "dsvert_formal_dp_cox")
-  expect_s3_class(fit, "ds.vertCox")
-  expect_equal(fit$coefficients, c(x = 0.25, z = -0.125))
-  expect_equal(fit$hazard_ratio, c(x = 1.285, z = 0.885))
-  expect_identical(fit$coefficient_lattice_steps[["z"]], "-32")
-  expect_false(fit$production_ready)
-  expect_false(fit$source_values_exposed)
-  expect_null(fit$covariance)
-  expect_null(fit$std_errors)
+  for (index in seq_along(c(2L, 3L, 5L))) {
+    k <- c(2L, 3L, 5L)[[index]]
+    peers <- c("site_a", "site_b", "witness_1", "witness_2",
+               "witness_3")[seq_len(k)]
+    conns <- stats::setNames(lapply(peers, function(...) {
+      structure(list(), class = "mock")
+    }), peers)
+    fit <- ds.vertCox(
+      stats::as.formula("Surv(time, status) ~ x + z"), data = "study",
+      formal_analysis_id = "primary_cox", verbose = FALSE,
+      datasources = conns)
+    expect_identical(calls, as.integer(index))
+    expect_s3_class(fit, "dsvert_formal_dp_cox")
+    expect_s3_class(fit, "ds.vertCox")
+    expect_equal(fit$coefficients, c(x = 0.25, z = -0.125))
+    expect_equal(fit$hazard_ratio, c(x = 1.285, z = 0.885))
+    expect_identical(fit$coefficient_lattice_steps[["z"]], "-32")
+    expect_false(fit$production_ready)
+    expect_false(fit$source_values_exposed)
+    expect_null(fit$covariance)
+    expect_null(fit$std_errors)
+  }
 })
 
 test_that("fresh formal Cox projects only one final committed public release", {
