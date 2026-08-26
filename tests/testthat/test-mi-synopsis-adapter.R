@@ -82,17 +82,27 @@ test_that("categorical MI completion accepts lattice counts and rejects invalid 
   contingency <- function(data_name, row_var, col_var, server, datasources,
                           .aggregate) {
     state$contingencies <- state$contingencies + 1L
-    if (!identical(data_name, "protected") || !identical(row_var, "outcome") ||
-        !col_var %in% c("exposure", "region") || !is.null(server)) {
+    if (!identical(data_name, "protected") || !is.null(server)) {
       stop("unexpected fixture joint pair", call. = FALSE)
     }
-    table <- switch(col_var,
-      exposure = matrix(c(18, 6, 8, 2, 5, 1), nrow = 2L,
-                        dimnames = list(c("control", "case"),
-                                        c("unexposed", "exposed", "unknown"))),
-      region = matrix(c(14, 6, 9, 3, 7, 1), nrow = 2L,
-                      dimnames = list(c("control", "case"),
-                                      c("north", "south", "west"))))
+    tables <- list(
+      "outcome/exposure" = matrix(
+        c(18, 6, 8, 2, 5, 1), nrow = 2L,
+        dimnames = list(c("control", "case"),
+                        c("unexposed", "exposed", "unknown"))),
+      "outcome/region" = matrix(
+        c(14, 6, 9, 3, 7, 1), nrow = 2L,
+        dimnames = list(c("control", "case"),
+                        c("north", "south", "west"))),
+      "region/exposure" = matrix(
+        c(8, 5, 3, 7, 4, 2, 6, 3, 2), nrow = 3L,
+        dimnames = list(c("north", "south", "west"),
+                        c("unexposed", "exposed", "unknown"))))
+    key <- paste(row_var, col_var, sep = "/")
+    reverse_key <- paste(col_var, row_var, sep = "/")
+    table <- tables[[key]]
+    if (is.null(table) && !is.null(tables[[reverse_key]])) table <- t(tables[[reverse_key]])
+    if (is.null(table)) stop("unexpected fixture joint pair", call. = FALSE)
     c(binding, list(
       row_var = row_var, col_var = col_var,
       missingness_policy =
@@ -240,6 +250,44 @@ test_that("MI builds a sticky multivariable categorical star model from signed p
         data_name, row_var, col_var, NULL, list(peer_a = NULL), identity)
     },
     dependence = "star"), "same signed vector release")
+})
+
+test_that("MI conditions multivariable categorical responses on one signed categorical column", {
+  fixture <- .mi_synopsis_adapter_fixture()
+  pair_release <- function(run, data_name, row_var, col_var) {
+    fixture$contingency(
+      data_name, row_var, col_var, NULL, list(peer_a = NULL), identity)
+  }
+  first <- dsVertClient:::.dsvert_mi_synopsis_result_v1(
+    cbind(outcome, exposure) ~ region, "protected", NULL, 6L, "auto",
+    list(peer_a = NULL), identity, .run = fixture$run,
+    .star_pair = pair_release, dependence = "star")
+  second <- dsVertClient:::.dsvert_mi_synopsis_result_v1(
+    cbind(outcome, exposure) ~ region, "protected", NULL, 6L, "auto",
+    list(peer_a = NULL), identity, .run = fixture$run,
+    .star_pair = pair_release, dependence = "star")
+
+  expect_s3_class(first, "ds.vertMI")
+  expect_identical(first$method, "signed_categorical_mcar_covariate_star_v1")
+  expect_identical(first$conditioning_column, "region")
+  expect_identical(names(first$variables), c("outcome", "exposure"))
+  expect_identical(names(first$conditional_probabilities),
+                   c("outcome", "exposure"))
+  expect_equal(sum(first$conditioning_probabilities), 1, tolerance = 1e-12)
+  expect_true(all(vapply(first$conditional_probabilities, function(value) {
+    is.matrix(value) && all(is.finite(value)) && all(value >= 0) &&
+      isTRUE(all.equal(unname(rowSums(value)), rep(1, nrow(value)),
+                       tolerance = 1e-12))
+  }, logical(1L))))
+  expect_identical(first$completed_draws_sha256, second$completed_draws_sha256)
+  expect_identical(fixture$state$contingencies, 4L)
+  expect_error(dsVertClient:::.dsvert_mi_synopsis_result_v1(
+    outcome ~ region, "protected", NULL, 6L, "auto", list(peer_a = NULL),
+    identity, .run = fixture$run, .star_pair = pair_release,
+    dependence = "independent"), "dependence = 'star'")
+  expect_error(dsVertClient:::.dsvert_mi_synopsis_result_v1(
+    outcome ~ region + exposure, "protected", NULL, 6L, "auto",
+    list(peer_a = NULL), identity), "one untransformed categorical")
 })
 
 test_that("the MI aliases forward one multivariable categorical request", {

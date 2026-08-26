@@ -723,6 +723,7 @@
     c("ds.vertMI", "ds.vert.mi"), "ds.vertMI", "multiple_imputation",
     c("admitted_count", "strict_missing_categorical_marginal",
       "strict_missing_categorical_joint_pair",
+      "strict_missing_categorical_conditioning_pairs",
       "signed_synopsis_release_provenance",
       "deterministic_release_bound_completion_draws"),
     paste(
@@ -737,7 +738,8 @@
       "three_or_more_responses_default_to_independent_marginals",
       "star_requires_same_signed_pair_vector",
       "star_conditional_independence_given_first_response",
-      "no_covariates_or_chained_equations", "no_rubin_sampling_inference",
+      "one_categorical_conditioning_column_star_only",
+      "no_chained_equations", "no_rubin_sampling_inference",
       "no_analyst_seed"),
     "synopsis_release_implemented",
     character(),

@@ -260,13 +260,20 @@
 
 #' @keywords internal
 .dsvert_mi_joint_star_result_v1 <- function(
-    formula, data_name, outcomes, m, run, .pair_release) {
-  if (length(outcomes) < 3L || !is.function(.pair_release)) {
+    formula, data_name, outcomes, m, run, .pair_release,
+    root = outcomes[[1L]], include_root = TRUE) {
+  if (!is.character(root) || length(root) != 1L || is.na(root) ||
+      !nzchar(root) || !is.logical(include_root) || length(include_root) != 1L ||
+      is.na(include_root) || !is.function(.pair_release)) {
     stop("Multivariable categorical MI requires signed strict pair releases",
          call. = FALSE)
   }
-  root <- outcomes[[1L]]
-  children <- outcomes[-1L]
+  children <- if (isTRUE(include_root)) outcomes[-1L] else outcomes
+  if (!length(children) || anyNA(children) || any(!nzchar(children)) ||
+      anyDuplicated(children) || root %in% children) {
+    stop("Multivariable categorical MI requires signed strict pair releases",
+         call. = FALSE)
+  }
   pairs <- stats::setNames(lapply(children, function(child) {
     .dsvert_mi_joint_pair_completion_v1(
       formula, c(root, child), m,
@@ -315,8 +322,12 @@
     }
     conditional
   }), children)
-  variables <- stats::setNames(vector("list", length(outcomes)), outcomes)
-  variables[[root]] <- list(levels = root_levels, probabilities = root_probabilities)
+  variables <- stats::setNames(vector("list", length(children)), children)
+  if (isTRUE(include_root)) {
+    variables <- c(stats::setNames(list(
+      list(levels = root_levels, probabilities = root_probabilities)), root),
+      variables)
+  }
   for (child in children) {
     probabilities <- as.numeric(root_probabilities %*%
                                   conditional_probabilities[[child]])
@@ -324,28 +335,43 @@
     variables[[child]] <- list(
       levels = names(probabilities), probabilities = probabilities)
   }
+  root_fields <- if (isTRUE(include_root)) {
+    list(root_column = root, root_probabilities = root_probabilities)
+  } else {
+    list(conditioning_column = root,
+         conditioning_probabilities = root_probabilities)
+  }
   result <- c(list(
     status = if (all(vapply(pairs, `[[`, character(1L), "status") == "ok")) {
       "ok"
     } else "some_variables_dp_effective_count_zero",
-    method = "signed_categorical_mcar_star_joint_v1",
-    joint_model = "strict_missing_signed_pairwise_star_completion_v1",
+    method = if (isTRUE(include_root)) {
+      "signed_categorical_mcar_star_joint_v1"
+    } else "signed_categorical_mcar_covariate_star_v1",
+    joint_model = if (isTRUE(include_root)) {
+      "strict_missing_signed_pairwise_star_completion_v1"
+    } else "strict_missing_signed_conditional_star_completion_v1",
     formula = stats::as.formula(formula), impute_columns = outcomes,
-    root_column = root, root_probabilities = root_probabilities,
     conditional_probabilities = conditional_probabilities,
-    variables = variables, m = as.integer(m)), first[binding_fields])
+    variables = variables, m = as.integer(m)), root_fields, first[binding_fields])
   result <- c(result, list(
     completed_draws_sha256 = digest::digest(
-      list(version = "dsvert-mi-categorical-star-joint-v1",
+      list(version = if (isTRUE(include_root)) {
+             "dsvert-mi-categorical-star-joint-v1"
+           } else "dsvert-mi-categorical-covariate-star-v1",
            release_sha256 = first$release_sha256, root = root,
            root_probabilities = root_probabilities,
            conditional_probabilities = conditional_probabilities, m = as.integer(m)),
       algo = "sha256", serialize = TRUE, serializeVersion = 3L),
     sticky_replay = TRUE,
     additional_privacy_cost = c(epsilon = 0, delta = 0),
-    assumption = paste(
-      "MCAR pair missingness under signed strict pair releases; non-root",
-      "responses are conditionally independent given the first response"),
+    assumption = if (isTRUE(include_root)) {
+      paste("MCAR pair missingness under signed strict pair releases; non-root",
+            "responses are conditionally independent given the first response")
+    } else {
+      paste("MCAR pair missingness under signed strict pair releases; responses",
+            "are conditionally independent given the categorical conditioning column")
+    },
     inference_scope = "No classical or Rubin sampling inference is provided",
     standard_errors = NULL, covariance = NULL, p_values = NULL,
     source_values_exposed = FALSE, intermediate_values_exposed = FALSE,
@@ -355,10 +381,8 @@
 }
 
 #' @keywords internal
-.dsvert_mi_response_columns_v1 <- function(formula) {
-  valid_formula <- inherits(formula, "formula") && length(formula) == 3L &&
-    length(attr(stats::terms(formula), "term.labels")) == 0L &&
-    identical(attr(stats::terms(formula), "intercept"), 1L)
+.dsvert_mi_formula_spec_v1 <- function(formula) {
+  valid_formula <- inherits(formula, "formula") && length(formula) == 3L
   response <- if (isTRUE(valid_formula)) formula[[2L]] else NULL
   columns <- if (is.symbol(response)) {
     as.character(response)
@@ -375,11 +399,36 @@
   if (!length(columns) || anyNA(columns) || any(!nzchar(columns)) ||
       anyDuplicated(columns)) {
     stop(paste(
-      "ds.vertMI supports only outcome ~ 1 or",
-      "cbind(outcome1, outcome2, ...) ~ 1 with untransformed columns"),
+      "ds.vertMI supports only outcome ~ 1, outcome ~ conditioning,",
+      "or cbind(outcome1, outcome2, ...) with one untransformed categorical",
+      "conditioning column"),
          call. = FALSE)
   }
-  columns
+  rhs <- if (isTRUE(valid_formula)) formula[[3L]] else NULL
+  intercept_only <- is.numeric(rhs) && length(rhs) == 1L && !is.na(rhs) &&
+    identical(as.numeric(rhs), 1)
+  conditioning <- if (isTRUE(intercept_only)) {
+    NULL
+  } else if (is.symbol(rhs)) {
+    as.character(rhs)
+  } else {
+    NA_character_
+  }
+  if (!is.null(conditioning)) {
+    if (!is.character(conditioning) || length(conditioning) != 1L ||
+        is.na(conditioning) || !nzchar(conditioning) || conditioning %in% columns) {
+      stop(paste(
+        "ds.vertMI supports only outcome ~ 1, outcome ~ conditioning,",
+        "or cbind(outcome1, outcome2, ...) with one untransformed categorical",
+        "conditioning column"), call. = FALSE)
+    }
+  }
+  list(outcomes = columns, conditioning = conditioning)
+}
+
+#' @keywords internal
+.dsvert_mi_response_columns_v1 <- function(formula) {
+  .dsvert_mi_formula_spec_v1(formula)$outcomes
 }
 
 #' @keywords internal
@@ -399,7 +448,9 @@
     .contingency = .dsvert_dp_contingency_impl,
     .star_pair = .dsvert_mi_star_pair_release_v1,
     dependence = c("independent", "star")) {
-  outcomes <- .dsvert_mi_response_columns_v1(formula)
+  formula_spec <- .dsvert_mi_formula_spec_v1(formula)
+  outcomes <- formula_spec$outcomes
+  conditioning <- formula_spec$conditioning
   if (!is.character(data_name) || length(data_name) != 1L ||
       is.na(data_name) || !nzchar(data_name)) {
     stop("data must name one signed protected dataset", call. = FALSE)
@@ -418,6 +469,18 @@
   }
   family <- match.arg(family, c("auto", "binomial", "multinomial"))
   dependence <- match.arg(dependence)
+  if (!is.null(conditioning)) {
+    if (!identical(family, "auto") || !identical(dependence, "star") ||
+        !is.function(.run) || !is.function(.star_pair)) {
+      stop(paste(
+        "categorical conditioning requires family = 'auto', dependence = 'star',",
+        "and signed strict pair releases"), call. = FALSE)
+    }
+    run <- .run(datasources, .aggregate = .aggregate)
+    return(.dsvert_mi_joint_star_result_v1(
+      formula, data_name, outcomes, m, run, .star_pair,
+      root = conditioning, include_root = FALSE))
+  }
   if (length(outcomes) > 1L && !identical(family, "auto")) {
     stop(paste(
       "multivariable categorical MI requires family = 'auto' because",
@@ -571,11 +634,14 @@
 #'   \code{cbind(outcome1, outcome2, ...) ~ 1}. The two-response form requires
 #'   one strict-missing signed joint pair. Larger response sets default to
 #'   independent signed marginals; \code{dependence = "star"} instead builds a
-#'   conditional star model from signed pairs sharing one vector release. It
-#'   never mutates source tables and its
+#'   conditional star model from signed pairs sharing one vector release. The
+#'   same star route accepts one categorical conditioning column on the
+#'   right-hand side. It never mutates source tables and its
 #'   deterministic completion draws are post-processing of released vectors.
 #' @param formula An intercept-only categorical response formula exactly of the
-#'   form \code{outcome ~ 1} or \code{cbind(outcome1, outcome2, ...) ~ 1}.
+#'   form \code{outcome ~ 1} or \code{cbind(outcome1, outcome2, ...) ~ 1}; with
+#'   \code{dependence = "star"}, it may instead have one untransformed
+#'   categorical conditioning column on the right-hand side.
 #' @param data Signed protected dataset name or federation.
 #' @param impute_columns Must be omitted or exactly match the response columns
 #'   in formula order.
@@ -583,10 +649,12 @@
 #' @param family One of \code{"auto"}, \code{"binomial"}, or
 #'   \code{"multinomial"}. Multi-response routes require \code{"auto"}; the
 #'   two-response route derives both domains from its signed pair.
-#' @param dependence For three or more responses, \code{"independent"} keeps
-#'   the protected marginal completion. \code{"star"} requires one signed
-#'   strict pair for each non-root response with the first response and assumes
-#'   those responses are conditionally independent given that root.
+#' @param dependence For three or more intercept-only responses,
+#'   \code{"independent"} keeps the protected marginal completion.
+#'   \code{"star"} requires one signed strict pair for each non-root response
+#'   with the first response and assumes those responses are conditionally
+#'   independent given that root. A formula with a conditioning column requires
+#'   \code{"star"} and one signed strict pair from that column to every response.
 #' @param max_iter,tol,lambda,intercept_only,verbose,seed Compatibility controls.
 #'   Only \code{lambda = 0}, \code{intercept_only = "aggregate"}, the default
 #'   iteration values, and \code{seed = NULL} are supported.
@@ -595,7 +663,8 @@
 #'   probabilities and no classical or Rubin sampling inference. Two-response
 #'   calls return a joint categorical probability table. Larger response sets
 #'   return protected marginals by default or an explicitly scoped categorical
-#'   star model, never joint microdata.
+#'   star model. A conditioning-column call returns only signed conditional
+#'   probability matrices and its conditioning marginal, never joint microdata.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
@@ -631,6 +700,10 @@ print.ds.vertMI <- function(x, ...) {
   } else if (identical(x$method, "signed_categorical_mcar_star_joint_v1")) {
     cat("  Signed categorical star model rooted at:", x$root_column, "\n")
     cat("  Conditional independence given the root; no joint microdata or Rubin inference.\n")
+  } else if (identical(x$method, "signed_categorical_mcar_covariate_star_v1")) {
+    cat("  Signed categorical conditional-star model given:",
+        x$conditioning_column, "\n")
+    cat("  No row-level imputations, joint microdata or Rubin inference.\n")
   } else if (is.list(x$variables)) {
     cat("  Independent signed marginals:",
         paste(names(x$variables), collapse = ", "), "\n")

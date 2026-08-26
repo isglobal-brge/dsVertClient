@@ -22,7 +22,9 @@ ds.vertMI(
 }
 \arguments{
 \item{formula}{An intercept-only categorical response formula exactly of the
-form \code{outcome ~ 1} or \code{cbind(outcome1, outcome2, ...) ~ 1}.}
+form \code{outcome ~ 1} or \code{cbind(outcome1, outcome2, ...) ~ 1}; with
+\code{dependence = "star"}, it may instead have one untransformed categorical
+conditioning column on the right-hand side.}
 
 \item{data}{Signed protected dataset name or federation.}
 
@@ -35,10 +37,12 @@ in formula order.}
 Multi-response routes require \code{"auto"}; the two-response route derives
 both domains from its signed pair.}
 
-\item{dependence}{For three or more responses, \code{"independent"} keeps
-the protected marginal completion. \code{"star"} requires one signed strict
-pair for each non-root response with the first response and assumes those
-responses are conditionally independent given that root.}
+\item{dependence}{For three or more intercept-only responses,
+\code{"independent"} keeps the protected marginal completion.
+\code{"star"} requires one signed strict pair for each non-root response with
+the first response and assumes those responses are conditionally independent
+given that root. A formula with a conditioning column requires \code{"star"}
+and one signed strict pair from that column to every response.}
 
 \item{max_iter, tol, lambda, intercept_only, verbose, seed}{Compatibility controls.
 Only \code{lambda = 0}, \code{intercept_only = "aggregate"}, the default
@@ -52,7 +56,9 @@ and no classical or Rubin sampling inference. A two-response call returns a
 joint categorical-probability completion only when the signed Synopsis
 contains the matching strict-missing contingency artifact. Calls with three or
 more responses return protected marginals by default or an explicitly scoped
-categorical star model, never joint microdata.
+categorical star model. A conditioning-column call returns only the signed
+conditional probability matrices and its conditioning marginal, never joint
+microdata.
 }
 \description{
 Returns categorical MCAR completions from one signed sticky Synopsis release.
@@ -62,7 +68,8 @@ strict-missing signed DP contingency table, retaining the released joint
 categorical dependence. Three or more responses complete signed marginals
 independently by default. With \code{dependence = "star"}, they instead use
 signed root-to-response pairs from one vector release to construct a
-conditional categorical star model. It never mutates source tables and its
+conditional categorical star model. With \code{dependence = "star"}, one
+categorical conditioning column may appear on the right-hand side. It never mutates source tables and its
 deterministic completion draws are post-processing of released vectors.
 }
 \details{
@@ -71,9 +78,11 @@ marginal. A two-response joint completion instead requires one matching
 strict-missing categorical-pair release. The optional multivariable star model
 requires all root-to-response pairs to come from the same signed vector release
 and assumes conditional independence of non-root responses given the first
-response. Covariates, chained equations, arbitrary joint models,
-analyst-controlled seeds, standard errors, p-values, and Rubin-rule sampling
-inference are unavailable.
+response. A conditioning-column star requires every conditioning-to-response
+pair to come from the same release and assumes conditional independence given
+that categorical column. Arbitrary covariates, chained equations, arbitrary
+joint models, analyst-controlled seeds, standard errors, p-values, and
+Rubin-rule sampling inference are unavailable.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}
