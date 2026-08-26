@@ -419,8 +419,8 @@
 }
 
 .dp_gaussian_cross_frontdoor_fixture <- function(k = 3L) {
-  stopifnot(k %in% 2:3)
-  peers <- c("site_a", "site_b", "site_c")[seq_len(k)]
+  stopifnot(k %in% c(2L, 3L, 5L))
+  peers <- c("site_a", "site_b", "site_c", "site_d", "site_e")[seq_len(k)]
   designated <- peers[1:2]
   predictor_owner <- if (k == 2L) "site_a" else "site_c"
   capacity <- 100
@@ -1189,93 +1189,95 @@ test_that("Gaussian front door cannot reach legacy model endpoints", {
   }
 })
 
-test_that("cross-owner Gaussian K=3 is served by both public front doors", {
-  fixture <- .dp_gaussian_cross_frontdoor_fixture()
-  capsule_calls <- 0L
-  testthat::local_mocked_bindings(
-    .dsvert_dp_gaussian_synopsis_release = function(
-        data_name, analysis_id, server = NULL, datasources = NULL, .aggregate) {
-      capsule_calls <<- capsule_calls + 1L
-      expect_identical(names(datasources), c("site_a", "site_b", "site_c"))
-      .dp_gaussian_legacy_released(
-        fixture, data_name, analysis_id, server, datasources, .aggregate)
-    },
-    .dsvert_aggregate_strict = function(...) {
-      stop("legacy aggregate route called", call. = FALSE)
-    },
-    .dsvert_fanout_by_site = function(...) {
-      stop("unexpected post-capsule fan-out", call. = FALSE)
-    },
-    .package = "dsVertClient")
+test_that("cross-owner Gaussian K=3 and K=5 are served by both public front doors", {
+  for (k in c(3L, 5L)) {
+    fixture <- .dp_gaussian_cross_frontdoor_fixture(k)
+    capsule_calls <- 0L
+    testthat::local_mocked_bindings(
+      .dsvert_dp_gaussian_synopsis_release = function(
+          data_name, analysis_id, server = NULL, datasources = NULL, .aggregate) {
+        capsule_calls <<- capsule_calls + 1L
+        expect_identical(names(datasources), names(fixture$conns))
+        .dp_gaussian_legacy_released(
+          fixture, data_name, analysis_id, server, datasources, .aggregate)
+      },
+      .dsvert_aggregate_strict = function(...) {
+        stop("legacy aggregate route called", call. = FALSE)
+      },
+      .dsvert_fanout_by_site = function(...) {
+        stop("unexpected post-capsule fan-out", call. = FALSE)
+      },
+      .package = "dsVertClient")
 
-  direct <- ds.vertDPGaussian(
-    "outcome_data", "cross_model", server = "site_b",
-    datasources = fixture$conns)
-  adapted <- ds.vertGLM(
-    y ~ x, data = "outcome_data", x_vars = list(site_c = "x"),
-    y_server = "site_b", family = "gaussian", lambda = 0,
-    dp_analysis_id = "cross_model", missing = "complete_case_capsule",
-    verbose = FALSE, datasources = fixture$conns)
+    direct <- ds.vertDPGaussian(
+      "outcome_data", "cross_model", server = "site_b",
+      datasources = fixture$conns)
+    adapted <- ds.vertGLM(
+      y ~ x, data = "outcome_data", x_vars = list(site_c = "x"),
+      y_server = "site_b", family = "gaussian", lambda = 0,
+      dp_analysis_id = "cross_model", missing = "complete_case_capsule",
+      verbose = FALSE, datasources = fixture$conns)
 
-  expect_identical(capsule_calls, 2L)
-  for (fit in list(direct, adapted)) {
-    expect_s3_class(fit, "ds.vertDPGaussian")
-    expect_equal(fit$coefficients_normalized,
-                 c(`(Intercept)` = 0.25, x = 0.5), tolerance = 1e-12)
-    expect_equal(fit$coefficients,
-                 c(`(Intercept)` = 0.5, x = 0.25), tolerance = 1e-12)
-    expect_identical(fit$server, "site_b")
-    expect_identical(fit$participating_servers, c("site_b", "site_c"))
-    expect_identical(fit$computation_servers, c("site_a", "site_b"))
-    expect_identical(fit$provenance_certificate$artifact$version,
-                     .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)
-    expect_identical(fit$signed_artifact$spec_version, "v2")
+    expect_identical(capsule_calls, 2L)
+    for (fit in list(direct, adapted)) {
+      expect_s3_class(fit, "ds.vertDPGaussian")
+      expect_equal(fit$coefficients_normalized,
+                   c(`(Intercept)` = 0.25, x = 0.5), tolerance = 1e-12)
+      expect_equal(fit$coefficients,
+                   c(`(Intercept)` = 0.5, x = 0.25), tolerance = 1e-12)
+      expect_identical(fit$server, "site_b")
+      expect_identical(fit$participating_servers, c("site_b", "site_c"))
+      expect_identical(fit$computation_servers, c("site_a", "site_b"))
+      expect_identical(fit$provenance_certificate$artifact$version,
+                       .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)
+      expect_identical(fit$signed_artifact$spec_version, "v2")
+      expect_identical(
+        fit$provenance_certificate$artifact_commitment$context$capsule_schema,
+        "dsvert-biomedical-capsule-workload-v2")
+      expect_identical(
+        fit$cross_owner_state, "exact_gc_to_joint_dp_vector_v1")
+      expect_identical(
+        fit$signed_artifact$transcript$exact_intermediate_release_count, 0)
+      expect_identical(fit$source_values_exposed, FALSE)
+      expect_identical(fit$intermediate_values_exposed, FALSE)
+      expect_identical(fit$legacy_fallback_called, FALSE)
+      expect_identical(fit$additional_server_calls_after_synopsis, 0L)
+      expect_identical(fit$history_gate, TRUE)
+      expect_identical(fit$request_limit, FALSE)
+      expect_identical(fit$operation_limit, TRUE)
+      expect_true(fit$provenance_integrity)
+      expect_identical(fit$provenance_authenticity,
+                       "session_transport_anchored")
+      verified <- ds.validateDPGaussianCertificate(fit)
+      expect_true(verified$integrity_valid)
+      caller_anchored <- ds.validateDPGaussianCertificate(
+        fit, trusted_pinset = fixture$pins)
+      expect_identical(caller_anchored$authenticity, "caller_anchored")
+      expect_length(
+        verified$certificate$peer_context$ordered_peer_pinset, k)
+      expect_identical(
+        names(verified$certificate$signed_evidence$manifest_build_receipts),
+        names(fixture$conns))
+      expect_identical(
+        names(verified$certificate$signed_evidence$vector_release_receipts),
+        c("site_a", "site_b"))
+      expect_true(all(vapply(
+        verified$certificate$signed_evidence$vector_release_receipts,
+        function(receipt) identical(receipt$history_gate, TRUE) &&
+          identical(receipt$request_limit, FALSE) &&
+          identical(receipt$operation_limit, TRUE), logical(1L))))
+      expect_true(all(vapply(
+        verified$certificate$signed_evidence$manifest_build_receipts,
+        function(receipt) identical(receipt$request_limit, FALSE) &&
+          identical(receipt$operation_limit, FALSE), logical(1L))))
+    }
+    expect_identical(adapted$called_via,
+                     "ds.vertGLM_explicit_dp_analysis_id")
+    expect_identical(adapted$legacy_glm_estimand, FALSE)
     expect_identical(
-      fit$provenance_certificate$artifact_commitment$context$capsule_schema,
-      "dsvert-biomedical-capsule-workload-v2")
-    expect_identical(
-      fit$cross_owner_state, "exact_gc_to_joint_dp_vector_v1")
-    expect_identical(
-      fit$signed_artifact$transcript$exact_intermediate_release_count, 0)
-    expect_identical(fit$source_values_exposed, FALSE)
-    expect_identical(fit$intermediate_values_exposed, FALSE)
-    expect_identical(fit$legacy_fallback_called, FALSE)
-    expect_identical(fit$additional_server_calls_after_synopsis, 0L)
-    expect_identical(fit$history_gate, TRUE)
-    expect_identical(fit$request_limit, FALSE)
-    expect_identical(fit$operation_limit, TRUE)
-    expect_true(fit$provenance_integrity)
-    expect_identical(fit$provenance_authenticity,
-                     "session_transport_anchored")
-    verified <- ds.validateDPGaussianCertificate(fit)
-    expect_true(verified$integrity_valid)
-    caller_anchored <- ds.validateDPGaussianCertificate(
-      fit, trusted_pinset = fixture$pins)
-    expect_identical(caller_anchored$authenticity, "caller_anchored")
-    expect_length(
-      verified$certificate$peer_context$ordered_peer_pinset, 3L)
-    expect_identical(
-      names(verified$certificate$signed_evidence$manifest_build_receipts),
-      c("site_a", "site_b", "site_c"))
-    expect_identical(
-      names(verified$certificate$signed_evidence$vector_release_receipts),
-      c("site_a", "site_b"))
-    expect_true(all(vapply(
-      verified$certificate$signed_evidence$vector_release_receipts,
-      function(receipt) identical(receipt$history_gate, TRUE) &&
-        identical(receipt$request_limit, FALSE) &&
-        identical(receipt$operation_limit, TRUE), logical(1L))))
-    expect_true(all(vapply(
-      verified$certificate$signed_evidence$manifest_build_receipts,
-      function(receipt) identical(receipt$request_limit, FALSE) &&
-        identical(receipt$operation_limit, FALSE), logical(1L))))
+      adapted$provenance_certificate$certificate_sha256,
+      direct$provenance_certificate$certificate_sha256)
   }
-  expect_identical(adapted$called_via,
-                   "ds.vertGLM_explicit_dp_analysis_id")
-  expect_identical(adapted$legacy_glm_estimand, FALSE)
-  expect_identical(
-    adapted$provenance_certificate$certificate_sha256,
-    direct$provenance_certificate$certificate_sha256)
 })
 
 test_that("cross-owner Gaussian K=2 uses both owner-computation peers", {
