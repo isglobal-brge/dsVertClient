@@ -1,14 +1,14 @@
 #' @title Bounded signed LMM compatibility frontdoor
-#' @description Admits a signed LMM artifact: the legacy \code{y ~ 1} moment
-#'   estimand, a fixed-effect finite-grid GLS estimand, or a finite Gaussian
-#'   random-slope candidate grid.
+#' @description Admits a signed LMM artifact: the legacy signed random-intercept
+#'   \code{y ~ 1} moment estimand, a fixed-effect finite-grid GLS estimand, or
+#'   a finite Gaussian random-slope candidate grid.
 #'   It uses one existing canonical DP Synopsis;
 #'   it neither calls the retired mixed-model endpoints nor exposes cluster
 #'   statistics.
 #' @details \code{analysis_id} selects the custodian-signed artifact. The
 #'   random-slope route accepts only its signed finite candidate grid and
-#'   returns its selected Gaussian covariance; unrestricted profile
-#'   optimisation, standard errors and classical inference are unavailable.
+#'   returns its selected Gaussian covariance; unrestricted profile optimisation,
+#'   standard errors and classical inference are unavailable.
 #'   The intercept-only artifact returns a method-of-moments projection; the
 #'   fixed-effect artifact evaluates its signed finite variance-ratio grid by
 #'   the signed ML or REML profile.

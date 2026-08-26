@@ -1,9 +1,9 @@
 #' @title Signed LMM K>=3 compatibility frontdoor
-#' @description This historical K>=3 name delegates to the signed
-#'   LMM Synopsis route, including a custodian-signed finite-grid
-#'   ML/REML profile or Gaussian random-slope candidate grid.
-#' @param formula An intercept-only or additive formula matching the signed
-#'   LMM artifact.
+#' @description This historical K>=3 signed random-intercept name delegates to
+#'   the signed LMM Synopsis route, including a custodian-signed finite-grid
+#'   ML or REML profile or Gaussian random-slope candidate grid.
+#' @param formula An intercept-only or additive fixed-effect formula matching
+#'   the signed LMM artifact.
 #' @param data Signed protected dataset name or federation.
 #' @param cluster_col Cluster column required to match the signed artifact.
 #' @param analysis_id Custodian-configured signed LMM artifact id.
