@@ -22,7 +22,7 @@
 #'   permutation of its signed category domain.
 #' @param ... Retained compatibility arguments; not evaluated.
 #' @param analysis_id Custodian-configured signed ordinal likelihood-grid id
-#'   for an additive covariate formula.
+#'   for an additive formula with covariates.
 #' @return With \code{frequency} or \code{server}, a threshold-only
 #'   \code{ds.vertOrdinal} object. With \code{analysis_id}, finite-grid ordinal
 #'   coefficients and thresholds without sampling inference. Otherwise the function raises

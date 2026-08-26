@@ -457,6 +457,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       paste(
         "Gaussian GLM uses an explicit dp_analysis_id selecting a bounded",
         "signed Synopsis artifact.",
+        "Binomial/Poisson analysis_id selects the minimum from one bounded",
+        "custodian-signed finite likelihood-grid Synopsis.",
         "Binomial/Poisson formal_analysis_id reads an already completed",
         "two-authority-signed public certificate or durable Phase21 terminal;",
         "fresh_formal_analysis_id may only resume the matching",
@@ -466,9 +468,9 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "is unreachable."),
       paste(
         "Gaussian needs a matching complete-case artifact. Binomial and Poisson",
-        "are completed releases, or the one configured fresh durable analysis;",
-        "they cannot choose source work or a new DP opening. Neither route",
-        "returns sampling inference or",
+        "need either a signed finite grid, a completed release, or the one",
+        "configured fresh durable analysis; finite grids have no arbitrary",
+        "optimizer or sampling inference. Neither route returns",
         "individual fitted values."))
   add("ds.vertCox", "ds.vertCox", "promoted",
       paste(

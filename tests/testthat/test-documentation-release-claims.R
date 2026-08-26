@@ -107,9 +107,10 @@ test_that("GLM help documents the Synopsis route matrix instead of legacy MPC", 
     "No observation-level data is ever disclosed",
     "Only p-dimensional aggregate gradients are revealed"), collapse = "|")
   for (text in list(source, rd)) {
-    expect_match(text, "two available routes",
+    expect_match(text, "three available routes",
                  ignore.case = TRUE, perl = TRUE)
     expect_match(text, "dp_analysis_id", fixed = TRUE)
+    expect_match(text, "analysis_id", fixed = TRUE)
     expect_match(text, "ds.vertDPGaussian", fixed = TRUE)
     expect_match(text, "formal_analysis_id", fixed = TRUE)
     expect_match(text, "completed public", ignore.case = TRUE)

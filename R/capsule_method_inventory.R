@@ -492,27 +492,29 @@
 
   add(
     c("ds.vertGLM", "ds.vert.glm"), "ds.vertGLM", "glm",
-    c("admitted_count", "formal_glm_public_certificate",
+    c("admitted_count", "bounded_binomial_poisson_likelihood_grid",
+      "formal_glm_public_certificate",
       "formal_glm_registered_fresh_terminal", "formal_glm_sticky_opening",
       "formal_glm_two_authority_signatures", "model_deviance",
       "model_score_hessian", "numeric_cross_products_same_and_cross_owner",
       "numeric_moments"),
     paste(
       "Bounded Gaussian coefficients use an explicit same-owner Synopsis",
-      "artifact. Binomial and Poisson use either a completed two-authority",
+      "artifact. Binomial and Poisson use a signed finite likelihood-grid",
+      "Synopsis, or either a completed two-authority",
       "formal public certificate or one custodian-configured registered",
       "durable analysis; identifier-free and legacy iterative calls fail",
       "closed before protected analysis."),
     c("convergence", "dp_aware_covariance", "identifiability",
       "numeric_certificate"),
-    "formal_public_certificate_implemented",
+    "synopsis_release_implemented",
     c("getObsCountDS", "glmRing63DevianceSumsDS", "glmStandardizeDS",
       "k2GradientR1DS", "k2GradientR2DS"),
     c("ds.vert.glm" = "ds.vertGLM"),
     current_route_status =
-      "formal_completed_public_certificate_or_registered_fresh",
+      "signed_finite_grid_synopsis_or_formal_completed_public_certificate_or_registered_fresh",
     artifact_implementation_state =
-      "validated_formal_public_certificate_adapter_implemented")
+      "validated_signed_finite_grid_and_formal_public_certificate_adapters_implemented")
 
   add(
     c("ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
@@ -1430,6 +1432,7 @@
     "formal_sticky_synopsis_artifact",
     "formal_completed_public_certificate_only",
     "formal_completed_public_certificate_or_registered_fresh",
+    "signed_finite_grid_synopsis_or_formal_completed_public_certificate_or_registered_fresh",
     "legacy_joint_dp_capsule_incompatible", "known_broken_route_quarantine",
     "legacy_exact_release_not_capsule_safe",
     "legacy_granular_release_not_capsule_safe",
@@ -1454,6 +1457,7 @@
     "signed_frequency_artifact_implemented",
     "signed_synopsis_describe_artifact_implemented",
     "validated_formal_public_certificate_adapter_implemented",
+    "validated_signed_finite_grid_and_formal_public_certificate_adapters_implemented",
     "validated_formal_cox_public_certificate_adapter_implemented",
     "planned_no_materializer", "reserved_not_materialized",
     "secure_artifact_not_implemented",

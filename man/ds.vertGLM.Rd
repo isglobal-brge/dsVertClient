@@ -32,6 +32,7 @@ ds.vertGLM(
   y_var = NULL,
   missing = "fail",
   numeric_backend = "auto",
+  analysis_id = NULL,
   dp_analysis_id = NULL,
   formal_analysis_id = NULL,
   fresh_formal_analysis_id = NULL
@@ -43,8 +44,8 @@ data name and optional signed-artifact ownership checks for the Gaussian
 Synopsis route.}
 
 \item{family}{Must be \code{"gaussian"} with \code{dp_analysis_id}, or
-\code{"binomial"}/\code{"poisson"} with \code{formal_analysis_id} or
-\code{fresh_formal_analysis_id}.}
+\code{"binomial"}/\code{"poisson"} with \code{analysis_id},
+\code{formal_analysis_id}, or \code{fresh_formal_analysis_id}.}
 
 \item{max_iter, tol, log_n, offset, weights, ring, binomial_sigmoid_intervals, eta_privacy, keep_session, std_mode, start, compute_se, compute_deviance, gradient_only, numeric_backend}{Retained legacy arguments. They are rejected when explicitly supplied to
 either signed-artifact adapter, and the no-id legacy route is unavailable.}
@@ -60,6 +61,10 @@ after the selected signed-artifact request has passed local checks.}
 \item{dp_analysis_id}{Custodian-configured signed bounded Gaussian artifact
 id. This is required for the available route.}
 
+\item{analysis_id}{Custodian-configured signed finite binomial/Poisson
+likelihood-grid id. The grid, outcome/predictor bounds and privacy parameters
+are fixed by the signed capsule.}
+
 \item{formal_analysis_id}{Custodian-configured binomial/Poisson public
 certificate selector. It is read-only: it cannot request a new analysis,
 choose privacy parameters, or activate the legacy iterative route.}
@@ -72,19 +77,22 @@ registered analysis before reading its public publication.}
 \value{
 With a valid Gaussian \code{dp_analysis_id}, a
 \code{ds.vertDPGaussian} object containing bounded noisy sufficient-
-statistic regression output. With a valid formal binomial/Poisson id, a
+statistic regression output. With a valid finite-grid or formal
+binomial/Poisson id, a
 coefficient-only \code{dsvert_formal_dp_glm} object from the completed
 public certificate. Neither route exposes classical standard errors,
 p-values, individual fitted values, residuals or scores. All other routes
 raise a typed condition and return no fitted object.
 }
 \description{
-This public frontdoor has two available routes:
+This public frontdoor has three available routes:
 an explicit \code{dp_analysis_id} with \code{family = "gaussian"}
 delegates to \code{ds.vertDPGaussian()} and returns that signed,
 contribution-bounded sticky joint-DP Synopsis estimand. A call without
 either signed-analysis id raises a typed \code{dsvert_route_unavailable}
-condition before any DSI call. An explicit \code{formal_analysis_id} for
+condition before any DSI call. An explicit \code{analysis_id} for
+binomial or Poisson selects a candidate from one signed finite likelihood-grid
+Synopsis. An explicit \code{formal_analysis_id} for
 binomial or Poisson reads a completed, two-authority-signed public DP
 certificate configured by the custodians. An explicit
 \code{fresh_formal_analysis_id} runs one preconfigured durable formal
@@ -107,6 +115,13 @@ canonically identical. The resulting coefficient-only DP fit has no
 sampling covariance, deviance, fitted values, residuals or classical
 inference. It reads an existing release and never starts source work or a
 new DP opening.
+
+\strong{Finite-grid binomial/Poisson route.} Supply an additive formula,
+\code{family = "binomial"} or \code{"poisson"}, and a custodian-configured
+\code{analysis_id}. It opens exactly one contribution-bounded sticky Synopsis
+and selects the minimum released negative log likelihood over the signed finite
+beta grid. The result is coefficient-only post-processing: it has no
+covariance, standard errors, p-values, residuals or fitted values.
 
 \strong{Fresh formal binomial/Poisson route.} A
 \code{fresh_formal_analysis_id} names a source, contract, compute pair and

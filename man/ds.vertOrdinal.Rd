@@ -37,7 +37,7 @@ permutation of its signed category domain.}
 frontdoor reads the canonical signed Frequency artifact for the outcome.}
 
 \item{analysis_id}{Custodian-configured signed ordinal likelihood-grid id
-for an additive covariate formula.}
+for an additive formula with covariates.}
 }
 \value{
 With \code{frequency} or \code{server}, a threshold-only

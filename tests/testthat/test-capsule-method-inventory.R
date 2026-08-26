@@ -603,13 +603,14 @@ test_that("mixed variants and Frequency compatibility names have explicit scopes
 
   expect_true(all(inventory$current_route_status[
     inventory$method %in% mixed] ==
-      "formal_completed_public_certificate_or_registered_fresh"))
+      "signed_finite_grid_synopsis_or_formal_completed_public_certificate_or_registered_fresh"))
   expect_true(all(inventory$migration_feasibility[
     inventory$method %in% mixed] ==
-      "formal_public_certificate_implemented"))
+      "synopsis_release_implemented"))
   expect_true(all(vapply(inventory$artifact_requirements[
     inventory$method %in% mixed], function(requirements) {
-      all(c("formal_glm_public_certificate",
+      all(c("bounded_binomial_poisson_likelihood_grid",
+            "formal_glm_public_certificate",
             "formal_glm_registered_fresh_terminal",
             "formal_glm_two_authority_signatures") %in% requirements)
     }, logical(1L))))

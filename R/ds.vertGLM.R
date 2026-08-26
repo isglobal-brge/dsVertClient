@@ -92,12 +92,14 @@
 }
 
 #' @title Sticky-DP GLM frontdoor
-#' @description This public frontdoor has two available routes:
+#' @description This public frontdoor has three available routes:
 #'   an explicit \code{dp_analysis_id} with \code{family = "gaussian"}
 #'   delegates to \code{ds.vertDPGaussian()} and returns that signed,
 #'   contribution-bounded sticky joint-DP Synopsis estimand. A call without
 #'   either signed-analysis id raises a typed \code{dsvert_route_unavailable}
-#'   condition before any DSI call. An explicit \code{formal_analysis_id} for
+#'   condition before any DSI call. An explicit \code{analysis_id} for
+#'   binomial or Poisson selects a candidate from one signed finite
+#'   likelihood-grid Synopsis. An explicit \code{formal_analysis_id} for
 #'   binomial or Poisson reads a completed, two-authority-signed public DP
 #'   certificate configured by the custodians, including the equivalent
 #'   publication rehydrated from a completed durable Phase21 terminal. It
@@ -123,6 +125,13 @@
 #' inference. It reads an existing release and never starts source work or a
 #' new DP opening.
 #'
+#' \strong{Finite-grid binomial/Poisson route.} Supply an additive formula,
+#' \code{family = "binomial"} or \code{"poisson"}, and a custodian-configured
+#' \code{analysis_id}. It opens exactly one contribution-bounded sticky
+#' Synopsis and selects the minimum released negative log likelihood over the
+#' signed finite beta grid. The result is coefficient-only post-processing:
+#' it has no covariance, standard errors, p-values, residuals or fitted values.
+#'
 #' \strong{Fresh formal binomial/Poisson route.} A
 #' \code{fresh_formal_analysis_id} names a source, contract, compute pair and
 #' public-terminal configuration fixed by custodians. It accepts no numerical,
@@ -139,8 +148,8 @@
 #'   data name and optional signed-artifact ownership checks for the Gaussian
 #'   Synopsis route.
 #' @param family Must be \code{"gaussian"} with \code{dp_analysis_id}, or
-#'   \code{"binomial"}/\code{"poisson"} with \code{formal_analysis_id} or
-#'   \code{fresh_formal_analysis_id}.
+#'   \code{"binomial"}/\code{"poisson"} with \code{analysis_id},
+#'   \code{formal_analysis_id}, or \code{fresh_formal_analysis_id}.
 #' @param lambda,no_intercept,data_name,y_var,missing Gaussian Synopsis
 #'   estimand selectors. \code{lambda} is the explicit non-negative ridge
 #'   penalty; \code{missing}, when supplied, must be
@@ -149,6 +158,9 @@
 #'   after the selected signed-artifact request has passed local checks.
 #' @param dp_analysis_id Custodian-configured signed bounded Gaussian artifact
 #'   id. This is required for the available route.
+#' @param analysis_id Custodian-configured signed finite binomial/Poisson
+#'   likelihood-grid id. The grid, outcome/predictor bounds and privacy
+#'   parameters are fixed by the signed capsule.
 #' @param formal_analysis_id Custodian-configured binomial/Poisson public
 #'   publication selector. It is read-only: it cannot request a new analysis,
 #'   choose privacy parameters, or activate the legacy iterative route.
@@ -161,7 +173,8 @@
 #'   either signed-artifact adapter, and the no-id legacy route is unavailable.
 #' @return With a valid Gaussian \code{dp_analysis_id}, a
 #'   \code{ds.vertDPGaussian} object containing bounded noisy sufficient-
-#'   statistic regression output. With a valid formal binomial/Poisson id, a
+#'   statistic regression output. With a valid finite-grid or formal
+#'   binomial/Poisson id, a
 #'   coefficient-only \code{dsvert_formal_dp_glm} object from the completed
 #'   public certificate or durable terminal publication. Neither route exposes
 #'   classical standard errors,
@@ -224,19 +237,30 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
                        data_name = NULL, y_var = NULL,
                        missing = "fail",
                        numeric_backend = "auto",
+                       analysis_id = NULL,
                        dp_analysis_id = NULL,
                        formal_analysis_id = NULL,
                        fresh_formal_analysis_id = NULL) {
   call_matched <- match.call()
 
   selected_analysis_ids <- sum(!vapply(
-    list(dp_analysis_id, formal_analysis_id, fresh_formal_analysis_id),
+    list(analysis_id, dp_analysis_id, formal_analysis_id,
+         fresh_formal_analysis_id),
     is.null, logical(1L)))
   if (selected_analysis_ids > 1L) {
     stop(paste(
-      "dp_analysis_id, formal_analysis_id and fresh_formal_analysis_id are",
+      "analysis_id, dp_analysis_id, formal_analysis_id and",
+      "fresh_formal_analysis_id are",
       "mutually exclusive"),
          call. = FALSE)
+  }
+
+  if (!is.null(analysis_id)) {
+    return(.dsvert_dp_glm_grid_adapter(
+      explicit_arguments = names(call_matched)[-1L],
+      formula = if (missing(formula)) NULL else formula,
+      data = data, family = family, verbose = verbose,
+      datasources = datasources, analysis_id = analysis_id))
   }
 
   if (!is.null(formal_analysis_id)) {

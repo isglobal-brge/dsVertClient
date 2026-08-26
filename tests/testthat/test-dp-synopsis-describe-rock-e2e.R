@@ -41,7 +41,7 @@
   "describe", "same_owner_contingency", "cross_owner_contingency",
   "stratified_epidemiology", "causal_standardization", "frequency",
   "mi", "mantel_haenszel", "roc", "survival", "correlation", "gaussian", "cross_owner_tamper",
-  "gaussian_lasso_focal", "lmm", "nb2", "multinom", "ordinal")
+  "gaussian_lasso_focal", "lmm", "nb2", "multinom", "ordinal", "glm_grid")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
   stop("unknown DSVERT_TEST_SYNOPSIS_E2E_FAMILY", call. = FALSE)
@@ -684,6 +684,48 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
   fixture$snapshots$peer_a[["data_peer_a"]]$data <- data.frame(
     patient_id = paste0("u", seq_len(n)), x_peer_a = x,
     stage_peer_a = stage, stringsAsFactors = FALSE)
+  fixture
+}
+
+.synopsis_glm_grid_real_e2e_fixture <- function(
+    k, server_ns, family = c("binomial", "poisson"), n = 400L) {
+  family <- match.arg(family)
+  fixture <- .synopsis_gaussian_real_e2e_fixture(k, server_ns, n = n)
+  for (peer in fixture$peers) {
+    policy <- fixture$policies[[peer]]
+    policy$capsule_workload_scope <- list(
+      mode = "catalog_v1", numeric_moments = character(),
+      categorical_marginals = character(), categorical_pairs = list(),
+      correlations = list())
+    policy$capsule_workload_specs$describe <- list()
+    policy$capsule_workload_specs$survival <- list()
+    policy$capsule_workload_specs$gaussian <- list()
+    if (identical(peer, "peer_a")) {
+      maximum <- if (identical(family, "poisson")) 8L else NULL
+      policy$numeric_bounds$y_peer_a <- c(0, if (is.null(maximum)) 1 else maximum)
+      policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+        "x_peer_a", "y_peer_a")
+      spec <- list(
+        version = paste0(family, "_grid_v1"), dataset = "data_peer_a",
+        outcome = "y_peer_a", predictors = "x_peer_a", intercept = TRUE,
+        beta_grid = list(c(-1, 2), c(0, 0)))
+      if (identical(family, "poisson")) {
+        spec$beta_grid <- list(c(0, 0), c(0, log(4)))
+        spec$max_outcome <- maximum
+      }
+      policy$capsule_workload_specs$gaussian$glm_primary <- spec
+    }
+    fixture$policies[[peer]] <- policy
+  }
+  x <- rep(c(0, 10), length.out = n)
+  y <- if (identical(family, "binomial")) {
+    as.numeric(x == 10)
+  } else {
+    ifelse(x == 0, 1, 4)
+  }
+  fixture$snapshots$peer_a[["data_peer_a"]]$data <- data.frame(
+    patient_id = paste0("u", seq_len(n)), x_peer_a = x, y_peer_a = y,
+    stringsAsFactors = FALSE)
   fixture
 }
 
@@ -2813,6 +2855,80 @@ test_that("real additive ordinal finite grid is plausible and Rock-replayable at
     expect_identical(replay$provenance_certificate$certificate_sha256,
                      fit$provenance_certificate$certificate_sha256)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real additive binomial and Poisson grids are plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("glm_grid")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  glm_grid <- get(".dsvert_dp_glm_grid_impl", asNamespace("dsVertClient"),
+                  inherits = FALSE)
+  for (family in c("binomial", "poisson")) {
+    for (k in .synopsis_real_e2e_peer_counts()) {
+      fixture <- .synopsis_glm_grid_real_e2e_fixture(
+        k, server_ns, family = family, n = 400L)
+      on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+      conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+        structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+      }), fixture$peers)
+      dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+      fit <- glm_grid(
+        y_peer_a ~ x_peer_a, "data_peer_a", "glm_primary", family,
+        "peer_a", conns, dispatch)
+
+      expect_s3_class(fit, "ds.glm")
+      expect_identical(fit$family, paste0(family, "_finite_grid"))
+      expect_identical(fit$signed_artifact$spec_version,
+                       paste0(family, "_grid_v1"))
+      expect_identical(fit$signed_artifact$design_terms,
+                       c("(Intercept)", "x_peer_a"))
+      expect_true(all(is.finite(fit$coefficients)))
+      expect_gt(fit$coefficients[["x_peer_a"]], 0)
+      expect_true(fit$selected_candidate %in% seq_len(2L))
+      expect_null(fit$covariance)
+      expect_null(fit$std_errors)
+      expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                       c(1L, 2L))
+      tampered_certificate <- fit$provenance_certificate
+      tampered_certificate$block_values_sha256 <- paste0(
+        chartr("0123456789abcdef", "123456789abcdef0",
+               substr(tampered_certificate$block_values_sha256, 1L, 1L)),
+        substr(tampered_certificate$block_values_sha256, 2L, 64L))
+      expect_error(ds.validateDPGaussianCertificate(tampered_certificate),
+                   "block commitment changed")
+
+      route_glm <- function(formula, data_name, analysis_id, family,
+                            server = NULL, datasources = NULL, .aggregate) {
+        glm_grid(formula, data_name, analysis_id, family, server,
+                 datasources, dispatch)
+      }
+      public <- testthat::with_mocked_bindings(
+        .dsvert_dp_glm_grid_impl = route_glm,
+        list(
+          direct = ds.vertGLM(
+            y_peer_a ~ x_peer_a, data = "data_peer_a", family = family,
+            analysis_id = "glm_primary", datasources = conns),
+          alias = ds.vert.glm(
+            y_peer_a ~ x_peer_a, data = "data_peer_a", family = family,
+            analysis_id = "glm_primary", datasources = conns)),
+        .package = "dsVertClient")
+      expect_identical(public$direct$coefficients, fit$coefficients)
+      expect_identical(public$alias$coefficients, fit$coefficients)
+      expect_identical(public$alias$frontdoor, "ds.vert.glm")
+
+      before <- c(fixture$state$source_prepare, fixture$state$start)
+      fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+        new.env(parent = emptyenv())
+      }), fixture$peers)
+      replay <- glm_grid(
+        y_peer_a ~ x_peer_a, "data_peer_a", "glm_primary", family,
+        "peer_a", conns, dispatch)
+      expect_identical(replay$coefficients, fit$coefficients)
+      expect_identical(replay$provenance_certificate$certificate_sha256,
+                       fit$provenance_certificate$certificate_sha256)
+      expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                       before)
+    }
   }
 })
 

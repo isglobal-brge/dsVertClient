@@ -488,6 +488,49 @@
                 all(is.finite(beta)) && all(abs(beta) <= 8)
             }, logical(1L))) && !anyDuplicated(beta_keys)
           if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
+        } else if (spec$version %in% c("binomial_grid_v1",
+                                       "poisson_grid_v1")) {
+          poisson <- identical(spec$version, "poisson_grid_v1")
+          expected <- c(
+            "version", "dataset", "outcome", "predictors", "intercept",
+            "beta_grid")
+          if (isTRUE(poisson)) expected <- c(expected, "max_outcome")
+          valid <- setequal(names(spec), expected) &&
+            identifier(spec$dataset) && column_reference(spec$outcome) &&
+            isTRUE(spec$intercept)
+          predictors <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$predictors, "finite GLM fixed predictors"),
+            error = function(error) character()) else character()
+          beta_grid <- spec$beta_grid
+          if (!is.list(beta_grid) || !is.null(names(beta_grid))) {
+            beta_grid <- list()
+          } else {
+            beta_grid <- lapply(beta_grid, function(beta) tryCatch(
+              .dsvert_dp_capsule_manifest_number_array(
+                beta, "finite GLM beta grid row"),
+              error = function(error) numeric()))
+          }
+          expected_dimension <- 1L + length(predictors)
+          beta_keys <- if (length(beta_grid)) vapply(beta_grid, function(beta) {
+            .dsvert_joint_dp_client_json(as.list(beta))
+          }, character(1L)) else character()
+          maximum_valid <- if (isTRUE(poisson)) {
+            .dsvert_dp_is_integer(spec$max_outcome, 1L, 1024L)
+          } else {
+            TRUE
+          }
+          valid <- isTRUE(valid) && isTRUE(maximum_valid) &&
+            length(predictors) && !anyDuplicated(predictors) &&
+            !spec$outcome %in% predictors &&
+            all(vapply(predictors, column_reference, logical(1L))) &&
+            length(beta_grid) && length(beta_grid) <= 256L &&
+            all(vapply(beta_grid, function(beta) {
+              length(beta) == expected_dimension && !anyNA(beta) &&
+                all(is.finite(beta)) && all(abs(beta) <= 8) &&
+                sum(abs(beta)) <= 16
+            }, logical(1L))) && !anyDuplicated(beta_keys)
+          if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
         } else if (identical(spec$version, "negative_binomial_grid_v1")) {
           expected <- c(
             "version", "dataset", "outcome", "predictors", "intercept",
@@ -656,6 +699,11 @@
         spec$predictors <- predictors
         spec$beta_grid <- beta_grid
         spec$variance_grid <- variance_grid
+      } else if (identical(family, "gaussian") &&
+                 spec$version %in% c("binomial_grid_v1",
+                                     "poisson_grid_v1")) {
+        spec$predictors <- predictors
+        spec$beta_grid <- beta_grid
       } else if (identical(family, "gaussian") &&
                  identical(spec$version, "negative_binomial_grid_v1")) {
         spec$predictors <- predictors

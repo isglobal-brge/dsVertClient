@@ -6,7 +6,8 @@
 #' typed \code{dsvert_route_unavailable} condition before any DSI call.
 #' \code{ds.vert.glm()} can delegate an explicit Gaussian
 #' \code{dp_analysis_id} to \code{ds.vertDPGaussian()}; its no-id legacy route
-#' is unavailable. A binomial/Poisson \code{formal_analysis_id} reads a
+#' is unavailable. A binomial/Poisson \code{analysis_id} opens one signed
+#' finite likelihood-grid Synopsis; \code{formal_analysis_id} reads a
 #' completed custodian-signed public certificate; a
 #' \code{fresh_formal_analysis_id} runs only the corresponding
 #' custodian-configured durable formal analysis. Neither runs the retired
@@ -58,7 +59,7 @@
 #' @param variables,var1,var2 Column selections for descriptive / bivariate routes.
 #' @param cluster_col Grouping column for the mixed-model routes.
 #' @param analysis_id,dp_analysis_id Custodian-configured signed random-intercept,
-#'   Gaussian, NB2, multinomial, or ordinal finite-grid artifact id. \code{analysis_id}
+#'   binomial/Poisson, Gaussian, NB2, multinomial, or ordinal finite-grid artifact id. \code{analysis_id}
 #'   is required by \code{ds.vert.lmm()} and \code{ds.vert.glmm()} and enables
 #'   finite-grid NB2, multinomial and ordinal aliases; \code{dp_analysis_id} enables only
 #'   independent Gaussian GEE post-processing.
@@ -311,14 +312,15 @@ ds.vert.glm <- function(formula, data = NULL,
                         datasources = NULL, ...) {
   dots_call <- match.call(expand.dots = FALSE)$...
   dots_names <- if (is.null(dots_call)) character() else names(dots_call)
+  grid <- "analysis_id" %in% dots_names
   formal <- "formal_analysis_id" %in% dots_names
   fresh <- "fresh_formal_analysis_id" %in% dots_names
   gaussian_dp <- "dp_analysis_id" %in% dots_names
-  if (!formal && !fresh && !gaussian_dp) {
+  if (!grid && !formal && !fresh && !gaussian_dp) {
     .dsvert_block_retired_remote_route("legacy_glm")
   }
   precision <- match.arg(precision)
-  if (formal || fresh) {
+  if (grid || formal || fresh) {
     if (!missing(precision) && !identical(precision, "auto")) {
       stop(paste(
         "precision is server-owned for formal GLM selectors;",
@@ -331,7 +333,11 @@ ds.vert.glm <- function(formula, data = NULL,
       formula = formula, data = data, datasources = datasources, ...)
     out <- .dsvert_set_frontdoor(
       out, "ds.vert.glm",
-      if (fresh) "ds.vertGLM.fresh_formal" else "ds.vertGLM.formal",
+      if (grid) "ds.vertGLM.finite_grid" else if (fresh) {
+        "ds.vertGLM.fresh_formal"
+      } else {
+        "ds.vertGLM.formal"
+      },
       if (is.null(datasources)) NULL else length(datasources))
     return(.dsvert_add_policy(out, precision = "server-owned"))
   }
