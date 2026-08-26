@@ -361,7 +361,7 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
   expect_match(lasso_iter$principal_limitation[[1L]],
                "Binomial and Poisson", fixed = TRUE)
   expect_match(ds.vertMethodStatus("ds.vertMI")$principal_limitation,
-               "intercept-only categorical marginals", fixed = TRUE)
+               "intercept-only categorical", fixed = TRUE)
   expect_match(ds.vertMethodStatus("ds.vertNBFullRegTheta")$
                  principal_limitation,
                "bounded non-negative integer y ~ 1", fixed = TRUE)

@@ -586,14 +586,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add(c("ds.vertMI", "ds.vert.mi"), "ds.vertMI", "promoted",
       paste(
         "Categorical MCAR completion for one or more intercept-only signed",
-        "marginals from one strict-missing sticky Synopsis release;",
-        "multivariable draws are deterministic post-processing and add no",
-        "privacy cost."),
+        "marginals from one strict-missing sticky Synopsis release. A",
+        "three-or-more response call can instead use signed root-to-response",
+        "pairs to build an explicit conditional star model; all draws are",
+        "deterministic post-processing and add no privacy cost."),
       paste(
-        "Only independent binomial or multinomial intercept-only categorical",
-        "marginals are available. Covariates, joint/chained equations,",
-        "analyst seeds, standard errors, p-values, and Rubin sampling",
-        "inference remain unavailable."))
+        "Only intercept-only categorical marginals, a two-response signed",
+        "joint pair, or an opt-in star model with conditional independence",
+        "given its first response are available. Covariates, chained",
+        "equations, analyst seeds, standard errors, p-values, and Rubin",
+        "sampling inference remain unavailable."))
   add(c("ds.vertLASSO", "ds.vert.lasso"), "ds.vertLASSO", "promoted",
       paste(
         "Gaussian L1 penalty path over one validated same-owner signed",

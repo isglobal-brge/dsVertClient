@@ -62,7 +62,8 @@
     state = "legacy_mutating_imputation_route_quarantined",
     replacement = paste0(
       "Use ds.vertMI(..., cbind(outcome1, outcome2, ...) ~ 1) for ",
-      "signed categorical MCAR independent-marginal completions; joint or ",
+      "signed categorical MCAR completions; dependence='star' is available ",
+      "for three or more responses with signed root-to-response pairs, but ",
       "chained imputation remains unavailable.")),
   lasso_iter = list(
     method = "ds.vertLASSOIter",

@@ -429,7 +429,9 @@ test_that("estimands and inference requirements match implemented semantics", {
   expect_true(all(c(
     "intercept_only_response_columns", "strict_missingness_contract",
     "mcar_assumption", "two_response_joint_completion_requires_signed_joint_pair",
-    "three_or_more_responses_use_independent_marginals",
+    "three_or_more_responses_default_to_independent_marginals",
+    "star_requires_same_signed_pair_vector",
+    "star_conditional_independence_given_first_response",
     "no_rubin_sampling_inference") %in%
       requirements_for(inventory, "ds.vertMI")))
   expect_true(all(c(

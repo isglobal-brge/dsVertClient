@@ -124,6 +124,11 @@
     formula, data_name, outcomes, m, datasources, .aggregate, .contingency) {
   release <- .contingency(
     data_name, outcomes[[1L]], outcomes[[2L]], NULL, datasources, .aggregate)
+  .dsvert_mi_joint_pair_completion_v1(formula, outcomes, m, release)
+}
+
+#' @keywords internal
+.dsvert_mi_joint_pair_completion_v1 <- function(formula, outcomes, m, release) {
   binding_fields <- c(
     "artifact_key", "execution_id", "manifest_sha256", "contract_sha256",
     "attempt_sha256", "source_contract_sha256", "result_set_sha256",
@@ -183,6 +188,173 @@
 }
 
 #' @keywords internal
+.dsvert_mi_star_pair_release_v1 <- function(run, data_name, row_var, col_var) {
+  references <- lapply(
+    list(row_var, col_var), .dsvert_dp_synopsis_pair_reference_v1,
+    what = "A categorical star variable")
+  if (identical(references[[1L]]$reference, references[[2L]]$reference)) {
+    stop("A categorical star pair needs two distinct variables", call. = FALSE)
+  }
+  context <- .dsvert_dp_vector_context(run, allow_synopsis = TRUE)
+  accepts <- function(reference, side) {
+    identical(reference$column, side$column) &&
+      (is.null(reference$owner_peer) ||
+         identical(reference$owner_peer, side$owner_peer))
+  }
+  block <- .dsvert_dp_capsule_single_block(
+    context$layout, "categorical_pairs", dataset = data_name,
+    predicate = function(candidate) {
+      descriptor <- candidate$descriptor
+      sides <- tryCatch(list(
+        descriptor$left[c("dataset", "column", "owner_peer")],
+        descriptor$right[c("dataset", "column", "owner_peer")]),
+        error = function(error) list())
+      if (length(sides) != 2L) return(FALSE)
+      direct <- accepts(references[[1L]], sides[[1L]]) &&
+        accepts(references[[2L]], sides[[2L]])
+      reverse <- accepts(references[[1L]], sides[[2L]]) &&
+        accepts(references[[2L]], sides[[1L]])
+      xor(direct, reverse)
+    },
+    description = paste0("signed categorical star pair for '", row_var,
+                         "' and '", col_var, "'"))
+  descriptor <- block$descriptor
+  canonical <- .dsvert_dp_capsule_vector_values(context$release, block)
+  row_levels <- .dsvert_dp_capsule_manifest_strings(
+    descriptor$left$levels, "left categorical star levels", sorted = TRUE)
+  col_levels <- .dsvert_dp_capsule_manifest_strings(
+    descriptor$right$levels, "right categorical star levels", sorted = TRUE)
+  expected <- as.double(length(row_levels)) * length(col_levels)
+  count_block <- .dsvert_dp_capsule_single_block(
+    context$layout, "admitted_count",
+    description = "signed admitted-count capacity block")
+  admitted_count <- .dsvert_dp_capsule_vector_values(
+    context$release, count_block)
+  capacity <- .dsvert_dp_vector_block_capacity(count_block)
+  if (length(canonical) != expected || any(!is.finite(canonical)) ||
+      any(canonical < 0) || any(canonical > capacity) ||
+      length(admitted_count) != 1L || !is.finite(admitted_count) ||
+      admitted_count < 0 || admitted_count > capacity) {
+    stop("The signed categorical star release violates its bound", call. = FALSE)
+  }
+  table <- matrix(canonical, nrow = length(row_levels),
+                  ncol = length(col_levels),
+                  dimnames = list(row_levels, col_levels))
+  left <- descriptor$left[c("dataset", "column", "owner_peer")]
+  right <- descriptor$right[c("dataset", "column", "owner_peer")]
+  if (accepts(references[[1L]], left) && accepts(references[[2L]], right)) {
+    mapped <- table
+  } else if (accepts(references[[1L]], right) &&
+             accepts(references[[2L]], left)) {
+    mapped <- t(table)
+  } else {
+    stop("The signed categorical star descriptor changed during mapping",
+         call. = FALSE)
+  }
+  c(.dsvert_dp_vector_public_metadata(context), list(
+    row_var = row_var, col_var = col_var, table = mapped,
+    admitted_count_dp = unname(admitted_count),
+    release_sha256 = context$release$final_vector_root,
+    missingness_policy = descriptor$missingness_policy))
+}
+
+#' @keywords internal
+.dsvert_mi_joint_star_result_v1 <- function(
+    formula, data_name, outcomes, m, run, .pair_release) {
+  if (length(outcomes) < 3L || !is.function(.pair_release)) {
+    stop("Multivariable categorical MI requires signed strict pair releases",
+         call. = FALSE)
+  }
+  root <- outcomes[[1L]]
+  children <- outcomes[-1L]
+  pairs <- stats::setNames(lapply(children, function(child) {
+    .dsvert_mi_joint_pair_completion_v1(
+      formula, c(root, child), m,
+      .pair_release(run, data_name, root, child))
+  }), children)
+  binding_fields <- c(
+    "artifact_key", "execution_id", "manifest_sha256", "contract_sha256",
+    "attempt_sha256", "source_contract_sha256", "result_set_sha256",
+    "final_vector_root", "coordinate_order_sha256", "release_sha256",
+    "admitted_count_dp")
+  first <- pairs[[1L]]
+  same_release <- vapply(pairs, function(pair) {
+    all(vapply(binding_fields, function(field) {
+      identical(pair[[field]], first[[field]])
+    }, logical(1L)))
+  }, logical(1L))
+  if (!all(same_release)) {
+    stop("All signed categorical pairs must use the same signed vector release",
+         call. = FALSE)
+  }
+  root_table <- first$joint_probabilities
+  root_probabilities <- rowSums(root_table)
+  valid_root <- is.numeric(root_probabilities) &&
+    !is.null(names(root_probabilities)) && !anyNA(root_probabilities) &&
+    all(is.finite(root_probabilities)) && all(root_probabilities >= 0) &&
+    isTRUE(all.equal(sum(root_probabilities), 1, tolerance = 1e-12))
+  if (!isTRUE(valid_root)) {
+    stop("The signed root categorical probabilities are invalid", call. = FALSE)
+  }
+  root_levels <- names(root_probabilities)
+  conditional_probabilities <- stats::setNames(lapply(children, function(child) {
+    table <- pairs[[child]]$joint_probabilities
+    valid_table <- is.matrix(table) && is.numeric(table) &&
+      identical(rownames(table), root_levels) && !is.null(colnames(table)) &&
+      !anyNA(table) && all(is.finite(table)) && all(table >= 0)
+    totals <- if (isTRUE(valid_table)) rowSums(table) else numeric()
+    if (!isTRUE(valid_table) || any(totals <= 0)) {
+      stop("Each signed categorical pair must have positive root support",
+           call. = FALSE)
+    }
+    conditional <- table / totals
+    if (!isTRUE(all.equal(unname(rowSums(conditional)), rep(1, nrow(conditional)),
+                         tolerance = 1e-12))) {
+      stop("The signed categorical pair conditional probabilities are invalid",
+           call. = FALSE)
+    }
+    conditional
+  }), children)
+  variables <- stats::setNames(vector("list", length(outcomes)), outcomes)
+  variables[[root]] <- list(levels = root_levels, probabilities = root_probabilities)
+  for (child in children) {
+    probabilities <- as.numeric(root_probabilities %*%
+                                  conditional_probabilities[[child]])
+    names(probabilities) <- colnames(conditional_probabilities[[child]])
+    variables[[child]] <- list(
+      levels = names(probabilities), probabilities = probabilities)
+  }
+  result <- c(list(
+    status = if (all(vapply(pairs, `[[`, character(1L), "status") == "ok")) {
+      "ok"
+    } else "some_variables_dp_effective_count_zero",
+    method = "signed_categorical_mcar_star_joint_v1",
+    joint_model = "strict_missing_signed_pairwise_star_completion_v1",
+    formula = stats::as.formula(formula), impute_columns = outcomes,
+    root_column = root, root_probabilities = root_probabilities,
+    conditional_probabilities = conditional_probabilities,
+    variables = variables, m = as.integer(m)), first[binding_fields])
+  result <- c(result, list(
+    completed_draws_sha256 = digest::digest(
+      list(version = "dsvert-mi-categorical-star-joint-v1",
+           release_sha256 = first$release_sha256, root = root,
+           root_probabilities = root_probabilities,
+           conditional_probabilities = conditional_probabilities, m = as.integer(m)),
+      algo = "sha256", serialize = TRUE, serializeVersion = 3L),
+    sticky_replay = TRUE,
+    additional_privacy_cost = c(epsilon = 0, delta = 0),
+    assumption = paste(
+      "MCAR pair missingness under signed strict pair releases; non-root",
+      "responses are conditionally independent given the first response"),
+    inference_scope = "No classical or Rubin sampling inference is provided",
+    standard_errors = NULL, covariance = NULL, p_values = NULL,
+    source_values_exposed = FALSE, intermediate_values_exposed = FALSE,
+    production_ready = FALSE))
+  class(result) <- c("ds.vertMI", "list")
+  result
+}
+
+#' @keywords internal
 .dsvert_mi_response_columns_v1 <- function(formula) {
   valid_formula <- inherits(formula, "formula") && length(formula) == 3L &&
     length(attr(stats::terms(formula), "term.labels")) == 0L &&
@@ -224,7 +396,9 @@
     .run = .dsvert_dp_synopsis_vector_run,
     .count = .dsvert_dp_count_synopsis_result_v1,
     .frequency = .dsvert_dp_frequency_synopsis_result_v1,
-    .contingency = .dsvert_dp_contingency_impl) {
+    .contingency = .dsvert_dp_contingency_impl,
+    .star_pair = .dsvert_mi_star_pair_release_v1,
+    dependence = c("independent", "star")) {
   outcomes <- .dsvert_mi_response_columns_v1(formula)
   if (!is.character(data_name) || length(data_name) != 1L ||
       is.na(data_name) || !nzchar(data_name)) {
@@ -243,6 +417,7 @@
     stop("m must be an integer in [2, 100]", call. = FALSE)
   }
   family <- match.arg(family, c("auto", "binomial", "multinomial"))
+  dependence <- match.arg(dependence)
   if (length(outcomes) > 1L && !identical(family, "auto")) {
     stop(paste(
       "multivariable categorical MI requires family = 'auto' because",
@@ -255,6 +430,14 @@
     }
     return(.dsvert_mi_joint_pair_result_v1(
       formula, data_name, outcomes, m, datasources, .aggregate, .contingency))
+  }
+  if (length(outcomes) >= 3L && identical(dependence, "star")) {
+    if (!is.function(.run) || !is.function(.star_pair)) {
+      stop("Invalid categorical MI signed-star dependency", call. = FALSE)
+    }
+    run <- .run(datasources, .aggregate = .aggregate)
+    return(.dsvert_mi_joint_star_result_v1(
+      formula, data_name, outcomes, m, run, .star_pair))
   }
   if (!is.function(.run) || !is.function(.count) || !is.function(.frequency)) {
     stop("Invalid categorical MI Synopsis dependency", call. = FALSE)
@@ -386,8 +569,10 @@
 #' @description Returns categorical MCAR completions from signed sticky
 #'   Synopsis releases. It accepts either \code{outcome ~ 1} or
 #'   \code{cbind(outcome1, outcome2, ...) ~ 1}. The two-response form requires
-#'   one strict-missing signed joint pair; larger response sets complete signed
-#'   marginals independently. It never mutates source tables and its
+#'   one strict-missing signed joint pair. Larger response sets default to
+#'   independent signed marginals; \code{dependence = "star"} instead builds a
+#'   conditional star model from signed pairs sharing one vector release. It
+#'   never mutates source tables and its
 #'   deterministic completion draws are post-processing of released vectors.
 #' @param formula An intercept-only categorical response formula exactly of the
 #'   form \code{outcome ~ 1} or \code{cbind(outcome1, outcome2, ...) ~ 1}.
@@ -398,18 +583,24 @@
 #' @param family One of \code{"auto"}, \code{"binomial"}, or
 #'   \code{"multinomial"}. Multi-response routes require \code{"auto"}; the
 #'   two-response route derives both domains from its signed pair.
+#' @param dependence For three or more responses, \code{"independent"} keeps
+#'   the protected marginal completion. \code{"star"} requires one signed
+#'   strict pair for each non-root response with the first response and assumes
+#'   those responses are conditionally independent given that root.
 #' @param max_iter,tol,lambda,intercept_only,verbose,seed Compatibility controls.
 #'   Only \code{lambda = 0}, \code{intercept_only = "aggregate"}, the default
 #'   iteration values, and \code{seed = NULL} are supported.
 #' @param datasources DataSHIELD connections.
 #' @return A \code{ds.vertMI} object with DP-projected completed-category
 #'   probabilities and no classical or Rubin sampling inference. Two-response
-#'   calls return a joint categorical probability table; larger response sets
-#'   return protected marginal completions, not joint microdata.
+#'   calls return a joint categorical probability table. Larger response sets
+#'   return protected marginals by default or an explicitly scoped categorical
+#'   star model, never joint microdata.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
                       m = 20L, family = c("auto", "binomial", "multinomial"),
+                      dependence = c("independent", "star"),
                       max_iter = 50L, tol = 1e-4, lambda = 0,
                       intercept_only = "aggregate",
                       verbose = TRUE, datasources = NULL, seed = NULL) {
@@ -424,9 +615,10 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
       "and no analyst seed"), call. = FALSE)
   }
   resolved <- .dsvert_federation_argument(data, datasources)
+  dependence <- match.arg(dependence)
   .dsvert_mi_synopsis_result_v1(
     formula, resolved$value, impute_columns, m, family,
-    resolved$datasources, DSI::datashield.aggregate)
+    resolved$datasources, DSI::datashield.aggregate, dependence = dependence)
 }
 
 #' @export
@@ -436,6 +628,9 @@ print.ds.vertMI <- function(x, ...) {
     cat("  Joint signed pair:", paste(x$impute_columns, collapse = " × "),
         "| missing (DP):", x$missing_count_dp, "\n")
     cat("  No joint microdata or Rubin inference is released.\n")
+  } else if (identical(x$method, "signed_categorical_mcar_star_joint_v1")) {
+    cat("  Signed categorical star model rooted at:", x$root_column, "\n")
+    cat("  Conditional independence given the root; no joint microdata or Rubin inference.\n")
   } else if (is.list(x$variables)) {
     cat("  Independent signed marginals:",
         paste(names(x$variables), collapse = ", "), "\n")

@@ -10,6 +10,7 @@ ds.vertMI(
   impute_columns = NULL,
   m = 20L,
   family = c("auto", "binomial", "multinomial"),
+  dependence = c("independent", "star"),
   max_iter = 50L,
   tol = 1e-04,
   lambda = 0,
@@ -34,6 +35,11 @@ in formula order.}
 Multi-response routes require \code{"auto"}; the two-response route derives
 both domains from its signed pair.}
 
+\item{dependence}{For three or more responses, \code{"independent"} keeps
+the protected marginal completion. \code{"star"} requires one signed strict
+pair for each non-root response with the first response and assumes those
+responses are conditionally independent given that root.}
+
 \item{max_iter, tol, lambda, intercept_only, verbose, seed}{Compatibility controls.
 Only \code{lambda = 0}, \code{intercept_only = "aggregate"}, the default
 iteration values, and \code{seed = NULL} are supported.}
@@ -45,8 +51,8 @@ A \code{ds.vertMI} object with DP-projected completed-category probabilities
 and no classical or Rubin sampling inference. A two-response call returns a
 joint categorical-probability completion only when the signed Synopsis
 contains the matching strict-missing contingency artifact. Calls with three or
-more responses return protected marginal completions, not a joint microdata
-set.
+more responses return protected marginals by default or an explicitly scoped
+categorical star model, never joint microdata.
 }
 \description{
 Returns categorical MCAR completions from one signed sticky Synopsis release.
@@ -54,15 +60,20 @@ It accepts either \code{outcome ~ 1} or \code{cbind(outcome1, outcome2, ...)
 ~ 1}. For exactly two responses, it requires and post-processes one matching
 strict-missing signed DP contingency table, retaining the released joint
 categorical dependence. Three or more responses complete signed marginals
-independently and never claim a joint model. It never mutates source tables and
-its deterministic completion draws are post-processing of released vectors.
+independently by default. With \code{dependence = "star"}, they instead use
+signed root-to-response pairs from one vector release to construct a
+conditional categorical star model. It never mutates source tables and its
+deterministic completion draws are post-processing of released vectors.
 }
 \details{
 Every response must use a custodian-signed strict-missingness categorical
 marginal. A two-response joint completion instead requires one matching
-strict-missing categorical-pair release. Covariates, chained equations,
-joint models with three or more responses, analyst-controlled seeds, standard
-errors, p-values, and Rubin-rule sampling inference are unavailable.
+strict-missing categorical-pair release. The optional multivariable star model
+requires all root-to-response pairs to come from the same signed vector release
+and assumes conditional independence of non-root responses given the first
+response. Covariates, chained equations, arbitrary joint models,
+analyst-controlled seeds, standard errors, p-values, and Rubin-rule sampling
+inference are unavailable.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}
