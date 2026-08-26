@@ -18,7 +18,9 @@
 #' \code{ds.vert.ordinal(..., frequency = x)} likewise returns only
 #' intercept-only cumulative-logit thresholds from the same kind of release;
 #' its complete ordered category domain must be explicit. It can likewise read
-#' the artifact by \code{server}.
+#' the artifact by \code{server}. With a signed \code{analysis_id}, it selects
+#' additive cumulative-logit coefficients and thresholds from one finite
+#' sticky-DP likelihood grid; covariance and sampling inference remain unavailable.
 #' \code{ds.vert.nb(..., frequency = x)} returns an intercept-only NB2
 #' method-of-moments fit for a bounded non-negative integer frequency domain.
 #' With a signed \code{analysis_id}, it also selects additive coefficients and
@@ -56,9 +58,9 @@
 #' @param variables,var1,var2 Column selections for descriptive / bivariate routes.
 #' @param cluster_col Grouping column for the mixed-model routes.
 #' @param analysis_id,dp_analysis_id Custodian-configured signed random-intercept,
-#'   Gaussian, NB2, or multinomial finite-grid artifact id. \code{analysis_id}
+#'   Gaussian, NB2, multinomial, or ordinal finite-grid artifact id. \code{analysis_id}
 #'   is required by \code{ds.vert.lmm()} and \code{ds.vert.glmm()} and enables
-#'   finite-grid NB2 and multinomial aliases; \code{dp_analysis_id} enables only
+#'   finite-grid NB2, multinomial and ordinal aliases; \code{dp_analysis_id} enables only
 #'   independent Gaussian GEE post-processing.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag. For
@@ -528,8 +530,19 @@ ds.vert.multinom <- function(formula, data = NULL, server = NULL,
 #' @rdname ds.vert.aliases
 #' @export
 ds.vert.ordinal <- function(formula, data = NULL, server = NULL,
-                            datasources = NULL, ...) {
+                            datasources = NULL, analysis_id = NULL, ...) {
   extras <- list(...)
+  if (!is.null(analysis_id)) {
+    if (!is.null(server) || !is.null(extras$frequency)) {
+      stop("The signed ordinal grid does not accept server or frequency",
+           call. = FALSE)
+    }
+    out <- do.call(ds.vertOrdinal, c(
+      list(formula = formula, data = data, datasources = datasources,
+           analysis_id = analysis_id), extras))
+    return(.dsvert_set_frontdoor(out, "ds.vert.ordinal",
+                                 "ds.vertOrdinal", NULL))
+  }
   if (!is.null(extras$frequency)) {
     if ("datasources" %in% names(match.call())[-1L] || !is.null(server)) {
       stop("Frequency-backed ordinal does not accept datasources or server", call. = FALSE)

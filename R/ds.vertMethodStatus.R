@@ -543,13 +543,15 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add(c("ds.vertOrdinal", "ds.vert.ordinal", "ds.vertOrdinalJointNewton"),
       "ds.vertOrdinal", "promoted",
       paste(
-        "Read-only intercept-only cumulative-logit thresholds from one",
-        "validated sticky DP Frequency release, including the historical",
-        "Newton name; it performs no new DSI call or opening."),
+        "Intercept-only cumulative-logit thresholds from one validated sticky",
+        "DP Frequency release, or additive ordinal coefficients and thresholds",
+        "selected from one same-owner signed sticky DP finite likelihood grid;",
+        "the historical Newton name remains a compatibility frontdoor."),
       paste(
-        "The caller must give the complete signed category domain in clinical",
-        "order. Covariates, protected score/information, covariance, standard",
-        "errors and inference remain unavailable."))
+        "The covariate route requires a signed category domain in clinical",
+        "order, public predictor bounds and finite threshold/beta candidates.",
+        "It returns no covariance, standard errors, p-values or sampling",
+        "inference."))
   add("ds.vertLMM.k3", "ds.vertDPLMM", "promoted",
       paste("K>=3 compatibility wrapper for the signed random-intercept",
             "Synopsis, including a matching signed finite ML/REML grid."),

@@ -4,12 +4,15 @@
 #'   this frontdoor fits \code{y ~ 1} by deterministic post-processing of one
 #'   sticky categorical release. The caller supplies the complete clinical
 #'   category order; the result contains Jeffreys-smoothed cumulative-logit
-#'   thresholds and never starts a new analysis or DSI request.
-#' @details This is deliberately narrower than a proportional-odds regression:
-#'   covariates, protected score/information, covariance, standard errors and
-#'   inference remain unavailable. Calls without \code{frequency} or
-#'   \code{server} retain the local zero-DSI quarantine gate.
-#' @param formula,data,levels_ordered,cumulative_template,max_iter,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources
+#'   thresholds and never starts a new analysis or DSI request. With
+#'   \code{analysis_id}, additive bare predictors select one candidate from a
+#'   signed sticky-DP finite cumulative-logit likelihood grid.
+#' @details The Frequency route is intercept-only and never starts a new
+#'   analysis. The grid route requires a same-owner signed categorical domain,
+#'   a declared clinical order, finite threshold/beta candidates and public
+#'   predictor bounds. Neither route returns covariance, standard errors or
+#'   sampling inference.
+#' @param formula,data,levels_ordered,cumulative_template,max_iter,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources,analysis_id
 #'   Retained compatibility arguments. With a validated \code{frequency}
 #'   object, only \code{y ~ 1} is available.
 #' @param server Required source-owner when \code{frequency} is absent. The
@@ -18,8 +21,11 @@
 #'   the outcome. The supplied \code{levels_ordered} must be a complete
 #'   permutation of its signed category domain.
 #' @param ... Retained compatibility arguments; not evaluated.
-#' @return With \code{frequency} or \code{server}, a threshold-only \code{ds.vertOrdinal}
-#'   object. Otherwise the function raises
+#' @param analysis_id Custodian-configured signed ordinal likelihood-grid id
+#'   for an additive covariate formula.
+#' @return With \code{frequency} or \code{server}, a threshold-only
+#'   \code{ds.vertOrdinal} object. With \code{analysis_id}, finite-grid ordinal
+#'   coefficients and thresholds without sampling inference. Otherwise the function raises
 #'   \code{dsvert_route_unavailable} before DSI.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
@@ -29,8 +35,28 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered = NULL,
                            warm_max_iter = NULL, warm_tol = NULL,
                            binomial_sigmoid_intervals = NULL,
                            verbose = TRUE, datasources = NULL, ...,
-                           frequency = NULL, server = NULL) {
+                           frequency = NULL, server = NULL, analysis_id = NULL) {
   explicit_arguments <- names(match.call())[-1L]
+  if (!is.null(analysis_id)) {
+    if (!is.null(frequency) || !is.null(server) ||
+        !is.character(analysis_id) || length(analysis_id) != 1L ||
+        is.na(analysis_id) || !nzchar(analysis_id)) {
+      stop("The signed ordinal grid requires analysis_id without frequency or server",
+           call. = FALSE)
+    }
+    terms <- if (inherits(formula, "formula")) stats::terms(formula) else NULL
+    predictors <- if (is.null(terms)) character() else attr(terms, "term.labels")
+    if (!inherits(formula, "formula") || length(formula) != 3L ||
+        !is.symbol(formula[[2L]]) || !identical(attr(terms, "intercept"), 1L) ||
+        !length(predictors) || any(!grepl("^[A-Za-z.][A-Za-z0-9._]*$", predictors))) {
+      stop("The signed ordinal grid requires an intercept and additive bare column names",
+           call. = FALSE)
+    }
+    resolved <- .dsvert_federation_argument(data, datasources)
+    return(.dsvert_dp_ordinal_grid_impl(
+      formula, resolved$value, analysis_id, datasources = resolved$datasources,
+      .aggregate = DSI::datashield.aggregate))
+  }
   if (is.null(frequency) && (!is.null(server) ||
                              (!missing(formula) &&
                               .dsvert_dp_frequency_intercept_formula(formula)))) {

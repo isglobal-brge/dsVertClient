@@ -386,7 +386,66 @@
           valid <- all(diff(grid) > 0)
         }
       } else if (identical(family, "gaussian")) {
-        if (identical(spec$version, "multinomial_grid_v1")) {
+        if (identical(spec$version, "ordinal_grid_v1")) {
+          expected <- c(
+            "version", "dataset", "outcome", "predictors", "intercept",
+            "ordered_levels", "candidate_grid")
+          valid <- setequal(names(spec), expected) &&
+            identifier(spec$dataset) && column_reference(spec$outcome) &&
+            isTRUE(spec$intercept)
+          predictors <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$predictors, "ordinal fixed predictors"),
+            error = function(error) character()) else character()
+          ordered_levels <- if (isTRUE(valid) &&
+              ((is.character(spec$ordered_levels) &&
+                is.null(names(spec$ordered_levels))) ||
+               (is.list(spec$ordered_levels) &&
+                is.null(names(spec$ordered_levels)) &&
+                all(vapply(spec$ordered_levels, .dsvert_dp_is_string,
+                           logical(1L)))))) {
+            enc2utf8(unname(unlist(spec$ordered_levels, use.names = FALSE)))
+          } else character()
+          candidate_grid <- spec$candidate_grid
+          if (!is.list(candidate_grid) || !is.null(names(candidate_grid))) {
+            candidate_grid <- list()
+          } else {
+            candidate_grid <- lapply(candidate_grid, function(candidate) {
+              if (!is.list(candidate) || is.null(names(candidate)) ||
+                  !setequal(names(candidate), c("thresholds", "beta"))) {
+                return(NULL)
+              }
+              thresholds <- tryCatch(.dsvert_dp_capsule_manifest_number_array(
+                candidate$thresholds, "ordinal threshold row"),
+                error = function(error) numeric())
+              beta <- tryCatch(.dsvert_dp_capsule_manifest_number_array(
+                candidate$beta, "ordinal beta row"),
+                error = function(error) numeric())
+              list(thresholds = thresholds, beta = beta)
+            })
+          }
+          candidate_keys <- if (length(candidate_grid) && all(vapply(
+                candidate_grid, is.list, logical(1L)))) vapply(
+            candidate_grid, .dsvert_joint_dp_client_json, character(1L)) else character()
+          expected_dimension <- 1L + length(predictors)
+          valid <- isTRUE(valid) && length(predictors) &&
+            !anyDuplicated(predictors) && !spec$outcome %in% predictors &&
+            all(vapply(predictors, column_reference, logical(1L))) &&
+            length(ordered_levels) >= 3L && !anyNA(ordered_levels) &&
+            anyDuplicated(ordered_levels) == 0L &&
+            length(candidate_grid) && length(candidate_grid) <= 256L &&
+            all(vapply(candidate_grid, function(candidate) {
+              length(candidate$thresholds) == length(ordered_levels) - 1L &&
+                length(candidate$beta) == expected_dimension &&
+                !anyNA(candidate$thresholds) && !anyNA(candidate$beta) &&
+                all(is.finite(candidate$thresholds)) &&
+                all(is.finite(candidate$beta)) &&
+                all(abs(candidate$thresholds) <= 8) &&
+                all(abs(candidate$beta) <= 8) &&
+                all(diff(candidate$thresholds) >= 1 / 256)
+            }, logical(1L))) && !anyDuplicated(candidate_keys) &&
+            identical(candidate_keys, sort(candidate_keys, method = "radix"))
+        } else if (identical(spec$version, "multinomial_grid_v1")) {
           expected <- c(
             "version", "dataset", "outcome", "predictors", "intercept",
             "levels", "reference", "beta_grid")
@@ -608,6 +667,11 @@
         spec$levels <- levels
         spec$reference <- reference
         spec$beta_grid <- beta_grid
+      } else if (identical(family, "gaussian") &&
+                 identical(spec$version, "ordinal_grid_v1")) {
+        spec$predictors <- predictors
+        spec$ordered_levels <- ordered_levels
+        spec$candidate_grid <- candidate_grid
       }
       normalized[[analysis_id]] <- spec
     }

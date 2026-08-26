@@ -19,11 +19,12 @@ ds.vertOrdinal(
   datasources = NULL,
   ...,
   frequency = NULL,
-  server = NULL
+  server = NULL,
+  analysis_id = NULL
 )
 }
 \arguments{
-\item{formula, data, levels_ordered, cumulative_template, max_iter, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources}{Retained compatibility arguments. With a validated \code{frequency}
+\item{formula, data, levels_ordered, cumulative_template, max_iter, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources, analysis_id}{Retained compatibility arguments. With a validated \code{frequency}
 object, only \code{y ~ 1} is available.}
 
 \item{...}{Retained compatibility arguments; not evaluated.}
@@ -34,10 +35,14 @@ permutation of its signed category domain.}
 
 \item{server}{Required source-owner when \code{frequency} is absent. The
 frontdoor reads the canonical signed Frequency artifact for the outcome.}
+
+\item{analysis_id}{Custodian-configured signed ordinal likelihood-grid id
+for an additive covariate formula.}
 }
 \value{
-With \code{frequency} or \code{server}, a threshold-only \code{ds.vertOrdinal}
-object. Otherwise the function raises
+With \code{frequency} or \code{server}, a threshold-only
+\code{ds.vertOrdinal} object. With \code{analysis_id}, finite-grid ordinal
+coefficients and thresholds without sampling inference. Otherwise the function raises
 \code{dsvert_route_unavailable} before DSI.
 }
 \description{
@@ -46,13 +51,16 @@ or an explicit \code{server} from which it can be read,
 this frontdoor fits \code{y ~ 1} by deterministic post-processing of one
 sticky categorical release. The caller supplies the complete clinical
 category order; the result contains Jeffreys-smoothed cumulative-logit
-thresholds and never starts a new analysis or DSI request.
+thresholds and never starts a new analysis or DSI request. With
+\code{analysis_id}, additive bare predictors select one candidate from a
+signed sticky-DP finite cumulative-logit likelihood grid.
 }
 \details{
-This is deliberately narrower than a proportional-odds regression:
-covariates, protected score/information, covariance, standard errors and
-inference remain unavailable. Calls without \code{frequency} or
-\code{server} retain the local zero-DSI quarantine gate.
+The Frequency route is intercept-only and never starts a new
+analysis. The grid route requires a same-owner signed categorical domain,
+a declared clinical order, finite threshold/beta candidates and public
+predictor bounds. Neither route returns covariance, standard errors or
+sampling inference.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

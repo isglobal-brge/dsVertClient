@@ -602,14 +602,18 @@
 
   add(
     c("ds.vertOrdinal", "ds.vert.ordinal", "ds.vertOrdinalJointNewton"),
-    "ds.vertOrdinal", "ordinal_intercept_frequency",
-    c("validated_sticky_frequency_artifact", "fixed_category_domain",
-      "caller_declared_ordinal_order", "zero_call_postprocessing"),
+    "ds.vertOrdinal", "ordinal_cumulative_logit",
+    c("validated_sticky_frequency_artifact", "signed_ordinal_grid",
+      "fixed_category_domain", "caller_declared_ordinal_order",
+      "finite_signed_candidates"),
     paste(
       "Intercept-only cumulative-logit thresholds with deterministic Jeffreys",
-      "smoothing of one validated sticky categorical Frequency release."),
+      "smoothing of one validated sticky categorical Frequency release, or",
+      "additive ordinal coefficients and thresholds selected from one",
+      "same-owner signed sticky DP finite likelihood grid."),
     c("fixed_category_domain", "caller_declared_ordinal_order",
-      "validated_frequency_provenance", "no_covariates",
+      "validated_frequency_or_grid_provenance", "public_predictor_bounds",
+      "finite_signed_candidates",
       "no_covariance_or_inference"),
     "frequency_operation_implemented",
     character(),
@@ -617,10 +621,11 @@
       "ds.vertOrdinalJointNewton" = "ds.vertOrdinal"),
     alias_kinds = c(
       "ds.vertOrdinalJointNewton" = "compatibility_wrapper"),
-    current_route_status = "client_only_validated_capsule_postprocess",
+    current_route_status = "formal_sticky_synopsis_artifact",
     artifact_implementation_state =
-      "validated_frequency_artifact_adapter_implemented",
-    inference_implementation_state = "frequency_postprocess_implemented")
+      "validated_frequency_and_finite_grid_artifact_adapters_implemented",
+    inference_implementation_state =
+      "frequency_and_finite_grid_postprocess_implemented")
 
   add(
     c("ds.vertDPLMM", "ds.vertLMM", "ds.vert.lmm", "ds.vertLMM.k3"),

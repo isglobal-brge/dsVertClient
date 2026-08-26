@@ -940,7 +940,10 @@
        identical(artifact$spec_version, "negative_binomial_grid_v1")) ||
     (identical(artifact$version,
                .DSVERT_CLIENT_DP_MULTINOM_GRID_ARTIFACT_VERSION) &&
-       identical(artifact$spec_version, "multinomial_grid_v1"))
+       identical(artifact$spec_version, "multinomial_grid_v1")) ||
+    (identical(artifact$version,
+               .DSVERT_CLIENT_DP_ORDINAL_GRID_ARTIFACT_VERSION) &&
+       identical(artifact$spec_version, "ordinal_grid_v1"))
   if (!isTRUE(context$synopsis) || !is.list(bundle) || !is.list(compilation) ||
       !is.list(provenance) || !all(required_provenance %in% names(provenance)) ||
       !identical(
@@ -1336,6 +1339,9 @@
   } else if (identical(artifact$version,
                        .DSVERT_CLIENT_DP_MULTINOM_GRID_ARTIFACT_VERSION)) {
     as.numeric(artifact$statistic_maximum)
+  } else if (identical(artifact$version,
+                       .DSVERT_CLIENT_DP_ORDINAL_GRID_ARTIFACT_VERSION)) {
+    as.numeric(artifact$statistic_maximum)
   } else if (identical(
         artifact$version,
         .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION)) {
@@ -1561,9 +1567,15 @@
         replay_is_postprocessing = TRUE,
         finite_global_composition_claim = FALSE), certificate = certificate))
   }
-  if (identical(artifact$version,
-                .DSVERT_CLIENT_DP_MULTINOM_GRID_ARTIFACT_VERSION)) {
-    moment <- .dsvert_dp_multinom_grid_moment(coordinates, artifact)
+  if (artifact$version %in% c(
+        .DSVERT_CLIENT_DP_MULTINOM_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_ORDINAL_GRID_ARTIFACT_VERSION)) {
+    moment <- if (identical(artifact$version,
+                            .DSVERT_CLIENT_DP_MULTINOM_GRID_ARTIFACT_VERSION)) {
+      .dsvert_dp_multinom_grid_moment(coordinates, artifact)
+    } else {
+      .dsvert_dp_ordinal_grid_moment(coordinates, artifact)
+    }
     accuracy_release <- list(
       manifest_sha256 = certificate$manifest_sha256,
       epsilon = certificate$epsilon, mechanism = certificate$mechanism,

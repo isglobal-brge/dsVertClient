@@ -86,7 +86,14 @@ ds.vert.nb(
 
 ds.vert.multinom(formula, data = NULL, server = NULL, datasources = NULL, ...)
 
-ds.vert.ordinal(formula, data = NULL, server = NULL, datasources = NULL, ...)
+ds.vert.ordinal(
+  formula,
+  data = NULL,
+  server = NULL,
+  datasources = NULL,
+  analysis_id = NULL,
+  ...
+)
 
 ds.vert.lmm(
   formula,
@@ -214,13 +221,13 @@ fixed-grid pooled-logistic estimand.}
 \item{server}{Required source-owner when an intercept-only NB2, multinomial,
 or ordinal alias resolves its canonical signed Frequency artifact itself.}
 
-\item{cluster_col}{Grouping column for the mixed-model routes.}
-
 \item{analysis_id, dp_analysis_id}{Custodian-configured signed random-intercept,
-Gaussian, NB2, or multinomial finite-grid artifact id. \code{analysis_id}
+Gaussian, NB2, multinomial, or ordinal finite-grid artifact id. \code{analysis_id}
 is required by \code{ds.vert.lmm()} and \code{ds.vert.glmm()} and enables
-finite-grid NB2 and multinomial aliases; \code{dp_analysis_id} enables only
+finite-grid NB2, multinomial and ordinal aliases; \code{dp_analysis_id} enables only
 independent Gaussian GEE post-processing.}
+
+\item{cluster_col}{Grouping column for the mixed-model routes.}
 
 \item{max_iter, inner_iter, max_outer, tol}{Iteration caps and convergence
 tolerance for the iterative fits.}
@@ -256,7 +263,9 @@ sticky-DP likelihood grid; covariance and sampling inference remain unavailable.
 \code{ds.vert.ordinal(..., frequency = x)} likewise returns only
 intercept-only cumulative-logit thresholds from the same kind of release;
 its complete ordered category domain must be explicit. It can likewise read
-the artifact by \code{server}.
+the artifact by \code{server}. With a signed \code{analysis_id}, it selects
+additive cumulative-logit coefficients and thresholds from one finite
+sticky-DP likelihood grid; covariance and sampling inference remain unavailable.
 \code{ds.vert.nb(..., frequency = x)} returns an intercept-only NB2
 method-of-moments fit for a bounded non-negative integer frequency domain.
 With a signed \code{analysis_id}, it also selects additive coefficients and
