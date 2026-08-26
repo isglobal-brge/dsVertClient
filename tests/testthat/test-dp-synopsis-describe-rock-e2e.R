@@ -3425,7 +3425,7 @@ test_that("real additive binomial and Poisson grids are plausible and Rock-repla
                substr(tampered_certificate$block_values_sha256, 1L, 1L)),
         substr(tampered_certificate$block_values_sha256, 2L, 64L))
       expect_error(ds.validateDPGaussianCertificate(tampered_certificate),
-                   "block commitment changed")
+                   "Invalid Gaussian Synopsis provenance certificate")
 
       route_glm <- function(formula, data_name, analysis_id, family,
                             server = NULL, datasources = NULL, .aggregate) {

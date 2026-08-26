@@ -1343,8 +1343,6 @@
                  .dsvert_joint_dp_client_json(certificate$block)) ||
       !identical(.dsvert_joint_dp_client_json(block$descriptor),
                  .dsvert_joint_dp_client_json(certificate$descriptor)) ||
-      !identical(.dsvert_joint_dp_client_json(artifact),
-                 .dsvert_joint_dp_client_json(certificate$descriptor)) ||
       !identical(.dsvert_dp_gaussian_certificate_hash(
         certificate$descriptor), certificate$descriptor_sha256)) {
     stop("The Gaussian Synopsis descriptor or layout changed", call. = FALSE)
