@@ -488,21 +488,25 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       paste(
         "Read-only coefficients and hazard-ratio ranges from one completed",
         "two-authority-signed sticky formal Cox opening selected by",
-        "formal_analysis_id; no legacy Cox computation is reachable."),
+        "formal_analysis_id, or the matching custodian-configured durable",
+        "analysis selected by analysis_id; no legacy Cox computation is",
+        "reachable."),
       paste(
-        "This compatibility route cannot start a Cox analysis and returns no",
-        "covariance, standard errors, p-values, baseline hazard, prediction,",
-        "residual or sampling inference artifact."))
+        "The configured analysis cannot choose source work or a new opening",
+        "and returns no covariance, standard errors, p-values, baseline",
+        "hazard, prediction, residual or sampling inference artifact."))
   add(c("ds.vertCoxProfileNonDisclosive"),
       "ds.vertCox", "promoted",
       paste(
         "Read-only coefficients and hazard-ratio ranges from one completed",
         "two-authority-signed sticky formal Cox opening selected by",
-        "formal_analysis_id; no legacy Cox computation is reachable."),
+        "formal_analysis_id, or the matching custodian-configured durable",
+        "analysis selected by analysis_id; no legacy Cox computation is",
+        "reachable."),
       paste(
-        "This route cannot start a Cox analysis and returns no covariance,",
-        "standard errors, p-values, baseline hazard, prediction, residual or",
-        "sampling inference artifact."))
+        "The configured analysis cannot choose source work or a new opening",
+        "and returns no covariance, standard errors, p-values, baseline",
+        "hazard, prediction, residual or sampling inference artifact."))
   add(c("ds.vertCoxDiscreteNonDisclosive"),
       "ds.vertCoxDiscreteNonDisclosive", "promoted",
       paste(

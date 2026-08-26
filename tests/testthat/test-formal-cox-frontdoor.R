@@ -125,6 +125,18 @@ test_that("Cox analysis_id is the standard fresh-analysis selector", {
     datasources = conns), "mutually exclusive")
 })
 
+test_that("Cox aliases advertise the configured analysis selector", {
+  status <- ds.vertMethodStatus(c(
+    "ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
+    "ds.vertCoxProfileNonDisclosive"))
+  expect_true(all(status$status == "promoted"))
+  expect_true(all(grepl("analysis_id", status$safe_scope, fixed = TRUE)))
+  aliases <- status$method %in% c(
+    "ds.vert.coxph", "ds.vertCoxProfileNonDisclosive")
+  expect_true(all(grepl("cannot choose source work",
+                        status$principal_limitation[aliases], fixed = TRUE)))
+})
+
 test_that("fresh formal Cox aliases retain the profile-only committed route", {
   conns <- list(site_a = structure(list(), class = "mock"),
                 site_b = structure(list(), class = "mock"))
