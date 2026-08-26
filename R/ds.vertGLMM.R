@@ -1,5 +1,5 @@
-#' @title Signed binary random-intercept GLMM
-#' @description Fits a binary random-intercept model from one signed, sticky
+#' @title Signed binary random-effect GLMM
+#' @description Fits a binary random-effect model from one signed, sticky
 #'   Synopsis.  The intercept-only call retains its historical moment
 #'   projection. Additive covariate calls select the minimum from the signed
 #'   finite marginal-likelihood grid; they never call PQL or expose
@@ -8,13 +8,16 @@
 #'   intercept-only formula, \code{sigma_b2} is the conventional logistic
 #'   latent-scale approximation to the released observed ICC. For additive
 #'   covariates, it is the selected value from a custodian-signed finite random
-#'   intercept variance grid. Neither route supplies standard errors, p-values
-#'   or sampling inference; random slopes, interactions and unconstrained
-#'   likelihood optimisation remain unavailable.
+#'   intercept variance grid or a two-effect covariance grid. Neither route
+#'   supplies standard errors, p-values or sampling inference; a named random slope is available only when it
+#'   exactly matches a signed finite two-effect grid. Interactions and
+#'   unconstrained likelihood optimisation remain unavailable.
 #' @param formula An intercept-only formula or additive bare column names.
 #' @param data Signed protected dataset name or federation.
 #' @param cluster_col Cluster column required to match the signed artifact.
 #' @param analysis_id Custodian-configured signed random-intercept artifact id.
+#' @param random_slopes Optional bare predictor name for a signed finite-grid
+#'   random-slope artifact; it must match the artifact exactly.
 #' @param max_outer,inner_iter,tol,ring,verbose Retained compatibility controls;
 #'   they do not alter the signed estimand.
 #' @param lambda Must be zero.
@@ -26,6 +29,7 @@
 #' @export
 ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         analysis_id = NULL,
+                        random_slopes = NULL,
                         max_outer = 30L, inner_iter = 50L,
                         tol = 1e-4, lambda = 0,
                         compute_se = FALSE,
@@ -48,6 +52,12 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     stop("ds.vertGLMM requires cluster_col and signed analysis_id strings",
          call. = FALSE)
   }
+  if (!is.null(random_slopes) && (!is.character(random_slopes) ||
+      length(random_slopes) != 1L || is.na(random_slopes) ||
+      !grepl("^[A-Za-z.][A-Za-z0-9._]*$", random_slopes))) {
+    stop("random_slopes must be one bare signed predictor name or NULL",
+         call. = FALSE)
+  }
   if (!is.numeric(lambda) || length(lambda) != 1L || is.na(lambda) ||
       !is.finite(lambda) || lambda != 0 || !identical(compute_se, FALSE)) {
     stop(paste(
@@ -56,9 +66,17 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
   }
   if (length(predictors)) {
     resolved <- .dsvert_federation_argument(data, datasources)
-    return(.dsvert_dp_glmm_grid_impl(
+    result <- .dsvert_dp_glmm_grid_impl(
       formula, resolved$value, cluster_col, analysis_id,
-      datasources = resolved$datasources, .aggregate = DSI::datashield.aggregate))
+      datasources = resolved$datasources, .aggregate = DSI::datashield.aggregate)
+    signed_slopes <- result$signed_artifact$random_effect_order[-1L] %||% character()
+    if (!identical(signed_slopes, random_slopes %||% character())) {
+      stop("random_slopes must exactly match the signed GLMM artifact", call. = FALSE)
+    }
+    return(result)
+  }
+  if (!is.null(random_slopes)) {
+    stop("random_slopes requires a signed finite-grid covariate formula", call. = FALSE)
   }
   signed <- ds.vertDPLMM(
     data_name = data, analysis_id = analysis_id, datasources = datasources)
@@ -129,13 +147,17 @@ print.ds.vertGLMM <- function(x, ...) {
     return(invisible(x))
   }
   if (!is.null(x$selected_candidate)) {
-    cat("dsVert signed binary random-intercept finite-grid GLMM\n")
+    cat("dsVert signed binary finite-grid GLMM\n")
     cat(sprintf("  Selected signed candidate = %d\n", x$selected_candidate))
     cat(sprintf("  Random-intercept variance = %.5g\n", x$sigma_b2))
     cat(sprintf("  DP negative log likelihood = %.5f\n",
                 x$selected_dp_negative_log_likelihood))
     cat("  Coefficients:\n")
     print(round(x$coefficients, 5L))
+    if (!is.null(x$random_effect_covariance)) {
+      cat("  Random-effect covariance:\n")
+      print(round(x$random_effect_covariance, 5L))
+    }
     cat("  Standard errors and sampling inference are unavailable.\n")
     return(invisible(x))
   }

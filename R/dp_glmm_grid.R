@@ -3,7 +3,203 @@
 
 .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION <-
   "bounded-binary-random-intercept-likelihood-grid-v1"
+.DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION <-
+  "bounded-binary-random-slope-likelihood-grid-v1"
 .DSVERT_CLIENT_DP_GLMM_GRID_MAX_GH_NODE <- 3.19099320178153
+
+.dsvert_dp_glmm_random_slope_candidates <- function(candidate_grid, dimension,
+                                                     random_effect_order) {
+  if (!is.list(candidate_grid) || !length(candidate_grid) ||
+      !is.null(names(candidate_grid)) || length(random_effect_order) != 2L ||
+      !identical(random_effect_order[[1L]], "(Intercept)")) return(list())
+  candidates <- lapply(candidate_grid, function(candidate) {
+    if (!.dsvert_dp_has_exact_names(candidate, c("beta", "covariance"))) return(NULL)
+    beta <- tryCatch(.dsvert_dp_capsule_manifest_number_array(
+      candidate$beta, "GLMM random-slope beta"), error = function(error) numeric())
+    covariance <- tryCatch(.dsvert_dp_capsule_manifest_number_array(
+      candidate$covariance, "GLMM random-slope covariance"),
+      error = function(error) numeric())
+    if (length(beta) != dimension || anyNA(beta) || any(!is.finite(beta)) ||
+        any(abs(beta) > 8) || length(covariance) != 4L || anyNA(covariance) ||
+        any(!is.finite(covariance)) || any(abs(covariance) > 16)) return(NULL)
+    covariance <- matrix(covariance, 2L, 2L, byrow = TRUE)
+    if (!isTRUE(all.equal(covariance, t(covariance), tolerance = 0)) ||
+        any(diag(covariance) < 0) ||
+        any(eigen(covariance, symmetric = TRUE, only.values = TRUE)$values < -1e-10)) {
+      return(NULL)
+    }
+    decomposition <- eigen(covariance, symmetric = TRUE)
+    root <- decomposition$vectors %*% diag(sqrt(pmax(0, decomposition$values)))
+    loss_bound <- log1p(exp(sum(abs(beta)) + sqrt(2) *
+      .DSVERT_CLIENT_DP_GLMM_GRID_MAX_GH_NODE * sum(abs(root))))
+    if (!is.finite(loss_bound) || loss_bound <= 0) return(NULL)
+    list(beta = beta, covariance = covariance, loss_bound = loss_bound)
+  })
+  if (any(vapply(candidates, is.null, logical(1L)))) return(list())
+  keys <- vapply(candidates, function(candidate) .dsvert_joint_dp_client_json(list(
+    beta = as.list(candidate$beta),
+    covariance = as.list(as.vector(t(candidate$covariance))))), character(1L))
+  if (anyDuplicated(keys) || !identical(keys, sort(keys, method = "radix"))) {
+    return(list())
+  }
+  candidates
+}
+
+.dsvert_dp_glmm_random_slope_grid_artifact <- function(
+    manifest, data_name, analysis_id, owner_peer, adjacency, scale, capacity) {
+  artifact <- tryCatch(
+    manifest$workload$families$gaussian_models$artifacts[[analysis_id]],
+    error = function(error) NULL)
+  required <- c(
+    "version", "spec_version", "analysis_id", "dataset", "owner_peer",
+    "outcome", "cluster", "predictors", "predictor_order", "intercept",
+    "design_terms", "random_effect_order", "observation_capacity",
+    "max_patients_per_cluster", "candidate_grid", "quadrature_rule",
+    "candidate_order", "candidate_loss_bounds", "numeric_grid_bits",
+    "coordinate_count", "coordinate_order", "source_coordinate_scaling",
+    "repeated_record_policy", "missingness_policy", "contribution_domain",
+    "statistic_maximum", "source_raw_l1_sensitivity",
+    "source_raw_l2_sensitivity", "natural_l1_sensitivity",
+    "natural_l2_sensitivity", "adjacency", "adjacency_sensitivity_basis",
+    "estimation_scope", "implementation_state", "cross_owner_state")
+  basic <- .dsvert_dp_has_exact_names(artifact, required) &&
+    identical(artifact$version,
+              .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION) &&
+    identical(artifact$spec_version, "binary_random_slope_grid_v1") &&
+    identical(artifact$analysis_id, analysis_id) && identical(artifact$dataset, data_name) &&
+    .dsvert_dp_is_string(artifact$owner_peer) &&
+    (is.null(owner_peer) || identical(artifact$owner_peer, owner_peer)) &&
+    identical(artifact$implementation_state, "same_owner_materialized") &&
+    identical(artifact$cross_owner_state, "reserved_not_materialized")
+  if (!isTRUE(basic)) .dsvert_dp_gaussian_reserved(paste0(
+    "the signed capsule has no valid binary random-slope GLMM grid artifact '",
+    analysis_id, "' for dataset '", data_name, "'"))
+  outcome <- .dsvert_dp_gaussian_bound(artifact$outcome, "GLMM outcome")
+  cluster <- artifact$cluster
+  levels <- tryCatch(.dsvert_dp_capsule_manifest_string_array(
+    cluster$levels, "GLMM random-slope cluster levels"),
+    error = function(error) character())
+  predictor_order <- tryCatch(.dsvert_dp_capsule_manifest_strings(
+    artifact$predictor_order, "GLMM random-slope predictor order", sorted = TRUE),
+    error = function(error) character())
+  design_terms <- tryCatch(.dsvert_dp_capsule_manifest_strings(
+    artifact$design_terms, "GLMM random-slope design terms", sorted = FALSE),
+    error = function(error) character())
+  effects <- tryCatch(.dsvert_dp_capsule_manifest_strings(
+    artifact$random_effect_order, "GLMM random-slope effects", sorted = FALSE),
+    error = function(error) character())
+  predictors <- artifact$predictors
+  predictors_valid <- is.list(predictors) && !is.null(names(predictors)) &&
+    identical(names(predictors), predictor_order) && length(predictor_order)
+  if (isTRUE(predictors_valid)) {
+    predictors <- tryCatch(stats::setNames(lapply(predictor_order, function(x) {
+      .dsvert_dp_gaussian_bound(predictors[[x]], "GLMM random-slope predictor")
+    }), predictor_order), error = function(error) NULL)
+    predictors_valid <- !is.null(predictors) && all(vapply(predictors, function(x) {
+      !identical(x$column, outcome$column) && !identical(x$column, cluster$column)
+    }, logical(1L)))
+  }
+  bits <- suppressWarnings(as.numeric(artifact$numeric_grid_bits))
+  cluster_capacity <- suppressWarnings(as.numeric(artifact$max_patients_per_cluster))
+  effects_valid <- identical(effects[[1L]], "(Intercept)") && length(effects) == 2L &&
+    effects[[2L]] %in% predictor_order && !anyDuplicated(effects)
+  candidates <- if (isTRUE(effects_valid)) .dsvert_dp_glmm_random_slope_candidates(
+    artifact$candidate_grid, 1L + length(predictor_order), effects) else list()
+  loss_bounds <- if (length(candidates)) vapply(candidates, `[[`, numeric(1L), "loss_bound") else numeric()
+  observed_loss_bounds <- tryCatch(.dsvert_dp_capsule_manifest_numbers(
+    artifact$candidate_loss_bounds, "GLMM random-slope candidate loss bounds"),
+    error = function(error) numeric())
+  maximum <- tryCatch(.dsvert_dp_capsule_manifest_numbers(
+    artifact$statistic_maximum, "GLMM random-slope maxima"), error = function(error) numeric())
+  raw <- ceiling(loss_bounds * scale)
+  multiplier <- if (identical(adjacency, "replace_one_fixed_cohort")) 2 else if (
+    identical(adjacency, "add_remove_patient")) 1 else NA_real_
+  valid <- .dsvert_dp_has_exact_names(cluster, c("column", "levels")) &&
+    .dsvert_dp_is_string(cluster$column) && length(levels) >= 2L &&
+    !anyDuplicated(levels) && all(nzchar(trimws(levels))) &&
+    isTRUE(predictors_valid) && .dsvert_dp_is_integer(bits, 8L, 18L) &&
+    identical(2^bits, scale) && .dsvert_dp_is_integer(artifact$observation_capacity,
+      capacity, capacity) && .dsvert_dp_is_integer(cluster_capacity, 2L, capacity) &&
+    outcome$lower == 0 && outcome$upper == 1 && isTRUE(artifact$intercept) &&
+    isTRUE(effects_valid) && length(candidates) && length(candidates) <= 128L &&
+    identical(design_terms, c("(Intercept)", predictor_order)) &&
+    identical(artifact$quadrature_rule, "gauss_hermite_9x9_standard_normal_v1") &&
+    identical(artifact$candidate_order, "canonical_signed_candidate_grid_v1") &&
+    length(observed_loss_bounds) == length(candidates) &&
+    isTRUE(all.equal(observed_loss_bounds, loss_bounds, tolerance = 1e-12)) &&
+    .dsvert_dp_is_integer(artifact$coordinate_count, length(candidates), length(candidates)) &&
+    identical(artifact$coordinate_order,
+      "signed_candidate_grid_cluster_marginal_binary_negative_log_likelihood_v1") &&
+    identical(artifact$source_coordinate_scaling,
+      "all_coordinates_already_on_common_numeric_lattice_v1") &&
+    identical(artifact$repeated_record_policy, paste(
+      "require_one_binary_outcome_and_mean_once_per_admitted_patient",
+      "with_one_consistent_public_cluster_level_v1", sep = "_")) &&
+    identical(artifact$missingness_policy, paste(
+      "nonbinary_or_missing_outcome_or_missing_or_nonfinite_predictor",
+      "or_missing_or_inconsistent_cluster_excludes_patient_v1", sep = "_")) &&
+    identical(artifact$contribution_domain, paste(
+      "one_bounded_patient_binary_log_likelihood_contribution_in_one",
+      "consistent_cluster_for_every_signed_candidate_v1", sep = "_")) &&
+    identical(maximum, capacity * raw) &&
+    isTRUE(all.equal(as.numeric(artifact$source_raw_l1_sensitivity), multiplier * sum(raw), tolerance = 1e-12)) &&
+    isTRUE(all.equal(as.numeric(artifact$source_raw_l2_sensitivity), multiplier * sqrt(sum(raw^2)), tolerance = 1e-12)) &&
+    isTRUE(all.equal(as.numeric(artifact$natural_l1_sensitivity), multiplier * sum(raw) / scale, tolerance = 1e-12)) &&
+    isTRUE(all.equal(as.numeric(artifact$natural_l2_sensitivity), multiplier * sqrt(sum(raw^2)) / scale, tolerance = 1e-12)) &&
+    identical(artifact$adjacency, adjacency) &&
+    identical(artifact$adjacency_sensitivity_basis,
+      "one_patient_changes_one_cluster_marginal_log_likelihood_by_at_most_its_signed_candidate_loss_bound_v1") &&
+    identical(artifact$estimation_scope,
+      "bounded_binary_random_slope_marginal_likelihood_finite_signed_parameter_grid_v1")
+  if (!isTRUE(valid)) stop("The signed binary random-slope GLMM descriptor is invalid",
+                           call. = FALSE)
+  artifact$outcome <- outcome
+  artifact$cluster <- list(column = enc2utf8(cluster$column), levels = levels)
+  artifact$predictors <- predictors
+  artifact$predictor_order <- predictor_order
+  artifact$design_terms <- c("(Intercept)", predictor_order)
+  artifact$random_effect_order <- effects
+  artifact$candidate_grid <- lapply(candidates, function(candidate) list(
+    beta = candidate$beta, covariance = as.vector(t(candidate$covariance))))
+  artifact$candidate_loss_bounds <- loss_bounds
+  artifact$statistic_maximum <- capacity * raw
+  artifact$coordinate_count <- as.integer(length(candidates))
+  artifact
+}
+
+.dsvert_dp_glmm_random_slope_grid_moment <- function(coordinates, artifact) {
+  upper <- as.numeric(artifact$statistic_maximum)
+  if (!is.numeric(coordinates) || length(coordinates) != length(upper) ||
+      anyNA(coordinates) || any(!is.finite(coordinates)) ||
+      any(coordinates < 0) || any(coordinates > upper)) {
+    stop("The released binary random-slope GLMM grid violates its signed bounds",
+         call. = FALSE)
+  }
+  candidate <- .dsvert_dp_glmm_random_slope_candidates(
+    artifact$candidate_grid, 1L + length(artifact$predictor_order),
+    artifact$random_effect_order)[[which.min(coordinates)[[1L]]]]
+  slopes <- candidate$beta[-1L] / vapply(
+    artifact$predictors, function(x) x$upper - x$lower, numeric(1L))
+  names(slopes) <- artifact$predictor_order
+  intercept <- candidate$beta[[1L]] - sum(slopes * vapply(
+    artifact$predictors, `[[`, numeric(1L), "lower"))
+  slope <- artifact$random_effect_order[[2L]]
+  span <- artifact$predictors[[slope]]$upper - artifact$predictors[[slope]]$lower
+  transform <- matrix(c(1, -artifact$predictors[[slope]]$lower / span, 0, 1 / span),
+                      2L, 2L, byrow = TRUE)
+  covariance <- transform %*% candidate$covariance %*% t(transform)
+  dimnames(covariance) <- list(artifact$random_effect_order,
+                               artifact$random_effect_order)
+  selected <- which.min(coordinates)[[1L]]
+  list(status = "ok", coefficients = c(`(Intercept)` = intercept, slopes),
+       normalized_coefficients = stats::setNames(candidate$beta, artifact$design_terms),
+       random_effect_covariance = covariance,
+       random_effect_order = artifact$random_effect_order,
+       selected_candidate = as.integer(selected),
+       selected_dp_negative_log_likelihood = coordinates[[selected]] /
+         (2^as.numeric(artifact$numeric_grid_bits)),
+       candidate_selection = "minimum_signed_finite_grid_dp_postprocessing_v1")
+}
 
 .dsvert_dp_glmm_grid_artifact <- function(
     manifest, data_name, analysis_id, owner_peer, adjacency, scale,
@@ -11,6 +207,11 @@
   artifact <- tryCatch(
     manifest$workload$families$gaussian_models$artifacts[[analysis_id]],
     error = function(error) NULL)
+  if (is.list(artifact) && identical(
+        artifact$version, .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+    return(.dsvert_dp_glmm_random_slope_grid_artifact(
+      manifest, data_name, analysis_id, owner_peer, adjacency, scale, capacity))
+  }
   required <- c(
     "version", "spec_version", "analysis_id", "dataset", "owner_peer",
     "outcome", "cluster", "predictors", "predictor_order", "intercept",
@@ -244,15 +445,19 @@
          call. = FALSE)
   }
   coordinates <- .dsvert_dp_capsule_vector_values(context$release, blocks[[1L]])
-  moment <- .dsvert_dp_glmm_grid_moment(coordinates, artifact)
+  moment <- if (identical(
+        artifact$version, .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+    .dsvert_dp_glmm_random_slope_grid_moment(coordinates, artifact)
+  } else .dsvert_dp_glmm_grid_moment(coordinates, artifact)
   certificate <- .dsvert_dp_gaussian_synopsis_certificate_build(
     context, artifact, blocks[[1L]], coordinates)
   verification <- ds.validateDPGaussianCertificate(certificate)
   if (!identical(verification$integrity_valid, TRUE) ||
       !identical(verification$authenticity, "session_transport_anchored") ||
-      !identical(verification$artifact$version,
-                 .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION)) {
-    stop("The binary random-intercept GLMM Synopsis certificate is not transport-anchored",
+      !verification$artifact$version %in% c(
+        .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+    stop("The binary GLMM Synopsis certificate is not transport-anchored",
          call. = FALSE)
   }
   list(context = context, metadata = metadata,
@@ -280,17 +485,24 @@
          call. = FALSE)
   }
   moment <- released$moment
+  random_slope <- identical(
+    artifact$version, .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)
   result <- c(released$metadata, list(
     status = moment$status, analysis_id = analysis_id,
     cohort_id = released$verification$cohort_id,
     logical_snapshot = released$verification$logical_snapshot,
     certificate_sha256 = released$certificate$certificate_sha256,
     signed_artifact = artifact, server = artifact$owner_peer,
-    family = "binomial_random_intercept",
+    family = if (isTRUE(random_slope)) "binomial_random_slope" else
+      "binomial_random_intercept",
     estimand = artifact$estimation_scope,
     coefficients = moment$coefficients,
     normalized_coefficients = moment$normalized_coefficients,
-    sigma_b2 = moment$random_intercept_variance,
+    sigma_b2 = if (isTRUE(random_slope)) moment$random_effect_covariance[
+      "(Intercept)", "(Intercept)"] else moment$random_intercept_variance,
+    random_effect_covariance = if (isTRUE(random_slope))
+      moment$random_effect_covariance else NULL,
+    random_effect_order = if (isTRUE(random_slope)) moment$random_effect_order else NULL,
     selected_candidate = moment$selected_candidate,
     selected_beta_index = moment$selected_beta_index,
     selected_variance_index = moment$selected_variance_index,

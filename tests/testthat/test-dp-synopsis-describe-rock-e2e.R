@@ -42,7 +42,7 @@
   "stratified_epidemiology", "causal_standardization", "frequency",
   "mi", "mantel_haenszel", "roc", "survival", "correlation", "gaussian", "cross_owner_tamper",
   "gaussian_lasso_focal", "lmm", "lmm_random_slope_focal", "nb2", "multinom",
-  "ordinal", "glm_grid")
+  "ordinal", "glm_grid", "glmm_random_slope_focal")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
   stop("unknown DSVERT_TEST_SYNOPSIS_E2E_FAMILY", call. = FALSE)
@@ -64,6 +64,13 @@ if (nzchar(.synopsis_real_e2e_family) &&
 .synopsis_real_e2e_lmm_random_slope_only <- function() {
   if (nzchar(.synopsis_real_e2e_family) &&
       !.synopsis_real_e2e_family %in% c("lmm", "lmm_random_slope_focal")) {
+    skip(paste("focused on", .synopsis_real_e2e_family))
+  }
+}
+
+.synopsis_real_e2e_glmm_random_slope_only <- function() {
+  if (nzchar(.synopsis_real_e2e_family) &&
+      !identical(.synopsis_real_e2e_family, "glmm_random_slope_focal")) {
     skip(paste("focused on", .synopsis_real_e2e_family))
   }
 }
@@ -2761,6 +2768,92 @@ test_that("real additive binary GLMM finite grid is plausible and Rock-replayabl
     replay <- glmm(y_peer_a ~ x_peer_a, "data_peer_a", "site_peer_a",
                    "lmm_primary", "peer_a", conns, dispatch)
     expect_identical(replay$coefficients, fit$coefficients)
+    expect_identical(replay$provenance_certificate$certificate_sha256,
+                     fit$provenance_certificate$certificate_sha256)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real binary random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_glmm_random_slope_only()
+  server_ns <- .synopsis_describe_real_e2e_server()
+  glmm <- get(".dsvert_dp_glmm_grid_impl", asNamespace("dsVertClient"),
+              inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_glmm_real_e2e_fixture(k, server_ns, n = 400L)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    policy <- fixture$policies$peer_a
+    policy$capsule_workload_specs$gaussian$lmm_primary <- list(
+      version = "binary_random_slope_grid_v1", dataset = "data_peer_a",
+      outcome = "y_peer_a", cluster = "site_peer_a", predictors = "x_peer_a",
+      random_slopes = "x_peer_a", intercept = TRUE,
+      max_patients_per_cluster = 100L,
+      candidate_grid = list(
+        list(beta = c(-1, 0), covariance = c(0.25, 0, 0, 0.25)),
+        list(beta = c(-1, 2), covariance = c(0.5, 0.1, 0.1, 0.5))))
+    policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+      "x_peer_a", "y_peer_a", "site_peer_a")
+    fixture$policies$peer_a <- policy
+    data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
+    site_effect <- rep(seq(-0.35, 0.35, length.out =
+      length(policy$categorical_levels$site_peer_a)), each = 100L)
+    slope_effect <- rep(c(-0.3, 0.3), length.out = length(site_effect))
+    rank_within_site <- rep(seq_len(100L), length(site_effect) %/% 100L)
+    probability <- stats::plogis(-1 + 2 * data$x_peer_a / 10 + site_effect +
+      slope_effect * data$x_peer_a / 10)
+    data$y_peer_a <- as.numeric(
+      (rank_within_site - 0.5) / 100 < probability)
+    fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    fit <- glmm(y_peer_a ~ x_peer_a, "data_peer_a", "site_peer_a",
+                 "lmm_primary", "peer_a", conns, dispatch)
+
+    expect_s3_class(fit, "ds.vertGLMM")
+    expect_identical(fit$family, "binomial_random_slope")
+    expect_identical(fit$signed_artifact$spec_version,
+                     "binary_random_slope_grid_v1")
+    expect_identical(fit$random_effect_order, c("(Intercept)", "x_peer_a"))
+    expect_true(all(is.finite(fit$coefficients)))
+    expect_true(all(is.finite(fit$random_effect_covariance)))
+    expect_true(all(eigen(fit$random_effect_covariance,
+                          symmetric = TRUE, only.values = TRUE)$values >= -1e-12))
+    expect_true(fit$coefficients[["x_peer_a"]] %in% c(0, 0.2))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    route_glmm <- function(formula, data_name, cluster_col, analysis_id,
+                           server = NULL, datasources = NULL, .aggregate) {
+      glmm(formula, data_name, cluster_col, analysis_id, server,
+           datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_glmm_grid_impl = route_glmm,
+      list(
+        direct = ds.vertGLMM(
+          y_peer_a ~ x_peer_a, data = "data_peer_a",
+          cluster_col = "site_peer_a", analysis_id = "lmm_primary",
+          random_slopes = "x_peer_a", datasources = conns),
+        alias = ds.vert.glmm(
+          y_peer_a ~ x_peer_a, data = "data_peer_a",
+          cluster_col = "site_peer_a", analysis_id = "lmm_primary",
+          random_slopes = "x_peer_a", datasources = conns)),
+      .package = "dsVertClient")
+    expect_identical(public$direct$coefficients, fit$coefficients)
+    expect_identical(public$alias$random_effect_covariance,
+                     fit$random_effect_covariance)
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- glmm(y_peer_a ~ x_peer_a, "data_peer_a", "site_peer_a",
+                   "lmm_primary", "peer_a", conns, dispatch)
+    expect_identical(replay$coefficients, fit$coefficients)
+    expect_identical(replay$random_effect_covariance,
+                     fit$random_effect_covariance)
     expect_identical(replay$provenance_certificate$certificate_sha256,
                      fit$provenance_certificate$certificate_sha256)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)

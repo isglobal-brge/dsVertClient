@@ -653,6 +653,36 @@
                 all(is.finite(beta)) && all(abs(beta) <= 8)
             }, logical(1L))) && !anyDuplicated(beta_keys)
           if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
+        } else if (identical(spec$version, "binary_random_slope_grid_v1")) {
+          expected <- c(
+            "version", "dataset", "outcome", "cluster", "predictors",
+            "random_slopes", "intercept", "max_patients_per_cluster",
+            "candidate_grid")
+          valid <- setequal(names(spec), expected) && identifier(spec$dataset) &&
+            column_reference(spec$outcome) && column_reference(spec$cluster) &&
+            !identical(spec$outcome, spec$cluster) && isTRUE(spec$intercept) &&
+            .dsvert_dp_is_integer(spec$max_patients_per_cluster, 2L)
+          predictors <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$predictors, "GLMM fixed predictors"),
+            error = function(error) character()) else character()
+          random_slopes <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$random_slopes, "GLMM random slopes"),
+            error = function(error) character()) else character()
+          valid <- isTRUE(valid) && length(predictors) && !anyDuplicated(predictors) &&
+            !spec$outcome %in% predictors && !spec$cluster %in% predictors &&
+            all(vapply(predictors, column_reference, logical(1L))) &&
+            length(random_slopes) == 1L && random_slopes %in% predictors
+          effects <- c("(Intercept)", sort(random_slopes, method = "radix"))
+          candidates <- if (isTRUE(valid)) .dsvert_dp_glmm_random_slope_candidates(
+            spec$candidate_grid, 1L + length(predictors), effects) else list()
+          valid <- isTRUE(valid) && length(candidates) && length(candidates) <= 128L
+          if (isTRUE(valid)) {
+            candidate_grid <- lapply(candidates, function(candidate) list(
+              beta = unname(candidate$beta),
+              covariance = unname(as.vector(t(candidate$covariance)))))
+          }
         } else if (spec$version %in% c("random_intercept_fixed_v2",
                                 "random_intercept_fixed_v3")) {
           expected <- c(
@@ -730,6 +760,11 @@
       }
       if (identical(family, "gaussian") &&
           identical(spec$version, "gaussian_random_slope_grid_v1")) {
+        spec$predictors <- predictors
+        spec$random_slopes <- sort(random_slopes, method = "radix")
+        spec$candidate_grid <- candidate_grid
+      } else if (identical(family, "gaussian") &&
+                 identical(spec$version, "binary_random_slope_grid_v1")) {
         spec$predictors <- predictors
         spec$random_slopes <- sort(random_slopes, method = "radix")
         spec$candidate_grid <- candidate_grid

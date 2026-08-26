@@ -582,11 +582,12 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       paste(
         "A binary outcome ~ 1 population-average moment projection or an",
         "additive fixed-covariate finite marginal-likelihood grid from one",
-        "validated sticky same-owner random-intercept Synopsis."),
+        "validated sticky same-owner random-intercept or one-random-slope",
+        "Synopsis."),
       paste(
         "The covariate route selects only among custodian-signed finite",
         "Gauss-Hermite marginal-likelihood candidates. It is not PQL, an",
-        "unconstrained optimizer, random slopes, interactions, standard",
+        "unconstrained optimizer, arbitrary random slopes, interactions, standard",
         "errors, p-values or sampling inference."))
   add(c("ds.vertIPW", "ds.vert.ipw"), "ds.vertIPW", "promoted",
       paste(
