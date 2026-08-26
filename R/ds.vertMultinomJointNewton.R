@@ -44,25 +44,24 @@
       "sufficient."))
 }
 
-#' @title Sticky-DP intercept-only multinomial Newton compatibility frontdoor
-#' @description The historical Newton name supports only \code{y ~ 1} when
-#'   supplied a released, validated \code{ds.vertDPFrequency} object. It
-#'   returns the same deterministic Jeffreys-smoothed log-odds as
-#'   \code{ds.vertMultinom()} without a DSI call or a new opening.
+#' @title Sticky-DP multinomial Newton compatibility frontdoor
+#' @description The historical Newton name delegates either to intercept-only
+#'   \code{ds.vertDPFrequency} post-processing or to the signed finite softmax
+#'   grid accepted by \code{ds.vertMultinom()}.
 #' @details This is a compatibility route, not a joint-softmax Newton fit.
-#'   Covariates, iterative controls, covariance, standard errors and inference
-#'   remain unavailable until a purpose-bound signed
-#'   \code{multinomial_design_grams} artifact exists. Calls without
-#'   \code{frequency} fail locally before DSI.
+#'   With \code{analysis_id}, an additive formula selects only from the
+#'   custodian-signed finite grid. Covariance, standard errors and sampling
+#'   inference remain unavailable.
 #' @param formula,data,levels,indicator_template,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources,design_analysis_id
 #'   With \code{frequency}, only \code{formula}, \code{data}, \code{levels}
 #'   and \code{verbose} are accepted. The optional levels must equal the signed
 #'   category order; its first entry is the reference.
 #' @param frequency A released, validated \code{ds.vertDPFrequency} object for
 #'   the outcome. It enables only intercept-only post-processing.
-#' @return With \code{frequency}, a coefficient-only \code{ds.vertMultinom}
-#'   result. Otherwise the function raises \code{dsvert_route_unavailable}
-#'   before DSI.
+#' @param analysis_id Custodian-configured signed multinomial likelihood-grid
+#'   id for an additive covariate formula.
+#' @return A coefficient-only \code{ds.vertMultinom} result without sampling
+#'   inference.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertMultinomJointNewton <- function(formula, data = NULL, levels = NULL,
@@ -73,7 +72,19 @@ ds.vertMultinomJointNewton <- function(formula, data = NULL, levels = NULL,
                                         binomial_sigmoid_intervals = NULL,
                                         verbose = TRUE, datasources = NULL,
                                         design_analysis_id = NULL,
-                                        frequency = NULL) {
+                                        frequency = NULL, analysis_id = NULL) {
+  if (!is.null(analysis_id)) {
+    if (!is.null(frequency) || !is.null(levels) ||
+        !identical(indicator_template, "%s_ind") ||
+        !identical(max_outer, 20L) || !identical(tol, 1e-5) ||
+        !is.null(warm_max_iter) || !is.null(warm_tol) ||
+        !is.null(binomial_sigmoid_intervals) || !is.null(design_analysis_id)) {
+      stop("The signed multinomial grid does not accept legacy Newton controls",
+           call. = FALSE)
+    }
+    return(ds.vertMultinom(
+      formula, data = data, datasources = datasources, analysis_id = analysis_id))
+  }
   if (!is.null(frequency)) {
     return(.dsvert_formal_multinom_joint_frequency_adapter(
       method = "ds.vertMultinomJointNewton",

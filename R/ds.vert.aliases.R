@@ -11,10 +11,10 @@
 #' \code{fresh_formal_analysis_id} runs only the corresponding
 #' custodian-configured durable formal analysis. Neither runs the retired
 #' iterative route.
-#' \code{ds.vert.multinom(..., frequency = x)} is likewise limited to
-#' intercept-only log-odds post-processed from one validated sticky Frequency
-#' release. Supplying \code{server} instead reads that canonical release;
-#' covariates and inference controls remain unavailable.
+#' \code{ds.vert.multinom(..., frequency = x)} is an intercept-only log-odds
+#' postprocess from one validated sticky Frequency release. With a signed
+#' \code{analysis_id}, it selects additive softmax coefficients from one finite
+#' sticky-DP likelihood grid; covariance and sampling inference remain unavailable.
 #' \code{ds.vert.ordinal(..., frequency = x)} likewise returns only
 #' intercept-only cumulative-logit thresholds from the same kind of release;
 #' its complete ordered category domain must be explicit. It can likewise read
@@ -56,10 +56,10 @@
 #' @param variables,var1,var2 Column selections for descriptive / bivariate routes.
 #' @param cluster_col Grouping column for the mixed-model routes.
 #' @param analysis_id,dp_analysis_id Custodian-configured signed random-intercept,
-#'   Gaussian, or NB2 finite-grid artifact id. \code{analysis_id} is required
-#'   by \code{ds.vert.lmm()} and \code{ds.vert.glmm()} and enables the
-#'   finite-grid NB2 alias; \code{dp_analysis_id} enables only independent
-#'   Gaussian GEE post-processing.
+#'   Gaussian, NB2, or multinomial finite-grid artifact id. \code{analysis_id}
+#'   is required by \code{ds.vert.lmm()} and \code{ds.vert.glmm()} and enables
+#'   finite-grid NB2 and multinomial aliases; \code{dp_analysis_id} enables only
+#'   independent Gaussian GEE post-processing.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag. For
 #'   code{ds.vert.glmm()}, code{method = "auto"} selects the signed
@@ -492,6 +492,15 @@ ds.vert.nb <- function(formula, data = NULL, server = NULL,
 ds.vert.multinom <- function(formula, data = NULL, server = NULL,
                              datasources = NULL, ...) {
   extras <- list(...)
+  if (!is.null(extras$analysis_id)) {
+    if (!is.null(server)) {
+      stop("The signed multinomial grid does not accept server", call. = FALSE)
+    }
+    out <- do.call(ds.vertMultinom, c(
+      list(formula = formula, data = data, datasources = datasources), extras))
+    return(.dsvert_set_frontdoor(out, "ds.vert.multinom",
+                                 "ds.vertMultinom", NULL))
+  }
   if (!is.null(extras$frequency)) {
     if ("datasources" %in% names(match.call())[-1L] || !is.null(server)) {
       stop("Frequency-backed multinomial does not accept datasources or server", call. = FALSE)

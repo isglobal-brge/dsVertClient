@@ -101,6 +101,12 @@
       manifest, data_name, analysis_id, owner_peer, adjacency, scale,
       capacity))
   }
+  if (is.list(artifact) && identical(
+        artifact$version, .DSVERT_CLIENT_DP_MULTINOM_GRID_ARTIFACT_VERSION)) {
+    return(.dsvert_dp_multinom_grid_artifact(
+      manifest, data_name, analysis_id, owner_peer, adjacency, scale,
+      capacity))
+  }
   required <- c(
     "version", "spec_version", "analysis_id", "dataset", "owner_peer",
     "outcome", "predictors", "predictor_order", "intercept",

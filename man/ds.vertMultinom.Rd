@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertMultinom.R
 \name{ds.vertMultinom}
 \alias{ds.vertMultinom}
-\title{Sticky-DP intercept-only multinomial frontdoor}
+\title{Sticky-DP multinomial frontdoor}
 \usage{
 ds.vertMultinom(
   formula,
@@ -21,14 +21,14 @@ ds.vertMultinom(
   ...,
   design_analysis_id = NULL,
   frequency = NULL,
-  server = NULL
+  server = NULL,
+  analysis_id = NULL
 )
 }
 \arguments{
-\item{formula, data, classes, reference, indicator_template, max_iter, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources, design_analysis_id}{Retained compatibility arguments. They are not evaluated because the
-public joint-softmax frontdoor fails locally. With a validated
-\code{frequency} object, only \code{y ~ 1} is available and it returns
-the sticky-DP categorical intercept fit.}
+\item{formula, data, classes, reference, indicator_template, max_iter, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources, design_analysis_id}{Retained compatibility arguments. With a validated \code{frequency}
+object, only \code{y ~ 1} is available and it returns the sticky-DP
+categorical intercept fit.}
 
 \item{...}{Retained compatibility arguments; not evaluated.}
 
@@ -38,10 +38,15 @@ it never starts another analysis or reveals a raw category count.}
 
 \item{server}{Required source-owner when \code{frequency} is absent. The
 frontdoor reads the canonical signed Frequency artifact for the outcome.}
+
+\item{analysis_id}{Custodian-configured signed multinomial likelihood-grid id
+for an additive covariate formula.}
 }
 \value{
 With \code{frequency} or \code{server}, a coefficient-only
-\code{ds.vertMultinom} object. Otherwise the function raises
+intercept-only \code{ds.vertMultinom} object. With \code{analysis_id},
+a finite-grid multinomial coefficient matrix without sampling inference.
+Otherwise the function raises
 \code{dsvert_route_unavailable} before DSI.
 }
 \description{
@@ -50,12 +55,14 @@ or an explicit \code{server} from which it can be read,
 this frontdoor fits \code{y ~ 1} by deterministic post-processing of that
 one sticky categorical release. It returns Jeffreys-smoothed intercept
 log-odds and never starts a new analysis or DSI request.
+With \code{analysis_id}, additive bare predictors select one candidate
+from a signed sticky-DP finite softmax likelihood grid.
 }
 \details{
-This is deliberately narrower than a covariate multinomial model:
-predictors, joint softmax, covariance, standard errors and inference stay
-unavailable until a signed score-design artifact exists. Calls without
-\code{frequency} or \code{server} retain the local zero-DSI quarantine gate.
+The Frequency route is intercept-only and never starts a new
+analysis. The grid route requires a same-owner signed categorical domain,
+finite beta grid and public predictor bounds. Neither route returns
+covariance, standard errors or sampling inference.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

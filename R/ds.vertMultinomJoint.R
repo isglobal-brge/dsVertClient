@@ -1,28 +1,38 @@
-#' @title Sticky-DP intercept-only multinomial compatibility frontdoor
-#' @description The historical joint-multinomial name supports only \code{y ~ 1}
-#'   when given a released, validated \code{ds.vertDPFrequency} object. It
-#'   delegates to the same deterministic Jeffreys-smoothed log-odds
-#'   post-processing as \code{ds.vertMultinom()} and makes no DSI request.
+#' @title Sticky-DP multinomial compatibility frontdoor
+#' @description The historical joint-multinomial name delegates either to
+#'   intercept-only \code{ds.vertDPFrequency} post-processing or to the
+#'   signed finite softmax grid accepted by \code{ds.vertMultinom()}.
 #' @details This does not re-enable the joint-softmax Newton estimator.
-#'   Covariates, iterative controls, covariance, standard errors and inference
-#'   remain unavailable until a purpose-bound protected score/design artifact
-#'   exists. Calls without \code{frequency} fail locally before DSI.
+#'   With \code{analysis_id}, an additive formula selects only from the
+#'   custodian-signed finite grid. Covariance, standard errors and sampling
+#'   inference remain unavailable.
 #' @param formula,data,levels,max_iter,tol,verbose,datasources,design_analysis_id
 #'   With \code{frequency}, only \code{formula}, \code{data}, \code{levels}
 #'   and \code{verbose} are accepted. The optional levels must be exactly the
 #'   signed category order; its first category is the reference.
 #' @param frequency A released, validated \code{ds.vertDPFrequency} object for
 #'   the outcome. It enables only the intercept-only post-processing route.
-#' @return With \code{frequency}, a coefficient-only \code{ds.vertMultinom}
-#'   result. Otherwise the function raises \code{dsvert_route_unavailable}
-#'   before DSI.
+#' @param analysis_id Custodian-configured signed multinomial likelihood-grid
+#'   id for an additive covariate formula.
+#' @return A coefficient-only \code{ds.vertMultinom} result without sampling
+#'   inference.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertMultinomJoint <- function(formula, data = NULL, levels = NULL,
                                  max_iter = 30L, tol = 1e-4,
                                  verbose = TRUE, datasources = NULL,
                                  design_analysis_id = NULL,
-                                 frequency = NULL) {
+                                 frequency = NULL, analysis_id = NULL) {
+  if (!is.null(analysis_id)) {
+    if (!is.null(frequency) || !is.null(levels) ||
+        !identical(max_iter, 30L) || !identical(tol, 1e-4) ||
+        !is.null(design_analysis_id)) {
+      stop("The signed multinomial grid does not accept legacy joint controls",
+           call. = FALSE)
+    }
+    return(ds.vertMultinom(
+      formula, data = data, datasources = datasources, analysis_id = analysis_id))
+  }
   if (!is.null(frequency)) {
     return(.dsvert_formal_multinom_joint_frequency_adapter(
       method = "ds.vertMultinomJoint",

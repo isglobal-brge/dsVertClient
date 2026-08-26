@@ -577,15 +577,16 @@
   add(
     c("ds.vertMultinom", "ds.vert.multinom", "ds.vertMultinomJoint",
       "ds.vertMultinomJointNewton"),
-    "ds.vertMultinom", "multinomial_intercept_frequency",
+    "ds.vertMultinom", "multinomial_frequency_or_finite_grid",
     c("validated_sticky_frequency_artifact", "fixed_category_domain",
-      "zero_call_postprocessing"),
+      "signed_finite_softmax_beta_grid"),
     paste(
       "Intercept-only multinomial log-odds with deterministic Jeffreys",
-      "smoothing of one validated sticky categorical Frequency release."),
+      "smoothing of one validated sticky categorical Frequency release, or",
+      "additive coefficients from one same-owner signed finite softmax grid."),
     c("fixed_category_domain", "validated_frequency_provenance",
-      "no_covariates", "no_covariance_or_inference"),
-    "frequency_operation_implemented",
+      "finite_signed_softmax_beta_grid", "no_covariance_or_inference"),
+    "synopsis_release_implemented",
     character(),
     c("ds.vert.multinom" = "ds.vertMultinom",
       "ds.vertMultinomJoint" = "ds.vertMultinom",
@@ -593,10 +594,11 @@
     alias_kinds = c(
       "ds.vertMultinomJoint" = "compatibility_wrapper",
       "ds.vertMultinomJointNewton" = "compatibility_wrapper"),
-    current_route_status = "client_only_validated_capsule_postprocess",
+    current_route_status = "formal_sticky_synopsis_artifact",
     artifact_implementation_state =
-      "validated_frequency_artifact_adapter_implemented",
-    inference_implementation_state = "frequency_postprocess_implemented")
+      "validated_frequency_and_finite_grid_artifact_adapters_implemented",
+    inference_implementation_state =
+      "frequency_and_finite_grid_postprocess_implemented")
 
   add(
     c("ds.vertOrdinal", "ds.vert.ordinal", "ds.vertOrdinalJointNewton"),

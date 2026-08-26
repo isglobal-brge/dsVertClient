@@ -1,26 +1,31 @@
-#' @title Sticky-DP intercept-only multinomial frontdoor
+#' @title Sticky-DP multinomial frontdoor
 #' @description With a released, validated \code{ds.vertDPFrequency} object,
 #'   or an explicit \code{server} from which it can be read,
 #'   this frontdoor fits \code{y ~ 1} by deterministic post-processing of that
 #'   one sticky categorical release. It returns Jeffreys-smoothed intercept
 #'   log-odds and never starts a new analysis or DSI request.
-#' @details This is deliberately narrower than a covariate multinomial model:
-#'   predictors, joint softmax, covariance, standard errors and inference stay
-#'   unavailable until a signed score-design artifact exists. Calls without
-#'   \code{frequency} or \code{server} retain the local zero-DSI quarantine gate.
+#'   With \code{analysis_id}, additive bare predictors select one candidate
+#'   from a signed sticky-DP finite softmax likelihood grid.
+#' @details The Frequency route is intercept-only and never starts a new
+#'   analysis. The grid route requires a same-owner signed categorical domain,
+#'   finite beta grid and public predictor bounds. Neither route returns
+#'   covariance, standard errors or sampling inference.
 #' @param formula,data,classes,reference,indicator_template,max_iter,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources,design_analysis_id
-#'   Retained compatibility arguments. They are not evaluated because the
-#'   public joint-softmax frontdoor fails locally. With a validated
-#'   \code{frequency} object, only \code{y ~ 1} is available and it returns
-#'   the sticky-DP categorical intercept fit.
+#'   Retained compatibility arguments. With a validated \code{frequency}
+#'   object, only \code{y ~ 1} is available and it returns the sticky-DP
+#'   categorical intercept fit.
 #' @param server Required source-owner when \code{frequency} is absent. The
 #'   frontdoor reads the canonical signed Frequency artifact for the outcome.
 #' @param frequency A released, validated \code{ds.vertDPFrequency} object for
 #'   the outcome. This enables only intercept-only multinomial coefficients;
 #'   it never starts another analysis or reveals a raw category count.
 #' @param ... Retained compatibility arguments; not evaluated.
+#' @param analysis_id Custodian-configured signed multinomial likelihood-grid id
+#'   for an additive covariate formula.
 #' @return With \code{frequency} or \code{server}, a coefficient-only
-#'   \code{ds.vertMultinom} object. Otherwise the function raises
+#'   intercept-only \code{ds.vertMultinom} object. With \code{analysis_id},
+#'   a finite-grid multinomial coefficient matrix without sampling inference.
+#'   Otherwise the function raises
 #'   \code{dsvert_route_unavailable} before DSI.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
@@ -31,8 +36,29 @@ ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
                             binomial_sigmoid_intervals = NULL,
                             verbose = TRUE, datasources = NULL, ...,
                             design_analysis_id = NULL, frequency = NULL,
-                            server = NULL) {
+                            server = NULL, analysis_id = NULL) {
   explicit_arguments <- names(match.call())[-1L]
+  if (!is.null(analysis_id)) {
+    if (!is.null(frequency) || !is.null(server) || !is.null(design_analysis_id) ||
+        !is.null(classes) || !is.null(reference) ||
+        !is.character(analysis_id) || length(analysis_id) != 1L ||
+        is.na(analysis_id) || !nzchar(analysis_id)) {
+      stop("The signed multinomial grid requires analysis_id without legacy controls",
+           call. = FALSE)
+    }
+    terms <- if (inherits(formula, "formula")) stats::terms(formula) else NULL
+    predictors <- if (is.null(terms)) character() else attr(terms, "term.labels")
+    if (!inherits(formula, "formula") || length(formula) != 3L ||
+        !is.symbol(formula[[2L]]) || !identical(attr(terms, "intercept"), 1L) ||
+        !length(predictors) || any(!grepl("^[A-Za-z.][A-Za-z0-9._]*$", predictors))) {
+      stop("The signed multinomial grid requires an intercept and additive bare column names",
+           call. = FALSE)
+    }
+    resolved <- .dsvert_federation_argument(data, datasources)
+    return(.dsvert_dp_multinom_grid_impl(
+      formula, resolved$value, analysis_id, datasources = resolved$datasources,
+      .aggregate = DSI::datashield.aggregate))
+  }
   if (is.null(frequency) && (!is.null(server) ||
                              (!missing(formula) &&
                               .dsvert_dp_frequency_intercept_formula(formula)))) {
@@ -345,6 +371,14 @@ ds.vertMultinom <- function(formula, data = NULL, classes = NULL,
 
 #' @export
 print.ds.vertMultinom <- function(x, ...) {
+  if (inherits(x, "dsvert_dp_multinom_grid")) {
+    cat("dsVert signed finite-grid multinomial regression\n")
+    cat("  Reference class:", x$reference, "\n")
+    cat(sprintf("  Selected signed candidate = %d\n", x$selected_candidate))
+    print(round(x$coefficients, 5L))
+    cat("  Covariance, standard errors and sampling inference are unavailable.\n")
+    return(invisible(x))
+  }
   if (inherits(x, "dsvert_dp_frequency_multinom")) {
     cat("dsVert sticky-DP intercept-only multinomial fit\n")
     cat("  Reference class:", x$reference, "\n")

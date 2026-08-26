@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertMultinomJoint.R
 \name{ds.vertMultinomJoint}
 \alias{ds.vertMultinomJoint}
-\title{Sticky-DP intercept-only multinomial compatibility frontdoor}
+\title{Sticky-DP multinomial compatibility frontdoor}
 \usage{
 ds.vertMultinomJoint(
   formula,
@@ -13,7 +13,8 @@ ds.vertMultinomJoint(
   verbose = TRUE,
   datasources = NULL,
   design_analysis_id = NULL,
-  frequency = NULL
+  frequency = NULL,
+  analysis_id = NULL
 )
 }
 \arguments{
@@ -23,23 +24,24 @@ signed category order; its first category is the reference.}
 
 \item{frequency}{A released, validated \code{ds.vertDPFrequency} object for
 the outcome. It enables only the intercept-only post-processing route.}
+
+\item{analysis_id}{Custodian-configured signed multinomial likelihood-grid
+id for an additive covariate formula.}
 }
 \value{
-With \code{frequency}, a coefficient-only \code{ds.vertMultinom}
-result. Otherwise the function raises \code{dsvert_route_unavailable}
-before DSI.
+A coefficient-only \code{ds.vertMultinom} result without sampling
+inference.
 }
 \description{
-The historical joint-multinomial name supports only \code{y ~ 1}
-when given a released, validated \code{ds.vertDPFrequency} object. It
-delegates to the same deterministic Jeffreys-smoothed log-odds
-post-processing as \code{ds.vertMultinom()} and makes no DSI request.
+The historical joint-multinomial name delegates either to
+intercept-only \code{ds.vertDPFrequency} post-processing or to the
+signed finite softmax grid accepted by \code{ds.vertMultinom()}.
 }
 \details{
 This does not re-enable the joint-softmax Newton estimator.
-Covariates, iterative controls, covariance, standard errors and inference
-remain unavailable until a purpose-bound protected score/design artifact
-exists. Calls without \code{frequency} fail locally before DSI.
+With \code{analysis_id}, an additive formula selects only from the
+custodian-signed finite grid. Covariance, standard errors and sampling
+inference remain unavailable.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

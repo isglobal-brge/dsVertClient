@@ -146,7 +146,7 @@ test_that("GLMM help names the signed binary moment and finite-grid scopes", {
                   status == "promoted"))
 })
 
-test_that("multinomial help limits Frequency post-processing to y ~ 1", {
+test_that("multinomial help scopes Frequency and finite-grid routes", {
   package_root <- dirname(.dsvert_client_source_root())
   source <- .dsvert_public_roxygen_text("ds.vertMultinom.R", "ds.vertMultinom")
   rd_path <- file.path(package_root, "man", "ds.vertMultinom.Rd")
@@ -160,17 +160,17 @@ test_that("multinomial help limits Frequency post-processing to y ~ 1", {
     expect_match(text, "y ~ 1", fixed = TRUE)
     expect_match(text, "Jeffreys", fixed = TRUE)
     expect_match(text, "never starts a new analysis", fixed = TRUE)
-    expect_match(text, "joint softmax", ignore.case = TRUE)
+    expect_match(text, "softmax", ignore.case = TRUE)
+    expect_match(text, "analysis_id", fixed = TRUE)
+    expect_match(text, "finite", ignore.case = TRUE)
     expect_match(text, "standard errors", ignore.case = TRUE)
   }
 })
 
-test_that("historical joint compatibility help keeps the Frequency-only boundary", {
+test_that("historical joint names document the finite-grid compatibility boundary", {
   package_root <- dirname(.dsvert_client_source_root())
-  topics <- c(
-    "ds.vertMultinomJoint" = "ds.vertMultinomJoint.R",
-    "ds.vertMultinomJointNewton" = "ds.vertMultinomJointNewton.R",
-    "ds.vertOrdinalJointNewton" = "ds.vertOrdinalJointNewton.R")
+  topics <- c("ds.vertMultinomJoint" = "ds.vertMultinomJoint.R",
+              "ds.vertMultinomJointNewton" = "ds.vertMultinomJointNewton.R")
   for (topic in names(topics)) {
     source <- .dsvert_public_roxygen_text(topics[[topic]], topic)
     rd_path <- file.path(package_root, "man", paste0(topic, ".Rd"))
@@ -178,12 +178,23 @@ test_that("historical joint compatibility help keeps the Frequency-only boundary
     rd <- paste(readLines(rd_path, warn = FALSE), collapse = "\n")
     for (text in list(source, rd)) {
       expect_match(text, "ds.vertDPFrequency", fixed = TRUE)
+      expect_match(text, "analysis_id", fixed = TRUE)
+      expect_match(text, "finite", ignore.case = TRUE)
+      expect_match(text, "standard errors", ignore.case = TRUE)
+    }
+  }
+  source <- .dsvert_public_roxygen_text(
+    "ds.vertOrdinalJointNewton.R", "ds.vertOrdinalJointNewton")
+  rd_path <- file.path(package_root, "man", "ds.vertOrdinalJointNewton.Rd")
+  if (!file.exists(rd_path)) testthat::fail("missing help: ds.vertOrdinalJointNewton")
+  rd <- paste(readLines(rd_path, warn = FALSE), collapse = "\n")
+  for (text in list(source, rd)) {
+      expect_match(text, "ds.vertDPFrequency", fixed = TRUE)
       expect_match(text, "y ~ 1", fixed = TRUE)
       expect_match(text, "Covariates", fixed = TRUE)
       expect_match(text, "standard errors", ignore.case = TRUE)
       expect_match(text, "before DSI", fixed = TRUE)
     }
-  }
 })
 
 test_that("NB2 help limits Frequency post-processing to bounded y ~ 1 counts", {

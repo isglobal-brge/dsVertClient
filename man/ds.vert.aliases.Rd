@@ -75,7 +75,14 @@ ds.vert.coxph(
   ...
 )
 
-ds.vert.nb(formula, data = NULL, server = NULL, method = "accurate", datasources = NULL, ...)
+ds.vert.nb(
+  formula,
+  data = NULL,
+  server = NULL,
+  method = "accurate",
+  datasources = NULL,
+  ...
+)
 
 ds.vert.multinom(formula, data = NULL, server = NULL, datasources = NULL, ...)
 
@@ -180,9 +187,6 @@ ds.vert.contrast(
 Model formulas may qualify ambiguous columns as
 \code{site_name$column}; the expression is parsed, never evaluated.}
 
-\item{server}{Required source-owner when an intercept-only NB2, multinomial,
-or ordinal alias resolves its canonical signed Frequency artifact itself.}
-
 \item{id_col, newobj}{Record-identifier column and output symbol for alignment.
 \code{data_name} and \code{id_col} may each be one string broadcast to all
 sites or a complete named per-site character/list map.}
@@ -193,27 +197,30 @@ sites or a complete named per-site character/list map.}
 
 \item{precision, method, ring, verbose}{Binomial-sigmoid precision preset,
 estimator/route selector, fixed-point ring, and progress flag. For
-\code{ds.vert.glmm()}, \code{method = "auto"} selects the signed
+code{ds.vert.glmm()}, code{method = "auto"} selects the signed
 intercept-only moment or additive finite-grid artifact from the formula;
 the explicit values must agree with that formula.}
 
 \item{formal_analysis_id, fresh_formal_analysis_id}{Custodian-owned selector
-for an already completed formal Cox profile, binomial/Poisson GLM certificate,
-or discrete-time public certificate. The fresh GLM selector is accepted by
-\code{ds.vert.glm()} and \code{ds.vert.gee()} only to run its configured
-durable analysis. The fresh Cox selector is accepted by
-\code{ds.vert.cox()} and \code{ds.vert.coxph()} only for the profile route.
-The GEE adapter remains limited to the GLM independence-working point-estimate
-scope, and the discrete selector remains a distinct fixed-grid pooled-logistic
-estimand.}
+for an already completed formal Cox profile, binomial/Poisson GLM
+certificate, or discrete-time public certificate. The fresh GLM selector
+is accepted by \code{ds.vert.glm()} and \code{ds.vert.gee()} only to run
+its configured durable analysis. The fresh Cox selector is accepted by
+\code{ds.vert.cox()} and \code{ds.vert.coxph()} only for the profile
+route. The GEE adapter remains limited to the GLM independence-working
+point-estimate scope, and the discrete selector remains a distinct
+fixed-grid pooled-logistic estimand.}
 
-\item{analysis_id, dp_analysis_id}{Custodian-configured signed random-intercept,
-Gaussian, or NB2 finite-grid artifact id. \code{analysis_id} is required
-by \code{ds.vert.lmm()} and \code{ds.vert.glmm()} and enables the
-finite-grid NB2 alias; \code{dp_analysis_id} enables only independent
-Gaussian GEE post-processing.}
+\item{server}{Required source-owner when an intercept-only NB2, multinomial,
+or ordinal alias resolves its canonical signed Frequency artifact itself.}
 
 \item{cluster_col}{Grouping column for the mixed-model routes.}
+
+\item{analysis_id, dp_analysis_id}{Custodian-configured signed random-intercept,
+Gaussian, NB2, or multinomial finite-grid artifact id. \code{analysis_id}
+is required by \code{ds.vert.lmm()} and \code{ds.vert.glmm()} and enables
+finite-grid NB2 and multinomial aliases; \code{dp_analysis_id} enables only
+independent Gaussian GEE post-processing.}
 
 \item{max_iter, inner_iter, max_outer, tol}{Iteration caps and convergence
 tolerance for the iterative fits.}
@@ -224,14 +231,9 @@ tolerance for the iterative fits.}
 
 \item{fit, reduced, full, parm, level, type, null, K}{Inference-helper inputs
 (fitted object, nested models, parameter, confidence level, interval type,
-null value, class count). For \code{ds.vert.confint},
-\code{type = "mechanism"} requests the signed Gaussian DP-mechanism region;
-it is not a sampling confidence interval. The same type for
-\code{ds.vert.wald} and \code{ds.vert.contrast} returns an outer
-DP-mechanism null region, never a sampling test or p-value. For
-\code{ds.vert.lr}, it accepts retained Gaussian terms and returns a bounded
-normalized RSS-reduction region from the same signed release, never a
-likelihood-ratio statistic, chi-square reference or p-value.}
+null value, class count). For code{ds.vert.confint()},
+code{type = "mechanism"} requests the signed Gaussian DP-mechanism
+region; it is not a sampling confidence interval.}
 
 \item{lambda, lambda_1, lambda_grid}{Penalty or penalty grid for the LASSO routes.}
 }
@@ -247,10 +249,10 @@ completed custodian-signed public certificate; a
 \code{fresh_formal_analysis_id} runs only the corresponding
 custodian-configured durable formal analysis. Neither runs the retired
 iterative route.
-\code{ds.vert.multinom(..., frequency = x)} is likewise limited to
-intercept-only log-odds post-processed from one validated sticky Frequency
-release. Supplying \code{server} instead reads that canonical release;
-covariates and inference controls remain unavailable.
+\code{ds.vert.multinom(..., frequency = x)} is an intercept-only log-odds
+postprocess from one validated sticky Frequency release. With a signed
+\code{analysis_id}, it selects additive softmax coefficients from one finite
+sticky-DP likelihood grid; covariance and sampling inference remain unavailable.
 \code{ds.vert.ordinal(..., frequency = x)} likewise returns only
 intercept-only cumulative-logit thresholds from the same kind of release;
 its complete ordered category domain must be explicit. It can likewise read

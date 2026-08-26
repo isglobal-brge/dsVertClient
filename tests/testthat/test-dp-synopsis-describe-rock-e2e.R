@@ -41,7 +41,7 @@
   "describe", "same_owner_contingency", "cross_owner_contingency",
   "stratified_epidemiology", "causal_standardization", "frequency",
   "mi", "mantel_haenszel", "roc", "survival", "correlation", "gaussian", "cross_owner_tamper",
-  "gaussian_lasso_focal", "lmm", "nb2")
+  "gaussian_lasso_focal", "lmm", "nb2", "multinom")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
   stop("unknown DSVERT_TEST_SYNOPSIS_E2E_FAMILY", call. = FALSE)
@@ -618,6 +618,38 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
   fixture$snapshots$peer_a[["data_peer_a"]]$data <- data.frame(
     patient_id = paste0("u", seq_len(n)), x_peer_a = x, y_peer_a = y,
     stringsAsFactors = FALSE)
+  fixture
+}
+
+.synopsis_multinom_real_e2e_fixture <- function(k, server_ns, n = 400L) {
+  fixture <- .synopsis_gaussian_real_e2e_fixture(k, server_ns, n = n)
+  for (peer in fixture$peers) {
+    policy <- fixture$policies[[peer]]
+    policy$capsule_workload_scope <- list(
+      mode = "catalog_v1", numeric_moments = character(),
+      categorical_marginals = character(), categorical_pairs = list(),
+      correlations = list())
+    policy$capsule_workload_specs$describe <- list()
+    policy$capsule_workload_specs$survival <- list()
+    policy$capsule_workload_specs$gaussian <- list()
+    if (identical(peer, "peer_a")) {
+      policy$numeric_bounds$y_peer_a <- NULL
+      policy$categorical_levels$class_peer_a <- c("A", "B", "C")
+      policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+        "x_peer_a", "class_peer_a")
+      policy$capsule_workload_specs$gaussian$multinom_primary <- list(
+        version = "multinomial_grid_v1", dataset = "data_peer_a",
+        outcome = "class_peer_a", predictors = "x_peer_a", intercept = TRUE,
+        levels = c("A", "B", "C"), reference = "A",
+        beta_grid = list(c(0, 0, 0, 0), c(1, 0, 0, 2)))
+    }
+    fixture$policies[[peer]] <- policy
+  }
+  x <- rep(c(0, 10), length.out = n)
+  outcome <- ifelse(x == 0, "B", "C")
+  fixture$snapshots$peer_a[["data_peer_a"]]$data <- data.frame(
+    patient_id = paste0("u", seq_len(n)), x_peer_a = x,
+    class_peer_a = outcome, stringsAsFactors = FALSE)
   fixture
 }
 
@@ -2611,6 +2643,76 @@ test_that("real additive NB2 finite grid is plausible and Rock-replayable at K=2
     }), fixture$peers)
     replay <- nb2(y_peer_a ~ x_peer_a, "data_peer_a", "nb2_primary",
                   "peer_a", conns, dispatch)
+    expect_identical(replay$coefficients, fit$coefficients)
+    expect_identical(replay$provenance_certificate$certificate_sha256,
+                     fit$provenance_certificate$certificate_sha256)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real additive multinomial finite grid is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("multinom")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  multinom <- get(".dsvert_dp_multinom_grid_impl", asNamespace("dsVertClient"),
+                  inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_multinom_real_e2e_fixture(k, server_ns, n = 400L)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    fit <- multinom(class_peer_a ~ x_peer_a, "data_peer_a", "multinom_primary",
+                    "peer_a", conns, dispatch)
+
+    expect_s3_class(fit, "ds.vertMultinom")
+    expect_identical(fit$family, "multinomial_finite_grid")
+    expect_identical(fit$signed_artifact$spec_version, "multinomial_grid_v1")
+    expect_identical(fit$signed_artifact$design_terms,
+                     c("(Intercept)", "x_peer_a"))
+    expect_identical(fit$reference, "A")
+    expect_identical(colnames(fit$coefficients), c("B", "C"))
+    expect_identical(rownames(fit$coefficients), c("(Intercept)", "x_peer_a"))
+    expect_true(all(is.finite(fit$coefficients)))
+    expect_true(all(fit$coefficients %in% c(0, 0.1, 0.2, 1, 2)))
+    expect_true(fit$selected_candidate %in% seq_len(2L))
+    expect_null(fit$covariance)
+    expect_null(fit$std_errors)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    route_multinom <- function(formula, data_name, analysis_id, server = NULL,
+                                datasources = NULL, .aggregate) {
+      multinom(formula, data_name, analysis_id, server, datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_multinom_grid_impl = route_multinom,
+      list(
+        direct = ds.vertMultinom(
+          class_peer_a ~ x_peer_a, data = "data_peer_a",
+          analysis_id = "multinom_primary", datasources = conns),
+        alias = ds.vert.multinom(
+          class_peer_a ~ x_peer_a, data = "data_peer_a",
+          analysis_id = "multinom_primary", datasources = conns),
+        joint = ds.vertMultinomJoint(
+          class_peer_a ~ x_peer_a, data = "data_peer_a",
+          analysis_id = "multinom_primary", datasources = conns),
+        newton = ds.vertMultinomJointNewton(
+          class_peer_a ~ x_peer_a, data = "data_peer_a",
+          analysis_id = "multinom_primary", datasources = conns)),
+      .package = "dsVertClient")
+    expect_identical(public$direct$coefficients, fit$coefficients)
+    expect_identical(public$alias$coefficients, fit$coefficients)
+    expect_identical(public$joint$coefficients, fit$coefficients)
+    expect_identical(public$newton$coefficients, fit$coefficients)
+    expect_identical(public$alias$frontdoor, "ds.vert.multinom")
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- multinom(class_peer_a ~ x_peer_a, "data_peer_a", "multinom_primary",
+                       "peer_a", conns, dispatch)
     expect_identical(replay$coefficients, fit$coefficients)
     expect_identical(replay$provenance_certificate$certificate_sha256,
                      fit$provenance_certificate$certificate_sha256)

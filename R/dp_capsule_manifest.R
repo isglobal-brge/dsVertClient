@@ -386,7 +386,50 @@
           valid <- all(diff(grid) > 0)
         }
       } else if (identical(family, "gaussian")) {
-        if (identical(spec$version, "negative_binomial_grid_v1")) {
+        if (identical(spec$version, "multinomial_grid_v1")) {
+          expected <- c(
+            "version", "dataset", "outcome", "predictors", "intercept",
+            "levels", "reference", "beta_grid")
+          valid <- setequal(names(spec), expected) &&
+            identifier(spec$dataset) && column_reference(spec$outcome) &&
+            isTRUE(spec$intercept)
+          predictors <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$predictors, "multinomial fixed predictors"),
+            error = function(error) character()) else character()
+          levels <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$levels, "multinomial outcome levels"),
+            error = function(error) character()) else character()
+          reference <- if (isTRUE(valid) && .dsvert_dp_is_string(spec$reference)) {
+            enc2utf8(spec$reference)
+          } else NA_character_
+          beta_grid <- spec$beta_grid
+          if (!is.list(beta_grid) || !is.null(names(beta_grid))) {
+            beta_grid <- list()
+          } else {
+            beta_grid <- lapply(beta_grid, function(beta) tryCatch(
+              .dsvert_dp_capsule_manifest_number_array(
+                beta, "multinomial beta grid row"),
+              error = function(error) numeric()))
+          }
+          expected_dimension <- (length(levels) - 1L) * (1L + length(predictors))
+          beta_keys <- if (length(beta_grid)) vapply(beta_grid, function(beta) {
+            .dsvert_joint_dp_client_json(as.list(beta))
+          }, character(1L)) else character()
+          valid <- isTRUE(valid) && length(predictors) &&
+            !anyDuplicated(predictors) && !spec$outcome %in% predictors &&
+            all(vapply(predictors, column_reference, logical(1L))) &&
+            length(levels) >= 3L && !anyDuplicated(levels) &&
+            identical(levels, sort(levels, method = "radix")) &&
+            !is.na(reference) && reference %in% levels &&
+            length(beta_grid) && length(beta_grid) <= 256L &&
+            all(vapply(beta_grid, function(beta) {
+              length(beta) == expected_dimension && !anyNA(beta) &&
+                all(is.finite(beta)) && all(abs(beta) <= 8)
+            }, logical(1L))) && !anyDuplicated(beta_keys)
+          if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
+        } else if (identical(spec$version, "negative_binomial_grid_v1")) {
           expected <- c(
             "version", "dataset", "outcome", "predictors", "intercept",
             "max_outcome", "beta_grid", "theta_grid")
@@ -559,6 +602,12 @@
         spec$predictors <- predictors
         spec$beta_grid <- beta_grid
         spec$theta_grid <- theta_grid
+      } else if (identical(family, "gaussian") &&
+                 identical(spec$version, "multinomial_grid_v1")) {
+        spec$predictors <- predictors
+        spec$levels <- levels
+        spec$reference <- reference
+        spec$beta_grid <- beta_grid
       }
       normalized[[analysis_id]] <- spec
     }

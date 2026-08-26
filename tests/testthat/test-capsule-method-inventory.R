@@ -619,10 +619,10 @@ test_that("mixed variants and Frequency compatibility names have explicit scopes
       "formal_sticky_synopsis_artifact"))
   expect_true(all(inventory$current_route_status[
     inventory$method %in% frequency_multinom] ==
-      "client_only_validated_capsule_postprocess"))
+      "formal_sticky_synopsis_artifact"))
   expect_true(all(inventory$inference_implementation_state[
     inventory$method %in% frequency_multinom] ==
-      "frequency_postprocess_implemented"))
+      "frequency_and_finite_grid_postprocess_implemented"))
   expect_true(all(inventory$current_route_status[
     inventory$method %in% frequency_ordinal] ==
       "client_only_validated_capsule_postprocess"))

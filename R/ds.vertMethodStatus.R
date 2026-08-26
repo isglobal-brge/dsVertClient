@@ -533,14 +533,13 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "ds.vertMultinomJointNewton"),
       "ds.vertMultinom", "promoted",
       paste(
-        "Read-only intercept-only multinomial log-odds from one validated",
-        "sticky DP Frequency release, including the historical joint names;",
-        "it performs no new DSI call or opening."),
+        "Intercept-only multinomial log-odds from one validated sticky DP",
+        "Frequency release, or additive softmax coefficients selected from",
+        "one same-owner signed sticky DP finite likelihood grid."),
       paste(
-        "Only y ~ 1 is available, with deterministic Jeffreys smoothing.",
-        "Covariates, joint softmax, covariance, standard errors and inference",
-        "remain unavailable until a purpose-bound protected score/design",
-        "artifact exists."))
+        "The covariate route requires a signed categorical domain, public",
+        "predictor bounds and finite beta candidates. It returns no covariance,",
+        "standard errors, p-values or sampling inference."))
   add(c("ds.vertOrdinal", "ds.vert.ordinal", "ds.vertOrdinalJointNewton"),
       "ds.vertOrdinal", "promoted",
       paste(
