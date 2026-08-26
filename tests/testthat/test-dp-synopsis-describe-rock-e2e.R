@@ -1781,7 +1781,7 @@ test_that("real Synopsis categorical MI is plausible and Rock-replayable at K=2/
       cbind(status, exposure, region) ~ 1, "data_peer_a", NULL, 8L, "auto",
       conns, dispatch, .run = run, dependence = "star")
     expect_s3_class(star, "ds.vertMI")
-    expect_identical(star$method, "signed_categorical_mcar_star_joint_v1")
+    expect_identical(star$method, "signed_categorical_mcar_star_joint_v2")
     expect_identical(star$root_column, "status")
     expect_identical(names(star$conditional_probabilities),
                      c("exposure", "region"))
@@ -1801,7 +1801,7 @@ test_that("real Synopsis categorical MI is plausible and Rock-replayable at K=2/
       conns, dispatch, .run = run, dependence = "star")
     expect_s3_class(conditional_star, "ds.vertMI")
     expect_identical(conditional_star$method,
-                     "signed_categorical_mcar_covariate_star_v1")
+                     "signed_categorical_mcar_covariate_star_v2")
     expect_identical(conditional_star$conditioning_column, "region")
     expect_identical(names(conditional_star$variables), c("status", "exposure"))
     expect_identical(names(conditional_star$conditional_probabilities),

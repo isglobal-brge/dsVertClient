@@ -294,7 +294,24 @@
     stop("All signed categorical pairs must use the same signed vector release",
          call. = FALSE)
   }
-  root_table <- first$joint_probabilities
+  smooth_pair <- function(pair) {
+    table <- pair$joint_probabilities
+    completed_count <- pair$completed_count_dp
+    valid_table <- is.matrix(table) && is.numeric(table) &&
+      !is.null(rownames(table)) && !is.null(colnames(table)) &&
+      !anyNA(table) && all(is.finite(table)) && all(table >= 0) &&
+      isTRUE(all.equal(sum(table), 1, tolerance = 1e-12)) &&
+      is.numeric(completed_count) && length(completed_count) == 1L &&
+      !is.na(completed_count) && is.finite(completed_count) &&
+      completed_count >= 0
+    if (!isTRUE(valid_table)) {
+      stop("The signed categorical pair probabilities are invalid", call. = FALSE)
+    }
+    alpha <- 0.5
+    (table * completed_count + alpha) /
+      (completed_count + alpha * length(table))
+  }
+  root_table <- smooth_pair(first)
   root_probabilities <- rowSums(root_table)
   valid_root <- is.numeric(root_probabilities) &&
     !is.null(names(root_probabilities)) && !anyNA(root_probabilities) &&
@@ -305,7 +322,7 @@
   }
   root_levels <- names(root_probabilities)
   conditional_probabilities <- stats::setNames(lapply(children, function(child) {
-    table <- pairs[[child]]$joint_probabilities
+    table <- smooth_pair(pairs[[child]])
     valid_table <- is.matrix(table) && is.numeric(table) &&
       identical(rownames(table), root_levels) && !is.null(colnames(table)) &&
       !anyNA(table) && all(is.finite(table)) && all(table >= 0)
@@ -346,31 +363,39 @@
       "ok"
     } else "some_variables_dp_effective_count_zero",
     method = if (isTRUE(include_root)) {
-      "signed_categorical_mcar_star_joint_v1"
-    } else "signed_categorical_mcar_covariate_star_v1",
+      "signed_categorical_mcar_star_joint_v2"
+    } else "signed_categorical_mcar_covariate_star_v2",
     joint_model = if (isTRUE(include_root)) {
-      "strict_missing_signed_pairwise_star_completion_v1"
-    } else "strict_missing_signed_conditional_star_completion_v1",
+      "strict_missing_signed_pairwise_star_completion_v2"
+    } else "strict_missing_signed_conditional_star_completion_v2",
     formula = stats::as.formula(formula), impute_columns = outcomes,
     conditional_probabilities = conditional_probabilities,
+    conditional_smoothing = list(
+      method = "Jeffreys_joint_cell_half",
+      alpha = 0.5,
+      count_scale = "completed_count_dp"),
     variables = variables, m = as.integer(m)), root_fields, first[binding_fields])
   result <- c(result, list(
     completed_draws_sha256 = digest::digest(
       list(version = if (isTRUE(include_root)) {
-             "dsvert-mi-categorical-star-joint-v1"
-           } else "dsvert-mi-categorical-covariate-star-v1",
+             "dsvert-mi-categorical-star-joint-v2"
+           } else "dsvert-mi-categorical-covariate-star-v2",
            release_sha256 = first$release_sha256, root = root,
            root_probabilities = root_probabilities,
-           conditional_probabilities = conditional_probabilities, m = as.integer(m)),
+           conditional_probabilities = conditional_probabilities,
+           conditional_smoothing = result$conditional_smoothing,
+           m = as.integer(m)),
       algo = "sha256", serialize = TRUE, serializeVersion = 3L),
     sticky_replay = TRUE,
     additional_privacy_cost = c(epsilon = 0, delta = 0),
     assumption = if (isTRUE(include_root)) {
-      paste("MCAR pair missingness under signed strict pair releases; non-root",
-            "responses are conditionally independent given the first response")
+      paste("MCAR pair missingness under signed strict pair releases with",
+            "Jeffreys joint-cell smoothing; non-root responses are conditionally",
+            "independent given the first response")
     } else {
-      paste("MCAR pair missingness under signed strict pair releases; responses",
-            "are conditionally independent given the categorical conditioning column")
+      paste("MCAR pair missingness under signed strict pair releases with",
+            "Jeffreys joint-cell smoothing; responses are conditionally independent",
+            "given the categorical conditioning column")
     },
     inference_scope = "No classical or Rubin sampling inference is provided",
     standard_errors = NULL, covariance = NULL, p_values = NULL,
@@ -697,10 +722,10 @@ print.ds.vertMI <- function(x, ...) {
     cat("  Joint signed pair:", paste(x$impute_columns, collapse = " × "),
         "| missing (DP):", x$missing_count_dp, "\n")
     cat("  No joint microdata or Rubin inference is released.\n")
-  } else if (identical(x$method, "signed_categorical_mcar_star_joint_v1")) {
+  } else if (identical(x$method, "signed_categorical_mcar_star_joint_v2")) {
     cat("  Signed categorical star model rooted at:", x$root_column, "\n")
     cat("  Conditional independence given the root; no joint microdata or Rubin inference.\n")
-  } else if (identical(x$method, "signed_categorical_mcar_covariate_star_v1")) {
+  } else if (identical(x$method, "signed_categorical_mcar_covariate_star_v2")) {
     cat("  Signed categorical conditional-star model given:",
         x$conditioning_column, "\n")
     cat("  No row-level imputations, joint microdata or Rubin inference.\n")

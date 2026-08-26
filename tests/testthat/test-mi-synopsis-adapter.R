@@ -221,9 +221,12 @@ test_that("MI builds a sticky multivariable categorical star model from signed p
     .star_pair = star_pair, dependence = "star")
 
   expect_s3_class(first, "ds.vertMI")
-  expect_identical(first$method, "signed_categorical_mcar_star_joint_v1")
+  expect_identical(first$method, "signed_categorical_mcar_star_joint_v2")
   expect_identical(first$joint_model,
-                   "strict_missing_signed_pairwise_star_completion_v1")
+                   "strict_missing_signed_pairwise_star_completion_v2")
+  expect_identical(first$conditional_smoothing,
+                   list(method = "Jeffreys_joint_cell_half", alpha = 0.5,
+                        count_scale = "completed_count_dp"))
   expect_identical(first$root_column, "outcome")
   expect_identical(names(first$conditional_probabilities), c("exposure", "region"))
   expect_equal(sum(first$root_probabilities), 1, tolerance = 1e-12)
@@ -234,6 +237,22 @@ test_that("MI builds a sticky multivariable categorical star model from signed p
   expect_identical(first$completed_draws_sha256, second$completed_draws_sha256)
   expect_identical(fixture$state$runs, 2L)
   expect_identical(fixture$state$contingencies, 4L)
+
+  zero_root_pair <- function(...) {
+    release <- star_pair(...)
+    release$table[1L, ] <- 0
+    release
+  }
+  zero_root <- dsVertClient:::.dsvert_mi_synopsis_result_v1(
+    cbind(outcome, exposure, region) ~ 1, "protected", NULL, 6L, "auto",
+    list(peer_a = NULL), identity, .run = fixture$run,
+    .count = fixture$count, .frequency = fixture$frequency,
+    .star_pair = zero_root_pair, dependence = "star")
+  expect_true(all(zero_root$root_probabilities > 0))
+  expect_true(all(vapply(zero_root$conditional_probabilities, function(value) {
+    all(is.finite(value)) && all(value > 0) &&
+      all(abs(rowSums(value) - 1) < 1e-12)
+  }, logical(1L))))
 
   inconsistent <- function(...) {
     release <- fixture$contingency(...)
@@ -268,7 +287,7 @@ test_that("MI conditions multivariable categorical responses on one signed categ
     .star_pair = pair_release, dependence = "star")
 
   expect_s3_class(first, "ds.vertMI")
-  expect_identical(first$method, "signed_categorical_mcar_covariate_star_v1")
+  expect_identical(first$method, "signed_categorical_mcar_covariate_star_v2")
   expect_identical(first$conditioning_column, "region")
   expect_identical(names(first$variables), c("outcome", "exposure"))
   expect_identical(names(first$conditional_probabilities),
