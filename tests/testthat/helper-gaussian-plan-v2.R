@@ -67,8 +67,12 @@
   function(request, command) {
     go <- Sys.which("go")
     if (is.null(binary) || !file.exists(binary)) {
-      source <- testthat::test_path(
-        "..", "..", "..", "dsVert", "inst", "dsvert-mpc")
+      source <- Sys.getenv("DSVERT_SERVER_SOURCE", unset = "")
+      if (nzchar(source)) source <- file.path(source, "inst", "dsvert-mpc")
+      if (!dir.exists(source)) {
+        source <- testthat::test_path(
+          "..", "..", "..", "dsVert", "inst", "dsvert-mpc")
+      }
       if (dir.exists(source) && nzchar(go)) {
         source <- normalizePath(source, mustWork = TRUE)
         binary <<- tempfile("dsvert-client-fresh-go-")

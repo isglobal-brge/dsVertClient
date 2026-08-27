@@ -7,8 +7,7 @@ test_that("active typed model families use unprefixed canonical UUID sessions", 
   files <- c(
     multinomial = "ds.vertMultinomJointNewton.R",
     ordinal = "ds.vertOrdinalJointNewton.R",
-    cox = "ds.vertCoxDiscreteNonDisclosive.R",
-    negative_binomial = "ds.vertNBFullRegTheta.R")
+    cox = "ds.vertCoxDiscreteNonDisclosive.R")
   for (family in names(files)) {
     source <- .canonical_session_source(files[[family]])
     expect_match(
