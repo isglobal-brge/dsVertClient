@@ -140,7 +140,8 @@ test_that("one shared session and gate serve both families for K=2/3/4/5", {
     }
     family <- function(
         manifest_json, manifest, context, source_receipt, .aggregate,
-        .setup_exact, .alignment_mask, .shared_exact) {
+        .setup_exact, .alignment_mask, .shared_exact,
+        .remote_context = NULL) {
       validated <- .dsvert_dp_cross_shared_exact_validate(
         .shared_exact, manifest_json, manifest, context, fixture$layout,
         source_receipt)
