@@ -214,9 +214,8 @@ the explicit values must agree with that formula.}
 for an already completed formal Cox profile, binomial/Poisson GLM
 certificate, or discrete-time public certificate. The fresh GLM selector
 is accepted by \code{ds.vert.glm()} and \code{ds.vert.gee()} only to run
-its configured durable analysis. For Cox, \code{analysis_id} is the
-standard profile selector and \code{fresh_formal_analysis_id} remains an
-alias. The GEE adapter remains limited to the GLM independence-working
+its configured durable analysis. Fresh Cox selectors remain unavailable
+before DSI. The GEE adapter remains limited to the GLM independence-working
 point-estimate scope, and the discrete selector remains a distinct
 fixed-grid pooled-logistic estimand.}
 
@@ -224,11 +223,11 @@ fixed-grid pooled-logistic estimand.}
 or ordinal alias resolves its canonical signed Frequency artifact itself.}
 
 \item{analysis_id, dp_analysis_id}{Custodian-configured signed random-intercept,
-binomial/Poisson, Gaussian, NB2, multinomial, ordinal, or durable Cox
-analysis id. \code{analysis_id} is required by \code{ds.vert.lmm()} and
+binomial/Poisson, Gaussian, NB2, multinomial, or ordinal analysis id.
+\code{analysis_id} is required by \code{ds.vert.lmm()} and
 \code{ds.vert.glmm()}, enables finite-grid NB2, multinomial and ordinal
-aliases, and selects the profile Cox analysis; \code{dp_analysis_id} enables
-only independent Gaussian GEE post-processing.}
+aliases; \code{dp_analysis_id} enables only independent Gaussian GEE
+post-processing.}
 
 \item{cluster_col}{Grouping column for the mixed-model routes.}
 

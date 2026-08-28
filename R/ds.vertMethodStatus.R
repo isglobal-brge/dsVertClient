@@ -477,36 +477,27 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       paste(
         "Read-only coefficients and hazard-ratio ranges from one completed",
         "two-authority-signed sticky formal Cox opening selected by",
-        "formal_analysis_id, or the matching custodian-configured durable",
-        "analysis selected by analysis_id (the older",
-        "fresh_formal_analysis_id remains an alias)."),
+        "formal_analysis_id."),
       paste(
-        "The fresh route cannot choose source work or a new opening and",
-        "returns no covariance,",
+        "Fresh Cox computation is sealed; the completed reader returns no covariance,",
         "standard errors, p-values, baseline hazard, prediction, residual or",
         "sampling inference artifact."))
   add("ds.vert.coxph", "ds.vertCox", "promoted",
       paste(
         "Read-only coefficients and hazard-ratio ranges from one completed",
         "two-authority-signed sticky formal Cox opening selected by",
-        "formal_analysis_id, or the matching custodian-configured durable",
-        "analysis selected by analysis_id; no legacy Cox computation is",
-        "reachable."),
+        "formal_analysis_id; no legacy or fresh Cox computation is reachable."),
       paste(
-        "The configured analysis cannot choose source work or a new opening",
-        "and returns no covariance, standard errors, p-values, baseline",
+        "The completed reader returns no covariance, standard errors, p-values, baseline",
         "hazard, prediction, residual or sampling inference artifact."))
   add(c("ds.vertCoxProfileNonDisclosive"),
       "ds.vertCox", "promoted",
       paste(
         "Read-only coefficients and hazard-ratio ranges from one completed",
         "two-authority-signed sticky formal Cox opening selected by",
-        "formal_analysis_id, or the matching custodian-configured durable",
-        "analysis selected by analysis_id; no legacy Cox computation is",
-        "reachable."),
+        "formal_analysis_id; no legacy or fresh Cox computation is reachable."),
       paste(
-        "The configured analysis cannot choose source work or a new opening",
-        "and returns no covariance, standard errors, p-values, baseline",
+        "The completed reader returns no covariance, standard errors, p-values, baseline",
         "hazard, prediction, residual or sampling inference artifact."))
   add(c("ds.vertCoxDiscreteNonDisclosive"),
       "ds.vertCoxDiscreteNonDisclosive", "promoted",
@@ -521,12 +512,10 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add("ds.vert.cox", "ds.vertCox", "promoted",
       paste(
         "Alias for the completed formal Cox public certificate when",
-        "formal_analysis_id is supplied, or the matching fresh durable Cox",
-        "analysis when analysis_id is supplied (with",
-        "fresh_formal_analysis_id retained as an alias)."),
+        "formal_analysis_id is supplied."),
       paste(
-        "Fresh analysis is available only for method='profile'; no covariance,",
-        "p-values or analyst-selected source work or opening is available."))
+        "Fresh Cox computation is sealed; no covariance, p-values or",
+        "analyst-selected source work or opening is available."))
   add(c("ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",
       "promoted",
       paste(

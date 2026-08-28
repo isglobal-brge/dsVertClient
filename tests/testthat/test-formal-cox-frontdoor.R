@@ -53,128 +53,55 @@ test_that("formal Cox reads one certified public release at K=2/3/5", {
   }
 })
 
-test_that("fresh formal Cox projects only one final committed public release", {
+test_that("fresh Cox selectors are sealed before DSI", {
   conns <- list(site_a = structure(list(), class = "mock"),
                 site_b = structure(list(), class = "mock"))
+  calls <- 0L
   testthat::local_mocked_bindings(
-    .dsvert_formal_cox_fresh_run = function(conns, selector, .aggregate) {
-      expect_identical(names(conns), c("site_a", "site_b"))
-      list(
-        analysis_id = selector$analysis_id, schema_sha256 = strrep("a", 64L),
-        total_blocks = 1L, state = "finalizer_committed",
-        public_result = list(
-          version = "dsvert-formal-cox-public-result-v1",
-          artifact_id = strrep("b", 64L), certificate_sha256 = strrep("c", 64L),
-          valid = TRUE, coefficients = list(list(
-            index = 0L, beta_steps = "64", fraction_bits = 8L, beta = 0.25,
-            hazard_ratio_lower = 1.2, hazard_ratio_upper = 1.3,
-            hazard_ratio_midpoint = 1.25)), production_ready = FALSE),
-        production_ready = FALSE)
+    .dsvert_formal_cox_fresh_run = function(...) {
+      calls <<- calls + 1L
+      stop("must not run")
+    },
+    .dsvert_aggregate_strict = function(...) {
+      calls <<- calls + 1L
+      stop("must not use DSI")
     }, .package = "dsVertClient")
-  fit <- ds.vertCox(
-    stats::as.formula("Surv(time, status) ~ x"), data = "study",
-    fresh_formal_analysis_id = "fresh_cox", verbose = FALSE,
-    datasources = conns)
-  expect_s3_class(fit, "ds.vertCox")
-  expect_identical(fit$called_via, "ds.vertCox_fresh_formal_analysis_id")
-  expect_equal(fit$coefficients, c(x = 0.25))
-  expect_false(fit$production_ready)
+  formula <- stats::as.formula("Surv(time, status) ~ x")
   expect_error(ds.vertCox(
-    stats::as.formula("Surv(time, status) ~ x"), data = "study",
+    formula, data = "study", analysis_id = "fresh_cox", verbose = FALSE,
+    datasources = conns), class = "dsvert_route_unavailable")
+  expect_error(ds.vertCox(
+    formula, data = "study", fresh_formal_analysis_id = "fresh_cox",
+    verbose = FALSE, datasources = conns), class = "dsvert_route_unavailable")
+  expect_error(ds.vert.cox(
+    formula, data = "study", analysis_id = "fresh_cox", verbose = FALSE,
+    datasources = conns), class = "dsvert_route_unavailable")
+  expect_error(ds.vert.coxph(
+    formula, data = "study", fresh_formal_analysis_id = "fresh_cox",
+    verbose = FALSE, datasources = conns), class = "dsvert_route_unavailable")
+  expect_error(ds.vertCoxProfileNonDisclosive(
+    formula, data = "study", analysis_id = "fresh_cox", verbose = FALSE,
+    datasources = conns), class = "dsvert_route_unavailable")
+  expect_identical(calls, 0L)
+  expect_error(ds.vertCox(
+    formula, data = "study",
     formal_analysis_id = "stored", fresh_formal_analysis_id = "fresh_cox",
     datasources = conns), "mutually exclusive")
 })
 
-test_that("Cox analysis_id is the standard fresh-analysis selector", {
-  conns <- list(site_a = structure(list(), class = "mock"),
-                site_b = structure(list(), class = "mock"))
-  testthat::local_mocked_bindings(
-    .dsvert_formal_cox_fresh_run = function(conns, selector, .aggregate) {
-      expect_identical(names(conns), c("site_a", "site_b"))
-      expect_identical(selector$analysis_id, "cox_standard")
-      list(
-        analysis_id = selector$analysis_id, schema_sha256 = strrep("a", 64L),
-        total_blocks = 1L, state = "finalizer_committed",
-        public_result = list(
-          version = "dsvert-formal-cox-public-result-v1",
-          artifact_id = strrep("b", 64L), certificate_sha256 = strrep("c", 64L),
-          valid = TRUE, coefficients = list(list(
-            index = 0L, beta_steps = "64", fraction_bits = 8L, beta = 0.25,
-            hazard_ratio_lower = 1.2, hazard_ratio_upper = 1.3,
-            hazard_ratio_midpoint = 1.25)), production_ready = FALSE),
-        production_ready = FALSE)
-    }, .package = "dsVertClient")
-  fit <- ds.vertCox(
-    stats::as.formula("Surv(time, status) ~ x"), data = "study",
-    analysis_id = "cox_standard", verbose = FALSE, datasources = conns)
-  expect_s3_class(fit, "ds.vertCox")
-  expect_identical(fit$called_via, "ds.vertCox_analysis_id")
-  expect_equal(fit$coefficients, c(x = 0.25))
-  cox <- ds.vert.cox(
-    stats::as.formula("Surv(time, status) ~ x"), data = "study",
-    analysis_id = "cox_standard", verbose = FALSE, datasources = conns)
-  coxph <- ds.vert.coxph(
-    stats::as.formula("Surv(time, status) ~ x"), data = "study",
-    analysis_id = "cox_standard", verbose = FALSE, datasources = conns)
-  profile <- ds.vertCoxProfileNonDisclosive(
-    stats::as.formula("Surv(time, status) ~ x"), data = "study",
-    analysis_id = "cox_standard", verbose = FALSE, datasources = conns)
-  expect_identical(cox$frontdoor, "ds.vert.cox")
-  expect_identical(coxph$frontdoor, "ds.vert.coxph")
-  expect_equal(cox$coefficients, c(x = 0.25))
-  expect_equal(coxph$coefficients, c(x = 0.25))
-  expect_identical(profile$called_via,
-                   "ds.vertCoxProfileNonDisclosive_analysis_id")
-  expect_error(ds.vertCox(
-    stats::as.formula("Surv(time, status) ~ x"), data = "study",
-    analysis_id = "cox_standard", fresh_formal_analysis_id = "old",
-    datasources = conns), "mutually exclusive")
-})
-
-test_that("Cox aliases advertise the configured analysis selector", {
+test_that("Cox aliases advertise only the completed certificate route", {
   status <- ds.vertMethodStatus(c(
     "ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
     "ds.vertCoxProfileNonDisclosive"))
   expect_true(all(status$status == "promoted"))
-  expect_true(all(grepl("analysis_id", status$safe_scope, fixed = TRUE)))
-  aliases <- status$method %in% c(
-    "ds.vert.coxph", "ds.vertCoxProfileNonDisclosive")
-  expect_true(all(grepl("cannot choose source work",
-                        status$principal_limitation[aliases], fixed = TRUE)))
-})
-
-test_that("fresh formal Cox aliases retain the profile-only committed route", {
-  conns <- list(site_a = structure(list(), class = "mock"),
-                site_b = structure(list(), class = "mock"))
-  testthat::local_mocked_bindings(
-    .dsvert_formal_cox_fresh_run = function(conns, selector, .aggregate) {
-      list(
-        analysis_id = selector$analysis_id, schema_sha256 = strrep("a", 64L),
-        total_blocks = 1L, state = "finalizer_already_public",
-        public_result = list(
-          version = "dsvert-formal-cox-public-result-v1",
-          artifact_id = strrep("b", 64L), certificate_sha256 = strrep("c", 64L),
-          valid = TRUE, coefficients = list(list(
-            index = 0L, beta_steps = "64", fraction_bits = 8L, beta = 0.25,
-            hazard_ratio_lower = 1.2, hazard_ratio_upper = 1.3,
-            hazard_ratio_midpoint = 1.25)), production_ready = FALSE),
-        production_ready = FALSE)
-    }, .package = "dsVertClient")
-  formula <- stats::as.formula("Surv(time, status) ~ x")
-  cox <- ds.vert.cox(
-    formula, data = "study", fresh_formal_analysis_id = "fresh_cox",
-    verbose = FALSE, datasources = conns)
-  coxph <- ds.vert.coxph(
-    formula, data = "study", fresh_formal_analysis_id = "fresh_cox",
-    verbose = FALSE, datasources = conns)
-  expect_identical(cox$frontdoor, "ds.vert.cox")
-  expect_identical(coxph$frontdoor, "ds.vert.coxph")
-  expect_equal(cox$coefficients, c(x = 0.25))
-  expect_equal(coxph$coefficients, c(x = 0.25))
-  expect_error(ds.vert.cox(
-    formula, data = "study", method = "discrete",
-    fresh_formal_analysis_id = "fresh_cox", datasources = conns),
-    "does not accept method='discrete'")
+  expect_true(all(grepl("formal_analysis_id", status$safe_scope, fixed = TRUE)))
+  expect_false(any(grepl("fresh_formal_analysis_id", status$safe_scope,
+                         fixed = TRUE)))
+  expect_true(grepl("Fresh Cox computation is sealed",
+                    status$principal_limitation[status$method == "ds.vertCox"],
+                    fixed = TRUE))
+  expect_true(all(grepl("no covariance", status$principal_limitation,
+                        fixed = TRUE)))
 })
 
 test_that("formal Cox rejects a cross-site certificate mismatch", {

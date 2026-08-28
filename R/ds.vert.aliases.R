@@ -61,10 +61,10 @@
 #' @param variables,var1,var2 Column selections for descriptive / bivariate routes.
 #' @param cluster_col Grouping column for the mixed-model routes.
 #' @param analysis_id,dp_analysis_id Custodian-configured signed random-intercept,
-#'   binomial/Poisson, Gaussian, NB2, multinomial, ordinal, or durable Cox
+#'   binomial/Poisson, Gaussian, NB2, multinomial, or ordinal
 #'   analysis id. \code{analysis_id} is required by \code{ds.vert.lmm()} and
 #'   \code{ds.vert.glmm()}, enables finite-grid NB2, multinomial and ordinal
-#'   aliases, and selects the profile Cox analysis; \code{dp_analysis_id}
+#'   aliases; \code{dp_analysis_id}
 #'   enables only independent Gaussian GEE post-processing.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag. For
@@ -75,9 +75,8 @@
 #'   for an already completed formal Cox profile, binomial/Poisson GLM
 #'   certificate, or discrete-time public certificate. The fresh GLM selector
 #'   is accepted by \code{ds.vert.glm()} and \code{ds.vert.gee()} only to run
-#'   its configured durable analysis. For Cox, \code{analysis_id} is the
-#'   standard profile selector and \code{fresh_formal_analysis_id} remains an
-#'   alias. The GEE adapter remains limited to the GLM independence-working
+#'   its configured durable analysis. Fresh Cox selectors remain unavailable
+#'   before DSI. The GEE adapter remains limited to the GLM independence-working
 #'   point-estimate scope, and the discrete selector remains a distinct
 #'   fixed-grid pooled-logistic estimand.
 #' @param max_iter,inner_iter,max_outer,tol Iteration caps and convergence

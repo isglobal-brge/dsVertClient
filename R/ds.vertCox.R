@@ -1,13 +1,11 @@
 #' @title Formal Cox public-release frontdoor
-#' @description With \code{analysis_id}, runs or resumes the matching
-#'   custodian-configured durable Cox analysis. With \code{formal_analysis_id},
-#'   reads an already completed,
-#'   two-authority-signed sticky formal Cox certificate. Both return only the
-#'   certified coefficient and hazard-ratio point/range values and never expose
-#'   source records, shares or intermediate state.
-#'   \code{fresh_formal_analysis_id} remains an alias for \code{analysis_id}.
-#'   Without a selector, this compatibility name remains unavailable before any
-#'   DSI call.
+#' @description With \code{formal_analysis_id}, reads one already completed,
+#'   two-authority-signed sticky formal Cox certificate. It returns only the
+#'   certified coefficient and hazard-ratio point/range values and never
+#'   exposes source records, shares or intermediate state. Fresh Cox
+#'   computation is sealed: \code{analysis_id} and
+#'   \code{fresh_formal_analysis_id} fail before any DSI call until its
+#'   protected runtime is production-attested.
 #'
 #' @details The read-only formal route needs an explicit formula, data name and
 #'   custodian-owned analysis id. It has no analyst-owned privacy parameters,
@@ -16,11 +14,12 @@
 #'   remain unavailable until separately attested artifacts exist.
 #' @param formula,data Explicit formula and aligned data name selecting the
 #'   custodian-configured completed release.
-#' @param analysis_id Custodian-configured durable Cox analysis selector.
+#' @param analysis_id Retained compatibility selector for fresh Cox
+#'   computation. It is currently unavailable before DSI.
 #' @param formal_analysis_id Custodian-configured formal Cox public certificate
 #'   selector. It is read-only and cannot create a new release.
-#' @param fresh_formal_analysis_id Custodian-configured fresh Cox selector. It
-#'   cannot choose source work, privacy settings, opening or retry randomness.
+#' @param fresh_formal_analysis_id Retained compatibility alias for
+#'   \code{analysis_id}. It is currently unavailable before DSI.
 #' @param max_iter,tol,max_event_times,newton,ridge_eps,debug_trace,verbose,datasources
 #'   Legacy compatibility arguments. They are rejected when a formal id is
 #'   supplied; without it the route fails before DSI.
@@ -47,21 +46,14 @@ ds.vertCox <- function(formula, data = NULL,
          call. = FALSE)
   }
   if (!is.null(analysis_id)) {
-    fresh_explicit <- explicit
-    fresh_explicit[fresh_explicit == "analysis_id"] <-
-      "fresh_formal_analysis_id"
-    fit <- .dsvert_formal_cox_fresh_frontdoor_adapter(
-      fresh_explicit, formula, data, verbose, datasources, analysis_id)
-    fit$called_via <- "ds.vertCox_analysis_id"
-    return(fit)
+    .dsvert_block_retired_remote_route("cox", .allow_test = FALSE)
   }
   if (!is.null(formal_analysis_id)) {
     return(.dsvert_formal_cox_frontdoor_adapter(
       explicit, formula, data, verbose, datasources, formal_analysis_id))
   }
   if (!is.null(fresh_formal_analysis_id)) {
-    return(.dsvert_formal_cox_fresh_frontdoor_adapter(
-      explicit, formula, data, verbose, datasources, fresh_formal_analysis_id))
+    .dsvert_block_retired_remote_route("cox", .allow_test = FALSE)
   }
   .dsvert_block_retired_remote_route("cox")
 }

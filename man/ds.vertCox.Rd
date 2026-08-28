@@ -27,28 +27,26 @@ custodian-configured completed release.}
 \item{max_iter, tol, max_event_times, newton, ridge_eps, debug_trace, verbose, datasources}{Legacy compatibility arguments. They are rejected when a formal id is
 supplied; without it the route fails before DSI.}
 
-\item{analysis_id}{Custodian-configured durable Cox analysis selector.}
+\item{analysis_id}{Retained compatibility selector for fresh Cox computation.
+It is currently unavailable before DSI.}
 
 \item{formal_analysis_id}{Custodian-configured formal Cox public certificate
 selector. It is read-only and cannot create a new release.}
 
-\item{fresh_formal_analysis_id}{Custodian-configured fresh Cox selector. It
-cannot choose source work, privacy settings, opening or retry randomness.}
+\item{fresh_formal_analysis_id}{Retained compatibility alias for
+\code{analysis_id}. It is currently unavailable before DSI.}
 }
 \value{
-With a valid \code{analysis_id} or \code{formal_analysis_id}, a coefficient-only
+With a valid \code{formal_analysis_id}, a coefficient-only
 \code{dsvert_formal_dp_cox} object. Otherwise a typed unavailable error.
 }
 \description{
-With \code{analysis_id}, runs or resumes the matching custodian-configured
-durable Cox analysis. With \code{formal_analysis_id}, reads an already completed,
-two-authority-signed sticky formal Cox certificate. Both routes return only
-the certified coefficient and hazard-ratio point/range values and never expose
-source records, shares or intermediate state.
-\code{fresh_formal_analysis_id} instead runs only the matching
-custodian-configured durable analysis and projects it after both
-authorities committed and acknowledged one certificate. Without any
-selector, this compatibility name remains unavailable before any DSI call.
+With \code{formal_analysis_id}, reads one already completed,
+two-authority-signed sticky formal Cox certificate. It returns only the
+certified coefficient and hazard-ratio point/range values and never exposes
+source records, shares or intermediate state. Fresh Cox computation is sealed:
+\code{analysis_id} and \code{fresh_formal_analysis_id} fail before any DSI
+call until its protected runtime is production-attested.
 }
 \details{
 The read-only formal route needs an explicit formula, data name and
