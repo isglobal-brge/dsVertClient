@@ -37,28 +37,34 @@
     replacement = paste0(
       "For a bounded non-negative integer y ~ 1 domain, pass a validated ",
       "ds.vertDPFrequency object to ds.vertNBFullRegTheta(..., frequency = ",
-      "...); covariate NB2 regression remains unavailable.")),
+      "...). For additive bare covariates, use one same-owner signed finite ",
+      "beta/theta grid selected by analysis_id; arbitrary optimization and ",
+      "sampling inference remain unavailable.")),
   multinomial = list(
     method = "ds.vertMultinomJointNewton",
     state = "multinomial_design_capsule_unavailable",
     replacement = paste0(
       "For y ~ 1, pass a validated ds.vertDPFrequency object to ",
-      "ds.vertMultinom(..., frequency = ...); covariate softmax models ",
-      "remain unavailable.")),
+      "ds.vertMultinom(..., frequency = ...). For additive bare covariates, ",
+      "select one same-owner signed finite softmax grid by analysis_id; ",
+      "interactions, transforms and sampling inference remain unavailable.")),
   ordinal = list(
     method = "ds.vertOrdinalJointNewton",
     state = "ordinal_score_capsule_unavailable",
     replacement = paste0(
       "For y ~ 1, pass a validated ds.vertDPFrequency object and a complete ",
       "clinical category order to ds.vertOrdinal(..., frequency = ...); ",
-      "covariate proportional-odds models remain unavailable.")),
+      "or select one same-owner signed finite cumulative-logit grid by ",
+      "analysis_id for additive bare covariates. Interactions, transforms and ",
+      "sampling inference remain unavailable.")),
   gee = list(
     method = "ds.vertGEE",
     state = "cluster_granular_gee_route_quarantined",
     replacement = paste0(
       "For an independence-working binomial/Poisson point estimate, use ",
-      "ds.vertGEE(..., corstr='independence', formal_analysis_id=...); ",
-      "clustered GEE remains unavailable.")),
+      "ds.vertGEE(..., corstr='independence', analysis_id=...) for one ",
+      "signed finite grid or formal_analysis_id=...) for one completed ",
+      "certificate; clustered GEE remains unavailable.")),
   ipw = list(
     method = "ds.vertIPW",
     state = "legacy_ipw_route_quarantined",

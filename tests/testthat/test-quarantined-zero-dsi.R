@@ -136,6 +136,21 @@ test_that("retired GLM guidance names the signed binomial and Poisson routes", {
                      fixed = TRUE))
 })
 
+test_that("retired categorical guidance names its signed finite-grid routes", {
+  contracts <- get(
+    ".DSVERT_RETIRED_REMOTE_ROUTES", envir = asNamespace("dsVertClient"),
+    inherits = FALSE)
+  for (route in c("negative_binomial", "multinomial", "ordinal", "gee")) {
+    expect_match(contracts[[route]]$replacement, "analysis_id", fixed = TRUE)
+  }
+  expect_false(grepl("covariate NB2 regression remains unavailable",
+                     contracts$negative_binomial$replacement, fixed = TRUE))
+  expect_false(grepl("covariate softmax models remain unavailable",
+                     contracts$multinomial$replacement, fixed = TRUE))
+  expect_false(grepl("covariate proportional-odds models remain unavailable",
+                     contracts$ordinal$replacement, fixed = TRUE))
+})
+
 test_that("generic exact-GLM helpers are production-blocked before DSI", {
   testthat::local_mocked_bindings(
     .dsvert_quarantine_test_mode = function() FALSE,
