@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertLASSOIterative.R
 \name{ds.vertLASSOIter}
 \alias{ds.vertLASSOIter}
-\title{Gaussian LASSO path under the historical iterative name}
+\title{Signed LASSO paths under the historical iterative name}
 \usage{
 ds.vertLASSOIter(
   formula,
@@ -22,7 +22,8 @@ ds.vertLASSOIter(
   verbose = TRUE,
   datasources = NULL,
   cor_analysis_id = NULL,
-  dp_analysis_id = NULL
+  dp_analysis_id = NULL,
+  analysis_id = NULL
 )
 }
 \arguments{
@@ -34,23 +35,31 @@ retired score-MPC routes do not alter its certified DP Synopsis estimand.}
 
 \item{dp_analysis_id}{Required signed Gaussian Synopsis artifact identifier
 for \code{family = "gaussian"}.}
+
+\item{analysis_id}{Required signed finite L1 path identifier for
+\code{family = "binomial"} or \code{"poisson"}. The optional
+\code{lambda} argument may only select exact penalty levels already in that
+path.}
 }
 \value{
 A \code{ds.vertLASSOIter} / \code{ds.vertDPLASSOPath} object for
-the authenticated Gaussian route. Other families raise
-\code{dsvert_route_unavailable} before DSI.
+one authenticated Gaussian or finite binomial/Poisson L1 path. Other
+non-Gaussian requests raise \code{dsvert_route_unavailable} before DSI.
 }
 \description{
 For \code{family = "gaussian"}, this compatibility frontdoor
 validates one signed bounded Gaussian DP Synopsis through
 \code{ds.vertGLM(..., dp_analysis_id = ...)} and computes a deterministic
-KKT-certified L1 path. It creates no second private release. Binomial and
-Poisson remain unavailable until their score-design artifacts are signed.
+KKT-certified L1 path. With \code{family = "binomial"} or
+\code{"poisson"}, \code{analysis_id} selects a separate signed finite L1
+candidate path; only its signed penalty levels can be requested. Neither route
+creates a second private release or restarts the retired score-MPC optimiser.
 }
 \details{
-The returned path is deterministic post-processing of one sticky
-release: its additional privacy cost is \code{(epsilon, delta) = (0, 0)}.
-It has no sampling inference or coefficient confidence regions.
+Every path uses exactly one sticky release; selecting multiple signed
+penalty levels is deterministic post-processing and creates no second release.
+The release certificate states its per-artifact privacy parameters. There is
+no sampling inference or coefficient confidence region.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

@@ -2,11 +2,12 @@
 
 ### Estimators
 
-* `ds.vertLASSOIter()` now admits its Gaussian variant only when an explicit
-  `dp_analysis_id` selects a matching signed same-owner Gaussian Synopsis.
-  The returned L1 path is deterministic KKT-checked post-processing of that
-  sticky release; binomial and Poisson variants remain unavailable rather than
-  falling back to their retired score-MPC routes.
+* `ds.vertLASSOIter()` admits its Gaussian variant when an explicit
+  `dp_analysis_id` selects a matching signed same-owner Gaussian Synopsis,
+  and binomial/Poisson finite paths when `analysis_id` selects a matching
+  signed candidate-path artifact. The latter release bounded likelihoods for
+  every signed beta/lambda candidate and accept only exact signed lambda
+  levels; neither route falls back to the retired score-MPC optimiser.
 
 * `ds.vertDPFrequency()` now uses the canonical fixed-domain sticky Frequency
   protocol rather than the biomedical capsule. It requires an explicit source
@@ -209,9 +210,9 @@
   select the server-owned lifetime bound.
 
 * The two remaining internal consumers of legacy correlation statistics are
-  closed. Exact slope-binomial `ds.vertLASSOIter()` now requires an explicit
-  signed id and fails with a typed `binomial_lasso_design_grams` availability
-  condition before DSI; multinomial slope models do the same for
+  closed. Binomial/Poisson `ds.vertLASSOIter()` uses an explicit signed finite
+  candidate path and never reads legacy correlation statistics; its retired
+  score route remains typed-unavailable. Multinomial slope models require
   `multinomial_design_grams`. Neither route substitutes `ds.vertCor`, pairwise
   statistics, or same-owner local moments whose clipping, mask, snapshot,
   scaling and design order are not bound to the score MPC.

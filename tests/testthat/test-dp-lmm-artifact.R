@@ -344,6 +344,70 @@
   fixture
 }
 
+.finite_l1_path_artifact_fixture <- function(family = "binomial") {
+  capacity <- 20L
+  scale <- 256
+  poisson <- identical(family, "poisson")
+  candidates <- list(
+    list(lambda = 0.5, beta = c(-1, 0)),
+    list(lambda = 0.5, beta = c(-1, 1)),
+    list(lambda = 0.1, beta = c(-1, 0)),
+    list(lambda = 0.1, beta = c(-1, 1)))
+  beta_grid <- lapply(candidates, `[[`, "beta")
+  loss_bounds <- dsVertClient:::.dsvert_dp_glm_grid_loss_bounds(
+    family, beta_grid, if (isTRUE(poisson)) 10L else NULL)
+  raw <- ceiling(loss_bounds * scale)
+  penalties <- ceiling(capacity * scale * vapply(candidates, function(candidate) {
+    candidate$lambda * sum(abs(candidate$beta[-1L]))
+  }, numeric(1L)))
+  artifact <- list(
+    version = paste0("bounded-", family, "-lasso-grid-v1"),
+    spec_version = paste0(family, "_lasso_grid_v1"),
+    analysis_id = paste0(family, "_lasso_path"), dataset = "protected",
+    owner_peer = "server_a",
+    outcome = list(column = "y", lower = 0, upper = if (isTRUE(poisson)) 10 else 1),
+    predictors = list(x = list(column = "x", lower = 0, upper = 10)),
+    predictor_order = "x", intercept = TRUE,
+    design_terms = c("(Intercept)", "x"), observation_capacity = capacity,
+    max_outcome = if (isTRUE(poisson)) 10L else NULL,
+    candidate_grid = candidates, penalty_normalizer = "observation_capacity_v1",
+    candidate_l1_penalty_raw = as.list(penalties),
+    candidate_order = "canonical_lambda_descending_beta_grid_lasso_v1",
+    candidate_loss_bounds = as.list(loss_bounds), numeric_grid_bits = 8L,
+    coordinate_count = 4L,
+    coordinate_order = paste(
+      "canonical_lambda_descending_beta_grid", family,
+      "negative_log_likelihood_lasso_path_v1", sep = "_"),
+    source_coordinate_scaling =
+      "all_coordinates_already_on_common_numeric_lattice_v1",
+    repeated_record_policy = paste(
+      "require_one_bounded", family, "outcome_and_mean_once_per_admitted",
+      "patient_v1", sep = "_"),
+    missingness_policy = paste(
+      "noninteger_or_out_of_range_or_missing_outcome_or_missing_or",
+      "nonfinite_predictor_excludes_patient_v1", sep = "_"),
+    contribution_domain = paste(
+      "one_bounded_patient", family, "negative_log_likelihood",
+      "contribution_for_every_signed_candidate_v1", sep = "_"),
+    statistic_maximum = as.list(capacity * raw),
+    source_raw_l1_sensitivity = sum(raw),
+    source_raw_l2_sensitivity = sqrt(sum(raw^2)),
+    natural_l1_sensitivity = sum(raw) / scale,
+    natural_l2_sensitivity = sqrt(sum(raw^2)) / scale,
+    adjacency = "add_remove_patient",
+    adjacency_sensitivity_basis = paste(
+      "one_patient_changes_one_candidate_loss_by_at_most_its_signed",
+      family, "loss_bound_v1", sep = "_"),
+    estimation_scope = paste(
+      "bounded", family, "fixed_covariates_finite_signed_l1",
+      "candidate_path_capacity_normalized_v1", sep = "_"),
+    implementation_state = "same_owner_materialized",
+    cross_owner_state = "reserved_not_materialized")
+  list(artifact = artifact, manifest = list(workload = list(families = list(
+    gaussian_models = list(artifacts = stats::setNames(
+      list(artifact), artifact$analysis_id))))))
+}
+
 .robust_independence_gee_grid_artifact_fixture <- function(family = "binomial") {
   capacity <- 20L
   scale <- 256
@@ -653,6 +717,38 @@ test_that("Poisson three-random-slope GLMM grid validates and fails closed", {
   expect_error(dsVertClient:::.dsvert_dp_glmm_grid_artifact(
     tampered, "protected", "poisson_glmm_three_slope", "server_a",
     "add_remove_patient", 256, 20), "descriptor is invalid")
+})
+
+test_that("finite binomial and Poisson L1 paths validate and remain signed", {
+  for (family in c("binomial", "poisson")) {
+    fixture <- .finite_l1_path_artifact_fixture(family)
+    artifact <- dsVertClient:::.dsvert_dp_lasso_grid_artifact(
+      fixture$manifest, "protected", fixture$artifact$analysis_id, "server_a",
+      "add_remove_patient", 256, 20, family)
+    fit <- dsVertClient:::.dsvert_dp_lasso_grid_moment(
+      c(20, 0, 20, 0), artifact, family)
+
+    expect_identical(fit$lambda, c(0.5, 0.1))
+    expect_identical(unname(vapply(fit$selected, `[[`, integer(1L), "candidate")),
+                     c(1L, 3L))
+    expect_true(all(vapply(fit$selected, function(value) {
+      all(is.finite(value$coefficients)) && is.finite(value$dp_objective)
+    }, logical(1L))))
+    tampered <- fixture$manifest
+    tampered$workload$families$gaussian_models$artifacts[[
+      fixture$artifact$analysis_id]]$candidate_l1_penalty_raw[[2L]] <- 0
+    expect_error(dsVertClient:::.dsvert_dp_lasso_grid_artifact(
+      tampered, "protected", fixture$artifact$analysis_id, "server_a",
+      "add_remove_patient", 256, 20, family), "descriptor is invalid")
+    tampered <- fixture$manifest
+    candidates <- tampered$workload$families$gaussian_models$artifacts[[
+      fixture$artifact$analysis_id]]$candidate_grid
+    tampered$workload$families$gaussian_models$artifacts[[
+      fixture$artifact$analysis_id]]$candidate_grid <- candidates[c(2L, 1L, 3L, 4L)]
+    expect_error(dsVertClient:::.dsvert_dp_lasso_grid_artifact(
+      tampered, "protected", fixture$artifact$analysis_id, "server_a",
+      "add_remove_patient", 256, 20, family), "descriptor is invalid")
+  }
 })
 
 test_that("robust binomial and Poisson independence GEE grids validate and fail closed", {

@@ -81,10 +81,10 @@
       "chained imputation remains unavailable.")),
   lasso_iter = list(
     method = "ds.vertLASSOIter",
-    state = "binomial_poisson_lasso_path_unavailable",
+    state = "binomial_poisson_legacy_score_route_unavailable",
     replacement = paste0(
-      "Only the signed Gaussian Synopsis path is released; binomial and ",
-      "Poisson require their purpose-bound score-design artifacts.")),
+      "Use analysis_id to select a signed finite binomial or Poisson L1 ",
+      "candidate path. The retired score-MPC route remains unavailable.")),
   legacy_joint_dp_capsule = list(
     method = "legacy joint-DP capsule lifecycle",
     state = "lifetime_admission_route_removed",

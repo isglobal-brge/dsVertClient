@@ -648,12 +648,14 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "promoted",
       paste(
         "Gaussian L1 paths from one explicit signed same-owner Synopsis",
-        "artifact; each path member carries a deterministic KKT certificate",
-        "and creates no second private release."),
+        "artifact, or binomial/Poisson finite L1 candidate paths with",
+        "signed penalty levels; each route creates no second private release."),
       paste(
-        "Only family='gaussian' with dp_analysis_id is available. Binomial",
-        "and Poisson fail closed: their score designs lack a purpose-bound",
-        "signed Gram and their whole-path DP contracts are not implemented."))
+        "Gaussian requires dp_analysis_id; binomial and Poisson require",
+        "analysis_id and select only exact signed lambda levels. All routes",
+        "are same-owner additive fixed-covariate paths without sampling",
+        "inference or coefficient regions; cross-owner and retired score-MPC",
+        "routes remain unavailable."))
   add(c("ds.vertLASSOCV", "ds.vert.lasso_cv"), "ds.vertLASSOCV",
       "promoted",
       paste(

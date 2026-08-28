@@ -569,6 +569,48 @@
                 sum(abs(beta)) <= 8
             }, logical(1L))) && !anyDuplicated(beta_keys)
           if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
+        } else if (spec$version %in% c("binomial_lasso_grid_v1",
+                                       "poisson_lasso_grid_v1")) {
+          poisson <- identical(spec$version, "poisson_lasso_grid_v1")
+          expected <- c(
+            "version", "dataset", "outcome", "predictors", "intercept",
+            "candidate_grid")
+          if (isTRUE(poisson)) expected <- c(expected, "max_outcome")
+          valid <- setequal(names(spec), expected) &&
+            identifier(spec$dataset) && column_reference(spec$outcome) &&
+            isTRUE(spec$intercept)
+          predictors <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$predictors, "finite L1 fixed predictors"),
+            error = function(error) character()) else character()
+          expected_dimension <- 1L + length(predictors)
+          candidate_grid <- .dsvert_dp_lasso_grid_candidates(
+            spec$candidate_grid, expected_dimension,
+            if (isTRUE(poisson)) "poisson" else "binomial")
+          lambda_grid <- if (length(candidate_grid)) vapply(
+            candidate_grid, `[[`, numeric(1L), "lambda") else numeric()
+          beta_keys <- if (length(candidate_grid)) vapply(
+            candidate_grid, function(candidate) .dsvert_joint_dp_client_json(
+              as.list(candidate$beta)), character(1L)) else character()
+          candidate_keys <- if (length(candidate_grid)) vapply(
+            candidate_grid, function(candidate) .dsvert_joint_dp_client_json(
+              list(lambda = candidate$lambda, beta = candidate$beta)),
+            character(1L)) else character()
+          maximum_valid <- if (isTRUE(poisson)) {
+            .dsvert_dp_is_integer(spec$max_outcome, 1L, 1024L)
+          } else {
+            TRUE
+          }
+          valid <- isTRUE(valid) && isTRUE(maximum_valid) &&
+            length(predictors) && !anyDuplicated(predictors) &&
+            !spec$outcome %in% predictors &&
+            all(vapply(predictors, column_reference, logical(1L))) &&
+            length(candidate_grid) >= 2L && length(candidate_grid) <= 256L &&
+            length(unique(lambda_grid)) >= 2L && !anyDuplicated(candidate_keys)
+          if (isTRUE(valid)) {
+            candidate_grid <- candidate_grid[order(
+              -lambda_grid, beta_keys, method = "radix")]
+          }
         } else if (spec$version %in% c("binomial_grid_v1",
                                        "poisson_grid_v1")) {
           poisson <- identical(spec$version, "poisson_grid_v1")
@@ -1012,6 +1054,11 @@
         spec$predictors <- predictors
         spec$score_clip <- score_clip
         spec$beta_grid <- beta_grid
+      } else if (identical(family, "gaussian") &&
+                 spec$version %in% c("binomial_lasso_grid_v1",
+                                     "poisson_lasso_grid_v1")) {
+        spec$predictors <- predictors
+        spec$candidate_grid <- candidate_grid
       } else if (identical(family, "gaussian") &&
                  spec$version %in% c("binomial_grid_v1",
                                      "poisson_grid_v1")) {

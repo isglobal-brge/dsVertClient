@@ -504,10 +504,10 @@ test_that("README maturity and numeric claims match the runtime registry", {
       ds.vertLASSOCV = "promoted"))
   expect_match(
     readme,
-    paste0("`ds.vertLASSOIter()`, `ds.vertLASSO()` and ",
-           "`ds.vertLASSO1Step()` are promoted Gaussian Synopsis paths ",
-           "when an explicit signed `dp_analysis_id` selects the ",
-           "same-owner artifact"),
+    paste0("`ds.vertLASSOIter()` admits a promoted Gaussian Synopsis path ",
+           "when `dp_analysis_id` selects the same-owner artifact, and a ",
+           "promoted binomial/Poisson finite L1 candidate path when ",
+           "`analysis_id` selects its signed artifact"),
     fixed = TRUE)
 
   registry <- ds.vertMethodStatus()

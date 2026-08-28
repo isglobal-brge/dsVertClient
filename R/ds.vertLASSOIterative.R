@@ -1,9 +1,12 @@
-#' @title Gaussian LASSO path under the historical iterative name
+#' @title Signed LASSO paths under the historical iterative name
 #' @description For \code{family = "gaussian"}, this compatibility frontdoor
 #'   validates one signed bounded Gaussian DP Synopsis through
 #'   \code{ds.vertGLM(..., dp_analysis_id = ...)} and computes a deterministic
-#'   KKT-certified L1 path. It creates no second private release. Binomial and
-#'   Poisson remain unavailable until their score-design artifacts are signed.
+#'   KKT-certified L1 path. With \code{family = "binomial"} or
+#'   \code{"poisson"}, \code{analysis_id} selects a separate signed finite
+#'   L1 candidate path; only its signed penalty levels can be requested.
+#'   Neither route creates a second private release or restarts the retired
+#'   score-MPC optimiser.
 #' @param formula,data,family,lambda,max_outer,tol,alpha,inner_iter,exact_non_gaussian,ring,lipschitz,fista_restart,binomial_sigmoid_intervals,poisson_damping,verbose,datasources,cor_analysis_id
 #'   Historical compatibility arguments. The Gaussian route first uses
 #'   \code{max_outer} as its coordinate-descent budget. For legacy requests
@@ -13,12 +16,18 @@
 #'   Synopsis estimand.
 #' @param dp_analysis_id Required signed Gaussian Synopsis artifact identifier
 #'   for \code{family = "gaussian"}.
+#' @param analysis_id Required signed finite L1 path identifier for
+#'   \code{family = "binomial"} or \code{"poisson"}. The optional
+#'   \code{lambda} argument may only select exact penalty levels already in
+#'   that path.
 #' @return A \code{ds.vertLASSOIter} / \code{ds.vertDPLASSOPath} object for
-#'   the authenticated Gaussian route. Other families raise
-#'   \code{dsvert_route_unavailable} before DSI.
-#' @details The returned path is deterministic post-processing of one sticky
-#'   release: its additional privacy cost is \code{(epsilon, delta) = (0, 0)}.
-#'   It has no sampling inference or coefficient confidence regions.
+#'   one authenticated Gaussian or finite binomial/Poisson L1 path. Other
+#'   non-Gaussian requests raise \code{dsvert_route_unavailable} before DSI.
+#' @details Every path uses exactly one sticky release; selecting multiple
+#'   signed penalty levels is deterministic post-processing and creates no
+#'   second release. The release certificate states its per-artifact privacy
+#'   parameters. There is no sampling inference or coefficient confidence
+#'   region.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertLASSOIter <- function(formula, data = NULL,
@@ -36,9 +45,15 @@ ds.vertLASSOIter <- function(formula, data = NULL,
                               poisson_damping = 0.5,
                               verbose = TRUE, datasources = NULL,
                               cor_analysis_id = NULL,
-                              dp_analysis_id = NULL) {
+                              dp_analysis_id = NULL,
+                              analysis_id = NULL) {
+  explicit_arguments <- names(as.list(match.call(expand.dots = FALSE)))[-1L]
   family <- match.arg(family)
   if (identical(family, "gaussian")) {
+    if (!is.null(analysis_id)) {
+      stop("analysis_id is reserved for signed binomial or Poisson L1 paths",
+           call. = FALSE)
+    }
     if (is.null(dp_analysis_id)) {
       stop(
         "dp_analysis_id is required for the signed Gaussian LASSO path",
@@ -86,6 +101,12 @@ ds.vertLASSOIter <- function(formula, data = NULL,
     path$certification_retry <- retried
     class(path) <- unique(c("ds.vertLASSOIter", class(path)))
     return(path)
+  }
+
+  if (!is.null(analysis_id)) {
+    return(.dsvert_dp_lasso_grid_adapter(
+      explicit_arguments, formula, data, family, lambda, verbose, datasources,
+      analysis_id))
   }
 
   .dsvert_block_retired_remote_route("lasso_iter")

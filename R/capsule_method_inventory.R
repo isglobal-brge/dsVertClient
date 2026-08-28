@@ -840,19 +840,20 @@
     c("ds.vertLASSOIter", "ds.vert.lasso_iter"), "ds.vertLASSOIter",
     "lasso_iterative",
     c("admitted_count", "gaussian_sufficient_statistics_same_owner",
-      "signed_gaussian_model_artifact",
+      "signed_gaussian_model_artifact_or_finite_binomial_poisson_l1_path",
       "validated_gaussian_provenance_certificate"),
-    "Gaussian L1 coefficient paths from one signed Synopsis artifact.",
-    c("gaussian_only", "identifiability", "kkt_validation",
+    paste("Gaussian L1 paths or signed finite binomial/Poisson L1 candidate",
+          "paths from one same-owner Synopsis artifact."),
+    c("same_owner_only", "finite_signed_candidate_path", "identifiability",
       "no_sampling_inference", "objective_scale_contract"),
     "synopsis_release_implemented", character(),
     c("ds.vert.lasso_iter" = "ds.vertLASSOIter"),
     current_route_status =
-      "formal_same_owner_synopsis_variant_only_legacy_unavailable",
+      "formal_same_owner_synopsis_gaussian_and_finite_glm_l1_legacy_unavailable",
     artifact_implementation_state =
-      "validated_same_owner_synopsis_adapter_implemented",
+      "validated_same_owner_synopsis_l1_adapters_implemented",
     inference_implementation_state =
-      "dp_gaussian_lasso_path_implemented")
+      "dp_gaussian_and_finite_glm_lasso_paths_implemented")
 
   add(
     c("ds.vertLASSOCV", "ds.vert.lasso_cv"), "ds.vertLASSOCV",
@@ -1508,7 +1509,8 @@
     "legacy_mutating_release_quarantine",
     "signed_workload_unavailable_quarantine",
     "formal_capsule_variant_only_legacy_unavailable",
-    "formal_same_owner_synopsis_variant_only_legacy_unavailable")
+    "formal_same_owner_synopsis_variant_only_legacy_unavailable",
+    "formal_same_owner_synopsis_gaussian_and_finite_glm_l1_legacy_unavailable")
   attr(out, "migration_feasibility_levels") <- c(
     "count_operation_implemented",
     "frequency_operation_implemented",
@@ -1539,11 +1541,13 @@
     "validated_synopsis_adapter_implemented",
     "validated_complete_case_gaussian_synopsis_adapter_implemented",
     "validated_same_owner_synopsis_adapter_implemented",
+    "validated_same_owner_synopsis_l1_adapters_implemented",
     "validated_complete_case_gaussian_capsule_adapter_implemented",
     "validated_same_and_cross_owner_capsule_adapter_implemented",
     "validated_same_owner_capsule_adapter_implemented")
   attr(out, "inference_implementation_state_levels") <- c(
     "dp_gaussian_lasso_path_implemented",
+    "dp_gaussian_and_finite_glm_lasso_paths_implemented",
     "dp_gaussian_pseudo_ic_implemented",
     "dp_aware_conditional_hypergeometric_bootstrap_implemented",
     "dp_aware_conditional_null_not_implemented",

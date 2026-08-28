@@ -130,6 +130,15 @@
       manifest, data_name, analysis_id, owner_peer, adjacency, scale,
       capacity, family_name))
   }
+  if (is.list(artifact) && artifact$version %in%
+      unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS)) {
+    family_name <- names(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS)[[
+      match(artifact$version,
+            unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS))]]
+    return(.dsvert_dp_lasso_grid_artifact(
+      manifest, data_name, analysis_id, owner_peer, adjacency, scale,
+      capacity, family_name))
+  }
   if (is.list(artifact) && identical(
         artifact$version, .DSVERT_CLIENT_DP_NB_GRID_ARTIFACT_VERSION)) {
     return(.dsvert_dp_nb_grid_artifact(

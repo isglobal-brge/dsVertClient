@@ -970,6 +970,12 @@
                .DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS[["poisson"]]) &&
        identical(artifact$spec_version, "poisson_grid_v1")) ||
     (identical(artifact$version,
+               .DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS[["binomial"]]) &&
+       identical(artifact$spec_version, "binomial_lasso_grid_v1")) ||
+    (identical(artifact$version,
+               .DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS[["poisson"]]) &&
+       identical(artifact$spec_version, "poisson_lasso_grid_v1")) ||
+    (identical(artifact$version,
                .DSVERT_CLIENT_DP_NB_GRID_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "negative_binomial_grid_v1")) ||
     (identical(artifact$version,
@@ -1480,7 +1486,8 @@
                .DSVERT_CLIENT_DP_GEE_AR1_ROBUST_GRID_ARTIFACT_VERSION)) {
     as.numeric(artifact$statistic_maximum)
   } else if (artifact$version %in%
-             unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS)) {
+             c(unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS),
+               unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS))) {
     as.numeric(artifact$statistic_maximum)
   } else if (identical(artifact$version,
                        .DSVERT_CLIENT_DP_NB_GRID_ARTIFACT_VERSION)) {
@@ -1707,12 +1714,18 @@
         finite_global_composition_claim = FALSE),
       certificate = certificate))
   }
-  if (artifact$version %in%
-      unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS)) {
-    family_name <- names(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS)[[
-      match(artifact$version,
-            unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS))]]
-    moment <- .dsvert_dp_glm_grid_moment(coordinates, artifact, family_name)
+  if (artifact$version %in% c(
+        unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS),
+        unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS))) {
+    lasso <- artifact$version %in%
+      unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS)
+    versions <- if (isTRUE(lasso)) {
+      .DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS
+    } else .DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS
+    family_name <- names(versions)[[match(artifact$version, unname(versions))]]
+    moment <- if (isTRUE(lasso)) {
+      .dsvert_dp_lasso_grid_moment(coordinates, artifact, family_name)
+    } else .dsvert_dp_glm_grid_moment(coordinates, artifact, family_name)
     accuracy_release <- list(
       manifest_sha256 = certificate$manifest_sha256,
       epsilon = certificate$epsilon, mechanism = certificate$mechanism,
@@ -2120,6 +2133,7 @@ ds.validateDPGaussianCertificate <- function(x, trusted_pinset = NULL) {
         .DSVERT_CLIENT_DP_GEE_AR1_ROBUST_GRID_ARTIFACT_VERSION,
         unname(.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS),
         unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS),
+        unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS),
         .DSVERT_CLIENT_DP_NB_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_MULTINOM_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_ORDINAL_GRID_ARTIFACT_VERSION)) {

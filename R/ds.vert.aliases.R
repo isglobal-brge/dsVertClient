@@ -760,11 +760,13 @@ ds.vert.lasso_iter <- function(formula, data = NULL,
                                ...) {
   method <- match.arg(method)
   args <- c(list(formula = formula, data = data), list(...))
-  if (is.null(args$exact_non_gaussian)) {
+  if (is.null(args$exact_non_gaussian) && is.null(args$analysis_id)) {
     args$exact_non_gaussian <- !identical(method, "fast")
   }
   route <- if (identical(args$family %||% "gaussian", "gaussian")) {
     "ds.vertLASSOIter(signed-gaussian-synopsis)"
+  } else if (!is.null(args$analysis_id)) {
+    "ds.vertLASSOIter(signed-finite-l1-path)"
   } else if (isTRUE(args$exact_non_gaussian)) {
     "ds.vertLASSOIter(aggregate-score-unavailable)"
   } else {

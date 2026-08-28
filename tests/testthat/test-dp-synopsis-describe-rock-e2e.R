@@ -45,7 +45,7 @@
   "ordinal", "glm_grid", "glmm_random_slope_focal", "gee_ar1",
   "gee_ar1_robust", "cox_partial_grid", "poisson_glmm",
   "poisson_glmm_random_slope", "poisson_glmm_three_random_slope",
-  "gee_glm_robust")
+  "gee_glm_robust", "lasso_glm_grid")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
   stop("unknown DSVERT_TEST_SYNOPSIS_E2E_FAMILY", call. = FALSE)
@@ -745,6 +745,27 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
   fixture$snapshots$peer_a[["data_peer_a"]]$data <- data.frame(
     patient_id = paste0("u", seq_len(n)), x_peer_a = x, y_peer_a = y,
     stringsAsFactors = FALSE)
+  fixture
+}
+
+.synopsis_lasso_grid_real_e2e_fixture <- function(
+    k, server_ns, family = c("binomial", "poisson"), n = 400L) {
+  family <- match.arg(family)
+  fixture <- .synopsis_glm_grid_real_e2e_fixture(k, server_ns, family, n)
+  policy <- fixture$policies$peer_a
+  beta_grid <- if (identical(family, "binomial")) {
+    list(c(-1, 0), c(-1, 2), c(-1, 0), c(-1, 2))
+  } else {
+    list(c(0, 0), c(0, log(4)), c(0, 0), c(0, log(4)))
+  }
+  policy$capsule_workload_specs$gaussian <- list(lasso_primary = c(list(
+    version = paste0(family, "_lasso_grid_v1"), dataset = "data_peer_a",
+    outcome = "y_peer_a", predictors = "x_peer_a", intercept = TRUE,
+    candidate_grid = Map(function(lambda, beta) {
+      list(lambda = lambda, beta = beta)
+    }, c(0.5, 0.5, 0.01, 0.01), beta_grid)),
+    if (identical(family, "poisson")) list(max_outcome = 8L) else list()))
+  fixture$policies$peer_a <- policy
   fixture
 }
 
@@ -4201,6 +4222,85 @@ test_that("real additive binomial and Poisson grids are plausible and Rock-repla
                        fit$provenance_certificate$certificate_sha256)
       expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                        before)
+    }
+  }
+})
+
+test_that("real finite binomial and Poisson L1 paths are plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("lasso_glm_grid")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  lasso <- get(".dsvert_dp_lasso_grid_impl", asNamespace("dsVertClient"),
+               inherits = FALSE)
+  for (family in c("binomial", "poisson")) {
+    for (k in .synopsis_real_e2e_peer_counts()) {
+      fixture <- .synopsis_lasso_grid_real_e2e_fixture(
+        k, server_ns, family = family, n = 400L)
+      on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+      conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+        structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+      }), fixture$peers)
+      dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+      fit <- lasso(y_peer_a ~ x_peer_a, "data_peer_a", "lasso_primary",
+                   family, NULL, "peer_a", conns, dispatch)
+
+      expect_s3_class(fit, "ds.vertLASSOIter")
+      expect_identical(fit$family, paste0(family, "_finite_lasso_grid"))
+      expect_identical(fit$signed_artifact$spec_version,
+                       paste0(family, "_lasso_grid_v1"))
+      expect_identical(fit$lambda, c(0.5, 0.01))
+      expect_identical(length(fit$paths), 2L)
+      expect_true(all(vapply(fit$paths, function(path) {
+        all(is.finite(path)) && length(path) == 2L
+      }, logical(1L))))
+      expect_true(all(is.finite(fit$selected_dp_objective)))
+      expect_null(fit$covariance)
+      expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                       c(1L, 2L))
+      tampered_certificate <- fit$provenance_certificate
+      tampered_certificate$block_values_sha256 <- paste0(
+        chartr("0123456789abcdef", "123456789abcdef0",
+               substr(tampered_certificate$block_values_sha256, 1L, 1L)),
+        substr(tampered_certificate$block_values_sha256, 2L, 64L))
+      expect_error(ds.validateDPGaussianCertificate(tampered_certificate),
+                   "Invalid Gaussian Synopsis provenance certificate")
+
+      route_lasso <- function(formula, data_name, analysis_id, family,
+                              lambda = NULL, server = NULL, datasources = NULL,
+                              .aggregate) {
+        lasso(formula, data_name, analysis_id, family, lambda, server,
+              datasources, dispatch)
+      }
+      public <- testthat::with_mocked_bindings(
+        .dsvert_dp_lasso_grid_impl = route_lasso,
+        list(
+          direct = ds.vertLASSOIter(
+            y_peer_a ~ x_peer_a, data = "data_peer_a", family = family,
+            analysis_id = "lasso_primary", datasources = conns,
+            verbose = FALSE),
+          alias = ds.vert.lasso_iter(
+            y_peer_a ~ x_peer_a, data = "data_peer_a", family = family,
+            analysis_id = "lasso_primary", datasources = conns,
+            verbose = FALSE),
+          selected = ds.vertLASSOIter(
+            y_peer_a ~ x_peer_a, data = "data_peer_a", family = family,
+            analysis_id = "lasso_primary", lambda = 0.01,
+            datasources = conns, verbose = FALSE)),
+        .package = "dsVertClient")
+      expect_identical(public$direct$paths, fit$paths)
+      expect_identical(public$alias$paths, fit$paths)
+      expect_identical(public$selected$lambda, 0.01)
+      expect_identical(length(public$selected$paths), 1L)
+
+      before <- c(fixture$state$source_prepare, fixture$state$start)
+      fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+        new.env(parent = emptyenv())
+      }), fixture$peers)
+      replay <- lasso(y_peer_a ~ x_peer_a, "data_peer_a", "lasso_primary",
+                      family, NULL, "peer_a", conns, dispatch)
+      expect_identical(replay$paths, fit$paths)
+      expect_identical(replay$provenance_certificate$certificate_sha256,
+                       fit$provenance_certificate$certificate_sha256)
+      expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
     }
   }
 })

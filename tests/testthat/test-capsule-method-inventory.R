@@ -657,11 +657,11 @@ test_that("mixed variants and Frequency compatibility names have explicit scopes
   lasso_iter <- inventory[inventory$method %in%
     c("ds.vertLASSOIter", "ds.vert.lasso_iter"), , drop = FALSE]
   expect_true(all(lasso_iter$current_route_status ==
-                    "formal_same_owner_synopsis_variant_only_legacy_unavailable"))
+                    "formal_same_owner_synopsis_gaussian_and_finite_glm_l1_legacy_unavailable"))
   expect_true(all(lasso_iter$artifact_implementation_state ==
-                    "validated_same_owner_synopsis_adapter_implemented"))
+                    "validated_same_owner_synopsis_l1_adapters_implemented"))
   expect_true(all(lasso_iter$inference_implementation_state ==
-                    "dp_gaussian_lasso_path_implemented"))
+                    "dp_gaussian_and_finite_glm_lasso_paths_implemented"))
   expect_true(all(ds.vertMethodStatus(mixed)$status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertLASSOIter", "ds.vert.lasso_iter"))$status == "promoted"))

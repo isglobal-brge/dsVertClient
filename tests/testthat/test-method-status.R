@@ -365,7 +365,7 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
   expect_true(all(lasso_iter$release_contract ==
                     "formal_sticky_synopsis_artifact"))
   expect_match(lasso_iter$principal_limitation[[1L]],
-               "Binomial and Poisson", fixed = TRUE)
+               "binomial and Poisson", ignore.case = TRUE)
   expect_match(ds.vertMethodStatus("ds.vertMI")$principal_limitation,
                "intercept-only categorical", fixed = TRUE)
   expect_match(ds.vertMethodStatus("ds.vertNBFullRegTheta")$
