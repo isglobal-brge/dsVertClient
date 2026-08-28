@@ -481,32 +481,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "computation is sealed pending a production-attested runtime. Finite grids have no arbitrary",
         "optimizer or sampling inference. Neither route returns",
         "individual fitted values."))
-  add("ds.vertCox", "ds.vertCox", "promoted",
-      paste(
-        "Read-only coefficients and hazard-ratio ranges from one completed",
-        "two-authority-signed sticky formal Cox opening selected by",
-        "formal_analysis_id."),
-      paste(
-        "Fresh Cox computation is sealed; the completed reader returns no covariance,",
-        "standard errors, p-values, baseline hazard, prediction, residual or",
-        "sampling inference artifact."))
-  add("ds.vert.coxph", "ds.vertCox", "promoted",
-      paste(
-        "Read-only coefficients and hazard-ratio ranges from one completed",
-        "two-authority-signed sticky formal Cox opening selected by",
-        "formal_analysis_id; no legacy or fresh Cox computation is reachable."),
-      paste(
-        "The completed reader returns no covariance, standard errors, p-values, baseline",
-        "hazard, prediction, residual or sampling inference artifact."))
-  add(c("ds.vertCoxProfileNonDisclosive"),
+  add(c("ds.vertCox", "ds.vert.coxph", "ds.vertCoxProfileNonDisclosive"),
       "ds.vertCox", "promoted",
       paste(
-        "Read-only coefficients and hazard-ratio ranges from one completed",
-        "two-authority-signed sticky formal Cox opening selected by",
-        "formal_analysis_id; no legacy or fresh Cox computation is reachable."),
+        "analysis_id selects one signed same-owner Breslow Cox",
+        "partial-likelihood finite-grid Synopsis; formal_analysis_id reads",
+        "one completed two-authority-signed formal Cox opening."),
       paste(
-        "The completed reader returns no covariance, standard errors, p-values, baseline",
-        "hazard, prediction, residual or sampling inference artifact."))
+        "The finite grid has no arbitrary optimizer; both routes have no",
+        "covariance, standard errors, p-values, baseline hazard, prediction,",
+        "residual or sampling inference artifact."))
   add(c("ds.vertCoxDiscreteNonDisclosive"),
       "ds.vertCoxDiscreteNonDisclosive", "promoted",
       paste(
@@ -519,11 +503,12 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "baseline hazards and predictions are unavailable."))
   add("ds.vert.cox", "ds.vertCox", "promoted",
       paste(
-        "Alias for the completed formal Cox public certificate when",
-        "formal_analysis_id is supplied."),
+        "Alias for a signed same-owner Breslow Cox partial-likelihood",
+        "finite-grid Synopsis when analysis_id is supplied, or a completed",
+        "formal Cox public certificate when formal_analysis_id is supplied."),
       paste(
-        "Fresh Cox computation is sealed; no covariance, p-values or",
-        "analyst-selected source work or opening is available."))
+        "No arbitrary optimizer, no covariance, p-values or analyst-selected",
+        "source work or opening is available."))
   add(c("ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",
       "promoted",
       paste(
@@ -779,6 +764,9 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   glm_synopsis_wrappers <- c(
     "ds.vertGLM", "ds.vert.glm",
     "ds.vertLASSOIter", "ds.vert.lasso_iter")
+  cox_synopsis_wrappers <- c(
+    "ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
+    "ds.vertCoxProfileNonDisclosive")
   out$release_contract[out$method %in% synopsis_releases] <-
     "formal_sticky_synopsis_artifact"
   out$release_contract[out$method == "ds.vertDPCount"] <-
@@ -791,9 +779,9 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "postprocessing_inherits_input"
   out$release_contract[out$method %in% glm_synopsis_wrappers] <-
     "formal_sticky_synopsis_artifact"
+  out$release_contract[out$method %in% cox_synopsis_wrappers] <-
+    "formal_sticky_synopsis_artifact"
   formal_cox_public <- c(
-    "ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
-    "ds.vertCoxProfileNonDisclosive",
     "ds.vertCoxDiscreteNonDisclosive",
     "ds.vertGEE", "ds.vert.gee")
   out$release_contract[out$method %in% formal_cox_public] <-

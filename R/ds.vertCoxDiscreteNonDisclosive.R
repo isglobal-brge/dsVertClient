@@ -1170,23 +1170,30 @@ ds.vertCoxDiscreteNonDisclosive <- function(formula,
     })
 }
 
-#' @title Formal Cox-profile public-release compatibility frontdoor
-#' @description With \code{formal_analysis_id}, reads the same already
-#'   completed two-authority-signed formal Cox certificate as
-#'   \code{ds.vertCox()}. Fresh Cox computation, including
-#'   \code{analysis_id}, is sealed before DSI. Without a selector, this
+#' @title Signed finite-grid Cox-profile compatibility frontdoor
+#' @description With \code{analysis_id}, selects the same signed Breslow Cox
+#'   partial-likelihood grid as \code{ds.vertCox()}. With
+#'   \code{formal_analysis_id}, it reads the same already completed
+#'   two-authority-signed formal Cox certificate. Without a selector, this
 #'   historical name fails before any DSI call; the word
 #'   \dQuote{NonDisclosive} is not a current security claim.
+#' @details The finite-grid route has the same one-row-per-patient, binary-event,
+#'   fixed-time-grid and bounded-numeric-predictor contract as
+#'   \code{ds.vertCox()}; it selects only signed beta candidates and has no
+#'   arbitrary optimizer or sampling inference.
 #' @param formula,data Explicit formula and aligned data name selecting the
 #'   custodian-configured completed release.
-#' @param analysis_id Retained compatibility selector for fresh Cox
-#'   computation. It is currently unavailable before DSI.
+#' @param analysis_id Custodian-configured same-owner Cox partial-likelihood
+#'   finite-grid selector. It requires \code{Surv(time,event) ~ predictors}
+#'   and rejects legacy optimizer controls.
 #' @param formal_analysis_id Custodian-owned selector for an already completed
 #'   formal Cox public certificate. It cannot create a new release.
 #' @param max_event_times,max_iter,tol,newton,ridge_eps,debug_trace,verbose,datasources
 #'   Legacy compatibility arguments. They are rejected with a formal id and
 #'   otherwise the route fails before DSI.
-#' @return With \code{formal_analysis_id}, a coefficient-only
+#' @return With \code{analysis_id}, a coefficient-only
+#'   \code{dsvert_dp_cox_partial_grid} object. With
+#'   \code{formal_analysis_id}, a coefficient-only
 #'   \code{dsvert_formal_dp_cox} object. Otherwise a typed unavailable error.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
@@ -1208,7 +1215,14 @@ ds.vertCoxProfileNonDisclosive <- function(formula,
          call. = FALSE)
   }
   if (!is.null(analysis_id)) {
-    .dsvert_block_retired_remote_route("cox", .allow_test = FALSE)
+    unsupported <- setdiff(explicit,
+      c("formula", "data", "verbose", "datasources", "analysis_id"))
+    if (length(unsupported)) {
+      stop("analysis_id does not accept legacy Cox controls", call. = FALSE)
+    }
+    return(ds.vertCox(
+      formula = formula, data = data, verbose = verbose,
+      datasources = datasources, analysis_id = analysis_id))
   }
   if (!is.null(formal_analysis_id)) {
     return(.dsvert_formal_cox_frontdoor_adapter(

@@ -324,8 +324,8 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
     "ds.vertCoxProfileNonDisclosive"))
   expect_true(all(cox_public$status == "promoted"))
   expect_true(all(cox_public$release_contract ==
-                    "formal_completed_public_certificate"))
-  expect_true(all(grepl("formal_analysis_id", cox_public$safe_scope,
+                    "formal_sticky_synopsis_artifact"))
+  expect_true(all(grepl("analysis_id", cox_public$safe_scope,
                         fixed = TRUE)))
   expect_false(any(grepl("fresh_formal_analysis_id", cox_public$safe_scope,
                          fixed = TRUE)))

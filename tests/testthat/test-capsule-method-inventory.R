@@ -360,6 +360,8 @@ test_that("planned artifacts describe the actual biomedical contracts", {
     "zero_call_postprocessing") %in%
       artifacts_for(inventory, "ds.vertIPW")))
   expect_true(all(c(
+    "bounded_cox_partial_likelihood_grid",
+    "cox_partial_likelihood_synopsis_certificate",
     "formal_cox_public_certificate", "formal_cox_sticky_opening",
     "formal_cox_two_authority_signatures") %in%
       artifacts_for(inventory, "ds.vertCox")))
@@ -433,7 +435,7 @@ test_that("estimands and inference requirements match implemented semantics", {
     "explicit_non_sampling_interpretation") %in%
       requirements_for(inventory, "ds.vertLR")))
   expect_true(all(c(
-    "canonical_certificate_validation", "completed_release_only",
+    "canonical_certificate_validation", "finite_signed_beta_grid",
     "two_authority_signatures") %in%
       requirements_for(inventory, "ds.vertCoxProfileNonDisclosive")))
   expect_true(all(c(

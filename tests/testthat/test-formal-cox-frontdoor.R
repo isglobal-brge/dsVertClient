@@ -53,7 +53,7 @@ test_that("formal Cox reads one certified public release at K=2/3/5", {
   }
 })
 
-test_that("fresh Cox selectors are sealed before DSI", {
+test_that("fresh formal Cox selectors are sealed before DSI", {
   conns <- list(site_a = structure(list(), class = "mock"),
                 site_b = structure(list(), class = "mock"))
   calls <- 0L
@@ -68,20 +68,11 @@ test_that("fresh Cox selectors are sealed before DSI", {
     }, .package = "dsVertClient")
   formula <- stats::as.formula("Surv(time, status) ~ x")
   expect_error(ds.vertCox(
-    formula, data = "study", analysis_id = "fresh_cox", verbose = FALSE,
-    datasources = conns), class = "dsvert_route_unavailable")
-  expect_error(ds.vertCox(
     formula, data = "study", fresh_formal_analysis_id = "fresh_cox",
     verbose = FALSE, datasources = conns), class = "dsvert_route_unavailable")
-  expect_error(ds.vert.cox(
-    formula, data = "study", analysis_id = "fresh_cox", verbose = FALSE,
-    datasources = conns), class = "dsvert_route_unavailable")
   expect_error(ds.vert.coxph(
     formula, data = "study", fresh_formal_analysis_id = "fresh_cox",
     verbose = FALSE, datasources = conns), class = "dsvert_route_unavailable")
-  expect_error(ds.vertCoxProfileNonDisclosive(
-    formula, data = "study", analysis_id = "fresh_cox", verbose = FALSE,
-    datasources = conns), class = "dsvert_route_unavailable")
   expect_identical(calls, 0L)
   expect_error(ds.vertCox(
     formula, data = "study",
@@ -89,17 +80,17 @@ test_that("fresh Cox selectors are sealed before DSI", {
     datasources = conns), "mutually exclusive")
 })
 
-test_that("Cox aliases advertise only the completed certificate route", {
+test_that("Cox aliases advertise the signed grid and completed certificate routes", {
   status <- ds.vertMethodStatus(c(
     "ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
     "ds.vertCoxProfileNonDisclosive"))
   expect_true(all(status$status == "promoted"))
-  expect_true(all(grepl("formal_analysis_id", status$safe_scope, fixed = TRUE)))
+  expect_true(all(grepl("analysis_id", status$safe_scope, fixed = TRUE)))
   expect_false(any(grepl("fresh_formal_analysis_id", status$safe_scope,
                          fixed = TRUE)))
-  expect_true(grepl("Fresh Cox computation is sealed",
-                    status$principal_limitation[status$method == "ds.vertCox"],
-                    fixed = TRUE))
+  expect_true(grepl("finite grid has no arbitrary optimizer",
+                    tolower(status$principal_limitation[
+                      status$method == "ds.vertCox"]), fixed = TRUE))
   expect_true(all(grepl("no covariance", status$principal_limitation,
                         fixed = TRUE)))
 })

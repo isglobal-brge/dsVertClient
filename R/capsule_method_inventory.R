@@ -517,15 +517,18 @@
   add(
     c("ds.vertCox", "ds.vert.cox", "ds.vert.coxph",
       "ds.vertCoxProfileNonDisclosive"),
-    "ds.vertCox", "cox_formal_public_release",
-    c("formal_cox_public_certificate", "formal_cox_sticky_opening",
+    "ds.vertCox", "cox_partial_likelihood",
+    c("bounded_cox_partial_likelihood_grid",
+      "cox_partial_likelihood_synopsis_certificate",
+      "formal_cox_public_certificate", "formal_cox_sticky_opening",
       "formal_cox_two_authority_signatures"),
     paste(
-      "Certified bounded log-hazard-ratio lattice point estimates and",
-      "hazard-ratio ranges from one completed two-authority sticky opening."),
-    c("canonical_certificate_validation", "completed_release_only",
+      "A signed same-owner Breslow partial-likelihood finite grid, or",
+      "bounded log-hazard-ratio point estimates and hazard-ratio ranges",
+      "from one completed two-authority sticky opening."),
+    c("canonical_certificate_validation", "finite_signed_beta_grid",
       "no_covariance_or_sampling_inference", "two_authority_signatures"),
-    "formal_public_certificate_implemented",
+    "synopsis_release_implemented",
     aliases = c("ds.vert.cox" = "ds.vertCox",
                 "ds.vert.coxph" = "ds.vertCox",
                 "ds.vertCoxProfileNonDisclosive" = "ds.vertCox"),
@@ -533,9 +536,10 @@
                     "ds.vert.coxph" = "compatibility_wrapper",
                     "ds.vertCoxProfileNonDisclosive" =
                       "compatibility_wrapper"),
-    current_route_status = "formal_completed_public_certificate_only",
+    current_route_status =
+      "signed_finite_grid_synopsis_or_formal_completed_public_certificate",
     artifact_implementation_state =
-      "validated_formal_cox_public_certificate_adapter_implemented")
+      "validated_signed_cox_grid_and_formal_public_certificate_adapters_implemented")
 
   add(
     "ds.vertCoxDiscreteNonDisclosive", "ds.vertCoxDiscreteNonDisclosive",
@@ -1507,6 +1511,7 @@
     "validated_signed_finite_grid_formal_certificate_and_gaussian_exchangeable_gls_adapters_implemented",
     "validated_signed_finite_grid_formal_certificate_and_gaussian_exchangeable_ar1_gls_adapters_implemented",
     "validated_formal_cox_public_certificate_adapter_implemented",
+    "validated_signed_cox_grid_and_formal_public_certificate_adapters_implemented",
     "planned_no_materializer", "reserved_not_materialized",
     "secure_artifact_not_implemented",
     "validated_capsule_adapter_implemented",

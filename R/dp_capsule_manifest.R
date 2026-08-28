@@ -371,19 +371,53 @@
             abs(sum(weights) - 1) <= 1024 * .Machine$double.eps
         }
       } else if (identical(family, "survival")) {
-        expected <- c(
-          "version", "dataset", "time", "event", "censor",
-          "time_grid", "entry")
-        valid <- setequal(names(spec), expected) &&
-          all(vapply(spec[c(
-            "version", "dataset", "time", "event")],
-            identifier, logical(1L))) &&
-          .dsvert_dp_is_string(spec$censor) && nzchar(spec$censor) &&
-          (is.null(spec$entry) || identifier(spec$entry))
-        if (isTRUE(valid)) {
-          grid <- .dsvert_dp_capsule_manifest_number_array(
-            spec$time_grid, "survival time grid")
-          valid <- all(diff(grid) > 0)
+        if (identical(spec$version, "cox_partial_likelihood_grid_v1")) {
+          expected <- c(
+            "version", "dataset", "time", "event", "censor",
+            "event_level", "time_grid", "predictors", "intercept",
+            "candidate_grid")
+          valid <- setequal(names(spec), expected) &&
+            all(vapply(spec[c("version", "dataset", "time", "event")],
+                       identifier, logical(1L))) &&
+            .dsvert_dp_is_string(spec$censor) && nzchar(spec$censor) &&
+            .dsvert_dp_is_string(spec$event_level) && nzchar(spec$event_level) &&
+            !identical(spec$censor, spec$event_level) &&
+            identical(spec$intercept, FALSE)
+          predictors <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$predictors, "Cox fixed predictors"),
+            error = function(error) character()) else character()
+          grid <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_number_array(
+              spec$time_grid, "Cox time grid"),
+            error = function(error) numeric()) else numeric()
+          candidates <- if (isTRUE(valid) && is.list(spec$candidate_grid)) {
+            lapply(spec$candidate_grid, function(beta) tryCatch(
+              .dsvert_dp_capsule_manifest_number_array(
+                beta, "Cox beta grid row"),
+              error = function(error) numeric()))
+          } else list()
+          valid <- isTRUE(valid) && length(predictors) && length(grid) &&
+            all(diff(grid) > 0) && length(candidates) &&
+            all(vapply(candidates, function(beta) {
+              length(beta) == length(predictors) && all(is.finite(beta)) &&
+                all(abs(beta) <= 4) && sum(abs(beta)) <= 8
+            }, logical(1L)))
+        } else {
+          expected <- c(
+            "version", "dataset", "time", "event", "censor",
+            "time_grid", "entry")
+          valid <- setequal(names(spec), expected) &&
+            all(vapply(spec[c(
+              "version", "dataset", "time", "event")],
+              identifier, logical(1L))) &&
+            .dsvert_dp_is_string(spec$censor) && nzchar(spec$censor) &&
+            (is.null(spec$entry) || identifier(spec$entry))
+          if (isTRUE(valid)) {
+            grid <- .dsvert_dp_capsule_manifest_number_array(
+              spec$time_grid, "survival time grid")
+            valid <- all(diff(grid) > 0)
+          }
         }
       } else if (identical(family, "gaussian")) {
         if (identical(spec$version, "ordinal_grid_v1")) {

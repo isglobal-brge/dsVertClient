@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertCox.R
 \name{ds.vertCox}
 \alias{ds.vertCox}
-\title{Formal Cox public-release frontdoor}
+\title{Signed finite-grid Cox frontdoor}
 \usage{
 ds.vertCox(
   formula,
@@ -27,8 +27,9 @@ custodian-configured completed release.}
 \item{max_iter, tol, max_event_times, newton, ridge_eps, debug_trace, verbose, datasources}{Legacy compatibility arguments. They are rejected when a formal id is
 supplied; without it the route fails before DSI.}
 
-\item{analysis_id}{Retained compatibility selector for fresh Cox computation.
-It is currently unavailable before DSI.}
+\item{analysis_id}{Custodian-configured same-owner Cox partial-likelihood
+finite-grid selector. It requires \code{Surv(time,event) ~ predictors} and
+rejects legacy optimizer controls.}
 
 \item{formal_analysis_id}{Custodian-configured formal Cox public certificate
 selector. It is read-only and cannot create a new release.}
@@ -37,23 +38,29 @@ selector. It is read-only and cannot create a new release.}
 \code{analysis_id}. It is currently unavailable before DSI.}
 }
 \value{
-With a valid \code{formal_analysis_id}, a coefficient-only
-\code{dsvert_formal_dp_cox} object. Otherwise a typed unavailable error.
+With \code{analysis_id}, a coefficient-only
+\code{dsvert_dp_cox_partial_grid} object. With \code{formal_analysis_id}, a
+coefficient-only \code{dsvert_formal_dp_cox} object. Otherwise a typed
+unavailable error.
 }
 \description{
-With \code{formal_analysis_id}, reads one already completed,
-two-authority-signed sticky formal Cox certificate. It returns only the
-certified coefficient and hazard-ratio point/range values and never exposes
-source records, shares or intermediate state. Fresh Cox computation is sealed:
-\code{analysis_id} and \code{fresh_formal_analysis_id} fail before any DSI
-call until its protected runtime is production-attested.
+With \code{analysis_id}, selects one point from a signed same-owner Breslow
+Cox partial-likelihood beta grid. With \code{formal_analysis_id}, reads one
+already completed, two-authority-signed sticky formal Cox certificate. Both
+routes return only certified coefficient and hazard-ratio values and never
+expose source records, shares or intermediate state. The finite-grid route is
+the only fresh Cox computation admitted here;
+\code{fresh_formal_analysis_id} remains sealed.
 }
 \details{
+The finite-grid route requires one bounded row per patient, a binary categorical
+event, no delayed entry, a fixed public time grid and bounded numeric predictors.
+It selects only from its signed beta candidates; it has no arbitrary optimizer.
 The read-only formal route needs an explicit formula, data name and
-custodian-owned analysis id. It has no analyst-owned privacy parameters,
-ring, retry, source or MPC settings. Covariance, standard errors, p-values,
-baseline hazards, residuals, individual predictions and new analysis runs
-remain unavailable until separately attested artifacts exist.
+custodian-owned analysis id. Both routes have no analyst-owned privacy
+parameters, ring, retry, source or MPC settings. Covariance, standard errors,
+p-values, baseline hazards, residuals, individual predictions and new analysis
+runs remain unavailable until separately attested artifacts exist.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

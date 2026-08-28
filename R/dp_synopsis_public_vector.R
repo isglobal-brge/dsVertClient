@@ -302,6 +302,17 @@
         c(bits, rep(0L, length(indices) - 1L))
       bound <- as.numeric(block$descriptor$statistic_maximum)
       vector_bound <- TRUE
+    } else if (identical(block$family, "survival_artifacts") &&
+               identical(block$descriptor$version,
+                         "bounded-cox-partial-likelihood-grid-v1")) {
+      if (!identical(block$descriptor$source_coordinate_scaling,
+                     "all_coordinates_already_on_common_numeric_lattice_v1")) {
+        stop("The Cox partial-likelihood Synopsis lattice is invalid",
+             call. = FALSE)
+      }
+      shifts[indices] <- 0L
+      bound <- as.numeric(block$descriptor$statistic_maximum)
+      vector_bound <- TRUE
     } else if (identical(block$family, "categorical_pairs") &&
                identical(block$descriptor$version,
                          "fixed-domain-categorical-cross-contingency-v1")) {

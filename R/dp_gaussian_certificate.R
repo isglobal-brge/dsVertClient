@@ -958,7 +958,10 @@
        identical(artifact$spec_version, "multinomial_grid_v1")) ||
     (identical(artifact$version,
                .DSVERT_CLIENT_DP_ORDINAL_GRID_ARTIFACT_VERSION) &&
-       identical(artifact$spec_version, "ordinal_grid_v1"))
+       identical(artifact$spec_version, "ordinal_grid_v1")) ||
+    (identical(artifact$version,
+               .DSVERT_CLIENT_DP_COX_PARTIAL_GRID_ARTIFACT_VERSION) &&
+       identical(artifact$spec_version, "cox_partial_likelihood_grid_v1"))
   cross_owner_artifact <- identical(
     artifact$version, .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION) &&
     identical(artifact$spec_version, "v2") &&
@@ -1323,13 +1326,24 @@
     compiled$layout, "admitted_count",
     description = "signed admitted-count capacity block")
   capacity <- .dsvert_dp_vector_block_capacity(count_block)
-  artifact <- .dsvert_dp_gaussian_artifact(
-    trusted$manifest, certificate$dataset, certificate$analysis_id,
-    certificate$owner_peer,
-    trusted$manifest$admission$adjacency,
-    compiled$lattice$output_lattice_scale, capacity)
+  cox_partial_grid <- identical(
+    certificate$descriptor$version,
+    .DSVERT_CLIENT_DP_COX_PARTIAL_GRID_ARTIFACT_VERSION)
+  artifact <- if (isTRUE(cox_partial_grid)) {
+    .dsvert_dp_cox_partial_grid_artifact(
+      trusted$manifest, certificate$dataset, certificate$analysis_id,
+      certificate$owner_peer, trusted$manifest$admission$adjacency,
+      compiled$lattice$output_lattice_scale, capacity)
+  } else {
+    .dsvert_dp_gaussian_artifact(
+      trusted$manifest, certificate$dataset, certificate$analysis_id,
+      certificate$owner_peer, trusted$manifest$admission$adjacency,
+      compiled$lattice$output_lattice_scale, capacity)
+  }
   blocks <- .dsvert_dp_capsule_vector_blocks(
-    compiled$layout, "gaussian_models", dataset = certificate$dataset,
+    compiled$layout,
+    if (isTRUE(cox_partial_grid)) "survival_artifacts" else "gaussian_models",
+    dataset = certificate$dataset,
     owner_peer = certificate$owner_peer)
   blocks <- blocks[vapply(blocks, function(block) {
     identical(block$key, certificate$analysis_id)
@@ -1451,6 +1465,9 @@
     as.numeric(artifact$statistic_maximum)
   } else if (identical(artifact$version,
                        .DSVERT_CLIENT_DP_ORDINAL_GRID_ARTIFACT_VERSION)) {
+    as.numeric(artifact$statistic_maximum)
+  } else if (identical(artifact$version,
+                       .DSVERT_CLIENT_DP_COX_PARTIAL_GRID_ARTIFACT_VERSION)) {
     as.numeric(artifact$statistic_maximum)
   } else if (identical(
         artifact$version,
@@ -1581,9 +1598,13 @@
         .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
-        .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION)) {
+        .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_COX_PARTIAL_GRID_ARTIFACT_VERSION)) {
     moment <- if (identical(artifact$version,
-                            .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION)) {
+                            .DSVERT_CLIENT_DP_COX_PARTIAL_GRID_ARTIFACT_VERSION)) {
+      .dsvert_dp_cox_partial_grid_moment(coordinates, artifact)
+    } else if (identical(artifact$version,
+                          .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION)) {
       .dsvert_dp_gee_ar1_grid_moment(coordinates, artifact)
     } else if (identical(artifact$version,
                           .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
@@ -1607,8 +1628,14 @@
     return(list(
       integrity_valid = TRUE, authenticity = authenticity,
       artifact = artifact,
-      bounds = list(outcome = artifact$outcome, cluster = artifact$cluster,
-                    predictors = artifact$predictors),
+      bounds = if (identical(artifact$version,
+                             .DSVERT_CLIENT_DP_COX_PARTIAL_GRID_ARTIFACT_VERSION)) {
+        list(time = artifact$time, event = artifact$event,
+             predictors = artifact$predictors)
+      } else {
+        list(outcome = artifact$outcome, cluster = artifact$cluster,
+             predictors = artifact$predictors)
+      },
       design_terms = artifact$design_terms, coordinates = coordinates,
       validated_moment = moment,
       coordinate_capacity = capacity,

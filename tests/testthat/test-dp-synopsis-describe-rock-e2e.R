@@ -42,7 +42,8 @@
   "stratified_epidemiology", "causal_standardization", "frequency",
   "mi", "mantel_haenszel", "roc", "survival", "correlation", "gaussian", "cross_owner_tamper",
   "gaussian_lasso_focal", "lmm", "lmm_random_slope_focal", "nb2", "multinom",
-  "ordinal", "glm_grid", "glmm_random_slope_focal", "gee_ar1")
+  "ordinal", "glm_grid", "glmm_random_slope_focal", "gee_ar1",
+  "cox_partial_grid")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
   stop("unknown DSVERT_TEST_SYNOPSIS_E2E_FAMILY", call. = FALSE)
@@ -2032,6 +2033,84 @@ test_that("real Synopsis survival is plausible and Rock-replayable at K=2/3/5", 
     expect_identical(ds.vertDPLogRank(
       replay, replay, comparison_label = "same", reference_label = "baseline"),
       logrank)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real Breslow Cox finite grid is certified and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("cox_partial_grid")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  cox <- get(".dsvert_dp_cox_partial_grid_impl", asNamespace("dsVertClient"),
+             inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_survival_real_e2e_fixture(k, server_ns)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    policy <- fixture$policies$peer_a
+    policy$capsule_workload_specs$survival <- list(cox_grid = list(
+      version = "cox_partial_likelihood_grid_v1", dataset = "data_peer_a",
+      time = "time_peer_a", event = "status_peer_a", censor = "censor",
+      event_level = "event", time_grid = c(5, 10), predictors = "x_peer_a",
+      intercept = FALSE, candidate_grid = list(c(0.5), c(0))))
+    fixture$policies$peer_a <- policy
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    fit <- cox(Surv(time_peer_a, status_peer_a) ~ x_peer_a,
+               "data_peer_a", "cox_grid", conns, dispatch)
+
+    expect_s3_class(fit, "dsvert_dp_cox_partial_grid")
+    expect_identical(fit$status,
+      "public_certified_breslow_cox_partial_likelihood_finite_grid")
+    expect_identical(fit$signed_artifact$spec_version,
+                     "cox_partial_likelihood_grid_v1")
+    expect_true(all(is.finite(c(fit$coefficients, fit$hazard_ratio,
+                                fit$selected_dp_partial_loss))))
+    expect_true(all(fit$hazard_ratio > 0))
+    expect_null(fit$covariance)
+    expect_null(fit$std_errors)
+    expect_null(fit$p_values)
+    expect_null(fit$baseline_hazard)
+    expect_false(fit$source_values_exposed)
+    expect_false(fit$intermediate_values_exposed)
+    expect_false(fit$production_ready)
+    expect_identical(fit$additional_server_calls_after_synopsis, 0L)
+    expect_identical(fit$additional_privacy_cost, c(epsilon = 0, delta = 0))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    route_cox <- function(formula, data_name, analysis_id, datasources = NULL,
+                          .aggregate) {
+      cox(formula, data_name, analysis_id, datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_cox_partial_grid_impl = route_cox,
+      ds.vertCox(Surv(time_peer_a, status_peer_a) ~ x_peer_a,
+                 data = "data_peer_a", analysis_id = "cox_grid",
+                 datasources = conns),
+      .package = "dsVertClient")
+    expect_s3_class(public, "dsvert_dp_cox_partial_grid")
+    expect_identical(public$coefficients, fit$coefficients)
+    expect_identical(public$hazard_ratio, fit$hazard_ratio)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    tampered <- fit$provenance_certificate
+    tampered$block_values_sha256 <- paste0(
+      chartr("0123456789abcdef", "123456789abcdef0",
+             substr(tampered$block_values_sha256, 1L, 1L)),
+      substr(tampered$block_values_sha256, 2L, 64L))
+    expect_error(ds.validateDPGaussianCertificate(tampered),
+                 "Invalid Gaussian Synopsis provenance certificate")
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- cox(Surv(time_peer_a, status_peer_a) ~ x_peer_a,
+                  "data_peer_a", "cox_grid", conns, dispatch)
+    expect_identical(replay$coefficients, fit$coefficients)
+    expect_identical(replay$final_vector_root, fit$final_vector_root)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
   }
 })
