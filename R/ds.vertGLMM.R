@@ -8,7 +8,7 @@
 #'   intercept-only formula, \code{sigma_b2} is the conventional logistic
 #'   latent-scale approximation to the released observed ICC. For additive
 #'   covariates, it is the selected value from a custodian-signed finite random
-#'   intercept variance grid or a signed covariance grid with one or two
+#'   intercept variance grid or a signed covariance grid with one to three
 #'   random slopes. Neither route supplies standard errors, p-values or
 #'   sampling inference; named random slopes are available only when they
 #'   exactly match a signed finite grid. Interactions and
@@ -17,7 +17,7 @@
 #' @param data Signed protected dataset name or federation.
 #' @param cluster_col Cluster column required to match the signed artifact.
 #' @param analysis_id Custodian-configured signed random-intercept artifact id.
-#' @param random_slopes Optional one or two bare predictor names for a signed
+#' @param random_slopes Optional one to three bare predictor names for a signed
 #'   finite-grid random-slope artifact; they must match the artifact exactly.
 #' @param max_outer,inner_iter,tol,ring,verbose Retained compatibility controls;
 #'   they do not alter the signed estimand.
@@ -54,10 +54,10 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
          call. = FALSE)
   }
   if (!is.null(random_slopes) && (!is.character(random_slopes) ||
-      length(random_slopes) < 1L || length(random_slopes) > 2L ||
+      length(random_slopes) < 1L || length(random_slopes) > 3L ||
       anyNA(random_slopes) || anyDuplicated(random_slopes) ||
       any(!grepl("^[A-Za-z.][A-Za-z0-9._]*$", random_slopes)))) {
-    stop("random_slopes must be one or two unique bare signed predictor names or NULL",
+    stop("random_slopes must be one to three unique bare signed predictor names or NULL",
          call. = FALSE)
   }
   if (!is.numeric(lambda) || length(lambda) != 1L || is.na(lambda) ||

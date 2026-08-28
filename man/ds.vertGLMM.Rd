@@ -29,7 +29,7 @@ ds.vertGLMM(
 
 \item{analysis_id}{Custodian-configured signed random-intercept artifact id.}
 
-\item{random_slopes}{Optional one or two bare predictor names for a signed
+\item{random_slopes}{Optional one to three bare predictor names for a signed
 finite-grid random-slope artifact; they must match the artifact exactly.}
 
 \item{max_outer, inner_iter, tol, ring, verbose}{Retained compatibility controls;
@@ -57,7 +57,7 @@ The signed outcome bounds must be exactly \code{[0, 1]}. For an
 intercept-only formula, \code{sigma_b2} is the conventional logistic
 latent-scale approximation to the released observed ICC. For additive
 covariates, it is the selected value from a custodian-signed finite random
-intercept variance grid or a signed covariance grid with one or two random
+intercept variance grid or a signed covariance grid with one to three random
 slopes. Neither route supplies standard errors, p-values or sampling
 inference; named random slopes are available only when they exactly match a
 signed finite grid. Interactions and

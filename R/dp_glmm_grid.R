@@ -10,7 +10,7 @@
 .dsvert_dp_glmm_random_slope_quadrature_rule_v1 <- function(effect_count) {
   if (!is.numeric(effect_count) || length(effect_count) != 1L ||
       is.na(effect_count) || effect_count != floor(effect_count) ||
-      effect_count < 2L || effect_count > 3L) return(NA_character_)
+      effect_count < 2L || effect_count > 4L) return(NA_character_)
   paste0("gauss_hermite_", paste(rep.int("9", effect_count), collapse = "x"),
          "_standard_normal_v1")
 }
@@ -19,7 +19,7 @@
                                                      random_effect_order) {
   if (!is.list(candidate_grid) || !length(candidate_grid) ||
       !is.null(names(candidate_grid)) || length(random_effect_order) < 2L ||
-      length(random_effect_order) > 3L ||
+      length(random_effect_order) > 4L ||
       !identical(random_effect_order[[1L]], "(Intercept)")) return(list())
   effect_count <- length(random_effect_order)
   candidates <- lapply(candidate_grid, function(candidate) {
@@ -112,7 +112,7 @@
   }
   bits <- suppressWarnings(as.numeric(artifact$numeric_grid_bits))
   cluster_capacity <- suppressWarnings(as.numeric(artifact$max_patients_per_cluster))
-  effects_valid <- length(effects) >= 2L && length(effects) <= 3L &&
+  effects_valid <- length(effects) >= 2L && length(effects) <= 4L &&
     identical(effects[[1L]], "(Intercept)") &&
     all(effects[-1L] %in% predictor_order) && !anyDuplicated(effects)
   candidates <- if (isTRUE(effects_valid)) .dsvert_dp_glmm_random_slope_candidates(
