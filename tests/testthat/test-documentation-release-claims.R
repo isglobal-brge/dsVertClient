@@ -40,9 +40,10 @@ test_that("package description distinguishes readmitted scopes from retired vari
 
   expect_match(description, "LMM, GLMM, IPW and categorical", fixed = TRUE)
   expect_match(description, "signed-artifact scopes", fixed = TRUE)
-  expect_match(description,
-               "REML/PQL, clustered-inference, weighting and chained-imputation",
-               fixed = TRUE)
+  expect_match(description, "mixed-model optimisation/PQL", fixed = TRUE)
+  expect_match(description, "clustered inference", fixed = TRUE)
+  expect_match(description, "covariate weighting", fixed = TRUE)
+  expect_match(description, "chained-imputation variants", fixed = TRUE)
   expect_false(grepl(
     "LMM, GLMM, IPW, multiple imputation and[[:space:]]+other historical",
     description, perl = TRUE))
@@ -425,6 +426,17 @@ test_that("README maturity and numeric claims match the runtime registry", {
   expect_match(
     numeric,
     "Gaussian exchangeable model-based working GLS",
+    fixed = TRUE)
+
+  mi <- ds.vertMethodStatus(c("ds.vertMI", "ds.vert.mi"))
+  expect_true(all(mi$status == "promoted"))
+  expect_match(
+    readme,
+    "conditional categorical star model",
+    fixed = TRUE)
+  expect_match(
+    numeric,
+    "strict-missing marginals or pairs",
     fixed = TRUE)
 
   penalised <- ds.vertMethodStatus(c(
