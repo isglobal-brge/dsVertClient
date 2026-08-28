@@ -207,7 +207,7 @@ test_that("Gaussian exchangeable GEE consumes only a matching signed random-inte
   expect_error(ds.vertGEE(
     y ~ x, data = "study", family = "gaussian", id_col = "patient",
     corstr = "ar1", analysis_id = "gee-gaussian-clustered",
-    datasources = conns), "exchangeable")
+    datasources = conns), "requires distinct id_col and order_col")
   expect_error(ds.vertGEE(
     y ~ x, data = "study", family = "gaussian", corstr = "exchangeable",
     analysis_id = "gee-gaussian-clustered", datasources = conns), "id_col")

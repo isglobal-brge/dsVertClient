@@ -936,6 +936,9 @@
                .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "gaussian_random_slope_grid_v1")) ||
     (identical(artifact$version,
+               .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION) &&
+       identical(artifact$spec_version, "gaussian_ar1_working_gls_grid_v1")) ||
+    (identical(artifact$version,
                .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "binary_random_intercept_grid_v1")) ||
     (identical(artifact$version,
@@ -1434,6 +1437,9 @@
   } else if (identical(artifact$version,
                        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
     as.numeric(artifact$statistic_maximum)
+  } else if (identical(artifact$version,
+                       .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION)) {
+    as.numeric(artifact$statistic_maximum)
   } else if (artifact$version %in%
              unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS)) {
     as.numeric(artifact$statistic_maximum)
@@ -1574,9 +1580,13 @@
   if (artifact$version %in% c(
         .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
-        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION)) {
     moment <- if (identical(artifact$version,
-                            .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+                            .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION)) {
+      .dsvert_dp_gee_ar1_grid_moment(coordinates, artifact)
+    } else if (identical(artifact$version,
+                          .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
       .dsvert_dp_lmm_random_slope_grid_moment(coordinates, artifact)
     } else if (identical(artifact$version,
                           .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
@@ -2041,6 +2051,7 @@ ds.validateDPGaussianCertificate <- function(x, trusted_pinset = NULL) {
         .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION,
         unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS),
         .DSVERT_CLIENT_DP_NB_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_MULTINOM_GRID_ARTIFACT_VERSION,

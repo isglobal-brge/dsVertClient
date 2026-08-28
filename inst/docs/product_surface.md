@@ -96,8 +96,8 @@ historical behaviour. Quarantined distributed names remain exported for API
 discovery, but their legacy server endpoints are unregistered and unexported;
 they fail locally with a stable migration error before connection discovery or
 DSI submission. Current quarantined families include legacy Cox computation,
-unbounded legacy NB2, multinomial and ordinal regression, AR(1) and robust
-clustered GEE, GLMM-PQL, legacy mutating MI, iterative LASSO and the legacy
+unbounded legacy NB2, multinomial and ordinal regression, legacy AR(1) and
+robust clustered GEE, GLMM-PQL, legacy mutating MI, iterative LASSO and the legacy
 weight-column IPW contract. Use
 `ds.vertMethodStatus(status = "quarantine")` for the authoritative list.
 
@@ -116,8 +116,10 @@ In particular:
   an `outcome ~ 1` moment projection or its signed additive finite
   random-intercept/one-or-two-random-slope grid.
   Gaussian exchangeable GEE is a model-based working-GLS post-processing of a
-  matching signed random-intercept artifact; AR(1), robust/sandwich GEE and
-  legacy PQL remain cluster-granular and quarantined;
+  matching signed random-intercept artifact. A distinct signed finite
+  beta/rho artifact supports Gaussian AR(1) working-GLS only with a strict
+  within-cluster order. Robust/sandwich GEE and legacy PQL remain
+  cluster-granular and quarantined;
 - `ds.vertMI()` only post-processes strict-missing signed categorical Synopsis
   artifacts into MCAR marginals, a two-response joint pair, or an opt-in
   conditional categorical star model. It never writes source data, performs

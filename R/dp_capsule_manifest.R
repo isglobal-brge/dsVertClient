@@ -571,6 +571,34 @@
                 all(is.finite(beta)) && all(abs(beta) <= 8)
             }, logical(1L))) && !anyDuplicated(beta_keys)
           if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
+        } else if (identical(spec$version, "gaussian_ar1_working_gls_grid_v1")) {
+          expected <- c(
+            "version", "dataset", "outcome", "cluster", "order",
+            "predictors", "intercept", "max_patients_per_cluster",
+            "candidate_grid")
+          valid <- setequal(names(spec), expected) && identifier(spec$dataset) &&
+            column_reference(spec$outcome) && column_reference(spec$cluster) &&
+            column_reference(spec$order) && isTRUE(spec$intercept) &&
+            .dsvert_dp_is_integer(spec$max_patients_per_cluster, 2L)
+          predictors <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$predictors, "GEE AR1 fixed predictors"),
+            error = function(error) character()) else character()
+          valid <- isTRUE(valid) && length(predictors) &&
+            !anyDuplicated(predictors) && all(vapply(
+              predictors, column_reference, logical(1L))) &&
+            length(unique(c(spec$outcome, spec$cluster, spec$order,
+                            predictors))) == 3L + length(predictors)
+          candidates <- if (isTRUE(valid)) .dsvert_dp_gee_ar1_grid_candidates(
+            spec$candidate_grid, as.numeric(spec$max_patients_per_cluster)) else list()
+          valid <- isTRUE(valid) && length(candidates) && length(candidates) <= 128L &&
+            all(vapply(candidates, function(candidate) {
+              length(candidate$beta) == 1L + length(predictors)
+            }, logical(1L)))
+          if (isTRUE(valid)) {
+            candidate_grid <- lapply(candidates, function(candidate) list(
+              beta = unname(candidate$beta), rho = candidate$rho))
+          }
         } else if (identical(spec$version, "gaussian_random_slope_grid_v1")) {
           expected <- c(
             "version", "dataset", "outcome", "cluster", "predictors",
@@ -760,7 +788,11 @@
              call. = FALSE)
       }
       if (identical(family, "gaussian") &&
-          identical(spec$version, "gaussian_random_slope_grid_v1")) {
+          identical(spec$version, "gaussian_ar1_working_gls_grid_v1")) {
+        spec$predictors <- predictors
+        spec$candidate_grid <- candidate_grid
+      } else if (identical(family, "gaussian") &&
+                 identical(spec$version, "gaussian_random_slope_grid_v1")) {
         spec$predictors <- predictors
         spec$random_slopes <- sort(random_slopes, method = "radix")
         spec$candidate_grid <- candidate_grid

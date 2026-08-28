@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertGEE.R
 \name{ds.vertGEE}
 \alias{ds.vertGEE}
-\title{Signed independent- or exchangeable-working GEE point estimate}
+\title{Signed finite-grid GEE working point estimate}
 \usage{
 ds.vertGEE(
   formula,
@@ -30,15 +30,17 @@ ds.vertGEE(
 data name, Gaussian/binomial/Poisson family, working correlation, progress flag and
 DataSHIELD connections. \code{corstr = "independence"} is available for
 every supported family; Gaussian \code{corstr = "exchangeable"} requires
-the matching signed random-intercept artifact.}
+the matching signed random-intercept artifact, and \code{corstr = "ar1"}
+requires the matching signed AR(1) working-GLS grid.}
 
 \item{id_col, order_col, max_iter, tol, lambda, working_max_iter, ring, binomial_sigmoid_intervals}{Retained clustered-GEE controls. They are unavailable with a formal point
 release and are never silently ignored.}
 
 \item{analysis_id}{Custodian-configured signed finite binomial/Poisson
-likelihood-grid selector, or the matching same-owner Gaussian
-random-intercept artifact for \code{corstr = "exchangeable"}. It is
-mutually exclusive with every other analysis selector.}
+likelihood-grid selector, the matching same-owner Gaussian random-intercept
+artifact for \code{corstr = "exchangeable"}, or a matching signed Gaussian
+AR(1) working-GLS grid for \code{corstr = "ar1"}. It is mutually exclusive
+with every other analysis selector.}
 
 \item{formal_analysis_id}{Custodian-configured completed formal GLM
 certificate selector.}
@@ -51,16 +53,17 @@ completed certificate and Gaussian Synopsis selectors and fails before DSI.}
 artifact selector. It is mutually exclusive with both formal selectors.}
 }
 \value{
-A \code{ds.vertGEE} point-estimate object. The Gaussian
-exchangeable route additionally returns the signed model-based working
-correlation, but never covariance, standard errors or inference.
+A \code{ds.vertGEE} point-estimate object. The Gaussian exchangeable and
+AR(1) routes additionally return their signed working correlation, but never
+covariance, standard errors or inference.
 }
 \description{
 With a custodian-configured \code{analysis_id}, this frontdoor
 consumes either one signed finite binomial/Poisson likelihood-grid Synopsis
 under an independence working correlation, or one signed same-owner
-Gaussian random-intercept Synopsis under an exchangeable working
-correlation. With \code{formal_analysis_id}, it returns the completed,
+  Gaussian random-intercept Synopsis under an exchangeable working
+  correlation, or one signed same-owner Gaussian AR(1) working-GLS grid.
+  With \code{formal_analysis_id}, it returns the completed,
 two-authority-certified binomial or Poisson GLM point estimate under an
 independence working correlation.
 \code{fresh_formal_analysis_id} is retained for compatibility but fails
@@ -74,9 +77,13 @@ For Gaussian \code{corstr = "exchangeable"}, the signed
 random-intercept GLS artifact is admissible because its covariance has the
 same exchangeable working-correlation form. The returned coefficient is
 therefore a model-based working-GLS estimate, with its correlation derived
-from the signed variance components. It is not a robust/sandwich GEE.
-AR(1), sandwich covariance, standard errors and inference remain
-unavailable until their contribution-bounded protected artifacts exist.
+from the signed variance components. Gaussian \code{corstr = "ar1"}
+selects a point from a signed finite beta/rho grid by the released bounded
+AR(1) working-GLS residual loss. It requires a categorical \code{id_col}, a
+distinct numeric \code{order_col}, and strictly distinct order values within
+each admitted cluster. Neither route is a robust/sandwich GEE; sandwich covariance,
+standard errors and inference remain unavailable until a protected cluster
+score-and-meat artifact exists.
 Calls without a configured selector keep failing locally before DSI.
 }
 \seealso{

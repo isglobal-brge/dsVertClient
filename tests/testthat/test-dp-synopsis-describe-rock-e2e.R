@@ -42,7 +42,7 @@
   "stratified_epidemiology", "causal_standardization", "frequency",
   "mi", "mantel_haenszel", "roc", "survival", "correlation", "gaussian", "cross_owner_tamper",
   "gaussian_lasso_focal", "lmm", "lmm_random_slope_focal", "nb2", "multinom",
-  "ordinal", "glm_grid", "glmm_random_slope_focal")
+  "ordinal", "glm_grid", "glmm_random_slope_focal", "gee_ar1")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
   stop("unknown DSVERT_TEST_SYNOPSIS_E2E_FAMILY", call. = FALSE)
@@ -2671,6 +2671,105 @@ test_that("real additive fixed-effect random-intercept REML is source-scale plau
       new.env(parent = emptyenv())
     }), fixture$peers)
     replay <- lmm("data_peer_a", "lmm_primary", "peer_a", conns, dispatch)
+    expect_identical(replay$coefficients, fit$coefficients)
+    expect_identical(replay$final_vector_root, fit$final_vector_root)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real Gaussian AR1 working-GLS GEE grid is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("gee_ar1")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  gee_ar1 <- get(".dsvert_dp_gee_ar1_grid_impl", asNamespace("dsVertClient"),
+                 inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_lmm_real_e2e_fixture(k, server_ns, n = 400L)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    policy <- fixture$policies$peer_a
+    policy$numeric_bounds$order_peer_a <- c(0, 400)
+    policy$capsule_workload_specs$gaussian$gee_ar1 <- list(
+      version = "gaussian_ar1_working_gls_grid_v1", dataset = "data_peer_a",
+      outcome = "y_peer_a", cluster = "site_peer_a", order = "order_peer_a",
+      predictors = "x_peer_a", intercept = TRUE,
+      max_patients_per_cluster = 100L,
+      candidate_grid = list(
+        list(beta = c(0.10, 0.20), rho = 0),
+        list(beta = c(0.20, 0.30), rho = 0.5),
+        list(beta = c(0.30, 0.40), rho = 0.75)))
+    policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+      "x_peer_a", "y_peer_a", "site_peer_a", "order_peer_a")
+    fixture$policies$peer_a <- policy
+    data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
+    data$order_peer_a <- rep(seq_len(100L), 4L)
+    data$y_peer_a <- pmin(10, pmax(0,
+      2 + 3 * (data$x_peer_a / 10) + rep(c(-0.20, 0.20), 200L)))
+    fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    fit <- gee_ar1(
+      y_peer_a ~ x_peer_a, "data_peer_a", "gee_ar1", "site_peer_a",
+      "order_peer_a", "peer_a", conns, dispatch)
+
+    expect_s3_class(fit, "dsvert_dp_gaussian_ar1_gee")
+    expect_identical(fit$status,
+                     "public_certified_gaussian_ar1_working_gls_finite_grid")
+    expect_identical(fit$signed_artifact$spec_version,
+                     "gaussian_ar1_working_gls_grid_v1")
+    expect_identical(fit$order_column, "order_peer_a")
+    expect_true(all(is.finite(c(fit$coefficients, fit$working_correlation,
+                                fit$selected_dp_working_gls_loss))))
+    expect_true(fit$working_correlation >= -0.8 && fit$working_correlation <= 0.8)
+    expect_null(fit$robust_covariance)
+    expect_null(fit$std_errors)
+    expect_false(fit$source_values_exposed)
+    expect_false(fit$intermediate_values_exposed)
+    expect_identical(fit$additional_server_calls_after_synopsis, 0L)
+    expect_identical(fit$additional_privacy_cost, c(epsilon = 0, delta = 0))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    route_gee_ar1 <- function(formula, data_name, analysis_id, id_col, order_col,
+                              server = NULL, datasources = NULL, .aggregate) {
+      gee_ar1(formula, data_name, analysis_id, id_col, order_col, server,
+              datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_gee_ar1_grid_impl = route_gee_ar1,
+      list(
+        gee = ds.vertGEE(
+          y_peer_a ~ x_peer_a, data = "data_peer_a", family = "gaussian",
+          id_col = "site_peer_a", order_col = "order_peer_a", corstr = "ar1",
+          analysis_id = "gee_ar1", datasources = conns),
+        alias = ds.vert.gee(
+          y_peer_a ~ x_peer_a, data = "data_peer_a", family = "gaussian",
+          id_col = "site_peer_a", order_col = "order_peer_a", corstr = "ar1",
+          analysis_id = "gee_ar1", datasources = conns)),
+      .package = "dsVertClient")
+    expect_s3_class(public$gee, "dsvert_dp_gaussian_ar1_gee")
+    expect_identical(public$gee$coefficients, fit$coefficients)
+    expect_identical(public$gee$working_correlation, fit$working_correlation)
+    expect_identical(public$alias$frontdoor, "ds.vert.gee")
+    expect_identical(public$alias$coefficients, fit$coefficients)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+
+    tampered <- fit$provenance_certificate
+    tampered$block_values_sha256 <- paste0(
+      chartr("0123456789abcdef", "123456789abcdef0",
+             substr(tampered$block_values_sha256, 1L, 1L)),
+      substr(tampered$block_values_sha256, 2L, 64L))
+    expect_error(ds.validateDPGaussianCertificate(tampered),
+                 "Invalid Gaussian Synopsis provenance certificate")
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- gee_ar1(
+      y_peer_a ~ x_peer_a, "data_peer_a", "gee_ar1", "site_peer_a",
+      "order_peer_a", "peer_a", conns, dispatch)
     expect_identical(replay$coefficients, fit$coefficients)
     expect_identical(replay$final_vector_root, fit$final_vector_root)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)

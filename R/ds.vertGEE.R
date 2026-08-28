@@ -1,9 +1,10 @@
-#' @title Signed independent- or exchangeable-working GEE point estimate
+#' @title Signed finite-grid GEE working point estimate
 #' @description With a custodian-configured \code{analysis_id}, this frontdoor
 #'   consumes either one signed finite binomial/Poisson likelihood-grid Synopsis
 #'   under an independence working correlation, or one signed same-owner
 #'   Gaussian random-intercept Synopsis under an exchangeable working
-#'   correlation. With \code{formal_analysis_id}, it returns the completed,
+#'   correlation, or one signed same-owner Gaussian AR(1) working-GLS grid.
+#'   With \code{formal_analysis_id}, it returns the completed,
 #'   two-authority-certified binomial or Poisson GLM point estimate under an
 #'   independence working correlation.
 #'   \code{fresh_formal_analysis_id} is retained for compatibility but fails
@@ -15,20 +16,26 @@
 #'   random-intercept GLS artifact is admissible because its covariance has the
 #'   same exchangeable working-correlation form. The returned coefficient is
 #'   therefore a model-based working-GLS estimate, with its correlation derived
-#'   from the signed variance components. It is not a robust/sandwich GEE.
-#'   AR(1), sandwich covariance, standard errors and inference remain
-#'   unavailable until their contribution-bounded protected artifacts exist.
+#'   from the signed variance components. Gaussian \code{corstr = "ar1"}
+#'   selects a point from a signed finite beta/rho grid by the released bounded
+#'   AR(1) working-GLS residual loss. It requires a categorical \code{id_col},
+#'   a distinct numeric \code{order_col}, and strictly distinct order values
+#'   within each admitted cluster. Neither route is a robust/sandwich GEE;
+#'   sandwich covariance, standard errors and inference remain unavailable until a
+#'   protected cluster score-and-meat artifact exists.
 #'   Calls without a configured selector keep failing locally before DSI.
 #' @param formula,data,family,corstr,verbose,datasources Formula, registered
 #'   data name, Gaussian/binomial/Poisson family, working correlation, progress flag and
 #'   DataSHIELD connections. \code{corstr = "independence"} is available for
 #'   every supported family; Gaussian \code{corstr = "exchangeable"} requires
-#'   the matching signed random-intercept artifact.
+#'   the matching signed random-intercept artifact, and \code{corstr = "ar1"}
+#'   requires the matching signed AR(1) working-GLS grid.
 #' @param formal_analysis_id Custodian-configured completed formal GLM
 #'   certificate selector.
 #' @param analysis_id Custodian-configured signed finite binomial/Poisson
-#'   likelihood-grid selector, or the matching same-owner Gaussian
-#'   random-intercept artifact for \code{corstr = "exchangeable"}. It is
+#'   likelihood-grid selector, the matching same-owner Gaussian random-
+#'   intercept artifact for \code{corstr = "exchangeable"}, or a matching
+#'   signed Gaussian AR(1) working-GLS grid for \code{corstr = "ar1"}. It is
 #'   mutually exclusive with every other analysis selector.
 #' @param fresh_formal_analysis_id Retained custodian-configured
 #'   binomial/Poisson fresh-GLM selector. It is mutually exclusive with the
@@ -39,7 +46,7 @@
 #'   Retained clustered-GEE controls. They are unavailable with a formal point
 #'   release and are never silently ignored.
 #' @return A \code{ds.vertGEE} point-estimate object. The Gaussian
-#'   exchangeable route additionally returns the signed model-based working
+#'   exchangeable and AR(1) routes additionally return their signed working
 #'   correlation, but never covariance, standard errors or inference.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
@@ -72,6 +79,13 @@ ds.vertGEE <- function(formula, data = NULL,
     family <- match.arg(family)
     corstr <- match.arg(corstr)
     if (identical(family, "gaussian")) {
+      if (identical(corstr, "ar1")) {
+        return(.dsvert_dp_gee_ar1_grid_adapter(
+          explicit_arguments = names(match.call())[-1L],
+          formula = if (missing(formula)) NULL else formula,
+          data = data, id_col = id_col, order_col = order_col, corstr = corstr,
+          verbose = verbose, datasources = datasources, analysis_id = analysis_id))
+      }
       return(.dsvert_gaussian_exchangeable_gee_adapter(
         explicit_arguments = names(match.call())[-1L],
         formula = if (missing(formula)) NULL else formula,
@@ -122,7 +136,8 @@ ds.vertGEE <- function(formula, data = NULL,
       !nzchar(id_col) || !is.null(order_col)) {
     stop(paste(
       "Gaussian exchangeable GEE requires one id_col and no order_col;",
-      "AR(1) remains unavailable"), call. = FALSE)
+      "use corstr='ar1' with a distinct order_col for the signed AR(1) grid"),
+      call. = FALSE)
   }
   allowed <- c("formula", "data", "family", "id_col", "corstr", "verbose",
                "datasources", "analysis_id")
@@ -740,6 +755,13 @@ ds.vertGEE <- function(formula, data = NULL,
 
 #' @keywords internal
 print.ds.vertGEE <- function(x, ...) {
+  if (inherits(x, "dsvert_dp_gaussian_ar1_gee")) {
+    cat("dsVert signed Gaussian AR(1) working-GLS finite grid\n")
+    cat(sprintf("  Working correlation: %.4g\n", x$working_correlation))
+    print(x$coefficients)
+    cat("  No robust covariance, standard errors or inference are released.\n")
+    return(invisible(x))
+  }
   if (inherits(x, "dsvert_dp_gaussian_exchangeable_gee")) {
     cat("dsVert signed Gaussian exchangeable-working GEE (model-based GLS)\n")
     cat(sprintf("  Working correlation: %.4g\n", x$working_correlation))
