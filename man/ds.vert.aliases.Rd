@@ -129,6 +129,7 @@ ds.vert.glmm(
   cluster_col,
   analysis_id = NULL,
   method = c("auto", "moment", "finite_grid"),
+  family = c("binomial", "poisson"),
   datasources = NULL,
   ...
 )
@@ -206,9 +207,13 @@ sites or a complete named per-site character/list map.}
 
 \item{precision, method, ring, verbose}{Binomial-sigmoid precision preset,
 estimator/route selector, fixed-point ring, and progress flag. For
-code{ds.vert.glmm()}, code{method = "auto"} selects the signed
+\code{ds.vert.glmm()}, \code{method = "auto"} selects the signed
 intercept-only moment or additive finite-grid artifact from the formula;
 the explicit values must agree with that formula.}
+
+\item{family}{For \code{ds.vert.glmm()}, either \code{"binomial"} (the
+default) or \code{"poisson"}. Poisson requires the signed bounded-count
+additive random-intercept grid.}
 
 \item{formal_analysis_id, fresh_formal_analysis_id}{Custodian-owned selector
 for an already completed formal Cox profile, binomial/Poisson GLM
@@ -277,10 +282,11 @@ random-intercept, finite ML/REML, or finite one-or-more-random-slope grid.
 It has no arbitrary random-effect formula, continuous optimisation, standard
 errors or classical inference.
 \code{ds.vert.glmm(..., analysis_id = x)} reads either that binary
-\code{outcome ~ 1} population-average moment artifact or a custodian-signed
-finite random-intercept or one-to-three-random-slope likelihood grid for
-additive bare covariates; it is not the retired PQL route and has no
-unconstrained optimisation or inference.
+\code{outcome ~ 1} population-average moment artifact, a custodian-signed
+finite binary random-intercept or one-to-three-random-slope likelihood grid,
+or a bounded-count Poisson random-intercept likelihood grid for additive bare
+covariates; it is not the retired PQL route and has no unconstrained
+optimisation or inference.
 No alias re-enables a retired remote endpoint or weakens the signed-artifact
 and custodian-owned policy gates of an available backend.
 For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied

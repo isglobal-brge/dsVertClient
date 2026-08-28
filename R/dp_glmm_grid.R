@@ -229,6 +229,12 @@
     manifest$workload$families$gaussian_models$artifacts[[analysis_id]],
     error = function(error) NULL)
   if (is.list(artifact) && identical(
+        artifact$version,
+        .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION)) {
+    return(.dsvert_dp_poisson_glmm_grid_artifact(
+      manifest, data_name, analysis_id, owner_peer, adjacency, scale, capacity))
+  }
+  if (is.list(artifact) && identical(
         artifact$version, .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
     return(.dsvert_dp_glmm_random_slope_grid_artifact(
       manifest, data_name, analysis_id, owner_peer, adjacency, scale, capacity))
@@ -408,7 +414,7 @@
   if (!is.numeric(coordinates) || length(coordinates) != length(upper) ||
       anyNA(coordinates) || any(!is.finite(coordinates)) ||
       any(coordinates < 0) || any(coordinates > upper)) {
-    stop("The released binary random-intercept GLMM grid violates its signed bounds",
+    stop("The released random-intercept GLMM grid violates its signed bounds",
          call. = FALSE)
   }
   candidate <- which.min(coordinates)[[1L]]
@@ -477,8 +483,9 @@
       !identical(verification$authenticity, "session_transport_anchored") ||
       !verification$artifact$version %in% c(
         .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
-        .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
-    stop("The binary GLMM Synopsis certificate is not transport-anchored",
+        .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION)) {
+    stop("The GLMM Synopsis certificate is not transport-anchored",
          call. = FALSE)
   }
   list(context = context, metadata = metadata,
@@ -508,13 +515,16 @@
   moment <- released$moment
   random_slope <- identical(
     artifact$version, .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)
+  poisson <- identical(
+    artifact$version, .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION)
   result <- c(released$metadata, list(
     status = moment$status, analysis_id = analysis_id,
     cohort_id = released$verification$cohort_id,
     logical_snapshot = released$verification$logical_snapshot,
     certificate_sha256 = released$certificate$certificate_sha256,
     signed_artifact = artifact, server = artifact$owner_peer,
-    family = if (isTRUE(random_slope)) "binomial_random_slope" else
+    family = if (isTRUE(poisson)) "poisson_random_intercept" else if (
+      isTRUE(random_slope)) "binomial_random_slope" else
       "binomial_random_intercept",
     estimand = artifact$estimation_scope,
     coefficients = moment$coefficients,

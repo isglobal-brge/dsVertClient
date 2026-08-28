@@ -43,7 +43,7 @@
   "mi", "mantel_haenszel", "roc", "survival", "correlation", "gaussian", "cross_owner_tamper",
   "gaussian_lasso_focal", "lmm", "lmm_random_slope_focal", "nb2", "multinom",
   "ordinal", "glm_grid", "glmm_random_slope_focal", "gee_ar1",
-  "cox_partial_grid")
+  "cox_partial_grid", "poisson_glmm")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
   stop("unknown DSVERT_TEST_SYNOPSIS_E2E_FAMILY", call. = FALSE)
@@ -3496,6 +3496,99 @@ test_that("real binary three-random-slope GLMM grid is plausible and Rock-replay
     expect_identical(replay$coefficients, fit$coefficients)
     expect_identical(replay$random_effect_covariance,
                      fit$random_effect_covariance)
+    expect_identical(replay$provenance_certificate$certificate_sha256,
+                     fit$provenance_certificate$certificate_sha256)
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+  }
+})
+
+test_that("real Poisson random-intercept GLMM grid is plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("poisson_glmm")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  glmm <- get(".dsvert_dp_glmm_grid_impl", asNamespace("dsVertClient"),
+              inherits = FALSE)
+  for (k in .synopsis_real_e2e_peer_counts()) {
+    fixture <- .synopsis_glmm_real_e2e_fixture(k, server_ns, n = 400L)
+    on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+    policy <- fixture$policies$peer_a
+    policy$numeric_bounds$y_peer_a <- c(0, 8)
+    policy$capsule_workload_specs$gaussian$lmm_primary <- list(
+      version = "poisson_random_intercept_grid_v1", dataset = "data_peer_a",
+      outcome = "y_peer_a", cluster = "site_peer_a", predictors = "x_peer_a",
+      intercept = TRUE, max_patients_per_cluster = 100L, max_outcome = 8L,
+      beta_grid = list(c(0, 0), c(0, log(4))),
+      variance_grid = c(0, 0.25))
+    fixture$policies$peer_a <- policy
+    data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
+    site_effect <- rep(c(-0.35, 0.35), length.out = nrow(data) %/% 100L)
+    site_effect <- rep(site_effect, each = 100L)
+    mean_count <- exp(data$x_peer_a / 10 * log(4) + site_effect)
+    data$y_peer_a <- pmin(8, pmax(0, round(mean_count)))
+    fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
+    conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+      structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+    }), fixture$peers)
+    dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    fit <- glmm(y_peer_a ~ x_peer_a, "data_peer_a", "site_peer_a",
+                "lmm_primary", "peer_a", conns, dispatch)
+
+    expect_s3_class(fit, "ds.vertGLMM")
+    expect_identical(fit$family, "poisson_random_intercept")
+    expect_identical(fit$signed_artifact$spec_version,
+                     "poisson_random_intercept_grid_v1")
+    expect_equal(fit$signed_artifact$max_outcome, 8)
+    expect_true(all(is.finite(c(fit$coefficients, fit$sigma_b2))))
+    expect_gt(fit$coefficients[["x_peer_a"]], 0)
+    expect_true(fit$sigma_b2 %in% c(0, 0.25))
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     c(1L, 2L))
+    tampered_certificate <- fit$provenance_certificate
+    tampered_certificate$block_values_sha256 <- paste0(
+      chartr("0123456789abcdef", "123456789abcdef0",
+             substr(tampered_certificate$block_values_sha256, 1L, 1L)),
+      substr(tampered_certificate$block_values_sha256, 2L, 64L))
+    expect_error(ds.validateDPGaussianCertificate(tampered_certificate),
+                 "Invalid Gaussian Synopsis provenance certificate")
+
+    route_glmm <- function(formula, data_name, cluster_col, analysis_id,
+                           server = NULL, datasources = NULL, .aggregate) {
+      glmm(formula, data_name, cluster_col, analysis_id, server,
+           datasources, dispatch)
+    }
+    public <- testthat::with_mocked_bindings(
+      .dsvert_dp_glmm_grid_impl = route_glmm,
+      list(
+        direct = ds.vertGLMM(
+          y_peer_a ~ x_peer_a, data = "data_peer_a",
+          cluster_col = "site_peer_a", analysis_id = "lmm_primary",
+          family = "poisson", datasources = conns),
+        alias = ds.vert.glmm(
+          y_peer_a ~ x_peer_a, data = "data_peer_a",
+          cluster_col = "site_peer_a", analysis_id = "lmm_primary",
+          family = "poisson", datasources = conns)),
+      .package = "dsVertClient")
+    expect_identical(public$direct$coefficients, fit$coefficients)
+    expect_identical(public$alias$sigma_b2, fit$sigma_b2)
+    expect_error(ds.vertGLMM(
+      y_peer_a ~ x_peer_a, data = "data_peer_a", cluster_col = "site_peer_a",
+      analysis_id = "lmm_primary", family = "poisson",
+      random_slopes = "x_peer_a", datasources = conns),
+      "only the signed random-intercept grid")
+    before_rejected <- c(fixture$state$source_prepare, fixture$state$start)
+    expect_error(ds.vertGLMM(
+      y_peer_a ~ 1, data = "data_peer_a", cluster_col = "site_peer_a",
+      analysis_id = "lmm_primary", family = "poisson", datasources = conns),
+      "requires an additive signed finite-grid formula")
+    expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                     before_rejected)
+
+    before <- c(fixture$state$source_prepare, fixture$state$start)
+    fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+      new.env(parent = emptyenv())
+    }), fixture$peers)
+    replay <- glmm(y_peer_a ~ x_peer_a, "data_peer_a", "site_peer_a",
+                   "lmm_primary", "peer_a", conns, dispatch)
+    expect_identical(replay$coefficients, fit$coefficients)
     expect_identical(replay$provenance_certificate$certificate_sha256,
                      fit$provenance_certificate$certificate_sha256)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)

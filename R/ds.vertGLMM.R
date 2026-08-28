@@ -1,24 +1,31 @@
-#' @title Signed binary random-effect GLMM
-#' @description Fits a binary random-effect model from one signed, sticky
-#'   Synopsis.  The intercept-only call retains its historical moment
-#'   projection. Additive covariate calls select the minimum from the signed
-#'   finite marginal-likelihood grid; they never call PQL or expose
+#' @title Signed binary or Poisson random-effect GLMM
+#' @description Fits a binary or Poisson random-effect model from one signed,
+#'   sticky Synopsis. The binary intercept-only call retains its historical
+#'   moment projection. Additive covariate calls select the minimum from the
+#'   signed finite marginal-likelihood grid; they never call PQL or expose
 #'   cluster-level statistics.
-#' @details The signed outcome bounds must be exactly \code{[0, 1]}. For an
+#' @details The signed binary outcome bounds must be exactly \code{[0, 1]}.
+#'   The Poisson grid requires an additive formula and a signed bounded
+#'   integer outcome domain \code{[0, max_outcome]}. For a binary
 #'   intercept-only formula, \code{sigma_b2} is the conventional logistic
 #'   latent-scale approximation to the released observed ICC. For additive
 #'   covariates, it is the selected value from a custodian-signed finite random
 #'   intercept variance grid or a signed covariance grid with one to three
-#'   random slopes. Neither route supplies standard errors, p-values or
-#'   sampling inference; named random slopes are available only when they
-#'   exactly match a signed finite grid. Interactions and
-#'   unconstrained likelihood optimisation remain unavailable.
-#' @param formula An intercept-only formula or additive bare column names.
+#'   random slopes. A Poisson call selects from a signed bounded-count,
+#'   random-intercept grid. Neither route supplies standard errors, p-values
+#'   or sampling inference; named random slopes are available only for the
+#'   binary signed grid. Interactions and unconstrained likelihood optimisation
+#'   remain unavailable.
+#' @param formula A binary intercept-only formula or additive bare column
+#'   names. Poisson requires at least one additive bare column name.
 #' @param data Signed protected dataset name or federation.
 #' @param cluster_col Cluster column required to match the signed artifact.
 #' @param analysis_id Custodian-configured signed random-intercept artifact id.
 #' @param random_slopes Optional one to three bare predictor names for a signed
 #'   finite-grid random-slope artifact; they must match the artifact exactly.
+#' @param family Either \code{"binomial"} (the default) or \code{"poisson"}.
+#'   Poisson supports only its signed finite random-intercept grid with a
+#'   bounded integer outcome.
 #' @param max_outer,inner_iter,tol,ring,verbose Retained compatibility controls;
 #'   they do not alter the signed estimand.
 #' @param lambda Must be zero.
@@ -36,7 +43,9 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
                         compute_se = FALSE,
                         ring = NULL,
                         verbose = TRUE,
-                        datasources = NULL) {
+                        datasources = NULL,
+                        family = c("binomial", "poisson")) {
+  family <- match.arg(family)
   terms <- if (inherits(formula, "formula")) stats::terms(formula) else NULL
   predictors <- if (is.null(terms)) character() else
     attr(terms, "term.labels")
@@ -60,13 +69,21 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
     stop("random_slopes must be one to three unique bare signed predictor names or NULL",
          call. = FALSE)
   }
+  if (identical(family, "poisson") && !is.null(random_slopes)) {
+    stop("Poisson ds.vertGLMM supports only the signed random-intercept grid",
+         call. = FALSE)
+  }
+  if (identical(family, "poisson") && !length(predictors)) {
+    stop("Poisson ds.vertGLMM requires an additive signed finite-grid formula",
+         call. = FALSE)
+  }
   if (!is.numeric(lambda) || length(lambda) != 1L || is.na(lambda) ||
       !is.finite(lambda) || lambda != 0 || !identical(compute_se, FALSE)) {
     stop(paste(
-      "ds.vertGLMM supports only signed binary moment or finite-grid routes:",
+      "ds.vertGLMM supports only signed moment or finite-grid routes:",
       "lambda=0 and compute_se=FALSE"), call. = FALSE)
   }
-  if (length(predictors)) {
+  if (length(predictors) || identical(family, "poisson")) {
     resolved <- .dsvert_federation_argument(data, datasources)
     result <- .dsvert_dp_glmm_grid_impl(
       formula, resolved$value, cluster_col, analysis_id,
@@ -76,6 +93,14 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
       sort(enc2utf8(random_slopes), method = "radix")
     if (!identical(signed_slopes, supplied_slopes)) {
       stop("random_slopes must exactly match the signed GLMM artifact", call. = FALSE)
+    }
+    expected_family <- if (identical(family, "poisson")) {
+      "poisson_random_intercept"
+    } else {
+      c("binomial_random_intercept", "binomial_random_slope")
+    }
+    if (!result$family %in% expected_family) {
+      stop("family does not match the signed GLMM artifact", call. = FALSE)
     }
     return(result)
   }
@@ -146,12 +171,17 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
 #' @export
 print.ds.vertGLMM <- function(x, ...) {
   if (!identical(x$status, "ok")) {
-    cat("dsVert signed binary random-intercept GLMM\n")
+    cat("dsVert signed random-intercept GLMM\n")
     cat("  Status: ", x$status %||% "non_identifiable", "\n", sep = "")
     return(invisible(x))
   }
   if (!is.null(x$selected_candidate)) {
-    cat("dsVert signed binary finite-grid GLMM\n")
+    family <- if (identical(x$family, "poisson_random_intercept")) {
+      "Poisson"
+    } else {
+      "binary"
+    }
+    cat("dsVert signed ", family, " finite-grid GLMM\n", sep = "")
     cat(sprintf("  Selected signed candidate = %d\n", x$selected_candidate))
     cat(sprintf("  Random-intercept variance = %.5g\n", x$sigma_b2))
     cat(sprintf("  DP negative log likelihood = %.5f\n",

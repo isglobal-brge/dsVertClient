@@ -715,6 +715,55 @@
                 all(is.finite(beta)) && all(abs(beta) <= 8)
             }, logical(1L))) && !anyDuplicated(beta_keys)
           if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
+        } else if (identical(
+              spec$version, "poisson_random_intercept_grid_v1")) {
+          expected <- c(
+            "version", "dataset", "outcome", "cluster", "predictors",
+            "intercept", "max_patients_per_cluster", "max_outcome",
+            "beta_grid", "variance_grid")
+          valid <- setequal(names(spec), expected) &&
+            identifier(spec$dataset) && column_reference(spec$outcome) &&
+            column_reference(spec$cluster) && !identical(
+              spec$outcome, spec$cluster) && isTRUE(spec$intercept) &&
+            .dsvert_dp_is_integer(spec$max_patients_per_cluster, 2L) &&
+            .dsvert_dp_is_integer(spec$max_outcome, 1L, 1024L)
+          predictors <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$predictors, "Poisson GLMM fixed predictors"),
+            error = function(error) character()) else character()
+          variance_grid <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_number_array(
+              spec$variance_grid, "Poisson GLMM variance grid"),
+            error = function(error) numeric()) else numeric()
+          beta_grid <- spec$beta_grid
+          if (!is.list(beta_grid) || !is.null(names(beta_grid))) {
+            beta_grid <- list()
+          } else {
+            beta_grid <- lapply(beta_grid, function(beta) {
+              tryCatch(.dsvert_dp_capsule_manifest_number_array(
+                beta, "Poisson GLMM beta grid row"),
+              error = function(error) numeric())
+            })
+          }
+          expected_dimension <- 1L + length(predictors)
+          beta_keys <- if (length(beta_grid)) vapply(beta_grid, function(beta) {
+            .dsvert_joint_dp_client_json(as.list(beta))
+          }, character(1L)) else character()
+          valid <- isTRUE(valid) && length(predictors) &&
+            !anyDuplicated(predictors) && !spec$outcome %in% predictors &&
+            !spec$cluster %in% predictors && all(vapply(
+              predictors, column_reference, logical(1L))) &&
+            identical(predictors, sort(predictors, method = "radix")) &&
+            length(variance_grid) && !anyNA(variance_grid) &&
+            all(is.finite(variance_grid)) && all(variance_grid >= 0) &&
+            all(variance_grid <= 16) && all(diff(variance_grid) > 0) &&
+            length(beta_grid) && length(beta_grid) * length(variance_grid) <= 256L &&
+            all(vapply(beta_grid, function(beta) {
+              length(beta) == expected_dimension && !anyNA(beta) &&
+                all(is.finite(beta)) && all(abs(beta) <= 8) &&
+                sum(abs(beta)) <= 16
+            }, logical(1L))) && !anyDuplicated(beta_keys)
+          if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
         } else if (identical(spec$version, "binary_random_slope_grid_v1")) {
           expected <- c(
             "version", "dataset", "outcome", "cluster", "predictors",
@@ -843,6 +892,11 @@
         spec$variance_ratio_grid <- grid
       } else if (identical(family, "gaussian") &&
                  identical(spec$version, "binary_random_intercept_grid_v1")) {
+        spec$predictors <- predictors
+        spec$beta_grid <- beta_grid
+        spec$variance_grid <- variance_grid
+      } else if (identical(family, "gaussian") &&
+                 identical(spec$version, "poisson_random_intercept_grid_v1")) {
         spec$predictors <- predictors
         spec$beta_grid <- beta_grid
         spec$variance_grid <- variance_grid

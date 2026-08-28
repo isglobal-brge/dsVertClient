@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertGLMM.R
 \name{ds.vertGLMM}
 \alias{ds.vertGLMM}
-\title{Signed binary random-effect GLMM}
+\title{Signed binary or Poisson random-effect GLMM}
 \usage{
 ds.vertGLMM(
   formula,
@@ -17,11 +17,13 @@ ds.vertGLMM(
   compute_se = FALSE,
   ring = NULL,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  family = c("binomial", "poisson")
 )
 }
 \arguments{
-\item{formula}{An intercept-only formula or additive bare column names.}
+\item{formula}{A binary intercept-only formula or additive bare column names.
+Poisson requires at least one additive bare column name.}
 
 \item{data}{Signed protected dataset name or federation.}
 
@@ -31,6 +33,10 @@ ds.vertGLMM(
 
 \item{random_slopes}{Optional one to three bare predictor names for a signed
 finite-grid random-slope artifact; they must match the artifact exactly.}
+
+\item{family}{Either \code{"binomial"} (the default) or \code{"poisson"}.
+Poisson supports only its signed finite random-intercept grid with a bounded
+integer outcome.}
 
 \item{max_outer, inner_iter, tol, ring, verbose}{Retained compatibility controls;
 they do not alter the signed estimand.}
@@ -46,21 +52,24 @@ A \code{ds.vertGLMM} object containing the certified public DP
 moment or finite-grid projection and no cluster-level statistics.
 }
 \description{
-Fits a binary random-effect model from one signed, sticky
+Fits a binary or Poisson random-effect model from one signed, sticky
 Synopsis.  The intercept-only call retains its historical moment
 projection. Additive covariate calls select the minimum from the signed
 finite marginal-likelihood grid; they never call PQL or expose
 cluster-level statistics.
 }
 \details{
-The signed outcome bounds must be exactly \code{[0, 1]}. For an
-intercept-only formula, \code{sigma_b2} is the conventional logistic
+The signed binary outcome bounds must be exactly \code{[0, 1]}.
+The Poisson grid requires an additive formula and a signed bounded integer
+outcome domain \code{[0, max_outcome]}. For a binary intercept-only formula,
+\code{sigma_b2} is the conventional logistic
 latent-scale approximation to the released observed ICC. For additive
 covariates, it is the selected value from a custodian-signed finite random
 intercept variance grid or a signed covariance grid with one to three random
-slopes. Neither route supplies standard errors, p-values or sampling
-inference; named random slopes are available only when they exactly match a
-signed finite grid. Interactions and
+slopes. A Poisson call selects from a signed bounded-count, random-intercept
+grid. Neither route supplies standard errors, p-values or sampling inference;
+named random slopes are available only for the binary signed grid.
+Interactions and
 unconstrained likelihood optimisation remain unavailable.
 }
 \seealso{

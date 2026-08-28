@@ -942,6 +942,9 @@
                .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "binary_random_intercept_grid_v1")) ||
     (identical(artifact$version,
+               .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION) &&
+       identical(artifact$spec_version, "poisson_random_intercept_grid_v1")) ||
+    (identical(artifact$version,
                .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "binary_random_slope_grid_v1")) ||
     (identical(artifact$version,
@@ -1446,7 +1449,8 @@
     .dsvert_dp_lmm_fixed_coordinate_upper(artifact)
   } else if (artifact$version %in% c(
         .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
-        .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+        .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION)) {
     as.numeric(artifact$statistic_maximum)
   } else if (identical(artifact$version,
                        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
@@ -1597,6 +1601,7 @@
   if (artifact$version %in% c(
         .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_COX_PARTIAL_GRID_ARTIFACT_VERSION)) {

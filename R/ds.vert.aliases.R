@@ -32,10 +32,11 @@
 #' It has no arbitrary random-effect formula, continuous optimisation, standard
 #' errors or classical inference.
 #' \code{ds.vert.glmm(..., analysis_id = x)} reads either that binary
-#' \code{outcome ~ 1} population-average moment artifact or a custodian-signed
-#' finite random-intercept or one-to-three-random-slope likelihood grid for
-#' additive bare covariates; it is not the retired PQL route and has no
-#' unconstrained optimisation or inference.
+#' \code{outcome ~ 1} population-average moment artifact, a custodian-signed
+#' finite binary random-intercept or one-to-three-random-slope likelihood grid,
+#' or a bounded-count Poisson random-intercept likelihood grid for additive bare
+#' covariates; it is not the retired PQL route and has no unconstrained
+#' optimisation or inference.
 #' No alias re-enables a retired remote endpoint or weakens the signed-artifact
 #' and custodian-owned policy gates of an available backend.
 #' For \code{ds.vert.pca()}, an authenticated \code{cor_result} can be supplied
@@ -68,9 +69,12 @@
 #'   enables only independent Gaussian GEE post-processing.
 #' @param precision,method,ring,verbose Binomial-sigmoid precision preset,
 #'   estimator/route selector, fixed-point ring, and progress flag. For
-#'   code{ds.vert.glmm()}, code{method = "auto"} selects the signed
+#'   \code{ds.vert.glmm()}, \code{method = "auto"} selects the signed
 #'   intercept-only moment or additive finite-grid artifact from the formula;
 #'   the explicit values must agree with that formula.
+#' @param family For \code{ds.vert.glmm()}, either \code{"binomial"} (the
+#'   default) or \code{"poisson"}. Poisson requires the signed bounded-count
+#'   additive random-intercept grid.
 #' @param formal_analysis_id,fresh_formal_analysis_id Custodian-owned selector
 #'   for an already completed formal Cox profile, binomial/Poisson GLM
 #'   certificate, or discrete-time public certificate. Fresh GLM and Cox
@@ -686,19 +690,25 @@ ds.vert.gee <- function(formula, data = NULL,
 ds.vert.glmm <- function(formula, data = NULL, cluster_col,
                          analysis_id = NULL,
                          method = c("auto", "moment", "finite_grid"),
+                         family = c("binomial", "poisson"),
                          datasources = NULL, ...) {
   method <- match.arg(method)
+  family <- match.arg(family)
   terms <- if (inherits(formula, "formula")) {
     attr(stats::terms(formula), "term.labels")
   } else character()
-  resolved_method <- if (length(terms)) "finite_grid" else "moment"
+  resolved_method <- if (length(terms) || identical(family, "poisson")) {
+    "finite_grid"
+  } else {
+    "moment"
+  }
   if (!identical(method, "auto") && !identical(method, resolved_method)) {
     stop("method does not match the GLMM formula scope", call. = FALSE)
   }
   datasources <- .dsvert_datasources(datasources)
   out <- ds.vertGLMM(formula = formula, data = data,
                      cluster_col = cluster_col, analysis_id = analysis_id,
-                     datasources = datasources, ...)
+                     family = family, datasources = datasources, ...)
   out <- .dsvert_set_frontdoor(out, "ds.vert.glmm", "ds.vertGLMM",
                                length(datasources))
   .dsvert_add_policy(out, method = resolved_method)

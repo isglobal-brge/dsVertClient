@@ -567,15 +567,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "is implemented."))
   add(c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "promoted",
       paste(
-        "A binary outcome ~ 1 population-average moment projection or an",
-        "additive fixed-covariate finite marginal-likelihood grid from one",
-        "validated sticky same-owner random-intercept or one-to-three-random-slope",
-        "Synopsis."),
+        "A binary outcome ~ 1 population-average moment projection, an",
+        "additive binary finite marginal-likelihood grid with a random intercept",
+        "or one to three random slopes, or an additive bounded-count Poisson",
+        "random-intercept finite grid from one validated sticky same-owner Synopsis."),
       paste(
         "The covariate route selects only among custodian-signed finite",
         "Gauss-Hermite marginal-likelihood candidates. It is not PQL, an",
-        "unconstrained optimizer, more than three random slopes, interactions, standard",
-        "errors, p-values or sampling inference."))
+        "unconstrained optimizer, interactions, standard errors, p-values or",
+        "sampling inference. Poisson random slopes are unavailable; binary supports",
+        "no more than three random slopes."))
   add(c("ds.vertIPW", "ds.vert.ipw"), "ds.vertIPW", "promoted",
       paste(
         "Exact binary intercept-only ATE IPW identity, or one categorical",

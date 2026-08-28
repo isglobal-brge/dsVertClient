@@ -112,9 +112,10 @@ In particular:
   releases weights, fits a propensity model, or supports continuous/multiple
   covariates or outcome regression.
 - the signed LMM route is limited to its signed random-intercept, fixed-effect
-  or finite random-slope artifacts; the signed binary GLMM route is limited to
-  an `outcome ~ 1` moment projection or its signed additive finite
-  random-intercept/one-to-three-random-slope grid.
+  or finite random-slope artifacts; the signed GLMM route is limited to a
+  binary `outcome ~ 1` moment projection, a signed additive binary finite
+  random-intercept/one-to-three-random-slope grid, or a signed additive
+  bounded-count Poisson random-intercept grid.
   Gaussian exchangeable GEE is a model-based working-GLS post-processing of a
   matching signed random-intercept artifact. A distinct signed finite
   beta/rho artifact supports Gaussian AR(1) working-GLS only with a strict
