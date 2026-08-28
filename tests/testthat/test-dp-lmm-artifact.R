@@ -241,6 +241,64 @@
   fixture
 }
 
+.poisson_glmm_random_slope_grid_artifact_fixture <- function() {
+  capacity <- 20
+  scale <- 256
+  candidate_grid <- list(
+    list(beta = c(-1, 0), covariance = c(0.25, 0, 0, 0.25)),
+    list(beta = c(-1, log(4)), covariance = c(0.5, 0.1, 0.1, 0.5)))
+  candidates <- dsVertClient:::.dsvert_dp_poisson_glmm_random_slope_candidates(
+    candidate_grid, 2L, c("(Intercept)", "x"), 10L)
+  loss_bounds <- vapply(candidates, `[[`, numeric(1L), "loss_bound")
+  raw <- ceiling(loss_bounds * scale)
+  artifact <- list(
+    version = "bounded-poisson-random-slope-likelihood-grid-v1",
+    spec_version = "poisson_random_slope_grid_v1",
+    analysis_id = "poisson_glmm_slope", dataset = "protected",
+    owner_peer = "server_a", outcome = list(column = "y", lower = 0, upper = 10),
+    max_outcome = 10L, cluster = list(column = "site", levels = c("a", "b", "c")),
+    predictors = list(x = list(column = "x", lower = 0, upper = 10)),
+    predictor_order = "x", intercept = TRUE,
+    design_terms = c("(Intercept)", "x"),
+    random_effect_order = c("(Intercept)", "x"),
+    observation_capacity = capacity, max_patients_per_cluster = 4L,
+    candidate_grid = lapply(candidates, function(candidate) list(
+      beta = candidate$beta, covariance = as.vector(t(candidate$covariance)))),
+    quadrature_rule = "gauss_hermite_9x9_standard_normal_v1",
+    candidate_order = "canonical_signed_candidate_grid_v1",
+    candidate_loss_bounds = as.list(loss_bounds), numeric_grid_bits = 8L,
+    coordinate_count = 2L,
+    coordinate_order =
+      "signed_candidate_grid_cluster_marginal_poisson_negative_log_likelihood_v1",
+    source_coordinate_scaling =
+      "all_coordinates_already_on_common_numeric_lattice_v1",
+    repeated_record_policy = paste(
+      "require_one_bounded_poisson_outcome_and_mean_once_per_admitted",
+      "patient_with_one_consistent_public_cluster_level_v1", sep = "_"),
+    missingness_policy = paste(
+      "noninteger_or_out_of_range_or_missing_outcome_or_missing_or",
+      "nonfinite_predictor_or_missing_or_inconsistent_cluster_excludes",
+      "patient_v1", sep = "_"),
+    contribution_domain = paste(
+      "one_bounded_patient_poisson_log_likelihood_contribution_in_one",
+      "consistent_cluster_for_every_signed_candidate_v1", sep = "_"),
+    statistic_maximum = as.list(capacity * raw),
+    source_raw_l1_sensitivity = sum(raw),
+    source_raw_l2_sensitivity = sqrt(sum(raw^2)),
+    natural_l1_sensitivity = sum(raw) / scale,
+    natural_l2_sensitivity = sqrt(sum(raw^2)) / scale,
+    adjacency = "add_remove_patient",
+    adjacency_sensitivity_basis = paste(
+      "one_patient_changes_one_cluster_marginal_log_likelihood_by_at",
+      "most_its_signed_poisson_loss_bound_v1", sep = "_"),
+    estimation_scope =
+      "bounded_poisson_random_intercept_and_one_random_slope_marginal_likelihood_finite_signed_parameter_grid_v1",
+    implementation_state = "same_owner_materialized",
+    cross_owner_state = "reserved_not_materialized")
+  list(artifact = artifact, manifest = list(workload = list(families = list(
+    gaussian_models = list(artifacts = list(poisson_glmm_slope = artifact))))))
+}
+
 .glmm_random_slope_grid_artifact_fixture <- function() {
   capacity <- 20
   scale <- 256
@@ -418,6 +476,31 @@ test_that("Poisson random-intercept GLMM grid validates and fails closed", {
     max_outcome <- 9L
   expect_error(dsVertClient:::.dsvert_dp_glmm_grid_artifact(
     tampered, "protected", "poisson_glmm_grid", "server_a",
+    "add_remove_patient", 256, 20), "descriptor is invalid")
+})
+
+test_that("Poisson random-slope GLMM grid validates, transforms and fails closed", {
+  fixture <- .poisson_glmm_random_slope_grid_artifact_fixture()
+  artifact <- dsVertClient:::.dsvert_dp_glmm_grid_artifact(
+    fixture$manifest, "protected", "poisson_glmm_slope", "server_a",
+    "add_remove_patient", 256, 20)
+  fit <- dsVertClient:::.dsvert_dp_poisson_glmm_random_slope_grid_moment(
+    c(100, 90), artifact)
+
+  expect_identical(artifact$version,
+    dsVertClient:::.DSVERT_CLIENT_DP_POISSON_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)
+  expect_identical(fit$random_effect_order, c("(Intercept)", "x"))
+  expect_identical(fit$selected_candidate, 2L)
+  expect_equal(fit$coefficients, c(`(Intercept)` = -1, x = log(4) / 10))
+  expect_equal(fit$random_effect_covariance,
+               matrix(c(0.5, 0.01, 0.01, 0.005), 2L, 2L,
+                      dimnames = list(c("(Intercept)", "x"),
+                                      c("(Intercept)", "x"))))
+  tampered <- fixture$manifest
+  tampered$workload$families$gaussian_models$artifacts$poisson_glmm_slope$
+    random_effect_order <- c("x", "(Intercept)")
+  expect_error(dsVertClient:::.dsvert_dp_glmm_grid_artifact(
+    tampered, "protected", "poisson_glmm_slope", "server_a",
     "add_remove_patient", 256, 20), "descriptor is invalid")
 })
 

@@ -951,6 +951,9 @@
                .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "poisson_random_intercept_grid_v1")) ||
     (identical(artifact$version,
+               .DSVERT_CLIENT_DP_POISSON_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION) &&
+       identical(artifact$spec_version, "poisson_random_slope_grid_v1")) ||
+    (identical(artifact$version,
                .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "binary_random_slope_grid_v1")) ||
     (identical(artifact$version,
@@ -1456,7 +1459,8 @@
   } else if (artifact$version %in% c(
         .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
-        .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION)) {
+        .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_POISSON_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
     as.numeric(artifact$statistic_maximum)
   } else if (identical(artifact$version,
                        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
@@ -1609,6 +1613,7 @@
         .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_POISSON_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GEE_AR1_ROBUST_GRID_ARTIFACT_VERSION,
@@ -1626,6 +1631,9 @@
     } else if (identical(artifact$version,
                           .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
       .dsvert_dp_glmm_random_slope_grid_moment(coordinates, artifact)
+    } else if (identical(artifact$version,
+                          .DSVERT_CLIENT_DP_POISSON_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+      .dsvert_dp_poisson_glmm_random_slope_grid_moment(coordinates, artifact)
     } else .dsvert_dp_glmm_grid_moment(coordinates, artifact)
     accuracy_release <- list(
       manifest_sha256 = certificate$manifest_sha256,
@@ -2091,6 +2099,8 @@ ds.validateDPGaussianCertificate <- function(x, trusted_pinset = NULL) {
   } else if (artifact$version %in% c(
         .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_POISSON_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GEE_AR1_ROBUST_GRID_ARTIFACT_VERSION,

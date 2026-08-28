@@ -120,6 +120,7 @@ ds.vert.gee(
   formal_analysis_id = NULL,
   fresh_formal_analysis_id = NULL,
   dp_analysis_id = NULL,
+  analysis_id = NULL,
   ...
 )
 
@@ -211,10 +212,6 @@ estimator/route selector, fixed-point ring, and progress flag. For
 intercept-only moment or additive finite-grid artifact from the formula;
 the explicit values must agree with that formula.}
 
-\item{family}{For \code{ds.vert.glmm()}, either \code{"binomial"} (the
-default) or \code{"poisson"}. Poisson requires the signed bounded-count
-additive random-intercept grid.}
-
 \item{formal_analysis_id, fresh_formal_analysis_id}{Custodian-owned selector
 for an already completed formal Cox profile, binomial/Poisson GLM
 certificate, or discrete-time public certificate. Fresh GLM and Cox
@@ -237,14 +234,18 @@ post-processing.}
 \item{max_iter, inner_iter, max_outer, tol}{Iteration caps and convergence
 tolerance for the iterative fits.}
 
+\item{family}{For \code{ds.vert.glmm()}, either \code{"binomial"} (the
+default) or \code{"poisson"}. Poisson requires a signed bounded-count
+additive random-intercept or one-random-slope grid.}
+
 \item{outcome_formula, propensity_formula}{Outcome and propensity models (IPW).}
 
 \item{impute_columns, m}{Columns to impute and number of imputations (MI).}
 
 \item{fit, reduced, full, parm, level, type, null, K}{Inference-helper inputs
 (fitted object, nested models, parameter, confidence level, interval type,
-null value, class count). For code{ds.vert.confint()},
-code{type = "mechanism"} requests the signed Gaussian DP-mechanism
+null value, class count). For \code{ds.vert.confint()},
+\code{type = "mechanism"} requests the signed Gaussian DP-mechanism
 region; it is not a sampling confidence interval.}
 
 \item{lambda, lambda_1, lambda_grid}{Penalty or penalty grid for the LASSO routes.}
@@ -284,8 +285,8 @@ errors or classical inference.
 \code{ds.vert.glmm(..., analysis_id = x)} reads either that binary
 \code{outcome ~ 1} population-average moment artifact, a custodian-signed
 finite binary random-intercept or one-to-three-random-slope likelihood grid,
-or a bounded-count Poisson random-intercept likelihood grid for additive bare
-covariates; it is not the retired PQL route and has no unconstrained
+or a bounded-count Poisson random-intercept or one-random-slope likelihood
+grid for additive bare covariates; it is not the retired PQL route and has no unconstrained
 optimisation or inference.
 No alias re-enables a retired remote endpoint or weakens the signed-artifact
 and custodian-owned policy gates of an available backend.

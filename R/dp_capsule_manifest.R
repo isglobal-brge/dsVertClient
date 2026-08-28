@@ -777,6 +777,45 @@
                 sum(abs(beta)) <= 16
             }, logical(1L))) && !anyDuplicated(beta_keys)
           if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
+        } else if (identical(spec$version, "poisson_random_slope_grid_v1")) {
+          expected <- c(
+            "version", "dataset", "outcome", "cluster", "predictors",
+            "random_slopes", "intercept", "max_patients_per_cluster",
+            "max_outcome", "candidate_grid")
+          valid <- setequal(names(spec), expected) && identifier(spec$dataset) &&
+            column_reference(spec$outcome) && column_reference(spec$cluster) &&
+            !identical(spec$outcome, spec$cluster) && isTRUE(spec$intercept) &&
+            .dsvert_dp_is_integer(spec$max_patients_per_cluster, 2L) &&
+            .dsvert_dp_is_integer(spec$max_outcome, 1L, 1024L)
+          predictors <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$predictors, "Poisson GLMM fixed predictors"),
+            error = function(error) character()) else character()
+          random_slopes <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$random_slopes, "Poisson GLMM random slopes"),
+            error = function(error) character()) else character()
+          valid <- isTRUE(valid) && length(predictors) &&
+            !anyDuplicated(predictors) && !spec$outcome %in% predictors &&
+            !spec$cluster %in% predictors &&
+            all(vapply(predictors, column_reference, logical(1L))) &&
+            identical(predictors, sort(predictors, method = "radix")) &&
+            length(random_slopes) == 1L &&
+            all(random_slopes %in% predictors) &&
+            identical(random_slopes, sort(random_slopes, method = "radix"))
+          effects <- c("(Intercept)", random_slopes)
+          candidates <- if (isTRUE(valid)) {
+            .dsvert_dp_poisson_glmm_random_slope_candidates(
+              spec$candidate_grid, 1L + length(predictors), effects,
+              as.integer(spec$max_outcome))
+          } else list()
+          valid <- isTRUE(valid) && length(candidates) &&
+            length(candidates) <= 64L
+          if (isTRUE(valid)) {
+            candidate_grid <- lapply(candidates, function(candidate) list(
+              beta = unname(candidate$beta),
+              covariance = unname(as.vector(t(candidate$covariance)))))
+          }
         } else if (identical(spec$version, "binary_random_slope_grid_v1")) {
           expected <- c(
             "version", "dataset", "outcome", "cluster", "predictors",
@@ -897,6 +936,11 @@
         spec$candidate_grid <- candidate_grid
       } else if (identical(family, "gaussian") &&
                  identical(spec$version, "binary_random_slope_grid_v1")) {
+        spec$predictors <- predictors
+        spec$random_slopes <- sort(random_slopes, method = "radix")
+        spec$candidate_grid <- candidate_grid
+      } else if (identical(family, "gaussian") &&
+                 identical(spec$version, "poisson_random_slope_grid_v1")) {
         spec$predictors <- predictors
         spec$random_slopes <- sort(random_slopes, method = "radix")
         spec$candidate_grid <- candidate_grid

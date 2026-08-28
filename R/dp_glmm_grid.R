@@ -235,6 +235,12 @@
       manifest, data_name, analysis_id, owner_peer, adjacency, scale, capacity))
   }
   if (is.list(artifact) && identical(
+        artifact$version,
+        .DSVERT_CLIENT_DP_POISSON_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+    return(.dsvert_dp_poisson_glmm_random_slope_grid_artifact(
+      manifest, data_name, analysis_id, owner_peer, adjacency, scale, capacity))
+  }
+  if (is.list(artifact) && identical(
         artifact$version, .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
     return(.dsvert_dp_glmm_random_slope_grid_artifact(
       manifest, data_name, analysis_id, owner_peer, adjacency, scale, capacity))
@@ -472,7 +478,10 @@
          call. = FALSE)
   }
   coordinates <- .dsvert_dp_capsule_vector_values(context$release, blocks[[1L]])
-  moment <- if (identical(
+  moment <- if (identical(artifact$version,
+                          .DSVERT_CLIENT_DP_POISSON_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
+    .dsvert_dp_poisson_glmm_random_slope_grid_moment(coordinates, artifact)
+  } else if (identical(
         artifact$version, .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
     .dsvert_dp_glmm_random_slope_grid_moment(coordinates, artifact)
   } else .dsvert_dp_glmm_grid_moment(coordinates, artifact)
@@ -484,6 +493,7 @@
       !verification$artifact$version %in% c(
         .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_POISSON_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION)) {
     stop("The GLMM Synopsis certificate is not transport-anchored",
          call. = FALSE)
@@ -513,8 +523,11 @@
          call. = FALSE)
   }
   moment <- released$moment
-  random_slope <- identical(
-    artifact$version, .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)
+  random_slope <- artifact$version %in% c(
+    .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
+    .DSVERT_CLIENT_DP_POISSON_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)
+  poisson_random_slope <- identical(
+    artifact$version, .DSVERT_CLIENT_DP_POISSON_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)
   poisson <- identical(
     artifact$version, .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION)
   result <- c(released$metadata, list(
@@ -523,7 +536,8 @@
     logical_snapshot = released$verification$logical_snapshot,
     certificate_sha256 = released$certificate$certificate_sha256,
     signed_artifact = artifact, server = artifact$owner_peer,
-    family = if (isTRUE(poisson)) "poisson_random_intercept" else if (
+    family = if (isTRUE(poisson_random_slope)) "poisson_random_slope" else if (
+      isTRUE(poisson)) "poisson_random_intercept" else if (
       isTRUE(random_slope)) "binomial_random_slope" else
       "binomial_random_intercept",
     estimand = artifact$estimation_scope,
