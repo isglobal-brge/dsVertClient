@@ -847,10 +847,10 @@
             !spec$cluster %in% predictors &&
             all(vapply(predictors, column_reference, logical(1L))) &&
             identical(predictors, sort(predictors, method = "radix")) &&
-            length(random_slopes) == 1L &&
+            length(random_slopes) >= 1L && length(random_slopes) <= 3L &&
             all(random_slopes %in% predictors) &&
             identical(random_slopes, sort(random_slopes, method = "radix"))
-          effects <- c("(Intercept)", random_slopes)
+          effects <- c("(Intercept)", sort(random_slopes, method = "radix"))
           candidates <- if (isTRUE(valid)) {
             .dsvert_dp_poisson_glmm_random_slope_candidates(
               spec$candidate_grid, 1L + length(predictors), effects,

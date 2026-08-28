@@ -299,6 +299,51 @@
     gaussian_models = list(artifacts = list(poisson_glmm_slope = artifact))))))
 }
 
+.poisson_glmm_three_random_slope_grid_artifact_fixture <- function() {
+  fixture <- .poisson_glmm_random_slope_grid_artifact_fixture()
+  artifact <- fixture$artifact
+  candidate_grid <- list(
+    list(beta = c(-1, 0, 0, 0), covariance = c(
+      0.25, 0, 0, 0,
+      0, 0.25, 0, 0,
+      0, 0, 0.25, 0,
+      0, 0, 0, 0.25)),
+    list(beta = c(-1, 1, log(4), 1), covariance = c(
+      0.5, 0.1, 0.05, 0.02,
+      0.1, 0.5, 0.05, 0.02,
+      0.05, 0.05, 0.5, 0.02,
+      0.02, 0.02, 0.02, 0.5)))
+  candidates <- dsVertClient:::.dsvert_dp_poisson_glmm_random_slope_candidates(
+    candidate_grid, 4L, c("(Intercept)", "w", "x", "z"), 10L)
+  loss_bounds <- vapply(candidates, `[[`, numeric(1L), "loss_bound")
+  raw <- ceiling(loss_bounds * 256)
+  artifact$analysis_id <- "poisson_glmm_three_slope"
+  artifact$predictors <- list(
+    w = list(column = "w", lower = 0, upper = 2),
+    x = list(column = "x", lower = 0, upper = 10),
+    z = list(column = "z", lower = 0, upper = 5))
+  artifact$predictor_order <- c("w", "x", "z")
+  artifact$design_terms <- c("(Intercept)", "w", "x", "z")
+  artifact$random_effect_order <- c("(Intercept)", "w", "x", "z")
+  artifact$candidate_grid <- lapply(candidates, function(candidate) list(
+    beta = candidate$beta, covariance = as.vector(t(candidate$covariance))))
+  artifact$quadrature_rule <- "gauss_hermite_9x9x9x9_standard_normal_v1"
+  artifact$candidate_loss_bounds <- as.list(loss_bounds)
+  artifact$statistic_maximum <- as.list(20L * raw)
+  artifact$coordinate_count <- 2L
+  artifact$source_raw_l1_sensitivity <- sum(raw)
+  artifact$source_raw_l2_sensitivity <- sqrt(sum(raw^2))
+  artifact$natural_l1_sensitivity <- sum(raw) / 256
+  artifact$natural_l2_sensitivity <- sqrt(sum(raw^2)) / 256
+  artifact$estimation_scope <- paste(
+    "bounded_poisson_random_intercept_and_one_to_three_random_slopes_marginal",
+    "likelihood_finite_signed_parameter_grid_v1", sep = "_")
+  fixture$artifact <- artifact
+  fixture$manifest$workload$families$gaussian_models$artifacts <- list(
+    poisson_glmm_three_slope = artifact)
+  fixture
+}
+
 .robust_independence_gee_grid_artifact_fixture <- function(family = "binomial") {
   capacity <- 20L
   scale <- 256
@@ -583,6 +628,30 @@ test_that("Poisson random-slope GLMM grid validates, transforms and fails closed
     random_effect_order <- c("x", "(Intercept)")
   expect_error(dsVertClient:::.dsvert_dp_glmm_grid_artifact(
     tampered, "protected", "poisson_glmm_slope", "server_a",
+    "add_remove_patient", 256, 20), "descriptor is invalid")
+})
+
+test_that("Poisson three-random-slope GLMM grid validates and fails closed", {
+  fixture <- .poisson_glmm_three_random_slope_grid_artifact_fixture()
+  artifact <- dsVertClient:::.dsvert_dp_glmm_grid_artifact(
+    fixture$manifest, "protected", "poisson_glmm_three_slope", "server_a",
+    "add_remove_patient", 256, 20)
+  fit <- dsVertClient:::.dsvert_dp_poisson_glmm_random_slope_grid_moment(
+    c(100, 90), artifact)
+
+  expect_identical(fit$random_effect_order,
+                   c("(Intercept)", "w", "x", "z"))
+  expect_identical(dim(fit$random_effect_covariance), c(4L, 4L))
+  expect_true(all(is.finite(c(fit$coefficients, fit$random_effect_covariance))))
+  expect_true(all(eigen(fit$random_effect_covariance,
+                        symmetric = TRUE, only.values = TRUE)$values >= -1e-12))
+  expect_equal(fit$coefficients, c(
+    `(Intercept)` = -1, w = 0.5, x = log(4) / 10, z = 0.2))
+  tampered <- fixture$manifest
+  tampered$workload$families$gaussian_models$artifacts$poisson_glmm_three_slope$
+    quadrature_rule <- "gauss_hermite_9x9_standard_normal_v1"
+  expect_error(dsVertClient:::.dsvert_dp_glmm_grid_artifact(
+    tampered, "protected", "poisson_glmm_three_slope", "server_a",
     "add_remove_patient", 256, 20), "descriptor is invalid")
 })
 

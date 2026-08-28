@@ -33,7 +33,7 @@ names. Poisson requires at least one additive bare column name.}
 
 \item{random_slopes}{Optional signed bare predictor names for a finite-grid
 random-slope artifact; they must match the artifact exactly. Binomial
-accepts one to three; Poisson accepts one.}
+accepts one to three; Poisson also accepts one to three.}
 
 \item{max_outer, inner_iter, tol, ring, verbose}{Retained compatibility controls;
 they do not alter the signed estimand.}
@@ -45,7 +45,7 @@ they do not alter the signed estimand.}
 \item{datasources}{DataSHIELD connections.}
 
 \item{family}{Either \code{"binomial"} (the default) or \code{"poisson"}.
-Poisson supports a signed finite random-intercept or one-random-slope grid
+Poisson supports a signed finite random-intercept or one-to-three-random-slope grid
 with a bounded integer outcome.}
 }
 \value{
@@ -68,7 +68,7 @@ latent-scale approximation to the released observed ICC. For additive
 covariates, it is the selected value from a custodian-signed finite random
 intercept variance grid or a signed covariance grid with one to three
 random slopes. A Poisson call selects from a signed bounded-count,
-random-intercept grid or one signed random slope. Neither route supplies
+random-intercept grid or one to three signed random slopes. Neither route supplies
 standard errors, p-values or sampling inference. Interactions and
 unconstrained likelihood optimisation remain unavailable.
 }

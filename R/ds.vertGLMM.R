@@ -12,7 +12,7 @@
 #'   covariates, it is the selected value from a custodian-signed finite random
 #'   intercept variance grid or a signed covariance grid with one to three
 #'   random slopes. A Poisson call selects from a signed bounded-count,
-#'   random-intercept grid or one signed random slope. Neither route supplies
+#'   random-intercept grid or one to three signed random slopes. Neither route supplies
 #'   standard errors, p-values or sampling inference. Interactions and
 #'   unconstrained likelihood optimisation remain unavailable.
 #' @param formula A binary intercept-only formula or additive bare column
@@ -22,9 +22,9 @@
 #' @param analysis_id Custodian-configured signed random-intercept artifact id.
 #' @param random_slopes Optional signed bare predictor names for a finite-grid
 #'   random-slope artifact; they must match the artifact exactly. Binomial
-#'   accepts one to three; Poisson accepts one.
+#'   accepts one to three; Poisson also accepts one to three.
 #' @param family Either \code{"binomial"} (the default) or \code{"poisson"}.
-#'   Poisson supports a signed finite random-intercept or one-random-slope grid
+#'   Poisson supports a signed finite random-intercept or one-to-three-random-slope grid
 #'   with a bounded integer outcome.
 #' @param max_outer,inner_iter,tol,ring,verbose Retained compatibility controls;
 #'   they do not alter the signed estimand.
@@ -67,11 +67,6 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
       anyNA(random_slopes) || anyDuplicated(random_slopes) ||
       any(!grepl("^[A-Za-z.][A-Za-z0-9._]*$", random_slopes)))) {
     stop("random_slopes must be one to three unique bare signed predictor names or NULL",
-         call. = FALSE)
-  }
-  if (identical(family, "poisson") && !is.null(random_slopes) &&
-      length(random_slopes) != 1L) {
-    stop("Poisson ds.vertGLMM supports at most one signed random slope",
          call. = FALSE)
   }
   if (identical(family, "poisson") && !length(predictors)) {
