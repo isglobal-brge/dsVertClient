@@ -354,7 +354,10 @@ test_that("RMTL accepts the formal vector survival object and binds provenance",
     survival_contrast = ds.vertDPSurvivalContrast(
       result, result, "comparison", "reference"),
     rmst_contrast = ds.vertDPRMSTContrast(
-      result, result, c(1, 2, 4), "comparison", "reference"))
+      result, result, c(1, 2, 4), "comparison", "reference"),
+    logrank = ds.vertDPLogRank(
+      result, result, cause = "A", comparison_label = "comparison",
+      reference_label = "reference"))
 }
 
 test_that("survival uses one no-lifetime Synopsis for K=2,3,5", {
@@ -442,7 +445,8 @@ test_that("survival uses one no-lifetime Synopsis for K=2,3,5", {
       attr(views$quantile, "source_release_provenance"),
       attr(views$median, "source_release_provenance"),
       attr(views$survival_contrast, "source_release_provenance")$comparison,
-      attr(views$rmst_contrast, "source_release_provenance")$comparison)
+      attr(views$rmst_contrast, "source_release_provenance")$comparison,
+      attr(views$logrank, "source_release_provenance")$comparison)
     for (provenance in provenances) {
       expect_identical(provenance$artifact_key, result$artifact_key)
       expect_identical(provenance$release_provenance,
@@ -780,6 +784,84 @@ test_that("survival contrasts preserve only defensible joint coverage", {
   expect_identical(attr(contrast, "additional_server_calls"), 0L)
 })
 
+test_that("fixed-grid log-rank score has a conservative mechanism region", {
+  comparison <- .dp_survival_client_object(FALSE)
+  reference <- comparison
+  reference$histogram[[5L]] <- reference$histogram[[5L]] + 1
+  reference <- .dsvert_dp_survival_postprocess(reference)
+  class(reference) <- c("ds.vertDPSurvival", "list")
+
+  all_cause <- ds.vertDPLogRank(comparison, reference)
+  cause_a <- ds.vertDPLogRank(comparison, reference, cause = "A")
+  expect_s3_class(all_cause, "ds.vertDPLogRank")
+  expect_identical(all_cause$cause, "all_causes")
+  expect_identical(cause_a$cause, "A")
+  expect_true(all_cause$logrank_score_mechanism_lower <=
+                all_cause$logrank_score)
+  expect_true(all_cause$logrank_score_mechanism_upper >=
+                all_cause$logrank_score)
+  expect_true(cause_a$logrank_score_mechanism_lower <=
+                cause_a$logrank_score)
+  expect_true(cause_a$logrank_score_mechanism_upper >=
+                cause_a$logrank_score)
+  expect_true(is.finite(all_cause$null_variance_plugin))
+  expect_identical(attr(all_cause, "joint_event"),
+                   "bonferroni_across_distinct_releases")
+  expect_equal(attr(all_cause, "joint_mechanism_confidence"), 0.9,
+               tolerance = 1e-15)
+  expect_identical(attr(all_cause, "additional_privacy_cost"),
+                   c(epsilon = 0, delta = 0))
+  expect_identical(attr(all_cause, "additional_server_calls"), 0L)
+  expect_match(attr(all_cause, "statistical_inference"), "not a standard error",
+               fixed = TRUE)
+  expect_match(attr(all_cause, "population_comparison_contract"),
+               "cannot establish", fixed = TRUE)
+
+  delayed <- .dp_survival_client_object(TRUE)
+  delayed_score <- ds.vertDPLogRank(delayed, delayed, cause = "A")
+  expect_equal(delayed_score$logrank_score, 0, tolerance = 0)
+  expect_true(delayed_score$logrank_score_mechanism_lower <= 0)
+  expect_true(delayed_score$logrank_score_mechanism_upper >= 0)
+})
+
+test_that("log-rank box bounds every rectangle corner", {
+  comparison <- list(
+    event = 2, event_lower = 1, event_upper = 3,
+    at_risk = 6, at_risk_lower = 5, at_risk_upper = 8)
+  reference <- list(
+    event = 3, event_lower = 2, event_upper = 4,
+    at_risk = 7, at_risk_lower = 4, at_risk_upper = 9)
+  score <- .dsvert_dp_logrank_score_box(comparison, reference)
+  corners <- expand.grid(
+    d1 = c(1, 3), d0 = c(2, 4), n1 = c(5, 8), n0 = c(4, 9))
+  corner_scores <- with(corners, (d1 * n0 - d0 * n1) / (n1 + n0))
+  expect_equal(score$lower, min(corner_scores), tolerance = 1e-15)
+  expect_equal(score$upper, max(corner_scores), tolerance = 1e-15)
+  expect_true(score$lower <= score$score && score$score <= score$upper)
+})
+
+test_that("log-rank validates causes, release bindings and zero-call scope", {
+  comparison <- .dp_survival_client_object(FALSE)
+  incompatible <- .dp_survival_client_object(TRUE)
+  expect_error(ds.vertDPLogRank(comparison, incompatible),
+               "same signed public time grid")
+  expect_error(ds.vertDPLogRank(comparison, comparison, cause = "missing"),
+               "cause must be NULL")
+  tampered <- comparison
+  tampered$curve$at_risk_dp[[1L]] <- 0
+  expect_error(ds.vertDPLogRank(tampered, comparison), "validated released")
+
+  fail <- function(...) stop("unexpected DSI call", call. = FALSE)
+  result <- testthat::with_mocked_bindings(
+    ds.vertDPLogRank(comparison, comparison),
+    .dsvert_dp_datasources = fail,
+    .dsvert_dp_capsule_vector_run = fail,
+    .dsvert_aggregate_strict = fail,
+    .dsvert_fanout_by_site = fail,
+    .package = "dsVertClient")
+  expect_identical(attr(result, "additional_server_calls"), 0L)
+})
+
 test_that("survival contrasts type zero-denominator ratios", {
   comparison <- .dp_survival_client_object(FALSE)
   reference <- comparison
@@ -898,15 +980,15 @@ test_that("copied identity metadata cannot bypass survival Bonferroni", {
   }
 })
 
-test_that("survival contrast implementations contain no DSI route", {
-  source <- paste(
-    readLines(.dsvert_client_source_file(
-                "ds.vertDPSurvivalContrast.R"),
-              warn = FALSE),
-    collapse = "\n")
-  expect_false(grepl(
-    "datashield\\.aggregate|\\.dsvert_fanout|\\.dsvert_dp_datasources|DSI::",
-    source))
+test_that("survival contrast and log-rank implementations contain no DSI route", {
+  for (file in c("ds.vertDPSurvivalContrast.R", "ds.vertDPLogRank.R")) {
+    source <- paste(
+      readLines(.dsvert_client_source_file(file), warn = FALSE),
+      collapse = "\n")
+    expect_false(grepl(
+      "datashield\\.aggregate|\\.dsvert_fanout|\\.dsvert_dp_datasources|DSI::",
+      source), info = file)
+  }
 })
 
 test_that("fixed-grid survival quantiles and median match the central curve", {

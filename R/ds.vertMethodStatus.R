@@ -239,6 +239,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "Distinct artifacts retain only the Bonferroni joint-confidence",
         "lower bound; sampling uncertainty and continuous-time grid error",
         "are excluded, and denominator-zero ratios can be unbounded."))
+  add("ds.vertDPLogRank", "ds.vertDPSurvival post-processing", "promoted",
+      paste(
+        "Zero-call fixed-grid all-cause or cause-specific log-rank score",
+        "from two compatible validated Synopsis survival artifacts, with a",
+        "conservative joint DP-mechanism region."),
+      paste(
+        "Distinct artifacts retain only the Bonferroni joint-confidence",
+        "lower bound; the plug-in variance is descriptive, authenticated",
+        "releases do not prove disjoint cohorts, and no hypothesis test,",
+        "p-value, sampling interval or proportional-hazards effect is given."))
   add(c("ds.vertDPSurvivalQuantile", "ds.vertDPMedianSurvival"),
       "ds.vertDPSurvival post-processing", "promoted",
       paste(
@@ -747,6 +757,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "ds.vertDPKaplanMeier", "ds.vertDPNelsonAalen",
     "ds.vertDPCumulativeIncidence", "ds.vertDPRMST", "ds.vertDPRMTL",
     "ds.vertDPSurvivalContrast", "ds.vertDPRMSTContrast",
+    "ds.vertDPLogRank",
     "ds.vertDPSurvivalQuantile", "ds.vertDPMedianSurvival",
     "ds.vertConfint", "ds.vert.confint", "ds.vertWald", "ds.vert.wald",
     "ds.vertContrast", "ds.vert.contrast", "ds.vertEpi2x2",

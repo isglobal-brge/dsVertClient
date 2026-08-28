@@ -1183,6 +1183,23 @@
     inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
+    "ds.vertDPLogRank", "ds.vertDPLogRank", "dp_survival_postprocess",
+    "two_compatible_validated_synopsis_survival_artifacts",
+    paste(
+      "Fixed-grid all-cause or cause-specific log-rank score with a",
+      "conservative DP-mechanism outer region."),
+    c("identical_signed_public_time_grid", "mechanism_uncertainty",
+      "bonferroni_joint_event_for_distinct_releases",
+      "declared_disjoint_cohort_contract_external",
+      "no_sampling_test_or_p_value", "validated_synopsis_provenance",
+      "zero_call_postprocessing"),
+    "synopsis_release_implemented",
+    current_route_status =
+      "client_only_validated_synopsis_postprocess",
+    artifact_implementation_state = "validated_synopsis_adapter_implemented",
+    inference_implementation_state = "synopsis_postprocess_implemented")
+
+  add(
     "ds.vertDPSurvivalQuantile", "ds.vertDPSurvivalQuantile",
     "dp_survival_postprocess", "validated_synopsis_survival_artifact",
     paste(

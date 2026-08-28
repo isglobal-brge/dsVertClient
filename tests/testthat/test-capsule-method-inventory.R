@@ -30,7 +30,7 @@ test_that("capsule migration inventory covers the complete public surface", {
   non_inference <- .dsvert_capsule_non_inference_exports()
   exports <- getNamespaceExports("dsVertClient")
 
-  expect_equal(nrow(inventory), 96L)
+  expect_equal(nrow(inventory), 97L)
   expect_equal(length(non_inference), 13L)
   expect_contains(non_inference, "ds.validateDPGaussianCertificate")
   expect_contains(non_inference, "ds.vertDPCapsulePlan")
@@ -464,6 +464,7 @@ test_that("implemented Synopsis producers and postprocessors are explicit", {
     "ds.vertDPKaplanMeier", "ds.vertDPNelsonAalen",
     "ds.vertDPCumulativeIncidence", "ds.vertDPRMST", "ds.vertDPRMTL",
     "ds.vertDPSurvivalContrast", "ds.vertDPRMSTContrast",
+    "ds.vertDPLogRank",
     "ds.vertDPSurvivalQuantile", "ds.vertDPMedianSurvival",
     "ds.vertDPEpi2x2", "ds.vertDPEpi2x2Inference",
     "ds.vertDPPrevalenceRatio", "ds.vertDPPrevalenceRatioInference",

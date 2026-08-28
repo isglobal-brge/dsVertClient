@@ -227,6 +227,7 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
     "ds.vertDPKaplanMeier", "ds.vertDPNelsonAalen",
     "ds.vertDPCumulativeIncidence", "ds.vertDPRMST", "ds.vertDPRMTL",
     "ds.vertDPSurvivalContrast", "ds.vertDPRMSTContrast",
+    "ds.vertDPLogRank",
     "ds.vertDPSurvivalQuantile", "ds.vertDPMedianSurvival"))
   expect_true(all(survival_views$release_contract ==
                     "postprocessing_inherits_input"))
@@ -398,7 +399,8 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
     ds.vertMethodStatus("ds.vertDPRMTL")$principal_limitation,
     "sampling uncertainty", fixed = TRUE)
   survival_contrasts <- ds.vertMethodStatus(c(
-    "ds.vertDPSurvivalContrast", "ds.vertDPRMSTContrast"))
+    "ds.vertDPSurvivalContrast", "ds.vertDPRMSTContrast",
+    "ds.vertDPLogRank"))
   expect_true(all(survival_contrasts$status == "promoted"))
   expect_true(all(survival_contrasts$release_contract ==
                     "postprocessing_inherits_input"))

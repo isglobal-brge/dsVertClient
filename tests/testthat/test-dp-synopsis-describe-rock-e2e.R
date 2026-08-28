@@ -1981,6 +1981,8 @@ test_that("real Synopsis survival is plausible and Rock-replayable at K=2/3/5", 
     rmst_contrast <- ds.vertDPRMSTContrast(
       first, first, tau = c(5, 10), comparison_label = "same",
       reference_label = "baseline")
+    logrank <- ds.vertDPLogRank(
+      first, first, comparison_label = "same", reference_label = "baseline")
     expect_true(all(is.finite(kaplan_meier$kaplan_meier)))
     expect_true(all(is.finite(nelson_aalen$nelson_aalen)))
     expect_true(all(is.finite(cumulative_incidence$cumulative_incidence)))
@@ -1998,7 +2000,7 @@ test_that("real Synopsis survival is plausible and Rock-replayable at K=2/3/5", 
       expect_identical(attr(view, "additional_privacy_cost"),
                        c(epsilon = 0, delta = 0))
     }
-    for (contrast in list(survival_contrast, rmst_contrast)) {
+    for (contrast in list(survival_contrast, rmst_contrast, logrank)) {
       expect_identical(attr(contrast, "additional_server_calls"), 0L)
       expect_identical(attr(contrast, "additional_privacy_cost"),
                        c(epsilon = 0, delta = 0))
@@ -2014,6 +2016,11 @@ test_that("real Synopsis survival is plausible and Rock-replayable at K=2/3/5", 
                  rep(0, nrow(rmst_contrast)), tolerance = 0)
     finite_rmst_ratios <- is.finite(rmst_contrast$rmst_ratio)
     expect_true(all(rmst_contrast$rmst_ratio[finite_rmst_ratios] == 1))
+    expect_equal(logrank$logrank_score, 0, tolerance = 0)
+    expect_true(logrank$logrank_score_mechanism_lower <= 0)
+    expect_true(logrank$logrank_score_mechanism_upper >= 0)
+    expect_match(attr(logrank, "statistical_inference"), "or p-value",
+                 fixed = TRUE)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
 
     fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
@@ -2022,6 +2029,9 @@ test_that("real Synopsis survival is plausible and Rock-replayable at K=2/3/5", 
     replay <- survival("data_peer_a", "primary", "peer_a", conns, dispatch)
     expect_identical(replay$curve, first$curve)
     expect_identical(replay$final_vector_root, first$final_vector_root)
+    expect_identical(ds.vertDPLogRank(
+      replay, replay, comparison_label = "same", reference_label = "baseline"),
+      logrank)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
   }
 })
