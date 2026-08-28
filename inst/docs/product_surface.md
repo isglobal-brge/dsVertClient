@@ -115,7 +115,7 @@ In particular:
   or finite random-slope artifacts; the signed GLMM route is limited to a
   binary `outcome ~ 1` moment projection, a signed additive binary finite
   random-intercept/one-to-three-random-slope grid, or a signed additive
-  bounded-count Poisson random-intercept/one-random-slope grid.
+  bounded-count Poisson random-intercept/one-to-three-random-slope grid.
   Gaussian exchangeable GEE is a model-based working-GLS post-processing of a
   matching signed random-intercept artifact. A distinct signed finite
   beta/rho artifact supports Gaussian AR(1) working-GLS with a strict

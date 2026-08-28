@@ -236,7 +236,7 @@ tolerance for the iterative fits.}
 
 \item{family}{For \code{ds.vert.glmm()}, either \code{"binomial"} (the
 default) or \code{"poisson"}. Poisson requires a signed bounded-count
-additive random-intercept or one-random-slope grid.}
+additive random-intercept or one-to-three-random-slope grid.}
 
 \item{outcome_formula, propensity_formula}{Outcome and propensity models (IPW).}
 

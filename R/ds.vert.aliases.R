@@ -74,7 +74,7 @@
 #'   the explicit values must agree with that formula.
 #' @param family For \code{ds.vert.glmm()}, either \code{"binomial"} (the
 #'   default) or \code{"poisson"}. Poisson requires a signed bounded-count
-#'   additive random-intercept or one-random-slope grid.
+#'   additive random-intercept or one-to-three-random-slope grid.
 #' @param formal_analysis_id,fresh_formal_analysis_id Custodian-owned selector
 #'   for an already completed formal Cox profile, binomial/Poisson GLM
 #'   certificate, or discrete-time public certificate. Fresh GLM and Cox
