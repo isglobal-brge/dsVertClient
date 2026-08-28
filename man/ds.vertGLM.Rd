@@ -69,10 +69,9 @@ are fixed by the signed capsule.}
 certificate selector. It is read-only: it cannot request a new analysis,
 choose privacy parameters, or activate the legacy iterative route.}
 
-\item{fresh_formal_analysis_id}{Custodian-configured binomial/Poisson fresh
-analysis selector. It is mutually exclusive with the other analysis ids,
-carries no numerical or privacy controls, and may only resume its one durable
-registered analysis before reading its public publication.}
+\item{fresh_formal_analysis_id}{Retained custodian-configured
+binomial/Poisson fresh-analysis selector. It is mutually exclusive with
+the other analysis ids and currently fails before DSI.}
 }
 \value{
 With a valid Gaussian \code{dp_analysis_id}, a
@@ -95,9 +94,9 @@ binomial or Poisson selects a candidate from one signed finite likelihood-grid
 Synopsis. An explicit \code{formal_analysis_id} for
 binomial or Poisson reads a completed, two-authority-signed public DP
 certificate configured by the custodians. An explicit
-\code{fresh_formal_analysis_id} runs one preconfigured durable formal
-analysis and then reads that same publication. Neither selector starts the
-retained iterative Ring/Beaver code.
+\code{fresh_formal_analysis_id} is retained for compatibility but is
+unavailable before DSI until its protected runtime is production-attested.
+Neither selector starts the retained iterative Ring/Beaver code.
 }
 \details{
 \strong{Available route.} Supply an additive formula, an aligned data name,
@@ -123,13 +122,10 @@ and selects the minimum released negative log likelihood over the signed finite
 beta grid. The result is coefficient-only post-processing: it has no
 covariance, standard errors, p-values, residuals or fitted values.
 
-\strong{Fresh formal binomial/Poisson route.} A
-\code{fresh_formal_analysis_id} names a source, contract, compute pair and
-public-terminal configuration fixed by custodians. It accepts no numerical,
-privacy or MPC controls. The client relays only authenticated opaque records,
-then reads the resulting public certificate and checks that it belongs to the
-source artifact. Retrying this selector resumes the durable analysis; it does
-not request another release.
+\strong{Fresh formal binomial/Poisson route.}
+\code{fresh_formal_analysis_id} is a retained compatibility selector. It
+fails locally before DSI until a production-attested protected runtime can
+resume its configured durable analysis safely.
 
 \strong{Unavailable routes.} Default/no-id calls and all legacy iterative
 routes stop locally. A formal selector without a matching completed

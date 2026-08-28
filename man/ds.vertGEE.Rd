@@ -43,9 +43,9 @@ mutually exclusive with every other analysis selector.}
 \item{formal_analysis_id}{Custodian-configured completed formal GLM
 certificate selector.}
 
-\item{fresh_formal_analysis_id}{Custodian-configured binomial/Poisson
-durable GLM selector. It is mutually exclusive with the completed
-certificate and Gaussian Synopsis selectors.}
+\item{fresh_formal_analysis_id}{Retained custodian-configured
+binomial/Poisson fresh-GLM selector. It is mutually exclusive with the
+completed certificate and Gaussian Synopsis selectors and fails before DSI.}
 
 \item{dp_analysis_id}{Custodian-configured signed Gaussian Synopsis
 artifact selector. It is mutually exclusive with both formal selectors.}
@@ -63,8 +63,8 @@ Gaussian random-intercept Synopsis under an exchangeable working
 correlation. With \code{formal_analysis_id}, it returns the completed,
 two-authority-certified binomial or Poisson GLM point estimate under an
 independence working correlation.
-\code{fresh_formal_analysis_id} first completes that same configured
-durable GLM analysis, then consumes its public result.
+\code{fresh_formal_analysis_id} is retained for compatibility but fails
+before DSI until the protected GLM runtime is production-attested.
 With \code{dp_analysis_id}, it reads the signed Gaussian Synopsis fit
 under that same score equation. Neither route chooses privacy controls or
 exposes a cluster statistic.

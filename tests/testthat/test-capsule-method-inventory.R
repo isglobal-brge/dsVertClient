@@ -56,7 +56,7 @@ test_that("inventory separates current, migration, artifact and inference state"
 
   expect_identical(names(inventory), expected_columns)
   expect_identical(attr(inventory, "schema_version"),
-                   "dsvert-capsule-method-inventory-v4")
+                   "dsvert-capsule-method-inventory-v5")
   expect_true(all(nzchar(inventory$canonical_method)))
   expect_true(all(nzchar(inventory$canonical_family)))
   expect_true(all(nzchar(inventory$estimand)))
@@ -614,7 +614,7 @@ test_that("mixed variants and Frequency compatibility names have explicit scopes
 
   expect_true(all(inventory$current_route_status[
     inventory$method %in% mixed] ==
-      "signed_finite_grid_synopsis_or_formal_completed_public_certificate_or_registered_fresh"))
+      "signed_finite_grid_synopsis_or_formal_completed_public_certificate"))
   expect_true(all(inventory$migration_feasibility[
     inventory$method %in% mixed] ==
       "synopsis_release_implemented"))
@@ -622,7 +622,6 @@ test_that("mixed variants and Frequency compatibility names have explicit scopes
     inventory$method %in% mixed], function(requirements) {
       all(c("bounded_binomial_poisson_likelihood_grid",
             "formal_glm_public_certificate",
-            "formal_glm_registered_fresh_terminal",
             "formal_glm_two_authority_signatures") %in% requirements)
     }, logical(1L))))
   expect_true(all(inventory$current_route_status[

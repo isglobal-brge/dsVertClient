@@ -461,16 +461,14 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "Binomial/Poisson analysis_id selects the minimum from one bounded",
         "custodian-signed finite likelihood-grid Synopsis.",
         "Binomial/Poisson formal_analysis_id reads an already completed",
-        "two-authority-signed public certificate or durable Phase21 terminal;",
-        "fresh_formal_analysis_id may only resume the matching",
-        "custodian-configured durable formal analysis.",
+        "two-authority-signed public certificate or durable Phase21 terminal.",
         "Same- and cross-owner",
         "artifacts must match the requested formula; the legacy estimator",
         "is unreachable."),
       paste(
         "Gaussian needs a matching complete-case artifact. Binomial and Poisson",
-        "need either a signed finite grid, a completed release, or the one",
-        "configured fresh durable analysis; finite grids have no arbitrary",
+        "need either a signed finite grid or a completed release; fresh",
+        "computation is sealed pending a production-attested runtime. Finite grids have no arbitrary",
         "optimizer or sampling inference. Neither route returns",
         "individual fitted values."))
   add("ds.vertCox", "ds.vertCox", "promoted",
@@ -558,8 +556,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add(c("ds.vertGEE", "ds.vert.gee"), "ds.vertGEE", "promoted",
       paste(
         "A signed finite binomial/Poisson likelihood-grid Synopsis, a",
-        "completed two-authority formal GLM certificate, or the matching",
-        "configured fresh durable GLM analysis can be read as an",
+        "completed two-authority formal GLM certificate can be read as an",
         "independence-working GEE point estimate; a matching signed Gaussian",
         "random-intercept Synopsis can additionally be read as a",
         "model-based exchangeable-working GLS GEE, because the two working",
@@ -567,7 +564,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "selected."),
       paste(
         "Gaussian exchangeable requires the matching signed same-owner",
-        "random-intercept artifact and id_col. AR(1), sandwich covariance,",
+        "random-intercept artifact and id_col. Fresh GLM computation, AR(1), sandwich covariance,",
         "standard errors and inference remain unavailable until a protected",
         "cluster score-and-meat artifact is implemented."))
   add(c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "promoted",

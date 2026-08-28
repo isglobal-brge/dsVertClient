@@ -122,12 +122,16 @@ test_that("the explicit Gaussian DP adapter remains reachable", {
   expect_identical(observed$family, "gaussian")
 })
 
-test_that("retired GLM guidance names the certified binomial and Poisson routes", {
+test_that("retired GLM guidance names the signed binomial and Poisson routes", {
   contract <- get(
     ".DSVERT_RETIRED_REMOTE_ROUTES", envir = asNamespace("dsVertClient"),
     inherits = FALSE)$legacy_glm
+  fresh <- get(
+    ".DSVERT_RETIRED_REMOTE_ROUTES", envir = asNamespace("dsVertClient"),
+    inherits = FALSE)$formal_glm_fresh
+  expect_match(contract$replacement, "analysis_id", fixed = TRUE)
   expect_match(contract$replacement, "formal_analysis_id", fixed = TRUE)
-  expect_match(contract$replacement, "fresh_formal_analysis_id", fixed = TRUE)
+  expect_match(fresh$replacement, "production-attested", fixed = TRUE)
   expect_false(grepl("no released binomial/Poisson", contract$replacement,
                      fixed = TRUE))
 })

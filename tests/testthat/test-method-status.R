@@ -341,6 +341,10 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
   expect_match(glm$safe_scope[[1L]], "explicit dp_analysis_id", fixed = TRUE)
   expect_match(glm$principal_limitation[[1L]], "Binomial and Poisson",
                fixed = TRUE)
+  expect_false(any(grepl("fresh_formal_analysis_id", glm$safe_scope,
+                         fixed = TRUE)))
+  expect_true(any(grepl("fresh computation is sealed",
+                        glm$principal_limitation, fixed = TRUE)))
   expect_true(all(ds.vertMethodStatus(c(
     "ds.vertChisqCross", "ds.vert.chisq_cross"))$release_contract ==
       "formal_sticky_synopsis_artifact"))

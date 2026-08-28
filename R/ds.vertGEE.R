@@ -6,8 +6,8 @@
 #'   correlation. With \code{formal_analysis_id}, it returns the completed,
 #'   two-authority-certified binomial or Poisson GLM point estimate under an
 #'   independence working correlation.
-#'   \code{fresh_formal_analysis_id} first completes that same configured
-#'   durable GLM analysis, then consumes its public result.
+#'   \code{fresh_formal_analysis_id} is retained for compatibility but fails
+#'   before DSI until the protected GLM runtime is production-attested.
 #'   With \code{dp_analysis_id}, it reads the signed Gaussian Synopsis fit
 #'   under that same score equation. Neither route chooses privacy controls or
 #'   exposes a cluster statistic.
@@ -30,9 +30,9 @@
 #'   likelihood-grid selector, or the matching same-owner Gaussian
 #'   random-intercept artifact for \code{corstr = "exchangeable"}. It is
 #'   mutually exclusive with every other analysis selector.
-#' @param fresh_formal_analysis_id Custodian-configured binomial/Poisson
-#'   durable GLM selector. It is mutually exclusive with the completed
-#'   certificate and Gaussian Synopsis selectors.
+#' @param fresh_formal_analysis_id Retained custodian-configured
+#'   binomial/Poisson fresh-GLM selector. It is mutually exclusive with the
+#'   completed certificate and Gaussian Synopsis selectors and fails before DSI.
 #' @param dp_analysis_id Custodian-configured signed Gaussian Synopsis
 #'   artifact selector. It is mutually exclusive with both formal selectors.
 #' @param id_col,order_col,max_iter,tol,lambda,working_max_iter,ring,binomial_sigmoid_intervals
@@ -105,14 +105,7 @@ ds.vertGEE <- function(formula, data = NULL,
       analysis_id = formal_analysis_id))
   }
   if (!is.null(fresh_formal_analysis_id)) {
-    corstr <- match.arg(corstr)
-    return(.dsvert_formal_gee_independence_adapter(
-      explicit_arguments = names(match.call())[-1L],
-      formula = if (missing(formula)) NULL else formula,
-      data = data, family = family, id_col = id_col, order_col = order_col,
-      corstr = corstr, verbose = verbose, datasources = datasources,
-      analysis_id = fresh_formal_analysis_id,
-      selector_name = "fresh_formal_analysis_id"))
+    .dsvert_block_retired_remote_route("formal_glm_fresh", .allow_test = FALSE)
   }
   return(.dsvert_block_retired_remote_route("gee", .allow_test = FALSE))
 }

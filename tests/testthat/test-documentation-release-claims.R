@@ -455,6 +455,17 @@ test_that("README maturity and numeric claims match the runtime registry", {
     numeric,
     "Gaussian exchangeable model-based working GLS",
     fixed = TRUE)
+  glm <- ds.vertMethodStatus(c("ds.vertGLM", "ds.vert.glm"))
+  expect_true(all(glm$status == "promoted"))
+  expect_match(readme, "signed finite likelihood grid with `analysis_id`",
+               fixed = TRUE)
+  expect_match(readme, "sealed before DSI", fixed = TRUE)
+  expect_match(numeric, "Fresh formal computation fails before DSI",
+               fixed = TRUE)
+  expect_false(any(grepl("fresh_formal_analysis_id", glm$safe_scope,
+                         fixed = TRUE)))
+  expect_false(grepl("runs one preconfigured durable formal", readme,
+                     fixed = TRUE))
 
   mi <- ds.vertMethodStatus(c("ds.vertMI", "ds.vert.mi"))
   expect_true(all(mi$status == "promoted"))

@@ -212,12 +212,10 @@ the explicit values must agree with that formula.}
 
 \item{formal_analysis_id, fresh_formal_analysis_id}{Custodian-owned selector
 for an already completed formal Cox profile, binomial/Poisson GLM
-certificate, or discrete-time public certificate. The fresh GLM selector
-is accepted by \code{ds.vert.glm()} and \code{ds.vert.gee()} only to run
-its configured durable analysis. Fresh Cox selectors remain unavailable
-before DSI. The GEE adapter remains limited to the GLM independence-working
-point-estimate scope, and the discrete selector remains a distinct
-fixed-grid pooled-logistic estimand.}
+certificate, or discrete-time public certificate. Fresh GLM and Cox
+selectors remain unavailable before DSI. The GEE adapter remains limited
+to the GLM independence-working point-estimate scope, and the discrete
+selector remains a distinct fixed-grid pooled-logistic estimand.}
 
 \item{server}{Required source-owner when an intercept-only NB2, multinomial,
 or ordinal alias resolves its canonical signed Frequency artifact itself.}
@@ -255,10 +253,10 @@ typed \code{dsvert_route_unavailable} condition before any DSI call.
 \code{dp_analysis_id} to \code{ds.vertDPGaussian()}; its no-id legacy route
 is unavailable. A binomial/Poisson \code{analysis_id} opens one signed finite
 likelihood-grid Synopsis; \code{formal_analysis_id} reads a
-completed custodian-signed public certificate; a
-\code{fresh_formal_analysis_id} runs only the corresponding
-custodian-configured durable formal analysis. Neither runs the retired
-iterative route.
+completed custodian-signed public certificate. Its retained
+\code{fresh_formal_analysis_id} compatibility selector is unavailable
+before DSI until that formal runtime is production-attested. Neither route
+runs the retired iterative estimator.
 \code{ds.vert.multinom(..., frequency = x)} is an intercept-only log-odds
 postprocess from one validated sticky Frequency release. With a signed
 \code{analysis_id}, it selects additive softmax coefficients from one finite

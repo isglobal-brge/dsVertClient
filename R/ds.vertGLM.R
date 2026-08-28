@@ -104,8 +104,8 @@
 #'   certificate configured by the custodians, including the equivalent
 #'   publication rehydrated from a completed durable Phase21 terminal. It
 #'   never starts the retained iterative Ring/Beaver code. An explicit
-#'   \code{fresh_formal_analysis_id} instead runs one already configured,
-#'   two-authority durable formal analysis and then reads that same publication.
+#'   \code{fresh_formal_analysis_id} is retained for compatibility but is
+#'   unavailable before DSI until its protected runtime is production-attested.
 #'
 #' @details
 #' \strong{Available route.} Supply an additive formula, an aligned data name,
@@ -132,13 +132,10 @@
 #' signed finite beta grid. The result is coefficient-only post-processing:
 #' it has no covariance, standard errors, p-values, residuals or fitted values.
 #'
-#' \strong{Fresh formal binomial/Poisson route.} A
-#' \code{fresh_formal_analysis_id} names a source, contract, compute pair and
-#' public-terminal configuration fixed by custodians. It accepts no numerical,
-#' privacy or MPC controls. The client relays only authenticated opaque records,
-#' then reads the resulting public certificate and checks that it belongs to the
-#' source artifact. Retrying this selector resumes the durable analysis; it does
-#' not request another release.
+#' \strong{Fresh formal binomial/Poisson route.}
+#' \code{fresh_formal_analysis_id} is a retained compatibility selector. It
+#' fails locally before DSI until a production-attested protected runtime can
+#' resume its configured durable analysis safely.
 #'
 #' \strong{Unavailable routes.} Default/no-id calls and all legacy iterative
 #' routes stop locally. A formal selector without a matching completed
@@ -164,10 +161,9 @@
 #' @param formal_analysis_id Custodian-configured binomial/Poisson public
 #'   publication selector. It is read-only: it cannot request a new analysis,
 #'   choose privacy parameters, or activate the legacy iterative route.
-#' @param fresh_formal_analysis_id Custodian-configured binomial/Poisson fresh
-#'   analysis selector. It is mutually exclusive with the other analysis ids,
-#'   carries no numerical or privacy controls, and may only resume its one
-#'   durable registered analysis before reading its public publication.
+#' @param fresh_formal_analysis_id Retained custodian-configured
+#'   binomial/Poisson fresh-analysis selector. It is mutually exclusive with
+#'   the other analysis ids and currently fails before DSI.
 #' @param max_iter,tol,log_n,offset,weights,ring,binomial_sigmoid_intervals,eta_privacy,keep_session,std_mode,start,compute_se,compute_deviance,gradient_only,numeric_backend
 #'   Retained legacy arguments. They are rejected when explicitly supplied to
 #'   either signed-artifact adapter, and the no-id legacy route is unavailable.
@@ -272,11 +268,7 @@ ds.vertGLM <- function(formula, data = NULL, x_vars = NULL, y_server = NULL,
   }
 
   if (!is.null(fresh_formal_analysis_id)) {
-    return(.dsvert_formal_glm_fresh_frontdoor_adapter(
-      explicit_arguments = names(call_matched)[-1L],
-      formula = if (missing(formula)) NULL else formula,
-      data = data, family = family, verbose = verbose,
-      datasources = datasources, analysis_id = fresh_formal_analysis_id))
+    .dsvert_block_retired_remote_route("formal_glm_fresh", .allow_test = FALSE)
   }
 
   if (!is.null(dp_analysis_id)) {

@@ -13,9 +13,16 @@
     replacement = paste0(
       "For Gaussian models use ds.vertGLM(..., dp_analysis_id=...) or ",
       "ds.vertDPGaussian(). For binomial/Poisson use ds.vertGLM(..., ",
-      "formal_analysis_id=...) to read a completed certificate, or ",
-      "fresh_formal_analysis_id=...) to resume its one custodian-configured ",
-      "durable analysis.")),
+      "analysis_id=...) for one signed finite grid or formal_analysis_id=...) ",
+      "to read a completed certificate.")),
+  formal_glm_fresh = list(
+    method = "ds.vertGLM",
+    state = "formal_glm_fresh_computation_sealed",
+    replacement = paste0(
+      "Use ds.vertGLM(..., analysis_id=...) for one signed finite ",
+      "binomial/Poisson grid or formal_analysis_id=...) to read a completed ",
+      "two-authority-signed certificate. Fresh formal GLM computation remains ",
+      "sealed pending a production-attested protected runtime.")),
   cox = list(
     method = "ds.vertCox",
     state = "legacy_cox_route_quarantined",

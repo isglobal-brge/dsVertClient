@@ -14,15 +14,6 @@
     class = c("dsvert_formal_dp_glm", "ds.glm", "list"))
 }
 
-.formal_gee_fresh_fit <- function(...) {
-  arguments <- list(...)
-  fit <- .formal_gee_certified_fit(
-    family = arguments$family,
-    formal_analysis_id = arguments$fresh_formal_analysis_id)
-  fit$called_via <- "ds.vertGLM_fresh_formal_analysis_id"
-  fit
-}
-
 .formal_gee_gaussian_fit <- function(...) {
   arguments <- list(...)
   structure(list(
@@ -104,30 +95,20 @@ test_that("formal independent GEE consumes one certified GLM point release", {
   expect_identical(seen$data, "study")
 })
 
-test_that("fresh formal independent GEE runs only the matching durable GLM", {
-  seen <- NULL
+test_that("fresh formal independent GEE is sealed before DSI", {
   glm_calls <- 0L
   testthat::local_mocked_bindings(
     ds.vertGLM = function(...) {
       glm_calls <<- glm_calls + 1L
-      seen <<- list(...)
-      .formal_gee_fresh_fit(...)
+      stop("must not run", call. = FALSE)
     },
     .package = "dsVertClient")
 
-  fit <- ds.vertGEE(
+  expect_error(ds.vertGEE(
     y ~ x, data = "study", family = "poisson",
     corstr = "independence", fresh_formal_analysis_id = "gee-count",
-    verbose = FALSE, datasources = list(site_a = structure(list(), class = "mock")))
-
-  expect_s3_class(fit, "dsvert_formal_dp_gee")
-  expect_identical(fit$called_via, "ds.vertGEE_fresh_formal_analysis_id")
-  expect_identical(fit$fresh_formal_analysis_id, "gee-count")
-  expect_null(fit$formal_analysis_id)
-  expect_identical(seen$fresh_formal_analysis_id, "gee-count")
-  expect_identical(seen$family, "poisson")
-  expect_false(fit$source_values_exposed)
-  expect_false(fit$production_ready)
+    verbose = FALSE, datasources = list(site_a = structure(list(), class = "mock"))),
+    class = "dsvert_route_unavailable")
 
   expect_error(ds.vertGEE(
     y ~ x, data = "study", family = "poisson",
@@ -136,8 +117,12 @@ test_that("fresh formal independent GEE runs only the matching durable GLM", {
   expect_error(ds.vertGEE(
     y ~ x, data = "study", family = "poisson", lambda = 0,
     fresh_formal_analysis_id = "gee-count"),
-    "fresh_formal_analysis_id GEE does not accept legacy controls")
-  expect_identical(glm_calls, 1L)
+    class = "dsvert_route_unavailable")
+  expect_error(ds.vert.gee(
+    y ~ x, data = "study", family = "binomial",
+    fresh_formal_analysis_id = "gee-logit", datasources = list()),
+    class = "dsvert_route_unavailable")
+  expect_identical(glm_calls, 0L)
 })
 
 test_that("independent Gaussian GEE consumes one signed Gaussian Synopsis", {
@@ -350,22 +335,5 @@ test_that("the compatibility GEE alias preserves the formal point boundary", {
     ds.vert.gee(
       y ~ x, data = "study", family = "poisson", precision = "high",
       formal_analysis_id = "gee-count", datasources = list()),
-    "does not accept legacy controls")
-})
-
-test_that("the compatibility GEE alias preserves the fresh formal boundary", {
-  testthat::local_mocked_bindings(
-    ds.vertGLM = .formal_gee_fresh_fit,
-    .package = "dsVertClient")
-
-  fit <- ds.vert.gee(
-    y ~ x, data = "study", family = "binomial",
-    fresh_formal_analysis_id = "gee-logit", datasources = list())
-  expect_s3_class(fit, "ds.vertGEE")
-  expect_identical(fit$fresh_formal_analysis_id, "gee-logit")
-  expect_identical(fit$route, "ds.vertGEE")
-  expect_error(ds.vert.gee(
-    y ~ x, data = "study", family = "binomial", precision = "high",
-    fresh_formal_analysis_id = "gee-logit", datasources = list()),
     "does not accept legacy controls")
 })
