@@ -448,7 +448,9 @@ test_that("estimands and inference requirements match implemented semantics", {
     "one_categorical_saturated_stratum_propensity_model",
     "complete_signed_stratum_treatment_row_mapping",
     "fixed_public_standard_weights",
-    "mechanism_and_sampling_regions", "no_individual_weights") %in%
+    "ate_mechanism_and_sampling_regions",
+    "att_atc_release_bound_target_weights",
+    "att_atc_mechanism_only_regions", "no_individual_weights") %in%
       requirements_for(inventory, "ds.vertIPW")))
 })
 

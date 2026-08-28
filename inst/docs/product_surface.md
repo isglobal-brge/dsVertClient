@@ -104,9 +104,12 @@ In particular:
 
 - `ds.vertIPW()` is limited to the exact intercept-only identity or one
   categorical saturated-stratum IPW/g-formula identity over a signed
-  treatment-by-outcome or stratum-treatment-by-outcome table. It never writes
-  or releases weights, fits a propensity model, or supports ATT/ATC,
-  continuous/multiple covariates or outcome regression.
+  treatment-by-outcome or stratum-treatment-by-outcome table. The categorical
+  route supports ATE with fixed public target weights and ATT/ATC with target
+  weights derived from that sticky signed table. ATT/ATC expose a
+  DP-mechanism region only, not sampling inference. It never writes or
+  releases weights, fits a propensity model, or supports continuous/multiple
+  covariates or outcome regression.
 - the signed LMM route is limited to its signed random-intercept, fixed-effect
   or finite random-slope artifacts; the signed binary GLMM route is limited to
   an `outcome ~ 1` moment projection or its signed additive finite

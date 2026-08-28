@@ -20,6 +20,7 @@ ds.vertIPW(
   server = NULL,
   verbose = TRUE,
   datasources = NULL,
+  estimand = c("ATE", "ATT", "ATC"),
   ...
 )
 }
@@ -51,8 +52,9 @@ column whose levels are the complete public stratum-treatment rows.}
 signed \code{arm_column} levels, assigning every row to its stratum and
 treatment level respectively.}
 
-\item{standard_weights}{Named, non-negative public target-population weights
-for every declared stratum. Required for \code{treatment ~ stratum}.}
+\item{standard_weights}{Named, non-negative public ATE target-population
+weights for every declared stratum. Required for the stratified
+\code{estimand = "ATE"} route and forbidden for ATT/ATC.}
 
 \item{server}{Optional same-owner assertion for the signed table artifact.}
 
@@ -60,30 +62,38 @@ for every declared stratum. Required for \code{treatment ~ stratum}.}
 
 \item{datasources}{DataSHIELD connections.}
 
+\item{estimand}{One of \code{"ATE"}, \code{"ATT"} or \code{"ATC"}. ATT and
+ATC require \code{treatment ~ stratum}; their target weights are derived
+from the signed released target arm, so they provide a DP-mechanism region
+only, not sampling inference.}
+
 \item{...}{No additional controls are accepted.}
 }
 \value{
 A \code{ds.vertIPW} object with a conservative DP-mechanism and
-combined DP-plus-sampling region, and no released individual weights or
-propensity fit.
+combined DP-plus-sampling region for ATE, or a DP-mechanism region for
+ATT/ATC, and no released individual weights or propensity fit.
 }
 \description{
 Computes a binary ATE from one signed sticky DP contingency
 release. With an intercept-only propensity model, IPW is exactly the
 treated-minus-control risk difference. With one categorical propensity
-stratum, a signed stratum-treatment-by-outcome table and fixed public target
-weights, the saturated IPW identity is exactly the corresponding
-stratum-standardised g-formula. Neither route releases weights, source rows,
-a propensity fit, or performs a second private computation. ATT/ATC,
-continuous outcomes and weighted outcome regression remain unavailable.
+stratum, a signed stratum-treatment-by-outcome table and fixed public ATE
+target weights, the saturated IPW identity is exactly the corresponding
+stratum-standardised g-formula. ATT and ATC use the same signed table and
+derive their target-arm stratum weights deterministically from that sticky
+release. Neither route releases weights, source rows, a propensity fit, or
+performs a second private computation.
 }
 \details{
 The categorical stratum route is an exact saturated IPW/g-formula
 identity, not a fitted propensity-score model. Its release is one canonical
 stratum-treatment-by-outcome DP table; unlimited retries return the same
 sticky release and do not create another draw. Arbitrary covariates,
-continuous strata, ATT/ATC, propensity fitting, trimming and outcome
-regression remain unavailable.
+continuous strata, propensity fitting, trimming and outcome regression
+remain unavailable. ATT/ATC target-arm weights are release-adaptive, so the
+reported outer region accounts for the simultaneous DP count box but does
+not claim superpopulation sampling coverage.
 }
 \seealso{
 \code{\link{ds.vertDPCausalStandardization}}

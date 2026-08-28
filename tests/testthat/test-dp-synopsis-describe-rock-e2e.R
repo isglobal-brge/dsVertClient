@@ -1446,6 +1446,38 @@ test_that("real Synopsis causal standardisation is plausible and Rock-replayable
     expect_identical(ipw$additional_privacy_cost_after_artifact,
                      c(epsilon = 0, delta = 0))
 
+    for (estimand in c("ATT", "ATC")) {
+      target_fit <- testthat::with_mocked_bindings(
+        ds.vertDPContingency = function(data, row_var, col_var, server = NULL,
+                                        datasources = NULL) {
+          expect_identical(c(data, row_var, col_var, server), c(
+            "data_peer_a", "arm", "outcome", "peer_a"))
+          first
+        },
+        ds.vertIPW(
+          outcome ~ treatment, treatment ~ stratum, data = "data_peer_a",
+          outcome_family = "binomial", estimand = estimand,
+          treated = "treated", event = "yes", arm_column = "arm",
+          arm_strata = stats::setNames(strata, arm_levels),
+          arm_treatment = stats::setNames(treatment, arm_levels),
+          server = "peer_a", datasources = conns, verbose = FALSE),
+        .package = "dsVertClient")
+      expect_s3_class(target_fit, "ds.vertIPW")
+      expect_identical(target_fit$estimand, estimand)
+      expect_identical(target_fit$confidence_region, NULL)
+      expect_false(target_fit$sampling_inference_available)
+      expect_identical(target_fit$target_weight_source,
+        "target_arm_weights_derived_from_signed_sticky_dp_table")
+      expect_equal(sum(target_fit$standard_weights), 1, tolerance = 1e-12)
+      expect_true(is.finite(target_fit$estimate))
+      expect_true(all(is.finite(target_fit$mechanism_region)))
+      expect_true(all(target_fit$mechanism_region >= -1 &
+                      target_fit$mechanism_region <= 1))
+      expect_identical(target_fit$final_vector_root, first$final_vector_root)
+      expect_identical(target_fit$additional_privacy_cost_after_artifact,
+                       c(epsilon = 0, delta = 0))
+    }
+
     before <- c(fixture$state$source_prepare, fixture$state$start)
     fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
       new.env(parent = emptyenv())

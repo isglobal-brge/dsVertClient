@@ -481,11 +481,11 @@ test_that("README maturity and numeric claims match the runtime registry", {
   expect_true(all(ipw$status == "promoted"))
   expect_match(
     readme,
-    "one-categorical-stratum saturated IPW/g-formula identity",
+    "saturated IPW/g-formula ATE, ATT and ATC identities",
     fixed = TRUE)
   expect_match(
     numeric,
-    "one-categorical-stratum saturated IPW/g-formula identity",
+    "ATT/ATC with release-bound target-arm weights",
     fixed = TRUE)
 
   penalised <- ds.vertMethodStatus(c(

@@ -219,8 +219,10 @@ essential:
   intermediates are quarantined. The signed Gaussian random-intercept
   Synopsis supports only its documented LMM scope and a model-based
   exchangeable GEE working-GLS post-processing; AR(1), sandwich covariance
-  and inference remain unavailable. The current IPW contract remains limited
-  to its signed intercept-only identity.
+  and inference remain unavailable. The IPW contract provides the signed
+  intercept-only ATE identity and one categorical saturated-stratum ATE, ATT
+  and ATC identity; ATT/ATC use release-bound target weights and provide no
+  sampling inference.
 - Legacy client-only epidemiology, standardisation, and inference helpers make
   no server call, but inherit the disclosure and statistical validity of their
   input. An arbitrary caller-supplied matrix has no DataSHIELD or DP
