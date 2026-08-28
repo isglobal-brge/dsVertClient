@@ -4,6 +4,9 @@
 #'   under an independence working correlation, or one signed same-owner
 #'   Gaussian random-intercept Synopsis under an exchangeable working
 #'   correlation, or one signed same-owner Gaussian AR(1) working-GLS grid.
+#'   A distinct AR(1) artifact may additionally contain bounded bread and
+#'   componentwise-clipped cluster score-meat coordinates for a covariance
+#'   estimate.
 #'   With \code{formal_analysis_id}, it returns the completed,
 #'   two-authority-certified binomial or Poisson GLM point estimate under an
 #'   independence working correlation.
@@ -20,22 +23,28 @@
 #'   selects a point from a signed finite beta/rho grid by the released bounded
 #'   AR(1) working-GLS residual loss. It requires a categorical \code{id_col},
 #'   a distinct numeric \code{order_col}, and strictly distinct order values
-#'   within each admitted cluster. Neither route is a robust/sandwich GEE;
-#'   sandwich covariance, standard errors and inference remain unavailable until a
-#'   protected cluster score-and-meat artifact exists.
+#'   within each admitted cluster. The ordinary AR(1) grid is only a point
+#'   selector. The distinct robust artifact supports at most three additive
+#'   predictors and returns a componentwise-clipped cluster-score sandwich covariance only when its released bread is positive definite. It does not
+#'   return standard errors, p-values, confidence intervals or sampling
+#'   inference; binomial and Poisson robust GEE remain unavailable. AR(1)
+#'   coefficients and, where present, covariance are transformed back to the
+#'   original outcome and predictor scales before return.
 #'   Calls without a configured selector keep failing locally before DSI.
 #' @param formula,data,family,corstr,verbose,datasources Formula, registered
 #'   data name, Gaussian/binomial/Poisson family, working correlation, progress flag and
 #'   DataSHIELD connections. \code{corstr = "independence"} is available for
 #'   every supported family; Gaussian \code{corstr = "exchangeable"} requires
 #'   the matching signed random-intercept artifact, and \code{corstr = "ar1"}
-#'   requires the matching signed AR(1) working-GLS grid.
+#'   requires the matching signed AR(1) working-GLS or clipped-score-sandwich
+#'   grid.
 #' @param formal_analysis_id Custodian-configured completed formal GLM
 #'   certificate selector.
 #' @param analysis_id Custodian-configured signed finite binomial/Poisson
 #'   likelihood-grid selector, the matching same-owner Gaussian random-
 #'   intercept artifact for \code{corstr = "exchangeable"}, or a matching
-#'   signed Gaussian AR(1) working-GLS grid for \code{corstr = "ar1"}. It is
+#'   signed Gaussian AR(1) working-GLS or clipped-score-sandwich grid for
+#'   \code{corstr = "ar1"}. It is
 #'   mutually exclusive with every other analysis selector.
 #' @param fresh_formal_analysis_id Retained custodian-configured
 #'   binomial/Poisson fresh-GLM selector. It is mutually exclusive with the
@@ -47,7 +56,9 @@
 #'   release and are never silently ignored.
 #' @return A \code{ds.vertGEE} point-estimate object. The Gaussian
 #'   exchangeable and AR(1) routes additionally return their signed working
-#'   correlation, but never covariance, standard errors or inference.
+#'   correlation. The clipped-score AR(1) route can additionally return its
+#'   covariance estimate, but never standard errors, p-values or sampling
+#'   inference.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertGEE <- function(formula, data = NULL,
@@ -756,10 +767,21 @@ ds.vertGEE <- function(formula, data = NULL,
 #' @keywords internal
 print.ds.vertGEE <- function(x, ...) {
   if (inherits(x, "dsvert_dp_gaussian_ar1_gee")) {
-    cat("dsVert signed Gaussian AR(1) working-GLS finite grid\n")
+    if (!is.null(x$robust_covariance_status)) {
+      cat("dsVert signed Gaussian AR(1) clipped-score sandwich finite grid\n")
+    } else {
+      cat("dsVert signed Gaussian AR(1) working-GLS finite grid\n")
+    }
     cat(sprintf("  Working correlation: %.4g\n", x$working_correlation))
     print(x$coefficients)
-    cat("  No robust covariance, standard errors or inference are released.\n")
+    if (!is.null(x$robust_covariance_status) &&
+        identical(x$robust_covariance_status, "ok")) {
+      cat("  Clipped-score sandwich covariance is released; no standard errors or inference.\n")
+    } else if (!is.null(x$robust_covariance_status)) {
+      cat("  DP bread is not identifiable; no covariance, standard errors or inference are released.\n")
+    } else {
+      cat("  No robust covariance, standard errors or inference are released.\n")
+    }
     return(invisible(x))
   }
   if (inherits(x, "dsvert_dp_gaussian_exchangeable_gee")) {

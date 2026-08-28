@@ -31,16 +31,18 @@ data name, Gaussian/binomial/Poisson family, working correlation, progress flag 
 DataSHIELD connections. \code{corstr = "independence"} is available for
 every supported family; Gaussian \code{corstr = "exchangeable"} requires
 the matching signed random-intercept artifact, and \code{corstr = "ar1"}
-requires the matching signed AR(1) working-GLS grid.}
+requires the matching signed AR(1) working-GLS or clipped-score-sandwich
+grid.}
 
 \item{id_col, order_col, max_iter, tol, lambda, working_max_iter, ring, binomial_sigmoid_intervals}{Retained clustered-GEE controls. They are unavailable with a formal point
 release and are never silently ignored.}
 
 \item{analysis_id}{Custodian-configured signed finite binomial/Poisson
-likelihood-grid selector, the matching same-owner Gaussian random-intercept
-artifact for \code{corstr = "exchangeable"}, or a matching signed Gaussian
-AR(1) working-GLS grid for \code{corstr = "ar1"}. It is mutually exclusive
-with every other analysis selector.}
+likelihood-grid selector, the matching same-owner Gaussian random-
+intercept artifact for \code{corstr = "exchangeable"}, or a matching
+signed Gaussian AR(1) working-GLS or clipped-score-sandwich grid for
+\code{corstr = "ar1"}. It is
+mutually exclusive with every other analysis selector.}
 
 \item{formal_analysis_id}{Custodian-configured completed formal GLM
 certificate selector.}
@@ -53,17 +55,22 @@ completed certificate and Gaussian Synopsis selectors and fails before DSI.}
 artifact selector. It is mutually exclusive with both formal selectors.}
 }
 \value{
-A \code{ds.vertGEE} point-estimate object. The Gaussian exchangeable and
-AR(1) routes additionally return their signed working correlation, but never
-covariance, standard errors or inference.
+A \code{ds.vertGEE} point-estimate object. The Gaussian
+exchangeable and AR(1) routes additionally return their signed working
+correlation. The clipped-score AR(1) route can additionally return its
+covariance estimate, but never standard errors, p-values or sampling
+inference.
 }
 \description{
 With a custodian-configured \code{analysis_id}, this frontdoor
 consumes either one signed finite binomial/Poisson likelihood-grid Synopsis
 under an independence working correlation, or one signed same-owner
-  Gaussian random-intercept Synopsis under an exchangeable working
-  correlation, or one signed same-owner Gaussian AR(1) working-GLS grid.
-  With \code{formal_analysis_id}, it returns the completed,
+Gaussian random-intercept Synopsis under an exchangeable working
+correlation, or one signed same-owner Gaussian AR(1) working-GLS grid.
+A distinct AR(1) artifact may additionally contain bounded bread and
+componentwise-clipped cluster score-meat coordinates for a covariance
+estimate.
+With \code{formal_analysis_id}, it returns the completed,
 two-authority-certified binomial or Poisson GLM point estimate under an
 independence working correlation.
 \code{fresh_formal_analysis_id} is retained for compatibility but fails
@@ -79,11 +86,15 @@ same exchangeable working-correlation form. The returned coefficient is
 therefore a model-based working-GLS estimate, with its correlation derived
 from the signed variance components. Gaussian \code{corstr = "ar1"}
 selects a point from a signed finite beta/rho grid by the released bounded
-AR(1) working-GLS residual loss. It requires a categorical \code{id_col}, a
-distinct numeric \code{order_col}, and strictly distinct order values within
-each admitted cluster. Neither route is a robust/sandwich GEE; sandwich covariance,
-standard errors and inference remain unavailable until a protected cluster
-score-and-meat artifact exists.
+AR(1) working-GLS residual loss. It requires a categorical \code{id_col},
+a distinct numeric \code{order_col}, and strictly distinct order values
+within each admitted cluster. The ordinary AR(1) grid is only a point
+selector. The distinct robust artifact supports at most three additive
+predictors and returns a componentwise-clipped cluster-score sandwich covariance only when its released bread is positive definite. It does not
+return standard errors, p-values, confidence intervals or sampling
+inference; binomial and Poisson robust GEE remain unavailable. AR(1)
+coefficients and, where present, covariance are transformed back to the
+original outcome and predictor scales before return.
 Calls without a configured selector keep failing locally before DSI.
 }
 \seealso{

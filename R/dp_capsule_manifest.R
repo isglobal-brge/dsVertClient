@@ -605,15 +605,21 @@
                 all(is.finite(beta)) && all(abs(beta) <= 8)
             }, logical(1L))) && !anyDuplicated(beta_keys)
           if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
-        } else if (identical(spec$version, "gaussian_ar1_working_gls_grid_v1")) {
+        } else if (spec$version %in% c("gaussian_ar1_working_gls_grid_v1",
+                                       "gaussian_ar1_robust_working_gls_grid_v1")) {
+          robust_sandwich <- identical(
+            spec$version, "gaussian_ar1_robust_working_gls_grid_v1")
           expected <- c(
             "version", "dataset", "outcome", "cluster", "order",
             "predictors", "intercept", "max_patients_per_cluster",
             "candidate_grid")
+          if (isTRUE(robust_sandwich)) expected <- c(expected, "score_clip")
           valid <- setequal(names(spec), expected) && identifier(spec$dataset) &&
             column_reference(spec$outcome) && column_reference(spec$cluster) &&
             column_reference(spec$order) && isTRUE(spec$intercept) &&
-            .dsvert_dp_is_integer(spec$max_patients_per_cluster, 2L)
+            .dsvert_dp_is_integer(spec$max_patients_per_cluster, 2L) &&
+            (!isTRUE(robust_sandwich) ||
+             .dsvert_dp_is_integer(spec$max_patients_per_cluster, 2L, 32L))
           predictors <- if (isTRUE(valid)) tryCatch(
             .dsvert_dp_capsule_manifest_string_array(
               spec$predictors, "GEE AR1 fixed predictors"),
@@ -621,17 +627,24 @@
           valid <- isTRUE(valid) && length(predictors) &&
             !anyDuplicated(predictors) && all(vapply(
               predictors, column_reference, logical(1L))) &&
+            (!isTRUE(robust_sandwich) || length(predictors) <= 3L) &&
             length(unique(c(spec$outcome, spec$cluster, spec$order,
                             predictors))) == 3L + length(predictors)
           candidates <- if (isTRUE(valid)) .dsvert_dp_gee_ar1_grid_candidates(
             spec$candidate_grid, as.numeric(spec$max_patients_per_cluster)) else list()
-          valid <- isTRUE(valid) && length(candidates) && length(candidates) <= 128L &&
+          score_clip <- suppressWarnings(as.numeric(spec$score_clip))
+          valid <- isTRUE(valid) && length(candidates) && length(candidates) <=
+            (if (isTRUE(robust_sandwich)) 64L else 128L) &&
+            (!isTRUE(robust_sandwich) ||
+             (length(score_clip) == 1L && is.finite(score_clip) &&
+              score_clip >= 0.25 && score_clip <= 32)) &&
             all(vapply(candidates, function(candidate) {
               length(candidate$beta) == 1L + length(predictors)
             }, logical(1L)))
           if (isTRUE(valid)) {
             candidate_grid <- lapply(candidates, function(candidate) list(
               beta = unname(candidate$beta), rho = candidate$rho))
+            if (isTRUE(robust_sandwich)) spec$score_clip <- score_clip
           }
         } else if (identical(spec$version, "gaussian_random_slope_grid_v1")) {
           expected <- c(
@@ -872,8 +885,9 @@
         stop("A peer returned an invalid custodian workload specification",
              call. = FALSE)
       }
-      if (identical(family, "gaussian") &&
-          identical(spec$version, "gaussian_ar1_working_gls_grid_v1")) {
+      if (identical(family, "gaussian") && spec$version %in% c(
+            "gaussian_ar1_working_gls_grid_v1",
+            "gaussian_ar1_robust_working_gls_grid_v1")) {
         spec$predictors <- predictors
         spec$candidate_grid <- candidate_grid
       } else if (identical(family, "gaussian") &&

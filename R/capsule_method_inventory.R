@@ -667,27 +667,31 @@
       "formal_glm_public_certificate", "formal_glm_sticky_opening",
       "formal_glm_two_authority_signatures",
       "signed_gaussian_random_intercept_synopsis",
-      "signed_gaussian_ar1_working_gls_grid"),
+      "signed_gaussian_ar1_working_gls_grid",
+      "signed_gaussian_ar1_clipped_score_sandwich_grid"),
     paste(
       "Binomial/Poisson independence-working GEE point coefficients from a",
       "signed finite likelihood-grid Synopsis or one completed formal GLM",
       "certificate; Gaussian exchangeable model-based working GLS from the",
-      "matching signed random-intercept Synopsis; or Gaussian AR(1)",
+      "matching signed random-intercept Synopsis; Gaussian AR(1)",
       "working-GLS point selection from a matching signed finite beta/rho",
-      "grid with strict within-cluster order."),
+      "grid; or a Gaussian AR(1) componentwise-clipped cluster-score",
+      "sandwich covariance from its matching protected bread/meat grid."),
     c("canonical_certificate_validation", "signed_finite_grid",
       "independence_working_correlation",
       "gaussian_exchangeable_working_gls",
       "gaussian_ar1_working_gls_finite_grid",
+      "gaussian_ar1_clipped_score_sandwich_covariance",
       "strict_within_cluster_order",
-      "no_cluster_covariance_or_inference", "two_authority_signatures"),
+      "no_standard_errors_p_values_or_sampling_inference",
+      "no_binomial_or_poisson_robust_gee", "two_authority_signatures"),
     "synopsis_release_implemented",
     character(),
     c("ds.vert.gee" = "ds.vertGEE"),
     current_route_status =
-      "signed_finite_grid_or_formal_certificate_or_signed_gaussian_exchangeable_or_ar1_working_gls",
+      "signed_finite_grid_or_formal_certificate_or_signed_gaussian_exchangeable_or_ar1_working_gls_or_clipped_score_sandwich",
     artifact_implementation_state =
-      "validated_signed_finite_grid_formal_certificate_and_gaussian_exchangeable_ar1_gls_adapters_implemented")
+      "validated_signed_finite_grid_formal_certificate_and_gaussian_exchangeable_ar1_gls_and_clipped_score_sandwich_adapters_implemented")
 
   add(
     c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "glmm",
@@ -1488,6 +1492,7 @@
     "signed_finite_grid_synopsis_or_formal_completed_public_certificate",
     "signed_finite_grid_or_formal_certificate_or_signed_gaussian_exchangeable_gls",
     "signed_finite_grid_or_formal_certificate_or_signed_gaussian_exchangeable_or_ar1_working_gls",
+    "signed_finite_grid_or_formal_certificate_or_signed_gaussian_exchangeable_or_ar1_working_gls_or_clipped_score_sandwich",
     "legacy_joint_dp_capsule_incompatible", "known_broken_route_quarantine",
     "legacy_exact_release_not_capsule_safe",
     "legacy_granular_release_not_capsule_safe",
@@ -1515,6 +1520,7 @@
     "validated_signed_finite_grid_and_formal_public_certificate_adapters_implemented",
     "validated_signed_finite_grid_formal_certificate_and_gaussian_exchangeable_gls_adapters_implemented",
     "validated_signed_finite_grid_formal_certificate_and_gaussian_exchangeable_ar1_gls_adapters_implemented",
+    "validated_signed_finite_grid_formal_certificate_and_gaussian_exchangeable_ar1_gls_and_clipped_score_sandwich_adapters_implemented",
     "validated_formal_cox_public_certificate_adapter_implemented",
     "validated_signed_cox_grid_and_formal_public_certificate_adapters_implemented",
     "planned_no_materializer", "reserved_not_materialized",

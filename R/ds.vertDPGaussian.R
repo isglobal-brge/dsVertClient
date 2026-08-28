@@ -96,9 +96,9 @@
       manifest, data_name, analysis_id, owner_peer, adjacency, scale,
       capacity))
   }
-  if (is.list(artifact) && identical(
-        artifact$version,
-        .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION)) {
+  if (is.list(artifact) && artifact$version %in% c(
+        .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION,
+        .DSVERT_CLIENT_DP_GEE_AR1_ROBUST_GRID_ARTIFACT_VERSION)) {
     return(.dsvert_dp_gee_ar1_grid_artifact(
       manifest, data_name, analysis_id, owner_peer, adjacency, scale,
       capacity))

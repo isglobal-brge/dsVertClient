@@ -557,14 +557,17 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "model-based exchangeable-working GLS GEE, because the two working",
         "covariance forms are identical after the signed variance ratio is",
         "selected. A matching signed Gaussian AR(1) working-GLS finite grid",
-        "selects beta and rho from its signed candidates."),
+        "selects beta and rho from its signed candidates; a distinct bounded",
+        "AR(1) bread/meat artifact can return a componentwise-clipped",
+        "cluster-score sandwich covariance."),
       paste(
         "Gaussian exchangeable requires the matching signed same-owner",
         "random-intercept artifact and id_col; Gaussian AR(1) requires its",
-        "matching signed grid, id_col and strict order_col. Fresh GLM",
-        "computation, robust/sandwich covariance, standard errors and inference",
-        "remain unavailable until a protected cluster score-and-meat artifact",
-        "is implemented."))
+        "matching signed grid, id_col and strict order_col. The protected",
+        "AR(1) bread/meat route is limited to three additive predictors and",
+        "componentwise-clipped scores; it provides no standard errors, p-values",
+        "or sampling inference. Fresh GLM and binomial/Poisson robust GEE",
+        "remain unavailable."))
   add(c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "promoted",
       paste(
         "A binary outcome ~ 1 population-average moment projection, an",

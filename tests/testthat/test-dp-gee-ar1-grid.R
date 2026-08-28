@@ -54,17 +54,89 @@
     gaussian_models = list(artifacts = list(gee_ar1 = artifact))))))
 }
 
+.gee_ar1_robust_grid_fixture <- function() {
+  fixture <- .gee_ar1_grid_fixture()
+  artifact <- fixture$artifact
+  candidates <- dsVertClient:::.dsvert_dp_gee_ar1_grid_candidates(
+    artifact$candidate_grid, 4L)
+  scale <- 256
+  triangle_count <- 3L
+  public_clusters <- 3L
+  score_clip <- 1
+  loss_bounds <- vapply(candidates, `[[`, numeric(1L), "loss_bound")
+  bread_bounds <- vapply(candidates, function(candidate) {
+    4 * (1 + abs(candidate$rho)) / (1 - abs(candidate$rho))
+  }, numeric(1L))
+  meat_bounds <- rep(score_clip^2, length(candidates))
+  loss_raw <- ceiling(loss_bounds * scale)
+  bread_raw <- ceiling(2 * bread_bounds * scale)
+  meat_raw <- ceiling(2 * meat_bounds * scale)
+  local_ar1_change <- vapply(candidates, function(candidate) {
+    2 * (1 + candidate$rho^2 + 6 * abs(candidate$rho)) /
+      (1 - candidate$rho^2)
+  }, numeric(1L))
+  loss_sensitivity_bounds <- local_ar1_change * vapply(candidates, function(candidate) {
+    (1 + sum(abs(candidate$beta)))^2
+  }, numeric(1L))
+  bread_sensitivity_bounds <- local_ar1_change
+  meat_sensitivity_bounds <- 4 * meat_bounds
+  loss_sensitivity_raw <- ceiling(loss_sensitivity_bounds * scale) + 2
+  bread_sensitivity_raw <- ceiling(bread_sensitivity_bounds * scale) + 2
+  meat_sensitivity_raw <- ceiling(meat_sensitivity_bounds * scale) + 2
+  maximums <- unlist(lapply(seq_along(candidates), function(index) {
+    c(20 * loss_raw[[index]], rep(public_clusters * bread_raw[[index]],
+                                   triangle_count),
+      rep(public_clusters * meat_raw[[index]], triangle_count))
+  }), use.names = FALSE)
+  raw_bounds <- unlist(lapply(seq_along(candidates), function(index) {
+    c(loss_sensitivity_raw[[index]],
+      rep(bread_sensitivity_raw[[index]], triangle_count),
+      rep(meat_sensitivity_raw[[index]], triangle_count))
+  }), use.names = FALSE)
+  artifact$version <- "bounded-gaussian-ar1-robust-working-gls-grid-v1"
+  artifact$spec_version <- "gaussian_ar1_robust_working_gls_grid_v1"
+  artifact$analysis_id <- "gee_ar1_robust"
+  artifact$score_clip <- score_clip
+  artifact$candidate_bread_bounds <- as.list(bread_bounds)
+  artifact$candidate_meat_bounds <- as.list(meat_bounds)
+  artifact$candidate_loss_sensitivity_bounds <- as.list(loss_sensitivity_bounds)
+  artifact$candidate_bread_sensitivity_bounds <- as.list(bread_sensitivity_bounds)
+  artifact$candidate_meat_sensitivity_bounds <- as.list(meat_sensitivity_bounds)
+  artifact$public_cluster_levels <- public_clusters
+  artifact$coordinate_count <- length(maximums)
+  artifact$coordinate_order <-
+    "signed_candidate_grid_cluster_gaussian_ar1_loss_bread_meat_upper_v1"
+  artifact$contribution_domain <- paste(
+    "one_bounded_patient_can_change_local_ar1_loss_and_bread",
+    "terms_and_at_most_two_componentwise_clipped_cluster_score",
+    "meat_products_per_signed_candidate_v1", sep = "_")
+  artifact$statistic_maximum <- as.list(maximums)
+  artifact$source_raw_l1_sensitivity <- sum(raw_bounds)
+  artifact$source_raw_l2_sensitivity <- sqrt(sum(raw_bounds^2))
+  artifact$natural_l1_sensitivity <- sum(raw_bounds) / scale
+  artifact$natural_l2_sensitivity <- sqrt(sum(raw_bounds^2)) / scale
+  artifact$adjacency_sensitivity_basis <- paste(
+    "one_patient_removal_insertion_or_order_change_affects_at",
+    "most_two_local_ar1_neighborhoods_and_two_clipped_score",
+    "outer_products_with_quantization_slack_v1", sep = "_")
+  artifact$estimation_scope <- paste(
+    "bounded_gaussian_ar1_working_gls_finite_signed_beta_rho_grid",
+    "with_componentwise_clipped_cluster_score_sandwich_v1", sep = "_")
+  list(artifact = artifact, manifest = list(workload = list(families = list(
+    gaussian_models = list(artifacts = list(gee_ar1_robust = artifact))))))
+}
+
 test_that("Gaussian AR1 working-GLS artifact validates and selects only a signed point", {
   fixture <- .gee_ar1_grid_fixture()
   artifact <- dsVertClient:::.dsvert_dp_gee_ar1_grid_artifact(
     fixture$manifest, "protected", "gee_ar1", "server_a",
     "add_remove_patient", 256, 20)
-  fit <- dsVertClient:::.dsvert_dp_gee_ar1_grid_moment(c(100, 90), artifact)
+  fit <- dsVertClient:::.dsvert_dp_gee_ar1_grid_moment(c(0.4, 0.35), artifact)
 
   expect_identical(artifact$order$column, "visit")
   expect_identical(fit$status, "ok")
   expect_identical(fit$selected_candidate, 2L)
-  expect_equal(fit$coefficients, c(`(Intercept)` = 0.2, x = 0.05))
+  expect_equal(fit$coefficients, c(`(Intercept)` = -0.4, x = 0.4))
   expect_equal(fit$working_correlation, 0.5)
   tampered <- fixture$manifest
   tampered$workload$families$gaussian_models$artifacts$gee_ar1$
@@ -77,6 +149,33 @@ test_that("Gaussian AR1 working-GLS artifact validates and selects only a signed
     "violates its signed bounds")
 })
 
+test_that("Gaussian AR1 robust sandwich grid validates and reconstructs covariance", {
+  fixture <- .gee_ar1_robust_grid_fixture()
+  artifact <- dsVertClient:::.dsvert_dp_gee_ar1_grid_artifact(
+    fixture$manifest, "protected", "gee_ar1_robust", "server_a",
+    "add_remove_patient", 256, 20)
+  block <- function(index, loss) c(
+    loss,
+    round((artifact$public_cluster_levels * artifact$candidate_bread_bounds[[index]] +
+      c(2, 0, 2))),
+    round((artifact$public_cluster_levels * artifact$candidate_meat_bounds[[index]] +
+      c(1, 0, 1))))
+  fit <- dsVertClient:::.dsvert_dp_gee_ar1_grid_moment(
+    c(block(1L, 0.4), block(2L, 0.35)), artifact)
+
+  expect_identical(fit$status, "ok")
+  expect_identical(fit$selected_candidate, 2L)
+  expect_true(is.matrix(fit$robust_covariance))
+  expect_true(all(is.finite(fit$robust_covariance)))
+  expect_equal(fit$robust_covariance, t(fit$robust_covariance))
+  tampered <- fixture$manifest
+  tampered$workload$families$gaussian_models$artifacts$gee_ar1_robust$
+    candidate_bread_bounds[[1L]] <- 0
+  expect_error(dsVertClient:::.dsvert_dp_gee_ar1_grid_artifact(
+    tampered, "protected", "gee_ar1_robust", "server_a",
+    "add_remove_patient", 256, 20), "descriptor is invalid")
+})
+
 test_that("Gaussian AR1 working-GLS Synopsis uses one validated signed block", {
   fixture <- .gee_ar1_grid_fixture()
   artifact <- fixture$artifact
@@ -84,7 +183,7 @@ test_that("Gaussian AR1 working-GLS Synopsis uses one validated signed block", {
   context <- list(
     lattice = list(output_lattice_scale = 256), layout = list(),
     manifest = fixture$manifest, release = list(), adjacency = "add_remove_patient")
-  coordinates <- c(100, 90)
+  coordinates <- c(0.4, 0.35)
   verification <- list(
     integrity_valid = TRUE, authenticity = "session_transport_anchored",
     artifact = artifact, coordinates = coordinates,

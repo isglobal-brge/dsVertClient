@@ -118,9 +118,12 @@ In particular:
   bounded-count Poisson random-intercept grid.
   Gaussian exchangeable GEE is a model-based working-GLS post-processing of a
   matching signed random-intercept artifact. A distinct signed finite
-  beta/rho artifact supports Gaussian AR(1) working-GLS only with a strict
-  within-cluster order. Robust/sandwich GEE and legacy PQL remain
-  cluster-granular and quarantined;
+  beta/rho artifact supports Gaussian AR(1) working-GLS with a strict
+  within-cluster order. A distinct bounded AR(1) artifact supports
+  componentwise-clipped cluster-score sandwich covariance for at most three
+  additive predictors when its DP bread remains positive definite. It has no
+  standard errors, p-values or sampling inference; binomial/Poisson robust
+  GEE and legacy PQL remain cluster-granular and quarantined;
 - `ds.vertMI()` only post-processes strict-missing signed categorical Synopsis
   artifacts into MCAR marginals, a two-response joint pair, or an opt-in
   conditional categorical star model. It never writes source data, performs
