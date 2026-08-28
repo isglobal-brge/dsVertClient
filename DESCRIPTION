@@ -20,8 +20,9 @@ Description: Client-side DataSHIELD functions for privacy-aware analysis
     post-processors remain available over validated sticky artifacts. The
     LMM, GLMM, IPW and categorical multiple-imputation compatibility names
     likewise expose only their documented signed-artifact scopes; unrestricted
-    mixed-model optimisation/PQL, clustered inference, covariate weighting and
-    chained-imputation variants fail locally before DSI. An audited
+    mixed-model optimisation/PQL, clustered inference, continuous or
+    multi-covariate weighting and chained-imputation variants fail locally
+    before DSI. An audited
     maturity registry distinguishes conditional promoted methods, provisional
     research routes, historical compatibility helpers and quarantined
     estimators. Peer pinning and MPC protect protocol intermediates.

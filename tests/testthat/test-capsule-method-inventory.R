@@ -353,7 +353,10 @@ test_that("planned artifacts describe the actual biomedical contracts", {
   expect_true(all(c(
     "validated_sticky_categorical_pair_artifact",
     "binary_treatment_outcome_domain",
-    "intercept_only_propensity_identity", "zero_call_postprocessing") %in%
+    "intercept_only_propensity_identity",
+    "validated_synopsis_stratum_treatment_by_outcome_artifact",
+    "saturated_categorical_stratum_propensity_identity",
+    "zero_call_postprocessing") %in%
       artifacts_for(inventory, "ds.vertIPW")))
   expect_true(all(c(
     "formal_cox_public_certificate", "formal_cox_sticky_opening",
@@ -442,6 +445,9 @@ test_that("estimands and inference requirements match implemented semantics", {
       requirements_for(inventory, "ds.vertMI")))
   expect_true(all(c(
     "intercept_only_propensity_model", "treated_level_binding",
+    "one_categorical_saturated_stratum_propensity_model",
+    "complete_signed_stratum_treatment_row_mapping",
+    "fixed_public_standard_weights",
     "mechanism_and_sampling_regions", "no_individual_weights") %in%
       requirements_for(inventory, "ds.vertIPW")))
 })

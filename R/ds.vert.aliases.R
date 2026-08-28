@@ -714,7 +714,7 @@ ds.vert.ipw <- function(outcome_formula, propensity_formula, data = NULL,
                         datasources = NULL, ...) {
   precision <- match.arg(precision)
   if (!identical(precision, "auto")) {
-    stop("intercept-only IPW has no precision control", call. = FALSE)
+    stop("saturated IPW has no precision control", call. = FALSE)
   }
   datasources <- .dsvert_datasources(datasources)
   args <- c(list(outcome_formula = outcome_formula,

@@ -97,13 +97,16 @@ they fail locally with a stable migration error before connection discovery or
 DSI submission. Current quarantined families include legacy Cox computation,
 covariate NB2, multinomial and ordinal regression, AR(1) and robust clustered
 GEE, GLMM-PQL, legacy mutating MI, iterative LASSO and the legacy
-`ds.vertIPW()` contract. Use
+weight-column IPW contract. Use
 `ds.vertMethodStatus(status = "quarantine")` for the authoritative list.
 
 In particular:
 
-- `ds.vertIPW()` consumes a pre-existing server-side weight column; it does not
-  derive propensity weights end-to-end.
+- `ds.vertIPW()` is limited to the exact intercept-only identity or one
+  categorical saturated-stratum IPW/g-formula identity over a signed
+  treatment-by-outcome or stratum-treatment-by-outcome table. It never writes
+  or releases weights, fits a propensity model, or supports ATT/ATC,
+  continuous/multiple covariates or outcome regression.
 - the signed LMM route is limited to its signed random-intercept artifacts;
   the signed binary GLMM route is limited to the signed finite-grid scope.
   Gaussian exchangeable GEE is a model-based working-GLS post-processing of a

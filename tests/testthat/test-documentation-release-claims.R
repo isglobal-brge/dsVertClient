@@ -42,7 +42,7 @@ test_that("package description distinguishes readmitted scopes from retired vari
   expect_match(description, "signed-artifact scopes", fixed = TRUE)
   expect_match(description, "mixed-model optimisation/PQL", fixed = TRUE)
   expect_match(description, "clustered inference", fixed = TRUE)
-  expect_match(description, "covariate weighting", fixed = TRUE)
+  expect_match(description, "multi-covariate weighting", fixed = TRUE)
   expect_match(description, "chained-imputation variants", fixed = TRUE)
   expect_false(grepl(
     "LMM, GLMM, IPW, multiple imputation and[[:space:]]+other historical",
@@ -437,6 +437,16 @@ test_that("README maturity and numeric claims match the runtime registry", {
   expect_match(
     numeric,
     "strict-missing marginals or pairs",
+    fixed = TRUE)
+  ipw <- ds.vertMethodStatus(c("ds.vertIPW", "ds.vert.ipw"))
+  expect_true(all(ipw$status == "promoted"))
+  expect_match(
+    readme,
+    "one-categorical-stratum saturated IPW/g-formula identity",
+    fixed = TRUE)
+  expect_match(
+    numeric,
+    "one-categorical-stratum saturated IPW/g-formula identity",
     fixed = TRUE)
 
   penalised <- ds.vertMethodStatus(c(

@@ -80,6 +80,9 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
                   status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertIPW", "ds.vert.ipw"))$
                   release_contract == "postprocessing_inherits_input"))
+  expect_match(
+    ds.vertMethodStatus("ds.vertIPW")$safe_scope,
+    "one categorical saturated-stratum", fixed = TRUE)
   expect_true(all(ds.vertMethodStatus(c("ds.vertGEE", "ds.vert.gee"))$
                   status == "promoted"))
   expect_true(all(ds.vertMethodStatus(c("ds.vertGEE", "ds.vert.gee"))$

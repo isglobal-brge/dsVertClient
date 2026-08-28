@@ -1417,6 +1417,35 @@ test_that("real Synopsis causal standardisation is plausible and Rock-replayable
     }
     expect_identical(causal_inference$coverage_lower_bound, 0.95)
 
+    arm_levels <- rownames(first$table)
+    ipw <- testthat::with_mocked_bindings(
+      ds.vertDPContingency = function(data, row_var, col_var, server = NULL,
+                                      datasources = NULL) {
+        expect_identical(c(data, row_var, col_var, server), c(
+          "data_peer_a", "arm", "outcome", "peer_a"))
+        first
+      },
+      ds.vertIPW(
+        outcome ~ treatment, treatment ~ stratum, data = "data_peer_a",
+        outcome_family = "binomial", treated = "treated", event = "yes",
+        arm_column = "arm", arm_strata = stats::setNames(strata, arm_levels),
+        arm_treatment = stats::setNames(treatment, arm_levels),
+        standard_weights = weights, server = "peer_a", datasources = conns,
+        verbose = FALSE),
+      .package = "dsVertClient")
+    expect_s3_class(ipw, "ds.vertIPW")
+    expect_identical(ipw$propensity_model,
+                     "saturated_categorical_treatment_given_stratum")
+    expect_equal(ipw$estimate, causal$point_estimates$risk_difference,
+                 tolerance = 1e-12)
+    expect_identical(ipw$mechanism_region,
+                     causal$mechanism_regions$risk_difference)
+    expect_identical(ipw$confidence_region,
+                     causal_inference$combined_regions$risk_difference)
+    expect_identical(ipw$final_vector_root, first$final_vector_root)
+    expect_identical(ipw$additional_privacy_cost_after_artifact,
+                     c(epsilon = 0, delta = 0))
+
     before <- c(fixture$state$source_prepare, fixture$state$start)
     fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
       new.env(parent = emptyenv())

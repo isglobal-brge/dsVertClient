@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertIPW.R
 \name{ds.vertIPW}
 \alias{ds.vertIPW}
-\title{Sticky intercept-only inverse-probability weighting}
+\title{Sticky saturated inverse-probability weighting}
 \usage{
 ds.vertIPW(
   outcome_formula,
@@ -13,6 +13,10 @@ ds.vertIPW(
   treated = NULL,
   event = 2L,
   level = 0.95,
+  arm_column = NULL,
+  arm_strata = NULL,
+  arm_treatment = NULL,
+  standard_weights = NULL,
   server = NULL,
   verbose = TRUE,
   datasources = NULL,
@@ -20,11 +24,14 @@ ds.vertIPW(
 )
 }
 \arguments{
-\item{outcome_formula}{A formula exactly of the form \code{outcome ~ treatment}.}
+\item{outcome_formula}{A formula exactly of the form
+\code{outcome ~ treatment}.}
 
-\item{propensity_formula}{A formula exactly of the form \code{treatment ~ 1}.}
+\item{propensity_formula}{A formula exactly of the form \code{treatment ~ 1}
+or \code{treatment ~ stratum} for one categorical saturated stratum.}
 
-\item{data}{Protected data frame name or a version-2 \code{ds.vertFederation}.}
+\item{data}{Protected data frame name or a version-2
+\code{ds.vertFederation}.}
 
 \item{weights_column}{Retained for compatibility and must be \code{"ipw"}.}
 
@@ -32,9 +39,20 @@ ds.vertIPW(
 
 \item{treated}{Explicit treated level from the signed binary treatment domain.}
 
-\item{event}{Event outcome column name or index in the signed binary outcome domain.}
+\item{event}{Event outcome column name or index in the signed binary outcome
+domain.}
 
 \item{level}{DP-mechanism and combined-region coverage level.}
+
+\item{arm_column}{For \code{treatment ~ stratum}, the signed categorical
+column whose levels are the complete public stratum-treatment rows.}
+
+\item{arm_strata, arm_treatment}{Named public vectors, with names exactly the
+signed \code{arm_column} levels, assigning every row to its stratum and
+treatment level respectively.}
+
+\item{standard_weights}{Named, non-negative public target-population weights
+for every declared stratum. Required for \code{treatment ~ stratum}.}
 
 \item{server}{Optional same-owner assertion for the signed table artifact.}
 
@@ -45,21 +63,26 @@ ds.vertIPW(
 \item{...}{No additional controls are accepted.}
 }
 \value{
-A \code{ds.vertIPW} object with the intercept-only ATE, conservative
-DP-mechanism and combined DP-plus-sampling regions, and no released
-individual weights or propensity fit.
+A \code{ds.vertIPW} object with a conservative DP-mechanism and
+combined DP-plus-sampling region, and no released individual weights or
+propensity fit.
 }
 \description{
-Computes the binary, intercept-only ATE IPW identity from one signed sticky DP
-contingency release. With an intercept-only propensity model, IPW is exactly
-the treated-minus-control risk difference, so no weights, source rows,
-propensity fit, or second private computation is exposed.
+Computes a binary ATE from one signed sticky DP contingency
+release. With an intercept-only propensity model, IPW is exactly the
+treated-minus-control risk difference. With one categorical propensity
+stratum, a signed stratum-treatment-by-outcome table and fixed public target
+weights, the saturated IPW identity is exactly the corresponding
+stratum-standardised g-formula. Neither route releases weights, source rows,
+a propensity fit, or performs a second private computation. ATT/ATC,
+continuous outcomes and weighted outcome regression remain unavailable.
 }
 \details{
-This is the exact intercept-only IPW special case, not a covariate-adjusted
-IPW implementation. The release is one canonical treatment-by-outcome DP table;
-unlimited retries return the same sticky release and do not create another draw.
-Covariate-adjusted IPW, ATT/ATC, continuous outcomes and weighted outcome
+The categorical stratum route is an exact saturated IPW/g-formula
+identity, not a fitted propensity-score model. Its release is one canonical
+stratum-treatment-by-outcome DP table; unlimited retries return the same
+sticky release and do not create another draw. Arbitrary covariates,
+continuous strata, ATT/ATC, propensity fitting, trimming and outcome
 regression remain unavailable.
 }
 \seealso{

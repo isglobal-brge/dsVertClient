@@ -594,14 +594,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "errors, p-values or sampling inference."))
   add(c("ds.vertIPW", "ds.vert.ipw"), "ds.vertIPW", "promoted",
       paste(
-        "Exact binary intercept-only ATE IPW identity from one validated",
-        "sticky treatment-by-outcome DP contingency artifact; it releases",
-        "no individual weights or propensity fit."),
+        "Exact binary intercept-only ATE IPW identity, or an exact one",
+        "categorical saturated-stratum IPW/g-formula identity, from one",
+        "validated sticky DP contingency artifact; it releases no individual",
+        "weights or propensity fit."),
       paste(
-        "Only outcome ~ treatment with treatment ~ 1 is available.",
-        "Covariates, ATT/ATC, weighting, outcome regression, standard errors",
-        "and p-values remain unavailable pending a purpose-bound causal",
-        "artifact."))
+        "Only outcome ~ treatment with treatment ~ 1, or treatment ~ one",
+        "categorical stratum with a complete signed stratum-treatment-by-",
+        "outcome table and fixed public target weights, is available. ATT/ATC,",
+        "individual weighting, continuous or multiple covariates, outcome",
+        "regression, standard errors and p-values remain unavailable."))
   add(c("ds.vertMI", "ds.vert.mi"), "ds.vertMI", "promoted",
       paste(
         "Categorical MCAR completion for one or more intercept-only signed",
