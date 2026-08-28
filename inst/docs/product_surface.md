@@ -114,7 +114,7 @@ In particular:
 - the signed LMM route is limited to its signed random-intercept, fixed-effect
   or finite random-slope artifacts; the signed binary GLMM route is limited to
   an `outcome ~ 1` moment projection or its signed additive finite
-  random-intercept/one-or-two-random-slope grid.
+  random-intercept/one-to-three-random-slope grid.
   Gaussian exchangeable GEE is a model-based working-GLS post-processing of a
   matching signed random-intercept artifact. A distinct signed finite
   beta/rho artifact supports Gaussian AR(1) working-GLS only with a strict

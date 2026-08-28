@@ -427,7 +427,7 @@ test_that("categorical finite-grid documentation matches the admitted routes", {
     ignore.case = TRUE)))
   expect_match(text, "same-owner signed finite", fixed = TRUE)
   expect_match(text, "additive bare-predictor", fixed = TRUE)
-  expect_match(text, "one-or-two-random-slope", fixed = TRUE)
+  expect_match(text, "one-to-three-random-slope", fixed = TRUE)
   expect_false(grepl("covariate NB2 remains unavailable", text, fixed = TRUE))
   expect_false(grepl("slope-bearing requests fail closed", text, fixed = TRUE))
   expect_false(grepl("covariates, random slopes, covariance", text,
