@@ -3,10 +3,10 @@
 #'   consumes either one signed finite binomial/Poisson likelihood-grid Synopsis
 #'   under an independence working correlation, or one signed same-owner
 #'   Gaussian random-intercept Synopsis under an exchangeable working
-#'   correlation, or one signed same-owner Gaussian AR(1) working-GLS grid.
-#'   A distinct AR(1) artifact may additionally contain bounded bread and
-#'   componentwise-clipped cluster score-meat coordinates for a covariance
-#'   estimate.
+#'   correlation, one signed same-owner Gaussian AR(1) working-GLS grid, or a
+#'   same-owner binomial/Poisson robust-independence grid. The two robust grids
+#'   contain bounded bread and componentwise-clipped cluster score-meat
+#'   coordinates for a covariance estimate.
 #'   With \code{formal_analysis_id}, it returns the completed,
 #'   two-authority-certified binomial or Poisson GLM point estimate under an
 #'   independence working correlation.
@@ -24,12 +24,15 @@
 #'   AR(1) working-GLS residual loss. It requires a categorical \code{id_col},
 #'   a distinct numeric \code{order_col}, and strictly distinct order values
 #'   within each admitted cluster. The ordinary AR(1) grid is only a point
-#'   selector. The distinct robust artifact supports at most three additive
-#'   predictors and returns a componentwise-clipped cluster-score sandwich covariance only when its released bread is positive definite. It does not
-#'   return standard errors, p-values, confidence intervals or sampling
-#'   inference; binomial and Poisson robust GEE remain unavailable. AR(1)
-#'   coefficients and, where present, covariance are transformed back to the
-#'   original outcome and predictor scales before return.
+#'   selector. Each robust artifact supports at most three additive predictors
+#'   and returns a componentwise-clipped cluster-score sandwich covariance only
+#'   when its released bread is positive definite; otherwise it returns an
+#'   explicit non-identifiability status and no covariance. Binomial/Poisson
+#'   robust independence requires one categorical \code{id_col}, no
+#'   \code{order_col}, and a matching same-owner signed grid. It does not return
+#'   standard errors, p-values, confidence intervals or sampling inference.
+#'   AR(1) coefficients and, where present, covariance are transformed back to
+#'   the original outcome and predictor scales before return.
 #'   Calls without a configured selector keep failing locally before DSI.
 #' @param formula,data,family,corstr,verbose,datasources Formula, registered
 #'   data name, Gaussian/binomial/Poisson family, working correlation, progress flag and
@@ -37,14 +40,17 @@
 #'   every supported family; Gaussian \code{corstr = "exchangeable"} requires
 #'   the matching signed random-intercept artifact, and \code{corstr = "ar1"}
 #'   requires the matching signed AR(1) working-GLS or clipped-score-sandwich
-#'   grid.
+#'   grid. Binomial/Poisson robust independence requires one categorical
+#'   \code{id_col} and no \code{order_col}.
 #' @param formal_analysis_id Custodian-configured completed formal GLM
 #'   certificate selector.
 #' @param analysis_id Custodian-configured signed finite binomial/Poisson
 #'   likelihood-grid selector, the matching same-owner Gaussian random-
 #'   intercept artifact for \code{corstr = "exchangeable"}, or a matching
 #'   signed Gaussian AR(1) working-GLS or clipped-score-sandwich grid for
-#'   \code{corstr = "ar1"}. It is
+#'   \code{corstr = "ar1"}, or a matching same-owner binomial/Poisson robust
+#'   independence grid for \code{corstr = "independence"} with \code{id_col}.
+#'   It is
 #'   mutually exclusive with every other analysis selector.
 #' @param fresh_formal_analysis_id Retained custodian-configured
 #'   binomial/Poisson fresh-GLM selector. It is mutually exclusive with the
@@ -56,9 +62,10 @@
 #'   release and are never silently ignored.
 #' @return A \code{ds.vertGEE} point-estimate object. The Gaussian
 #'   exchangeable and AR(1) routes additionally return their signed working
-#'   correlation. The clipped-score AR(1) route can additionally return its
-#'   covariance estimate, but never standard errors, p-values or sampling
-#'   inference.
+#'   correlation. The clipped-score AR(1) and binomial/Poisson robust-
+#'   independence routes can additionally return a covariance estimate when
+#'   DP bread is positive definite, but never standard errors, p-values or
+#'   sampling inference.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertGEE <- function(formula, data = NULL,
@@ -102,6 +109,14 @@ ds.vertGEE <- function(formula, data = NULL,
         formula = if (missing(formula)) NULL else formula,
         data = data, id_col = id_col, order_col = order_col, corstr = corstr,
         verbose = verbose, datasources = datasources, analysis_id = analysis_id))
+    }
+    if (!is.null(id_col)) {
+      return(.dsvert_dp_gee_glm_robust_grid_adapter(
+        explicit_arguments = names(match.call())[-1L],
+        formula = if (missing(formula)) NULL else formula,
+        data = data, family = family, id_col = id_col, order_col = order_col,
+        corstr = corstr, verbose = verbose, datasources = datasources,
+        analysis_id = analysis_id))
     }
     return(.dsvert_dp_glm_grid_gee_independence_adapter(
       explicit_arguments = names(match.call())[-1L],

@@ -103,6 +103,15 @@
       manifest, data_name, analysis_id, owner_peer, adjacency, scale,
       capacity))
   }
+  if (is.list(artifact) && artifact$version %in%
+      unname(.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS)) {
+    family_name <- names(.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS)[[
+      match(artifact$version,
+            unname(.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS))]]
+    return(.dsvert_dp_gee_glm_robust_grid_artifact(
+      manifest, data_name, analysis_id, owner_peer, adjacency, scale,
+      capacity, family_name))
+  }
   if (is.list(artifact) && artifact$version %in% c(
         .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,

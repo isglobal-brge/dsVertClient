@@ -44,7 +44,7 @@
   "gaussian_lasso_focal", "lmm", "lmm_random_slope_focal", "nb2", "multinom",
   "ordinal", "glm_grid", "glmm_random_slope_focal", "gee_ar1",
   "gee_ar1_robust", "cox_partial_grid", "poisson_glmm",
-  "poisson_glmm_random_slope")
+  "poisson_glmm_random_slope", "gee_glm_robust")
 if (nzchar(.synopsis_real_e2e_family) &&
     !.synopsis_real_e2e_family %in% .synopsis_real_e2e_families) {
   stop("unknown DSVERT_TEST_SYNOPSIS_E2E_FAMILY", call. = FALSE)
@@ -4075,6 +4075,128 @@ test_that("real additive binomial and Poisson grids are plausible and Rock-repla
                        fit$provenance_certificate$certificate_sha256)
       expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                        before)
+    }
+  }
+})
+
+test_that("real robust binomial and Poisson independence GEE grids are plausible and Rock-replayable at K=2/3/5", {
+  .synopsis_real_e2e_only("gee_glm_robust")
+  server_ns <- .synopsis_describe_real_e2e_server()
+  gee <- get(".dsvert_dp_gee_glm_robust_grid_impl", asNamespace("dsVertClient"),
+             inherits = FALSE)
+  for (family in c("binomial", "poisson")) {
+    for (k in .synopsis_real_e2e_peer_counts()) {
+      fixture <- .synopsis_lmm_real_e2e_fixture(k, server_ns, n = 400L)
+      on.exit(unlink(fixture$root, recursive = TRUE, force = TRUE), add = TRUE)
+      sites <- sprintf("site_%03d", seq_len(20L))
+      for (peer in fixture$peers) {
+        policy <- fixture$policies[[peer]]
+        policy$global_total_epsilon <- 4
+        policy$capsule_workload_scope <- list(
+          mode = "catalog_v1", numeric_moments = character(),
+          categorical_marginals = character(), categorical_pairs = list(),
+          correlations = list())
+        policy$capsule_workload_specs$describe <- list()
+        policy$capsule_workload_specs$survival <- list()
+        policy$capsule_workload_specs$gaussian <- list()
+        if (identical(peer, "peer_a")) {
+          policy$numeric_bounds$y_peer_a <- c(0, if (identical(family, "poisson")) 8 else 1)
+          policy$categorical_levels$site_peer_a <- sites
+          policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
+            "x_peer_a", "y_peer_a", "site_peer_a")
+          spec <- list(
+            version = paste0(family, "_robust_independence_gee_grid_v1"),
+            dataset = "data_peer_a", outcome = "y_peer_a",
+            cluster = "site_peer_a", predictors = "x_peer_a", intercept = TRUE,
+            max_patients_per_cluster = 20L, score_clip = 3,
+            beta_grid = list(c(-1, 0), c(-1, log(4))))
+          if (identical(family, "poisson")) spec$max_outcome <- 8L
+          policy$capsule_workload_specs$gaussian$gee_robust <- spec
+        }
+        fixture$policies[[peer]] <- policy
+      }
+      data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
+      data$x_peer_a <- rep(c(0, 10), length.out = nrow(data))
+      data$site_peer_a <- rep(sites, each = 20L)
+      data$y_peer_a <- if (identical(family, "poisson")) {
+        ifelse(data$x_peer_a == 0, 1, 4)
+      } else {
+        as.numeric(data$x_peer_a == 10)
+      }
+      fixture$snapshots$peer_a[["data_peer_a"]]$data <- data
+      conns <- stats::setNames(lapply(fixture$peers, function(peer) {
+        structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
+      }), fixture$peers)
+      dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+      fit <- gee(y_peer_a ~ x_peer_a, "data_peer_a", "gee_robust", family,
+                 "site_peer_a", "peer_a", conns, dispatch)
+
+      expect_s3_class(fit, "ds.vertGEE")
+      expect_identical(fit$family, family)
+      expect_identical(fit$corstr, "independence")
+      expect_identical(fit$signed_artifact$spec_version,
+                       paste0(family, "_robust_independence_gee_grid_v1"))
+      expect_true(all(is.finite(fit$coefficients)))
+      expect_gt(fit$coefficients[["x_peer_a"]], 0)
+      expect_true(fit$robust_covariance_status %in%
+                    c("ok", "non_identifiable_dp_bread"))
+      if (identical(fit$robust_covariance_status, "ok")) {
+        expect_true(is.matrix(fit$robust_covariance))
+        expect_true(all(is.finite(fit$robust_covariance)))
+      } else {
+        expect_null(fit$robust_covariance)
+      }
+      expect_null(fit$std_errors)
+      expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                       c(1L, 2L))
+      tampered_certificate <- fit$provenance_certificate
+      tampered_certificate$block_values_sha256 <- paste0(
+        chartr("0123456789abcdef", "123456789abcdef0",
+               substr(tampered_certificate$block_values_sha256, 1L, 1L)),
+        substr(tampered_certificate$block_values_sha256, 2L, 64L))
+      expect_error(ds.validateDPGaussianCertificate(tampered_certificate),
+                   "Invalid Gaussian Synopsis provenance certificate")
+
+      route_gee <- function(formula, data_name, analysis_id, family, id_col,
+                            server = NULL, datasources = NULL, .aggregate) {
+        gee(formula, data_name, analysis_id, family, id_col, server,
+            datasources, dispatch)
+      }
+      public <- testthat::with_mocked_bindings(
+        .dsvert_dp_gee_glm_robust_grid_impl = route_gee,
+        list(
+          direct = ds.vertGEE(
+            y_peer_a ~ x_peer_a, data = "data_peer_a", family = family,
+            id_col = "site_peer_a", corstr = "independence",
+            analysis_id = "gee_robust", datasources = conns),
+          alias = ds.vert.gee(
+            y_peer_a ~ x_peer_a, data = "data_peer_a", family = family,
+            id_col = "site_peer_a", corstr = "independence",
+            analysis_id = "gee_robust", datasources = conns)),
+        .package = "dsVertClient")
+      expect_identical(public$direct$coefficients, fit$coefficients)
+      expect_identical(public$alias$robust_covariance, fit$robust_covariance)
+      expect_identical(public$alias$frontdoor, "ds.vert.gee")
+      before_rejected <- c(fixture$state$source_prepare, fixture$state$start)
+      expect_error(ds.vertGEE(
+        y_peer_a ~ x_peer_a, data = "data_peer_a", family = family,
+        id_col = "site_peer_a", order_col = "x_peer_a",
+        corstr = "independence", analysis_id = "gee_robust", datasources = conns),
+        "one id_col and no order_col")
+      expect_identical(c(fixture$state$source_prepare, fixture$state$start),
+                       before_rejected)
+
+      before <- c(fixture$state$source_prepare, fixture$state$start)
+      fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+        new.env(parent = emptyenv())
+      }), fixture$peers)
+      replay <- gee(y_peer_a ~ x_peer_a, "data_peer_a", "gee_robust", family,
+                    "site_peer_a", "peer_a", conns, dispatch)
+      expect_identical(replay$coefficients, fit$coefficients)
+      expect_identical(replay$robust_covariance, fit$robust_covariance)
+      expect_identical(replay$provenance_certificate$certificate_sha256,
+                       fit$provenance_certificate$certificate_sha256)
+      expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
     }
   }
 })

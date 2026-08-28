@@ -96,8 +96,8 @@ historical behaviour. Quarantined distributed names remain exported for API
 discovery, but their legacy server endpoints are unregistered and unexported;
 they fail locally with a stable migration error before connection discovery or
 DSI submission. Current quarantined families include legacy Cox computation,
-unbounded legacy NB2, multinomial and ordinal regression, legacy AR(1) and
-robust clustered GEE, GLMM-PQL, legacy mutating MI, iterative LASSO and the legacy
+unbounded legacy NB2, multinomial and ordinal regression, arbitrary legacy
+AR(1) and clustered-GEE solvers, GLMM-PQL, legacy mutating MI, iterative LASSO and the legacy
 weight-column IPW contract. Use
 `ds.vertMethodStatus(status = "quarantine")` for the authoritative list.
 
@@ -115,15 +115,18 @@ In particular:
   or finite random-slope artifacts; the signed GLMM route is limited to a
   binary `outcome ~ 1` moment projection, a signed additive binary finite
   random-intercept/one-to-three-random-slope grid, or a signed additive
-  bounded-count Poisson random-intercept grid.
+  bounded-count Poisson random-intercept/one-random-slope grid.
   Gaussian exchangeable GEE is a model-based working-GLS post-processing of a
   matching signed random-intercept artifact. A distinct signed finite
   beta/rho artifact supports Gaussian AR(1) working-GLS with a strict
   within-cluster order. A distinct bounded AR(1) artifact supports
   componentwise-clipped cluster-score sandwich covariance for at most three
   additive predictors when its DP bread remains positive definite. It has no
-  standard errors, p-values or sampling inference; binomial/Poisson robust
-  GEE and legacy PQL remain cluster-granular and quarantined;
+  standard errors, p-values or sampling inference. Matching same-owner
+  binomial/Poisson robust-independence grids likewise support one categorical
+  cluster id, no order column, at most three additive predictors and a
+  clipped-score sandwich covariance only when DP bread is positive definite;
+  legacy PQL and arbitrary clustered-GEE solvers remain quarantined;
 - `ds.vertMI()` only post-processes strict-missing signed categorical Synopsis
   artifacts into MCAR marginals, a two-response joint pair, or an opt-in
   conditional categorical star model. It never writes source data, performs

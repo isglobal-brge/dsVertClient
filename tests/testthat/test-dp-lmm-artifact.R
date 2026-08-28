@@ -299,6 +299,88 @@
     gaussian_models = list(artifacts = list(poisson_glmm_slope = artifact))))))
 }
 
+.robust_independence_gee_grid_artifact_fixture <- function(family = "binomial") {
+  capacity <- 20L
+  scale <- 256
+  score_clip <- 2
+  beta_grid <- list(c(-1, log(2)), c(-1, 0))
+  candidates <- dsVertClient:::.dsvert_dp_gee_glm_robust_grid_candidates(
+    family, beta_grid, if (identical(family, "poisson")) 10L else NULL)
+  loss_bounds <- vapply(candidates, `[[`, numeric(1L), "loss_bound")
+  bread_bounds <- vapply(candidates, `[[`, numeric(1L), "bread_bound")
+  meat_bounds <- rep(score_clip^2, length(candidates))
+  triangle_count <- 3L
+  loss_raw <- ceiling(loss_bounds * scale)
+  bread_raw <- ceiling(bread_bounds * scale)
+  meat_raw <- ceiling(2 * meat_bounds * scale)
+  maximum <- unlist(lapply(seq_along(candidates), function(index) {
+    c(capacity * loss_raw[[index]], rep(capacity * bread_raw[[index]],
+                                        triangle_count),
+      rep(3 * meat_raw[[index]], triangle_count))
+  }), use.names = FALSE)
+  coordinate_bounds <- unlist(lapply(seq_along(candidates), function(index) {
+    c(loss_raw[[index]], rep(bread_raw[[index]], triangle_count),
+      rep(meat_raw[[index]] + 2, triangle_count))
+  }), use.names = FALSE)
+  artifact <- list(
+    version = dsVertClient:::.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS[[family]],
+    spec_version = paste0(family, "_robust_independence_gee_grid_v1"),
+    analysis_id = paste0(family, "_gee"), dataset = "protected",
+    owner_peer = "server_a", family = family,
+    outcome = list(column = "y", lower = 0,
+                   upper = if (identical(family, "poisson")) 10 else 1),
+    max_outcome = if (identical(family, "poisson")) 10L else NULL,
+    cluster = list(column = "site", levels = c("a", "b", "c")),
+    predictors = list(x = list(column = "x", lower = 0, upper = 10)),
+    predictor_order = "x", intercept = TRUE, design_terms = c("(Intercept)", "x"),
+    observation_capacity = capacity, max_patients_per_cluster = 4L,
+    beta_grid = lapply(candidates, `[[`, "beta"),
+    candidate_order = "canonical_beta_grid_glm_v1",
+    candidate_loss_bounds = as.list(loss_bounds), score_clip = score_clip,
+    candidate_bread_bounds = as.list(bread_bounds),
+    candidate_meat_bounds = as.list(meat_bounds),
+    candidate_loss_sensitivity_bounds = as.list(loss_bounds),
+    candidate_bread_sensitivity_bounds = as.list(bread_bounds),
+    candidate_meat_sensitivity_bounds = as.list(2 * meat_bounds),
+    public_cluster_levels = 3L, numeric_grid_bits = 8L,
+    coordinate_count = as.integer(length(coordinate_bounds)),
+    coordinate_order = paste("signed_candidate_grid_cluster", family,
+                             "independence_loss_bread_meat_upper_v1", sep = "_"),
+    source_coordinate_scaling =
+      "all_coordinates_already_on_common_numeric_lattice_v1",
+    repeated_record_policy = paste(
+      "require_one_complete_bounded", family,
+      "outcome_and_mean_once_per_admitted_patient_with_one",
+      "consistent_public_cluster_level_v1", sep = "_"),
+    missingness_policy = paste(
+      "noninteger_or_out_of_range_or_missing_outcome_or_missing_or",
+      "nonfinite_predictor_or_missing_or_inconsistent_cluster_excludes",
+      "patient_v1", sep = "_"),
+    contribution_domain = paste(
+      "one_bounded_patient_can_change_one", family,
+      "loss_and_bread_term_and_one_componentwise_clipped_cluster_score",
+      "outer_product_per_signed_candidate_v1", sep = "_"),
+    statistic_maximum = as.list(maximum),
+    source_raw_l1_sensitivity = sum(coordinate_bounds),
+    source_raw_l2_sensitivity = sqrt(sum(coordinate_bounds^2)),
+    natural_l1_sensitivity = sum(coordinate_bounds) / scale,
+    natural_l2_sensitivity = sqrt(sum(coordinate_bounds^2)) / scale,
+    adjacency = "add_remove_patient",
+    adjacency_sensitivity_basis = paste(
+      "one_patient_removal_insertion_or_replacement_changes_one",
+      "bounded_loss_and_bread_term_and_one_clipped_cluster_score_outer",
+      "product_with_quantization_slack_v1", sep = "_"),
+    estimation_scope = paste(
+      "bounded", family,
+      "independence_gee_finite_signed_beta_grid_with_componentwise",
+      "clipped_cluster_score_sandwich_v1", sep = "_"),
+    implementation_state = "same_owner_materialized",
+    cross_owner_state = "reserved_not_materialized")
+  list(artifact = artifact, manifest = list(workload = list(families = list(
+    gaussian_models = list(artifacts = stats::setNames(
+      list(artifact), artifact$analysis_id))))))
+}
+
 .glmm_random_slope_grid_artifact_fixture <- function() {
   capacity <- 20
   scale <- 256
@@ -502,6 +584,40 @@ test_that("Poisson random-slope GLMM grid validates, transforms and fails closed
   expect_error(dsVertClient:::.dsvert_dp_glmm_grid_artifact(
     tampered, "protected", "poisson_glmm_slope", "server_a",
     "add_remove_patient", 256, 20), "descriptor is invalid")
+})
+
+test_that("robust binomial and Poisson independence GEE grids validate and fail closed", {
+  for (family in c("binomial", "poisson")) {
+    fixture <- .robust_independence_gee_grid_artifact_fixture(family)
+    artifact <- dsVertClient:::.dsvert_dp_gee_glm_robust_grid_artifact(
+      fixture$manifest, "protected", fixture$artifact$analysis_id, "server_a",
+      "add_remove_patient", 256, 20, family)
+    scale <- 256
+    width <- 7L
+    coordinates <- numeric(14L)
+    coordinates[c(1L, 8L)] <- c(100, 200)
+    bread <- c(2, 0.2, 0.5) * scale
+    meat <- (3 * 4 + c(1, 0.1, 0.6)) * scale
+    coordinates[2:4] <- bread
+    coordinates[5:7] <- meat
+    coordinates[9:11] <- bread
+    coordinates[12:14] <- meat
+    fit <- dsVertClient:::.dsvert_dp_gee_glm_robust_grid_moment(
+      coordinates, artifact)
+
+    expect_identical(fit$status, "ok")
+    expect_identical(fit$selected_candidate, 1L)
+    expect_equal(fit$coefficients,
+                 c(`(Intercept)` = -1, x = log(2) / 10))
+    expect_true(is.matrix(fit$robust_covariance))
+    expect_true(all(is.finite(fit$robust_covariance)))
+    tampered <- fixture$manifest
+    tampered$workload$families$gaussian_models$artifacts[[
+      fixture$artifact$analysis_id]]$cluster$levels <- c("a", "b")
+    expect_error(dsVertClient:::.dsvert_dp_gee_glm_robust_grid_artifact(
+      tampered, "protected", fixture$artifact$analysis_id, "server_a",
+      "add_remove_patient", 256, 20, family), "descriptor is invalid")
+  }
 })
 
 test_that("binary random-slope GLMM grid validates, transforms and fails closed", {

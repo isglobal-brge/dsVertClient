@@ -522,6 +522,53 @@
                 all(is.finite(beta)) && all(abs(beta) <= 8)
             }, logical(1L))) && !anyDuplicated(beta_keys)
           if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
+        } else if (spec$version %in% c(
+              "binomial_robust_independence_gee_grid_v1",
+              "poisson_robust_independence_gee_grid_v1")) {
+          poisson <- identical(spec$version,
+                               "poisson_robust_independence_gee_grid_v1")
+          expected <- c(
+            "version", "dataset", "outcome", "cluster", "predictors",
+            "intercept", "max_patients_per_cluster", "score_clip", "beta_grid")
+          if (isTRUE(poisson)) expected <- c(expected, "max_outcome")
+          valid <- setequal(names(spec), expected) && identifier(spec$dataset) &&
+            column_reference(spec$outcome) && column_reference(spec$cluster) &&
+            !identical(spec$outcome, spec$cluster) && isTRUE(spec$intercept) &&
+            .dsvert_dp_is_integer(spec$max_patients_per_cluster, 2L, 32L)
+          predictors <- if (isTRUE(valid)) tryCatch(
+            .dsvert_dp_capsule_manifest_string_array(
+              spec$predictors, "robust independence GEE fixed predictors"),
+            error = function(error) character()) else character()
+          beta_grid <- spec$beta_grid
+          if (!is.list(beta_grid) || !is.null(names(beta_grid))) {
+            beta_grid <- list()
+          } else {
+            beta_grid <- lapply(beta_grid, function(beta) tryCatch(
+              .dsvert_dp_capsule_manifest_number_array(
+                beta, "robust independence GEE beta grid row"),
+              error = function(error) numeric()))
+          }
+          beta_keys <- if (length(beta_grid)) vapply(beta_grid, function(beta) {
+            .dsvert_joint_dp_client_json(as.list(beta))
+          }, character(1L)) else character()
+          score_clip <- suppressWarnings(as.numeric(spec$score_clip))
+          maximum_valid <- if (isTRUE(poisson)) {
+            .dsvert_dp_is_integer(spec$max_outcome, 1L, 1024L)
+          } else TRUE
+          valid <- isTRUE(valid) && isTRUE(maximum_valid) &&
+            length(predictors) && length(predictors) <= 3L &&
+            !anyDuplicated(predictors) && !spec$outcome %in% predictors &&
+            !spec$cluster %in% predictors &&
+            all(vapply(predictors, column_reference, logical(1L))) &&
+            length(beta_grid) && length(beta_grid) <= 32L &&
+            length(score_clip) == 1L && is.finite(score_clip) &&
+            score_clip >= 0.25 && score_clip <= 32 &&
+            all(vapply(beta_grid, function(beta) {
+              length(beta) == 1L + length(predictors) && !anyNA(beta) &&
+                all(is.finite(beta)) && all(abs(beta) <= 8) &&
+                sum(abs(beta)) <= 8
+            }, logical(1L))) && !anyDuplicated(beta_keys)
+          if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
         } else if (spec$version %in% c("binomial_grid_v1",
                                        "poisson_grid_v1")) {
           poisson <- identical(spec$version, "poisson_grid_v1")
@@ -958,6 +1005,13 @@
         spec$predictors <- predictors
         spec$beta_grid <- beta_grid
         spec$variance_grid <- variance_grid
+      } else if (identical(family, "gaussian") &&
+                 spec$version %in% c(
+                   "binomial_robust_independence_gee_grid_v1",
+                   "poisson_robust_independence_gee_grid_v1")) {
+        spec$predictors <- predictors
+        spec$score_clip <- score_clip
+        spec$beta_grid <- beta_grid
       } else if (identical(family, "gaussian") &&
                  spec$version %in% c("binomial_grid_v1",
                                      "poisson_grid_v1")) {

@@ -944,6 +944,13 @@
          } else {
            "gaussian_ar1_working_gls_grid_v1"
          })) ||
+    (artifact$version %in%
+       unname(.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS) &&
+       identical(artifact$spec_version, paste0(
+         names(.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS)[[
+           match(artifact$version,
+                 unname(.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS))]],
+         "_robust_independence_gee_grid_v1"))) ||
     (identical(artifact$version,
                .DSVERT_CLIENT_DP_GLMM_GRID_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "binary_random_intercept_grid_v1")) ||
@@ -1462,6 +1469,9 @@
         .DSVERT_CLIENT_DP_POISSON_GLMM_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_POISSON_GLMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
     as.numeric(artifact$statistic_maximum)
+  } else if (artifact$version %in%
+             unname(.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS)) {
+    as.numeric(artifact$statistic_maximum)
   } else if (identical(artifact$version,
                        .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
     as.numeric(artifact$statistic_maximum)
@@ -1617,6 +1627,7 @@
         .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GEE_AR1_ROBUST_GRID_ARTIFACT_VERSION,
+        unname(.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS),
         .DSVERT_CLIENT_DP_COX_PARTIAL_GRID_ARTIFACT_VERSION)) {
     moment <- if (identical(artifact$version,
                             .DSVERT_CLIENT_DP_COX_PARTIAL_GRID_ARTIFACT_VERSION)) {
@@ -1625,6 +1636,9 @@
                  .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION,
                  .DSVERT_CLIENT_DP_GEE_AR1_ROBUST_GRID_ARTIFACT_VERSION)) {
       .dsvert_dp_gee_ar1_grid_moment(coordinates, artifact)
+    } else if (artifact$version %in%
+               unname(.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS)) {
+      .dsvert_dp_gee_glm_robust_grid_moment(coordinates, artifact)
     } else if (identical(artifact$version,
                           .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION)) {
       .dsvert_dp_lmm_random_slope_grid_moment(coordinates, artifact)
@@ -2104,6 +2118,7 @@ ds.validateDPGaussianCertificate <- function(x, trusted_pinset = NULL) {
         .DSVERT_CLIENT_DP_LMM_RANDOM_SLOPE_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GEE_AR1_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_GEE_AR1_ROBUST_GRID_ARTIFACT_VERSION,
+        unname(.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS),
         unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS),
         .DSVERT_CLIENT_DP_NB_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_MULTINOM_GRID_ARTIFACT_VERSION,

@@ -286,7 +286,8 @@ test_that("independent binomial and Poisson GEE consumes one signed finite grid"
     datasources = conns), "Gaussian analysis_id GEE supports only")
   expect_error(ds.vertGEE(
     y ~ x, data = "study", family = "binomial", analysis_id = "gee-grid",
-    id_col = "patient", datasources = conns), "does not accept cluster")
+    id_col = "patient", order_col = "visit", datasources = conns),
+    "requires one id_col and no order_col")
   expect_error(ds.vertGEE(
     y ~ x, data = "study", family = "binomial", analysis_id = "gee-grid",
     lambda = 0, datasources = conns), "does not accept legacy controls")
