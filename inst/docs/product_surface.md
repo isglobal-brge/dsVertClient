@@ -78,8 +78,8 @@ Formal capsule descriptives/correlation/PCA/contingency methods, the explicit
 Gaussian GLM capsule adapter and selected client post-processing remain
 provisional. Pinned fixed-capacity PSI
 alignment and its count-free persistent attestation are promoted non-statistical
-protocols. Covariate multinomial and ordinal regression, local MI and the
-iterative LASSO route remain quarantined. Their
+protocols. Unbounded/legacy categorical regression, legacy mutating MI and
+the iterative LASSO route remain quarantined. Their
 precise supported scope and limitation are returned by
 `ds.vertMethodStatus()`.
 
@@ -95,8 +95,8 @@ historical behaviour. Quarantined distributed names remain exported for API
 discovery, but their legacy server endpoints are unregistered and unexported;
 they fail locally with a stable migration error before connection discovery or
 DSI submission. Current quarantined families include legacy Cox computation,
-covariate NB2, multinomial and ordinal regression, AR(1) and robust clustered
-GEE, GLMM-PQL, legacy mutating MI, iterative LASSO and the legacy
+unbounded legacy NB2, multinomial and ordinal regression, AR(1) and robust
+clustered GEE, GLMM-PQL, legacy mutating MI, iterative LASSO and the legacy
 weight-column IPW contract. Use
 `ds.vertMethodStatus(status = "quarantine")` for the authoritative list.
 
@@ -107,8 +107,10 @@ In particular:
   treatment-by-outcome or stratum-treatment-by-outcome table. It never writes
   or releases weights, fits a propensity model, or supports ATT/ATC,
   continuous/multiple covariates or outcome regression.
-- the signed LMM route is limited to its signed random-intercept artifacts;
-  the signed binary GLMM route is limited to the signed finite-grid scope.
+- the signed LMM route is limited to its signed random-intercept, fixed-effect
+  or finite random-slope artifacts; the signed binary GLMM route is limited to
+  an `outcome ~ 1` moment projection or its signed additive finite
+  random-intercept/one-or-two-random-slope grid.
   Gaussian exchangeable GEE is a model-based working-GLS post-processing of a
   matching signed random-intercept artifact; AR(1), robust/sandwich GEE and
   legacy PQL remain cluster-granular and quarantined;
@@ -118,14 +120,15 @@ In particular:
   chained equations or supplies Rubin sampling inference;
 - `ds.vertNBFullRegTheta(y ~ 1, frequency = ...)` post-processes one signed
   bounded count Frequency release into a no-inference NB2 method-of-moments
-  result; covariate NB2 remains unavailable;
-- multinomial and ordinal warm-start covariance, standard errors and tests are
-  retained only under a clearly labelled `warm_start` diagnostic field and are
-  never presented as inference for the final joint estimator;
-- slope-bearing multinomial and exact slope-binomial iterative-LASSO requests,
-  like every other quarantined distributed route, fail before DSI. A future
-  replacement still requires a signed design Gram over the exact same raw score
-  inputs; a Gaussian correlation capsule is not substituted;
+  result. With an `analysis_id`, it instead selects an additive bare-predictor
+  coefficient/theta candidate from one same-owner signed finite likelihood
+  grid; no free likelihood optimisation or inference is offered;
+- multinomial and ordinal `analysis_id` routes likewise select one additive
+  bare-predictor candidate from a same-owner signed finite likelihood grid.
+  They never report covariance, standard errors, tests or sampling inference;
+- interactions, transforms, cross-owner categorical designs and arbitrary
+  candidate grids remain unavailable before DSI; a Gaussian correlation
+  capsule is not substituted for their signed likelihood artifact;
 - `ds.vertLASSOCV()` is a legacy name for information-criterion selection, not
   cross-validation and not a one-standard-error rule.
 

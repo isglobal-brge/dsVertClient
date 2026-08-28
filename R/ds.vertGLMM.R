@@ -63,7 +63,7 @@ ds.vertGLMM <- function(formula, data = NULL, cluster_col,
   if (!is.numeric(lambda) || length(lambda) != 1L || is.na(lambda) ||
       !is.finite(lambda) || lambda != 0 || !identical(compute_se, FALSE)) {
     stop(paste(
-      "ds.vertGLMM supports only signed binary random-intercept routes:",
+      "ds.vertGLMM supports only signed binary moment or finite-grid routes:",
       "lambda=0 and compute_se=FALSE"), call. = FALSE)
   }
   if (length(predictors)) {

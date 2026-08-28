@@ -390,7 +390,8 @@ test_that("Gaussian ownership claims match the implemented capsule registry", {
     file.path(package_root, "README.md"),
     file.path(package_root, "inst", "docs", "product_surface.md"),
     file.path(package_root, "inst", "docs",
-              "capsule_method_migration_matrix.md"))
+              "capsule_method_migration_matrix.md"),
+    file.path(package_root, "inst", "docs", "numeric_surface_inventory.md"))
   if (!all(file.exists(paths))) {
     skip("repository documentation is absent from the package tarball")
   }
@@ -404,6 +405,33 @@ test_that("Gaussian ownership claims match the implemented capsule registry", {
   expect_false(grepl(
     "binomial/Poisson/cross-owner routes still require migration",
     text, fixed = TRUE))
+})
+
+test_that("categorical finite-grid documentation matches the admitted routes", {
+  package_root <- dirname(.dsvert_client_source_root())
+  paths <- c(
+    file.path(package_root, "README.md"),
+    file.path(package_root, "inst", "docs", "product_surface.md"),
+    file.path(package_root, "inst", "docs",
+              "capsule_method_migration_matrix.md"))
+  if (!all(file.exists(paths))) {
+    skip("repository categorical-scope documentation is absent")
+  }
+  text <- paste(unlist(lapply(paths, readLines, warn = FALSE)), collapse = "\n")
+  methods <- ds.vertMethodStatus(c(
+    "ds.vertNBFullRegTheta", "ds.vertMultinom", "ds.vertOrdinal"))
+
+  expect_true(all(methods$status == "promoted"))
+  expect_true(all(grepl(
+    "finite", paste(methods$safe_scope, methods$principal_limitation),
+    ignore.case = TRUE)))
+  expect_match(text, "same-owner signed finite", fixed = TRUE)
+  expect_match(text, "additive bare-predictor", fixed = TRUE)
+  expect_match(text, "one-or-two-random-slope", fixed = TRUE)
+  expect_false(grepl("covariate NB2 remains unavailable", text, fixed = TRUE))
+  expect_false(grepl("slope-bearing requests fail closed", text, fixed = TRUE))
+  expect_false(grepl("covariates, random slopes, covariance", text,
+                    fixed = TRUE))
 })
 
 test_that("README maturity and numeric claims match the runtime registry", {
