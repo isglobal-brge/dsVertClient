@@ -1,27 +1,35 @@
-#' @title Signed independent-working GEE point estimate
+#' @title Signed independent- or exchangeable-working GEE point estimate
 #' @description With a custodian-configured \code{analysis_id}, this frontdoor
-#'   consumes one signed finite binomial/Poisson likelihood-grid Synopsis under
-#'   an independence working correlation. With \code{formal_analysis_id}, it
-#'   returns the completed, two-authority-certified binomial or
-#'   Poisson GLM point estimate under an independence working correlation.
+#'   consumes either one signed finite binomial/Poisson likelihood-grid Synopsis
+#'   under an independence working correlation, or one signed same-owner
+#'   Gaussian random-intercept Synopsis under an exchangeable working
+#'   correlation. With \code{formal_analysis_id}, it returns the completed,
+#'   two-authority-certified binomial or Poisson GLM point estimate under an
+#'   independence working correlation.
 #'   \code{fresh_formal_analysis_id} first completes that same configured
 #'   durable GLM analysis, then consumes its public result.
 #'   With \code{dp_analysis_id}, it reads the signed Gaussian Synopsis fit
 #'   under that same score equation. Neither route chooses privacy controls or
 #'   exposes a cluster statistic.
-#' @details This is deliberately narrower than a general GEE: cluster ids,
-#'   exchangeable and AR(1) correlations, sandwich covariance, standard errors
-#'   and inference remain unavailable until their contribution-bounded,
-#'   protected artifacts exist. Calls without a configured selector keep
-#'   failing locally before DSI.
+#' @details For Gaussian \code{corstr = "exchangeable"}, the signed
+#'   random-intercept GLS artifact is admissible because its covariance has the
+#'   same exchangeable working-correlation form. The returned coefficient is
+#'   therefore a model-based working-GLS estimate, with its correlation derived
+#'   from the signed variance components. It is not a robust/sandwich GEE.
+#'   AR(1), sandwich covariance, standard errors and inference remain
+#'   unavailable until their contribution-bounded protected artifacts exist.
+#'   Calls without a configured selector keep failing locally before DSI.
 #' @param formula,data,family,corstr,verbose,datasources Formula, registered
 #'   data name, Gaussian/binomial/Poisson family, working correlation, progress flag and
-#'   DataSHIELD connections. Only \code{corstr = "independence"} is available.
+#'   DataSHIELD connections. \code{corstr = "independence"} is available for
+#'   every supported family; Gaussian \code{corstr = "exchangeable"} requires
+#'   the matching signed random-intercept artifact.
 #' @param formal_analysis_id Custodian-configured completed formal GLM
 #'   certificate selector.
 #' @param analysis_id Custodian-configured signed finite binomial/Poisson
-#'   likelihood-grid selector. It is mutually exclusive with every other
-#'   analysis selector.
+#'   likelihood-grid selector, or the matching same-owner Gaussian
+#'   random-intercept artifact for \code{corstr = "exchangeable"}. It is
+#'   mutually exclusive with every other analysis selector.
 #' @param fresh_formal_analysis_id Custodian-configured binomial/Poisson
 #'   durable GLM selector. It is mutually exclusive with the completed
 #'   certificate and Gaussian Synopsis selectors.
@@ -30,8 +38,9 @@
 #' @param id_col,order_col,max_iter,tol,lambda,working_max_iter,ring,binomial_sigmoid_intervals
 #'   Retained clustered-GEE controls. They are unavailable with a formal point
 #'   release and are never silently ignored.
-#' @return A \code{ds.vertGEE} point-estimate object without covariance,
-#'   standard errors, working-correlation estimate or inference.
+#' @return A \code{ds.vertGEE} point-estimate object. The Gaussian
+#'   exchangeable route additionally returns the signed model-based working
+#'   correlation, but never covariance, standard errors or inference.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertGEE <- function(formula, data = NULL,
@@ -62,6 +71,13 @@ ds.vertGEE <- function(formula, data = NULL,
   if (!is.null(analysis_id)) {
     family <- match.arg(family)
     corstr <- match.arg(corstr)
+    if (identical(family, "gaussian")) {
+      return(.dsvert_gaussian_exchangeable_gee_adapter(
+        explicit_arguments = names(match.call())[-1L],
+        formula = if (missing(formula)) NULL else formula,
+        data = data, id_col = id_col, order_col = order_col, corstr = corstr,
+        verbose = verbose, datasources = datasources, analysis_id = analysis_id))
+    }
     return(.dsvert_dp_glm_grid_gee_independence_adapter(
       explicit_arguments = names(match.call())[-1L],
       formula = if (missing(formula)) NULL else formula,
@@ -99,6 +115,106 @@ ds.vertGEE <- function(formula, data = NULL,
       selector_name = "fresh_formal_analysis_id"))
   }
   return(.dsvert_block_retired_remote_route("gee", .allow_test = FALSE))
+}
+
+.dsvert_gaussian_exchangeable_gee_adapter <- function(
+    explicit_arguments, formula, data, id_col, order_col, corstr, verbose,
+    datasources, analysis_id) {
+  if (!identical(corstr, "exchangeable")) {
+    stop(paste(
+      "Gaussian analysis_id GEE supports only corstr='exchangeable';",
+      "use dp_analysis_id for Gaussian independence"), call. = FALSE)
+  }
+  if (!is.character(id_col) || length(id_col) != 1L || is.na(id_col) ||
+      !nzchar(id_col) || !is.null(order_col)) {
+    stop(paste(
+      "Gaussian exchangeable GEE requires one id_col and no order_col;",
+      "AR(1) remains unavailable"), call. = FALSE)
+  }
+  allowed <- c("formula", "data", "family", "id_col", "corstr", "verbose",
+               "datasources", "analysis_id")
+  unexpected <- setdiff(explicit_arguments, allowed)
+  if (length(unexpected)) {
+    stop(paste(
+      "Gaussian exchangeable GEE does not accept legacy controls:",
+      paste(sort(unexpected, method = "radix"), collapse = ", ")),
+      call. = FALSE)
+  }
+  if (!inherits(formula, "formula") || length(formula) != 3L ||
+      !is.symbol(formula[[2L]])) {
+    stop("Gaussian exchangeable GEE requires an additive formula", call. = FALSE)
+  }
+  terms <- stats::terms(formula)
+  labels <- attr(terms, "term.labels")
+  if (!identical(attr(terms, "intercept"), 1L) ||
+      any(grepl("[:*^|()]", labels))) {
+    stop("Gaussian exchangeable GEE requires an intercept-only or additive formula",
+         call. = FALSE)
+  }
+
+  fit <- ds.vertDPLMM(
+    data_name = data, analysis_id = analysis_id, datasources = datasources)
+  artifact <- fit$signed_artifact
+  fixed_versions <- c(
+    .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
+    .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_REML_ARTIFACT_VERSION)
+  supported_artifact <- is.list(artifact) && artifact$version %in% c(
+    .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_ARTIFACT_VERSION, fixed_versions)
+  expected_labels <- if (isTRUE(supported_artifact) &&
+      artifact$version %in% fixed_versions) artifact$predictor_order else character()
+  outcome <- as.character(formula[[2L]])
+  if (!isTRUE(supported_artifact) ||
+      !identical(sort(labels, method = "radix"), expected_labels) ||
+      !identical(artifact$outcome$column, outcome) ||
+      !identical(artifact$cluster$column, id_col)) {
+    stop(paste(
+      "formula or id_col does not match a signed Gaussian random-intercept",
+      "GEE artifact"), call. = FALSE)
+  }
+  variance <- c(fit$sigma2, fit$sigma_b2)
+  valid_fit <- inherits(fit, "ds.vertDPLMM") && identical(fit$status, "ok") &&
+    is.numeric(fit$coefficients) && length(fit$coefficients) &&
+    !is.null(names(fit$coefficients)) && all(is.finite(fit$coefficients)) &&
+    length(variance) == 2L && all(is.finite(variance)) && all(variance >= 0) &&
+    sum(variance) > 0 && is.character(fit$certificate_sha256) &&
+    length(fit$certificate_sha256) == 1L &&
+    grepl("^[0-9a-f]{64}$", fit$certificate_sha256) &&
+    isTRUE(fit$source_values_exposed == FALSE) &&
+    isTRUE(fit$intermediate_values_exposed == FALSE) &&
+    identical(fit$additional_server_calls_after_synopsis, 0L) &&
+    identical(fit$additional_privacy_cost, c(epsilon = 0, delta = 0))
+  if (!isTRUE(valid_fit)) {
+    stop("signed Gaussian random-intercept Synopsis cannot support exchangeable GEE",
+         call. = FALSE)
+  }
+  alpha <- fit$sigma_b2 / sum(variance)
+  if (!is.finite(alpha) || alpha < 0 || alpha >= 1) {
+    stop("signed Gaussian random-intercept correlation is invalid", call. = FALSE)
+  }
+  result <- list(
+    status = "public_certified_gaussian_exchangeable_working_gls",
+    family = "gaussian",
+    corstr = "exchangeable",
+    coefficients = fit$coefficients,
+    analysis_id = analysis_id,
+    certificate_sha256 = fit$certificate_sha256,
+    signed_artifact_version = artifact$version,
+    estimation_scope = artifact$estimation_scope,
+    working_correlation = as.numeric(alpha),
+    correlation_estimation = "signed_random_intercept_variance_components",
+    cluster_correlation_estimated = TRUE,
+    cluster_columns = id_col,
+    robust_covariance = NULL,
+    std_errors = NULL,
+    source_values_exposed = FALSE,
+    intermediate_values_exposed = FALSE,
+    production_ready = FALSE,
+    additional_server_calls_after_synopsis = 0L,
+    additional_privacy_cost = c(epsilon = 0, delta = 0),
+    inference = "unavailable_without_protected_cluster_score_and_meat",
+    called_via = "ds.vertGEE_gaussian_exchangeable_analysis_id")
+  class(result) <- c("dsvert_dp_gaussian_exchangeable_gee", "ds.vertGEE", "list")
+  result
 }
 
 .dsvert_dp_glm_grid_gee_independence_adapter <- function(
@@ -631,6 +747,13 @@ ds.vertGEE <- function(formula, data = NULL,
 
 #' @keywords internal
 print.ds.vertGEE <- function(x, ...) {
+  if (inherits(x, "dsvert_dp_gaussian_exchangeable_gee")) {
+    cat("dsVert signed Gaussian exchangeable-working GEE (model-based GLS)\n")
+    cat(sprintf("  Working correlation: %.4g\n", x$working_correlation))
+    print(x$coefficients)
+    cat("  No robust covariance, standard errors or inference are released.\n")
+    return(invisible(x))
+  }
   if (inherits(x, "dsvert_formal_dp_gee")) {
     cat("dsVert formal independent-working GEE point estimate\n")
     cat("  Family :", x$family, "\n")

@@ -420,11 +420,11 @@ test_that("README maturity and numeric claims match the runtime registry", {
   expect_true(all(gee$status == "promoted"))
   expect_match(
     readme,
-    "independence-working GEE point estimate",
+    "exchangeable-working model-based GLS estimate",
     fixed = TRUE)
   expect_match(
     numeric,
-    "Read-only independence-working point adapter",
+    "Gaussian exchangeable model-based working GLS",
     fixed = TRUE)
 
   penalised <- ds.vertMethodStatus(c(

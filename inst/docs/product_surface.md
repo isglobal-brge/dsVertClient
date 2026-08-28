@@ -95,18 +95,19 @@ historical behaviour. Quarantined distributed names remain exported for API
 discovery, but their legacy server endpoints are unregistered and unexported;
 they fail locally with a stable migration error before connection discovery or
 DSI submission. Current quarantined families include legacy Cox computation,
-covariate NB2, multinomial and ordinal regression, clustered GEE, GLMM-PQL,
-MI, iterative LASSO and the legacy `ds.vertIPW()` contract. Use
+covariate NB2, multinomial and ordinal regression, AR(1) and robust clustered
+GEE, GLMM-PQL, MI, iterative LASSO and the legacy `ds.vertIPW()` contract. Use
 `ds.vertMethodStatus(status = "quarantine")` for the authoritative list.
 
 In particular:
 
 - `ds.vertIPW()` consumes a pre-existing server-side weight column; it does not
   derive propensity weights end-to-end.
-- the signed LMM route is limited to `outcome ~ 1` random-intercept moments;
-  the signed binary GLMM route is limited to a population-average log-odds
-  and observed-scale ICC approximation. Legacy PQL and clustered GEE paths
-  remain cluster-granular and quarantined;
+- the signed LMM route is limited to its signed random-intercept artifacts;
+  the signed binary GLMM route is limited to the signed finite-grid scope.
+  Gaussian exchangeable GEE is a model-based working-GLS post-processing of a
+  matching signed random-intercept artifact; AR(1), robust/sandwich GEE and
+  legacy PQL remain cluster-granular and quarantined;
 - `ds.vertNBFullRegTheta(y ~ 1, frequency = ...)` post-processes one signed
   bounded count Frequency release into a no-inference NB2 method-of-moments
   result; covariate NB2 remains unavailable;

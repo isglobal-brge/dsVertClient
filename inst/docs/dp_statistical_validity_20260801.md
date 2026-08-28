@@ -215,10 +215,12 @@ essential:
   custodian-owned `ds.vertDPDescribe` artifact. It performs no exact column,
   moment, extrema or adaptive-histogram release; its legacy variable and
   quantile arguments are only local post-processing of the immutable capsule.
-- LMM, clustered GEE, GLMM, and the current IPW contract are already
-  quarantined. In addition to missing confirmatory statistical validation,
-  some historical paths use cluster-granular intermediates and are especially
-  unsuitable for a production non-reconstruction claim.
+- The historical LMM, GLMM and clustered-GEE routes that expose granular
+  intermediates are quarantined. The signed Gaussian random-intercept
+  Synopsis supports only its documented LMM scope and a model-based
+  exchangeable GEE working-GLS post-processing; AR(1), sandwich covariance
+  and inference remain unavailable. The current IPW contract remains limited
+  to its signed intercept-only identity.
 - Legacy client-only epidemiology, standardisation, and inference helpers make
   no server call, but inherit the disclosure and statistical validity of their
   input. An arbitrary caller-supplied matrix has no DataSHIELD or DP

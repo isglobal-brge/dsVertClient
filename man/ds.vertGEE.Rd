@@ -2,7 +2,7 @@
 % Please edit documentation in R/ds.vertGEE.R
 \name{ds.vertGEE}
 \alias{ds.vertGEE}
-\title{Signed independent-working GEE point estimate}
+\title{Signed independent- or exchangeable-working GEE point estimate}
 \usage{
 ds.vertGEE(
   formula,
@@ -28,17 +28,20 @@ ds.vertGEE(
 \arguments{
 \item{formula, data, family, corstr, verbose, datasources}{Formula, registered
 data name, Gaussian/binomial/Poisson family, working correlation, progress flag and
-DataSHIELD connections. Only \code{corstr = "independence"} is available.}
+DataSHIELD connections. \code{corstr = "independence"} is available for
+every supported family; Gaussian \code{corstr = "exchangeable"} requires
+the matching signed random-intercept artifact.}
 
 \item{id_col, order_col, max_iter, tol, lambda, working_max_iter, ring, binomial_sigmoid_intervals}{Retained clustered-GEE controls. They are unavailable with a formal point
 release and are never silently ignored.}
 
+\item{analysis_id}{Custodian-configured signed finite binomial/Poisson
+likelihood-grid selector, or the matching same-owner Gaussian
+random-intercept artifact for \code{corstr = "exchangeable"}. It is
+mutually exclusive with every other analysis selector.}
+
 \item{formal_analysis_id}{Custodian-configured completed formal GLM
 certificate selector.}
-
-\item{analysis_id}{Custodian-configured signed finite binomial/Poisson
-likelihood-grid selector. It is mutually exclusive with every other analysis
-selector.}
 
 \item{fresh_formal_analysis_id}{Custodian-configured binomial/Poisson
 durable GLM selector. It is mutually exclusive with the completed
@@ -48,15 +51,18 @@ certificate and Gaussian Synopsis selectors.}
 artifact selector. It is mutually exclusive with both formal selectors.}
 }
 \value{
-A \code{ds.vertGEE} point-estimate object without covariance,
-standard errors, working-correlation estimate or inference.
+A \code{ds.vertGEE} point-estimate object. The Gaussian
+exchangeable route additionally returns the signed model-based working
+correlation, but never covariance, standard errors or inference.
 }
 \description{
 With a custodian-configured \code{analysis_id}, this frontdoor
-consumes one signed finite binomial/Poisson likelihood-grid Synopsis under
-an independence working correlation. With \code{formal_analysis_id}, it
-returns the completed, two-authority-certified binomial or
-Poisson GLM point estimate under an independence working correlation.
+consumes either one signed finite binomial/Poisson likelihood-grid Synopsis
+under an independence working correlation, or one signed same-owner
+Gaussian random-intercept Synopsis under an exchangeable working
+correlation. With \code{formal_analysis_id}, it returns the completed,
+two-authority-certified binomial or Poisson GLM point estimate under an
+independence working correlation.
 \code{fresh_formal_analysis_id} first completes that same configured
 durable GLM analysis, then consumes its public result.
 With \code{dp_analysis_id}, it reads the signed Gaussian Synopsis fit
@@ -64,10 +70,14 @@ under that same score equation. Neither route chooses privacy controls or
 exposes a cluster statistic.
 }
 \details{
-This is deliberately narrower than a general GEE: cluster ids,
-exchangeable and AR(1) correlations, sandwich covariance, standard errors
-and inference remain unavailable until their contribution-bounded,
-protected artifacts exist. Calls without a configured selector keep failing locally before DSI.
+For Gaussian \code{corstr = "exchangeable"}, the signed
+random-intercept GLS artifact is admissible because its covariance has the
+same exchangeable working-correlation form. The returned coefficient is
+therefore a model-based working-GLS estimate, with its correlation derived
+from the signed variance components. It is not a robust/sandwich GEE.
+AR(1), sandwich covariance, standard errors and inference remain
+unavailable until their contribution-bounded protected artifacts exist.
+Calls without a configured selector keep failing locally before DSI.
 }
 \seealso{
 \code{\link{ds.vertMethodStatus}}

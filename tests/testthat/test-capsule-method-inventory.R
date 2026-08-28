@@ -288,13 +288,15 @@ test_that("verified legacy disclosure evidence cannot regress to omission", {
   expect_identical(nrow(ipw$legacy_remote_call_evidence[[1L]]), 0L)
   gee <- row_for(inventory, "ds.vertGEE")
   expect_identical(gee$current_route_status,
-                   "signed_finite_grid_synopsis_or_formal_completed_public_certificate")
+                   "signed_finite_grid_or_formal_certificate_or_signed_gaussian_exchangeable_gls")
   expect_identical(gee$migration_feasibility,
                    "synopsis_release_implemented")
   expect_true(all(c(
     "bounded_binomial_poisson_likelihood_grid",
     "formal_glm_public_certificate", "formal_glm_sticky_opening",
-    "formal_glm_two_authority_signatures") %in% gee$artifact_requirements[[1L]]))
+    "formal_glm_two_authority_signatures",
+    "signed_gaussian_random_intercept_synopsis") %in%
+    gee$artifact_requirements[[1L]]))
   # The retired implementation remains inventoried as historical disclosure
   # evidence, but it is not a current route for this narrow certificate reader.
   expect_gte(length(gee$legacy_remote_call_evidence[[1L]]), 1L)

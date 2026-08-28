@@ -2442,6 +2442,14 @@ test_that("real random-intercept LMM Synopsis is plausible and Rock-replayable a
         alias = ds.vert.lmm(
           y_peer_a ~ 1, data = "data_peer_a", cluster_col = "site_peer_a",
           analysis_id = "lmm_primary", datasources = conns),
+        gee = ds.vertGEE(
+          y_peer_a ~ 1, data = "data_peer_a", family = "gaussian",
+          id_col = "site_peer_a", corstr = "exchangeable",
+          analysis_id = "lmm_primary", datasources = conns),
+        gee_alias = ds.vert.gee(
+          y_peer_a ~ 1, data = "data_peer_a", family = "gaussian",
+          id_col = "site_peer_a", corstr = "exchangeable",
+          analysis_id = "lmm_primary", datasources = conns),
         k3 = if (length(conns) >= 3L) ds.vertLMM.k3(
           y_peer_a ~ 1, data = "data_peer_a", cluster_col = "site_peer_a",
           analysis_id = "lmm_primary", datasources = conns) else NULL),
@@ -2452,6 +2460,19 @@ test_that("real random-intercept LMM Synopsis is plausible and Rock-replayable a
     expect_identical(public$typed$coefficients, fit$coefficients)
     expect_identical(public$legacy$coefficients, fit$coefficients)
     expect_identical(public$alias$coefficients, fit$coefficients)
+    expect_s3_class(public$gee, "dsvert_dp_gaussian_exchangeable_gee")
+    expect_identical(public$gee$coefficients, fit$coefficients)
+    expect_equal(public$gee$working_correlation,
+                 fit$sigma_b2 / (fit$sigma2 + fit$sigma_b2))
+    expect_null(public$gee$robust_covariance)
+    expect_null(public$gee$std_errors)
+    expect_false(public$gee$source_values_exposed)
+    expect_false(public$gee$intermediate_values_exposed)
+    expect_identical(public$gee$additional_server_calls_after_synopsis, 0L)
+    expect_identical(public$gee$additional_privacy_cost,
+                     c(epsilon = 0, delta = 0))
+    expect_identical(public$gee_alias$frontdoor, "ds.vert.gee")
+    expect_identical(public$gee_alias$coefficients, fit$coefficients)
     expect_identical(public$typed$final_vector_root, fit$final_vector_root)
     expect_identical(public$legacy$reml, FALSE)
     expect_identical(public$legacy$cluster_sizes, NULL)
@@ -2547,6 +2568,11 @@ test_that("real additive fixed-effect random-intercept REML is source-scale plau
           y_peer_a ~ x_peer_a + z_peer_a, data = "data_peer_a",
           cluster_col = "site_peer_a", analysis_id = "lmm_primary",
           reml = TRUE, datasources = conns),
+        gee = ds.vertGEE(
+          y_peer_a ~ x_peer_a + z_peer_a, data = "data_peer_a",
+          family = "gaussian", id_col = "site_peer_a",
+          corstr = "exchangeable", analysis_id = "lmm_primary",
+          datasources = conns),
         k3 = if (k >= 3L) ds.vertLMM.k3(
           y_peer_a ~ x_peer_a + z_peer_a, data = "data_peer_a",
           cluster_col = "site_peer_a", analysis_id = "lmm_primary",
@@ -2554,6 +2580,14 @@ test_that("real additive fixed-effect random-intercept REML is source-scale plau
       .package = "dsVertClient")
     expect_identical(public$lmm$coefficients, fit$coefficients)
     expect_true(public$lmm$reml)
+    expect_s3_class(public$gee, "dsvert_dp_gaussian_exchangeable_gee")
+    expect_identical(public$gee$coefficients, fit$coefficients)
+    expect_equal(public$gee$working_correlation,
+                 fit$sigma_b2 / (fit$sigma2 + fit$sigma_b2))
+    expect_identical(public$gee$signed_artifact_version,
+      "bounded-normalized-random-intercept-fixed-sufficient-statistics-v3")
+    expect_null(public$gee$robust_covariance)
+    expect_null(public$gee$std_errors)
     if (k >= 3L) {
       expect_identical(public$k3$coefficients, fit$coefficients)
       expect_identical(public$k3$frontdoor, "ds.vertLMM.k3")

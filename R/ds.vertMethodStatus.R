@@ -571,14 +571,16 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "A signed finite binomial/Poisson likelihood-grid Synopsis, a",
         "completed two-authority formal GLM certificate, or the matching",
         "configured fresh durable GLM analysis can be read as an",
-        "independence-working GEE point estimate; the",
-        "score equation is the same and GEE adds no private computation",
-        "beyond that configured GLM analysis."),
+        "independence-working GEE point estimate; a matching signed Gaussian",
+        "random-intercept Synopsis can additionally be read as a",
+        "model-based exchangeable-working GLS GEE, because the two working",
+        "covariance forms are identical after the signed variance ratio is",
+        "selected."),
       paste(
-        "Only corstr='independence' is available. Cluster identifiers,",
-        "exchangeable/AR(1) correlations, sandwich covariance, standard",
-        "errors and inference remain unavailable until a protected cluster",
-        "score-and-meat artifact is implemented."))
+        "Gaussian exchangeable requires the matching signed same-owner",
+        "random-intercept artifact and id_col. AR(1), sandwich covariance,",
+        "standard errors and inference remain unavailable until a protected",
+        "cluster score-and-meat artifact is implemented."))
   add(c("ds.vertGLMM", "ds.vert.glmm"), "ds.vertGLMM", "promoted",
       paste(
         "A binary outcome ~ 1 population-average moment projection or an",

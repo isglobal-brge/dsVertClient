@@ -55,6 +55,26 @@
     class = c("dsvert_dp_glm_grid", "ds.glm", "list"))
 }
 
+.formal_gee_gaussian_exchangeable_fit <- function(...) {
+  structure(list(
+    status = "ok",
+    signed_artifact = list(
+      version =
+        "bounded-normalized-random-intercept-fixed-sufficient-statistics-v2",
+      outcome = list(column = "y"), cluster = list(column = "patient"),
+      predictor_order = "x",
+      estimation_scope =
+        "bounded_random_intercept_GLS_fixed_effects_finite_signed_variance_ratio_grid_ML_profile_v1"),
+    sigma2 = 2, sigma_b2 = 1,
+    coefficients = c(`(Intercept)` = 1.25, x = 0.75),
+    certificate_sha256 = paste(rep("a", 64L), collapse = ""),
+    source_values_exposed = FALSE,
+    intermediate_values_exposed = FALSE,
+    additional_server_calls_after_synopsis = 0L,
+    additional_privacy_cost = c(epsilon = 0, delta = 0)),
+    class = c("ds.vertDPLMM", "list"))
+}
+
 test_that("formal independent GEE consumes one certified GLM point release", {
   seen <- NULL
   testthat::local_mocked_bindings(
@@ -162,6 +182,89 @@ test_that("independent Gaussian GEE consumes one signed Gaussian Synopsis", {
   expect_length(calls, 2L)
 })
 
+test_that("Gaussian exchangeable GEE consumes only a matching signed random-intercept GLS artifact", {
+  seen <- NULL
+  testthat::local_mocked_bindings(
+    ds.vertDPLMM = function(...) {
+      seen <<- list(...)
+      .formal_gee_gaussian_exchangeable_fit(...)
+    },
+    .package = "dsVertClient")
+  conns <- list(site_a = list(), site_b = list())
+  direct <- ds.vertGEE(
+    y ~ x, data = "study", family = "gaussian", id_col = "patient",
+    corstr = "exchangeable", analysis_id = "gee-gaussian-clustered",
+    datasources = conns, verbose = FALSE)
+  alias <- ds.vert.gee(
+    y ~ x, data = "study", family = "gaussian", id_col = "patient",
+    corstr = "exchangeable", analysis_id = "gee-gaussian-clustered",
+    datasources = conns)
+  expect_s3_class(direct, "dsvert_dp_gaussian_exchangeable_gee")
+  expect_s3_class(alias, "ds.vertGEE")
+  expect_identical(seen$analysis_id, "gee-gaussian-clustered")
+  expect_identical(direct$coefficients,
+                   c(`(Intercept)` = 1.25, x = 0.75))
+  expect_equal(direct$working_correlation, 1 / 3)
+  expect_identical(direct$correlation_estimation,
+                   "signed_random_intercept_variance_components")
+  expect_true(direct$cluster_correlation_estimated)
+  expect_identical(direct$cluster_columns, "patient")
+  expect_null(direct$robust_covariance)
+  expect_null(direct$std_errors)
+  expect_false(direct$source_values_exposed)
+  expect_false(direct$intermediate_values_exposed)
+  expect_identical(direct$additional_server_calls_after_synopsis, 0L)
+  expect_identical(direct$additional_privacy_cost,
+                   c(epsilon = 0, delta = 0))
+  expect_identical(alias$frontdoor, "ds.vert.gee")
+  expect_output(print(direct), "exchangeable-working GEE")
+
+  expect_error(ds.vertGEE(
+    y ~ x, data = "study", family = "gaussian", id_col = "patient",
+    corstr = "ar1", analysis_id = "gee-gaussian-clustered",
+    datasources = conns), "exchangeable")
+  expect_error(ds.vertGEE(
+    y ~ x, data = "study", family = "gaussian", corstr = "exchangeable",
+    analysis_id = "gee-gaussian-clustered", datasources = conns), "id_col")
+  expect_error(ds.vertGEE(
+    y ~ x, data = "study", family = "gaussian", id_col = "patient",
+    corstr = "exchangeable", analysis_id = "gee-gaussian-clustered",
+    lambda = 0, datasources = conns), "legacy controls")
+})
+
+test_that("Gaussian exchangeable GEE rejects a substituted or malformed LMM result", {
+  bad_artifact <- .formal_gee_gaussian_exchangeable_fit()
+  bad_artifact$signed_artifact$version <-
+    "bounded-gaussian-random-slope-likelihood-grid-v1"
+  testthat::with_mocked_bindings(
+    ds.vertDPLMM = function(...) bad_artifact,
+    expect_error(ds.vertGEE(
+      y ~ x, data = "study", family = "gaussian", id_col = "patient",
+      corstr = "exchangeable", analysis_id = "gee-gaussian-clustered",
+      datasources = list()), "does not match"),
+    .package = "dsVertClient")
+
+  bad_variance <- .formal_gee_gaussian_exchangeable_fit()
+  bad_variance$sigma2 <- -1
+  testthat::with_mocked_bindings(
+    ds.vertDPLMM = function(...) bad_variance,
+    expect_error(ds.vertGEE(
+      y ~ x, data = "study", family = "gaussian", id_col = "patient",
+      corstr = "exchangeable", analysis_id = "gee-gaussian-clustered",
+      datasources = list()), "cannot support"),
+    .package = "dsVertClient")
+
+  singular_correlation <- .formal_gee_gaussian_exchangeable_fit()
+  singular_correlation$sigma2 <- 0
+  testthat::with_mocked_bindings(
+    ds.vertDPLMM = function(...) singular_correlation,
+    expect_error(ds.vertGEE(
+      y ~ x, data = "study", family = "gaussian", id_col = "patient",
+      corstr = "exchangeable", analysis_id = "gee-gaussian-clustered",
+      datasources = list()), "correlation is invalid"),
+    .package = "dsVertClient")
+})
+
 test_that("independent binomial and Poisson GEE consumes one signed finite grid", {
   calls <- list()
   testthat::local_mocked_bindings(
@@ -195,7 +298,7 @@ test_that("independent binomial and Poisson GEE consumes one signed finite grid"
 
   expect_error(ds.vertGEE(
     y ~ x, data = "study", family = "gaussian", analysis_id = "gee-grid",
-    datasources = conns), "binomial.*poisson")
+    datasources = conns), "Gaussian analysis_id GEE supports only")
   expect_error(ds.vertGEE(
     y ~ x, data = "study", family = "binomial", analysis_id = "gee-grid",
     id_col = "patient", datasources = conns), "does not accept cluster")
@@ -227,7 +330,7 @@ test_that("formal independent GEE rejects cluster and legacy controls before GLM
   gaussian <- base
   gaussian$family <- "gaussian"
   expect_error(do.call(ds.vertGEE, gaussian),
-               "binomial.*poisson")
+               "formal_analysis_id GEE supports only")
   expect_identical(glm_calls, 0L)
 })
 
