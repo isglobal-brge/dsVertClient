@@ -1,7 +1,7 @@
 # dsVertClient - DataSHIELD Client for Vertically Partitioned Data
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://isglobal-brge.github.io/dsVertClient/news/index.html)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://isglobal-brge.github.io/dsVertClient/news/index.html)
 
 ## Overview
 
@@ -154,7 +154,7 @@ environment. No client option or DSI argument carries an attestation, and an
 installed package never auto-attests. See
 `inst/docs/remote_surface_attestation_20260808.md` for the admin procedure.
 
-## Function surface (v1.1.0 development audit)
+## Function surface (v1.2.0)
 
 This is a capability index, not a claim that every route has the same maturity.
 Use the runtime registry for the authoritative status and limitation of each

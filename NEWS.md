@@ -1,4 +1,4 @@
-# dsVertClient (development version)
+# dsVertClient 1.2.0
 
 ### Estimators
 
