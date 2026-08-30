@@ -222,9 +222,17 @@ ds.vertGEE <- function(formula, data = NULL,
          call. = FALSE)
   }
   alpha <- fit$sigma_b2 / sum(variance)
-  if (!is.finite(alpha) || alpha < 0 || alpha >= 1) {
+  if (!is.finite(alpha) || alpha < 0 || alpha > 1) {
     stop("signed Gaussian random-intercept correlation is invalid", call. = FALSE)
   }
+  # A noise-floored residual variance in the released artifact places the
+  # derived intra-cluster correlation on the closed boundary alpha = 1, where
+  # the exchangeable working model is singular. Project the working value back
+  # into the open interval and disclose the projection: this is deterministic
+  # client-side post-processing of already-released values and costs no
+  # privacy.
+  alpha_ceiling <- 1 - 2^-16
+  working_alpha <- min(alpha, alpha_ceiling)
   result <- list(
     status = "public_certified_gaussian_exchangeable_working_gls",
     family = "gaussian",
@@ -234,7 +242,9 @@ ds.vertGEE <- function(formula, data = NULL,
     certificate_sha256 = fit$certificate_sha256,
     signed_artifact_version = artifact$version,
     estimation_scope = artifact$estimation_scope,
-    working_correlation = as.numeric(alpha),
+    working_correlation = as.numeric(working_alpha),
+    working_correlation_raw = as.numeric(alpha),
+    working_correlation_clamped = working_alpha < alpha,
     correlation_estimation = "signed_random_intercept_variance_components",
     cluster_correlation_estimated = TRUE,
     cluster_columns = id_col,

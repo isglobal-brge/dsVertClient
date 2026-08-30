@@ -1,3 +1,26 @@
+# dsVertClient 1.2.1
+
+### Fixes
+
+* `ds.vertGEE()`'s Gaussian exchangeable adapter no longer refuses a released
+  random-intercept artifact whose noise-floored residual variance places the
+  derived intra-cluster correlation on the closed boundary `alpha = 1`, where
+  the exchangeable working model is singular. The working correlation is now
+  projected into the open interval (ceiling `1 - 2^-16`) and the projection is
+  disclosed through the new `working_correlation_raw` and
+  `working_correlation_clamped` result fields. The projection is deterministic
+  client-side post-processing of already-released values and costs no privacy;
+  non-finite or out-of-range derived correlations are still refused. Found by
+  the run-at-pin validation campaign (random-intercept LMM Rock E2E block,
+  K = 2).
+
+* The Rock E2E Poisson random-intercept negative-path assertion now routes its
+  mismatched `random_slopes` request through the fixture dispatch, as the
+  random-slope blocks already did, so the artifact-mismatch guard is reached
+  deterministically instead of the transport-security guard firing first
+  against the synthetic test connections. Test-only change; the release path
+  always failed closed. Found by the same campaign.
+
 # dsVertClient 1.2.0
 
 ### Estimators

@@ -243,10 +243,15 @@ test_that("Gaussian exchangeable GEE rejects a substituted or malformed LMM resu
   singular_correlation$sigma2 <- 0
   testthat::with_mocked_bindings(
     ds.vertDPLMM = function(...) singular_correlation,
-    expect_error(ds.vertGEE(
-      y ~ x, data = "study", family = "gaussian", id_col = "patient",
-      corstr = "exchangeable", analysis_id = "gee-gaussian-clustered",
-      datasources = list()), "correlation is invalid"),
+    {
+      clamped <- ds.vertGEE(
+        y ~ x, data = "study", family = "gaussian", id_col = "patient",
+        corstr = "exchangeable", analysis_id = "gee-gaussian-clustered",
+        datasources = list())
+      expect_equal(clamped$working_correlation, 1 - 2^-16)
+      expect_equal(clamped$working_correlation_raw, 1)
+      expect_true(clamped$working_correlation_clamped)
+    },
     .package = "dsVertClient")
 })
 

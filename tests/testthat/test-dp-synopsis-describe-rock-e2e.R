@@ -2635,8 +2635,11 @@ test_that("real random-intercept LMM Synopsis is plausible and Rock-replayable a
     expect_identical(public$alias$coefficients, fit$coefficients)
     expect_s3_class(public$gee, "dsvert_dp_gaussian_exchangeable_gee")
     expect_identical(public$gee$coefficients, fit$coefficients)
-    expect_equal(public$gee$working_correlation,
-                 fit$sigma_b2 / (fit$sigma2 + fit$sigma_b2))
+    raw_alpha <- fit$sigma_b2 / (fit$sigma2 + fit$sigma_b2)
+    expect_equal(public$gee$working_correlation, min(raw_alpha, 1 - 2^-16))
+    expect_equal(public$gee$working_correlation_raw, raw_alpha)
+    expect_identical(public$gee$working_correlation_clamped,
+                     raw_alpha > 1 - 2^-16)
     expect_null(public$gee$robust_covariance)
     expect_null(public$gee$std_errors)
     expect_false(public$gee$source_values_exposed)
@@ -2755,8 +2758,11 @@ test_that("real additive fixed-effect random-intercept REML is source-scale plau
     expect_true(public$lmm$reml)
     expect_s3_class(public$gee, "dsvert_dp_gaussian_exchangeable_gee")
     expect_identical(public$gee$coefficients, fit$coefficients)
-    expect_equal(public$gee$working_correlation,
-                 fit$sigma_b2 / (fit$sigma2 + fit$sigma_b2))
+    raw_alpha <- fit$sigma_b2 / (fit$sigma2 + fit$sigma_b2)
+    expect_equal(public$gee$working_correlation, min(raw_alpha, 1 - 2^-16))
+    expect_equal(public$gee$working_correlation_raw, raw_alpha)
+    expect_identical(public$gee$working_correlation_clamped,
+                     raw_alpha > 1 - 2^-16)
     expect_identical(public$gee$signed_artifact_version,
       "bounded-normalized-random-intercept-fixed-sufficient-statistics-v3")
     expect_null(public$gee$robust_covariance)
@@ -3696,11 +3702,14 @@ test_that("real Poisson random-intercept GLMM grid is plausible and Rock-replaya
       .package = "dsVertClient")
     expect_identical(public$direct$coefficients, fit$coefficients)
     expect_identical(public$alias$sigma_b2, fit$sigma_b2)
-    expect_error(ds.vertGLMM(
-      y_peer_a ~ x_peer_a, data = "data_peer_a", cluster_col = "site_peer_a",
-      analysis_id = "lmm_primary", family = "poisson",
-      random_slopes = "x_peer_a", datasources = conns),
-      "must exactly match the signed GLMM artifact")
+    testthat::with_mocked_bindings(
+      .dsvert_dp_glmm_grid_impl = route_glmm,
+      expect_error(ds.vertGLMM(
+        y_peer_a ~ x_peer_a, data = "data_peer_a", cluster_col = "site_peer_a",
+        analysis_id = "lmm_primary", family = "poisson",
+        random_slopes = "x_peer_a", datasources = conns),
+        "must exactly match the signed GLMM artifact"),
+      .package = "dsVertClient")
     before_rejected <- c(fixture$state$source_prepare, fixture$state$start)
     expect_error(ds.vertGLMM(
       y_peer_a ~ 1, data = "data_peer_a", cluster_col = "site_peer_a",
