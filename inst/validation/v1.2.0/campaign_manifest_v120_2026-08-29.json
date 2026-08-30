@@ -1,0 +1,142 @@
+{
+  "campaign": "dsVert run-at-pin validation, released v1.2.0 tags",
+  "date": "2026-08-29",
+  "host": {
+    "machine": "Davids-MacBook-Air.local",
+    "os": "macOS Darwin 24.4.0 arm64 (T8112, 8 cores, 16 GB)",
+    "note": "concurrent CPU load from an unrelated dsFlower campaign in another session"
+  },
+  "tags": {
+    "dsVert": {
+      "version": "1.2.0",
+      "sha": "9067cc7458374e9ad02003d7debcc098fa740aa5",
+      "snapshot": "scratchpad/snapshots-current/dsVert-120"
+    },
+    "dsVertClient": {
+      "version": "1.2.0",
+      "sha": "be57ff83f20a651a99ba5853ac44b8090df6418c",
+      "snapshot": "scratchpad/snapshots-current/dsVertClient-120"
+    }
+  },
+  "mpc_binary": {
+    "path": "inst/bin/darwin-arm64/dsvert-mpc",
+    "sha256": "246cf5d733d519ac49fe0318eecb85a14b8e2b957784e7c6a11e859ba89a5616",
+    "matches_shipped_sha256sums": true
+  },
+  "versions": {
+    "R": "4.5.2",
+    "dsVert": "1.2.0",
+    "dsVertClient": "1.2.0",
+    "DSI": "1.8.0",
+    "DSLite": "1.4.1",
+    "dsBase": "6.3.5",
+    "callr": "3.7.6",
+    "pkgload": "1.4.1",
+    "devtools": "2.4.6",
+    "testthat": "3.3.2",
+    "digest": "0.6.39",
+    "openssl": "2.3.5",
+    "jsonlite": "2.0.0"
+  },
+  "install": {
+    "command": "R CMD INSTALL --library=<Rlib> dsVert-120 dsVertClient-120",
+    "result": "both packages installed cleanly into the private lib; no missing dependencies",
+    "log": "logs/install.log"
+  },
+  "harnessA": {
+    "script": "dsVertClient-120/tools/validate_formal_dp_e2e.R",
+    "command": "Rscript dsVertClient/tools/validate_formal_dp_e2e.R --k=2,3,5 --output out/formal_dp_e2e_v120_2026-08-29.json",
+    "k_values": [2, 3, 5],
+    "result": "PASSED (all scenarios)",
+    "started_utc": "2026-08-29 20:44:42 UTC",
+    "completed_utc": "2026-08-29 21:00:18 UTC",
+    "duration_min": 15.6,
+    "scenario_summary": [
+      {"k": 2, "passed": true, "surface_method_count": 96, "dp_value": 13.342, "sticky_same_output": true, "restart_same_output": true, "sampler_invocations": [1, 1]},
+      {"k": 3, "passed": true, "surface_method_count": 96, "dp_value": 12.461, "sticky_same_output": true, "restart_same_output": true, "sampler_invocations": [1, 1, 0]},
+      {"k": 5, "passed": true, "surface_method_count": 96, "dp_value": 12.351, "sticky_same_output": true, "restart_same_output": true, "sampler_invocations": [1, 1, 0, 0, 0]}
+    ],
+    "artifact": "out/formal_dp_e2e_v120_2026-08-29.json",
+    "log": "logs/harnessA_formal_dp_e2e.log"
+  },
+  "harnessB": {
+    "script": "dsVertClient-120/tools/validate_promoted_historical_e2e.R",
+    "attempt1": {
+      "command": "DSVERT_SERVER_SOURCE=<dsVert-120> Rscript dsVertClient/tools/validate_promoted_historical_e2e.R",
+      "result": "COULD NOT COMPLETE: killed by the background-task supervisor ~57 min into gate 1 (Synopsis, full K=2/3/5 battery); no test failures had been observed before the kill",
+      "log": "logs/harnessB_promoted_historical_e2e.log"
+    },
+    "attempt2": {
+      "command": "Rscript harnessB_driver.R (same devtools::test filters and DSVERT_* env contract, detached)",
+      "deviations": [
+        "stop_on_failure=FALSE (measure all families instead of gating)",
+        "K coverage split: full family sweep at K=2; Count and Gaussian-LASSO-focal at K=2,3,5; describe/gaussian/glm_grid/survival additionally at K=3,5"
+      ],
+      "results_csv": "out/harnessB_results.csv",
+      "log": "logs/harnessB_v2.log",
+      "status": "COMPLETED 2026-08-30 (plus follow-up rechecks)",
+      "runs": [
+        {"run": "count_k235", "k": "2,3,5", "blocks": 1, "result": "PASS", "wall_s": 635},
+        {"run": "synopsis_full_k2", "k": "2", "blocks": 37, "result": "35 ran: 33 PASS, 1 errored (lmm), 1 failed (poisson_glmm negative path); 2 by-design skips (lasso focal, tamper needs K>=3)", "wall_s": 4794},
+        {"run": "lasso_focal_k235", "k": "2,3,5", "blocks": 2, "result": "PASS", "wall_s": 423},
+        {"run": "describe_k35", "k": "3,5", "blocks": 2, "result": "PASS", "wall_s": 510},
+        {"run": "gaussian_k35", "k": "3,5", "blocks": 2, "result": "PASS", "wall_s": 1007},
+        {"run": "glm_grid_k35", "k": "3,5", "blocks": 2, "result": "PASS", "wall_s": 1059},
+        {"run": "survival_k35", "k": "3,5", "blocks": 2, "result": "PASS", "wall_s": 369}
+      ],
+      "followup": {
+        "results_csv": "out/harnessB_followup_results.csv",
+        "log": "logs/harnessB_followup.log",
+        "runs": [
+          {"run": "lmm_k2_recheck", "k": "2", "result": "REPRODUCED: same block errored again, 'signed Gaussian random-intercept correlation is invalid' in the ds.vertGEE exchangeable adapter (test-dp-synopsis-describe-rock-e2e.R:2606); the 7 other lmm-family blocks passed", "wall_s": 749},
+          {"run": "poisson_glmm_k2_recheck", "k": "2", "result": "REPRODUCED: negative-path expect_error at test line 3699 expected 'must exactly match the signed GLMM artifact' but got 'Site peer_a has no inspectable DSI endpoint; verified HTTPS is required' (DSI transport-security check preempts the artifact-mismatch error); positive-path block passed", "wall_s": 78},
+          {"run": "cross_owner_tamper_k3", "k": "3", "result": "PASS (block skipped at K=2 by design, so covered here)", "wall_s": 5}
+        ]
+      },
+      "totals": {
+        "exercised_block_runs": 58,
+        "pass": 54,
+        "fail": 4,
+        "fail_note": "the 4 failing block-runs are 2 distinct blocks, each observed twice (original + deterministic reproduction)",
+        "expectations_passed": 1985,
+        "expectations_failed": 2,
+        "errored_blocks": 2
+      },
+      "family_summary": ["out/harnessB_family_summary.csv", "out/harnessB_family_summary.txt"]
+    }
+  },
+  "registry_export": {
+    "command": "ds.vertMethodStatus() from installed dsVertClient 1.2.0",
+    "artifact": "out/method_status_v120.csv",
+    "rows": 110,
+    "status_counts": {"promoted": 108, "provisional": 2},
+    "provisional_methods": ["ds.validateDPGaussianCertificate", "ds.validateDPLMMCertificate"],
+    "audit_date_attribute": "2026-08-28"
+  },
+  "worked_example": {
+    "status": "COMPLETED (run 3)",
+    "transcript": "out/worked_example_transcript.txt",
+    "custodian_scaffold": "out/worked_example_custodian.R",
+    "driver": "worked_example_driver_final.R",
+    "design": "2 process-isolated DSLite peers; site_a holds y,x1,x2 (+3 local-only ids), site_b holds x3,x4 (+4 local-only ids); 50 common patients, seed 20260829",
+    "analyst_calls": [
+      "ds.getIdentityPks(conns)",
+      "ds.psiAlign('D', 'patient_id', 'DA', datasources = conns)",
+      "ds.isPsiAligned('DA', datasources = conns) -> list(aligned=TRUE, n_common=NA)",
+      "ds.vertGLM(y ~ x1 + x2, data='DA', family='binomial', analysis_id='glm_primary', datasources=conns)",
+      "ds.vertDPCount('DA', datasources = conns)"
+    ],
+    "fit_entry_point": "ds.vertGLM analysis_id route (promoted signed finite binomial likelihood grid); selection among 3 custodian-signed candidates. In the published run-3 transcript the DP-noised likelihood selected candidate 2, the null model (released coefficients 0,0,0): at n=50 with total epsilon 1 the selection is noise-dominated. Run 2 (same data, independent noise draw) and run 1 (n=500) both selected candidate 1, the near-truth vector, i.e. the expected n-scaling behaviour.",
+    "timings_s": {"psi_align": 104.8, "glm_first_release": 95.1},
+    "dp_count_release": {"value": 19.12086, "accuracy_95_abs": 60.75711, "true_aligned_count": 50, "note": "true count lies within the public accuracy radius; wide radius reflects unit_capacity=1024 at epsilon 1"},
+    "replay": "repeated identical ds.vertGLM call returned a byte-identical release object (whole-object digest 6f562945aeb9a023e9edcaa4b6731db5 on both calls) and identical provenance certificate",
+    "n500_confirmation": "run 1 at n=500 COMPLETED after the transcript was published: ds.psiAlign 3121 s (PSI capacity bucket 512, exact-GC dominated, under CPU contention), aligned=TRUE/n_common=NA, ds.vertGLM first release 78.5 s selecting candidate 1 (near-truth vector, normalized_coefficients -0.5/0.8/-0.6), replay whole-release digest identical TRUE, ds.vertDPCount released TRUE; log logs/worked_example_run1.log (same driver before print() fixes, so some intermediate replay booleans are not echoed)"
+  },
+  "caveats": [
+    "Harness A validates the privacy gap against its theoretical envelope (monotonicity/dispersion contracts), never against zero; dp_value entries above are single noisy draws around the true aligned intersection of 12.",
+    "Both harnesses load dsVert/dsVertClient from the v1.2.0 source snapshots via pkgload (source-tree harness contract); the installed private-lib copies are used for the registry export and the worked example client.",
+    "The released monolithic harness B wrapper could not be completed on this host: the first attempt was killed by the background-task supervisor ~57 min into gate 1 with no failures observed. The structured rerun uses the same devtools::test filters and DSVERT_* env contract but stop_on_failure=FALSE and split K coverage (full sweep at K=2 only; Count and LASSO-focal at K=2,3,5; describe/gaussian/glm_grid/survival at K=3,5). 31 of 37 Synopsis blocks were therefore exercised at K=2 only.",
+    "Two K=2 anomalies are deterministic on this host (2/2 each) and would have halted the released stop-on-failure gate: (1) 'real random-intercept LMM Synopsis' errors in the ds.vertGEE exchangeable adapter with 'signed Gaussian random-intercept correlation is invalid'; (2) 'real Poisson random-intercept GLMM grid' negative-path expect_error observes the DSI transport-security refusal instead of the expected artifact-mismatch message. Whether these are environment-specific (R 4.5.2 / package-version drift vs the release environment) or genuine v1.2.0 regressions was not adjudicated here.",
+    "Harness B runs executed under CPU contention from an unrelated dsFlower campaign on the same 8-core host; wall times are upper bounds."
+  ]
+}

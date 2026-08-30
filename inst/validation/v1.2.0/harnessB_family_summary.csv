@@ -1,0 +1,59 @@
+"block","run","k_coverage","expectations","passed","failed","errored","outcome","wall_s"
+"real Poisson random-intercept GLMM grid","poisson_glmm_k2_recheck","2",17,16,1,FALSE,"FAIL",76.9
+"real Poisson random-intercept GLMM grid","synopsis_full_k2","2",17,16,1,FALSE,"FAIL",93.5
+"real random-intercept LMM Synopsis","lmm_k2_recheck","2",11,11,0,TRUE,"FAIL",92.5
+"real random-intercept LMM Synopsis","synopsis_full_k2","2",11,11,0,TRUE,"FAIL",161.4
+"Frequency safely readmits NB2, multinomial and ordinal y ~ 1","synopsis_full_k2","2",43,43,0,FALSE,"PASS",91.3
+"cross-owner Synopsis rejects a tampered witness before mutation","cross_owner_tamper_k3","3",3,3,0,FALSE,"PASS",4.5
+"focused Gaussian LASSO pseudo-IC is plausible and replayable","lasso_focal_k235","2,3,5",93,93,0,FALSE,"PASS",421.5
+"real Breslow Cox finite grid is certified and Rock-replayable","synopsis_full_k2","2",23,23,0,FALSE,"PASS",97.6
+"real Gaussian AR1 clipped-score sandwich GEE is bound and Rock-replayable","synopsis_full_k2","2",22,22,0,FALSE,"PASS",77.7
+"real Gaussian AR1 working-GLS GEE grid","synopsis_full_k2","2",24,24,0,FALSE,"PASS",136.3
+"real Gaussian random-slope LMM grid","lmm_k2_recheck","2",15,15,0,FALSE,"PASS",72.4
+"real Gaussian random-slope LMM grid","synopsis_full_k2","2",15,15,0,FALSE,"PASS",73.7
+"real Gaussian three-random-slope LMM grid","lmm_k2_recheck","2",14,14,0,FALSE,"PASS",89.3
+"real Gaussian three-random-slope LMM grid","synopsis_full_k2","2",14,14,0,FALSE,"PASS",88
+"real Gaussian two-random-slope LMM grid","lmm_k2_recheck","2",14,14,0,FALSE,"PASS",80.5
+"real Gaussian two-random-slope LMM grid","synopsis_full_k2","2",14,14,0,FALSE,"PASS",77.5
+"real Poisson one-random-slope GLMM grid","synopsis_full_k2","2",16,16,0,FALSE,"PASS",132.8
+"real Poisson three-random-slope GLMM grid","synopsis_full_k2","2",16,16,0,FALSE,"PASS",180.1
+"real Synopsis Count","count_k235","2,3,5",78,78,0,FALSE,"PASS",633.1
+"real Synopsis Describe","describe_k35","3,5",136,136,0,FALSE,"PASS",509.1
+"real Synopsis Describe","synopsis_full_k2","2",68,68,0,FALSE,"PASS",173.2
+"real Synopsis Frequency","synopsis_full_k2","2",26,26,0,FALSE,"PASS",71.7
+"real Synopsis Mantel-Haenszel","synopsis_full_k2","2",22,22,0,FALSE,"PASS",61.1
+"real Synopsis ROC","synopsis_full_k2","2",21,21,0,FALSE,"PASS",62
+"real Synopsis categorical MI","synopsis_full_k2","2",64,64,0,FALSE,"PASS",251.9
+"real Synopsis causal standardisation","synopsis_full_k2","2",60,60,0,FALSE,"PASS",60.9
+"real Synopsis survival","survival_k35","3,5",118,118,0,FALSE,"PASS",367.7
+"real Synopsis survival","synopsis_full_k2","2",59,59,0,FALSE,"PASS",116.8
+"real additive NB2 finite grid","synopsis_full_k2","2",17,17,0,FALSE,"PASS",179.8
+"real additive binary GLMM finite grid","lmm_k2_recheck","2",16,16,0,FALSE,"PASS",76.3
+"real additive binary GLMM finite grid","synopsis_full_k2","2",16,16,0,FALSE,"PASS",86.1
+"real additive binomial and Poisson grids are plausible and Rock-replayable","glm_grid_k35","3,5",96,96,0,FALSE,"PASS",1058
+"real additive binomial and Poisson grids are plausible and Rock-replayable","synopsis_full_k2","2",48,48,0,FALSE,"PASS",231.4
+"real additive fixed-effect random-intercept REML is source-scale plausible and Rock-replayable","lmm_k2_recheck","2",21,21,0,FALSE,"PASS",269.2
+"real additive fixed-effect random-intercept REML is source-scale plausible and Rock-replayable","synopsis_full_k2","2",21,21,0,FALSE,"PASS",491.3
+"real additive multinomial finite grid","synopsis_full_k2","2",21,21,0,FALSE,"PASS",182.4
+"real additive ordinal finite grid","synopsis_full_k2","2",19,19,0,FALSE,"PASS",81.6
+"real binary random-intercept GLMM moment route","lmm_k2_recheck","2",15,15,0,FALSE,"PASS",67.7
+"real binary random-intercept GLMM moment route","synopsis_full_k2","2",15,15,0,FALSE,"PASS",72
+"real binary random-slope GLMM grid","synopsis_full_k2","2",15,15,0,FALSE,"PASS",104.6
+"real binary three-random-slope GLMM grid","synopsis_full_k2","2",16,16,0,FALSE,"PASS",110.2
+"real cross-owner Synopsis contingency","synopsis_full_k2","2",35,35,0,FALSE,"PASS",123.5
+"real finite binomial and Poisson L1 paths are plausible and Rock-replayable","synopsis_full_k2","2",34,34,0,FALSE,"PASS",225.4
+"real robust binomial and Poisson independence GEE grids are plausible and Rock-replayable","synopsis_full_k2","2",41,41,0,FALSE,"PASS",290.1
+"real same-owner Gaussian Synopsis and correlation are plausible and Rock-replayable","gaussian_k35","3,5",180,180,0,FALSE,"PASS",1005.2
+"real same-owner Gaussian Synopsis and correlation are plausible and Rock-replayable","synopsis_full_k2","2",129,129,0,FALSE,"PASS",371.5
+"real same-owner Synopsis contingency","synopsis_full_k2","2",101,101,0,FALSE,"PASS",78.1
+"real same-owner Synopsis correlation","synopsis_full_k2","2",21,21,0,FALSE,"PASS",90.9
+"real stratified Synopsis supports sticky standardisation","synopsis_full_k2","2",49,49,0,FALSE,"PASS",63.8
+"the Synopsis real-E2E topology selector preserves the full gate","cross_owner_tamper_k3","3",3,3,0,FALSE,"PASS",0
+"the Synopsis real-E2E topology selector preserves the full gate","describe_k35","3,5",3,3,0,FALSE,"PASS",0
+"the Synopsis real-E2E topology selector preserves the full gate","gaussian_k35","3,5",3,3,0,FALSE,"PASS",0
+"the Synopsis real-E2E topology selector preserves the full gate","glm_grid_k35","3,5",3,3,0,FALSE,"PASS",0
+"the Synopsis real-E2E topology selector preserves the full gate","lasso_focal_k235","2,3,5",3,3,0,FALSE,"PASS",0
+"the Synopsis real-E2E topology selector preserves the full gate","lmm_k2_recheck","2",3,3,0,FALSE,"PASS",0
+"the Synopsis real-E2E topology selector preserves the full gate","poisson_glmm_k2_recheck","2",3,3,0,FALSE,"PASS",0
+"the Synopsis real-E2E topology selector preserves the full gate","survival_k35","3,5",3,3,0,FALSE,"PASS",0
+"the Synopsis real-E2E topology selector preserves the full gate","synopsis_full_k2","2",3,3,0,FALSE,"PASS",0

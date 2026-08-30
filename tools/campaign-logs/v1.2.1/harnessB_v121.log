@@ -1,0 +1,489 @@
+
+==RUN count_k235 (filter=dp-count-synopsis-rock-e2e family=<all> K=2,3,5)==
+ℹ Testing dsVertClient
+dp-count-synopsis-rock-e2e: ..............................................................................
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+==RUN count_k235 done in 192.9 s: tests=1 failed=0 errored=0==
+
+==RUN synopsis_full_k2 (filter=dp-synopsis-describe-rock-e2e family=<all> K=2)==
+ℹ Testing dsVertClient
+dp-synopsis-describe-rock-e2e: .............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................SS
+
+══ Skipped ═════════════════════════════════════════════════════════════════════
+1. focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4440:3') - Reason: set DSVERT_TEST_SYNOPSIS_E2E_FAMILY=gaussian_lasso_focal
+
+2. cross-owner Synopsis rejects a tampered witness before mutation ('test-dp-synopsis-describe-rock-e2e.R:4536:3') - Reason: cross-owner witness tamper requires K=3 or K=5
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+==RUN synopsis_full_k2 done in 3453 s: tests=37 failed=0 errored=0==
+
+==RUN lasso_focal_k235 (filter=dp-synopsis-describe-rock-e2e family=gaussian_lasso_focal K=2,3,5)==
+ℹ Testing dsVertClient
+dp-synopsis-describe-rock-e2e: ...SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS.............................................................................................S
+
+══ Skipped ═════════════════════════════════════════════════════════════════════
+1. real Synopsis Describe is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:841:3') - Reason: focused on gaussian_lasso_focal
+
+2. real same-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1006:3') - Reason: focused on gaussian_lasso_focal
+
+3. real stratified Synopsis supports sticky standardisation at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1198:3') - Reason: focused on gaussian_lasso_focal
+
+4. real Synopsis Mantel-Haenszel is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1286:3') - Reason: focused on gaussian_lasso_focal
+
+5. real Synopsis ROC is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1340:3') - Reason: focused on gaussian_lasso_focal
+
+6. real Synopsis causal standardisation is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1391:3') - Reason: focused on gaussian_lasso_focal
+
+7. real cross-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1518:3') - Reason: focused on gaussian_lasso_focal
+
+8. real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1619:3') - Reason: focused on gaussian_lasso_focal
+
+9. Frequency safely readmits NB2, multinomial and ordinal y ~ 1 at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1688:3') - Reason: focused on gaussian_lasso_focal
+
+10. real Synopsis categorical MI is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1798:3') - Reason: focused on gaussian_lasso_focal
+
+11. real Synopsis survival is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1953:3') - Reason: focused on gaussian_lasso_focal
+
+12. real Breslow Cox finite grid is certified and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2064:3') - Reason: focused on gaussian_lasso_focal
+
+13. real same-owner Synopsis correlation is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2142:3') - Reason: focused on gaussian_lasso_focal
+
+14. real same-owner Gaussian Synopsis and correlation are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2207:3') - Reason: focused on gaussian_lasso_focal
+
+15. real random-intercept LMM Synopsis is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2573:3') - Reason: focused on gaussian_lasso_focal
+
+16. real additive fixed-effect random-intercept REML is source-scale plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2677:3') - Reason: focused on gaussian_lasso_focal
+
+17. real Gaussian AR1 working-GLS GEE grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2789:3') - Reason: focused on gaussian_lasso_focal
+
+18. real Gaussian AR1 clipped-score sandwich GEE is bound and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2892:3') - Reason: focused on gaussian_lasso_focal
+
+19. real Gaussian random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2992:3') - Reason: focused on gaussian_lasso_focal
+
+20. real Gaussian two-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3086:3') - Reason: focused on gaussian_lasso_focal
+
+21. real Gaussian three-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3182:3') - Reason: focused on gaussian_lasso_focal
+
+22. real binary random-intercept GLMM moment route is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3294:3') - Reason: focused on gaussian_lasso_focal
+
+23. real additive binary GLMM finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3355:3') - Reason: focused on gaussian_lasso_focal
+
+24. real binary random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3434:3') - Reason: focused on gaussian_lasso_focal
+
+25. real binary three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3520:3') - Reason: focused on gaussian_lasso_focal
+
+26. real Poisson random-intercept GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3639:3') - Reason: focused on gaussian_lasso_focal
+
+27. real Poisson one-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3735:3') - Reason: focused on gaussian_lasso_focal
+
+28. real Poisson three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3836:3') - Reason: focused on gaussian_lasso_focal
+
+29. real additive NB2 finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3958:3') - Reason: focused on gaussian_lasso_focal
+
+30. real additive multinomial finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4019:3') - Reason: focused on gaussian_lasso_focal
+
+31. real additive ordinal finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4089:3') - Reason: focused on gaussian_lasso_focal
+
+32. real additive binomial and Poisson grids are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4151:3') - Reason: focused on gaussian_lasso_focal
+
+33. real finite binomial and Poisson L1 paths are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4239:3') - Reason: focused on gaussian_lasso_focal
+
+34. real robust binomial and Poisson independence GEE grids are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4318:3') - Reason: focused on gaussian_lasso_focal
+
+35. cross-owner Synopsis rejects a tampered witness before mutation ('test-dp-synopsis-describe-rock-e2e.R:4531:3') - Reason: focused on gaussian_lasso_focal
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+==RUN lasso_focal_k235 done in 281.8 s: tests=37 failed=0 errored=0==
+
+==RUN describe_k35 (filter=dp-synopsis-describe-rock-e2e family=describe K=3,5)==
+ℹ Testing dsVertClient
+dp-synopsis-describe-rock-e2e: ...........................................................................................................................................SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+
+══ Skipped ═════════════════════════════════════════════════════════════════════
+1. real same-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1006:3') - Reason: focused on describe
+
+2. real stratified Synopsis supports sticky standardisation at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1198:3') - Reason: focused on describe
+
+3. real Synopsis Mantel-Haenszel is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1286:3') - Reason: focused on describe
+
+4. real Synopsis ROC is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1340:3') - Reason: focused on describe
+
+5. real Synopsis causal standardisation is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1391:3') - Reason: focused on describe
+
+6. real cross-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1518:3') - Reason: focused on describe
+
+7. real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1619:3') - Reason: focused on describe
+
+8. Frequency safely readmits NB2, multinomial and ordinal y ~ 1 at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1688:3') - Reason: focused on describe
+
+9. real Synopsis categorical MI is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1798:3') - Reason: focused on describe
+
+10. real Synopsis survival is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1953:3') - Reason: focused on describe
+
+11. real Breslow Cox finite grid is certified and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2064:3') - Reason: focused on describe
+
+12. real same-owner Synopsis correlation is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2142:3') - Reason: focused on describe
+
+13. real same-owner Gaussian Synopsis and correlation are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2207:3') - Reason: focused on describe
+
+14. real random-intercept LMM Synopsis is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2573:3') - Reason: focused on describe
+
+15. real additive fixed-effect random-intercept REML is source-scale plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2677:3') - Reason: focused on describe
+
+16. real Gaussian AR1 working-GLS GEE grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2789:3') - Reason: focused on describe
+
+17. real Gaussian AR1 clipped-score sandwich GEE is bound and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2892:3') - Reason: focused on describe
+
+18. real Gaussian random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2992:3') - Reason: focused on describe
+
+19. real Gaussian two-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3086:3') - Reason: focused on describe
+
+20. real Gaussian three-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3182:3') - Reason: focused on describe
+
+21. real binary random-intercept GLMM moment route is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3294:3') - Reason: focused on describe
+
+22. real additive binary GLMM finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3355:3') - Reason: focused on describe
+
+23. real binary random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3434:3') - Reason: focused on describe
+
+24. real binary three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3520:3') - Reason: focused on describe
+
+25. real Poisson random-intercept GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3639:3') - Reason: focused on describe
+
+26. real Poisson one-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3735:3') - Reason: focused on describe
+
+27. real Poisson three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3836:3') - Reason: focused on describe
+
+28. real additive NB2 finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3958:3') - Reason: focused on describe
+
+29. real additive multinomial finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4019:3') - Reason: focused on describe
+
+30. real additive ordinal finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4089:3') - Reason: focused on describe
+
+31. real additive binomial and Poisson grids are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4151:3') - Reason: focused on describe
+
+32. real finite binomial and Poisson L1 paths are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4239:3') - Reason: focused on describe
+
+33. real robust binomial and Poisson independence GEE grids are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4318:3') - Reason: focused on describe
+
+34. focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4440:3') - Reason: set DSVERT_TEST_SYNOPSIS_E2E_FAMILY=gaussian_lasso_focal
+
+35. cross-owner Synopsis rejects a tampered witness before mutation ('test-dp-synopsis-describe-rock-e2e.R:4531:3') - Reason: focused on describe
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+==RUN describe_k35 done in 467.4 s: tests=37 failed=0 errored=0==
+
+==RUN gaussian_k35 (filter=dp-synopsis-describe-rock-e2e family=gaussian K=3,5)==
+ℹ Testing dsVertClient
+dp-synopsis-describe-rock-e2e: ...SSSSSSSSSSSSS....................................................................................................................................................................................SSSSSSSSSSSSSSSSSSSSSS
+
+══ Skipped ═════════════════════════════════════════════════════════════════════
+1. real Synopsis Describe is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:841:3') - Reason: focused on gaussian
+
+2. real same-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1006:3') - Reason: focused on gaussian
+
+3. real stratified Synopsis supports sticky standardisation at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1198:3') - Reason: focused on gaussian
+
+4. real Synopsis Mantel-Haenszel is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1286:3') - Reason: focused on gaussian
+
+5. real Synopsis ROC is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1340:3') - Reason: focused on gaussian
+
+6. real Synopsis causal standardisation is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1391:3') - Reason: focused on gaussian
+
+7. real cross-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1518:3') - Reason: focused on gaussian
+
+8. real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1619:3') - Reason: focused on gaussian
+
+9. Frequency safely readmits NB2, multinomial and ordinal y ~ 1 at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1688:3') - Reason: focused on gaussian
+
+10. real Synopsis categorical MI is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1798:3') - Reason: focused on gaussian
+
+11. real Synopsis survival is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1953:3') - Reason: focused on gaussian
+
+12. real Breslow Cox finite grid is certified and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2064:3') - Reason: focused on gaussian
+
+13. real same-owner Synopsis correlation is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2142:3') - Reason: focused on gaussian
+
+14. real random-intercept LMM Synopsis is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2573:3') - Reason: focused on gaussian
+
+15. real additive fixed-effect random-intercept REML is source-scale plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2677:3') - Reason: focused on gaussian
+
+16. real Gaussian AR1 working-GLS GEE grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2789:3') - Reason: focused on gaussian
+
+17. real Gaussian AR1 clipped-score sandwich GEE is bound and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2892:3') - Reason: focused on gaussian
+
+18. real Gaussian random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2992:3') - Reason: focused on gaussian
+
+19. real Gaussian two-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3086:3') - Reason: focused on gaussian
+
+20. real Gaussian three-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3182:3') - Reason: focused on gaussian
+
+21. real binary random-intercept GLMM moment route is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3294:3') - Reason: focused on gaussian
+
+22. real additive binary GLMM finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3355:3') - Reason: focused on gaussian
+
+23. real binary random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3434:3') - Reason: focused on gaussian
+
+24. real binary three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3520:3') - Reason: focused on gaussian
+
+25. real Poisson random-intercept GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3639:3') - Reason: focused on gaussian
+
+26. real Poisson one-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3735:3') - Reason: focused on gaussian
+
+27. real Poisson three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3836:3') - Reason: focused on gaussian
+
+28. real additive NB2 finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3958:3') - Reason: focused on gaussian
+
+29. real additive multinomial finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4019:3') - Reason: focused on gaussian
+
+30. real additive ordinal finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4089:3') - Reason: focused on gaussian
+
+31. real additive binomial and Poisson grids are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4151:3') - Reason: focused on gaussian
+
+32. real finite binomial and Poisson L1 paths are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4239:3') - Reason: focused on gaussian
+
+33. real robust binomial and Poisson independence GEE grids are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4318:3') - Reason: focused on gaussian
+
+34. focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4440:3') - Reason: set DSVERT_TEST_SYNOPSIS_E2E_FAMILY=gaussian_lasso_focal
+
+35. cross-owner Synopsis rejects a tampered witness before mutation ('test-dp-synopsis-describe-rock-e2e.R:4531:3') - Reason: focused on gaussian
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+==RUN gaussian_k35 done in 895.5 s: tests=37 failed=0 errored=0==
+
+==RUN glm_grid_k35 (filter=dp-synopsis-describe-rock-e2e family=glm_grid K=3,5)==
+ℹ Testing dsVertClient
+dp-synopsis-describe-rock-e2e: ...SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS................................................................................................SSSS
+
+══ Skipped ═════════════════════════════════════════════════════════════════════
+1. real Synopsis Describe is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:841:3') - Reason: focused on glm_grid
+
+2. real same-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1006:3') - Reason: focused on glm_grid
+
+3. real stratified Synopsis supports sticky standardisation at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1198:3') - Reason: focused on glm_grid
+
+4. real Synopsis Mantel-Haenszel is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1286:3') - Reason: focused on glm_grid
+
+5. real Synopsis ROC is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1340:3') - Reason: focused on glm_grid
+
+6. real Synopsis causal standardisation is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1391:3') - Reason: focused on glm_grid
+
+7. real cross-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1518:3') - Reason: focused on glm_grid
+
+8. real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1619:3') - Reason: focused on glm_grid
+
+9. Frequency safely readmits NB2, multinomial and ordinal y ~ 1 at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1688:3') - Reason: focused on glm_grid
+
+10. real Synopsis categorical MI is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1798:3') - Reason: focused on glm_grid
+
+11. real Synopsis survival is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1953:3') - Reason: focused on glm_grid
+
+12. real Breslow Cox finite grid is certified and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2064:3') - Reason: focused on glm_grid
+
+13. real same-owner Synopsis correlation is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2142:3') - Reason: focused on glm_grid
+
+14. real same-owner Gaussian Synopsis and correlation are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2207:3') - Reason: focused on glm_grid
+
+15. real random-intercept LMM Synopsis is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2573:3') - Reason: focused on glm_grid
+
+16. real additive fixed-effect random-intercept REML is source-scale plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2677:3') - Reason: focused on glm_grid
+
+17. real Gaussian AR1 working-GLS GEE grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2789:3') - Reason: focused on glm_grid
+
+18. real Gaussian AR1 clipped-score sandwich GEE is bound and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2892:3') - Reason: focused on glm_grid
+
+19. real Gaussian random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2992:3') - Reason: focused on glm_grid
+
+20. real Gaussian two-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3086:3') - Reason: focused on glm_grid
+
+21. real Gaussian three-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3182:3') - Reason: focused on glm_grid
+
+22. real binary random-intercept GLMM moment route is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3294:3') - Reason: focused on glm_grid
+
+23. real additive binary GLMM finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3355:3') - Reason: focused on glm_grid
+
+24. real binary random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3434:3') - Reason: focused on glm_grid
+
+25. real binary three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3520:3') - Reason: focused on glm_grid
+
+26. real Poisson random-intercept GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3639:3') - Reason: focused on glm_grid
+
+27. real Poisson one-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3735:3') - Reason: focused on glm_grid
+
+28. real Poisson three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3836:3') - Reason: focused on glm_grid
+
+29. real additive NB2 finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3958:3') - Reason: focused on glm_grid
+
+30. real additive multinomial finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4019:3') - Reason: focused on glm_grid
+
+31. real additive ordinal finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4089:3') - Reason: focused on glm_grid
+
+32. real finite binomial and Poisson L1 paths are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4239:3') - Reason: focused on glm_grid
+
+33. real robust binomial and Poisson independence GEE grids are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4318:3') - Reason: focused on glm_grid
+
+34. focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4440:3') - Reason: set DSVERT_TEST_SYNOPSIS_E2E_FAMILY=gaussian_lasso_focal
+
+35. cross-owner Synopsis rejects a tampered witness before mutation ('test-dp-synopsis-describe-rock-e2e.R:4531:3') - Reason: focused on glm_grid
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+==RUN glm_grid_k35 done in 908.5 s: tests=37 failed=0 errored=0==
+
+==RUN survival_k35 (filter=dp-synopsis-describe-rock-e2e family=survival K=3,5)==
+ℹ Testing dsVertClient
+dp-synopsis-describe-rock-e2e: ...SSSSSSSSSS......................................................................................................................SSSSSSSSSSSSSSSSSSSSSSSSS
+
+══ Skipped ═════════════════════════════════════════════════════════════════════
+1. real Synopsis Describe is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:841:3') - Reason: focused on survival
+
+2. real same-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1006:3') - Reason: focused on survival
+
+3. real stratified Synopsis supports sticky standardisation at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1198:3') - Reason: focused on survival
+
+4. real Synopsis Mantel-Haenszel is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1286:3') - Reason: focused on survival
+
+5. real Synopsis ROC is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1340:3') - Reason: focused on survival
+
+6. real Synopsis causal standardisation is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1391:3') - Reason: focused on survival
+
+7. real cross-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1518:3') - Reason: focused on survival
+
+8. real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1619:3') - Reason: focused on survival
+
+9. Frequency safely readmits NB2, multinomial and ordinal y ~ 1 at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1688:3') - Reason: focused on survival
+
+10. real Synopsis categorical MI is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1798:3') - Reason: focused on survival
+
+11. real Breslow Cox finite grid is certified and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2064:3') - Reason: focused on survival
+
+12. real same-owner Synopsis correlation is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2142:3') - Reason: focused on survival
+
+13. real same-owner Gaussian Synopsis and correlation are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2207:3') - Reason: focused on survival
+
+14. real random-intercept LMM Synopsis is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2573:3') - Reason: focused on survival
+
+15. real additive fixed-effect random-intercept REML is source-scale plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2677:3') - Reason: focused on survival
+
+16. real Gaussian AR1 working-GLS GEE grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2789:3') - Reason: focused on survival
+
+17. real Gaussian AR1 clipped-score sandwich GEE is bound and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2892:3') - Reason: focused on survival
+
+18. real Gaussian random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2992:3') - Reason: focused on survival
+
+19. real Gaussian two-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3086:3') - Reason: focused on survival
+
+20. real Gaussian three-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3182:3') - Reason: focused on survival
+
+21. real binary random-intercept GLMM moment route is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3294:3') - Reason: focused on survival
+
+22. real additive binary GLMM finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3355:3') - Reason: focused on survival
+
+23. real binary random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3434:3') - Reason: focused on survival
+
+24. real binary three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3520:3') - Reason: focused on survival
+
+25. real Poisson random-intercept GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3639:3') - Reason: focused on survival
+
+26. real Poisson one-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3735:3') - Reason: focused on survival
+
+27. real Poisson three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3836:3') - Reason: focused on survival
+
+28. real additive NB2 finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3958:3') - Reason: focused on survival
+
+29. real additive multinomial finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4019:3') - Reason: focused on survival
+
+30. real additive ordinal finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4089:3') - Reason: focused on survival
+
+31. real additive binomial and Poisson grids are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4151:3') - Reason: focused on survival
+
+32. real finite binomial and Poisson L1 paths are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4239:3') - Reason: focused on survival
+
+33. real robust binomial and Poisson independence GEE grids are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4318:3') - Reason: focused on survival
+
+34. focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4440:3') - Reason: set DSVERT_TEST_SYNOPSIS_E2E_FAMILY=gaussian_lasso_focal
+
+35. cross-owner Synopsis rejects a tampered witness before mutation ('test-dp-synopsis-describe-rock-e2e.R:4531:3') - Reason: focused on survival
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+==RUN survival_k35 done in 361.5 s: tests=37 failed=0 errored=0==
+
+==RUN cross_owner_tamper_k3 (filter=dp-synopsis-describe-rock-e2e family=cross_owner_tamper K=3)==
+ℹ Testing dsVertClient
+dp-synopsis-describe-rock-e2e: ...SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS...
+
+══ Skipped ═════════════════════════════════════════════════════════════════════
+1. real Synopsis Describe is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:841:3') - Reason: focused on cross_owner_tamper
+
+2. real same-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1006:3') - Reason: focused on cross_owner_tamper
+
+3. real stratified Synopsis supports sticky standardisation at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1198:3') - Reason: focused on cross_owner_tamper
+
+4. real Synopsis Mantel-Haenszel is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1286:3') - Reason: focused on cross_owner_tamper
+
+5. real Synopsis ROC is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1340:3') - Reason: focused on cross_owner_tamper
+
+6. real Synopsis causal standardisation is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1391:3') - Reason: focused on cross_owner_tamper
+
+7. real cross-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1518:3') - Reason: focused on cross_owner_tamper
+
+8. real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1619:3') - Reason: focused on cross_owner_tamper
+
+9. Frequency safely readmits NB2, multinomial and ordinal y ~ 1 at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1688:3') - Reason: focused on cross_owner_tamper
+
+10. real Synopsis categorical MI is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1798:3') - Reason: focused on cross_owner_tamper
+
+11. real Synopsis survival is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:1953:3') - Reason: focused on cross_owner_tamper
+
+12. real Breslow Cox finite grid is certified and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2064:3') - Reason: focused on cross_owner_tamper
+
+13. real same-owner Synopsis correlation is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2142:3') - Reason: focused on cross_owner_tamper
+
+14. real same-owner Gaussian Synopsis and correlation are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2207:3') - Reason: focused on cross_owner_tamper
+
+15. real random-intercept LMM Synopsis is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2573:3') - Reason: focused on cross_owner_tamper
+
+16. real additive fixed-effect random-intercept REML is source-scale plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2677:3') - Reason: focused on cross_owner_tamper
+
+17. real Gaussian AR1 working-GLS GEE grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2789:3') - Reason: focused on cross_owner_tamper
+
+18. real Gaussian AR1 clipped-score sandwich GEE is bound and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2892:3') - Reason: focused on cross_owner_tamper
+
+19. real Gaussian random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:2992:3') - Reason: focused on cross_owner_tamper
+
+20. real Gaussian two-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3086:3') - Reason: focused on cross_owner_tamper
+
+21. real Gaussian three-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3182:3') - Reason: focused on cross_owner_tamper
+
+22. real binary random-intercept GLMM moment route is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3294:3') - Reason: focused on cross_owner_tamper
+
+23. real additive binary GLMM finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3355:3') - Reason: focused on cross_owner_tamper
+
+24. real binary random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3434:3') - Reason: focused on cross_owner_tamper
+
+25. real binary three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3520:3') - Reason: focused on cross_owner_tamper
+
+26. real Poisson random-intercept GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3639:3') - Reason: focused on cross_owner_tamper
+
+27. real Poisson one-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3735:3') - Reason: focused on cross_owner_tamper
+
+28. real Poisson three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3836:3') - Reason: focused on cross_owner_tamper
+
+29. real additive NB2 finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:3958:3') - Reason: focused on cross_owner_tamper
+
+30. real additive multinomial finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4019:3') - Reason: focused on cross_owner_tamper
+
+31. real additive ordinal finite grid is plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4089:3') - Reason: focused on cross_owner_tamper
+
+32. real additive binomial and Poisson grids are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4151:3') - Reason: focused on cross_owner_tamper
+
+33. real finite binomial and Poisson L1 paths are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4239:3') - Reason: focused on cross_owner_tamper
+
+34. real robust binomial and Poisson independence GEE grids are plausible and Rock-replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4318:3') - Reason: focused on cross_owner_tamper
+
+35. focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3/5 ('test-dp-synopsis-describe-rock-e2e.R:4440:3') - Reason: set DSVERT_TEST_SYNOPSIS_E2E_FAMILY=gaussian_lasso_focal
+
+══ DONE ════════════════════════════════════════════════════════════════════════
+==RUN cross_owner_tamper_k3 done in 18.3 s: tests=37 failed=0 errored=0==
+
+==BATTERY V121 COMPLETE==

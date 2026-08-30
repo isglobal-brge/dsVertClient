@@ -1,0 +1,74 @@
+dsVertClient v1.2.0 promoted-historical Rock E2E battery, 2026-08-29/30, macOS arm64, R 4.5.2
+Filters: dp-synopsis-describe-rock-e2e + dp-count-synopsis-rock-e2e (devtools::test, DSVERT_SERVER_SOURCE=dsVert v1.2.0 snapshot)
+Coverage: full 37-block sweep at K=2; Count and Gaussian-LASSO-focal at K=2,3,5; describe/gaussian/glm_grid/survival at K=3,5;
+          rechecks: lmm and poisson_glmm at K=2, cross_owner_tamper at K=3. Blocks skipped in focused runs are by design and excluded.
+
+block                                                                      run                      K       nexp  pass fail err  res   wall_s
+real Poisson random-intercept GLMM grid                                    poisson_glmm_k2_recheck  2         17    16    1   0  FAIL      77
+real Poisson random-intercept GLMM grid                                    synopsis_full_k2         2         17    16    1   0  FAIL      94
+real random-intercept LMM Synopsis                                         lmm_k2_recheck           2         11    11    0   1  FAIL      92
+real random-intercept LMM Synopsis                                         synopsis_full_k2         2         11    11    0   1  FAIL     161
+Frequency safely readmits NB2, multinomial and ordinal y ~ 1               synopsis_full_k2         2         43    43    0   0  PASS      91
+cross-owner Synopsis rejects a tampered witness before mutation            cross_owner_tamper_k3    3          3     3    0   0  PASS       4
+focused Gaussian LASSO pseudo-IC is plausible and replayable               lasso_focal_k235         2,3,5     93    93    0   0  PASS     422
+real Breslow Cox finite grid is certified and Rock-replayable              synopsis_full_k2         2         23    23    0   0  PASS      98
+real Gaussian AR1 clipped-score sandwich GEE is bound and Rock-replayable  synopsis_full_k2         2         22    22    0   0  PASS      78
+real Gaussian AR1 working-GLS GEE grid                                     synopsis_full_k2         2         24    24    0   0  PASS     136
+real Gaussian random-slope LMM grid                                        lmm_k2_recheck           2         15    15    0   0  PASS      72
+real Gaussian random-slope LMM grid                                        synopsis_full_k2         2         15    15    0   0  PASS      74
+real Gaussian three-random-slope LMM grid                                  lmm_k2_recheck           2         14    14    0   0  PASS      89
+real Gaussian three-random-slope LMM grid                                  synopsis_full_k2         2         14    14    0   0  PASS      88
+real Gaussian two-random-slope LMM grid                                    lmm_k2_recheck           2         14    14    0   0  PASS      80
+real Gaussian two-random-slope LMM grid                                    synopsis_full_k2         2         14    14    0   0  PASS      78
+real Poisson one-random-slope GLMM grid                                    synopsis_full_k2         2         16    16    0   0  PASS     133
+real Poisson three-random-slope GLMM grid                                  synopsis_full_k2         2         16    16    0   0  PASS     180
+real Synopsis Count                                                        count_k235               2,3,5     78    78    0   0  PASS     633
+real Synopsis Describe                                                     describe_k35             3,5      136   136    0   0  PASS     509
+real Synopsis Describe                                                     synopsis_full_k2         2         68    68    0   0  PASS     173
+real Synopsis Frequency                                                    synopsis_full_k2         2         26    26    0   0  PASS      72
+real Synopsis Mantel-Haenszel                                              synopsis_full_k2         2         22    22    0   0  PASS      61
+real Synopsis ROC                                                          synopsis_full_k2         2         21    21    0   0  PASS      62
+real Synopsis categorical MI                                               synopsis_full_k2         2         64    64    0   0  PASS     252
+real Synopsis causal standardisation                                       synopsis_full_k2         2         60    60    0   0  PASS      61
+real Synopsis survival                                                     survival_k35             3,5      118   118    0   0  PASS     368
+real Synopsis survival                                                     synopsis_full_k2         2         59    59    0   0  PASS     117
+real additive NB2 finite grid                                              synopsis_full_k2         2         17    17    0   0  PASS     180
+real additive binary GLMM finite grid                                      lmm_k2_recheck           2         16    16    0   0  PASS      76
+real additive binary GLMM finite grid                                      synopsis_full_k2         2         16    16    0   0  PASS      86
+real additive binomial and Poisson grids are plausible and Rock-replayable glm_grid_k35             3,5       96    96    0   0  PASS    1058
+real additive binomial and Poisson grids are plausible and Rock-replayable synopsis_full_k2         2         48    48    0   0  PASS     231
+real additive fixed-effect random-intercept REML is source-scale plausible lmm_k2_recheck           2         21    21    0   0  PASS     269
+real additive fixed-effect random-intercept REML is source-scale plausible synopsis_full_k2         2         21    21    0   0  PASS     491
+real additive multinomial finite grid                                      synopsis_full_k2         2         21    21    0   0  PASS     182
+real additive ordinal finite grid                                          synopsis_full_k2         2         19    19    0   0  PASS      82
+real binary random-intercept GLMM moment route                             lmm_k2_recheck           2         15    15    0   0  PASS      68
+real binary random-intercept GLMM moment route                             synopsis_full_k2         2         15    15    0   0  PASS      72
+real binary random-slope GLMM grid                                         synopsis_full_k2         2         15    15    0   0  PASS     105
+real binary three-random-slope GLMM grid                                   synopsis_full_k2         2         16    16    0   0  PASS     110
+real cross-owner Synopsis contingency                                      synopsis_full_k2         2         35    35    0   0  PASS     124
+real finite binomial and Poisson L1 paths are plausible and Rock-replayabl synopsis_full_k2         2         34    34    0   0  PASS     225
+real robust binomial and Poisson independence GEE grids are plausible and  synopsis_full_k2         2         41    41    0   0  PASS     290
+real same-owner Gaussian Synopsis and correlation are plausible and Rock-r gaussian_k35             3,5      180   180    0   0  PASS    1005
+real same-owner Gaussian Synopsis and correlation are plausible and Rock-r synopsis_full_k2         2        129   129    0   0  PASS     372
+real same-owner Synopsis contingency                                       synopsis_full_k2         2        101   101    0   0  PASS      78
+real same-owner Synopsis correlation                                       synopsis_full_k2         2         21    21    0   0  PASS      91
+real stratified Synopsis supports sticky standardisation                   synopsis_full_k2         2         49    49    0   0  PASS      64
+the Synopsis real-E2E topology selector preserves the full gate            cross_owner_tamper_k3    3          3     3    0   0  PASS       0
+the Synopsis real-E2E topology selector preserves the full gate            describe_k35             3,5        3     3    0   0  PASS       0
+the Synopsis real-E2E topology selector preserves the full gate            gaussian_k35             3,5        3     3    0   0  PASS       0
+the Synopsis real-E2E topology selector preserves the full gate            glm_grid_k35             3,5        3     3    0   0  PASS       0
+the Synopsis real-E2E topology selector preserves the full gate            lasso_focal_k235         2,3,5      3     3    0   0  PASS       0
+the Synopsis real-E2E topology selector preserves the full gate            lmm_k2_recheck           2          3     3    0   0  PASS       0
+the Synopsis real-E2E topology selector preserves the full gate            poisson_glmm_k2_recheck  2          3     3    0   0  PASS       0
+the Synopsis real-E2E topology selector preserves the full gate            survival_k35             3,5        3     3    0   0  PASS       0
+the Synopsis real-E2E topology selector preserves the full gate            synopsis_full_k2         2          3     3    0   0  PASS       0
+
+TOTALS: exercised block-runs: 58  PASS: 54  FAIL: 4 
+expectations passed: 1985  failed: 2  errored blocks: 2 
+
+The 2 failing block-runs are the same 2 blocks, each reproduced once (2/2) in a focused recheck:
+ 1) real random-intercept LMM Synopsis (K=2): ds.vertGEE exchangeable adapter errors with
+    "signed Gaussian random-intercept correlation is invalid" (test line 2606).
+ 2) real Poisson random-intercept GLMM grid (K=2): negative-path expect_error at test line 3699
+    expected "must exactly match the signed GLMM artifact" but got
+    "Site 'peer_a' has no inspectable DSI endpoint; verified HTTPS is required".

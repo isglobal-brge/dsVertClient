@@ -1,0 +1,49 @@
+test_block,run,k_coverage,expectations,failed,errored,outcome,wall_s
+"Frequency safely readmits NB2, multinomial and ordinal y ~ 1 at K=2/3/5",synopsis_full_k2,2,43,0,False,PASS,73.8
+cross-owner Synopsis rejects a tampered witness before mutation,cross_owner_tamper_k3,3,3,0,False,PASS,17.2
+focused Gaussian LASSO pseudo-IC is plausible and replayable at K=2/3/5,lasso_focal_k235,"2,3,5",93,0,False,PASS,280.9
+real Breslow Cox finite grid is certified and Rock-replayable at K=2/3/5,synopsis_full_k2,2,23,0,False,PASS,62.1
+real Gaussian AR1 clipped-score sandwich GEE is bound and Rock-replayable at K=2/3/5,synopsis_full_k2,2,22,0,False,PASS,69.9
+real Gaussian AR1 working-GLS GEE grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,24,0,False,PASS,84.9
+real Gaussian random-slope LMM grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,15,0,False,PASS,73.5
+real Gaussian three-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,14,0,False,PASS,93.4
+real Gaussian two-random-slope LMM grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,14,0,False,PASS,76.0
+real Poisson one-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,16,0,False,PASS,95.0
+real Poisson random-intercept GLMM grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,17,0,False,PASS,95.9
+real Poisson three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,16,0,False,PASS,108.6
+real Synopsis Count is plausible and Rock-replayable at K=2/3/5,count_k235,"2,3,5",78,0,False,PASS,192.0
+real Synopsis Describe is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,68,0,False,PASS,86.8
+real Synopsis Describe is plausible and Rock-replayable at K=2/3/5,describe_k35,"3,5",136,0,False,PASS,466.4
+real Synopsis Frequency is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,26,0,False,PASS,58.5
+real Synopsis Mantel-Haenszel is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,22,0,False,PASS,48.4
+real Synopsis ROC is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,21,0,False,PASS,48.1
+real Synopsis categorical MI is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,64,0,False,PASS,170.8
+real Synopsis causal standardisation is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,60,0,False,PASS,48.9
+real Synopsis survival is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,59,0,False,PASS,62.5
+real Synopsis survival is plausible and Rock-replayable at K=2/3/5,survival_k35,"3,5",118,0,False,PASS,360.3
+real additive NB2 finite grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,17,0,False,PASS,130.1
+real additive binary GLMM finite grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,16,0,False,PASS,96.8
+real additive binomial and Poisson grids are plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,48,0,False,PASS,201.4
+real additive binomial and Poisson grids are plausible and Rock-replayable at K=2/3/5,glm_grid_k35,"3,5",96,0,False,PASS,907.1
+real additive fixed-effect random-intercept REML is source-scale plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,23,0,False,PASS,268.9
+real additive multinomial finite grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,21,0,False,PASS,124.8
+real additive ordinal finite grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,19,0,False,PASS,95.0
+real binary random-intercept GLMM moment route is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,15,0,False,PASS,74.0
+real binary random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,15,0,False,PASS,91.2
+real binary three-random-slope GLMM grid is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,16,0,False,PASS,107.0
+real cross-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,35,0,False,PASS,107.1
+real finite binomial and Poisson L1 paths are plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,34,0,False,PASS,180.4
+real random-intercept LMM Synopsis is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,38,0,False,PASS,97.9
+real robust binomial and Poisson independence GEE grids are plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,41,0,False,PASS,159.8
+real same-owner Gaussian Synopsis and correlation are plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,129,0,False,PASS,186.6
+real same-owner Gaussian Synopsis and correlation are plausible and Rock-replayable at K=2/3/5,gaussian_k35,"3,5",180,0,False,PASS,894.4
+real same-owner Synopsis contingency is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,101,0,False,PASS,57.6
+real same-owner Synopsis correlation is plausible and Rock-replayable at K=2/3/5,synopsis_full_k2,2,21,0,False,PASS,61.4
+real stratified Synopsis supports sticky standardisation at K=2/3/5,synopsis_full_k2,2,49,0,False,PASS,53.0
+the Synopsis real-E2E topology selector preserves the full gate,synopsis_full_k2,2,3,0,False,PASS,0.0
+the Synopsis real-E2E topology selector preserves the full gate,lasso_focal_k235,"2,3,5",3,0,False,PASS,0.0
+the Synopsis real-E2E topology selector preserves the full gate,describe_k35,"3,5",3,0,False,PASS,0.0
+the Synopsis real-E2E topology selector preserves the full gate,gaussian_k35,"3,5",3,0,False,PASS,0.0
+the Synopsis real-E2E topology selector preserves the full gate,glm_grid_k35,"3,5",3,0,False,PASS,0.0
+the Synopsis real-E2E topology selector preserves the full gate,survival_k35,"3,5",3,0,False,PASS,0.0
+the Synopsis real-E2E topology selector preserves the full gate,cross_owner_tamper_k3,3,3,0,False,PASS,0.0

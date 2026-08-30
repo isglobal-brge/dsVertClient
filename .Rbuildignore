@@ -21,3 +21,4 @@
 ^_archive_vignettes$
 ^\.claude$
 ^\.claude/
+^tools/campaign-logs$

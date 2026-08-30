@@ -1,0 +1,37 @@
+{
+  "campaign": "dsVert run-at-pin validation, v1.2.1 fix verification and full re-run",
+  "date": "2026-08-30",
+  "context": "The v1.2.0 campaign (see ../v1.2.0/) surfaced two deterministic K=2 findings in the Rock E2E battery: (1) ds.vertGEE's Gaussian exchangeable adapter refused a released random-intercept artifact whose noise-floored residual variance placed the derived intra-cluster correlation on the singular boundary alpha = 1; (2) the Poisson random-intercept negative-path test reached the transport-security guard instead of the artifact-mismatch guard because it called the real grid impl against synthetic fixture connections. Both were fixed in dsVertClient 1.2.1 (see NEWS.md) and the full battery was re-executed at the fix commit.",
+  "packages": {
+    "dsVert": {"version": "1.2.0", "ref": "tag v1.2.0 (9067cc7458374e9ad02003d7debcc098fa740aa5)", "unchanged": true},
+    "dsVertClient": {"version": "1.2.1", "ref": "release-1.2.1 (fix commit on top of tag v1.2.0)"}
+  },
+  "host": {"machine": "Davids-MacBook-Air.local", "os": "macOS Darwin 24.4.0 arm64", "R": "4.5.2", "note": "no concurrent load (unlike parts of the v1.2.0 run)"},
+  "fix_verification": {
+    "unit_formal_gee_frontdoor": {"passed": 84, "failed": 0, "errored": 0},
+    "e2e_family_lmm_k2": {"passed": 138, "failed": 0, "errored": 0},
+    "e2e_family_poisson_glmm_k2": {"passed": 20, "failed": 0, "errored": 0}
+  },
+  "battery_rerun": {
+    "driver": "same run plan as the v1.2.0 attempt-2 battery (full 37-block sweep at K=2; Count and Gaussian-LASSO-focal at K=2,3,5; describe/gaussian/glm_grid/survival at K=3,5; cross-owner tamper at K=3)",
+    "results_csv": "harnessB_v121_results.csv",
+    "family_summary": "harnessB_v121_family_summary.csv",
+    "exercised_block_runs": 48,
+    "expectations_passed": 1887,
+    "failed": 0,
+    "errored": 0
+  },
+  "formal_dslite_harness": {
+    "artifact": "formal_dp_e2e_v121_2026-08-30.json",
+    "passed": true,
+    "k_values": [2, 3, 5],
+    "surface_method_count": 96,
+    "sticky_and_restart_replay": true,
+    "sampler_invocations": [[1,1],[1,1,0],[1,1,0,0,0]]
+  },
+  "registry_export": {"artifact": "method_status_v121.csv", "rows": 110, "promoted": 108, "provisional": 2},
+  "worked_example": {
+    "transcript": "worked_example_transcript_v121.txt",
+    "note": "fresh custodial secrets give an independent sticky draw: this capture selects the near-truth candidate #1 at n=50, eps=1, where the v1.2.0 capture selected the null candidate #2 -- draw-to-draw instability is the expected noise-dominated small-n-epsilon regime; the v1.2.0 n=500 confirmation run selected the near-truth candidate"
+  }
+}

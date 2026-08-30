@@ -1,0 +1,81 @@
+{
+  "version": "dsvert-canonical-synopsis-count-e2e-v1",
+  "passed": true,
+  "started_utc": "2026-08-30 03:31:08 UTC",
+  "completed_utc": "2026-08-30 03:41:10 UTC",
+  "scenarios": [
+    {
+      "k": 2,
+      "passed": true,
+      "surface_method_count": 96,
+      "surface_sha256": "81470398280a3b56935a803f47f5bd996d1fe1afc8146ef255a100307ae50ef6",
+      "mpc_binary_sha256": "246cf5d733d519ac49fe0318eecb85a14b8e2b957784e7c6a11e859ba89a5616",
+      "psi_aligned_without_cardinality": true,
+      "protected_source_present_on_restart": true,
+      "identity_persistent": true,
+      "dp_value": 13.22576904296875,
+      "artifact_key": "df12ae0c067abfcab49499a9a00825321a1114f244025da5b4f88a8a60c6d40e",
+      "release_sha256": "4cd787583d3e45a4065317c50f834c6c74f0695b799f3b785cf94cace0185e54",
+      "sticky_same_output": true,
+      "restart_same_output": true,
+      "finite_global_composition_claim": false,
+      "sampler_invocations": [
+        1,
+        1
+      ],
+      "sampler_not_reinvoked_after_client_restart": true,
+      "signed_release_revalidated_after_service_restart": true
+    },
+    {
+      "k": 3,
+      "passed": true,
+      "surface_method_count": 96,
+      "surface_sha256": "81470398280a3b56935a803f47f5bd996d1fe1afc8146ef255a100307ae50ef6",
+      "mpc_binary_sha256": "246cf5d733d519ac49fe0318eecb85a14b8e2b957784e7c6a11e859ba89a5616",
+      "psi_aligned_without_cardinality": true,
+      "protected_source_present_on_restart": true,
+      "identity_persistent": true,
+      "dp_value": 11.764633178710938,
+      "artifact_key": "f1c404a3dc7dac0ebb951589e9251d90761f1a1e342e5c953589c1c6f2d98c52",
+      "release_sha256": "4f5d9395499166a435acc15ffe07483ee065fdc2639c2c2e517fe24d299e0d05",
+      "sticky_same_output": true,
+      "restart_same_output": true,
+      "finite_global_composition_claim": false,
+      "sampler_invocations": [
+        1,
+        1,
+        0
+      ],
+      "sampler_not_reinvoked_after_client_restart": true,
+      "signed_release_revalidated_after_service_restart": true
+    },
+    {
+      "k": 5,
+      "passed": true,
+      "surface_method_count": 96,
+      "surface_sha256": "81470398280a3b56935a803f47f5bd996d1fe1afc8146ef255a100307ae50ef6",
+      "mpc_binary_sha256": "246cf5d733d519ac49fe0318eecb85a14b8e2b957784e7c6a11e859ba89a5616",
+      "psi_aligned_without_cardinality": true,
+      "protected_source_present_on_restart": true,
+      "identity_persistent": true,
+      "dp_value": 12.134613037109375,
+      "artifact_key": "a6ca93ff292a30ac9c6aa29114a51d97d6a92a118acd4e2b70d2496d370f41ad",
+      "release_sha256": "75943d5d5bf3e8342e60c63cc1a886da7d620d2b2d4ddd2a290dcc98179b79e1",
+      "sticky_same_output": true,
+      "restart_same_output": true,
+      "finite_global_composition_claim": false,
+      "sampler_invocations": [
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      "sampler_not_reinvoked_after_client_restart": true,
+      "signed_release_revalidated_after_service_restart": true
+    }
+  ],
+  "mpc_binary_mode_unchanged": true,
+  "state_retained": false,
+  "state_path": null
+}
