@@ -83,3 +83,7 @@ server targeted suite passes its original 626 plus 11 admission expectations.
 Client Rd validation passes. Paired installed baseline/current synopsis-artifact
 logs reproduce the same missing test-helper error (source-loaded tests pass).
 Related installed synopsis failures are being checked against that baseline.
+
+Final measured-delivery revisions: **client 12b1fec; server 8dd48c8**.
+This documentation-only receipt records the complete code/evidence revisions.
+Both worktrees were clean after delivery commits; no push was performed.
