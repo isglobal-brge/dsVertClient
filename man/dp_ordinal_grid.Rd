@@ -50,3 +50,6 @@ must be authenticated before candidate post-processing. A signed descriptor
 or either state string alone is never release evidence. Existing same-owner
 \code{ds.vertOrdinal} routes retain their original behavior.}
 \seealso{\code{\link{dp_multinomial_grid}}, \code{\link{ds.vertOrdinal}}}
+
+\note{This integration entry point is namespace-internal until the shared public method registry and authenticated release path are wired together.}
+\keyword{internal}

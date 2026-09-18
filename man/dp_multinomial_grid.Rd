@@ -44,3 +44,6 @@ must be authenticated before candidate post-processing. A signed descriptor
 or either state string alone is never release evidence. Existing same-owner
 \code{ds.vertMultinom} routes retain their original behavior.}
 \seealso{\code{\link{dp_ordinal_grid}}, \code{\link{ds.vertMultinom}}}
+
+\note{This integration entry point is namespace-internal until the shared public method registry and authenticated release path are wired together.}
+\keyword{internal}

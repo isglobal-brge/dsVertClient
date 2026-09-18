@@ -58,7 +58,9 @@
 #'   row, plus output rounding when fewer than 16 output fractional bits are
 #'   used. Selection targets this certified profile; an exact-loss total
 #'   differs by at most the admitted row count times the certified row error.
-#' @export
+#' @note This integration entry point is namespace-internal until the shared
+#'   public method registry and authenticated release path are wired together.
+#' @keywords internal
 dp_ordinal_grid <- function(formula, data, analysis_id, signed_contract,
                             policy, schema_manifest, datasources = NULL) {
   tryCatch({
