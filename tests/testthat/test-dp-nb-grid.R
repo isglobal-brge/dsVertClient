@@ -1,3 +1,25 @@
+test_that("NB2 signed loss caps match the complete negative-binomial likelihood", {
+  beta_grid <- list(c(0, 0), c(0, 1), c(-8, 0), c(8, -8, 8))
+  theta_grid <- c(1e-6, 0.25, 1, 2, 64)
+  for (max_outcome in c(1L, 2L, 8L, 1024L)) {
+    expected <- unlist(lapply(theta_grid, function(theta) {
+      vapply(beta_grid, function(beta) {
+        eta_bound <- sum(abs(beta))
+        max(vapply(c(-eta_bound, eta_bound), function(eta) {
+          max(-stats::dnbinom(0:max_outcome, size = theta,
+                             mu = exp(eta), log = TRUE))
+        }, numeric(1L)))
+      }, numeric(1L))
+    }), use.names = FALSE)
+    actual <- dsVertClient:::.dsvert_dp_nb_grid_loss_bounds(
+      beta_grid, theta_grid, max_outcome)
+    expect_equal(actual, expected, tolerance = 1e-11)
+  }
+  expect_equal(dsVertClient:::.dsvert_dp_nb_grid_loss_bounds(
+    list(c(0, 0)), 2, 1L),
+    -stats::dnbinom(1, size = 2, mu = 1, log = TRUE), tolerance = 1e-12)
+})
+
 .nb_grid_artifact_fixture <- function() {
   scale <- 256
   capacity <- 20L
