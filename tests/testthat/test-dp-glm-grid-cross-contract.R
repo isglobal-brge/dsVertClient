@@ -433,3 +433,47 @@ test_that("piecewise admission pins new arithmetic, caps and all signatures", {
       bad, fixture$policy, fixture$schema_manifest), class = "dsvert_dp_public_failure")
   }
 })
+
+test_that("materialized cross grids select only from authenticated signed candidates", {
+  for (family in c("binomial", "poisson")) {
+    f <- .grid_cross_client_fixture(family)
+    spec <- .dsvert_dp_glm_grid_cross_spec(f$raw, f$policy, f$schema, "piecewise_v2")
+    core <- .dsvert_dp_glm_grid_cross_artifact(spec)
+    signed <- f$sign(list(version = f$contract$version, spec = spec, artifact = core,
+      source_contract = .dsvert_dp_glm_grid_cross_source_contract(spec, core)))
+    artifact <- .dsvert_dp_glm_grid_cross_workload_artifact(signed)
+    manifest <- list(admission = list(unit_capacity = spec$observation_capacity,
+      adjacency = spec$adjacency), bounds = list(numeric_grid_bits = spec$numeric_grid_bits),
+      workload = list(families = list(gaussian_models = list(
+        artifacts = list(cross_grid = artifact)))))
+    context <- list(pinset = f$policy$peer_pinset, designated = f$policy$designated_noise_peers)
+    fragments <- list(describe = list(), survival = list(), vertical_cross = list(),
+      gaussian = list(cross_grid = list(version = spec$version, dataset = spec$dataset,
+        contract = artifact$signed_contract)))
+    expect_equal(.dsvert_dp_capsule_manifest_fragments(fragments),
+      .dsvert_joint_dp_client_canonical(fragments))
+    schema_json <- .dsvert_joint_dp_client_json(f$schema_manifest)
+    expect_true(.dsvert_dp_glm_grid_cross_preflight(manifest, context, schema_json))
+    validated <- .dsvert_dp_glm_grid_artifact(manifest, spec$dataset, spec$analysis_id,
+      NULL, spec$adjacency, 2^spec$numeric_grid_bits, spec$observation_capacity, family)
+    selected <- .dsvert_dp_glm_grid_moment(c(20, 10), validated, family)
+    expect_equal(selected$selected_candidate, 2L)
+    expect_equal(unname(selected$normalized_coefficients), unlist(spec$beta_grid[[2]]))
+    expect_identical(validated$implementation_state, "cross_owner_exact_gc_materialized")
+    for (mutation in c("signature", "cap", "profile", "wrapper")) {
+      bad <- signed
+      if (mutation == "signature") bad$signatures[[1]] <- NULL
+      if (mutation == "cap") bad$spec$sensitivity$candidate_bounds[[1]]$per_patient_cap <- 1
+      if (mutation == "profile") bad$spec$numeric_contract$profile_sha256 <- paste(rep("0", 64), collapse = "")
+      altered <- .dsvert_dp_glm_grid_cross_workload_artifact(bad)
+      if (mutation == "wrapper") altered$statistic_maximum[[1]] <- 1
+      broken <- manifest
+      broken$workload$families$gaussian_models$artifacts$cross_grid <- altered
+      expect_error(.dsvert_dp_glm_grid_cross_preflight(broken, context, schema_json),
+        class = "dsvert_dp_public_failure")
+    }
+  }
+  expect_identical(.dsvert_dp_glm_grid_formula_reference(quote(site_a$x)), "site_a$x")
+  expect_null(.dsvert_dp_glm_grid_formula_reference(quote(log(site_a$x))))
+  expect_null(.dsvert_dp_glm_grid_formula_reference(quote(site_a$x$y)))
+})

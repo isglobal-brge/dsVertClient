@@ -453,6 +453,10 @@
   categorical <- .dsvert_dp_categorical_cross_artifacts_client(manifest)
   gaussian <- .dsvert_dp_gaussian_cross_artifacts_client(manifest)
   completed <- list()
+  if (length(.dsvert_dp_glm_grid_cross_artifacts(manifest))) {
+    completed$glm_grid <- .dsvert_dp_glm_grid_cross_orchestrate(manifest_json,
+      manifest, context, source_receipt, .aggregate, .remote_context)
+  }
   shared_exact <- NULL
   share_session <- length(categorical) > 0L && length(gaussian) > 0L
   if (isTRUE(share_session)) {

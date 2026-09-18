@@ -335,7 +335,7 @@
 
 .dsvert_dp_synopsis_vector_run <- function(
     datasources, status = NULL, local_projection = NULL,
-    .aggregate = DSI::datashield.aggregate) {
+    .aggregate = DSI::datashield.aggregate, .request_check = NULL) {
   datasources <- .dsvert_dp_datasources(datasources)
   bootstrap <- if (is.null(local_projection)) {
     .dsvert_dp_synopsis_bootstrap_build_v1(
@@ -348,11 +348,18 @@
   status <- bootstrap$status
   manifest_bundle <- bootstrap$manifest_bundle
   trusted <- .dsvert_dp_synopsis_client_bundle(manifest_bundle, status)
+  grid_cross <- .dsvert_dp_synopsis_supported_glm_grid_cross_v1(trusted$manifest)
+  .dsvert_dp_glm_grid_cross_preflight(trusted$manifest, trusted$context,
+    manifest_bundle$schema_json)
+  if (!is.null(.request_check)) {
+    if (!is.function(.request_check)) stop("Invalid Synopsis request validator", call. = FALSE)
+    .request_check(trusted$manifest)
+  }
   categorical_cross <- .dsvert_dp_synopsis_supported_categorical_cross_v1(
     trusted$manifest)
   gaussian_cross <- .dsvert_dp_synopsis_supported_gaussian_cross_v1(
     trusted$manifest)
-  cross <- isTRUE(categorical_cross) || isTRUE(gaussian_cross)
+  cross <- isTRUE(categorical_cross) || isTRUE(gaussian_cross) || isTRUE(grid_cross)
   if (.dsvert_dp_synopsis_runner_cross(trusted$manifest) &&
       !isTRUE(cross)) {
     stop("Cross-owner synopsis catalogs are not supported", call. = FALSE)

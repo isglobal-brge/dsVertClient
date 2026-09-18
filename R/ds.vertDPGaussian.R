@@ -68,6 +68,13 @@
   artifact <- if (is.list(family$artifacts)) {
     family$artifacts[[analysis_id]]
   } else NULL
+  if (is.list(artifact) && artifact$version %in%
+      unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS)) {
+    family_name <- names(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS)[[
+      match(artifact$version, unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS))]]
+    return(.dsvert_dp_glm_grid_artifact(manifest, data_name, analysis_id,
+      owner_peer, adjacency, scale, capacity, family_name))
+  }
   if (is.list(artifact) && identical(
         artifact$version,
         .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)) {

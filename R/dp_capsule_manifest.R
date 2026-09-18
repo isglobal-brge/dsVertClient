@@ -420,7 +420,11 @@
           }
         }
       } else if (identical(family, "gaussian")) {
-        if (identical(spec$version, "ordinal_grid_v1")) {
+        if (spec$version %in% unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_SPEC_VERSIONS)) {
+          contract <- .dsvert_dp_glm_grid_cross_raw_contract(spec)
+          valid <- identical(contract$spec$analysis_id, analysis_id) &&
+             .dsvert_dp_is_string(contract$spec$outcome$owner_peer) && is.character(spec$contract)
+        } else if (identical(spec$version, "ordinal_grid_v1")) {
           expected <- c(
             "version", "dataset", "outcome", "predictors", "intercept",
             "ordered_levels", "candidate_grid")
@@ -1228,7 +1232,7 @@
     peer_pinset_sha256 = reference$peer_pinset_sha256,
     alignment_protocol_version = as.numeric(alignment_protocol_version),
     datasets = datasets,
-    workload_contract = workload_contract))
+    workload_contract = .dsvert_dp_glm_grid_cross_snapshot_workload(workload_contract)))
   .dsvert_joint_dp_client_canonical(list(
     logical_snapshot_id = reference$cohort_id,
     version = paste0("schema-v1-", fingerprint),

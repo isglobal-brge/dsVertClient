@@ -987,6 +987,11 @@
     (identical(artifact$version,
                .DSVERT_CLIENT_DP_COX_PARTIAL_GRID_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "cox_partial_likelihood_grid_v1"))
+  cross_grid_artifact <- artifact$version %in%
+    unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS) &&
+    identical(artifact$spec_version, paste0(artifact$family, "_grid_cross_v1")) &&
+    identical(artifact$implementation_state, "cross_owner_exact_gc_materialized") &&
+    identical(artifact$cross_owner_state, "exact_gc_to_joint_dp_vector_v1")
   cross_owner_artifact <- identical(
     artifact$version, .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION) &&
     identical(artifact$spec_version, "v2") &&
@@ -1005,7 +1010,8 @@
       !identical(provenance$source_values_included, FALSE) ||
       !identical(provenance$intermediate_payload_exposed, FALSE) ||
       !identical(provenance$durable_replay, TRUE) ||
-      !(isTRUE(same_owner_artifact) || isTRUE(cross_owner_artifact)) ||
+      !(isTRUE(same_owner_artifact) || isTRUE(cross_owner_artifact) ||
+        isTRUE(cross_grid_artifact)) ||
       (isTRUE(same_owner_artifact) &&
        (!identical(artifact$implementation_state, "same_owner_materialized") ||
         !identical(artifact$cross_owner_state,
@@ -1219,7 +1225,8 @@
     "preclamp_values_included", "patient_derived_identifiers_included",
     "certificate_sha256")
   cross_owner <- identical(
-    certificate$cross_owner_state, "exact_gc_to_joint_dp_vector_v1")
+    certificate$cross_owner_state, "exact_gc_to_joint_dp_vector_v1") &&
+    identical(certificate$descriptor$version, .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)
   if (!.dsvert_dp_has_exact_names(certificate, required) ||
       !identical(certificate$version,
                  .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION) ||
@@ -1278,6 +1285,8 @@
   }
   reconstructed <- .dsvert_dp_gaussian_synopsis_trusted(certificate)
   trusted <- reconstructed$trusted
+  .dsvert_dp_glm_grid_cross_preflight(trusted$manifest, trusted$context,
+    reconstructed$bundle$schema_json)
   bundle <- reconstructed$bundle
   if (!identical(trusted$context$pinset, pinset) ||
       !identical(trusted$context$designated, designated) ||
@@ -1487,6 +1496,7 @@
     as.numeric(artifact$statistic_maximum)
   } else if (artifact$version %in%
              c(unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS),
+        unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
                unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS))) {
     as.numeric(artifact$statistic_maximum)
   } else if (identical(artifact$version,
@@ -1716,11 +1726,14 @@
   }
   if (artifact$version %in% c(
         unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS),
+        unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
         unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS))) {
     lasso <- artifact$version %in%
       unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS)
     versions <- if (isTRUE(lasso)) {
       .DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS
+    } else if (artifact$version %in% unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS)) {
+      .DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS
     } else .DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS
     family_name <- names(versions)[[match(artifact$version, unname(versions))]]
     moment <- if (isTRUE(lasso)) {
@@ -2133,6 +2146,7 @@ ds.validateDPGaussianCertificate <- function(x, trusted_pinset = NULL) {
         .DSVERT_CLIENT_DP_GEE_AR1_ROBUST_GRID_ARTIFACT_VERSION,
         unname(.DSVERT_CLIENT_DP_GEE_GLM_ROBUST_GRID_ARTIFACT_VERSIONS),
         unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS),
+        unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
         unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS),
         .DSVERT_CLIENT_DP_NB_GRID_ARTIFACT_VERSION,
         .DSVERT_CLIENT_DP_MULTINOM_GRID_ARTIFACT_VERSION,
