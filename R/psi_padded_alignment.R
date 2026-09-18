@@ -4,6 +4,8 @@
 # membership bits, exact counts or GC shares.
 
 .DSVERT_CLIENT_PSI_PADDED_PROTOCOL <- "dsvert-pinned-padded-psi-v5"
+# Match the server schedule within the unchanged 512 Ki-bit worker cap.
+.DSVERT_CLIENT_PSI_PADDED_AND_CHUNK_CAPACITY <- 2048L
 
 .dsvert_validate_psi_padded_attestation <- function(
     value, expected_contract = NULL) {
@@ -324,7 +326,8 @@
   }
 
   compute_indices <- match(contract$compute_peers, server_names)
-  chunk_count <- as.integer(ceiling(as.numeric(contract$capacity) / 4096L))
+  chunk_count <- as.integer(ceiling(as.numeric(contract$capacity) /
+    .DSVERT_CLIENT_PSI_PADDED_AND_CHUNK_CAPACITY))
   for (chunk_index in seq_len(chunk_count)) {
     initialized <- .dsvert_aggregate_strict(
       datasources[contract$compute_peers], call(
