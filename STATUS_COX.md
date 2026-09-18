@@ -1,5 +1,29 @@
 # Cox client handoff
 
+## Current result — 2026-09-18 final handoff
+
+Signed admission is **N<=4000, J<=50**, matching the completed nine-point server
+matrix. The largest passing family kernel uses 52,962,304,383 bytes and
+5663.674 seconds. All 10000-row points stop at the 60 GB traffic budget.
+Final client implementation commits: **992b713** (admission), **cd2efc9**
+(signed terminal Ring64-to-Ring128 fusion boundary).
+
+Final targeted pod validation passes **77 expectations**, zero failures/errors/
+skips, including 23 two-peer tagged DSLite/pooled-coxph expectations at epsilon
+1,4,8. Companion server passes 641 R expectations and 24 Go tests + 7 subtests.
+The full client R CMD check passed 25,425 expectations with 48 skips and the
+three documented pre-existing WARNING categories. The companion server's 17
+full-check failures were all reproduced on installed primitive baseline 38146c0.
+
+The client entry remains namespace-internal and production release fails closed
+pending step-2 authenticated fusion, joint DP/sticky lifecycle and explicit
+method-inventory/maturity admission. The signed layout prohibits independently
+widening terminal Ring64 shares; conversion must happen inside fusion. See the
+server MEASURED_ENVELOPE_COX.md and INTEGRATION_COX.md for complete evidence,
+headroom and exact wiring. No pushes or shared-route changes.
+
+Historical milestones follow.
+
 Resumed 2026-09-18 from the quota-interrupted worktree. Preserved and committed
 the recovered client in 19b0e02, added the synthetic DSLite/oracle/coxph comparison
 and server/client canonical parity in 6b993e2.

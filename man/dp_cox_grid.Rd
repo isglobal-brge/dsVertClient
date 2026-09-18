@@ -23,7 +23,8 @@ and ties; ties use Breslow denominators, including censored observations at the
 event time. The execution contract uses one private packed-row permutation,
 exact prefix and loss additions on shares, and certified exp/log profile kernels.
 Log batches have a fixed public shape and mask event status privately.
-Both custodians sign the measured public row/candidate admission envelope.
+Both custodians sign the measured public admission envelope: at most 4000
+rows and 50 candidates for this family kernel.
 The client and server reject requests exceeding that envelope before source
 access; signatures cannot override the implementation limits.
 Missing inputs exclude the patient privately. There is no intercept,
