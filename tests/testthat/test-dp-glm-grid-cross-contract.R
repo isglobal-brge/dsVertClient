@@ -283,3 +283,49 @@ test_that("cross-grid profile coefficients, proof and numeric template are immut
     }, fromJSON = function(...) changed, .package = "jsonlite")
   }
 })
+
+test_that("signed categorical schema labels share the server canonical representations", {
+  fixture <- .grid_cross_client_fixture()
+  cases <- list(
+    list(value = c("B", "A"), labels = c("A", "B")),
+    list(value = c(TRUE, FALSE), labels = c("FALSE", "TRUE")),
+    list(value = c(10L, -2L), labels = c("-2", "10")),
+    list(value = c(1e10, -0), labels = c("0", "10000000000")),
+    list(value = factor(c("B", "A")), labels = c("A", "B")),
+    list(value = ordered(c("B", "A")), labels = c("A", "B")))
+  for (case in cases) {
+    schema <- fixture$schema_manifest
+    schema$datasets$aligned$columns$category <- list(
+      kind = "categorical", owner_peer = "site_b", levels = case$labels)
+    signed <- fixture$sign_schema(schema)
+    signed$datasets$aligned$columns$category$levels <- case$value
+    authenticated <- .dsvert_dp_glm_grid_cross_schema_validate(
+      fixture$policy, signed$logical_snapshot, signed,
+      .dsvert_dp_glm_grid_cross_verify)
+    expect_identical(authenticated$unsigned$datasets$aligned$columns$category$levels,
+                     case$labels)
+  }
+})
+
+test_that("real signatures cannot authorize unsupported categorical label encodings", {
+  fixture <- .grid_cross_client_fixture()
+  cases <- list(
+    list(value = c(1.5, 2.5), labels = c("1.5", "2.5")),
+    list(value = Inf, labels = "Inf"),
+    list(value = 2^53, labels = "9007199254740992"),
+    list(value = as.raw(1), labels = "01"),
+    list(value = 1+1i, labels = "1+1i"),
+    list(value = structure("A", class = "custom"), labels = "A"),
+    list(value = matrix("A"), labels = "A"),
+    list(value = structure(2L, class = "factor", levels = "A"), labels = "A"))
+  for (case in cases) {
+    schema <- fixture$schema_manifest
+    schema$datasets$aligned$columns$category <- list(
+      kind = "categorical", owner_peer = "site_b", levels = case$labels)
+    signed <- fixture$sign_schema(schema)
+    signed$datasets$aligned$columns$category$levels <- case$value
+    expect_error(.dsvert_dp_glm_grid_cross_schema_validate(
+      fixture$policy, signed$logical_snapshot, signed,
+      .dsvert_dp_glm_grid_cross_verify), class = "dsvert_dp_public_failure")
+  }
+})

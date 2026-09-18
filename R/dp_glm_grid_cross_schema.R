@@ -19,6 +19,47 @@
   }, error = function(error) FALSE)
 }
 
+.dsvert_dp_glm_grid_cross_schema_levels <- function(value) {
+  fail <- function() stop("Invalid cross grid signed schema.", call. = FALSE)
+  if (!is.atomic(value) || !is.null(dim(value))) fail()
+  declared <- attr(value, "class", exact = TRUE)
+  factor_value <- identical(declared, "factor") ||
+    identical(declared, c("ordered", "factor"))
+  plain <- is.null(declared)
+  levels <- if (factor_value) {
+    labels <- attr(value, "levels", exact = TRUE)
+    codes <- value
+    attributes(codes) <- NULL
+    if (typeof(codes) != "integer" || !is.character(labels) ||
+        anyNA(labels) || anyDuplicated(labels) ||
+        any(!is.na(codes) & (codes < 1L | codes > length(labels)))) fail()
+    unname(labels[codes])
+  } else if (plain && is.character(value)) {
+    unname(value)
+  } else if (plain && is.logical(value)) {
+    ifelse(is.na(value), NA_character_, ifelse(value, "TRUE", "FALSE"))
+  } else if (plain && typeof(value) == "integer") {
+    result <- rep(NA_character_, length(value))
+    present <- !is.na(value)
+    result[present] <- sprintf("%d", value[present])
+    result
+  } else if (plain && typeof(value) == "double") {
+    present <- !is.na(value)
+    if (any(!is.finite(value[present])) ||
+        any(value[present] != floor(value[present])) ||
+        any(abs(value[present]) > 2^53 - 1)) fail()
+    result <- rep(NA_character_, length(value))
+    normalized <- value[present]
+    normalized[normalized == 0] <- 0
+    result[present] <- sprintf("%.0f", normalized)
+    result
+  } else fail()
+  levels <- enc2utf8(levels)
+  if (!length(levels) || anyNA(levels) || anyDuplicated(levels) ||
+      any(!nzchar(trimws(levels)))) fail()
+  sort(unname(levels), method = "radix")
+}
+
 .dsvert_dp_glm_grid_cross_schema_validate <- function(
     policy, logical_snapshot, schema_manifest, signature_verifier) {
   tryCatch({
@@ -98,12 +139,8 @@
             column$lower >= column$upper ||
             !is.finite((column$upper - column$lower)^2)) fail()
       } else if (identical(column$kind, "categorical")) {
-        if (!exact(column, c("kind", "owner_peer", "levels")) ||
-            !is.atomic(column$levels) || !length(column$levels) ||
-            anyNA(column$levels) || anyDuplicated(column$levels) ||
-            any(!nzchar(trimws(as.character(column$levels))))) fail()
-        column$levels <- sort(enc2utf8(as.character(column$levels)),
-                              method = "radix")
+        if (!exact(column, c("kind", "owner_peer", "levels"))) fail()
+        column$levels <- .dsvert_dp_glm_grid_cross_schema_levels(column$levels)
         dataset$columns[[column_name]] <- column
       } else fail()
       physical <- paste(column$owner_peer, data_name,
