@@ -25,3 +25,24 @@ Whole-release traffic is independently excessive for the current kernels;
 see the server's revised status/benchmark evidence. Client reader stays closed.
 R CMD check results are being collected from the prior snapshot; those do not
 constitute a final clean check of this hash update.
+
+## Resumed 2026-09-18 — clause 5 and package-check recovery
+
+The old composed-GC traffic blocker is withdrawn; no measured release capacity
+is yet admitted. Server components and unresolved exact-arithmetic/fusion
+interface are documented in ../dsVert/STATUS_GROUPED.md and
+../dsVert/CLAUSE5_ARITHMETIC_GROUPED.md. Reader remains fail closed.
+
+Inherited client R CMD check finished with 1 ERROR, 3 WARNINGs, 1 NOTE. Tests:
+23868 pass, 1 failure, 51 skipped. The error was OUR missing method inventory
+for the new exports, not a pre-existing failure. Fixed by 429b2a7: three
+quarantine entries via additive shared-registry lines; new grouped helper and
+tests. Existing inventory/maturity expectations now explicitly cover the
+quarantined methods without weakening assertions for existing methods.
+Focused registry/inventory/maturity/contract tests: 1237 assertions pass,
+zero failures, errors or warnings. Existing warnings remain documented in
+server status; no clean full-check claim.
+
+New-snapshot R CMD build passed; full post-fix R CMD check is running at
+/workspace/dsvert/grouped/clause5/client-check.log (exit: client-check.exit).
+Read these results before relaunching. No production release enabled.
