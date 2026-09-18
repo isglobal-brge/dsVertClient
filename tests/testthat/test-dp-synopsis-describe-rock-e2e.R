@@ -109,15 +109,20 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
   peers <- c("peer_a", "peer_b", if (k > 2L) {
     paste0("witness_", seq_len(k - 2L))
   } else character())
-  identities <- stats::setNames(lapply(seq_along(peers), function(index) {
-    get_server(".callMpcTool")("derive-identity", list(
-      seed = jsonlite::base64_enc(as.raw((seq_len(32L) + 37L * index) %% 256L))))
-  }), peers)
+  root <- tempfile("synopsis-describe-rock-e2e-")
+  dir.create(root, mode = "0700", recursive = TRUE)
+  identities <- testthat::with_mocked_bindings(
+    stats::setNames(lapply(seq_along(peers), function(index) {
+      get_server(".callMpcTool")("derive-identity", list(
+        seed = jsonlite::base64_enc(as.raw((seq_len(32L) + 37L * index) %% 256L))))
+    }), peers),
+    .dsvert_session_storage_root = function() {
+      normalizePath(root, winslash = "/", mustWork = TRUE)
+    },
+    .package = "dsVert")
   pins <- vapply(identities, function(value) {
     b64url(jsonlite::base64_dec(value$identity_pk))
   }, character(1L))
-  root <- tempfile("synopsis-describe-rock-e2e-")
-  dir.create(root, mode = "0700", recursive = TRUE)
   common <- list(
     schema_version = 1L,
     mechanism_version = "dsvert-dp-v7-contingency-unit-aggregation-1",
@@ -792,6 +797,7 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
       }
       value <- tryCatch(testthat::with_mocked_bindings(
         do.call(get_server(method), args),
+        .dsvert_identity_test_mode = function() TRUE,
         .dsvert_dp_synopsis_policy_v1 = function() fixture$policies[[peer]],
         .dsvert_dp_policy = function() fixture$policies[[peer]],
         .dsvert_dp_synopsis_state_path_v1 = function() {
@@ -820,6 +826,8 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
             consortium_id = "synopsis-real-e2e-exact-gc")
         },
         .dsvert_dp_secret = function() fixture$secrets[[peer]],
+        .get_identity_seed = function() jsonlite::base64_enc(
+          jsonlite::base64_dec(fixture$identities[[peer]]$identity_sk)[1:32]),
         .get_identity_keypair = function() fixture$identities[[peer]],
         .session_storage = function() fixture$state$storage[[peer]],
         .S = function(id) .synopsis_describe_real_e2e_session(
