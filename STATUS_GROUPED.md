@@ -46,3 +46,15 @@ server status; no clean full-check claim.
 New-snapshot R CMD build passed; full post-fix R CMD check is running at
 /workspace/dsvert/grouped/clause5/client-check.log (exit: client-check.exit).
 Read these results before relaunching. No production release enabled.
+
+## Addendum 3 — exact arithmetic components
+
+Client 91ea81b mirrors server's new `grouped-lmm-stats-f264-q64-v2` profile and
+exact f100/no-intermediate-rounding semantics. Focused contracts: 151 assertions
+pass. Paired server synthetic DSLite comparison now calls the matching tagged
+LMM statistic and passes 202 assertions across all five families/three epsilons.
+The reader remains fail closed. Backend ownership is resolved; see server
+STATUS_GROUPED.md for measured products, remaining GEE whitening/certification,
+full-release matrix and authenticated Step-2 fusion. No admitted capacity or
+completed current-snapshot R CMD check is claimed. Historical traffic and
+ownership blocker statements above are superseded.
