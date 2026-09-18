@@ -32,3 +32,24 @@ ordinal duplicate argument). The long full checks were stopped at the blocked
 handoff, not reported as passes. The server BLOCKED_COX.md and machine-readable
 package_check_status.json distinguish completed Cox tests from partial broad
 coverage. No modified pre-existing files remain relative to cb26ecd.
+
+## 2026-09-18 resumed — revised share-based lane
+
+The earlier 30 GB gate/handoff is superseded by GATE_REVISION clauses 4 and 5.
+Client commits 7ffacd0, a1966dc and df6b7eb mirror the single packed permutation,
+share prefix/loss sums, streaming checked OT and private-key receipt mode. No
+public export or release lifecycle is enabled; registration remains internal.
+
+Full client R CMD check completed: **25425 passing expectations, 0 failures,
+0 test warnings, 48 skips**. Overall **3 pre-existing WARNING categories** remain:
+MI non-ASCII source, codoc mismatches, and duplicate ordinal Rd argument.
+The explicit tagged two-custodian DSLite/pooled-coxph test separately passed all
+23 expectations without skips. Server/client signature/canonical checks remain
+part of that completed suite. The server Go family gate passed 21 top-level
+and 7 nested tests after correcting its fixture working directory.
+
+The new family kernel's first completed pod envelope, 2000 rows x 16 candidates,
+is 8.473 GB and 21.64 minutes including cold compilation, with exact oracle
+equality. The remaining matrix and final signed admission are still pending;
+this is not a production source-to-joint-DP claim. The sibling server STATUS,
+INTEGRATION and NUMERIC_CERTIFICATE documents contain the authoritative evidence.
