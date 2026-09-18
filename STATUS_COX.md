@@ -53,3 +53,9 @@ is 8.473 GB and 21.64 minutes including cold compilation, with exact oracle
 equality. The remaining matrix and final signed admission are still pending;
 this is not a production source-to-joint-DP claim. The sibling server STATUS,
 INTEGRATION and NUMERIC_CERTIFICATE documents contain the authoritative evidence.
+
+Resumed admission validation: client targeted suite now passes 50 expectations;
+server targeted suite passes its original 626 plus 11 admission expectations.
+Client Rd validation passes. Paired installed baseline/current synopsis-artifact
+logs reproduce the same missing test-helper error (source-loaded tests pass).
+Related installed synopsis failures are being checked against that baseline.
