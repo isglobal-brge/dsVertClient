@@ -5,6 +5,18 @@
 .DSVERT_CLIENT_DP_NB_GRID_ARTIFACT_VERSION <-
   "bounded-negative-binomial-likelihood-grid-v2"
 
+#' Per-row bounds for the corrected NB2 v2 grid loss
+#'
+#' For each signed candidate, the complete NB2 negative log likelihood is
+#' convex in the linear predictor. With normalized predictors and
+#' `A = sum(abs(beta))`, its maximum occurs at `-A` or `A`. Enumerating those
+#' endpoints and all admitted counts gives the bound before lattice rounding.
+#' The omitted v1 term is included; defective v1 releases remain sealed.
+#' @param beta_grid Signed list of coefficient vectors.
+#' @param theta_grid Signed positive dispersion candidates.
+#' @param max_outcome Signed maximum admitted integer count.
+#' @return Numeric vector of per-row loss bounds in theta-then-beta order.
+#' @keywords internal
 .dsvert_dp_nb_grid_loss_bounds <- function(beta_grid, theta_grid, max_outcome) {
   log1pexp <- function(value) pmax(value, 0) + log1p(exp(-abs(value)))
   unlist(lapply(theta_grid, function(theta) vapply(beta_grid, function(beta) {

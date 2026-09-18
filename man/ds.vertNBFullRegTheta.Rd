@@ -41,11 +41,11 @@ canonical signed Frequency artifact for the outcome.}
 additive covariate formula.}
 }
 \value{
-With \code{frequency} or \code{server}, an intercept-only coefficient-only
-\code{ds.vertNBFullRegTheta} object. With \code{analysis_id}, an additive
-finite-grid NB2 object with coefficients and \code{theta}, but no covariance
-or sampling inference. Otherwise the function raises
-\code{dsvert_route_unavailable} before DSI.
+With \code{frequency} or \code{server}, an intercept-only
+coefficient-only \code{ds.vertNBFullRegTheta} object. With
+\code{analysis_id}, an additive finite-grid NB2 object with coefficients
+and \code{theta}, but no covariance or sampling inference. Otherwise the
+function raises \code{dsvert_route_unavailable} before DSI.
 }
 \description{
 With a released, validated \code{ds.vertDPFrequency} object,
