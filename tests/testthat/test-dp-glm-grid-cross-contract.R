@@ -444,7 +444,8 @@ test_that("materialized cross grids select only from authenticated signed candid
     artifact <- .dsvert_dp_glm_grid_cross_workload_artifact(signed)
     manifest <- list(admission = list(unit_capacity = spec$observation_capacity,
       adjacency = spec$adjacency), bounds = list(numeric_grid_bits = spec$numeric_grid_bits),
-      workload = list(families = list(gaussian_models = list(
+      workload = list(coordinate_count = artifact$coordinate_count + 1,
+        families = list(gaussian_models = list(
         artifacts = list(cross_grid = artifact)))))
     context <- list(pinset = f$policy$peer_pinset, designated = f$policy$designated_noise_peers)
     fragments <- list(describe = list(), survival = list(), vertical_cross = list(),
@@ -476,4 +477,23 @@ test_that("materialized cross grids select only from authenticated signed candid
   expect_identical(.dsvert_dp_glm_grid_formula_reference(quote(site_a$x)), "site_a$x")
   expect_null(.dsvert_dp_glm_grid_formula_reference(quote(log(site_a$x))))
   expect_null(.dsvert_dp_glm_grid_formula_reference(quote(site_a$x$y)))
+})
+
+test_that("grid Claim coverage includes owners without public moment blocks", {
+  peers <- c("site_a", "site_b", "site_c")
+  context <- list(servers = peers, all_conns = stats::setNames(as.list(peers), peers))
+  artifact <- list(version = unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS[[1]]),
+    participating_peers = as.list(peers))
+  trusted <- list(manifest = list(workload = list(families = list(
+    gaussian_models = list(artifacts = list(grid = artifact))))))
+  observed <- NULL
+  testthat::local_mocked_bindings(.dsvert_fanout_by_site = function(conns, calls, ...) {
+    observed <<- names(calls)
+    stop("claim coverage captured")
+  })
+  expect_error(.dsvert_dp_synopsis_runner_compile(context,
+    list(manifest_sha256 = strrep("a", 64)), trusted,
+    list(blocks = list(list(owner_peer = "site_a"))), function(...) NULL),
+    "claim coverage captured")
+  expect_identical(observed, peers)
 })

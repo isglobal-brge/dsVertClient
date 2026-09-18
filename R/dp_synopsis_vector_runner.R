@@ -250,6 +250,11 @@
     }
     owners <- c(owners, cross_owners)
   }
+  grids <- .dsvert_dp_glm_grid_cross_artifacts(trusted$manifest)
+  if (length(grids)) {
+    owners <- c(owners, unlist(lapply(grids, `[[`, "participating_peers"),
+      use.names = FALSE))
+  }
   sources <- sort(unique(owners), method = "radix")
   if (!length(sources) || anyNA(sources) || any(!nzchar(sources)) ||
       !all(sources %in% servers)) {
