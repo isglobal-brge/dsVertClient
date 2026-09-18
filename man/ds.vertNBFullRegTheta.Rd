@@ -58,8 +58,10 @@ a signed sticky-DP finite \eqn{(beta, theta)} likelihood grid.
 \details{
 The Frequency route is intercept-only, never starts a new analysis,
 and has no covariance or standard errors. The grid route requires a same-owner
-signed artifact with bounded integer outcomes, finite beta and theta grids,
-and public predictor bounds. Neither route runs iterative remote likelihood
+signed \code{negative_binomial_grid_v2} artifact with bounded integer
+outcomes, finite beta and theta grids, and public predictor bounds. The
+defective v1 grid loss semantics are sealed and rejected; existing v1
+releases cannot be relabelled as v2. Neither route runs iterative remote likelihood
 calculations or returns sampling inference.
 }
 \seealso{

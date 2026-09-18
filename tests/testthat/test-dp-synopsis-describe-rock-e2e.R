@@ -623,7 +623,7 @@ test_that("the Synopsis real-E2E topology selector preserves the full gate", {
       policy$capsule_dataset_mapping[["data_peer_a"]] <- c(
         "x_peer_a", "y_peer_a")
       policy$capsule_workload_specs$gaussian$nb2_primary <- list(
-        version = "negative_binomial_grid_v1", dataset = "data_peer_a",
+        version = "negative_binomial_grid_v2", dataset = "data_peer_a",
         outcome = "y_peer_a", predictors = "x_peer_a", intercept = TRUE,
         max_outcome = 8L,
         beta_grid = list(c(-1, 0), c(-1, 1), c(0, 0), c(0, 1)),
@@ -3972,7 +3972,7 @@ test_that("real additive NB2 finite grid is plausible and Rock-replayable at K=2
     expect_s3_class(fit, "ds.vertNBFullRegTheta")
     expect_identical(fit$family, "negative_binomial_finite_grid")
     expect_identical(fit$signed_artifact$spec_version,
-                     "negative_binomial_grid_v1")
+                     "negative_binomial_grid_v2")
     expect_identical(fit$signed_artifact$design_terms,
                      c("(Intercept)", "x_peer_a"))
     expect_true(all(is.finite(fit$coefficients)))

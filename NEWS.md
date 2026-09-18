@@ -1,3 +1,13 @@
+# Unreleased
+
+* Corrected the same-owner NB2 grid loss oracle and signed caps to include
+  `y * log(theta + mu)`. The client now requires
+  `negative_binomial_grid_v2` and
+  `bounded-negative-binomial-likelihood-grid-v2`, with recalculated lattice
+  maxima and DP sensitivities. Defective v1 releases are sealed historical
+  artifacts and are rejected rather than migrated or relabelled. See
+  `inst/docs/negative_binomial_grid_v2.md` for the sensitivity derivation.
+
 # dsVertClient 1.2.1
 
 ### Fixes
