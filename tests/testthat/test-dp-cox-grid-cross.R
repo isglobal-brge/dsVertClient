@@ -91,3 +91,26 @@ test_that("Cox server and client canonical contracts agree", {
     .dsvert_joint_dp_client_json(.dsvert_dp_cox_grid_cross_contract_validate(
       f$contract,f$policy,f$schema_manifest)))
 })
+
+
+test_that("Cox measured admission is enforced even with both valid signatures", {
+  admission <- .dsvert_dp_cox_grid_cross_admission(2, 1)
+  n <- admission$maximum_rows; j <- admission$maximum_candidates
+  grid <- lapply(seq_len(j), function(i) c(i / 100, 0))
+  f <- .cox_cross_client_fixture(capacity = n, beta_grid = grid)
+  validate <- function(value) .dsvert_dp_cox_grid_cross_contract_validate(
+    value, f$policy, f$schema_manifest)
+  expect_silent(validate(f$contract))
+  expect_identical(f$contract$spec$resource_admission, admission)
+  expect_error(.cox_cross_client_fixture(capacity = n + 1), class = "dsvert_dp_public_failure")
+  expect_error(.cox_cross_client_fixture(beta_grid = c(grid, list(c(1, 0)))),
+    class = "dsvert_dp_public_failure")
+  for (field in names(admission)) {
+    changed <- f$contract
+    changed$spec$resource_admission[[field]] <- NULL
+    expect_error(validate(f$sign(changed)), class = "dsvert_dp_public_failure")
+  }
+  changed <- f$contract
+  changed$spec$resource_admission$maximum_rows <- n + 1
+  expect_error(validate(f$sign(changed)), class = "dsvert_dp_public_failure")
+})
