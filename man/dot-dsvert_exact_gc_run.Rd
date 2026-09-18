@@ -22,6 +22,7 @@
   initialized = NULL,
   mul_contract = NULL,
   alignment_source_count = NULL,
+  analysis_contract = NULL,
   .aggregate = DSI::datashield.aggregate
 )
 }

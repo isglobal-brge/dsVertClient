@@ -136,6 +136,7 @@ test_that("only the audited producer allowlist receives automatic replay", {
     call(name = "dsvertDPSynopsisGaussianCrossBindDS"),
     call(name = "dsvertDPSynopsisGaussianCrossFinalizeDS"),
     call(name = "dsvertDPSynopsisGaussianCrossEvidenceDS"),
+    call(name = "dsvertDPSynopsisGLMGridCrossDS"),
     call(name = "dsvertDPSynopsisAlignmentMaskStartDS"),
     call(name = "dsvertDPSynopsisAlignmentMaskStoreDS"),
     call(name = "dsvertDPSynopsisAlignmentMaskSealDS"),
