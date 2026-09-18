@@ -74,6 +74,8 @@ test_that("production Cox client is closed and exposes no test evaluator", {
     "aligned", "cox_grid", list(site_a = NULL, site_b = NULL)),
     class = "dsvert_dp_public_failure")
   expect_false(.dsvert_dp_cox_grid_cross_client_register()$runtime_enabled)
+  expect_identical(.dsvert_dp_cox_grid_cross_client_register()$entry, dp_cox_grid)
+  expect_false("dp_cox_grid" %in% getNamespaceExports("dsVertClient"))
 })
 
 test_that("Cox server and client canonical contracts agree", {

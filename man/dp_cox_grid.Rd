@@ -11,7 +11,10 @@ predictors, for example \code{site_a$x + site_b$z}.}
 }
 \description{Selects the first canonical minimum of a sticky jointly noised
 loss vector from a finite coefficient grid signed by both custodians.}
-\details{The production release runner currently fails closed pending connection
+\details{This family entry is currently namespace-internal and exposed to the
+integration session through its single registration function. Public export
+requires the package method-inventory and maturity-registry registration.
+The production release runner currently fails closed pending connection
 to the authenticated fused producer and existing joint-DP vector lifecycle.
 This function does not enable a plaintext evaluator or a general nonlinear RPC.
 Time and event must have the same owner. Predictors may span both custodians.
@@ -22,3 +25,4 @@ protected-data optimizer, baseline hazard, or standard error. Existing same-owne
 \code{ds.vertCox} routes are unchanged.}
 \value{After release integration, a finite-grid point estimate with raw-unit
 coefficients and hazard ratios, without sampling inference.}
+\keyword{internal}

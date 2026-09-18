@@ -464,7 +464,7 @@
 #' @param datasources Exactly two custodians, also the compute/noise authorities.
 #' @return After release integration, a finite-grid point estimate with raw-unit
 #'   coefficients and hazard ratios, without standard errors or baseline hazard.
-#' @export
+#' @keywords internal
 dp_cox_grid <- function(formula, data, analysis_id, datasources = NULL) {
   tryCatch({
     .dsvert_dp_cox_grid_cross_formula(formula)
@@ -476,6 +476,7 @@ dp_cox_grid <- function(formula, data, analysis_id, datasources = NULL) {
 
 .dsvert_dp_cox_grid_cross_client_register <- function() {
   list(version = "cox_grid_cross_v1", runtime_enabled = FALSE,
+       entry = dp_cox_grid,
        contract_validate = .dsvert_dp_cox_grid_cross_contract_validate,
        moment = .dsvert_dp_cox_grid_cross_moment,
        release = .dsvert_dp_cox_grid_cross_release)
