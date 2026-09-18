@@ -68,6 +68,10 @@
     stop("The private alignment-mask projection is incomplete",
          call. = FALSE)
   }
+  if (all(vapply(blocks, function(block) identical(block$input_family, "glm_grid"),
+                 logical(1L)))) {
+    return(list(source_offset = as.numeric(start - 1), coordinate_count = 1))
+  }
   list(source_offset = as.numeric(start - 1),
        coordinate_count = as.numeric(total - start + 1))
 }
