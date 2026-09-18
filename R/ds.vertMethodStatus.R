@@ -852,6 +852,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "Preflight eligibility is not execution certification and returns no",
     "estimator.")
 
+  out <- .dsvert_grouped_cross_maturity_register(out)
   out <- out[c(
     "method", "canonical", "status", "release_contract",
     "numeric_contract", "may_report_numerically_certified",
