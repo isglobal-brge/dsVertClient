@@ -148,3 +148,9 @@
   }
   invisible(TRUE)
 }
+
+.dsvert_dp_glm_grid_cross_noise_policy <- function(manifest) {
+  if (length(.dsvert_dp_glm_grid_cross_artifacts(manifest))) {
+    "dsvert-cross-grid-exact-gc-cost-policy-v2"
+  } else .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_COST_POLICY_VERSION
+}

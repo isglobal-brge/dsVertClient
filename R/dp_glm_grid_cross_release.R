@@ -9,6 +9,9 @@
 .dsvert_dp_glm_grid_cross_preflight <- function(manifest, context, schema_json) {
   artifacts <- .dsvert_dp_glm_grid_cross_artifacts(manifest)
   if (!length(artifacts)) return(invisible(TRUE))
+  if (.dsvert_dp_capsule_vector_layout(manifest)$coordinate_count > 51) {
+    .dsvert_dp_glm_grid_cross_fail()
+  }
   schema <- .dsvert_joint_dp_client_decode(schema_json, "signed grid schema",
     .DSVERT_CLIENT_DP_CAPSULE_SOURCE_MAX_MANIFEST_BYTES)
   policy <- list(peer_pinset = context$pinset,

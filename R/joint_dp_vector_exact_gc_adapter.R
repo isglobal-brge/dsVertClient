@@ -17,6 +17,13 @@
 .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_OUTPUT_KIND <-
   "joint-dp-vector-ring128-share-v1"
 
+.dsvert_joint_dp_vector_exact_gc_client_cost_limit <- function(policy) {
+  switch(policy,
+    "dsvert-joint-dp-vector-exact-gc-cost-policy-v1" = 1L,
+    "dsvert-cross-grid-exact-gc-cost-policy-v2" = 51L,
+    stop("Invalid exact-GC cost policy.", call. = FALSE))
+}
+
 .dsvert_joint_dp_vector_exact_gc_client_hash <- function(value) {
   digest::digest(
     .dsvert_joint_dp_client_json(value),
@@ -48,9 +55,10 @@
     assessment$maximum_chunk_coordinates)) else NA_real_
   total <- if (is.list(assessment)) suppressWarnings(as.numeric(
     assessment$total_coordinate_count)) else NA_real_
+  limit <- .dsvert_joint_dp_vector_exact_gc_client_cost_limit(assessment$cost_policy_version)
   promoted <- length(total) == 1L && !is.na(total) && is.finite(total) &&
     total == floor(total) && total >= 1L && total <= 1000000L &&
-    total <= .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_MAX_PROMOTED_COORDINATES
+    total <= limit
   reason <- if (isTRUE(promoted)) {
     "within_public_exact_gc_cost_ceiling"
   } else {
@@ -60,9 +68,7 @@
     length(maximum) == 1L && !is.na(maximum) && is.finite(maximum) &&
     maximum == floor(maximum) && maximum >= 1L &&
     maximum <= .DSVERT_CLIENT_JOINT_DP_VECTOR_MAX_CHUNK &&
-    identical(assessment$cost_policy_version,
-              .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_COST_POLICY_VERSION) &&
-    identical(as.numeric(assessment$maximum_promoted_coordinates), 1) &&
+    identical(as.numeric(assessment$maximum_promoted_coordinates), as.numeric(limit)) &&
     identical(assessment$promoted, promoted) &&
     identical(assessment$selection_reason, reason)
   valid <- is.list(assessment) && setequal(names(assessment), required) &&
@@ -103,9 +109,10 @@
     .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_BACKEND)
   total <- if (is.list(selection)) suppressWarnings(as.numeric(
     selection$total_coordinate_count)) else NA_real_
+  limit <- .dsvert_joint_dp_vector_exact_gc_client_cost_limit(selection$cost_policy_version)
   promoted <- length(total) == 1L && !is.na(total) && is.finite(total) &&
     total == floor(total) && total >= 1L && total <= 1000000L &&
-    total <= .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_MAX_PROMOTED_COORDINATES
+    total <= limit
   expected_backend <- if (isTRUE(promoted)) {
     .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_BACKEND
   } else {
@@ -118,9 +125,7 @@
   }
   coherent <- identical(selection$backend, expected_backend) &&
     identical(selection$one_draw, promoted) &&
-    identical(selection$cost_policy_version,
-              .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_COST_POLICY_VERSION) &&
-    identical(as.numeric(selection$maximum_promoted_coordinates), 1) &&
+    identical(as.numeric(selection$maximum_promoted_coordinates), as.numeric(limit)) &&
     identical(selection$selection_reason, expected_reason) &&
     length(maximum) == 1L && !is.na(maximum) && is.finite(maximum) &&
     maximum == floor(maximum) && maximum >= 1L &&

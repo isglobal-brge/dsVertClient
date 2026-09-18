@@ -109,15 +109,24 @@
   responses
 }
 
+.dsvert_dp_synopsis_runner_exact_chunk_size <- function(compiled, execution) {
+  if (identical(compiled$physical$backend_selection$policy_version,
+      "dsvert-cross-grid-exact-gc-cost-policy-v2")) {
+    return(min(64L, compiled$layout$coordinate_count,
+      compiled$physical$full_plan$maximum_chunk_coordinates))
+  }
+  execution$geometry$public_chunk_coordinates
+}
+
 .dsvert_dp_synopsis_runner_exact_start_set <- function(
     responses, authorities, trusted, compiled, execution, chunk_index) {
   response_json <- .dsvert_dp_synopsis_runner_json_set(
     responses, authorities, "exact-GC START",
     .DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES)
-  expected_offset <- as.integer(
-    chunk_index * execution$geometry$public_chunk_coordinates)
+  chunk_size <- .dsvert_dp_synopsis_runner_exact_chunk_size(compiled, execution)
+  expected_offset <- as.integer(chunk_index * chunk_size)
   expected_count <- as.integer(min(
-    execution$geometry$public_chunk_coordinates,
+    chunk_size,
     execution$geometry$coordinate_count - expected_offset))
   fields <- c(
     "version", "phase", "execution_id", "artifact_key",
@@ -394,7 +403,7 @@
   backend <- if (identical(
       mechanism$mechanism, .DSVERT_CLIENT_VECTOR_GAUSSIAN_MECHANISM)) {
     NULL
-  } else if (layout$coordinate_count <=
+  } else if (isTRUE(grid_cross) || layout$coordinate_count <=
              .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_MAX_PROMOTED_COORDINATES) {
     .DSVERT_CLIENT_VECTOR_EXACT_BACKEND
   } else {
@@ -609,7 +618,9 @@
       }
     }
 
-    for (chunk_index in seq.int(0L, public_chunk_count - 1L)) {
+    start_chunk_count <- if (isTRUE(grid_cross)) ceiling(layout$coordinate_count /
+      .dsvert_dp_synopsis_runner_exact_chunk_size(compiled, execution)) else public_chunk_count
+    for (chunk_index in seq.int(0L, start_chunk_count - 1L)) {
       start_calls <- stats::setNames(lapply(authorities, function(peer) call(
         name = "dsvertDPSynopsisStartDS", session_id = session_id,
         first_prepare_json = prepare_json[[authorities[[1L]]]],
