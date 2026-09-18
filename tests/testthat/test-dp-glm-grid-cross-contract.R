@@ -266,3 +266,20 @@ test_that("cross grid dimensions coefficients and exact integer caps fail closed
   bad$policy$adjacency <- "unsupported"
   .grid_cross_client_reject(bad$contract, bad)
 })
+
+test_that("cross-grid profile coefficients, proof and numeric template are immutable", {
+  fixture <- jsonlite::fromJSON(system.file(
+    "cross-grid-v1", "numeric_profile_v1.json", package = "dsVertClient"),
+    simplifyVector = FALSE)
+  mutations <- list(
+    function(x) { x$profile$softplus_coefficients_q64[[1]] <- "0"; x },
+    function(x) { x$certificate$eta_error_bound <- "0"; x },
+    function(x) { x$numeric_contract$binomial$input_fraction_bits <- 48; x })
+  for (mutate in mutations) {
+    changed <- mutate(fixture)
+    testthat::with_mocked_bindings({
+      expect_error(.dsvert_dp_glm_grid_cross_numeric("binomial"),
+                   class = "dsvert_dp_public_failure")
+    }, fromJSON = function(...) changed, .package = "jsonlite")
+  }
+})

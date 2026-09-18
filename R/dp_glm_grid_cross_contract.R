@@ -22,6 +22,9 @@
   "748900bb7f0d4d1026ba5e9b162bfb16e45e306033851dfc203c2461a6a78e4f"
 .DSVERT_CLIENT_DP_GLM_GRID_CROSS_CERTIFICATE_SHA256 <-
   "887fdf3eb38528bde7497580ba90b13d187bee94da54d67fd2c55e813565e1d8"
+.DSVERT_CLIENT_DP_GLM_GRID_CROSS_NUMERIC_SHA256 <- c(
+  binomial = "80f2fdbb6892dd0aaabb0eab2aea6f4d13341a502d8336050ea6d7ee8006cd1c",
+  poisson = "25ef48b66f919e2b8c5d9474829e1496d36a5eb4c45c1c778731648d7f3df797")
 
 .dsvert_dp_glm_grid_cross_fail <- function() {
   .dsvert_dp_glm_grid_cross_transcript_stop(simpleError("Invalid cross-grid contract."))
@@ -82,7 +85,9 @@
       !identical(.dsvert_dp_capsule_source_hash(value$certificate),
                  .DSVERT_CLIENT_DP_GLM_GRID_CROSS_CERTIFICATE_SHA256) ||
       !identical(value$numeric_contract[[family]]$certificate_sha256,
-                 .DSVERT_CLIENT_DP_GLM_GRID_CROSS_CERTIFICATE_SHA256)) {
+                 .DSVERT_CLIENT_DP_GLM_GRID_CROSS_CERTIFICATE_SHA256) ||
+      !identical(.dsvert_dp_capsule_source_hash(value$numeric_contract[[family]]),
+                 unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_NUMERIC_SHA256[[family]]))) {
     .dsvert_dp_glm_grid_cross_fail()
   }
   value$numeric_contract[[family]]
