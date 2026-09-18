@@ -445,6 +445,7 @@ test_that("materialized cross grids select only from authenticated signed candid
     manifest <- list(admission = list(unit_capacity = spec$observation_capacity,
       adjacency = spec$adjacency), bounds = list(numeric_grid_bits = spec$numeric_grid_bits),
       workload = list(coordinate_count = artifact$coordinate_count + 1,
+        capsule_mechanism = list(mechanism = "discrete-laplace"),
         families = list(gaussian_models = list(
         artifacts = list(cross_grid = artifact)))))
     context <- list(pinset = f$policy$peer_pinset, designated = f$policy$designated_noise_peers)
@@ -455,6 +456,10 @@ test_that("materialized cross grids select only from authenticated signed candid
       .dsvert_joint_dp_client_canonical(fragments))
     schema_json <- .dsvert_joint_dp_client_json(f$schema_manifest)
     expect_true(.dsvert_dp_glm_grid_cross_preflight(manifest, context, schema_json))
+    unsupported <- manifest
+    unsupported$workload$capsule_mechanism$mechanism <- "discrete-gaussian"
+    expect_error(.dsvert_dp_glm_grid_cross_preflight(unsupported, context, schema_json),
+      class = "dsvert_dp_public_failure")
     validated <- .dsvert_dp_glm_grid_artifact(manifest, spec$dataset, spec$analysis_id,
       NULL, spec$adjacency, 2^spec$numeric_grid_bits, spec$observation_capacity, family)
     selected <- .dsvert_dp_glm_grid_moment(c(20, 10), validated, family)
