@@ -502,3 +502,46 @@ test_that("grid Claim coverage includes owners without public moment blocks", {
     "claim coverage captured")
   expect_identical(observed, peers)
 })
+
+test_that("both certified profiles admit the full signed ten-predictor envelope", {
+  for (family in c("binomial", "poisson")) {
+    f <- .grid_cross_client_fixture(family)
+    f$policy$unit_capacity <- 10000
+    columns <- sprintf("x%02d", 1:10)
+    owners <- rep(c("site_a", "site_b", "site_c"), c(4, 3, 3))
+    schema <- f$schema_manifest
+    schema$datasets$aligned$patient_keys <- list(site_a = "patient",
+      site_b = "patient", site_c = "patient")
+    schema$datasets$aligned$columns <- c(stats::setNames(lapply(seq_along(columns),
+      function(i) list(kind = "numeric", owner_peer = owners[[i]], lower = 0,
+                       upper = 1)), columns), list(y = list(kind = "numeric",
+        owner_peer = "site_c", lower = 0, upper = f$raw$max_outcome)))
+    schema <- f$sign_schema(schema)
+    authenticated <- .dsvert_dp_glm_grid_cross_schema_validate(
+      f$policy, schema$logical_snapshot, schema, .dsvert_dp_glm_grid_cross_verify)
+    raw <- f$raw
+    raw$predictor_order <- paste0(owners, "$", columns)
+    raw$beta_grid <- lapply(seq(-0.25, 0.25, length.out = 50), function(offset)
+      c(-0.5 + offset, rep(c(0.25, -0.25), 5)))
+    raw$beta_grid <- raw$beta_grid[order(vapply(raw$beta_grid,
+      function(beta) .dsvert_joint_dp_client_json(as.list(beta)), character(1)),
+      method = "radix")]
+    spec <- .dsvert_dp_glm_grid_cross_spec(raw, f$policy, authenticated, "piecewise_v2")
+    artifact <- .dsvert_dp_glm_grid_cross_artifact(spec)
+    contract <- f$sign(list(version = f$contract$version, spec = spec,
+      artifact = artifact,
+      source_contract = .dsvert_dp_glm_grid_cross_source_contract(spec, artifact)))
+    admitted <- .dsvert_dp_glm_grid_profile_admit(contract, f$policy, schema)
+    expect_equal(admitted$spec$observation_capacity, 10000)
+    expect_length(admitted$spec$predictor_order, 10)
+    expect_length(admitted$spec$beta_grid, 50)
+    expect_identical(unlist(admitted$spec$participating_peers),
+                     c("site_a", "site_b", "site_c"))
+    expect_identical(admitted$artifact$implementation_state,
+                     "cross_owner_exact_gc_materialized")
+    malformed <- raw
+    malformed$predictor_order[c(8, 9, 10)] <- raw$predictor_order[c(9, 10, 8)]
+    expect_error(.dsvert_dp_glm_grid_cross_spec(malformed, f$policy, authenticated,
+      "piecewise_v2"), class = "dsvert_dp_public_failure")
+  }
+})
