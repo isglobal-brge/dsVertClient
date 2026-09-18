@@ -20,7 +20,10 @@ This function does not enable a plaintext evaluator or a general nonlinear RPC.
 Time and event must have the same owner. Predictors may span both custodians.
 Observed binary64 times are clipped to signed bounds and retain exact ordering
 and ties; ties use Breslow denominators, including censored observations at the
-event time. Missing inputs exclude the patient privately. There is no intercept,
+event time. The execution contract uses one private packed-row permutation,
+exact prefix and loss additions on shares, and certified exp/log profile kernels.
+Log batches have a fixed public shape and mask event status privately.
+Missing inputs exclude the patient privately. There is no intercept,
 protected-data optimizer, baseline hazard, or standard error. Existing same-owner
 \code{ds.vertCox} routes are unchanged.}
 \value{After release integration, a finite-grid point estimate with raw-unit
