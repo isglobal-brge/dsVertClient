@@ -61,4 +61,3 @@
        schema = schema, raw = raw, keys = keys, b64 = b64,
        sign = sign, sign_schema = sign_schema)
 }
-

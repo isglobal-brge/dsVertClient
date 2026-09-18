@@ -24,3 +24,11 @@ The authoritative numeric proof, cost model, full validation outcomes, commits
 and remaining gates are in the sibling server checkout: STATUS_COX.md,
 DECISIONS_COX.md, NUMERIC_CERTIFICATE_COX.md and INTEGRATION_COX.md. The current
 full-size resource model misses the 30 GB envelope; promotion remains blocked.
+
+Final functional commit: c35322e. The initial full client check reached tests
+and caught the export/inventory mismatch; the focused repair passed. Static
+checks show three pre-existing warning categories (MI non-ASCII, codoc mismatch,
+ordinal duplicate argument). The long full checks were stopped at the blocked
+handoff, not reported as passes. The server BLOCKED_COX.md and machine-readable
+package_check_status.json distinguish completed Cox tests from partial broad
+coverage. No modified pre-existing files remain relative to cb26ecd.
