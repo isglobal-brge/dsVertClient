@@ -22,3 +22,5 @@
 ^\.claude$
 ^\.claude/
 ^tools/campaign-logs$
+
+^inst/cross-grid-v2/build$

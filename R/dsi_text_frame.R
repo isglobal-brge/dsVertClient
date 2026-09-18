@@ -481,6 +481,8 @@
     c("claim_set_json", "compilation_json"),
   dsvertDPSynopsisGaussianCrossBindDS =
     c("claim_set_json", "compilation_json"),
+  dsvertDPSynopsisGLMGridCrossDS =
+    c("claim_set_json", "compilation_json"),
   dsvertDPSynopsisGaussianCrossFinalizeDS =
     c("claim_set_json", "compilation_json"),
   dsvertDPSynopsisGaussianCrossEvidenceDS =

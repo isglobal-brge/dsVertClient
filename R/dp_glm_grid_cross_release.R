@@ -70,6 +70,15 @@
       !identical(source_receipt$sampler_handoff_ready, FALSE) ||
       !identical(source_receipt$payload_exposed, FALSE)) .dsvert_dp_glm_grid_cross_fail()
   session_id <- .dsvert_uuid4()
+  # A dedicated source-computation session needs the same authenticated
+  # Synopsis authority before its exact transport can bind the pinned pair.
+  prepare_calls <- stats::setNames(lapply(peers, function(peer) {
+    as.call(c(list(as.name("dsvertDPSynopsisPrepareDS")),
+      list(session_id = session_id), .remote_context))
+  }), peers)
+  .dsvert_dp_synopsis_runner_json_set(.dsvert_fanout_by_site(context$conns,
+    prepare_calls, operation = "cross-grid Synopsis authority", .aggregate = .aggregate),
+    peers, "PREPARE", .DSVERT_CLIENT_SYNOPSIS_PREPARE_MAX_OBJECT_BYTES)
   setup <- .dsvert_dp_cross_exact_setup(.dsvert_setup_exact_gc_transport,
     context$all_conns, context$servers, match(peers, context$servers),
     session_id, .aggregate = .aggregate)
@@ -104,12 +113,13 @@
       stage <- .dsvert_dp_glm_grid_cross_receipts(invoke("prepare", batch),
         context, artifact, "prepared")
       check_binding(stage)
+      initialized <- invoke("start", batch)
       .dsvert_exact_gc_run(context$all_conns, server_names = context$servers,
         servers = match(peers, context$servers), session_id = session_id,
         operation_id = stage$operation_id, source_key = stage$source_key,
         output_key = stage$output_key, operation = stage$operation,
         ring = 128L, frac_bits = 0L, vector_len = stage$vector_len,
-        purpose = stage$purpose, transport_ready = TRUE, .aggregate = .aggregate)
+        purpose = stage$purpose, transport_ready = TRUE, initialized = initialized, .aggregate = .aggregate)
       check_binding(.dsvert_dp_glm_grid_cross_receipts(invoke("store", batch), context,
         artifact, "batch_persisted"))
     }

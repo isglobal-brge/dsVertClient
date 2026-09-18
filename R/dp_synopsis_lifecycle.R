@@ -1364,8 +1364,9 @@
   cross_artifacts <- .dsvert_dp_gaussian_cross_artifacts_client(manifest)
   categorical_cross_artifacts <-
     .dsvert_dp_categorical_cross_artifacts_client(manifest)
+  grid_cross_artifacts <- .dsvert_dp_glm_grid_cross_artifacts(manifest)
   cross_layout <- if (length(cross_artifacts) ||
-                      length(categorical_cross_artifacts)) {
+                      length(categorical_cross_artifacts) || length(grid_cross_artifacts)) {
     .dsvert_dp_gaussian_cross_layout_client(manifest)
   } else {
     NULL
@@ -1387,7 +1388,9 @@
       cross_layout$transport_coordinate_order_sha256
     } else NULL,
     cross_enabled = !is.null(cross_layout),
-    purpose = if (length(categorical_cross_artifacts)) {
+    purpose = if (length(grid_cross_artifacts)) {
+      .DSVERT_CLIENT_DP_GLM_GRID_CROSS_SOURCE_PURPOSE
+    } else if (length(categorical_cross_artifacts)) {
       .DSVERT_CLIENT_DP_CAPSULE_SOURCE_CATEGORICAL_CROSS_PURPOSE
     } else if (!is.null(cross_layout)) {
       .DSVERT_CLIENT_DP_CAPSULE_SOURCE_CROSS_PURPOSE
