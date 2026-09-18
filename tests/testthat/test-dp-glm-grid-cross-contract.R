@@ -329,3 +329,65 @@ test_that("real signatures cannot authorize unsupported categorical label encodi
       .dsvert_dp_glm_grid_cross_verify), class = "dsvert_dp_public_failure")
   }
 })
+
+.grid_cross_client_validate <- function(fixture, value) {
+  .dsvert_dp_glm_grid_cross_contract_validate(
+    value, fixture$policy, fixture$schema_manifest)
+}
+
+test_that("cross-grid signed zero encoding survives canonical round trips", {
+  fixture <- .grid_cross_client_fixture()
+  for (zero in c(-0, -2^-52)) {
+    raw <- fixture$raw
+    raw$beta_grid <- list(c(zero, 0, 0))
+    spec <- .dsvert_dp_glm_grid_cross_spec(raw, fixture$policy,
+                                         fixture$schema)
+    expect_identical(spec$beta_encoded[[1]], as.list(c("0", "0", "0")))
+    artifact <- .dsvert_dp_glm_grid_cross_artifact(spec)
+    contract <- fixture$sign(list(
+      version = .DSVERT_CLIENT_DP_GLM_GRID_CROSS_CONTRACT_VERSION,
+      spec = spec, artifact = artifact,
+      source_contract = .dsvert_dp_glm_grid_cross_source_contract(spec, artifact)))
+    validated <- .grid_cross_client_validate(fixture, contract)
+    encoded <- jsonlite::fromJSON(.dsvert_joint_dp_client_json(validated),
+                                  simplifyVector = FALSE)
+    expect_identical(.grid_cross_client_validate(fixture, encoded), validated)
+  }
+})
+
+test_that("cross-grid beta L1 comparison is exact at the public boundary", {
+  expect_true(.dsvert_dp_glm_grid_cross_beta_l1_valid(c(8, 8)))
+  expect_true(.dsvert_dp_glm_grid_cross_beta_l1_valid(rep(0.5, 32)))
+  expect_true(.dsvert_dp_glm_grid_cross_beta_l1_valid(
+    c(8 - 6 * 2^-50, rep(2 + 3 * 2^-51, 4))))
+  expect_false(.dsvert_dp_glm_grid_cross_beta_l1_valid(rep(3.2, 5)))
+  expect_false(.dsvert_dp_glm_grid_cross_beta_l1_valid(c(8, 8, 2^-60)))
+  expect_false(.dsvert_dp_glm_grid_cross_beta_l1_valid(c(8, 8, 2^-1074)))
+  fixture <- .grid_cross_client_fixture()
+  raw <- fixture$raw
+  for (beta in list(c(8, 8, 0), c(7.5, 7.5, 1))) {
+    raw$beta_grid <- list(beta)
+    expect_no_error(.dsvert_dp_glm_grid_cross_spec(
+      raw, fixture$policy, fixture$schema))
+  }
+  raw$beta_grid <- list(c(8, 8, 2^-60))
+  expect_error(.dsvert_dp_glm_grid_cross_spec(
+    raw, fixture$policy, fixture$schema), class = "dsvert_dp_public_failure")
+})
+
+test_that("cross-grid scalar identifiers reject JSON array representations", {
+  fixture <- .grid_cross_client_fixture()
+  for (field in c("analysis_id", "dataset", "outcome")) {
+    raw <- fixture$raw
+    raw[[field]] <- as.list(raw[[field]])
+    expect_error(.dsvert_dp_glm_grid_cross_spec(
+      raw, fixture$policy, fixture$schema), class = "dsvert_dp_public_failure")
+  }
+  forged <- fixture$contract[setdiff(names(fixture$contract), "signatures")]
+  forged$spec$analysis_id <- list("grid")
+  forged$artifact <- .dsvert_dp_glm_grid_cross_artifact(forged$spec)
+  forged$source_contract <- .dsvert_dp_glm_grid_cross_source_contract(
+    forged$spec, forged$artifact)
+  expect_error(.grid_cross_client_validate(fixture, fixture$sign(forged)),
+               class = "dsvert_dp_public_failure")
+})
