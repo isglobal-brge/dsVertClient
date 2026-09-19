@@ -94,15 +94,16 @@
                  "cross_owner_exact_gc_materialized") ||
       !identical(artifact$cross_owner_state, "exact_gc_to_joint_dp_vector_v1") ||
       !isTRUE(spec$intercept) ||
-      length(unique(unlist(spec$participating_peers))) != 2L ||
-      !setequal(unlist(spec$participating_peers),
-                unlist(spec$computation_peers)) ||
+      length(unique(unlist(spec$participating_peers))) < 2L ||
+      !setequal(unlist(spec$participating_peers), names(policy$peer_pinset)) ||
+      length(unique(unlist(spec$computation_peers))) != 2L ||
+      !all(unlist(spec$computation_peers) %in% unlist(spec$participating_peers)) ||
       !setequal(unlist(spec$computation_peers),
                 unname(policy$designated_noise_peers)) ||
-      length(policy$peer_pinset) != 2L) .dsvert_dp_glm_grid_cross_fail()
+      length(policy$peer_pinset) < 2L) .dsvert_dp_glm_grid_cross_fail()
   bits <- .dsvert_dp_glm_grid_cross_integer(spec$numeric_grid_bits, 8, 18)
   if (bits != .dsvert_dp_glm_grid_cross_integer(policy$numeric_grid_bits, 8, 18) ||
-      !setequal(unlist(spec$computation_peers), names(policy$peer_pinset))) {
+      !setequal(unlist(spec$participating_peers), names(policy$peer_pinset))) {
     .dsvert_dp_glm_grid_cross_fail()
   }
   capacity <- .dsvert_dp_glm_grid_cross_integer(policy$unit_capacity, 1, 2^31 - 1)
@@ -314,31 +315,117 @@
     production_release_enabled = FALSE, result_evidence_required = TRUE)
 }
 
+# The existing base lifecycle owns source access, joint noise and sticky replay.
+# The signed L1 extension binds only deterministic public postprocessing.
+.dsvert_dp_lasso_cross_release <- function(covariates, signed_contract,
+    base_contract, policy, schema_manifest, datasources, .aggregate) {
+  gaussian <- identical(signed_contract$spec$family, "gaussian")
+  validate_base <- function(value, policy, schema) {
+    if (gaussian) return(.dsvert_dp_lasso_cross_base(value, policy, "gaussian"))
+    .dsvert_dp_lasso_cross_base(
+      .dsvert_dp_glm_grid_profile_admit(value, policy, schema), policy)
+  }
+  validated <- .dsvert_dp_lasso_cross_contract_validate(
+    signed_contract, policy, schema_manifest, base_contract,
+    .base_validator = validate_base)
+  base <- validated$spec$base
+  covariates <- .dsvert_dp_glm_grid_cross_references(covariates)
+  if (!setequal(covariates, unlist(base$predictor_order))) {
+    .dsvert_dp_glm_grid_cross_fail()
+  }
+  check_base <- function(manifest) {
+    artifact <- manifest$workload$families$gaussian_models$artifacts[[base$analysis_id]]
+    if (!is.list(artifact)) .dsvert_dp_glm_grid_cross_fail()
+    .dsvert_dp_glm_grid_cross_equal(
+      if (gaussian) artifact else .dsvert_dp_glm_grid_cross_embedded_contract(artifact),
+      base_contract)
+    if (gaussian) {
+      .dsvert_dp_gaussian_artifact(manifest, base$dataset, base$analysis_id, NULL,
+        manifest$admission$adjacency, 2^manifest$bounds$numeric_grid_bits,
+        manifest$admission$unit_capacity)
+    } else {
+      .dsvert_dp_glm_grid_artifact(manifest, base$dataset, base$analysis_id, NULL,
+        manifest$admission$adjacency, 2^manifest$bounds$numeric_grid_bits,
+        manifest$admission$unit_capacity, base$family)
+    }
+  }
+  datasources <- .dsvert_dp_datasources(datasources)
+  bootstrap <- .dsvert_dp_synopsis_bootstrap_build_v1(datasources, .aggregate = .aggregate)
+  trusted <- .dsvert_dp_synopsis_client_bundle(bootstrap$manifest_bundle, bootstrap$status)
+  .dsvert_dp_glm_grid_cross_equal(as.list(policy$peer_pinset),
+                                 as.list(trusted$context$pinset))
+  if (!setequal(unname(policy$designated_noise_peers), trusted$context$designated)) {
+    .dsvert_dp_glm_grid_cross_fail()
+  }
+  .dsvert_dp_glm_grid_cross_equal(schema_manifest,
+    .dsvert_joint_dp_client_decode(bootstrap$manifest_bundle$schema_json,
+      "signed LASSO base schema", .DSVERT_CLIENT_DP_CAPSULE_SOURCE_MAX_MANIFEST_BYTES))
+  check_base(trusted$manifest)
+  run <- .dsvert_dp_synopsis_vector_run(datasources, status = bootstrap$status,
+    .aggregate = .aggregate, .request_check = check_base)
+  context <- .dsvert_dp_vector_context(run, allow_synopsis = TRUE)
+  artifact <- check_base(context$manifest)
+  blocks <- .dsvert_dp_capsule_vector_blocks(context$layout, "gaussian_models",
+    dataset = base$dataset, owner_peer = artifact$owner_peer)
+  blocks <- blocks[vapply(blocks, function(x) identical(x$key, base$analysis_id),
+                          logical(1L))]
+  if (length(blocks) != 1L) .dsvert_dp_glm_grid_cross_fail()
+  .dsvert_dp_glm_grid_cross_equal(blocks[[1L]]$descriptor,
+    context$manifest$workload$families$gaussian_models$artifacts[[base$analysis_id]])
+  coordinates <- .dsvert_dp_capsule_vector_values(context$release, blocks[[1L]])
+  certificate <- .dsvert_dp_gaussian_synopsis_certificate_build(
+    context, artifact, blocks[[1L]], coordinates)
+  verification <- ds.validateDPGaussianCertificate(certificate)
+  if (!identical(verification$integrity_valid, TRUE) ||
+      !identical(verification$authenticity, "session_transport_anchored")) {
+    .dsvert_dp_glm_grid_cross_fail()
+  }
+  coordinates <- verification$coordinates
+  if (gaussian) coordinates <- coordinates * 2^base$numeric_grid_bits
+  result <- .dsvert_dp_lasso_cross_postprocess(coordinates, validated$spec)
+  ranges <- vapply(artifact$predictors, function(x) x$upper-x$lower, numeric(1L))
+  lowers <- vapply(artifact$predictors, `[[`, numeric(1L), "lower")
+  outcome_span <- if (gaussian) artifact$outcome$upper-artifact$outcome$lower else 1
+  outcome_lower <- if (gaussian) artifact$outcome$lower else 0
+  result$paths <- lapply(result$normalized_paths, function(beta) {
+    slopes <- outcome_span*beta[-1L]/ranges
+    stats::setNames(c(outcome_lower + outcome_span*beta[[1L]] - sum(slopes*lowers),
+      unname(slopes)), names(beta))
+  })
+  c(.dsvert_dp_vector_public_metadata(context), result, list(
+    signed_lasso_contract = validated,
+    lasso_contract_sha256 = .dsvert_dp_capsule_source_hash(validated),
+    base_contract_sha256 = base$base_contract_sha256,
+    provenance_certificate = certificate,
+    certificate_sha256 = certificate$certificate_sha256,
+    implementation_state = artifact$implementation_state,
+    cross_owner_state = artifact$cross_owner_state,
+    postprocessing_binding_sha256 = .dsvert_dp_capsule_source_hash(list(
+      version = "signed-lasso-base-release-binding-v1",
+      lasso_contract = .dsvert_dp_capsule_source_hash(validated),
+      base_certificate = certificate$certificate_sha256))))
+}
+
 #' Select a finite signed cross-owner LASSO grid
 #'
 #' Binomial and Poisson reuse the signed certified-profile loss release. The
 #' Gaussian route reuses its signed sufficient statistics. Public penalties
 #' exclude the intercept and use public capacity, never the protected row count.
-#' This staging entry point fails closed until the fused release adapter is wired.
+#' The integration entry uses the authenticated base release and remains
+#' namespace-internal pending complete family promotion evidence.
 #' No caller-supplied plaintext or noisy vector can authorize a release.
 #' @param covariates Character vector of owner-qualified signed predictors.
 #' @param signed_contract Both custodians' signed LASSO extension contract.
 #' @param base_contract Signed base cross-owner release contract.
 #' @param policy Public pinned policy used to validate both contracts.
 #' @param schema_manifest Both custodians' signed public schema.
-#' @param datasources DataSHIELD connections, reserved for integrated transport.
-#' @return After integration, selected public candidates without standard errors.
-#'   In this staging version, a transcript-safe failure.
+#' @param datasources DataSHIELD connections for the authenticated base release.
+#' @return Selected public candidates, the signed extension and an anchored base
+#'   release certificate, without standard errors.
 #' @export
 dp_lasso_grid <- function(covariates, signed_contract, base_contract, policy,
                           schema_manifest, datasources = NULL) {
-  tryCatch({
-    validated <- .dsvert_dp_lasso_cross_contract_validate(
-      signed_contract, policy, schema_manifest, base_contract)
-    covariates <- .dsvert_dp_glm_grid_cross_references(covariates)
-    if (!setequal(covariates, unlist(validated$spec$base$predictor_order))) {
-      .dsvert_dp_glm_grid_cross_fail()
-    }
-    .dsvert_dp_glm_grid_cross_fail()
-  }, error = .dsvert_dp_glm_grid_cross_transcript_stop)
+  tryCatch(.dsvert_dp_lasso_cross_release(covariates, signed_contract,
+    base_contract, policy, schema_manifest, datasources, DSI::datashield.aggregate),
+    error = .dsvert_dp_glm_grid_cross_transcript_stop)
 }

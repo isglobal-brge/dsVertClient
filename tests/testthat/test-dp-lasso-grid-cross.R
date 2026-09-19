@@ -196,3 +196,42 @@ test_that("Gaussian LASSO evaluates cross moments with canonical first-candidate
   tied <- .dsvert_dp_lasso_cross_postprocess(c(0, 0), zero$spec)
   expect_identical(tied$selected_candidates, c(1L, 3L))
 })
+
+
+test_that("LASSO authenticates K2/K3/K5 owners with exactly two noise authorities", {
+  for (k in c(2L, 3L, 5L)) {
+    fixture <- .lasso_cross_fixture(peer_count = k, execution_profile = "piecewise_v2")
+    checked <- .dsvert_dp_lasso_cross_contract_validate(fixture$contract,
+      fixture$policy, fixture$schema, fixture$base_contract,
+      .base_validator = function(value, policy, schema) {
+        .dsvert_dp_lasso_cross_base(
+          .dsvert_dp_glm_grid_profile_admit(value, policy, schema), policy)
+      })
+    expect_equal(checked$spec$base$coordinate_count, fixture$base$coordinate_count)
+    expect_length(fixture$base_contract$spec$participating_peers, k)
+    expect_length(fixture$base_contract$spec$computation_peers, 2)
+    missing <- fixture$contract
+    missing$signatures[[k]] <- NULL
+    expect_error(.dsvert_dp_lasso_cross_contract_validate(missing,
+      fixture$policy, fixture$schema, fixture$base_contract),
+      class = "dsvert_dp_public_failure")
+  }
+})
+
+test_that("LASSO rejects a policy detached from the authenticated base authorities", {
+  fixture <- .lasso_cross_fixture("gaussian")
+  run_called <- FALSE
+  trusted <- list(context = list(pinset = fixture$policy$peer_pinset,
+    designated = fixture$policy$designated_noise_peers))
+  trusted$context$pinset[[1L]] <- trusted$context$pinset[[2L]]
+  expect_error(testthat::with_mocked_bindings(
+    .dsvert_dp_lasso_cross_release(c("peer_a$x", "peer_b$z"),
+      fixture$contract, fixture$base_contract, fixture$policy, fixture$schema,
+      list(peer_a = structure(list(), class = "DSConnection")), function(...) NULL),
+    .dsvert_dp_datasources = function(x) x,
+    .dsvert_dp_synopsis_bootstrap_build_v1 = function(...) list(),
+    .dsvert_dp_synopsis_client_bundle = function(...) trusted,
+    .dsvert_dp_synopsis_vector_run = function(...) { run_called <<- TRUE; stop("unexpected release") },
+    .package = "dsVertClient"), class = "dsvert_dp_public_failure")
+  expect_false(run_called)
+})
