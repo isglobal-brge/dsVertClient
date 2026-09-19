@@ -31,7 +31,7 @@
     coefficients <- coefficients * (spec$outcome$upper - spec$outcome$lower)
     coefficients[1L] <- coefficients[1L] + spec$outcome$lower
   }
-  list(status = "ok", family = spec$family,
+  result <- list(status = "ok", family = spec$family,
        analysis_id = spec$analysis_id, coefficients = coefficients,
        normalized_coefficients = stats::setNames(beta,
          c("(Intercept)", predictors)), selected_candidate = as.integer(selected),
@@ -42,6 +42,9 @@
        standard_errors = NULL, p_values = NULL,
        implementation_state = artifact$implementation_state,
        cross_owner_state = artifact$cross_owner_state)
+  if (identical(spec$family, "poisson_glmm"))
+    result$loss_objective <- "factorial_free_gh5_selection_plus_2_per_live_row_v1"
+  result
 }
 
 .dsvert_dp_grouped_grid_cross_impl <- function(

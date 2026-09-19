@@ -98,3 +98,17 @@ test_that("patient replacement and movement use two complete cluster ranges", {
     expect_identical(replacement$maximum_coordinates, spec$sensitivity$maximum_coordinates)
   }
 })
+
+test_that("Poisson GLMM selection values cannot masquerade as full likelihoods", {
+  f <- .grouped_cross_client_fixture("poisson_glmm")
+  spec <- f$contract$spec
+  result <- .dsvert_dp_grouped_grid_cross_moment(c(0, 1), spec, f$contract$artifact)
+  expect_identical(result$loss_objective,
+    "factorial_free_gh5_selection_plus_2_per_live_row_v1")
+  for (field in c("profile", "objective", "per_live_row_shift", "full_likelihood_value")) {
+    bad <- f$contract
+    bad$spec$numeric_contract[[field]] <- NULL
+    expect_error(.dsvert_dp_grouped_grid_cross_contract_validate(
+      f$sign(bad), f$policy, f$schema_manifest), class = "dsvert_dp_public_failure")
+  }
+})
