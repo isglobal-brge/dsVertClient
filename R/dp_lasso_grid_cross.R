@@ -361,7 +361,7 @@
     .dsvert_joint_dp_client_decode(bootstrap$manifest_bundle$schema_json,
       "signed LASSO base schema", .DSVERT_CLIENT_DP_CAPSULE_SOURCE_MAX_MANIFEST_BYTES))
   check_base(trusted$manifest)
-  run <- .dsvert_dp_synopsis_vector_run(datasources, status = bootstrap$status,
+  run <- .dsvert_dp_synopsis_vector_run(datasources,
     .aggregate = .aggregate, .request_check = check_base)
   context <- .dsvert_dp_vector_context(run, allow_synopsis = TRUE)
   artifact <- check_base(context$manifest)
@@ -380,8 +380,9 @@
       !identical(verification$authenticity, "session_transport_anchored")) {
     .dsvert_dp_glm_grid_cross_fail()
   }
-  coordinates <- verification$coordinates
-  if (gaussian) coordinates <- coordinates * 2^base$numeric_grid_bits
+  if (!identical(as.numeric(verification$output_lattice_scale),
+                 2^base$numeric_grid_bits)) .dsvert_dp_glm_grid_cross_fail()
+  coordinates <- verification$coordinates * verification$output_lattice_scale
   result <- .dsvert_dp_lasso_cross_postprocess(coordinates, validated$spec)
   ranges <- vapply(artifact$predictors, function(x) x$upper-x$lower, numeric(1L))
   lowers <- vapply(artifact$predictors, `[[`, numeric(1L), "lower")
