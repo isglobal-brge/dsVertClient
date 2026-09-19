@@ -2,7 +2,7 @@ test_that("staged LMM receipts bind both peers to plan terminal and candidate sh
   artifact <- list(analysis_id = "lmm", coordinate_count = 10L,
     numeric_certificate = list(profile_sha256 = strrep("a", 64), certificate_sha256 = strrep("b", 64)))
   peers <- c("peer_a", "peer_b")
-  context <- list(designated = peers)
+  context <- list(designated = peers, pinset = setNames(paste0("pk-", peers), peers))
   checked <- character()
   local_mocked_bindings(.dsvert_dp_capsule_source_verify = function(value, purpose, peer, context) {
     checked <<- c(checked, peer)

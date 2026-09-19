@@ -1,10 +1,54 @@
 # Internal orchestration, reached only after the signed workload admission gate.
+.dsvert_dp_lmm_cross_public_evidence_set <- function(
+    responses, context, manifest, analysis_id, release, compiled) {
+  artifact <- .dsvert_dp_glm_grid_cross_artifacts(manifest)[[analysis_id]]
+  if (!is.list(artifact) || !identical(artifact$version, "bounded-lmm-cross-grid-v1")) {
+    .dsvert_dp_glm_grid_cross_fail()
+  }
+  reference <- .dsvert_dp_lmm_cross_receipts(responses, context, artifact, "published")
+  for (field in c("artifact_key", "execution_id", "final_vector_root", "result_set_sha256")) {
+    if (!.dsvert_dp_capsule_source_hex(reference[[field]]) ||
+        !identical(reference[[field]], release[[field]])) .dsvert_dp_glm_grid_cross_fail()
+  }
+  if (!identical(reference$artifact_key, compiled$artifact$artifact_key)) {
+    .dsvert_dp_glm_grid_cross_fail()
+  }
+  namespace <- list(version = "dsvert-stateless-catalog-synopsis-source-contract-v1",
+    manifest_capsule_id = manifest$capsule_identity$capsule_id,
+    artifact_key = compiled$artifact$artifact_key,
+    source_claim_set_sha256 = compiled$artifact$semantic$source_claim_set_sha256)
+  capsule_id <- .dsvert_dp_synopsis_client_hash(
+    "dsVert/stateless-catalog-synopsis/source-namespace/v1|", namespace)
+  semantic_key <- .dsvert_dp_capsule_source_hash(list(
+    version = "cross-grid-semantic-release-key-v2", capsule_id = capsule_id,
+    source_contract_sha256 = release$source_contract_sha256,
+    signed_contract = artifact$signed_contract,
+    family = artifact$family, version_family = artifact$spec_version,
+    mechanism = manifest$workload$capsule_mechanism,
+    alignment = .dsvert_dp_glm_grid_cross_embedded_contract(artifact)$spec$alignment,
+    caps = artifact$sensitivity))
+  if (!identical(reference$capsule_id, capsule_id) ||
+      !identical(reference$source_contract_sha256, release$source_contract_sha256) ||
+      !identical(reference$semantic_key, semantic_key)) .dsvert_dp_glm_grid_cross_fail()
+  # Keep both actual signatures so an offline/cold certificate never relies on
+  # the orchestration's in-memory reference receipt or a synthesized authority.
+  stats::setNames(lapply(context$designated, function(peer) {
+    .dsvert_joint_dp_client_decode(responses[[peer]], "LMM public evidence",
+      .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_MAX_RECEIPT_BYTES)
+  }), context$designated)
+}
+
 .dsvert_dp_lmm_cross_receipts <- function(responses, context, artifact, phase) {
   peers <- context$designated
-  if (!setequal(names(responses), peers)) .dsvert_dp_glm_grid_cross_fail()
+  if (!is.list(responses) || length(responses) != 2L ||
+      anyDuplicated(names(responses)) || !setequal(names(responses), peers)) {
+    .dsvert_dp_glm_grid_cross_fail()
+  }
   extra <- switch(phase, bound = character(),
     prepared = c("operation_id", "source_key", "output_key", "operation", "purpose", "vector_len", "persisted"),
     persisted = "stage_receipt", complete = c("coordinate_count", "stage_receipt"),
+    published = c("coordinate_count", "stage_receipt", "artifact_key", "execution_id",
+      "final_vector_root", "result_set_sha256"),
     .dsvert_dp_glm_grid_cross_fail())
   fields <- c("version", "phase", "capsule_id", "analysis_id", "peer_name",
     "peer_identity_pk", "semantic_key", "artifact_sha256", "source_contract_sha256",
@@ -16,11 +60,13 @@
     .dsvert_dp_capsule_source_verify(value, "cross-grid-result", peer, context)
     if (!identical(value$version, "dsvert-lmm-staged-receipt-v1") ||
         !identical(value$phase, phase) || !identical(value$analysis_id, artifact$analysis_id) ||
+        !identical(value$peer_name, peer) ||
+        !identical(value$peer_identity_pk, unname(context$pinset[[peer]])) ||
         !identical(value$artifact_sha256, .dsvert_dp_capsule_source_hash(artifact)) ||
         !identical(value$profile_sha256, artifact$numeric_certificate$profile_sha256) ||
         !identical(value$certificate_sha256, artifact$numeric_certificate$certificate_sha256) ||
         !identical(value$private_result_exposed, FALSE)) .dsvert_dp_glm_grid_cross_fail()
-    for (field in c("stage_plan_digest", if (phase %in% c("persisted", "complete")) "stage_receipt")) {
+    for (field in c("stage_plan_digest", if (phase %in% c("persisted", "complete", "published")) "stage_receipt")) {
       if (!is.character(value[[field]]) || length(value[[field]]) != 1L || is.na(value[[field]]) ||
           !grepl("^[0-9a-f]{64}$", value[[field]]) || identical(value[[field]], strrep("0", 64))) {
         .dsvert_dp_glm_grid_cross_fail()
@@ -33,7 +79,7 @@
         !is.logical(value$persisted) || length(value$persisted) != 1L || is.na(value$persisted))) {
       .dsvert_dp_glm_grid_cross_fail()
     }
-    if (phase == "complete" && !identical(as.numeric(value$coordinate_count),
+    if (phase %in% c("complete", "published") && !identical(as.numeric(value$coordinate_count),
         as.numeric(artifact$coordinate_count))) .dsvert_dp_glm_grid_cross_fail()
     value
   })

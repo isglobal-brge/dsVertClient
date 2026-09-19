@@ -21,12 +21,12 @@ dp_gee_grid(outcome, predictors, contract, policy, schema_manifest,
 \item{datasources}{Optional DataSHIELD connections for the integrated reader.}
 }
 \description{Validates a finite-grid grouped contract and requests its sticky
-joint-DP artifact. The production reader currently fails closed pending fused
-producer integration. Existing same-owner adapters are unchanged.}
+joint-DP artifact. LMM ML reads authenticated sticky joint-DP releases;
+the remaining grouped readers fail closed until their producer is connected.}
 \details{LMM accepts a signed fixed covariance or an explicit finite ML variance grid,
 ordered by variance then coefficient candidate. The ML objective includes the
 private log determinant and a candidate-independent count shift; it does not
-provide REML.
+provide REML. The authenticated LMM reader requires an explicit ML grid.
 GLMM uses fixed nonadaptive GH5 quadrature with signed variance. Its target is a
 finite-quadrature surrogate, and numerical circuit error is separate from its
 Gaussian-integral approximation error. No protected optimisation is performed.
@@ -37,6 +37,6 @@ one analysis row. Sensitivity includes the change of the entire affected cluster
 Both custodians must sign the schema and the complete candidate contract. An
 unavailable producer, invalid signature, stale evidence, or malformed descriptor
 fails with the standard transcript-safe error. No plaintext fallback exists.}
-\value{After integration, a list containing the selected candidate, transformed
+\value{A list containing the selected candidate, transformed
 fixed-effect coefficients, signed parameters and release provenance. No standard
 errors or p-values.}

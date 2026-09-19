@@ -21,6 +21,11 @@
 
 .dsvert_dp_glm_grid_cross_schema_levels <- function(value) {
   fail <- function() stop("Invalid cross grid signed schema.", call. = FALSE)
+  # Canonical JSON arrays decode as unnamed lists. Their signed labels remain
+  # character scalars; reject objects and mixed/coerced label types.
+  if (is.list(value) && is.null(names(value)) && length(value) &&
+      all(vapply(value, function(label) is.character(label) && length(label) == 1L &&
+        !is.na(label), logical(1L)))) value <- unlist(value, use.names = FALSE)
   if (!is.atomic(value) || !is.null(dim(value))) fail()
   declared <- attr(value, "class", exact = TRUE)
   factor_value <- identical(declared, "factor") ||

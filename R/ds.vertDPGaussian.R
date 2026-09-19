@@ -68,6 +68,10 @@
   artifact <- if (is.list(family$artifacts)) {
     family$artifacts[[analysis_id]]
   } else NULL
+  if (is.list(artifact) && identical(artifact$version, "bounded-lmm-cross-grid-v1")) {
+    return(.dsvert_dp_grouped_cross_client_artifact(artifact, data_name,
+      analysis_id, owner_peer, adjacency, scale, capacity))
+  }
   if (is.list(artifact) && artifact$version %in%
       unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS)) {
     family_name <- names(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS)[[
@@ -665,6 +669,9 @@
   artifact <- .dsvert_dp_gaussian_artifact(
     context$manifest, data_name, analysis_id, server,
     context$adjacency, scale, capacity)
+  if (identical(artifact$version, "bounded-lmm-cross-grid-v1")) {
+    stop("The signed artifact is a grouped LMM; use dp_lmm_grid", call. = FALSE)
+  }
   blocks <- .dsvert_dp_capsule_vector_blocks(
     context$layout, "gaussian_models", dataset = data_name,
     owner_peer = artifact$owner_peer)

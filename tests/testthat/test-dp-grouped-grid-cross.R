@@ -72,7 +72,7 @@ test_that("grouped postprocessing selects likelihood and omits inference", {
   }
 })
 
-test_that("public grouped functions fail closed before fused release promotion", {
+test_that("public grouped functions reject unreleased fixed covariance and unopened families", {
   registration <- .dsvert_dp_grouped_grid_cross_register()
   expect_length(registration$versions, 5)
   for (family in .DSVERT_CLIENT_DP_GROUPED_GRID_CROSS_FAMILIES) {

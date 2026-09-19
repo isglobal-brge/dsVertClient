@@ -3,7 +3,8 @@
   artifacts <- manifest$workload$families$gaussian_models$artifacts
   if (!is.list(artifacts)) return(list())
   artifacts[vapply(artifacts, function(artifact) is.list(artifact) &&
-    artifact$version %in% unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
+    artifact$version %in% c(unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
+      "bounded-lmm-cross-grid-v1"),
     logical(1L))]
 }
 
@@ -46,6 +47,9 @@
 }
 
 .dsvert_dp_glm_grid_cross_source_blocks <- function(artifact, cursor) {
+  if (identical(artifact$version, "bounded-lmm-cross-grid-v1")) {
+    return(.dsvert_dp_grouped_cross_source_blocks(artifact, cursor))
+  }
   spec <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)$spec
   blocks <- list()
   for (variable in artifact$input_variable_order) {
@@ -89,6 +93,10 @@
 # reconstruction. Rebuild all public arithmetic fields again at use time.
 .dsvert_dp_glm_grid_cross_client_artifact <- function(artifact, data_name,
     analysis_id, owner_peer, adjacency, scale, capacity, family) {
+  if (identical(artifact$version, "bounded-lmm-cross-grid-v1")) {
+    return(.dsvert_dp_grouped_cross_client_artifact(artifact, data_name,
+      analysis_id, owner_peer, adjacency, scale, capacity, family))
+  }
   contract <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)
   spec <- contract$spec
   .dsvert_dp_glm_grid_cross_equal(artifact,
@@ -121,6 +129,108 @@
     }
     .dsvert_dp_glm_grid_cross_equal(spec, .dsvert_dp_glm_grid_profile_spec(spec))
   }
+  artifact$beta_grid <- lapply(spec$beta_grid, function(x) unlist(x, use.names = FALSE))
+  artifact$statistic_maximum <- unlist(artifact$statistic_maximum, use.names = FALSE)
+  artifact$candidate_loss_bounds <- unlist(artifact$candidate_loss_bounds, use.names = FALSE)
+  artifact
+}
+
+.dsvert_dp_grouped_cross_workload_artifact <- function(contract) {
+  artifact <- .dsvert_dp_glm_grid_cross_workload_artifact(contract)
+  spec <- contract$spec
+  artifact$transcript$producer <- paste0("dp.", spec$family, "-grid-cross.v1")
+  artifact$outcome_encoding <- spec$outcome_encoding
+  artifact$predictor_encoding <- spec$predictor_encoding
+  artifact$routing_inputs <- spec$routing_inputs
+  artifact$grouping <- spec$grouping
+  artifact$parameters <- spec$parameters
+  artifact$candidate_loss_bounds <- lapply(spec$sensitivity$candidate_bounds,
+                                           `[[`, "per_cluster_caps")
+  if (identical(spec$family, "lmm")) {
+    artifact$source_coordinate_scaling <-
+      "all_coordinates_already_on_common_numeric_lattice_v1"
+    # Match the manifest reader's scalar/array representation while preserving
+    # the complete signed contract as its original opaque JSON string.
+    artifact$candidate_loss_bounds <- unlist(artifact$candidate_loss_bounds, use.names = FALSE)
+    artifact <- .dsvert_joint_dp_client_canonical(jsonlite::fromJSON(
+      .dsvert_joint_dp_client_json(artifact), simplifyVector = TRUE,
+      simplifyDataFrame = FALSE, simplifyMatrix = FALSE))
+    artifact$participating_peers <- as.list(artifact$participating_peers)
+    artifact$computation_peers <- as.list(artifact$computation_peers)
+  }
+  artifact
+}
+
+.dsvert_dp_grouped_cross_source_blocks <- function(artifact, cursor) {
+  spec <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)$spec
+  layout <- .dsvert_dp_grouped_grid_cross_layout(spec)
+  blocks <- list()
+  for (signed_block in layout$blocks) {
+    variable <- signed_block$reference
+    outcome <- identical(variable, spec$outcome$reference)
+    routing <- isTRUE(signed_block$private_routing_input)
+    descriptor <- if (routing) spec$routing_inputs[[variable]] else {
+      if (outcome) spec$outcome else spec$predictors[[variable]]
+    }
+    for (kind in c("value", "validity")) {
+      size <- signed_block$length
+      end <- cursor + size - 1
+      if (end > .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_MAX_TRANSPORT_COORDINATES) {
+        .dsvert_dp_grouped_grid_cross_fail()
+      }
+      key <- paste(artifact$analysis_id, variable, kind, sep = "::")
+      block <- list(input_family = "grouped_grid", analysis_id = artifact$analysis_id,
+        variable = descriptor$column, kind = kind, outcome = outcome,
+        dataset = descriptor$dataset, owner_peer = descriptor$owner_peer,
+        start = as.integer(cursor), end = as.integer(end), length = as.integer(size),
+        fraction_bits = if (kind == "validity") 0L else signed_block$value_fraction_bits,
+        maximum = if (kind == "validity") 1 else signed_block$value_maximum,
+        private_routing_input = routing)
+      if (routing) block$levels <- unlist(descriptor$levels, use.names = FALSE) else {
+        block$lower <- descriptor$lower
+        block$upper <- descriptor$upper
+        if (outcome) block$outcome_encoding <- spec$outcome_encoding
+      }
+      blocks[[key]] <- block
+      cursor <- end + 1
+    }
+  }
+  list(blocks = blocks, cursor = cursor)
+}
+
+.dsvert_dp_grouped_cross_client_artifact <- function(artifact, data_name,
+    analysis_id, owner_peer, adjacency, scale, capacity, family = "lmm") {
+  contract <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)
+  spec <- contract$spec
+  if (!identical(family, "lmm") || !identical(spec$family, "lmm") ||
+      !identical(spec$parameters$objective, "ml") ||
+      !identical(spec$dataset, data_name) || !identical(spec$analysis_id, analysis_id) ||
+      (!is.null(owner_peer) && !identical(spec$owner_peer, owner_peer)) ||
+      !identical(spec$adjacency, adjacency) ||
+      !isTRUE(all.equal(spec$observation_capacity, capacity)) ||
+      !isTRUE(all.equal(2^spec$numeric_grid_bits, scale))) {
+    .dsvert_dp_grouped_grid_cross_fail()
+  }
+  parameters <- .dsvert_dp_grouped_grid_cross_ml_parameters(spec$parameters)
+  .dsvert_dp_glm_grid_cross_equal(spec$numeric_contract,
+    .dsvert_dp_grouped_grid_cross_ml_numeric(spec$grouping, parameters))
+  .dsvert_dp_glm_grid_cross_equal(spec$sensitivity,
+    .dsvert_dp_grouped_grid_cross_ml_sensitivity(spec$beta_grid,
+      spec$numeric_grid_bits, spec$grouping, parameters, adjacency, spec$numeric_contract))
+  candidates <- unlist(lapply(seq_along(parameters$variance_grid), function(v) {
+    lapply(seq_along(spec$beta_grid), function(b) list(variance_index = v, beta_index = b))
+  }), recursive = FALSE)
+  .dsvert_dp_glm_grid_cross_equal(spec$candidate_grid, candidates)
+  .dsvert_dp_glm_grid_cross_equal(spec$candidate_order, lapply(candidates, function(candidate) {
+    .dsvert_dp_capsule_source_hash(list(objective = "ml",
+      variance = parameters$variance_grid[[candidate$variance_index]],
+      beta = spec$beta_grid[[candidate$beta_index]]))
+  }))
+  .dsvert_dp_grouped_grid_cross_artifact_validate(contract$artifact, spec)
+  .dsvert_dp_glm_grid_cross_equal(contract$source_contract,
+    .dsvert_dp_grouped_grid_cross_source_contract(spec, contract$artifact))
+  .dsvert_dp_glm_grid_cross_equal(artifact,
+    .dsvert_dp_grouped_cross_workload_artifact(contract))
   artifact$beta_grid <- lapply(spec$beta_grid, function(x) unlist(x, use.names = FALSE))
   artifact$statistic_maximum <- unlist(artifact$statistic_maximum, use.names = FALSE)
   artifact$candidate_loss_bounds <- unlist(artifact$candidate_loss_bounds, use.names = FALSE)
