@@ -24,7 +24,7 @@ ds.vertOrdinal(
 )
 }
 \arguments{
-\item{formula, data, levels_ordered, cumulative_template, max_iter, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources, analysis_id}{Retained compatibility arguments. With a validated \code{frequency}
+\item{formula, data, levels_ordered, cumulative_template, max_iter, max_outer, tol, warm_max_iter, warm_tol, binomial_sigmoid_intervals, verbose, datasources}{Retained compatibility arguments. With a validated \code{frequency}
 object, only \code{y ~ 1} is available.}
 
 \item{...}{Retained compatibility arguments; not evaluated.}
