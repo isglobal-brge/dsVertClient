@@ -29,20 +29,21 @@
   .dsvert_dp_categorical_grid_cross_postprocess(contract, noisy_losses, "ordinal")
 }
 
-.dsvert_dp_ordinal_grid_cross_release <- function(contract, datasources) {
-  .dsvert_dp_glm_grid_cross_fail()
+.dsvert_dp_ordinal_grid_cross_release <- function(contract, datasources,
+    policy = NULL, schema_manifest = NULL) {
+  if (is.null(policy) || is.null(schema_manifest)) .dsvert_dp_glm_grid_cross_fail()
+  .dsvert_dp_likelihood_grid_cross_release(contract, policy, schema_manifest,
+    datasources, DSI::datashield.aggregate)
 }
 
 #' Select a signed cross-owner ordinal cumulative-logit grid candidate
 #'
-#' Validates both custodians' signatures and the complete public numeric and
-#' source contract. The release boundary fails closed before any DataSHIELD
-#' call until Step 2 supplies its fused producer and authenticated joint-DP
-#' release integration.
+#' Validates all pinned custodians' signatures and the complete public numeric
+#' and source contract, then uses the shared two-authority DP release lifecycle.
+#' This internal adapter remains pending full family promotion validation.
 #' @inheritParams dp_multinomial_grid
-#' @return After authenticated release integration, a finite-grid candidate
-#'   with coefficients and thresholds and no standard errors. Currently raises
-#'   the fixed transcript-safe unavailable error.
+#' @return A finite-grid candidate with coefficients and thresholds and no
+#'   standard errors, after verifying the authenticated DP release certificate.
 #' @details The ordinal domain has 2--8 ordered classes, 1--16 predictors and
 #'   at most 256 signed candidates. Intercepts are fixed at zero; candidate
 #'   slopes have L1 norm at most 8, thresholds have magnitude at most 8 and
@@ -58,8 +59,7 @@
 #'   row, plus output rounding when fewer than 16 output fractional bits are
 #'   used. Selection targets this certified profile; an exact-loss total
 #'   differs by at most the admitted row count times the certified row error.
-#' @note This integration entry point is namespace-internal until the shared
-#'   public method registry and authenticated release path are wired together.
+#' @note This entry point is namespace-internal pending full promotion evidence.
 #' @keywords internal
 dp_ordinal_grid <- function(formula, data, analysis_id, signed_contract,
                             policy, schema_manifest, datasources = NULL) {
@@ -71,6 +71,6 @@ dp_ordinal_grid <- function(formula, data, analysis_id, signed_contract,
       .dsvert_dp_glm_grid_cross_fail()
     }
     .dsvert_dp_categorical_grid_cross_formula(formula, contract$spec)
-    .dsvert_dp_ordinal_grid_cross_release(contract, datasources)
+    .dsvert_dp_ordinal_grid_cross_release(contract, datasources, policy, schema_manifest)
   }, error = .dsvert_dp_glm_grid_cross_transcript_stop)
 }

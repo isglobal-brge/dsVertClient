@@ -1738,6 +1738,13 @@
     family_name <- names(versions)[[match(artifact$version, unname(versions))]]
     moment <- if (isTRUE(lasso)) {
       .dsvert_dp_lasso_grid_moment(coordinates, artifact, family_name)
+    } else if (identical(family_name, "nb")) {
+      .dsvert_dp_nb_grid_cross_moment(coordinates * compiled$lattice$output_lattice_scale,
+        .dsvert_dp_glm_grid_cross_embedded_contract(artifact)$spec)
+    } else if (family_name %in% c("multinomial", "ordinal")) {
+      .dsvert_dp_categorical_grid_cross_postprocess(
+        .dsvert_dp_glm_grid_cross_embedded_contract(artifact),
+        unname(coordinates * compiled$lattice$output_lattice_scale), family_name)
     } else .dsvert_dp_glm_grid_moment(coordinates, artifact, family_name)
     accuracy_release <- list(
       manifest_sha256 = certificate$manifest_sha256,

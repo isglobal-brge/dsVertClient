@@ -36,13 +36,13 @@
   artifact <- tryCatch(
     manifest$workload$families$gaussian_models$artifacts[[analysis_id]],
     error = function(error) NULL)
-  if (!family %in% names(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS)) {
-    stop("The finite GLM family is invalid", call. = FALSE)
-  }
   if (is.list(artifact) && artifact$version %in%
       unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS)) {
     return(.dsvert_dp_glm_grid_cross_client_artifact(artifact, data_name,
       analysis_id, owner_peer, adjacency, scale, capacity, family))
+  }
+  if (!family %in% names(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS)) {
+    stop("The finite GLM family is invalid", call. = FALSE)
   }
   required <- c(
     "version", "spec_version", "analysis_id", "dataset", "owner_peer",

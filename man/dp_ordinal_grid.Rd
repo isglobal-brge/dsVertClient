@@ -10,20 +10,19 @@ dp_ordinal_grid(formula, data, analysis_id, signed_contract,
 for example \code{site_a$y ~ site_a$x + site_b$z}.}
 \item{data}{Signed logical dataset name.}
 \item{analysis_id}{Signed analysis identifier.}
-\item{signed_contract}{Complete cross-owner grid contract signed by both
+\item{signed_contract}{Complete cross-owner grid contract signed by all
 pinned custodians.}
 \item{policy}{Pinned public policy with two computation/noise authorities,
 adjacency, capacity and numeric output precision.}
-\item{schema_manifest}{Public schema signed by both custodians.}
-\item{datasources}{DataSHIELD connections; reserved for release integration.}
+\item{schema_manifest}{Public schema signed by all pinned custodians.}
+\item{datasources}{Authenticated DataSHIELD connections.}
 }
-\value{After authenticated release integration, a finite-grid candidate with
-coefficients and thresholds and no standard errors. Currently raises the fixed
-transcript-safe unavailable error.}
-\description{Validates both custodians' signatures and the complete public
-numeric and source contract. The release boundary fails closed before any
-DataSHIELD call until Step 2 supplies its fused producer and authenticated
-joint-DP release integration.}
+\value{A finite-grid candidate with coefficients and thresholds and no standard errors,
+after verifying the authenticated DP release certificate.}
+\description{Validates all pinned custodians' signatures and the complete
+public numeric and source contract, then uses the shared two-authority DP
+release lifecycle. This internal adapter remains pending full family
+promotion validation.}
 \details{The ordinal domain has 2--8 ordered classes, 1--16 predictors and at
 most 256 signed candidates. Intercepts are fixed at zero; candidate slopes
 have L1 norm at most 8, thresholds have magnitude at most 8 and adjacent
@@ -51,5 +50,5 @@ or either state string alone is never release evidence. Existing same-owner
 \code{ds.vertOrdinal} routes retain their original behavior.}
 \seealso{\code{\link{dp_multinomial_grid}}, \code{\link{ds.vertOrdinal}}}
 
-\note{This integration entry point is namespace-internal until the shared public method registry and authenticated release path are wired together.}
+\note{This entry point is namespace-internal pending full promotion evidence.}
 \keyword{internal}

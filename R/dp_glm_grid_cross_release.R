@@ -103,7 +103,7 @@
     binding <- .dsvert_dp_glm_grid_cross_receipts(invoke("bind"), context, artifact, "bound")
     if (!identical(binding$source_contract_sha256, source_receipt$contract_hash) ||
         !identical(binding$capsule_id, source_receipt$capsule_id) ||
-        !isTRUE(all.equal(binding$batch_count, ceiling(artifact$observation_capacity / 32) *
+        !isTRUE(all.equal(binding$batch_count, ceiling(artifact$observation_capacity / artifact$transcript$row_batch_size) *
           ceiling(artifact$coordinate_count / 8)))) .dsvert_dp_glm_grid_cross_fail()
     check_binding <- function(receipt) {
       for (field in c("source_contract_sha256", "capsule_id", "semantic_key")) {

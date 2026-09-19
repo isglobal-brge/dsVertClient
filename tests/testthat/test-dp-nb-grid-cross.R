@@ -128,10 +128,10 @@ test_that("NB2 candidate identities bind theta and reject encoded collisions", {
                class = "dsvert_dp_public_failure")
 })
 
-test_that("NB2 client entry validates cross-owner names then fails before DSI", {
+test_that("NB2 entry rejects missing authenticated datasources and signatures", {
   f <- .nb_grid_cross_fixture("dsVertClient")
   expect_error(dp_nb_grid(peer_a$y ~ peer_a$x + peer_b$z, "cohort", "nb_grid",
-    f$contract, f$policy, f$schema), class = "dsvert_dp_public_failure")
+    f$contract, f$policy, f$schema, datasources = list()), class = "dsvert_dp_public_failure")
   bad <- f$contract
   bad$signatures$peer_b <- NULL
   expect_error(dp_nb_grid(peer_a$y ~ peer_a$x + peer_b$z, "cohort", "nb_grid",
@@ -251,5 +251,23 @@ test_that("NB2 default envelope approximation is below one percent of DP noise s
                                             "certified_row_error") + 0.5 / 2^16)
   for (epsilon in c(1, 4, 8)) {
     expect_lt(accumulated_error, 0.01 * spec$natural_l1_sensitivity / epsilon)
+  }
+})
+
+
+test_that("NB signed profiles enter Step-2 admission at K2/K3/K5", {
+  for (k in c(2L, 3L, 5L)) {
+    f <- .nb_grid_cross_fixture("dsVertClient", peer_count = k)
+    admitted <- .dsvert_dp_glm_grid_profile_admit(f$contract, f$policy, f$schema)
+    expect_true(.dsvert_dp_glm_grid_cross_equal(admitted, f$contract))
+    expect_length(admitted$spec$participating_peers, k)
+    expect_length(admitted$spec$computation_peers, 2L)
+    projected <- .dsvert_dp_glm_grid_cross_workload_artifact(admitted)
+    expect_equal(projected$theta_grid, admitted$spec$theta_grid)
+    expect_equal(projected$numeric_certificate, admitted$spec$numeric_contract)
+    tampered <- f$contract
+    tampered$spec$theta_grid[[1L]] <- 128
+    expect_error(.dsvert_dp_glm_grid_profile_admit(tampered, f$policy, f$schema),
+      class = "dsvert_dp_public_failure")
   }
 })

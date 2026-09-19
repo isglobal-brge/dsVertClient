@@ -14,9 +14,11 @@
   artifact$transcript$operation <- NULL
   descriptors <- lapply(spec$predictors, function(x)
     x[c("column", "dataset", "owner_peer", "lower", "upper")])
+  categorical <- spec$family %in% c("multinomial", "ordinal")
   extra <- list(
     dataset = spec$dataset, family = spec$family,
-    outcome = spec$outcome[c("column", "dataset", "owner_peer", "lower", "upper")],
+    outcome = spec$outcome[c("column", "dataset", "owner_peer",
+      if (categorical) "levels" else c("lower", "upper"))],
     predictors = descriptors,
     predictor_order = unlist(spec$predictor_order, use.names = FALSE),
     input_variable_order = unlist(spec$input_variable_order, use.names = FALSE),
@@ -35,6 +37,11 @@
     adjacency = spec$adjacency,
     estimation_scope = "certified_bounded_cross_owner_signed_grid_only_v2",
     signed_contract = .dsvert_joint_dp_client_json(.dsvert_joint_dp_client_canonical(contract)))
+  if (identical(spec$family, "nb")) extra$theta_grid <- spec$theta_grid
+  if (categorical) {
+    extra$class_count <- spec$class_count
+    extra$class_order <- spec$class_order
+  }
   c(artifact, extra)
 }
 
@@ -44,6 +51,11 @@
   for (variable in artifact$input_variable_order) {
     outcome <- identical(variable, spec$outcome$reference)
     descriptor <- if (outcome) artifact$outcome else artifact$predictors[[variable]]
+    categorical_outcome <- outcome && spec$family %in% c("multinomial", "ordinal")
+    if (categorical_outcome) {
+      descriptor$lower <- 0
+      descriptor$upper <- spec$max_outcome
+    }
     for (kind in c("value", "validity")) {
       size <- spec$observation_capacity
       end <- cursor + size - 1
@@ -59,6 +71,7 @@
         fraction_bits = if (identical(kind, "validity") || outcome) 0L else 50L,
         maximum = if (identical(kind, "validity")) 1 else
           if (outcome) spec$max_outcome else 2^50))
+      if (categorical_outcome) blocks[[key]]$levels <- unlist(spec$class_order, use.names = FALSE)
       cursor <- end + 1
     }
   }
@@ -85,11 +98,29 @@
       (!is.null(owner_peer) && !identical(owner_peer, spec$owner_peer)) ||
       !identical(spec$adjacency, adjacency) ||
       !isTRUE(all.equal(spec$observation_capacity, capacity)) ||
-      !isTRUE(all.equal(2^spec$numeric_grid_bits, scale)) ||
-      !identical(spec$numeric_contract$profile_identity, .DSVERT_DP_GLM_GRID_PROFILE_V2)) {
+      !isTRUE(all.equal(2^spec$numeric_grid_bits, scale))) {
     .dsvert_dp_glm_grid_cross_fail()
   }
-  .dsvert_dp_glm_grid_cross_equal(spec, .dsvert_dp_glm_grid_profile_spec(spec))
+  if (identical(family, "nb")) {
+    .dsvert_dp_glm_grid_cross_equal(spec$numeric_contract, .dsvert_dp_nb_grid_cross_numeric())
+    .dsvert_dp_glm_grid_cross_equal(spec$sensitivity,
+      .dsvert_dp_nb_grid_cross_sensitivity(spec$beta_grid,
+        unlist(spec$theta_grid, use.names = FALSE), spec$max_outcome,
+        spec$numeric_grid_bits, capacity, adjacency))
+  } else if (family %in% c("multinomial", "ordinal")) {
+    .dsvert_dp_glm_grid_cross_equal(spec$numeric_contract,
+      .dsvert_dp_categorical_grid_cross_numeric(family))
+    .dsvert_dp_glm_grid_cross_equal(spec$sensitivity,
+      .dsvert_dp_categorical_grid_cross_sensitivity(
+        if (identical(family, "ordinal")) spec$candidate_grid else spec$beta_grid,
+        family, spec$class_count, length(spec$predictor_order),
+        spec$numeric_grid_bits, capacity, adjacency))
+  } else {
+    if (!identical(spec$numeric_contract$profile_identity, .DSVERT_DP_GLM_GRID_PROFILE_V2)) {
+      .dsvert_dp_glm_grid_cross_fail()
+    }
+    .dsvert_dp_glm_grid_cross_equal(spec, .dsvert_dp_glm_grid_profile_spec(spec))
+  }
   artifact$beta_grid <- lapply(spec$beta_grid, function(x) unlist(x, use.names = FALSE))
   artifact$statistic_maximum <- unlist(artifact$statistic_maximum, use.names = FALSE)
   artifact$candidate_loss_bounds <- unlist(artifact$candidate_loss_bounds, use.names = FALSE)

@@ -1,7 +1,8 @@
 .categorical_cross_client_fixture <- function(family = "multinomial",
                                              bits = 8L,
-                                             adjacency = "add_remove_patient") {
-  peers <- c("site_a", "site_b")
+                                             adjacency = "add_remove_patient", peer_count = 2L) {
+  peers <- paste0("site_", letters[seq_len(peer_count)])
+  predictors <- c("site_a$x", "site_b$z", if (peer_count > 2L) paste0(peers[3:peer_count], "$x", 3:peer_count) else character())
   keys <- stats::setNames(lapply(peers, function(peer) {
     openssl::ed25519_keygen()
   }), peers)
@@ -12,7 +13,7 @@
   }, character(1L))
   policy <- list(peer_pinset = pins,
     peer_pinset_sha256 = .dsvert_dp_capsule_source_hash(as.list(pins)),
-    designated_noise_peers = peers, unit_capacity = 20,
+    designated_noise_peers = peers[1:2], unit_capacity = 20,
     numeric_grid_bits = bits, adjacency = adjacency)
   snapshot <- list(logical_snapshot_id = "cohort", version = "v1",
                    alignment_protocol_version = 1)
@@ -30,6 +31,11 @@
                  levels = c("A", "B", "C")),
         z = list(kind = "numeric", owner_peer = "site_b", lower = 0,
                  upper = 10))))))
+  schema_unsigned$datasets$aligned$patient_keys <- stats::setNames(as.list(rep("patient", peer_count)), peers)
+  if (peer_count > 2L) for (i in 3:peer_count) {
+    schema_unsigned$datasets$aligned$columns[[paste0("x", i)]] <- list(
+      kind = "numeric", owner_peer = peers[[i]], lower = 0, upper = 1)
+  }
   sign_schema <- function(value) {
     value$signatures <- NULL
     value <- .dsvert_joint_dp_client_canonical(value)
@@ -44,7 +50,7 @@
     policy, snapshot, schema_manifest, .dsvert_dp_glm_grid_cross_verify)
   raw <- list(version = paste0(family, "_grid_cross_v1"),
     analysis_id = "cross_grid", dataset = "aligned", outcome = "site_a$y",
-    predictor_order = c("site_a$x", "site_b$z"),
+    predictor_order = predictors,
     alignment = list(version = "existing_prealigned_logical_dataset_v1",
       method = "pinned_psi_ordered_manifest_v1", alignment_group = "group",
       public_alignment_contract_sha256 = .dsvert_dp_capsule_source_hash(list(
@@ -60,6 +66,16 @@
     raw$candidate_grid <- list(
       list(beta = c(0, 0, 0), thresholds = c(-1, 1)),
       list(beta = c(0, 1, 1), thresholds = c(-0.5, 0.5)))
+  }
+  if (peer_count > 2L) {
+    if (identical(family, "multinomial")) {
+      raw$beta_grid <- lapply(raw$beta_grid, function(beta)
+        unlist(lapply(split(beta, rep(1:2, each = 3L)), function(column)
+          c(column, rep(0, peer_count - 2L))), use.names = FALSE))
+    } else raw$candidate_grid <- lapply(raw$candidate_grid, function(candidate) {
+      candidate$beta <- c(candidate$beta, rep(0, peer_count - 2L))
+      candidate
+    })
   }
   registration <- if (identical(family, "multinomial")) {
     .dsvert_dp_multinomial_grid_cross_register()

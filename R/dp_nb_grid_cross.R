@@ -424,9 +424,7 @@
        cross_owner_state = "exact_gc_to_joint_dp_vector_v1")
 }
 
-# The public entry point admits only the new signed cross-owner plan. Until the
-# Step 2 authenticated producer/release adapter is wired, it fails before DSI.
-# No caller-supplied callback can stand in for release evidence.
+# The entry remains namespace-internal pending the full promotion evidence.
 dp_nb_grid <- function(formula, data_name, analysis_id, signed_contract,
                        policy, schema_manifest, datasources = NULL) {
   tryCatch({
@@ -444,6 +442,7 @@ dp_nb_grid <- function(formula, data_name, analysis_id, signed_contract,
         !identical(attr(stats::terms(formula), "intercept"), 1L)) {
       .dsvert_dp_glm_grid_cross_fail()
     }
-    .dsvert_dp_glm_grid_cross_fail()
+    .dsvert_dp_likelihood_grid_cross_release(contract, policy, schema_manifest,
+      datasources, DSI::datashield.aggregate)
   }, error = .dsvert_dp_glm_grid_cross_transcript_stop)
 }

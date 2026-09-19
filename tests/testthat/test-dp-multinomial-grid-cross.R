@@ -91,7 +91,7 @@ test_that("multinomial DP postprocessing converts units and breaks ties canonica
   }
 })
 
-test_that("new family frontdoors validate then fail closed without a producer", {
+test_that("categorical frontdoors reject invalid contracts before resolving datasources", {
   for (family in c("multinomial", "ordinal")) {
     fixture <- .categorical_cross_client_fixture(family)
     frontdoor <- if (family == "multinomial") dp_multinomial_grid else dp_ordinal_grid
@@ -108,8 +108,10 @@ test_that("new family frontdoors validate then fail closed without a producer", 
         datasources = list(not_a_connection = "never_resolved")))
     }
     datasource_evaluated <- FALSE
+    unsigned <- fixture$contract
+    unsigned$signatures <- NULL
     .categorical_cross_client_reject(function() frontdoor(
-      formulas[[1L]], "aligned", "cross_grid", fixture$contract,
+      formulas[[1L]], "aligned", "cross_grid", unsigned,
       fixture$policy, fixture$schema_manifest, datasources = {
         datasource_evaluated <<- TRUE
         stop("must not contact a datasource")

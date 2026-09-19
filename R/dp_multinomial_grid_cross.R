@@ -259,9 +259,9 @@
     participants <- sort(unique(vapply(descriptors, `[[`, character(1L),
       "owner_peer")), method = "radix")
     compute <- sort(unname(policy$designated_noise_peers), method = "radix")
-    if (length(participants) != 2L || length(compute) != 2L ||
-        anyDuplicated(compute) || !identical(participants, compute) ||
-        !all(compute %in% names(policy$peer_pinset))) {
+    if (length(participants) < 2L || length(compute) != 2L ||
+        anyDuplicated(compute) || !all(compute %in% participants) ||
+        !setequal(participants, names(policy$peer_pinset))) {
       .dsvert_dp_glm_grid_cross_fail()
     }
     alignment <- list(version = "existing_prealigned_logical_dataset_v1",
@@ -351,7 +351,8 @@
       operation = paste0("dp.", spec$family, "-grid-cross.v1"),
       padded_units = spec$observation_capacity, candidate_count = length(spec$beta_grid),
       class_count = spec$class_count,
-      row_batch_size = min(32, spec$observation_capacity),
+      row_batch_size = min(if (identical(spec$family, "multinomial") && spec$class_count >= 5) 16 else 32,
+        spec$observation_capacity),
       candidate_batch_size = min(8, length(spec$beta_grid)),
       traversal = "row_batch_then_candidate_batch_v1",
       output = "two_authority_additive_candidate_sum_shares_only_v1"),
@@ -520,31 +521,30 @@
   .dsvert_dp_categorical_grid_cross_postprocess(contract, noisy_losses, "multinomial")
 }
 
-.dsvert_dp_multinomial_grid_cross_release <- function(contract, datasources) {
-  # Contract/state strings do not prove that MPC and joint DP ran. Integration
-  # must replace this boundary with the authenticated Step 2 transport/verifier.
-  .dsvert_dp_glm_grid_cross_fail()
+.dsvert_dp_multinomial_grid_cross_release <- function(contract, datasources,
+    policy = NULL, schema_manifest = NULL) {
+  if (is.null(policy) || is.null(schema_manifest)) .dsvert_dp_glm_grid_cross_fail()
+  .dsvert_dp_likelihood_grid_cross_release(contract, policy, schema_manifest,
+    datasources, DSI::datashield.aggregate)
 }
 
 #' Select a signed cross-owner multinomial grid candidate
 #'
-#' Validates both custodians' signatures and the complete public numeric and
-#' source contract. The cross-owner release requires the Step 2 fused producer
-#' and authenticated joint-DP release integration; until then this function
-#' fails closed before any DataSHIELD call.
+#' Validates all pinned custodians' signatures and the complete public numeric
+#' and source contract, then uses the shared two-authority DP release lifecycle.
+#' This internal adapter remains pending full family promotion validation.
 #' @param formula An additive formula of qualified owner-column references,
 #'   for example \code{site_a$y ~ site_a$x + site_b$z}.
 #' @param data Signed logical dataset name.
 #' @param analysis_id Signed analysis identifier.
-#' @param signed_contract Complete cross-owner grid contract signed by both
+#' @param signed_contract Complete cross-owner grid contract signed by all
 #'   pinned custodians.
 #' @param policy Pinned public policy with two computation/noise authorities,
 #'   adjacency, capacity and numeric output precision.
-#' @param schema_manifest Public schema signed by both custodians.
-#' @param datasources DataSHIELD connections; reserved for release integration.
-#' @return After authenticated release integration, a finite-grid candidate
-#'   with coefficients and no standard errors. Currently raises the fixed
-#'   transcript-safe unavailable error.
+#' @param schema_manifest Public schema signed by all pinned custodians.
+#' @param datasources Authenticated DataSHIELD connections.
+#' @return A finite-grid candidate with coefficients and no standard errors,
+#'   after verifying the authenticated DP release certificate.
 #' @details The multinomial domain has 2--8 classes, 1--16 predictors and at
 #'   most 256 signed candidates. Each nonreference class has an intercept and
 #'   slopes with component magnitude at most 8 and L1 norm at most 16. Class
@@ -555,8 +555,7 @@
 #'   plus output rounding when fewer than 16 output fractional bits are used.
 #'   Selection targets the certified profile; an exact-loss total differs by
 #'   at most the number of admitted rows times the certified row error.
-#' @note This integration entry point is namespace-internal until the shared
-#'   public method registry and authenticated release path are wired together.
+#' @note This entry point is namespace-internal pending full promotion evidence.
 #' @keywords internal
 dp_multinomial_grid <- function(formula, data, analysis_id, signed_contract,
                              policy, schema_manifest, datasources = NULL) {
@@ -568,6 +567,6 @@ dp_multinomial_grid <- function(formula, data, analysis_id, signed_contract,
       .dsvert_dp_glm_grid_cross_fail()
     }
     .dsvert_dp_categorical_grid_cross_formula(formula, contract$spec)
-    .dsvert_dp_multinomial_grid_cross_release(contract, datasources)
+    .dsvert_dp_multinomial_grid_cross_release(contract, datasources, policy, schema_manifest)
   }, error = .dsvert_dp_glm_grid_cross_transcript_stop)
 }

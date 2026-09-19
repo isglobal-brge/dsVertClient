@@ -1159,7 +1159,26 @@ test_that("real same-owner Synopsis contingency is plausible and Rock-replayable
       expect_gte(result$estimate, region[["lower"]] - 1e-12)
       expect_lte(result$estimate, region[["upper"]] + 1e-12)
       expect_gte(region[["lower"]], 0)
-      expect_true(is.finite(region[["upper"]]))
+      if (inherits(result, "ds.vertDPIndirectStandardizationInference")) {
+        box <- result$confidential_count_integer_box
+        expected_lower <- sum(result$expected_rates * rowSums(box$lower))
+        expect_equal(result$confidential_expected_events_range[["lower"]],
+                     expected_lower)
+        if (expected_lower == 0) {
+          expect_identical(result$combined_region_status,
+                           "vacuous_expected_denominator_includes_zero")
+          expect_equal(unname(region), c(0, Inf))
+        } else expect_true(is.finite(region[["upper"]]))
+      } else {
+        expect_equal(result$count_lower,
+                     pmax(first$table - result$simultaneous_radius, 0))
+        expected_lower <- sum(result$expected_rates * rowSums(result$count_lower))
+        expect_identical(result$mechanism_region_includes_non_estimable,
+                         expected_lower == 0)
+        # Event counts also occur in this denominator; positive public rates
+        # bound the mechanism-only ratio even when the empty table is possible.
+        expect_lte(region[["upper"]], 1/min(result$expected_rates) + 1e-10)
+      }
     }
     expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
 
@@ -2158,9 +2177,54 @@ test_that("real same-owner Synopsis correlation is plausible and Rock-replayable
       structure(list(peer = peer), class = "dsvert_synopsis_real_e2e_connection")
     }), fixture$peers)
     dispatch <- .synopsis_describe_real_e2e_dispatch(fixture)
+    client <- asNamespace("dsVertClient")
+    run <- get(".dsvert_dp_synopsis_vector_run", client)(
+      conns, .aggregate = dispatch)
+    context <- get(".dsvert_dp_vector_context", client)(run, allow_synopsis = TRUE)
+    block <- get(".dsvert_dp_capsule_vector_blocks", client)(
+      context$layout, "numeric_pair_moments", dataset = "data_peer_a",
+      owner_peer = "peer_a")[[1L]]
+    coordinates <- get(".dsvert_dp_capsule_vector_values", client)(
+      context$release, block)
+    radius <- get(".dsvert_dp_vector_accuracy_radius", client)(
+      context$release, context$manifest, coordinate_count = 6,
+      confidence = 0.95, maximum_error = fixture$policies$peer_a$unit_capacity)$radius
+    data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
+    x <- data$x_peer_a / 10
+    y <- data$y_peer_a / 10
+    scale <- as.numeric(context$lattice$output_lattice_scale)
+    exact <- c(length(x), colSums(round(cbind(x, y, x*x, y*y, x*y)*scale))/scale)
+    expect_lte(max(abs(coordinates - exact)), radius)
+    n <- coordinates[[1L]]
+    sums <- pmin(n, pmax(0, coordinates[2:3]))
+    squares <- pmin(sums, pmax(sums^2/n, coordinates[4:5]))
+    denominator <- sqrt(prod(pmax(0, squares - sums^2/n)))
+    if (n <= 0 || denominator <= 128*.Machine$double.eps*max(1, n)) {
+      expect_error(correlation(
+        "data_peer_a", "data_peer_a::peer_a", c("x_peer_a", "y_peer_a"),
+        "peer_a", conns, dispatch), "non_identifiable:")
+      before <- c(fixture$state$source_prepare, fixture$state$start)
+      fixture$state$storage <- stats::setNames(lapply(fixture$peers, function(...) {
+        new.env(parent = emptyenv())
+      }), fixture$peers)
+      replay <- get(".dsvert_dp_synopsis_vector_run", client)(
+        conns, .aggregate = dispatch)
+      replay_context <- get(".dsvert_dp_vector_context", client)(
+        replay, allow_synopsis = TRUE)
+      expect_identical(get(".dsvert_dp_capsule_vector_values", client)(
+        replay_context$release, block), coordinates)
+      expect_error(correlation(
+        "data_peer_a", "data_peer_a::peer_a", c("x_peer_a", "y_peer_a"),
+        "peer_a", conns, dispatch), "non_identifiable:")
+      expect_identical(c(fixture$state$source_prepare, fixture$state$start), before)
+      next
+    }
     first <- correlation(
       "data_peer_a", "data_peer_a::peer_a", c("x_peer_a", "y_peer_a"),
       "peer_a", conns, dispatch)
+    cross <- min(sums, max(0, sum(sums)-n, coordinates[[6L]]))
+    oracle <- min(1, max(-1, (cross-prod(sums)/n)/denominator))
+    expect_equal(first$correlation_raw_pairwise[1, 2], oracle, tolerance = 1e-12)
     expect_s3_class(first, "ds.vertDPCor")
     expect_identical(fixture$state$source_prepare, 1L)
     expect_identical(fixture$state$start, 2L)
@@ -2496,8 +2560,28 @@ test_that("real same-owner Gaussian Synopsis and correlation are plausible and R
       "data_peer_a", "gaussian_primary", c("x_peer_a", "y_peer_a"),
       "peer_a", conns, dispatch)
     expect_equal(unname(diag(cor$correlation)), c(1, 1), tolerance = 1e-12)
-    expect_equal(cor$correlation["x_peer_a", "y_peer_a"], -1,
-                 tolerance = 0.05)
+    verified <- ds.validateDPGaussianCertificate(cor$provenance_certificate)
+    expect_true(verified$integrity_valid)
+    coordinates <- verified$coordinates
+    data <- fixture$snapshots$peer_a[["data_peer_a"]]$data
+    x <- data$x_peer_a / 10
+    y <- data$y_peer_a / 10
+    exact <- c(length(x), length(x), sum(x), sum(x*x), sum(y), sum(x*y), sum(y*y))
+    expect_lte(max(abs(coordinates - exact)),
+               cor$accuracy_simultaneous_95_abs_raw_coordinates)
+    # Independent augmented-moment PSD projection and Pearson calculation.
+    augmented <- matrix(c(coordinates[2:3], coordinates[5],
+                          coordinates[3:4], coordinates[6],
+                          coordinates[5:7]), 3, 3)
+    n <- min(verified$coordinate_capacity, max(0, coordinates[[1L]]))
+    augmented <- pmin(pmax(augmented, 0), n)
+    eig <- eigen(augmented, symmetric = TRUE)
+    projected <- eig$vectors %*% diag(pmax(0, eig$values)) %*% t(eig$vectors)
+    centered <- projected[2:3, 2:3] -
+      outer(projected[1, 2:3], projected[1, 2:3])/projected[1, 1]
+    oracle <- centered[1, 2]/sqrt(prod(diag(centered)))
+    expect_equal(unname(cor$correlation_raw_complete_case[1, 2]),
+                 oracle, tolerance = 1e-12)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
                      c(1L, 2L))
 
@@ -2728,14 +2812,26 @@ test_that("real additive fixed-effect random-intercept REML is source-scale plau
     expect_identical(fit$signed_artifact$estimation_profile, "reml")
     expect_true(all(is.finite(c(fit$coefficients, fit$sigma2,
                                 fit$sigma_b2, fit$icc))))
-    expect_true(fit$coefficients[["(Intercept)"]] > 3 &&
-                fit$coefficients[["(Intercept)"]] < 5)
-    expect_true(fit$coefficients[["x_peer_a"]] > 0.25 &&
-                fit$coefficients[["x_peer_a"]] < 0.65)
-    # This is one epsilon=1 DP release rather than a non-private regression;
-    # retain the signed effect and a conservative source-scale magnitude.
-    expect_true(fit$coefficients[["z_peer_a"]] > 0.05 &&
-                fit$coefficients[["z_peer_a"]] < 0.9)
+    verified <- ds.validateDPGaussianCertificate(fit$provenance_certificate)
+    expect_true(verified$integrity_valid)
+    X <- cbind(1, data$x_peer_a/10, (data$z_peer_a+2)/4)
+    y <- data$y_peer_a/10
+    scale <- as.numeric(verified$output_lattice_scale)
+    pack <- function(X, y) {
+      pairs <- which(upper.tri(matrix(0, ncol(X), ncol(X)), diag = TRUE),
+                     arr.ind = TRUE)
+      gram <- vapply(seq_len(nrow(pairs)), function(i) {
+        sum(round(X[, pairs[i, 1]]*X[, pairs[i, 2]]*scale))/scale
+      }, numeric(1L))
+      c(gram, colSums(round(X*y*scale))/scale, sum(round(y*y*scale))/scale)
+    }
+    cluster_X <- rowsum(X, data$site_peer_a, reorder = FALSE)
+    cluster_y <- as.numeric(rowsum(y, data$site_peer_a, reorder = FALSE))
+    exact <- c(nrow(data), pack(X, y), 0, rep(0, 10),
+               nrow(cluster_X), pack(cluster_X, cluster_y))
+    expect_length(verified$coordinates, length(exact))
+    expect_lte(max(abs(verified$coordinates - exact)),
+               fit$accuracy$simultaneous_abs_mechanism_radius)
     expect_true(fit$sigma2 >= 0 && fit$sigma_b2 >= 0 &&
                 fit$icc >= 0 && fit$icc <= 1)
     expect_identical(c(fixture$state$source_prepare, fixture$state$start),
