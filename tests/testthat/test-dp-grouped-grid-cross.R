@@ -79,9 +79,9 @@ test_that("public grouped functions fail closed before fused release promotion",
     f <- .grouped_cross_client_fixture(family)
     entry <- if (family == "lmm") dp_lmm_grid else if (grepl("_glmm$", family))
       dp_glmm_grid else dp_gee_grid
-    expect_error(entry("site_a$y", c("site_a$x", "site_b$z"), f$contract,
+    expect_error(entry("site_b$y", c("site_a$x", "site_b$z"), f$contract,
       f$policy, f$schema_manifest), class = "dsvert_dp_public_failure")
-    expect_error(entry("site_a$y", "site_a$x", f$contract, f$policy,
+    expect_error(entry("site_b$y", "site_a$x", f$contract, f$policy,
       f$schema_manifest), class = "dsvert_dp_public_failure")
   }
 })
@@ -110,5 +110,40 @@ test_that("Poisson GLMM selection values cannot masquerade as full likelihoods",
     bad$spec$numeric_contract[[field]] <- NULL
     expect_error(.dsvert_dp_grouped_grid_cross_contract_validate(
       f$sign(bad), f$policy, f$schema_manifest), class = "dsvert_dp_public_failure")
+  }
+})
+
+test_that("grouped clients authenticate fractional source encoding and private routing", {
+  f <- .grouped_cross_client_fixture("lmm")
+  expect_identical(f$contract$spec$outcome_encoding, list(kind = "fixed_point", q = 50))
+  expect_identical(f$contract$spec$outcome$owner_peer, "site_b")
+  expect_identical(f$contract$spec$grouping$owner_peer, "site_a")
+  layout <- f$contract$source_contract$private_layout
+  expect_true(tail(layout$blocks, 1L)[[1L]]$private_routing_input)
+  for (field in c("outcome_encoding", "predictor_encoding", "routing_inputs")) {
+    bad <- f$contract
+    bad$spec[[field]] <- NULL
+    expect_error(.dsvert_dp_grouped_grid_cross_contract_validate(
+      f$sign(bad), f$policy, f$schema_manifest), class = "dsvert_dp_public_failure")
+  }
+  bad <- f$contract
+  bad$source_contract$private_layout$grouping_controls$source_encoding_sha256 <- strrep("0", 64)
+  expect_error(.dsvert_dp_grouped_grid_cross_contract_validate(
+    f$sign(bad), f$policy, f$schema_manifest), class = "dsvert_dp_public_failure")
+})
+
+test_that("grouped client schemas bind K source owners to two authorities", {
+  for (owners in c(2L, 3L, 5L)) {
+    f <- .grouped_cross_client_fixture("lmm", owners = owners)
+    validated <- .dsvert_dp_grouped_grid_cross_contract_validate(
+      f$contract, f$policy, f$schema_manifest)
+    expect_equal(unlist(validated$spec$participating_peers), names(f$policy$peer_pinset))
+    expect_equal(unlist(validated$spec$computation_peers), c("site_a", "site_b"))
+    expect_setequal(vapply(validated$source_contract$private_layout$blocks,
+      `[[`, character(1L), "owner_peer"), names(f$policy$peer_pinset))
+    missing <- f$contract
+    missing$signatures[[owners]] <- NULL
+    expect_error(.dsvert_dp_grouped_grid_cross_contract_validate(
+      missing, f$policy, f$schema_manifest), class = "dsvert_dp_public_failure")
   }
 })
