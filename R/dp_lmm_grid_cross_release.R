@@ -2,7 +2,7 @@
 .dsvert_dp_lmm_cross_public_evidence_set <- function(
     responses, context, manifest, analysis_id, release, compiled) {
   artifact <- .dsvert_dp_glm_grid_cross_artifacts(manifest)[[analysis_id]]
-  if (!is.list(artifact) || !identical(artifact$version, "bounded-lmm-cross-grid-v1")) {
+  if (!is.list(artifact) || !.dsvert_dp_staged_grouped_artifact(artifact)) {
     .dsvert_dp_glm_grid_cross_fail()
   }
   reference <- .dsvert_dp_lmm_cross_receipts(responses, context, artifact, "published")
@@ -58,7 +58,7 @@
       .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_MAX_RECEIPT_BYTES)
     .dsvert_dp_glm_grid_cross_fields(value, c(fields, extra))
     .dsvert_dp_capsule_source_verify(value, "cross-grid-result", peer, context)
-    if (!identical(value$version, "dsvert-lmm-staged-receipt-v1") ||
+    if (!identical(value$version, .dsvert_dp_staged_grouped_tag(artifact, "-staged-receipt-v1", "dsvert-")) ||
         !identical(value$phase, phase) || !identical(value$analysis_id, artifact$analysis_id) ||
         !identical(value$peer_name, peer) ||
         !identical(value$peer_identity_pk, unname(context$pinset[[peer]])) ||
@@ -72,9 +72,9 @@
         .dsvert_dp_glm_grid_cross_fail()
       }
     }
-    if (phase == "prepared" && (!identical(value$operation, "grouped-lmm-staged-v1") ||
+    if (phase == "prepared" && (!identical(value$operation, .dsvert_dp_staged_grouped_tag(artifact, "-staged-v1", "grouped-")) ||
         !is.character(value$purpose) || length(value$purpose) != 1L || is.na(value$purpose) ||
-        !grepl("^grouped-lmm-staged-v1/[0-9a-f]{64}$", value$purpose) ||
+        !grepl(.dsvert_dp_staged_grouped_tag(artifact, "-staged-v1/[0-9a-f]{64}$", "^grouped-"), value$purpose) ||
         !identical(as.numeric(value$vector_len), as.numeric(artifact$coordinate_count)) ||
         !is.logical(value$persisted) || length(value$persisted) != 1L || is.na(value$persisted))) {
       .dsvert_dp_glm_grid_cross_fail()
@@ -95,7 +95,7 @@
 .dsvert_dp_lmm_cross_orchestrate <- function(manifest_json, manifest, context,
     source_receipt, .aggregate, .remote_context) {
   artifacts <- .dsvert_dp_glm_grid_cross_artifacts(manifest)
-  if (length(artifacts) != 1L || !identical(artifacts[[1L]]$family, "lmm") ||
+  if (length(artifacts) != 1L || !.dsvert_dp_staged_grouped_artifact(artifacts[[1L]]) ||
       is.null(.remote_context)) .dsvert_dp_glm_grid_cross_fail()
   artifact <- artifacts[[1L]]
   layout <- .dsvert_dp_gaussian_cross_layout_client(manifest)

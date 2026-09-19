@@ -21,13 +21,16 @@ dp_gee_grid(outcome, predictors, contract, policy, schema_manifest,
 \item{datasources}{Optional DataSHIELD connections for the integrated reader.}
 }
 \description{Validates a finite-grid grouped contract and requests its sticky
-joint-DP artifact. LMM ML reads authenticated sticky joint-DP releases;
-the remaining grouped readers fail closed until their producer is connected.}
+joint-DP artifact. LMM ML and binomial GH5 grids read authenticated sticky
+joint-DP releases; the remaining grouped readers fail closed.}
 \details{LMM accepts a signed fixed covariance or an explicit finite ML variance grid,
 ordered by variance then coefficient candidate. The ML objective includes the
 private log determinant and a candidate-independent count shift; it does not
 provide REML. The authenticated LMM reader requires an explicit ML grid.
-GLMM uses fixed nonadaptive GH5 quadrature with signed variance. Its target is a
+GLMM uses fixed nonadaptive GH5 quadrature with signed variance. Binomial GLMM
+also accepts an explicit signed variance grid over zero and one quarter, ordered
+by variance then coefficient candidate; its authenticated reader requires this
+explicit grid. Its target is a
 finite-quadrature surrogate, and numerical circuit error is separate from its
 Gaussian-integral approximation error. No protected optimisation is performed.
 GEE retains likelihood, bread, and componentwise clipped cluster-score meat;

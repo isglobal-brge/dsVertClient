@@ -364,7 +364,7 @@
   trusted <- .dsvert_dp_synopsis_client_bundle(manifest_bundle, status)
   grid_cross <- .dsvert_dp_synopsis_supported_glm_grid_cross_v1(trusted$manifest)
   lmm_cross <- any(vapply(.dsvert_dp_glm_grid_cross_artifacts(trusted$manifest),
-    function(artifact) identical(artifact$version, "bounded-lmm-cross-grid-v1"), logical(1L)))
+    function(artifact) .dsvert_dp_staged_grouped_artifact(artifact), logical(1L)))
   .dsvert_dp_glm_grid_cross_preflight(trusted$manifest, trusted$context,
     manifest_bundle$schema_json)
   if (!is.null(.request_check)) {

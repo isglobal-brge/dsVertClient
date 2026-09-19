@@ -22,7 +22,7 @@
   for (artifact in artifacts) {
     contract <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)
     .dsvert_dp_glm_grid_profile_admit(contract, policy, schema)
-    expected <- if (identical(contract$spec$family, "lmm")) {
+    expected <- if (contract$spec$family %in% c("lmm", "binomial_glmm")) {
       .dsvert_dp_grouped_cross_workload_artifact(contract)
     } else .dsvert_dp_glm_grid_cross_workload_artifact(contract)
     .dsvert_dp_glm_grid_cross_equal(artifact, expected)
@@ -73,7 +73,7 @@
     source_receipt, .aggregate, .remote_context) {
   artifacts <- .dsvert_dp_glm_grid_cross_artifacts(manifest)
   if (!length(artifacts)) return(NULL)
-  if (any(vapply(artifacts, function(artifact) identical(artifact$family, "lmm"), logical(1L)))) {
+  if (any(vapply(artifacts, function(artifact) .dsvert_dp_staged_grouped_artifact(artifact), logical(1L)))) {
     return(.dsvert_dp_lmm_cross_orchestrate(manifest_json, manifest, context,
       source_receipt, .aggregate, .remote_context))
   }

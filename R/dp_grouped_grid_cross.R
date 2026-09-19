@@ -3,7 +3,7 @@
 # coordinates; no option, callback argument, or plaintext fallback enables it.
 .dsvert_dp_grouped_grid_cross_release <- function(contract, policy, schema, datasources,
     .aggregate = DSI::datashield.aggregate) {
-  if (!identical(contract$spec$family, "lmm")) .dsvert_dp_glm_grid_cross_fail()
+  if (!contract$spec$family %in% c("lmm", "binomial_glmm")) .dsvert_dp_glm_grid_cross_fail()
   contract <- .dsvert_dp_glm_grid_profile_admit(contract, policy, schema)
   datasources <- .dsvert_dp_datasources(datasources)
   bootstrap <- .dsvert_dp_synopsis_bootstrap_build_v1(datasources, .aggregate = .aggregate)
@@ -62,11 +62,13 @@
   gee <- grepl("_gee$", spec$family)
   width <- if (gee) 1L + 2L * triangle else 1L
   ml <- identical(spec$family, "lmm") && identical(spec$parameters$objective, "ml")
-  count <- if (ml) length(spec$candidate_grid) else length(spec$beta_grid)
+  glmm_grid <- identical(spec$family, "binomial_glmm") &&
+    !is.null(spec$parameters$variance_grid)
+  count <- if (ml || glmm_grid) length(spec$candidate_grid) else length(spec$beta_grid)
   if (length(coordinates) != count * width) .dsvert_dp_glm_grid_cross_fail()
   losses <- coordinates[seq.int(1L, length(coordinates), by = width)]
   selected <- which.min(losses)
-  candidate <- if (ml) spec$candidate_grid[[selected]] else list(beta_index = selected)
+  candidate <- if (ml || glmm_grid) spec$candidate_grid[[selected]] else list(beta_index = selected)
   beta <- unlist(spec$beta_grid[[candidate$beta_index]], use.names = FALSE)
   predictors <- unlist(spec$predictor_order, use.names = FALSE)
   spans <- vapply(spec$predictors, function(x) x$upper - x$lower, numeric(1L))
@@ -92,6 +94,12 @@
   if (ml) {
     result$parameters <- c(list(objective = "ml"),
       spec$parameters$variance_grid[[candidate$variance_index]])
+    result$loss_objective <- spec$numeric_contract$objective
+  }
+  if (glmm_grid) {
+    result$parameters <- list(
+      random_intercept_variance = spec$parameters$variance_grid[[candidate$variance_index]],
+      quadrature = spec$parameters$quadrature)
     result$loss_objective <- spec$numeric_contract$objective
   }
   if (identical(spec$family, "poisson_glmm"))
@@ -120,8 +128,8 @@
 #'
 #' These typed entry points accept owner-qualified covariates and a contract
 #' signed by both compute-and-noise authorities. They never fit an optimiser
-#' to protected data. LMM ML reads authenticated sticky joint-DP releases;
-#' the remaining grouped readers fail closed until their producer is connected.
+#' to protected data. LMM ML and binomial GH5 grids read authenticated sticky
+#' joint-DP releases; the remaining grouped readers fail closed.
 #'
 #' @param outcome One owner-qualified outcome, such as `site_a$y`.
 #' @param predictors Owner-qualified covariates in the signed canonical order.
@@ -135,8 +143,10 @@
 #'   variance grid, ordered by variance then coefficient candidate. The ML
 #'   objective includes the private log determinant and a candidate-independent
 #'   count shift; it does not provide REML. The authenticated LMM reader requires
-#'   an explicit ML grid. GLMM uses signed fixed variance and
-#'   the nonadaptive GH5 surrogate, not adaptive quadrature.
+#'   an explicit ML grid. GLMM uses signed fixed variance or, for binomial,
+#'   an explicit variance grid over zero and one quarter, ordered by variance
+#'   then coefficient candidate, with the nonadaptive GH5 surrogate.
+#'   The authenticated binomial GLMM reader requires an explicit variance grid.
 #'   GEE selects using independent likelihood; its complete DP workload also
 #'   includes bread and clipped cluster-score meat. Its correlation structure
 #'   and parameter are signed. All families protect one admitted patient with

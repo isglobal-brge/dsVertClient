@@ -989,7 +989,7 @@
        identical(artifact$spec_version, "cox_partial_likelihood_grid_v1"))
   cross_grid_artifact <- artifact$version %in%
     c(unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
-      "bounded-lmm-cross-grid-v1") &&
+      "bounded-lmm-cross-grid-v1", "bounded-binomial-glmm-cross-grid-v1") &&
     identical(artifact$spec_version, paste0(artifact$family, "_grid_cross_v1")) &&
     identical(artifact$implementation_state, "cross_owner_exact_gc_materialized") &&
     identical(artifact$cross_owner_state, "exact_gc_to_joint_dp_vector_v1")
@@ -1001,7 +1001,7 @@
     identical(artifact$cross_owner_state, "exact_gc_to_joint_dp_vector_v1")
   cross_evidence <- context$cross_gaussian_evidence[[artifact$analysis_id]] %||%
     NULL
-  lmm_cross_artifact <- identical(artifact$version, "bounded-lmm-cross-grid-v1")
+  lmm_cross_artifact <- .dsvert_dp_staged_grouped_artifact(artifact)
   lmm_evidence <- context$cross_lmm_evidence[[artifact$analysis_id]] %||% NULL
   if (!isTRUE(context$synopsis) || !is.list(bundle) || !is.list(compilation) ||
       !is.list(provenance) || !all(required_provenance %in% names(provenance)) ||
@@ -1236,7 +1236,7 @@
   cross_owner <- identical(
     certificate$cross_owner_state, "exact_gc_to_joint_dp_vector_v1") &&
     identical(certificate$descriptor$version, .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)
-  lmm_cross <- identical(certificate$descriptor$version, "bounded-lmm-cross-grid-v1")
+  lmm_cross <- .dsvert_dp_staged_grouped_artifact(certificate$descriptor)
   if (!.dsvert_dp_has_exact_names(certificate, required) ||
       !identical(certificate$version,
                  .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION) ||
@@ -1751,7 +1751,7 @@
     lasso <- artifact$version %in%
       unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS)
     versions <- if (isTRUE(lmm_cross)) {
-      c(lmm = "bounded-lmm-cross-grid-v1")
+      c(lmm = "bounded-lmm-cross-grid-v1", binomial_glmm = "bounded-binomial-glmm-cross-grid-v1")
     } else if (isTRUE(lasso)) {
       .DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS
     } else if (artifact$version %in% unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS)) {

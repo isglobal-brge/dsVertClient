@@ -4,7 +4,7 @@
   if (!is.list(artifacts)) return(list())
   artifacts[vapply(artifacts, function(artifact) is.list(artifact) &&
     artifact$version %in% c(unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
-      "bounded-lmm-cross-grid-v1"),
+      "bounded-lmm-cross-grid-v1", "bounded-binomial-glmm-cross-grid-v1"),
     logical(1L))]
 }
 
@@ -47,7 +47,7 @@
 }
 
 .dsvert_dp_glm_grid_cross_source_blocks <- function(artifact, cursor) {
-  if (identical(artifact$version, "bounded-lmm-cross-grid-v1")) {
+  if (.dsvert_dp_staged_grouped_artifact(artifact)) {
     return(.dsvert_dp_grouped_cross_source_blocks(artifact, cursor))
   }
   spec <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)$spec
@@ -93,7 +93,7 @@
 # reconstruction. Rebuild all public arithmetic fields again at use time.
 .dsvert_dp_glm_grid_cross_client_artifact <- function(artifact, data_name,
     analysis_id, owner_peer, adjacency, scale, capacity, family) {
-  if (identical(artifact$version, "bounded-lmm-cross-grid-v1")) {
+  if (.dsvert_dp_staged_grouped_artifact(artifact)) {
     return(.dsvert_dp_grouped_cross_client_artifact(artifact, data_name,
       analysis_id, owner_peer, adjacency, scale, capacity, family))
   }
@@ -146,7 +146,7 @@
   artifact$parameters <- spec$parameters
   artifact$candidate_loss_bounds <- lapply(spec$sensitivity$candidate_bounds,
                                            `[[`, "per_cluster_caps")
-  if (identical(spec$family, "lmm")) {
+  if (spec$family %in% c("lmm", "binomial_glmm")) {
     artifact$source_coordinate_scaling <-
       "all_coordinates_already_on_common_numeric_lattice_v1"
     # Match the manifest reader's scalar/array representation while preserving
@@ -199,11 +199,13 @@
 }
 
 .dsvert_dp_grouped_cross_client_artifact <- function(artifact, data_name,
-    analysis_id, owner_peer, adjacency, scale, capacity, family = "lmm") {
+    analysis_id, owner_peer, adjacency, scale, capacity, family = NULL) {
   contract <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)
   spec <- contract$spec
-  if (!identical(family, "lmm") || !identical(spec$family, "lmm") ||
-      !identical(spec$parameters$objective, "ml") ||
+  if (is.null(family)) family <- spec$family
+  if (!family %in% c("lmm", "binomial_glmm") || !identical(spec$family, family) ||
+      (identical(family, "lmm") && !identical(spec$parameters$objective, "ml")) ||
+      (identical(family, "binomial_glmm") && is.null(spec$parameters$variance_grid)) ||
       !identical(spec$dataset, data_name) || !identical(spec$analysis_id, analysis_id) ||
       (!is.null(owner_peer) && !identical(spec$owner_peer, owner_peer)) ||
       !identical(spec$adjacency, adjacency) ||
@@ -211,20 +213,24 @@
       !isTRUE(all.equal(2^spec$numeric_grid_bits, scale))) {
     .dsvert_dp_grouped_grid_cross_fail()
   }
-  parameters <- .dsvert_dp_grouped_grid_cross_ml_parameters(spec$parameters)
+  parameters <- .dsvert_dp_grouped_grid_cross_parameters(spec$parameters, family)
   .dsvert_dp_glm_grid_cross_equal(spec$numeric_contract,
-    .dsvert_dp_grouped_grid_cross_ml_numeric(spec$grouping, parameters))
+    .dsvert_dp_grouped_grid_cross_numeric(family, spec$grouping, parameters))
   .dsvert_dp_glm_grid_cross_equal(spec$sensitivity,
-    .dsvert_dp_grouped_grid_cross_ml_sensitivity(spec$beta_grid,
+    .dsvert_dp_grouped_grid_cross_sensitivity(spec$beta_grid, family, spec$max_outcome,
       spec$numeric_grid_bits, spec$grouping, parameters, adjacency, spec$numeric_contract))
   candidates <- unlist(lapply(seq_along(parameters$variance_grid), function(v) {
     lapply(seq_along(spec$beta_grid), function(b) list(variance_index = v, beta_index = b))
   }), recursive = FALSE)
   .dsvert_dp_glm_grid_cross_equal(spec$candidate_grid, candidates)
   .dsvert_dp_glm_grid_cross_equal(spec$candidate_order, lapply(candidates, function(candidate) {
-    .dsvert_dp_capsule_source_hash(list(objective = "ml",
+    if (identical(family, "lmm")) .dsvert_dp_capsule_source_hash(list(objective = "ml",
       variance = parameters$variance_grid[[candidate$variance_index]],
-      beta = spec$beta_grid[[candidate$beta_index]]))
+      beta = spec$beta_grid[[candidate$beta_index]])) else {
+      .dsvert_dp_capsule_source_hash(list(objective = "finite_gh5_binomial_negative_log_likelihood_v1",
+        random_intercept_variance = parameters$variance_grid[[candidate$variance_index]],
+        quadrature = parameters$quadrature, beta = spec$beta_grid[[candidate$beta_index]]))
+    }
   }))
   .dsvert_dp_grouped_grid_cross_artifact_validate(contract$artifact, spec)
   .dsvert_dp_glm_grid_cross_equal(contract$source_contract,
