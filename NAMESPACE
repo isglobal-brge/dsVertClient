@@ -192,3 +192,5 @@ importFrom(stats,terms)
 importFrom(stats,var)
 importFrom(utils,head)
 importFrom(utils,tail)
+
+export(dp_lmm_grid, dp_glmm_grid, dp_gee_grid)
