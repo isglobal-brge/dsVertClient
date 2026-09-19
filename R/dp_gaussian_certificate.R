@@ -977,7 +977,7 @@
        identical(artifact$spec_version, "poisson_lasso_grid_v1")) ||
     (identical(artifact$version,
                .DSVERT_CLIENT_DP_NB_GRID_ARTIFACT_VERSION) &&
-       identical(artifact$spec_version, "negative_binomial_grid_v1")) ||
+       identical(artifact$spec_version, "negative_binomial_grid_v2")) ||
     (identical(artifact$version,
                .DSVERT_CLIENT_DP_MULTINOM_GRID_ARTIFACT_VERSION) &&
        identical(artifact$spec_version, "multinomial_grid_v1")) ||

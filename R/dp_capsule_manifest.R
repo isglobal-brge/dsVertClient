@@ -659,6 +659,9 @@
             }, logical(1L))) && !anyDuplicated(beta_keys)
           if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
         } else if (identical(spec$version, "negative_binomial_grid_v1")) {
+          # Sealed defective likelihood semantics must not enter a fallback.
+          valid <- FALSE
+        } else if (identical(spec$version, "negative_binomial_grid_v2")) {
           expected <- c(
             "version", "dataset", "outcome", "predictors", "intercept",
             "max_outcome", "beta_grid", "theta_grid")
@@ -1069,7 +1072,7 @@
         spec$predictors <- predictors
         spec$beta_grid <- beta_grid
       } else if (identical(family, "gaussian") &&
-                 identical(spec$version, "negative_binomial_grid_v1")) {
+                 identical(spec$version, "negative_binomial_grid_v2")) {
         spec$predictors <- predictors
         spec$beta_grid <- beta_grid
         spec$theta_grid <- theta_grid
