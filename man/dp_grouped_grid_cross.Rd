@@ -23,7 +23,10 @@ dp_gee_grid(outcome, predictors, contract, policy, schema_manifest,
 \description{Validates a finite-grid grouped contract and requests its sticky
 joint-DP artifact. The production reader currently fails closed pending fused
 producer integration. Existing same-owner adapters are unchanged.}
-\details{The LMM random-intercept covariance is public and fixed across candidates.
+\details{LMM accepts a signed fixed covariance or an explicit finite ML variance grid,
+ordered by variance then coefficient candidate. The ML objective includes the
+private log determinant and a candidate-independent count shift; it does not
+provide REML.
 GLMM uses fixed nonadaptive GH5 quadrature with signed variance. Its target is a
 finite-quadrature surrogate, and numerical circuit error is separate from its
 Gaussian-integral approximation error. No protected optimisation is performed.

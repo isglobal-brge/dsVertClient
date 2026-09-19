@@ -71,6 +71,10 @@
     source_receipt, .aggregate, .remote_context) {
   artifacts <- .dsvert_dp_glm_grid_cross_artifacts(manifest)
   if (!length(artifacts)) return(NULL)
+  if (any(vapply(artifacts, function(artifact) identical(artifact$family, "lmm"), logical(1L)))) {
+    return(.dsvert_dp_lmm_cross_orchestrate(manifest_json, manifest, context,
+      source_receipt, .aggregate, .remote_context))
+  }
   if (is.null(.remote_context)) .dsvert_dp_glm_grid_cross_fail()
   layout <- .dsvert_dp_gaussian_cross_layout_client(manifest)
   peers <- context$designated

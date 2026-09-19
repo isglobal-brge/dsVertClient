@@ -16,11 +16,13 @@
   triangle <- dimension * (dimension + 1L) / 2L
   gee <- grepl("_gee$", spec$family)
   width <- if (gee) 1L + 2L * triangle else 1L
-  count <- length(spec$beta_grid)
+  ml <- identical(spec$family, "lmm") && identical(spec$parameters$objective, "ml")
+  count <- if (ml) length(spec$candidate_grid) else length(spec$beta_grid)
   if (length(coordinates) != count * width) .dsvert_dp_glm_grid_cross_fail()
   losses <- coordinates[seq.int(1L, length(coordinates), by = width)]
   selected <- which.min(losses)
-  beta <- unlist(spec$beta_grid[[selected]], use.names = FALSE)
+  candidate <- if (ml) spec$candidate_grid[[selected]] else list(beta_index = selected)
+  beta <- unlist(spec$beta_grid[[candidate$beta_index]], use.names = FALSE)
   predictors <- unlist(spec$predictor_order, use.names = FALSE)
   spans <- vapply(spec$predictors, function(x) x$upper - x$lower, numeric(1L))
   lower <- vapply(spec$predictors, `[[`, numeric(1L), "lower")
@@ -42,6 +44,11 @@
        standard_errors = NULL, p_values = NULL,
        implementation_state = artifact$implementation_state,
        cross_owner_state = artifact$cross_owner_state)
+  if (ml) {
+    result$parameters <- c(list(objective = "ml"),
+      spec$parameters$variance_grid[[candidate$variance_index]])
+    result$loss_objective <- spec$numeric_contract$objective
+  }
   if (identical(spec$family, "poisson_glmm"))
     result$loss_objective <- "factorial_free_gh5_selection_plus_2_per_live_row_v1"
   result
@@ -83,9 +90,12 @@
 #' @param schema_manifest Doubly signed aligned dataset schema.
 #' @param datasources Optional DataSHIELD connections for the integrated reader.
 #' @return After producer integration, the DP-selected fixed-effect candidate,
-#'   public fixed parameters and provenance. No standard errors or p-values.
-#' @details Random-intercept variance is fixed and signed. GLMM uses the signed
-#'   nonadaptive GH5 surrogate, not adaptive quadrature or a fitted variance.
+#'   selected signed parameters and provenance. No standard errors or p-values.
+#' @details LMM accepts a signed fixed covariance or an explicit finite ML
+#'   variance grid, ordered by variance then coefficient candidate. The ML
+#'   objective includes the private log determinant and a candidate-independent
+#'   count shift; it does not provide REML. GLMM uses signed fixed variance and
+#'   the nonadaptive GH5 surrogate, not adaptive quadrature.
 #'   GEE selects using independent likelihood; its complete DP workload also
 #'   includes bread and clipped cluster-score meat. Its correlation structure
 #'   and parameter are signed. All families protect one admitted patient with
