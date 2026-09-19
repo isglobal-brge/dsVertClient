@@ -545,3 +545,73 @@ test_that("both certified profiles admit the full signed ten-predictor envelope"
       "piecewise_v2"), class = "dsvert_dp_public_failure")
   }
 })
+
+
+test_that("batch reuse needs two authentic matching durable receipts", {
+  peers <- c("site_a", "site_b")
+  keys <- setNames(lapply(peers, function(peer) openssl::ed25519_keygen()), peers)
+  b64 <- function(x) sub("=+$", "", chartr("+/", "-_", gsub("[\r\n]", "", jsonlite::base64_enc(x))))
+  context <- list(designated = peers, pinset = vapply(keys, function(key)
+    b64(tail(as.raw(as.list(key)$pubkey), 32)), character(1)))
+  artifact <- list(analysis_id = "grid", numeric_certificate = list(
+    profile_sha256 = strrep("a", 64), certificate_sha256 = strrep("b", 64)))
+  make <- function(flags, mutate = identity) setNames(lapply(seq_along(peers), function(i) {
+    peer <- peers[[i]]
+    value <- list(version = "dsvert-cross-grid-receipt-v2", phase = "prepared",
+      capsule_id = "capsule", analysis_id = "grid", peer_name = peer,
+      peer_identity_pk = unname(context$pinset[[peer]]), semantic_key = strrep("c", 64),
+      artifact_sha256 = .dsvert_dp_capsule_source_hash(artifact),
+      source_contract_sha256 = strrep("d", 64),
+      profile_sha256 = artifact$numeric_certificate$profile_sha256,
+      certificate_sha256 = artifact$numeric_certificate$certificate_sha256,
+      private_result_exposed = FALSE, operation_id = "operation", source_key = "input",
+      output_key = "output", purpose = "purpose", operation = "glm-grid-profile-v2",
+      vector_len = 2, batch = 1, persisted = flags[[i]])
+    if (i == 2) value <- mutate(value)
+    message <- charToRaw(paste0(.DSVERT_CLIENT_DP_CAPSULE_SOURCE_SIGNATURE_DOMAIN,
+      "cross-grid-result|", .dsvert_joint_dp_client_json(value)))
+    value$signature <- b64(openssl::ed25519_sign(message, keys[[peer]]))
+    .dsvert_joint_dp_client_json(value)
+  }), peers)
+  check <- function(x) .dsvert_dp_glm_grid_cross_receipts(x, context, artifact, "prepared")
+  expect_true(attr(check(make(c(TRUE, TRUE))), "both_persisted"))
+  for (flags in list(c(FALSE, FALSE), c(TRUE, FALSE), c(FALSE, TRUE)))
+    expect_false(attr(check(make(flags)), "both_persisted"))
+  for (field in c("batch", "semantic_key", "source_contract_sha256", "operation_id")) {
+    expect_error(check(make(c(TRUE, TRUE), function(x) { x[[field]] <- "changed"; x })))
+  }
+  expect_error(check(make(c(1, 1))))
+  forged <- make(c(TRUE, FALSE))
+  forged[[2]] <- sub('"persisted":false', '"persisted":true', forged[[2]], fixed = TRUE)
+  expect_error(check(forged))
+  missing <- make(c(TRUE, TRUE)); missing[[2]] <- NULL
+  expect_error(check(missing))
+})
+
+
+test_that("structured snapshot identity reaches a fixed point without enabling release", {
+  families <- c("lmm", "binomial_glmm", "poisson_glmm", "binomial_gee", "poisson_gee", "cox")
+  for (family in families) {
+    version <- paste0(family, "_grid_cross_v1")
+    contract <- list(spec = list(version = version, dataset = "cohort",
+      schema_sha256 = "first", logical_snapshot = list(version = "first"),
+      alignment = list(public_alignment_contract_sha256 = "first", method = "pinned"),
+      beta_grid = list(c(0, .25)), numeric_contract = list(profile = "signed-profile"),
+      grouping = list(max_patients_per_cluster = 4)), signatures = list(a = "first"))
+    workload <- list(gaussian = list(grid = list(owner_peer = "site_a", spec = list(
+      version = version, dataset = "cohort", contract = contract))))
+    first <- .dsvert_dp_glm_grid_cross_snapshot_workload(workload)
+    changed <- workload
+    changed$gaussian$grid$spec$contract$spec$schema_sha256 <- "second"
+    changed$gaussian$grid$spec$contract$spec$logical_snapshot$version <- "second"
+    changed$gaussian$grid$spec$contract$spec$alignment$public_alignment_contract_sha256 <- "second"
+    changed$gaussian$grid$spec$contract$signatures$a <- "second"
+    expect_identical(.dsvert_dp_glm_grid_cross_snapshot_workload(changed), first)
+    for (field in c("beta_grid", "numeric_contract", "grouping")) {
+      altered <- workload
+      altered$gaussian$grid$spec$contract$spec[[field]] <- list(changed = TRUE)
+      expect_false(identical(.dsvert_dp_glm_grid_cross_snapshot_workload(altered), first))
+    }
+    expect_error(.dsvert_dp_glm_grid_profile_admit(contract, list(), list()))
+  }
+})

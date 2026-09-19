@@ -38,11 +38,14 @@
       "peer_identity_pk", "semantic_key", "artifact_sha256", "source_contract_sha256",
       "profile_sha256", "certificate_sha256", "private_result_exposed", "signature")
     extra <- switch(phase, bound = "batch_count",
-      prepared = c("operation_id", "source_key", "output_key", "purpose", "operation", "vector_len", "batch"),
+      prepared = c("operation_id", "source_key", "output_key", "purpose", "operation", "vector_len", "batch", "persisted"),
       batch_persisted = "batch", complete = c("coordinate_count", "implementation_state", "cross_owner_state"),
       .dsvert_dp_glm_grid_cross_fail())
     .dsvert_dp_glm_grid_cross_fields(value, c(fields, extra))
     .dsvert_dp_capsule_source_verify(value, "cross-grid-result", peer, context)
+    if (identical(phase, "prepared") &&
+        (!is.logical(value$persisted) || length(value$persisted) != 1L ||
+         is.na(value$persisted))) .dsvert_dp_glm_grid_cross_fail()
     if (!identical(value$version, "dsvert-cross-grid-receipt-v2") ||
         !identical(value$phase, phase) ||
         !identical(value$artifact_sha256, .dsvert_dp_capsule_source_hash(artifact)) ||
@@ -53,9 +56,15 @@
     value
   })
   common <- function(value) value[setdiff(names(value),
-    c("peer_name", "peer_identity_pk", "signature"))]
+    c("peer_name", "peer_identity_pk", "signature",
+      if (identical(phase, "prepared")) "persisted"))]
   .dsvert_dp_glm_grid_cross_equal(common(results[[1]]), common(results[[2]]))
-  results[[1]]
+  result <- results[[1]]
+  # This local decision is derived only after both signatures and all common
+  # bindings were checked. A unilateral durable write still reruns the batch.
+  if (identical(phase, "prepared")) attr(result, "both_persisted") <-
+    all(vapply(results, function(x) isTRUE(x$persisted), logical(1L)))
+  result
 }
 
 .dsvert_dp_glm_grid_cross_orchestrate <- function(manifest_json, manifest, context,
@@ -115,6 +124,7 @@
       stage <- .dsvert_dp_glm_grid_cross_receipts(invoke("prepare", batch),
         context, artifact, "prepared")
       check_binding(stage)
+      if (isTRUE(attr(stage, "both_persisted"))) next
       initialized <- invoke("start", batch)
       .dsvert_exact_gc_run(context$all_conns, server_names = context$servers,
         servers = match(peers, context$servers), session_id = session_id,
