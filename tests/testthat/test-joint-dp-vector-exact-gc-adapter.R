@@ -38,6 +38,13 @@ test_that("grid noise traverses certified execution chunks without changing lega
   expect_equal(ceiling(51 / size), 7)
   expect_equal(51 - 6 * size, 3)
   compiled$physical$backend_selection$policy_version <-
+    "dsvert-lmm-grid-exact-gc-cost-policy-v1"
+  compiled$layout$coordinate_count <- 257
+  size <- .dsvert_dp_synopsis_runner_exact_chunk_size(compiled, execution)
+  expect_equal(size, 8)
+  expect_equal(ceiling(257 / size), 33)
+  expect_equal(257 - 32 * size, 1)
+  compiled$physical$backend_selection$policy_version <-
     .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_COST_POLICY_VERSION
   expect_equal(.dsvert_dp_synopsis_runner_exact_chunk_size(compiled, execution), 256)
   expect_equal(.dsvert_joint_dp_vector_exact_gc_client_cost_limit(

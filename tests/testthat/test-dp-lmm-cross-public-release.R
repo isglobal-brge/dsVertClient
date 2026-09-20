@@ -131,7 +131,7 @@ test_that("LMM public artifacts rebuild ML bounds certificate and variance-major
   bad$statistic_maximum[[1]] <- 1
   expect_error(validate(bad), class = "dsvert_dp_public_failure")
   bad <- f$manifest
-  bad$workload$coordinate_count <- 52
+  bad$workload$coordinate_count <- 258
   expect_error(.dsvert_dp_glm_grid_cross_preflight(bad,
     list(pinset = f$policy$peer_pinset, designated = f$policy$designated_noise_peers),
     .dsvert_joint_dp_client_json(f$schema_manifest)), class = "dsvert_dp_public_failure")
@@ -257,4 +257,35 @@ test_that("cold LMM public evidence requires both real signatures and source sem
   expect_identical(cold$release, release)
   expect_identical(cold$cross_lmm_evidence$grouped, evidence)
   expect_equal(requests, 1L)
+})
+
+test_that("signed LMM preflight admits all 256 candidates plus the count", {
+  f <- .lmm_release_client_fixture()
+  expect_identical(.dsvert_dp_glm_grid_cross_noise_policy(f$manifest),
+    "dsvert-cross-grid-exact-gc-cost-policy-v2")
+  f$raw$beta_grid <- lapply(0:127, function(i) c(i/128, 0, 0))
+  f$raw$beta_grid <- f$raw$beta_grid[order(vapply(f$raw$beta_grid,
+    .dsvert_joint_dp_client_json, character(1L)), method = "radix")]
+  spec <- .dsvert_dp_grouped_grid_cross_spec(f$raw, f$policy, f$schema)
+  artifact <- .dsvert_dp_grouped_grid_cross_artifact(spec)
+  contract <- f$sign(list(version = f$contract$version, spec = spec, artifact = artifact,
+    source_contract = .dsvert_dp_grouped_grid_cross_source_contract(spec, artifact)))
+  f$manifest$workload$families$gaussian_models$artifacts$grouped <-
+    .dsvert_dp_grouped_cross_workload_artifact(contract)
+  f$manifest$workload$coordinate_count <- artifact$coordinate_count + 1L
+  expect_equal(f$manifest$workload$coordinate_count, 257)
+  policy <- .dsvert_dp_glm_grid_cross_noise_policy(f$manifest)
+  expect_identical(policy, "dsvert-lmm-grid-exact-gc-cost-policy-v1")
+  expect_identical(.dsvert_joint_dp_vector_exact_gc_client_cost_limit(policy), 257L)
+  check <- function() .dsvert_dp_glm_grid_cross_preflight(f$manifest,
+    list(pinset = f$policy$peer_pinset, designated = f$policy$designated_noise_peers),
+    .dsvert_joint_dp_client_json(f$schema_manifest))
+  expect_silent(check())
+  f$manifest$workload$coordinate_count <- 258
+  expect_error(check(), class = "dsvert_dp_public_failure")
+  f$manifest$workload$coordinate_count <- 257
+  contract$spec$numeric_contract$certificate_sha256 <- strrep("0", 64)
+  f$manifest$workload$families$gaussian_models$artifacts$grouped <-
+    .dsvert_dp_grouped_cross_workload_artifact(f$sign(contract))
+  expect_error(check(), class = "dsvert_dp_public_failure")
 })

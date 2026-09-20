@@ -110,8 +110,9 @@
 }
 
 .dsvert_dp_synopsis_runner_exact_chunk_size <- function(compiled, execution) {
-  if (identical(compiled$physical$backend_selection$policy_version,
-      "dsvert-cross-grid-exact-gc-cost-policy-v2")) {
+  if (isTRUE(compiled$physical$backend_selection$policy_version %in% c(
+      "dsvert-cross-grid-exact-gc-cost-policy-v2",
+      "dsvert-lmm-grid-exact-gc-cost-policy-v1"))) {
     return(min(64L, compiled$layout$coordinate_count,
       compiled$physical$full_plan$maximum_chunk_coordinates))
   }

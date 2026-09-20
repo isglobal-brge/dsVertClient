@@ -9,8 +9,9 @@
 .dsvert_dp_glm_grid_cross_preflight <- function(manifest, context, schema_json) {
   artifacts <- .dsvert_dp_glm_grid_cross_artifacts(manifest)
   if (!length(artifacts)) return(invisible(TRUE))
-  .dsvert_dp_glm_grid_cross_noise_policy(manifest)
-  .dsvert_dp_glm_grid_cross_integer(manifest$workload$coordinate_count, 1, 51)
+  policy <- .dsvert_dp_glm_grid_cross_noise_policy(manifest)
+  .dsvert_dp_glm_grid_cross_integer(manifest$workload$coordinate_count, 1,
+    .dsvert_joint_dp_vector_exact_gc_client_cost_limit(policy))
   schema <- .dsvert_joint_dp_client_decode(schema_json, "signed grid schema",
     .DSVERT_CLIENT_DP_CAPSULE_SOURCE_MAX_MANIFEST_BYTES)
   policy <- list(peer_pinset = context$pinset,

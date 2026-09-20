@@ -493,7 +493,7 @@
     cost_policy <- .dsvert_dp_glm_grid_cross_noise_policy(trusted$manifest)
     limit <- .dsvert_joint_dp_vector_exact_gc_client_cost_limit(cost_policy)
     promoted <- layout$coordinate_count <= limit
-    if (limit == 51L && !promoted) stop("Cross-grid release exceeds its certified envelope", call. = FALSE)
+    if (limit > 1L && !promoted) stop("Cross-grid release exceeds its certified envelope", call. = FALSE)
     list(
       version = "dsvert-stateless-catalog-synopsis-backend-selection-v1",
       rule = "public_coordinate_ceiling_v1",

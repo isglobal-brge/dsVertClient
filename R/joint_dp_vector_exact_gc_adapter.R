@@ -21,6 +21,7 @@
   switch(policy,
     "dsvert-joint-dp-vector-exact-gc-cost-policy-v1" = 1L,
     "dsvert-cross-grid-exact-gc-cost-policy-v2" = 51L,
+    "dsvert-lmm-grid-exact-gc-cost-policy-v1" = 257L,
     stop("Invalid exact-GC cost policy.", call. = FALSE))
 }
 
