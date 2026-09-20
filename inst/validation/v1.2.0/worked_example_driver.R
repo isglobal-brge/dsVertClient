@@ -1,3 +1,4 @@
+# Workspace paths are placeholders for local reproduction.
 # =========================================================================
 # dsVert / dsVertClient v1.2.0 -- chapter-4 worked example (binomial GLM)
 # Vertically partitioned synthetic data over DSLite, exported analyst API.
@@ -6,8 +7,8 @@
 # out/worked_example_custodian.R for the sourced scaffold.
 # =========================================================================
 
-WR <- "/private/tmp/claude-501/-Users-david-Documents-GitHub-thesis/a3f58816-b8a7-4aef-b778-fbf9c9639dd7/scratchpad/dsvert_campaign"
-SERVER_DIR <- "/private/tmp/claude-501/-Users-david-Documents-GitHub-thesis/a3f58816-b8a7-4aef-b778-fbf9c9639dd7/scratchpad/snapshots-current/dsVert-120"
+WR <- "/path/to/validation-workspace/dsvert_campaign"
+SERVER_DIR <- "/path/to/validation-workspace/snapshots-current/dsVert-120"
 MPC_BINARY <- file.path(SERVER_DIR, "inst", "bin", "darwin-arm64", "dsvert-mpc")
 
 source(file.path(WR, "out", "worked_example_custodian.R"))
