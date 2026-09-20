@@ -12,11 +12,9 @@ compute/noise authorities.}
 }
 \description{Selects the first canonical minimum of a sticky jointly noised
 loss vector from a finite coefficient grid signed by all source owners.}
-\details{This family entry is currently namespace-internal and exposed to the
-integration session through its single registration function. Public export
-requires the package method-inventory and maturity-registry registration.
-The production release runner currently fails closed pending connection
-to the authenticated fused producer and existing joint-DP vector lifecycle.
+\details{The release uses the authenticated staged Synopsis lifecycle and
+requires signed evidence from both pinned computation authorities. Durable
+cold reads verify the public compilation and publication without rereading sources.
 This function does not enable a plaintext evaluator or a general nonlinear RPC.
 Time and event must have the same owner. Predictors may span all source owners.
 Observed binary64 times are clipped to signed bounds and retain exact ordering
@@ -24,13 +22,12 @@ and ties; ties use Breslow denominators, including censored observations at the
 event time. The execution contract uses one private packed-row permutation,
 exact prefix and loss additions on shares, and certified exp/log profile kernels.
 Log batches have a fixed public shape and mask event status privately.
-All source owners sign the measured public admission envelope: at most 4000
-rows and 50 candidates for this family kernel.
+All source owners sign the public admission envelope. The integrated release
+is scoped to at most 400 rows and 50 candidates.
 The client and server reject requests exceeding that envelope before source
 access; signatures cannot override the implementation limits.
 Missing inputs exclude the patient privately. There is no intercept,
 protected-data optimizer, baseline hazard, or standard error. Existing same-owner
 \code{ds.vertCox} routes are unchanged.}
-\value{After release integration, a finite-grid point estimate with raw-unit
+\value{A finite-grid point estimate with raw-unit
 coefficients and hazard ratios, without sampling inference.}
-\keyword{internal}
