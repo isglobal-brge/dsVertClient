@@ -437,7 +437,8 @@
             }, logical(1L))) &&
             !identical(signed$time$column, signed$event$column)
         } else if (spec$version %in% c(unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_SPEC_VERSIONS),
-                              "lmm_grid_cross_v1", "binomial_glmm_grid_cross_v1", "poisson_glmm_grid_cross_v1")) {
+                              "lmm_grid_cross_v1", "binomial_glmm_grid_cross_v1", "poisson_glmm_grid_cross_v1",
+                              "binomial_gee_grid_cross_v1", "poisson_gee_grid_cross_v1")) {
           contract <- .dsvert_dp_glm_grid_cross_raw_contract(spec)
           valid <- identical(contract$spec$analysis_id, analysis_id) &&
              .dsvert_dp_is_string(contract$spec$outcome$owner_peer) && is.character(spec$contract)

@@ -990,7 +990,8 @@
   cross_grid_artifact <- artifact$version %in%
     c(unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
       "bounded-lmm-cross-grid-v1", "bounded-binomial-glmm-cross-grid-v1", "bounded-poisson-glmm-cross-grid-v1",
-      .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION) &&
+      .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION,
+      "bounded-binomial-gee-cross-grid-v1", "bounded-poisson-gee-cross-grid-v1") &&
     identical(artifact$spec_version, paste0(artifact$family, "_grid_cross_v1")) &&
     identical(artifact$implementation_state, "cross_owner_exact_gc_materialized") &&
     identical(artifact$cross_owner_state, "exact_gc_to_joint_dp_vector_v1")
@@ -1779,7 +1780,8 @@
     versions <- if (isTRUE(cox_cross)) {
       c(cox = .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION)
     } else if (isTRUE(lmm_cross)) {
-      c(lmm = "bounded-lmm-cross-grid-v1", binomial_glmm = "bounded-binomial-glmm-cross-grid-v1", poisson_glmm = "bounded-poisson-glmm-cross-grid-v1")
+      c(lmm = "bounded-lmm-cross-grid-v1", binomial_glmm = "bounded-binomial-glmm-cross-grid-v1", poisson_glmm = "bounded-poisson-glmm-cross-grid-v1",
+        binomial_gee = "bounded-binomial-gee-cross-grid-v1", poisson_gee = "bounded-poisson-gee-cross-grid-v1")
     } else if (isTRUE(lasso)) {
       .DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS
     } else if (artifact$version %in% unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS)) {
@@ -1822,7 +1824,11 @@
       output_lattice_scale = compiled$lattice$output_lattice_scale,
       accuracy_simultaneous_95 = accuracy_simultaneous_95,
       sufficient_statistics_dp = list(
-        candidate_negative_log_likelihoods = coordinates), n_obs = NULL,
+        candidate_negative_log_likelihoods = if (isTRUE(lmm_cross) &&
+            artifact$family %in% c("binomial_gee", "poisson_gee")) {
+          width <- 1L + (length(artifact$predictors) + 1L) * (length(artifact$predictors) + 2L)
+          coordinates[seq.int(1L, length(coordinates), by = width)]
+        } else coordinates), n_obs = NULL,
       cohort_id = trusted$status[[trusted$context$servers[[1L]]]]$policy$cohort_id,
       logical_snapshot = trusted$manifest$logical_snapshot,
       analysis_id = certificate$analysis_id,

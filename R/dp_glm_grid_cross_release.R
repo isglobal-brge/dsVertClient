@@ -25,7 +25,7 @@
     .dsvert_dp_glm_grid_profile_admit(contract, policy, schema)
     expected <- if (identical(contract$spec$family, "cox")) {
       .dsvert_dp_cox_cross_workload_artifact(contract)
-    } else if (contract$spec$family %in% c("lmm", "binomial_glmm", "poisson_glmm")) {
+    } else if (contract$spec$family %in% c("lmm", "binomial_glmm", "poisson_glmm", "binomial_gee", "poisson_gee")) {
       .dsvert_dp_grouped_cross_workload_artifact(contract)
     } else .dsvert_dp_glm_grid_cross_workload_artifact(contract)
     .dsvert_dp_glm_grid_cross_equal(artifact, expected)
