@@ -77,6 +77,11 @@
 
 .dsvert_dp_glm_grid_profile_admit <- function(contract, policy, schema) {
   version <- tryCatch(contract$spec$version, error = function(error) NULL)
+  if (identical(version, "cox_grid_cross_v1")) {
+    value <- .dsvert_dp_cox_grid_cross_contract_validate(contract, policy, schema)
+    if (value$spec$observation_capacity > 400) .dsvert_dp_cox_grid_cross_fail()
+    return(value)
+  }
   if (version %in% c("binomial_glmm_grid_cross_v1", "poisson_glmm_grid_cross_v1")) {
     value <- .dsvert_dp_grouped_grid_cross_contract_validate(contract, policy, schema)
     if (!identical(value$spec$numeric_contract$version,

@@ -68,6 +68,11 @@
   artifact <- if (is.list(family$artifacts)) {
     family$artifacts[[analysis_id]]
   } else NULL
+  if (is.list(artifact) && identical(artifact$version,
+      .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION)) {
+    return(.dsvert_dp_cox_cross_client_artifact(artifact, data_name,
+      analysis_id, owner_peer, adjacency, scale, capacity))
+  }
   if (is.list(artifact) && .dsvert_dp_staged_grouped_artifact(artifact)) {
     return(.dsvert_dp_grouped_cross_client_artifact(artifact, data_name,
       analysis_id, owner_peer, adjacency, scale, capacity, artifact$family))

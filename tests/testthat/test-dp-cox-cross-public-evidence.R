@@ -235,8 +235,9 @@ test_that("Cox public evidence authenticates cold two-authority source and relea
     expect_identical(point$selected_candidate, 2L)
     expect_identical(point$selected_dp_partial_loss, 83 / 256)
     expect_false(point$source_values_exposed)
-    # No public source discovery or release route is opened by this verifier.
-    expect_length(.dsvert_dp_glm_grid_cross_artifacts(f$manifest), 0L)
+    # Discovery recognizes Cox; contract-only state still prevents public release.
+    expect_length(.dsvert_dp_glm_grid_cross_artifacts(f$manifest), 1L)
+    expect_false(.dsvert_dp_synopsis_supported_glm_grid_cross_v1(f$manifest))
     expect_error(.dsvert_dp_cox_grid_cross_release("aligned", "cox_grid", list()))
   }
 })

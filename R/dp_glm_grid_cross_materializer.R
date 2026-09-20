@@ -4,7 +4,8 @@
   if (!is.list(artifacts)) return(list())
   artifacts[vapply(artifacts, function(artifact) is.list(artifact) &&
     artifact$version %in% c(unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
-      "bounded-lmm-cross-grid-v1", "bounded-binomial-glmm-cross-grid-v1", "bounded-poisson-glmm-cross-grid-v1"),
+      "bounded-lmm-cross-grid-v1", "bounded-binomial-glmm-cross-grid-v1", "bounded-poisson-glmm-cross-grid-v1",
+      .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION),
     logical(1L))]
 }
 
@@ -47,6 +48,9 @@
 }
 
 .dsvert_dp_glm_grid_cross_source_blocks <- function(artifact, cursor) {
+  if (identical(artifact$version, .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION)) {
+    return(.dsvert_dp_cox_cross_source_blocks(artifact, cursor))
+  }
   if (.dsvert_dp_staged_grouped_artifact(artifact)) {
     return(.dsvert_dp_grouped_cross_source_blocks(artifact, cursor))
   }
@@ -93,6 +97,11 @@
 # reconstruction. Rebuild all public arithmetic fields again at use time.
 .dsvert_dp_glm_grid_cross_client_artifact <- function(artifact, data_name,
     analysis_id, owner_peer, adjacency, scale, capacity, family) {
+  if (identical(artifact$version, .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION)) {
+    if (!identical(family, "cox")) .dsvert_dp_cox_grid_cross_fail()
+    return(.dsvert_dp_cox_cross_client_artifact(artifact, data_name,
+      analysis_id, owner_peer, adjacency, scale, capacity))
+  }
   if (.dsvert_dp_staged_grouped_artifact(artifact)) {
     return(.dsvert_dp_grouped_cross_client_artifact(artifact, data_name,
       analysis_id, owner_peer, adjacency, scale, capacity, family))

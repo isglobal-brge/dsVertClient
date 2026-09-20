@@ -23,7 +23,9 @@
   for (artifact in artifacts) {
     contract <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)
     .dsvert_dp_glm_grid_profile_admit(contract, policy, schema)
-    expected <- if (contract$spec$family %in% c("lmm", "binomial_glmm", "poisson_glmm")) {
+    expected <- if (identical(contract$spec$family, "cox")) {
+      .dsvert_dp_cox_cross_workload_artifact(contract)
+    } else if (contract$spec$family %in% c("lmm", "binomial_glmm", "poisson_glmm")) {
       .dsvert_dp_grouped_cross_workload_artifact(contract)
     } else .dsvert_dp_glm_grid_cross_workload_artifact(contract)
     .dsvert_dp_glm_grid_cross_equal(artifact, expected)
@@ -71,9 +73,22 @@
 }
 
 .dsvert_dp_glm_grid_cross_orchestrate <- function(manifest_json, manifest, context,
-    source_receipt, .aggregate, .remote_context) {
+    source_receipt, .aggregate, .remote_context, .schema_json = NULL) {
   artifacts <- .dsvert_dp_glm_grid_cross_artifacts(manifest)
   if (!length(artifacts)) return(NULL)
+  if (any(vapply(artifacts, function(artifact) identical(artifact$version,
+      .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION), logical(1L)))) {
+    schema <- .dsvert_joint_dp_client_decode(.schema_json, "signed Cox schema",
+      .DSVERT_CLIENT_DP_CAPSULE_SOURCE_MAX_MANIFEST_BYTES)
+    policy <- list(peer_pinset = context$pinset,
+      peer_pinset_sha256 = .dsvert_dp_capsule_source_hash(as.list(context$pinset)),
+      designated_noise_peers = context$designated,
+      unit_capacity = manifest$admission$unit_capacity,
+      numeric_grid_bits = manifest$bounds$numeric_grid_bits,
+      adjacency = manifest$admission$adjacency)
+    return(.dsvert_dp_cox_cross_orchestrate(manifest_json, manifest, context,
+      source_receipt, policy, schema, .aggregate, .remote_context))
+  }
   if (any(vapply(artifacts, function(artifact) .dsvert_dp_staged_grouped_artifact(artifact), logical(1L)))) {
     return(.dsvert_dp_lmm_cross_orchestrate(manifest_json, manifest, context,
       source_receipt, .aggregate, .remote_context))

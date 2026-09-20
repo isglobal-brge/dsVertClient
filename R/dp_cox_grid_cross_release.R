@@ -1,5 +1,5 @@
 # Internal Cox projection for authenticated source/lifecycle wiring.
-# Public workload discovery stays closed until the complete staged path is proved.
+# Public server admission stays closed until the complete staged path is proved.
 .dsvert_dp_cox_cross_workload_artifact <- function(contract) {
   spec <- contract$spec
   artifact <- contract$artifact
@@ -25,6 +25,35 @@
     natural_l2_sensitivity = spec$sensitivity$natural_l2_sensitivity,
     numeric_certificate = spec$numeric_contract, adjacency = spec$adjacency,
     signed_contract = .dsvert_joint_dp_client_json(.dsvert_joint_dp_client_canonical(contract))))
+}
+
+# Reconstruct public arithmetic at use time, after signed-schema preflight.
+.dsvert_dp_cox_cross_client_artifact <- function(artifact, data_name,
+    analysis_id, owner_peer, adjacency, scale, capacity) {
+  contract <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)
+  spec <- contract$spec
+  if (!identical(contract$version, .DSVERT_CLIENT_DP_COX_GRID_CROSS_CONTRACT_VERSION) ||
+      !identical(spec$family, "cox") || !identical(spec$dataset, data_name) ||
+      !identical(spec$analysis_id, analysis_id) ||
+      (!is.null(owner_peer) && !identical(spec$owner_peer, owner_peer)) ||
+      !identical(spec$adjacency, adjacency) ||
+      !isTRUE(all.equal(spec$observation_capacity, capacity)) || capacity > 400 ||
+      !isTRUE(all.equal(2^spec$numeric_grid_bits, scale))) {
+    .dsvert_dp_cox_grid_cross_fail()
+  }
+  .dsvert_dp_glm_grid_cross_equal(spec$numeric_contract,
+    .dsvert_dp_cox_grid_cross_numeric())
+  .dsvert_dp_glm_grid_cross_equal(spec$sensitivity,
+    .dsvert_dp_cox_grid_cross_sensitivity(spec$beta_grid,
+      spec$numeric_grid_bits, capacity, adjacency))
+  .dsvert_dp_cox_grid_cross_artifact_validate(contract$artifact, spec)
+  .dsvert_dp_glm_grid_cross_equal(contract$source_contract,
+    .dsvert_dp_cox_grid_cross_source_contract(spec, contract$artifact))
+  .dsvert_dp_glm_grid_cross_equal(artifact,
+    .dsvert_dp_cox_cross_workload_artifact(contract))
+  artifact$beta_grid <- lapply(spec$beta_grid, function(x) unlist(x, use.names = FALSE))
+  artifact$statistic_maximum <- unlist(artifact$statistic_maximum, use.names = FALSE)
+  artifact
 }
 
 # Internal verifier for the two server publication receipts. It consumes an

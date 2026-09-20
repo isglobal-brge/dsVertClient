@@ -9,6 +9,8 @@
   families$gaussian_models$artifacts <- list(cox_grid = artifact)
   list(logical_snapshot = f$contract$spec$logical_snapshot,
     capsule_identity = list(capsule_id = strrep("6", 64)),
+    admission = list(unit_capacity = f$policy$unit_capacity, adjacency = f$policy$adjacency),
+    bounds = list(numeric_grid_bits = f$policy$numeric_grid_bits),
     workload = list(coordinate_count = artifact$coordinate_count + 1L,
       families = families, capsule_mechanism = list(source_context_hash = strrep("a", 64))))
 }
@@ -113,9 +115,15 @@ test_that("Cox signed orchestration preserves bilateral persistence and terminal
         setNames(lapply(names(calls), function(peer)
           .dsvert_joint_dp_client_json(receipt(phase, peer))), names(calls))
       }, .package = "dsVertClient")
-    run <- function() .dsvert_dp_cox_cross_orchestrate(.dsvert_joint_dp_client_json(manifest),
-      manifest, context, source, f$policy, f$schema_manifest, function(...) stop("unexpected"),
-      list(manifest_sha256 = strrep("1", 64), claim_set_json = "{}", compilation_json = "{}"))
+    run <- function(schema = f$schema_manifest) .dsvert_dp_glm_grid_cross_orchestrate(
+      .dsvert_joint_dp_client_json(manifest), manifest, context, source,
+      function(...) stop("unexpected"),
+      list(manifest_sha256 = strrep("1", 64), claim_set_json = "{}", compilation_json = "{}"),
+      .schema_json = .dsvert_joint_dp_client_json(schema))
+    bad_schema <- f$schema_manifest
+    bad_schema$datasets$aligned$columns$time$upper <- 21
+    expect_error(run(bad_schema))
+    expect_length(actions, 0L)
     for (state in list(c(FALSE, FALSE), c(TRUE, FALSE), c(FALSE, TRUE), c(TRUE, TRUE))) {
       persisted[] <- state; actions <- character(); runs <- 0L
       before <- cleanups

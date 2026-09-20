@@ -639,7 +639,8 @@
         compilation_json = compilation_json)
       cross_receipt <- .dsvert_dp_cross_orchestrate(
         manifest_bundle$manifest_json, cross_manifest, context,
-        source_receipt, .aggregate, .remote_context = remote_context)
+        source_receipt, .aggregate, .remote_context = remote_context,
+        .schema_json = manifest_bundle$schema_json)
       if (!is.list(cross_receipt) ||
           !identical(cross_receipt$enabled, TRUE) ||
           !identical(cross_receipt$sampler_handoff_ready, TRUE) ||
