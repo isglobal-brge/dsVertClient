@@ -110,13 +110,25 @@
 }
 
 .dsvert_dp_synopsis_runner_exact_chunk_size <- function(compiled, execution) {
-  if (isTRUE(compiled$physical$backend_selection$policy_version %in% c(
+  size <- if (isTRUE(compiled$physical$backend_selection$policy_version %in% c(
       "dsvert-cross-grid-exact-gc-cost-policy-v2",
       "dsvert-lmm-grid-exact-gc-cost-policy-v1"))) {
-    return(min(64L, compiled$layout$coordinate_count,
-      compiled$physical$full_plan$maximum_chunk_coordinates))
+    min(64L, compiled$layout$coordinate_count,
+      compiled$physical$full_plan$maximum_chunk_coordinates)
+  } else {
+    execution$geometry$public_chunk_coordinates
   }
-  execution$geometry$public_chunk_coordinates
+  artifacts <- compiled$artifact$semantic$catalog_projection$catalog$families$
+    gaussian_models$artifacts
+  if (any(vapply(artifacts, function(artifact) {
+    .dsvert_dp_staged_grouped_artifact(artifact) &&
+      artifact$family %in% c("binomial_gee", "poisson_gee")
+  }, logical(1L)))) {
+    # Mirror the server's fixed-rho GEE memory schedule. This deterministic
+    # geometry is attempt-bound; it never recalibrates the full privacy plan.
+    size <- min(size, 16L)
+  }
+  size
 }
 
 .dsvert_dp_synopsis_runner_exact_start_set <- function(

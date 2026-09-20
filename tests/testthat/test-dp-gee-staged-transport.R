@@ -59,3 +59,119 @@ test_that("fixed-rho GEE reaches the exact transport only with its Ring128 famil
     expect_error(validate(mutation(states)), "operation contract")
   }
 })
+
+.gee_sampler_client_fixture <- function(family) {
+  f <- .grouped_cross_client_fixture(family)
+  f$raw$parameters$composition <- "staged_fixed_rho_v1"
+  spec <- .dsvert_dp_grouped_grid_cross_spec(f$raw, f$policy, f$schema)
+  artifact <- .dsvert_dp_grouped_grid_cross_artifact(spec)
+  contract <- f$sign(list(version = f$contract$version, spec = spec,
+    artifact = artifact,
+    source_contract = .dsvert_dp_grouped_grid_cross_source_contract(spec, artifact)))
+  admitted <- .dsvert_dp_glm_grid_profile_admit(contract, f$policy,
+    f$schema_manifest)
+  workload <- .dsvert_dp_grouped_cross_workload_artifact(admitted)
+  list(artifact = list(artifact_key = strrep("a", 64), semantic = list(
+    catalog_projection = list(catalog = list(families = list(
+      gaussian_models = list(artifacts = list(gee = workload))))))),
+    layout = list(coordinate_count = 43L), physical = list(
+      backend_selection = list(policy_version =
+        "dsvert-lmm-grid-exact-gc-cost-policy-v1"),
+      full_plan = list(total_coordinate_count = 43L,
+        maximum_chunk_coordinates = 36L, epsilon = 8, delta = 2^-100,
+        sensitivity_steps = "123456789", complete_epsilon_per_peer = TRUE)))
+}
+
+test_that("staged fixed-rho GEE schedules 16 coordinates without changing its full plan", {
+  execution <- list(geometry = list(coordinate_count = 43L,
+    public_chunk_coordinates = 8192L))
+  for (family in c("binomial_gee", "poisson_gee")) {
+    compiled <- .gee_sampler_client_fixture(family)
+    before <- serialize(compiled, NULL)
+    size <- .dsvert_dp_synopsis_runner_exact_chunk_size(compiled, execution)
+    expect_equal(size, 16L, info = family)
+    expect_equal(.dsvert_dp_synopsis_runner_exact_chunk_size(compiled, execution),
+      size, info = family)
+    expect_equal(pmin(size, 43L - (0:2) * size), c(16L, 16L, 11L), info = family)
+    expect_identical(serialize(compiled, NULL), before, info = family)
+    smaller <- compiled
+    smaller$physical$full_plan$maximum_chunk_coordinates <- 8L
+    expect_equal(.dsvert_dp_synopsis_runner_exact_chunk_size(smaller, execution),
+      8L, info = family)
+    for (control in c("lmm", "binomial_glmm", "poisson_glmm", "legacy_gee",
+                      "wrong_version")) {
+      changed <- compiled
+      artifact <- changed$artifact$semantic$catalog_projection$catalog$families$
+        gaussian_models$artifacts$gee
+      if (control == "legacy_gee") {
+        artifact$composition <- NULL
+      } else if (control == "wrong_version") {
+        artifact$version <- "bounded-lmm-cross-grid-v1"
+      } else {
+        artifact$family <- control
+        artifact$version <- paste0("bounded-", gsub("_", "-", control),
+          "-cross-grid-v1")
+        artifact$spec_version <- paste0(control, "_grid_cross_v1")
+      }
+      changed$artifact$semantic$catalog_projection$catalog$families$
+        gaussian_models$artifacts$gee <- artifact
+      expect_equal(.dsvert_dp_synopsis_runner_exact_chunk_size(changed, execution),
+        36L, info = paste(family, control))
+    }
+  }
+})
+
+test_that("signed staged GEE START receipts bind the 16-coordinate sampler windows", {
+  peers <- c("site_a", "site_b")
+  keys <- setNames(lapply(peers, function(peer) openssl::ed25519_keygen()), peers)
+  b64 <- function(value) sub("=+$", "", chartr("+/", "-_",
+    gsub("[\r\n]", "", jsonlite::base64_enc(value))))
+  pins <- vapply(keys, function(key) b64(tail(as.raw(as.list(key)$pubkey), 32L)),
+    character(1L))
+  trusted <- list(context = list(pinset = pins))
+  execution <- list(execution_id = strrep("b", 64), geometry = list(
+    coordinate_count = 43L, public_chunk_coordinates = 8192L))
+  for (family in c("binomial_gee", "poisson_gee")) {
+    compiled <- .gee_sampler_client_fixture(family)
+    responses_for <- function(index, offset, count) setNames(lapply(peers,
+      function(peer) {
+        unsigned <- list(version = .DSVERT_CLIENT_SYNOPSIS_EXACT_START_VERSION,
+          phase = "synopsis_exact_gc_initialized",
+          execution_id = execution$execution_id,
+          artifact_key = compiled$artifact$artifact_key,
+          contract_sha256 = strrep("c", 64), attempt_sha256 = strrep("d", 64),
+          source_contract_sha256 = strrep("e", 64), local_authority = list(
+            peer_name = peer, identity_pk = unname(pins[[peer]]),
+            role = c("primary_noise_authority", "secondary_noise_authority")[[
+              match(peer, peers)]]),
+          chunk_index = index, coordinate_offset = offset, coordinate_count = count,
+          backend_selection_sha256 = strrep("f", 64),
+          worker_contract_sha256 = strrep("1", 64), binding_sha256 = strrep("2", 64),
+          operation_id = paste0("op_", strrep("3", 32)),
+          purpose = "joint-dp-vector-laplace-v3/fixture",
+          local_chunk_durable = FALSE, intermediate_payload_exposed = FALSE,
+          source_share_exposed = FALSE, private_seed_exposed = FALSE,
+          preclamp_values_exposed = FALSE)
+        signature <- b64(openssl::ed25519_sign(charToRaw(paste0(
+          .DSVERT_CLIENT_SYNOPSIS_EXACT_START_DOMAIN,
+          .dsvert_joint_dp_client_json(unsigned))), keys[[peer]]))
+        .dsvert_joint_dp_client_json(list(
+          version = .DSVERT_CLIENT_SYNOPSIS_EXACT_START_RESPONSE_VERSION,
+          receipt = c(unsigned, list(signature = signature)),
+          initialization = list(state = "running", stored = FALSE)))
+      }), peers)
+    for (index in 0:2) {
+      count <- c(16L, 16L, 11L)[[index + 1L]]
+      accepted <- .dsvert_dp_synopsis_runner_exact_start_set(
+        responses_for(index, index * 16L, count), peers, trusted, compiled,
+        execution, index)
+      expect_false(accepted$complete, info = family)
+      expect_equal(accepted$receipts[[1L]]$coordinate_count, count, info = family)
+    }
+    for (old in list(c(0L, 0L, 36L), c(1L, 36L, 7L))) {
+      expect_error(.dsvert_dp_synopsis_runner_exact_start_set(
+        responses_for(old[[1L]], old[[2L]], old[[3L]]), peers, trusted,
+        compiled, execution, old[[1L]]), "misbound exact-GC START", info = family)
+    }
+  }
+})
