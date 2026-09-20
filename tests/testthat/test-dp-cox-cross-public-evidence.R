@@ -105,9 +105,52 @@ test_that("Cox public evidence authenticates cold two-authority source and relea
     context$pinset[[1L]] <- strrep("A", 43)
     expect_error(validate(signed))
     context <- original_context
+    # Durable publication needs only its public compilation and signed evidence.
+    # Bootstrap/publication/transport are doubles; Cox contract and evidence are real.
+    cold_check <- function() {
+      manifest <- trusted$manifest
+      manifest$admission <- list(unit_capacity = 4, adjacency = f$policy$adjacency)
+      manifest$bounds <- list(numeric_grid_bits = 8)
+      manifest$workload$coordinate_count <- 4
+      ctx <- context
+      ctx$servers <- names(f$keys)
+      ctx$all_conns <- setNames(rep(list(list()), owners), ctx$servers)
+      ctx$conns <- ctx$all_conns[peers]
+      compilation <- list(version = "retained-public-compilation")
+      publication <- list(release = release, verification_compilation = compilation)
+      bootstrap <- list(status = list(), manifest_bundle = list(
+        manifest_sha256 = strrep("7", 64), schema_json = .dsvert_joint_dp_client_json(f$schema_manifest)))
+      local_mocked_bindings(
+        .dsvert_dp_datasources = function(value) value,
+        .dsvert_dp_synopsis_bootstrap_build_v1 = function(...) bootstrap,
+        .dsvert_dp_synopsis_client_bundle = function(...) list(manifest = manifest, context = ctx),
+        .dsvert_dp_synopsis_publication_resume_v1 = function(...) publication,
+        .dsvert_vector_profile = function(...) list(),
+        .dsvert_dp_synopsis_client_compile = function(value, ...) {
+          expect_identical(value, compilation)
+          compiled
+        },
+        .dsvert_dp_synopsis_runner_compile = function(...) stop("cold source resolver forbidden"),
+        .dsvert_exact_gc_run = function(...) stop("cold sampler forbidden"),
+        .dsvert_fanout_by_site = function(conns, calls, operation, ...) {
+          expect_identical(operation, "Cox public evidence")
+          expect_named(calls, peers)
+          for (call in calls) {
+            args <- as.list(call)
+            expect_identical(args$action, "evidence")
+            expect_identical(args$claim_set_json, "{}")
+            expect_identical(args$compilation_json, .dsvert_joint_dp_client_json(compilation))
+          }
+          signed
+        }, .package = "dsVertClient")
+      cold <- .dsvert_dp_synopsis_vector_run(ctx$all_conns)
+      expect_identical(cold$release, release)
+      expect_identical(cold$cross_cox_evidence$cox_grid, evidence)
+      expect_null(cold$cross_lmm_evidence)
+    }
     # Compose real RELEASE signatures and hashed bilateral REPLAY with the Cox
     # publication signatures. Compilation here is an authenticated-input fixture;
-    # this does not claim that the public Cox compiler/runner is enabled.
+    # source-to-native integration is proved separately by the DSLite harness.
     manifest <- f$manifest
     manifest$workload$coordinate_count <- 4L
     manifest$workload$families <- c(manifest$workload$families, list(
@@ -135,7 +178,7 @@ test_that("Cox public evidence authenticates cold two-authority source and relea
       result_set_sha256 = release$result_set_sha256, public_chunk_index = 0,
       public_chunk_count = 1, coordinate_offset = 0, coordinate_count = 4,
       output_lattice_bits = 8, output_lattice_scale = 256,
-      scaled_values = list("1024", "117", "83", "83"),
+      scaled_values = list("1024", "1170", "1083", "1083"),
       value_encoding = "nonnegative-decimal-integer-common-lattice-v1",
       postprocessing = compiled$profile$postprocessing,
       source_values_exposed = FALSE, preclamp_values_exposed = FALSE)
@@ -181,8 +224,106 @@ test_that("Cox public evidence authenticates cold two-authority source and relea
     read <- function(r = vector_release, p = vector_replay, e = published, c = compiled) {
       .dsvert_dp_cox_cross_read_vector(r, p, e, trusted, c, f$policy, f$schema_manifest, "cox_grid")
     }
+    cold_check()
     result <- read()
-    expect_identical(result$coordinates, c(117, 83, 83))
+    certificate_check <- function() {
+      ctx <- context
+      ctx$servers <- names(f$keys)
+      m <- manifest
+      m$admission <- list(unit_capacity = 4, adjacency = f$policy$adjacency)
+      m$bounds <- list(numeric_grid_bits = 8)
+      c <- compiled
+      c$receipts <- list()
+      c$profile$backend <- "joint-dp-vector-exact-gc-v1"
+      c$profile$sampler <- "fixture"
+      c$physical$full_plan_sha256 <- strrep("9", 64)
+      public_policy <- f$policy
+      public_policy$peer_pinset <- as.list(public_policy$peer_pinset)
+      public_policy$designated_noise_peers <- as.list(public_policy$designated_noise_peers)
+      status <- setNames(lapply(ctx$servers, function(peer) list(policy = public_policy)), ctx$servers)
+      t <- list(context = ctx, manifest = m, status = status)
+      bundle <- list(manifest_sha256 = strrep("a", 64), schema_sha256 = strrep("b", 64),
+        workload_contract_sha256 = strrep("c", 64),
+        schema_json = .dsvert_joint_dp_client_json(f$schema_manifest))
+      compilation <- list(receipts = list())
+      # Only bundle/compilation reconstruction is supplied by the fixture.
+      # RELEASE, REPLAY, Cox signatures, caps, and certificate checks are real.
+      local_mocked_bindings(
+        .dsvert_dp_synopsis_client_bundle = function(...) t,
+        .dsvert_dp_synopsis_client_compile = function(...) c,
+        .dsvert_dp_gaussian_synopsis_trusted = function(...) list(trusted = t, bundle = bundle),
+        .dsvert_dp_vector_accuracy_radius = function(...) 0,
+        .package = "dsVertClient")
+      vector <- .dsvert_dp_synopsis_public_vector_v1(vector_release, vector_replay,
+        bundle, status, compilation)
+      evidence <- .dsvert_dp_cox_cross_public_evidence_set(published, ctx, m,
+        "cox_grid", vector, c, f$policy, f$schema_manifest)
+      cert_context <- list(synopsis = TRUE, release = vector, status = status,
+        manifest_bundle = bundle, verification_compilation = compilation,
+        cross_cox_evidence = list(cox_grid = evidence))
+      block <- c$layout$blocks[["gaussian_models::cox_grid"]]
+      artifact <- .dsvert_dp_cox_cross_client_artifact(f$artifact, "aligned",
+        "cox_grid", NULL, f$policy$adjacency, 256, 4)
+      build <- function(context = cert_context) .dsvert_dp_gaussian_synopsis_certificate_build(
+        context, artifact, block, c(1170, 1083, 1083) / 256)
+      certificate <- build()
+      verified <- .dsvert_dp_gaussian_synopsis_certificate_validate(NULL, certificate,
+        trusted_pinset = ctx$pinset)
+      expect_true(verified$integrity_valid)
+      expect_identical(verified$authenticity, "caller_anchored")
+      expect_identical(verified$validated_moment$selected_candidate, 2L)
+      expect_identical(verified$validated_moment$selected_dp_partial_loss, 1083 / 256)
+      # Losses use their signed Cox caps on the common lattice, not the count cap.
+      expect_gt(verified$validated_moment$selected_dp_partial_loss, m$admission$unit_capacity)
+      offline <- .dsvert_joint_dp_client_decode(.dsvert_joint_dp_client_json(certificate),
+        "persisted Cox certificate", 2^24)
+      expect_identical(ds.validateDPGaussianCertificate(offline,
+        trusted_pinset = ctx$pinset)$validated_moment, verified$validated_moment)
+      # The public release entry uses this same certificate verification path.
+      cert_context$manifest <- m
+      cert_context$layout <- c$layout
+      local_mocked_bindings(
+        .dsvert_dp_datasources = function(value) value,
+        .dsvert_dp_synopsis_vector_run = function(datasources, .request_check) {
+          expect_identical(.request_check(m), artifact)
+          list(authenticated_synopsis = TRUE)
+        },
+        .dsvert_dp_vector_context = function(value, allow_synopsis) {
+          expect_true(value$authenticated_synopsis)
+          expect_true(allow_synopsis)
+          cert_context
+        },
+        .dsvert_dp_vector_public_metadata = function(context) list(verified = TRUE),
+        .package = "dsVertClient")
+      released <- .dsvert_dp_cox_grid_cross_release("aligned", "cox_grid",
+        setNames(rep(list(list()), owners), ctx$servers))
+      expect_identical(released$coordinates, c(1170, 1083, 1083))
+      expect_identical(released$policy$peer_pinset, ctx$pinset)
+      expect_identical(.dsvert_joint_dp_client_json(released$schema_manifest),
+        .dsvert_joint_dp_client_json(f$schema_manifest))
+      expect_identical(ds.validateDPGaussianCertificate(released$provenance_certificate)$authenticity,
+        "session_transport_anchored")
+      missing <- cert_context; missing$cross_cox_evidence <- NULL
+      expect_error(build(missing), "closed Synopsis provenance")
+      reseal_certificate <- function(value) {
+        value$certificate_sha256 <- .dsvert_dp_gaussian_certificate_hash(
+          value[setdiff(names(value), "certificate_sha256")])
+        value
+      }
+      changed <- certificate
+      changed$signed_evidence$cross_cox_evidence_json <- NULL
+      expect_error(.dsvert_dp_gaussian_synopsis_certificate_validate(NULL,
+        reseal_certificate(changed)), "evidence envelope")
+      for (field in c("signature", "stage_plan_digest", "final_vector_root")) {
+        changed <- certificate
+        e <- evidence; e[[1]][[field]] <- strrep("0", 64)
+        changed$signed_evidence$cross_cox_evidence_json <- .dsvert_joint_dp_client_json(e)
+        expect_error(.dsvert_dp_gaussian_synopsis_certificate_validate(NULL,
+          reseal_certificate(changed)))
+      }
+    }
+    certificate_check()
+    expect_identical(result$coordinates, c(1170, 1083, 1083))
     expect_identical(.dsvert_dp_cox_grid_cross_moment(result$coordinates, result$contract$spec)$selected_candidate, 2L)
     expect_identical(read(p = replay_wire(.dsvert_joint_dp_client_decode(
       .dsvert_joint_dp_client_json(replay), "cold replay", 2^20))), result)
@@ -233,17 +374,20 @@ test_that("Cox public evidence authenticates cold two-authority source and relea
       setNames(rep(list(NULL), owners), names(f$policy$peer_pinset)),
       .release = function(...) read())
     expect_identical(point$selected_candidate, 2L)
-    expect_identical(point$selected_dp_partial_loss, 83 / 256)
+    expect_identical(point$selected_dp_partial_loss, 1083 / 256)
     expect_false(point$source_values_exposed)
-    # Discovery recognizes Cox; contract-only state still prevents public release.
+    # Cox dispatch requires the authenticated Synopsis lifecycle.
     expect_length(.dsvert_dp_glm_grid_cross_artifacts(f$manifest), 1L)
-    expect_false(.dsvert_dp_synopsis_supported_glm_grid_cross_v1(f$manifest))
+    expect_true(.dsvert_dp_synopsis_supported_glm_grid_cross_v1(f$manifest))
     expect_error(.dsvert_dp_cox_grid_cross_release("aligned", "cox_grid", list()))
   }
 })
 
 test_that("Cox public evidence retains the private-v2 400-row scope", {
-  f <- .cox_cross_client_fixture(capacity = 401)
+  f <- .cox_cross_client_fixture(capacity = 400)
+  f$policy$unit_capacity <- 401
+  f$contract$spec$observation_capacity <- 401
+  f$contract <- f$sign(f$contract)
   artifact <- .dsvert_dp_cox_cross_workload_artifact(f$contract)
   manifest <- list(workload = list(families = list(
     gaussian_models = list(artifacts = list(cox_grid = artifact)))))

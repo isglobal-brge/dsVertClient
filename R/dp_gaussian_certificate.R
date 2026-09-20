@@ -989,7 +989,8 @@
        identical(artifact$spec_version, "cox_partial_likelihood_grid_v1"))
   cross_grid_artifact <- artifact$version %in%
     c(unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
-      "bounded-lmm-cross-grid-v1", "bounded-binomial-glmm-cross-grid-v1", "bounded-poisson-glmm-cross-grid-v1") &&
+      "bounded-lmm-cross-grid-v1", "bounded-binomial-glmm-cross-grid-v1", "bounded-poisson-glmm-cross-grid-v1",
+      .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION) &&
     identical(artifact$spec_version, paste0(artifact$family, "_grid_cross_v1")) &&
     identical(artifact$implementation_state, "cross_owner_exact_gc_materialized") &&
     identical(artifact$cross_owner_state, "exact_gc_to_joint_dp_vector_v1")
@@ -1003,6 +1004,8 @@
     NULL
   lmm_cross_artifact <- .dsvert_dp_staged_grouped_artifact(artifact)
   lmm_evidence <- context$cross_lmm_evidence[[artifact$analysis_id]] %||% NULL
+  cox_cross_artifact <- identical(artifact$version, .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION)
+  cox_evidence <- context$cross_cox_evidence[[artifact$analysis_id]] %||% NULL
   if (!isTRUE(context$synopsis) || !is.list(bundle) || !is.list(compilation) ||
       !is.list(provenance) || !all(required_provenance %in% names(provenance)) ||
       !identical(
@@ -1022,7 +1025,9 @@
       (isTRUE(cross_owner_artifact) &&
        (!is.list(cross_evidence) || !length(cross_evidence))) ||
       (isTRUE(lmm_cross_artifact) &&
-       (!is.list(lmm_evidence) || !length(lmm_evidence)))) {
+       (!is.list(lmm_evidence) || !length(lmm_evidence))) ||
+      (isTRUE(cox_cross_artifact) &&
+       (!is.list(cox_evidence) || !length(cox_evidence)))) {
     stop("The Gaussian result lacks closed Synopsis provenance",
          call. = FALSE)
   }
@@ -1091,6 +1096,10 @@
   if (isTRUE(lmm_cross_artifact)) {
     evidence$cross_lmm_evidence_json <-
       .dsvert_dp_gaussian_synopsis_evidence_json(lmm_evidence, "LMM staged evidence")
+  }
+  if (isTRUE(cox_cross_artifact)) {
+    evidence$cross_cox_evidence_json <-
+      .dsvert_dp_gaussian_synopsis_evidence_json(cox_evidence, "Cox staged evidence")
   }
   unsigned <- list(
     version = .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION,
@@ -1237,6 +1246,8 @@
     certificate$cross_owner_state, "exact_gc_to_joint_dp_vector_v1") &&
     identical(certificate$descriptor$version, .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)
   lmm_cross <- .dsvert_dp_staged_grouped_artifact(certificate$descriptor)
+  cox_cross <- identical(certificate$descriptor$version,
+    .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION)
   if (!.dsvert_dp_has_exact_names(certificate, required) ||
       !identical(certificate$version,
                  .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION) ||
@@ -1261,6 +1272,7 @@
     evidence_fields <- c(evidence_fields, "cross_gaussian_evidence_json")
   }
   if (isTRUE(lmm_cross)) evidence_fields <- c(evidence_fields, "cross_lmm_evidence_json")
+  if (isTRUE(cox_cross)) evidence_fields <- c(evidence_fields, "cross_cox_evidence_json")
   if (!.dsvert_dp_has_exact_names(certificate$peer_context, peer_fields) ||
       !.dsvert_dp_has_exact_names(
         certificate$signed_evidence, evidence_fields) ||
@@ -1481,6 +1493,20 @@
       lapply(evidence, .dsvert_joint_dp_client_json), trusted$context,
       trusted$manifest, certificate$analysis_id, reference, compiled)
   }
+  if (isTRUE(cox_cross)) {
+    evidence <- .dsvert_dp_gaussian_synopsis_evidence_decode(
+      certificate$signed_evidence$cross_cox_evidence_json, "Cox staged evidence")
+    policy <- list(peer_pinset = trusted$context$pinset,
+      peer_pinset_sha256 = .dsvert_dp_capsule_source_hash(as.list(trusted$context$pinset)),
+      designated_noise_peers = trusted$context$designated,
+      unit_capacity = trusted$manifest$admission$unit_capacity,
+      numeric_grid_bits = trusted$manifest$bounds$numeric_grid_bits,
+      adjacency = trusted$manifest$admission$adjacency)
+    schema <- .dsvert_dp_gaussian_synopsis_evidence_decode(bundle$schema_json, "signed Cox schema")
+    .dsvert_dp_cox_cross_public_evidence_set(
+      lapply(evidence, .dsvert_joint_dp_client_json), trusted$context,
+      trusted$manifest, certificate$analysis_id, reference, compiled, policy, schema)
+  }
   scaled <- replay$scaled[seq.int(block$start, block$end)]
   block_hash <- .dsvert_dp_gaussian_certificate_hash(list(
     protocol = "dsvert-dp-gaussian-synopsis-block-values-v1",
@@ -1492,7 +1518,7 @@
   }
   coordinates <- .dsvert_vector_scaled_to_double(
     scaled, compiled$lattice$output_lattice_scale)
-  coordinate_upper <- if (isTRUE(lmm_cross)) {
+  coordinate_upper <- if (isTRUE(lmm_cross) || isTRUE(cox_cross)) {
     as.numeric(artifact$statistic_maximum) / compiled$lattice$output_lattice_scale
   } else if (artifact$version %in% c(
         .DSVERT_CLIENT_DP_RANDOM_INTERCEPT_FIXED_ARTIFACT_VERSION,
@@ -1744,13 +1770,15 @@
         finite_global_composition_claim = FALSE),
       certificate = certificate))
   }
-  if (isTRUE(lmm_cross) || artifact$version %in% c(
+  if (isTRUE(lmm_cross) || isTRUE(cox_cross) || artifact$version %in% c(
         unname(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS),
         unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
         unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS))) {
     lasso <- artifact$version %in%
       unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS)
-    versions <- if (isTRUE(lmm_cross)) {
+    versions <- if (isTRUE(cox_cross)) {
+      c(cox = .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION)
+    } else if (isTRUE(lmm_cross)) {
       c(lmm = "bounded-lmm-cross-grid-v1", binomial_glmm = "bounded-binomial-glmm-cross-grid-v1", poisson_glmm = "bounded-poisson-glmm-cross-grid-v1")
     } else if (isTRUE(lasso)) {
       .DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS
@@ -1758,7 +1786,10 @@
       .DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS
     } else .DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS
     family_name <- names(versions)[[match(artifact$version, unname(versions))]]
-    moment <- if (isTRUE(lmm_cross)) {
+    moment <- if (isTRUE(cox_cross)) {
+      .dsvert_dp_cox_grid_cross_moment(as.numeric(scaled),
+        .dsvert_dp_glm_grid_cross_embedded_contract(artifact)$spec)
+    } else if (isTRUE(lmm_cross)) {
       contract <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)
       .dsvert_dp_grouped_grid_cross_moment(
         unname(coordinates * compiled$lattice$output_lattice_scale),
