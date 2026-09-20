@@ -154,9 +154,8 @@
   if (verbose) message(sprintf(
     "[closed_form] Phase 1: local gram + shares (share_scale=%.2f)", sc))
 
-  # Post-centering L2 standardization is enabled by default (the
-  # Codex-approved structural fix 2026-04-19 for kappa=5.57e5 Gram
-  # ill-conditioning). Server computes L2 of each centered column and
+  # Post-centering L2 standardization is enabled by default for
+  # kappa=5.57e5 Gram ill-conditioning. Server computes L2 of each centered column and
   # divides by it, then returns `l2_scales` so the client can unscale beta.
   # Default ON; caller can pass `standardize = FALSE` for debugging.
   std_flag <- isTRUE(standardize)
