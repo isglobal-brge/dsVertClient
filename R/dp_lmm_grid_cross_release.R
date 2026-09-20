@@ -80,9 +80,11 @@
         .dsvert_dp_glm_grid_cross_fail()
       }
     }
-    if (phase == "prepared" && (!identical(value$operation, .dsvert_dp_staged_grouped_tag(artifact, "-staged-v1", "grouped-")) ||
+    operation <- if (identical(artifact$family, "cox")) "cox-loss-staged-v1" else
+      .dsvert_dp_staged_grouped_tag(artifact, "-staged-v1", "grouped-")
+    if (phase == "prepared" && (!identical(value$operation, operation) ||
         !is.character(value$purpose) || length(value$purpose) != 1L || is.na(value$purpose) ||
-        !grepl(.dsvert_dp_staged_grouped_tag(artifact, "-staged-v1/[0-9a-f]{64}$", "^grouped-"), value$purpose) ||
+        !grepl(paste0("^", operation, "/[0-9a-f]{64}$"), value$purpose) ||
         !identical(as.numeric(value$vector_len), as.numeric(artifact$coordinate_count)) ||
         !is.logical(value$persisted) || length(value$persisted) != 1L || is.na(value$persisted))) {
       .dsvert_dp_glm_grid_cross_fail()
@@ -107,6 +109,14 @@
       is.null(.remote_context)) .dsvert_dp_glm_grid_cross_fail()
   artifact <- artifacts[[1L]]
   layout <- .dsvert_dp_gaussian_cross_layout_client(manifest)
+  .dsvert_dp_staged_cross_orchestrate(manifest_json, manifest, context,
+    source_receipt, artifact, layout, .aggregate, .remote_context)
+}
+
+# Shared authenticated executor; callers admit a typed artifact and its layout.
+.dsvert_dp_staged_cross_orchestrate <- function(manifest_json, manifest, context,
+    source_receipt, artifact, layout, .aggregate, .remote_context) {
+  if (is.null(.remote_context)) .dsvert_dp_glm_grid_cross_fail()
   if (!identical(source_receipt$purpose, .DSVERT_CLIENT_DP_GLM_GRID_CROSS_SOURCE_PURPOSE) ||
       !identical(as.numeric(source_receipt$coordinate_count), as.numeric(layout$transport_coordinate_count)) ||
       !identical(as.numeric(source_receipt$release_coordinate_count), as.numeric(layout$release_coordinate_count)) ||
@@ -134,7 +144,10 @@
     }), peers)
     .dsvert_fanout_by_site(context$conns, calls, operation = paste("staged LMM", action), .aggregate = .aggregate)
   }
-  bound <- .dsvert_dp_lmm_cross_receipts(invoke("bind"), context, artifact, "bound")
+  bound <- if (identical(artifact$family, "cox")) {
+    .dsvert_dp_cox_cross_bind(manifest, context, artifact, source_receipt,
+      session_id, .remote_context, .aggregate)
+  } else .dsvert_dp_lmm_cross_receipts(invoke("bind"), context, artifact, "bound")
   if (!identical(bound$source_contract_sha256, source_receipt$contract_hash) ||
       !identical(bound$capsule_id, source_receipt$capsule_id)) .dsvert_dp_glm_grid_cross_fail()
   checked <- function(responses, phase) {

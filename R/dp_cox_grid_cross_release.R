@@ -190,3 +190,55 @@
   }
   bound
 }
+
+
+# Exact projection used by the authenticated single-Cox source contract.
+.dsvert_dp_cox_cross_transport_layout <- function(manifest, artifact) {
+  release <- .dsvert_dp_capsule_vector_layout(manifest)
+  artifacts <- manifest$workload$families$gaussian_models$artifacts
+  if (length(artifacts) != 1L || !identical(names(artifacts), artifact$analysis_id) ||
+      release$coordinate_count != artifact$coordinate_count + 1L) {
+    .dsvert_dp_cox_grid_cross_fail()
+  }
+  start <- ceiling(release$coordinate_count /
+    .DSVERT_CLIENT_DP_CAPSULE_SOURCE_CHUNK_COORDINATES) *
+    .DSVERT_CLIENT_DP_CAPSULE_SOURCE_CHUNK_COORDINATES + 1
+  projection <- .dsvert_dp_cox_cross_source_blocks(artifact, start)
+  shape <- list(version = .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_LAYOUT_VERSION,
+    capsule_id = manifest$capsule_identity$capsule_id,
+    release_coordinate_count = as.integer(release$coordinate_count),
+    release_coordinate_order_sha256 = release$sha256,
+    private_start = as.integer(start),
+    padding_coordinates = as.integer(start - release$coordinate_count - 1),
+    transport_coordinate_count = as.integer(projection$cursor - 1),
+    blocks = projection$blocks, source_peers = artifact$participating_peers,
+    computation_peers = artifact$computation_peers,
+    padding_rule = "zero_to_next_source_chunk_boundary_v1",
+    payload_rule = "manifest_order_capacity_padded_ring128_value_then_validity_no_exact_release_v1")
+  shape$transport_coordinate_order_sha256 <- .dsvert_dp_capsule_source_hash(shape)
+  shape
+}
+
+# Internal signed entry into the existing durable executor. Public discovery
+# remains closed until workload admission and certificate dispatch are wired.
+.dsvert_dp_cox_cross_orchestrate <- function(manifest_json, manifest, context,
+    source_receipt, policy, schema_manifest, .aggregate, .remote_context) {
+  artifacts <- manifest$workload$families$gaussian_models$artifacts
+  if (length(artifacts) != 1L) .dsvert_dp_cox_grid_cross_fail()
+  artifact <- artifacts[[1L]]
+  contract <- .dsvert_dp_cox_grid_cross_contract_validate(
+    .dsvert_dp_glm_grid_cross_embedded_contract(artifact), policy, schema_manifest)
+  if (contract$spec$observation_capacity > 400 ||
+      !identical(names(artifacts), contract$spec$analysis_id) ||
+      !setequal(context$designated, unlist(contract$spec$computation_peers))) {
+    .dsvert_dp_cox_grid_cross_fail()
+  }
+  .dsvert_dp_glm_grid_cross_equal(as.list(context$pinset), as.list(policy$peer_pinset))
+  .dsvert_dp_glm_grid_cross_equal(artifact, .dsvert_dp_cox_cross_workload_artifact(contract))
+  .dsvert_dp_glm_grid_cross_equal(manifest,
+    .dsvert_joint_dp_client_decode(manifest_json, "Cox manifest",
+      .DSVERT_CLIENT_DP_CAPSULE_SOURCE_MAX_MANIFEST_BYTES))
+  layout <- .dsvert_dp_cox_cross_transport_layout(manifest, artifact)
+  .dsvert_dp_staged_cross_orchestrate(manifest_json, manifest, context,
+    source_receipt, artifact, layout, .aggregate, .remote_context)
+}
