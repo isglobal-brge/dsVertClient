@@ -69,7 +69,7 @@ test_that("LMM ML discovery and private source projection preserve signed padded
     expect_identical(source$private_layout_sha256, layout$transport_coordinate_order_sha256)
     expect_identical(source$purpose, .DSVERT_CLIENT_DP_GLM_GRID_CROSS_SOURCE_PURPOSE)
     expect_equal(source$coordinate_count, layout$transport_coordinate_count)
-    for (family in setdiff(.DSVERT_CLIENT_DP_GROUPED_GRID_CROSS_FAMILIES, c("lmm", "binomial_glmm"))) {
+    for (family in setdiff(.DSVERT_CLIENT_DP_GROUPED_GRID_CROSS_FAMILIES, c("lmm", "binomial_glmm", "poisson_glmm"))) {
       unavailable <- f$manifest
       unavailable$workload$families$gaussian_models$artifacts$grouped$version <-
         paste0("bounded-", gsub("_", "-", family), "-cross-grid-v1")
