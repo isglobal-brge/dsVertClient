@@ -146,7 +146,8 @@
   artifact$parameters <- spec$parameters
   artifact$candidate_loss_bounds <- lapply(spec$sensitivity$candidate_bounds,
                                            `[[`, "per_cluster_caps")
-  if (spec$family %in% c("lmm", "binomial_glmm", "poisson_glmm")) {
+  if (spec$family %in% c("lmm", "binomial_glmm", "poisson_glmm") ||
+      identical(spec$parameters$composition, "staged_fixed_rho_v1")) {
     artifact$source_coordinate_scaling <-
       "all_coordinates_already_on_common_numeric_lattice_v1"
     # Match the manifest reader's scalar/array representation while preserving
@@ -203,7 +204,9 @@
   contract <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)
   spec <- contract$spec
   if (is.null(family)) family <- spec$family
-  if (!family %in% c("lmm", "binomial_glmm", "poisson_glmm") || !identical(spec$family, family) ||
+  gee <- family %in% c("binomial_gee", "poisson_gee") &&
+    identical(spec$parameters$composition, "staged_fixed_rho_v1")
+  if ((!family %in% c("lmm", "binomial_glmm", "poisson_glmm") && !gee) || !identical(spec$family, family) ||
       (identical(family, "lmm") && !identical(spec$parameters$objective, "ml")) ||
       (family %in% c("binomial_glmm", "poisson_glmm") && is.null(spec$parameters$variance_grid)) ||
       !identical(spec$dataset, data_name) || !identical(spec$analysis_id, analysis_id) ||
@@ -219,19 +222,37 @@
   .dsvert_dp_glm_grid_cross_equal(spec$sensitivity,
     .dsvert_dp_grouped_grid_cross_sensitivity(spec$beta_grid, family, spec$max_outcome,
       spec$numeric_grid_bits, spec$grouping, parameters, adjacency, spec$numeric_contract))
-  candidates <- unlist(lapply(seq_along(parameters$variance_grid), function(v) {
-    lapply(seq_along(spec$beta_grid), function(b) list(variance_index = v, beta_index = b))
-  }), recursive = FALSE)
-  .dsvert_dp_glm_grid_cross_equal(spec$candidate_grid, candidates)
-  .dsvert_dp_glm_grid_cross_equal(spec$candidate_order, lapply(candidates, function(candidate) {
-    if (identical(family, "lmm")) .dsvert_dp_capsule_source_hash(list(objective = "ml",
-      variance = parameters$variance_grid[[candidate$variance_index]],
-      beta = spec$beta_grid[[candidate$beta_index]])) else {
-      .dsvert_dp_capsule_source_hash(list(objective = if (family == "poisson_glmm") "gh5_negative_log_kernel_without_factorial_v1" else "finite_gh5_binomial_negative_log_likelihood_v1",
-        random_intercept_variance = parameters$variance_grid[[candidate$variance_index]],
-        quadrature = parameters$quadrature, beta = spec$beta_grid[[candidate$beta_index]]))
+  if (gee) {
+    .dsvert_dp_glm_grid_cross_equal(spec$staged_numeric,
+      .dsvert_dp_grouped_grid_gee_staged_numeric(spec))
+    .dsvert_dp_glm_grid_cross_equal(spec$candidate_order,
+      as.list(vapply(spec$beta_grid, .dsvert_dp_capsule_source_hash, character(1L))))
+    encoded <- lapply(spec$beta_grid, function(beta) as.list(vapply(beta, function(value) {
+      integer <- round(value * 2^50)
+      if (integer == 0) integer <- 0
+      sprintf("%.0f", integer)
+    }, character(1L))))
+    .dsvert_dp_glm_grid_cross_equal(spec$beta_encoded, encoded)
+    width <- 1 + (length(spec$predictors) + 1) * (length(spec$predictors) + 2)
+    if (!is.null(spec$candidate_grid) ||
+        !isTRUE(all.equal(artifact$coordinate_count, length(spec$beta_grid) * width))) {
+      .dsvert_dp_grouped_grid_cross_fail()
     }
-  }))
+  } else {
+    candidates <- unlist(lapply(seq_along(parameters$variance_grid), function(v) {
+      lapply(seq_along(spec$beta_grid), function(b) list(variance_index = v, beta_index = b))
+    }), recursive = FALSE)
+    .dsvert_dp_glm_grid_cross_equal(spec$candidate_grid, candidates)
+    .dsvert_dp_glm_grid_cross_equal(spec$candidate_order, lapply(candidates, function(candidate) {
+      if (identical(family, "lmm")) .dsvert_dp_capsule_source_hash(list(objective = "ml",
+        variance = parameters$variance_grid[[candidate$variance_index]],
+        beta = spec$beta_grid[[candidate$beta_index]])) else {
+        .dsvert_dp_capsule_source_hash(list(objective = if (family == "poisson_glmm") "gh5_negative_log_kernel_without_factorial_v1" else "finite_gh5_binomial_negative_log_likelihood_v1",
+          random_intercept_variance = parameters$variance_grid[[candidate$variance_index]],
+          quadrature = parameters$quadrature, beta = spec$beta_grid[[candidate$beta_index]]))
+      }
+    }))
+  }
   .dsvert_dp_grouped_grid_cross_artifact_validate(contract$artifact, spec)
   .dsvert_dp_glm_grid_cross_equal(contract$source_contract,
     .dsvert_dp_grouped_grid_cross_source_contract(spec, contract$artifact))
