@@ -205,3 +205,36 @@ test_that("Cox K-owner source contracts retain exactly two computation authoriti
     }
   }
 })
+
+test_that("Cox catalog fragments bind time and event to the advertising owner", {
+  for (owners in c(2L, 3L, 5L)) {
+    f <- .cox_cross_client_fixture(capacity = 5, owners = owners)
+    fragments <- function(contract = f$contract) list(describe = list(),
+      survival = list(), vertical_cross = list(), gaussian = list(cox_grid = list(
+        version = "cox_grid_cross_v1", dataset = "aligned",
+        contract = .dsvert_joint_dp_client_json(contract))))
+    input <- fragments()
+    admitted <- .dsvert_dp_capsule_manifest_fragments(input, peer = "site_a")
+    expect_identical(.dsvert_joint_dp_client_json(admitted$gaussian),
+      .dsvert_joint_dp_client_json(input$gaussian))
+    expect_identical(.dsvert_joint_dp_client_json(
+      .dsvert_dp_capsule_manifest_fragments(input)$gaussian),
+      .dsvert_joint_dp_client_json(input$gaussian))
+    expect_identical(.dsvert_joint_dp_client_json(.dsvert_dp_cox_grid_cross_contract_validate(
+      .dsvert_dp_glm_grid_cross_raw_contract(admitted$gaussian$cox_grid),
+      f$policy, f$schema_manifest)), .dsvert_joint_dp_client_json(f$contract))
+    expect_error(.dsvert_dp_capsule_manifest_fragments(input, peer = "site_b"))
+    for (field in c("version", "dataset", "analysis_id", "owner_peer")) {
+      bad <- f$contract; bad$spec[[field]] <- "different"
+      expect_error(.dsvert_dp_capsule_manifest_fragments(fragments(bad), peer = "site_a"))
+    }
+    for (field in c("time", "event")) for (part in c("owner_peer", "dataset", "reference", "column")) {
+      bad <- f$contract; bad$spec[[field]][[part]] <- "different"
+      expect_error(.dsvert_dp_capsule_manifest_fragments(fragments(bad), peer = "site_a"))
+    }
+    bad <- f$contract; bad$spec$event <- bad$spec$time
+    expect_error(.dsvert_dp_capsule_manifest_fragments(fragments(bad), peer = "site_a"))
+    bad <- input; bad$gaussian$cox_grid$contract <- f$contract
+    expect_error(.dsvert_dp_capsule_manifest_fragments(bad, peer = "site_a"))
+  }
+})

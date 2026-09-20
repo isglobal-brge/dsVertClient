@@ -181,7 +181,7 @@
          call. = FALSE)
   }
   fragments <- .dsvert_dp_capsule_manifest_fragments(
-    draft$workload_fragments)
+    draft$workload_fragments, peer = peer)
   datasets <- draft$datasets[order(names(draft$datasets), method = "radix")]
   normalized <- vector("list", length(datasets))
   names(normalized) <- names(datasets)

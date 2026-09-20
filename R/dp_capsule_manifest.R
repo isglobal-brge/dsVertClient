@@ -298,7 +298,7 @@
   result
 }
 
-.dsvert_dp_capsule_manifest_fragments <- function(value) {
+.dsvert_dp_capsule_manifest_fragments <- function(value, peer = NULL) {
   families <- c("describe", "survival", "gaussian", "vertical_cross")
   if (!is.list(value) || is.null(names(value)) || anyNA(names(value)) ||
       anyDuplicated(names(value)) || !setequal(names(value), families)) {
@@ -420,7 +420,23 @@
           }
         }
       } else if (identical(family, "gaussian")) {
-        if (spec$version %in% c(unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_SPEC_VERSIONS),
+        if (identical(spec$version, "cox_grid_cross_v1")) {
+          contract <- .dsvert_dp_glm_grid_cross_raw_contract(spec)
+          signed <- contract$spec
+          valid <- identical(signed$analysis_id, analysis_id) &&
+            identifier(spec$dataset) && is.character(spec$contract) &&
+            identifier(signed$owner_peer) &&
+            (is.null(peer) || identical(signed$owner_peer, peer)) &&
+            all(vapply(c("time", "event"), function(field) {
+              descriptor <- signed[[field]]
+              is.list(descriptor) && identifier(descriptor$column) &&
+                identical(descriptor$dataset, spec$dataset) &&
+                identical(descriptor$owner_peer, signed$owner_peer) &&
+                identical(descriptor$reference,
+                  paste0(signed$owner_peer, "$", descriptor$column))
+            }, logical(1L))) &&
+            !identical(signed$time$column, signed$event$column)
+        } else if (spec$version %in% c(unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_SPEC_VERSIONS),
                               "lmm_grid_cross_v1", "binomial_glmm_grid_cross_v1", "poisson_glmm_grid_cross_v1")) {
           contract <- .dsvert_dp_glm_grid_cross_raw_contract(spec)
           valid <- identical(contract$spec$analysis_id, analysis_id) &&
@@ -1135,7 +1151,7 @@
   }
   .dsvert_dp_capsule_manifest_verify(draft, "draft", peer, context)
   workload_fragments <- .dsvert_dp_capsule_manifest_fragments(
-    draft$workload_fragments)
+    draft$workload_fragments, peer = peer)
   datasets <- draft$datasets[order(names(draft$datasets), method = "radix")]
   normalized <- vector("list", length(datasets))
   names(normalized) <- names(datasets)
