@@ -3,7 +3,7 @@
 # coordinates; no option, callback argument, or plaintext fallback enables it.
 .dsvert_dp_grouped_grid_cross_release <- function(contract, policy, schema, datasources,
     .aggregate = DSI::datashield.aggregate) {
-  if (!contract$spec$family %in% c("lmm", "binomial_glmm", "poisson_glmm")) .dsvert_dp_glm_grid_cross_fail()
+  if (!contract$spec$family %in% c("lmm", "binomial_glmm", "poisson_glmm", "binomial_gee", "poisson_gee")) .dsvert_dp_glm_grid_cross_fail()
   contract <- .dsvert_dp_glm_grid_profile_admit(contract, policy, schema)
   datasources <- .dsvert_dp_datasources(datasources)
   bootstrap <- .dsvert_dp_synopsis_bootstrap_build_v1(datasources, .aggregate = .aggregate)
@@ -128,8 +128,8 @@
 #'
 #' These typed entry points accept owner-qualified covariates and a contract
 #' signed by both compute-and-noise authorities. They never fit an optimiser
-#' to protected data. LMM ML and binomial GH5 grids read authenticated sticky
-#' joint-DP releases; the remaining grouped readers fail closed.
+#' to protected data. The admitted LMM ML, GLMM GH5 and analyst-fixed-rho GEE
+#' grids read authenticated sticky joint-DP releases.
 #'
 #' @param outcome One owner-qualified outcome, such as `site_a$y`.
 #' @param predictors Owner-qualified covariates in the signed canonical order.
@@ -149,7 +149,9 @@
 #'   The authenticated binomial and Poisson GLMM readers require an explicit variance grid.
 #'   GEE selects using independent likelihood; its complete DP workload also
 #'   includes bread and clipped cluster-score meat. Its correlation structure
-#'   and parameter are signed. All families protect one admitted patient with
+#'   and parameter are analyst-specified, fixed and signed; correlation is never
+#'   estimated from protected outcomes. The GEE reader requires
+#'   `composition = "staged_fixed_rho_v1"`. All families protect one admitted patient with
 #'   exactly one analysis row; the entire affected cluster enters the bound.
 #' @name dp_grouped_grid_cross
 NULL
