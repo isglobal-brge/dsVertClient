@@ -88,6 +88,7 @@ test_that("two DSLite custodians exercise tagged Cox oracle and DP grid selectio
     expect_equal(selected, which.min(noisy))
     expect_null(result$std_errors)
     expect_false(result$production_ready)
+    expect_null(result$provenance_certificate)
     report[[as.character(epsilon)]] <- list(epsilon=epsilon,
       selected=selected, exact_best=which.min(exact), selected_beta=unname(beta[selected,]),
       exact_best_beta=unname(beta[which.min(exact),]), coxph_beta=unname(stats::coef(fit)),

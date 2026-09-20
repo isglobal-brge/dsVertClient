@@ -201,7 +201,7 @@
       .dsvert_dp_cox_grid_cross_fail()
     }
     bits <- .dsvert_dp_glm_grid_cross_integer(policy$numeric_grid_bits, 8, 18)
-    capacity <- .dsvert_dp_glm_grid_cross_integer(policy$unit_capacity, 2, 10000)
+    capacity <- .dsvert_dp_glm_grid_cross_integer(policy$unit_capacity, 2, 400)
     list(version = raw$version, family = "cox", analysis_id = raw$analysis_id,
       dataset = raw$dataset, schema_sha256 = schema$sha256,
       logical_snapshot = schema$unsigned$logical_snapshot,
@@ -291,11 +291,11 @@
       log_rows = "all_public_padded_slots_private_event_mask_v2",
       output = "two_authority_additive_candidate_sum_shares_only_v1"),
     result_evidence_required = TRUE,
-    implementation_state = "cross_owner_exact_gc_contract_only",
-    cross_owner_state = "exact_gc_to_joint_dp_vector_pending_v1",
+    implementation_state = "cross_owner_exact_gc_materialized",
+    cross_owner_state = "exact_gc_to_joint_dp_vector_v1",
     required_result_states = list(implementation_state = "cross_owner_exact_gc_materialized",
       cross_owner_state = "exact_gc_to_joint_dp_vector_v1"),
-    runtime_enabled = FALSE)
+    runtime_enabled = TRUE)
 }
 
 .dsvert_dp_cox_grid_cross_artifact_validate <- function(value, spec) {
@@ -350,8 +350,7 @@
   }, error = .dsvert_dp_glm_grid_cross_transcript_stop)
 }
 
-# Additive Cox cross-owner client. The contract helpers below mirror the
-# server; the production release runner remains closed until fusion wiring.
+# Additive Cox cross-owner client over the authenticated Synopsis release.
 
 .dsvert_dp_cox_grid_cross_formula <- function(formula) {
   fail <- .dsvert_dp_glm_grid_cross_fail
@@ -411,10 +410,44 @@
 }
 
 .dsvert_dp_cox_grid_cross_release <- function(data_name, analysis_id, datasources) {
-  # No generic nonlinear RPC, R plaintext fallback, or protected optimizer.
-  # Integration replaces this body only after the authenticated fused producer
-  # and existing sticky jointly noised vector lifecycle are connected.
-  .dsvert_dp_glm_grid_cross_fail()
+  datasources <- .dsvert_dp_datasources(datasources)
+  check <- function(manifest) {
+    artifact <- manifest$workload$families$gaussian_models$artifacts[[analysis_id]]
+    .dsvert_dp_cox_cross_client_artifact(artifact, data_name, analysis_id, NULL,
+      manifest$admission$adjacency, 2^manifest$bounds$numeric_grid_bits,
+      manifest$admission$unit_capacity)
+  }
+  run <- .dsvert_dp_synopsis_vector_run(datasources, .request_check = check)
+  context <- .dsvert_dp_vector_context(run, allow_synopsis = TRUE)
+  artifact <- check(context$manifest)
+  block <- .dsvert_dp_capsule_single_block(context$layout, "gaussian_models",
+    dataset = data_name, owner_peer = artifact$owner_peer,
+    predicate = function(value) identical(value$key, analysis_id))
+  .dsvert_dp_glm_grid_cross_equal(block$descriptor,
+    context$manifest$workload$families$gaussian_models$artifacts[[analysis_id]])
+  coordinates <- .dsvert_dp_capsule_vector_values(context$release, block)
+  certificate <- .dsvert_dp_gaussian_synopsis_certificate_build(context, artifact, block, coordinates)
+  verification <- ds.validateDPGaussianCertificate(certificate)
+  contract <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)
+  spec <- contract$spec
+  if (!identical(verification$integrity_valid, TRUE) ||
+      !identical(verification$authenticity, "session_transport_anchored") ||
+      !identical(as.numeric(verification$output_lattice_scale), 2^spec$numeric_grid_bits)) {
+    .dsvert_dp_cox_grid_cross_fail()
+  }
+  schema <- .dsvert_joint_dp_client_decode(context$manifest_bundle$schema_json,
+    "signed Cox schema", .DSVERT_CLIENT_DP_CAPSULE_SOURCE_MAX_MANIFEST_BYTES)
+  pins <- unlist(certificate$peer_context$ordered_peer_pinset)
+  policy <- list(peer_pinset = pins,
+    peer_pinset_sha256 = .dsvert_dp_capsule_source_hash(as.list(pins)),
+    designated_noise_peers = unlist(certificate$peer_context$designated_noise_peers),
+    unit_capacity = context$manifest$admission$unit_capacity,
+    numeric_grid_bits = context$manifest$bounds$numeric_grid_bits,
+    adjacency = context$manifest$admission$adjacency)
+  list(contract = contract, policy = policy, schema_manifest = schema,
+    coordinates = unname(verification$coordinates * verification$output_lattice_scale),
+    provenance_certificate = certificate,
+    public_metadata = .dsvert_dp_vector_public_metadata(context))
 }
 
 .dsvert_dp_cox_grid_cross_impl <- function(
@@ -454,7 +487,11 @@
       covariance = NULL, std_errors = NULL, p_values = NULL,
       baseline_hazard = NULL, inference = "unavailable_for_finite_grid_cox",
       source_values_exposed = FALSE, intermediate_values_exposed = FALSE,
-      protected_optimizer_called = FALSE, production_ready = FALSE,
+      protected_optimizer_called = FALSE,
+      production_ready = !is.null(released$provenance_certificate),
+      provenance_certificate = released$provenance_certificate %||% NULL,
+      certificate_sha256 = released$provenance_certificate$certificate_sha256 %||% NULL,
+      public_metadata = released$public_metadata %||% NULL,
       additional_privacy_cost = c(epsilon = 0, delta = 0)))
     class(result) <- c("dsvert_dp_cox_grid_cross", "list")
     result
@@ -466,9 +503,8 @@
 #' Selects the first canonical minimum of an authenticated, sticky, jointly
 #' noised loss vector. All source owners must sign the bounded observed-time
 #' specification and owner-qualified covariates; exactly two peers compute the
-#' release. No optimizer or inference is available. The production release
-#' route currently fails closed until the
-#' authenticated fused producer is connected.
+#' release through the authenticated staged Synopsis lifecycle. No optimizer
+#' or inference is available. The integrated release admits at most 400 rows.
 #'
 #' @param formula An additive \code{Surv(time, event)} formula. Predictor names
 #'   are owner-qualified, for example \code{site_a$x + site_b$z}.
@@ -476,9 +512,9 @@
 #' @param analysis_id The signed finite-grid analysis identifier.
 #' @param datasources Two to five signed source owners, including the two
 #'   compute/noise authorities.
-#' @return After release integration, a finite-grid point estimate with raw-unit
+#' @return A finite-grid point estimate with raw-unit
 #'   coefficients and hazard ratios, without standard errors or baseline hazard.
-#' @keywords internal
+#' @export
 dp_cox_grid <- function(formula, data, analysis_id, datasources = NULL) {
   tryCatch({
     .dsvert_dp_cox_grid_cross_formula(formula)
@@ -489,7 +525,7 @@ dp_cox_grid <- function(formula, data, analysis_id, datasources = NULL) {
 }
 
 .dsvert_dp_cox_grid_cross_client_register <- function() {
-  list(version = "cox_grid_cross_v1", runtime_enabled = FALSE,
+  list(version = "cox_grid_cross_v1", runtime_enabled = TRUE,
        entry = dp_cox_grid,
        contract_validate = .dsvert_dp_cox_grid_cross_contract_validate,
        moment = .dsvert_dp_cox_grid_cross_moment,

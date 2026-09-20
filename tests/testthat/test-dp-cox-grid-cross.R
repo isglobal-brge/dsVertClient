@@ -67,15 +67,15 @@ test_that("Cox client canonical argmin rescales slopes and omits inference", {
     class = "dsvert_dp_public_failure")
 })
 
-test_that("production Cox client is closed and exposes no test evaluator", {
+test_that("production Cox client requires authenticated sources and exposes no test evaluator", {
   expect_identical(names(formals(dp_cox_grid)),
     c("formula", "data", "analysis_id", "datasources"))
   expect_error(dp_cox_grid(Surv(site_a$time, site_a$event) ~ site_a$x + site_b$z,
     "aligned", "cox_grid", list(site_a = NULL, site_b = NULL)),
     class = "dsvert_dp_public_failure")
-  expect_false(.dsvert_dp_cox_grid_cross_client_register()$runtime_enabled)
+  expect_true(.dsvert_dp_cox_grid_cross_client_register()$runtime_enabled)
   expect_identical(.dsvert_dp_cox_grid_cross_client_register()$entry, dp_cox_grid)
-  expect_false("dp_cox_grid" %in% getNamespaceExports("dsVertClient"))
+  expect_true("dp_cox_grid" %in% getNamespaceExports("dsVertClient"))
 })
 
 test_that("Cox result validates all source owners separately from computation peers", {
@@ -121,9 +121,9 @@ test_that("Cox server and client canonical contracts agree", {
 })
 
 
-test_that("Cox measured admission is enforced even with both valid signatures", {
+test_that("Cox integrated row scope and measured admission require valid signatures", {
   admission <- .dsvert_dp_cox_grid_cross_admission(2, 1)
-  n <- admission$maximum_rows; j <- admission$maximum_candidates
+  n <- 400; j <- admission$maximum_candidates
   grid <- lapply(seq_len(j), function(i) c(i / 100, 0))
   f <- .cox_cross_client_fixture(capacity = n, beta_grid = grid)
   validate <- function(value) .dsvert_dp_cox_grid_cross_contract_validate(
@@ -139,7 +139,7 @@ test_that("Cox measured admission is enforced even with both valid signatures", 
     expect_error(validate(f$sign(changed)), class = "dsvert_dp_public_failure")
   }
   changed <- f$contract
-  changed$spec$resource_admission$maximum_rows <- n + 1
+  changed$spec$resource_admission$maximum_rows <- admission$maximum_rows + 1
   expect_error(validate(f$sign(changed)), class = "dsvert_dp_public_failure")
 })
 

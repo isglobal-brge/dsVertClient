@@ -25,8 +25,8 @@ test_that("Cox discovery and generic layout preserve private padded source lanes
     expect_identical(time[[1L]]$kind, "validity")
     expect_identical(time[[1L]]$length, 8L)
     expect_identical(unlist(layout$source_peers), names(f$keys))
-    # Discovery does not promote a contract-only artifact to runtime admission.
-    expect_false(.dsvert_dp_synopsis_supported_glm_grid_cross_v1(manifest))
+    # Signed Cox artifacts use the authenticated staged runtime.
+    expect_true(.dsvert_dp_synopsis_supported_glm_grid_cross_v1(manifest))
     context <- list(pinset = f$policy$peer_pinset, designated = f$policy$designated_noise_peers)
     preflight <- function(value = manifest, schema = f$schema_manifest) {
       .dsvert_dp_glm_grid_cross_preflight(value, context, .dsvert_joint_dp_client_json(schema))
@@ -54,6 +54,23 @@ test_that("Cox discovery and generic layout preserve private padded source lanes
   }
 })
 
+test_that("Cox rejects mixed-family runtime and transport manifests", {
+  f <- .cox_cross_client_fixture()
+  cox <- .dsvert_dp_cox_cross_workload_artifact(f$contract)
+  grouped <- .grouped_cross_client_fixture()
+  lmm <- .dsvert_dp_grouped_cross_workload_artifact(grouped$contract)
+  manifest <- list(workload = list(families = list(gaussian_models = list(
+    artifacts = list(cox_grid = cox, lmm_grid = lmm)))))
+  expect_length(.dsvert_dp_glm_grid_cross_artifacts(manifest), 2L)
+  expect_false(.dsvert_dp_synopsis_supported_glm_grid_cross_v1(manifest))
+  expect_error(.dsvert_dp_gaussian_cross_layout_client(manifest))
+  expect_error(.dsvert_dp_cox_cross_orchestrate(
+    .dsvert_joint_dp_client_json(manifest), manifest, list(), list(),
+    f$policy, f$schema_manifest,
+    function(...) stop("mixed-family transport must not run"), list()),
+    class = "dsvert_dp_public_failure")
+})
+
 test_that("Cox reconstruction rejects changed arithmetic, source and request bindings", {
   f <- .cox_cross_client_fixture(capacity = 5)
   artifact <- .dsvert_dp_cox_cross_workload_artifact(f$contract)
@@ -76,6 +93,6 @@ test_that("Cox reconstruction rejects changed arithmetic, source and request bin
   expect_error(do.call(.dsvert_dp_cox_cross_client_artifact, args))
   expect_error(.dsvert_dp_glm_grid_cross_client_artifact(artifact, "aligned", "cox_grid",
     "site_a", f$policy$adjacency, 256, 5, "lmm"))
-  f <- .cox_cross_client_fixture(capacity = 401)
-  expect_error(.dsvert_dp_glm_grid_profile_admit(f$contract, f$policy, f$schema_manifest))
+  expect_error(.cox_cross_client_fixture(capacity = 401),
+    class = "dsvert_dp_public_failure")
 })

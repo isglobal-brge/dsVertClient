@@ -303,6 +303,13 @@ test_that("Cox public evidence authenticates cold two-authority source and relea
         .dsvert_joint_dp_client_json(f$schema_manifest))
       expect_identical(ds.validateDPGaussianCertificate(released$provenance_certificate)$authenticity,
         "session_transport_anchored")
+      formula <- stats::reformulate(unlist(f$contract$spec$predictor_order),
+        response = "Surv(site_a$time, site_a$event)")
+      point <- .dsvert_dp_cox_grid_cross_impl(formula, "aligned", "cox_grid",
+        setNames(rep(list(list()), owners), ctx$servers), .release = function(...) released)
+      expect_true(point$production_ready)
+      expect_identical(point$certificate_sha256,
+        released$provenance_certificate$certificate_sha256)
       missing <- cert_context; missing$cross_cox_evidence <- NULL
       expect_error(build(missing), "closed Synopsis provenance")
       reseal_certificate <- function(value) {

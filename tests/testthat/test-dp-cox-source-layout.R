@@ -36,9 +36,9 @@ test_that("Cox client source lanes match the authenticated server layout", {
         .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_MAX_TRANSPORT_COORDINATES)) {
       expect_error(.dsvert_dp_cox_cross_source_blocks(artifact, cursor))
     }
-    # Public discovery is still closed until the complete owner-first runner lands.
+    # Generic discovery includes Cox while source blocks retain its private layout.
     manifest <- list(workload = list(families = list(gaussian_models = list(
       artifacts = list(cox_grid = artifact)))))
-    expect_length(.dsvert_dp_glm_grid_cross_artifacts(manifest), 0)
+    expect_length(.dsvert_dp_glm_grid_cross_artifacts(manifest), 1)
   }
 })
