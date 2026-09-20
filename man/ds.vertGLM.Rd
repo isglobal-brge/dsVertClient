@@ -121,6 +121,16 @@ new DP opening.
 and selects the minimum released negative log likelihood over the signed finite
 beta grid. The result is coefficient-only post-processing: it has no
 covariance, standard errors, p-values, residuals or fitted values.
+Cross-owner grids require every participating custodian's signed candidate contract and a
+completed pinned PSI alignment. Use additive \code{owner$column} references
+for the outcome and covariates. The binomial and Poisson cross-owner routes
+report \code{implementation_state = "cross_owner_exact_gc_materialized"}
+and \code{cross_owner_state = "exact_gc_to_joint_dp_vector_v1"}.
+Losses use certified fixed-point piecewise profiles; only the jointly noised
+candidate-loss vector is released. Selection is the first minimum in signed
+candidate order, and is not a continuous maximum-likelihood estimate.
+Public catalog validation precedes protected source claims; replay of the
+same signed grid and source binding returns the same sticky DP result.
 
 \strong{Fresh formal binomial/Poisson route.}
 \code{fresh_formal_analysis_id} is a retained compatibility selector. It

@@ -298,7 +298,7 @@
   result
 }
 
-.dsvert_dp_capsule_manifest_fragments <- function(value) {
+.dsvert_dp_capsule_manifest_fragments <- function(value, peer = NULL) {
   families <- c("describe", "survival", "gaussian", "vertical_cross")
   if (!is.list(value) || is.null(names(value)) || anyNA(names(value)) ||
       anyDuplicated(names(value)) || !setequal(names(value), families)) {
@@ -420,7 +420,29 @@
           }
         }
       } else if (identical(family, "gaussian")) {
-        if (identical(spec$version, "ordinal_grid_v1")) {
+        if (identical(spec$version, "cox_grid_cross_v1")) {
+          contract <- .dsvert_dp_glm_grid_cross_raw_contract(spec)
+          signed <- contract$spec
+          valid <- identical(signed$analysis_id, analysis_id) &&
+            identifier(spec$dataset) && is.character(spec$contract) &&
+            identifier(signed$owner_peer) &&
+            (is.null(peer) || identical(signed$owner_peer, peer)) &&
+            all(vapply(c("time", "event"), function(field) {
+              descriptor <- signed[[field]]
+              is.list(descriptor) && identifier(descriptor$column) &&
+                identical(descriptor$dataset, spec$dataset) &&
+                identical(descriptor$owner_peer, signed$owner_peer) &&
+                identical(descriptor$reference,
+                  paste0(signed$owner_peer, "$", descriptor$column))
+            }, logical(1L))) &&
+            !identical(signed$time$column, signed$event$column)
+        } else if (spec$version %in% c(unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_SPEC_VERSIONS),
+                              "lmm_grid_cross_v1", "binomial_glmm_grid_cross_v1", "poisson_glmm_grid_cross_v1",
+                              "binomial_gee_grid_cross_v1", "poisson_gee_grid_cross_v1")) {
+          contract <- .dsvert_dp_glm_grid_cross_raw_contract(spec)
+          valid <- identical(contract$spec$analysis_id, analysis_id) &&
+             .dsvert_dp_is_string(contract$spec$outcome$owner_peer) && is.character(spec$contract)
+        } else if (identical(spec$version, "ordinal_grid_v1")) {
           expected <- c(
             "version", "dataset", "outcome", "predictors", "intercept",
             "ordered_levels", "candidate_grid")
@@ -655,6 +677,9 @@
             }, logical(1L))) && !anyDuplicated(beta_keys)
           if (isTRUE(valid)) beta_grid <- beta_grid[order(beta_keys)]
         } else if (identical(spec$version, "negative_binomial_grid_v1")) {
+          # Sealed defective likelihood semantics must not enter a fallback.
+          valid <- FALSE
+        } else if (identical(spec$version, "negative_binomial_grid_v2")) {
           expected <- c(
             "version", "dataset", "outcome", "predictors", "intercept",
             "max_outcome", "beta_grid", "theta_grid")
@@ -1065,7 +1090,7 @@
         spec$predictors <- predictors
         spec$beta_grid <- beta_grid
       } else if (identical(family, "gaussian") &&
-                 identical(spec$version, "negative_binomial_grid_v1")) {
+                 identical(spec$version, "negative_binomial_grid_v2")) {
         spec$predictors <- predictors
         spec$beta_grid <- beta_grid
         spec$theta_grid <- theta_grid
@@ -1127,7 +1152,7 @@
   }
   .dsvert_dp_capsule_manifest_verify(draft, "draft", peer, context)
   workload_fragments <- .dsvert_dp_capsule_manifest_fragments(
-    draft$workload_fragments)
+    draft$workload_fragments, peer = peer)
   datasets <- draft$datasets[order(names(draft$datasets), method = "radix")]
   normalized <- vector("list", length(datasets))
   names(normalized) <- names(datasets)
@@ -1228,7 +1253,7 @@
     peer_pinset_sha256 = reference$peer_pinset_sha256,
     alignment_protocol_version = as.numeric(alignment_protocol_version),
     datasets = datasets,
-    workload_contract = workload_contract))
+    workload_contract = .dsvert_dp_glm_grid_cross_snapshot_workload(workload_contract)))
   .dsvert_joint_dp_client_canonical(list(
     logical_snapshot_id = reference$cohort_id,
     version = paste0("schema-v1-", fingerprint),

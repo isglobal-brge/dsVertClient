@@ -12,7 +12,7 @@
 #'   a declared clinical order, finite threshold/beta candidates and public
 #'   predictor bounds. Neither route returns covariance, standard errors or
 #'   sampling inference.
-#' @param formula,data,levels_ordered,cumulative_template,max_iter,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources,analysis_id
+#' @param formula,data,levels_ordered,cumulative_template,max_iter,max_outer,tol,warm_max_iter,warm_tol,binomial_sigmoid_intervals,verbose,datasources
 #'   Retained compatibility arguments. With a validated \code{frequency}
 #'   object, only \code{y ~ 1} is available.
 #' @param server Required source-owner when \code{frequency} is absent. The

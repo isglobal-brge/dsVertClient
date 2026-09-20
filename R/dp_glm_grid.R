@@ -36,6 +36,11 @@
   artifact <- tryCatch(
     manifest$workload$families$gaussian_models$artifacts[[analysis_id]],
     error = function(error) NULL)
+  if (is.list(artifact) && artifact$version %in%
+      unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS)) {
+    return(.dsvert_dp_glm_grid_cross_client_artifact(artifact, data_name,
+      analysis_id, owner_peer, adjacency, scale, capacity, family))
+  }
   if (!family %in% names(.DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS)) {
     stop("The finite GLM family is invalid", call. = FALSE)
   }
@@ -219,10 +224,17 @@
 
 .dsvert_dp_glm_grid_synopsis_release <- function(
     data_name, analysis_id, family, server = NULL, datasources = NULL,
-    .aggregate) {
+    .aggregate, formula = NULL) {
   datasources <- .dsvert_dp_datasources(datasources)
   if (!is.null(server)) server <- .dsvert_dp_server(server, datasources)
-  run <- .dsvert_dp_synopsis_vector_run(datasources, .aggregate = .aggregate)
+  request_check <- function(manifest) {
+    artifact <- .dsvert_dp_glm_grid_artifact(manifest, data_name, analysis_id, server,
+      manifest$admission$adjacency, 2^manifest$bounds$numeric_grid_bits,
+      manifest$admission$unit_capacity, family)
+    if (!is.null(formula)) .dsvert_dp_glm_grid_formula_check(formula, artifact)
+  }
+  run <- .dsvert_dp_synopsis_vector_run(datasources, .aggregate = .aggregate,
+    .request_check = request_check)
   context <- .dsvert_dp_vector_context(run, allow_synopsis = TRUE)
   metadata <- .dsvert_dp_vector_public_metadata(context)
   scale <- as.numeric(context$lattice$output_lattice_scale)
@@ -254,8 +266,9 @@
   verification <- ds.validateDPGaussianCertificate(certificate)
   if (!identical(verification$integrity_valid, TRUE) ||
       !identical(verification$authenticity, "session_transport_anchored") ||
-      !identical(verification$artifact$version,
-                 .DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS[[family]])) {
+      !verification$artifact$version %in% c(
+                 .DSVERT_CLIENT_DP_GLM_GRID_ARTIFACT_VERSIONS[[family]],
+                 .DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS[[family]])) {
     stop("The finite GLM Synopsis certificate is not transport-anchored",
          call. = FALSE)
   }
@@ -270,16 +283,10 @@
     datasources = NULL, .aggregate) {
   data_name <- .dsvert_dp_gaussian_identifier(data_name, "data_name")
   analysis_id <- .dsvert_dp_gaussian_identifier(analysis_id, "analysis_id")
-  outcome <- as.character(formula[[2L]])
-  predictors <- attr(stats::terms(formula), "term.labels")
   released <- .dsvert_dp_glm_grid_synopsis_release(
-    data_name, analysis_id, family, server, datasources, .aggregate)
+    data_name, analysis_id, family, server, datasources, .aggregate, formula)
   artifact <- released$artifact
-  if (!identical(artifact$outcome$column, outcome) ||
-      !setequal(artifact$predictor_order, predictors)) {
-    stop("formula must match the signed finite GLM grid artifact",
-         call. = FALSE)
-  }
+  .dsvert_dp_glm_grid_formula_check(formula, artifact)
   moment <- released$moment
   result <- c(released$metadata, list(
     status = moment$status, analysis_id = analysis_id,
@@ -302,6 +309,7 @@
     additional_server_calls_after_synopsis = 0L,
     additional_privacy_cost = c(epsilon = 0, delta = 0),
     cross_owner_state = artifact$cross_owner_state,
+    implementation_state = artifact$implementation_state,
     legacy_fallback_called = FALSE, provenance_certificate = released$certificate,
     disclosure_guard = list(satisfied = TRUE,
       basis = "formal_canonical_sticky_DP_synopsis_postprocessing")))
@@ -329,12 +337,12 @@
   terms <- if (inherits(formula, "formula")) stats::terms(formula) else NULL
   predictors <- if (is.null(terms)) character() else attr(terms, "term.labels")
   if (!inherits(formula, "formula") || length(formula) != 3L ||
-      !is.symbol(formula[[2L]]) || !identical(attr(terms, "intercept"), 1L) ||
+      is.null(.dsvert_dp_glm_grid_formula_reference(formula[[2L]])) || !identical(attr(terms, "intercept"), 1L) ||
       !length(predictors) ||
-      any(!grepl("^[A-Za-z.][A-Za-z0-9._]*$", predictors))) {
+      any(!grepl("^[A-Za-z.][A-Za-z0-9._]*(\\$[A-Za-z.][A-Za-z0-9._]*)?$", predictors))) {
     stop(paste(
       "The signed finite GLM grid requires an intercept and additive bare",
-      "column names"), call. = FALSE)
+      "column names or owner$column references"), call. = FALSE)
   }
   resolved <- .dsvert_federation_argument(data, datasources)
   result <- .dsvert_dp_glm_grid_impl(

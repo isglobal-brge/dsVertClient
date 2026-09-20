@@ -16,6 +16,15 @@ test_that("client alignment projects only the signed private suffix", {
   projection <- .dsvert_dp_alignment_mask_private_projection_client(layout)
   expect_identical(projection$source_offset, 8192)
   expect_identical(projection$coordinate_count, 96)
+  grid <- layout
+  grid$blocks <- lapply(grid$blocks, function(block) {
+    block$input_family <- "glm_grid"
+    block
+  })
+  expect_identical(.dsvert_dp_alignment_mask_private_projection_client(grid),
+    list(source_offset = 8192, coordinate_count = 1))
+  grid$blocks[[1L]]$input_family <- "gaussian"
+  expect_identical(.dsvert_dp_alignment_mask_private_projection_client(grid), projection)
   layout$blocks[[2L]]$start <- 8242L
   expect_error(.dsvert_dp_alignment_mask_private_projection_client(layout),
                "contiguous")

@@ -1481,6 +1481,7 @@
     artifact_implementation_state = "validated_synopsis_adapter_implemented",
     inference_implementation_state = "synopsis_postprocess_implemented")
 
+  .dsvert_grouped_cross_inventory_register(add)
   out <- do.call(rbind, rows)
   out <- out[order(out$method, method = "radix"), , drop = FALSE]
   rownames(out) <- NULL

@@ -719,7 +719,7 @@ ds.vertMI <- function(formula, data = NULL, impute_columns = NULL,
 print.ds.vertMI <- function(x, ...) {
   cat("dsVert signed categorical MCAR completion\n")
   if (identical(x$method, "signed_categorical_mcar_joint_pair_v3")) {
-    cat("  Joint signed pair:", paste(x$impute_columns, collapse = " × "),
+    cat("  Joint signed pair:", paste(x$impute_columns, collapse = " \u00d7 "),
         "| missing (DP):", x$missing_count_dp, "\n")
     cat("  No joint microdata or Rubin inference is released.\n")
   } else if (identical(x$method, "signed_categorical_mcar_star_joint_v2")) {

@@ -81,7 +81,7 @@
           "bounded-poisson-likelihood-grid-v1",
           "bounded-binomial-lasso-grid-v1",
           "bounded-poisson-lasso-grid-v1",
-          "bounded-negative-binomial-likelihood-grid-v1",
+          "bounded-negative-binomial-likelihood-grid-v2",
           "bounded-multinomial-likelihood-grid-v1",
           "bounded-ordinal-likelihood-grid-v1")
       }, logical(1L)))) return(TRUE)
@@ -109,15 +109,37 @@
   responses
 }
 
+.dsvert_dp_synopsis_runner_exact_chunk_size <- function(compiled, execution) {
+  size <- if (isTRUE(compiled$physical$backend_selection$policy_version %in% c(
+      "dsvert-cross-grid-exact-gc-cost-policy-v2",
+      "dsvert-lmm-grid-exact-gc-cost-policy-v1"))) {
+    min(64L, compiled$layout$coordinate_count,
+      compiled$physical$full_plan$maximum_chunk_coordinates)
+  } else {
+    execution$geometry$public_chunk_coordinates
+  }
+  artifacts <- compiled$artifact$semantic$catalog_projection$catalog$families$
+    gaussian_models$artifacts
+  if (any(vapply(artifacts, function(artifact) {
+    .dsvert_dp_staged_grouped_artifact(artifact) &&
+      artifact$family %in% c("binomial_gee", "poisson_gee")
+  }, logical(1L)))) {
+    # Mirror the server's fixed-rho GEE memory schedule. This deterministic
+    # geometry is attempt-bound; it never recalibrates the full privacy plan.
+    size <- min(size, 16L)
+  }
+  size
+}
+
 .dsvert_dp_synopsis_runner_exact_start_set <- function(
     responses, authorities, trusted, compiled, execution, chunk_index) {
   response_json <- .dsvert_dp_synopsis_runner_json_set(
     responses, authorities, "exact-GC START",
     .DSVERT_CLIENT_SYNOPSIS_RECEIPT_MAX_OBJECT_BYTES)
-  expected_offset <- as.integer(
-    chunk_index * execution$geometry$public_chunk_coordinates)
+  chunk_size <- .dsvert_dp_synopsis_runner_exact_chunk_size(compiled, execution)
+  expected_offset <- as.integer(chunk_index * chunk_size)
   expected_count <- as.integer(min(
-    execution$geometry$public_chunk_coordinates,
+    chunk_size,
     execution$geometry$coordinate_count - expected_offset))
   fields <- c(
     "version", "phase", "execution_id", "artifact_key",
@@ -241,6 +263,11 @@
     }
     owners <- c(owners, cross_owners)
   }
+  grids <- .dsvert_dp_glm_grid_cross_artifacts(trusted$manifest)
+  if (length(grids)) {
+    owners <- c(owners, unlist(lapply(grids, `[[`, "participating_peers"),
+      use.names = FALSE))
+  }
   sources <- sort(unique(owners), method = "radix")
   if (!length(sources) || anyNA(sources) || any(!nzchar(sources)) ||
       !all(sources %in% servers)) {
@@ -335,7 +362,7 @@
 
 .dsvert_dp_synopsis_vector_run <- function(
     datasources, status = NULL, local_projection = NULL,
-    .aggregate = DSI::datashield.aggregate) {
+    .aggregate = DSI::datashield.aggregate, .request_check = NULL) {
   datasources <- .dsvert_dp_datasources(datasources)
   bootstrap <- if (is.null(local_projection)) {
     .dsvert_dp_synopsis_bootstrap_build_v1(
@@ -348,18 +375,31 @@
   status <- bootstrap$status
   manifest_bundle <- bootstrap$manifest_bundle
   trusted <- .dsvert_dp_synopsis_client_bundle(manifest_bundle, status)
+  grid_cross <- .dsvert_dp_synopsis_supported_glm_grid_cross_v1(trusted$manifest)
+  lmm_cross <- any(vapply(.dsvert_dp_glm_grid_cross_artifacts(trusted$manifest),
+    function(artifact) .dsvert_dp_staged_grouped_artifact(artifact), logical(1L)))
+  cox_cross <- any(vapply(.dsvert_dp_glm_grid_cross_artifacts(trusted$manifest),
+    function(artifact) identical(artifact$version,
+      .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION), logical(1L)))
+  .dsvert_dp_glm_grid_cross_preflight(trusted$manifest, trusted$context,
+    manifest_bundle$schema_json)
+  if (!is.null(.request_check)) {
+    if (!is.function(.request_check)) stop("Invalid Synopsis request validator", call. = FALSE)
+    .request_check(trusted$manifest)
+  }
   categorical_cross <- .dsvert_dp_synopsis_supported_categorical_cross_v1(
     trusted$manifest)
   gaussian_cross <- .dsvert_dp_synopsis_supported_gaussian_cross_v1(
     trusted$manifest)
-  cross <- isTRUE(categorical_cross) || isTRUE(gaussian_cross)
+  cross <- isTRUE(categorical_cross) || isTRUE(gaussian_cross) || isTRUE(grid_cross)
   if (.dsvert_dp_synopsis_runner_cross(trusted$manifest) &&
       !isTRUE(cross)) {
     stop("Cross-owner synopsis catalogs are not supported", call. = FALSE)
   }
   published <- .dsvert_dp_synopsis_publication_resume_v1(
     bootstrap, .aggregate = .aggregate)
-  if (!is.null(published) && !isTRUE(gaussian_cross)) return(published)
+  if (!is.null(published) && !isTRUE(gaussian_cross) && !isTRUE(lmm_cross) &&
+      !isTRUE(cox_cross)) return(published)
   layout <- .dsvert_dp_capsule_vector_layout(trusted$manifest)
   context <- trusted$context
   valid_context <- is.list(context) && is.character(context$servers) &&
@@ -387,7 +427,7 @@
   backend <- if (identical(
       mechanism$mechanism, .DSVERT_CLIENT_VECTOR_GAUSSIAN_MECHANISM)) {
     NULL
-  } else if (layout$coordinate_count <=
+  } else if (isTRUE(grid_cross) || layout$coordinate_count <=
              .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_MAX_PROMOTED_COORDINATES) {
     .DSVERT_CLIENT_VECTOR_EXACT_BACKEND
   } else {
@@ -397,7 +437,13 @@
     mechanism,
     mechanism_selection = trusted$manifest$workload$mechanism_selection,
     backend = backend)
-  built <- .dsvert_dp_synopsis_runner_compile(
+  built <- if (!is.null(published) && (isTRUE(lmm_cross) || isTRUE(cox_cross))) {
+    # A durable staged publication already authenticates the source Claim set.
+    # Reconstruct public compilation only; ClaimDS would reread private data.
+    list(compilation = published$verification_compilation,
+      compiled = .dsvert_dp_synopsis_client_compile(
+        published$verification_compilation, trusted, manifest_bundle))
+  } else .dsvert_dp_synopsis_runner_compile(
     context, manifest_bundle, trusted, layout, .aggregate)
   compiled <- built$compiled
   gaussian_evidence <- function(value) {
@@ -420,8 +466,51 @@
         context, trusted$manifest, analysis_id, value$release)
     }), names(artifacts))
   }
+  lmm_evidence <- function(value) {
+    if (!isTRUE(lmm_cross)) return(NULL)
+    artifacts <- .dsvert_dp_glm_grid_cross_artifacts(trusted$manifest)
+    remote_context <- list(
+      manifest_sha256 = manifest_bundle$manifest_sha256,
+      claim_set_json = "{}",
+      compilation_json = .dsvert_joint_dp_client_json(built$compilation))
+    stats::setNames(lapply(names(artifacts), function(analysis_id) {
+      calls <- stats::setNames(lapply(authorities, function(peer) {
+        as.call(c(list(as.name("dsvertDPSynopsisGLMGridCrossDS")), remote_context,
+          list(analysis_id = analysis_id, session_id = .dsvert_uuid4(), action = "evidence", batch = 0)))
+      }), authorities)
+      .dsvert_dp_lmm_cross_public_evidence_set(.dsvert_fanout_by_site(
+        context$conns, calls, operation = "LMM public evidence", .aggregate = .aggregate),
+        context, trusted$manifest, analysis_id, value$release, compiled)
+    }), names(artifacts))
+  }
+  cox_evidence <- function(value) {
+    if (!isTRUE(cox_cross)) return(NULL)
+    artifacts <- .dsvert_dp_glm_grid_cross_artifacts(trusted$manifest)
+    policy <- list(peer_pinset = context$pinset,
+      peer_pinset_sha256 = .dsvert_dp_capsule_source_hash(as.list(context$pinset)),
+      designated_noise_peers = context$designated,
+      unit_capacity = trusted$manifest$admission$unit_capacity,
+      numeric_grid_bits = trusted$manifest$bounds$numeric_grid_bits,
+      adjacency = trusted$manifest$admission$adjacency)
+    schema <- .dsvert_joint_dp_client_decode(manifest_bundle$schema_json,
+      "signed Cox schema", .DSVERT_CLIENT_DP_CAPSULE_SOURCE_MAX_MANIFEST_BYTES)
+    remote_context <- list(manifest_sha256 = manifest_bundle$manifest_sha256,
+      claim_set_json = "{}",
+      compilation_json = .dsvert_joint_dp_client_json(built$compilation))
+    stats::setNames(lapply(names(artifacts), function(analysis_id) {
+      calls <- stats::setNames(lapply(authorities, function(peer) {
+        as.call(c(list(as.name("dsvertDPSynopsisGLMGridCrossDS")), remote_context,
+          list(analysis_id = analysis_id, session_id = .dsvert_uuid4(), action = "evidence", batch = 0)))
+      }), authorities)
+      .dsvert_dp_cox_cross_public_evidence_set(.dsvert_fanout_by_site(
+        context$conns, calls, operation = "Cox public evidence", .aggregate = .aggregate),
+        context, trusted$manifest, analysis_id, value$release, compiled, policy, schema)
+    }), names(artifacts))
+  }
   if (!is.null(published)) {
     published$cross_gaussian_evidence <- gaussian_evidence(published)
+    published$cross_lmm_evidence <- lmm_evidence(published)
+    published$cross_cox_evidence <- cox_evidence(published)
     return(published)
   }
   execution <- .dsvert_dp_synopsis_client_execution(compiled)
@@ -591,7 +680,8 @@
         compilation_json = compilation_json)
       cross_receipt <- .dsvert_dp_cross_orchestrate(
         manifest_bundle$manifest_json, cross_manifest, context,
-        source_receipt, .aggregate, .remote_context = remote_context)
+        source_receipt, .aggregate, .remote_context = remote_context,
+        .schema_json = manifest_bundle$schema_json)
       if (!is.list(cross_receipt) ||
           !identical(cross_receipt$enabled, TRUE) ||
           !identical(cross_receipt$sampler_handoff_ready, TRUE) ||
@@ -602,7 +692,9 @@
       }
     }
 
-    for (chunk_index in seq.int(0L, public_chunk_count - 1L)) {
+    start_chunk_count <- if (isTRUE(grid_cross)) ceiling(layout$coordinate_count /
+      .dsvert_dp_synopsis_runner_exact_chunk_size(compiled, execution)) else public_chunk_count
+    for (chunk_index in seq.int(0L, start_chunk_count - 1L)) {
       start_calls <- stats::setNames(lapply(authorities, function(peer) call(
         name = "dsvertDPSynopsisStartDS", session_id = session_id,
         first_prepare_json = prepare_json[[authorities[[1L]]]],
@@ -711,5 +803,7 @@
          call. = FALSE)
   }
   published$cross_gaussian_evidence <- gaussian_evidence(published)
+  published$cross_lmm_evidence <- lmm_evidence(published)
+  published$cross_cox_evidence <- cox_evidence(published)
   published
 }

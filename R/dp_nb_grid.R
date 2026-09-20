@@ -3,16 +3,31 @@
 # Synopsis; no profile-score RPC or client-side optimisation is performed.
 
 .DSVERT_CLIENT_DP_NB_GRID_ARTIFACT_VERSION <-
-  "bounded-negative-binomial-likelihood-grid-v1"
+  "bounded-negative-binomial-likelihood-grid-v2"
 
+#' Per-row bounds for the corrected NB2 v2 grid loss
+#'
+#' For each signed candidate, the complete NB2 negative log likelihood is
+#' convex in the linear predictor. With normalized predictors and
+#' `A = sum(abs(beta))`, its maximum occurs at `-A` or `A`. Enumerating those
+#' endpoints and all admitted counts gives the bound before lattice rounding.
+#' The omitted v1 term is included; defective v1 releases remain sealed.
+#' @param beta_grid Signed list of coefficient vectors.
+#' @param theta_grid Signed positive dispersion candidates.
+#' @param max_outcome Signed maximum admitted integer count.
+#' @return Numeric vector of per-row loss bounds in theta-then-beta order.
+#' @keywords internal
 .dsvert_dp_nb_grid_loss_bounds <- function(beta_grid, theta_grid, max_outcome) {
   log1pexp <- function(value) pmax(value, 0) + log1p(exp(-abs(value)))
   unlist(lapply(theta_grid, function(theta) vapply(beta_grid, function(beta) {
     eta_bound <- sum(abs(beta))
     y <- 0:max_outcome
+    # The complete NB2 loss is convex in eta. Its maximum on the signed
+    # interval occurs at an endpoint; enumerate every admitted integer count.
     max(0, max(outer(y, c(-eta_bound, eta_bound), function(count, eta) {
       lgamma(theta) + lgamma(count + 1) - lgamma(count + theta) +
-        theta * log1pexp(eta - log(theta)) - count * eta
+        theta * log1pexp(eta - log(theta)) +
+        count * log1pexp(log(theta) - eta)
     })))
   }, numeric(1L))), use.names = FALSE)
 }
@@ -37,7 +52,7 @@
     "implementation_state", "cross_owner_state")
   basic <- .dsvert_dp_has_exact_names(artifact, required) &&
     identical(artifact$version, .DSVERT_CLIENT_DP_NB_GRID_ARTIFACT_VERSION) &&
-    identical(artifact$spec_version, "negative_binomial_grid_v1") &&
+    identical(artifact$spec_version, "negative_binomial_grid_v2") &&
     identical(artifact$analysis_id, analysis_id) &&
     identical(artifact$dataset, data_name) && .dsvert_dp_is_string(artifact$owner_peer) &&
     (is.null(owner_peer) || identical(artifact$owner_peer, owner_peer)) &&
@@ -124,7 +139,7 @@
     .dsvert_dp_is_integer(artifact$coordinate_count, candidate_count,
                           candidate_count) &&
     identical(artifact$coordinate_order, paste(
-      "theta_grid_then_beta_grid_negative_binomial_log_likelihood_v1",
+      "theta_grid_then_beta_grid_negative_binomial_log_likelihood_v2",
       sep = "_")) &&
     identical(artifact$source_coordinate_scaling,
               "all_coordinates_already_on_common_numeric_lattice_v1") &&
@@ -136,7 +151,7 @@
       "nonfinite_predictor_excludes_patient_v1", sep = "_")) &&
     identical(artifact$contribution_domain, paste(
       "one_bounded_patient_negative_binomial_log_likelihood",
-      "contribution_for_every_signed_candidate_v1", sep = "_")) &&
+      "contribution_for_every_signed_candidate_v2", sep = "_")) &&
     identical(maximum, expected_maximum) &&
     isTRUE(all.equal(as.numeric(artifact$source_raw_l1_sensitivity), raw_l1,
                      tolerance = 1e-12)) &&
@@ -149,10 +164,10 @@
     identical(artifact$adjacency, adjacency) &&
     identical(artifact$adjacency_sensitivity_basis, paste(
       "one_patient_changes_one_candidate_loss_by_at_most_its_signed",
-      "negative_binomial_loss_bound_v1", sep = "_")) &&
+      "negative_binomial_loss_bound_v2", sep = "_")) &&
     identical(artifact$estimation_scope, paste(
       "bounded_negative_binomial_fixed_covariates_finite_signed",
-      "beta_theta_grid_v1", sep = "_"))
+      "beta_theta_grid_v2", sep = "_"))
   if (!isTRUE(valid)) stop("The signed negative-binomial grid descriptor is invalid",
                            call. = FALSE)
   artifact$outcome <- outcome

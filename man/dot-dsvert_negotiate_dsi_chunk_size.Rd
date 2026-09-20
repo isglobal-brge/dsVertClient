@@ -7,8 +7,23 @@
 .dsvert_negotiate_dsi_chunk_size(
   conns,
   .aggregate = DSI::datashield.aggregate,
-  .candidates = .DSVERT_DSI_PROBE_CANDIDATES
+  .candidates = .DSVERT_DSI_PROBE_CANDIDATES,
+  .response_candidates = if (identical(.candidates, .DSVERT_DSI_PROBE_CANDIDATES)) {
+
+    .DSVERT_DSI_RESPONSE_PROBE_CANDIDATES
+ } else {
+     .candidates
+ }
 )
+}
+\arguments{
+\item{conns}{Named DataSHIELD connections.}
+
+\item{.aggregate}{Aggregate dispatcher.}
+
+\item{.candidates}{Descending public request-padding candidates.}
+
+\item{.response_candidates}{Descending public response-padding candidates.}
 }
 \description{
 Negotiate one common request geometry before opaque payload transfer

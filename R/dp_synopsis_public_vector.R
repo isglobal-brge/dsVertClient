@@ -490,18 +490,18 @@
       backend = profile$backend, selected_before_private_material = TRUE,
       retry_may_change_backend = FALSE)
   } else {
-    promoted <- layout$coordinate_count <=
-      .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_MAX_PROMOTED_COORDINATES
+    cost_policy <- .dsvert_dp_glm_grid_cross_noise_policy(trusted$manifest)
+    limit <- .dsvert_joint_dp_vector_exact_gc_client_cost_limit(cost_policy)
+    promoted <- layout$coordinate_count <= limit
+    if (limit > 1L && !promoted) stop("Cross-grid release exceeds its certified envelope", call. = FALSE)
     list(
       version = "dsvert-stateless-catalog-synopsis-backend-selection-v1",
       rule = "public_coordinate_ceiling_v1",
       selected_before_private_material = TRUE,
       retry_may_change_backend = FALSE,
-      policy_version =
-        .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_COST_POLICY_VERSION,
+      policy_version = cost_policy,
       total_coordinate_count = as.integer(layout$coordinate_count),
-      maximum_promoted_coordinates =
-        .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_MAX_PROMOTED_COORDINATES,
+      maximum_promoted_coordinates = limit,
       promoted = promoted,
       backend = if (promoted) .DSVERT_CLIENT_VECTOR_EXACT_BACKEND else
         .DSVERT_CLIENT_VECTOR_BACKEND,

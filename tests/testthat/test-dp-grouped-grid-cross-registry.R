@@ -1,0 +1,32 @@
+test_that("grouped prototypes are inventoried without advertising promotion", {
+  methods <- c("dp_lmm_grid", "dp_glmm_grid", "dp_gee_grid")
+  status <- ds.vertMethodStatus(methods)
+  expect_setequal(status$method, methods)
+  expect_true(all(status$status == "quarantine"))
+  expect_true(all(status$release_contract == "disclosure_safe_protocol_no_statistic"))
+  expect_false(any(status$currently_numerically_certified))
+  inventory <- .dsvert_capsule_method_inventory()
+  rows <- inventory[inventory$method %in% methods, , drop = FALSE]
+  expect_equal(nrow(rows), 3L)
+  expect_true(all(rows$current_route_status == "signed_workload_unavailable_quarantine"))
+  expect_true(all(rows$artifact_implementation_state == "secure_artifact_not_implemented"))
+  expect_true(all(vapply(rows$legacy_remote_call_evidence, nrow, integer(1L)) == 0L))
+})
+
+test_that("Cox runtime registration preserves quarantine pending measured capacity", {
+  status <- ds.vertMethodStatus("dp_cox_grid")
+  expect_identical(status$status, "quarantine")
+  expect_identical(status$release_contract, "formal_sticky_synopsis_artifact")
+  expect_identical(status$numeric_contract, "separate_integer_dp_contract")
+  expect_false(status$currently_numerically_certified)
+  expect_false(status$may_report_numerically_certified)
+  inventory <- .dsvert_capsule_method_inventory()
+  row <- inventory[inventory$method == "dp_cox_grid", , drop = FALSE]
+  expect_equal(nrow(row), 1L)
+  expect_identical(row$current_route_status, "formal_sticky_synopsis_artifact")
+  expect_identical(row$migration_feasibility, "synopsis_release_implemented")
+  expect_identical(row$artifact_implementation_state, "validated_synopsis_adapter_implemented")
+  expect_identical(row$inference_implementation_state, "synopsis_postprocess_implemented")
+  expect_contains(row$inference_requirements[[1L]], "all_source_owner_signatures")
+  expect_contains(row$inference_requirements[[1L]], "measured_signed_capacity")
+})

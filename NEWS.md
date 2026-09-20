@@ -1,3 +1,33 @@
+# dsVertClient 1.3.0
+
+* Provide cross-owner finite signed-grid DP release paths for Gaussian linear
+  (`gaussian`), logistic (`binomial`) and Poisson GLMs, and the ten extension
+  families: `nb`, `lasso`, `multinomial`, `ordinal`, `lmm`, `binomial_glmm`,
+  `poisson_glmm`, `binomial_gee`, `poisson_gee` and `cox`. The GEE fixed-rho
+  lane uses signed analyst-specified working correlation; Cox retains its
+  admitted Breslow scope.
+
+* Combine two-authority joint DP noise with a deterministic discrete-Laplace
+  fallback when the certified discrete-Gaussian support does not admit the
+  public plan. Signed bounds, integer arithmetic and privacy parameters bind
+  the complete release workload.
+
+* Preserve sticky byte-identical replay and restart/resume replay identity
+  through authenticated durable release state and family-bound transport.
+
+* Include oracle-bitwise validation against the independent Go oracle, with
+  cold replay, interruption/recovery and tamper checks for the signed release
+  paths.
+
+
+* Corrected the same-owner NB2 grid loss oracle and signed caps to include
+  `y * log(theta + mu)`. The client now requires
+  `negative_binomial_grid_v2` and
+  `bounded-negative-binomial-likelihood-grid-v2`, with recalculated lattice
+  maxima and DP sensitivities. Defective v1 releases are sealed historical
+  artifacts and are rejected rather than migrated or relabelled. See
+  `inst/docs/negative_binomial_grid_v2.md` for the sensitivity derivation.
+
 # dsVertClient 1.2.1
 
 ### Fixes

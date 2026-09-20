@@ -526,6 +526,16 @@
     "joint-dp-ring-share-v2"
   } else if (identical(operation, "formal-glm-phase19-schedule-v1")) {
     "formal-glm-phase19-ring128-dp-bridge-share-v1"
+  } else if (identical(operation, "glm-grid-profile-v2")) {
+    "cross-grid-ring128-share-v2"
+  } else if (identical(operation, "grouped-gee-fixed-rho-staged-v1")) {
+    "grouped-gee-fixed-rho-staged-ring128-share-v1"
+  } else if (identical(operation, "grouped-glmm-staged-v1")) {
+    "grouped-glmm-staged-ring128-share-v1"
+  } else if (identical(operation, "grouped-lmm-staged-v1")) {
+    "grouped-lmm-staged-ring128-share-v1"
+  } else if (identical(operation, "cox-loss-staged-v1")) {
+    "cox-loss-staged-ring128-share-v1"
   } else if (identical(operation, "alignment-mask-ring128")) {
     "alignment-masked-ring128-share-v1"
   } else if (operation %in% c(
@@ -1120,7 +1130,10 @@
       "compare-signed", "truncate-floor", "mul-truncate-checked",
       "categorical-product-ring128",
       "count-guard", "clamp-count", "joint-dp-vector-laplace-v3",
-      "alignment-mask-ring128", "formal-glm-phase19-schedule-v1")
+      "alignment-mask-ring128", "glm-grid-profile-v2", "grouped-lmm-staged-v1", "grouped-glmm-staged-v1",
+      "cox-loss-staged-v1",
+      "grouped-gee-fixed-rho-staged-v1",
+      "formal-glm-phase19-schedule-v1")
   if (!is.null(analysis)) {
     allowed_operations <- c(allowed_operations, "joint-dp-laplace-v2")
   }
@@ -1139,7 +1152,9 @@
       (operation %in% c(
          "compare-signed", "count-guard", "clamp-count",
          "joint-dp-laplace-v2",
-         "joint-dp-vector-laplace-v3", "alignment-mask-ring128",
+         "joint-dp-vector-laplace-v3", "alignment-mask-ring128", "grouped-lmm-staged-v1", "grouped-glmm-staged-v1",
+         "cox-loss-staged-v1",
+         "grouped-gee-fixed-rho-staged-v1",
          "formal-glm-phase19-schedule-v1") &&
        frac_bits != 0L) ||
       length(vector_len) != 1L || is.na(vector_len) ||
@@ -1159,6 +1174,21 @@
       (ring != 128L || vector_len >
          .DSVERT_CLIENT_JOINT_DP_VECTOR_MAX_CHUNK)) {
     stop("Invalid exact MPC biomedical vector shape.", call. = FALSE)
+  }
+  if (identical(operation, "glm-grid-profile-v2") &&
+      (ring != 128L || frac_bits != 0L || vector_len > 8L)) {
+    stop("Invalid cross-grid batch shape", call. = FALSE)
+  }
+  if (operation %in% c("grouped-lmm-staged-v1", "grouped-glmm-staged-v1",
+                       "grouped-gee-fixed-rho-staged-v1") &&
+      (ring != 128L || frac_bits != 0L ||
+       !grepl(paste0("^", operation, "/[0-9a-f]{64}$"), purpose))) {
+    stop("Invalid staged LMM operation shape.", call. = FALSE)
+  }
+  if (identical(operation, "cox-loss-staged-v1") &&
+      (ring != 128L || frac_bits != 0L ||
+       !grepl("^cox-loss-staged-v1/[0-9a-f]{64}$", purpose))) {
+    stop("Invalid staged Cox operation shape.", call. = FALSE)
   }
   if (identical(operation, "formal-glm-phase19-schedule-v1") &&
       (ring != 128L || frac_bits != 0L || vector_len > 4L)) {

@@ -68,6 +68,22 @@
   artifact <- if (is.list(family$artifacts)) {
     family$artifacts[[analysis_id]]
   } else NULL
+  if (is.list(artifact) && identical(artifact$version,
+      .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION)) {
+    return(.dsvert_dp_cox_cross_client_artifact(artifact, data_name,
+      analysis_id, owner_peer, adjacency, scale, capacity))
+  }
+  if (is.list(artifact) && .dsvert_dp_staged_grouped_artifact(artifact)) {
+    return(.dsvert_dp_grouped_cross_client_artifact(artifact, data_name,
+      analysis_id, owner_peer, adjacency, scale, capacity, artifact$family))
+  }
+  if (is.list(artifact) && artifact$version %in%
+      unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS)) {
+    family_name <- names(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS)[[
+      match(artifact$version, unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS))]]
+    return(.dsvert_dp_glm_grid_artifact(manifest, data_name, analysis_id,
+      owner_peer, adjacency, scale, capacity, family_name))
+  }
   if (is.list(artifact) && identical(
         artifact$version,
         .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)) {
@@ -658,6 +674,9 @@
   artifact <- .dsvert_dp_gaussian_artifact(
     context$manifest, data_name, analysis_id, server,
     context$adjacency, scale, capacity)
+  if (.dsvert_dp_staged_grouped_artifact(artifact)) {
+    stop("The signed artifact is grouped; use its grouped grid reader", call. = FALSE)
+  }
   blocks <- .dsvert_dp_capsule_vector_blocks(
     context$layout, "gaussian_models", dataset = data_name,
     owner_peer = artifact$owner_peer)

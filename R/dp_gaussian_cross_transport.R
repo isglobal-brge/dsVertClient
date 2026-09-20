@@ -77,7 +77,8 @@
   artifacts <- .dsvert_dp_gaussian_cross_artifacts_client(manifest)
   categorical_artifacts <-
     .dsvert_dp_categorical_cross_artifacts_client(manifest)
-  if (!length(artifacts) && !length(categorical_artifacts)) {
+  grid_artifacts <- .dsvert_dp_glm_grid_cross_artifacts(manifest)
+  if (!length(artifacts) && !length(categorical_artifacts) && !length(grid_artifacts)) {
     return(list(
       version = .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_LAYOUT_VERSION,
       enabled = FALSE,
@@ -206,6 +207,16 @@
         cursor <- end + 1
       }
     }
+  }
+  for (analysis_id in names(grid_artifacts)) {
+    artifact <- grid_artifacts[[analysis_id]]
+    projection <- .dsvert_dp_glm_grid_cross_source_blocks(artifact, cursor)
+    blocks <- c(blocks, projection$blocks)
+    cursor <- projection$cursor
+    source_peers <- c(source_peers, unlist(artifact$participating_peers,
+                                         use.names = FALSE))
+    computation_peers <- c(computation_peers, unlist(artifact$computation_peers,
+                                                   use.names = FALSE))
   }
   source_peers <- sort(unique(source_peers), method = "radix")
   computation_peers <- sort(unique(computation_peers), method = "radix")

@@ -37,7 +37,7 @@ test_that("method maturity registry covers every public analysis entry point", {
     "^(ds[.]vert|ds[.]psiAlign$|ds[.]isPsiAligned$|",
     "ds[.]getIdentityPks$|ds[.]validateDP(Gaussian|LMM)Certificate$)"),
                           exports)]
-  expect_setequal(registry$method, public)
+  expect_setequal(registry$method, c(public, "dp_lmm_grid", "dp_glmm_grid", "dp_gee_grid", "dp_cox_grid"))
 })
 
 test_that("no public route may report a result numeric certificate", {

@@ -1,0 +1,114 @@
+# Cycle34: internal authenticated DP-vector reader
+
+The namespace-internal Cox cold reader now composes the existing Synopsis
+RELEASE signature and bilateral REPLAY chunk/Merkle validators with both signed
+Cox publication receipts. It reconstructs the signed coordinate layout/lattice,
+checks the admitted N<=400 staged scope, and returns the candidate integers
+without an extra lattice shift. Source, execution, artifact and final-vector
+bindings must agree before the result reaches Cox postprocessing.
+
+Inputs `trusted` and `compiled` retain the shared reader's prerequisite: they
+must come from authenticated bundle and compilation validation, never a public
+caller override. This adapter does not establish that Cox public compilation,
+source registration or orchestration is connected. The public entry remains
+closed. No new sampler, privacy budget, cap, arithmetic or native runtime.
+
+Proof scope: K2/K3/K5 signed synthetic RELEASE/publication receipts and hashed
+bilateral REPLAY; exact integer and first-tie selection; cold JSON round trip;
+missing authority/chunk, changed signed budget, detached publication, forged
+signature, altered replay, layout/lattice substitution and signed out-of-cap
+values reject. These are reader boundary tests, not actual Cox DP releases,
+recovery/capacity evidence or promotion. Fresh snapshot evidence is retained at
+`integrator-evidence/cycle34-20260920/` in the integration workspace.
+
+---
+
+# Cox client handoff
+
+## Current result — 2026-09-18 final handoff
+
+Signed admission is **N<=4000, J<=50**, matching the completed nine-point server
+matrix. The largest passing family kernel uses 52,962,304,383 bytes and
+5663.674 seconds. All 10000-row points stop at the 60 GB traffic budget.
+Final client implementation commits: **992b713** (admission), **cd2efc9**
+(signed terminal Ring64-to-Ring128 fusion boundary).
+
+Final targeted pod validation passes **77 expectations**, zero failures/errors/
+skips, including 23 two-peer tagged DSLite/pooled-coxph expectations at epsilon
+1,4,8. Companion server passes 641 R expectations and 24 Go tests + 7 subtests.
+The full client R CMD check passed 25,425 expectations with 48 skips and the
+three documented pre-existing WARNING categories. The companion server's 17
+full-check failures were all reproduced on installed primitive baseline 38146c0.
+
+The client entry remains namespace-internal and production release fails closed
+pending step-2 authenticated fusion, joint DP/sticky lifecycle and explicit
+method-inventory/maturity admission. The signed layout prohibits independently
+widening terminal Ring64 shares; conversion must happen inside fusion. See the
+server MEASURED_ENVELOPE_COX.md and INTEGRATION_COX.md for complete evidence,
+headroom and exact wiring. No pushes or shared-route changes.
+
+Historical milestones follow.
+
+Resumed 2026-09-18 from the quota-interrupted worktree. Preserved and committed
+the recovered client in 19b0e02, added the synthetic DSLite/oracle/coxph comparison
+and server/client canonical parity in 6b993e2.
+
+The implementation is in R/dp_cox_grid_cross.R; one registration function,
+.dsvert_dp_cox_grid_cross_client_register(), returns its `entry` (dp_cox_grid),
+validator and disabled release function. The entry is namespace-internal while
+fused release and public inventory/maturity registration are pending. Both
+real custodian signatures are required; all production release attempts fail
+with the fixed public failure. No protected optimizer, standard errors or
+baseline-hazard path is enabled.
+
+The initial full R check detected our premature NAMESPACE export through the
+existing exact-surface inventory test. Removed that export and preserved the
+existing inventory/status code and tests. Cox contract/parity checks now pass
+39 expectations; the full inventory suite also passes. The two-peer PUBLIC
+synthetic DSLite test passed 23 expectations at epsilon 1,4,8, comparing a
+test-tagged Go integer evaluator with pure R and survival::coxph (Breslow).
+Its reference noise is not evidence of production joint-DP/sticky execution.
+
+The authoritative numeric proof, cost model, full validation outcomes, commits
+and remaining gates are in the sibling server checkout: STATUS_COX.md,
+DECISIONS_COX.md, NUMERIC_CERTIFICATE_COX.md and INTEGRATION_COX.md. The current
+full-size resource model misses the 30 GB envelope; promotion remains blocked.
+
+Final functional commit: c35322e. The initial full client check reached tests
+and caught the export/inventory mismatch; the focused repair passed. Static
+checks show three pre-existing warning categories (MI non-ASCII, codoc mismatch,
+ordinal duplicate argument). The long full checks were stopped at the blocked
+handoff, not reported as passes. The server BLOCKED_COX.md and machine-readable
+package_check_status.json distinguish completed Cox tests from partial broad
+coverage. No modified pre-existing files remain relative to cb26ecd.
+
+## 2026-09-18 resumed — revised share-based lane
+
+The earlier 30 GB gate/handoff is superseded by GATE_REVISION clauses 4 and 5.
+Client commits 7ffacd0, a1966dc and df6b7eb mirror the single packed permutation,
+share prefix/loss sums, streaming checked OT and private-key receipt mode. No
+public export or release lifecycle is enabled; registration remains internal.
+
+Full client R CMD check completed: **25425 passing expectations, 0 failures,
+0 test warnings, 48 skips**. Overall **3 pre-existing WARNING categories** remain:
+MI non-ASCII source, codoc mismatches, and duplicate ordinal Rd argument.
+The explicit tagged two-custodian DSLite/pooled-coxph test separately passed all
+23 expectations without skips. Server/client signature/canonical checks remain
+part of that completed suite. The server Go family gate passed 21 top-level
+and 7 nested tests after correcting its fixture working directory.
+
+The new family kernel's first completed pod envelope, 2000 rows x 16 candidates,
+is 8.473 GB and 21.64 minutes including cold compilation, with exact oracle
+equality. The remaining matrix and final signed admission are still pending;
+this is not a production source-to-joint-DP claim. The sibling server STATUS,
+INTEGRATION and NUMERIC_CERTIFICATE documents contain the authoritative evidence.
+
+Resumed admission validation: client targeted suite now passes 50 expectations;
+server targeted suite passes its original 626 plus 11 admission expectations.
+Client Rd validation passes. Paired installed baseline/current synopsis-artifact
+logs reproduce the same missing test-helper error (source-loaded tests pass).
+Related installed synopsis failures are being checked against that baseline.
+
+Final measured-delivery revisions: **client 12b1fec; server 8dd48c8**.
+This documentation-only receipt records the complete code/evidence revisions.
+Both worktrees were clean after delivery commits; no push was performed.

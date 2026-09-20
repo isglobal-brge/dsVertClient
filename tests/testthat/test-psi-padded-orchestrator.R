@@ -72,7 +72,7 @@ test_that("padded PSI client follows one fixed K/B-dependent DSI schedule", {
         psiPaddedMembershipAcceptDS = list(accepted = TRUE),
         psiPaddedANDStartDS = list(
           operation_id = paste0("op_", strrep("b", 32L)),
-          vector_len = 64L, purpose = "psi.padded.and.test"),
+          vector_len = min(contract$capacity, 2048L), purpose = "psi.padded.and.test"),
         psiPaddedANDFinalizeDS = list(
           transport = "inline", envelope = paste0("and-", peer),
           relay = NULL),
@@ -143,6 +143,16 @@ test_that("padded PSI client follows one fixed K/B-dependent DSI schedule", {
   expect_identical(sum(methods == "psiPaddedMembershipAcceptDS"), 4L)
   expect_identical(sum(methods == "psiPaddedANDAcceptDS"), 2L)
   expect_false("psiPaddedExactTransportDS" %in% methods)
+
+  # A large public bucket must be split before the fixed worker input cap.
+  contract$capacity <- 8192L
+  exact_calls <- list()
+  .dsvert_psi_padded_align(
+    "D", "patient_id", "DA", datasources,
+    session_id = session_id, operation_id = operation_id,
+    .aggregate = aggregate, .assign = assign, .exact_run = exact)
+  expect_length(exact_calls, 4L)
+  expect_identical(vapply(exact_calls, `[[`, integer(1), "vector_len"), rep(2048L, 4))
 })
 
 test_that("padded PSI client rejects one substituted contract before matching", {

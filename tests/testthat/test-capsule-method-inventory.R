@@ -30,7 +30,7 @@ test_that("capsule migration inventory covers the complete public surface", {
   non_inference <- .dsvert_capsule_non_inference_exports()
   exports <- getNamespaceExports("dsVertClient")
 
-  expect_equal(nrow(inventory), 97L)
+  expect_equal(nrow(inventory), 101L)
   expect_equal(length(non_inference), 13L)
   expect_contains(non_inference, "ds.validateDPGaussianCertificate")
   expect_contains(non_inference, "ds.vertDPCapsulePlan")
@@ -40,7 +40,8 @@ test_that("capsule migration inventory covers the complete public surface", {
   expect_setequal(c(inventory$method, non_inference),
                   ds.vertMethodStatus()$method)
   analysis_status <- ds.vertMethodStatus(inventory$method)
-  expect_true(all(analysis_status$status == "promoted"))
+  expect_equal(analysis_status$status, ifelse(analysis_status$method %in%
+    c("dp_lmm_grid", "dp_glmm_grid", "dp_gee_grid", "dp_cox_grid"), "quarantine", "promoted"))
 })
 
 test_that("inventory separates current, migration, artifact and inference state", {
@@ -234,6 +235,8 @@ test_that("remote-call evidence is classified and scoped", {
 
   remote_migrations <- inventory$migration_feasibility %in% c(
     "requires_new_capsule_artifact", "requires_new_secure_protocol")
+  remote_migrations <- remote_migrations & !inventory$method %in%
+    c("dp_lmm_grid", "dp_glmm_grid", "dp_gee_grid", "dp_cox_grid")
   local_migrations <- inventory$migration_feasibility ==
     "client_only_requires_attested_input"
   expect_true(all(remote_counts[remote_migrations] > 0L))
