@@ -93,3 +93,100 @@
     coordinates = coordinates, publication_evidence = evidence,
     release_receipts = releases$receipts, replay_responses = replay$replay)
 }
+
+# Internal client source layout. Time values and permutation controls stay on
+# the time owner; only time-presence validity enters the encrypted source lanes.
+.dsvert_dp_cox_cross_source_blocks <- function(artifact, cursor) {
+  spec <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)$spec
+  if (!identical(spec$family, "cox")) .dsvert_dp_cox_grid_cross_fail()
+  blocks <- list()
+  descriptors <- c(spec$predictors, setNames(list(spec$event, spec$time),
+    c(spec$event$reference, spec$time$reference)))
+  for (reference in names(descriptors)) {
+    descriptor <- descriptors[[reference]]
+    time <- identical(reference, spec$time$reference)
+    event <- identical(reference, spec$event$reference)
+    for (kind in if (time) "validity" else c("value", "validity")) {
+      size <- spec$padded_capacity
+      end <- cursor + size - 1
+      if (!is.numeric(cursor) || length(cursor) != 1L || !is.finite(cursor) ||
+          cursor < 1 || cursor != round(cursor) ||
+          end > .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_MAX_TRANSPORT_COORDINATES) {
+        .dsvert_dp_cox_grid_cross_fail()
+      }
+      key <- paste(artifact$analysis_id, reference, kind, sep = "::")
+      blocks[[key]] <- list(input_family = "cox_grid", analysis_id = artifact$analysis_id,
+        reference = reference, variable = descriptor$column, dataset = descriptor$dataset,
+        owner_peer = descriptor$owner_peer, kind = kind, outcome = event,
+        private_time_validity = time, lower = descriptor$lower, upper = descriptor$upper,
+        start = as.integer(cursor), end = as.integer(end), length = as.integer(size),
+        fraction_bits = if (kind == "validity" || event) 0L else 50L,
+        maximum = if (kind == "validity" || event) 1 else 2^50)
+      cursor <- end + 1
+    }
+  }
+  list(blocks = blocks, cursor = cursor)
+}
+
+
+# Owner-first binding relays only the authenticated public route commitment.
+# The caller must already have authenticated the artifact and source receipt.
+.dsvert_dp_cox_cross_bind <- function(manifest, context, artifact, source_receipt,
+    session_id, .remote_context, .aggregate) {
+  spec <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)$spec
+  peers <- context$designated
+  owner <- spec$time$owner_peer
+  if (!identical(spec$family, "cox") || spec$observation_capacity > 400 ||
+      length(peers) != 2L || anyDuplicated(peers) || !owner %in% peers ||
+      !identical(owner, spec$event$owner_peer) || is.null(.remote_context)) {
+    .dsvert_dp_cox_grid_cross_fail()
+  }
+  invoke <- function(peer, routing = "") {
+    request <- as.call(c(list(as.name("dsvertDPSynopsisGLMGridCrossDS")),
+      .remote_context, list(analysis_id = artifact$analysis_id,
+        session_id = session_id, action = "bind", batch = 0,
+        routing_receipt_json = routing)))
+    response <- .dsvert_fanout_by_site(context$conns[peer], setNames(list(request), peer),
+      operation = "Cox owner-first bind", .aggregate = .aggregate)[[peer]]
+    value <- .dsvert_joint_dp_client_decode(response, "Cox bind response",
+      .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_MAX_RECEIPT_BYTES)
+    .dsvert_dp_glm_grid_cross_fields(value, c("bound", "routing_receipt"))
+    value
+  }
+  first <- invoke(owner)
+  route <- first$routing_receipt
+  expected <- list(version = "dsvert-cox-staged-routing-receipt-v1",
+    capsule_id = source_receipt$capsule_id, analysis_id = artifact$analysis_id,
+    peer_name = owner, peer_identity_pk = unname(context$pinset[[owner]]),
+    semantic_key = .dsvert_dp_capsule_source_hash(list(
+      version = "cross-grid-semantic-release-key-v2",
+      capsule_id = source_receipt$capsule_id,
+      source_contract_sha256 = source_receipt$contract_hash,
+      signed_contract = artifact$signed_contract, family = artifact$family,
+      version_family = artifact$spec_version,
+      mechanism = manifest$workload$capsule_mechanism,
+      alignment = spec$alignment, caps = artifact$sensitivity)),
+    artifact_sha256 = .dsvert_dp_capsule_source_hash(artifact),
+    source_contract_sha256 = source_receipt$contract_hash,
+    profile_sha256 = artifact$numeric_certificate$profile_sha256,
+    certificate_sha256 = artifact$numeric_certificate$certificate_sha256,
+    private_result_exposed = FALSE)
+  .dsvert_dp_glm_grid_cross_fields(route,
+    c(names(expected), "routing_digest", "stage_plan_digest", "signature"))
+  .dsvert_dp_glm_grid_cross_equal(route[names(expected)], expected)
+  .dsvert_dp_capsule_source_verify(route, "cross-grid-result", owner, context)
+  for (field in c("routing_digest", "stage_plan_digest")) {
+    if (!.dsvert_dp_capsule_source_hex(route[[field]]) ||
+        identical(route[[field]], strrep("0", 64))) .dsvert_dp_cox_grid_cross_fail()
+  }
+  evaluator <- setdiff(peers, owner)
+  second <- invoke(evaluator, .dsvert_joint_dp_client_json(route))
+  .dsvert_dp_glm_grid_cross_equal(second$routing_receipt, route)
+  responses <- setNames(lapply(list(first$bound, second$bound),
+    .dsvert_joint_dp_client_json), c(owner, evaluator))
+  bound <- .dsvert_dp_lmm_cross_receipts(responses, context, artifact, "bound")
+  for (field in c("capsule_id", "semantic_key", "source_contract_sha256", "stage_plan_digest")) {
+    if (!identical(bound[[field]], route[[field]])) .dsvert_dp_cox_grid_cross_fail()
+  }
+  bound
+}
