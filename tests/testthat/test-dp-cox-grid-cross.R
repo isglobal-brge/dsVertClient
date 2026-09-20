@@ -128,3 +128,52 @@ test_that("Cox signed layout pins the terminal share conversion for fusion", {
   expect_error(.dsvert_dp_cox_grid_cross_contract_validate(
     f$sign(changed), f$policy, f$schema_manifest), class = "dsvert_dp_public_failure")
 })
+
+test_that("Cox K-owner source contracts retain exactly two computation authorities", {
+  for (owners in c(2L, 3L, 5L)) {
+    f <- .cox_cross_client_fixture(owners = owners)
+    validate <- function(value) .dsvert_dp_cox_grid_cross_contract_validate(
+      value, f$policy, f$schema_manifest)
+    spec <- validate(f$contract)$spec
+    expect_length(spec$participating_peers, owners)
+    expect_identical(unlist(spec$computation_peers, use.names = FALSE), c("site_a", "site_b"))
+    source <- f$contract$source_contract
+    expect_identical(source$source_peers, spec$participating_peers)
+    expect_identical(source$recipients, spec$computation_peers)
+    layout <- .dsvert_dp_cox_grid_cross_layout(spec)
+    expect_identical(layout$version, if (owners == 2L)
+      "dsvert-cox-cross-private-source-layout-v1" else "dsvert-cox-cross-private-source-layout-v2")
+    expect_identical(layout$partial_predictors, if (owners == 2L)
+      "two_owners_exact_f100_additive_ring128_v1" else "all_source_owners_exact_f100_additive_ring128_v1")
+    expect_identical(layout$release_prefix_source_rule,
+      "all_zero_until_authenticated_result_injection_v1")
+    expect_identical(spec$numeric_contract$eta_rounding, "one_rne_after_owner_sum_v1")
+    for (peer in names(f$keys)) {
+      changed <- f$contract; changed$signatures[[peer]] <- NULL
+      expect_error(validate(changed), class = "dsvert_dp_public_failure")
+    }
+    for (mutate in list(
+      function(x) { x$spec$participating_peers <- x$spec$participating_peers[-1]; x },
+      function(x) { x$spec$computation_peers <- rev(x$spec$computation_peers); x },
+      function(x) { x$source_contract$source_peers <- x$source_contract$source_peers[-1]; x },
+      function(x) { x$source_contract$recipients <- x$source_contract$recipients[1]; x })) {
+      expect_error(validate(f$sign(mutate(f$contract))), class = "dsvert_dp_public_failure")
+    }
+    for (compute in list("site_a", c("site_a", "site_a"), c("site_a", "absent"),
+                         c("site_a", "site_b", "site_c"))) {
+      policy <- f$policy; policy$designated_noise_peers <- compute
+      expect_error(.dsvert_dp_cox_grid_cross_spec(f$raw, policy, f$schema),
+        class = "dsvert_dp_public_failure")
+    }
+    if (owners > 2L) {
+      changed <- f$contract
+      changed$source_contract$private_layout$partial_predictors <-
+        "two_owners_exact_f100_additive_ring128_v1"
+      expect_error(validate(f$sign(changed)), class = "dsvert_dp_public_failure")
+      raw <- f$raw; raw$predictor_order <- raw$predictor_order[-length(raw$predictor_order)]
+      raw$beta_grid <- lapply(raw$beta_grid, function(beta) beta[-length(beta)])
+      expect_error(.dsvert_dp_cox_grid_cross_spec(raw, f$policy, f$schema),
+        class = "dsvert_dp_public_failure")
+    }
+  }
+})
