@@ -1,5 +1,4 @@
 # Internal Cox projection for authenticated source/lifecycle wiring.
-# Public server admission stays closed until the complete staged path is proved.
 .dsvert_dp_cox_cross_workload_artifact <- function(contract) {
   spec <- contract$spec
   artifact <- contract$artifact
@@ -58,7 +57,7 @@
 
 # Internal verifier for the two server publication receipts. It consumes an
 # already authenticated DP release/compilation, including on a cold read; it
-# neither authenticates the DP vector itself nor enables public Cox dispatch.
+# does not replace authentication of the DP vector itself.
 .dsvert_dp_cox_cross_public_evidence_set <- function(responses, context, manifest,
     analysis_id, release, compiled, policy, schema_manifest) {
   artifact <- manifest$workload$families$gaussian_models$artifacts[[analysis_id]]
@@ -82,7 +81,7 @@
 
 # Internal cold vector reader. As in the shared Synopsis reader, trusted and
 # compiled must come from authenticated bundle/compilation validation; neither
-# is a public caller override. Source admission and public dispatch stay closed.
+# is a public caller override.
 .dsvert_dp_cox_cross_read_vector <- function(release_receipts, replay_responses,
     publication_receipts, trusted, compiled, policy, schema_manifest, analysis_id) {
   manifest <- trusted$manifest
@@ -248,8 +247,7 @@
   shape
 }
 
-# Internal signed entry into the existing durable executor. Public discovery
-# remains closed until workload admission and certificate dispatch are wired.
+# Internal signed entry into the existing durable executor.
 .dsvert_dp_cox_cross_orchestrate <- function(manifest_json, manifest, context,
     source_receipt, policy, schema_manifest, .aggregate, .remote_context) {
   artifacts <- manifest$workload$families$gaussian_models$artifacts
@@ -268,6 +266,7 @@
     .dsvert_joint_dp_client_decode(manifest_json, "Cox manifest",
       .DSVERT_CLIENT_DP_CAPSULE_SOURCE_MAX_MANIFEST_BYTES))
   layout <- .dsvert_dp_cox_cross_transport_layout(manifest, artifact)
+  layout$enabled <- TRUE
   .dsvert_dp_staged_cross_orchestrate(manifest_json, manifest, context,
     source_receipt, artifact, layout, .aggregate, .remote_context)
 }

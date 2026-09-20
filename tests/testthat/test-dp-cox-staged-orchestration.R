@@ -90,7 +90,13 @@ test_that("Cox signed orchestration preserves bilateral persistence and terminal
       .dsvert_dp_cross_exact_setup = function(...) list(),
       .dsvert_dp_cross_exact_cleanup = function(...) { cleanups <<- cleanups + 1L },
       .dsvert_dp_synopsis_runner_json_set = function(...) NULL,
-      .dsvert_dp_alignment_mask_run = function(...) { actions <<- c(actions, "alignment") },
+      .dsvert_dp_alignment_mask_run = function(manifest_json, context, layout, ...) {
+        projection <- .dsvert_dp_alignment_mask_private_projection_client(layout)
+        expect_identical(projection$source_offset, as.numeric(layout$private_start - 1L))
+        expect_identical(projection$coordinate_count,
+          as.numeric(layout$transport_coordinate_count - layout$private_start + 1L))
+        actions <<- c(actions, "alignment")
+      },
       .dsvert_exact_gc_run = function(...) {
         args <- list(...)
         expect_identical(args$operation, "cox-loss-staged-v1")

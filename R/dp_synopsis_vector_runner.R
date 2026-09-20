@@ -366,6 +366,9 @@
   grid_cross <- .dsvert_dp_synopsis_supported_glm_grid_cross_v1(trusted$manifest)
   lmm_cross <- any(vapply(.dsvert_dp_glm_grid_cross_artifacts(trusted$manifest),
     function(artifact) .dsvert_dp_staged_grouped_artifact(artifact), logical(1L)))
+  cox_cross <- any(vapply(.dsvert_dp_glm_grid_cross_artifacts(trusted$manifest),
+    function(artifact) identical(artifact$version,
+      .DSVERT_CLIENT_DP_COX_GRID_CROSS_ARTIFACT_VERSION), logical(1L)))
   .dsvert_dp_glm_grid_cross_preflight(trusted$manifest, trusted$context,
     manifest_bundle$schema_json)
   if (!is.null(.request_check)) {
@@ -383,7 +386,8 @@
   }
   published <- .dsvert_dp_synopsis_publication_resume_v1(
     bootstrap, .aggregate = .aggregate)
-  if (!is.null(published) && !isTRUE(gaussian_cross) && !isTRUE(lmm_cross)) return(published)
+  if (!is.null(published) && !isTRUE(gaussian_cross) && !isTRUE(lmm_cross) &&
+      !isTRUE(cox_cross)) return(published)
   layout <- .dsvert_dp_capsule_vector_layout(trusted$manifest)
   context <- trusted$context
   valid_context <- is.list(context) && is.character(context$servers) &&
@@ -421,8 +425,8 @@
     mechanism,
     mechanism_selection = trusted$manifest$workload$mechanism_selection,
     backend = backend)
-  built <- if (!is.null(published) && isTRUE(lmm_cross)) {
-    # A durable LMM publication already authenticates the source Claim set.
+  built <- if (!is.null(published) && (isTRUE(lmm_cross) || isTRUE(cox_cross))) {
+    # A durable staged publication already authenticates the source Claim set.
     # Reconstruct public compilation only; ClaimDS would reread private data.
     list(compilation = published$verification_compilation,
       compiled = .dsvert_dp_synopsis_client_compile(
@@ -467,9 +471,34 @@
         context, trusted$manifest, analysis_id, value$release, compiled)
     }), names(artifacts))
   }
+  cox_evidence <- function(value) {
+    if (!isTRUE(cox_cross)) return(NULL)
+    artifacts <- .dsvert_dp_glm_grid_cross_artifacts(trusted$manifest)
+    policy <- list(peer_pinset = context$pinset,
+      peer_pinset_sha256 = .dsvert_dp_capsule_source_hash(as.list(context$pinset)),
+      designated_noise_peers = context$designated,
+      unit_capacity = trusted$manifest$admission$unit_capacity,
+      numeric_grid_bits = trusted$manifest$bounds$numeric_grid_bits,
+      adjacency = trusted$manifest$admission$adjacency)
+    schema <- .dsvert_joint_dp_client_decode(manifest_bundle$schema_json,
+      "signed Cox schema", .DSVERT_CLIENT_DP_CAPSULE_SOURCE_MAX_MANIFEST_BYTES)
+    remote_context <- list(manifest_sha256 = manifest_bundle$manifest_sha256,
+      claim_set_json = "{}",
+      compilation_json = .dsvert_joint_dp_client_json(built$compilation))
+    stats::setNames(lapply(names(artifacts), function(analysis_id) {
+      calls <- stats::setNames(lapply(authorities, function(peer) {
+        as.call(c(list(as.name("dsvertDPSynopsisGLMGridCrossDS")), remote_context,
+          list(analysis_id = analysis_id, session_id = .dsvert_uuid4(), action = "evidence", batch = 0)))
+      }), authorities)
+      .dsvert_dp_cox_cross_public_evidence_set(.dsvert_fanout_by_site(
+        context$conns, calls, operation = "Cox public evidence", .aggregate = .aggregate),
+        context, trusted$manifest, analysis_id, value$release, compiled, policy, schema)
+    }), names(artifacts))
+  }
   if (!is.null(published)) {
     published$cross_gaussian_evidence <- gaussian_evidence(published)
     published$cross_lmm_evidence <- lmm_evidence(published)
+    published$cross_cox_evidence <- cox_evidence(published)
     return(published)
   }
   execution <- .dsvert_dp_synopsis_client_execution(compiled)
@@ -763,5 +792,6 @@
   }
   published$cross_gaussian_evidence <- gaussian_evidence(published)
   published$cross_lmm_evidence <- lmm_evidence(published)
+  published$cross_cox_evidence <- cox_evidence(published)
   published
 }
