@@ -7,23 +7,24 @@
 predictors, for example \code{site_a$x + site_b$z}.}
 \item{data}{A signed logical dataset name or vertical federation object.}
 \item{analysis_id}{The signed finite-grid analysis identifier.}
-\item{datasources}{Exactly two custodians, also the compute/noise authorities.}
+\item{datasources}{Two to five signed source owners, including the two
+compute/noise authorities.}
 }
 \description{Selects the first canonical minimum of a sticky jointly noised
-loss vector from a finite coefficient grid signed by both custodians.}
+loss vector from a finite coefficient grid signed by all source owners.}
 \details{This family entry is currently namespace-internal and exposed to the
 integration session through its single registration function. Public export
 requires the package method-inventory and maturity-registry registration.
 The production release runner currently fails closed pending connection
 to the authenticated fused producer and existing joint-DP vector lifecycle.
 This function does not enable a plaintext evaluator or a general nonlinear RPC.
-Time and event must have the same owner. Predictors may span both custodians.
+Time and event must have the same owner. Predictors may span all source owners.
 Observed binary64 times are clipped to signed bounds and retain exact ordering
 and ties; ties use Breslow denominators, including censored observations at the
 event time. The execution contract uses one private packed-row permutation,
 exact prefix and loss additions on shares, and certified exp/log profile kernels.
 Log batches have a fixed public shape and mask event status privately.
-Both custodians sign the measured public admission envelope: at most 4000
+All source owners sign the measured public admission envelope: at most 4000
 rows and 50 candidates for this family kernel.
 The client and server reject requests exceeding that envelope before source
 access; signatures cannot override the implementation limits.

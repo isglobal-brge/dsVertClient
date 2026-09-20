@@ -437,7 +437,7 @@
       descriptor$reference, descriptor$column)
     if (!identical(spec$dataset, data_name) ||
         !identical(spec$analysis_id, analysis_id) ||
-        !setequal(names(datasources), unlist(spec$computation_peers)) ||
+        !setequal(names(datasources), unlist(spec$participating_peers)) ||
         !matches(requested$time, spec$time) ||
         !matches(requested$event, spec$event) ||
         !setequal(requested$predictors, unlist(spec$predictor_order))) {
@@ -464,16 +464,18 @@
 #' Select a signed cross-owner Breslow Cox candidate
 #'
 #' Selects the first canonical minimum of an authenticated, sticky, jointly
-#' noised loss vector. Both custodians must sign the bounded observed-time
-#' specification and owner-qualified covariates. No optimizer or inference is
-#' available. The production release route currently fails closed until the
+#' noised loss vector. All source owners must sign the bounded observed-time
+#' specification and owner-qualified covariates; exactly two peers compute the
+#' release. No optimizer or inference is available. The production release
+#' route currently fails closed until the
 #' authenticated fused producer is connected.
 #'
 #' @param formula An additive \code{Surv(time, event)} formula. Predictor names
 #'   are owner-qualified, for example \code{site_a$x + site_b$z}.
 #' @param data A signed logical dataset name or vertical federation object.
 #' @param analysis_id The signed finite-grid analysis identifier.
-#' @param datasources Exactly two custodians, also the compute/noise authorities.
+#' @param datasources Two to five signed source owners, including the two
+#'   compute/noise authorities.
 #' @return After release integration, a finite-grid point estimate with raw-unit
 #'   coefficients and hazard ratios, without standard errors or baseline hazard.
 #' @keywords internal

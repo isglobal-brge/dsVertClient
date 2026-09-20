@@ -78,6 +78,34 @@ test_that("production Cox client is closed and exposes no test evaluator", {
   expect_false("dp_cox_grid" %in% getNamespaceExports("dsVertClient"))
 })
 
+test_that("Cox result validates all source owners separately from computation peers", {
+  for (owners in c(2L, 3L, 5L)) {
+    f <- .cox_cross_client_fixture(capacity = 4, owners = owners)
+    spec <- f$contract$spec
+    peers <- unlist(spec$participating_peers, use.names = FALSE)
+    sources <- setNames(rep(list(NULL), owners), peers)
+    formula <- stats::as.formula(paste("Surv(site_a$time, site_a$event) ~",
+      paste(unlist(spec$predictor_order, use.names = FALSE), collapse = " + ")))
+    coordinates <- rep(0, length(spec$beta_grid))
+    release <- function(...) c(f[c("contract", "policy", "schema_manifest")],
+      list(coordinates = coordinates))
+    run <- function(conns) .dsvert_dp_cox_grid_cross_impl(
+      formula, "aligned", "cox_grid", conns, release)
+    result <- run(sources)
+    expect_identical(result$selected_candidate, 1L)
+    expect_identical(result$coefficients,
+      .dsvert_dp_cox_grid_cross_moment(coordinates, spec)$coefficients)
+    expect_identical(run(rev(sources)), result)
+    expect_false(result$production_ready)
+    expect_error(run(sources[-owners]), class = "dsvert_dp_public_failure")
+    substituted <- sources
+    names(substituted)[[owners]] <- "unknown_owner"
+    expect_error(run(substituted), class = "dsvert_dp_public_failure")
+    if (owners > 2L) expect_error(run(sources[c("site_a", "site_b")]),
+      class = "dsvert_dp_public_failure")
+  }
+})
+
 test_that("Cox server and client canonical contracts agree", {
   skip_if_not_installed("dsVert")
   server <- asNamespace("dsVert")
