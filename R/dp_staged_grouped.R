@@ -1,6 +1,6 @@
-# Only the two authenticated typed producers share this release lifecycle.
+# Typed receipt domains. Cox evidence does not enable staged source discovery.
 .dsvert_dp_staged_grouped_kind <- function(family) {
-  switch(family, lmm = "lmm", binomial_glmm = "glmm", poisson_glmm = "glmm",
+  switch(family, lmm = "lmm", binomial_glmm = "glmm", poisson_glmm = "glmm", cox = "cox",
     .dsvert_dp_glm_grid_cross_fail())
 }
 

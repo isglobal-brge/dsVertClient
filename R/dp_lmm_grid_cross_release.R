@@ -5,6 +5,14 @@
   if (!is.list(artifact) || !.dsvert_dp_staged_grouped_artifact(artifact)) {
     .dsvert_dp_glm_grid_cross_fail()
   }
+  .dsvert_dp_staged_cross_public_evidence_set(
+    responses, context, manifest, artifact, release, compiled)
+}
+
+# Shared verifier for an already admitted typed artifact. The family-specific
+# caller validates admission; this function never discovers or starts a release.
+.dsvert_dp_staged_cross_public_evidence_set <- function(
+    responses, context, manifest, artifact, release, compiled) {
   reference <- .dsvert_dp_lmm_cross_receipts(responses, context, artifact, "published")
   for (field in c("artifact_key", "execution_id", "final_vector_root", "result_set_sha256")) {
     if (!.dsvert_dp_capsule_source_hex(reference[[field]]) ||
