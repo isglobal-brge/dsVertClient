@@ -1,3 +1,28 @@
+# Cycle34: internal authenticated DP-vector reader
+
+The namespace-internal Cox cold reader now composes the existing Synopsis
+RELEASE signature and bilateral REPLAY chunk/Merkle validators with both signed
+Cox publication receipts. It reconstructs the signed coordinate layout/lattice,
+checks the admitted N<=400 staged scope, and returns the candidate integers
+without an extra lattice shift. Source, execution, artifact and final-vector
+bindings must agree before the result reaches Cox postprocessing.
+
+Inputs `trusted` and `compiled` retain the shared reader's prerequisite: they
+must come from authenticated bundle and compilation validation, never a public
+caller override. This adapter does not establish that Cox public compilation,
+source registration or orchestration is connected. The public entry remains
+closed. No new sampler, privacy budget, cap, arithmetic or native runtime.
+
+Proof scope: K2/K3/K5 signed synthetic RELEASE/publication receipts and hashed
+bilateral REPLAY; exact integer and first-tie selection; cold JSON round trip;
+missing authority/chunk, changed signed budget, detached publication, forged
+signature, altered replay, layout/lattice substitution and signed out-of-cap
+values reject. These are reader boundary tests, not actual Cox DP releases,
+recovery/capacity evidence or promotion. Fresh snapshot evidence is retained at
+`integrator-evidence/cycle34-20260920/` in the integration workspace.
+
+---
+
 # Cox client handoff
 
 ## Current result — 2026-09-18 final handoff
