@@ -22,7 +22,7 @@
   for (artifact in artifacts) {
     contract <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)
     .dsvert_dp_glm_grid_profile_admit(contract, policy, schema)
-    expected <- if (contract$spec$family %in% c("lmm", "binomial_glmm")) {
+    expected <- if (contract$spec$family %in% c("lmm", "binomial_glmm", "poisson_glmm")) {
       .dsvert_dp_grouped_cross_workload_artifact(contract)
     } else .dsvert_dp_glm_grid_cross_workload_artifact(contract)
     .dsvert_dp_glm_grid_cross_equal(artifact, expected)

@@ -989,7 +989,7 @@
        identical(artifact$spec_version, "cox_partial_likelihood_grid_v1"))
   cross_grid_artifact <- artifact$version %in%
     c(unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
-      "bounded-lmm-cross-grid-v1", "bounded-binomial-glmm-cross-grid-v1") &&
+      "bounded-lmm-cross-grid-v1", "bounded-binomial-glmm-cross-grid-v1", "bounded-poisson-glmm-cross-grid-v1") &&
     identical(artifact$spec_version, paste0(artifact$family, "_grid_cross_v1")) &&
     identical(artifact$implementation_state, "cross_owner_exact_gc_materialized") &&
     identical(artifact$cross_owner_state, "exact_gc_to_joint_dp_vector_v1")
@@ -1751,7 +1751,7 @@
     lasso <- artifact$version %in%
       unname(.DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS)
     versions <- if (isTRUE(lmm_cross)) {
-      c(lmm = "bounded-lmm-cross-grid-v1", binomial_glmm = "bounded-binomial-glmm-cross-grid-v1")
+      c(lmm = "bounded-lmm-cross-grid-v1", binomial_glmm = "bounded-binomial-glmm-cross-grid-v1", poisson_glmm = "bounded-poisson-glmm-cross-grid-v1")
     } else if (isTRUE(lasso)) {
       .DSVERT_CLIENT_DP_LASSO_GRID_ARTIFACT_VERSIONS
     } else if (artifact$version %in% unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS)) {

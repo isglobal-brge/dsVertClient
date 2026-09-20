@@ -4,7 +4,7 @@
   if (!is.list(artifacts)) return(list())
   artifacts[vapply(artifacts, function(artifact) is.list(artifact) &&
     artifact$version %in% c(unname(.DSVERT_CLIENT_DP_GLM_GRID_CROSS_ARTIFACT_VERSIONS),
-      "bounded-lmm-cross-grid-v1", "bounded-binomial-glmm-cross-grid-v1"),
+      "bounded-lmm-cross-grid-v1", "bounded-binomial-glmm-cross-grid-v1", "bounded-poisson-glmm-cross-grid-v1"),
     logical(1L))]
 }
 
@@ -146,7 +146,7 @@
   artifact$parameters <- spec$parameters
   artifact$candidate_loss_bounds <- lapply(spec$sensitivity$candidate_bounds,
                                            `[[`, "per_cluster_caps")
-  if (spec$family %in% c("lmm", "binomial_glmm")) {
+  if (spec$family %in% c("lmm", "binomial_glmm", "poisson_glmm")) {
     artifact$source_coordinate_scaling <-
       "all_coordinates_already_on_common_numeric_lattice_v1"
     # Match the manifest reader's scalar/array representation while preserving
@@ -203,9 +203,9 @@
   contract <- .dsvert_dp_glm_grid_cross_embedded_contract(artifact)
   spec <- contract$spec
   if (is.null(family)) family <- spec$family
-  if (!family %in% c("lmm", "binomial_glmm") || !identical(spec$family, family) ||
+  if (!family %in% c("lmm", "binomial_glmm", "poisson_glmm") || !identical(spec$family, family) ||
       (identical(family, "lmm") && !identical(spec$parameters$objective, "ml")) ||
-      (identical(family, "binomial_glmm") && is.null(spec$parameters$variance_grid)) ||
+      (family %in% c("binomial_glmm", "poisson_glmm") && is.null(spec$parameters$variance_grid)) ||
       !identical(spec$dataset, data_name) || !identical(spec$analysis_id, analysis_id) ||
       (!is.null(owner_peer) && !identical(spec$owner_peer, owner_peer)) ||
       !identical(spec$adjacency, adjacency) ||
@@ -227,7 +227,7 @@
     if (identical(family, "lmm")) .dsvert_dp_capsule_source_hash(list(objective = "ml",
       variance = parameters$variance_grid[[candidate$variance_index]],
       beta = spec$beta_grid[[candidate$beta_index]])) else {
-      .dsvert_dp_capsule_source_hash(list(objective = "finite_gh5_binomial_negative_log_likelihood_v1",
+      .dsvert_dp_capsule_source_hash(list(objective = if (family == "poisson_glmm") "gh5_negative_log_kernel_without_factorial_v1" else "finite_gh5_binomial_negative_log_likelihood_v1",
         random_intercept_variance = parameters$variance_grid[[candidate$variance_index]],
         quadrature = parameters$quadrature, beta = spec$beta_grid[[candidate$beta_index]]))
     }

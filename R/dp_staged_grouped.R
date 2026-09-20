@@ -1,11 +1,11 @@
 # Only the two authenticated typed producers share this release lifecycle.
 .dsvert_dp_staged_grouped_kind <- function(family) {
-  switch(family, lmm = "lmm", binomial_glmm = "glmm",
+  switch(family, lmm = "lmm", binomial_glmm = "glmm", poisson_glmm = "glmm",
     .dsvert_dp_glm_grid_cross_fail())
 }
 
 .dsvert_dp_staged_grouped_artifact <- function(artifact) {
-  is.list(artifact) && isTRUE(artifact$family %in% c("lmm", "binomial_glmm")) &&
+  is.list(artifact) && isTRUE(artifact$family %in% c("lmm", "binomial_glmm", "poisson_glmm")) &&
     identical(artifact$version, paste0("bounded-", gsub("_", "-", artifact$family), "-cross-grid-v1")) &&
     identical(artifact$spec_version, paste0(artifact$family, "_grid_cross_v1"))
 }
