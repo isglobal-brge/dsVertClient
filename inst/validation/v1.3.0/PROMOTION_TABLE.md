@@ -1,12 +1,17 @@
-# Promotion record — 2026-09-21
+# Promotion record — 2026-09-22
 
-**8/10 promoted**: nb, lasso, multinomial, ordinal, lmm, binomial_glmm, poisson_glmm, cox.
-Binomial GEE and Poisson GEE: **evidence running**, unpromoted.
+**10/10 promoted**: nb, lasso, multinomial, ordinal, lmm, binomial_glmm, poisson_glmm, cox, binomial_gee, poisson_gee.
 
-Exact source pairs, per-job evidence pointers and descriptive capacity measurements are in
-[PROMOTION_MANIFEST.jsonl](PROMOTION_MANIFEST.jsonl). Cox uses dedicated results only.
-Both GLMM K2 cells use the interrupted-and-resumed runs under Directive P; binomial GLMM uses
-the isolated pod-cox-1 rerun under Directive N. Launch definitions/pins are preserved separately.
+Exact source pairs, per-cell evidence files, gate values and descriptive capacity measurements are in
+[PROMOTION_MANIFEST.jsonl](PROMOTION_MANIFEST.jsonl). GEE uses terminal n=256 rows only from
+`~/Documents/GitHub/dsvert-fleet-heavy/gee-pods/preview-n256/RESULTS.jsonl`: 64 clusters of 4,
+p=3, grid=2, epsilon=8, fixed signed independence (rho=0). K2/K3/K5 baselines evidence
+the topology cells; K2 recoveries evidence restart/resume replay identity. Binomial K2 recovery
+is re-scored PASS from its capacity-only FAIL: all four gates are true; 23774 seconds is descriptive.
+The eight discontinued n=2000 GEE definitions remain superseded history and never evidence promotion.
+
+Cox uses dedicated results only. Both GLMM K2 cells retain interrupted-and-resumed evidence
+under Directive P; binomial GLMM uses the isolated pod-cox-1 rerun under Directive N.
 Wall-clock and capacity never gate promotion. Cox remains admitted up to 400 aligned observations.
 
 ## Historical checkpoint (superseded by the promotion record above)

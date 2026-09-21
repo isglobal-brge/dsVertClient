@@ -1,0 +1,66 @@
+{
+  "metrics": {
+    "family": "binomial_glmm",
+    "n": 2000,
+    "p": 3,
+    "grid": 2,
+    "candidates": 4,
+    "clusters": 500,
+    "slots": 4,
+    "owners": 5,
+    "epsilon": 8,
+    "instance": 1,
+    "elapsed": 48053.891,
+    "successful_call_elapsed": 48053.715,
+    "uninterrupted_baseline_elapsed": 48053.715,
+    "recovery": "not_exercised",
+    "native_recovery": "not_exercised",
+    "end_to_end_release_elapsed": 48275.778,
+    "end_to_end_serialized_rpc_bytes": 45266004477,
+    "end_to_end_scope": "fixture-bootstrap-PSI-signing-source-staged-binomial_glmm-and-DP-through-first-successful-release-including-retries-before-oracle-and-replay",
+    "release_serialized_rpc_bytes": 45101686101,
+    "serialized_rpc_scope": "R-v3-serialized-DSI-request-response-objects-including-retries-excluding-IPC-framing",
+    "protocol_payload": {
+      "exact_gc_unique_payload_bytes": 16751406126,
+      "exact_gc_offered_payload_bytes": 16751406126,
+      "source_ciphertext_delivered_bytes": 4573950
+    },
+    "protocol_payload_scope": "public-release-exactGC-and-source-transport-before-replay-no-bootstrap-PSI",
+    "expected_oracle_sha256": "6557396a5365d2c9b1740e12181d695cd10a323b4a3833d780462ef074b37f36",
+    "oracle_only": false,
+    "selected_candidate": 1,
+    "exact_best": 1,
+    "loss_gap": 0,
+    "artifact_key": "9e0d9f8851662f2effa0926ffce426855b52bf76f4639d2f1f417952df966200",
+    "certificate_sha256": "90499118a7215e1d28c146130d2f77e1205abea5905ba1ec8953882d4213460e"
+  },
+  "promotion_record": {
+    "job_id": "binomial_glmm-e8-k5-i01-baseline",
+    "K": 5,
+    "mode": "baseline",
+    "pod": "pod20",
+    "source_commits": {
+      "dsVert": "502b0058cd4b804b0e7adbba0e4c71485c755989",
+      "dsVertClient": "4c6c5622fbdc2ae97de315f18c18901d452f3c09"
+    },
+    "expected_oracle_sha256": "6557396a5365d2c9b1740e12181d695cd10a323b4a3833d780462ef074b37f36",
+    "oracle_equal": true,
+    "cold": true,
+    "tamper": true,
+    "recovery": null,
+    "seconds": 48275.778,
+    "wall_seconds": 48697.21996164322,
+    "bytes": {
+      "serialized_rpc": 45266004477,
+      "native": {
+        "exact_gc_unique_payload_bytes": 16751406126,
+        "exact_gc_offered_payload_bytes": 16751406126,
+        "source_ciphertext_delivered_bytes": 4573950
+      }
+    },
+    "evidence": "~/Documents/GitHub/dsvert-fleet-heavy/RESULTS.jsonl",
+    "status": "PASS",
+    "capacity_promotion_gate": false
+  },
+  "metrics_source": "/Users/david/Documents/GitHub/dsvert-fleet-heavy/logs/binomial_glmm-e8-k5-i01-baseline/remote-logs/binomial_glmm-e8-k5-i01-baseline.json"
+}

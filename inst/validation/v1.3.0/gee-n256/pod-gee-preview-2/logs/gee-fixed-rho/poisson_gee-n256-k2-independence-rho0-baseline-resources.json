@@ -1,0 +1,85 @@
+{
+  "measurement": "poisson_gee-n256-k2-independence-rho0-baseline",
+  "started_utc": "2026-09-21T11:19:49.161042+00:00",
+  "finished_utc": "2026-09-21T14:21:06.563676+00:00",
+  "source_repositories": {
+    "dsVert": "3c7a185ff2fd8987c3dc49911143542e9652f30b",
+    "dsVertClient": "20adcc8cd237abba5aee6f58d941d7b2eebab77e"
+  },
+  "source_manifest_sha256": "01aea53af677f138563f68bbd054066eccae71eae2b10738d6b020e13e487aa4",
+  "process_wall_seconds": 10877.40266425535,
+  "max_child_rss_kib_linux": 7137792,
+  "user_seconds": 10213.186228,
+  "system_seconds": 861.012736,
+  "process_exit_code": 0,
+  "stdin": "/dev/null",
+  "transport_policy": {
+    "ttl_seconds": 900,
+    "max_runtime_seconds": 86400,
+    "maximum_concurrent_gee_releases": 1,
+    "lane_lock_path": "/workspace/.gee-fixed-rho-release.lock"
+  },
+  "markers": {
+    "DSLITE_ORACLE_BITWISE_EQUAL_STICKY_TAMPER_REJECTED poisson_gee": true,
+    "DIRECT_R_COLD_LIFECYCLE_EQUAL_TAMPER_REJECTED": true,
+    "DSLITE_GEE-FIXED-RHO_COLD_EXPORTED_API_EQUAL_AUTHENTICATED": true
+  },
+  "metric_shape_passed": true,
+  "recovery_metrics_passed": true,
+  "promoted": false,
+  "source_unchanged": true,
+  "release_metrics": {
+    "family": "poisson_gee",
+    "n": 256,
+    "p": 3,
+    "grid": 2,
+    "candidates": 2,
+    "clusters": 64,
+    "slots": 4,
+    "owners": 2,
+    "working_correlation": {
+      "mode": "fixed_analyst_specified",
+      "correlation": "independence",
+      "rho": 0,
+      "score_clip": 1,
+      "composition": "staged_fixed_rho_v1"
+    },
+    "epsilon": 8,
+    "instance": 1,
+    "elapsed": 10754.699,
+    "successful_call_elapsed": 10754.555,
+    "uninterrupted_baseline_elapsed": 10754.555,
+    "recovery": "not_exercised",
+    "native_recovery": "not_exercised",
+    "end_to_end_release_elapsed": 10792.876,
+    "end_to_end_serialized_rpc_bytes": 12565597863,
+    "end_to_end_scope": "fixture-bootstrap-PSI-signing-source-staged-poisson_gee-and-DP-through-first-successful-release-including-retries-before-oracle-and-replay",
+    "release_serialized_rpc_bytes": 12542626683,
+    "serialized_rpc_scope": "R-v3-serialized-DSI-request-response-objects-including-retries-excluding-IPC-framing",
+    "protocol_payload": {
+      "exact_gc_unique_payload_bytes": 4629510055,
+      "exact_gc_offered_payload_bytes": 4629510055,
+      "source_ciphertext_delivered_bytes": 700764
+    },
+    "protocol_payload_scope": "public-release-exactGC-and-source-transport-before-replay-no-bootstrap-PSI",
+    "expected_oracle_sha256": "f100821d3bc394e01c3733ff2d1ef5770b4410dc0d49a4fabf5c80deda6e5b5a",
+    "oracle_only": false,
+    "selected_candidate": 2,
+    "exact_best": 1,
+    "loss_gap": 4.4390869140625,
+    "artifact_key": "cd613724eeee329fed0908bdbe7231c4eadc2bda90ac290de66fcfea5f12088a",
+    "certificate_sha256": "1d13f3bcb1c877ed0fe30ab3821a0f9d3c3b246d88e0387665d9124ac2fc2b25"
+  },
+  "capacity_gate": {
+    "ceiling_bytes": 256000000000,
+    "ceiling_seconds": 21600,
+    "measured_serialized_rpc_bytes": 12565597863,
+    "measured_release_seconds": 10792.876,
+    "scope": "fixture-bootstrap-PSI-signing-source-staged-poisson_gee-and-DP-through-first-successful-release-including-retries-before-oracle-and-replay",
+    "wire_scope": "R-v3-serialized-DSI-request-response-objects-including-retries-excluding-IPC-framing",
+    "passed": true,
+    "budget_stop": false
+  },
+  "proof_passed": true,
+  "exit_code": 0
+}

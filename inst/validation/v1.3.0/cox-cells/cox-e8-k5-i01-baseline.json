@@ -1,0 +1,66 @@
+{
+  "metrics": {
+    "family": "cox",
+    "n": 400,
+    "p": 5,
+    "grid": 2,
+    "candidates": 2,
+    "clusters": 100,
+    "slots": 4,
+    "owners": 5,
+    "epsilon": 8,
+    "instance": 1,
+    "elapsed": 1253.089,
+    "successful_call_elapsed": 1252.95,
+    "uninterrupted_baseline_elapsed": 1252.95,
+    "recovery": "not_exercised",
+    "native_recovery": "not_exercised",
+    "end_to_end_release_elapsed": 1330.511,
+    "end_to_end_serialized_rpc_bytes": 1939365306,
+    "end_to_end_scope": "fixture-bootstrap-PSI-signing-source-staged-cox-and-DP-through-first-successful-release-including-retries-before-oracle-and-replay",
+    "release_serialized_rpc_bytes": 1890891493,
+    "serialized_rpc_scope": "R-v3-serialized-DSI-request-response-objects-including-retries-excluding-IPC-framing",
+    "protocol_payload": {
+      "exact_gc_unique_payload_bytes": 697592019,
+      "exact_gc_offered_payload_bytes": 697592019,
+      "source_ciphertext_delivered_bytes": 2407270
+    },
+    "protocol_payload_scope": "public-release-exactGC-and-source-transport-before-replay-no-bootstrap-PSI",
+    "expected_oracle_sha256": "ba5d77ddffabca8ce5b9be5f516aee3662b90b6e44a2ef0bfb886da6c8bb950d",
+    "oracle_only": false,
+    "selected_candidate": 1,
+    "exact_best": 1,
+    "loss_gap": 0,
+    "artifact_key": "15d30cd12e5f76d28e0de1e10d77b21c6745222d95534b4d01abced786f97f3f",
+    "certificate_sha256": "6328d985f6fc125b2eb2d027086591110bc644500df383ea7467b8881e30c962"
+  },
+  "promotion_record": {
+    "job_id": "cox-e8-k5-i01-baseline",
+    "K": 5,
+    "mode": "baseline",
+    "pod": "pod-cox-3",
+    "source_commits": {
+      "dsVert": "c97cd193c06dbae695792b4a03644c05fa733f8f",
+      "dsVertClient": "28be3cd6fea312d8f1c2442c810b453ad81080ce"
+    },
+    "expected_oracle_sha256": "ba5d77ddffabca8ce5b9be5f516aee3662b90b6e44a2ef0bfb886da6c8bb950d",
+    "oracle_equal": true,
+    "cold": true,
+    "tamper": true,
+    "recovery": null,
+    "seconds": 1330.511,
+    "wall_seconds": 1435.4893732070923,
+    "bytes": {
+      "serialized_rpc": 1939365306,
+      "native": {
+        "exact_gc_unique_payload_bytes": 697592019,
+        "exact_gc_offered_payload_bytes": 697592019,
+        "source_ciphertext_delivered_bytes": 2407270
+      }
+    },
+    "evidence": "~/Documents/GitHub/dsvert-fleet-heavy/cox-pods/RESULTS.jsonl",
+    "status": "PASS",
+    "capacity_promotion_gate": false
+  },
+  "metrics_source": "/Users/david/Documents/GitHub/dsvert-fleet-heavy/cox-pods/artifacts/pod-cox-3/release/logs/cox-e8-k5-i01-baseline.json"
+}

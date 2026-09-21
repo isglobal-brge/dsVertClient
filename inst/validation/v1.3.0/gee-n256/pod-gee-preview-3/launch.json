@@ -1,0 +1,56 @@
+{
+  "job": {
+    "job_id": "gee-preview-n256-binomial_gee-k2-recovery",
+    "family": "binomial_gee",
+    "K": 2,
+    "mode": "recovery",
+    "n": 256
+  },
+  "pid": 6817,
+  "ppid": 1,
+  "stdin": "/dev/null",
+  "started_utc": "2026-09-21T11:03:51.655305+00:00",
+  "status": "FAIL",
+  "phases": {
+    "smoke": {
+      "started_unix": 1789988631.994514,
+      "command": [
+        "python3",
+        "run-release-preview.py",
+        "binomial_gee",
+        "2",
+        "--n",
+        "4",
+        "--recovery"
+      ],
+      "label": "binomial_gee-n4-k2-independence-rho0-recovery",
+      "finished_unix": 1789991487.2242749,
+      "exit_code": 0
+    },
+    "preview": {
+      "started_unix": 1789991487.2248514,
+      "command": [
+        "python3",
+        "run-release-preview.py",
+        "binomial_gee",
+        "2",
+        "--n",
+        "256",
+        "--recovery"
+      ],
+      "label": "binomial_gee-n256-k2-independence-rho0-recovery",
+      "finished_unix": 1790015261.6494353,
+      "exit_code": 1
+    }
+  },
+  "verified_source": {
+    "repositories": {
+      "dsVert": "3c7a185ff2fd8987c3dc49911143542e9652f30b",
+      "dsVertClient": "20adcc8cd237abba5aee6f58d941d7b2eebab77e"
+    },
+    "manifest_sha256": "01aea53af677f138563f68bbd054066eccae71eae2b10738d6b020e13e487aa4",
+    "runtime_sha256": "a59e004567027fc0c09c620cf9ab8dcae0000efb4477f14672997fd800b150c6",
+    "native_inputs_matched": 630
+  },
+  "finished_unix": 1790015261.6500468
+}
