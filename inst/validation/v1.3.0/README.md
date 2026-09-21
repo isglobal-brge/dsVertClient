@@ -120,3 +120,9 @@ cleanup tests also pass (30 expectations).
 The campaign manifest records UTC execution dates, package refs,
 runtime checksums and evidence hashes. These results retain the original battery
 and registry byte-for-byte and replace the three failed multi-process captures.
+
+## Eight-family promotion
+
+The 2026-09-21 promotion records nb, lasso, multinomial, ordinal, Cox, LMM and binomial/Poisson GLMM at the exact execution pairs in `PROMOTION_MANIFEST.jsonl`. The GLMM K2 cells are evidenced by interrupted-and-resumed recovery runs under Directive P, with the isolated binomial GLMM rerun authoritative under Directive N; Cox uses dedicated results only. Promotion is based on oracle equality and lifecycle checks, with elapsed time and capacity descriptive only. `method_status_v130_promoted.csv` and `registry_counts_v130_promoted.json` record 114 rows: 111 promoted, 2 provisional and 1 quarantine (`dp_gee_grid`); the original exports remain historical evidence. The three newly promoted grid entries use the formal sticky Synopsis and separate integer DP contracts, remain grid-resolution-limited with no standard errors, and retain Cox admission up to 400 aligned observations. Both GEE families remain evidence running; final v1.3.0 tags require their evidence and David’s explicit go.
+
+Registry validation: `testthat::test_local("dsVertClient", filter="^(method-status|dp-grouped-grid-cross-registry|capsule-method-inventory)$", stop_on_failure=TRUE)` passes 1,110 assertions with no failures, warnings or skips. Export comparison changes exactly the three promoted grid rows; all 114 public exports remain represented one-to-one. Reproduce the promoted export with `DSVERT_VALIDATION_ROOT` pointing to the paired source root and `DSVERT_REGISTRY_SUFFIX=_promoted` using `export_registry.R` with the updated client package loaded.

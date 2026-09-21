@@ -41,7 +41,7 @@ test_that("capsule migration inventory covers the complete public surface", {
                   ds.vertMethodStatus()$method)
   analysis_status <- ds.vertMethodStatus(inventory$method)
   expect_equal(analysis_status$status, ifelse(analysis_status$method %in%
-    c("dp_lmm_grid", "dp_glmm_grid", "dp_gee_grid", "dp_cox_grid"), "quarantine", "promoted"))
+    "dp_gee_grid", "quarantine", "promoted"))
 })
 
 test_that("inventory separates current, migration, artifact and inference state", {

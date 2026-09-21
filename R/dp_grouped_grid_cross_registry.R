@@ -7,8 +7,10 @@
         "DP selection from a signed finite candidate grid; no standard errors.",
         c("two_owner_signatures", "certified_grouped_arithmetic",
           "authenticated_fusion", "measured_signed_capacity"),
-        "requires_new_secure_protocol",
-        current_route_status = "signed_workload_unavailable_quarantine")
+        if (family == "gee") "requires_new_secure_protocol" else "synopsis_release_implemented",
+        current_route_status = if (family == "gee") "signed_workload_unavailable_quarantine" else "formal_sticky_synopsis_artifact",
+        artifact_implementation_state = if (family == "gee") "secure_artifact_not_implemented" else "validated_synopsis_adapter_implemented",
+        inference_implementation_state = if (family == "gee") "legacy_inference_requires_secure_redesign" else "synopsis_postprocess_implemented")
   }
   add("dp_cox_grid", "dp_cox_grid", "cox_grid_cross_v1",
       "authenticated_cross_owner_joint_dp_vector",
@@ -34,12 +36,15 @@
     row$safe_scope <- "Signed-contract validation only; protected invocation fails closed."
     row$principal_limitation <- "Authenticated grouped producer and measured capacity are not available."
     row$numeric_blocker <- "Scalar certificates do not certify a complete grouped release."
-    if (family == "cox") {
+    if (family != "gee") {
+      row$status <- "promoted"
       row$release_contract <- "formal_sticky_synopsis_artifact"
       row$numeric_contract <- "separate_integer_dp_contract"
-      row$safe_scope <- "Signed Breslow finite-grid release at N<=400; promotion evidence pending."
-      row$principal_limitation <- "Measured fleet capacity and promotion evidence are pending."
-      row$numeric_blocker <- "Signed finite-grid arithmetic and DP provenance do not certify unrestricted Cox inference."
+      row$safe_scope <- if (family == "cox")
+        "Signed Breslow finite-grid sticky DP release at up to 400 aligned observations." else
+        "Signed finite-grid sticky DP release for cross-owner LMM or binomial/Poisson GLMM."
+      row$principal_limitation <- "Grid-resolution-limited selection; no standard errors or unrestricted optimization. Capacity is descriptive only."
+      row$numeric_blocker <- "Signed finite-grid arithmetic and DP provenance do not certify unrestricted inference."
     }
     out <- rbind(out, row)
   }
