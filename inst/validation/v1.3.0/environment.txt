@@ -1,0 +1,4 @@
+2026-09-20T20:00:26Z
+Linux af34a4a77310 6.8.0-85-generic #85-Ubuntu SMP PREEMPT_DYNAMIC Thu Sep 18 15:26:59 UTC 2025 x86_64 x86_64 x86_64 GNU/Linux
+Rscript (R) version 4.6.1 (2026-06-24)
+d5eabb8a7061b1edf5d35b4a8df7b4fb3513a0f1801bea2346de4b2af8d27cd3  dsVert/inst/bin/linux-amd64/dsvert-mpc

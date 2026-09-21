@@ -1,0 +1,80 @@
+[formal-dp-e2e] K=2: bootstrapping isolated peers
+[formal-dp-e2e] K=2: running public pinned PSI
+[formal-dp-e2e] K=2: creating one canonical Synopsis Count release
+[formal-dp-e2e] K=2: restarting every server with the current protected snapshot
+[formal-dp-e2e] K=3: bootstrapping isolated peers
+[formal-dp-e2e] K=3: running public pinned PSI
+[formal-dp-e2e] K=3: creating one canonical Synopsis Count release
+[formal-dp-e2e] K=3: restarting every server with the current protected snapshot
+[formal-dp-e2e] K=5: bootstrapping isolated peers
+[formal-dp-e2e] K=5: running public pinned PSI
+[formal-dp-e2e] K=5: creating one canonical Synopsis Count release
+[formal-dp-e2e] K=5: restarting every server with the current protected snapshot
+{
+  "version": "dsvert-canonical-synopsis-count-e2e-v1",
+  "passed": true,
+  "started_utc": "2026-09-20 23:38:59 UTC",
+  "completed_utc": "2026-09-20 23:48:58 UTC",
+  "scenarios": [
+    {
+      "k": 2,
+      "passed": true,
+      "surface_method_count": 97,
+      "surface_sha256": "40756e8afbcb84eefa5df2f1ff58fc78a01edf42e08305d4228fc5bc5fe40b30",
+      "mpc_binary_sha256": "d5eabb8a7061b1edf5d35b4a8df7b4fb3513a0f1801bea2346de4b2af8d27cd3",
+      "psi_aligned_without_cardinality": true,
+      "protected_source_present_on_restart": true,
+      "identity_persistent": true,
+      "dp_value": 12.11273193359375,
+      "artifact_key": "df76cf6c9ba4a73560816af5e7950b78122e9aa5121cd2f24ed33a84fb8823f8",
+      "release_sha256": "368428f25d0a316672a2ff369aa59c858b32027500682ceb82e531afcc9c4852",
+      "sticky_same_output": true,
+      "restart_same_output": true,
+      "finite_global_composition_claim": false,
+      "sampler_invocations": [1, 1],
+      "sampler_not_reinvoked_after_client_restart": true,
+      "signed_release_revalidated_after_service_restart": true
+    },
+    {
+      "k": 3,
+      "passed": true,
+      "surface_method_count": 97,
+      "surface_sha256": "40756e8afbcb84eefa5df2f1ff58fc78a01edf42e08305d4228fc5bc5fe40b30",
+      "mpc_binary_sha256": "d5eabb8a7061b1edf5d35b4a8df7b4fb3513a0f1801bea2346de4b2af8d27cd3",
+      "psi_aligned_without_cardinality": true,
+      "protected_source_present_on_restart": true,
+      "identity_persistent": true,
+      "dp_value": 9.158355712890625,
+      "artifact_key": "f4cdcf7b0dbafc491eaf83065141af313d6f1206786bd69616ffa1dfaec604a7",
+      "release_sha256": "23245d94db5df20092a4e86bff993b03ddb32ae14d6481f15f79fd3a292b1527",
+      "sticky_same_output": true,
+      "restart_same_output": true,
+      "finite_global_composition_claim": false,
+      "sampler_invocations": [1, 1, 0],
+      "sampler_not_reinvoked_after_client_restart": true,
+      "signed_release_revalidated_after_service_restart": true
+    },
+    {
+      "k": 5,
+      "passed": true,
+      "surface_method_count": 97,
+      "surface_sha256": "40756e8afbcb84eefa5df2f1ff58fc78a01edf42e08305d4228fc5bc5fe40b30",
+      "mpc_binary_sha256": "d5eabb8a7061b1edf5d35b4a8df7b4fb3513a0f1801bea2346de4b2af8d27cd3",
+      "psi_aligned_without_cardinality": true,
+      "protected_source_present_on_restart": true,
+      "identity_persistent": true,
+      "dp_value": 11.02838134765625,
+      "artifact_key": "b5664bd672f2db642a8f8e41ab7caddfceaa5d197d4be5ceafb1883a04d05192",
+      "release_sha256": "78e3734b9d53d020578aa25f6073b9ba4c11ccb3970d1585d6508177d6ac5864",
+      "sticky_same_output": true,
+      "restart_same_output": true,
+      "finite_global_composition_claim": false,
+      "sampler_invocations": [1, 1, 0, 0, 0],
+      "sampler_not_reinvoked_after_client_restart": true,
+      "signed_release_revalidated_after_service_restart": true
+    }
+  ],
+  "mpc_binary_mode_unchanged": true,
+  "state_retained": false,
+  "state_path": null
+} 

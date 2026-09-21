@@ -140,7 +140,10 @@ if (!.e2e_cleanup_test %in% c("", "success", "failure")) {
   file.path(parent, base)
 }
 
-.e2e_state_parent <- normalizePath(tempdir(), mustWork = TRUE)
+# Identity recovery provisions a durable DP noise root; rc1 rejects temporary
+# and installed-library paths. Keep private service state beside the source
+# trees, with the same guarded removal/explicit retention lifecycle below.
+.e2e_state_parent <- normalizePath(.e2e_root, mustWork = TRUE)
 .e2e_state_root <- file.path(
   .e2e_state_parent,
   paste0(".dsvert-formal-dp-e2e-", Sys.getpid(), "-",

@@ -1,0 +1,15 @@
+ [1] "method"                           "canonical"                       
+ [3] "status"                           "release_contract"                
+ [5] "numeric_contract"                 "may_report_numerically_certified"
+ [7] "currently_numerically_certified"  "safe_scope"                      
+ [9] "principal_limitation"             "numeric_blocker"                 
+
+   promoted provisional  quarantine 
+        108           2           4 
+
+disclosure_safe_protocol_no_statistic   formal_completed_public_certificate 
+                                   16                                     3 
+         formal_sticky_count_artifact      formal_sticky_frequency_artifact 
+                                    1                                     1 
+      formal_sticky_synopsis_artifact         postprocessing_inherits_input 
+                                   35                                    58 
