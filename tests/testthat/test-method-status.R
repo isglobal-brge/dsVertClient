@@ -29,15 +29,13 @@ test_that("method maturity registry covers every public analysis entry point", {
   expect_length(
     registry$method[registry$may_report_numerically_certified], 0L)
 
-  namespace <- readLines(system.file("NAMESPACE", package = "dsVertClient"),
-                         warn = FALSE)
-  exports <- sub("^export\\((.*)\\)$", "\\1",
-                 grep("^export\\(", namespace, value = TRUE))
+  exports <- getNamespaceExports("dsVertClient")
   public <- exports[grepl(paste0(
     "^(ds[.]vert|ds[.]psiAlign$|ds[.]isPsiAligned$|",
-    "ds[.]getIdentityPks$|ds[.]validateDP(Gaussian|LMM)Certificate$)"),
+    "ds[.]getIdentityPks$|ds[.]validateDP(Gaussian|LMM)Certificate$|dp_.*_grid$)"),
                           exports)]
-  expect_setequal(registry$method, c(public, "dp_lmm_grid", "dp_glmm_grid", "dp_gee_grid", "dp_cox_grid"))
+  expect_setequal(registry$method, public)
+  expect_equal(nrow(registry), length(public))
 })
 
 test_that("no public route may report a result numeric certificate", {
