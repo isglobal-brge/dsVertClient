@@ -1,0 +1,38 @@
+{
+  "recorded_unix": 1790000539.5826242,
+  "stage_files": 1388,
+  "stage_first_mtime": 1789989835.9833279,
+  "stage_last_mtime": 1789999951.2492063,
+  "execution_dbs": [
+    {
+      "path": "/var/lib/dsvert-gee-state/binomial_gee-n256-k2-independence-rho0-baseline/cross-grid-dslite-a5f448318545/site_a/dp-synopsis.synopsis-execution-v1.sqlite",
+      "mtime": 1790000437.3628187
+    },
+    {
+      "path": "/var/lib/dsvert-gee-state/binomial_gee-n256-k2-independence-rho0-baseline/cross-grid-dslite-a5f448318545/site_b/dp-synopsis.synopsis-execution-v1.sqlite",
+      "mtime": 1790000437.4638193
+    }
+  ],
+  "cold_dbs": [
+    {
+      "path": "/var/lib/dsvert-gee-state/binomial_gee-n256-k2-independence-rho0-baseline/cross-grid-dslite-a5f448318545/site_a/synthetic-cold-a66628a36673.sqlite",
+      "mtime": 1789999952.118211
+    },
+    {
+      "path": "/var/lib/dsvert-gee-state/binomial_gee-n256-k2-independence-rho0-baseline/cross-grid-dslite-a5f448318545/site_b/synthetic-cold-a65f15e50105.sqlite",
+      "mtime": 1789999952.114211
+    }
+  ],
+  "metrics": {
+    "path": "/workspace/dsvert-gee-state/logs/gee-fixed-rho/binomial_gee-n256-k2-independence-rho0-baseline-metrics.json",
+    "mtime": 1790000539.2743664
+  },
+  "phase_seconds": {
+    "smoke": 929.685977935791,
+    "staged": 10115.26587843895,
+    "execution": 0.8650047779083252,
+    "finalize": 587.1601552963257
+  },
+  "phase_seconds_scope": "mtime proxies: staged first-to-last stage; execution last-stage to first cold DB final mtime; finalize first cold DB final mtime to metrics. DB mtimes are final writes, not creation boundaries; missing or reversed boundaries are null.",
+  "preview_started_unix": 1789989558.6321354
+}

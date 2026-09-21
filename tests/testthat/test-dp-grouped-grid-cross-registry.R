@@ -1,5 +1,5 @@
 test_that("validated grouped grids are promoted with bounded inference", {
-  methods <- c("dp_lmm_grid", "dp_glmm_grid", "dp_cox_grid")
+  methods <- c("dp_lmm_grid", "dp_glmm_grid", "dp_cox_grid", "dp_gee_grid")
   status <- ds.vertMethodStatus(methods)
   expect_setequal(status$method, methods)
   expect_true(all(status$status == "promoted"))
@@ -13,7 +13,7 @@ test_that("validated grouped grids are promoted with bounded inference", {
                "400 aligned observations", fixed = TRUE)
   inventory <- .dsvert_capsule_method_inventory()
   rows <- inventory[inventory$method %in% methods, , drop = FALSE]
-  expect_equal(nrow(rows), 3L)
+  expect_equal(nrow(rows), 4L)
   expect_true(all(rows$current_route_status == "formal_sticky_synopsis_artifact"))
   expect_true(all(rows$migration_feasibility == "synopsis_release_implemented"))
   expect_true(all(rows$artifact_implementation_state == "validated_synopsis_adapter_implemented"))
@@ -21,18 +21,16 @@ test_that("validated grouped grids are promoted with bounded inference", {
   expect_true(all(vapply(rows$legacy_remote_call_evidence, nrow, integer(1L)) == 0L))
 })
 
-test_that("GEE remains quarantined while evidence is running", {
+test_that("GEE promotion records fixed correlation and evaluated cluster scope", {
   status <- ds.vertMethodStatus("dp_gee_grid")
-  expect_identical(status$status, "quarantine")
-  expect_identical(status$release_contract, "disclosure_safe_protocol_no_statistic")
-  expect_identical(status$numeric_contract, "not_applicable_no_statistic")
-  inventory <- .dsvert_capsule_method_inventory()
-  row <- inventory[inventory$method == "dp_gee_grid", , drop = FALSE]
-  expect_identical(row$current_route_status, "signed_workload_unavailable_quarantine")
-  expect_identical(row$artifact_implementation_state, "secure_artifact_not_implemented")
+  expect_match(status$safe_scope, "64 clusters of 4 participants", fixed = TRUE)
+  expect_match(status$safe_scope, "cluster capacity up to 500", fixed = TRUE)
+  expect_match(status$safe_scope, "up to 8 slots", fixed = TRUE)
+  expect_match(status$principal_limitation, "fixed and signed rather than estimated", fixed = TRUE)
+  expect_match(status$principal_limitation, "no standard errors or sandwich covariance", fixed = TRUE)
   registry <- ds.vertMethodStatus()
   expect_equal(nrow(registry), 114L)
-  expect_equal(sum(registry$status == "promoted"), 111L)
+  expect_equal(sum(registry$status == "promoted"), 112L)
   expect_equal(sum(registry$status == "provisional"), 2L)
-  expect_identical(registry$method[registry$status == "quarantine"], "dp_gee_grid")
+  expect_length(registry$method[registry$status == "quarantine"], 0L)
 })

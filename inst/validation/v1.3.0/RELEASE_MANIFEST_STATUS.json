@@ -15,12 +15,9 @@
   "paired_suite_cli": "Rscript --vanilla -e 'testthat::test_local(\"dsVert\", stop_on_failure=TRUE); testthat::test_local(\"dsVertClient\", stop_on_failure=TRUE)' </dev/null",
   "paired_suite_review": "Retain structured results and review warnings/skips as well as failures.",
   "prepare_cli": "bash dsVert/inst/cross-grid-v2/integrator-validation/prepare-release-workspace.sh ad276b565d85fce3d01204365cce25b5380c99d3 bf737442adbca7ac733518da32c9cb0cd6338870",
-  "pending_families": {
-    "binomial_gee": "evidence running",
-    "poisson_gee": "evidence running"
-  },
+  "pending_families": {},
   "proof_scope": "Job definitions are not release evidence. Full selection matrix is ORACLE-ONLY.",
-  "existing_wave_instruction": "Harvest existing LMM/GLMM/Cox and GEE waves; do not rerun or duplicate. Per-row source pins remain authoritative; seven-day lease applies only to future launches.",
+  "existing_wave_instruction": "All promotion evidence is complete. No execution requested; historical launch definitions are retained only.",
   "oracle_commitment_provenance": "cycle46-20260920/ORACLE_DEPENDENCY_EQUIVALENCE.json",
   "capacity_policy": {
     "revision": "2026-09-20-david-capacity-descriptive",
@@ -48,8 +45,21 @@
     "lmm",
     "binomial_glmm",
     "poisson_glmm",
-    "cox"
+    "cox",
+    "binomial_gee",
+    "poisson_gee"
   ],
-  "promoted_family_count": 8,
-  "promotion_record": "PROMOTION_MANIFEST.jsonl"
+  "promoted_family_count": 10,
+  "promotion_record": "PROMOTION_MANIFEST.jsonl",
+  "historical_discontinued_job_count": 8,
+  "evaluated_gee_cell_count": 8,
+  "manifest_record_count": 36,
+  "gee_evidence": {
+    "source": "gee-pods/preview-n256/RESULTS.jsonl",
+    "domain": "n=256, 64 clusters x 4 participants, p=3, grid=2, epsilon=8; fixed signed independence rho=0; K2/K3/K5 baselines plus K2 recovery",
+    "source_commits": {
+      "dsVert": "3c7a185ff2fd8987c3dc49911143542e9652f30b",
+      "dsVertClient": "20adcc8cd237abba5aee6f58d941d7b2eebab77e"
+    }
+  }
 }

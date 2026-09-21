@@ -1,0 +1,54 @@
+{
+  "job": {
+    "job_id": "gee-preview-n256-poisson_gee-k5-baseline-fast",
+    "family": "poisson_gee",
+    "K": 5,
+    "mode": "baseline",
+    "n": 256
+  },
+  "pid": 6817,
+  "ppid": 1,
+  "stdin": "/dev/null",
+  "started_utc": "2026-09-21T18:37:23.989732+00:00",
+  "status": "PASS",
+  "phases": {
+    "smoke": {
+      "started_unix": 1790015844.1189365,
+      "command": [
+        "python3",
+        "run-release-preview.py",
+        "poisson_gee",
+        "5",
+        "--n",
+        "4"
+      ],
+      "label": "poisson_gee-n4-k5-independence-rho0-baseline",
+      "finished_unix": 1790016841.0080152,
+      "exit_code": 0
+    },
+    "preview": {
+      "started_unix": 1790016841.008321,
+      "command": [
+        "python3",
+        "run-release-preview.py",
+        "poisson_gee",
+        "5",
+        "--n",
+        "256"
+      ],
+      "label": "poisson_gee-n256-k5-independence-rho0-baseline",
+      "finished_unix": 1790027453.4180765,
+      "exit_code": 0
+    }
+  },
+  "verified_source": {
+    "repositories": {
+      "dsVert": "3c7a185ff2fd8987c3dc49911143542e9652f30b",
+      "dsVertClient": "20adcc8cd237abba5aee6f58d941d7b2eebab77e"
+    },
+    "manifest_sha256": "01aea53af677f138563f68bbd054066eccae71eae2b10738d6b020e13e487aa4",
+    "runtime_sha256": "a59e004567027fc0c09c620cf9ab8dcae0000efb4477f14672997fd800b150c6",
+    "native_inputs_matched": 630
+  },
+  "finished_unix": 1790027453.4185033
+}

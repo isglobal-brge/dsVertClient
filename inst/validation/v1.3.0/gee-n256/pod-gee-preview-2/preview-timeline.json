@@ -1,0 +1,38 @@
+{
+  "recorded_unix": 1790000466.7262666,
+  "stage_files": 1388,
+  "stage_first_mtime": 1789989869.1965024,
+  "stage_last_mtime": 1789999843.442627,
+  "execution_dbs": [
+    {
+      "path": "/var/lib/dsvert-gee-state/poisson_gee-n256-k2-independence-rho0-baseline/cross-grid-dslite-a8f948a2da25/site_a/dp-synopsis.synopsis-execution-v1.sqlite",
+      "mtime": 1790000366.311437
+    },
+    {
+      "path": "/var/lib/dsvert-gee-state/poisson_gee-n256-k2-independence-rho0-baseline/cross-grid-dslite-a8f948a2da25/site_b/dp-synopsis.synopsis-execution-v1.sqlite",
+      "mtime": 1790000366.6414385
+    }
+  ],
+  "cold_dbs": [
+    {
+      "path": "/var/lib/dsvert-gee-state/poisson_gee-n256-k2-independence-rho0-baseline/cross-grid-dslite-a8f948a2da25/site_a/synthetic-cold-a96463593513.sqlite",
+      "mtime": 1789999844.3346317
+    },
+    {
+      "path": "/var/lib/dsvert-gee-state/poisson_gee-n256-k2-independence-rho0-baseline/cross-grid-dslite-a8f948a2da25/site_b/synthetic-cold-a96b7272899c.sqlite",
+      "mtime": 1789999844.3336318
+    }
+  ],
+  "metrics": {
+    "path": "/workspace/dsvert-gee-state/logs/gee-fixed-rho/poisson_gee-n256-k2-independence-rho0-baseline-metrics.json",
+    "mtime": 1790000466.4129748
+  },
+  "phase_seconds": {
+    "smoke": 959.1909832954407,
+    "staged": 9974.246124505997,
+    "execution": 0.8910048007965088,
+    "finalize": 622.0793430805206
+  },
+  "phase_seconds_scope": "mtime proxies: staged first-to-last stage; execution last-stage to first cold DB final mtime; finalize first cold DB final mtime to metrics. DB mtimes are final writes, not creation boundaries; missing or reversed boundaries are null.",
+  "preview_started_unix": 1789989589.0003545
+}

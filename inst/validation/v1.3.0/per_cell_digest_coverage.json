@@ -1,0 +1,427 @@
+{
+  "evaluated_records": 58,
+  "complete_digest_records": 22,
+  "missing_oracle_digest_records": 36,
+  "cells": [
+    {
+      "family": "nb",
+      "cell_id": "nb-eps1-k2-n2000",
+      "file": "nb-cells/nb-eps1-k2-n2000.json",
+      "certificate_sha256": "460b788efc05b20b319e2aab8d3e806fc5533b2dffb7baaf4ae90909322c6072",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "nb",
+      "cell_id": "nb-eps1-k3-n2000",
+      "file": "nb-cells/nb-eps1-k3-n2000.json",
+      "certificate_sha256": "6b739913b9382a979017b64f1d7f8a1e6c7afe3cc2c58795f5fefcbc4e5d5767",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "nb",
+      "cell_id": "nb-eps1-k5-n2000",
+      "file": "nb-cells/nb-eps1-k5-n2000.json",
+      "certificate_sha256": "07a4bfc82bb78e7a58a324147482cf951f634786cdfda9c56573253b181c94a9",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "nb",
+      "cell_id": "nb-eps4-k2-n2000",
+      "file": "nb-cells/nb-eps4-k2-n2000.json",
+      "certificate_sha256": "24b028906bf7400343216d50ab4941e4f72fcca1d9be63b0a56a2163e41e6e47",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "nb",
+      "cell_id": "nb-eps4-k3-n2000",
+      "file": "nb-cells/nb-eps4-k3-n2000.json",
+      "certificate_sha256": "c71422ba84bc31b03a51c51610e455e51bb71a2a2ef739f1d14ea379be869459",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "nb",
+      "cell_id": "nb-eps4-k5-n2000",
+      "file": "nb-cells/nb-eps4-k5-n2000.json",
+      "certificate_sha256": "12980656531493e32c8b1545eb371e34e63089222fca04f75eecf19718dcf29a",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "nb",
+      "cell_id": "nb-eps8-k2-n2000",
+      "file": "nb-cells/nb-eps8-k2-n2000.json",
+      "certificate_sha256": "5fb1a944272235826eb556b07daeb10b48c8cbf2409b5f3a33bacffaefa2c7e2",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "nb",
+      "cell_id": "nb-eps8-k3-n2000",
+      "file": "nb-cells/nb-eps8-k3-n2000.json",
+      "certificate_sha256": "7b24127851e5d6f148743167e90d1adab86f15cf64461e05e1e1a0ffd508c5bb",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "nb",
+      "cell_id": "nb-eps8-k5-n2000",
+      "file": "nb-cells/nb-eps8-k5-n2000.json",
+      "certificate_sha256": "a08f6e2455419910acf7a09732d8a1565fe1411d627af1ebb576746499069a1f",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "lasso",
+      "cell_id": "lasso-eps1-k2-n2000",
+      "file": "lasso-cells/lasso-eps1-k2-n2000.json",
+      "certificate_sha256": "cb0d53eab3880d3a909f47eb7261ccd1f6c5e9a3e4aa574cd1466cc44c6ae4c8",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "lasso",
+      "cell_id": "lasso-eps1-k3-n2000",
+      "file": "lasso-cells/lasso-eps1-k3-n2000.json",
+      "certificate_sha256": "9c71f0db5227283e5363ab320b8d8de258319802944570c2c152b193c456e7fa",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "lasso",
+      "cell_id": "lasso-eps1-k5-n2000",
+      "file": "lasso-cells/lasso-eps1-k5-n2000.json",
+      "certificate_sha256": "9ef74c51c379a5b8d6a6fb3beea37f4ddf1dd2c1e3e5a5f71be6f6eec439442c",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "lasso",
+      "cell_id": "lasso-eps4-k2-n2000",
+      "file": "lasso-cells/lasso-eps4-k2-n2000.json",
+      "certificate_sha256": "5c276eadcbb7f0394ad794ca4c8da873747a6ab0a22011ee239a2b5323c1de30",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "lasso",
+      "cell_id": "lasso-eps4-k3-n2000",
+      "file": "lasso-cells/lasso-eps4-k3-n2000.json",
+      "certificate_sha256": "e6decb220f82c50863cdd153f4a8acfc36ae16a46a3b9504fad23f8c0b485fb2",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "lasso",
+      "cell_id": "lasso-eps4-k5-n2000",
+      "file": "lasso-cells/lasso-eps4-k5-n2000.json",
+      "certificate_sha256": "4c1915c8ec34abd77e3e1d770a4ddce5e0c56e73f8d86ac3fdab8bb64baffce7",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "lasso",
+      "cell_id": "lasso-eps8-k2-n2000",
+      "file": "lasso-cells/lasso-eps8-k2-n2000.json",
+      "certificate_sha256": "018f8d9da5c4ed366b42efd95b39ce6b17a4d993f3f1f6b65dfb45101da252c8",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "lasso",
+      "cell_id": "lasso-eps8-k3-n2000",
+      "file": "lasso-cells/lasso-eps8-k3-n2000.json",
+      "certificate_sha256": "3edb440450e6a8c500d2b3ed1f0a1a39d6bc2dc8342f8cd7b72c0d5b0294ca7e",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "lasso",
+      "cell_id": "lasso-eps8-k5-n2000",
+      "file": "lasso-cells/lasso-eps8-k5-n2000.json",
+      "certificate_sha256": "aeedf95391f9dfba4456e616ef0c2d81d03b08f430a9d6f87b135bbaec50241c",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "multinomial",
+      "cell_id": "multinomial-eps1-k2-n2000",
+      "file": "multinomial-cells/multinomial-eps1-k2-n2000.json",
+      "certificate_sha256": "92f7912feef19fb7bc923cf0a594721c3c777065ecd08f16b6a6f60aa381b6c1",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "multinomial",
+      "cell_id": "multinomial-eps1-k3-n2000",
+      "file": "multinomial-cells/multinomial-eps1-k3-n2000.json",
+      "certificate_sha256": "3dfba7aacfbe302a356e4928d1232ddeb9d31b777578a237a6813301477ed59b",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "multinomial",
+      "cell_id": "multinomial-eps1-k5-n2000",
+      "file": "multinomial-cells/multinomial-eps1-k5-n2000.json",
+      "certificate_sha256": "4f7383ae4c9a9deb8edcbd858060f59a6cb73725c9f4a62dbeaf19edbaf11a96",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "multinomial",
+      "cell_id": "multinomial-eps4-k2-n2000",
+      "file": "multinomial-cells/multinomial-eps4-k2-n2000.json",
+      "certificate_sha256": "7a26390e0c43b9d588628fc217441abc5991ca845c6ec599a62d1538eb45f56c",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "multinomial",
+      "cell_id": "multinomial-eps4-k3-n2000",
+      "file": "multinomial-cells/multinomial-eps4-k3-n2000.json",
+      "certificate_sha256": "78b10d93bde58ae43a6b2c76da903a4afb11b4db704745759131511b13386ba9",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "multinomial",
+      "cell_id": "multinomial-eps4-k5-n2000",
+      "file": "multinomial-cells/multinomial-eps4-k5-n2000.json",
+      "certificate_sha256": "b5d2f529c3bad7419237a9c6a7d92e53897fb0b07a9cdac4e330f35ea0395857",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "multinomial",
+      "cell_id": "multinomial-eps8-k2-n2000",
+      "file": "multinomial-cells/multinomial-eps8-k2-n2000.json",
+      "certificate_sha256": "c3f3a4d4e3cecbe6545b3bdcd6e478815229cdafaa9958f4ced0004636e5bc51",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "multinomial",
+      "cell_id": "multinomial-eps8-k3-n2000",
+      "file": "multinomial-cells/multinomial-eps8-k3-n2000.json",
+      "certificate_sha256": "0de0a4d02568484ccaa52373147916c6111eaf12f25fa5e791ecb520391c1c5e",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "multinomial",
+      "cell_id": "multinomial-eps8-k5-n2000",
+      "file": "multinomial-cells/multinomial-eps8-k5-n2000.json",
+      "certificate_sha256": "1ed35b80511ea185527c942612a34e36b10c24d9ca10458e0d74718766f030fa",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "ordinal",
+      "cell_id": "ordinal-eps1-k2-n2000",
+      "file": "ordinal-cells/ordinal-eps1-k2-n2000.json",
+      "certificate_sha256": "4b04297e44342becc8d9b82301795aa288f769282db3578d3494826aa38208d7",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "ordinal",
+      "cell_id": "ordinal-eps1-k3-n2000",
+      "file": "ordinal-cells/ordinal-eps1-k3-n2000.json",
+      "certificate_sha256": "c85a4c03baaed27d774f80bb24206f81795abd60b3cde77ed216b30f5cfbcfa0",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "ordinal",
+      "cell_id": "ordinal-eps1-k5-n2000",
+      "file": "ordinal-cells/ordinal-eps1-k5-n2000.json",
+      "certificate_sha256": "8be45974b4cdde5f27472b359ef59cf0f5283cdbe3d825900d946bf98f29f5d7",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "ordinal",
+      "cell_id": "ordinal-eps4-k2-n2000",
+      "file": "ordinal-cells/ordinal-eps4-k2-n2000.json",
+      "certificate_sha256": "320c0ecc39f84ecb13fb85f3d53e942b7df591257adf92a4e3405f65a329ef2f",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "ordinal",
+      "cell_id": "ordinal-eps4-k3-n2000",
+      "file": "ordinal-cells/ordinal-eps4-k3-n2000.json",
+      "certificate_sha256": "4b99524cb4501e8255d94b50adfbd4bff316b32286fbedc40ef7bd0d656f8923",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "ordinal",
+      "cell_id": "ordinal-eps4-k5-n2000",
+      "file": "ordinal-cells/ordinal-eps4-k5-n2000.json",
+      "certificate_sha256": "2e238cda7b1fc58651d1fbbbdf932a98aa29e088fac91f1902bdff7acb66041d",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "ordinal",
+      "cell_id": "ordinal-eps8-k2-n2000",
+      "file": "ordinal-cells/ordinal-eps8-k2-n2000.json",
+      "certificate_sha256": "610b08123d5462bfe1ea4966a9a6c540cb08c4c4e3c66cc2d3e81314622ed0e1",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "ordinal",
+      "cell_id": "ordinal-eps8-k3-n2000",
+      "file": "ordinal-cells/ordinal-eps8-k3-n2000.json",
+      "certificate_sha256": "c505862253b54c106508a36c393332d8cbfb8ded26d348cc48d32bf49e42a8cc",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "ordinal",
+      "cell_id": "ordinal-eps8-k5-n2000",
+      "file": "ordinal-cells/ordinal-eps8-k5-n2000.json",
+      "certificate_sha256": "5a63de4f1862dfc9a1d3fe44c32e6d9d7a13a110e9540c05194710df41aed5ef",
+      "oracle_digest_available": false
+    },
+    {
+      "family": "lmm",
+      "cell_id": "lmm-e8-k2-i01-baseline",
+      "file": "lmm-cells/lmm-e8-k2-i01-baseline.json",
+      "certificate_sha256": "cb83f3183f2daf5415bd9015f88ffbc84252834bb8a36bad247f5e967a70ab3e",
+      "expected_oracle_sha256": "17c093ad58042d7e1d23e3f5fb402552dc2fb7c9f928586f1044767e5c9f8fe5",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "lmm",
+      "cell_id": "lmm-e8-k2-i01-recovery",
+      "file": "lmm-cells/lmm-e8-k2-i01-recovery.json",
+      "certificate_sha256": "8ecfc52e81fd06f4cc0cf05afc5730f5dbb49bd5b48c33ef0b27e5331575d18e",
+      "expected_oracle_sha256": "17c093ad58042d7e1d23e3f5fb402552dc2fb7c9f928586f1044767e5c9f8fe5",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "lmm",
+      "cell_id": "lmm-e8-k3-i01-baseline",
+      "file": "lmm-cells/lmm-e8-k3-i01-baseline.json",
+      "certificate_sha256": "ce0aebf39d8ca8f1fc61675fc3b14118f4ee03716a8c32979314706ae1c088e5",
+      "expected_oracle_sha256": "17c093ad58042d7e1d23e3f5fb402552dc2fb7c9f928586f1044767e5c9f8fe5",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "lmm",
+      "cell_id": "lmm-e8-k5-i01-baseline",
+      "file": "lmm-cells/lmm-e8-k5-i01-baseline.json",
+      "certificate_sha256": "5e0c91b5058882451e902c9aebee0ebbe62978ed54ea33acf1e96f6993b25b0b",
+      "expected_oracle_sha256": "17c093ad58042d7e1d23e3f5fb402552dc2fb7c9f928586f1044767e5c9f8fe5",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "cox",
+      "cell_id": "cox-e8-k2-i01-baseline",
+      "file": "cox-cells/cox-e8-k2-i01-baseline.json",
+      "certificate_sha256": "5bcf7ee5311d3fc51c6d6f6cf94ca61e609438df96e786fc7b562fe8337ac451",
+      "expected_oracle_sha256": "ba5d77ddffabca8ce5b9be5f516aee3662b90b6e44a2ef0bfb886da6c8bb950d",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "cox",
+      "cell_id": "cox-e8-k2-i01-recovery",
+      "file": "cox-cells/cox-e8-k2-i01-recovery.json",
+      "certificate_sha256": "3570786a813c849f0c7088b47233943d25ded8ca0d8f16ddb7159fe12bdd86ea",
+      "expected_oracle_sha256": "ba5d77ddffabca8ce5b9be5f516aee3662b90b6e44a2ef0bfb886da6c8bb950d",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "cox",
+      "cell_id": "cox-e8-k3-i01-baseline",
+      "file": "cox-cells/cox-e8-k3-i01-baseline.json",
+      "certificate_sha256": "c9050359b7b61cd27d332eb00ee0e9402731085a3f41dcd320e47f7922a041f7",
+      "expected_oracle_sha256": "ba5d77ddffabca8ce5b9be5f516aee3662b90b6e44a2ef0bfb886da6c8bb950d",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "cox",
+      "cell_id": "cox-e8-k5-i01-baseline",
+      "file": "cox-cells/cox-e8-k5-i01-baseline.json",
+      "certificate_sha256": "6328d985f6fc125b2eb2d027086591110bc644500df383ea7467b8881e30c962",
+      "expected_oracle_sha256": "ba5d77ddffabca8ce5b9be5f516aee3662b90b6e44a2ef0bfb886da6c8bb950d",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "binomial_glmm",
+      "cell_id": "binomial_glmm-e8-k2-i01-recovery",
+      "file": "binomial_glmm-cells/binomial_glmm-e8-k2-i01-recovery.json",
+      "certificate_sha256": "96a15327ff94e38e99319423b864d3200f627b9b4a25341d749b335222f60201",
+      "expected_oracle_sha256": "6557396a5365d2c9b1740e12181d695cd10a323b4a3833d780462ef074b37f36",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "binomial_glmm",
+      "cell_id": "binomial_glmm-e8-k3-i01-baseline",
+      "file": "binomial_glmm-cells/binomial_glmm-e8-k3-i01-baseline.json",
+      "certificate_sha256": "086f9a48fa1b7ca0108d845dd719dc5e509de204d6e7d52ddc259ffa0258c6ae",
+      "expected_oracle_sha256": "6557396a5365d2c9b1740e12181d695cd10a323b4a3833d780462ef074b37f36",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "binomial_glmm",
+      "cell_id": "binomial_glmm-e8-k5-i01-baseline",
+      "file": "binomial_glmm-cells/binomial_glmm-e8-k5-i01-baseline.json",
+      "certificate_sha256": "90499118a7215e1d28c146130d2f77e1205abea5905ba1ec8953882d4213460e",
+      "expected_oracle_sha256": "6557396a5365d2c9b1740e12181d695cd10a323b4a3833d780462ef074b37f36",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "poisson_glmm",
+      "cell_id": "poisson_glmm-e8-k2-i01-recovery",
+      "file": "poisson_glmm-cells/poisson_glmm-e8-k2-i01-recovery.json",
+      "certificate_sha256": "179a2cadd9fbd57568815f81e9bbf051f572dbe921f527c2259be9134517ff6d",
+      "expected_oracle_sha256": "d631d0c510ec4895b9f2c53bb0b3998b8d11e4aa4d84fe88aaf43a8d750ba613",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "poisson_glmm",
+      "cell_id": "poisson_glmm-e8-k3-i01-baseline",
+      "file": "poisson_glmm-cells/poisson_glmm-e8-k3-i01-baseline.json",
+      "certificate_sha256": "c184ee2dde77ee6846d1a99e921b324a874bf72c74d51757d465f4ebc37e3871",
+      "expected_oracle_sha256": "d631d0c510ec4895b9f2c53bb0b3998b8d11e4aa4d84fe88aaf43a8d750ba613",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "poisson_glmm",
+      "cell_id": "poisson_glmm-e8-k5-i01-baseline",
+      "file": "poisson_glmm-cells/poisson_glmm-e8-k5-i01-baseline.json",
+      "certificate_sha256": "a7c7978e51f483b1596efe99fcc2552af9153e28dc3087033cb14ee1e448107a",
+      "expected_oracle_sha256": "d631d0c510ec4895b9f2c53bb0b3998b8d11e4aa4d84fe88aaf43a8d750ba613",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "binomial_gee",
+      "file": "gee-n256/pod-gee-preview-1/logs/gee-fixed-rho/binomial_gee-n256-k2-independence-rho0-baseline-metrics.json",
+      "certificate_sha256": "d4c4f5b53ce48a5d4162b63a7430ee3c774f538f31631e636afe0680e7655eab",
+      "expected_oracle_sha256": "ad72451507d9d7b676c782eaeb076b0453ae376eed906778871117ce3691243b",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "poisson_gee",
+      "file": "gee-n256/pod-gee-preview-10/logs/gee-fixed-rho/poisson_gee-n256-k3-independence-rho0-baseline-metrics.json",
+      "certificate_sha256": "e14d724bbfaf3220600a247dcd618ec4bb9183a1dc0039a696a88e72c64f3ca8",
+      "expected_oracle_sha256": "f100821d3bc394e01c3733ff2d1ef5770b4410dc0d49a4fabf5c80deda6e5b5a",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "poisson_gee",
+      "file": "gee-n256/pod-gee-preview-11/logs/gee-fixed-rho/poisson_gee-n256-k5-independence-rho0-baseline-metrics.json",
+      "certificate_sha256": "c6c6077389b04031b4d094af4f9c84673fcddf5a2ed73eece11ff6519a8e849b",
+      "expected_oracle_sha256": "f100821d3bc394e01c3733ff2d1ef5770b4410dc0d49a4fabf5c80deda6e5b5a",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "poisson_gee",
+      "file": "gee-n256/pod-gee-preview-12/logs/gee-fixed-rho/poisson_gee-n256-k2-independence-rho0-recovery-metrics.json",
+      "certificate_sha256": "c8b205a138260141075e074c73f3b4ae30eb713e9c10dcfb040cf0939192a668",
+      "expected_oracle_sha256": "f100821d3bc394e01c3733ff2d1ef5770b4410dc0d49a4fabf5c80deda6e5b5a",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "poisson_gee",
+      "file": "gee-n256/pod-gee-preview-2/logs/gee-fixed-rho/poisson_gee-n256-k2-independence-rho0-baseline-metrics.json",
+      "certificate_sha256": "1d13f3bcb1c877ed0fe30ab3821a0f9d3c3b246d88e0387665d9124ac2fc2b25",
+      "expected_oracle_sha256": "f100821d3bc394e01c3733ff2d1ef5770b4410dc0d49a4fabf5c80deda6e5b5a",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "binomial_gee",
+      "file": "gee-n256/pod-gee-preview-3/logs/gee-fixed-rho/binomial_gee-n256-k2-independence-rho0-recovery-metrics.json",
+      "certificate_sha256": "673557ec8c0c7ae62370be7beed6c2885dac27667ff4a398e37ce0a7a67dfb65",
+      "expected_oracle_sha256": "ad72451507d9d7b676c782eaeb076b0453ae376eed906778871117ce3691243b",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "binomial_gee",
+      "file": "gee-n256/pod-gee-preview-4/logs/gee-fixed-rho/binomial_gee-n256-k3-independence-rho0-baseline-metrics.json",
+      "certificate_sha256": "142266778ed84c3e8f90a08bee2a506940f2fbc5dd87b3150c7eb550897b04cf",
+      "expected_oracle_sha256": "ad72451507d9d7b676c782eaeb076b0453ae376eed906778871117ce3691243b",
+      "oracle_digest_available": true
+    },
+    {
+      "family": "binomial_gee",
+      "file": "gee-n256/pod-gee-preview-9/logs/gee-fixed-rho/binomial_gee-n256-k5-independence-rho0-baseline-metrics.json",
+      "certificate_sha256": "5a1e7a61a0237d0822fcd0c16e6e35aabaf6fc6c7e7cdd1c068308ac9ff85395",
+      "expected_oracle_sha256": "ad72451507d9d7b676c782eaeb076b0453ae376eed906778871117ce3691243b",
+      "oracle_digest_available": true
+    }
+  ]
+}

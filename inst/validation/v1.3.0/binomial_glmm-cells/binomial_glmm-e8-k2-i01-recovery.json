@@ -1,0 +1,66 @@
+{
+  "metrics": {
+    "family": "binomial_glmm",
+    "n": 2000,
+    "p": 3,
+    "grid": 2,
+    "candidates": 4,
+    "clusters": 500,
+    "slots": 4,
+    "owners": 2,
+    "epsilon": 8,
+    "instance": 1,
+    "elapsed": 49096.05,
+    "successful_call_elapsed": 2114.469,
+    "uninterrupted_baseline_elapsed": null,
+    "recovery": "exercised",
+    "native_recovery": "prepare_remask_and_unilateral_commit_exact_replay",
+    "end_to_end_release_elapsed": 49235.186,
+    "end_to_end_serialized_rpc_bytes": 57168168896,
+    "end_to_end_scope": "fixture-bootstrap-PSI-signing-source-staged-binomial_glmm-and-DP-through-first-successful-release-including-retries-before-oracle-and-replay",
+    "release_serialized_rpc_bytes": 57013069651,
+    "serialized_rpc_scope": "R-v3-serialized-DSI-request-response-objects-including-retries-excluding-IPC-framing",
+    "protocol_payload": {
+      "exact_gc_unique_payload_bytes": 21156293411,
+      "exact_gc_offered_payload_bytes": 21156293411,
+      "source_ciphertext_delivered_bytes": 10977480
+    },
+    "protocol_payload_scope": "public-release-exactGC-and-source-transport-before-replay-no-bootstrap-PSI",
+    "expected_oracle_sha256": "6557396a5365d2c9b1740e12181d695cd10a323b4a3833d780462ef074b37f36",
+    "oracle_only": false,
+    "selected_candidate": 1,
+    "exact_best": 1,
+    "loss_gap": 0,
+    "artifact_key": "5cbdc97396978d929e657b11db5f86b3da4c54bf749822625fc73749de8793ef",
+    "certificate_sha256": "96a15327ff94e38e99319423b864d3200f627b9b4a25341d749b335222f60201"
+  },
+  "promotion_record": {
+    "job_id": "binomial_glmm-e8-k2-i01-recovery",
+    "K": 2,
+    "mode": "recovery",
+    "pod": "pod-cox-1",
+    "source_commits": {
+      "dsVert": "ad276b565d85fce3d01204365cce25b5380c99d3",
+      "dsVertClient": "bf737442adbca7ac733518da32c9cb0cd6338870"
+    },
+    "expected_oracle_sha256": "6557396a5365d2c9b1740e12181d695cd10a323b4a3833d780462ef074b37f36",
+    "oracle_equal": true,
+    "cold": true,
+    "tamper": true,
+    "recovery": true,
+    "seconds": 49235.186,
+    "wall_seconds": 49540.30120611191,
+    "bytes": {
+      "serialized_rpc": 57168168896,
+      "native": {
+        "exact_gc_unique_payload_bytes": 21156293411,
+        "exact_gc_offered_payload_bytes": 21156293411,
+        "source_ciphertext_delivered_bytes": 10977480
+      }
+    },
+    "evidence": "~/Documents/GitHub/dsvert-fleet-heavy/cox-pods/RESULTS.jsonl",
+    "status": "PASS",
+    "capacity_promotion_gate": false
+  },
+  "metrics_source": "/Users/david/Documents/GitHub/dsvert-fleet-heavy/cox-pods/artifacts/pod-cox-1/glmm-recovery/logs/binomial_glmm-e8-k2-i01-recovery.json"
+}

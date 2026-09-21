@@ -1,0 +1,66 @@
+{
+  "metrics": {
+    "family": "poisson_glmm",
+    "n": 2000,
+    "p": 3,
+    "grid": 2,
+    "candidates": 4,
+    "clusters": 500,
+    "slots": 4,
+    "owners": 3,
+    "epsilon": 8,
+    "instance": 1,
+    "elapsed": 70387.438,
+    "successful_call_elapsed": 70387.259,
+    "uninterrupted_baseline_elapsed": 70387.259,
+    "recovery": "not_exercised",
+    "native_recovery": "not_exercised",
+    "end_to_end_release_elapsed": 70645.237,
+    "end_to_end_serialized_rpc_bytes": 54787157149,
+    "end_to_end_scope": "fixture-bootstrap-PSI-signing-source-staged-poisson_glmm-and-DP-through-first-successful-release-including-retries-before-oracle-and-replay",
+    "release_serialized_rpc_bytes": 54629012582,
+    "serialized_rpc_scope": "R-v3-serialized-DSI-request-response-objects-including-retries-excluding-IPC-framing",
+    "protocol_payload": {
+      "exact_gc_unique_payload_bytes": 20301646173,
+      "exact_gc_offered_payload_bytes": 20301646173,
+      "source_ciphertext_delivered_bytes": 2744370
+    },
+    "protocol_payload_scope": "public-release-exactGC-and-source-transport-before-replay-no-bootstrap-PSI",
+    "expected_oracle_sha256": "d631d0c510ec4895b9f2c53bb0b3998b8d11e4aa4d84fe88aaf43a8d750ba613",
+    "oracle_only": false,
+    "selected_candidate": 1,
+    "exact_best": 1,
+    "loss_gap": 0,
+    "artifact_key": "5d18380dde471b70c040ff1b0a957917d0e75ca1cada9b54ac668f0e5cab8f39",
+    "certificate_sha256": "c184ee2dde77ee6846d1a99e921b324a874bf72c74d51757d465f4ebc37e3871"
+  },
+  "promotion_record": {
+    "job_id": "poisson_glmm-e8-k3-i01-baseline",
+    "K": 3,
+    "mode": "baseline",
+    "pod": "pod23",
+    "source_commits": {
+      "dsVert": "502b0058cd4b804b0e7adbba0e4c71485c755989",
+      "dsVertClient": "4c6c5622fbdc2ae97de315f18c18901d452f3c09"
+    },
+    "expected_oracle_sha256": "d631d0c510ec4895b9f2c53bb0b3998b8d11e4aa4d84fe88aaf43a8d750ba613",
+    "oracle_equal": true,
+    "cold": true,
+    "tamper": true,
+    "recovery": null,
+    "seconds": 70645.237,
+    "wall_seconds": 71099.46785831451,
+    "bytes": {
+      "serialized_rpc": 54787157149,
+      "native": {
+        "exact_gc_unique_payload_bytes": 20301646173,
+        "exact_gc_offered_payload_bytes": 20301646173,
+        "source_ciphertext_delivered_bytes": 2744370
+      }
+    },
+    "evidence": "~/Documents/GitHub/dsvert-fleet-heavy/RESULTS.jsonl",
+    "status": "PASS",
+    "capacity_promotion_gate": false
+  },
+  "metrics_source": "/Users/david/Documents/GitHub/dsvert-fleet-heavy/logs/poisson_glmm-e8-k3-i01-baseline/remote-logs/poisson_glmm-e8-k3-i01-baseline.json"
+}

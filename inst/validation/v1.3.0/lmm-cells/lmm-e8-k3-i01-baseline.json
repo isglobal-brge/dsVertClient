@@ -1,0 +1,66 @@
+{
+  "metrics": {
+    "family": "lmm",
+    "n": 2000,
+    "p": 3,
+    "grid": 2,
+    "candidates": 4,
+    "clusters": 500,
+    "slots": 4,
+    "owners": 3,
+    "epsilon": 8,
+    "instance": 1,
+    "elapsed": 29702.66,
+    "successful_call_elapsed": 29702.483,
+    "uninterrupted_baseline_elapsed": 29702.483,
+    "recovery": "not_exercised",
+    "native_recovery": "not_exercised",
+    "end_to_end_release_elapsed": 29890.088,
+    "end_to_end_serialized_rpc_bytes": 24030965558,
+    "end_to_end_scope": "fixture-bootstrap-PSI-signing-source-staged-LMM-and-DP-through-first-successful-release-including-retries-before-oracle-and-replay",
+    "release_serialized_rpc_bytes": 23872836536,
+    "serialized_rpc_scope": "R-v3-serialized-DSI-request-response-objects-including-retries-excluding-IPC-framing",
+    "protocol_payload": {
+      "exact_gc_unique_payload_bytes": 8836926020,
+      "exact_gc_offered_payload_bytes": 8836926020,
+      "source_ciphertext_delivered_bytes": 2744370
+    },
+    "protocol_payload_scope": "public-release-exactGC-and-source-transport-before-replay-no-bootstrap-PSI",
+    "expected_oracle_sha256": "17c093ad58042d7e1d23e3f5fb402552dc2fb7c9f928586f1044767e5c9f8fe5",
+    "oracle_only": false,
+    "selected_candidate": 2,
+    "exact_best": 2,
+    "loss_gap": 0,
+    "artifact_key": "a6cf3aa82a3fb38692b4561927b1dcf14c81a2d5fc9e7edb864f58607c6cd9f4",
+    "certificate_sha256": "ce0aebf39d8ca8f1fc61675fc3b14118f4ee03716a8c32979314706ae1c088e5"
+  },
+  "promotion_record": {
+    "job_id": "lmm-e8-k3-i01-baseline",
+    "K": 3,
+    "mode": "baseline",
+    "pod": "pod21",
+    "source_commits": {
+      "dsVert": "502b0058cd4b804b0e7adbba0e4c71485c755989",
+      "dsVertClient": "4c6c5622fbdc2ae97de315f18c18901d452f3c09"
+    },
+    "expected_oracle_sha256": "17c093ad58042d7e1d23e3f5fb402552dc2fb7c9f928586f1044767e5c9f8fe5",
+    "oracle_equal": true,
+    "cold": true,
+    "tamper": true,
+    "recovery": null,
+    "seconds": 29890.088,
+    "wall_seconds": 30262.035816907883,
+    "bytes": {
+      "serialized_rpc": 24030965558,
+      "native": {
+        "exact_gc_unique_payload_bytes": 8836926020,
+        "exact_gc_offered_payload_bytes": 8836926020,
+        "source_ciphertext_delivered_bytes": 2744370
+      }
+    },
+    "evidence": "~/Documents/GitHub/dsvert-fleet-heavy/RESULTS.jsonl",
+    "status": "PASS",
+    "capacity_promotion_gate": false
+  },
+  "metrics_source": "/Users/david/Documents/GitHub/dsvert-fleet-heavy/logs/lmm-e8-k3-i01-baseline/remote-logs/lmm-e8-k3-i01-baseline.json"
+}
