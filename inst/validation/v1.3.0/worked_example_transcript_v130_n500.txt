@@ -1,0 +1,339 @@
+
+> WR <- Sys.getenv("DSVERT_VALIDATION_ROOT", "/workspace/rc1")
+
+> SERVER_DIR <- file.path(WR, "dsVert")
+
+> MPC_BINARY <- file.path(SERVER_DIR, "inst/bin/linux-amd64/dsvert-mpc")
+
+> source(file.path(WR, "dsVertClient/inst/validation/v1.3.0/worked_example_custodian.R"))
+
+> library(dsVertClient)
+
+> packageVersion("dsVert")
+[1] ‘1.3.0’
+
+> packageVersion("dsVertClient")
+[1] ‘1.3.0’
+
+> set.seed(20260829)
+
+> n <- as.integer(Sys.getenv("DSVERT_EXAMPLE_N", "50"))
+
+> stopifnot(n %in% c(50, 500))
+
+> cat("Common generator patients:", n, "\n")
+Common generator patients: 500 
+
+> patient_ids <- sprintf("patient-%04d", seq_len(n))
+
+> x1 <- runif(n, -3, 3)
+
+> x2 <- runif(n, -3, 3)
+
+> x3 <- runif(n, -3, 3)
+
+> x4 <- runif(n, -3, 3)
+
+> y <- rbinom(n, 1, plogis(-0.5 + 0.8 * x1 - 0.6 * x2))
+
+> raw_site_a <- data.frame(patient_id = c(patient_ids, 
++     sprintf("site-a-extra-%02d", 1:3)), y = c(y, rbinom(3, 1, 
++     0.5)), x1 = c(x1, runif(3, -3, 3)), x2 = c(x2, runif(3, -3, 
++     3)), stringsAsFactors = FALSE)
+
+> raw_site_a <- raw_site_a[sample(nrow(raw_site_a)), 
++     ]
+
+> raw_site_b <- data.frame(patient_id = c(patient_ids, 
++     sprintf("site-b-extra-%02d", 1:4)), x3 = c(x3, runif(4, -3, 
++     3)), x4 = c(x4, runif(4, -3, 3)), stringsAsFactors = FALSE)
+
+> raw_site_b <- raw_site_b[sample(nrow(raw_site_b)), 
++     ]
+
+> print(coef(glm(y ~ x1 + x3, family = binomial())))
+(Intercept)          x1          x3 
+-0.61746142  0.66787349  0.04428353 
+
+> dataset_id <- "worked-example-binomial-v130"
+
+> state_root <- tempfile(".dsvert-worked-example-", 
++     tmpdir = WR)
+
+> dir.create(state_root, recursive = TRUE, mode = "0700")
+
+> .we_state_guard <- new.env(parent = emptyenv())
+
+> .we_state_guard$path <- state_root
+
+> reg.finalizer(.we_state_guard, function(guard) {
++     unlink(guard$path, recursive = TRUE)
++ }, onexit = TRUE)
+NULL
+
+> make_spec <- function(name) {
++     state_dir <- file.path(state_root, name)
++     dir.create(state_dir, recursive = TRUE, mode = "0700")
++     list(name = name, state_dir = state_dir, dslite_home = file.path(state_dir, 
++         "dslite"), mpc_binary = MPC_BINARY, dataset_id = dataset_id, 
++         dataset_version = "v1")
++ }
+
+> specs <- list(site_a = make_spec("site_a"), site_b = make_spec("site_b"))
+
+> base_policy <- function(spec) list(total_epsilon = 1, 
++     total_delta = 2^-100, domain = "worked-example-binomial", 
++     cohort_id = "worked-example-cohort-v1", adjacency = "add_remove_patient", 
++     patient_column = "patient_id", unit_capacity = 1024, numeric_grid_bits = 16, 
++     max_records_per_unit = 1, fixed_cohort_size = NULL, overflow_policy = "reject_snapshot", 
++     datasets = list(DA = list(id = spec$dataset_id, version = spec$dataset_version)), 
++     workload_scope = list(mode = "catalog_v1", numeric_moments = character(), 
++         categorical_marginals = character(), categorical_pairs = list(), 
++         correlations = list()), designated_noise_peers = c("site_a", 
++         "site_b"), synopsis_state_path = file.path(spec$state_dir, 
++         "dp-synopsis"))
+
+> policy_a <- c(base_policy(specs$site_a), list(numeric_bounds = list(y = c(0, 
++     1), x1 = c(-4, 4), x2 = c(-4, 4)), capsule_dataset_mapping = list(DA = c("y", 
++     "x1", "x2")), gaussian_specs = list()))
+
+> policy_b <- c(base_policy(specs$site_b), list(numeric_bounds = list(x3 = c(-4, 
++     4), x4 = c(-4, 4)), capsule_dataset_mapping = list(DA = c("x3", 
++     "x4")), gaussian_specs = list()))
+
+> peers <- list(site_a = we_boot_peer(specs$site_a, 
++     SERVER_DIR, raw = raw_site_a, policy = policy_a), site_b = we_boot_peer(specs$site_b, 
++     SERVER_DIR, raw = raw_site_b, policy = policy_b))
+
+> conns <- we_connections(peers)
+
+> identities <- ds.getIdentityPks(conns)
+
+> str(identities)
+List of 2
+ $ site_a: chr "pF3Gx4Oom80shN5dApN3bosVCghbdH8jmmpKgbyT7rE"
+ $ site_b: chr "E62j2LLD2idzfZoBvsC3CN0c35OzE34WkX_3ER_RwcM"
+
+> pins <- list(site_a = c(site_b = unname(unlist(identities$site_b))), 
++     site_b = c(site_a = unname(unlist(identities$site_a))))
+
+> we_close_peers(peers)
+
+> peers <- list(site_a = we_boot_peer(specs$site_a, 
++     SERVER_DIR, pins = pins$site_a, raw = raw_site_a, policy = policy_a), 
++     site_b = we_boot_peer(specs$site_b, SERVER_DIR, pins = pins$site_b, 
++         raw = raw_site_b, policy = policy_b))
+
+> conns <- we_connections(peers)
+
+> identical(ds.getIdentityPks(conns), identities)
+[1] TRUE
+
+> t_align <- system.time(ds.psiAlign("D", "patient_id", 
++     "DA", datasources = conns, verbose = FALSE))
+
+> t_align
+   user  system elapsed 
+  3.364   0.139  28.352 
+
+> aligned <- ds.isPsiAligned("DA", datasources = conns)
+
+> str(aligned)
+List of 2
+ $ aligned : logi TRUE
+ $ n_common: int NA
+
+> stopifnot(isTRUE(aligned$aligned), is.na(aligned$n_common))
+
+> we_sign_cross_grid(peers, conns, identities)
+
+> t_fit <- system.time(fit <- tryCatch(ds.vertGLM(site_a$y ~ 
++     site_a$x1 + site_b$x3, data = "DA", family = "binomial", 
++     analysis_id = "glm_primary", datasources = conns, verbose = FALSE), 
++     error = function(e) e))
+
+> t_fit
+   user  system elapsed 
+114.053   3.079 981.637 
+
+> if (inherits(fit, "error")) {
++     cat("ds.vertGLM (finite-grid binomial) FAILED with:\n")
++     print(conditionMessage(fit))
++ } else {
++     print(class(fit))
++     print(fit$coefficients)
++     print(fit$selected_candidate)
++     str(fit, max.level = 1)
++     print(fit[c("family", "estimand", "epsilon", "delta", "std_errors", 
++         "inference", "sticky_replay", "unlimited_replay", "additional_privacy_cost")])
++     cat("certificate prefix:", substr(fit$certificate_sha256, 
++         1, 16), "\n")
++ }
+[1] "dsvert_dp_glm_grid" "ds.glm"             "list"              
+(Intercept)   site_a$x1   site_b$x3 
+     -0.400       0.100      -0.075 
+[1] 1
+List of 80
+ $ released                              : logi TRUE
+ $ mechanism                             : chr "one-joint-complete-vector-discrete-laplace-draw-v3"
+ $ implementation                        : chr "exact_gc_one_joint_discrete_laplace_draw_ring128_v3"
+ $ backend                               : chr "exact_signed_Ring128_canonical_synopsis_vector"
+ $ sampler                               : chr "hkdf-sha256-chacha20-xor-binary-geometric-tv-v3"
+ $ randomness                            : chr "independent pinned-peer HKDF-SHA256/ChaCha20 streams; no analyst-controlled seed"
+ $ postprocessing                        : chr "fixed-public-coordinate-clamp-inside-exact-GC-before-selective-sharing-v1"
+ $ one_joint_draw                        : logi TRUE
+ $ mechanism_plan                        :List of 25
+ $ plan_sha256                           : chr "2dd10fa95a7ef60c24a819abfaa53daf6fa6309906e83b7f5ec1aec5d90a93db"
+ $ backend_selection                     : NULL
+ $ backend_assessment                    : NULL
+ $ epsilon                               : num 1
+ $ delta                                 : num 7.89e-31
+ $ implementation_delta                  : chr "242238073595410804323659619998837108692588212545422837045955365951163062036087474535022056068679253395726081597"| __truncated__
+ $ delta_aggregation                     : chr "single_joint_draw"
+ $ adjacency                             : chr "add_remove_patient"
+ $ sensitivity                           : num 7.38
+ $ sensitivity_norm                      : chr "l1"
+ $ l1_sensitivity                        : num 7.38
+ $ l2_sensitivity                        : num 3.82
+ $ sensitivity_scope                     : chr "complete_signed_canonical_synopsis_vector"
+ $ synopsis_mechanism                    :List of 15
+ $ mechanism_selection                   :List of 24
+ $ output_lattice_bits                   : int 16
+ $ output_lattice_scale                  : num 65536
+ $ artifact_key                          : chr "31afa79e39d6fe4af8322ea3e1f28f11fa487ce7356ea62397283ea97a18ad3c"
+ $ execution_id                          : chr "3d5ae380517a9db781f62b058c83507054e5fd7146ab8b1a29a4af84e13d46ba"
+ $ manifest_sha256                       : chr "c8866978caeb401ef9dcc0b76f5af4ce791c9dc5ffbb616a4eda107adc2d2e3b"
+ $ contract_sha256                       : chr "dc78f6007d80037d2c603b4fbdddef635a973face23c3824a98e8992839af992"
+ $ attempt_sha256                        : chr "450b7a990101eaf3c409c0d59ebbcf8a8ff982650fb56f114d69f62872db5d00"
+ $ source_contract_sha256                : chr "7effad144ea29f7bb697ff18ae5a48bce33cf26c5e02272901f051b3b954499a"
+ $ result_set_sha256                     : chr "a41d70ca838b6144a5039474b4919cddc87cd8a579f2a05e7478389f209aaeea"
+ $ final_vector_root                     : chr "bc2fe9e240f87696606fa9d05bcff15e63ab92377b4e6abd67319e0d986e5837"
+ $ coordinate_order_sha256               : chr "d80adb4729b159c6502b6de21e7896f51941e7d960b89e8a25ace13df095aca8"
+ $ synopsis_coordinate_count             : int 4
+ $ sticky_noise                          : chr "one_immutable_canonical_synopsis_artifact"
+ $ sticky_replay                         : logi TRUE
+ $ unlimited_replay                      : logi TRUE
+ $ release_provenance                    :List of 22
+ $ privacy                               :List of 9
+ $ source_values_exposed                 : logi FALSE
+ $ intermediate_values_exposed           : logi FALSE
+ $ composition_rule                      : chr "one_sticky_release_per_canonical_signed_artifact"
+ $ data_dependency                       : chr "immutable_signed_canonical_synopsis_snapshot"
+ $ security_claim                        :List of 8
+ $ clipped_coordinates                   : int NA
+ $ clamp_activation_disclosed            : logi FALSE
+ $ status                                : chr "ok"
+ $ analysis_id                           : chr "glm_primary"
+ $ cohort_id                             : chr "worked-example-cohort-v1"
+ $ logical_snapshot                      :List of 3
+ $ certificate_sha256                    : chr "4f85e44f2a6e74a6eab78603a93f4938547f23990727907b0b7efee3c7d3e72e"
+ $ signed_artifact                       :List of 39
+ $ server                                : chr "site_a"
+ $ family                                : chr "binomial_finite_grid"
+ $ estimand                              : chr "certified_bounded_cross_owner_signed_grid_only_v2"
+ $ coefficients                          : Named num [1:3] -0.4 0.1 -0.075
+  ..- attr(*, "names")= chr [1:3] "(Intercept)" "site_a$x1" "site_b$x3"
+ $ normalized_coefficients               : Named num [1:3] -0.5 0.8 -0.6
+  ..- attr(*, "names")= chr [1:3] "(Intercept)" "site_a$x1" "site_b$x3"
+ $ selected_candidate                    : int 1
+ $ selected_dp_negative_log_likelihood   : num 0.00474
+ $ candidate_selection                   : chr "minimum_signed_finite_grid_dp_postprocessing_v1"
+ $ covariance                            : NULL
+ $ vcov                                  : NULL
+ $ std_errors                            : NULL
+ $ standard_errors                       : NULL
+ $ p_values                              : NULL
+ $ deviance                              : num NA
+ $ aic                                   : num NA
+ $ inference                             : chr "unavailable_for_finite_grid_glm"
+ $ source_values_exposed                 : logi FALSE
+ $ intermediate_values_exposed           : logi FALSE
+ $ additional_server_calls_after_synopsis: int 0
+ $ additional_privacy_cost               : Named num [1:2] 0 0
+  ..- attr(*, "names")= chr [1:2] "epsilon" "delta"
+ $ cross_owner_state                     : chr "exact_gc_to_joint_dp_vector_v1"
+ $ implementation_state                  : chr "cross_owner_exact_gc_materialized"
+ $ legacy_fallback_called                : logi FALSE
+ $ provenance_certificate                :List of 37
+ $ disclosure_guard                      :List of 2
+ $ called_via                            : chr "ds.vertGLM_analysis_id"
+ - attr(*, "class")= chr [1:3] "dsvert_dp_glm_grid" "ds.glm" "list"
+$family
+[1] "binomial_finite_grid"
+
+$estimand
+[1] "certified_bounded_cross_owner_signed_grid_only_v2"
+
+$epsilon
+[1] 1
+
+$delta
+[1] 7.888609e-31
+
+$std_errors
+NULL
+
+$inference
+[1] "unavailable_for_finite_grid_glm"
+
+$sticky_replay
+[1] TRUE
+
+$unlimited_replay
+[1] TRUE
+
+$additional_privacy_cost
+epsilon   delta 
+      0       0 
+
+certificate prefix: 4f85e44f2a6e74a6 
+
+> if (!inherits(fit, "error")) {
++     replay <- ds.vertGLM(site_a$y ~ site_a$x1 + site_b$x3, data = "DA", 
++         family = "binomial", analysis_id = "glm_primary", datasources = conns, 
++         verbose = FALSE)
++     cat("coefficients identical:            ", identical(fit$coefficients, 
++         replay$coefficients), "\n")
++     cat("certificate_sha256 identical:      ", identical(fit$certificate_sha256, 
++         replay$certificate_sha256), "\n")
++     cat("provenance_certificate identical:  ", identical(fit$provenance_certificate, 
++         replay$provenance_certificate), "\n")
++     cat("digest(fit):    ", digest::digest(fit), "\n")
++     cat("digest(replay): ", digest::digest(replay), "\n")
++     cat("whole-release digest identical:    ", identical(digest::digest(fit), 
++         digest::digest(replay)), "\n")
++ }
+coefficients identical:             TRUE 
+certificate_sha256 identical:       TRUE 
+provenance_certificate identical:   TRUE 
+digest(fit):     2f30a6fbecc0c7b13df5627e0879fcda 
+digest(replay):  2f30a6fbecc0c7b13df5627e0879fcda 
+whole-release digest identical:     TRUE 
+
+> count <- tryCatch(ds.vertDPCount("DA", datasources = conns), 
++     error = function(e) e)
+
+> if (inherits(count, "error")) {
++     cat("ds.vertDPCount FAILED with:\n")
++     print(conditionMessage(count))
++ } else {
++     print(c(value = count$value, accuracy_95_abs = count$accuracy_95_abs))
++     cat("count released:", count$released, " sticky_replay:", 
++         count$sticky_replay, "\n")
++ }
+          value accuracy_95_abs 
+      501.58829        22.11177 
+count released: TRUE  sticky_replay: TRUE 
+
+> stopifnot(!inherits(fit, "error"), !inherits(count, 
++     "error"), isTRUE(count$released), identical(fit$certificate_sha256, 
++     replay$certificate_sha256), identical(fit$provenance_certificate, 
++     replay$provenance_certificate), identical(digest::digest(fit), 
++     digest::digest(replay)))
+
+> we_close_peers(peers)
+
+> unlink(state_root, recursive = TRUE)
+
+> sessionInfo()$otherPkgs$dsVertClient$Version
+[1] "1.3.0"

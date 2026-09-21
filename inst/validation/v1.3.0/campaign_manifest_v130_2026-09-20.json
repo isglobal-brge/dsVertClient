@@ -1,0 +1,213 @@
+{
+  "campaign": "dsVert 1.3.0 RC1 validation with corrected source-only multi-process harnesses",
+  "date": "2026-09-20",
+  "started_utc": "2026-09-20T19:59:48Z",
+  "completed_utc": "2026-09-21T00:32:05Z",
+  "packages": {
+    "dsVert": {
+      "version": "1.3.0",
+      "ref": "v1.3.0-rc1",
+      "sha": "f9d4a19980d9e78b6ab49fc64e6f8ebbd8e7c927",
+      "package_code_unchanged": true
+    },
+    "dsVertClient": {
+      "version": "1.3.0",
+      "ref": "v1.3.0-rc1",
+      "sha": "5e4c3ea7cd72b71bfac5ef91c21ee77094071888",
+      "package_code_unchanged": true
+    }
+  },
+  "source_verification": {
+    "dsVert_package_files_matching_rc1": 143,
+    "dsVertClient_package_files_matching_rc1": 158,
+    "scope": "R/*.R, DESCRIPTION, NAMESPACE"
+  },
+  "host": {
+    "pod_id": "lyzk3uwe3wlds7",
+    "os": "Ubuntu 22.04.5 LTS",
+    "architecture": "x86_64",
+    "R": "4.6.1 (2026-06-24)"
+  },
+  "runtime_sha256": {
+    "darwin-amd64/dsvert-mpc": "111e42fd3409b1488d72818c2faf417b52a3d595715908983c854779d62d6575",
+    "darwin-arm64/dsvert-mpc": "592a433ae9fdaba1481576c59a50a16d0dc746f61f6df2f0da3d5c1fd720ef53",
+    "linux-amd64/dsvert-mpc": "d5eabb8a7061b1edf5d35b4a8df7b4fb3513a0f1801bea2346de4b2af8d27cd3",
+    "windows-amd64/dsvert-mpc.exe": "50302b19e60905fafe217a013a8b7a6e2b179dbf105bc1897bff03ff47496367"
+  },
+  "runtime_checksum_verification": [
+    "darwin-amd64/dsvert-mpc: OK",
+    "darwin-arm64/dsvert-mpc: OK",
+    "linux-amd64/dsvert-mpc: OK",
+    "windows-amd64/dsvert-mpc.exe: OK"
+  ],
+  "harness_fix": {
+    "root_cause": "Identity recovery rejected the DP noise root under tempdir().",
+    "per_site_error": "The DP noise root must be outside temporary and installed-library trees",
+    "change": "Private state lives beside sibling source trees; cleanup retained.",
+    "path": "tools/validate_formal_dp_e2e.R",
+    "sha256": "1e732ccff1b7066e2e30ad2c4feecdc5cc28813d9be39a8d4567e793bb4aa2a9",
+    "cleanup_test_expectations_passed": 30
+  },
+  "battery_rerun": {
+    "artifact": "harnessB_v130_results.csv",
+    "retained_original_rc1_run": true,
+    "exercised_block_runs": 48,
+    "expectations_passed": 1898,
+    "failed": 0,
+    "errored": 0,
+    "completed_gates": [
+      "count_k235",
+      "synopsis_full_k2",
+      "lasso_focal_k235",
+      "describe_k35",
+      "gaussian_k35",
+      "glm_grid_k35",
+      "survival_k35",
+      "cross_owner_tamper_k3"
+    ]
+  },
+  "formal_dslite_harness": {
+    "artifact": "formal_dp_e2e_v130_2026-09-20.json",
+    "version": "dsvert-canonical-synopsis-count-e2e-v1",
+    "passed": true,
+    "started_utc": "2026-09-20 23:38:59 UTC",
+    "completed_utc": "2026-09-20 23:48:58 UTC",
+    "scenarios": [
+      {
+        "k": 2,
+        "passed": true,
+        "surface_method_count": 97,
+        "surface_sha256": "40756e8afbcb84eefa5df2f1ff58fc78a01edf42e08305d4228fc5bc5fe40b30",
+        "mpc_binary_sha256": "d5eabb8a7061b1edf5d35b4a8df7b4fb3513a0f1801bea2346de4b2af8d27cd3",
+        "psi_aligned_without_cardinality": true,
+        "protected_source_present_on_restart": true,
+        "identity_persistent": true,
+        "dp_value": 12.11273193359375,
+        "artifact_key": "df76cf6c9ba4a73560816af5e7950b78122e9aa5121cd2f24ed33a84fb8823f8",
+        "release_sha256": "368428f25d0a316672a2ff369aa59c858b32027500682ceb82e531afcc9c4852",
+        "sticky_same_output": true,
+        "restart_same_output": true,
+        "finite_global_composition_claim": false,
+        "sampler_invocations": [
+          1,
+          1
+        ],
+        "sampler_not_reinvoked_after_client_restart": true,
+        "signed_release_revalidated_after_service_restart": true
+      },
+      {
+        "k": 3,
+        "passed": true,
+        "surface_method_count": 97,
+        "surface_sha256": "40756e8afbcb84eefa5df2f1ff58fc78a01edf42e08305d4228fc5bc5fe40b30",
+        "mpc_binary_sha256": "d5eabb8a7061b1edf5d35b4a8df7b4fb3513a0f1801bea2346de4b2af8d27cd3",
+        "psi_aligned_without_cardinality": true,
+        "protected_source_present_on_restart": true,
+        "identity_persistent": true,
+        "dp_value": 9.158355712890625,
+        "artifact_key": "f4cdcf7b0dbafc491eaf83065141af313d6f1206786bd69616ffa1dfaec604a7",
+        "release_sha256": "23245d94db5df20092a4e86bff993b03ddb32ae14d6481f15f79fd3a292b1527",
+        "sticky_same_output": true,
+        "restart_same_output": true,
+        "finite_global_composition_claim": false,
+        "sampler_invocations": [
+          1,
+          1,
+          0
+        ],
+        "sampler_not_reinvoked_after_client_restart": true,
+        "signed_release_revalidated_after_service_restart": true
+      },
+      {
+        "k": 5,
+        "passed": true,
+        "surface_method_count": 97,
+        "surface_sha256": "40756e8afbcb84eefa5df2f1ff58fc78a01edf42e08305d4228fc5bc5fe40b30",
+        "mpc_binary_sha256": "d5eabb8a7061b1edf5d35b4a8df7b4fb3513a0f1801bea2346de4b2af8d27cd3",
+        "psi_aligned_without_cardinality": true,
+        "protected_source_present_on_restart": true,
+        "identity_persistent": true,
+        "dp_value": 11.02838134765625,
+        "artifact_key": "b5664bd672f2db642a8f8e41ab7caddfceaa5d197d4be5ceafb1883a04d05192",
+        "release_sha256": "78e3734b9d53d020578aa25f6073b9ba4c11ccb3970d1585d6508177d6ac5864",
+        "sticky_same_output": true,
+        "restart_same_output": true,
+        "finite_global_composition_claim": false,
+        "sampler_invocations": [
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        "sampler_not_reinvoked_after_client_restart": true,
+        "signed_release_revalidated_after_service_restart": true
+      }
+    ],
+    "mpc_binary_mode_unchanged": true,
+    "state_retained": false,
+    "state_path": null
+  },
+  "registry_export": {
+    "artifact": "method_status_v130.csv",
+    "retained_original_rc1_run": true,
+    "rows": 114,
+    "by_status": {
+      "promoted": 108,
+      "provisional": 2,
+      "quarantine": 4
+    },
+    "server_endpoint_count": 97
+  },
+  "worked_examples": {
+    "50": {
+      "transcript": "worked_example_transcript_v130_n50.txt",
+      "passed": true,
+      "seed": 20260829,
+      "formula": "site_a$y ~ site_a$x1 + site_b$x3",
+      "central_reference_formula": "y ~ x1 + x3",
+      "whole_release_replay_identical": true,
+      "certificate_replay_identical": true,
+      "count_released": true
+    },
+    "500": {
+      "transcript": "worked_example_transcript_v130_n500.txt",
+      "passed": true,
+      "seed": 20260829,
+      "formula": "site_a$y ~ site_a$x1 + site_b$x3",
+      "central_reference_formula": "y ~ x1 + x3",
+      "whole_release_replay_identical": true,
+      "certificate_replay_identical": true,
+      "count_released": true
+    }
+  },
+  "exit_status": {
+    "promoted_battery": 0,
+    "formal_dp_e2e": 0,
+    "registry_export": 0,
+    "worked_example_n50": 0,
+    "worked_example_n500": 0
+  },
+  "scope": "Historical heavy cross-owner campaigns were not rerun. No package version bump or release tag. No fleet changes.",
+  "sha256": {
+    "README.md": "cadada4d8222edc5aba66e4601286990353afb3485e57b44e702fafd39d8c6ad",
+    "completed_utc.txt": "0f573b33f2581a7a127f35d01c42b92bf94770a89a8fc27e9d258cea308fd902",
+    "environment.txt": "d3d01c9df0b3d5161735331ebd38a891740452fca5dc31b92dc87b68325306e4",
+    "exit_status.csv": "716a145371dd824b48180bf496ce21e6285cf9b64fa1a2f67372d7f5479fa773",
+    "export_registry.R": "9a3c7c44dde17446960ce2246f17d0d23cb892f240cbe213b47838d5dd42a768",
+    "formal_dp_e2e.log": "169d6865b723b0b881824fe6287858507a65ef5a38f79e778352faad9f7297c5",
+    "formal_dp_e2e_v130_2026-09-20.json": "a1f17566c4aa6dd8f3bc6f75205e56f5d57c94119d7270e5b5fdb48690dfecac",
+    "harnessB_v130_results.csv": "bdaf98cdd30df2816bd8247d0cc16c6960d271354d2a61318d179139e66e80d8",
+    "method_status_v130.csv": "4cfbfd74688af4afd5888905e08851f6c63cbc1799b792d9b4086afd65d2be5e",
+    "promoted_battery.log": "488e87a21c06b75646f3b3dc2e145e97688510adbcf85f1af03197b2672d6406",
+    "registry_counts_v130.json": "71411b4b33370ee4f07c3cdc38963cd39237e63501af91050c7be337a572ab3f",
+    "registry_export.log": "17f2e46b83b5c82040a2c2a715bed06488c7ddaf992a91ad9e8917c563338185",
+    "run_promoted_battery.R": "eea6377e2dcab804c45a6986a7c51c8c77cb1d09fafe7f534211ef2051fe18c6",
+    "runtime_checksums.log": "3204788e3e0cc61dfda384cb10c6cce49101bcebc159db685264352d840a7fae",
+    "started_utc.txt": "5835dfdc0b3fa04ba23093e5ff3e99edeedad02dc3903a728a22440fc1d43688",
+    "worked_example_custodian.R": "c9936eeaff244e4f3ea36347c02382f0fbcd6f932f11aa5a1d76cc1c87bc8197",
+    "worked_example_driver.R": "c8f08c57fd3c84bb0ed2a5f61e23edee57500ebb9fb750f4eb70b9f21a8fb51d",
+    "worked_example_transcript_v130_n50.txt": "1493c288cb0610cd2dcc6d4f1fe358a4ae76170efd5873ea47144c2e3cf77e68",
+    "worked_example_transcript_v130_n500.txt": "3afec604ea1f6f8d570d9c1fda6d4c459b2659ce73a3fba00bef4097d7fa7a39"
+  }
+}
