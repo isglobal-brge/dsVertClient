@@ -22,6 +22,12 @@
   "hkdf-sha256-chacha20-independent-full-draw-binary-geometric-tv-v3"
 .DSVERT_CLIENT_VECTOR_RELEASE_MECHANISM <-
   "two-independent-complete-vector-discrete-laplace-draws-v3"
+.DSVERT_CLIENT_VECTOR_PURE_BACKEND <-
+  "independent_full_global_draw_convolution_ring128_v4"
+.DSVERT_CLIENT_VECTOR_PURE_SAMPLER <-
+  "hkdf-sha256-chacha20-independent-full-draw-exact-geometric-v4"
+.DSVERT_CLIENT_VECTOR_PURE_RELEASE_MECHANISM <-
+  "two-independent-complete-vector-discrete-laplace-draws-v4"
 .DSVERT_CLIENT_VECTOR_EXACT_BACKEND <-
   "exact_gc_one_joint_discrete_laplace_draw_ring128_v3"
 .DSVERT_CLIENT_VECTOR_EXACT_SAMPLER <-
@@ -103,16 +109,20 @@
       manifest_selection = if (is.list(capsule_mechanism)) {
         capsule_mechanism$certificate
       } else NULL)
-  } else if (identical(backend, .DSVERT_CLIENT_VECTOR_BACKEND)) {
+  } else if (backend %in% c(.DSVERT_CLIENT_VECTOR_BACKEND,
+                            .DSVERT_CLIENT_VECTOR_PURE_BACKEND)) {
+    pure <- identical(backend, .DSVERT_CLIENT_VECTOR_PURE_BACKEND)
     list(
-      gaussian = FALSE, exact_gc = FALSE, selection_bound = TRUE,
+      gaussian = FALSE, exact_gc = FALSE, pure = pure, selection_bound = TRUE,
       mechanism = mechanism,
       plan_version = paste0(
         "dsvert-joint-dp-vector-independent-full-draw-",
-        "convolution-plan-v3"),
-      backend = .DSVERT_CLIENT_VECTOR_BACKEND,
-      sampler = .DSVERT_CLIENT_VECTOR_SAMPLER,
-      release_mechanism = .DSVERT_CLIENT_VECTOR_RELEASE_MECHANISM,
+        if (pure) "convolution-plan-v4" else "convolution-plan-v3"),
+      backend = backend,
+      sampler = if (pure) .DSVERT_CLIENT_VECTOR_PURE_SAMPLER else
+        .DSVERT_CLIENT_VECTOR_SAMPLER,
+      release_mechanism = if (pure) .DSVERT_CLIENT_VECTOR_PURE_RELEASE_MECHANISM else
+        .DSVERT_CLIENT_VECTOR_RELEASE_MECHANISM,
       complete_epsilon_per_peer = TRUE,
       delta_aggregation = "max_per_peer_not_sum",
       postprocessing =
@@ -441,6 +451,9 @@
       identical(.dsvert_joint_dp_client_json(plan),
                 .dsvert_joint_dp_client_json(expected_plan)) &&
       identical(selection$gaussian_plan_sha256, plan_sha256)
+  } else if (isTRUE(profile$pure)) {
+    valid <- .dsvert_vector_exact_plan_valid(plan, sensitivity_steps,
+                                           coordinate_count)
   } else {
     valid <- identical(plan$sensitivity_steps, sensitivity_steps) &&
       .dsvert_vector_integer_text(sensitivity_steps, TRUE) &&
@@ -736,12 +749,18 @@
          call. = FALSE)
   }
   policy <- context$status[[peers[[1L]]]]$policy
-  epsilon <- .dsvert_vector_decimal(reference$epsilon, 0, 8, TRUE)
-  delta <- .dsvert_vector_decimal(reference$allocated_delta, 0, 1, TRUE)
+  epsilon <- .dsvert_vector_decimal(
+    reference$epsilon, 0, if (isTRUE(profile$pure)) 10000 else 8, TRUE)
+  delta <- .dsvert_vector_decimal(
+    reference$allocated_delta, 0, 1, !isTRUE(profile$pure))
   coordinate_count <- as.numeric(manifest$workload$coordinate_count)
   .dsvert_vector_plan_validate(
     reference$mechanism_plan, reference$plan_sha256, profile,
     coordinate_count, reference$sensitivity_steps)
+  if (isTRUE(profile$pure)) .dsvert_joint_dp_pure_plan_validate(
+    reference$mechanism_plan, list(epsilon = reference$epsilon,
+      delta = reference$allocated_delta, sensitivity_steps = reference$sensitivity_steps,
+      total_coordinate_count = coordinate_count))
   chunk_coordinates <- if (isTRUE(profile$exact_gc)) {
     as.integer(reference$mechanism_plan$maximum_chunk_coordinates)
   } else {

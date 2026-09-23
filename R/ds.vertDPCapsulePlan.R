@@ -79,9 +79,12 @@
     length(selection$gaussian_backend_available) == 1L &&
     !is.na(selection$gaussian_backend_available) &&
     isTRUE(selection$gaussian_backend_available)
-  expected_backends <- if (gaussian_available) c(
+  legacy_backends <- if (gaussian_available) c(
     "joint-discrete-laplace-v3", "dyadic-discrete-gaussian-tv-bounded-v2")
   else "joint-discrete-laplace-v3"
+  expected_backends <- c("joint-discrete-laplace-v3",
+    "exact-unbounded-discrete-laplace-modular-v4",
+    if (gaussian_available) "dyadic-discrete-gaussian-tv-bounded-v2")
   gaussian_availability_valid <- if (gaussian_available) {
     is.null(selection$gaussian_unavailable_reason) &&
       is.list(selection$gaussian_calibration_request) &&
@@ -164,7 +167,8 @@
     is.logical(selection$positive_delta_reserved) &&
     identical(selection$positive_delta_reserved,
               selection$allocated_delta > 0) &&
-    identical(backends, expected_backends) && rounding_valid && plan_valid &&
+    (identical(backends, expected_backends) ||
+     identical(backends, legacy_backends)) && rounding_valid && plan_valid &&
     gaussian_availability_valid && utility_valid &&
     (if (selection$allocated_delta > 0) {
       is.list(selection$gaussian_calibration_request)

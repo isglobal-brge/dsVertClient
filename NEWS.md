@@ -1,11 +1,15 @@
-# Development
+# dsVertClient 1.4.0
 
 * Run the seven-family statistical battery against the active production Go
   sampler by default, using its actual signed-plan parameters and implementation
   allowance. Keep `--ideal-sampler` for comparison and write synthetic replay
   inputs, peer seeds and released coordinates with every new result.
-* Accept the canonical zero rational string emitted by Go. This does not
-  change production mechanism admission or relabel existing finite samplers.
+* Accept the v4 unbounded exact discrete-Laplace fallback and zero mechanism
+  delta under ideal independent bits, with keyed replay under the documented
+  pseudorandomness assumption. Validate its positive representability/wrap
+  certificate separately from privacy delta; retain v3 artifact readers.
+* Read the exact v4 plan's rational rate for accuracy calculations and preserve
+  the fixed signed Ring128 decoding and public clamp after modular addition.
 
 # dsVertClient 1.3.0
 

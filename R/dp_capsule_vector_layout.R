@@ -500,6 +500,32 @@
 }
 
 .dsvert_dp_vector_dyadic_tail_context <- function(plan) {
+  if (is.list(plan) && identical(plan$sampler,
+      .DSVERT_CLIENT_VECTOR_PURE_SAMPLER)) {
+    # The exact sampler has ratio exp(-epsilon / S). Bound the rational
+    # rate before evaluating its tail; no rounded Bernoulli plan is used.
+    numerator <- plan$epsilon_effective_upper_numerator
+    denominator <- as.character(openssl::bignum(
+      plan$epsilon_effective_upper_denominator) *
+        openssl::bignum(plan$sensitivity_steps))
+    rate_upper <- .dsvert_dp_vector_fraction_upper(
+      numerator, denominator, maximum_bytes = 512L)
+    reciprocal_upper <- .dsvert_dp_vector_fraction_upper(
+      denominator, numerator, maximum_bytes = 512L)
+    rate_lower <- .dsvert_dp_vector_next_down(1 / reciprocal_upper)
+    outward <- function(value, upward) {
+      for (index in seq_len(8L)) value <- if (upward) {
+        .dsvert_dp_vector_next_up(value)
+      } else .dsvert_dp_vector_next_down(value)
+      value
+    }
+    q_lower <- max(0, outward(-expm1(-rate_lower), FALSE))
+    q_upper <- min(1, outward(-expm1(-rate_upper), TRUE))
+    return(list(q = -expm1(-as.numeric(numerator) / as.numeric(denominator)),
+      q_lower = q_lower, q_upper = q_upper,
+      log_p_upper = .dsvert_dp_vector_next_up(-rate_lower),
+      log_one_plus_p_lower = outward(log(2 - q_upper), FALSE)))
+  }
   if (!is.list(plan) ||
       !.dsvert_vector_whole(plan$stop_bits, 1, 1023) ||
       !.dsvert_vector_integer_text(plan$stop_numerator)) {
@@ -555,6 +581,7 @@
                             .DSVERT_DP_MAX_COORDINATES)) {
     stop("The signed vector sampler-TV plan is invalid", call. = FALSE)
   }
+  if (identical(plan$sampler, .DSVERT_CLIENT_VECTOR_PURE_SAMPLER)) return(0)
   one <- .dsvert_dp_vector_fraction_upper(
     plan$one_geometric_tv_numerator,
     plan$one_geometric_tv_denominator)
@@ -578,6 +605,9 @@
         release$mechanism,
         .DSVERT_CLIENT_VECTOR_EXACT_RELEASE_MECHANISM)) {
       .DSVERT_CLIENT_VECTOR_EXACT_BACKEND
+    } else if (identical(release$mechanism,
+                         .DSVERT_CLIENT_VECTOR_PURE_RELEASE_MECHANISM)) {
+      .DSVERT_CLIENT_VECTOR_PURE_BACKEND
     } else if (identical(
         release$mechanism,
         .DSVERT_CLIENT_VECTOR_RELEASE_MECHANISM)) {
@@ -858,11 +888,26 @@
     min(.dsvert_dp_vector_next_up(2 * implementation_delta),
         1 - .Machine$double.eps)
   }
+  wrap_bound <- if (isTRUE(profile$pure) && isTRUE(certified_plan)) {
+    public_lattice <- .dsvert_dp_synopsis_client_lattice(
+      manifest, .dsvert_dp_capsule_vector_layout(manifest))
+    maximum <- openssl::bignum(0)
+    for (index in seq_along(public_lattice$raw_upper_bounds)) {
+      upper <- openssl::bignum(public_lattice$raw_upper_bounds[[index]]) *
+        (openssl::bignum(2)^public_lattice$scale_shifts[[index]])
+      if (upper > maximum) maximum <- upper
+    }
+    .dsvert_vector_exact_sum_certificate(
+      plan, maximum, plan$total_coordinate_count)$sum_wrap_bound
+  } else NULL
+  wrap_probability <- if (is.null(wrap_bound)) 0 else
+    .dsvert_vector_exact_probability_upper(wrap_bound)
   # Utility transfers the signed finite sampler to its ideal law. The exact-GC
   # route emits one joint draw and therefore charges its vector TV once; the
   # certified convolution fallback charges the two independent peer TVs.
   alpha <- .dsvert_dp_vector_next_down(
-    .dsvert_dp_vector_next_down(1 - confidence - implementation_tv))
+    .dsvert_dp_vector_next_down(
+      1 - confidence - implementation_tv - wrap_probability))
   if (!is.finite(alpha) || alpha <= 0) {
     stop("The vector sampler cannot certify the requested confidence",
          call. = FALSE)
@@ -911,12 +956,17 @@
     method = if (isTRUE(profile$exact_gc)) paste(
       "exact ideal one-draw two-sided-geometric tail with union bound;",
       "signed vector sampler TV deducted once; clamp inside exact GC applied")
+    else if (isTRUE(profile$pure)) paste(
+      "exact two-sided-geometric convolution tail with union bound;",
+      "zero sampler TV; modular Ring128 decoding and fixed-clamp range applied")
     else paste(
       "exact ideal two-sided-geometric convolution tail with union bound;",
       "two-peer finite-sampler TV deducted; fixed-clamp range applied"),
     implementation_delta_bound = implementation_delta,
     implementation_tv_upper_bound = implementation_tv,
     sampler_tv_upper_bound = implementation_tv,
+    sum_wrap_bound = wrap_bound,
+    sum_wrap_probability_upper_bound = wrap_probability,
     accuracy_plan_certified = isTRUE(certified_plan),
     additional_privacy_cost = c(epsilon = 0, delta = 0))
 }

@@ -184,6 +184,22 @@
 }
 .dsvert_dp_frequency_client_plan_v1 <- function(config) {
     selection <- config$backend_selection
+    if (identical(selection$summary$version, "dsvert-frequency-backend-selection-v3")) {
+        result <- .dsvert_dp_analysis_frequency_plan_summary_v2(config)
+        profile <- .dsvert_dp_analysis_frequency_profile_v1(selection$summary$selected_primitive)
+        if (isTRUE(profile$gaussian)) {
+            request <- selection$selected_request
+            plan <- selection$selected_plan
+            vector_profile <- list(exact_gc = FALSE, gaussian = TRUE,
+                plan_version = profile$plan, sampler = profile$sampler,
+                mechanism = "dyadic_discrete_gaussian_truncated_tv_bounded",
+                manifest_selection = list(gaussian_calibration_request = request,
+                    gaussian_plan = plan, gaussian_plan_sha256 = .dsvert_vector_hash(plan)))
+            .dsvert_vector_plan_validate(plan, .dsvert_vector_hash(plan), vector_profile,
+                config$factor_domain$dimension, request$l2_sensitivity_steps)
+        }
+        return(result)
+    }
     fields <- c("summary", "selected_request", "selected_plan", "selected_accuracy_certificate", "selection_certificate")
     if (!.dsvert_dp_frequency_client_object_v1(selection, fields))
         stop("Invalid Frequency backend selection.", call. = FALSE)
@@ -260,7 +276,7 @@
     valid <- all(vapply(value[ids], .dsvert_dp_analysis_client_scalar_id, logical(1L))) && is.character(value$privacy_unit_column) && grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", value$privacy_unit_column) &&
         identical(value$source_binding_id, source_binding) && .dsvert_dp_frequency_client_object_v1(owner, c("peer_name", "identity_pk")) && .dsvert_dp_frequency_client_object_v1(privacy,
         c("adjacency", "epsilon", "delta")) && .dsvert_dp_frequency_client_object_v1(calibration, "implementation_delta") && privacy$adjacency %in% c("add_remove_patient", "replace_one_fixed_cohort") &&
-        scalar(privacy$epsilon, .Machine$double.xmin, 8) && scalar(privacy$delta, .Machine$double.xmin, 1 - .Machine$double.eps) && scalar(calibration$implementation_delta, .Machine$double.xmin,
+        scalar(privacy$epsilon, .Machine$double.xmin, 8) && scalar(privacy$delta, 0, 1 - .Machine$double.eps) && scalar(calibration$implementation_delta, 0,
         privacy$delta) && scalar(value$coordinate_upper_bound, 1, 1e+06, TRUE) && identical(as.numeric(value$max_records_per_unit), 1) && identical(value$repeated_record_policy, "psi_v5_first_eligible_source_record_per_privacy_unit_v1") &&
         identical(value$overflow_policy, "clip_to_psi_v5_first_eligible_source_record_v1") && identical(value$missingness_policy, "missing_or_out_of_domain_rows_are_ignored") && .dsvert_dp_analysis_frequency_hex_v1(value$backend_build_sha256) &&
         scalar(value$transport_chunk_coordinates, 1, .Machine$integer.max, TRUE) && identical(value$factor_entry_sha256, .dsvert_dp_frequency_client_factor_hash_v1(factor))
@@ -335,7 +351,7 @@
                 norm = profile$sensitivity_norm, value = sensitivity), calibration = list(version = "dsvert-calibration-v1", sampler = profile$sampler, implementation_delta = config$calibration$implementation_delta),
                 randomness = list(version = "dsvert-randomness-plan-v1", lanes = list(final_noise = list(version = "dsvert-randomness-lane-v1", purpose = "privatize_final_vector", primitive = profile$sampler,
                   coordinates = config$factor_domain$dimension)))), epsilon = config$privacy$epsilon, delta = config$privacy$delta), numeric = list(version = "dsvert-numeric-semantics-v1",
-            value_bits = 128, fractional_bits = 0, rounding = "toward_zero", overflow = "reject", output_encoding = "twos_complement_integer_v1"), public_shape = list(counts = config$factor_domain$dimension))
+            value_bits = 128, fractional_bits = 0, rounding = "toward_zero", overflow = if (isTRUE(profile$exact)) "modular_noise_then_fixed_clamp" else "reject", output_encoding = "twos_complement_integer_v1"), public_shape = list(counts = config$factor_domain$dimension))
     contract <- list(version = .DSVERT_DP_ANALYSIS_CONTRACT_VERSION, artifact_key = .dsvert_dp_analysis_artifact_key_v1(semantic), semantic = semantic, execution = list(version = .DSVERT_DP_ANALYSIS_EXECUTION_VERSION,
         peer_pins = as.list(config$peer_pins), backend = list(kernel = config$backend_selection$summary$selected_primitive, ring = "ring128", build_sha256 = config$backend_build_sha256),
         transport = list(chunk_coordinates = config$transport_chunk_coordinates)))

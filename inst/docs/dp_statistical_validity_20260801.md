@@ -58,7 +58,9 @@ Every accuracy region is simultaneous only over the coordinates stated in its
 release certificate. Laplace regions use the exact granular integer mechanism
 confidence calculation and a union bound. Gaussian regions subtract the
 published sampler total-variation bound from the tail allocation before the
-same union-bound logic. Cellwise projection to non-negative integers does not
+same union-bound logic. The 1.4.0 exact v4 Laplace fallback has zero sampler
+TV and reserves its separate certified statistic-plus-noise sum-wrap bound;
+see [the v4 mechanism contract](exact_laplace_fallback_v4.md). Cellwise projection to non-negative integers does not
 widen error relative to a non-negative true count.
 
 The deployed Gaussian implementation slack is not an empirical tolerance. Its

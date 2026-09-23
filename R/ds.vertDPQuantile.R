@@ -187,6 +187,9 @@
   profile <- if (identical(
       x$mechanism, .DSVERT_CLIENT_VECTOR_RELEASE_MECHANISM)) {
     list(sampler = .DSVERT_CLIENT_VECTOR_SAMPLER)
+  } else if (identical(x$mechanism,
+                       .DSVERT_CLIENT_VECTOR_PURE_RELEASE_MECHANISM)) {
+    list(sampler = .DSVERT_CLIENT_VECTOR_PURE_SAMPLER)
   } else if (identical(
       x$mechanism, .DSVERT_CLIENT_VECTOR_GAUSSIAN_RELEASE_MECHANISM)) {
     list(sampler = .DSVERT_CLIENT_VECTOR_GAUSSIAN_SAMPLER)

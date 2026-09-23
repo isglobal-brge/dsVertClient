@@ -236,7 +236,7 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
   grid$selected_delta <- NA_real_
   grid$formal_backend <- "signed_server_capsule_manifest"
   grid$deployed_backends <- paste(
-    "joint-discrete-laplace-v3",
+    "joint-discrete-laplace-v3", "exact-unbounded-discrete-laplace-modular-v4",
     "dyadic-discrete-gaussian-tv-bounded-v2", sep = ";")
   grid$gaussian_backend_deployed <- TRUE
   grid$gaussian_preview_supported <- grid$gaussian_sampler_supported

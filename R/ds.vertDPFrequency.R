@@ -27,6 +27,29 @@
     steps <- signed_95
     method <- paste("signed selected 95%", certificate$method,
                     "simultaneous certificate")
+  } else if (identical(full$guarantee, "pure-dp-under-ideal-bits")) {
+    # Use the same exact exponential envelope as the signed 95% certificate.
+    # The fixed clamp always supplies radius `maximum`, even on ring wrap.
+    failure <- .dsvert_dp_analysis_frequency_decimal_fraction_v1(
+      .dsvert_dp_vector_next_down(1 - confidence))
+    multiplier <- 4 * dimension * failure$denominator
+    power <- failure$numerator
+    k <- 0L
+    while (power < multiplier) {
+      power <- 10 * power
+      k <- k + 1L
+    }
+    epsilon <- openssl::bignum(full$epsilon_effective_upper_numerator)
+    denominator <- openssl::bignum(full$epsilon_effective_upper_denominator) *
+      openssl::bignum(full$sensitivity_steps)
+    threshold <- (3 * k * denominator + epsilon - 1) %/% epsilon
+    radius <- 2 * threshold
+    if (radius >= maximum_big || maximum_big + radius > (openssl::bignum(2)^127) - 1) {
+      steps <- maximum
+    } else steps <- as.numeric(radius)
+    if (confidence > 0.95) steps <- max(steps, signed_95)
+    finite_support <- FALSE
+    method <- "exact two-draw exponential union with modular release and fixed clamp"
   } else if (gaussian) {
     accuracy_plan <- full
     accuracy_plan$maximum_noise_magnitude_two_peers <- format(

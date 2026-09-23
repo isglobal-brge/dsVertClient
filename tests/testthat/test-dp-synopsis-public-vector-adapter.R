@@ -102,7 +102,7 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
 
 .synopsis_public_fixture <- function(
     k = 3L, scaled_values = c("256", "512"), gaussian_artifact = NULL,
-    .source = NULL, parent_authorization = NULL) {
+    .source = NULL, parent_authorization = NULL, pure = FALSE) {
   dimension <- if (is.null(gaussian_artifact)) 2L else
     1L + as.integer(gaussian_artifact$coordinate_count)
   if (!is.character(scaled_values) || length(scaled_values) != dimension) {
@@ -130,7 +130,7 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
     peer_pinset_sha256 = .dsvert_vector_hash(as.list(pins)),
     peer_count = as.integer(k),
     designated_noise_peers = as.list(authorities),
-    artifact_epsilon = 1, artifact_delta = 2^-100,
+    artifact_epsilon = 1, artifact_delta = if (pure) 0 else 2^-100,
     adjacency = legacy_policy$adjacency,
     patient_column = legacy_policy$patient_column,
     unit_capacity = as.integer(legacy_policy$unit_capacity),
@@ -240,6 +240,7 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
   manifest$workload$sensitivity <- list(
     l1 = dimension * scale, l2 = sqrt(dimension) * scale)
   manifest$workload$mechanism_selection <- list(version = "test-selection")
+  if (pure) manifest$workload$mechanism_selection$allocated_delta <- 0
   manifest$workload$capsule_mechanism <- c(
     manifest$workload$capsule_mechanism,
     list(
@@ -315,10 +316,24 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
   plan$implementation_delta_bound <- "3.944304526105059e-31"
   plan$per_peer_implementation_delta_denominator <- safe_delta_denominator
   plan$per_peer_implementation_delta_bound <- "3.944304526105059e-31"
+  if (pure) {
+    binary <- Sys.getenv("DSVERT_MPC_BINARY", unset = "")
+    skip_if(!nzchar(binary), "set DSVERT_MPC_BINARY for exact production plan")
+    input <- tempfile()
+    output <- tempfile()
+    on.exit(unlink(c(input, output)), add = TRUE)
+    jsonlite::write_json(list(epsilon = "1", delta = "0",
+      sensitivity_steps = sensitivity_steps, total_coordinate_count = dimension),
+      input, auto_unbox = TRUE)
+    stopifnot(identical(system2(binary, "joint-dp-vector-convolution-plan-v4",
+      stdin = input, stdout = output), 0L))
+    plan <- jsonlite::read_json(output, simplifyVector = FALSE)
+  }
   full_plan_sha256 <- .dsvert_vector_hash(plan)
   profile <- .dsvert_vector_profile(
     manifest$workload$capsule_mechanism,
-    backend = .DSVERT_CLIENT_VECTOR_BACKEND)
+    backend = if (pure) .DSVERT_CLIENT_VECTOR_PURE_BACKEND else
+      .DSVERT_CLIENT_VECTOR_BACKEND)
   profile_value <- list(
     version = "dsvert-stateless-catalog-synopsis-backend-profile-v1",
     mechanism = "discrete-laplace", backend = profile$backend,
@@ -337,10 +352,13 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
     selected_before_private_material = TRUE,
     retry_may_change_backend = FALSE,
     policy_version =
-      .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_COST_POLICY_VERSION,
-    total_coordinate_count = dimension, maximum_promoted_coordinates = 1L,
+      if (pure) "dsvert-joint-dp-vector-pure-laplace-policy-v1" else
+        "dsvert-joint-dp-vector-exact-gc-cost-policy-v1",
+    total_coordinate_count = dimension,
+    maximum_promoted_coordinates = if (pure) 0L else 1L,
     promoted = FALSE, backend = profile$backend,
-    selection_reason = "above_public_exact_gc_cost_ceiling")
+    selection_reason = if (pure) "zero_delta_requires_exact_unbounded_laplace" else
+      "above_public_exact_gc_cost_ceiling")
   lattice_info <- .dsvert_dp_synopsis_client_lattice(manifest, layout)
   lattice_transform <- list(
     version = manifest$workload$release_lattice$version,
@@ -358,7 +376,8 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
     sensitivity_norm = "l1", sensitivity_steps = sensitivity_steps,
     ring_bits = 128L, fractional_bits = 0L)
   epsilon <- formatC(1, digits = 18L, format = "e", decimal.mark = ".")
-  delta <- formatC(2^-100, digits = 18L, format = "e", decimal.mark = ".")
+  delta <- formatC(if (pure) 0 else 2^-100, digits = 18L,
+                   format = "e", decimal.mark = ".")
   request <- list(
     epsilon = epsilon, delta = delta, sensitivity_steps = sensitivity_steps,
     total_coordinate_count = dimension)
@@ -380,6 +399,8 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
     "release_implementation_delta_aggregation",
     "two_peer_ideal_transfer_delta_numerator",
     "two_peer_ideal_transfer_delta_denominator")
+  if (pure) convolution_fields <- c(
+    convolution_fields, .DSVERT_CLIENT_VECTOR_PURE_CERTIFICATE_FIELDS)
   draw_law <- plan[convolution_fields]
   physical_identity <- list(
     version = "dsvert-stateless-catalog-synopsis-physical-plan-v1",
@@ -528,7 +549,8 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
   execution_id <- digest::digest(charToRaw(paste0(
     "dsVert/stateless-catalog-synopsis/execution-id/v1|",
     artifact_value$artifact_key)), algo = "sha256", serialize = FALSE)
-  support <- openssl::bignum(plan$maximum_noise_magnitude) * 2L
+  support <- if (pure) NULL else
+    openssl::bignum(plan$maximum_noise_magnitude) * 2L
   positive_limit <- (openssl::bignum(2) ^ 127L) - 1L
   maximum_scaled_source <- openssl::bignum(0)
   for (index in seq_len(dimension)) {
@@ -536,7 +558,15 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
       (openssl::bignum(2) ^ lattice_info$scale_shifts[[index]])
     if (candidate > maximum_scaled_source) maximum_scaled_source <- candidate
   }
-  ring_unsigned <- list(
+  ring_unsigned <- if (pure) c(list(
+    version = "dsvert-stateless-catalog-synopsis-ring128-certificate-v2",
+    ring_bits = 128L, fractional_bits = 0L,
+    maximum_scaled_source_coordinate = as.character(maximum_scaled_source),
+    maximum_release_noise_magnitude = "unbounded",
+    positive_limit = as.character(positive_limit), wrap_bound_certified = TRUE,
+    representability_bound = plan$representability_bound),
+    .dsvert_vector_exact_sum_certificate(plan, maximum_scaled_source, dimension))
+  else list(
     version = "dsvert-stateless-catalog-synopsis-ring128-certificate-v1",
     ring_bits = 128L, fractional_bits = 0L,
     maximum_scaled_source_coordinate = as.character(maximum_scaled_source),
@@ -1036,4 +1066,22 @@ test_that("client rejects zero delta certificates from finite Laplace v3", {
     .dsvert_dp_synopsis_client_compile(
       compilation, trusted, fixture$manifest_bundle),
     "pure DP|finite Laplace|positive implementation delta")
+})
+
+
+test_that("zero-delta exact v4 Synopsis release validates its modular certificate and replay", {
+  fixture <- .synopsis_public_fixture(pure = TRUE)
+  arguments <- c("release_receipts", "replay_responses", "manifest_bundle", "status", "artifact")
+  release <- do.call(.dsvert_dp_synopsis_public_vector_v1, fixture[arguments])
+  repeated <- do.call(.dsvert_dp_synopsis_public_vector_v1, fixture[arguments])
+  expect_identical(release, repeated)
+  expect_identical(release$backend, .DSVERT_CLIENT_VECTOR_PURE_BACKEND)
+  expect_identical(release$delta, 0)
+  expect_identical(release$implementation_delta, "0/1")
+  expect_identical(release$mechanism_plan$guarantee, "pure-dp-under-ideal-bits")
+  expect_true(release$mechanism_plan$wrap_bound_certified)
+  expect_identical(release$values, as.numeric(fixture$values) / 256)
+  altered <- fixture
+  altered$artifact$artifact$physical_plan$full_plan$representability_bound <- "0"
+  expect_error(do.call(.dsvert_dp_synopsis_public_vector_v1, altered[arguments]))
 })

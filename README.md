@@ -69,7 +69,12 @@ the exact-GC one-draw Laplace route for a scalar vector, the scalable
 two-complete-draw Laplace convolution for wider vectors, or the formal
 fixed-work dyadic discrete-Gaussian backend when its exact server plan strictly
 improves the certified simultaneous radius. The preview does not impersonate
-that decision: the signed server manifest is authoritative.
+that decision: the signed server manifest is authoritative. The 1.4.0
+[exact v4 Laplace fallback](inst/docs/exact_laplace_fallback_v4.md) uses
+unbounded draws and modular Ring128 addition, accepts zero mechanism delta
+under ideal independent bits, and carries a separate positive utility-wrap
+certificate. Keyed replay assumes pseudorandomness; v3 artifacts retain their
+original finite-sampler guarantees.
 
 ```r
 ds.vertDPCalibrate(capsule_epsilon = c(1, 3, 5),

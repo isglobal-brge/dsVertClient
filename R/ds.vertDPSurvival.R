@@ -655,6 +655,7 @@ ds.vertDPSurvival <- function(data_name, analysis_id, server = NULL,
   }
   current_vector <- is.list(x) && x$mechanism %in% c(
     .DSVERT_CLIENT_VECTOR_RELEASE_MECHANISM,
+    .DSVERT_CLIENT_VECTOR_PURE_RELEASE_MECHANISM,
     .DSVERT_CLIENT_VECTOR_GAUSSIAN_RELEASE_MECHANISM)
   synopsis <- .dsvert_dp_survival_is_synopsis(x)
   if (!inherits(x, "ds.vertDPSurvival") || !is.list(x) ||

@@ -427,11 +427,14 @@
   backend <- if (identical(
       mechanism$mechanism, .DSVERT_CLIENT_VECTOR_GAUSSIAN_MECHANISM)) {
     NULL
+  } else if (identical(.dsvert_dp_glm_grid_cross_noise_policy(trusted$manifest),
+                       "dsvert-joint-dp-vector-pure-laplace-policy-v1")) {
+    .DSVERT_CLIENT_VECTOR_PURE_BACKEND
   } else if (isTRUE(grid_cross) || layout$coordinate_count <=
              .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_MAX_PROMOTED_COORDINATES) {
     .DSVERT_CLIENT_VECTOR_EXACT_BACKEND
   } else {
-    .DSVERT_CLIENT_VECTOR_BACKEND
+    .DSVERT_CLIENT_VECTOR_PURE_BACKEND
   }
   cold_profile <- .dsvert_vector_profile(
     mechanism,

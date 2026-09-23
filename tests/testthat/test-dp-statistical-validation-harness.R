@@ -99,7 +99,13 @@ test_that("the battery defaults to production and records replayable requests", 
   expect_identical(result$sampler_records, repeated$sampler_records)
   expect_identical(result$metadata$sampler_mode, "production")
   expect_identical(result$metadata$randomness, "keyed-stream-computational")
-  expect_identical(result$metadata$guarantee, "approximate-dp-under-ideal-bits")
+  expect_identical(result$metadata$guarantee, "pure-dp-under-ideal-bits")
+  expect_true(all(vapply(result$sampler_records$oracle_plans, function(record) {
+    identical(record$request$allocated_delta, "0") &&
+      identical(record$response$plan$implementation_delta_numerator, "0") &&
+      identical(record$response$plan$wrap_bound_certified, TRUE) &&
+      !identical(record$response$plan$representability_bound, "0")
+  }, logical(1L))))
   expect_length(result$sampler_records$oracle_plans, 5L)
   expect_length(result$sampler_records$oracle_batches, 6L)
   expect_length(result$sampler_records$draws, 6L)
@@ -121,7 +127,7 @@ test_that("the battery defaults to production and records replayable requests", 
                              pmax(0, exact + noise)))
   }, logical(1L))))
   changed <- batches[[1L]]$response
-  changed$guarantee <- "pure-dp-under-ideal-bits"
+  changed$guarantee <- "approximate-dp-under-ideal-bits"
   expect_error(env$.dv_check_oracle(changed, batches[[1L]]$request),
                "inconsistent privacy metadata")
   expect_null(env$.dv_sampler_state)

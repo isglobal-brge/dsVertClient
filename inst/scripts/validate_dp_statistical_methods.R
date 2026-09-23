@@ -32,12 +32,12 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
 .dv_namespace <- asNamespace("dsVertClient")
 .dv_get <- function(name) get(name, envir = .dv_namespace, inherits = FALSE)
 .dv_laplace_mechanism <- .dv_get(
-  ".DSVERT_CLIENT_VECTOR_RELEASE_MECHANISM")
-.dv_laplace_sampler <- .dv_get(".DSVERT_CLIENT_VECTOR_SAMPLER")
-.dv_laplace_backend <- .dv_get(".DSVERT_CLIENT_VECTOR_BACKEND")
+  ".DSVERT_CLIENT_VECTOR_PURE_RELEASE_MECHANISM")
+.dv_laplace_sampler <- .dv_get(".DSVERT_CLIENT_VECTOR_PURE_SAMPLER")
+.dv_laplace_backend <- .dv_get(".DSVERT_CLIENT_VECTOR_PURE_BACKEND")
 .dv_laplace_plan <- .dv_get(".dsvert_vector_profile")(
   "discrete-laplace", backend = .dv_laplace_backend)$plan_version
-.dv_allocated_delta <- "7.888609052210118e-31"
+.dv_allocated_delta <- "0"
 .dv_ideal_comparison_delta <- "1/1267650600228229401496703205376"
 .dv_sampler_state <- NULL
 .dv_level <- 0.95
@@ -70,6 +70,22 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
       natural_l2_sensitivity = sqrt(natural_l1_sensitivity),
       integer_l2_sensitivity_steps =
         sqrt(natural_l1_sensitivity) * scale)))
+  # A public synthetic lattice envelope also certifies the modular-sum utility
+  # event. Every recorded exact coordinate is checked below against this range.
+  synthetic_bound <- floor((2^53 - 1) / scale)
+  synthetic_descriptor <- list(owner_peer = "synthetic", dataset = "public",
+    statistic_maximum = synthetic_bound)
+  dimension <- manifest$workload$coordinate_count
+  families <- stats::setNames(rep(list(list()), 10L), c(
+    "admitted_count", "numeric_moments", "numeric_pair_moments",
+    "gaussian_models", "fixed_numeric_histograms", "categorical_marginals",
+    "categorical_pairs", "correlation_artifacts", "describe_artifacts",
+    "survival_artifacts"))
+  families$admitted_count <- synthetic_descriptor
+  if (dimension > 1L) families$fixed_numeric_histograms <- list(
+    artifacts = list(public = c(synthetic_descriptor,
+                               list(coordinate_count = dimension - 1L))))
+  manifest$workload$families <- families
   release <- list(
     epsilon = as.numeric(epsilon),
     mechanism = .dv_laplace_mechanism,
@@ -94,7 +110,9 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
       convolution = TRUE)
   }
   failure_upper <- coordinate_count * exp(log_tail) +
-    radius$implementation_tv_upper_bound
+    radius$implementation_tv_upper_bound +
+    if (is.null(radius$sum_wrap_probability_upper_bound)) 0 else
+      radius$sum_wrap_probability_upper_bound
   list(
     family = family,
     epsilon = epsilon,
@@ -107,6 +125,9 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
     mechanism_plan = mechanism_plan,
     implementation_tv_upper_bound =
       radius$implementation_tv_upper_bound,
+    sum_wrap_bound = radius$sum_wrap_bound,
+    sum_wrap_probability_upper_bound = radius$sum_wrap_probability_upper_bound,
+    maximum_scaled_source_coordinate = sprintf("%.0f", synthetic_bound * scale),
     certified_failure_probability_upper = failure_upper,
     certified_coverage_lower = max(0, 1 - failure_upper))
 }
@@ -203,6 +224,10 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
     stop("Production sampler oracle returned inconsistent privacy metadata",
          call. = FALSE)
   }
+  .dv_get(".dsvert_joint_dp_pure_plan_validate")(
+    response$plan, list(epsilon = request$epsilon,
+      delta = request$allocated_delta, sensitivity_steps = request$sensitivity_steps,
+      total_coordinate_count = request$coordinate_count))
   .dv_get(".dsvert_vector_plan_validate")(
     response$plan, .dv_get(".dsvert_vector_hash")(response$plan),
     .dv_get(".dsvert_vector_profile")(
@@ -217,7 +242,7 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   if (!is.null(cached)) return(cached$response$plan)
   request <- .dv_oracle_request(
     epsilon, sensitivity, n, 0L,
-    paste0("dsvert-dp-statistical-validation-v3:plan:", key))
+    paste0("dsvert-dp-statistical-validation-v4:plan:", key))
   response <- .dv_call_sampler(request, .dv_sampler_state$binary)
   .dv_check_oracle(response, request)
   .dv_sampler_state$plans[[key]] <- list(request = request, response = response)
@@ -227,7 +252,7 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
 .dv_production_batch <- function(n, contract) {
   batch_index <- length(.dv_sampler_state$batches) + 1L
   label <- paste(
-    "dsvert-dp-statistical-validation-v3", contract$family,
+    "dsvert-dp-statistical-validation-v4", contract$family,
     batch_index, sep = ":")
   request <- .dv_oracle_request(
     contract$epsilon, contract$natural_l1_sensitivity * contract$scale,
@@ -287,6 +312,10 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
 }
 
 .dv_noisy_coordinates <- function(exact, contract, maximum) {
+  if (any(!is.finite(exact)) || any(exact < 0) ||
+      any(exact * contract$scale > as.numeric(contract$maximum_scaled_source_coordinate))) {
+    stop("Synthetic coordinates exceed the certified public source envelope", call. = FALSE)
+  }
   released <- .dv_clamp(exact + .dv_draw_noise(length(exact), contract),
                         maximum)
   position <- length(.dv_sampler_state$draws)
@@ -295,6 +324,9 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   .dv_sampler_state$draws[[position]]$released_coordinate_integer <-
     sprintf("%.0f", released * contract$scale)
   .dv_sampler_state$draws[[position]]$scale <- contract$scale
+  .dv_sampler_state$draws[[position]]$sum_wrap_bound <- contract$sum_wrap_bound
+  .dv_sampler_state$draws[[position]]$maximum_scaled_source_coordinate <-
+    contract$maximum_scaled_source_coordinate
   .dv_sampler_state$draws[[position]]$clamp_lower <- "0"
   .dv_sampler_state$draws[[position]]$clamp_upper_integer <-
     sprintf("%.0f", maximum * contract$scale)
@@ -1466,6 +1498,11 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
     implementation_delta = value$implementation_delta,
     implementation_tv_upper_bound =
       value$implementation_tv_upper_bound,
+    sum_wrap_bound = if (is.null(value$sum_wrap_bound)) NA_character_ else
+      value$sum_wrap_bound,
+    sum_wrap_probability_upper_bound = if (
+      is.null(value$sum_wrap_probability_upper_bound)) 0 else
+        value$sum_wrap_probability_upper_bound,
     certified_failure_probability_upper =
       value$certified_failure_probability_upper,
     certified_coverage_lower = value$certified_coverage_lower,
@@ -1644,7 +1681,7 @@ dsvert_run_dp_statistical_validation <- function(
       oracle_batches = .dv_sampler_state$batches,
       draws = .dv_sampler_state$draws),
     metadata = list(
-      schema_version = "dsvert-dp-statistical-validation-v3",
+      schema_version = "dsvert-dp-statistical-validation-v4",
       sampler_mode = sampler,
       sampler = if (sampler == "production") .dv_laplace_sampler else
         "base-r-ideal-two-sided-geometric-comparison",
@@ -1742,7 +1779,9 @@ dsvert_run_dp_statistical_validation <- function(
     .dv_markdown_table(result$contracts),
     "",
     "The analytic gate combines the convolution tail, the union bound over",
-    "the released coordinates, and the implementation allowance.",
+    "the released coordinates, implementation allowance, and the separate",
+    "statistic-plus-noise sum-wrap utility bound. Privacy delta remains zero",
+    "for the exact production v4 sampler.",
     if (result$metadata$sampler_mode == "production") paste(
       "The actual production plan supplies the certified dyadic tail and",
       "two-peer sampler TV allowance.") else paste(

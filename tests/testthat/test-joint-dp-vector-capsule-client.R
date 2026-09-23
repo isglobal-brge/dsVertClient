@@ -1268,3 +1268,69 @@ test_that("vector client rejects signature and bilateral replay tampering", {
     replay, fixture$context, prepared$contract, releases[[1L]], 0L),
     "different vector replay")
 })
+
+
+test_that("signed production v4 capsule PREPARE admits zero delta and binds epsilon", {
+  binary <- Sys.getenv("DSVERT_MPC_BINARY", unset = "")
+  skip_if(!nzchar(binary), "set DSVERT_MPC_BINARY for production v4 PREPARE")
+  fixture <- .vector_client_fixture(k = 2L)
+  input <- tempfile()
+  output <- tempfile()
+  withr::defer(unlink(c(input, output)))
+  jsonlite::write_json(list(epsilon = "1", delta = "0",
+    sensitivity_steps = fixture$contract$sensitivity_steps,
+    total_coordinate_count = fixture$contract$coordinate_count), input,
+    auto_unbox = TRUE)
+  expect_identical(system2(binary, "joint-dp-vector-convolution-plan-v4",
+    stdin = input, stdout = output), 0L)
+  plan <- jsonlite::read_json(output, simplifyVector = FALSE)
+  prepare <- fixture$aggregate(fixture$context$conns,
+    stats::setNames(lapply(fixture$context$designated, function(peer) call(
+      name = "dsvertJointDPVectorPrepareDS")), fixture$context$designated),
+    error = function(...) NULL)
+  updated <- stats::setNames(lapply(fixture$context$designated, function(peer) {
+    value <- .dsvert_joint_dp_client_decode(prepare[[peer]], "prepare", 2L * 1024L^2)
+    value$signature <- NULL
+    value$backend <- .DSVERT_CLIENT_VECTOR_PURE_BACKEND
+    value$sampler <- .DSVERT_CLIENT_VECTOR_PURE_SAMPLER
+    value$allocated_delta <- "0"
+    value$mechanism_plan <- plan
+    value$plan_sha256 <- .dsvert_vector_hash(plan)
+    assessment <- value$backend_assessment
+    assessment$plan_sha256 <- value$plan_sha256
+    assessment$maximum_chunk_coordinates <- plan$maximum_chunk_coordinates
+    assessment$cost_policy_version <- "dsvert-joint-dp-vector-pure-laplace-policy-v1"
+    assessment$maximum_promoted_coordinates <- 0L
+    assessment$selection_reason <- "zero_delta_requires_exact_unbounded_laplace"
+    assessment$assessment_sha256 <- .dsvert_joint_dp_vector_exact_gc_client_hash(
+      assessment[setdiff(names(assessment), "assessment_sha256")])
+    value$backend_assessment <- assessment
+    selection <- value$backend_selection
+    selection$backend <- value$backend
+    selection$cost_policy_version <- assessment$cost_policy_version
+    selection$maximum_promoted_coordinates <- 0L
+    selection$selection_reason <- assessment$selection_reason
+    selection$assessment_sha256 <- assessment$assessment_sha256
+    selection$exact_gc_plan_sha256 <- value$plan_sha256
+    selection$exact_gc_maximum_chunk_coordinates <- plan$maximum_chunk_coordinates
+    selection$selection_sha256 <- .dsvert_joint_dp_vector_exact_gc_client_hash(
+      selection[setdiff(names(selection), "selection_sha256")])
+    value$backend_selection <- selection
+    value$backend_selection_sha256 <- selection$selection_sha256
+    fixture$sign_receipt(value, peer)
+  }), fixture$context$designated)
+  for (peer in fixture$context$designated) fixture$context$status[[peer]]$policy$capsule_delta <- 0
+  prepared <- .dsvert_vector_prepare_set(updated, fixture$context, fixture$manifest,
+    fixture$release_instance, fixture$manifest_bundle$manifest_sha256)
+  expect_identical(prepared$contract$delta, "0")
+  expect_true(prepared$contract$profile$pure)
+  changed <- stats::setNames(lapply(fixture$context$designated, function(peer) {
+    value <- .dsvert_joint_dp_client_decode(updated[[peer]], "prepare", 2L * 1024L^2)
+    value$signature <- NULL
+    value$epsilon <- "2"
+    fixture$sign_receipt(value, peer)
+  }), fixture$context$designated)
+  expect_error(.dsvert_vector_prepare_set(changed, fixture$context, fixture$manifest,
+    fixture$release_instance, fixture$manifest_bundle$manifest_sha256),
+    "exact Laplace plan certificate")
+})

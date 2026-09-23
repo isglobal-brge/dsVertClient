@@ -1,0 +1,135 @@
+{
+  "backend_selection": {
+    "summary": {
+      "version": "dsvert-frequency-backend-selection-v3",
+      "policy_sha256": "c7f7b64a1e8cd18e960f54d057473f9ed89b301395dda63bf7d0f3990a666cbf",
+      "selection_certificate_sha256": "b3957c7608c430049d43a00f9ef810d135c069630a99d6c5d605a42d5b1ce006",
+      "objective": "minimum_certified_simultaneous_95_abs",
+      "tie_break": "convolution_laplace_v4_on_equal_certified_radius",
+      "candidates": {
+        "convolution": {
+          "available": true,
+          "planner_request_sha256": "f2eb05077b042a59c907dc79ccc248f3527581831218870b671ce9bd4d533c95",
+          "full_plan_sha256": "5bb6cb3297b83df5934d10cd5e6d078fe9e5a3562adb9bdff63a0595d5d22195",
+          "accuracy_certificate_sha256": "665bdbaa2f5c31981bb2dc2391a65a11a9e2a9cffe8db97c6fba1e22ef7d17a1",
+          "simultaneous_95_abs": "18",
+          "absolute_support": "100"
+        },
+        "gaussian": {
+          "available": false,
+          "planner_request_sha256": "636a4133b04be85fc2897988c3a1cce621d407933afa613b46ce5c58ee0a65f3",
+          "unavailable_reason": "public_gaussian_plan_unavailable: delta must be in (0,1)"
+        }
+      },
+      "selected_primitive": "independent_full_global_draw_convolution_ring128_v4",
+      "selected_simultaneous_95_abs": "18"
+    },
+    "selected_request": {
+      "epsilon": "1e+00",
+      "delta": "0e+00",
+      "sensitivity_steps": "1",
+      "total_coordinate_count": 3
+    },
+    "selected_plan": {
+      "version": "dsvert-joint-dp-vector-independent-full-draw-convolution-plan-v4",
+      "sampler": "hkdf-sha256-chacha20-independent-full-draw-exact-geometric-v4",
+      "stop_bits": 0,
+      "stop_numerator": "0",
+      "uniform_bits": 0,
+      "binary_geometric_bits": 0,
+      "bernoulli_thresholds": [],
+      "sensitivity_steps": "1",
+      "total_coordinate_count": 3,
+      "epsilon_effective_upper_numerator": "1",
+      "epsilon_effective_upper_denominator": "1",
+      "one_geometric_tv_numerator": "0",
+      "one_geometric_tv_denominator": "1",
+      "tail_upper_numerator": "0",
+      "tail_upper_denominator": "1",
+      "rounding_upper_numerator": "0",
+      "rounding_upper_denominator": "1",
+      "implementation_delta_numerator": "0",
+      "implementation_delta_denominator": "1",
+      "implementation_delta_bound": "0",
+      "maximum_noise_magnitude": "unbounded",
+      "maximum_chunk_coordinates": 3,
+      "private_stream_bytes_per_coordinate": 0,
+      "accounting": "global iid discrete Laplace: each peer samples one unbounded exact full-epsilon global-L1-sensitivity discrete-Laplace vector; ideal-bit mechanism delta is zero; Ring128 modular reduction, fixed signed decoding and clamping are post-processing; representability and sum-wrap bounds are utility events distinct from mechanism delta",
+      "capability_available": true,
+      "guarantee": "pure-dp-under-ideal-bits",
+      "randomness": "keyed-stream-computational",
+      "noise_support": "unbounded_integer",
+      "noise_commitment": "modulo_2^128",
+      "representability_bound": "1e-56713727820156410577229101238628035241",
+      "wrap_bound_certified": true,
+      "wrap_bound": "1e-56713727820156410577229101238628035241",
+      "wrap_bound_event": "at_least_one_peer_draw_outside_signed_Ring128",
+      "admitted_ranges": {
+        "epsilon_minimum_exclusive": "0",
+        "epsilon_maximum": "10000",
+        "sensitivity_steps": "positive_integer",
+        "epsilon_over_sensitivity_minimum": "2^-100",
+        "total_coordinate_count_minimum": 1,
+        "total_coordinate_count_maximum": 1000000,
+        "ring_bits": 128
+      },
+      "independent_noise_peer_count": 2,
+      "complete_epsilon_per_peer": true,
+      "epsilon_divided_by_peer_count": false,
+      "geometric_variables_per_peer_per_coordinate": 2,
+      "geometric_variables_total_per_coordinate": 4,
+      "per_peer_implementation_delta_numerator": "0",
+      "per_peer_implementation_delta_denominator": "1",
+      "per_peer_implementation_delta_bound": "0",
+      "release_implementation_delta_aggregation": "max_per_peer_not_sum",
+      "two_peer_ideal_transfer_delta_numerator": "0",
+      "two_peer_ideal_transfer_delta_denominator": "1",
+      "two_peer_ideal_transfer_delta_bound": "0",
+      "threat_model": "pinned_semi_honest_noncolluding_noise_peers; analyst_may_collude_with_at_most_one_noise_peer",
+      "privacy_argument": "conditioned on either peer's source share, seed, draw, and transcript, the other peer contributes one hidden complete-epsilon global-sensitivity exact discrete-Laplace vector mechanism; translation, the second independent draw, modular reduction, signed decoding, and fixed clamping are post-processing"
+    },
+    "selected_accuracy_certificate": {
+      "primitive": "independent_full_global_draw_convolution_ring128_v4",
+      "plan_sha256": "5bb6cb3297b83df5934d10cd5e6d078fe9e5a3562adb9bdff63a0595d5d22195",
+      "event": "max_j_abs_error_gt_radius",
+      "method": "exact_two_draw_exponential_union_modular_clamp_v1",
+      "release_tv_upper_numerator": "0",
+      "release_tv_upper_denominator": "1",
+      "simultaneous_95_abs": "18",
+      "absolute_support": "100"
+    },
+    "selection_certificate": {
+      "version": "dsvert-joint-dp-frequency-backend-selection-certificate-v2",
+      "policy": "minimum_certified_simultaneous_95_abs_convolution_tie_v2",
+      "objective": "minimum_certified_simultaneous_95_abs",
+      "selected_primitive": "independent_full_global_draw_convolution_ring128_v4",
+      "selected_plan_sha256": "5bb6cb3297b83df5934d10cd5e6d078fe9e5a3562adb9bdff63a0595d5d22195",
+      "selected_simultaneous_95_abs": "18",
+      "tie_break": "convolution_laplace_v4_on_equal_certified_radius",
+      "input_scope": "public_adjacency_planner_requests_and_coordinate_upper_bound_only",
+      "source_material_consulted": false,
+      "private_randomness_consulted": false,
+      "runtime_failure_consulted": false,
+      "automatic_fallback": false,
+      "utility_optimality_claimed": false
+    }
+  },
+  "privacy": {
+    "adjacency": "add_remove_patient",
+    "epsilon": 1,
+    "delta": 0
+  },
+  "calibration": {
+    "implementation_delta": 0
+  },
+  "factor_domain": {
+    "dimension": 3,
+    "levels": [
+      "a",
+      "b",
+      "c"
+    ]
+  },
+  "coordinate_upper_bound": 100,
+  "transport_chunk_coordinates": 3
+}

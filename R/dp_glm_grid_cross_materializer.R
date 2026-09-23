@@ -332,6 +332,16 @@
 }
 
 .dsvert_dp_glm_grid_cross_noise_policy <- function(manifest) {
+  if (identical(as.numeric(manifest$workload$mechanism_selection$allocated_delta), 0)) {
+    staged <- manifest$workload$families$gaussian_models$artifacts
+    if (any(vapply(staged, function(artifact) {
+      .dsvert_dp_staged_grouped_artifact(artifact) || identical(artifact$family, "cox")
+    }, logical(1L)))) {
+      stop("Staged source requires positive delta for its exact-GC validity gate.",
+           call. = FALSE)
+    }
+    return("dsvert-joint-dp-vector-pure-laplace-policy-v1")
+  }
   artifacts <- .dsvert_dp_glm_grid_cross_artifacts(manifest)
   if (length(artifacts)) {
     if (!identical(manifest$workload$capsule_mechanism$mechanism, "discrete-laplace")) {

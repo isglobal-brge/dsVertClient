@@ -491,6 +491,11 @@
       retry_may_change_backend = FALSE)
   } else {
     cost_policy <- .dsvert_dp_glm_grid_cross_noise_policy(trusted$manifest)
+    if (identical(cost_policy, "dsvert-joint-dp-vector-exact-gc-cost-policy-v2") &&
+        identical(physical$backend_selection$policy_version,
+                  "dsvert-joint-dp-vector-exact-gc-cost-policy-v1")) {
+      cost_policy <- "dsvert-joint-dp-vector-exact-gc-cost-policy-v1"
+    }
     limit <- .dsvert_joint_dp_vector_exact_gc_client_cost_limit(cost_policy)
     promoted <- layout$coordinate_count <= limit
     if (limit > 1L && !promoted) stop("Cross-grid release exceeds its certified envelope", call. = FALSE)
@@ -504,8 +509,14 @@
       maximum_promoted_coordinates = limit,
       promoted = promoted,
       backend = if (promoted) .DSVERT_CLIENT_VECTOR_EXACT_BACKEND else
-        .DSVERT_CLIENT_VECTOR_BACKEND,
-      selection_reason = if (promoted) {
+        if (cost_policy %in% c("dsvert-joint-dp-vector-exact-gc-cost-policy-v2",
+                              "dsvert-joint-dp-vector-pure-laplace-policy-v1")) {
+          .DSVERT_CLIENT_VECTOR_PURE_BACKEND
+        } else .DSVERT_CLIENT_VECTOR_BACKEND,
+      selection_reason = if (identical(cost_policy,
+          "dsvert-joint-dp-vector-pure-laplace-policy-v1")) {
+        "zero_delta_requires_exact_unbounded_laplace"
+      } else if (promoted) {
         "within_public_exact_gc_cost_ceiling"
       } else "above_public_exact_gc_cost_ceiling")
   }
@@ -561,6 +572,8 @@
       "tail_upper_denominator", "rounding_upper_numerator",
       "rounding_upper_denominator", "implementation_delta_numerator",
       "implementation_delta_denominator", "maximum_noise_magnitude")
+    if (isTRUE(profile$pure)) fields <- c(
+      fields, .DSVERT_CLIENT_VECTOR_PURE_CERTIFICATE_FIELDS)
     if (!isTRUE(profile$exact_gc)) c(
       fields, "independent_noise_peer_count", "complete_epsilon_per_peer",
       "epsilon_divided_by_peer_count",
@@ -590,13 +603,15 @@
     randomness$lanes$final_noise
   } else NULL
   epsilon_number <- if (is.list(privacy)) {
-    .dsvert_vector_decimal(privacy$epsilon, 0, 8, open_minimum = TRUE)
+    .dsvert_vector_decimal(privacy$epsilon, 0,
+      if (isTRUE(profile$pure)) 10000 else 8, open_minimum = TRUE)
   } else NULL
   delta_number <- if (is.list(privacy)) {
     .dsvert_vector_decimal(
       privacy$delta, 0, 1, open_minimum = isTRUE(profile$gaussian))
   } else NULL
-  if (!isTRUE(profile$gaussian) && identical(delta_number, 0)) {
+  if (!isTRUE(profile$gaussian) && !isTRUE(profile$pure) &&
+      identical(delta_number, 0)) {
     stop(paste(
       "The finite synopsis Laplace v3 backend has positive implementation",
       "delta and cannot certify pure DP"), call. = FALSE)
@@ -661,6 +676,8 @@
     layout$coordinate_count,
     if (isTRUE(profile$gaussian)) physical$request$l2_sensitivity_steps else
       lattice$sensitivity_steps)
+  if (isTRUE(profile$pure)) .dsvert_joint_dp_pure_plan_validate(
+    physical$full_plan, physical$request)
   if (!isTRUE(profile$gaussian) &&
       (!.dsvert_dp_synopsis_client_fraction_leq(
         physical$draw_law$epsilon_effective_upper_numerator,
@@ -737,8 +754,10 @@
   support_field <- if (isTRUE(profile$gaussian)) {
     "maximum_noise_magnitude_two_peers"
   } else "maximum_noise_magnitude"
-  support <- openssl::bignum(physical$full_plan[[support_field]])
-  if (!isTRUE(profile$gaussian) && !isTRUE(profile$exact_gc)) {
+  support <- if (isTRUE(profile$pure)) NULL else
+    openssl::bignum(physical$full_plan[[support_field]])
+  if (!isTRUE(profile$pure) && !isTRUE(profile$gaussian) &&
+      !isTRUE(profile$exact_gc)) {
     support <- support * openssl::bignum(2)
   }
   maximum <- openssl::bignum(0)
@@ -748,10 +767,19 @@
     if (scaled > maximum) maximum <- scaled
   }
   positive_limit <- (openssl::bignum(2) ^ 127L) - 1L
-  if (support > positive_limit || maximum + support > positive_limit) {
+  if (maximum > positive_limit || (!isTRUE(profile$pure) &&
+      (support > positive_limit || maximum + support > positive_limit))) {
     stop("The synopsis Ring128 headroom is insufficient", call. = FALSE)
   }
-  ring_unsigned <- list(
+  ring_unsigned <- if (isTRUE(profile$pure)) {
+    c(list(version = "dsvert-stateless-catalog-synopsis-ring128-certificate-v2",
+      ring_bits = 128L, fractional_bits = 0L,
+      maximum_scaled_source_coordinate = as.character(maximum),
+      maximum_release_noise_magnitude = "unbounded",
+      positive_limit = as.character(positive_limit), wrap_bound_certified = TRUE,
+      representability_bound = physical$full_plan$representability_bound),
+      .dsvert_vector_exact_sum_certificate(physical$full_plan, maximum, dimension))
+  } else list(
     version = "dsvert-stateless-catalog-synopsis-ring128-certificate-v1",
     ring_bits = 128L, fractional_bits = 0L,
     maximum_scaled_source_coordinate = as.character(maximum),

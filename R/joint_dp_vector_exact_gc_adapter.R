@@ -6,7 +6,7 @@
 .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_SELECTION_VERSION <-
   "dsvert-joint-dp-vector-backend-selection-v2"
 .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_COST_POLICY_VERSION <-
-  "dsvert-joint-dp-vector-exact-gc-cost-policy-v1"
+  "dsvert-joint-dp-vector-exact-gc-cost-policy-v2"
 .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_MAX_PROMOTED_COORDINATES <- 1L
 .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_BINDING_VERSION <-
   "dsvert-joint-dp-vector-exact-gc-binding-v1"
@@ -20,6 +20,8 @@
 .dsvert_joint_dp_vector_exact_gc_client_cost_limit <- function(policy) {
   switch(policy,
     "dsvert-joint-dp-vector-exact-gc-cost-policy-v1" = 1L,
+    "dsvert-joint-dp-vector-exact-gc-cost-policy-v2" = 1L,
+    "dsvert-joint-dp-vector-pure-laplace-policy-v1" = 0L,
     "dsvert-cross-grid-exact-gc-cost-policy-v2" = 51L,
     "dsvert-lmm-grid-exact-gc-cost-policy-v1" = 257L,
     stop("Invalid exact-GC cost policy.", call. = FALSE))
@@ -60,7 +62,10 @@
   promoted <- length(total) == 1L && !is.na(total) && is.finite(total) &&
     total == floor(total) && total >= 1L && total <= 1000000L &&
     total <= limit
-  reason <- if (isTRUE(promoted)) {
+  reason <- if (identical(assessment$cost_policy_version,
+      "dsvert-joint-dp-vector-pure-laplace-policy-v1")) {
+    "zero_delta_requires_exact_unbounded_laplace"
+  } else if (isTRUE(promoted)) {
     "within_public_exact_gc_cost_ceiling"
   } else {
     "above_public_exact_gc_cost_ceiling"
@@ -68,7 +73,11 @@
   coherent <- identical(assessment$representable, TRUE) &&
     length(maximum) == 1L && !is.na(maximum) && is.finite(maximum) &&
     maximum == floor(maximum) && maximum >= 1L &&
-    maximum <= .DSVERT_CLIENT_JOINT_DP_VECTOR_MAX_CHUNK &&
+    maximum <= (if (assessment$cost_policy_version %in% c(
+      "dsvert-joint-dp-vector-exact-gc-cost-policy-v2",
+      "dsvert-joint-dp-vector-pure-laplace-policy-v1") && !promoted) {
+      .DSVERT_CLIENT_VECTOR_CHUNK_COORDINATES
+    } else .DSVERT_CLIENT_JOINT_DP_VECTOR_MAX_CHUNK) &&
     identical(as.numeric(assessment$maximum_promoted_coordinates), as.numeric(limit)) &&
     identical(assessment$promoted, promoted) &&
     identical(assessment$selection_reason, reason)
@@ -116,10 +125,17 @@
     total <= limit
   expected_backend <- if (isTRUE(promoted)) {
     .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_BACKEND
+  } else if (selection$cost_policy_version %in% c(
+      "dsvert-joint-dp-vector-exact-gc-cost-policy-v2",
+      "dsvert-joint-dp-vector-pure-laplace-policy-v1")) {
+    .DSVERT_CLIENT_VECTOR_PURE_BACKEND
   } else {
     .DSVERT_CLIENT_VECTOR_BACKEND
   }
-  expected_reason <- if (isTRUE(promoted)) {
+  expected_reason <- if (identical(selection$cost_policy_version,
+      "dsvert-joint-dp-vector-pure-laplace-policy-v1")) {
+    "zero_delta_requires_exact_unbounded_laplace"
+  } else if (isTRUE(promoted)) {
     "within_public_exact_gc_cost_ceiling"
   } else {
     "above_public_exact_gc_cost_ceiling"
@@ -130,7 +146,10 @@
     identical(selection$selection_reason, expected_reason) &&
     length(maximum) == 1L && !is.na(maximum) && is.finite(maximum) &&
     maximum == floor(maximum) && maximum >= 1L &&
-    maximum <= .DSVERT_CLIENT_JOINT_DP_VECTOR_MAX_CHUNK
+    maximum <= (if (identical(expected_backend,
+      .DSVERT_CLIENT_VECTOR_PURE_BACKEND)) {
+      .DSVERT_CLIENT_VECTOR_CHUNK_COORDINATES
+    } else .DSVERT_CLIENT_JOINT_DP_VECTOR_MAX_CHUNK)
   valid <- is.list(selection) && setequal(names(selection), required) &&
     identical(selection$version,
       .DSVERT_CLIENT_JOINT_DP_VECTOR_EXACT_GC_SELECTION_VERSION) &&

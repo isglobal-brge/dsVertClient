@@ -1,8 +1,9 @@
 .dsvert_dp_table_vector_profile <- function(x) {
   capsule_mechanism <- x$capsule_mechanism
   if (is.null(capsule_mechanism)) {
-    capsule_mechanism <- if (identical(
-        x$mechanism, .DSVERT_CLIENT_VECTOR_RELEASE_MECHANISM)) {
+    capsule_mechanism <- if (isTRUE(x$mechanism %in% c(
+        .DSVERT_CLIENT_VECTOR_RELEASE_MECHANISM,
+        .DSVERT_CLIENT_VECTOR_PURE_RELEASE_MECHANISM))) {
       "discrete-laplace"
     } else if (identical(
         x$mechanism, .DSVERT_CLIENT_VECTOR_GAUSSIAN_RELEASE_MECHANISM)) {
@@ -33,6 +34,9 @@
     paste(
       "exact ideal one-draw two-sided-geometric tail with union bound;",
       "signed vector sampler TV deducted once; clamp inside exact GC applied")
+  } else if (isTRUE(profile$pure)) {
+    paste("exact two-sided-geometric convolution tail with union bound;",
+      "zero sampler TV; modular Ring128 decoding and fixed-clamp range applied")
   } else {
     paste(
       "exact ideal two-sided-geometric convolution tail with union bound;",
