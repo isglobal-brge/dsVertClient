@@ -297,6 +297,8 @@
 }
 
 .dsvert_dp_vector_fraction <- function(value) {
+  # Go's exact rational encoding emits the integer string for zero.
+  if (identical(value, "0")) return(0)
   if (!.dsvert_vector_string(
       value, "^(0|[1-9][0-9]*)/[1-9][0-9]*\\z",
       .DSVERT_CLIENT_VECTOR_MAX_RECEIPT_BYTES)) {

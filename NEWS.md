@@ -1,3 +1,12 @@
+# Development
+
+* Run the seven-family statistical battery against the active production Go
+  sampler by default, using its actual signed-plan parameters and implementation
+  allowance. Keep `--ideal-sampler` for comparison and write synthetic replay
+  inputs, peer seeds and released coordinates with every new result.
+* Accept the canonical zero rational string emitted by Go. This does not
+  change production mechanism admission or relabel existing finite samplers.
+
 # dsVertClient 1.3.0
 
 * Provide cross-owner finite signed-grid DP release paths for Gaussian linear

@@ -384,6 +384,7 @@ test_that("implementation-delta conversion is bounded and outward", {
   bound <- .dsvert_dp_vector_fraction(certificate)
   expect_true(.vector_double_at_least_rational(
     bound, numerator, denominator))
+  expect_identical(.dsvert_dp_vector_fraction("0"), 0)
   expect_identical(.dsvert_dp_vector_fraction("0/1"), 0)
 
   near_numerator <- strrep("9", 400L)
@@ -401,7 +402,8 @@ test_that("implementation-delta conversion is bounded and outward", {
   expect_true(.vector_double_at_least_rational(
     subnormal_bound, "1", subnormal_denominator))
 
-  malformed <- c("1/0", "1/1", "2/1", "01/2", "1//2", "1/2\n")
+  malformed <- c("00", "0.0", "-0", "0\n", "1/0", "1/1", "2/1",
+                 "01/2", "1//2", "1/2\n")
   for (value in malformed) {
     expect_error(.dsvert_dp_vector_fraction(value),
                  "Invalid vector implementation-delta certificate",

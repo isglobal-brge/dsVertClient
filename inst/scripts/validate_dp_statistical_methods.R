@@ -2,11 +2,12 @@
 
 # Reproducible finite-dataset validation of stable DP post-processors.
 #
-# This is a distributional simulation, not a DataSHIELD/DSI integration test.
-# It uses the deployed signed-vector accuracy calculation and the ideal
-# two-peer two-sided-geometric convolution to generate mechanism noise. The
-# productive HMAC/HKDF/ChaCha20 finite sampler is not reimplemented here; its
-# separately certified TV bound is retained by the deployed radius calculator.
+# This exercises the production Go sampler and deployed signed-vector accuracy
+# calculation on fixed synthetic data; it is not a DataSHIELD/DSI integration
+# test. The default draws use the production keyed HKDF/ChaCha20 stream and
+# active production sampler. --ideal-sampler retains the base-R distributional
+# comparison. Public synthetic seeds and complete oracle inputs/outputs are
+# written with the exact and released lattice coordinates for recomputation.
 # Gaussian regression coefficients and PCA loading directions are validated as
 # point estimators only because the public API deliberately claims no regions
 # for either nonlinear quantity.
@@ -15,7 +16,7 @@
 if (sys.nframe() == 0L && "--help" %in% .dv_cli_args) {
   cat(paste(
     "Usage: validate_dp_statistical_methods.R [--quick] [--replicates=N]",
-    "[--output-dir=PATH] [--preflight]\n"
+    "[--output-dir=PATH] [--sampler-binary=PATH] [--ideal-sampler] [--preflight]\n"
   ))
   quit(save = "no", status = 0L)
 }
@@ -34,16 +35,29 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   ".DSVERT_CLIENT_VECTOR_RELEASE_MECHANISM")
 .dv_laplace_sampler <- .dv_get(".DSVERT_CLIENT_VECTOR_SAMPLER")
 .dv_laplace_backend <- .dv_get(".DSVERT_CLIENT_VECTOR_BACKEND")
-.dv_implementation_delta <-
-  "1/1267650600228229401496703205376"
+.dv_laplace_plan <- .dv_get(".dsvert_vector_profile")(
+  "discrete-laplace", backend = .dv_laplace_backend)$plan_version
+.dv_allocated_delta <- "7.888609052210118e-31"
+.dv_ideal_comparison_delta <- "1/1267650600228229401496703205376"
+.dv_sampler_state <- NULL
 .dv_level <- 0.95
 .dv_numeric_tolerance <- 1e-10
 
 .dv_accuracy_contract <- function(
     family, epsilon, natural_l1_sensitivity, coordinate_count,
-    scale = 256, maximum_error = Inf) {
+    scale = 256, maximum_error = Inf, mechanism_plan = NULL) {
+  if (identical(.dv_sampler_state$mode, "production") &&
+      is.null(mechanism_plan)) {
+    mechanism_plan <- .dv_production_plan(
+      epsilon, natural_l1_sensitivity * scale, coordinate_count)
+  }
+  implementation_delta <- if (is.null(mechanism_plan)) {
+    .dv_ideal_comparison_delta
+  } else .dv_plan_delta(mechanism_plan)
   manifest <- list(workload = list(
-    coordinate_count = as.integer(coordinate_count),
+    coordinate_count = as.integer(if (is.null(mechanism_plan)) {
+      coordinate_count
+    } else mechanism_plan$total_coordinate_count),
     capsule_mechanism = list(
       mechanism = "discrete-laplace", sensitivity_norm = "l1"),
     mechanism_selection = NULL,
@@ -59,7 +73,8 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   release <- list(
     epsilon = as.numeric(epsilon),
     mechanism = .dv_laplace_mechanism,
-    implementation_delta = .dv_implementation_delta)
+    implementation_delta = implementation_delta,
+    mechanism_plan = mechanism_plan)
   radius <- .dv_get(".dsvert_dp_vector_accuracy_radius")(
     release, manifest, coordinate_count = coordinate_count,
     confidence = .dv_level, maximum_error = maximum_error)
@@ -69,8 +84,15 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
     stop("The deployed accuracy radius is not on the release lattice",
          call. = FALSE)
   }
-  log_tail <- .dv_get(".dsvert_dp_vector_convolution_log_tail")(
-    round(steps), epsilon, natural_l1_sensitivity * scale)
+  log_tail <- if (is.null(mechanism_plan)) {
+    .dv_get(".dsvert_dp_vector_convolution_log_tail")(
+      round(steps), epsilon, natural_l1_sensitivity * scale)
+  } else {
+    .dv_get(".dsvert_dp_vector_plan_log_tail_upper")(
+      round(steps),
+      .dv_get(".dsvert_dp_vector_dyadic_tail_context")(mechanism_plan),
+      convolution = TRUE)
+  }
   failure_upper <- coordinate_count * exp(log_tail) +
     radius$implementation_tv_upper_bound
   list(
@@ -81,13 +103,15 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
     scale = scale,
     radius = radius$radius,
     accuracy_method = radius$method,
+    implementation_delta = implementation_delta,
+    mechanism_plan = mechanism_plan,
     implementation_tv_upper_bound =
       radius$implementation_tv_upper_bound,
     certified_failure_probability_upper = failure_upper,
     certified_coverage_lower = max(0, 1 - failure_upper))
 }
 
-.dv_draw_one_peer <- function(n, contract) {
+.dv_draw_one_peer_ideal <- function(n, contract) {
   success_probability <- -expm1(
     -contract$epsilon /
       (contract$natural_l1_sensitivity * contract$scale))
@@ -103,9 +127,178 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   result
 }
 
+.dv_sampler_binary <- function(binary) {
+  if (!nzchar(binary) && requireNamespace("dsVert", quietly = TRUE)) {
+    binary <- get(".findMpcBinary", asNamespace("dsVert"))()
+  }
+  if (!is.character(binary) || length(binary) != 1L ||
+      is.na(binary) || !nzchar(binary) || !file.exists(binary)) {
+    stop(paste(
+      "The production battery requires an MPC binary with the sampler oracle;",
+      "set DSVERT_MPC_BINARY or --sampler-binary=PATH"), call. = FALSE)
+  }
+  normalizePath(binary, mustWork = TRUE)
+}
+
+.dv_call_sampler <- function(request, binary) {
+  input <- tempfile("dsvert-battery-input-")
+  output <- tempfile("dsvert-battery-output-")
+  error <- tempfile("dsvert-battery-error-")
+  on.exit(unlink(c(input, output, error)), add = TRUE)
+  jsonlite::write_json(request, input, auto_unbox = TRUE, digits = 17L)
+  status <- system2(
+    .dv_sampler_binary(binary), "joint-dp-vector-convolution-oracle-v1",
+    stdin = input, stdout = output, stderr = error)
+  if (!identical(status, 0L)) {
+    stop("Production sampler oracle failed: ",
+         paste(readLines(c(output, error), warn = FALSE), collapse = "\n"),
+         call. = FALSE)
+  }
+  jsonlite::read_json(output, simplifyVector = FALSE)
+}
+
+.dv_plan_delta <- function(plan) {
+  paste0(plan$per_peer_implementation_delta_numerator, "/",
+         plan$per_peer_implementation_delta_denominator)
+}
+
+.dv_oracle_request <- function(epsilon, sensitivity, n, replicates, label) {
+  hash <- function(value) digest::digest(value, "sha256", serialize = FALSE)
+  list(
+    version = "dsvert-dp-statistical-noise-oracle-input-v1",
+    epsilon = format(epsilon, scientific = FALSE, trim = TRUE, digits = 17L),
+    allocated_delta = .dv_allocated_delta,
+    sensitivity_steps = sprintf("%.0f", sensitivity),
+    coordinate_count = as.integer(n), replicates = as.integer(replicates),
+    garbler_seed = hash(paste0(label, ":garbler")),
+    evaluator_seed = hash(paste0(label, ":evaluator")),
+    release_contract_hash = hash(paste(
+      epsilon, sensitivity, n, .dv_allocated_delta, sep = ":")),
+    transcript_hash = hash(paste0(label, ":transcript")))
+}
+
+.dv_check_oracle <- function(response, request) {
+  if (!identical(response$version,
+                 "dsvert-dp-statistical-noise-oracle-output-v1") ||
+      !identical(response$sampler, .dv_laplace_sampler) ||
+      !identical(response$backend, .dv_laplace_backend) ||
+      !identical(response$plan_version, .dv_laplace_plan) ||
+      !is.list(response$plan) ||
+      !identical(response$randomness, "keyed-stream-computational") ||
+      length(response$draws) != request$replicates) {
+    stop("Production sampler oracle returned an incompatible contract",
+         call. = FALSE)
+  }
+  delta <- .dv_plan_delta(response$plan)
+  allowance <- .dv_get(".dsvert_dp_vector_fraction")(delta)
+  guarantee <- if (identical(
+      response$plan$per_peer_implementation_delta_numerator, "0")) {
+    "pure-dp-under-ideal-bits"
+  } else
+    "approximate-dp-under-ideal-bits"
+  if (!identical(response$guarantee, guarantee) ||
+      !identical(response$implementation_delta,
+                 response$plan$implementation_delta_bound) ||
+      allowance > as.numeric(request$allocated_delta)) {
+    stop("Production sampler oracle returned inconsistent privacy metadata",
+         call. = FALSE)
+  }
+  .dv_get(".dsvert_vector_plan_validate")(
+    response$plan, .dv_get(".dsvert_vector_hash")(response$plan),
+    .dv_get(".dsvert_vector_profile")(
+      "discrete-laplace", backend = .dv_laplace_backend),
+    request$coordinate_count, request$sensitivity_steps)
+  invisible(response)
+}
+
+.dv_production_plan <- function(epsilon, sensitivity, n) {
+  key <- paste(epsilon, sensitivity, n, sep = ":")
+  cached <- .dv_sampler_state$plans[[key]]
+  if (!is.null(cached)) return(cached$response$plan)
+  request <- .dv_oracle_request(
+    epsilon, sensitivity, n, 0L,
+    paste0("dsvert-dp-statistical-validation-v3:plan:", key))
+  response <- .dv_call_sampler(request, .dv_sampler_state$binary)
+  .dv_check_oracle(response, request)
+  .dv_sampler_state$plans[[key]] <- list(request = request, response = response)
+  response$plan
+}
+
+.dv_production_batch <- function(n, contract) {
+  batch_index <- length(.dv_sampler_state$batches) + 1L
+  label <- paste(
+    "dsvert-dp-statistical-validation-v3", contract$family,
+    batch_index, sep = ":")
+  request <- .dv_oracle_request(
+    contract$epsilon, contract$natural_l1_sensitivity * contract$scale,
+    contract$mechanism_plan$total_coordinate_count,
+    .dv_sampler_state$replicates, label)
+  response <- .dv_call_sampler(request, .dv_sampler_state$binary)
+  .dv_check_oracle(response, request)
+  if (!identical(response$plan, contract$mechanism_plan)) {
+    stop("Production draws do not match their accuracy plan", call. = FALSE)
+  }
+  for (draw in response$draws) {
+    integers <- unlist(draw$sum, use.names = FALSE)
+    values <- suppressWarnings(as.numeric(integers))
+    if (!is.character(integers) ||
+        length(integers) != request$coordinate_count ||
+        any(!grepl("^-?[0-9]+$", integers)) ||
+        any(!is.finite(values) | abs(values) > 2^53)) {
+      stop("Production noise is outside the exact R validation range",
+           call. = FALSE)
+    }
+  }
+  .dv_sampler_state$batches[[batch_index]] <- list(
+    request = request, response = response)
+  list(index = batch_index, position = 0L,
+       key = paste(contract$family, n, sep = ":"))
+}
+
 .dv_draw_noise <- function(n, contract) {
-  (.dv_draw_one_peer(n, contract) +
-     .dv_draw_one_peer(n, contract)) / contract$scale
+  if (is.null(.dv_sampler_state)) {
+    stop("Noise draws must run inside the configured battery", call. = FALSE)
+  }
+  if (.dv_sampler_state$mode == "ideal") {
+    integers <- .dv_draw_one_peer_ideal(n, contract) +
+      .dv_draw_one_peer_ideal(n, contract)
+    draw_record <- list(family = contract$family,
+                        noise_integer = sprintf("%.0f", integers))
+  } else {
+    batch <- .dv_sampler_state$current_batch
+    key <- paste(contract$family, n, sep = ":")
+    if (is.null(batch) || !identical(batch$key, key) ||
+        batch$position >= .dv_sampler_state$replicates) {
+      batch <- .dv_production_batch(n, contract)
+    }
+    batch$position <- batch$position + 1L
+    .dv_sampler_state$current_batch <- batch
+    draw <- .dv_sampler_state$batches[[batch$index]]$
+      response$draws[[batch$position]]
+    integers <- as.numeric(unlist(draw$sum, use.names = FALSE)[seq_len(n)])
+    draw_record <- list(
+      family = contract$family, oracle_batch = batch$index,
+      oracle_draw = batch$position,
+      noise_integer = unlist(draw$sum, use.names = FALSE)[seq_len(n)])
+  }
+  .dv_sampler_state$draws[[length(.dv_sampler_state$draws) + 1L]] <-
+    draw_record
+  integers / contract$scale
+}
+
+.dv_noisy_coordinates <- function(exact, contract, maximum) {
+  released <- .dv_clamp(exact + .dv_draw_noise(length(exact), contract),
+                        maximum)
+  position <- length(.dv_sampler_state$draws)
+  .dv_sampler_state$draws[[position]]$exact_coordinate_integer <-
+    sprintf("%.0f", exact * contract$scale)
+  .dv_sampler_state$draws[[position]]$released_coordinate_integer <-
+    sprintf("%.0f", released * contract$scale)
+  .dv_sampler_state$draws[[position]]$scale <- contract$scale
+  .dv_sampler_state$draws[[position]]$clamp_lower <- "0"
+  .dv_sampler_state$draws[[position]]$clamp_upper_integer <-
+    sprintf("%.0f", maximum * contract$scale)
+  released
 }
 
 .dv_clamp <- function(value, maximum) pmin(maximum, pmax(0, value))
@@ -161,7 +354,8 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   grid_length <- length(grid)
   marginal <- .dv_accuracy_contract(
     paste0(contract$family, "_marginal"), contract$epsilon,
-    contract$natural_l1_sensitivity, 1L, scale, capacity)
+    contract$natural_l1_sensitivity, 1L, scale, capacity,
+    mechanism_plan = contract$mechanism_plan)
   statistics <- c(
     round(natural_coordinates[[1L]]),
     round(natural_coordinates[[2L]] * scale),
@@ -208,8 +402,8 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
       "DP mechanism noise only; sampling uncertainty excluded",
     privacy_epoch = 1, noise_key_id = "validation-noise-key-a",
     sticky_noise = "one immutable capsule vector; unlimited replay",
-    epsilon = contract$epsilon, delta = 2^-100,
-    implementation_delta = .dv_implementation_delta,
+    epsilon = contract$epsilon, delta = as.numeric(.dv_allocated_delta),
+    implementation_delta = contract$implementation_delta,
     adjacency = "add_remove_patient",
     capsule_id = strrep("a", 64L), final_vector_root = strrep("b", 64L),
     coordinate_order_sha256 = strrep("c", 64L), server = "site_a",
@@ -270,10 +464,8 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   position <- 0L
   started <- proc.time()[["elapsed"]]
   for (iteration in seq_len(replicates)) {
-    noisy <- .dv_clamp(
-      exact$natural_coordinates +
-        .dv_draw_noise(length(exact$natural_coordinates), contract),
-      capacity)
+    noisy <- .dv_noisy_coordinates(
+      exact$natural_coordinates, contract, capacity)
     coordinate_event <- all(
       abs(noisy - exact$natural_coordinates) <=
         contract$radius + .dv_numeric_tolerance)
@@ -339,8 +531,8 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
     randomness = paste(
       "independent pinned-peer HKDF-SHA256/ChaCha20 streams;",
       "no analyst-controlled seed"),
-    epsilon = contract$epsilon, delta = 2^-100,
-    implementation_delta = .dv_implementation_delta,
+    epsilon = contract$epsilon, delta = as.numeric(.dv_allocated_delta),
+    implementation_delta = contract$implementation_delta,
     adjacency = "add_remove_patient",
     sensitivity = contract$natural_l1_sensitivity,
     sensitivity_norm = "l1",
@@ -477,8 +669,7 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   started <- proc.time()[["elapsed"]]
   for (iteration in seq_len(replicates)) {
     noisy_table <- matrix(
-      .dv_clamp(
-        as.numeric(exact_table) + .dv_draw_noise(4L, contract), 2000),
+      .dv_noisy_coordinates(as.numeric(exact_table), contract, 2000),
       nrow = 2L, dimnames = dimnames(exact_table))
     coordinate_event <- all(
       abs(noisy_table - exact_table) <=
@@ -641,10 +832,7 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   started <- proc.time()[["elapsed"]]
   for (iteration in seq_len(replicates)) {
     noisy_table <- matrix(
-      .dv_clamp(
-        as.numeric(exact_table) +
-          .dv_draw_noise(length(exact_table), contract),
-        2000),
+      .dv_noisy_coordinates(as.numeric(exact_table), contract, 2000),
       nrow = nrow(exact_table), dimnames = dimnames(exact_table))
     coordinate_event <- all(
       abs(noisy_table - exact_table) <=
@@ -725,7 +913,7 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
     accuracy_95_abs_per_coordinate = .dv_accuracy_contract(
       paste0(contract$family, "_marginal"), contract$epsilon,
       contract$natural_l1_sensitivity, 1L, contract$scale,
-      capacity)$radius,
+      capacity, mechanism_plan = contract$mechanism_plan)$radius,
     accuracy_simultaneous_95_abs = contract$radius,
     accuracy_simultaneous_confidence = .dv_level,
     accuracy_simultaneous_method = contract$accuracy_method,
@@ -733,8 +921,8 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
       "DP mechanism noise only; sampling uncertainty excluded",
     privacy_epoch = 1, noise_key_id = "validation-noise-key-a",
     sticky_noise = "one immutable capsule vector; unlimited replay",
-    epsilon = contract$epsilon, delta = 2^-100,
-    implementation_delta = .dv_implementation_delta,
+    epsilon = contract$epsilon, delta = as.numeric(.dv_allocated_delta),
+    implementation_delta = contract$implementation_delta,
     adjacency = "add_remove_patient",
     capsule_id = strrep("d", 64L), final_vector_root = strrep("e", 64L),
     coordinate_order_sha256 = strrep("f", 64L), server = "site_a",
@@ -791,9 +979,7 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   identity_error <- 0
   started <- proc.time()[["elapsed"]]
   for (iteration in seq_len(replicates)) {
-    noisy <- .dv_clamp(
-      exact_histogram + .dv_draw_noise(length(exact_histogram), contract),
-      capacity)
+    noisy <- .dv_noisy_coordinates(exact_histogram, contract, capacity)
     coordinate_event <- all(
       abs(noisy - exact_histogram) <=
         contract$radius + .dv_numeric_tolerance)
@@ -920,10 +1106,8 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   identity_error <- 0
   started <- proc.time()[["elapsed"]]
   for (iteration in seq_len(replicates)) {
-    noisy <- .dv_clamp(
-      fixture$coordinates + .dv_draw_noise(
-        length(fixture$coordinates), fixture$contract),
-      fixture$capacity)
+    noisy <- .dv_noisy_coordinates(
+      fixture$coordinates, fixture$contract, fixture$capacity)
     coordinate_event <- all(
       abs(noisy - fixture$coordinates) <=
         fixture$contract$radius + .dv_numeric_tolerance)
@@ -1064,10 +1248,8 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
     colnames(fixture$correlation)[pairs[, 2L]])
   started <- proc.time()[["elapsed"]]
   for (iteration in seq_len(replicates)) {
-    noisy <- .dv_clamp(
-      fixture$coordinates + .dv_draw_noise(
-        length(fixture$coordinates), fixture$contract),
-      fixture$capacity)
+    noisy <- .dv_noisy_coordinates(
+      fixture$coordinates, fixture$contract, fixture$capacity)
     coordinate_event <- all(
       abs(noisy - fixture$coordinates) <=
         fixture$contract$radius + .dv_numeric_tolerance)
@@ -1281,6 +1463,7 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
     natural_l1_sensitivity = value$natural_l1_sensitivity,
     coordinate_count = value$coordinate_count, scale = value$scale,
     simultaneous_radius_95 = value$radius,
+    implementation_delta = value$implementation_delta,
     implementation_tv_upper_bound =
       value$implementation_tv_upper_bound,
     certified_failure_probability_upper =
@@ -1311,13 +1494,25 @@ if (sys.nframe() == 0L && "--preflight" %in% .dv_cli_args) {
   }, logical(1L)))
 }
 
-dsvert_run_dp_statistical_validation <- function(replicates = 1000L) {
+dsvert_run_dp_statistical_validation <- function(
+    replicates = 1000L, sampler = c("production", "ideal"),
+    sampler_binary = Sys.getenv("DSVERT_MPC_BINARY", unset = "")) {
+  sampler <- match.arg(sampler)
   if (!is.numeric(replicates) || length(replicates) != 1L ||
       is.na(replicates) || !is.finite(replicates) || replicates < 1 ||
       replicates > 100000L || replicates != floor(replicates)) {
     stop("replicates must be one integer in [1, 100000]", call. = FALSE)
   }
   replicates <- as.integer(replicates)
+  old_sampler_state <- .dv_sampler_state
+  .dv_sampler_state <<- new.env(parent = emptyenv())
+  .dv_sampler_state$mode <- sampler
+  .dv_sampler_state$binary <- sampler_binary
+  .dv_sampler_state$replicates <- replicates
+  .dv_sampler_state$plans <- list()
+  .dv_sampler_state$batches <- list()
+  .dv_sampler_state$draws <- list()
+  on.exit(.dv_sampler_state <<- old_sampler_state, add = TRUE)
   old_kind <- RNGkind()
   old_seed_exists <- exists(".Random.seed", envir = .GlobalEnv,
                             inherits = FALSE)
@@ -1444,12 +1639,27 @@ dsvert_run_dp_statistical_validation <- function(replicates = 1000L) {
   list(
     summary = summary, contracts = contracts, gates = gates,
     edge_cases = edges,
+    sampler_records = list(
+      oracle_plans = unname(.dv_sampler_state$plans),
+      oracle_batches = .dv_sampler_state$batches,
+      draws = .dv_sampler_state$draws),
     metadata = list(
-      schema_version = "dsvert-dp-statistical-validation-v2",
-      execution_scope = paste(
-        "fixed finite-dataset distributional simulation using the ideal",
-        "two-peer geometric convolution; not DSI E2E and not a productive",
-        "cryptographic-sampler replay"),
+      schema_version = "dsvert-dp-statistical-validation-v3",
+      sampler_mode = sampler,
+      sampler = if (sampler == "production") .dv_laplace_sampler else
+        "base-r-ideal-two-sided-geometric-comparison",
+      plan_version = if (sampler == "production") .dv_laplace_plan else NULL,
+      guarantee = if (sampler == "production")
+        .dv_sampler_state$batches[[1L]]$response$guarantee else
+          "ideal-distribution-comparison-only",
+      randomness = if (sampler == "production")
+        "keyed-stream-computational" else "base-r-comparison-simulation",
+      seed_scope = "public synthetic harness seeds; never production secrets",
+      execution_scope = if (sampler == "production") paste(
+        "fixed finite-dataset validation using the active production Go",
+        "two-peer sampler and keyed HKDF/ChaCha20 stream; not DSI E2E") else
+        paste("fixed finite-dataset ideal base-R two-peer geometric",
+              "comparison simulation; not DSI E2E"),
       uncertainty_scope = paste(
         "DP mechanism noise and public grid/quantization only; no sampling",
         "or population confidence intervals"),
@@ -1486,13 +1696,18 @@ dsvert_run_dp_statistical_validation <- function(replicates = 1000L) {
     stop("output_dir must already exist", call. = FALSE)
   }
   summary_path <- file.path(
-    output_dir, "dp_statistical_validation_20260802.csv")
+    output_dir, "dp_statistical_validation_20260923.csv")
   contracts_path <- file.path(
-    output_dir, "dp_statistical_validation_contracts_20260802.csv")
+    output_dir, "dp_statistical_validation_contracts_20260923.csv")
   edges_path <- file.path(
-    output_dir, "dp_statistical_validation_edges_20260802.csv")
+    output_dir, "dp_statistical_validation_edges_20260923.csv")
   report_path <- file.path(
-    output_dir, "dp_statistical_validation_20260802.md")
+    output_dir, "dp_statistical_validation_20260923.md")
+  replay_path <- file.path(
+    output_dir, "dp_statistical_validation_replay_20260923.json")
+  jsonlite::write_json(
+    list(metadata = result$metadata, sampler_records = result$sampler_records),
+    replay_path, auto_unbox = TRUE, pretty = TRUE, digits = 17L)
   utils::write.csv(result$summary, summary_path, row.names = FALSE,
                    na = "NA")
   utils::write.csv(result$contracts, contracts_path, row.names = FALSE,
@@ -1500,7 +1715,7 @@ dsvert_run_dp_statistical_validation <- function(replicates = 1000L) {
   utils::write.csv(result$edge_cases, edges_path, row.names = FALSE,
                    na = "NA")
   report <- c(
-    "# dsVert DP statistical validation — 2026-08-02",
+    "# dsVert DP statistical validation — 2026-09-23",
     "",
     "## Scope",
     "",
@@ -1526,9 +1741,14 @@ dsvert_run_dp_statistical_validation <- function(replicates = 1000L) {
     "",
     .dv_markdown_table(result$contracts),
     "",
-    "The analytic gate combines the exact ideal convolution tail, the union",
-    "bound over the released coordinates, and the productive sampler's",
-    "published two-peer total-variation allowance. Region coverage is also",
+    "The analytic gate combines the convolution tail, the union bound over",
+    "the released coordinates, and the implementation allowance.",
+    if (result$metadata$sampler_mode == "production") paste(
+      "The actual production plan supplies the certified dyadic tail and",
+      "two-peer sampler TV allowance.") else paste(
+      "The ideal comparison retains the conservative declared-budget",
+      "allowance used by the original simulation."),
+    "Region coverage is also",
     "required deterministically whenever every exact coordinate lies inside",
     "that certified simultaneous box.",
     "",
@@ -1556,13 +1776,21 @@ dsvert_run_dp_statistical_validation <- function(replicates = 1000L) {
     "## Interpretation",
     "",
     "The run exercises the real dsVertClient postprocessors and the deployed",
-    "signed-vector radius calculation. Noise draws come from a base-R sampler",
-    "for the same ideal two-sided-geometric convolution distribution; they do",
-    "not exercise HMAC/HKDF/ChaCha20, Ring128, peer pinning, DSI transport,",
-    "sticky replay, server admission, or signed receipt verification. Those",
-    "remain separate protocol/E2E validation obligations.")
+    "signed-vector radius calculation.",
+    if (result$metadata$sampler_mode == "production") paste(
+      "Noise draws call the active production Go sampler and HKDF/ChaCha20",
+      "stream through a synthetic oracle with public fixed test keys.") else
+      paste("The explicitly selected comparison draws come from the ideal",
+            "base-R two-sided-geometric simulator."),
+    "The replay JSON contains every synthetic oracle request and response,",
+    "peer seed, exact lattice coordinate and released coordinate. Its seeds",
+    "are public test fixtures and must never be production deployment keys.",
+    "This does not validate peer pinning, DSI transport, sticky replay, server",
+    "admission, or signed receipt verification; those remain separate",
+    "protocol/E2E validation obligations.")
   writeLines(report, report_path, useBytes = TRUE)
-  invisible(c(summary_path, contracts_path, edges_path, report_path))
+  invisible(c(summary_path, contracts_path, edges_path, report_path,
+              replay_path))
 }
 
 .dv_main <- function() {
@@ -1583,7 +1811,13 @@ dsvert_run_dp_statistical_validation <- function(replicates = 1000L) {
   } else {
     getwd()
   }
-  result <- dsvert_run_dp_statistical_validation(replicates)
+  binary_arg <- args[startsWith(args, "--sampler-binary=")]
+  binary <- if (length(binary_arg)) {
+    sub("^--sampler-binary=", "", binary_arg[[1L]])
+  } else Sys.getenv("DSVERT_MPC_BINARY", unset = "")
+  sampler <- if ("--ideal-sampler" %in% args) "ideal" else "production"
+  result <- dsvert_run_dp_statistical_validation(
+    replicates, sampler = sampler, sampler_binary = binary)
   paths <- .dv_write_validation(result, output_dir)
   cat("DP statistical validation passed\n")
   cat(paste(paths, collapse = "\n"), "\n")
