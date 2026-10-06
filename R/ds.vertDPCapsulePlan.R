@@ -339,7 +339,7 @@ ds.vertDPCapsulePlan <- function(datasources = NULL, status = NULL) {
       designated_noise_peers = context$designated,
       peer_pinset_sha256 = context$policy$peer_pinset_sha256),
     guarantees = list(
-      data_access = FALSE, release_created = FALSE,
+      data_access = TRUE, release_created = FALSE,
       operation_limit = FALSE, request_limit = FALSE,
       rate_limit = FALSE, catalog_limit = FALSE,
       history_can_deny_operation = FALSE))
@@ -468,13 +468,17 @@ ds.vertDPCapsulePlan <- function(datasources = NULL, status = NULL) {
 
 #' @export
 print.ds.vertDPCapsulePlan <- function(x, ...) {
-  cat("dsVert Synopsis plan (dry-run; no data access; no release)\n")
+  if (isTRUE(x$guarantees$data_access)) {
+    cat("dsVert Synopsis plan (authorization material may be captured; no release)\n")
+  } else {
+    cat("dsVert Synopsis plan (dry-run; no data access; no release)\n")
+  }
   cat("capsule:", x$capsule$capsule_id, "\n")
   cat("manifest:", x$capsule$manifest_sha256, "\n")
   cat("workload:", x$workload$version, "| coordinates:",
       x$artifacts$coordinate_layout$coordinate_count, "\n")
   cat("peers:", x$consortium$K, "| pinset:",
       x$consortium$peer_pinset_sha256, "\n")
-  cat("planning data/release cost: none; limits/history gates: false\n")
+  cat("planning release cost: none; limits/history gates: false\n")
   invisible(x)
 }

@@ -440,6 +440,7 @@ ds.vertDPFrequency <- function(data_name, variable, server = NULL,
     additional_privacy_cost = c(epsilon = 0, delta = 0),
     artifact_key = release$artifact_key, release_sha256 = release$release_sha256,
     operation_id = closed$operation_id, proof = closed$proof,
+    stable_receipt = .dsvert_provenance_stable_receipt(closed$compiled$contract),
     uncertainty_scope = paste(
       "Simultaneous regions cover DP mechanism noise only; population",
       "sampling uncertainty is excluded"),
@@ -668,6 +669,8 @@ ds.vertDPFrequency <- function(data_name, variable, server = NULL,
     identical(x$inferential_scope, paste(
       "Finite-snapshot DP frequencies; use ds.vertDPFrequencyInference()",
       "for conservative iid multinomial sampling regions")) &&
+    identical(x$stable_receipt,
+      .dsvert_provenance_stable_receipt(closed$compiled$contract)) &&
     identical(x$artifact_key, closed$release$artifact_key) &&
     identical(x$release_sha256, closed$release$release_sha256) &&
     isTRUE(all.equal(x$mechanism_regions, regions,

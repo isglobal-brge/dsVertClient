@@ -16,8 +16,9 @@ A reusable authenticated Synopsis bootstrap with class
 \description{
 Verifies the signed Synopsis bootstrap on every connected server. It binds
 the exact logical-name-to-Ed25519 pin map, the two designated noise peers,
-and the server-authoritative canonical workload before any protected-source
-access. This call releases no protected statistic and creates no release.
+and the server-authoritative canonical workload. Authorization material may
+be read and captured durably on first registration. This call releases no
+protected statistic and creates no release.
 It has no request, rate, catalog, or finite lifetime admission limit:
 repeated calls validate the same sticky artifact, while distinct canonical
 artifacts have their own scoped DP releases and compose accordingly.

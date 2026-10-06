@@ -342,7 +342,7 @@ test_that("Count execution is K-generic but computes on exactly two roles", {
                      "dsvert-dp-count-execution-result-v1")
     expect_identical(result$mode, "add_remove_dp")
     expect_identical(names(result$payload), c(
-      "release", "finalizer_peer", "accuracy_95_abs",
+      "release", "stable_receipt", "finalizer_peer", "accuracy_95_abs",
       "accuracy_95_confidence", "accuracy_95_method"))
     expect_identical(result$payload$release$value, "17")
     expect_identical(result$payload$finalizer_peer,

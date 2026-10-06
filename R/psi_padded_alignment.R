@@ -3,7 +3,7 @@
 # public, server-signed contract; it never receives identifiers, row maps,
 # membership bits, exact counts or GC shares.
 
-.DSVERT_CLIENT_PSI_PADDED_PROTOCOL <- "dsvert-pinned-padded-psi-v5"
+.DSVERT_CLIENT_PSI_PADDED_PROTOCOL <- "dsvert-pinned-padded-psi-v6"
 # Match the server schedule within the unchanged 512 Ki-bit worker cap.
 .DSVERT_CLIENT_PSI_PADDED_AND_CHUNK_CAPACITY <- 2048L
 
@@ -15,7 +15,7 @@
   required <- c(
     "attestation_version", "alignment_attested", "alignment_protocol",
     "attestation_id", "contract_hash", "policy_id", "alignment_purpose",
-    "dataset_id", "dataset_version", "id_column", "source_binding_id",
+    "dataset_id", "dataset_version", "id_column", "source_binding_id", "derivation_policy_id", "authorization_epochs",
     "pinset_id",
     "capacity_bucket", "relay_frame_bytes", "inline_max_bytes",
     "peer_count", "reference_peer", "compute_peers")
@@ -29,7 +29,7 @@
       candidate == floor(candidate) && candidate >= lower && candidate <= upper
   }
   if (!is.list(value) || !identical(names(value), required) ||
-      !integer(value$attestation_version, 3L, 3L) ||
+      !integer(value$attestation_version, 4L, 4L) ||
       !identical(value$alignment_attested, TRUE) ||
       !identical(value$alignment_protocol,
                  .DSVERT_CLIENT_PSI_PADDED_PROTOCOL) ||
@@ -45,6 +45,7 @@
       !scalar(value$id_column,
               "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$") ||
       !scalar(value$source_binding_id, "^source_[0-9a-f]{64}$") ||
+      !scalar(value$derivation_policy_id, "^[0-9a-f]{64}$") ||
       !scalar(value$pinset_id, "^pinset_[0-9a-f]{64}$") ||
       !integer(value$capacity_bucket, 64L, 1048576L) ||
       bitwAnd(as.integer(value$capacity_bucket),
@@ -61,6 +62,8 @@
                  value$compute_peers, perl = TRUE)) ||
       !value$reference_peer %in% value$compute_peers ||
       value$peer_count < length(value$compute_peers)) invalid()
+  .dsvert_provenance_epochs_validate(value$authorization_epochs)
+  if (length(value$authorization_epochs) != value$peer_count) invalid()
   normalized <- value
   for (field in c(
       "attestation_version", "capacity_bucket", "relay_frame_bytes",
@@ -69,7 +72,7 @@
   }
   if (!is.null(expected_contract)) {
     expected <- list(
-      attestation_version = 3L,
+      attestation_version = 4L,
       alignment_attested = TRUE,
       alignment_protocol = .DSVERT_CLIENT_PSI_PADDED_PROTOCOL,
       attestation_id = expected_contract$attestation_id,
@@ -80,6 +83,8 @@
       dataset_version = expected_contract$dataset_version,
       id_column = expected_contract$id_column,
       source_binding_id = expected_contract$source_binding_id,
+      derivation_policy_id = expected_contract$derivation_policy_id,
+      authorization_epochs = expected_contract$authorization_epochs,
       pinset_id = expected_contract$pinset_id,
       capacity_bucket = as.integer(expected_contract$capacity),
       relay_frame_bytes = as.integer(expected_contract$relay_frame_bytes),
@@ -113,7 +118,7 @@
   required <- c(
     "protocol", "session_id", "operation_id", "policy_id",
     "alignment_purpose", "dataset_id", "dataset_version", "id_column",
-    "source_binding_id", "pinset_id",
+    "source_binding_id", "derivation_policy_id", "authorization_epochs", "pinset_id",
     "capacity", "relay_frame_bytes", "inline_max_bytes", "peer_names",
     "peer_ids", "reference_peer",
     "compute_peers", "snapshot_ids", "attestation_id", "contract_hash")
@@ -136,6 +141,7 @@
       !scalar(contract$id_column,
               "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$") ||
       !scalar(contract$source_binding_id, "^source_[0-9a-f]{64}$") ||
+      !scalar(contract$derivation_policy_id, "^[0-9a-f]{64}$") ||
       !scalar(contract$pinset_id, "^pinset_[0-9a-f]{64}$") ||
       !scalar(contract$attestation_id, "^attest_[0-9a-f]{64}$") ||
       !scalar(contract$contract_hash, "^[0-9a-f]{64}$") ||
@@ -169,6 +175,12 @@
       length(contract$snapshot_ids) != length(server_names) ||
       anyNA(contract$snapshot_ids) || anyDuplicated(contract$snapshot_ids) ||
       any(!grepl("^snap_[0-9a-f]{64}$", contract$snapshot_ids))) invalid()
+  .dsvert_provenance_epochs_validate(contract$authorization_epochs)
+  epoch_peers <- vapply(contract$authorization_epochs, function(entry) {
+    .dsvert_exact_gc_identity_peer_id(entry$peer_identity)
+  }, character(1L))
+  if (length(epoch_peers) != length(server_names) ||
+      !setequal(epoch_peers, contract$peer_ids)) invalid()
   receipts <- lapply(bound, `[[`, "receipt")
   names(receipts) <- server_names
   list(contract = contract, receipts = receipts)
@@ -222,12 +234,14 @@
     expression
   }
 
+  .dsvert_provenance_preflight(datasources, .aggregate)
   offers <- .dsvert_fanout_by_site(
     datasources, stats::setNames(lapply(server_names, function(server) {
       call(
         name = "psiPaddedInitDS", data_name = data_name[[server]],
         id_col = id_col[[server]], session_id = session_id,
-        operation_id = operation_id)
+        operation_id = operation_id,
+        privacy_protocol = .DSVERT_CLIENT_PROVENANCE_PROTOCOL)
     }), server_names),
     operation = "pinned padded PSI initialization", .aggregate = .aggregate)
   encoded_offers <- .dsvert_psi_padded_json_b64url(unname(offers))

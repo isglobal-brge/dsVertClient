@@ -534,7 +534,7 @@ test_that("the public plan projects only an authenticated Synopsis bundle", {
   expect_identical(result$consortium$designated_noise_peers,
                    bootstrap$context$designated)
   expect_identical(result$guarantees, list(
-    data_access = FALSE, release_created = FALSE,
+    data_access = TRUE, release_created = FALSE,
     operation_limit = FALSE, request_limit = FALSE,
     rate_limit = FALSE, catalog_limit = FALSE,
     history_can_deny_operation = FALSE))

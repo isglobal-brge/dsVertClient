@@ -281,6 +281,8 @@
     context$all_conns[sources], claim_calls,
     operation = "stateless synopsis source Claim",
     .aggregate = .aggregate)
+  expected_projection <- .dsvert_dp_synopsis_client_projection(
+    context$policy, trusted$manifest, layout)
   claims <- stats::setNames(lapply(sources, function(peer) {
     value <- .dsvert_dp_synopsis_client_json(
       claim_raw[[peer]], paste("synopsis Claim from", peer))
@@ -293,6 +295,13 @@
         !identical(value$claim$source_peer_name, peer)) {
       stop("Invalid local synopsis Claim", call. = FALSE)
     }
+    if (!identical(.dsvert_joint_dp_client_json(value$projection),
+                   .dsvert_joint_dp_client_json(expected_projection))) {
+      stop("The Synopsis Claim omits or changes authorization provenance",
+           call. = FALSE)
+    }
+    .dsvert_dp_synopsis_client_source_claim_v2(
+      value$claim, expected_projection, peer, context)
     value
   }), sources)
   projection_json <- vapply(claims, function(value) {
@@ -329,6 +338,23 @@
     value
   }), servers)
   reference <- envelopes[[servers[[1L]]]]
+  expected_claims <- lapply(claims, `[[`, "claim")
+  unsigned_claims <- unname(lapply(expected_claims, function(claim) {
+    claim[setdiff(names(claim), "signature")]
+  }))
+  expected_claim_hash <- .dsvert_dp_synopsis_client_hash(
+    "dsVert/stateless-catalog-synopsis/source-claim-set/v1|", list(
+      version = "dsvert-stateless-catalog-synopsis-source-claim-set-v1",
+      catalog_sha256 = expected_projection$sha256, claims = unsigned_claims))
+  expected_claim_set <- list(
+    version = "dsvert-stateless-catalog-synopsis-source-claim-set-v1",
+    sha256 = expected_claim_hash, projection = expected_projection,
+    claims = expected_claims)
+  if (!identical(.dsvert_joint_dp_client_json(reference$claim_set),
+                 .dsvert_joint_dp_client_json(expected_claim_set))) {
+    stop("The Synopsis compilation changed its authenticated source Claims",
+         call. = FALSE)
+  }
   if (!all(vapply(envelopes, function(value) {
         identical(
           .dsvert_joint_dp_client_json(value$claim_set),

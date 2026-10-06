@@ -1,7 +1,7 @@
 .psi_padded_client_contract <- function(peers, session_id, operation_id,
                                         capacity = 64L) {
   list(
-    protocol = "dsvert-pinned-padded-psi-v5",
+    protocol = "dsvert-pinned-padded-psi-v6",
     session_id = session_id, operation_id = operation_id,
     policy_id = paste0("policy_", strrep("1", 64L)),
     alignment_purpose = "patient-record-alignment-v1",
@@ -9,12 +9,23 @@
     dataset_version = "v1",
     id_column = "patient_id",
     source_binding_id = paste0("source_", strrep("6", 64L)),
+    derivation_policy_id = strrep("7", 64L),
+    authorization_epochs = local({
+      identities <- sort(vapply(seq_along(peers), function(index) {
+        .dsvert_exact_gc_b64url_encode(as.raw(rep(index, 32L)))
+      }, character(1L)), method = "radix")
+      lapply(seq_along(identities), function(index) list(
+        peer_identity = identities[[index]],
+        authorization_epoch = sprintf("%064x", index),
+        source_contract_id = strrep("8", 64L)))
+    }),
     pinset_id = paste0("pinset_", strrep("2", 64L)),
     capacity = capacity, relay_frame_bytes = 64L * 1024L,
     inline_max_bytes = 448L * 1024L, peer_names = peers,
-    peer_ids = paste0("dsv1_", vapply(seq_along(peers), function(index) {
-      paste(rep(as.character(index), 64L), collapse = "")
-    }, character(1L))),
+    peer_ids = vapply(seq_along(peers), function(index) {
+      .dsvert_exact_gc_identity_peer_id(
+        .dsvert_exact_gc_b64url_encode(as.raw(rep(index, 32L))))
+    }, character(1L)),
     reference_peer = peers[[1L]], compute_peers = peers[1:2],
     snapshot_ids = paste0("snap_", vapply(seq_along(peers), function(index) {
       paste(rep(letters[[index]], 64L), collapse = "")
@@ -49,6 +60,9 @@ test_that("padded PSI client follows one fixed K/B-dependent DSI schedule", {
       method <- as.character(request[[1L]])
       transcript <<- c(transcript, paste(peer, method, sep = ":"))
       switch(method,
+        dsvertProvenanceCapabilitiesDS = list(
+          protocol = "dsvert-provenance-epochs-v1", version = "1.4.1",
+          families = c("psi", "count", "frequency", "synopsis")),
         psiPaddedInitDS = list(peer = peer),
         psiPaddedBindDS = list(
           contract = contract,
@@ -82,7 +96,7 @@ test_that("padded PSI client follows one fixed K/B-dependent DSI schedule", {
             transport = "inline", envelope = paste0("final-", target),
             relay = NULL)), setdiff(peers, contract$reference_peer))),
         psiPaddedAttestationDS = list(
-          attestation_version = 3L, alignment_attested = TRUE,
+          attestation_version = 4L, alignment_attested = TRUE,
           alignment_protocol = contract$protocol,
           attestation_id = contract$attestation_id,
           contract_hash = contract$contract_hash,
@@ -92,6 +106,8 @@ test_that("padded PSI client follows one fixed K/B-dependent DSI schedule", {
           dataset_version = contract$dataset_version,
           id_column = contract$id_column,
           source_binding_id = contract$source_binding_id,
+          derivation_policy_id = contract$derivation_policy_id,
+          authorization_epochs = contract$authorization_epochs,
           pinset_id = contract$pinset_id,
           capacity_bucket = contract$capacity,
           relay_frame_bytes = contract$relay_frame_bytes,
@@ -143,6 +159,8 @@ test_that("padded PSI client follows one fixed K/B-dependent DSI schedule", {
   expect_identical(sum(methods == "psiPaddedMembershipAcceptDS"), 4L)
   expect_identical(sum(methods == "psiPaddedANDAcceptDS"), 2L)
   expect_false("psiPaddedExactTransportDS" %in% methods)
+  expect_identical(head(methods, length(peers)),
+                   rep("dsvertProvenanceCapabilitiesDS", length(peers)))
 
   # A large public bucket must be split before the fixed worker input cap.
   contract$capacity <- 8192L

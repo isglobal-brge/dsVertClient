@@ -8,8 +8,9 @@
 #'
 #' Verifies the signed Synopsis bootstrap on every connected server. It binds
 #' the exact logical-name-to-Ed25519 pin map, the two designated noise peers,
-#' and the server-authoritative canonical workload before any protected-source
-#' access. This call releases no protected statistic and creates no release.
+#' and the server-authoritative canonical workload. Authorization material may
+#' be read and captured durably on first registration. This call releases no
+#' protected statistic and creates no release.
 #' It has no request, rate, catalog, or finite lifetime admission limit:
 #' repeated calls validate the same sticky artifact, while distinct canonical
 #' artifacts have their own scoped DP releases and compose accordingly.
@@ -53,7 +54,7 @@ print.ds.vertDPStatus <- function(x, ...) {
   cat("capsule:", bundle$capsule_id,
       "| manifest:", bundle$manifest_sha256, "\n")
   cat(paste(
-    "data access: none; release: none; request/rate/catalog limits: none;",
+    "authorization material may be captured; release: none; request/rate/catalog limits: none;",
     "sticky replay is deterministic and distinct artifacts compose.\n"))
   invisible(x)
 }
@@ -690,6 +691,7 @@ ds.vertDPCalibrate <- function(capsule_epsilon = c(1, 3),
     sticky_replay = isTRUE(release$sticky_replay),
     unlimited_replay = TRUE,
     release_provenance = release$signed_provenance,
+    stable_receipt = release$stable_receipt,
     privacy = list(
       version = "dsvert-per-synopsis-dp-v1",
       per_artifact_epsilon = release$epsilon,
@@ -942,7 +944,7 @@ ds.vertDPCount <- function(data_name, server = NULL, datasources = NULL) {
   payload <- execution$payload
   if (identical(execution$mode, "add_remove_dp")) {
     payload_fields <- c(
-      "release", "finalizer_peer", "accuracy_95_abs",
+      "release", "stable_receipt", "finalizer_peer", "accuracy_95_abs",
       "accuracy_95_confidence", "accuracy_95_method")
     release <- payload$release
     release_fields <- c(
@@ -981,8 +983,14 @@ ds.vertDPCount <- function(data_name, server = NULL, datasources = NULL) {
     if (!isTRUE(valid)) {
       stop("Invalid add/remove Count execution payload", call. = FALSE)
     }
+    receipt <- .dsvert_provenance_stable_receipt(payload$stable_receipt)
+    if (!identical(receipt, payload$stable_receipt) ||
+        !identical(receipt$artifact_key, release$artifact_key)) {
+      stop("Invalid Count stable provenance receipt", call. = FALSE)
+    }
     result <- list(
       released = TRUE,
+      stable_receipt = receipt,
       value = value,
       server = payload$finalizer_peer,
       mechanism = release$mechanism$version,

@@ -1,8 +1,8 @@
 # Internal client preparation for one server-authoritative Frequency analysis.
 
-.DSVERT_CLIENT_DP_FREQUENCY_CLAIM_VERSION <- "dsvert-dp-frequency-factor-claim-v2"
+.DSVERT_CLIENT_DP_FREQUENCY_CLAIM_VERSION <- "dsvert-dp-frequency-factor-claim-v3"
 .DSVERT_CLIENT_DP_FREQUENCY_CONFIG_VERSION <- "dsvert-dp-frequency-config-v2"
-.DSVERT_CLIENT_DP_FREQUENCY_RECEIPT_VERSION <- "dsvert-dp-frequency-receipt-v1"
+.DSVERT_CLIENT_DP_FREQUENCY_RECEIPT_VERSION <- "dsvert-dp-frequency-receipt-v2"
 .DSVERT_CLIENT_DP_FREQUENCY_PUBLIC_AUTH_VERSION <- "dsvert-dp-frequency-public-authorization-v1"
 .DSVERT_CLIENT_DP_FREQUENCY_PREPARED_VERSION <- "dsvert-dp-frequency-prepared-v1"
 .DSVERT_CLIENT_DP_FREQUENCY_FACTOR_VERSION <- "dsvert-psi-padded-factor-entry-v1"
@@ -87,7 +87,7 @@
 }
 .dsvert_dp_frequency_client_claim_v1 <- function(value, source_owner, peer_pins = NULL) {
     fields <- c("version", "source_peer_name", "source_identity_pk", "psi_run_sha256", "attestation_id", "contract_hash", "source_binding_id", "alignment_hash", "alignment_purpose",
-        "dataset_id", "dataset_version", "privacy_unit_column", "pinset_id", "capacity_bucket", "factor_entry", "factor_entry_sha256", "signature")
+        "dataset_id", "dataset_version", "privacy_unit_column", "pinset_id", "capacity_bucket", "factor_entry", "factor_entry_sha256", "authorization_epochs", "derivation_policy_id", "signature")
     if (!.dsvert_dp_frequency_client_object_v1(value, fields) || !identical(value$version, .DSVERT_CLIENT_DP_FREQUENCY_CLAIM_VERSION)) {
         stop("Invalid signed Frequency Claim.", call. = FALSE)
     }
@@ -103,13 +103,15 @@
         grepl("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$", value$privacy_unit_column) && grepl("^attest_[0-9a-f]{64}$", value$attestation_id) && identical(value$source_binding_id, source_binding) &&
         grepl("^pinset_[0-9a-f]{64}$", value$pinset_id) && length(capacity) == 1L && is.finite(capacity) && capacity == floor(capacity) && capacity >= 64 && capacity <= 1048576 && bitwAnd(as.integer(capacity),
         as.integer(capacity) - 1L) == 0L
-    for (field in c("psi_run_sha256", "contract_hash", "alignment_hash", "factor_entry_sha256")) {
+    for (field in c("psi_run_sha256", "contract_hash", "alignment_hash", "factor_entry_sha256", "derivation_policy_id")) {
         valid <- valid && .dsvert_dp_analysis_frequency_hex_v1(value[[field]])
     }
     if (!isTRUE(valid) || !identical(value$factor_entry_sha256, .dsvert_dp_frequency_client_factor_hash_v1(factor)))
         stop("Invalid signed Frequency Claim.", call. = FALSE)
+    .dsvert_provenance_epochs_validate(value$authorization_epochs)
     if (!is.null(peer_pins)) {
         pins <- .dsvert_dp_frequency_client_pins_v1(peer_pins)
+        .dsvert_provenance_epochs_validate(value$authorization_epochs, unname(pins))
         if (!peer %in% names(pins) || !identical(identity, unname(pins[[peer]])) || !identical(value$pinset_id, .dsvert_dp_frequency_client_pinset_v1(pins)))
             stop("The Frequency Claim source identity is not pinned.", call. = FALSE)
     }
@@ -119,7 +121,7 @@
     normalized$capacity_bucket <- as.integer(capacity)
     normalized$factor_entry <- factor
     unsigned <- .dsvert_dp_analysis_client_canonical_value_v1(normalized[setdiff(names(normalized), "signature")])
-    .dsvert_dp_frequency_client_verify_v1(charToRaw(paste0("dsVert/dp-frequency/factor-claim/v2|", .dsvert_joint_dp_client_json(unsigned))), identity, value$signature, "Claim")
+    .dsvert_dp_frequency_client_verify_v1(charToRaw(paste0("dsVert/dp-frequency/factor-claim/v3|", .dsvert_joint_dp_client_json(unsigned))), identity, value$signature, "Claim")
     .dsvert_dp_analysis_client_canonical_value_v1(normalized)
 }
 .dsvert_dp_frequency_client_reduce_v1 <- function(numerator, denominator) {
@@ -308,22 +310,35 @@
     .dsvert_dp_frequency_client_hash_v1("dsVert/dp-frequency/source-claim/v1|", value)
 }
 .dsvert_dp_frequency_client_receipt_v1 <- function(value, config, claim) {
-    fields <- c("version", "peer_name", "peer_identity_pk", "config_sha256", "source_claim_sha256", "psi_run_sha256", "snapshot_commitment", "signature")
+    fields <- c("version", "peer_name", "peer_identity_pk", "config_sha256", "source_claim_sha256", "psi_run_sha256", "snapshot_commitment", "authorization_epochs", "derivation_policy_id", "signature")
     if (!.dsvert_dp_frequency_client_object_v1(value, fields) || !identical(value$version, .DSVERT_CLIENT_DP_FREQUENCY_RECEIPT_VERSION))
         stop("Invalid signed Frequency receipt fields.", call. = FALSE)
     peer <- .dsvert_dp_frequency_client_peer_v1(value$peer_name)
     identity <- tryCatch(.dsvert_dp_analysis_client_identity_pk(value$peer_identity_pk), error = function(error) NULL)
     unsigned <- value[setdiff(names(value), "signature")]
-    for (field in c("config_sha256", "source_claim_sha256", "psi_run_sha256", "snapshot_commitment")) {
+    for (field in c("config_sha256", "source_claim_sha256", "psi_run_sha256", "snapshot_commitment", "derivation_policy_id")) {
         .dsvert_dp_frequency_client_hex_v1(unsigned[[field]], paste("receipt", field))
     }
     if (is.null(identity) || !peer %in% names(config$peer_pins) || !identical(identity, unname(config$peer_pins[[peer]])) || !identical(unsigned$config_sha256, .dsvert_dp_frequency_client_config_hash_v1(config)) ||
         !identical(unsigned$source_claim_sha256, .dsvert_dp_frequency_client_claim_hash_v1(claim, config)) || !identical(unsigned$psi_run_sha256, claim$psi_run_sha256))
         stop("Frequency receipt disagrees with its signed inputs.", call. = FALSE)
+    .dsvert_provenance_epochs_validate(unsigned$authorization_epochs, unname(config$peer_pins))
+    if (!identical(.dsvert_joint_dp_client_json(unsigned$authorization_epochs),
+                   .dsvert_joint_dp_client_json(claim$authorization_epochs)) ||
+        !identical(unsigned$derivation_policy_id, claim$derivation_policy_id))
+        stop("Frequency receipt disagrees with complete authorization provenance.", call. = FALSE)
+    expected_snapshot <- .dsvert_provenance_snapshot_commitment(
+        unsigned, config, peer, list(family = "frequency",
+            factor_domain = config$factor_domain,
+            source_owner = config$source_owner,
+            missingness_policy = config$missingness_policy,
+            repeated_record_policy = config$repeated_record_policy))
+    if (!identical(unsigned$snapshot_commitment, expected_snapshot))
+        stop("Frequency receipt does not bind complete authorization provenance.", call. = FALSE)
     unsigned$peer_name <- peer
     unsigned$peer_identity_pk <- identity
     unsigned <- .dsvert_dp_analysis_client_canonical_value_v1(unsigned)
-    .dsvert_dp_frequency_client_verify_v1(charToRaw(paste0("dsVert/dp-frequency/receipt/v1|", .dsvert_joint_dp_client_json(unsigned))), identity, value$signature, "receipt")
+    .dsvert_dp_frequency_client_verify_v1(charToRaw(paste0("dsVert/dp-frequency/receipt/v2|", .dsvert_joint_dp_client_json(unsigned))), identity, value$signature, "receipt")
     .dsvert_dp_analysis_client_canonical_value_v1(c(unsigned, list(signature = value$signature)))
 }
 .dsvert_dp_frequency_client_contract_v1 <- function(config, receipts) {
@@ -483,7 +498,8 @@
         stop("Frequency requires the complete named K>=2 datasource set.", call. = FALSE)
     source_owner <- .dsvert_dp_server(source_owner, datasources)
     server_names <- names(datasources)
-    claim_values <- .dsvert_aggregate_strict(datasources[source_owner], call(name = "dsvertDPFrequencyClaimDS", data_name = data_name, variable_name = variable_name), operation = "Frequency source Claim",
+    .dsvert_provenance_preflight(datasources, .aggregate)
+    claim_values <- .dsvert_aggregate_strict(datasources[source_owner], call(name = "dsvertDPFrequencyClaimDS", data_name = data_name, variable_name = variable_name, privacy_protocol = .DSVERT_CLIENT_PROVENANCE_PROTOCOL), operation = "Frequency source Claim",
         .aggregate = .aggregate)
     claim <- .dsvert_dp_frequency_client_claim_v1(claim_values[[source_owner]], source_owner)
     if (!identical(claim$factor_entry$variable_name, variable_name))
