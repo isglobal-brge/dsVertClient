@@ -382,7 +382,8 @@
     identical(contract$bounds, manifest$bounds) &&
     identical(contract$workload, manifest$workload) &&
     identical(.dsvert_dp_synopsis_client_closure_validate_v2(
-      contract$authorization_dependencies), context$authorization_dependencies) &&
+      contract$authorization_dependencies),
+      .dsvert_dp_synopsis_client_effective_dependencies_v2(context, manifest)) &&
     identical(contract$privacy_epoch_scope,
               "per_canonical_artifact_sticky_v1") &&
     identical(.dsvert_joint_dp_client_canonical(manifest$logical_snapshot),

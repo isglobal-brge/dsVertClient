@@ -123,3 +123,26 @@
     "Synopsis source Claim")
   claim
 }
+
+.dsvert_dp_synopsis_client_effective_dependencies_v2 <- function(
+    context, manifest) {
+  closure <- .dsvert_dp_synopsis_client_closure_validate_v2(
+    context$authorization_dependencies)
+  release <- .dsvert_dp_capsule_vector_layout(manifest)
+  cross <- .dsvert_dp_gaussian_cross_layout_client(manifest, release)
+  required <- unique(vapply(c(release$blocks, cross$blocks), function(block) {
+    if (is.null(block$owner_peer) ||
+        !block$owner_peer %in% names(context$pinset) || is.null(block$dataset)) {
+      stop("The public Synopsis layout lacks source dependency provenance.",
+           call. = FALSE)
+    }
+    paste(unname(context$pinset[[block$owner_peer]]), block$dataset, sep = "|")
+  }, character(1L)))
+  keys <- vapply(closure$dependencies, function(entry) paste(
+    entry$source_identity, entry$dataset, sep = "|"), character(1L))
+  if (!all(required %in% keys)) stop(
+    "The Synopsis authorization closure omits an effective source.",
+    call. = FALSE)
+  closure$dependencies <- closure$dependencies[keys %in% required]
+  .dsvert_dp_synopsis_client_closure_validate_v2(closure)
+}

@@ -271,7 +271,8 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
     capsule_schema = manifest$capsule_schema,
     admission = manifest$admission, bounds = manifest$bounds,
     workload = manifest$workload,
-    authorization_dependencies = context$authorization_dependencies,
+    authorization_dependencies =
+      .dsvert_dp_synopsis_client_effective_dependencies_v2(context, manifest),
     privacy_epoch_scope = "per_canonical_artifact_sticky_v1")
   manifest$capsule_identity$capsule_id <-
     .dsvert_vector_hash(manifest$capsule_identity$contract)
@@ -296,7 +297,8 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
     sensitivity = manifest$workload$sensitivity,
     coordinate_count = dimension, coordinate_order_sha256 = layout$sha256,
     clipping_sha256 = manifest$workload$capsule_mechanism$clipping_hash,
-    authorization_dependencies = context$authorization_dependencies)
+    authorization_dependencies =
+      manifest$capsule_identity$contract$authorization_dependencies)
   rename_ids <- function(value) {
     if (!is.list(value)) return(value)
     if (!is.null(names(value))) {
@@ -1099,4 +1101,38 @@ test_that("zero-delta exact v4 Synopsis release validates its modular certificat
   altered <- fixture
   altered$artifact$artifact$physical_plan$full_plan$representability_bound <- "0"
   expect_error(do.call(.dsvert_dp_synopsis_public_vector_v1, altered[arguments]))
+})
+
+test_that("public Synopsis requires exactly the effective authenticated closure", {
+  fixture <- .synopsis_public_fixture(k = 3L)
+  context <- fixture$manifest_bundle$context
+  manifest <- jsonlite::fromJSON(fixture$manifest_bundle$manifest_json,
+                                simplifyVector = FALSE)
+  layout <- .dsvert_dp_capsule_vector_layout(manifest)
+  effective <- .dsvert_dp_synopsis_client_effective_dependencies_v2(
+    context, manifest)
+  expect_lt(length(effective$dependencies),
+            length(context$authorization_dependencies$dependencies))
+  selected <- vapply(effective$dependencies, function(entry)
+    paste(entry$source_identity, entry$dataset), character(1L))
+  changed <- context
+  unused <- which(!vapply(changed$authorization_dependencies$dependencies,
+    function(entry) paste(entry$source_identity, entry$dataset) %in% selected,
+    logical(1L)))[[1L]]
+  changed$authorization_dependencies$dependencies[[unused]]$dependency$
+    authorization_epoch <- strrep("e", 64L)
+  expect_identical(.dsvert_dp_synopsis_client_effective_dependencies_v2(
+    changed, manifest), effective)
+  missing <- manifest
+  missing$capsule_identity$contract$authorization_dependencies <- NULL
+  expect_error(.dsvert_dp_synopsis_client_projection(context$policy,
+    missing, layout), "authorization closure")
+  empty <- manifest
+  empty$capsule_identity$contract$authorization_dependencies$dependencies <- list()
+  expect_error(.dsvert_dp_synopsis_client_projection(context$policy,
+    empty, layout), "complete authorization provenance")
+  changed <- context
+  changed$authorization_dependencies$dependencies <- list()
+  expect_error(.dsvert_dp_synopsis_client_effective_dependencies_v2(
+    changed, manifest), "omits an effective source")
 })

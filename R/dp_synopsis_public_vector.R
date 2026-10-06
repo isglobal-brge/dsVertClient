@@ -239,10 +239,11 @@
     coordinate_order_sha256 = layout$sha256,
     clipping_sha256 = manifest$workload$capsule_mechanism$clipping_hash)
   dependencies <- manifest$capsule_identity$contract$authorization_dependencies
-  if (!is.null(dependencies)) {
-    catalog$authorization_dependencies <-
-      .dsvert_dp_synopsis_client_closure_validate_v2(dependencies)
-  }
+  dependencies <- .dsvert_dp_synopsis_client_closure_validate_v2(dependencies)
+  if (!length(dependencies$dependencies)) stop(
+    "The public Synopsis catalog lacks complete authorization provenance.",
+    call. = FALSE)
+  catalog$authorization_dependencies <- dependencies
   catalog <- .dsvert_dp_synopsis_client_catalog_ids(catalog)
   list(
     version = "dsvert-stateless-catalog-synopsis-projection-v2",
