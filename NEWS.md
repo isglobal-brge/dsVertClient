@@ -1,3 +1,17 @@
+# dsVertClient 1.4.1
+
+* Address the public content-equality channel in Count, Frequency and Synopsis
+  identified in isglobal-brge/dsVert#25 with the coordinated dsVert 1.4.1
+  provenance protocol. Validate complete signed authorization epoch vectors,
+  Synopsis dependency closures, provenance commitments and stable receipts.
+* Reject mixed server/client provenance protocols before private
+  materialization. Existing analyst function arguments and sampler calibration
+  are unchanged; session signatures remain operational evidence.
+* Legacy generic aligned imports require one custodian migration before use:
+  `dsVert::dsvertAuthorizeSource(data = aligned, descriptor = getOption("dsvert.dp.datasets")$aligned, event_id = "migration-1.4.1", kind = "dataset", patient_column = "id")`.
+  The approved descriptor must match the frame. Registered sources and answers
+  remain frozen until explicit reauthorization; see the provenance workflow.
+
 # dsVertClient 1.4.0
 
 * Run the seven-family statistical battery against the active production Go
