@@ -5,9 +5,9 @@
 .DSVERT_CLIENT_SYNOPSIS_POLICY_VERSION <-
   "dsvert-stateless-catalog-synopsis-policy-v1"
 .DSVERT_CLIENT_SYNOPSIS_BOOTSTRAP_VERSION <-
-  "dsvert-stateless-catalog-synopsis-bootstrap-v1"
+  "dsvert-stateless-catalog-synopsis-bootstrap-v2"
 .DSVERT_CLIENT_SYNOPSIS_BIND_REQUEST_VERSION <-
-  "dsvert-stateless-catalog-synopsis-bind-request-v1"
+  "dsvert-stateless-catalog-synopsis-bind-request-v2"
 .DSVERT_CLIENT_SYNOPSIS_BIND_SIGNATURE_VERSION <-
   "dsvert-stateless-catalog-synopsis-bind-signature-v1"
 .DSVERT_CLIENT_SYNOPSIS_BOUND_MANIFEST_VERSION <-
@@ -17,9 +17,9 @@
 .DSVERT_CLIENT_SYNOPSIS_FINALIZE_ACK_VERSION <-
   "dsvert-stateless-catalog-synopsis-finalize-ack-v1"
 .DSVERT_CLIENT_SYNOPSIS_BOOTSTRAP_DOMAIN <-
-  "dsVert/stateless-catalog-synopsis/bootstrap/v1|"
+  "dsVert/stateless-catalog-synopsis/bootstrap/v2|"
 .DSVERT_CLIENT_SYNOPSIS_BIND_DOMAIN <-
-  "dsVert/stateless-catalog-synopsis/bind/v1|"
+  "dsVert/stateless-catalog-synopsis/bind/v2|"
 .DSVERT_CLIENT_SYNOPSIS_FINALIZE_ACK_DOMAIN <-
   "dsVert/stateless-catalog-synopsis/finalize-ack/v1|"
 .DSVERT_CLIENT_SYNOPSIS_LOCAL_PAIR_REQUEST_VERSION <-
@@ -381,6 +381,9 @@
     identical(contract$admission, manifest$admission) &&
     identical(contract$bounds, manifest$bounds) &&
     identical(contract$workload, manifest$workload) &&
+    identical(.dsvert_dp_synopsis_client_closure_validate_v2(
+      contract$authorization_dependencies),
+      .dsvert_dp_synopsis_client_effective_dependencies_v2(context, manifest)) &&
     identical(contract$privacy_epoch_scope,
               "per_canonical_artifact_sticky_v1") &&
     identical(.dsvert_joint_dp_client_canonical(manifest$logical_snapshot),
@@ -778,6 +781,7 @@
   }
   peers <- sort(names(datasources), method = "radix")
   conns <- datasources[peers]
+  .dsvert_provenance_preflight(conns, .aggregate)
   if (!is.null(status)) {
     if (inherits(status, "dsvert_synopsis_bootstrap_v1") &&
         identical(status$context$servers, peers)) {
@@ -813,7 +817,8 @@
 
   bootstrap_raw <- .dsvert_fanout_by_site(
     conns, stats::setNames(rep(list(call(
-      name = "dsvertDPSynopsisBootstrapDS")), length(peers)), peers),
+      name = "dsvertDPSynopsisBootstrapDS",
+      privacy_protocol = .DSVERT_CLIENT_PROVENANCE_PROTOCOL)), length(peers)), peers),
     operation = "no-lifetime synopsis bootstrap fan-out",
     .aggregate = .aggregate)
   bootstraps <- stats::setNames(lapply(peers, function(peer) {
@@ -821,7 +826,7 @@
       bootstrap_raw[[peer]], paste("synopsis bootstrap from", peer))
     fields <- c(
       "version", "phase", "peer_name", "peer_identity_pk", "policy",
-      "draft", "data_access", "patient_derived_metadata", "request_limit",
+      "draft", "authorization_dependencies", "data_access", "patient_derived_metadata", "request_limit",
       "rate_limit", "catalog_limit", "signature")
     if (!.dsvert_dp_has_exact_names(value, fields) ||
         !identical(value$version,
@@ -829,7 +834,7 @@
         !identical(value$phase, "custodian_policy_bootstrap") ||
         !identical(value$peer_name, peer) ||
         !identical(value$peer_identity_pk, identities[[peer]]) ||
-        !identical(value$data_access, FALSE) ||
+        !identical(value$data_access, TRUE) ||
         !identical(value$patient_derived_metadata, FALSE) ||
         !identical(value$request_limit, FALSE) ||
         !identical(value$rate_limit, FALSE) ||
@@ -863,6 +868,8 @@
       bootstraps[[peer]], peer, context,
       .DSVERT_CLIENT_SYNOPSIS_BOOTSTRAP_DOMAIN)
   }
+  context$authorization_dependencies <- .dsvert_dp_synopsis_client_closure_v2(
+    bootstraps, context)
   drafts <- stats::setNames(lapply(peers, function(peer) {
     .dsvert_dp_synopsis_bootstrap_draft_v1(
       bootstraps[[peer]]$draft, peer, context)
@@ -1246,7 +1253,7 @@
     context$policy, context$servers)
   bootstrap_fields <- c(
     "version", "phase", "peer_name", "peer_identity_pk", "policy",
-    "draft", "data_access", "patient_derived_metadata", "request_limit",
+    "draft", "authorization_dependencies", "data_access", "patient_derived_metadata", "request_limit",
     "rate_limit", "catalog_limit", "signature")
   for (peer in context$servers) {
     value <- status[[peer]]
@@ -1257,7 +1264,7 @@
       identical(value$peer_identity_pk, unname(context$pinset[[peer]])) &&
       identical(.dsvert_joint_dp_client_json(value$policy),
                 .dsvert_joint_dp_client_json(policy$value)) &&
-      identical(value$data_access, FALSE) &&
+      identical(value$data_access, TRUE) &&
       identical(value$patient_derived_metadata, FALSE) &&
       identical(value$request_limit, FALSE) &&
       identical(value$rate_limit, FALSE) &&
@@ -1267,6 +1274,11 @@
     }
     .dsvert_dp_synopsis_outer_signature_v1(
       value, peer, context, .DSVERT_CLIENT_SYNOPSIS_BOOTSTRAP_DOMAIN)
+  }
+  closure <- .dsvert_dp_synopsis_client_closure_v2(unclass(status), context)
+  if (!identical(closure, context$authorization_dependencies)) {
+    stop("The trusted Synopsis authorization closure differs from its signatures",
+         call. = FALSE)
   }
   bootstrap_set_sha256 <- .dsvert_vector_hash(list(
     version = .DSVERT_CLIENT_SYNOPSIS_BOOTSTRAP_VERSION,

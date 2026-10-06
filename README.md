@@ -1,7 +1,7 @@
 # dsVertClient - DataSHIELD Client for Vertically Partitioned Data
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://isglobal-brge.github.io/dsVertClient/news/index.html)
+[![Version](https://img.shields.io/badge/version-1.4.1-blue.svg)](https://isglobal-brge.github.io/dsVertClient/news/index.html)
 
 ## Overview
 
@@ -23,6 +23,34 @@ explicit unavailable/migration error instead of falling back silently.
 
 Pair with the server-side companion package [**dsVert**](https://github.com/isglobal-brge/dsVert).
 
+## 1.4.1 provenance epochs and migration
+
+Upgrade dsVert and dsVertClient together. PSI, Count, Frequency and Synopsis
+reject mixed provenance protocols before private materialization; analyst
+function arguments are unchanged. These releases expose a `stable_receipt`
+that binds public analysis semantics and all participating authorization
+epochs, including Synopsis dependencies. A new custodian authorization changes
+that identity even when the authorized bytes are identical.
+
+**Legacy generic aligned imports require one custodian migration before use.**
+In the trusted server R process, after approving a descriptor for the current
+frame, run this once per imported dataset (replace `id` with its privacy-unit
+column):
+
+```r
+dsVert::dsvertAuthorizeSource(
+  data = aligned, descriptor = getOption("dsvert.dp.datasets")$aligned,
+  event_id = "migration-1.4.1", kind = "dataset", patient_column = "id")
+```
+
+The command is administrative and is not a DataSHIELD analyst endpoint.
+Registered material and committed numeric answers stay frozen across source
+edits and restarts until explicit custodian reauthorization. Retain the server
+authorization store with the existing identity/noise/replay state. See the
+[provenance and custodian workflow](inst/docs/provenance_epochs_1.4.1.md) for
+first-load rules, reauthorization, stable versus operational receipts and
+privacy limits.
+
 ## Quick Start
 
 ```r
@@ -36,7 +64,7 @@ DSI::datashield.assign.table(conns, "D", "project.data")
 ds.psiAlign("D", "patient_id", "DA", na.action = "na.omit",
             datasources = conns)
 
-# 2. Inspect the immutable server policy and signed, data-free capsule plan
+# 2. Inspect the immutable server policy and signed capsule plan
 ds.vertDPStatus(conns)
 ds.vertDPCapsulePlan(conns)
 
@@ -57,8 +85,10 @@ DSI::datashield.logout(conns)
 
 ## Differentially private releases
 
-The package can inspect—never change—the immutable DP policy and run a public,
-data-free utility preview. Count independently compiles one canonical signed
+The package can inspect—never change—the immutable DP policy and run a public
+utility preview. The capability check is data-free; a 1.4.1 Synopsis plan may
+read and freeze authorized source material during first registration, without
+releasing statistics. Count independently compiles one canonical signed
 current-snapshot artifact and uses sticky exact-MPC noise or signed fixed-cohort
 K-consensus. Frequency independently compiles one signed fixed-domain artifact
 and executes one sticky two-authority Ring128 release; the source owner must be
@@ -81,7 +111,7 @@ ds.vertDPCalibrate(capsule_epsilon = c(1, 3, 5),
                    peer_count = length(conns),
                    sensitivity = 1)
 ds.vertDPStatus(conns)
-ds.vertDPCapsulePlan(conns) # signed dry-run; no data access or release
+ds.vertDPCapsulePlan(conns) # signed preview; may capture authorization, no release
 # Canonical stateless sticky artifacts:
 ds.vertDPCount("DA", datasources = conns)
 frequency <- ds.vertDPFrequency(
@@ -133,9 +163,10 @@ There is no request, rate, catalog, or finite lifetime admission limit. A
 supported canonical artifact has its own declared DP scope; a distinct
 artifact is a distinct analysis and may compose with it. We do not claim a
 finite global privacy bound across an unlimited set of different analyses.
-`ds.vertDPStatus()` and `ds.vertDPCapsulePlan()` are data-free signed Synopsis
-bootstraps: they bind the pinset, two designated authorities and immutable
-workload, but create neither a release nor a protected-source read. The retired
+`ds.vertDPStatus()` and `ds.vertDPCapsulePlan()` verify signed Synopsis
+bootstraps: they bind the pinset, two designated authorities, authorization
+dependencies and immutable workload. They may read and durably capture
+authorized material on first registration, and create no statistical release. The retired
 vector-lifecycle ABI remains internal compatibility code and is not a public
 release route.
 

@@ -278,8 +278,9 @@
 #' Performs only the signed no-lifetime Synopsis bootstrap and byte-identical
 #' manifest binding. The selection is owned by custodian policy and signed
 #' workload specifications: this function has no analyst-controlled expansion
-#' input. It never resolves a protected snapshot, materialises coordinates,
-#' invokes a producer, or creates a DP release.
+#' input. It may read and durably capture authorized protected-source material
+#' on first registration. It never materialises coordinates, invokes a producer,
+#' or creates a statistical release.
 #'
 #' @param datasources Complete named DataSHIELD connection set. If `NULL`, use
 #'   the active connections.
@@ -287,7 +288,8 @@
 #'   again against `datasources`; if omitted, the handshake is performed.
 #' @return A compact `ds.vertDPCapsulePlan` object containing the signed
 #'   Synopsis identity, immutable workload and coordinate layout, pinset, and
-#'   explicit zero-access/zero-release/no-limit guarantees for this dry-run.
+#'   explicit protected-source access, no-statistical-release and no-limit
+#'   guarantees for this dry-run.
 #' @export
 ds.vertDPCapsulePlan <- function(datasources = NULL, status = NULL) {
   .dsvert_dp_synopsis_plan_impl(
@@ -339,7 +341,7 @@ ds.vertDPCapsulePlan <- function(datasources = NULL, status = NULL) {
       designated_noise_peers = context$designated,
       peer_pinset_sha256 = context$policy$peer_pinset_sha256),
     guarantees = list(
-      data_access = FALSE, release_created = FALSE,
+      data_access = TRUE, release_created = FALSE,
       operation_limit = FALSE, request_limit = FALSE,
       rate_limit = FALSE, catalog_limit = FALSE,
       history_can_deny_operation = FALSE))
@@ -468,13 +470,17 @@ ds.vertDPCapsulePlan <- function(datasources = NULL, status = NULL) {
 
 #' @export
 print.ds.vertDPCapsulePlan <- function(x, ...) {
-  cat("dsVert Synopsis plan (dry-run; no data access; no release)\n")
+  if (isTRUE(x$guarantees$data_access)) {
+    cat("dsVert Synopsis plan (authorization material may be captured; no release)\n")
+  } else {
+    cat("dsVert Synopsis plan (dry-run; no data access; no release)\n")
+  }
   cat("capsule:", x$capsule$capsule_id, "\n")
   cat("manifest:", x$capsule$manifest_sha256, "\n")
   cat("workload:", x$workload$version, "| coordinates:",
       x$artifacts$coordinate_layout$coordinate_count, "\n")
   cat("peers:", x$consortium$K, "| pinset:",
       x$consortium$peer_pinset_sha256, "\n")
-  cat("planning data/release cost: none; limits/history gates: false\n")
+  cat("planning release cost: none; limits/history gates: false\n")
   invisible(x)
 }

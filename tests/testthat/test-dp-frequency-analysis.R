@@ -242,7 +242,7 @@ test_that("Frequency accepts the real convolution planner rational bounds", {
     dataset_id = "cohort_table", dataset_version = "v1",
     id_column = "patient_id")
   claim_unsigned <- .dsvert_dp_analysis_client_canonical_value_v1(list(
-    version = "dsvert-dp-frequency-factor-claim-v2",
+    version = "dsvert-dp-frequency-factor-claim-v3",
     source_peer_name = source_peer,
     source_identity_pk = unname(pins[[source_peer]]),
     psi_run_sha256 = strrep("1", 64L),
@@ -257,10 +257,15 @@ test_that("Frequency accepts the real convolution planner rational bounds", {
     privacy_unit_column = source$id_column,
     pinset_id = .dsvert_dp_frequency_client_pinset_v1(pins),
     capacity_bucket = 64L, factor_entry = factor,
-    factor_entry_sha256 = .dsvert_dp_frequency_client_factor_hash_v1(factor)))
+    factor_entry_sha256 = .dsvert_dp_frequency_client_factor_hash_v1(factor),
+    derivation_policy_id = strrep("c", 64L),
+    authorization_epochs = lapply(seq_along(pins), function(i) list(
+      peer_identity = sort(unname(pins), method = "radix")[[i]],
+      authorization_epoch = sprintf("%064x", i + 10L),
+      source_contract_id = strrep("d", 64L)))))
   claim <- .dsvert_dp_analysis_client_canonical_value_v1(c(
     claim_unsigned, list(signature = .frequency_client_sign(charToRaw(paste0(
-      "dsVert/dp-frequency/factor-claim/v2|",
+      "dsVert/dp-frequency/factor-claim/v3|",
       .dsvert_joint_dp_client_json(claim_unsigned))),
       keys$private[[source_peer]]))))
   config <- .dsvert_dp_frequency_client_config_v1(list(
@@ -289,14 +294,21 @@ test_that("Frequency accepts the real convolution planner rational bounds", {
   receipts <- stats::setNames(lapply(seq_along(pins), function(index) {
     peer <- names(pins)[[index]]
     unsigned <- .dsvert_dp_analysis_client_canonical_value_v1(list(
-      version = "dsvert-dp-frequency-receipt-v1", peer_name = peer,
+      version = "dsvert-dp-frequency-receipt-v2", peer_name = peer,
       peer_identity_pk = unname(pins[[peer]]),
       config_sha256 = config_sha256, source_claim_sha256 = claim_sha256,
       psi_run_sha256 = claim$psi_run_sha256,
-      snapshot_commitment = sprintf("%064x", index)))
+      snapshot_commitment = .dsvert_provenance_snapshot_commitment(
+        claim, config, peer, list(family = "frequency",
+          factor_domain = config$factor_domain,
+          source_owner = config$source_owner,
+          missingness_policy = config$missingness_policy,
+          repeated_record_policy = config$repeated_record_policy)),
+      authorization_epochs = claim$authorization_epochs,
+      derivation_policy_id = claim$derivation_policy_id))
     .dsvert_dp_analysis_client_canonical_value_v1(c(
       unsigned, list(signature = .frequency_client_sign(charToRaw(paste0(
-        "dsVert/dp-frequency/receipt/v1|",
+        "dsVert/dp-frequency/receipt/v2|",
         .dsvert_joint_dp_client_json(unsigned))), keys$private[[peer]]))))
   }), names(pins))
   envelopes <- stats::setNames(lapply(names(pins), function(peer) {
@@ -440,6 +452,10 @@ test_that("Frequency metadata cap includes the factor variable prefix", {
     state$calls[[length(state$calls) + 1L]] <- list(
       command = command, peers = peers, expression = expr)
     values <- switch(command,
+      dsvertProvenanceCapabilitiesDS = stats::setNames(rep(list(list(
+        protocol = "dsvert-provenance-epochs-v1", version = "1.4.1",
+        families = c("psi", "count", "frequency", "synopsis"))),
+        length(peers)), peers),
       dsvertDPFrequencyClaimDS = stats::setNames(
         list(fixture$claim), peers),
       dsvertDPFrequencyCompileDS = fixture$envelopes[peers],
@@ -489,12 +505,12 @@ test_that("Frequency preparation uses one source, full K, then two roles", {
       .aggregate = mock$aggregate,
       .session_id = function() fixture$session_id)
     expect_identical(mock$state$commands, c(
-      "dsvertDPFrequencyClaimDS", "dsvertDPFrequencyCompileDS",
+      "dsvertProvenanceCapabilitiesDS", "dsvertDPFrequencyClaimDS", "dsvertDPFrequencyCompileDS",
       "dsvertDPFrequencyAuthorizeDS", "exactGCTransportInitDS",
       "exactGCBindPeersDS"))
-    expect_identical(mock$state$calls[[1L]]$peers, fixture$source_peer)
-    expect_identical(mock$state$calls[[2L]]$peers, order)
-    for (index in 3:5) {
+    expect_identical(mock$state$calls[[2L]]$peers, fixture$source_peer)
+    expect_identical(mock$state$calls[[3L]]$peers, order)
+    for (index in 4:6) {
       expect_identical(
         mock$state$calls[[index]]$peers, fixture$compiled$authorities)
     }

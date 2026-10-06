@@ -222,7 +222,7 @@
 
 .dsvert_dp_synopsis_client_projection <- function(policy, manifest, layout) {
   catalog <- list(
-    version = "dsvert-stateless-catalog-synopsis-catalog-v1",
+    version = "dsvert-stateless-catalog-synopsis-catalog-v2",
     domain = policy$domain, cohort_id = policy$cohort_id,
     peer_pinset_sha256 = policy$peer_pinset_sha256,
     logical_snapshot = manifest$logical_snapshot,
@@ -238,11 +238,17 @@
     coordinate_count = manifest$workload$coordinate_count,
     coordinate_order_sha256 = layout$sha256,
     clipping_sha256 = manifest$workload$capsule_mechanism$clipping_hash)
+  dependencies <- manifest$capsule_identity$contract$authorization_dependencies
+  dependencies <- .dsvert_dp_synopsis_client_closure_validate_v2(dependencies)
+  if (!length(dependencies$dependencies)) stop(
+    "The public Synopsis catalog lacks complete authorization provenance.",
+    call. = FALSE)
+  catalog$authorization_dependencies <- dependencies
   catalog <- .dsvert_dp_synopsis_client_catalog_ids(catalog)
   list(
-    version = "dsvert-stateless-catalog-synopsis-projection-v1",
+    version = "dsvert-stateless-catalog-synopsis-projection-v2",
     sha256 = .dsvert_dp_synopsis_client_hash(
-      "dsVert/stateless-catalog-synopsis/catalog/v1|", catalog),
+      "dsVert/stateless-catalog-synopsis/catalog/v2|", catalog),
     catalog = catalog)
 }
 
@@ -1078,6 +1084,7 @@
     sticky_replay = TRUE, source_values_exposed = FALSE,
     intermediate_values_exposed = FALSE,
     manifest = trusted$manifest,
+    stable_receipt = .dsvert_provenance_stable_receipt(compiled$artifact),
     signed_provenance = list(
       version = "dsvert-stateless-synopsis-public-provenance-v1",
       ordered_peer_pinset = as.list(trusted$context$pinset),

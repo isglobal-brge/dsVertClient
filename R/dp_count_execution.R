@@ -540,6 +540,7 @@
     mode = "add_remove_dp",
     payload = list(
       release = release,
+      stable_receipt = .dsvert_provenance_stable_receipt(context$contract),
       finalizer_peer = evaluator,
       accuracy_95_abs = accuracy_95_abs,
       accuracy_95_confidence = 0.95,

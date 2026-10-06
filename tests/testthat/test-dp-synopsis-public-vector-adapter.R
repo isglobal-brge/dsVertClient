@@ -166,7 +166,18 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
       phase = "custodian_policy_bootstrap", peer_name = peer,
       peer_identity_pk = unname(pins[[peer]]), policy = policy,
       draft = draft,
-      data_access = FALSE, patient_derived_metadata = FALSE,
+      authorization_dependencies = stats::setNames(list(list(
+        version = .DSVERT_CLIENT_SYNOPSIS_DEPENDENCY_VERSION,
+        dataset_id = paste0("data_", peer), dataset_version = "v1",
+        authorization_epoch = sprintf("%064x", match(peer, peers) + 10L),
+        source_contract_id = strrep("a", 64L),
+        derivation_policy_id = strrep("b", 64L),
+        provenance_kind = "padded_psi",
+        authorization_epochs = lapply(seq_along(pins), function(index) list(
+          peer_identity = sort(unname(pins), method = "radix")[[index]],
+          authorization_epoch = sprintf("%064x", index),
+          source_contract_id = strrep("c", 64L))))), paste0("data_", peer)),
+      data_access = TRUE, patient_derived_metadata = FALSE,
       request_limit = FALSE, rate_limit = FALSE, catalog_limit = FALSE)
     c(unsigned, list(signature = sign_outer(
       unsigned, peer, .DSVERT_CLIENT_SYNOPSIS_BOOTSTRAP_DOMAIN)))
@@ -177,6 +188,8 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
     status = status, servers = peers, pinset = pins,
     designated = authorities, conns = source$conns[authorities],
     all_conns = source$conns, policy = policy)
+  context$authorization_dependencies <- .dsvert_dp_synopsis_client_closure_v2(
+    bootstraps, context)
   manifest <- source$manifest
 
   schema_unsigned <- list(
@@ -258,6 +271,8 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
     capsule_schema = manifest$capsule_schema,
     admission = manifest$admission, bounds = manifest$bounds,
     workload = manifest$workload,
+    authorization_dependencies =
+      .dsvert_dp_synopsis_client_effective_dependencies_v2(context, manifest),
     privacy_epoch_scope = "per_canonical_artifact_sticky_v1")
   manifest$capsule_identity$capsule_id <-
     .dsvert_vector_hash(manifest$capsule_identity$contract)
@@ -267,7 +282,7 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
   layout <- .dsvert_dp_capsule_vector_layout(manifest)
 
   catalog <- list(
-    version = "dsvert-stateless-catalog-synopsis-catalog-v1",
+    version = "dsvert-stateless-catalog-synopsis-catalog-v2",
     domain = policy$domain, cohort_id = policy$cohort_id,
     peer_pinset_sha256 = policy$peer_pinset_sha256,
     logical_snapshot = .dsvert_joint_dp_client_canonical(
@@ -281,7 +296,9 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
     release_lattice = manifest$workload$release_lattice,
     sensitivity = manifest$workload$sensitivity,
     coordinate_count = dimension, coordinate_order_sha256 = layout$sha256,
-    clipping_sha256 = manifest$workload$capsule_mechanism$clipping_hash)
+    clipping_sha256 = manifest$workload$capsule_mechanism$clipping_hash,
+    authorization_dependencies =
+      manifest$capsule_identity$contract$authorization_dependencies)
   rename_ids <- function(value) {
     if (!is.list(value)) return(value)
     if (!is.null(names(value))) {
@@ -291,9 +308,9 @@ test_that("one-coordinate Synopsis accepts signed exact-GC START state", {
   }
   catalog <- rename_ids(catalog)
   projection <- list(
-    version = "dsvert-stateless-catalog-synopsis-projection-v1",
+    version = "dsvert-stateless-catalog-synopsis-projection-v2",
     sha256 = .synopsis_public_domain_hash(
-      "dsVert/stateless-catalog-synopsis/catalog/v1|", catalog),
+      "dsVert/stateless-catalog-synopsis/catalog/v2|", catalog),
     catalog = catalog)
 
   sensitivity_steps <- as.character(dimension * scale)
@@ -1084,4 +1101,38 @@ test_that("zero-delta exact v4 Synopsis release validates its modular certificat
   altered <- fixture
   altered$artifact$artifact$physical_plan$full_plan$representability_bound <- "0"
   expect_error(do.call(.dsvert_dp_synopsis_public_vector_v1, altered[arguments]))
+})
+
+test_that("public Synopsis requires exactly the effective authenticated closure", {
+  fixture <- .synopsis_public_fixture(k = 3L)
+  context <- fixture$manifest_bundle$context
+  manifest <- jsonlite::fromJSON(fixture$manifest_bundle$manifest_json,
+                                simplifyVector = FALSE)
+  layout <- .dsvert_dp_capsule_vector_layout(manifest)
+  effective <- .dsvert_dp_synopsis_client_effective_dependencies_v2(
+    context, manifest)
+  expect_lt(length(effective$dependencies),
+            length(context$authorization_dependencies$dependencies))
+  selected <- vapply(effective$dependencies, function(entry)
+    paste(entry$source_identity, entry$dataset), character(1L))
+  changed <- context
+  unused <- which(!vapply(changed$authorization_dependencies$dependencies,
+    function(entry) paste(entry$source_identity, entry$dataset) %in% selected,
+    logical(1L)))[[1L]]
+  changed$authorization_dependencies$dependencies[[unused]]$dependency$
+    authorization_epoch <- strrep("e", 64L)
+  expect_identical(.dsvert_dp_synopsis_client_effective_dependencies_v2(
+    changed, manifest), effective)
+  missing <- manifest
+  missing$capsule_identity$contract$authorization_dependencies <- NULL
+  expect_error(.dsvert_dp_synopsis_client_projection(context$policy,
+    missing, layout), "authorization closure")
+  empty <- manifest
+  empty$capsule_identity$contract$authorization_dependencies$dependencies <- list()
+  expect_error(.dsvert_dp_synopsis_client_projection(context$policy,
+    empty, layout), "complete authorization provenance")
+  changed <- context
+  changed$authorization_dependencies$dependencies <- list()
+  expect_error(.dsvert_dp_synopsis_client_effective_dependencies_v2(
+    changed, manifest), "omits an effective source")
 })

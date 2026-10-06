@@ -72,15 +72,23 @@
   receipts <- stats::setNames(lapply(seq_along(peers), function(index) {
     peer <- peers[[index]]
     unsigned <- list(
-      version = "dsvert-dp-count-receipt-v1",
+      version = "dsvert-dp-count-receipt-v2",
       peer_name = peer,
       peer_identity_pk = unname(config$peer_pins[[peer]]),
       config_sha256 = config_sha256,
       psi_run_sha256 = strrep("b", 64L),
-      snapshot_commitment = sprintf("%064x", index),
-      sampler_plan = .count_client_plan())
+      snapshot_commitment = NULL,
+      sampler_plan = .count_client_plan(),
+      derivation_policy_id = strrep("c", 64L),
+      authorization_epochs = lapply(seq_along(config$peer_pins), function(i) list(
+        peer_identity = sort(unname(config$peer_pins), method = "radix")[[i]],
+        authorization_epoch = sprintf("%064x", i + 10L),
+        source_contract_id = strrep("d", 64L))))
+    unsigned$snapshot_commitment <- .dsvert_provenance_snapshot_commitment(
+      unsigned, config, peer,
+      list(family = "count", statistic = "aligned_privacy_unit_count"))
     message <- charToRaw(paste0(
-      "dsVert/dp-count/receipt/v1|",
+      "dsVert/dp-count/receipt/v2|",
       .dsvert_joint_dp_client_json(unsigned)))
     c(unsigned, list(signature = .count_client_sign(
       message, keys$private[[peer]])))
@@ -91,7 +99,7 @@
 .count_client_resign_receipt <- function(receipt, key) {
   unsigned <- receipt[setdiff(names(receipt), "signature")]
   receipt$signature <- .count_client_sign(charToRaw(paste0(
-    "dsVert/dp-count/receipt/v1|",
+    "dsVert/dp-count/receipt/v2|",
     .dsvert_joint_dp_client_json(unsigned))), key)
   receipt
 }
@@ -229,7 +237,12 @@
     state$commands <- c(state$commands, command)
     state$calls[[length(state$calls) + 1L]] <- list(
       command = command, peers = names(conns), expression = expr)
-    if (identical(command, "dsvertDPCountCompileDS")) {
+    if (identical(command, "dsvertProvenanceCapabilitiesDS")) {
+      values <- stats::setNames(rep(list(list(
+        protocol = "dsvert-provenance-epochs-v1", version = "1.4.1",
+        families = c("psi", "count", "frequency", "synopsis"))),
+        length(conns)), names(conns))
+    } else if (identical(command, "dsvertDPCountCompileDS")) {
       values <- .count_client_compile_envelopes(fixture)[names(conns)]
     } else if (identical(command, "dsvertDPCountAuthorizeDS")) {
       config_json <- .dsvert_dsi_text_decode(expr$config_json)
@@ -315,15 +328,16 @@ test_that("Count compile-authorize-bind is K-generic and role stable", {
 
     expect_identical(
       mock$state$commands,
-      c("dsvertDPCountCompileDS", "dsvertDPCountAuthorizeDS",
+      c("dsvertProvenanceCapabilitiesDS", "dsvertDPCountCompileDS", "dsvertDPCountAuthorizeDS",
         "exactGCTransportInitDS", "exactGCBindPeersDS"))
     expect_identical(mock$state$calls[[1L]]$peers, order)
-    expect_identical(
-      mock$state$calls[[2L]]$peers, mock$state$authorities)
+    expect_identical(mock$state$calls[[2L]]$peers, order)
     expect_identical(
       mock$state$calls[[3L]]$peers, mock$state$authorities)
     expect_identical(
       mock$state$calls[[4L]]$peers, mock$state$authorities)
+    expect_identical(
+      mock$state$calls[[5L]]$peers, mock$state$authorities)
     expect_identical(names(result), c("version", "mode", "payload"))
     expect_identical(result$version, "dsvert-dp-count-prepared-v1")
     expect_identical(result$mode, "add_remove_dp")
@@ -343,7 +357,7 @@ test_that("Count compile-authorize-bind is K-generic and role stable", {
     expect_identical(
       attr(result$transport, "exact_gc_cleanup_purpose", exact = TRUE),
       .DSVERT_CLIENT_EXACT_GC_CROSS_CLEANUP_PURPOSE)
-    bind <- mock$state$calls[[4L]]$expression
+    bind <- mock$state$calls[[5L]]$expression
     expect_setequal(names(bind)[nzchar(names(bind))], c(
       "transport_keys_b64", "identity_info_b64", "session_id",
       "cleanup_purpose", "artifact_key"))
@@ -396,6 +410,12 @@ test_that("fixed Count Compile verifies exact K signatures and short-circuits", 
     calls <- character()
     aggregate <- function(conns, expr, ...) {
       calls <<- c(calls, as.character(expr[[1L]]))
+      if (identical(as.character(expr[[1L]]), "dsvertProvenanceCapabilitiesDS")) {
+        return(stats::setNames(rep(list(list(
+          protocol = "dsvert-provenance-epochs-v1", version = "1.4.1",
+          families = c("psi", "count", "frequency", "synopsis"))),
+          length(conns)), names(conns)))
+      }
       fixture$envelopes[names(conns)]
     }
     result <- .dsvert_dp_count_compile_authorize_bind_v1(
@@ -403,7 +423,8 @@ test_that("fixed Count Compile verifies exact K signatures and short-circuits", 
       .session_id = function() stop("fixed Count created a UUID"),
       .setup_exact = function(...) stop("fixed Count initialized MPC"))
 
-    expect_identical(calls, "dsvertDPCountCompileDS")
+    expect_identical(calls, c("dsvertProvenanceCapabilitiesDS",
+                              "dsvertDPCountCompileDS"))
     expect_identical(names(result), c("version", "mode", "payload"))
     expect_identical(result$version, "dsvert-dp-count-prepared-v1")
     expect_identical(result$mode, "fixed_cohort_public")
@@ -470,10 +491,13 @@ test_that("fixed Count Compile rejects every consensus and pin tamper", {
 })
 
 test_that("Count client compiler has exact K, signature and server hash parity", {
+  # Version 2 receipts bind the complete public epoch vector. These identity
+  # fixtures intentionally change with that protocol; the sampler plan above
+  # and its independent production KAT remain unchanged.
   expected_artifacts <- c(
-    `2` = "43699087a778670dc9560e2d08d5cc6ee9a8fe88ba95d14f5cca1cbfa24eb413",
-    `3` = "dd7f9d853be96a30d9b5bf6adce94b61bcdeb9f0deb671387a9d81cc78b9050a",
-    `5` = "202de715ec4969d33b4379535317e5491ddb1f3ad241a1f14698f66217e3465b")
+    `2` = "da9aa56a700c2a829903913c7fc850f098324f05ead51e0ef6b9132f01a83e7b",
+    `3` = "57c0405684e84bf132ff1bd6bdd1d3cb133956b952cb541803b6c69a0cca9403",
+    `5` = "315dcd88ef84d1fe7d09b73c42fd90423966c5e15d4bbf69c1ffc3aef2b63245")
   for (k in c(2L, 3L, 5L)) {
     fixture <- .count_client_fixture(k)
     compiled <- .dsvert_dp_count_client_compile_v1(
@@ -497,16 +521,16 @@ test_that("Count client compiler has exact K, signature and server hash parity",
     "080b424640dd19d6ba66486eb55d059db47db77c42536746ef6cb82f74ec846b")
   expect_identical(
     compiled$receipt_set_sha256,
-    "2cc5814af6db7281125de27d6ed2dd29cacff7d5471efb96976ab9b625d10986")
+    "def53d49cff20516628bca9950a9be1b0f0ff35bd65cf42e55dd398349921552")
   expect_identical(
     compiled$contract_sha256,
-    "bd9c848fef424c9c45d89e8dee6402d918f95be205436ce84eec740c3fc364fa")
+    "0003317e1fdee07bbf90d832e56434d78057fad90b7384fe71bf33ccfd494195")
   expect_identical(
     compiled$binding$sha256,
-    "6b6b67dcebfafcaa3cd3656bec73a99364b4f0d82411906f6ad27d8114637817")
+    "7caaf094b5f41657c98b067c8cd0700819c6b181be7c8821ad0b13ff528d75b4")
   expect_identical(
     compiled$worker_static_sha256,
-    "d9fe49a1a8eefe982205019fe77b9a4187edada13a69a8e03a8feb681bd8f141")
+    "f191c925c0e3c52643beb2031bc5f5fc7d9b9d9ae0d48158f42b3c4d1eb0f1c5")
 })
 
 test_that("Count compile consensus rejects closed-schema and receipt tampering", {
@@ -646,7 +670,7 @@ test_that("Count authorization fails before transport on every public tamper", {
     .session_id = function() session_id), "signature")
   expect_identical(
     mock$state$commands,
-    c("dsvertDPCountCompileDS", "dsvertDPCountAuthorizeDS"))
+    c("dsvertProvenanceCapabilitiesDS", "dsvertDPCountCompileDS", "dsvertDPCountAuthorizeDS"))
 })
 
 test_that("Count control-plane result contains no protected statistic", {

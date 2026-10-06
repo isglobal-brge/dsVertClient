@@ -4,8 +4,8 @@
 # receipts.
 
 .DSVERT_CLIENT_DP_COUNT_CONFIG_VERSION <- "dsvert-dp-count-config-v1"
-.DSVERT_CLIENT_DP_COUNT_RECEIPT_VERSION <- "dsvert-dp-count-receipt-v1"
-.DSVERT_CLIENT_DP_COUNT_RECEIPT_DOMAIN <- "dsVert/dp-count/receipt/v1|"
+.DSVERT_CLIENT_DP_COUNT_RECEIPT_VERSION <- "dsvert-dp-count-receipt-v2"
+.DSVERT_CLIENT_DP_COUNT_RECEIPT_DOMAIN <- "dsVert/dp-count/receipt/v2|"
 .DSVERT_CLIENT_DP_COUNT_CONFIG_DOMAIN <- "dsVert/dp-count/config/v1|"
 .DSVERT_CLIENT_DP_COUNT_RECEIPT_SET_DOMAIN <-
   "dsVert/dp-count/receipt-set/v1|"
@@ -343,7 +343,8 @@
 .dsvert_dp_count_client_receipt_v1 <- function(receipt, config) {
   fields <- c(
     "version", "peer_name", "peer_identity_pk", "config_sha256",
-    "psi_run_sha256", "snapshot_commitment", "sampler_plan", "signature")
+    "psi_run_sha256", "snapshot_commitment", "sampler_plan",
+    "authorization_epochs", "derivation_policy_id", "signature")
   if (!is.list(receipt) || is.null(names(receipt)) || anyNA(names(receipt)) ||
       anyDuplicated(names(receipt)) || !setequal(names(receipt), fields) ||
       !identical(receipt$version, .DSVERT_CLIENT_DP_COUNT_RECEIPT_VERSION)) {
@@ -358,10 +359,13 @@
     error = function(error) stop("Invalid Count receipt identity.",
                                  call. = FALSE))
   for (field in c(
-      "config_sha256", "psi_run_sha256", "snapshot_commitment")) {
+      "config_sha256", "psi_run_sha256", "snapshot_commitment",
+      "derivation_policy_id")) {
     unsigned[[field]] <- .dsvert_dp_count_client_hex_v1(
       unsigned[[field]], paste("receipt", field))
   }
+  .dsvert_provenance_epochs_validate(
+    unsigned$authorization_epochs, unname(config$peer_pins))
   unsigned$sampler_plan <- .dsvert_dp_count_client_plan_v1(
     unsigned$sampler_plan, config)
   unsigned <- .dsvert_dp_analysis_client_canonical_value_v1(unsigned)
@@ -374,6 +378,13 @@
       !identical(unsigned$peer_identity_pk,
                  unname(config$peer_pins[[unsigned$peer_name]]))) {
     stop("The Count receipt identity is not pinned.", call. = FALSE)
+  }
+  expected_snapshot <- .dsvert_provenance_snapshot_commitment(
+    unsigned, config, unsigned$peer_name,
+    list(family = "count", statistic = "aligned_privacy_unit_count"))
+  if (!identical(unsigned$snapshot_commitment, expected_snapshot)) {
+    stop("The Count receipt does not bind complete authorization provenance.",
+         call. = FALSE)
   }
   signature <- .dsvert_joint_dp_client_b64url(
     receipt$signature, 64L, "Count receipt signature")
@@ -788,6 +799,14 @@
       receipts, `[[`, character(1L), "psi_run_sha256"))) != 1L) {
     stop("Count receipts disagree on the PSI run.", call. = FALSE)
   }
+  for (field in c("authorization_epochs", "derivation_policy_id")) {
+    if (!all(vapply(receipts, function(receipt) identical(
+        .dsvert_joint_dp_client_json(receipt[[field]]),
+        .dsvert_joint_dp_client_json(receipts[[1L]][[field]])), logical(1L)))) {
+      stop("Count receipts disagree on complete authorization provenance.",
+           call. = FALSE)
+    }
+  }
   plan <- receipts[[1L]]$sampler_plan
   if (!all(vapply(receipts, function(receipt) {
     identical(receipt$sampler_plan, plan)
@@ -949,9 +968,11 @@
     stop("Invalid Count client orchestration dependency.", call. = FALSE)
   }
   server_names <- names(datasources)
+  .dsvert_provenance_preflight(datasources, .aggregate)
   envelopes <- .dsvert_aggregate_strict(
     datasources,
-    call(name = "dsvertDPCountCompileDS", data_name = data_name),
+    call(name = "dsvertDPCountCompileDS", data_name = data_name,
+         privacy_protocol = .DSVERT_CLIENT_PROVENANCE_PROTOCOL),
     operation = "Count signed analysis compilation",
     .aggregate = .aggregate)
   compiled_mode <- .dsvert_dp_count_client_compile_sum_v1(
