@@ -278,8 +278,9 @@
 #' Performs only the signed no-lifetime Synopsis bootstrap and byte-identical
 #' manifest binding. The selection is owned by custodian policy and signed
 #' workload specifications: this function has no analyst-controlled expansion
-#' input. It never resolves a protected snapshot, materialises coordinates,
-#' invokes a producer, or creates a DP release.
+#' input. It may read and durably capture authorized protected-source material
+#' on first registration. It never materialises coordinates, invokes a producer,
+#' or creates a statistical release.
 #'
 #' @param datasources Complete named DataSHIELD connection set. If `NULL`, use
 #'   the active connections.
@@ -287,7 +288,8 @@
 #'   again against `datasources`; if omitted, the handshake is performed.
 #' @return A compact `ds.vertDPCapsulePlan` object containing the signed
 #'   Synopsis identity, immutable workload and coordinate layout, pinset, and
-#'   explicit zero-access/zero-release/no-limit guarantees for this dry-run.
+#'   explicit protected-source access, no-statistical-release and no-limit
+#'   guarantees for this dry-run.
 #' @export
 ds.vertDPCapsulePlan <- function(datasources = NULL, status = NULL) {
   .dsvert_dp_synopsis_plan_impl(
