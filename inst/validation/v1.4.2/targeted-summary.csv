@@ -13,6 +13,7 @@ dsVert,test-dp-synopsis-source-gate.R,5,76,0,0,0,0
 dsVertClient,test-capsule-method-inventory.R,13,966,0,0,0,0
 dsVertClient,test-cross-gaussian-schema.R,5,54,0,0,0,0
 dsVertClient,test-cross-owner-cor-pca.R,7,128,0,0,0,0
+dsVertClient,test-cross-owner-smoke-fixture.R,3,17,0,0,0,0
 dsVertClient,test-dp-capsule-manifest-client.R,4,96,0,0,0,0
 dsVertClient,test-dp-cor-pca.R,17,222,0,0,0,0
 dsVertClient,test-dp-cox-grid-cross-e2e.R,1,0,0,0,0,1

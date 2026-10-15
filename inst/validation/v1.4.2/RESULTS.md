@@ -62,13 +62,14 @@ does not establish a separate Poisson promotion campaign or statistical accuracy
 
 ## 6. Results and commands
 
-Final unique-file totals: **8,654 client assertions / 32 files / 239 blocks** and
+Final unique-file totals: **8,671 client assertions / 33 files / 242 blocks** and
 **6,382 server assertions / 11 files / 163 blocks**, zero failures/errors/warnings.
 One client skip: the optional tagged Cox plaintext harness needs `survival`, which
 is not installed. All 21 changed Rd files parse. Both package installations and
 `git diff --check` are checked separately.
 
-Each file below was run with the targeted helper:
+The production test files below were run with the targeted helper; the added
+smoke-fixture file uses the direct targeted command in section 9:
 
 ```sh
 source /workspace/dsflower/.tmp/vertcor/env.sh
@@ -100,6 +101,7 @@ files are not counted (see `.tmp/vertcor/GRID_PHASE_B.md`).
 | dsVertClient | test-capsule-method-inventory.R | 13 | 966 | 0 | 0 | 0 | 0 |
 | dsVertClient | test-cross-gaussian-schema.R | 5 | 54 | 0 | 0 | 0 | 0 |
 | dsVertClient | test-cross-owner-cor-pca.R | 7 | 128 | 0 | 0 | 0 | 0 |
+| dsVertClient | test-cross-owner-smoke-fixture.R | 3 | 17 | 0 | 0 | 0 | 0 |
 | dsVertClient | test-dp-capsule-manifest-client.R | 4 | 96 | 0 | 0 | 0 | 0 |
 | dsVertClient | test-dp-cor-pca.R | 17 | 222 | 0 | 0 | 0 | 0 |
 | dsVertClient | test-dp-cox-grid-cross-e2e.R | 1 | 0 | 0 | 0 | 1 | 0 |
@@ -132,10 +134,11 @@ files are not counted (see `.tmp/vertcor/GRID_PHASE_B.md`).
 
 ## 7. Separate-process DSLite smoke — vertcor03 follow-up
 
-**K2 Cor/PCA, exact replay, offline zero-DSI conversion and binomial LASSO
-passed. The full requested release gate is still incomplete: K3 Cor/PCA was
+**At the end of vertcor03, K2 Cor/PCA, exact replay, offline zero-DSI conversion
+and binomial LASSO passed. The requested release gate remained incomplete: K3 Cor/PCA was
 non-identifiable, Poisson did not finish before the cumulative deadline, and
-optional K5 was not attempted.** No further smoke was run after the deadline.
+optional K5 was not attempted.** No further smoke was run under that exhausted
+budget. Section 9 records the separately authorized vertcor04 follow-up.
 
 ### Production diagnosis and fixes
 
@@ -191,8 +194,9 @@ K3 startup plus PSI took 65.4261 s; its command took **512.6773 s**. Do not inte
 K3's signed noisy count as a successful Cor/PCA result or replace it with a guessed
 count. Its certificate is retained locally for inspection. Larger public
 synthetic cohorts improve the chance of identifiability but require another
-bounded run; the default K3 runner now uses eight rows, and `DSVERT_SMOKE_ROWS=4`
-recreates the tested cohort shape (not a fresh noise draw).
+bounded run. The runner at commit `8d6b83d` used eight rows by default, with
+`DSVERT_SMOKE_ROWS=4` recreating the tested cohort shape. Section 9 describes
+the subsequent four-variable n64 fixture.
 
 The LASSO cases shared two custodian processes and one real PSI run (49.6051 s).
 Binomial registration took 26.6559 s; its registration plus verified fit took
@@ -245,7 +249,7 @@ DSVERT_SMOKE_CASES=lasso timeout 900 python3 ../.tmp/vertcor/run-smoke03.py \
 Run from the client root. The runner evolved during diagnosis; the effective
 cohort sizes are recorded above. For a fresh isolated case use `binomial` or
 `poisson`; `lasso` shares startup but still performs two independent signed
-releases. No additional attempt is authorized by the exhausted follow-up budget.
+releases. No additional attempt was made under that exhausted follow-up budget.
 
 The preceding phase-B smoke remains historical evidence: seven attempts, six
 analysis requests, 574.64430 s, no completed Cor/PCA result. Its last unresolved
@@ -285,3 +289,169 @@ references and the fixed owner-qualified anchor identity remain supported.
 The README and NEWS contain the full public family inventory. MI and survival
 Synopsis producers retain their explicit same-owner restrictions; the release
 does not claim that every possible family scope is cross-owner.
+
+## 9. Sized live gates (`vertcor04`)
+
+This is a separately authorized 2,700-second campaign. Every command is limited
+to 900 seconds, including cleanup. The new tracked launcher
+`tools/run_cross_owner_smoke.py` keeps an exclusive campaign lock, durable
+start/completion records and conservative reservations for interrupted attempts.
+Linux subreaper adoption tracks detached descendants; generation-checked pidfd
+signals clean up only processes belonging to this attempt. Five focused Python
+tests pass (3.612 s), including detached-child cleanup and preservation of an
+unrelated process. The fixture test adds 17 passing R assertions in three blocks,
+zero failures/errors/warnings/skips. These tests do not count as live federation
+evidence or against the live-smoke budget.
+
+### K3 cohort selection
+
+The one bounded K3 attempt uses **n = unit capacity = 64**, epsilon 8, delta 0,
+8-bit quantization, add/remove-patient adjacency and bounds [0,1]. The requested
+variables are `site_a$a`, `site_a$b`, `site_b$x`, `site_c$x`: one same-owner pair,
+all three data owners and cross-owner pairs. Balanced binary columns have true
+centered sums of squares 16 and zero pairwise centered cross-products. The fixed
+public anchor is `site_a$a`.
+
+The existing compiler admits 16 Gaussian coordinates, 12 automatic numeric
+moment coordinates and one global count. Total L1 sensitivity is 29 normalized
+units (7,424 lattice steps); the two independent discrete-Laplace authorities
+give pre-clamp additive-noise SD 7.24999965 per normalized coordinate at epsilon
+8. Clamped/projected released moments need not retain that SD. No sensitivity,
+epsilon, sampler, clipping, attestation or identity rule is changed.
+
+Public planning through the unchanged Gaussian unpacker and Cor identifiability
+gates gave 49,889/50,000 finite results at n32 and 50,000/50,000 at n64, n128 and
+n256. At n64 the exact ideal nonpositive-count probability is 1.05705e-7; the
+95% binomial interval for simulated finite output is [99.9926%, 100%]. Choosing
+n64 provides more margin than n32 while limiting exact-computation cost.
+This supports a functional gate, not a precision guarantee: the simultaneous
+95% noise radius is 26.484375 over the 16 Gaussian sums, and balanced population
+PCA directions are not uniquely identified. The n64 size was fixed before this
+campaign from the earlier certificate's public calibration and public noise
+simulation. It was not tuned to newly released values or retried for a favorable
+draw. The reproducible planning script is
+`tools/plan_cross_owner_142_noise.R`; exact counts, calibration and limitations
+are in `vertcor04-noise-planning.json`. Public planning took 67.428 s, outside
+the live-smoke budget.
+
+### Earlier Poisson timeout diagnosis
+
+The previous Poisson interruption came from the external cumulative smoke
+budget, **not a 40-second deployment timeout**. The old launcher allocated
+386.1197 seconds to the entire combined binomial/Poisson command; measured wall
+time was 386.1519 seconds, exit 124. Only about 39.84 seconds remained after the
+Poisson public call began. The client exact-GC inactivity default is 900 seconds,
+capped by the signed server lease (default 180 seconds); authenticated progress
+renews it. The server default maximum runtime is 21,600 seconds. The DSLite
+scaffold's 1,000-ms polling interval is not an overall deadline. There is no
+reason to raise a production timeout for this case.
+
+The independent Poisson fixture provisions fresh K2 custodian state, one patient,
+one predictor, epsilon 8, delta 2^-100 and one permitted artifact. It signs the
+two-candidate base grid and two-penalty LASSO extension and uses the public
+`dp_lasso_grid` entry point. Objective normalization uses public capacity, so it
+does not require a positive noisy Gaussian count. The completed run establishes
+protocol operation on this tiny fixture, not statistical utility or promotion
+campaign coverage.
+
+### K3 bounded outcome and runtime diagnosis
+
+The single n64/m4 K3 command ran from 13:21:16.946751 to
+13:36:14.083548 UTC, **897.1367984600365 seconds**, and stopped with exit 124
+(`command_limit`). The launcher reserved three seconds of its 900-second
+allowance for cleanup; all owned processes exited, including detached native
+workers (`cleanup_complete=true`, no remaining PIDs). Setup and real PSI passed
+in 159.1586 seconds. Cor entered its production release path, but neither a
+completed Cor/PCA result nor a public certificate was returned before the limit.
+The analysis event ledger contains completed events only; the timeout itself is
+recorded in the command ledger.
+
+Read-only process and public operation metadata showed forward progress, not an
+inactivity timeout or a pin/signature/authorization rejection. Alignment-mask
+execution completed at about 13:30:18, and subsequent exact-GC multiplications
+ran. The first native operation was active by 13:28:29; the third had started by
+13:34:24. Diagnostics inspected only process counters, public transport offsets,
+file metadata and SQLite compilation completion bits, never private payloads.
+
+The existing protocol has a concrete cost at this cohort size. In
+`R/dp_gaussian_cross_transport.R:338–355`, validity has n entries, masked values
+have n*m and moments have n*m*(m+1)/2. The fresh stage sequence at lines 760–790
+requires m-1 validity stages. Server `R/dpGaussianCrossDS.R:1307–1318` fixes
+Ring128; client `R/exact_gc_transport.R:457–464` caps direct multiplication chunks
+at 64 (the separate ring127-OT alternative does not apply). Chunking at lines
+973–1021 therefore requires
+`3*ceil(64/64) + ceil(256/64) + ceil(640/64) = 17` multiplication operations.
+This excludes alignment, R preparation/finalization and the final DP sampler.
+The observed per-operation transport/coordination cost makes the 900-second
+functional gate impractical here. This is a bounded-runtime result, not evidence
+of a new security or correctness defect. No chunk limit or protocol guard was
+changed, and neither reviewed production fix (`a957113`, `f6f123c`) was modified.
+
+No smaller-cohort retry was made. The independently requested Poisson gate is
+separate; optional K5 is not attempted after this K3 limit. The prepared K5
+fixture has three data owners and two additional signed federation members,
+each with an unrequested bounded local marker because empty local schemas are
+rejected. An offline check of the unchanged server scope function confirms those
+markers do not enter the requested block or its 29-coordinate calibration. This
+planning is not K5 live evidence.
+
+### Final gate outcomes and accounting
+
+| Gate | Outcome | Measured seconds |
+|---|---|---:|
+| K3 Cor, n64 / four variables / mixed pairs | Incomplete at bounded command deadline; exit 124 | 897.1367984600365, entire command including cleanup |
+| K3 PCA | Not reached | — |
+| K2 Poisson LASSO via public `dp_lasso_grid` | PASS, including current certificate validation against independently obtained peer pins | 273.5162, analysis |
+| K2 Poisson full command | PASS, exit 0, complete worker cleanup | 357.93558445200324 |
+| Optional K5 Cor/PCA | Not attempted after the K3 stop condition | — |
+
+Poisson setup/PSI took 54.9176 seconds and authenticated registration 26.9793
+seconds. Registration plus the verified fit took 300.5216 seconds. Its certificate
+passed integrity and anchored-authenticity checks; implementation state is
+`cross_owner_exact_gc_materialized`, with two penalty paths and no standard
+errors. The diagnostic observer retained `dsvert_phase_not_ready:v1` from normal
+publication polling at both peers; it did not prevent completion. No fixture
+seams, substituted samplers or relaxed checks were used. The actual public fit is
+retained as `.tmp/vertcor/vertcor04-k2-poisson-lasso.rds` (37,766 bytes), SHA256
+`dbfb8688654195adfa0a5771c8fbcee34eafa0eeed767feebd6471b55db2b84d`.
+
+The two commands used exactly **1,255.0723829120398 seconds (20m55.072383s)** of
+new live-command time, including cleanup, below 2,700 seconds. Their elapsed
+campaign span was 1,270.874165572226 seconds (21m10.874166s), including the
+15.80178266018629-second gap between commands. Each command was below 900 seconds.
+Both completion records report `cleanup_complete=true` and zero remaining owned
+PIDs; no R or native workers remained after the second command. These durations
+are separate from the earlier vertcor03 budget. No new production defect was
+found or changed; server source, runtime bytes and both fixes under independent
+review remain unchanged. K3 remains a required live release gate; optional K5
+has no new live evidence.
+
+The exact durable records and complete short command logs are committed here:
+`vertcor04-smoke-ledger.jsonl`, `vertcor04-analysis-events.jsonl`,
+`vertcor04-k3-cor-pca-001.log`, `vertcor04-k2-poisson-lasso-002.log`.
+Commands, from the client root after sourcing the environment, were:
+
+```sh
+source /workspace/dsflower/.tmp/vertcor/env.sh
+DSVERT_SMOKE_CASES=cor3 DSVERT_SMOKE_ROWS=64 \
+  python3 -B tools/run_cross_owner_smoke.py --root /workspace/dsflower \
+  --label k3-cor-pca -- Rscript tools/validate_cross_owner_142.R /workspace/dsflower
+DSVERT_SMOKE_CASES=poisson \
+  python3 -B tools/run_cross_owner_smoke.py --root /workspace/dsflower \
+  --label k2-poisson-lasso -- Rscript tools/validate_cross_owner_142.R /workspace/dsflower
+```
+
+The launcher defaults to campaign `vertcor04`, a 900-second command cap and a
+2,700-second cumulative cap. Do not erase or reuse a campaign ledger to reset
+its accounting. Targeted checks for the new harness files were:
+
+```sh
+timeout 120 Rscript -e 'pkgload::load_all(".", quiet=TRUE); testthat::test_file("tests/testthat/test-cross-owner-smoke-fixture.R", reporter="summary")'
+python3 -B tools/test_run_cross_owner_smoke.py
+```
+
+Results: 17 R assertions in three blocks and five Python test cases passed. An
+initial test-only comparison of a `table` with an unclassed array was corrected;
+the final test run is the one included in `targeted-summary.csv`. No production
+tests were repeated because this follow-up changes validation tools and records
+only. No full suite or push was run.

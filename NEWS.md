@@ -28,13 +28,17 @@
 * Coordinate with dsVert 1.4.2 metadata/fixture updates; retain 1.4.1 provenance
   capabilities, existing protocol identities and unchanged native runtime.
 
-* Targeted validation passes 8,654 client and 6,382 server assertions (one optional
+* Targeted validation passes 8,671 client and 6,382 server assertions (one optional
   Cox harness skip); same-owner golden and fixed signed bytes remain identical.
   Real separate-process DSLite K2 Cor/PCA, exact replay, offline zero-DSI
-  conversion and binomial LASSO pass after the lifecycle fixes. K3 Cor rejected a
-  non-positive DP count; the Poisson LASSO call reached the cumulative
-  deadline, and K5 was not attempted. The complete release gate remains open;
-  see `inst/validation/v1.4.2/RESULTS.md` for the 44m55s accounting and limitations.
+  conversion and binomial/Poisson LASSO pass after the lifecycle fixes. Poisson's
+  earlier interruption was the external campaign budget, not a deployment
+  timeout. A new mixed-pair K3 attempt at n=capacity=64 and epsilon 8 reached the
+  bounded command limit before completing its serial exact-GC stages; K3 PCA
+  and optional K5 were not run. The required K3 live gate remains open.
+  The follow-up used 20m55.07s of live-command time, including complete worker
+  cleanup. The bounded launcher has five passing process/budget tests; see
+  `inst/validation/v1.4.2/RESULTS.md` for both campaign budgets and limitations.
 
 Public family inventory (limits are part of the release contract):
 
