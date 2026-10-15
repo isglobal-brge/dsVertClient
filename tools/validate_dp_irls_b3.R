@@ -6,6 +6,10 @@ root <- normalizePath(if (length(args)) args[[1L]] else "..")
 client <- file.path(root, "v3-dsVertClient")
 server <- file.path(root, "v3-dsVert")
 out <- file.path(root, ".tmp", "v3")
+test_rows <- Sys.getenv("DSVERT_B3_TEST_ROWS", "")
+stopifnot(test_rows %in% c("", "4"))
+is_integration_test <- identical(test_rows, "4")
+n <- if (is_integration_test) 4L else 64L
 stopifnot(normalizePath(Sys.getenv("DSVERT_SERVER_SOURCE")) == normalizePath(server),
           normalizePath(Sys.getenv("DS_VERT_MPC")) == normalizePath(file.path(out, "bin", "dsvert-mpc")))
 campaign <- Sys.getenv("DSVERT_SMOKE_CAMPAIGN", "v3-b3")
@@ -15,8 +19,8 @@ pkgload::load_all(client, quiet = TRUE)
 cf <- function(name) get(name, asNamespace("dsVertClient"))
 seconds <- function(start) as.numeric(difftime(Sys.time(), start, units = "secs"))
 evidence_path <- file.path(out, paste0(campaign, "-evidence.json"))
-evidence <- list(version = "dsvert-v3-irls-b3-gate-v1", profile = "irls-smoke-k2-c64-p3-v1",
-  n = 64L, p = 3L, family = "binomial", stage_limit_seconds = 240,
+evidence <- list(version = "dsvert-v3-irls-b3-gate-v1", profile = if (is_integration_test) "dsvert-dp-irls-producer-p3-q16-q12-v1" else "irls-smoke-k2-c64-p3-v1",
+  integration_test_not_gate = is_integration_test, n = n, p = 3L, family = "binomial", stage_limit_seconds = 240,
   path_limit_seconds = 840, compile_in_stage_gate = TRUE,
   binary_sha256 = digest::digest(file = Sys.getenv("DS_VERT_MPC"), algo = "sha256"),
   setup = list(), stages = list(), gate = "not-run")
@@ -33,10 +37,10 @@ dir.create(state, recursive = TRUE, mode = "0700")
 on.exit(we_close_peers(peers), add = TRUE)
 setup_started <- Sys.time()
 owners <- c("peer_a", "peer_b")
-ids <- sprintf("person-%03d", seq_len(64L))
-x <- rep(c(-1, -.5, .5, 1), 16L)
-z <- rep(c(-.75, .75, .25, -.25), each = 16L)
-y <- as.integer((seq_len(64L) * 17L %% 23L) < 12L)
+ids <- sprintf("person-%03d", seq_len(n))
+x <- rep(c(-1, -.5, .5, 1), length.out = n)
+z <- rep(c(-.75, .75, .25, -.25), each = max(1L, n %/% 4L), length.out = n)
+y <- as.integer((seq_len(n) * 17L %% 23L) < 12L)
 raw <- list(peer_a = data.frame(patient_id = ids, y = y),
             peer_b = data.frame(patient_id = rev(ids), x = rev(x), z = rev(z)))
 specs <- stats::setNames(lapply(owners, function(owner) {
@@ -68,11 +72,11 @@ evidence$pins <- as.list(pins)
 write_evidence()
 
 provision_started <- Sys.time()
-contract <- peers[[1L]]$worker$run(function(server, pins, attestation) {
+contract <- peers[[1L]]$worker$run(function(server, pins, attestation, n) {
   helper <- new.env(parent = asNamespace("dsVert"))
   sys.source(file.path(server, "tests/testthat/helper-dp-irls-contract.R"), helper)
   sys.source(file.path(server, "tests/testthat/helper-dp-irls-profile.R"), helper)
-  spec <- helper$.irls_smoke_fixture()$spec
+  spec <- if (n == 64L) helper$.irls_smoke_fixture()$spec else helper$.irls_producer_fixture("binomial", as.character(n))$spec
   spec$privacy_source$peer_pins <- as.list(pins)
   spec$privacy_source$pinset_sha256 <- dsVert:::.dsvert_dp_synopsis_pinset_hash_v1(pins)
   spec$privacy_source$alignment_purpose <- attestation$alignment_purpose
@@ -97,7 +101,7 @@ contract <- peers[[1L]]$worker$run(function(server, pins, attestation) {
       ordering_rule = spec$privacy_source$ordering_rule,
       attestation = attestation))
   dsVert:::.dsvert_dp_irls_contract_normalize(spec)
-}, args = list(server, pins, attestation))
+}, args = list(server, pins, attestation, n))
 unsigned <- list(version = "dsvert-dp-irls-contract-v1", contract = contract)
 # Use server's actual version rather than assume fixture envelope spelling.
 unsigned$version <- peers[[1L]]$worker$run(function() dsVert:::.DSVERT_DP_IRLS_CONTRACT_VERSION)
@@ -137,10 +141,10 @@ cat("B3 SETUP", jsonlite::toJSON(evidence$setup, auto_unbox = TRUE), "\n"); flus
 # arguments are rejected before materialization or native worker startup.
 injections <- c("beta", "predecessor")
 for (argument in injections) {
-  rejected <- try(DSI::datashield.aggregate(conns[1L],
-    as.call(c(list(as.name("dpIRLSStartDS"), analysis_id = "irls_b3_smoke"),
-                stats::setNames(list("injected"), argument)))), silent = TRUE)
-  stopifnot(inherits(rejected, "try-error") || all(vapply(rejected, inherits, logical(1L), "error")))
+  rejected <- try(cf(".dsvert_aggregate_strict")(conns = conns[1L],
+    expr = as.call(c(list(as.name("dpIRLSStartDS"), analysis_id = "irls_b3_smoke"),
+                stats::setNames(list("injected"), argument))), operation = "IRLS injection rejection"), silent = TRUE)
+  stopifnot(inherits(rejected, "try-error"))
 }
 evidence$dsi_injection_rejections <- as.list(injections)
 if (identical(Sys.getenv("DSVERT_B3_SETUP_ONLY"), "true")) {
@@ -163,7 +167,7 @@ on.exit(untrace(".dsvert_aggregate_strict", where = asNamespace("dsVertClient"))
 path_started <- Sys.time()
 resolved <- cf(".dsvert_dp_irls_client_metadata")("irls_b3_smoke", conns, as.list(pins))
 metadata <- resolved$metadata
-for (index in 0:2) {
+for (index in if (is_integration_test) 0L else 0:2) {
   stage_started <- Sys.time()
   prior_transport <- transport_clock$seconds; prior_calls <- transport_clock$calls
   publication <- tryCatch(cf(".dsvert_dp_irls_client_stage")("irls_b3_smoke", conns, metadata, as.list(pins)),
@@ -181,7 +185,7 @@ for (index in 0:2) {
       dsi_transport_roundtrip_seconds = transport_clock$seconds - prior_transport,
       dsi_transport_calls = transport_clock$calls - prior_calls, pass = FALSE,
       error = conditionMessage(publication))
-    evidence$gate <- "stage-fail-stop"; evidence$path_seconds <- seconds(path_started)
+    evidence$gate <- if (is_integration_test) "integration-failed-not-cost-gate" else "stage-fail-stop"; evidence$path_seconds <- seconds(path_started)
     write_evidence(); stop(publication)
   }
   components <- c("compile", "source", "protected_compute", "noise", "publication")
@@ -205,6 +209,11 @@ for (index in 0:2) {
     evidence$gate <- "path-fail-stop"; write_evidence()
     stop("B3 three-release path exceeded 840 seconds; stop for maintainer decision.")
   }
+}
+if (is_integration_test) {
+  evidence$gate <- "integration-pass-not-cost-gate"; write_evidence()
+  cat("B3 INTEGRATION PASS rows", n, "stage_seconds", evidence$stages[[1L]]$wall_seconds, "\n")
+  return(invisible(NULL))
 }
 evidence$gate <- if (evidence$path_seconds <= 840) "pass" else "path-fail-stop"
 # Repeated exported client calls read the retained chain and do no fresh work.

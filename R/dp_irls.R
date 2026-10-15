@@ -89,9 +89,9 @@
   if (old >= length(contract$accounting$stages))
     return(.dsvert_dp_irls_client_publication(analysis_id, datasources,
                                             metadata, pins, .aggregate))
+  deadline <- proc.time()[["elapsed"]] + as.numeric(contract$operations$max_stage_seconds)
   status <- .dsvert_dp_irls_client_call("dpIRLSStartDS", analysis_id,
                                        datasources, .aggregate)
-  deadline <- proc.time()[["elapsed"]] + as.numeric(contract$operations$max_stage_seconds)
   frames <- stats::setNames(rep(list(""), length(datasources)), names(datasources))
   repeat {
     for (value in status) {
