@@ -14,6 +14,11 @@
   exact-MPC transport binding, avoiding an incorrect legacy-policy fallback.
   Preserve pin, signature and provenance checks, sticky release identities and
   native runtime bytes; this authorization adds no privacy release.
+* Restore the signed authorization dependency closure when reconstructing a
+  Gaussian Synopsis certificate for validation. The omission also affected
+  current same-owner certificates in 1.4.1. Rebuild from the signed federation
+  evidence and retain full signature/epoch validation; certificate bytes and
+  release identities are unchanged.
 * Export NB, LASSO, multinomial and ordinal grid adapters; add authenticated
   embedded-contract dispatch to safe NB/categorical front doors and explicit
   signed LASSO extension contracts. Accept current cross Gaussian certificates
