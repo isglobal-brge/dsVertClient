@@ -9,6 +9,11 @@
   server schema keys before hashing, fixing client schema-binding parity.
   Registration retains the existing exact canonical-label contract.
   Preserve existing valid artifacts, identities and same-owner outputs.
+* Fix the production cross-owner Gaussian Synopsis path affected in 1.4.1:
+  authenticate its dedicated computation session with Synopsis PREPARE before
+  exact-MPC transport binding, avoiding an incorrect legacy-policy fallback.
+  Preserve pin, signature and provenance checks, sticky release identities and
+  native runtime bytes; this authorization adds no privacy release.
 * Export NB, LASSO, multinomial and ordinal grid adapters; add authenticated
   embedded-contract dispatch to safe NB/categorical front doors and explicit
   signed LASSO extension contracts. Accept current cross Gaussian certificates
