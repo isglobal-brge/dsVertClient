@@ -1260,6 +1260,59 @@
     alignment_protocol_version = as.numeric(alignment_protocol_version)))
 }
 
+.dsvert_dp_capsule_manifest_cross_gaussian_references <- function(contract, datasets) {
+  # Match the existing server Synopsis normal form for v2 only. Signed grid
+  # contracts and all same-owner workload families remain byte-identical.
+  value <- contract$value
+  for (analysis_id in names(value$gaussian)) {
+    entry <- value$gaussian[[analysis_id]]
+    spec <- entry$spec
+    if (!identical(spec$version, "v2")) next
+    resolve <- function(reference, dataset = NULL, default_owner = NULL) {
+      parsed <- .dsvert_dp_gaussian_reference(reference)
+      if (is.null(parsed)) {
+        stop("A cross-owner Gaussian workload reference is invalid", call. = FALSE)
+      }
+      selected <- if (is.null(dataset)) datasets else datasets[dataset]
+      candidates <- unlist(lapply(selected, function(item) {
+        columns <- item$columns
+        names(columns)[vapply(names(columns), function(name) {
+          physical <- .dsvert_dp_gaussian_reference(name)
+          !is.null(physical) && identical(physical$column, parsed$column) &&
+            (is.null(parsed$server) ||
+             identical(columns[[name]]$owner_peer, parsed$server))
+        }, logical(1L))]
+      }), use.names = FALSE)
+      if (length(candidates) > 1L && is.null(parsed$server) &&
+          !is.null(default_owner)) {
+        columns <- datasets[[dataset]]$columns
+        owned <- candidates[vapply(candidates, function(name) {
+          identical(columns[[name]]$owner_peer, default_owner)
+        }, logical(1L))]
+        if (length(owned) == 1L) candidates <- owned
+      }
+      if (length(candidates) != 1L) {
+        stop("A cross-owner Gaussian workload column is missing or ambiguous",
+             call. = FALSE)
+      }
+      candidates[[1L]]
+    }
+    spec$outcome <- resolve(spec$outcome, spec$dataset, entry$owner_peer)
+    spec$predictors <- unname(vapply(spec$predictors, resolve, character(1L)))
+    entry$spec <- spec
+    value$gaussian[[analysis_id]] <- entry
+  }
+  value <- .dsvert_joint_dp_client_canonical(value)
+  json <- .dsvert_joint_dp_client_json(value)
+  if (identical(json, contract$json)) return(contract)
+  if (nchar(json, type = "bytes") >
+      .DSVERT_CLIENT_DP_CAPSULE_MANIFEST_MAX_WORKLOAD_BYTES) {
+    stop("The custodian workload contract is too large", call. = FALSE)
+  }
+  list(value = value, json = json,
+       sha256 = digest::digest(json, algo = "sha256", serialize = FALSE))
+}
+
 .dsvert_dp_capsule_manifest_schema <- function(drafts, context) {
   peers <- context$servers
   if (!is.list(drafts) || is.null(names(drafts)) ||
@@ -1267,13 +1320,30 @@
     stop("Capsule policy drafts do not cover every pinned peer",
          call. = FALSE)
   }
+  cross_gaussian_v2 <- any(vapply(drafts, function(draft) {
+    any(vapply(draft$workload_fragments$gaussian, function(spec) {
+      identical(spec$version, "v2")
+    }, logical(1L)))
+  }, logical(1L)))
+  physical_name <- function(reference) {
+    parsed <- .dsvert_dp_gaussian_reference(reference)
+    if (is.null(parsed)) {
+      stop("A cross-owner Gaussian schema reference is invalid", call. = FALSE)
+    }
+    parsed$column
+  }
   column_names <- unlist(lapply(peers, function(peer) {
     unlist(lapply(drafts[[peer]]$datasets, function(dataset) {
       names(dataset$columns)
     }), use.names = FALSE)
   }), use.names = FALSE)
+  if (cross_gaussian_v2) {
+    column_names <- vapply(column_names, physical_name, character(1L),
+                           USE.NAMES = FALSE)
+  }
   duplicate_columns <- unique(column_names[
     duplicated(column_names) | duplicated(column_names, fromLast = TRUE)])
+  seen_cross_columns <- character()
   datasets <- list()
   alignment_versions <- numeric()
   for (peer in peers) {
@@ -1297,9 +1367,18 @@
       }
       datasets[[data_name]]$patient_keys[[peer]] <- local$patient_column
       local_names <- names(local$columns)
+      physical_names <- if (cross_gaussian_v2) {
+        vapply(local_names, physical_name, character(1L), USE.NAMES = FALSE)
+      } else local_names
       signed_names <- ifelse(
-        local_names %in% duplicate_columns,
-        paste0(peer, "$", local_names), local_names)
+        physical_names %in% duplicate_columns,
+        paste0(peer, "$", physical_names), local_names)
+      if (cross_gaussian_v2 && (anyDuplicated(signed_names) ||
+          any(signed_names %in% seen_cross_columns))) {
+        stop("Cross-owner Gaussian schema columns are ambiguous across datasets",
+             call. = FALSE)
+      }
+      seen_cross_columns <- c(seen_cross_columns, signed_names)
       if (any(signed_names %in% names(datasets[[data_name]]$columns))) {
         stop("Biomedical capsule columns do not identify a unique signed ",
              "owner/dataset/column triplet", call. = FALSE)
@@ -1323,6 +1402,10 @@
   })
   workload_contract <- .dsvert_dp_capsule_manifest_workload_contract(
     drafts, context)
+  if (cross_gaussian_v2) {
+    workload_contract <- .dsvert_dp_capsule_manifest_cross_gaussian_references(
+      workload_contract, datasets)
+  }
   snapshot <- .dsvert_dp_capsule_manifest_expected_snapshot(
     context, datasets, unique(alignment_versions),
     workload_contract$value)
