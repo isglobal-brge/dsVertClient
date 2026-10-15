@@ -15,6 +15,22 @@ stopifnot(normalizePath(Sys.getenv("DSVERT_SERVER_SOURCE")) == normalizePath(ser
 campaign <- Sys.getenv("DSVERT_SMOKE_CAMPAIGN", "v3-b3")
 stopifnot(grepl("^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$", campaign))
 source(file.path(client, "inst/validation/v1.3.0/worked_example_custodian.R"))
+# Preserve the genuine allowlisted endpoint condition inside its custodian;
+# this observer neither returns private values nor substitutes endpoint results.
+assign(".we_worker_submit", function(worker, operation, args, async) {
+  if (!identical(worker$get_state(), "idle")) stop("The isolated DSLite peer already has a pending command")
+  job <- switch(operation,
+    aggregate = function(expr) withCallingHandlers(
+      get(".dsvert_e2e_server", .GlobalEnv)$aggregate(get(".dsvert_e2e_sid", .GlobalEnv), expr),
+      error = function(e) assign(".irls_b3_endpoint_error", list(operation = deparse(expr[[1L]]),
+        message = conditionMessage(e)), .GlobalEnv)),
+    assign = function(symbol, expr) {
+      get(".dsvert_e2e_server", .GlobalEnv)$assignExpr(get(".dsvert_e2e_sid", .GlobalEnv), symbol, expr)
+      NULL
+    })
+  if (isTRUE(async)) {worker$call(job, args = args); return(NULL)}
+  worker$run(job, args = args)
+}, .GlobalEnv)
 pkgload::load_all(client, quiet = TRUE)
 cf <- function(name) get(name, asNamespace("dsVertClient"))
 seconds <- function(start) as.numeric(difftime(Sys.time(), start, units = "secs"))
@@ -158,19 +174,32 @@ trace(".dsvert_aggregate_strict", where = asNamespace("dsVertClient"),
   tracer = quote({.b3_transport_started <- proc.time()[["elapsed"]]}),
   exit = substitute({
     if (identical(operation, "DP IRLS encrypted transport")) {
-      CLOCK$seconds <- CLOCK$seconds + proc.time()[["elapsed"]] - .b3_transport_started
-      CLOCK$calls <- CLOCK$calls + 1L
+      # CLOCK is substituted as an environment value, so it cannot be an
+      # assignment target; update its bindings explicitly.
+      assign("seconds", get("seconds", envir = CLOCK) +
+        proc.time()[["elapsed"]] - .b3_transport_started, envir = CLOCK)
+      assign("calls", get("calls", envir = CLOCK) + 1L, envir = CLOCK)
     }
   }, list(CLOCK = transport_clock)), print = FALSE)
 on.exit(untrace(".dsvert_aggregate_strict", where = asNamespace("dsVertClient")), add = TRUE)
 
 path_started <- Sys.time()
-resolved <- cf(".dsvert_dp_irls_client_metadata")("irls_b3_smoke", conns, as.list(pins))
+resolved <- tryCatch(cf(".dsvert_dp_irls_client_metadata")("irls_b3_smoke", conns, as.list(pins)),
+                     error = identity)
+if (inherits(resolved, "error")) {
+  evidence$gate <- "metadata-failed-before-stage"
+  evidence$metadata_error <- conditionMessage(resolved)
+  evidence$endpoint_errors <- lapply(peers, function(peer) peer$worker$run(function()
+    get0(".irls_b3_endpoint_error", .GlobalEnv, ifnotfound = NULL)))
+  write_evidence()
+  cat("B3 METADATA ERRORS", jsonlite::toJSON(evidence$endpoint_errors, auto_unbox = TRUE), "\n")
+  stop(resolved)
+}
 metadata <- resolved$metadata
 for (index in if (is_integration_test) 0L else 0:2) {
   stage_started <- Sys.time()
   prior_transport <- transport_clock$seconds; prior_calls <- transport_clock$calls
-  publication <- tryCatch(cf(".dsvert_dp_irls_client_stage")("irls_b3_smoke", conns, metadata, as.list(pins)),
+  publication <- tryCatch(cf(".dsvert_dp_irls_client_execute_stage")("irls_b3_smoke", conns, metadata, as.list(pins)),
                           error = identity)
   stage_wall <- seconds(stage_started)
   metrics <- lapply(peers, function(peer) tryCatch(peer$worker$run(function(index) {
@@ -184,7 +213,10 @@ for (index in if (is_integration_test) 0L else 0:2) {
         error = function(e) list(error = conditionMessage(e)))),
       dsi_transport_roundtrip_seconds = transport_clock$seconds - prior_transport,
       dsi_transport_calls = transport_clock$calls - prior_calls, pass = FALSE,
-      error = conditionMessage(publication))
+      error = conditionMessage(publication),
+      endpoint_errors = lapply(peers, function(peer) tryCatch(peer$worker$run(function()
+        get0(".irls_b3_endpoint_error", .GlobalEnv, ifnotfound = NULL)),
+        error = function(e) list(error = conditionMessage(e)))))
     evidence$gate <- if (is_integration_test) "integration-failed-not-cost-gate" else "stage-fail-stop"; evidence$path_seconds <- seconds(path_started)
     write_evidence(); stop(publication)
   }
@@ -200,6 +232,7 @@ for (index in if (is_integration_test) 0L else 0:2) {
     dsi_transport_calls = transport_clock$calls - prior_calls,
     pass = stage_wall <= 240, published_stage_id = publication$stages[[index + 1L]]$body$stage_id)
   metadata$stages <- publication$stages
+  metadata$resume_required <- NULL
   evidence$path_seconds <- seconds(path_started)
   evidence$gate <- if (stage_wall <= 240) "stage-pass" else "stage-fail-stop"
   write_evidence()
