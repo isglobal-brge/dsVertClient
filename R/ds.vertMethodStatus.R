@@ -718,6 +718,12 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "Read-only audited release registry.",
       "Status is conservative release metadata, not formal certification.")
 
+  add("ds.vertDPIRLS", "ds.vertDPIRLS", "provisional",
+      paste("Selector-only signed two-owner IRLS path with mandatory v4 split",
+            "noise, atomic dual-signed publications and independently verified updates."),
+      paste("B3 wiring and cost fixture only; sampling inference, standard errors,",
+            "larger row tiles and showcase admission remain pending."))
+
   out <- do.call(rbind, rows)
   out$release_contract <- "legacy_exact_release_not_capsule_safe"
   synopsis_releases <- c(
@@ -799,6 +805,8 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   out$release_contract[out$method %in% formal_cox_public] <-
     "formal_completed_public_certificate"
 
+  out$release_contract[out$method == "ds.vertDPIRLS"] <- "formal_signed_irls_path"
+
   # Numeric certification is a separate axis from statistical maturity and
   # disclosure release status.  Keep it explicit so a newly promoted method
   # cannot inherit the GLM certificate merely because it reuses part of a GLM
@@ -823,7 +831,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     "formal_sticky_count_artifact",
     "formal_sticky_frequency_artifact",
     "formal_sticky_synopsis_artifact",
-    "formal_completed_public_certificate")
+    "formal_completed_public_certificate", "formal_signed_irls_path")
   out$numeric_contract[dp_release] <- "separate_integer_dp_contract"
   out$numeric_blocker[dp_release] <- paste(
     "Covered by the DP mechanism/accountant contract, not the Ring numeric",

@@ -30,7 +30,7 @@ test_that("capsule migration inventory covers the complete public surface", {
   non_inference <- .dsvert_capsule_non_inference_exports()
   exports <- getNamespaceExports("dsVertClient")
 
-  expect_equal(nrow(inventory), 106L)
+  expect_equal(nrow(inventory), 107L)
   expect_equal(length(non_inference), 13L)
   expect_contains(non_inference, "ds.validateDPGaussianCertificate")
   expect_contains(non_inference, "ds.vertDPCapsulePlan")
@@ -40,7 +40,8 @@ test_that("capsule migration inventory covers the complete public surface", {
   expect_setequal(c(inventory$method, non_inference),
                   ds.vertMethodStatus()$method)
   analysis_status <- ds.vertMethodStatus(inventory$method)
-  expect_true(all(analysis_status$status == "promoted"))
+  expect_true(all(analysis_status$status[analysis_status$method != "ds.vertDPIRLS"] == "promoted"))
+  expect_identical(analysis_status$status[analysis_status$method == "ds.vertDPIRLS"], "provisional")
 })
 
 test_that("inventory separates current, migration, artifact and inference state", {

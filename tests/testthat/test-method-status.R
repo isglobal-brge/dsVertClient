@@ -10,7 +10,7 @@ test_that("method maturity registry covers every public analysis entry point", {
     "formal_sticky_count_artifact",
     "formal_sticky_frequency_artifact",
     "formal_sticky_synopsis_artifact",
-    "formal_completed_public_certificate",
+    "formal_completed_public_certificate", "formal_signed_irls_path",
     "disclosure_safe_protocol_no_statistic",
     "postprocessing_inherits_input",
     "legacy_exact_release_not_capsule_safe")))
@@ -443,4 +443,13 @@ test_that("readmitted MI and existing Synopsis routes are presented honestly", {
     "disclosure_safe_protocol_no_statistic")
   expect_match(capsule_plan$safe_scope, "Data-free")
   expect_error(ds.vertMethodStatus("not.a.method"), "Unknown method")
+})
+
+
+test_that("B3 IRLS is provisional with inference unavailable", {
+  value <- ds.vertMethodStatus("ds.vertDPIRLS")
+  expect_identical(value$status, "provisional")
+  expect_identical(value$release_contract, "formal_signed_irls_path")
+  expect_match(value$principal_limitation, "sampling inference")
+  expect_false(value$currently_numerically_certified)
 })

@@ -297,6 +297,9 @@
       alias_kind[alias_kind_names] <- unname(alias_kinds)
     }
     defaults <- switch(migration_feasibility,
+      irls_path_implemented = list(route = "formal_signed_irls_path",
+        artifact = "dual_signed_irls_path_implemented",
+        inference = "unavailable_pending_B4"),
       count_operation_implemented = list(
         route = "formal_sticky_count_artifact",
         artifact = "signed_count_artifact_implemented",
@@ -1505,6 +1508,13 @@
     artifact_implementation_state = "validated_synopsis_adapter_implemented",
     inference_implementation_state = "synopsis_postprocess_implemented")
 
+  add("ds.vertDPIRLS", "ds.vertDPIRLS", "dp_irls",
+    c("unanimous_signed_irls_contract", "dual_signed_atomic_split_noise_stages",
+      "frozen_authenticated_person_slots"),
+    "Signed bounded binomial or Poisson estimating-equation optimizer path.",
+    c("B4_replay_candidate_and_refusal", "sampling_qualification_pending"),
+    "irls_path_implemented")
+
   .dsvert_grouped_cross_inventory_register(add)
   out <- do.call(rbind, rows)
   out <- out[order(out$method, method = "radix"), , drop = FALSE]
@@ -1514,6 +1524,7 @@
     "canonical", "compatibility_alias", "compatibility_wrapper",
     "deprecated_subroute")
   attr(out, "current_route_status_levels") <- c(
+    "formal_signed_irls_path",
     "client_only_inherits_input",
     "client_only_validated_capsule_postprocess",
     "client_only_validated_synopsis_postprocess",
@@ -1538,6 +1549,7 @@
     "formal_same_owner_synopsis_gaussian_and_finite_glm_l1_legacy_unavailable",
     "formal_same_and_cross_owner_synopsis_gaussian_and_finite_glm_l1_legacy_unavailable")
   attr(out, "migration_feasibility_levels") <- c(
+    "irls_path_implemented",
     "count_operation_implemented",
     "frequency_operation_implemented",
     "synopsis_release_implemented",
@@ -1546,6 +1558,7 @@
     "client_only_requires_attested_input",
     "requires_new_capsule_artifact", "requires_new_secure_protocol")
   attr(out, "artifact_implementation_state_levels") <- c(
+    "dual_signed_irls_path_implemented",
     "client_input_not_capsule_attested",
     "joint_vector_release_implemented",
     "signed_count_artifact_implemented",
@@ -1574,6 +1587,7 @@
     "validated_same_and_cross_owner_capsule_adapter_implemented",
     "validated_same_owner_capsule_adapter_implemented")
   attr(out, "inference_implementation_state_levels") <- c(
+    "unavailable_pending_B4",
     "dp_gaussian_lasso_path_implemented",
     "dp_gaussian_and_finite_glm_lasso_paths_implemented",
     "dp_gaussian_pseudo_ic_implemented",
