@@ -54,6 +54,8 @@
       stop("Authorities returned inconsistent IRLS predecessors.", call. = FALSE)
   }
   first$metadata$stages <- first$metadata$stages[seq_len(common)]
+  if (any(vapply(checked, function(x) length(x$metadata$stages), integer(1L)) != common))
+    first$metadata$resume_required <- TRUE
   first$verified <- .dsvert_dp_irls_verify_chain(first$metadata$signed_contract,
     pins, first$metadata$stages, expected_root = first$metadata$root)
   first
@@ -82,7 +84,7 @@
 
 # The internal stage driver is also the cost-gate boundary. It never accepts
 # beta, predecessor, budget, family, seeds, bounds or any source values.
-.dsvert_dp_irls_client_stage <- function(analysis_id, datasources, metadata,
+.dsvert_dp_irls_client_execute_stage <- function(analysis_id, datasources, metadata,
     pins, .aggregate = DSI::datashield.aggregate) {
   old <- length(metadata$stages)
   contract <- metadata$signed_contract$contract
@@ -90,7 +92,8 @@
     return(.dsvert_dp_irls_client_publication(analysis_id, datasources,
                                             metadata, pins, .aggregate))
   deadline <- proc.time()[["elapsed"]] + as.numeric(contract$operations$max_stage_seconds)
-  status <- .dsvert_dp_irls_client_call("dpIRLSStartDS", analysis_id,
+  endpoint <- if (isTRUE(metadata$resume_required)) "dpIRLSResumeDS" else "dpIRLSStartDS"
+  status <- .dsvert_dp_irls_client_call(endpoint, analysis_id,
                                        datasources, .aggregate)
   frames <- stats::setNames(rep(list(""), length(datasources)), names(datasources))
   repeat {
@@ -110,7 +113,8 @@
     if (length(datasources) != 2L)
       stop("The admitted IRLS relay requires two authorities.", call. = FALSE)
     expressions <- stats::setNames(lapply(seq_along(datasources), function(i)
-      call("dpIRLSRelayDS", analysis_id = analysis_id, frame = frames[[3L - i]])),
+      call("dpIRLSRelayDS", analysis_id = analysis_id,
+        frame = .dsvert_dsi_text_encode(frames[[3L - i]], "DP IRLS relay frame"))),
       names(datasources))
     relayed <- .dsvert_aggregate_strict(conns = datasources, expr = expressions,
       operation = "DP IRLS encrypted transport", .aggregate = .aggregate)
@@ -177,8 +181,9 @@ ds.vertDPIRLS <- function(analysis_id, datasources = NULL, verbose = TRUE) {
   metadata <- resolved$metadata
   if (verbose) message("Executing the signed DP IRLS path.")
   while (length(metadata$stages) < length(metadata$signed_contract$contract$accounting$stages)) {
-    publication <- .dsvert_dp_irls_client_stage(analysis_id, datasources, metadata, pins)
+    publication <- .dsvert_dp_irls_client_execute_stage(analysis_id, datasources, metadata, pins)
     metadata$stages <- publication$stages
+    metadata$resume_required <- NULL
   }
   verified <- .dsvert_dp_irls_verify_chain(metadata$signed_contract, pins,
     metadata$stages, expected_root = metadata$root)

@@ -67,3 +67,23 @@ test_that("IRLS publication requires both matching signed chains", {
   expect_error(.dsvert_dp_irls_client_publication("smoke", f$conns,
     f$metadata, f$f$pins), "signature")
 })
+
+
+test_that("partial publication resumes the common predecessor before advancing", {
+  f <- .irls_driver_fixture(); left <- f$metadata; right <- f$metadata
+  left$stages <- f$f$stages[1L]
+  testthat::local_mocked_bindings(.dsvert_dp_irls_client_call = function(...) {
+    stats::setNames(list(left, right), names(f$conns))
+  }, .package = "dsVertClient")
+  resolved <- .dsvert_dp_irls_client_metadata("smoke", f$conns, f$f$pins)
+  expect_length(resolved$metadata$stages, 0L)
+  expect_true(resolved$metadata$resume_required)
+  expect_false(resolved$verified$complete)
+})
+
+
+test_that("the stage executor and B1 stage descriptor have separate interfaces", {
+  expect_identical(names(formals(.dsvert_dp_irls_client_execute_stage)),
+    c("analysis_id", "datasources", "metadata", "pins", ".aggregate"))
+  expect_identical(names(formals(.dsvert_dp_irls_client_stage)), c("contract", "t", "purpose"))
+})
