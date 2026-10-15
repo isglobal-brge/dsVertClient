@@ -86,6 +86,11 @@ we_close_peers(peers); peers <- list()
 for (owner in owners) peers[[owner]] <- we_boot_peer(specs[[owner]], server,
   pins = pins[setdiff(owners, owner)], raw = raw[[owner]])
 conns <- we_connections(peers)
+if (poc) {
+  # Custodian transport policy for this DSLite run only: 4 MiB exact-GC frames
+  # (the package default is 480 KiB; the admitted range is 16 KiB..8 MiB).
+  for (peer in peers) peer$worker$run(function() options(dsvert.exact_gc.chunk_bytes = 4L * 1024L^2))
+}
 options(dsvert.dp_irls.trusted_pins = pins)
 evidence$pids <- vapply(peers, function(peer) peer$worker$get_pid(), integer(1L))
 stopifnot(length(unique(evidence$pids)) == 2L, !Sys.getpid() %in% evidence$pids)
