@@ -1,0 +1,131 @@
+{
+  "version": "dsvert-v3-irls-poc-report-v1",
+  "n": 64,
+  "epsilon_total": 8,
+  "stages": 3,
+  "chain_verified_offline": true,
+  "accounting": {
+    "auxiliary_charged_epsilon": {
+      "d": "1",
+      "n": "0"
+    },
+    "charged_epsilon": {
+      "d": "1",
+      "n": "8"
+    },
+    "epsilon_path": {
+      "d": "1",
+      "n": "8"
+    },
+    "pilot_epsilon": {
+      "d": "1",
+      "n": "0"
+    },
+    "reservation_refund": {
+      "d": "1",
+      "n": "0"
+    },
+    "reserved_epsilon": {
+      "d": "1",
+      "n": "8"
+    },
+    "root": "e76673a6a3d4e401199a76f29411f73e1387de098ea18aa63efd2aac4c8cfcf2",
+    "stages": [
+      {
+        "charged_epsilon": {
+          "d": "1",
+          "n": "2"
+        },
+        "epsilon": {
+          "d": "1",
+          "n": "2"
+        },
+        "observed_lanes": [
+          "g",
+          "H"
+        ],
+        "purpose": "optimizer",
+        "status": "complete",
+        "t": "0"
+      },
+      {
+        "charged_epsilon": {
+          "d": "1",
+          "n": "2"
+        },
+        "epsilon": {
+          "d": "1",
+          "n": "2"
+        },
+        "observed_lanes": [
+          "g",
+          "H"
+        ],
+        "purpose": "optimizer",
+        "status": "complete",
+        "t": "1"
+      },
+      {
+        "charged_epsilon": {
+          "d": "1",
+          "n": "4"
+        },
+        "epsilon": {
+          "d": "1",
+          "n": "4"
+        },
+        "observed_lanes": [
+          "g",
+          "H"
+        ],
+        "purpose": "terminal-audit",
+        "status": "complete",
+        "t": "2"
+      }
+    ],
+    "version": "dsvert-dp-irls-partial-accounting-v1"
+  },
+  "inference_status": "refused (experimental values shown for diagnosis only)",
+  "refusal_reasons": [
+    "stage 0 trust truncation",
+    "stage 1 floor shift",
+    "replay bias > 0.1 sampling SD"
+  ],
+  "table": [
+    {
+      "term": "(Intercept)",
+      "dp_estimate": -0.363,
+      "dp_total_se": 0.659,
+      "sampling_sd": 0.402,
+      "dp_sd": 0.522,
+      "ci_low": -1.655,
+      "ci_high": 0.928,
+      "glm_estimate": -0.455,
+      "glm_se": 0.297
+    },
+    {
+      "term": "x",
+      "dp_estimate": 0.757,
+      "dp_total_se": 0.77,
+      "sampling_sd": 0.481,
+      "dp_sd": 0.601,
+      "ci_low": -0.752,
+      "ci_high": 2.267,
+      "glm_estimate": 1.414,
+      "glm_se": 0.511
+    },
+    {
+      "term": "z",
+      "dp_estimate": -0.317,
+      "dp_total_se": 0.963,
+      "sampling_sd": 0.663,
+      "dp_sd": 0.699,
+      "ci_low": -2.205,
+      "ci_high": 1.57,
+      "glm_estimate": -1.222,
+      "glm_se": 0.562
+    }
+  ],
+  "stage_seconds": [268.46673536, 453.30336165, 492.88677859],
+  "setup_seconds": 53.20465469
+}
