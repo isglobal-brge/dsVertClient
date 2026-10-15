@@ -20,6 +20,24 @@ The baseline had a concrete defect (now fixed): correlation construction supplie
 
 A second baseline defect (now fixed) was demonstrated for owner-qualified duplicate physical names. A current server-built artifact with outcome `peer_a$x` and predictor `peer_b$x` passes server construction but the client rejects it with “The signed cross-owner Gaussian predictor order changed”; the unique-name control succeeds. Parts of the Gaussian client compare canonical references directly to physical column names. The read-only diagnostic uses existing fixture signature/selector seams and is not federation evidence. Fix these cross-path inconsistencies; never drop owner/dataset binding or merge two owners' identically named columns. Distinguish canonical signed variable identifiers from physical column names throughout the new converter. Preserve unqualified same-owner outputs. Use the existing `owner$column` grammar and signed dataset binding; ambiguity when one owner has the same physical column in multiple datasets must fail closed unless separately designed.
 
+The vertcor03 separate-process diagnostic found another production client defect
+present in 1.4.1: the dedicated Gaussian computation session created a fresh UUID
+without installing its Synopsis authorization before exact-MPC transport binding.
+The actual endpoint error was `dsvert.dp.ledger_path must be one non-empty string`,
+because the unauthorised session selected the legacy DP policy. The previously
+recorded `dsvert_phase_not_ready` came from an earlier publication lookup, not
+this binding failure. The client now sends the existing authenticated
+`dsvertDPSynopsisPrepareDS` request to both designated authorities before creating
+transport keys, using the same child UUID and manifest/claim/compilation evidence.
+This matches the established cross-grid lifecycle. PREPARE validates the existing
+signed authorization and installs artifact-derived execution state; it neither
+starts a noise draw nor creates a new release identity. Server pin, signature,
+attestation, provenance and fail-closed checks remain unchanged. Focused tests
+cover ordering, exact context/session binding, rejected or malformed authorization
+before transport, and the unchanged legacy route. Current federation outcomes
+are recorded in [RESULTS.md](inst/validation/v1.4.2/RESULTS.md); this finding does
+not establish that every historical cross-owner Gaussian deployment failed.
+
 ## Why the 26 August admission was reverted
 
 There is **no documented author rationale** in `b83260a`, Git notes, or the searched tracked notes/NEWS. The revert says only that it reverts `766a663`; it followed 88 seconds later. Do not present a guessed motive as a historical fact.
@@ -161,7 +179,7 @@ Every command has `timeout 900`; never run full suites or `go test ./...`. Recor
 5. Replay: exact artifact, final-vector, release/certificate and same-owner result bytes with fixed fixtures. Retained authorized source mutation/reconnect/restart replays; new authorization (including membership-only dependency) changes affected identity. Test subset/order/rank choices do not create new private releases. Keep the 1.4.1 provenance tests.
 6. Grid exports: check NAMESPACE and `getExportedValue` for four names; every registry export represented once; flags/comments consistent. Test authenticated frontdoor parity and zero unexpected calls for NB/multinomial/ordinal; LASSO binomial/Poisson contract mismatch and extension tampering; all current same-owner and Gaussian LASSO routes unchanged.
 7. Server files: Gaussian cross, capsule workload/materializer (correlation descriptors included), relevant Synopsis source/attestation/replay/provenance files; four-family registration tests when flags change. Client files: current Cor/PCA/Gaussian/transport/certificate/method-status and matching cross-grid files. Add only focused tests for the changed behavior, not broad suite expansion.
-8. **DSLite smoke, maximum 10 fit/analysis invocations and 15 minutes total:** separate custodian R processes with owner-only persistent state outside TMPDIR/library (reuse the established isolated-host harness), n≈8–16 and capacity≈16 with tiny signed grids. Proposed budget: K2 Cor+PCA (2), K3 Cor+PCA (2), K5 Cor+PCA (2), K2 binomial LASSO grid (1), K2 Poisson LASSO grid (1), exact Cor replay (1), offline Cor-to-PCA chain counted conservatively as one more (1). Offline stages must report zero DSI calls. Keep signing/admission/PSI real; no plaintext fixture endpoint presented as production evidence. Deadline applies to the whole smoke, not to each fit. If initialization or MPC cannot complete in 900 seconds, retain partial evidence and report the check incomplete; do not exceed the budget or label mocked algebra as federation validation. Other grid families are covered by targeted unit/adversarial tests and the named historical promotion evidence.
+8. **DSLite smoke:** use separate custodian R processes with owner-only persistent state outside TMPDIR/library, bounded public synthetic data and tiny signed grids. The original phase-B budget was at most ten fit/analysis invocations and 15 minutes total; its attempts and limits remain part of the historical validation record. For the vertcor03 debugging follow-up, the maintainer explicitly authorized **45 minutes cumulative smoke wall time across attempts**, with **every command still capped at 900 seconds**. Prioritize K2 Cor+PCA, then K3 Cor+PCA, K5 if time permits, one binomial and one Poisson LASSO grid release, exact Cor replay, and the offline Cor-to-PCA chain with zero DSI calls. Keep signing, the allowlist, source authorization, PSI and the production release path real; use no fixture seams. Record exact outcomes, timings and cumulative wall time in [RESULTS.md](inst/validation/v1.4.2/RESULTS.md). A deadline or partial run remains incomplete evidence; never label mocked algebra as federation validation. Other grid families retain targeted unit/adversarial tests and their named historical promotion evidence.
 
 Identity-sensitive tests must not treat ordinary one-process DSLite as separate persistent custodians. A short DSLite smoke is a local connector check, not a live Opal/Rock release guarantee. Do not run the historical multi-hour campaign in this phase.
 
