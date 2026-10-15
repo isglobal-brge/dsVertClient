@@ -45,6 +45,17 @@
     (is.null(reference$server) || identical(reference$server, owner))
 }
 
+# Preserve the signed identifiers (which can be owner-qualified) separately
+# from the physical local column names. Existing unqualified artifacts retain
+# their original names and bytes.
+.dsvert_dp_gaussian_variable_order <- function(artifact) {
+  if (identical(artifact$version,
+                .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)) {
+    return(unlist(artifact$input_variable_order, use.names = FALSE))
+  }
+  c(artifact$predictor_order, artifact$outcome$column)
+}
+
 .dsvert_dp_gaussian_bound <- function(value, what) {
   required <- c("column", "lower", "upper")
   if (!is.list(value) || is.null(names(value)) || anyNA(names(value)) ||
@@ -349,7 +360,7 @@
   outcome <- bound(artifact$outcome, "outcome")
   predictor_order <- .dsvert_dp_capsule_manifest_strings(
     artifact$predictor_order, "Gaussian predictor order", sorted = TRUE)
-  if (!length(predictor_order) || outcome$column %in% predictor_order ||
+  if (!length(predictor_order) ||
       !is.list(artifact$predictors) ||
       !identical(names(artifact$predictors), predictor_order)) {
     stop("The signed cross-owner Gaussian predictor contract is invalid",
@@ -357,7 +368,7 @@
   }
   predictors <- lapply(predictor_order, function(variable) {
     value <- bound(artifact$predictors[[variable]], "predictor")
-    if (!identical(value$column, variable)) {
+    if (!.dsvert_dp_gaussian_reference_matches(variable, value)) {
       stop("The signed cross-owner Gaussian predictor order changed",
            call. = FALSE)
     }
@@ -397,7 +408,12 @@
   alignment <- artifact$alignment_contract
   valid <- identical(outcome$dataset, data_name) &&
     identical(outcome$owner_peer, artifact$owner_peer) &&
-    identical(input_order, c(predictor_order, outcome$column)) &&
+    length(input_order) == length(predictor_order) + 1L &&
+    identical(head(input_order, -1L), predictor_order) &&
+    .dsvert_dp_gaussian_reference_matches(tail(input_order, 1L), outcome) &&
+    !anyDuplicated(c(vapply(predictors, function(value) {
+      paste(value$owner_peer, value$column, sep = "$")
+    }, character(1L)), paste(outcome$owner_peer, outcome$column, sep = "$"))) &&
     !anyDuplicated(participants) &&
     identical(participants, sort(participants, method = "radix")) &&
     setequal(participants, unique(descriptor_owners)) &&
@@ -937,7 +953,7 @@ ds.vertDPGaussian <- function(
       "The capsule Gaussian ds.vertGLM adapter requires an explicit",
       "additive formula and data name"), call. = FALSE)
   }
-  formula_spec <- .dsvert_plain_formula(formula)
+  formula_spec <- .dsvert_plain_formula(formula, qualified = TRUE)
   if (!is.null(y_var) && !identical(y_var, formula_spec$response)) {
     stop("y_var disagrees with the explicit capsule formula", call. = FALSE)
   }
@@ -996,9 +1012,35 @@ ds.vertDPGaussian <- function(
          identical(artifact$owner_peer,
                    unname(requested_predictor_owners[[variable]])))
     }, logical(1L)))
-  if (!identical(artifact$outcome$column, formula_spec$response) ||
-      !identical(artifact$predictor_order,
-                 sort(enc2utf8(predictors), method = "radix")) ||
+  if (identical(artifact$version,
+                .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)) {
+    matched_predictors <- vapply(predictors, function(reference) {
+      matches <- vapply(artifact$predictors, function(descriptor) {
+        .dsvert_dp_gaussian_reference_matches(reference, descriptor)
+      }, logical(1L))
+      signed_index <- match(reference, names(artifact$predictors))
+      if (!is.na(signed_index) && matches[[signed_index]]) {
+        matches <- seq_along(artifact$predictors) == signed_index
+      }
+      if (sum(matches) != 1L) return(NA_character_)
+      names(artifact$predictors)[[which(matches)]]
+    }, character(1L), USE.NAMES = FALSE)
+    owner_match <- is.null(requested_predictor_owners) ||
+      (!anyNA(matched_predictors) && all(vapply(seq_along(predictors), function(i) {
+        identical(artifact$predictors[[matched_predictors[[i]]]]$owner_peer,
+                  unname(requested_predictor_owners[[predictors[[i]]]]))
+      }, logical(1L))))
+    formula_match <- .dsvert_dp_gaussian_reference_matches(
+      formula_spec$response, artifact$outcome) &&
+      !anyNA(matched_predictors) && !anyDuplicated(matched_predictors) &&
+      identical(artifact$predictor_order,
+                sort(matched_predictors, method = "radix"))
+  } else {
+    formula_match <- identical(artifact$outcome$column, formula_spec$response) &&
+      identical(artifact$predictor_order,
+                sort(enc2utf8(predictors), method = "radix"))
+  }
+  if (!isTRUE(formula_match) ||
       !identical(artifact$intercept, intercept) || !isTRUE(owner_match)) {
     stop(paste(
       "The explicit formula does not match the signed Gaussian artifact;",

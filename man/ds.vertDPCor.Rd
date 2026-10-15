@@ -2,14 +2,17 @@
 % Please edit documentation in R/ds.vertCor.R
 \name{ds.vertDPCor}
 \alias{ds.vertDPCor}
-\title{Differentially private same-owner Pearson correlation}
+\title{Differentially private Pearson correlation from a signed artifact}
 \usage{
 ds.vertDPCor(
-  data_name,
-  analysis_id,
+  data_name = NULL,
+  analysis_id = NULL,
   variables = NULL,
   server = NULL,
-  datasources = NULL
+  datasources = NULL,
+  artifact_family = "correlation_artifacts",
+  gaussian_result = NULL,
+  trusted_pinset = NULL
 )
 }
 \arguments{
@@ -20,11 +23,22 @@ ds.vertDPCor(
 \code{paste(data_name, owner, sep = "::")}.}
 
 \item{variables}{Optional character subset, or a named list containing
-exactly one owner entry. At least two variables are required.}
+owner entries. Pairwise artifacts require exactly one owner; Gaussian
+artifacts accept owner-qualified references. At least two variables are required.}
 
-\item{server}{Optional assertion of the single owner.}
+\item{server}{Optional assertion of the pairwise owner or Gaussian outcome owner.}
 
 \item{datasources}{DataSHIELD connections.}
+
+\item{artifact_family}{\code{"correlation_artifacts"} (default) or explicitly
+\code{"gaussian_models"} for joint complete-case correlation.}
+
+\item{gaussian_result}{Optional current signed Gaussian Synopsis certificate
+or Gaussian result. Fully revalidated locally; a certificate requires no
+successful regression fit. Mutually exclusive with PCA \code{cor_result}.}
+
+\item{trusted_pinset}{Optional independently trusted peer-to-public-key map.
+Offline input requires caller anchoring or existing session transport trust.}
 }
 \value{
 A \code{ds.vertDPCor}/\code{ds.cor} object containing raw and projected
@@ -32,11 +46,12 @@ correlations, pair counts, simultaneous mechanism/quantization regions,
 and signed Synopsis provenance.
 }
 \description{
-Reads pairwise-complete bounded moments from exactly one signed, sticky
-biomedical Synopsis vector. The requested variables must all be co-located
-in one dataset and owner. Cross-owner products remain deliberately
-unavailable.
-The returned raw matrix uses pairwise-complete DP moments and can therefore
+By default reads same-owner pairwise-complete bounded moments from exactly
+one signed sticky Synopsis. Explicit \code{artifact_family="gaussian_models"}
+selects joint complete-case correlation across all signed owners, using the
+existing Gaussian Synopsis with an intercept. Subsets retain the full signed
+variable set's complete-case cohort and add no privacy cost.
+The default raw matrix uses pairwise-complete DP moments and can therefore
 be indefinite; \code{correlation} is an explicitly labelled eigenvalue-clipping
 and diagonal-rescaling projection, not an exact correlation reconstruction
 or an exact nearest-correlation solution.

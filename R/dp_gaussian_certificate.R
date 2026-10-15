@@ -2008,7 +2008,7 @@
 
 #' Verify a bounded Gaussian provenance certificate without DSI
 #'
-#' Dispatches between the same-owner no-lifetime Synopsis provenance
+#' Dispatches between the same- or cross-owner no-lifetime Synopsis provenance
 #' certificate v1 and the byte-compatible legacy capsule certificate v3. It
 #' revalidates the signed schema/manifest, pinned-peer receipts, Gaussian
 #' descriptor and exact released DP block before algebra. A self-contained

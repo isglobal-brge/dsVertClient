@@ -11,7 +11,9 @@ ds.vertPCA(
   analysis_id = NULL,
   cor_result = NULL,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  gaussian_result = NULL,
+  trusted_pinset = NULL
 )
 }
 \arguments{
@@ -23,8 +25,7 @@ supported when they agree with the Gaussian artifact.}
 
 \item{n_components}{Number of components, or \code{NULL} for all.}
 
-\item{analysis_id}{Mandatory signed Gaussian artifact id when
-\code{cor_result} is not supplied.}
+\item{analysis_id}{Signed Gaussian artifact id for online acquisition.}
 
 \item{cor_result}{An existing complete-case \code{ds.vertCor} result from the
 same sticky Synopsis. Pairwise, arbitrary, and legacy \code{ds.cor} objects are
@@ -33,6 +34,13 @@ rejected.}
 \item{verbose}{Logical progress flag.}
 
 \item{datasources}{DataSHIELD connections.}
+
+\item{gaussian_result}{Optional current signed Gaussian Synopsis certificate
+or Gaussian result. Fully revalidated locally; a certificate requires no
+successful regression fit. Mutually exclusive with PCA \code{cor_result}.}
+
+\item{trusted_pinset}{Optional independently trusted peer-to-public-key map.
+Offline input requires caller anchoring or existing session transport trust.}
 }
 \value{
 A \code{ds.pca} object with loadings, eigenvalues, explicit spectral

@@ -50,6 +50,9 @@
 #' role catalogue. Formula frontdoors use it to resolve unique names and to
 #' require explicit \code{server$column} qualification for collisions.
 #'
+#' @param gaussian_result Authenticated current Gaussian Synopsis result or
+#'   certificate for offline Cor/PCA post-processing.
+#' @param trusted_pinset Caller-anchored peer identity pins for offline validation.
 #' @param data_name,data,formula,datasources Aligned data-frame symbol, reusable
 #'   \code{ds.vertFederation}, model \code{formula}, and DataSHIELD connections.
 #'   Model formulas may qualify ambiguous columns as
@@ -224,13 +227,20 @@ ds.vert.desc <- function(data_name, datasources = NULL, ...) {
 
 #' @rdname ds.vert.aliases
 #' @export
-ds.vert.cor <- function(data_name, variables = NULL,
-                        datasources = NULL, ...) {
+ds.vert.cor <- function(data_name = NULL, variables = NULL,
+                        datasources = NULL, ..., gaussian_result = NULL,
+                        trusted_pinset = NULL) {
+  if (!is.null(gaussian_result)) {
+    out <- ds.vertCor(
+      data_name = data_name, variables = variables, datasources = datasources,
+      ..., gaussian_result = gaussian_result, trusted_pinset = trusted_pinset)
+    return(.dsvert_set_frontdoor(out, "ds.vert.cor", "ds.vertCor"))
+  }
   datasources <- .dsvert_datasources(datasources)
   resolved <- .dsvert_resolve_federation(data_name, datasources)
   out <- ds.vertCor(
     data_name = resolved$value, variables = variables,
-    datasources = resolved$datasources, ...)
+    datasources = resolved$datasources, ..., trusted_pinset = trusted_pinset)
   .dsvert_set_frontdoor(out, "ds.vert.cor", "ds.vertCor",
                         length(datasources))
 }
@@ -238,19 +248,21 @@ ds.vert.cor <- function(data_name, variables = NULL,
 #' @rdname ds.vert.aliases
 #' @export
 ds.vert.pca <- function(data_name = NULL, variables = NULL,
-                        datasources = NULL, ...) {
+                        datasources = NULL, ..., gaussian_result = NULL,
+                        trusted_pinset = NULL) {
   arguments <- list(...)
-  if (!is.null(arguments$cor_result)) {
+  if (!is.null(arguments$cor_result) || !is.null(gaussian_result)) {
     out <- ds.vertPCA(
       data_name = data_name, variables = variables,
-      datasources = datasources, ...)
+      datasources = datasources, ..., gaussian_result = gaussian_result,
+      trusted_pinset = trusted_pinset)
     return(.dsvert_set_frontdoor(out, "ds.vert.pca", "ds.vertPCA"))
   }
   datasources <- .dsvert_datasources(datasources)
   resolved <- .dsvert_resolve_federation(data_name, datasources)
   out <- ds.vertPCA(
     data_name = resolved$value, variables = variables,
-    datasources = resolved$datasources, ...)
+    datasources = resolved$datasources, ..., trusted_pinset = trusted_pinset)
   .dsvert_set_frontdoor(out, "ds.vert.pca", "ds.vertPCA",
                         length(datasources))
 }
@@ -760,12 +772,13 @@ ds.vert.lasso_iter <- function(formula, data = NULL,
                                ...) {
   method <- match.arg(method)
   args <- c(list(formula = formula, data = data), list(...))
-  if (is.null(args$exact_non_gaussian) && is.null(args$analysis_id)) {
+  if (is.null(args$exact_non_gaussian) && is.null(args$analysis_id) &&
+      is.null(args$cross_contract) && is.null(args$base_contract)) {
     args$exact_non_gaussian <- !identical(method, "fast")
   }
   route <- if (identical(args$family %||% "gaussian", "gaussian")) {
     "ds.vertLASSOIter(signed-gaussian-synopsis)"
-  } else if (!is.null(args$analysis_id)) {
+  } else if (!is.null(args$analysis_id) || !is.null(args$cross_contract)) {
     "ds.vertLASSOIter(signed-finite-l1-path)"
   } else if (isTRUE(args$exact_non_gaussian)) {
     "ds.vertLASSOIter(aggregate-score-unavailable)"

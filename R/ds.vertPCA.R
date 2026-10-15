@@ -222,25 +222,38 @@
 #' @param variables Optional signed variable subset. Named owner lists are
 #'   supported when they agree with the Gaussian artifact.
 #' @param n_components Number of components, or `NULL` for all.
-#' @param analysis_id Mandatory signed Gaussian artifact id when
-#'   `cor_result` is not supplied.
+#' @param analysis_id Signed Gaussian artifact id for online acquisition.
 #' @param cor_result An existing complete-case `ds.vertCor` result from the
 #'   same sticky Synopsis. Pairwise, arbitrary, and legacy `ds.cor` objects are
 #'   rejected.
 #' @param verbose Logical progress flag.
 #' @param datasources DataSHIELD connections.
+#' @param gaussian_result Optional current Gaussian Synopsis result or
+#'   certificate for authenticated zero-call correlation/PCA conversion.
+#'   Mutually exclusive with `cor_result`.
+#' @param trusted_pinset Optional independently trusted peer-to-public-key map
+#'   for revalidating `cor_result` or `gaussian_result` after a session restart.
 #' @return A `ds.pca` object with loadings, eigenvalues, explicit spectral
 #'   mechanism diagnostics and inherited DP provenance. Scores are unavailable.
 #' @export
 ds.vertPCA <- function(data_name = NULL, variables = NULL,
                        n_components = NULL, analysis_id = NULL,
                        cor_result = NULL, verbose = TRUE,
-                       datasources = NULL) {
+                       datasources = NULL, gaussian_result = NULL,
+                       trusted_pinset = NULL) {
   if (!is.logical(verbose) || length(verbose) != 1L || is.na(verbose)) {
     stop("verbose must be one non-missing logical", call. = FALSE)
   }
-  synopsis_read_performed <- is.null(cor_result)
-  if (is.null(cor_result)) {
+  if (!is.null(cor_result) && !is.null(gaussian_result)) {
+    stop("Supply only one of cor_result and gaussian_result", call. = FALSE)
+  }
+  synopsis_read_performed <- is.null(cor_result) && is.null(gaussian_result)
+  if (is.null(cor_result) && !is.null(gaussian_result)) {
+    cor_result <- ds.vertCor(
+      data_name = data_name, variables = variables,
+      analysis_id = analysis_id, verbose = verbose,
+      gaussian_result = gaussian_result, trusted_pinset = trusted_pinset)
+  } else if (is.null(cor_result)) {
     if (inherits(data_name, "ds.vertFederation")) {
       resolved <- .dsvert_federation_argument(data_name, datasources)
       data_name <- resolved$value
@@ -281,7 +294,8 @@ ds.vertPCA <- function(data_name = NULL, variables = NULL,
       call. = FALSE)
   }
   verification <- tryCatch(
-    ds.validateDPGaussianCertificate(cor_result$provenance_certificate),
+    ds.validateDPGaussianCertificate(
+      cor_result$provenance_certificate, trusted_pinset = trusted_pinset),
     error = function(error) {
       stop("The PCA Gaussian Synopsis certificate is invalid: ",
            conditionMessage(error), call. = FALSE)
