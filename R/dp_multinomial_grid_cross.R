@@ -416,7 +416,8 @@
 }
 .dsvert_dp_multinomial_grid_cross_register <- function() {
   list(family = "multinomial", spec_version = "multinomial_grid_cross_v1",
-    operation = "dp.multinomial-grid-cross.v1", release_enabled = FALSE,
+    operation = "dp.multinomial-grid-cross.v1", promotion_status = "promoted_v1.3.0",
+    production_route = "authenticated_synopsis_lifecycle",
     spec = .dsvert_dp_multinomial_grid_cross_spec,
     validate = .dsvert_dp_multinomial_grid_cross_contract_validate,
     artifact = .dsvert_dp_categorical_grid_cross_artifact,
@@ -532,7 +533,7 @@
 #'
 #' Validates all pinned custodians' signatures and the complete public numeric
 #' and source contract, then uses the shared two-authority DP release lifecycle.
-#' This internal adapter remains pending full family promotion validation.
+#' The archived v1.3.0 promotion covers K = 2, 3 and 5 custodians.
 #' @param formula An additive formula of qualified owner-column references,
 #'   for example \code{site_a$y ~ site_a$x + site_b$z}.
 #' @param data Signed logical dataset name.
@@ -555,8 +556,7 @@
 #'   plus output rounding when fewer than 16 output fractional bits are used.
 #'   Selection targets the certified profile; an exact-loss total differs by
 #'   at most the number of admitted rows times the certified row error.
-#' @note This entry point is namespace-internal pending full promotion evidence.
-#' @keywords internal
+#' @export
 dp_multinomial_grid <- function(formula, data, analysis_id, signed_contract,
                              policy, schema_manifest, datasources = NULL) {
   tryCatch({

@@ -24,13 +24,11 @@ from one eighth through 128. The complete contract, bounds, predictor order,
 PSI binding, numeric certificate and all pinned signatures are checked locally.
 }
 \details{
-This namespace-internal adapter uses the shared authenticated sticky two-authority
+This public adapter uses the shared authenticated sticky two-authority
 DP release lifecycle and verifies its anchored certificate before selecting a
-candidate. Full family promotion evidence remains pending. The same-owner
+candidate. Archived v1.3.0 promotion covers K = 2, 3 and 5. The same-owner
 negative-binomial routes remain independent. No protected-data optimizer,
 standard errors, covariance or p-values are used.
 }
 \value{A selected finite-grid candidate with theta and coefficients, together
 with its authenticated DP release certificate.}
-\note{This entry point is namespace-internal pending full promotion evidence.}
-\keyword{internal}

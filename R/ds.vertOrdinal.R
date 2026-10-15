@@ -8,7 +8,7 @@
 #'   \code{analysis_id}, additive bare predictors select one candidate from a
 #'   signed sticky-DP finite cumulative-logit likelihood grid.
 #' @details The Frequency route is intercept-only and never starts a new
-#'   analysis. The grid route requires a same-owner signed categorical domain,
+#'   analysis. The bare-name grid route requires a same-owner signed categorical domain,
 #'   a declared clinical order, finite threshold/beta candidates and public
 #'   predictor bounds. Neither route returns covariance, standard errors or
 #'   sampling inference.
@@ -27,6 +27,12 @@
 #'   \code{ds.vertOrdinal} object. With \code{analysis_id}, finite-grid ordinal
 #'   coefficients and thresholds without sampling inference. Otherwise the function raises
 #'   \code{dsvert_route_unavailable} before DSI.
+#' @details Owner-qualified additive formulas with \code{analysis_id} select
+#'   the authenticated embedded cross-owner finite-grid contract. Bare-name
+#'   formulas retain the existing same-owner route. No legacy optimizer controls
+#'   are accepted on the cross-owner route.
+#' @return Qualified cross-owner calls return the authenticated
+#'   \code{dp_ordinal_grid} result with the signed contract and release certificate.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertOrdinal <- function(formula, data = NULL, levels_ordered = NULL,
@@ -37,6 +43,14 @@ ds.vertOrdinal <- function(formula, data = NULL, levels_ordered = NULL,
                            verbose = TRUE, datasources = NULL, ...,
                            frequency = NULL, server = NULL, analysis_id = NULL) {
   explicit_arguments <- names(match.call())[-1L]
+  if (!is.null(analysis_id) && .dsvert_dp_grid_cross_formula_requested(formula)) {
+    allowed <- c("formula", "data", "analysis_id", "verbose", "datasources", "levels_ordered")
+    if (length(setdiff(explicit_arguments, allowed)) || !.dsvert_dp_is_string(analysis_id)) {
+      stop("Cross-owner ordinal grids do not accept legacy controls", call. = FALSE)
+    }
+    return(.dsvert_dp_grid_cross_frontdoor("ordinal", formula, data, analysis_id,
+      datasources, levels_ordered = levels_ordered))
+  }
   if (!is.null(analysis_id)) {
     if (!is.null(frequency) || !is.null(server) ||
         !is.character(analysis_id) || length(analysis_id) != 1L ||

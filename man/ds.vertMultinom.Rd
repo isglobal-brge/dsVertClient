@@ -43,6 +43,9 @@ frontdoor reads the canonical signed Frequency artifact for the outcome.}
 for an additive covariate formula.}
 }
 \value{
+Qualified cross-owner calls return the authenticated \code{dp_multinomial_grid}
+result with its signed contract and release certificate.
+
 With \code{frequency} or \code{server}, a coefficient-only
 intercept-only \code{ds.vertMultinom} object. With \code{analysis_id},
 a finite-grid multinomial coefficient matrix without sampling inference.
@@ -59,8 +62,13 @@ With \code{analysis_id}, additive bare predictors select one candidate
 from a signed sticky-DP finite softmax likelihood grid.
 }
 \details{
+Owner-qualified additive formulas with \code{analysis_id} select the authenticated
+embedded cross-owner finite-grid contract. Bare formulas retain the same-owner
+route. Cross calls reject legacy optimizer controls. Categorical controls, if
+supplied, must exactly match the signed class order and reference.
+
 The Frequency route is intercept-only and never starts a new
-analysis. The grid route requires a same-owner signed categorical domain,
+analysis. The bare-name grid route requires a same-owner signed categorical domain,
 finite beta grid and public predictor bounds. Neither route returns
 covariance, standard errors or sampling inference.
 }

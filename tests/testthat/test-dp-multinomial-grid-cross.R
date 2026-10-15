@@ -12,7 +12,7 @@ test_that("both categorical cross-owner validators require both authentic signat
                      "cross_owner_exact_gc_materialized")
     expect_identical(contract$artifact$cross_owner_state,
                      "exact_gc_to_joint_dp_vector_v1")
-    expect_false(registration$release_enabled)
+    expect_identical(registration$promotion_status, "promoted_v1.3.0")
     wire <- jsonlite::fromJSON(.dsvert_joint_dp_client_json(contract),
                               simplifyVector = FALSE)
     expect_identical(validate(wire), contract)

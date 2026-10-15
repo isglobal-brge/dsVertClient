@@ -72,7 +72,7 @@ test_that("NB2 signed contracts retain the frozen source ABI and both authoritie
   expect_true(.dsvert_dp_glm_grid_cross_equal(got$source_contract$private_layout,
                    .dsvert_dp_glm_grid_cross_layout(got$spec)))
   expect_identical(got$source_contract$recipients, as.list(c("peer_a", "peer_b")))
-  expect_false(f$registration$production_release_registered)
+  expect_identical(f$registration$promotion_status, "promoted_v1.3.0")
   decoded <- jsonlite::fromJSON(.dsvert_joint_dp_client_json(got), simplifyVector = FALSE)
   expect_identical(f$registration$validate_contract(decoded, f$policy, f$schema), got)
 })
@@ -136,7 +136,7 @@ test_that("NB2 entry rejects missing authenticated datasources and signatures", 
   bad$signatures$peer_b <- NULL
   expect_error(dp_nb_grid(peer_a$y ~ peer_a$x + peer_b$z, "cohort", "nb_grid",
     bad, f$policy, f$schema), class = "dsvert_dp_public_failure")
-  expect_false(f$registration$production_release_registered)
+  expect_identical(f$registration$promotion_status, "promoted_v1.3.0")
 })
 
 test_that("NB2 postprocessing selects only signed public beta/theta candidates", {

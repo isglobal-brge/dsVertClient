@@ -20,6 +20,10 @@
 #'   \code{family = "binomial"} or \code{"poisson"}. The optional
 #'   \code{lambda} argument may only select exact penalty levels already in
 #'   that path.
+#' @param cross_contract,base_contract For a cross-owner binomial/Poisson path,
+#'   the separately signed LASSO extension and its base loss contract. Both are
+#'   required; the qualified formula, family, dataset and penalty subset must
+#'   match. Policy and schema come from authenticated Synopsis discovery.
 #' @return A \code{ds.vertLASSOIter} / \code{ds.vertDPLASSOPath} object for
 #'   one authenticated Gaussian or finite binomial/Poisson L1 path. Other
 #'   non-Gaussian requests raise \code{dsvert_route_unavailable} before DSI.
@@ -46,9 +50,15 @@ ds.vertLASSOIter <- function(formula, data = NULL,
                               verbose = TRUE, datasources = NULL,
                               cor_analysis_id = NULL,
                               dp_analysis_id = NULL,
-                              analysis_id = NULL) {
+                              analysis_id = NULL,
+                              cross_contract = NULL, base_contract = NULL) {
   explicit_arguments <- names(as.list(match.call(expand.dots = FALSE)))[-1L]
   family <- match.arg(family)
+  if (!is.null(cross_contract) || !is.null(base_contract)) {
+    return(.dsvert_dp_lasso_cross_frontdoor(explicit_arguments, formula, data,
+      family, lambda, datasources, analysis_id, cross_contract, base_contract))
+  }
+  explicit_arguments <- setdiff(explicit_arguments, c("cross_contract", "base_contract"))
   if (identical(family, "gaussian")) {
     if (!is.null(analysis_id)) {
       stop("analysis_id is reserved for signed binomial or Poisson L1 paths",
@@ -508,6 +518,8 @@ print.ds.vertLASSOIter <- function(x, ...) {
   if (!is.null(x$n_outer)) {
     cat(sprintf("  Solver iters : %s\n",
                 paste(x$n_outer, collapse = " ")))
+  } else if (identical(x$method, "signed_dp_cross_owner_finite_l1_path")) {
+    cat("  Selection : signed finite candidates from the DP base release\n")
   } else {
     cat("  Solver : certified Synopsis coordinate descent\n")
   }

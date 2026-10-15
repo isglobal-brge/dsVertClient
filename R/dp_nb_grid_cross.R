@@ -395,7 +395,8 @@
        sensitivity = .dsvert_dp_nb_grid_cross_sensitivity,
        postprocess = .dsvert_dp_nb_grid_cross_moment,
        client_entry = dp_nb_grid,
-       production_release_registered = FALSE)
+       promotion_status = "promoted_v1.3.0",
+       production_route = "authenticated_synopsis_lifecycle")
 }
 
 # Postprocessing consumes a public, already authenticated and DP-released vector.
@@ -424,7 +425,22 @@
        cross_owner_state = "exact_gc_to_joint_dp_vector_v1")
 }
 
-# The entry remains namespace-internal pending the full promotion evidence.
+#' Select a signed cross-owner negative-binomial finite grid candidate
+#'
+#' Validates the bounded NB2 beta/theta grid signed by all pinned custodians,
+#' then selects a candidate from the authenticated two-authority DP release.
+#' @param formula Additive owner-qualified outcome and predictor formula.
+#' @param data_name Signed logical dataset name.
+#' @param analysis_id Signed analysis identifier.
+#' @param signed_contract Complete cross-owner NB2 contract signed by all custodians.
+#' @param policy Public pinned policy, capacity, adjacency and numeric precision.
+#' @param schema_manifest Public schema signed by all pinned custodians.
+#' @param datasources Authenticated DataSHIELD connections.
+#' @return Selected finite-grid coefficients and theta, with an authenticated
+#'   release certificate, without covariance, standard errors or p-values.
+#' @details Archived v1.3.0 promotion covers K = 2, 3 and 5 custodians. No
+#'   protected-data optimizer is enabled by this entry point.
+#' @export
 dp_nb_grid <- function(formula, data_name, analysis_id, signed_contract,
                        policy, schema_manifest, datasources = NULL) {
   tryCatch({

@@ -312,7 +312,10 @@
     implementation_state = "cross_owner_exact_gc_materialized",
     cross_owner_state = "exact_gc_to_joint_dp_vector_v1",
     nonlinear_arithmetic_required = "certified_piecewise_polynomial_profile_v1",
-    production_release_enabled = FALSE, result_evidence_required = TRUE)
+    promotion_status = "promoted_v1.3.0",
+    archived_promotion_family = "binomial",
+    production_route = "authenticated_synopsis_lifecycle",
+    result_evidence_required = TRUE)
 }
 
 # The existing base lifecycle owns source access, joint noise and sticky replay.
@@ -412,14 +415,15 @@
 #' Binomial and Poisson reuse the signed certified-profile loss release. The
 #' Gaussian route reuses its signed sufficient statistics. Public penalties
 #' exclude the intercept and use public capacity, never the protected row count.
-#' The integration entry uses the authenticated base release and remains
-#' namespace-internal pending complete family promotion evidence.
+#' The integration entry uses the authenticated base release. Archived
+#' v1.3.0 federation promotion covers binomial; Poisson shares the implementation
+#' and unit validation, without a separate archived federation campaign.
 #' No caller-supplied plaintext or noisy vector can authorize a release.
 #' @param covariates Character vector of owner-qualified signed predictors.
-#' @param signed_contract Both custodians' signed LASSO extension contract.
+#' @param signed_contract All pinned custodians' signed LASSO extension contract.
 #' @param base_contract Signed base cross-owner release contract.
 #' @param policy Public pinned policy used to validate both contracts.
-#' @param schema_manifest Both custodians' signed public schema.
+#' @param schema_manifest All pinned custodians' signed public schema.
 #' @param datasources DataSHIELD connections for the authenticated base release.
 #' @return Selected public candidates, the signed extension and an anchored base
 #'   release certificate, without standard errors.
