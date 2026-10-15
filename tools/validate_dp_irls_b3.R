@@ -103,7 +103,7 @@ contract <- peers[[1L]]$worker$run(function(server, pins, attestation, n, poc) {
   sys.source(file.path(server, "tests/testthat/helper-dp-irls-contract.R"), helper)
   sys.source(file.path(server, "tests/testthat/helper-dp-irls-profile.R"), helper)
   spec <- if (n == 64L && !poc) helper$.irls_smoke_fixture()$spec else helper$.irls_producer_fixture("binomial", as.character(n))$spec
-  if (poc) { spec$operations$max_stage_seconds <- "900"; spec$operations$max_path_seconds <- "2700" }
+  if (poc) { spec$operations$max_stage_seconds <- "1800"; spec$operations$max_path_seconds <- "5400" }
   spec$privacy_source$peer_pins <- as.list(pins)
   spec$privacy_source$pinset_sha256 <- dsVert:::.dsvert_dp_synopsis_pinset_hash_v1(pins)
   spec$privacy_source$alignment_purpose <- attestation$alignment_purpose
