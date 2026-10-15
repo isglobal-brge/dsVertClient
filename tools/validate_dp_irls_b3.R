@@ -194,14 +194,6 @@ trace(".dsvert_aggregate_strict", where = asNamespace("dsVertClient"),
   }, list(CLOCK = transport_clock)), print = FALSE)
 on.exit(untrace(".dsvert_aggregate_strict", where = asNamespace("dsVertClient")), add = TRUE)
 
-if (poc) {
-  # Custodian transport policy for the IRLS path of this DSLite run only, set
-  # after PSI and provisioning: 4 MiB exact-GC frames (package default 480 KiB,
-  # admitted 16 KiB..8 MiB) and a client DSI expression bound that admits them
-  # (default just under 768 KiB for Opal/Armadillo; DSLite has no such limit).
-  for (peer in peers) peer$worker$run(function() options(dsvert.exact_gc.chunk_bytes = 4L * 1024L^2))
-  options(dsvert.dsi_max_expression_bytes = 8L * 1024L^2)
-}
 path_started <- Sys.time()
 resolved <- tryCatch(cf(".dsvert_dp_irls_client_metadata")("irls_b3_smoke", conns, as.list(pins)),
                      error = identity)
