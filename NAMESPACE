@@ -201,3 +201,5 @@ export(dp_lasso_grid)
 export(dp_multinomial_grid)
 export(dp_ordinal_grid)
 export(ds.vertNB)
+
+export(ds.vertDPIRLS)
