@@ -1,0 +1,697 @@
+# B1 contract wire rules mirror the server schema. Arithmetic verification is
+# independently implemented in dp_irls_verify.R and never invokes the server.
+# Existing client signature, pin and provenance validators remain authoritative.
+.dsvert_dp_irls_client_scalar_id <- function(x, what) {
+  if (!.dsvert_dp_analysis_client_scalar_id(x)) stop("Invalid IRLS ", what, call. = FALSE)
+  x
+}
+.dsvert_dp_irls_client_hex_check <- function(x, what) {
+  if (!.dsvert_vector_hex(x)) stop("Invalid IRLS ", what, call. = FALSE)
+  x
+}
+.dsvert_dp_irls_client_pins <- function(pins) {
+  if (!is.character(pins) || length(pins) < 2L || length(pins) > 4096L ||
+      is.null(names(pins)) || anyNA(names(pins)) || anyDuplicated(names(pins)))
+    stop("Invalid IRLS external pins.", call. = FALSE)
+  lapply(names(pins), .dsvert_dp_irls_client_scalar_id, what = "peer")
+  pins <- pins[order(names(pins), method = "radix")]
+  .dsvert_dp_synopsis_client_pinset_v1(pins, names(pins))
+}
+.dsvert_dp_irls_client_pinset_hash <- function(pins) {
+  digest::digest(.dsvert_joint_dp_client_json(as.list(
+    .dsvert_dp_irls_client_pins(pins))), algo = "sha256", serialize = FALSE)
+}
+.dsvert_dp_irls_client_signature <- function(x) {
+  if (!is.character(x) || length(x) != 1L || is.na(x) ||
+      !grepl("^[A-Za-z0-9_-]{86}$", x)) stop("Invalid IRLS signature.", call. = FALSE)
+  .dsvert_joint_dp_client_b64url(x, 64L, "IRLS signature")
+  x
+}
+
+# Public deterministic B1 contract layer. No producer or DataSHIELD endpoint.
+# All new identities use fresh domains; existing registries/artifacts are read
+# through their established normalizers without altering their wire formats.
+.DSVERT_CLIENT_DP_IRLS_VERSION <- "dp_irls_v1"
+.DSVERT_CLIENT_DP_IRLS_CONTRACT_VERSION <- "dsvert-dp-irls-contract-v1"
+.DSVERT_CLIENT_DP_IRLS_SIGNING_DOMAIN <- "dsVert/dp-irls/contract/v1|"
+.DSVERT_CLIENT_DP_IRLS_UPDATE_VERSION <- "dp_irls_update_v1"
+
+.dsvert_dp_irls_client_fail <- function(what = "contract") {
+  stop("Invalid DP IRLS ", what, ".", call. = FALSE)
+}
+.dsvert_dp_irls_client_fields <- function(x, fields, what = "fields") {
+  if (!is.list(x) || is.null(names(x)) || anyNA(names(x)) ||
+      anyDuplicated(names(x)) || !setequal(names(x), fields))
+    .dsvert_dp_irls_client_fail(what)
+  invisible(x)
+}
+.dsvert_dp_irls_client_text <- function(x, what = "text") {
+  if (!is.character(x) || length(x) != 1L || is.na(x) || !nzchar(x) ||
+      nchar(x, type = "bytes") > 8192L || grepl("[\r\n\t]", x))
+    .dsvert_dp_irls_client_fail(what)
+  x
+}
+.dsvert_dp_irls_client_choice <- function(x, choices, what = "choice") {
+  .dsvert_dp_irls_client_text(x, what)
+  if (!x %in% choices) .dsvert_dp_irls_client_fail(what)
+  x
+}
+.dsvert_dp_irls_client_int <- function(x, lower = NULL, upper = NULL) {
+  if (!is.character(x) || length(x) != 1L || is.na(x) ||
+      nchar(x) > 1500L || !grepl("^(0|-?[1-9][0-9]*)$", x))
+    .dsvert_dp_irls_client_fail("integer string")
+  z <- gmp::as.bigz(x)
+  if ((!is.null(lower) && z < gmp::as.bigz(lower)) ||
+      (!is.null(upper) && z > gmp::as.bigz(upper)))
+    .dsvert_dp_irls_client_fail("integer range")
+  x
+}
+.dsvert_dp_irls_client_q <- function(x, lower = NULL, upper = NULL) {
+  .dsvert_dp_irls_client_fields(x, c("n", "d"), "rational")
+  n <- .dsvert_dp_irls_client_int(x$n); d <- .dsvert_dp_irls_client_int(x$d, "1")
+  q <- gmp::as.bigq(n, d)
+  if ((!is.null(lower) && q < lower) || (!is.null(upper) && q > upper))
+    .dsvert_dp_irls_client_fail("rational range")
+  list(n = as.character(gmp::numerator(q)),
+       d = as.character(gmp::denominator(q)))
+}
+.dsvert_dp_irls_client_bigq <- function(x) gmp::as.bigq(x$n, x$d)
+.dsvert_dp_irls_client_rational <- function(x) list(
+  n = as.character(gmp::numerator(x)), d = as.character(gmp::denominator(x)))
+.dsvert_dp_irls_client_array <- function(x, size = NULL, minimum = 0L) {
+  if (is.character(x) && is.null(names(x))) x <- as.list(x)
+  if (!is.list(x) || !is.null(names(x)) || length(x) < minimum ||
+      (!is.null(size) && length(x) != size)) .dsvert_dp_irls_client_fail("array")
+  x
+}
+.dsvert_dp_irls_client_texts <- function(x, minimum = 0L, unique = TRUE) {
+  x <- lapply(.dsvert_dp_irls_client_array(x, minimum = minimum), .dsvert_dp_irls_client_text)
+  if (unique && anyDuplicated(unlist(x))) .dsvert_dp_irls_client_fail("duplicate text")
+  x
+}
+.dsvert_dp_irls_client_no_float <- function(x) {
+  if (is.list(x)) {
+    if (is.object(x)) .dsvert_dp_irls_client_fail("attributed contract")
+    lapply(x, .dsvert_dp_irls_client_no_float)
+  } else if (!is.character(x) || anyNA(x) || !is.null(attributes(x))) {
+    .dsvert_dp_irls_client_fail("non-string contract leaf")
+  }
+  invisible(NULL)
+}
+.dsvert_dp_irls_client_json <- function(x) .dsvert_joint_dp_client_json(
+  .dsvert_joint_dp_client_canonical(x))
+.dsvert_dp_irls_client_hash <- function(domain, value) digest::digest(
+  charToRaw(paste0(domain, "|", .dsvert_dp_irls_client_json(value))),
+  algo = "sha256", serialize = FALSE)
+.dsvert_dp_irls_client_hex <- function(x) .dsvert_dp_irls_client_hex_check(x, "IRLS digest")
+.dsvert_dp_irls_client_interval <- function(x) {
+  .dsvert_dp_irls_client_fields(x, c("lower", "upper"))
+  x$lower <- .dsvert_dp_irls_client_q(x$lower); x$upper <- .dsvert_dp_irls_client_q(x$upper)
+  if (.dsvert_dp_irls_client_bigq(x$lower) > .dsvert_dp_irls_client_bigq(x$upper))
+    .dsvert_dp_irls_client_fail("reversed interval")
+  x
+}
+.dsvert_dp_irls_client_flag <- function(x) .dsvert_dp_irls_client_choice(x, c("0", "1"))
+.dsvert_dp_irls_client_qarray <- function(x, size, lower = NULL, upper = NULL) {
+  lapply(.dsvert_dp_irls_client_array(x, size), .dsvert_dp_irls_client_q,
+         lower = lower, upper = upper)
+}
+
+
+# Parse only an explicit additive grammar, without evaluating formula language.
+# B1 has no model-matrix compiler: transformations/interactions must obtain an
+# explicit later grammar/certificate instead of being silently interpreted here.
+.dsvert_dp_irls_client_estimand_formula <- function(e) {
+  parsed <- tryCatch(parse(text = e$formula, keep.source = TRUE),
+                     error = function(error) NULL)
+  if (is.null(parsed) || length(parsed) != 1L) .dsvert_dp_irls_client_fail("formula grammar")
+  tokens <- utils::getParseData(parsed)
+  if (any(tokens$token == "COMMENT") ||
+      any(tokens$text[tokens$token == "NUM_CONST"] %in% c("0", "1") == FALSE))
+    .dsvert_dp_irls_client_fail("formula grammar")
+  expr <- parsed[[1L]]
+  call_is <- function(x, name, size) is.call(x) && length(x) == size &&
+    is.symbol(x[[1L]]) && identical(as.character(x[[1L]]), name)
+  if (!call_is(expr, "~", 3L) || !is.symbol(expr[[2L]]))
+    .dsvert_dp_irls_client_fail("two-sided formula")
+  outcome <- Filter(function(z) z$role == "outcome", e$columns)[[1L]]$column_id
+  if (!identical(as.character(expr[[2L]]), outcome)) .dsvert_dp_irls_client_fail("formula outcome")
+  predictors <- character(); directives <- character(); offsets <- character()
+  constant <- function(x, n) is.numeric(x) && length(x) == 1L && !is.object(x) && x == n
+  walk <- function(x) {
+    if (is.symbol(x)) {
+      predictors <<- c(predictors, as.character(x)); return(invisible(NULL))
+    }
+    if (constant(x, 0) || constant(x, 1)) {
+      directives <<- c(directives, if (constant(x, 0)) "0" else "1")
+      return(invisible(NULL))
+    }
+    if (call_is(x, "(", 2L)) return(walk(x[[2L]]))
+    if (call_is(x, "+", 3L)) {walk(x[[2L]]); walk(x[[3L]]); return(invisible(NULL))}
+    if (call_is(x, "-", 2L) && constant(x[[2L]], 1)) {
+      directives <<- c(directives, "0"); return(invisible(NULL))
+    }
+    if (call_is(x, "-", 3L) && constant(x[[3L]], 1)) {
+      walk(x[[2L]]); directives <<- c(directives, "0"); return(invisible(NULL))
+    }
+    if (call_is(x, "offset", 2L)) {
+      term <- x[[2L]]
+      if (e$offset$kind == "offset" && is.symbol(term)) {
+        offsets <<- c(offsets, as.character(term)); return(invisible(NULL))
+      }
+      if (e$offset$kind == "log-exposure" && call_is(term, "log", 2L) && is.symbol(term[[2L]])) {
+        offsets <<- c(offsets, as.character(term[[2L]])); return(invisible(NULL))
+      }
+    }
+    .dsvert_dp_irls_client_fail("unsupported formula grammar")
+  }
+  walk(expr[[3L]])
+  if (anyDuplicated(predictors) || length(unique(directives)) > 1L)
+    .dsvert_dp_irls_client_fail("duplicate formula term or conflicting intercept")
+  intercept <- if (length(directives)) directives[[1L]] else "1"
+  if (!identical(intercept, e$intercept)) .dsvert_dp_irls_client_fail("formula intercept")
+  declared_predictors <- vapply(Filter(function(z) z$role == "predictor", e$columns),
+                                `[[`, character(1L), "column_id")
+  if (!setequal(predictors, declared_predictors)) .dsvert_dp_irls_client_fail("formula predictor declarations")
+  offset_columns <- Filter(function(z) z$role %in% c("offset", "exposure"), e$columns)
+  if (e$offset$kind == "none") {
+    if (length(offsets) || length(offset_columns)) .dsvert_dp_irls_client_fail("formula absent offset")
+  } else {
+    role <- if (e$offset$kind == "offset") "offset" else "exposure"
+    if (length(offsets) != 1L || !identical(offsets[[1L]], e$offset$column_id) ||
+        length(offset_columns) != 1L || offset_columns[[1L]]$role != role ||
+        offset_columns[[1L]]$column_id != e$offset$column_id ||
+        (e$offset$kind == "log-exposure" && e$family != "poisson"))
+      .dsvert_dp_irls_client_fail("formula offset declaration")
+  }
+  levels <- vapply(e$levels, `[[`, character(1L), "column_id")
+  contrasts <- vapply(e$contrasts, `[[`, character(1L), "column_id")
+  if (!setequal(levels, contrasts) || !all(levels %in% declared_predictors))
+    .dsvert_dp_irls_client_fail("categorical contrast declarations")
+  expanded <- if (intercept == "1") "(Intercept)" else character()
+  for (predictor in predictors) {
+    contrast <- match(predictor, contrasts)
+    if (is.na(contrast)) expanded <- c(expanded, predictor) else {
+      names <- unlist(e$contrasts[[contrast]]$coefficient_names, use.names = FALSE)
+      if (length(names) > length(e$levels[[match(predictor, levels)]]$values))
+        .dsvert_dp_irls_client_fail("categorical contrast dimension")
+      expanded <- c(expanded, names)
+    }
+  }
+  if (anyDuplicated(expanded) ||
+      !identical(expanded, unlist(e$coefficient_order, use.names = FALSE)))
+    .dsvert_dp_irls_client_fail("expanded coefficient order")
+  symbol_text <- function(x) paste(deparse(as.name(x), backtick = TRUE, width.cutoff = 500L), collapse = " ")
+  terms <- c(if (intercept == "0") "0", vapply(predictors, symbol_text, character(1L)))
+  if (length(offsets)) {
+    term <- symbol_text(offsets[[1L]])
+    if (e$offset$kind == "log-exposure") term <- paste0("log(", term, ")")
+    terms <- c(terms, paste0("offset(", term, ")"))
+  }
+  if (!length(terms)) terms <- "1"
+  e$formula <- paste(symbol_text(outcome), "~", paste(terms, collapse = " + "))
+  e
+}
+
+.dsvert_dp_irls_client_contract_normalize <- function(value) {
+  if (!requireNamespace("gmp", quietly = TRUE))
+    stop("DP IRLS requires gmp for exact arithmetic.", call. = FALSE)
+  .dsvert_dp_irls_client_no_float(value)
+  .dsvert_dp_irls_client_fields(value, c("mechanism", "profile_id", "estimand",
+    "privacy_source", "numeric", "path", "accounting", "inference", "operations"))
+  .dsvert_dp_irls_client_choice(value$mechanism, .DSVERT_CLIENT_DP_IRLS_VERSION)
+  .dsvert_dp_irls_client_scalar_id(value$profile_id, "IRLS profile")
+  e <- value$estimand
+  .dsvert_dp_irls_client_fields(e, c("formula", "coefficient_order", "family", "link",
+    "levels", "contrasts", "columns", "offset", "intercept", "clamped_target",
+    "model_assumptions"))
+  .dsvert_dp_irls_client_text(e$formula)
+  e$coefficient_order <- .dsvert_dp_irls_client_texts(e$coefficient_order, 1L)
+  p <- length(e$coefficient_order); nh <- p * (p + 1L) / 2L
+  if (p > 128L) .dsvert_dp_irls_client_fail("coefficient capacity")
+  .dsvert_dp_irls_client_choice(e$family, c("binomial", "poisson"))
+  .dsvert_dp_irls_client_choice(e$link, if (e$family == "binomial") "logit" else "log")
+  e$levels <- lapply(.dsvert_dp_irls_client_array(e$levels), function(z) {
+    .dsvert_dp_irls_client_fields(z, c("column_id", "values")); .dsvert_dp_irls_client_text(z$column_id)
+    z$values <- .dsvert_dp_irls_client_texts(z$values, 1L); z
+  })
+  e$contrasts <- lapply(.dsvert_dp_irls_client_array(e$contrasts), function(z) {
+    .dsvert_dp_irls_client_fields(z, c("column_id", "coding", "coefficient_names"))
+    .dsvert_dp_irls_client_text(z$column_id); .dsvert_dp_irls_client_text(z$coding)
+    z$coefficient_names <- .dsvert_dp_irls_client_texts(z$coefficient_names, 1L)
+    if (!all(unlist(z$coefficient_names) %in% unlist(e$coefficient_order)))
+      .dsvert_dp_irls_client_fail("contrast order")
+    z
+  })
+  e$columns <- lapply(.dsvert_dp_irls_client_array(e$columns, minimum = 1L), function(z) {
+    .dsvert_dp_irls_client_fields(z, c("column_id", "owner", "source_id", "role"))
+    lapply(z, .dsvert_dp_irls_client_text)
+    .dsvert_dp_irls_client_choice(z$role, c("predictor", "outcome", "offset", "exposure")); z
+  })
+  column_ids <- vapply(e$columns, `[[`, character(1L), "column_id")
+  if (anyDuplicated(column_ids) ||
+      sum(vapply(e$columns, function(z) z$role == "outcome", logical(1L))) != 1L)
+    .dsvert_dp_irls_client_fail("column declarations")
+  for (entries in list(e$levels, e$contrasts)) {
+    ids <- vapply(entries, `[[`, character(1L), "column_id")
+    if (anyDuplicated(ids) || !all(ids %in% column_ids))
+      .dsvert_dp_irls_client_fail("level/contrast columns")
+  }
+  .dsvert_dp_irls_client_fields(e$offset, c("kind", "column_id", "zero_exposure"))
+  .dsvert_dp_irls_client_choice(e$offset$kind, c("none", "offset", "log-exposure"))
+  if (e$offset$kind == "none") {
+    if (e$offset$column_id != "none" || e$offset$zero_exposure != "not-applicable")
+      .dsvert_dp_irls_client_fail("absent offset")
+  } else {
+    if (!e$offset$column_id %in% column_ids) .dsvert_dp_irls_client_fail("offset column")
+    .dsvert_dp_irls_client_choice(e$offset$zero_exposure,
+      if (e$offset$kind == "log-exposure") "masked-zero-contribution" else "not-applicable")
+  }
+  .dsvert_dp_irls_client_flag(e$intercept)
+  if ((e$intercept == "1") != (e$coefficient_order[[1L]] == "(Intercept)"))
+    .dsvert_dp_irls_client_fail("intercept order")
+  .dsvert_dp_irls_client_text(e$clamped_target)
+  e$model_assumptions <- .dsvert_dp_irls_client_texts(e$model_assumptions, 1L)
+  e <- .dsvert_dp_irls_client_estimand_formula(e)
+  value$estimand <- e
+
+  s <- value$privacy_source
+  .dsvert_dp_irls_client_fields(s, c("adjacency", "capacity", "row_cap", "closure",
+    "source_ids", "alignment_purpose", "missing_rule", "duplicate_rule",
+    "ordering_rule", "x_bounds", "y_bounds", "offset_bounds", "person_caps",
+    "peer_pins", "pinset_sha256", "computation_peers", "schema_sha256"))
+  .dsvert_dp_irls_client_choice(s$adjacency, c("add-remove-person", "replace-one-person"))
+  .dsvert_dp_irls_client_int(s$capacity, "1"); .dsvert_dp_irls_client_int(s$row_cap, "1")
+  pins <- .dsvert_dp_irls_client_pins(unlist(s$peer_pins))
+  s$peer_pins <- as.list(pins)
+  if (!identical(s$pinset_sha256, .dsvert_dp_irls_client_pinset_hash(pins)))
+    .dsvert_dp_irls_client_fail("pinset digest")
+  s$computation_peers <- .dsvert_dp_irls_client_texts(s$computation_peers, 2L)
+  if (length(s$computation_peers) != 2L ||
+      !all(unlist(s$computation_peers) %in% names(pins)))
+    .dsvert_dp_irls_client_fail("designated pair")
+  s$closure <- .dsvert_dp_synopsis_client_closure_validate_v2(s$closure)
+  dependencies <- s$closure$dependencies
+  if (!length(dependencies)) .dsvert_dp_irls_client_fail("empty epoch closure")
+  s$source_ids <- .dsvert_dp_irls_client_texts(s$source_ids, 1L)
+  if (length(s$source_ids) != length(dependencies))
+    .dsvert_dp_irls_client_fail("complete source vector")
+  for (dep in dependencies) {
+    epoch_pins <- vapply(dep$dependency$authorization_epochs, `[[`, character(1L), "peer_identity")
+    if (!dep$source_identity %in% pins || !all(epoch_pins %in% pins) ||
+        (dep$dependency$provenance_kind == "padded_psi" && !setequal(epoch_pins, unname(pins))) ||
+        (dep$dependency$provenance_kind == "frozen_materialized_root" &&
+         !identical(epoch_pins, dep$source_identity))) .dsvert_dp_irls_client_fail("epoch pin")
+  }
+  for (column in e$columns) {
+    j <- match(column$source_id, unlist(s$source_ids))
+    if (!column$owner %in% names(pins) || is.na(j) ||
+        !identical(unname(pins[[column$owner]]), dependencies[[j]]$source_identity))
+      .dsvert_dp_irls_client_fail("source owner")
+  }
+  for (nm in c("alignment_purpose", "missing_rule", "duplicate_rule", "ordering_rule"))
+    .dsvert_dp_irls_client_text(s[[nm]])
+  s$x_bounds <- lapply(.dsvert_dp_irls_client_array(s$x_bounds, p), .dsvert_dp_irls_client_interval)
+  s$y_bounds <- .dsvert_dp_irls_client_interval(s$y_bounds)
+  s$offset_bounds <- .dsvert_dp_irls_client_interval(s$offset_bounds)
+  if (e$offset$kind == "none" && any(vapply(s$offset_bounds,
+      function(q) .dsvert_dp_irls_client_bigq(q) != 0, logical(1L))))
+    .dsvert_dp_irls_client_fail("absent offset bounds")
+  if (e$family == "binomial" && (.dsvert_dp_irls_client_bigq(s$y_bounds$lower) != 0 ||
+      .dsvert_dp_irls_client_bigq(s$y_bounds$upper) != 1)) .dsvert_dp_irls_client_fail("Bernoulli bounds")
+  if (.dsvert_dp_irls_client_bigq(s$y_bounds$lower) < 0) .dsvert_dp_irls_client_fail("outcome bounds")
+  .dsvert_dp_irls_client_fields(s$person_caps, c("score_abs", "curvature_abs"))
+  s$person_caps$score_abs <- .dsvert_dp_irls_client_qarray(s$person_caps$score_abs, p, 0)
+  s$person_caps$curvature_abs <- .dsvert_dp_irls_client_qarray(s$person_caps$curvature_abs, nh, 0)
+  .dsvert_dp_irls_client_hex(s$schema_sha256)
+  value$privacy_source <- s
+
+  n <- value$numeric
+  .dsvert_dp_irls_client_fields(n, c("eta_bounds", "score_definition", "curvature_definition",
+    "curvature_role", "approximation_certificate_sha256", "lattice", "rounding",
+    "rounding_slack", "ring_bits", "source_intermediate_bits", "layout",
+    "translation", "person_integer_caps", "translation_margin", "upper_limits",
+    "compiler_version", "backend_version", "sampler_version", "certificate",
+    "certificate_sha256"))
+  n$eta_bounds <- .dsvert_dp_irls_client_interval(n$eta_bounds)
+  for (nm in c("score_definition", "curvature_definition", "compiler_version", "backend_version"))
+    .dsvert_dp_irls_client_text(n[[nm]])
+  .dsvert_dp_irls_client_choice(n$curvature_role, c("derivative", "preconditioner"))
+  .dsvert_dp_irls_client_hex(n$approximation_certificate_sha256)
+  .dsvert_dp_irls_client_fields(n$lattice, c("g", "H", "beta"))
+  n$lattice <- lapply(n$lattice, .dsvert_dp_irls_client_q, lower = 0)
+  if (any(vapply(n$lattice, function(q) .dsvert_dp_irls_client_bigq(q) == 0, logical(1L))))
+    .dsvert_dp_irls_client_fail("zero lattice")
+  .dsvert_dp_irls_client_choice(n$rounding, "nearest-even-per-person-v1")
+  .dsvert_dp_irls_client_fields(n$rounding_slack, c("g", "H"))
+  n$rounding_slack <- lapply(n$rounding_slack, .dsvert_dp_irls_client_q, lower = 0)
+  if (.dsvert_dp_irls_client_bigq(n$rounding_slack$g) < p * .dsvert_dp_irls_client_bigq(n$lattice$g) / 2 ||
+      .dsvert_dp_irls_client_bigq(n$rounding_slack$H) < nh * .dsvert_dp_irls_client_bigq(n$lattice$H) / 2)
+    .dsvert_dp_irls_client_fail("rounding slack")
+  .dsvert_dp_irls_client_choice(n$ring_bits, "128")
+  .dsvert_dp_irls_client_int(n$source_intermediate_bits, "1", "4096")
+  expected_layout <- c(paste0("g:", seq_len(p)), unlist(lapply(seq_len(p),
+    function(i) paste0("H:", i, ":", i:p))))
+  n$layout <- .dsvert_dp_irls_client_texts(n$layout)
+  if (!identical(unlist(n$layout), expected_layout)) .dsvert_dp_irls_client_fail("statistic layout")
+  for (group in c("translation", "person_integer_caps", "translation_margin", "upper_limits")) {
+    .dsvert_dp_irls_client_fields(n[[group]], c("g", "H"))
+    for (lane in c("g", "H")) n[[group]][[lane]] <- lapply(
+      .dsvert_dp_irls_client_array(n[[group]][[lane]], if (lane == "g") p else nh),
+      .dsvert_dp_irls_client_int, lower = if (group == "translation") "1" else "0")
+  }
+  for (lane in c("g", "H")) for (i in seq_along(n$translation[[lane]])) {
+    a <- gmp::as.bigz(n$translation[[lane]][[i]])
+    cap <- gmp::as.bigz(n$person_integer_caps[[lane]][[i]])
+    margin <- gmp::as.bigz(n$translation_margin[[lane]][[i]])
+    upper <- gmp::as.bigz(n$upper_limits[[lane]][[i]])
+    if (a < gmp::as.bigz(s$capacity) * cap + margin || upper != 2 * a ||
+        upper >= gmp::as.bigz(2)^127) .dsvert_dp_irls_client_fail("translation bounds")
+    physical <- if (lane == "g") s$person_caps$score_abs[[i]] else s$person_caps$curvature_abs[[i]]
+    if (gmp::as.bigq(cap) * .dsvert_dp_irls_client_bigq(n$lattice[[lane]]) <
+        .dsvert_dp_irls_client_bigq(physical)) .dsvert_dp_irls_client_fail("integer person cap")
+  }
+  .dsvert_dp_irls_client_choice(n$sampler_version, "independent_full_global_draw_convolution_ring128_v4")
+  .dsvert_dp_irls_client_fields(n$certificate, c("common_denominator", "input_bits", "k_max", "temporary_bits"))
+  for (nm in names(n$certificate)) .dsvert_dp_irls_client_int(n$certificate[[nm]], "1")
+  .dsvert_dp_irls_client_int(n$certificate$input_bits, "1", "4096")
+  .dsvert_dp_irls_client_int(n$certificate$temporary_bits, "1", "5000000")
+  if (!identical(n$certificate_sha256,
+      .dsvert_dp_irls_client_hash("dsvert-v3-irls-numeric-certificate-v1", n$certificate)))
+    .dsvert_dp_irls_client_fail("numeric certificate digest")
+  value$numeric <- n
+
+  a <- value$path
+  .dsvert_dp_irls_client_fields(a, c("T", "start", "box", "floor", "floor_quantum", "ridge",
+    "damping", "trust", "refresh_mask", "terminal_audit", "update_version", "tie_rule",
+    "root_domain", "stage_domain", "lane_domain", "role_domain", "pin_domain"))
+  .dsvert_dp_irls_client_int(a$T, "1", "10000"); T <- as.integer(a$T)
+  .dsvert_dp_irls_client_fields(a$start, c("kind", "digest", "beta", "epsilon", "composition_sha256"))
+  .dsvert_dp_irls_client_choice(a$start$kind, c("zero", "pilot"))
+  .dsvert_dp_irls_client_hex(a$start$digest); .dsvert_dp_irls_client_hex(a$start$composition_sha256)
+  a$start$beta <- .dsvert_dp_irls_client_qarray(a$start$beta, p)
+  a$start$epsilon <- .dsvert_dp_irls_client_q(a$start$epsilon, 0)
+  if (a$start$kind == "zero" && (any(vapply(a$start$beta,
+      function(q) .dsvert_dp_irls_client_bigq(q) != 0, logical(1L))) ||
+      .dsvert_dp_irls_client_bigq(a$start$epsilon) != 0 ||
+      a$start$digest != paste(rep("0", 64L), collapse = "") ||
+      a$start$composition_sha256 != paste(rep("0", 64L), collapse = "")))
+    .dsvert_dp_irls_client_fail("zero start")
+  if (a$start$kind == "pilot" && .dsvert_dp_irls_client_bigq(a$start$epsilon) <= 0)
+    .dsvert_dp_irls_client_fail("unbudgeted pilot")
+  .dsvert_dp_irls_client_fields(a$box, c("lower", "upper"))
+  a$box <- lapply(a$box, .dsvert_dp_irls_client_qarray, size = p)
+  for (i in seq_len(p)) {
+    lo <- .dsvert_dp_irls_client_bigq(a$box$lower[[i]]); hi <- .dsvert_dp_irls_client_bigq(a$box$upper[[i]])
+    b <- .dsvert_dp_irls_client_bigq(a$start$beta[[i]])
+    quantum <- .dsvert_dp_irls_client_bigq(n$lattice$beta)
+    if (lo > hi || b < lo || b > hi || any(vapply(list(lo, hi, b),
+        function(q) gmp::denominator(q / quantum) != 1, logical(1L))))
+      .dsvert_dp_irls_client_fail("coefficient box/lattice")
+  }
+  for (nm in c("floor", "floor_quantum", "ridge")) a[[nm]] <- .dsvert_dp_irls_client_q(a[[nm]], 0)
+  if (.dsvert_dp_irls_client_bigq(a$floor) == 0 || .dsvert_dp_irls_client_bigq(a$floor_quantum) == 0)
+    .dsvert_dp_irls_client_fail("positive floor")
+  a$damping <- .dsvert_dp_irls_client_qarray(a$damping, T, 0, 1)
+  if (any(vapply(a$damping, function(q) .dsvert_dp_irls_client_bigq(q) == 0, logical(1L))))
+    .dsvert_dp_irls_client_fail("positive damping")
+  a$trust <- .dsvert_dp_irls_client_qarray(a$trust, T, 0)
+  a$refresh_mask <- lapply(.dsvert_dp_irls_client_array(a$refresh_mask, T), .dsvert_dp_irls_client_flag)
+  if (a$refresh_mask[[1L]] != "1") .dsvert_dp_irls_client_fail("initial curvature")
+  .dsvert_dp_irls_client_flag(a$terminal_audit)
+  .dsvert_dp_irls_client_choice(a$update_version, .DSVERT_CLIENT_DP_IRLS_UPDATE_VERSION)
+  .dsvert_dp_irls_client_choice(a$tie_rule, "nearest-even-v1")
+  domains <- c(root_domain = "dsvert-v3-irls-root-v1", stage_domain = "dsvert-v3-irls-stage-v1",
+    lane_domain = "dsvert-v3-irls-lane-v1", role_domain = "dsvert-v3-irls-role-v1",
+    pin_domain = "dsvert-v3-irls-pins-v1")
+  for (nm in names(domains)) .dsvert_dp_irls_client_choice(a[[nm]], domains[[nm]])
+  value$path <- a
+  .dsvert_dp_irls_client_certificate_check(value)
+
+  b <- value$accounting
+  .dsvert_dp_irls_client_fields(b, c("geometry", "stages", "sensitivity", "pilot_epsilon",
+    "auxiliary", "epsilon_path", "delta", "rho", "noise_law", "draws_per_authority",
+    "authority_count", "failure_semantics"))
+  .dsvert_dp_irls_client_choice(b$geometry, "split-block-v1")
+  .dsvert_dp_irls_client_fields(b$sensitivity, c("g", "H"))
+  b$sensitivity <- lapply(b$sensitivity, .dsvert_dp_irls_client_int, lower = "1")
+  adjacency <- if (s$adjacency == "replace-one-person") 2L else 1L
+  for (lane in c("g", "H")) {
+    capsum <- Reduce(`+`, lapply(n$person_integer_caps[[lane]], gmp::as.bigz), gmp::as.bigz(0))
+    if (gmp::as.bigz(b$sensitivity[[lane]]) < adjacency * capsum)
+      .dsvert_dp_irls_client_fail("insufficient lane sensitivity")
+  }
+  nstage <- T + as.integer(a$terminal_audit)
+  b$stages <- lapply(.dsvert_dp_irls_client_array(b$stages, nstage), function(z) {
+    .dsvert_dp_irls_client_fields(z, c("t", "purpose", "g", "H", "epsilon", "alpha_g", "alpha_H"))
+    .dsvert_dp_irls_client_int(z$t, "0")
+    for (nm in c("g", "H", "epsilon", "alpha_g", "alpha_H")) z[[nm]] <- .dsvert_dp_irls_client_q(z[[nm]], 0)
+    z
+  })
+  for (i in seq_len(nstage)) {
+    z <- b$stages[[i]]; audit <- i > T
+    if (z$t != as.character(i - 1L) || z$purpose != if (audit) "terminal-audit" else "optimizer")
+      .dsvert_dp_irls_client_fail("accounting stage order")
+    refresh <- audit || a$refresh_mask[[i]] == "1"
+    if (.dsvert_dp_irls_client_bigq(z$g) <= 0 ||
+        ((.dsvert_dp_irls_client_bigq(z$H) > 0) != refresh) ||
+        .dsvert_dp_irls_client_bigq(z$epsilon) != .dsvert_dp_irls_client_bigq(z$g) + .dsvert_dp_irls_client_bigq(z$H))
+      .dsvert_dp_irls_client_fail("stage allocation")
+    for (lane in c("g", "H")) if (.dsvert_dp_irls_client_bigq(z[[paste0("alpha_", lane)]]) !=
+        .dsvert_dp_irls_client_bigq(z[[lane]]) / gmp::as.bigz(b$sensitivity[[lane]]))
+      .dsvert_dp_irls_client_fail("lane alpha")
+  }
+  for (nm in c("pilot_epsilon", "epsilon_path", "delta", "rho")) b[[nm]] <- .dsvert_dp_irls_client_q(b[[nm]], 0)
+  if (.dsvert_dp_irls_client_bigq(b$pilot_epsilon) != .dsvert_dp_irls_client_bigq(a$start$epsilon) ||
+      .dsvert_dp_irls_client_bigq(b$delta) != 0 || .dsvert_dp_irls_client_bigq(b$rho) != 0)
+    .dsvert_dp_irls_client_fail("pilot/pure Laplace accounting")
+  b$auxiliary <- lapply(.dsvert_dp_irls_client_array(b$auxiliary), function(z) {
+    .dsvert_dp_irls_client_fields(z, c("id", "epsilon")); .dsvert_dp_irls_client_text(z$id)
+    z$epsilon <- .dsvert_dp_irls_client_q(z$epsilon, 0)
+    if (.dsvert_dp_irls_client_bigq(z$epsilon) <= 0) .dsvert_dp_irls_client_fail("auxiliary allocation")
+    z
+  })
+  if (anyDuplicated(vapply(b$auxiliary, `[[`, character(1L), "id"))) .dsvert_dp_irls_client_fail("auxiliary IDs")
+  total <- .dsvert_dp_irls_client_bigq(b$pilot_epsilon) + Reduce(`+`, lapply(
+    c(b$stages, b$auxiliary), function(z) .dsvert_dp_irls_client_bigq(z$epsilon)), gmp::as.bigq(0))
+  if (total != .dsvert_dp_irls_client_bigq(b$epsilon_path)) .dsvert_dp_irls_client_fail("path allocation sum")
+  .dsvert_dp_irls_client_choice(b$noise_law, "two-independent-full-coordinate-discrete-laplace-draws-v4")
+  .dsvert_dp_irls_client_choice(b$draws_per_authority, "1")
+  .dsvert_dp_irls_client_choice(b$authority_count, "2")
+  .dsvert_dp_irls_client_choice(b$failure_semantics, "reserve-full-path-charge-observed-lanes-no-refund-no-redraw-v1")
+  value$accounting <- b
+
+  f <- value$inference
+  .dsvert_dp_irls_client_fields(f, c("mode", "method", "qualification_certificate_sha256", "replay",
+    "confidence", "refusal", "thresholds", "tolerances", "allowed_contrasts"))
+  .dsvert_dp_irls_client_choice(f$mode, c("estimate-only", "candidate", "qualified"))
+  .dsvert_dp_irls_client_choice(f$method, if (f$mode == "estimate-only") "none" else "whole-path-replay-plus-terminal-inverse-v1")
+  .dsvert_dp_irls_client_hex(f$qualification_certificate_sha256)
+  if (f$mode == "qualified" && f$qualification_certificate_sha256 == paste(rep("0", 64L), collapse = ""))
+    .dsvert_dp_irls_client_fail("missing qualification")
+  if (f$mode != "estimate-only" && a$terminal_audit != "1") .dsvert_dp_irls_client_fail("inference audit")
+  .dsvert_dp_irls_client_fields(f$replay, c("law", "version", "seed", "replicates"))
+  .dsvert_dp_irls_client_choice(f$replay$law, b$noise_law)
+  .dsvert_dp_irls_client_text(f$replay$version); .dsvert_dp_irls_client_hex(f$replay$seed)
+  .dsvert_dp_irls_client_int(f$replay$replicates, if (f$mode == "estimate-only") "0" else "2")
+  f$confidence <- .dsvert_dp_irls_client_q(f$confidence, 0, 1)
+  if (.dsvert_dp_irls_client_bigq(f$confidence) %in% c(0, 1)) .dsvert_dp_irls_client_fail("confidence")
+  .dsvert_dp_irls_client_fields(f$refusal, c("any_shift", "any_trust", "any_projection", "any_saturation",
+    "ridge", "positive_information", "domain_margin", "terminal_audit"))
+  lapply(f$refusal, .dsvert_dp_irls_client_choice, choices = "1")
+  .dsvert_dp_irls_client_fields(f$thresholds, c("diagnostic_tail", "curvature_error_ratio", "condition_max",
+    "bias_sd_ratio", "replay_precision"))
+  f$thresholds <- lapply(f$thresholds, .dsvert_dp_irls_client_q, lower = 0)
+  if (any(vapply(f$thresholds, function(q) .dsvert_dp_irls_client_bigq(q) <= 0, logical(1L))) ||
+      .dsvert_dp_irls_client_bigq(f$thresholds$diagnostic_tail) >= 1)
+    .dsvert_dp_irls_client_fail("refusal thresholds")
+  .dsvert_dp_irls_client_fields(f$tolerances, c("approximation", "bias", "noise_tail"))
+  f$tolerances <- lapply(f$tolerances, .dsvert_dp_irls_client_q, lower = 0)
+  if (.dsvert_dp_irls_client_bigq(f$tolerances$noise_tail) >= 1) .dsvert_dp_irls_client_fail("noise tail tolerance")
+  f$allowed_contrasts <- lapply(.dsvert_dp_irls_client_array(f$allowed_contrasts), .dsvert_dp_irls_client_qarray, size = p)
+  value$inference <- f
+
+  o <- value$operations
+  .dsvert_dp_irls_client_fields(o, c("shape", "max_compile_bytes", "max_memory_bytes", "max_stage_seconds",
+    "max_path_seconds", "recovery_version", "retention_policy", "resource_failure"))
+  .dsvert_dp_irls_client_fields(o$shape, c("p", "coordinates", "capacity", "row_cap"))
+  expected <- list(p = as.character(p), coordinates = as.character(p + nh), capacity = s$capacity, row_cap = s$row_cap)
+  if (!identical(.dsvert_dp_irls_client_json(o$shape), .dsvert_dp_irls_client_json(expected))) .dsvert_dp_irls_client_fail("admission shape")
+  for (nm in c("max_compile_bytes", "max_memory_bytes", "max_stage_seconds", "max_path_seconds"))
+    .dsvert_dp_irls_client_int(o[[nm]], "1")
+  if (gmp::as.bigz(o$max_path_seconds) < gmp::as.bigz(o$max_stage_seconds))
+    .dsvert_dp_irls_client_fail("time admission")
+  .dsvert_dp_irls_client_choice(o$recovery_version, "durable-single-successor-v1")
+  .dsvert_dp_irls_client_choice(o$retention_policy, "retain-committed-bytes-signatures-and-reservations-v1")
+  .dsvert_dp_irls_client_choice(o$resource_failure, "fail-closed-no-new-root-no-redraw-v1")
+  value$operations <- o
+  .dsvert_joint_dp_client_canonical(value)
+}
+
+# Derive the certificate entirely with integers/rationals. This checks admission
+# without running the authoritative update engine or accepting a caller's proof.
+.dsvert_dp_irls_client_certificate_check <- function(spec) {
+  q <- .dsvert_dp_irls_client_bigq
+  ceilq <- function(x) (gmp::numerator(x) + gmp::denominator(x) - 1) %/% gmp::denominator(x)
+  bits <- function(x) {
+    x <- abs(gmp::as.bigz(x)); if (x == 0) 0L else nchar(as.character(x, b = 2L))
+  }
+  n <- spec$numeric; a <- spec$path
+  p <- length(a$box$lower)
+  w <- as.integer(n$certificate$input_bits)
+  m <- 0L; pp <- gmp::as.bigz(p)^p
+  while (gmp::as.bigz(2)^(2L * m) < pp) m <- m + 1L
+  L <- p * w + m + 2L
+  if (n$certificate$temporary_bits != as.character(8L * L + 16L * w + 64L))
+    .dsvert_dp_irls_client_fail("certificate temporary bits")
+  static <- c(a$box$lower, a$box$upper, a$damping, a$trust,
+              list(a$floor, a$floor_quantum, a$ridge, n$lattice$g, n$lattice$H, n$lattice$beta))
+  # Check signed input widths before LCM/range products. With static values
+  # bounded by w, the six-denominator admission DAG also fits the 8L+16w+64
+  # ceiling; a malformed contract cannot enlarge admission arithmetic first.
+  static_bits <- max(vapply(static, function(z) max(bits(z$n), bits(z$d)), integer(1L)),
+    vapply(c(n$translation$g, n$translation$H), function(z) bits(2 * gmp::as.bigz(z)), integer(1L)))
+  if (w < static_bits) .dsvert_dp_irls_client_fail("certificate input bits")
+  D <- gmp::as.bigz(1)
+  ds <- lapply(list(q(n$lattice$H), q(a$floor_quantum), q(a$ridge),
+    q(a$floor), q(n$lattice$g), q(a$ridge) * q(n$lattice$beta)), gmp::denominator)
+  for (d in ds) D <- (D %/% gmp::gcd.bigz(D, d)) * d
+  if (as.character(D) != n$certificate$common_denominator)
+    .dsvert_dp_irls_client_fail("certificate common denominator")
+  rh <- replicate(p, gmp::as.bigq(0), simplify = FALSE)
+  hmax <- gmp::as.bigq(0); cursor <- 1L
+  for (i in seq_len(p)) for (j in i:p) {
+    v <- gmp::as.bigq(n$translation$H[[cursor]]) * q(n$lattice$H)
+    rh[[i]] <- rh[[i]] + v; if (j != i) rh[[j]] <- rh[[j]] + v
+    hmax <- max(hmax, v); cursor <- cursor + 1L
+  }
+  k <- ceilq((q(a$floor) + Reduce(max, rh)) / q(a$floor_quantum))
+  if (as.character(k) != n$certificate$k_max) .dsvert_dp_irls_client_fail("certificate k_max")
+  bmax <- Reduce(max, lapply(c(a$box$lower, a$box$upper), function(z) abs(q(z))))
+  gmax <- Reduce(max, lapply(n$translation$g, function(z) gmp::as.bigq(z) * q(n$lattice$g)))
+  bound <- max(hmax + k * q(a$floor_quantum) + q(a$ridge) + q(a$floor),
+               gmax + q(a$ridge) * bmax)
+  wmin <- max(static_bits, bits(D), bits(ceilq(D * bound)),
+              bits(ceilq(bmax * gmp::as.bigz(n$lattice$beta$d))))
+  if (w < wmin) .dsvert_dp_irls_client_fail("certificate input bits")
+  invisible(TRUE)
+}
+
+.dsvert_dp_irls_client_contract_message <- function(unsigned) {
+  .dsvert_dp_irls_client_fields(unsigned, c("version", "contract"))
+  .dsvert_dp_irls_client_choice(unsigned$version, .DSVERT_CLIENT_DP_IRLS_CONTRACT_VERSION)
+  unsigned$contract <- .dsvert_dp_irls_client_contract_normalize(unsigned$contract)
+  charToRaw(paste0(.DSVERT_CLIENT_DP_IRLS_SIGNING_DOMAIN, .dsvert_dp_irls_client_json(unsigned)))
+}
+.dsvert_dp_irls_client_contract_validate <- function(value, trusted_pins,
+    .verifier = .dsvert_dp_glm_grid_cross_verify) {
+  .dsvert_dp_irls_client_fields(value, c("version", "contract", "signatures"))
+  .dsvert_dp_irls_client_choice(value$version, .DSVERT_CLIENT_DP_IRLS_CONTRACT_VERSION)
+  spec <- .dsvert_dp_irls_client_contract_normalize(value$contract)
+  # Signing normalized bytes is useful for custodians; accepting a different
+  # spelling inside an already signed envelope is not.
+  if (!identical(.dsvert_dp_irls_client_json(value$contract), .dsvert_dp_irls_client_json(spec)))
+    .dsvert_dp_irls_client_fail("noncanonical signed contract")
+  pins <- .dsvert_dp_irls_client_pins(unlist(trusted_pins))
+  if (!identical(as.list(pins), spec$privacy_source$peer_pins))
+    .dsvert_dp_irls_client_fail("external pins")
+  .dsvert_dp_irls_client_fields(value$signatures, names(pins), "unanimous signatures")
+  message <- .dsvert_dp_irls_client_contract_message(value[c("version", "contract")])
+  for (peer in names(pins)) {
+    signature <- .dsvert_dp_irls_client_signature(value$signatures[[peer]])
+    if (!isTRUE(.verifier(message, unname(pins[[peer]]), signature)))
+      .dsvert_dp_irls_client_fail("contract signature")
+  }
+  spec
+}
+.dsvert_dp_irls_client_root <- function(contract) {
+  contract <- .dsvert_dp_irls_client_contract_normalize(contract)
+  .dsvert_dp_irls_client_hash(contract$path$root_domain, contract)
+}
+.dsvert_dp_irls_client_start_digest <- function(contract) {
+  .dsvert_dp_irls_client_hash("dsvert-v3-irls-start-v1", list(
+    root = .dsvert_dp_irls_client_root(contract), start = contract$path$start))
+}
+.dsvert_dp_irls_client_stage <- function(contract, t, purpose = NULL) {
+  .dsvert_dp_irls_client_int(t, "0")
+  T <- as.integer(contract$path$T)
+  if (gmp::as.bigz(t) > T || (t == as.character(T) && contract$path$terminal_audit != "1"))
+    .dsvert_dp_irls_client_fail("stage number")
+  expected <- if (t == as.character(T)) "terminal-audit" else "optimizer"
+  if (!is.null(purpose) && !identical(purpose, expected)) .dsvert_dp_irls_client_fail("stage purpose")
+  list(t = t, purpose = expected, refresh = expected == "terminal-audit" ||
+    contract$path$refresh_mask[[as.integer(t) + 1L]] == "1")
+}
+.dsvert_dp_irls_client_stage_id <- function(contract, t, predecessor, purpose = NULL) {
+  contract <- .dsvert_dp_irls_client_contract_normalize(contract)
+  stage <- .dsvert_dp_irls_client_stage(contract, t, purpose)
+  .dsvert_dp_irls_client_hex(predecessor)
+  if (t == "0" && !identical(predecessor, .dsvert_dp_irls_client_start_digest(contract)))
+    .dsvert_dp_irls_client_fail("initial predecessor")
+  .dsvert_dp_irls_client_hash(contract$path$stage_domain, list(
+    root = .dsvert_dp_irls_client_root(contract), purpose = stage$purpose, t = t,
+    predecessor_public_payload_digest = predecessor))
+}
+.dsvert_dp_irls_client_lane_id <- function(stage_id, lane) {
+  .dsvert_dp_irls_client_hex(stage_id); .dsvert_dp_irls_client_choice(lane, c("g", "H"))
+  .dsvert_joint_dp_client_canonical(list(stage_id = stage_id, lane = lane))
+}
+.dsvert_dp_irls_client_payload_validate <- function(contract, t, payload) {
+  stage <- .dsvert_dp_irls_client_stage(contract, t)
+  .dsvert_dp_irls_client_fields(payload, if (stage$refresh) c("g", "H") else c("g", "H_reference"))
+  for (lane in if (stage$refresh) c("g", "H") else "g") {
+    upper <- contract$numeric$upper_limits[[lane]]
+    payload[[lane]] <- .dsvert_dp_irls_client_array(payload[[lane]], length(upper))
+    for (i in seq_along(upper)) .dsvert_dp_irls_client_int(payload[[lane]][[i]], "0", upper[[i]])
+  }
+  if (!stage$refresh) {
+    .dsvert_dp_irls_client_fields(payload$H_reference, c("stage_id", "payload_digest"))
+    lapply(payload$H_reference, .dsvert_dp_irls_client_hex)
+  }
+  .dsvert_joint_dp_client_canonical(payload)
+}
+.dsvert_dp_irls_client_payload_digest <- function(contract, t, payload) {
+  payload <- .dsvert_dp_irls_client_payload_validate(contract, t, payload)
+  # Array order is normative g || H, or g || signed retained-H reference.
+  .dsvert_dp_irls_client_hash("dsvert-v3-irls-public-payload-v1", if (!is.null(payload[["H"]]))
+    list(list(lane = "g", values = payload$g), list(lane = "H", values = payload[["H"]])) else
+    list(list(lane = "g", values = payload$g), list(lane = "H", reference = payload$H_reference)))
+}
+.dsvert_dp_irls_client_accounting <- function(contract, observed = list(), observed_auxiliary = list()) {
+  contract <- .dsvert_dp_irls_client_contract_normalize(contract)
+  observed <- .dsvert_dp_irls_client_array(observed)
+  stages <- contract$accounting$stages; seen <- list()
+  for (entry in observed) {
+    .dsvert_dp_irls_client_fields(entry, c("t", "lanes"))
+    stage <- .dsvert_dp_irls_client_stage(contract, entry$t)
+    lanes <- .dsvert_dp_irls_client_texts(entry$lanes, 1L)
+    if (!all(unlist(lanes) %in% if (stage$refresh) c("g", "H") else "g"))
+      .dsvert_dp_irls_client_fail("observed lane")
+    # Repeat observations represent replay; charge the logical lane once.
+    seen[[entry$t]] <- union(seen[[entry$t]], unlist(lanes))
+  }
+  records <- lapply(stages, function(stage) {
+    lanes <- seen[[stage$t]]
+    charged <- Reduce(`+`, lapply(lanes, function(lane) .dsvert_dp_irls_client_bigq(stage[[lane]])), gmp::as.bigq(0))
+    required <- if (.dsvert_dp_irls_client_bigq(stage$H) > 0) c("g", "H") else "g"
+    list(t = stage$t, purpose = stage$purpose, epsilon = stage$epsilon,
+      observed_lanes = as.list(required[required %in% lanes]),
+      charged_epsilon = .dsvert_dp_irls_client_rational(charged),
+      status = if (!length(lanes)) "unobserved" else if (setequal(required, lanes)) "complete" else "partial")
+  })
+  ids <- .dsvert_dp_irls_client_texts(observed_auxiliary)
+  aux <- contract$accounting$auxiliary
+  valid_ids <- vapply(aux, `[[`, character(1L), "id")
+  if (!all(unlist(ids) %in% valid_ids)) .dsvert_dp_irls_client_fail("observed auxiliary")
+  auxcharged <- Reduce(`+`, lapply(aux[valid_ids %in% unlist(ids)],
+    function(z) .dsvert_dp_irls_client_bigq(z$epsilon)), gmp::as.bigq(0))
+  consumed <- .dsvert_dp_irls_client_bigq(contract$accounting$pilot_epsilon) + auxcharged +
+    Reduce(`+`, lapply(records, function(z) .dsvert_dp_irls_client_bigq(z$charged_epsilon)), gmp::as.bigq(0))
+  .dsvert_joint_dp_client_canonical(list(version = "dsvert-dp-irls-partial-accounting-v1",
+    root = .dsvert_dp_irls_client_root(contract), stages = records,
+    epsilon_path = contract$accounting$epsilon_path, reserved_epsilon = contract$accounting$epsilon_path,
+    pilot_epsilon = contract$accounting$pilot_epsilon,
+    auxiliary_charged_epsilon = .dsvert_dp_irls_client_rational(auxcharged),
+    charged_epsilon = .dsvert_dp_irls_client_rational(consumed),
+    reservation_refund = list(d = "1", n = "0")))
+}
