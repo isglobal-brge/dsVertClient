@@ -90,6 +90,9 @@ if (poc) {
   # Custodian transport policy for this DSLite run only: 4 MiB exact-GC frames
   # (the package default is 480 KiB; the admitted range is 16 KiB..8 MiB).
   for (peer in peers) peer$worker$run(function() options(dsvert.exact_gc.chunk_bytes = 4L * 1024L^2))
+  # The client's DSI expression bound (default just under 768 KiB, for Opal and
+  # Armadillo request limits) must admit those frames; DSLite has no such limit.
+  options(dsvert.dsi_max_expression_bytes = 8L * 1024L^2)
 }
 options(dsvert.dp_irls.trusted_pins = pins)
 evidence$pids <- vapply(peers, function(peer) peer$worker$get_pid(), integer(1L))
