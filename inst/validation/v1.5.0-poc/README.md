@@ -1,5 +1,8 @@
 # DP-IRLS proof of concept (isglobal-brge/dsVert#26): end-to-end run, 15 Oct 2026
 
+Design: [isglobal-brge/dsVert#26](https://github.com/isglobal-brge/dsVert/issues/26). Implementation records: dsVert
+`inst/docs/v3/` on branch `feature/v3-dp-irls`.
+
 This is one complete fixed-path DP Newton/IRLS release through DataSHIELD. It is evidence that the mechanism works
 end to end, not a qualification of utility or inference.
 
