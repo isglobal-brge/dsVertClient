@@ -114,7 +114,7 @@
       stop("The admitted IRLS relay requires two authorities.", call. = FALSE)
     expressions <- stats::setNames(lapply(seq_along(datasources), function(i)
       call("dpIRLSRelayDS", analysis_id = analysis_id,
-        frame = .dsvert_dsi_text_encode(frames[[3L - i]], "DP IRLS relay frame"))),
+        frame = if (nzchar(frames[[3L - i]])) frames[[3L - i]] else "none")),
       names(datasources))
     relayed <- .dsvert_aggregate_strict(conns = datasources, expr = expressions,
       operation = "DP IRLS encrypted transport", .aggregate = .aggregate)

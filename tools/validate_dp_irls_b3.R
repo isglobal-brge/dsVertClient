@@ -9,6 +9,11 @@ out <- file.path(root, ".tmp", "v3")
 test_rows <- Sys.getenv("DSVERT_B3_TEST_ROWS", "")
 stopifnot(test_rows %in% c("", "4"))
 is_integration_test <- identical(test_rows, "4")
+# Proof-of-concept mode: the admitted producer profile with real signal in the
+# synthetic outcome, a 15-minute stage envelope and all three releases. It is
+# not the B3 cost gate and records no gate verdict.
+poc <- identical(Sys.getenv("DSVERT_B3_POC"), "1")
+stopifnot(!(poc && is_integration_test))
 n <- if (is_integration_test) 4L else 64L
 stopifnot(normalizePath(Sys.getenv("DSVERT_SERVER_SOURCE")) == normalizePath(server),
           normalizePath(Sys.getenv("DS_VERT_MPC")) == normalizePath(file.path(out, "bin", "dsvert-mpc")))
@@ -57,6 +62,11 @@ ids <- sprintf("person-%03d", seq_len(n))
 x <- rep(c(-1, -.5, .5, 1), length.out = n)
 z <- rep(c(-.75, .75, .25, -.25), each = max(1L, n %/% 4L), length.out = n)
 y <- as.integer((seq_len(n) * 17L %% 23L) < 12L)
+if (poc) {
+  set.seed(20261015)
+  x <- round(stats::runif(n, -1, 1), 3); z <- round(stats::runif(n, -1, 1), 3)
+  y <- stats::rbinom(n, 1L, stats::plogis(-0.25 + 1.2 * x - 0.9 * z))
+}
 raw <- list(peer_a = data.frame(patient_id = ids, y = y),
             peer_b = data.frame(patient_id = rev(ids), x = rev(x), z = rev(z)))
 specs <- stats::setNames(lapply(owners, function(owner) {
@@ -88,11 +98,12 @@ evidence$pins <- as.list(pins)
 write_evidence()
 
 provision_started <- Sys.time()
-contract <- peers[[1L]]$worker$run(function(server, pins, attestation, n) {
+contract <- peers[[1L]]$worker$run(function(server, pins, attestation, n, poc) {
   helper <- new.env(parent = asNamespace("dsVert"))
   sys.source(file.path(server, "tests/testthat/helper-dp-irls-contract.R"), helper)
   sys.source(file.path(server, "tests/testthat/helper-dp-irls-profile.R"), helper)
-  spec <- if (n == 64L) helper$.irls_smoke_fixture()$spec else helper$.irls_producer_fixture("binomial", as.character(n))$spec
+  spec <- if (n == 64L && !poc) helper$.irls_smoke_fixture()$spec else helper$.irls_producer_fixture("binomial", as.character(n))$spec
+  if (poc) { spec$operations$max_stage_seconds <- "900"; spec$operations$max_path_seconds <- "2700" }
   spec$privacy_source$peer_pins <- as.list(pins)
   spec$privacy_source$pinset_sha256 <- dsVert:::.dsvert_dp_synopsis_pinset_hash_v1(pins)
   spec$privacy_source$alignment_purpose <- attestation$alignment_purpose
@@ -117,7 +128,7 @@ contract <- peers[[1L]]$worker$run(function(server, pins, attestation, n) {
       ordering_rule = spec$privacy_source$ordering_rule,
       attestation = attestation))
   dsVert:::.dsvert_dp_irls_contract_normalize(spec)
-}, args = list(server, pins, attestation, n))
+}, args = list(server, pins, attestation, n, poc))
 unsigned <- list(version = "dsvert-dp-irls-contract-v1", contract = contract)
 # Use server's actual version rather than assume fixture envelope spelling.
 unsigned$version <- peers[[1L]]$worker$run(function() dsVert:::.DSVERT_DP_IRLS_CONTRACT_VERSION)
@@ -234,11 +245,11 @@ for (index in if (is_integration_test) 0L else 0:2) {
   metadata$stages <- publication$stages
   metadata$resume_required <- NULL
   evidence$path_seconds <- seconds(path_started)
-  evidence$gate <- if (stage_wall <= 240) "stage-pass" else "stage-fail-stop"
+  evidence$gate <- if (poc) "poc-running" else if (stage_wall <= 240) "stage-pass" else "stage-fail-stop"
   write_evidence()
   cat("B3 STAGE", jsonlite::toJSON(evidence$stages[[index + 1L]], auto_unbox = TRUE), "\n"); flush.console()
-  if (stage_wall > 240) stop("B3 stage cost gate failed; stop for maintainer decision.")
-  if (evidence$path_seconds > 840) {
+  if (!poc && stage_wall > 240) stop("B3 stage cost gate failed; stop for maintainer decision.")
+  if (!poc && evidence$path_seconds > 840) {
     evidence$gate <- "path-fail-stop"; write_evidence()
     stop("B3 three-release path exceeded 840 seconds; stop for maintainer decision.")
   }
@@ -248,7 +259,14 @@ if (is_integration_test) {
   cat("B3 INTEGRATION PASS rows", n, "stage_seconds", evidence$stages[[1L]]$wall_seconds, "\n")
   return(invisible(NULL))
 }
-evidence$gate <- if (evidence$path_seconds <= 840) "pass" else "path-fail-stop"
+evidence$gate <- if (poc) "poc-complete" else if (evidence$path_seconds <= 840) "pass" else "path-fail-stop"
+if (poc) {
+  # Everything the analyst received, plus the synthetic source table that only
+  # this offline report uses for its centralised glm() comparison.
+  saveRDS(list(signed = signed, pins = as.list(pins), root = metadata$root,
+    stages = metadata$stages, data = data.frame(y = y, x = x, z = z),
+    evidence = evidence), file.path(out, "poc-run.rds"))
+}
 # Repeated exported client calls read the retained chain and do no fresh work.
 first <- ds.vertDPIRLS("irls_b3_smoke", datasources = conns, verbose = FALSE)
 second <- ds.vertDPIRLS("irls_b3_smoke", datasources = conns, verbose = FALSE)
@@ -256,7 +274,7 @@ stopifnot(identical(serialize(first$stages, NULL), serialize(second$stages, NULL
 evidence$replay_byte_identical <- TRUE
 write_evidence()
 cat("B3 GATE", evidence$gate, "path_seconds", evidence$path_seconds, "evidence", evidence_path, "\n")
-if (evidence$gate != "pass") quit(status = 1L)
+if (!evidence$gate %in% c("pass", "poc-complete")) quit(status = 1L)
 }
 tryCatch(main(), error = function(e) {
   message("B3 stopped: ", conditionMessage(e)); quit(status = 1L)
