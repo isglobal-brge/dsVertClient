@@ -2,9 +2,29 @@
 % Please edit documentation in R/ds.vertNBFullRegTheta.R
 \name{ds.vertNBFullRegTheta}
 \alias{ds.vertNBFullRegTheta}
+\alias{ds.vertNB}
 \title{Sticky-DP NB2 frontdoor}
 \usage{
 ds.vertNBFullRegTheta(
+  formula,
+  data = NULL,
+  theta = NULL,
+  joint = TRUE,
+  theta_max_iter = 5L,
+  theta_tol = 0.001,
+  variant = "full_reg_nd",
+  beta_max_iter = 2L,
+  beta_tol = 1e-04,
+  compute_covariance = TRUE,
+  verbose = TRUE,
+  datasources = NULL,
+  ...,
+  frequency = NULL,
+  server = NULL,
+  analysis_id = NULL
+)
+
+ds.vertNB(
   formula,
   data = NULL,
   theta = NULL,
@@ -41,6 +61,9 @@ canonical signed Frequency artifact for the outcome.}
 additive covariate formula.}
 }
 \value{
+Qualified cross-owner calls return the authenticated \code{dp_nb_grid}
+result with its signed contract and release certificate.
+
 With \code{frequency} or \code{server}, an intercept-only
 coefficient-only \code{ds.vertNBFullRegTheta} object. With
 \code{analysis_id}, an additive finite-grid NB2 object with coefficients
@@ -56,8 +79,13 @@ With \code{analysis_id}, additive bare predictors select one candidate from
 a signed sticky-DP finite \eqn{(beta, theta)} likelihood grid.
 }
 \details{
+Owner-qualified additive formulas with \code{analysis_id} select the authenticated
+embedded cross-owner finite-grid contract. Bare formulas retain the same-owner
+route. Cross calls reject legacy optimizer controls. Categorical controls, if
+supplied, must exactly match the signed class order and reference.
+
 The Frequency route is intercept-only, never starts a new analysis,
-and has no covariance or standard errors. The grid route requires a same-owner
+and has no covariance or standard errors. The bare-name grid route requires a same-owner
 signed \code{negative_binomial_grid_v2} artifact with bounded integer
 outcomes, finite beta and theta grids, and public predictor bounds. The
 defective v1 grid loss semantics are sealed and rejected; existing v1

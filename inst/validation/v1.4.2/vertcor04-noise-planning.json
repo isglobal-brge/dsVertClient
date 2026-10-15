@@ -1,0 +1,211 @@
+{
+  "version": "dsvert-1.4.2-public-noise-planning-v1",
+  "classification": "public synthetic planning; no federation evidence",
+  "evidence_origin": "Captured initial public simulation console; exact counts; displayed variance quantiles and timings retain console precision; no repeated simulation",
+  "package_version": "1.4.2",
+  "r_version": "R version 4.3.3 (2024-02-29)",
+  "seed": 20261015,
+  "rng_kind": [
+    "Mersenne-Twister",
+    "Inversion",
+    "Rejection"
+  ],
+  "scope": {
+    "variables": [
+      "site_a$a",
+      "site_a$b",
+      "site_b$x",
+      "site_c$x"
+    ],
+    "data_owners": 3,
+    "variable_count": 4,
+    "bounds": [
+      0,
+      1
+    ],
+    "adjacency": "add_remove_patient",
+    "epsilon": 8,
+    "delta": 0,
+    "numeric_grid_bits": 8,
+    "explicit_catalog": "empty except Gaussian spec",
+    "automatic_numeric_moment_coordinates": 12,
+    "gaussian_coordinates": 16,
+    "admitted_count_coordinates": 1,
+    "total_coordinates": 29,
+    "natural_l1_sensitivity": 29,
+    "integer_l1_sensitivity_steps": 7424
+  },
+  "noise": {
+    "mechanism": "two-independent-complete-vector-discrete-laplace-draws-v4",
+    "per_authority_natural_scale": 3.625,
+    "per_coordinate_standard_deviation": 7.2499996492232519,
+    "q": 0.9989229941806288,
+    "geometric_probability": 0.0010770058193711547,
+    "simulation": "G1-G2+G3-G4; independent zero-based geometric variables; divide by 256",
+    "sampler_implementation_delta": "0/1",
+    "note": "Ideal exact law, up to the negligible signed Ring128 representability bound; public R RNG is used only for planning"
+  },
+  "observed_signed_reference": {
+    "file": ".tmp/vertcor/smoke-k3-certificate.rds",
+    "variable_count": 3,
+    "capacity": 4,
+    "total_coordinates": 21,
+    "natural_l1_sensitivity": 21,
+    "integer_l1_sensitivity_steps": 5376,
+    "explanation": "The signed reference includes nine automatic numeric-moment coordinates plus eleven Gaussian coordinates plus admitted count"
+  },
+  "simulation": {
+    "trials_per_n": 50000,
+    "order": [
+      16,
+      32,
+      64,
+      128,
+      256
+    ],
+    "exact_input": "Four balanced mutually orthogonal binary columns, bits 0 through 3 of row index minus one",
+    "implementation": "Unmodified .dsvert_dp_gaussian_unpack, then the production Cor projected-mass and centered-diagonal tolerance checks",
+    "unpack_body_sha256": "e8e9fc3adf7309c4450455f0f9632157be72652feb0f1dbeab48e8d72c794e4b",
+    "elapsed_seconds": 67.427999999999997,
+    "results": [
+      {
+        "n": 16,
+        "trials": 50000,
+        "finite": 48455,
+        "count_failures": 973,
+        "mass_failures": 0,
+        "variance_failures": 572,
+        "minimum_variance_quantiles": [
+          -3.5527100000000001e-15,
+          8.8817800000000003e-16,
+          0.059454,
+          1.71139
+        ],
+        "cumulative_elapsed_seconds": 13.75,
+        "finite_fraction": 0.96909999999999996,
+        "finite_fraction_binomial_95_interval": [
+          0.9675457082186304,
+          0.97059951113224774
+        ],
+        "count_nonpositive_probability": 0.019425240475464029,
+        "sufficient_identifiability_failure_union_bound": 1
+      },
+      {
+        "n": 32,
+        "trials": 50000,
+        "finite": 49889,
+        "count_failures": 16,
+        "mass_failures": 0,
+        "variance_failures": 95,
+        "minimum_variance_quantiles": [
+          -1.7763599999999999e-15,
+          0.049197999999999999,
+          0.36701600000000001,
+          3.6372499999999999
+        ],
+        "cumulative_elapsed_seconds": 26.684000000000001,
+        "finite_fraction": 0.99778,
+        "finite_fraction_binomial_95_interval": [
+          0.99732715372945524,
+          0.99817339193697674
+        ],
+        "count_nonpositive_probability": 0.00039711105590371445,
+        "sufficient_identifiability_failure_union_bound": 1
+      },
+      {
+        "n": 64,
+        "trials": 50000,
+        "finite": 50000,
+        "count_failures": 0,
+        "mass_failures": 0,
+        "variance_failures": 0,
+        "minimum_variance_quantiles": [
+          0.0023778200000000001,
+          0.45048020999999999,
+          1.6316375000000001,
+          8.2876437900000006
+        ],
+        "cumulative_elapsed_seconds": 39.761000000000003,
+        "finite_fraction": 1,
+        "finite_fraction_binomial_95_interval": [
+          0.99992622513241713,
+          1
+        ],
+        "count_nonpositive_probability": 1.0570484784590737e-07,
+        "sufficient_identifiability_failure_union_bound": 1
+      },
+      {
+        "n": 128,
+        "trials": 50000,
+        "finite": 50000,
+        "count_failures": 0,
+        "mass_failures": 0,
+        "variance_failures": 0,
+        "minimum_variance_quantiles": [
+          0.066925399999999996,
+          3.9938389000000001,
+          8.5044894000000006,
+          21.0582402
+        ],
+        "cumulative_elapsed_seconds": 53.831000000000003,
+        "finite_fraction": 1,
+        "finite_fraction_binomial_95_interval": [
+          0.99992622513241713,
+          1
+        ],
+        "count_nonpositive_probability": 4.314286505960872e-15,
+        "sufficient_identifiability_failure_union_bound": 0.40490443068060245
+      },
+      {
+        "n": 256,
+        "trials": 50000,
+        "finite": 50000,
+        "count_failures": 0,
+        "mass_failures": 0,
+        "variance_failures": 0,
+        "minimum_variance_quantiles": [
+          9.3021899999999995,
+          29.2165,
+          37.339289999999998,
+          52.81944
+        ],
+        "cumulative_elapsed_seconds": 67.427999999999997,
+        "finite_fraction": 1,
+        "finite_fraction_binomial_95_interval": [
+          0.99992622513241713,
+          1
+        ],
+        "count_nonpositive_probability": 3.8819972439162597e-30,
+        "sufficient_identifiability_failure_union_bound": 0.019417411835151645
+      }
+    ]
+  },
+  "uncertainty": {
+    "gaussian_block_simultaneous_95_sum_radius": 26.484375,
+    "entire_release_simultaneous_95_sum_radius": 28.890625,
+    "conservative_quantization_sum_allowance_at_n64": 0.500244140625,
+    "actual_binary_fixture_quantization_error": 0,
+    "sufficient_condition": "For strict r<n/10, count/intercept >= n-r, each sum <= n/2+r and each square sum >= n/2-r imply positive principal determinants: n^2/4-(5/2)*n*r>0. Eigenvalue clipping adds a PSD matrix, preserving those positive principal blocks.",
+    "interpretation": "Binomial intervals quantify Monte Carlo sampling uncertainty under this public model. Finite output does not establish accurate correlations, informative confidence regions, stable PCA directions or a guarantee for a future sticky release."
+  },
+  "decision": {
+    "n": 64,
+    "unit_capacity": 64,
+    "reason": "No finite-output failures in 50000 public simulations; stronger margin than n32 while avoiding the larger exact-MPC cost of n128/n256"
+  },
+  "k5_membership_extension": {
+    "data_owners": 3,
+    "federation_members": 5,
+    "local_schema_requirement": "site_d/e each need an unused bounded public synthetic column because bootstrap rejects empty local schemas",
+    "release_scope": "Do not list site_d/e columns in catalog, correlations or Gaussian spec; catalog_v1 includes only explicit or referenced numeric columns",
+    "expected_total_coordinates": 29,
+    "expected_integer_l1_sensitivity_steps": 7424,
+    "requirement": "Check the actual signed manifest before release; this is not a five-data-owner fit",
+    "offline_scope_check": {
+      "kind": "offline production scope function on public metadata; no signature or release claim",
+      "included_numeric": ["a", "b", "site_b$x", "site_c$x"],
+      "excluded_unreferenced_numeric": ["unused_d", "unused_e"],
+      "resulting_coordinate_count": 29
+    }
+  }
+}

@@ -374,7 +374,7 @@ test_that("historical LASSO frontdoor returns a certified DP path", {
       lambda_1 = 0.1),
     "validated ds.vertDPGaussian")
   fit$signed_artifact$cross_owner_state <- "exact_gc_to_joint_dp_vector_v1"
-  expect_error(ds.vertLASSO(fit, lambda_1 = 0.1), "same-owner")
+  expect_error(ds.vertLASSO(fit, lambda_1 = 0.1), "authenticated Gaussian moments")
 })
 
 test_that("lowercase LASSO alias retains only the DP path", {

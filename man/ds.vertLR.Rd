@@ -55,3 +55,11 @@ least-squares reductions from exactly one signed sufficient-statistic vector.
 It proves an outer region for that bounded, normalized RSS reduction only;
 it deliberately returns no chi-square reference or p-value.
 }
+\section{Cross-owner Gaussian post-processing}{
+The mechanism route accepts same-owner and current authenticated cross-owner
+Gaussian Synopsis fits. It revalidates the signed certificate and uses the
+signed cross-owner quantisation allowance, with no extra server call or
+privacy cost. It returns DP-mechanism regions, never sampling inference.
+A finite region can be unavailable when the released system is insufficiently
+identified.
+}

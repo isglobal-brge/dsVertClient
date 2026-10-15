@@ -1,0 +1,6 @@
+Tracing function ".dsvert_dp_gaussian_synopsis_trusted" in package
+"namespace:dsVertClient"
+[1] ".dsvert_dp_gaussian_synopsis_trusted"
+FIXTURE vertcor04 K 3 n 64 capacity 64 variables site_a$a,site_a$b,site_b$x,site_c$x epsilon 8 
+PEERS 3 PIDS 3617406 3617422 3617434 
+ANALYSIS 1 K3 Cor 

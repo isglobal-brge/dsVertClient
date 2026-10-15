@@ -32,3 +32,11 @@ Gaussian Synopsis to determine whether its simultaneous DP mechanism region
 excludes the null. It is deterministic post-processing, not a Wald statistic,
 p-value, or population-sampling test.
 }
+\section{Cross-owner Gaussian post-processing}{
+The mechanism route accepts same-owner and current authenticated cross-owner
+Gaussian Synopsis fits. It revalidates the signed certificate and uses the
+signed cross-owner quantisation allowance, with no extra server call or
+privacy cost. It returns DP-mechanism regions, never sampling inference.
+A finite region can be unavailable when the released system is insufficiently
+identified.
+}

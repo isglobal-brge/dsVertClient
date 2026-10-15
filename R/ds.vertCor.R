@@ -59,7 +59,8 @@
     analysis_id = analysis_id, reason = reason))
 }
 
-.dsvert_dp_cor_request <- function(variables, server, datasources) {
+.dsvert_dp_cor_request <- function(variables, server, datasources,
+                                    qualify_duplicates = FALSE) {
   requested_owner <- NULL
   owner_map <- NULL
   owner_count <- 0L
@@ -74,6 +75,20 @@
     if (!length(nonempty)) {
       stop("variables must request at least two signed variables",
            call. = FALSE)
+    }
+    if (isTRUE(qualify_duplicates) && anyDuplicated(unlist(
+        variables[nonempty], use.names = FALSE))) {
+      variables[nonempty] <- lapply(nonempty, function(owner) {
+        vapply(variables[[owner]], function(variable) {
+          reference <- .dsvert_dp_gaussian_reference(variable)
+          if (is.null(reference) || (!is.null(reference$server) &&
+              !identical(reference$server, owner))) {
+            stop("The named variable owners disagree with their references",
+                 call. = FALSE)
+          }
+          paste(owner, reference$column, sep = "$")
+        }, character(1L), USE.NAMES = FALSE)
+      })
     }
     owner_count <- length(nonempty)
     requested_owner <- if (owner_count == 1L) nonempty[[1L]] else NULL
@@ -389,13 +404,14 @@
     numerical_tolerance = tolerance)
 }
 
-#' Differentially private same-owner Pearson correlation
+#' Differentially private Pearson correlation from a signed artifact
 #'
-#' Reads pairwise-complete bounded moments from exactly one signed, sticky
-#' biomedical Synopsis vector. The requested variables must all be co-located
-#' in one dataset and owner. Cross-owner products remain deliberately
-#' unavailable.
-#' The returned raw matrix uses pairwise-complete DP moments and can therefore
+#' By default reads same-owner pairwise-complete bounded moments from exactly
+#' one signed sticky Synopsis. Explicit `artifact_family="gaussian_models"`
+#' selects joint complete-case correlation across all signed owners, using the
+#' existing Gaussian Synopsis with an intercept. Subsets retain the full signed
+#' variable set's complete-case cohort and add no privacy cost.
+#' The default raw matrix uses pairwise-complete DP moments and can therefore
 #' be indefinite; `correlation` is an explicitly labelled eigenvalue-clipping
 #' and diagonal-rescaling projection, not an exact correlation reconstruction
 #' or an exact nearest-correlation solution.
@@ -405,15 +421,36 @@
 #' @param analysis_id Signed correlation artifact id, normally
 #'   `paste(data_name, owner, sep = "::")`.
 #' @param variables Optional character subset, or a named list containing
-#'   exactly one owner entry. At least two variables are required.
-#' @param server Optional assertion of the single owner.
+#'   owner entries. Pairwise artifacts require exactly one owner; Gaussian
+#'   artifacts accept owner-qualified references. At least two variables are required.
+#' @param server Optional assertion of the pairwise owner or Gaussian outcome owner.
 #' @param datasources DataSHIELD connections.
+#' @param artifact_family `"correlation_artifacts"` (default) or explicitly
+#'   `"gaussian_models"` for joint complete-case correlation.
+#' @param gaussian_result Optional current signed Gaussian Synopsis certificate
+#'   or Gaussian result, with no regression fit required for a certificate.
+#'   Validated entirely offline; supplied data/id assertions must match.
+#' @param trusted_pinset Optional independently trusted peer-to-public-key map.
+#'   Offline input requires this or the existing session transport trust cache.
 #' @return A `ds.vertDPCor`/`ds.cor` object containing raw and projected
 #'   correlations, pair counts, simultaneous mechanism/quantization regions,
 #'   and signed Synopsis provenance.
 #' @export
-ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
-                         server = NULL, datasources = NULL) {
+ds.vertDPCor <- function(data_name = NULL, analysis_id = NULL, variables = NULL,
+                         server = NULL, datasources = NULL,
+                         artifact_family = "correlation_artifacts",
+                         gaussian_result = NULL, trusted_pinset = NULL) {
+  artifact_family <- match.arg(
+    artifact_family, c("correlation_artifacts", "gaussian_models"))
+  if (identical(artifact_family, "gaussian_models")) {
+    return(.dsvert_dp_cor_gaussian_entry(
+      data_name, analysis_id, variables, server, datasources,
+      gaussian_result, trusted_pinset))
+  }
+  if (!is.null(gaussian_result) || !is.null(trusted_pinset)) {
+    stop("Gaussian inputs require artifact_family='gaussian_models'",
+         call. = FALSE)
+  }
   resolved <- .dsvert_federation_argument(data_name, datasources)
   .dsvert_dp_cor_impl(
     resolved$value, analysis_id, variables, server, resolved$datasources,
@@ -655,7 +692,8 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
   cross <- coordinates[cursor:(cursor + q - 1L)]
   names(cross) <- artifact$design_terms
   cursor <- cursor + q
-  variables <- c(artifact$predictor_order, artifact$outcome$column)
+  variables <- .dsvert_dp_gaussian_variable_order(artifact)
+  outcome_name <- tail(variables, 1L)
   sums <- c(
     as.numeric(gram[
       "(Intercept)", artifact$predictor_order, drop = TRUE]),
@@ -666,11 +704,11 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
     dimnames = list(variables, variables))
   second[artifact$predictor_order, artifact$predictor_order] <-
     gram[artifact$predictor_order, artifact$predictor_order, drop = FALSE]
-  second[artifact$predictor_order, artifact$outcome$column] <-
+  second[artifact$predictor_order, outcome_name] <-
     cross[artifact$predictor_order]
-  second[artifact$outcome$column, artifact$predictor_order] <-
+  second[outcome_name, artifact$predictor_order] <-
     cross[artifact$predictor_order]
-  second[artifact$outcome$column, artifact$outcome$column] <-
+  second[outcome_name, outcome_name] <-
     coordinates[[cursor]]
   list(
     variables = variables, mass = gram["(Intercept)", "(Intercept)"],
@@ -687,7 +725,7 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
   }
   variables <- result$var_names
   all_variables <- if (is.list(artifact)) {
-    c(artifact$predictor_order, artifact$outcome$column)
+    .dsvert_dp_gaussian_variable_order(artifact)
   } else character()
   roots <- c(
     "artifact_key", "execution_id", "contract_sha256", "attempt_sha256",
@@ -736,7 +774,8 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
   coordinate_summary <- .dsvert_dp_cor_gaussian_coordinates(
     verification$coordinates, artifact)
   moment <- verification$validated_moment
-  augmented_names <- c(artifact$design_terms, artifact$outcome$column)
+  augmented_names <- c(artifact$design_terms,
+                       tail(.dsvert_dp_gaussian_variable_order(artifact), 1L))
   augmented <- moment$augmented_projected
   dimnames(augmented) <- list(augmented_names, augmented_names)
   selected <- match(variables, augmented_names)
@@ -772,7 +811,8 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
         coordinate_summary$second[left, left],
         coordinate_summary$second[right, right],
         coordinate_summary$second[left, right]),
-        radius, capacity, scale)
+        radius, capacity, scale,
+        quantization = .dsvert_dp_cor_gaussian_quantization(artifact, scale))
       lower[left_index, right_index] <- lower[right_index, left_index] <-
         interval$correlation[["lower"]]
       upper[left_index, right_index] <- upper[right_index, left_index] <-
@@ -813,29 +853,75 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
   invisible(TRUE)
 }
 
+.dsvert_dp_cor_gaussian_quantization <- function(artifact, scale) {
+  if (identical(artifact$version,
+                .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)) {
+    return(as.numeric(
+      artifact$quantization_contract$per_sum_max_abs_error_lattice_steps) /
+      scale)
+  }
+  NULL
+}
+
 .dsvert_dp_cor_gaussian_impl <- function(
     data_name, analysis_id, variables = NULL, server = NULL,
     datasources = NULL, .aggregate) {
   data_name <- .dsvert_dp_cor_identifier(data_name, "data_name")
   analysis_id <- .dsvert_dp_cor_identifier(analysis_id, "analysis_id")
   datasources <- .dsvert_dp_datasources(datasources)
-  request <- .dsvert_dp_cor_request(variables, server, datasources)
+  request <- .dsvert_dp_cor_request(
+    variables, server, datasources, qualify_duplicates = TRUE)
   source <- .dsvert_dp_gaussian_synopsis_release(
     data_name, analysis_id, request$server, datasources, .aggregate)
+  .dsvert_dp_cor_gaussian_postprocess(source, request, analysis_id)
+}
+
+.dsvert_dp_cor_gaussian_postprocess <- function(source, request, analysis_id) {
   context <- source$context
   scale <- source$scale
   capacity <- source$capacity
   artifact <- source$artifact
-  all_variables <- c(artifact$predictor_order, artifact$outcome$column)
+  all_variables <- .dsvert_dp_gaussian_variable_order(artifact)
   variables <- if (is.null(request$variables)) {
     all_variables
   } else request$variables
+  if (identical(artifact$version,
+                .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)) {
+    descriptors <- c(artifact$predictors, list(artifact$outcome))
+    names(descriptors) <- all_variables
+    requested_names <- variables
+    variables <- vapply(seq_along(requested_names), function(index) {
+      name <- requested_names[[index]]
+      owner <- if (is.null(request$owner_map)) NULL else
+        unname(request$owner_map[[name]])
+      matches <- vapply(descriptors, function(value) {
+        .dsvert_dp_gaussian_reference_matches(name, value) &&
+          (is.null(owner) || identical(owner, value$owner_peer))
+      }, logical(1L))
+      # Exact signed identifiers take precedence over physical-column aliases.
+      # Bare aliases are admitted only when their owner/dataset is unambiguous.
+      signed_index <- match(name, all_variables)
+      if (!is.na(signed_index) && matches[[signed_index]]) {
+        matches <- seq_along(all_variables) == signed_index
+      }
+      if (sum(matches) != 1L) {
+        stop("Every requested correlation variable must resolve uniquely to ",
+             "the signed owner and dataset", call. = FALSE)
+      }
+      all_variables[[which(matches)]]
+    }, character(1L), USE.NAMES = FALSE)
+    if (anyDuplicated(variables)) {
+      stop("variables must contain at least two unique signed variables",
+           call. = FALSE)
+    }
+  }
   if (length(variables) < 2L || !all(variables %in% all_variables)) {
     stop(
       "Every requested correlation variable must belong to the signed ",
       "complete-case Gaussian artifact", call. = FALSE)
   }
-  if (!is.null(request$owner_map)) {
+  if (!is.null(request$owner_map) && !identical(artifact$version,
+      .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)) {
     expected_owners <- stats::setNames(vapply(all_variables, function(name) {
       if (identical(name, artifact$outcome$column)) {
         artifact$outcome$owner_peer %||% artifact$owner_peer
@@ -853,7 +939,8 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
   coordinate_summary <- .dsvert_dp_cor_gaussian_coordinates(
     coordinates, artifact)
   moment <- source$moment
-  augmented_names <- c(artifact$design_terms, artifact$outcome$column)
+  augmented_names <- c(artifact$design_terms,
+                       tail(.dsvert_dp_gaussian_variable_order(artifact), 1L))
   augmented <- moment$augmented_projected
   dimnames(augmented) <- list(augmented_names, augmented_names)
   selected <- match(variables, augmented_names)
@@ -884,17 +971,12 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
   dimnames(raw) <- list(variables, variables)
   psd <- .dsvert_dp_cor_psd(raw)
 
-  simultaneous <- .dsvert_dp_vector_accuracy_radius(
-    context$release, context$manifest,
-    coordinate_count = artifact$coordinate_count,
-    confidence = 0.95, maximum_error = capacity)
-  quantization <- if (identical(
-      artifact$version,
-      .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)) {
-    as.numeric(
-      artifact$quantization_contract$per_sum_max_abs_error_lattice_steps) /
-      scale
-  } else NULL
+  simultaneous <- source$accuracy_simultaneous_95 %||%
+    .dsvert_dp_vector_accuracy_radius(
+      context$release, context$manifest,
+      coordinate_count = artifact$coordinate_count,
+      confidence = 0.95, maximum_error = capacity)
+  quantization <- .dsvert_dp_cor_gaussian_quantization(artifact, scale)
   lower <- upper <- raw
   pair_details <- list()
   for (left_index in seq_len(length(variables) - 1L)) {
@@ -1006,36 +1088,131 @@ ds.vertDPCor <- function(data_name, analysis_id, variables = NULL,
 #' Disclosure-safe compatibility adapter for correlation
 #'
 #' This existing name consumes only a signed `gaussian_models` sufficient-
-#' statistic Synopsis artifact. A signed `analysis_id` is mandatory and every
-#' requested variable must be same-owner. Cross-owner descriptors fail closed;
-#' there is no silent fallback to either pairwise moments or a legacy capsule.
+#' statistic Synopsis artifact with an intercept, across one or several owners.
+#' Without an offline input a signed `analysis_id` is mandatory. No fallback to
+#' pairwise moments or legacy capsules occurs. Every pair shares the full signed
+#' variable set's complete-case cohort, even when a subset is requested.
+#' With no scientific outcome custodians freeze the smallest owner-qualified
+#' reference as the public storage outcome at registration. Relabelling creates
+#' a new release. Offline conversion and PCA add no privacy cost or server calls.
 #'
-#' @param data_name Signed protected dataset name.
+#' @param data_name Signed outcome dataset name, or `NULL` for offline input.
 #' @param variables Optional character subset, or a named list identifying the
 #'   signed owner of each requested variable. At least two variables are
 #'   required.
-#' @param analysis_id Mandatory signed Gaussian artifact id.
+#' @param analysis_id Signed Gaussian artifact id; inferred for offline input.
 #' @param verbose Logical progress flag retained for compatibility.
 #' @param datasources DataSHIELD connections.
+#' @param gaussian_result Optional current Gaussian Synopsis result or its
+#'   certificate. The authenticated certificate is fully revalidated and its
+#'   coordinates reconstructed; a certificate needs no successful regression fit.
+#' @param trusted_pinset Optional independently trusted peer-to-public-key map.
+#'   Offline input requires caller anchoring or existing session transport trust.
 #' @return A `ds.vertDPCor`/`ds.cor` object.
 #' @export
-ds.vertCor <- function(data_name, variables = NULL, analysis_id = NULL,
-                       verbose = TRUE, datasources = NULL) {
+ds.vertCor <- function(data_name = NULL, variables = NULL, analysis_id = NULL,
+                       verbose = TRUE, datasources = NULL,
+                       gaussian_result = NULL, trusted_pinset = NULL) {
   if (!is.logical(verbose) || length(verbose) != 1L || is.na(verbose)) {
     stop("verbose must be one non-missing logical", call. = FALSE)
   }
-  resolved <- .dsvert_federation_argument(data_name, datasources)
-  analysis_id <- .dsvert_dp_cor_identifier(analysis_id, "analysis_id")
-  if (isTRUE(verbose)) {
-    message("Reading signed complete-case DP Gaussian artifact '",
-            analysis_id, "'...")
-  }
-  result <- .dsvert_dp_cor_gaussian_impl(
-    data_name = resolved$value, analysis_id = analysis_id,
-    variables = variables, datasources = resolved$datasources,
-    .aggregate = DSI::datashield.aggregate)
+  result <- .dsvert_dp_cor_gaussian_entry(
+    data_name, analysis_id, variables, NULL, datasources,
+    gaussian_result, trusted_pinset)
   if (isTRUE(verbose)) message("DP correlation post-processing complete.")
   result
+}
+
+.dsvert_dp_cor_gaussian_entry <- function(
+    data_name, analysis_id, variables, server, datasources,
+    gaussian_result, trusted_pinset) {
+  if (is.null(gaussian_result)) {
+    if (!is.null(trusted_pinset)) {
+      stop("trusted_pinset requires an offline gaussian_result", call. = FALSE)
+    }
+    resolved <- .dsvert_federation_argument(data_name, datasources)
+    return(.dsvert_dp_cor_gaussian_impl(
+      data_name = resolved$value, analysis_id = analysis_id,
+      variables = variables, server = server,
+      datasources = resolved$datasources,
+      .aggregate = DSI::datashield.aggregate))
+  }
+  certificate <- if (is.list(gaussian_result) && identical(
+      gaussian_result$version,
+      .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION)) {
+    gaussian_result
+  } else if (is.list(gaussian_result)) {
+    gaussian_result$provenance_certificate
+  } else NULL
+  if (!is.list(certificate) || !identical(certificate$version,
+      .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION) ||
+      !is.list(certificate$descriptor) ||
+      !.dsvert_dp_is_string(certificate$descriptor$version) ||
+      !certificate$descriptor$version %in% c(
+        "bounded-normalized-gaussian-sufficient-statistics-v1",
+        .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION)) {
+    stop("gaussian_result requires a current signed Gaussian Synopsis certificate",
+         call. = FALSE)
+  }
+  # Validate result fields too, when a result was supplied. No supplied matrix,
+  # fit, authenticity flag, or self-supplied pinset is a trust anchor.
+  verification <- ds.validateDPGaussianCertificate(
+    gaussian_result, trusted_pinset = trusted_pinset)
+  if (!identical(verification$integrity_valid, TRUE) ||
+      !verification$authenticity %in% c(
+        "caller_anchored", "session_transport_anchored")) {
+    stop("Offline correlation requires externally anchored Gaussian provenance",
+         call. = FALSE)
+  }
+  for (field in c("data_name", "analysis_id")) {
+    value <- if (identical(field, "data_name")) data_name else analysis_id
+    expected <- certificate[[if (identical(field, "data_name")) "dataset" else field]]
+    if (!is.null(value) && !identical(
+        .dsvert_dp_cor_identifier(value, field), expected)) {
+      stop(field, " disagrees with the signed Gaussian certificate",
+           call. = FALSE)
+    }
+  }
+  pins <- certificate$peer_context$ordered_peer_pinset
+  placeholders <- stats::setNames(rep(list(list()), length(pins)), names(pins))
+  request <- .dsvert_dp_cor_request(
+    variables, server, placeholders, qualify_duplicates = TRUE)
+  if (!is.null(request$server) &&
+      !identical(request$server, certificate$owner_peer)) {
+    stop("server disagrees with the signed Gaussian outcome owner", call. = FALSE)
+  }
+  # Reconstruct public metadata from the authenticated RELEASE and replay
+  # transcript. This path is entirely local and never populates the trust cache.
+  reconstructed <- .dsvert_dp_gaussian_synopsis_trusted(certificate)
+  evidence <- certificate$signed_evidence
+  releases <- .dsvert_dp_gaussian_synopsis_evidence_decode(
+    evidence$release_set_json, "release set")
+  replay <- .dsvert_dp_gaussian_synopsis_evidence_decode(
+    evidence$replay_set_json, "replay set")
+  designated <- unlist(certificate$peer_context$designated_noise_peers,
+                       use.names = FALSE)
+  replay_input <- stats::setNames(lapply(replay, function(value) {
+    stats::setNames(rep(list(.dsvert_joint_dp_client_json(value)), 2L),
+                    designated)
+  }), as.character(seq_along(replay) - 1L))
+  compilation <- .dsvert_dp_gaussian_synopsis_evidence_decode(
+    evidence$compilation_json, "compilation")
+  release <- .dsvert_dp_synopsis_public_vector_v1(
+    lapply(releases, .dsvert_joint_dp_client_json), replay_input,
+    reconstructed$bundle, reconstructed$trusted$status, compilation)
+  context <- list(synopsis = TRUE, release = release,
+    manifest = reconstructed$trusted$manifest,
+    lattice = reconstructed$trusted$manifest$workload$release_lattice,
+    adjacency = reconstructed$trusted$manifest$admission$adjacency)
+  source <- list(context = context,
+    metadata = .dsvert_dp_vector_public_metadata(context),
+    scale = verification$output_lattice_scale,
+    capacity = verification$coordinate_capacity,
+    artifact = verification$artifact, coordinates = verification$coordinates,
+    moment = verification$validated_moment, certificate = certificate,
+    verification = verification,
+    accuracy_simultaneous_95 = verification$accuracy_simultaneous_95)
+  .dsvert_dp_cor_gaussian_postprocess(source, request, certificate$analysis_id)
 }
 
 #' @title Print Method for ds.cor Objects

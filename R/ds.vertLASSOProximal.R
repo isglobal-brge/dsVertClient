@@ -5,7 +5,9 @@
 #'   privacy operation. Unauthenticated historical \code{ds.glm} normal-
 #'   equation inputs are rejected.
 #'
-#' @param fit A validated same-owner \code{ds.vertDPGaussian} object.
+#' @param fit A validated same-owner or current cross-owner
+#'   \code{ds.vertDPGaussian} object. Cross-owner moments require a current
+#'   authenticated Gaussian Synopsis certificate.
 #' @param lambda One finite non-negative L1 penalty on the signed-bound
 #'   normalized Gaussian objective.
 #' @param max_iter Positive bound on coordinate-descent iterations.

@@ -21,8 +21,7 @@ adjacency, capacity and numeric output precision.}
 after verifying the authenticated DP release certificate.}
 \description{Validates all pinned custodians' signatures and the complete
 public numeric and source contract, then uses the shared two-authority DP
-release lifecycle. This internal adapter remains pending full family
-promotion validation.}
+release lifecycle. Archived v1.3.0 promotion covers K = 2, 3 and 5 custodians.}
 \details{The multinomial domain has 2--8 classes, 1--16 predictors and at most
 256 signed candidates. Each nonreference class has an intercept and slopes
 with component magnitude at most 8 and L1 norm at most 16. Class predictors
@@ -43,6 +42,3 @@ must be authenticated before candidate post-processing. A signed descriptor
 or either state string alone is never release evidence. Existing same-owner
 \code{ds.vertMultinom} routes retain their original behavior.}
 \seealso{\code{\link{dp_ordinal_grid}}, \code{\link{ds.vertMultinom}}}
-
-\note{This entry point is namespace-internal pending full promotion evidence.}
-\keyword{internal}

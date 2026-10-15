@@ -35,14 +35,14 @@ test_that("both family validators bind the final numeric certificate", {
 })
 
 
-test_that("unpromoted categorical frontdoors stay outside the public inventory", {
+test_that("promoted categorical frontdoors are in the public inventory", {
   ns <- asNamespace("dsVertClient")
   for (family in c("multinomial", "ordinal")) {
     frontdoor <- paste0("dp_", family, "_grid")
-    expect_false(frontdoor %in% getNamespaceExports("dsVertClient"))
+    expect_true(frontdoor %in% getNamespaceExports("dsVertClient"))
     expect_true(is.function(get(frontdoor, envir = ns, inherits = FALSE)))
     registration <- get(paste0(".dsvert_dp_", family, "_grid_cross_register"), ns)()
-    expect_false(registration$release_enabled)
+    expect_identical(registration$promotion_status, "promoted_v1.3.0")
   }
 })
 

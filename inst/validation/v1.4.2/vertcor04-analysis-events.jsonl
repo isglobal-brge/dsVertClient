@@ -1,0 +1,4 @@
+{"label":"K3 setup and PSI","status":"passed","seconds":159.1586,"detail":null} 
+{"label":"K2 poisson LASSO setup and PSI","status":"passed","seconds":54.9176,"detail":null} 
+{"label":"K2 poisson LASSO authenticated registration","status":"passed","seconds":26.9793,"detail":null} 
+{"label":"K2 Poisson LASSO grid","status":"passed","seconds":273.5162,"detail":null} 

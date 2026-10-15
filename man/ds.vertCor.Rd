@@ -5,32 +5,45 @@
 \title{Disclosure-safe compatibility adapter for correlation}
 \usage{
 ds.vertCor(
-  data_name,
+  data_name = NULL,
   variables = NULL,
   analysis_id = NULL,
   verbose = TRUE,
-  datasources = NULL
+  datasources = NULL,
+  gaussian_result = NULL,
+  trusted_pinset = NULL
 )
 }
 \arguments{
-\item{data_name}{Signed protected dataset name.}
+\item{data_name}{Signed outcome dataset name, or \code{NULL} for offline input.}
 
 \item{variables}{Optional character subset, or a named list identifying the
 signed owner of each requested variable. At least two variables are
 required.}
 
-\item{analysis_id}{Mandatory signed Gaussian artifact id.}
+\item{analysis_id}{Signed Gaussian artifact id; inferred for offline input.}
 
 \item{verbose}{Logical progress flag retained for compatibility.}
 
 \item{datasources}{DataSHIELD connections.}
+
+\item{gaussian_result}{Optional current signed Gaussian Synopsis certificate
+or Gaussian result. Fully revalidated locally; a certificate requires no
+successful regression fit. Mutually exclusive with PCA \code{cor_result}.}
+
+\item{trusted_pinset}{Optional independently trusted peer-to-public-key map.
+Offline input requires caller anchoring or existing session transport trust.}
 }
 \value{
 A \code{ds.vertDPCor}/\code{ds.cor} object.
 }
 \description{
 This existing name consumes only a signed \code{gaussian_models} sufficient-
-statistic Synopsis artifact. A signed \code{analysis_id} is mandatory and every
-requested variable must be same-owner. Cross-owner descriptors fail closed;
-there is no silent fallback to either pairwise moments or a legacy capsule.
+statistic Synopsis artifact with an intercept, across one or several owners.
+Without an offline input a signed \code{analysis_id} is mandatory. No fallback to
+pairwise moments or legacy capsules occurs. Every pair shares the full signed
+variable set's complete-case cohort, even when a subset is requested.
+With no scientific outcome custodians freeze the smallest owner-qualified
+reference as the public storage outcome at registration. Relabelling creates
+a new release. Offline conversion and PCA add no privacy cost or server calls.
 }

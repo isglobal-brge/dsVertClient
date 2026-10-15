@@ -40,6 +40,9 @@
 #'   least-squares reductions from exactly one signed sufficient-statistic vector.
 #'   It proves an outer region for that bounded, normalized RSS reduction only;
 #'   it deliberately returns no chi-square reference or p-value.
+#'   The mechanism route accepts same-owner and current authenticated
+#'   cross-owner Gaussian Synopsis fits. Both models use the same bounded
+#'   complete-case release; a cross-owner comparison performs no extra release.
 #' @export
 ds.vertLR <- function(reduced, full,
                       type = c("sampling", "mechanism"), level = 0.95) {
@@ -402,6 +405,10 @@ print.ds.vertLR <- function(x, ...) {
 #'   exposes no source statistic and must not be interpreted as sampling
 #'   inference. Binomial and Poisson sampling inference remain unavailable
 #'   until a joint signed inference artifact exists.
+#'   Same-owner and current authenticated cross-owner Gaussian Synopsis fits
+#'   use the same mechanism-region calculation, including the signed
+#'   cross-owner quantisation allowance. A finite region can be unavailable
+#'   when the released system is insufficiently identified.
 #'
 #' @param fit A fitted model object; `type = "mechanism"` requires a signed
 #'   `ds.vertDPGaussian` result.
@@ -632,6 +639,8 @@ ds.vertConfint <- function(fit, parm = NULL, level = 0.95,
 #'   signed Gaussian Synopsis to determine whether its simultaneous DP
 #'   mechanism region excludes the null. It is deterministic post-processing,
 #'   not a Wald statistic, p-value, or population-sampling test.
+#'   Current authenticated cross-owner Gaussian Synopsis fits are supported
+#'   by the mechanism route with no additional server call or privacy cost.
 #'
 #' @param fit A ds.glm object for sampling inference, or a signed
 #'   ds.vertDPGaussian result for a mechanism region.
@@ -738,6 +747,8 @@ print.ds.vertWald <- function(x, ...) {
 #'   Gaussian coefficient region through K. It can prove that individual
 #'   contrast components exclude their nulls, but it is not a Wald statistic,
 #'   p-value, or population-sampling test.
+#'   Current authenticated cross-owner Gaussian Synopsis fits are supported
+#'   by the mechanism route with no additional server call or privacy cost.
 #'
 #' @param fit A ds.glm object with a non-NULL `covariance` slot for sampling
 #'   inference, or a signed ds.vertDPGaussian result for a mechanism region.

@@ -1,6 +1,9 @@
 # dsVertClient audited method surface
 
-Status: development audit, 2026-08-11.
+Status: implemented 1.4.2 surface audit, 2026-10-15.
+
+The complete ownership inventory and remaining same-owner limitations are in
+[the README](../../README.md#public-cross-owner-inventory-142).
 
 The release contract is available at runtime through
 `ds.vertMethodStatus()`. It classifies every public analysis entry point as
@@ -16,8 +19,8 @@ the authoritative maturity classification.
 | Route | Defensible scope | Important condition |
 |---|---|---|
 | `ds.getIdentityPks()` | Public Ed25519 identity discovery | Deployment must validate persistence, rotation and pin mismatch handling |
-| `ds.vertConfint(type = "mechanism")` | Certificate-revalidated client post-processing | A current signed same-owner Gaussian Synopsis has a finite inverse-norm margin; the result is a simultaneous DP-mechanism region, never a sampling interval |
-| `ds.vertWald()`, `ds.vertContrast()` | Client-only algebra | The supplied fit must be converged, unpenalised and expose a valid covariance matrix |
+| `ds.vertConfint(type = "mechanism")` | Certificate-revalidated client post-processing | A current authenticated same- or cross-owner Gaussian Synopsis has a finite inverse-norm margin; the result is a simultaneous DP-mechanism region, never a sampling interval |
+| `ds.vertWald()`, `ds.vertContrast()`, `ds.vertLR()` | Current Gaussian `type="mechanism"` regions are certificate-revalidated post-processing for either ownership layout | No sampling inference is added; LR bounds nested RSS reduction. Preserved sampling routes still require their documented valid covariance/deviance inputs |
 | `ds.vertEpi2x2()` | Client-only measures from an authorised 2-by-2 table | Caller-supplied matrices have no DataSHIELD provenance |
 | `ds.vertMantelHaenszel()` | Client-only common odds ratio and classical MH inference from authorised stratified 2-by-2 aggregates | Bare inputs are caller-attested; orientation, strata and common-odds-ratio assumptions must be valid |
 | `ds.vertDirectStandardization()` | Client-only directly standardised rates | Inputs must already be disclosure-authorised aggregates with compatible strata |
@@ -34,6 +37,11 @@ the authoritative maturity classification.
 | `ds.vertFisher()` | Client-only 2-by-2 conditional hypergeometric plug-in bootstrap from one signed DP contingency release | Not Fisher-exact for confidential data; no conditional CMLE/CI; Gaussian calibration is not yet certified |
 | `ds.vertDPMeanVar()` | Bounded DP moments | Clipping and privacy noise must be included in interpretation |
 | `ds.vertDPQuantile()`, `ds.vertDPMedian()` | Client-only fixed-grid bins and intervals from one validated DP describe release | No exact sample quantile or within-bin interpolation is claimed; mechanism regions exclude sampling uncertainty |
+| `ds.vertCor()`, `ds.vertDPCor(artifact_family="gaussian_models")`, `ds.vertPCA()` and aliases | All variable pairs and PCA eigenstructure from one same- or cross-owner Gaussian Synopsis | An intercept, fixed registered outcome/anchor and whole-artifact complete cases are required; authenticated offline certificates make zero DSI calls; no scores are released |
+| `dp_nb_grid()`, `dp_multinomial_grid()`, `dp_ordinal_grid()` | Promoted signed finite grids across K custodians with exactly two compute/noise authorities | Matching qualified formulas dispatch through `analysis_id` in safe `ds.vertNB`/`ds.vertNBFullRegTheta`, `ds.vertMultinom` and `ds.vertOrdinal`; no unconstrained optimizer or sampling inference |
+| `dp_lasso_grid()`, non-Gaussian `ds.vertLASSOIter()` | Finite signed L1 candidate selection over one authenticated binomial/Poisson base loss release | The front door needs separately signed `cross_contract` and `base_contract`; lambda can only select exact signed levels; no second private release |
+| `dp_cox_grid()`, `dp_lmm_grid()`, `dp_glmm_grid()`, `dp_gee_grid()` | Promoted cross-owner finite Breslow, random-intercept ML, GH5, and fixed-working-correlation grids respectively | Explicit signed contracts remain the cross entry points; historical front-door risk-set/REML/random-slope/covariance controls are not silently mapped onto different estimands |
+| Gaussian `ds.vertLASSO*()` | KKT-certified paths or pseudo-information-criterion selection from validated current same- or cross-owner Gaussian certificates | Existing same-owner inputs remain valid; historic cross capsules and caller-supplied unverified moments are refused; the CV name does not mean cross-validation |
 | `ds.vertDPGaussian()` | Bounded same- or cross-owner complete-case Gaussian coefficients from one signed sticky capsule; cross-owner products use the fixed-shape exact-GC artifact | Population-sampling inference is unavailable; ridge is explicit and changes the estimand |
 | `ds.vertDPDiagnostic2x2()` | Client-only diagnostic accuracy from an authorised disease-by-test DP 2-by-2 table | Positive disease row and test column must be explicit; regions cover mechanism noise, not sampling uncertainty |
 | `ds.vertDPDiagnostic2x2Inference()` | Conservative joint DP-mechanism plus exact-binomial sampling confidence regions for diagnostic accuracy | Assumes iid privacy units from one joint disease/test population; regions can be wide or unbounded and provide no p-value |
@@ -70,8 +78,11 @@ sensitivities, and non-claims are recorded in
 [`dp_statistical_validity_20260801.md`](dp_statistical_validity_20260801.md).
 The same-owner statistics remain local protected-data materializations. The
 declared cross-owner categorical and Gaussian artifacts use purpose-bound,
-fixed-transcript exact GC and enter the same one-opening joint-DP vector;
-families without such a signed cross-owner artifact remain unavailable.
+fixed-transcript exact GC and enter the same one-opening joint-DP vector.
+The promoted likelihood/grouped grids use their existing authenticated protected
+release routes. The default pairwise correlation artifact, MI strict-missing
+artifacts and time/event/entry survival histogram still require same-owner
+inputs; no new producer is implied by 1.4.2.
 
 ## Provisional routes
 
@@ -80,7 +91,8 @@ Gaussian GLM capsule adapter and selected client post-processing remain
 provisional. Pinned fixed-capacity PSI
 alignment and its count-free persistent attestation are promoted non-statistical
 protocols. Unbounded/legacy categorical regression, legacy mutating MI and
-the iterative LASSO route remain quarantined. Their
+the retired iterative score-MPC LASSO route remain quarantined; the signed
+Gaussian and finite-grid LASSO paths are admitted. Their
 precise supported scope and limitation are returned by
 `ds.vertMethodStatus()`.
 
@@ -97,7 +109,7 @@ discovery, but their legacy server endpoints are unregistered and unexported;
 they fail locally with a stable migration error before connection discovery or
 DSI submission. Current quarantined families include legacy Cox computation,
 unbounded legacy NB2, multinomial and ordinal regression, arbitrary legacy
-AR(1) and clustered-GEE solvers, GLMM-PQL, legacy mutating MI, iterative LASSO and the legacy
+AR(1) and clustered-GEE solvers, GLMM-PQL, legacy mutating MI, retired score-MPC LASSO and the legacy
 weight-column IPW contract. Use
 `ds.vertMethodStatus(status = "quarantine")` for the authoritative list.
 
@@ -126,22 +138,34 @@ In particular:
   binomial/Poisson robust-independence grids likewise support one categorical
   cluster id, no order column, at most three additive predictors and a
   clipped-score sandwich covariance only when DP bread is positive definite;
-  legacy PQL and arbitrary clustered-GEE solvers remain quarantined;
+  legacy PQL and arbitrary clustered-GEE solvers remain quarantined. Cross-owner
+  `dp_lmm_grid`, `dp_glmm_grid`, `dp_gee_grid` and `dp_cox_grid` expose their
+  own signed finite-grid estimands; their historical front doors do not add
+  automatic cross dispatch;
 - `ds.vertMI()` only post-processes strict-missing signed categorical Synopsis
   artifacts into MCAR marginals, a two-response joint pair, or an opt-in
   conditional categorical star model. It never writes source data, performs
-  chained equations or supplies Rubin sampling inference;
-- `ds.vertNBFullRegTheta(y ~ 1, frequency = ...)` post-processes one signed
-  bounded count Frequency release into a no-inference NB2 method-of-moments
-  result. With an `analysis_id`, it instead selects an additive bare-predictor
-  coefficient/theta candidate from one same-owner signed finite likelihood
-  grid; no free likelihood optimisation or inference is offered;
-- multinomial and ordinal `analysis_id` routes likewise select one additive
-  bare-predictor candidate from a same-owner signed finite likelihood grid.
-  They never report covariance, standard errors, tests or sampling inference;
-- interactions, transforms, cross-owner categorical designs and arbitrary
-  candidate grids remain unavailable before DSI; a Gaussian correlation
-  capsule is not substituted for their signed likelihood artifact;
+  chained equations or supplies Rubin sampling inference. Its current supported
+  artifacts are same-owner: cross categorical exclusion rules do not satisfy the
+  required strict missingness contract;
+- `ds.vertNBFullRegTheta(y ~ 1, frequency = ...)` and safe alias `ds.vertNB`
+  retain the signed bounded-count Frequency NB2 method-of-moments route.
+  With `analysis_id`, bare formulas retain the existing same-owner finite
+  likelihood grid; fully qualified additive formulas select the embedded
+  authenticated cross-owner NB2 beta/theta contract through `dp_nb_grid`.
+- Multinomial and ordinal primary `analysis_id` routes likewise admit the
+  corresponding signed cross-owner grid with qualified additive formulas.
+  Class/reference/order controls must exactly match the signed contract.
+  `ds.vertOrdinalJointNewton` remains Frequency-only; it has no grid selector.
+  No finite-grid route provides covariance, standard errors or sampling tests.
+- Interactions, transforms, unsigned candidate grids and unrestricted
+  optimizers remain unavailable. A Gaussian correlation artifact cannot replace
+  a signed categorical likelihood contract.
+- `ds.vertLASSOIter(..., cross_contract=..., base_contract=...)` exposes the
+  separately signed binomial/Poisson finite L1 extension. Its base release owns
+  protected computation and privacy spending; the public capacity-normalized
+  penalty adds zero sensitivity. The v1.3.0 archive covers binomial; Poisson
+  shares implementation/unit validation but has no separate archived campaign.
 - `ds.vertLASSOCV()` is a legacy name for information-criterion selection, not
   cross-validation and not a one-standard-error rule.
 

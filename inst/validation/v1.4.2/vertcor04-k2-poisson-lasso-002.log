@@ -1,0 +1,11 @@
+Tracing function ".dsvert_dp_gaussian_synopsis_trusted" in package
+"namespace:dsVertClient"
+[1] ".dsvert_dp_gaussian_synopsis_trusted"
+LASSO poisson PEER_PIDS 3631593 3631605 
+LASSO poisson AUTHENTICATED_REGISTRATION_COMPLETE 
+ANALYSIS 1 K2 Poisson LASSO grid 
+PASS K2 Poisson LASSO grid seconds 273.5162 
+COMPLETE LASSO poisson elapsed 300.5216 
+SYNTHETIC LAST ENDPOINT CONDITION (may be expected polling) site_a dsvertDPSynopsisReleaseDS [dsvert_phase_not_ready:v1] 
+SYNTHETIC LAST ENDPOINT CONDITION (may be expected polling) site_b dsvertDPSynopsisReleaseDS [dsvert_phase_not_ready:v1] 
+SMOKE complete invocations 1 elapsed_seconds 355.7599 

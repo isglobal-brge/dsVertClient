@@ -1,3 +1,76 @@
+# dsVertClient 1.4.2
+
+* Admit authenticated cross-owner Gaussian correlation and PCA, including
+  certificate-only offline inputs and explicit `ds.vertDPCor(artifact_family =
+  "gaussian_models")`. Pairwise remains the default. Freeze the public anchor
+  at registration; return loadings, eigenvalues and variance, never scores.
+* Correct cross-only quantization validation and owner-qualified duplicate
+  physical names. Canonicalize v2 Gaussian workload references to the existing
+  server schema keys before hashing, fixing client schema-binding parity.
+  Registration retains the existing exact canonical-label contract.
+  Preserve existing valid artifacts, identities and same-owner outputs.
+* Fix the production cross-owner Gaussian Synopsis path affected in 1.4.1:
+  authenticate its dedicated computation session with Synopsis PREPARE before
+  exact-MPC transport binding, avoiding an incorrect legacy-policy fallback.
+  Preserve pin, signature and provenance checks, sticky release identities and
+  native runtime bytes; this authorization adds no privacy release.
+* Restore the signed authorization dependency closure when reconstructing a
+  Gaussian Synopsis certificate for validation. The omission also affected
+  current same-owner certificates in 1.4.1. Rebuild from the signed federation
+  evidence and retain full signature/epoch validation; certificate bytes and
+  release identities are unchanged.
+* Export NB, LASSO, multinomial and ordinal grid adapters; add authenticated
+  embedded-contract dispatch to safe NB/categorical front doors and explicit
+  signed LASSO extension contracts. Accept current cross Gaussian certificates
+  in Gaussian LASSO and mechanism inference helpers.
+* Correct registry and documentation. Keep Cox/LMM/GLMM/GEE cross entry points
+  explicit because their front-door controls describe additional estimands.
+* Coordinate with dsVert 1.4.2 metadata/fixture updates; retain 1.4.1 provenance
+  capabilities, existing protocol identities and unchanged native runtime.
+
+* Targeted validation passes 8,671 client and 6,382 server assertions (one optional
+  Cox harness skip); same-owner golden and fixed signed bytes remain identical.
+  Real separate-process DSLite K2 Cor/PCA, exact replay, offline zero-DSI
+  conversion and binomial/Poisson LASSO pass after the lifecycle fixes. Poisson's
+  earlier interruption was the external campaign budget, not a deployment
+  timeout. A mixed-pair K3 Cor/PCA run (three owners, four variables, n=64,
+  epsilon 8) passed in one maintainer-approved extended run: Cor 3,378.7 s,
+  PCA 2.6 s. Its runtime is dominated by 17 serial exact-GC multiplication
+  operations under the 64-element chunk cap; the earlier 900-second attempt had
+  stopped at that cap without error. Optional K5 was not attempted. See
+  `inst/validation/v1.4.2/RESULTS.md` for campaign budgets, timings and limits.
+
+Public family inventory (limits are part of the release contract):
+
+| Public method family (aliases share the stated route) | Public cross-owner entry point in 1.4.2 | Estimand and limits | Remaining same-owner scope and reason |
+|---|---|---|---|
+| Identity and alignment | `ds.getIdentityPks`, `ds.psiAlign`, `ds.isPsiAligned` | Pinned private record alignment across K peers; no public intersection size | None; alignment is not a statistical release |
+| Status, planning, calibration and certificates | `ds.vertSecurityStatus`, `ds.vertMethodStatus`, `ds.vertNumericPreflight`, `ds.vertDPStatus`, `ds.vertDPCapsulePlan`, `ds.vertDPCalibrate`, `ds.validateDPGaussianCertificate` | Public contracts, utility planning and authenticated artifact checks; readiness is route-specific | `ds.validateDPLMMCertificate` validates the existing same-owner LMM certificate; cross LMM uses its own grid validation |
+| Count | `ds.vertDPCount` | One signed aligned-cohort count artifact; distinct artifacts compose | No multivariate estimand |
+| Frequency and frequency inference | `ds.vertDPFrequency`, `ds.vertDPFrequencyInference` | One explicit source owner, two noise authorities, other peers sign; fixed categorical domain | One variable naturally has one owner; not a joint-table producer |
+| Description, moments, quantiles and medians | `ds.vertDesc`, `ds.vertDPMeanVar`, `ds.vertDPDescribe`, `ds.vertDPQuantile`, `ds.vertDPMedian` | Bounded per-column summaries across an aligned federation; quantiles are release-only fixed-bin post-processing | Each described column is owned locally; no extra cross moments are inferred |
+| Correlation | `ds.vertCor`, `ds.vertDPCor(artifact_family="gaussian_models")`, `ds.vert.cor` | All pairs from one authenticated intercept-containing Gaussian Synopsis; full registered-set complete cases, fixed anchor, bounded quantized Pearson correlation | Default `ds.vertDPCor` pairwise-complete artifact remains same-owner; no cross pairwise producer |
+| PCA | `ds.vertPCA`, `ds.vert.pca` | PSD-projected Gaussian correlation eigenvalues, loadings and variance; offline current certificates accepted | Pairwise artifacts rejected; individual scores are never released |
+| Gaussian regression | `ds.vertDPGaussian`, `ds.vertGLM(family="gaussian", dp_analysis_id=...)` | Bounded normalized complete-case Gaussian moments; explicit ridge if required | Existing same-owner artifacts retained; no sampling inference |
+| Binomial / Poisson GLM | `ds.vertGLM(..., analysis_id=...)` | Authenticated finite signed coefficient grid; fixed bounded design | Completed formal-certificate reader retained; fresh formal/legacy iterative routes remain sealed |
+| Gaussian mechanism inference | `ds.vertConfint`, `ds.vertContrast`, `ds.vertWald`, `ds.vertLR`, `type="mechanism"` | Gaussian fits with current same- or cross-owner certificates; simultaneous mechanism regions, including nested RSS reduction | No new sampling covariance, p-values or population-inference claim; LR is not a likelihood-ratio test |
+| Gaussian LASSO | `ds.vertLASSO`, `ds.vertLASSO1Step`, `ds.vertLASSOProximal`, `ds.vertLASSOCV`; Gaussian `ds.vertLASSOIter` | Deterministic Gaussian L1 path/KKT and pseudo-information-criterion selection from validated current cross Gaussian provenance | Historical same-owner inputs retained; historic cross capsules rejected; CV name is not cross-validation |
+| Binomial / Poisson LASSO | `dp_lasso_grid`; `ds.vertLASSOIter(..., cross_contract=..., base_contract=...)` | Signed finite candidate and lambda grid over an authenticated base contract | Existing same-owner `analysis_id` path retained; no unrestricted optimizer; Poisson live-connector evidence is not claimed by unit tests |
+| Negative binomial | `dp_nb_grid`; safe `ds.vertNB`, `ds.vertNBFullRegTheta`, `ds.vert.nb` with `analysis_id` | Bounded NB2 beta/theta grid with complete negative log-PMF, signed by source owners | Intercept-only Frequency method-of-moments retained; historical disclosive NB body is internal and never dispatched |
+| Multinomial | `dp_multinomial_grid`; `ds.vertMultinom`, `ds.vertMultinomJoint`, `ds.vertMultinomJointNewton` with `analysis_id` | Signed finite additive softmax grid with fixed outcome levels | Intercept-only Frequency path retained; no transformed predictors or unconstrained optimization |
+| Ordinal | `dp_ordinal_grid`; `ds.vertOrdinal`, `ds.vert.ordinal` with `analysis_id` | Signed finite proportional-odds coefficient/threshold grid, exact declared clinical order | Intercept-only Frequency path retained; no unconstrained optimization |
+| Cox PH | `dp_cox_grid` | Signed finite Breslow coefficient grid within admitted capacity; no standard errors or baseline hazard | `ds.vertCox`, profile and aliases retain same-owner grid/completed-certificate routes; their risk-set controls do not map transparently to the cross contract |
+| Discrete hazard | `ds.vertCoxDiscreteNonDisclosive`, `ds.vert.cox(method="discrete")` read a compatible completed certificate | Fixed pooled-logistic time-grid certificate; no fresh person-period computation | No new cross-owner producer; this is not Cox PH |
+| Linear mixed models | `dp_lmm_grid` | Signed finite cross-owner random-intercept ML grid | `ds.vertDPLMM`, `ds.vertLMM`, `ds.vertLMM.k3` and aliases retain same-owner moments, ML/REML and random-slope scopes; different contracts prevent implicit dispatch |
+| Generalized linear mixed models | `dp_glmm_grid` | Signed binomial/Poisson random-intercept finite grid with fixed quadrature | `ds.vertGLMM` and aliases retain same-owner moments and random-slope grids; different estimands/controls prevent implicit dispatch |
+| GEE | `dp_gee_grid` | Signed binomial/Poisson finite grid with fixed working correlation; evaluated independence lane; no sandwich covariance | `ds.vertGEE` retains Gaussian exchangeable/AR(1), robust-independence and completed-certificate scopes; those require different covariance contracts |
+| Contingency, chi-square and Fisher | `ds.vertDPContingency`, `ds.vertChisq`, `ds.vertChisqCross`, `ds.vertFisher` | Signed cross-owner categorical pair; concordant-unit estimand, mechanism-aware/plugin inference | No classical exact-test claim for a noisy confidential table |
+| DP epidemiology, diagnosis, ROC and standardization | `ds.vertDPEpi2x2*`, `ds.vertDPPrevalenceRatio*`, `ds.vertDPMantelHaenszel`, `ds.vertDPDiagnostic2x2*`, `ds.vertDPROC`, `ds.vertDPDirectStandardization*`, `ds.vertDPIndirectStandardization*`, `ds.vertDPCausalStandardization*` | Post-processing of a compatible authenticated cross table and fixed public mappings/weights | A stratum or combined arm must be one registered categorical column; no new cross multiway producer; scientific sampling/causal assumptions remain external |
+| IPW | `ds.vertIPW`, `ds.vert.ipw` using a signed cross contingency table | Binary intercept-only or one categorical saturated-stratum IPW/g-formula identities; no released individual weights | Stratum+treatment must already form one registered arm column; arbitrary propensity models unavailable |
+| Multiple imputation | No current cross-owner producer for the supported MI contract | `ds.vertMI`, `ds.vert.mi`: categorical MCAR marginal, joint-pair or conditional-star completion summaries | Same-owner only: cross categorical exclusion semantics do not meet MI's strict missingness contract; chained/continuous MI and Rubin inference unavailable |
+| Survival curves and contrasts | No cross-owner survival Synopsis producer | `ds.vertDPSurvival`, Kaplan–Meier, Nelson–Aalen, cumulative incidence, RMST/RMTL, survival/RMST contrasts, log-rank and survival quantile/median post-processors | Time/event/entry inputs must share an owner; the existing producer rejects split ownership |
+| Epidemiology from supplied aggregates | `ds.vertEpi2x2`, `ds.vertMantelHaenszel`, `ds.vertDirectStandardization`, `ds.vertIndirectStandardization` | Client-only calculations on already-authorized tables, regardless of upstream ownership | Arbitrary matrices carry no DataSHIELD provenance; these helpers do not acquire cross data or establish a DP claim |
+
 # dsVertClient 1.4.1
 
 * Address the public content-equality channel in Count, Frequency and Synopsis

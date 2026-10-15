@@ -15,7 +15,7 @@ ds.vertLASSO(
 )
 }
 \arguments{
-\item{fit}{A validated \code{ds.vertDPGaussian} object.}
+\item{fit}{A validated same-owner or current cross-owner \code{ds.vertDPGaussian} object. Cross-owner moments require a current authenticated Gaussian Synopsis certificate.}
 
 \item{lambda_1}{Base non-negative L1 penalty on the signed-bound normalized
 Gaussian objective.}

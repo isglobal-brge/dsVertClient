@@ -693,6 +693,21 @@
   }
   if (is.null(.shared_exact)) {
     session_id <- .dsvert_uuid4()
+    if (isTRUE(synopsis)) {
+      # This source-computation session is distinct from the sampler session.
+      # Install the authenticated Synopsis authority before transport keys;
+      # otherwise exact binding falls back to the unrelated legacy DP policy.
+      prepare_calls <- stats::setNames(lapply(peers, function(peer) {
+        as.call(c(list(as.name("dsvertDPSynopsisPrepareDS")),
+          list(session_id = session_id), .remote_context))
+      }), peers)
+      .dsvert_dp_synopsis_runner_json_set(
+        .dsvert_fanout_by_site(
+          context$conns, prepare_calls,
+          operation = "cross-owner Gaussian Synopsis authority",
+          .aggregate = .aggregate),
+        peers, "PREPARE", .DSVERT_CLIENT_SYNOPSIS_PREPARE_MAX_OBJECT_BYTES)
+    }
     setup_result <- .dsvert_dp_cross_exact_setup(
       .setup_exact,
       context$all_conns, context$servers,

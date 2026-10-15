@@ -590,6 +590,20 @@
     stop("The Gaussian DP provenance certificate is not anchored to trusted peers",
          call. = FALSE)
   }
+  # Historical cross-owner capsule certificates are readable for audit, but
+  # newly admitted cross-owner consumers require the current Synopsis chain.
+  # This check follows full signature, attestation and result verification.
+  if (identical(verification$artifact$version,
+                .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION) &&
+      (!identical(verification$certificate$version,
+                  .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION) ||
+       !identical(verification$artifact$implementation_state,
+                  "cross_owner_exact_gc_materialized") ||
+       !identical(verification$artifact$cross_owner_state,
+                  "exact_gc_to_joint_dp_vector_v1"))) {
+    stop("Cross-owner Gaussian LASSO requires a current authenticated Synopsis certificate",
+         call. = FALSE)
+  }
   statistics <- fit$sufficient_statistics_dp
   required <- c(
     "gram_projected", "cross_projected", "outcome_square_projected")

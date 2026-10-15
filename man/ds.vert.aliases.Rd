@@ -38,9 +38,11 @@ ds.vert.is_aligned(newobj = "DA", datasources = NULL, ...)
 
 ds.vert.desc(data_name, datasources = NULL, ...)
 
-ds.vert.cor(data_name, variables = NULL, datasources = NULL, ...)
+ds.vert.cor(data_name = NULL, variables = NULL, datasources = NULL, ...,
+  gaussian_result = NULL, trusted_pinset = NULL)
 
-ds.vert.pca(data_name = NULL, variables = NULL, datasources = NULL, ...)
+ds.vert.pca(data_name = NULL, variables = NULL, datasources = NULL, ...,
+  gaussian_result = NULL, trusted_pinset = NULL)
 
 ds.vert.chisq(data_name, var1 = NULL, var2 = NULL, datasources = NULL, ...)
 
@@ -193,6 +195,9 @@ ds.vert.contrast(
 )
 }
 \arguments{
+\item{gaussian_result}{An authenticated current Gaussian Synopsis result or certificate for offline Cor/PCA post-processing.}
+\item{trusted_pinset}{Caller-anchored peer identity pins for offline certificate validation.}
+
 \item{data_name, data, formula, datasources}{Aligned data-frame symbol, reusable
 \code{ds.vertFederation}, model \code{formula}, and DataSHIELD connections.
 Model formulas may qualify ambiguous columns as

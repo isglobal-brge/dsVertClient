@@ -40,6 +40,9 @@ frontdoor reads the canonical signed Frequency artifact for the outcome.}
 for an additive formula with covariates.}
 }
 \value{
+Qualified cross-owner calls return the authenticated \code{dp_ordinal_grid}
+result with its signed contract and release certificate.
+
 With \code{frequency} or \code{server}, a threshold-only
 \code{ds.vertOrdinal} object. With \code{analysis_id}, finite-grid ordinal
 coefficients and thresholds without sampling inference. Otherwise the function raises
@@ -56,8 +59,13 @@ thresholds and never starts a new analysis or DSI request. With
 signed sticky-DP finite cumulative-logit likelihood grid.
 }
 \details{
+Owner-qualified additive formulas with \code{analysis_id} select the authenticated
+embedded cross-owner finite-grid contract. Bare formulas retain the same-owner
+route. Cross calls reject legacy optimizer controls. Categorical controls, if
+supplied, must exactly match the signed class order and reference.
+
 The Frequency route is intercept-only and never starts a new
-analysis. The grid route requires a same-owner signed categorical domain,
+analysis. The bare-name grid route requires a same-owner signed categorical domain,
 a declared clinical order, finite threshold/beta candidates and public
 predictor bounds. Neither route returns covariance, standard errors or
 sampling inference.

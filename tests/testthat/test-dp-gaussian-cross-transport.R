@@ -254,6 +254,7 @@ test_that("cross Gaussian references bind an optional public owner", {
       command <- as.character(expression[[1L]])
       state$commands <- c(state$commands, command)
       switch(command,
+        dsvertDPSynopsisPrepareDS = "{}",
         dsvertDPGaussianCrossBindDS = bind[[peer]],
         dsvertDPGaussianCrossPrepareDS = stage_response(peer, expression),
         dsvertDPGaussianCrossFinalizeDS = result[[peer]],
@@ -383,21 +384,47 @@ test_that("cross Gaussian K=3 through K=5 uses one fixed typed transcript", {
     expect_false("exactGCVecmulBindInputsDS" %in% fixture$state$commands)
     expect_identical(sum(
       fixture$state$commands == "dsvertDPGaussianCrossPrepareDS"), 6L)
+    expect_false("dsvertDPSynopsisPrepareDS" %in% fixture$state$commands)
   }
 })
 
 test_that("cross Gaussian Synopsis uses only the sealed remote ABI", {
   for (k in 3:5) {
     fixture <- .gaussian_cross_client_fixture(k = k)
+    remote <- list(
+      manifest_sha256 = strrep("a", 64L), claim_set_json = "{}",
+      compilation_json = "{}")
+    preparations <- list()
+    aggregate <- function(conns, expr, ...) {
+      for (peer in names(conns)) {
+        expression <- if (is.list(expr) && !is.call(expr)) expr[[peer]] else expr
+        if (identical(as.character(expression[[1L]]), "dsvertDPSynopsisPrepareDS")) {
+          preparations[[peer]] <<- as.list(expression)[-1L]
+        }
+      }
+      fixture$aggregate(conns, expr, ...)
+    }
     receipt <- .dsvert_dp_gaussian_cross_orchestrate(
       "canonical-cross-manifest", fixture$manifest, fixture$context,
-      fixture$source_receipt, .aggregate = fixture$aggregate,
-      .setup_exact = function(...) invisible(list()),
+      fixture$source_receipt, .aggregate = aggregate,
+      .setup_exact = function(datasources, server_names, servers, session_id,
+                              .aggregate) {
+        expect_identical(names(preparations), fixture$context$designated)
+        expect_identical(fixture$state$commands,
+                         rep("dsvertDPSynopsisPrepareDS", 2L))
+        for (prepared in preparations) {
+          expect_identical(prepared$session_id, session_id)
+          expect_identical(prepared$manifest_sha256, remote$manifest_sha256)
+          for (field in c("claim_set_json", "compilation_json")) {
+            expect_identical(.dsvert_dsi_text_decode(prepared[[field]]),
+                             remote[[field]])
+          }
+        }
+        invisible(list())
+      },
       .vecmul = function(...) invisible(list()),
       .alignment_mask = .gaussian_alignment_complete,
-      .remote_context = list(
-        manifest_sha256 = strrep("a", 64L), claim_set_json = "{}",
-        compilation_json = "{}"))
+      .remote_context = remote)
     expect_true(receipt$sampler_handoff_ready)
     expect_true(all(c(
       "dsvertDPSynopsisGaussianCrossBindDS",
@@ -406,6 +433,33 @@ test_that("cross Gaussian Synopsis uses only the sealed remote ABI", {
     expect_false(any(c(
       "dsvertDPGaussianCrossBindDS", "dsvertDPGaussianCrossFinalizeDS") %in%
       fixture$state$commands))
+  }
+})
+
+test_that("Gaussian Synopsis authorization failure prevents exact transport", {
+  fixture <- .gaussian_cross_client_fixture()
+  for (failure in c("rejected", "malformed")) {
+    touched <- FALSE
+    expect_error(.dsvert_dp_gaussian_cross_orchestrate(
+      "canonical-cross-manifest", fixture$manifest, fixture$context,
+      fixture$source_receipt,
+      .aggregate = function(conns, expr, error, ...) {
+        command <- if (is.call(expr)) expr[[1L]] else expr[[1L]][[1L]]
+        expect_identical(as.character(command), "dsvertDPSynopsisPrepareDS")
+        if (identical(failure, "rejected")) {
+          error(names(conns)[[1L]], "authority rejected")
+          return(stats::setNames(rep(list(NULL), length(conns)), names(conns)))
+        }
+        stats::setNames(rep(list("not-json"), length(conns)), names(conns))
+      },
+      .setup_exact = function(...) { touched <<- TRUE; stop("unexpected setup") },
+      .vecmul = function(...) { touched <<- TRUE; stop("unexpected product") },
+      .alignment_mask = function(...) { touched <<- TRUE; stop("unexpected alignment") },
+      .remote_context = list(
+        manifest_sha256 = strrep("a", 64L), claim_set_json = "{}",
+        compilation_json = "{}")),
+      if (identical(failure, "rejected")) "transport failed" else "non-canonical")
+    expect_false(touched)
   }
 })
 

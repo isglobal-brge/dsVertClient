@@ -1175,6 +1175,10 @@
     designated = policy_info$designated,
     conns = placeholder[policy_info$designated], all_conns = placeholder,
     policy = policy_info$value)
+  # Reconstruct the same provenance closure as the online bootstrap. The
+  # trusted-bundle validator below authenticates every signed dependency.
+  context$authorization_dependencies <- .dsvert_dp_synopsis_client_closure_v2(
+    unclass(status), context)
   bundle <- .dsvert_dp_gaussian_synopsis_evidence_decode(
     evidence$manifest_bundle_json, "manifest bundle")
   if (!is.list(bundle) || "context" %in% names(bundle)) {
@@ -2008,7 +2012,7 @@
 
 #' Verify a bounded Gaussian provenance certificate without DSI
 #'
-#' Dispatches between the same-owner no-lifetime Synopsis provenance
+#' Dispatches between the same- or cross-owner no-lifetime Synopsis provenance
 #' certificate v1 and the byte-compatible legacy capsule certificate v3. It
 #' revalidates the signed schema/manifest, pinned-peer receipts, Gaussian
 #' descriptor and exact released DP block before algebra. A self-contained

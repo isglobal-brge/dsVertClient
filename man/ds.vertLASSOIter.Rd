@@ -23,10 +23,17 @@ ds.vertLASSOIter(
   datasources = NULL,
   cor_analysis_id = NULL,
   dp_analysis_id = NULL,
-  analysis_id = NULL
+  analysis_id = NULL,
+  cross_contract = NULL,
+  base_contract = NULL
 )
 }
 \arguments{
+\item{cross_contract, base_contract}{For a cross-owner binomial/Poisson path,
+the separately signed LASSO extension and base loss contract. Both are required.
+The qualified formula, family, dataset and exact signed penalty subset must
+match; policy and schema come from authenticated Synopsis discovery.}
+
 \item{formula, data, family, lambda, max_outer, tol, alpha, inner_iter, exact_non_gaussian, ring, lipschitz, fista_restart, binomial_sigmoid_intervals, poisson_damping, verbose, datasources, cor_analysis_id}{Historical compatibility arguments. The Gaussian route first uses
 \code{max_outer} as its coordinate-descent budget. For legacy requests below
 500 sweeps, one KKT-only retry at 500 sweeps preserves historical compatibility

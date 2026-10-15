@@ -5,7 +5,8 @@
 #'   retired \code{ds.glm} soft-thresholding sketch is rejected rather than
 #'   being represented as an L1-optimised estimator.
 #'
-#' @param fit A validated \code{ds.vertDPGaussian} object.
+#' @param fit A validated \code{ds.vertDPGaussian} object. Cross-owner
+#'   moments require a current authenticated Gaussian Synopsis certificate.
 #' @param lambda_1 Base non-negative L1 penalty on the signed-bound normalized
 #'   Gaussian objective.
 #' @param alpha_grid Non-negative multipliers defining
@@ -58,12 +59,19 @@ ds.vertLASSO <- function(fit, lambda_1,
 
   lambda_grid <- as.numeric(lambda_1) * as.numeric(alpha_grid)
   source <- .dsvert_lasso_dp_source(fit, trusted_pinset = trusted_pinset)
-  if (!identical(source$artifact$implementation_state,
-                 "same_owner_materialized") ||
-      !identical(source$artifact$cross_owner_state,
-                 "reserved_not_materialized")) {
+  same_owner <- identical(source$artifact$implementation_state,
+                          "same_owner_materialized") &&
+    identical(source$artifact$cross_owner_state, "reserved_not_materialized")
+  cross_owner <- identical(source$artifact$version,
+                           .DSVERT_CLIENT_DP_GAUSSIAN_CROSS_ARTIFACT_VERSION) &&
+    identical(source$artifact$implementation_state,
+              "cross_owner_exact_gc_materialized") &&
+    identical(source$artifact$cross_owner_state, "exact_gc_to_joint_dp_vector_v1") &&
+    identical(source$verification$certificate$version,
+              .DSVERT_DP_GAUSSIAN_SYNOPSIS_CERTIFICATE_VERSION)
+  if (!same_owner && !cross_owner) {
     stop(
-      "ds.vertLASSO currently requires a validated same-owner Gaussian Synopsis",
+      "ds.vertLASSO requires authenticated Gaussian moments; cross-owner moments require a current Synopsis certificate",
       call. = FALSE)
   }
   solutions <- .dsvert_lasso_dp_lambda_path(
@@ -148,7 +156,8 @@ print.ds.vertLASSO <- function(x, ...) {
 #'   \code{ds.vertDPGaussian} Synopsis. The retired \code{ds.glm}
 #'   quadratic-surrogate approximation is unavailable.
 #'
-#' @param fit A validated \code{ds.vertDPGaussian} object.
+#' @param fit A validated same-owner or current cross-owner
+#'   \code{ds.vertDPGaussian} object.
 #' @param lambda Numeric vector of finite non-negative L1 penalties.
 #' @param keep_intercept If TRUE (default), the intercept is not penalised.
 #' @param max_iter Positive bound on coordinate-descent iterations per path

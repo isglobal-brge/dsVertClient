@@ -6,7 +6,7 @@
 #'   With \code{analysis_id}, additive bare predictors select one candidate from
 #'   a signed sticky-DP finite \eqn{(beta, theta)} likelihood grid.
 #' @details The Frequency route is intercept-only, never starts a new analysis,
-#' and has no covariance or standard errors. The grid route requires a same-owner
+#' and has no covariance or standard errors. The bare-name grid route requires a same-owner
 #' signed \code{negative_binomial_grid_v2} artifact with bounded integer
 #' outcomes, finite beta and theta grids, and public predictor bounds. The
 #' defective v1 grid loss semantics are sealed and rejected; existing v1
@@ -29,6 +29,12 @@
 #'   \code{analysis_id}, an additive finite-grid NB2 object with coefficients
 #'   and \code{theta}, but no covariance or sampling inference. Otherwise the
 #'   function raises \code{dsvert_route_unavailable} before DSI.
+#' @details Owner-qualified additive formulas with \code{analysis_id} select
+#'   the authenticated embedded cross-owner finite-grid contract. Bare-name
+#'   formulas retain the existing same-owner route. No legacy optimizer controls
+#'   are accepted on the cross-owner route.
+#' @return Qualified cross-owner calls return the authenticated
+#'   \code{dp_nb_grid} result with the signed contract and release certificate.
 #' @seealso \code{\link{ds.vertMethodStatus}}
 #' @export
 ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
@@ -48,6 +54,13 @@ ds.vertNBFullRegTheta <- function(formula, data = NULL, theta = NULL,
         !is.null(theta) || !identical(compute_covariance, TRUE)) {
       stop("The signed NB2 grid requires analysis_id with default compatibility controls",
            call. = FALSE)
+    }
+    if (.dsvert_dp_grid_cross_formula_requested(formula)) {
+      allowed <- c("formula", "data", "analysis_id", "verbose", "datasources")
+      if (length(setdiff(explicit_arguments, allowed))) {
+        stop("Cross-owner NB2 does not accept legacy controls", call. = FALSE)
+      }
+      return(.dsvert_dp_grid_cross_frontdoor("nb", formula, data, analysis_id, datasources))
     }
     terms <- if (inherits(formula, "formula")) stats::terms(formula) else NULL
     predictors <- if (is.null(terms)) character() else attr(terms, "term.labels")
@@ -232,3 +245,9 @@ print.ds.vertNBFullRegTheta <- function(x, ...) {
 # Null-coalescing helper -- internal, may already exist elsewhere but
 # redefined here for standalone loading safety.
 `%||%` <- function(a, b) if (is.null(a)) b else a
+
+# The safe public NB name is a true alias: match.call() retains only arguments
+# actually supplied, including on the strict Frequency compatibility route.
+#' @rdname ds.vertNBFullRegTheta
+#' @export
+ds.vertNB <- ds.vertNBFullRegTheta
