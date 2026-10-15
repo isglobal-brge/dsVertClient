@@ -37,7 +37,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   }
   rownames(registry) <- NULL
   class(registry) <- c("ds.vertMethodStatus", class(registry))
-  attr(registry, "audit_date") <- "2026-08-28"
+  attr(registry, "audit_date") <- "2026-10-15"
   attr(registry, "threat_model") <- paste(
     "pinned honest-but-curious peers; untrusted analyst/relay;",
     "privacy and composition follow each row's release contract; Count is",
@@ -187,11 +187,11 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "quantile or within-bin interpolation is claimed."))
   add("ds.vertDPCor", "ds.vertDPCor", "promoted",
       paste(
-        "Same-owner pairwise-complete bounded correlations from one sticky",
-        "canonical Synopsis artifact, with unlimited exact replay and explicit",
-        "PSD post-processing."),
+        "Pairwise-complete same-owner correlations by default; explicit",
+        "artifact_family=gaussian_models admits joint complete-case same- or",
+        "cross-owner correlations from one authenticated Gaussian Synopsis."),
       paste(
-        "Cross-owner products remain reserved_not_materialized; mechanism",
+        "Cross-owner pairwise products remain reserved_not_materialized; mechanism",
         "regions exclude sampling uncertainty and PSD projection changes the",
         "raw pairwise estimand when the matrix is indefinite."))
   add("ds.vertDPSurvival", "ds.vertDPSurvival", "promoted",
@@ -384,12 +384,12 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       "A backend is usable only after its advertised exact primitives pass end-to-end attestation.")
   add(c("ds.vertCor", "ds.vert.cor"), "ds.vertCor", "promoted",
       paste(
-        "Joint complete-case Pearson correlation from one signed same-owner",
+        "Joint complete-case Pearson correlation from one signed same- or cross-owner",
         "Gaussian Synopsis artifact."),
       paste(
         "A signed analysis id and intercept are mandatory; mechanism regions",
-        "exclude population-sampling uncertainty. Cross-owner descriptors",
-        "are quarantined without a capsule fallback."))
+        "exclude sampling uncertainty. Offline certificates require anchored pins;",
+        "the registered outcome/anchor and complete-case cohort are fixed."))
   add(c("ds.vertPCA", "ds.vert.pca"), "ds.vertPCA", "promoted",
       paste(
         "Client-only eigenstructure of the explicitly PSD-projected sticky DP",
@@ -428,13 +428,13 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add("ds.vertDPGaussian", "ds.vertDPGaussian", "promoted",
       paste(
         "Bounded, clipped complete-case Gaussian coefficients from one signed",
-        "no-lifetime Synopsis sufficient-statistic artifact for same-owner",
-        "predictors."),
+        "no-lifetime Synopsis sufficient-statistic artifact for same- or cross-owner",
+        "predictors, with authenticated exact-GC cross products."),
       paste(
         "Binomial/Poisson links and population-sampling inference are not",
         "implemented on this route; singular released designs require an",
-        "explicit ridge that changes the estimand. Cross-owner descriptors",
-        "fail closed without capsule fallback."))
+        "explicit ridge that changes the estimand. Cross-owner evidence and",
+        "the current provenance epoch must validate without capsule fallback."))
   add(c("ds.vertDPLMM", "ds.vertLMM", "ds.vert.lmm"),
       "ds.vertDPLMM", "promoted",
       paste(
@@ -509,12 +509,12 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       paste(
         "No arbitrary optimizer, no covariance, p-values or analyst-selected",
         "source work or opening is available."))
-  add(c("ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",
+  add(c("ds.vertNB", "ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",
       "promoted",
       paste(
         "An intercept-only NB2 method-of-moments postprocess from one",
         "validated sticky Frequency release, or an additive covariate fit",
-        "selected from one same-owner signed sticky DP beta/theta grid."),
+        "selected from one same- or cross-owner signed sticky DP beta/theta grid."),
       paste(
         "The covariate route is limited to a bounded integer outcome and",
         "custodian-signed finite beta/theta candidates. It is not an",
@@ -526,23 +526,25 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
       paste(
         "Intercept-only multinomial log-odds from one validated sticky DP",
         "Frequency release, or additive softmax coefficients selected from",
-        "one same-owner signed sticky DP finite likelihood grid."),
+        "one same- or cross-owner signed sticky DP finite likelihood grid."),
       paste(
         "The covariate route requires a signed categorical domain, public",
         "predictor bounds and finite beta candidates. It returns no covariance,",
         "standard errors, p-values or sampling inference."))
-  add(c("ds.vertOrdinal", "ds.vert.ordinal", "ds.vertOrdinalJointNewton"),
+  add(c("ds.vertOrdinal", "ds.vert.ordinal"),
       "ds.vertOrdinal", "promoted",
       paste(
         "Intercept-only cumulative-logit thresholds from one validated sticky",
         "DP Frequency release, or additive ordinal coefficients and thresholds",
-        "selected from one same-owner signed sticky DP finite likelihood grid;",
-        "the historical Newton name remains a compatibility frontdoor."),
+        "selected from one same- or cross-owner signed sticky DP finite likelihood grid."),
       paste(
         "The covariate route requires a signed category domain in clinical",
         "order, public predictor bounds and finite threshold/beta candidates.",
         "It returns no covariance, standard errors, p-values or sampling",
         "inference."))
+  add("ds.vertOrdinalJointNewton", "ds.vertOrdinal", "promoted",
+      "Intercept-only cumulative-logit thresholds from one validated sticky DP Frequency release.",
+      "Frequency-only compatibility name; no analysis_id grid dispatch or remote Newton optimization.")
   add("ds.vertLMM.k3", "ds.vertDPLMM", "promoted",
       paste("K>=3 compatibility wrapper for the signed random-intercept",
             "Synopsis, including matching finite fixed-effect or one-or-more",
@@ -616,59 +618,58 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
         "unavailable."))
   add(c("ds.vertLASSO", "ds.vert.lasso"), "ds.vertLASSO", "promoted",
       paste(
-        "Gaussian L1 penalty path over one validated same-owner signed",
+        "Gaussian L1 penalty path over one validated same- or cross-owner signed",
         "Synopsis moment artifact; each member has a deterministic KKT",
         "certificate and incurs no new private computation."),
       paste(
-        "Gaussian same-owner designs only; no sampling inference or",
+        "Cross-owner designs require current certificates; no sampling inference or",
         "coefficient regions are available, and the retired ds.glm",
         "thresholding sketch is rejected."))
   add(c("ds.vertLASSO1Step", "ds.vert.lasso_1step"), "ds.vertLASSO1Step",
       "promoted",
       paste(
         "Historical one-step name for the Gaussian L1 penalty path over one",
-        "validated same-owner signed Synopsis moment artifact; each member",
+        "validated same- or cross-owner signed Synopsis moment artifact; each member",
         "has a deterministic KKT certificate and incurs no new private",
         "computation."),
       paste(
-        "Gaussian same-owner designs only; no sampling inference or",
+        "Cross-owner designs require current certificates; no sampling inference or",
         "coefficient regions are available, and the retired ds.glm",
         "quadratic-surrogate route is rejected."))
   add(c("ds.vertLASSOProximal", "ds.vert.lasso_proximal"),
       "ds.vertLASSOProximal", "promoted",
       paste(
         "Preferred zero-call Gaussian LASSO post-processing of one validated",
-        "same-owner signed Synopsis moment artifact; each result carries a",
+        "same- or cross-owner signed Synopsis moment artifact; each result carries a",
         "deterministic KKT certificate."),
       paste(
         "Gaussian only; no sampling inference or coefficient regions;",
-        "cross-owner designs and unauthenticated legacy ds.glm inputs are",
-        "unavailable."))
+        "cross-owner designs require current certificates; unauthenticated legacy",
+        "ds.glm inputs are unavailable."))
   add(c("ds.vertLASSOIter", "ds.vert.lasso_iter"), "ds.vertLASSOIter",
       "promoted",
       paste(
-        "Gaussian L1 paths from one explicit signed same-owner Synopsis",
+        "Gaussian L1 paths from one explicit signed same- or cross-owner Synopsis",
         "artifact, or binomial/Poisson finite L1 candidate paths with",
         "signed penalty levels; each route creates no second private release."),
       paste(
         "Gaussian requires dp_analysis_id; binomial and Poisson require",
-        "analysis_id and select only exact signed lambda levels. All routes",
-        "are same-owner additive fixed-covariate paths without sampling",
-        "inference or coefficient regions; cross-owner and retired score-MPC",
-        "routes remain unavailable."))
+        "analysis_id or explicit signed cross/base contracts and exact signed lambda",
+        "levels. These are additive fixed-covariate paths without sampling",
+        "inference or coefficient regions; retired score-MPC routes remain unavailable."))
   add(c("ds.vertLASSOCV", "ds.vert.lasso_cv"), "ds.vertLASSOCV",
       "promoted",
       paste(
         "Preferred zero-call DP-projected pseudo-AIC/BIC/EBIC selection over",
-        "one validated same-owner signed Gaussian Synopsis LASSO path."),
+        "one validated same- or cross-owner signed Gaussian Synopsis LASSO path."),
       paste(
         "It is not cross-validation or a one-standard-error rule;",
         "selection uncertainty and sampling inference are unavailable;",
-        "Gaussian same-owner designs only and cross-owner designs are",
-        "unavailable; unauthenticated legacy ds.glm inputs are rejected."))
+        "cross-owner designs require current certificates; unauthenticated legacy",
+        "ds.glm inputs are rejected."))
   add(c("ds.vertConfint", "ds.vert.confint"), "ds.vertConfint", "promoted",
       paste(
-        "For a current signed same-owner Gaussian Synopsis,",
+        "For a current signed same- or cross-owner Gaussian Synopsis,",
         "type='mechanism' returns a certificate-revalidated simultaneous",
         "mechanism region for the bounded complete-case ridge estimator",
         "without another server call or release."),
@@ -680,7 +681,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
   add(c("ds.vertWald", "ds.vert.wald", "ds.vertContrast", "ds.vert.contrast"),
       "ds.vert inference helpers", "promoted",
       paste(
-        "For a current signed same-owner Gaussian Synopsis, type='mechanism'",
+        "For a current signed same- or cross-owner Gaussian Synopsis, type='mechanism'",
         "returns deterministic simultaneous DP-mechanism null regions for",
         "a coefficient or declared linear contrasts without another release."),
       paste(
@@ -771,7 +772,7 @@ ds.vertMethodStatus <- function(method = NULL, status = NULL) {
     inherited_postprocessing, "ds.vertMultinom", "ds.vert.multinom",
     "ds.vertMultinomJoint", "ds.vertMultinomJointNewton",
     "ds.vertOrdinal", "ds.vert.ordinal", "ds.vertOrdinalJointNewton",
-    "ds.vertNBFullRegTheta", "ds.vert.nb")
+    "ds.vertNB", "ds.vertNBFullRegTheta", "ds.vert.nb")
   glm_synopsis_wrappers <- c(
     "ds.vertGLM", "ds.vert.glm",
     "ds.vertLASSOIter", "ds.vert.lasso_iter")

@@ -389,8 +389,8 @@
       "validated_synopsis_provenance"),
     paste(
       "Bounded joint complete-case Pearson correlations for signed",
-      "same-owner Gaussian Synopsis artifacts; cross-owner requests are",
-      "quarantined without a capsule fallback."),
+      "same- or cross-owner Gaussian Synopsis artifacts with an intercept;",
+      "authenticated offline certificates need no regression fit or calls."),
     c("finite_public_bounds", "identifiability", "mechanism_uncertainty",
       "positive_semidefinite_projection"),
     "synopsis_release_implemented", character(),
@@ -407,7 +407,8 @@
       "validated_synopsis_provenance"),
     paste(
       "Eigenstructure of the explicitly PSD-projected bounded DP joint",
-      "complete-case correlation matrix."),
+      "complete-case correlation matrix across signed owners; loadings and",
+      "variance only, never individual scores."),
     c("finite_public_bounds", "mechanism_uncertainty",
       "positive_semidefinite_projection", "spectral_stability"),
     "synopsis_release_implemented", character(),
@@ -474,20 +475,21 @@
   add(
     "ds.vertDPGaussian", "ds.vertDPGaussian", "gaussian_regression",
     c("admitted_count", "complete_case_patient_collapse",
-      "gaussian_sufficient_statistics_same_owner", "joint_dp_noise",
+      "gaussian_sufficient_statistics_same_owner",
+      "gaussian_sufficient_statistics_cross_owner", "joint_dp_noise",
       "public_numeric_bounds", "signed_gaussian_model_artifact",
       "validated_synopsis_provenance"),
     paste(
-      "Bounded, clipped same-owner complete-case Gaussian",
+      "Bounded, clipped same- or cross-owner complete-case Gaussian",
       "least-squares coefficients for one signed public model; a positive",
       "ridge requests an explicitly different normalized-design estimand;",
-      "cross-owner descriptors fail closed without capsule fallback."),
+      "current signed two-authority cross-owner evidence is mandatory."),
     c("explicit_regularization_estimand", "finite_public_bounds",
       "fixed_complete_case_rule", "identifiability", "mechanism_uncertainty",
       "no_sampling_inference", "positive_semidefinite_projection"),
     "synopsis_release_implemented", character(),
     artifact_implementation_state =
-      "validated_same_owner_synopsis_adapter_implemented",
+      "validated_same_and_cross_owner_synopsis_adapter_implemented",
     inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
@@ -498,8 +500,8 @@
       "model_score_hessian", "numeric_cross_products_same_and_cross_owner",
       "numeric_moments"),
     paste(
-      "Bounded Gaussian coefficients use an explicit same-owner Synopsis",
-      "artifact. Binomial and Poisson use a signed finite likelihood-grid",
+      "Bounded Gaussian coefficients use an explicit same- or cross-owner",
+      "Synopsis artifact. Binomial and Poisson use a signed finite likelihood-grid",
       "Synopsis or a completed two-authority formal public certificate;",
       "identifier-free, fresh-formal and legacy iterative calls fail closed",
       "before protected analysis."),
@@ -559,19 +561,20 @@
       "validated_formal_public_certificate_adapter_implemented")
 
   add(
-    c("ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",
+    c("ds.vertNB", "ds.vertNBFullRegTheta", "ds.vert.nb"), "ds.vertNBFullRegTheta",
     "negative_binomial_frequency_or_finite_grid",
     c("validated_sticky_frequency_artifact",
       "bounded_nonnegative_integer_domain", "signed_finite_beta_theta_grid"),
     paste(
       "Intercept-only NB2 mean and method-of-moments dispersion from one",
       "validated sticky count Frequency release, or additive coefficients and",
-      "dispersion from one same-owner signed finite likelihood grid."),
+      "dispersion from one same- or cross-owner signed finite likelihood grid."),
     c("bounded_nonnegative_integer_domain", "validated_frequency_provenance",
       "finite_signed_beta_theta_grid", "no_covariance_or_inference"),
     "synopsis_release_implemented",
     character(),
-    c("ds.vert.nb" = "ds.vertNBFullRegTheta"),
+    c("ds.vertNB" = "ds.vertNBFullRegTheta",
+      "ds.vert.nb" = "ds.vertNBFullRegTheta"),
     current_route_status = "formal_sticky_synopsis_artifact",
     artifact_implementation_state =
       "validated_frequency_and_finite_grid_artifact_adapters_implemented",
@@ -587,7 +590,7 @@
     paste(
       "Intercept-only multinomial log-odds with deterministic Jeffreys",
       "smoothing of one validated sticky categorical Frequency release, or",
-      "additive coefficients from one same-owner signed finite softmax grid."),
+      "additive coefficients from one same- or cross-owner signed finite softmax grid."),
     c("fixed_category_domain", "validated_frequency_provenance",
       "finite_signed_softmax_beta_grid", "no_covariance_or_inference"),
     "synopsis_release_implemented",
@@ -605,7 +608,7 @@
       "frequency_and_finite_grid_postprocess_implemented")
 
   add(
-    c("ds.vertOrdinal", "ds.vert.ordinal", "ds.vertOrdinalJointNewton"),
+    c("ds.vertOrdinal", "ds.vert.ordinal"),
     "ds.vertOrdinal", "ordinal_cumulative_logit",
     c("validated_sticky_frequency_artifact", "signed_ordinal_grid",
       "fixed_category_domain", "caller_declared_ordinal_order",
@@ -614,22 +617,34 @@
       "Intercept-only cumulative-logit thresholds with deterministic Jeffreys",
       "smoothing of one validated sticky categorical Frequency release, or",
       "additive ordinal coefficients and thresholds selected from one",
-      "same-owner signed sticky DP finite likelihood grid."),
+      "same- or cross-owner signed sticky DP finite likelihood grid."),
     c("fixed_category_domain", "caller_declared_ordinal_order",
       "validated_frequency_or_grid_provenance", "public_predictor_bounds",
       "finite_signed_candidates",
       "no_covariance_or_inference"),
     "frequency_operation_implemented",
     character(),
-    c("ds.vert.ordinal" = "ds.vertOrdinal",
-      "ds.vertOrdinalJointNewton" = "ds.vertOrdinal"),
-    alias_kinds = c(
-      "ds.vertOrdinalJointNewton" = "compatibility_wrapper"),
+    c("ds.vert.ordinal" = "ds.vertOrdinal"),
     current_route_status = "formal_sticky_synopsis_artifact",
     artifact_implementation_state =
       "validated_frequency_and_finite_grid_artifact_adapters_implemented",
     inference_implementation_state =
       "frequency_and_finite_grid_postprocess_implemented")
+
+  add(
+    "ds.vertOrdinalJointNewton", "ds.vertOrdinal", "ordinal_cumulative_logit",
+    c("validated_sticky_frequency_artifact", "fixed_category_domain",
+      "caller_declared_ordinal_order"),
+    paste("Intercept-only cumulative-logit thresholds from one validated",
+          "sticky categorical Frequency release; no analysis_id grid dispatch."),
+    c("fixed_category_domain", "caller_declared_ordinal_order",
+      "validated_frequency_provenance", "no_covariance_or_inference"),
+    "frequency_operation_implemented", character(),
+    c("ds.vertOrdinalJointNewton" = "ds.vertOrdinal"),
+    alias_kinds = c("ds.vertOrdinalJointNewton" = "compatibility_wrapper"),
+    current_route_status = "formal_sticky_synopsis_artifact",
+    artifact_implementation_state = "validated_frequency_artifact_adapter_implemented",
+    inference_implementation_state = "frequency_postprocess_implemented")
 
   add(
     c("ds.vertDPLMM", "ds.vertLMM", "ds.vert.lmm", "ds.vertLMM.k3"),
@@ -789,9 +804,10 @@
     c("ds.vertLASSO", "ds.vert.lasso"), "ds.vertLASSO",
     "lasso_gaussian",
     c("admitted_count", "gaussian_sufficient_statistics_same_owner",
+      "gaussian_sufficient_statistics_cross_owner",
       "signed_gaussian_model_artifact",
       "validated_gaussian_provenance_certificate"),
-    "Bound-normalized Gaussian LASSO path over one signed projected DP moment artifact.",
+    "Bound-normalized Gaussian LASSO path over one signed same- or cross-owner projected DP moment artifact.",
     c("certificate_integrity_validation", "gaussian_only",
       "identifiability", "kkt_validation", "no_sampling_inference",
       "objective_scale_contract", "authentic_federation_e2e_validation"),
@@ -799,16 +815,17 @@
     aliases = c("ds.vert.lasso" = "ds.vertLASSO"),
     current_route_status = "client_only_validated_synopsis_postprocess",
     artifact_implementation_state =
-      "validated_same_owner_synopsis_adapter_implemented",
+      "validated_same_and_cross_owner_synopsis_adapter_implemented",
     inference_implementation_state = "dp_gaussian_lasso_path_implemented")
 
   add(
     c("ds.vertLASSO1Step", "ds.vert.lasso_1step"), "ds.vertLASSO1Step",
     "lasso_gaussian",
     c("admitted_count", "gaussian_sufficient_statistics_same_owner",
+      "gaussian_sufficient_statistics_cross_owner",
       "signed_gaussian_model_artifact",
       "validated_gaussian_provenance_certificate"),
-    "Historical one-step frontdoor for the bound-normalized Gaussian LASSO path over one signed projected DP moment artifact.",
+    "Historical one-step frontdoor for the bound-normalized Gaussian LASSO path over one signed same- or cross-owner projected DP moment artifact.",
     c("certificate_integrity_validation", "gaussian_only",
       "identifiability", "kkt_validation", "no_sampling_inference",
       "objective_scale_contract", "authentic_federation_e2e_validation"),
@@ -816,16 +833,17 @@
     aliases = c("ds.vert.lasso_1step" = "ds.vertLASSO1Step"),
     current_route_status = "client_only_validated_synopsis_postprocess",
     artifact_implementation_state =
-      "validated_same_owner_synopsis_adapter_implemented",
+      "validated_same_and_cross_owner_synopsis_adapter_implemented",
     inference_implementation_state = "dp_gaussian_lasso_path_implemented")
 
   add(
     c("ds.vertLASSOProximal", "ds.vert.lasso_proximal"),
     "ds.vertLASSOProximal", "lasso_gaussian",
     c("admitted_count", "gaussian_sufficient_statistics_same_owner",
+      "gaussian_sufficient_statistics_cross_owner",
       "signed_gaussian_model_artifact",
       "validated_gaussian_provenance_certificate"),
-    "Bound-normalized Gaussian LASSO on one signed projected DP moment artifact.",
+    "Bound-normalized Gaussian LASSO on one signed same- or cross-owner projected DP moment artifact.",
     c("certificate_integrity_validation", "gaussian_only",
       "identifiability", "kkt_validation", "no_sampling_inference",
       "objective_scale_contract", "authentic_federation_e2e_validation"),
@@ -833,25 +851,27 @@
     aliases = c("ds.vert.lasso_proximal" = "ds.vertLASSOProximal"),
     current_route_status = "client_only_validated_synopsis_postprocess",
     artifact_implementation_state =
-      "validated_same_owner_synopsis_adapter_implemented",
+      "validated_same_and_cross_owner_synopsis_adapter_implemented",
     inference_implementation_state = "dp_gaussian_lasso_path_implemented")
 
   add(
     c("ds.vertLASSOIter", "ds.vert.lasso_iter"), "ds.vertLASSOIter",
     "lasso_iterative",
     c("admitted_count", "gaussian_sufficient_statistics_same_owner",
+      "gaussian_sufficient_statistics_cross_owner",
       "signed_gaussian_model_artifact_or_finite_binomial_poisson_l1_path",
       "validated_gaussian_provenance_certificate"),
-    paste("Gaussian L1 paths or signed finite binomial/Poisson L1 candidate",
-          "paths from one same-owner Synopsis artifact."),
-    c("same_owner_only", "finite_signed_candidate_path", "identifiability",
+    paste("Same- or cross-owner Gaussian L1 paths, or finite binomial/Poisson",
+          "candidate paths; cross paths require signed extension/base contracts",
+          "and reuse the authenticated base Synopsis release."),
+    c("signed_cross_extension_and_base_contracts", "finite_signed_candidate_path", "identifiability",
       "no_sampling_inference", "objective_scale_contract"),
     "synopsis_release_implemented", character(),
     c("ds.vert.lasso_iter" = "ds.vertLASSOIter"),
     current_route_status =
-      "formal_same_owner_synopsis_gaussian_and_finite_glm_l1_legacy_unavailable",
+      "formal_same_and_cross_owner_synopsis_gaussian_and_finite_glm_l1_legacy_unavailable",
     artifact_implementation_state =
-      "validated_same_owner_synopsis_l1_adapters_implemented",
+      "validated_same_and_cross_owner_synopsis_l1_adapters_implemented",
     inference_implementation_state =
       "dp_gaussian_and_finite_glm_lasso_paths_implemented")
 
@@ -859,11 +879,12 @@
     c("ds.vertLASSOCV", "ds.vert.lasso_cv"), "ds.vertLASSOCV",
     "lasso_information_criterion",
     c("admitted_count", "gaussian_sufficient_statistics_same_owner",
+      "gaussian_sufficient_statistics_cross_owner",
       "signed_gaussian_model_artifact",
       "validated_gaussian_provenance_certificate"),
     paste(
       "DP-projected pseudo-AIC/BIC/EBIC selection on one signed Gaussian",
-      "moment artifact; it is not cross-validation."),
+      "same- or cross-owner moment artifact; it is not cross-validation."),
     c("certificate_integrity_validation", "estimand_label",
       "no_sampling_inference", "pseudo_information_criterion_label",
       "selection_uncertainty", "authentic_federation_e2e_validation"),
@@ -871,12 +892,12 @@
     aliases = c("ds.vert.lasso_cv" = "ds.vertLASSOCV"),
     current_route_status = "client_only_validated_synopsis_postprocess",
     artifact_implementation_state =
-      "validated_same_owner_synopsis_adapter_implemented",
+      "validated_same_and_cross_owner_synopsis_adapter_implemented",
     inference_implementation_state = "dp_gaussian_pseudo_ic_implemented")
 
   add(
     c("ds.vertLR", "ds.vert.lr"), "ds.vertLR", "likelihood_ratio",
-    c("signed_same_owner_gaussian_synopsis",
+    c("signed_current_gaussian_synopsis_same_and_cross_owner",
       "simultaneous_coordinate_error_certificate"),
     paste(
       "Simultaneous DP-mechanism outer region for a declared strict",
@@ -887,13 +908,13 @@
     aliases = c("ds.vert.lr" = "ds.vertLR"),
     current_route_status = "client_only_validated_synopsis_postprocess",
     artifact_implementation_state =
-      "validated_same_owner_synopsis_adapter_implemented",
+      "validated_same_and_cross_owner_synopsis_adapter_implemented",
     inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     c("ds.vertConfint", "ds.vert.confint"), "ds.vertConfint",
     "confidence_interval",
-    c("signed_same_owner_gaussian_synopsis",
+    c("signed_current_gaussian_synopsis_same_and_cross_owner",
       "simultaneous_coordinate_error_certificate"),
     paste(
       "Simultaneous DP-mechanism outer region for the bounded",
@@ -906,13 +927,13 @@
     current_route_status =
       "client_only_validated_synopsis_postprocess",
     artifact_implementation_state =
-      "validated_same_owner_synopsis_adapter_implemented",
+      "validated_same_and_cross_owner_synopsis_adapter_implemented",
     inference_implementation_state =
       "synopsis_postprocess_implemented")
 
   add(
     c("ds.vertWald", "ds.vert.wald"), "ds.vertWald", "wald_test",
-    c("signed_same_owner_gaussian_synopsis",
+    c("signed_current_gaussian_synopsis_same_and_cross_owner",
       "simultaneous_coordinate_error_certificate"),
     "Simultaneous DP-mechanism null region for one declared coefficient.",
     c("certificate_revalidation", "finite_inverse_norm_margin",
@@ -921,13 +942,13 @@
     aliases = c("ds.vert.wald" = "ds.vertWald"),
     current_route_status = "client_only_validated_synopsis_postprocess",
     artifact_implementation_state =
-      "validated_same_owner_synopsis_adapter_implemented",
+      "validated_same_and_cross_owner_synopsis_adapter_implemented",
     inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
     c("ds.vertContrast", "ds.vert.contrast"), "ds.vertContrast",
     "linear_contrast",
-    c("signed_same_owner_gaussian_synopsis",
+    c("signed_current_gaussian_synopsis_same_and_cross_owner",
       "simultaneous_coordinate_error_certificate"),
     "Simultaneous DP-mechanism outer regions for declared linear contrasts.",
     c("certificate_revalidation", "finite_inverse_norm_margin",
@@ -936,7 +957,7 @@
     aliases = c("ds.vert.contrast" = "ds.vertContrast"),
     current_route_status = "client_only_validated_synopsis_postprocess",
     artifact_implementation_state =
-      "validated_same_owner_synopsis_adapter_implemented",
+      "validated_same_and_cross_owner_synopsis_adapter_implemented",
     inference_implementation_state = "synopsis_postprocess_implemented")
 
   add(
@@ -1048,17 +1069,20 @@
   add(
     "ds.vertDPCor", "ds.vertDPCor", "dp_correlation",
     c("joint_dp_noise", "numeric_pair_moments_same_owner",
-      "signed_correlation_artifact"),
+      "signed_correlation_artifact", "gaussian_models",
+      "signed_complete_case_gaussian_artifact"),
     paste(
       "Pairwise-complete bounded correlations and explicit PSD",
-      "post-processing for one signed same-owner variable set."),
+      "post-processing for one signed same-owner variable set by default;",
+      "explicit gaussian_models selects same- or cross-owner joint complete cases",
+      "and supports authenticated zero-call certificate conversion."),
     c("adjacency_contract", "finite_public_bounds", "identifiability",
       "mechanism_uncertainty", "validated_synopsis_provenance"),
     "synopsis_release_implemented",
     artifact_implementation_state =
       "validated_synopsis_adapter_implemented",
     inference_implementation_state =
-      "pairwise_postprocess_and_explicit_psd_projection_implemented")
+      "pairwise_or_complete_case_postprocess_and_explicit_psd_projection_implemented")
 
   add(
     "ds.vertDPDescribe", "ds.vertDPDescribe", "dp_descriptive",
@@ -1511,7 +1535,8 @@
     "signed_workload_unavailable_quarantine",
     "formal_capsule_variant_only_legacy_unavailable",
     "formal_same_owner_synopsis_variant_only_legacy_unavailable",
-    "formal_same_owner_synopsis_gaussian_and_finite_glm_l1_legacy_unavailable")
+    "formal_same_owner_synopsis_gaussian_and_finite_glm_l1_legacy_unavailable",
+    "formal_same_and_cross_owner_synopsis_gaussian_and_finite_glm_l1_legacy_unavailable")
   attr(out, "migration_feasibility_levels") <- c(
     "count_operation_implemented",
     "frequency_operation_implemented",
@@ -1543,6 +1568,8 @@
     "validated_complete_case_gaussian_synopsis_adapter_implemented",
     "validated_same_owner_synopsis_adapter_implemented",
     "validated_same_owner_synopsis_l1_adapters_implemented",
+    "validated_same_and_cross_owner_synopsis_adapter_implemented",
+    "validated_same_and_cross_owner_synopsis_l1_adapters_implemented",
     "validated_complete_case_gaussian_capsule_adapter_implemented",
     "validated_same_and_cross_owner_capsule_adapter_implemented",
     "validated_same_owner_capsule_adapter_implemented")
@@ -1568,6 +1595,7 @@
     "client_only_spectral_postprocess_with_eigengap_regions",
     "complete_case_postprocess_and_explicit_psd_projection_implemented",
     "pairwise_postprocess_and_explicit_psd_projection_implemented",
+    "pairwise_or_complete_case_postprocess_and_explicit_psd_projection_implemented",
     "legacy_inference_requires_secure_redesign",
     "signed_binomial_lasso_design_gram_not_materialized",
     "signed_multinomial_design_gram_not_materialized",

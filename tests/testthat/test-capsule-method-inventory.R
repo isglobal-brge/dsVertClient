@@ -30,7 +30,7 @@ test_that("capsule migration inventory covers the complete public surface", {
   non_inference <- .dsvert_capsule_non_inference_exports()
   exports <- getNamespaceExports("dsVertClient")
 
-  expect_equal(nrow(inventory), 101L)
+  expect_equal(nrow(inventory), 106L)
   expect_equal(length(non_inference), 13L)
   expect_contains(non_inference, "ds.validateDPGaussianCertificate")
   expect_contains(non_inference, "ds.vertDPCapsulePlan")
@@ -168,6 +168,7 @@ test_that("aliases and wrappers retain honest routing semantics", {
     "ds.vert.multinom" = "ds.vertMultinom",
     "ds.vertMultinomJoint" = "ds.vertMultinom",
     "ds.vertMultinomJointNewton" = "ds.vertMultinom",
+    "ds.vertNB" = "ds.vertNBFullRegTheta",
     "ds.vert.nb" = "ds.vertNBFullRegTheta",
     "ds.vert.ordinal" = "ds.vertOrdinal",
     "ds.vertOrdinalJointNewton" = "ds.vertOrdinal",
@@ -203,7 +204,7 @@ test_that("aliases and wrappers retain honest routing semantics", {
     "new_capsule_reservation_history_can_deny", "migration_feasibility",
     "artifact_implementation_state", "inference_implementation_state",
     "legacy_remote_call_evidence")
-  for (alias in names(actual)) {
+  for (alias in setdiff(names(actual), "ds.vertOrdinalJointNewton")) {
     alias_row <- row_for(inventory, alias)
     target_row <- row_for(inventory, actual[[alias]])
     rownames(alias_row) <- NULL
@@ -211,6 +212,11 @@ test_that("aliases and wrappers retain honest routing semantics", {
     expect_identical(alias_row[contract_columns], target_row[contract_columns],
                      info = paste("alias contract differs for", alias))
   }
+  ordinal_joint <- row_for(inventory, "ds.vertOrdinalJointNewton")
+  expect_identical(ordinal_joint$inference_implementation_state,
+                   "frequency_postprocess_implemented")
+  expect_false("signed_ordinal_grid" %in% ordinal_joint$artifact_requirements[[1L]])
+  expect_match(ordinal_joint$estimand, "no analysis_id grid dispatch")
 })
 
 test_that("remote-call evidence is classified and scoped", {
@@ -336,6 +342,15 @@ test_that("planned artifacts describe the actual biomedical contracts", {
       artifacts_for(inventory, "ds.vertDPGaussian")))
   expect_contains(requirements_for(inventory, "ds.vertDPGaussian"),
                   "no_sampling_inference")
+  expect_contains(artifacts_for(inventory, "ds.vertDPGaussian"),
+                  "gaussian_sufficient_statistics_cross_owner")
+  expect_contains(artifacts_for(inventory, "ds.vertDPCor"), "gaussian_models")
+  expect_match(row_for(inventory, "ds.vertCor")$estimand, "cross-owner")
+  expect_false("same_owner_only" %in% requirements_for(inventory, "ds.vertLASSOIter"))
+  for (method in c("ds.vertConfint", "ds.vertContrast", "ds.vertWald", "ds.vertLR")) {
+    expect_contains(artifacts_for(inventory, method),
+      "signed_current_gaussian_synopsis_same_and_cross_owner")
+  }
 
   lasso_paths <- c("ds.vertLASSO", "ds.vertLASSO1Step",
                    "ds.vertLASSOProximal", "ds.vertLASSOCV")
@@ -504,7 +519,7 @@ test_that("implemented Synopsis producers and postprocessors are explicit", {
   expect_identical(
     row_for(inventory, "ds.vertDPGaussian")$
       artifact_implementation_state,
-    "validated_same_owner_synopsis_adapter_implemented")
+    "validated_same_and_cross_owner_synopsis_adapter_implemented")
   count <- row_for(inventory, "ds.vertDPCount")
   expect_identical(count$current_route_status,
                    "formal_sticky_count_artifact")
@@ -538,7 +553,7 @@ test_that("implemented Synopsis producers and postprocessors are explicit", {
   expect_true(all(inventory$migration_feasibility[lasso_proximal] ==
                     "synopsis_release_implemented"))
   expect_true(all(inventory$artifact_implementation_state[lasso_proximal] ==
-                    "validated_same_owner_synopsis_adapter_implemented"))
+                    "validated_same_and_cross_owner_synopsis_adapter_implemented"))
   expect_true(all(inventory$inference_implementation_state[lasso_proximal] ==
                     "dp_gaussian_lasso_path_implemented"))
   expect_true(all(vapply(
@@ -551,7 +566,7 @@ test_that("implemented Synopsis producers and postprocessors are explicit", {
   expect_true(all(inventory$migration_feasibility[lasso_cv] ==
                     "synopsis_release_implemented"))
   expect_true(all(inventory$artifact_implementation_state[lasso_cv] ==
-                    "validated_same_owner_synopsis_adapter_implemented"))
+                    "validated_same_and_cross_owner_synopsis_adapter_implemented"))
   expect_true(all(inventory$inference_implementation_state[lasso_cv] ==
                     "dp_gaussian_pseudo_ic_implemented"))
   expect_true(all(vapply(inventory$legacy_remote_call_evidence[lasso_cv],
@@ -574,7 +589,7 @@ test_that("implemented Synopsis producers and postprocessors are explicit", {
       "synopsis_postprocess_implemented"))
   expect_identical(
     row_for(inventory, "ds.vertDPCor")$inference_implementation_state,
-    "pairwise_postprocess_and_explicit_psd_projection_implemented")
+    "pairwise_or_complete_case_postprocess_and_explicit_psd_projection_implemented")
   expect_identical(
     row_for(inventory, "ds.vertDPGaussian")$
       inference_implementation_state,
@@ -648,8 +663,10 @@ test_that("mixed variants and Frequency compatibility names have explicit scopes
     inventory$method %in% frequency_ordinal] ==
       "formal_sticky_synopsis_artifact"))
   expect_true(all(inventory$inference_implementation_state[
-    inventory$method %in% frequency_ordinal] ==
+    inventory$method %in% setdiff(frequency_ordinal, "ds.vertOrdinalJointNewton")] ==
       "frequency_and_finite_grid_postprocess_implemented"))
+  expect_identical(row_for(inventory, "ds.vertOrdinalJointNewton")$
+    inference_implementation_state, "frequency_postprocess_implemented")
   expect_true(all(inventory$current_route_status[
     inventory$method %in% frequency_nb2] ==
       "formal_sticky_synopsis_artifact"))
@@ -659,9 +676,9 @@ test_that("mixed variants and Frequency compatibility names have explicit scopes
   lasso_iter <- inventory[inventory$method %in%
     c("ds.vertLASSOIter", "ds.vert.lasso_iter"), , drop = FALSE]
   expect_true(all(lasso_iter$current_route_status ==
-                    "formal_same_owner_synopsis_gaussian_and_finite_glm_l1_legacy_unavailable"))
+                    "formal_same_and_cross_owner_synopsis_gaussian_and_finite_glm_l1_legacy_unavailable"))
   expect_true(all(lasso_iter$artifact_implementation_state ==
-                    "validated_same_owner_synopsis_l1_adapters_implemented"))
+                    "validated_same_and_cross_owner_synopsis_l1_adapters_implemented"))
   expect_true(all(lasso_iter$inference_implementation_state ==
                     "dp_gaussian_and_finite_glm_lasso_paths_implemented"))
   expect_true(all(ds.vertMethodStatus(mixed)$status == "promoted"))

@@ -21,11 +21,23 @@
       current_route_status = "formal_sticky_synopsis_artifact",
       artifact_implementation_state = "validated_synopsis_adapter_implemented",
       inference_implementation_state = "synopsis_postprocess_implemented")
+  for (family in c("nb", "lasso", "multinomial", "ordinal")) {
+    method <- paste0("dp_", family, "_grid")
+    add(method, method, paste0(family, "_grid_cross_v1"),
+        "authenticated_cross_owner_joint_dp_vector",
+        "DP selection from one owner-signed finite candidate grid; no sampling inference.",
+        c("all_source_owner_signatures", "authenticated_embedded_contract",
+          "two_authority_joint_noise", "measured_signed_capacity"),
+        "synopsis_release_implemented",
+        current_route_status = "formal_sticky_synopsis_artifact",
+        artifact_implementation_state = "validated_synopsis_adapter_implemented",
+        inference_implementation_state = "synopsis_postprocess_implemented")
+  }
   invisible(NULL)
 }
 
 .dsvert_grouped_cross_maturity_register <- function(out) {
-  for (family in c("lmm", "glmm", "gee", "cox")) {
+  for (family in c("lmm", "glmm", "gee", "cox", "nb", "lasso", "multinomial", "ordinal")) {
     row <- out[1L, , drop = FALSE]
     row$method <- row$canonical <- paste0("dp_", family, "_grid")
     row$status <- "promoted"
@@ -33,7 +45,9 @@
     row$numeric_contract <- "separate_integer_dp_contract"
     row$may_report_numerically_certified <- FALSE
     row$currently_numerically_certified <- FALSE
-    row$safe_scope <- if (family == "cox")
+    row$safe_scope <- if (family %in% c("nb", "lasso", "multinomial", "ordinal"))
+      paste("Signed cross-owner finite-grid sticky DP release for", family,
+            "with authenticated source-owner contracts and fixed public candidates.") else if (family == "cox")
       "Signed Breslow finite-grid sticky DP release at up to 400 aligned observations." else if (family == "gee")
       paste("Signed finite-grid sticky DP release for cross-owner binomial/Poisson GEE;",
             "independence (rho = 0) evaluated at 64 clusters of 4 participants.",
