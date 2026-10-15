@@ -1,3 +1,9 @@
+# dsVertClient 1.5.0.9000 (development)
+
+* Add an independent exact rational DP-IRLS update verifier and offline signed
+  path validation for synthetic stage certificates.
+* The protected producer, R/DSI lifecycle and inference remain later milestones.
+
 # dsVertClient 1.4.2
 
 * Admit authenticated cross-owner Gaussian correlation and PCA, including
