@@ -38,6 +38,18 @@ before transport, and the unchanged legacy route. Current federation outcomes
 are recorded in [RESULTS.md](inst/validation/v1.4.2/RESULTS.md); this finding does
 not establish that every historical cross-owner Gaussian deployment failed.
 
+A subsequent live release reached certificate verification and exposed a second
+1.4.1 client omission: `.dsvert_dp_gaussian_synopsis_trusted` reconstructed the
+connection-free context without `authorization_dependencies`, so the unchanged
+trusted-bundle validator compared the signed closure against `NULL`. The client
+now derives that closure from the signed federation evidence exactly as bootstrap
+does, then performs all existing signature, complete-epoch and manifest checks.
+This correction covers current same-owner and cross-owner Synopsis certificates,
+including consumers sharing that reader; legacy capsule certificates are
+unaffected. It changes no emitted certificate bytes or release identity. Direct
+K2/K3/K5 tests exercise real signed bootstrap/manifest validation without mocking
+the closure or trusted-bundle validator, and reject changed or incomplete epochs.
+
 ## Why the 26 August admission was reverted
 
 There is **no documented author rationale** in `b83260a`, Git notes, or the searched tracked notes/NEWS. The revert says only that it reverts `766a663`; it followed 88 seconds later. Do not present a guessed motive as a historical fact.

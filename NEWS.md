@@ -28,11 +28,13 @@
 * Coordinate with dsVert 1.4.2 metadata/fixture updates; retain 1.4.1 provenance
   capabilities, existing protocol identities and unchanged native runtime.
 
-* Targeted validation passes 8,595 client and 6,382 server assertions (one optional
+* Targeted validation passes 8,654 client and 6,382 server assertions (one optional
   Cox harness skip); same-owner golden and fixed signed bytes remain identical.
-  The bounded process-isolated DSLite smoke is incomplete at exact-MPC peer
-  binding, before a Cor/PCA result. No fresh K3/K5 or Poisson LASSO connector
-  completion is claimed; see `inst/validation/v1.4.2/RESULTS.md`.
+  Real separate-process DSLite K2 Cor/PCA, exact replay, offline zero-DSI
+  conversion and binomial LASSO pass after the lifecycle fixes. K3 Cor rejected a
+  non-positive DP count; the Poisson LASSO call reached the cumulative
+  deadline, and K5 was not attempted. The complete release gate remains open;
+  see `inst/validation/v1.4.2/RESULTS.md` for the 44m55s accounting and limitations.
 
 Public family inventory (limits are part of the release contract):
 

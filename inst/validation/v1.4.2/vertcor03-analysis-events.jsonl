@@ -1,0 +1,14 @@
+{"label":"K2 setup and PSI","status":"passed","seconds":49.0199,"detail":null} 
+{"label":"K2 setup and PSI","status":"passed","seconds":50.2219,"detail":null} 
+{"label":"K2 Cor","status":"failed","seconds":470.8485,"detail":"The trusted Synopsis authorization closure differs from its signatures"} 
+{"label":"K2 setup and PSI","status":"passed","seconds":51.254,"detail":null} 
+{"label":"K2 Cor","status":"passed","seconds":361.0614,"detail":null} 
+{"label":"K2 PCA","status":"passed","seconds":2.0341,"detail":null} 
+{"label":"K2 sticky Cor replay","status":"passed","seconds":43.0975,"detail":null} 
+{"label":"K2 offline Cor to PCA zero DSI","status":"passed","seconds":4.1262,"detail":null} 
+{"label":"K3 setup and PSI","status":"passed","seconds":65.4261,"detail":null} 
+{"label":"K3 Cor","status":"failed","seconds":444.9315,"detail":"The DP complete-case count is non-positive."} 
+{"label":"K2 binomial+poisson LASSO setup and PSI","status":"passed","seconds":49.6051,"detail":null} 
+{"label":"K2 binomial LASSO authenticated registration","status":"passed","seconds":26.6559,"detail":null} 
+{"label":"K2 binomial LASSO grid","status":"passed","seconds":256.2188,"detail":null} 
+{"label":"K2 poisson LASSO authenticated registration","status":"passed","seconds":11.5835,"detail":null} 
