@@ -33,12 +33,12 @@
   Real separate-process DSLite K2 Cor/PCA, exact replay, offline zero-DSI
   conversion and binomial/Poisson LASSO pass after the lifecycle fixes. Poisson's
   earlier interruption was the external campaign budget, not a deployment
-  timeout. A new mixed-pair K3 attempt at n=capacity=64 and epsilon 8 reached the
-  bounded command limit before completing its serial exact-GC stages; K3 PCA
-  and optional K5 were not run. The required K3 live gate remains open.
-  The follow-up used 20m55.07s of live-command time, including complete worker
-  cleanup. The bounded launcher has five passing process/budget tests; see
-  `inst/validation/v1.4.2/RESULTS.md` for both campaign budgets and limitations.
+  timeout. A mixed-pair K3 Cor/PCA run (three owners, four variables, n=64,
+  epsilon 8) passed in one maintainer-approved extended run: Cor 3,378.7 s,
+  PCA 2.6 s. Its runtime is dominated by 17 serial exact-GC multiplication
+  operations under the 64-element chunk cap; the earlier 900-second attempt had
+  stopped at that cap without error. Optional K5 was not attempted. See
+  `inst/validation/v1.4.2/RESULTS.md` for campaign budgets, timings and limits.
 
 Public family inventory (limits are part of the release contract):
 

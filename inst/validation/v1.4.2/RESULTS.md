@@ -455,3 +455,62 @@ initial test-only comparison of a `table` with an unclassed array was corrected;
 the final test run is the one included in `targeted-summary.csv`. No production
 tests were repeated because this follow-up changes validation tools and records
 only. No full suite or push was run.
+
+## 10. Extended K3 run (maintainer-approved, one-off)
+
+The maintainer approved one live K3 Cor/PCA run without the 900-second command cap. The fixture is unchanged from
+section 9:
+- n = unit capacity = 64;
+- four variables `site_a$a`, `site_a$b`, `site_b$x`, `site_c$x`, giving one same-owner pair plus cross-owner pairs
+  across all three data owners;
+- epsilon 8, delta 0, 8-bit quantization and add/remove-patient adjacency;
+- real PSI, signatures, allowlist and production release endpoints.
+
+Only the time limits changed. The tracked launcher and runner were copied outside the repository, with exactly these
+edits:
+- `tools/run_cross_owner_smoke.py`: `MAX_COMMAND_SECONDS` 900 → 5400 and `MAX_CAMPAIGN_SECONDS` 2700 → 5400, with the
+  two matching range messages.
+- `tools/validate_cross_owner_142.R`: the per-analysis guard `< 2680` → `< 5300`, and `prior_seconds < 2700` →
+  `< 5400`.
+
+No package code, sensitivity, epsilon, sampler, chunk limit, attestation or identity rule changed.
+
+```sh
+source /workspace/dsflower/.tmp/vertcor/env.sh
+DSVERT_SMOKE_CASES=cor3 DSVERT_SMOKE_ROWS=64 python3 -B <copy>/run_long.py --root /workspace/dsflower \
+  --campaign k3long --label k3-cor-pca-long --timeout 5400 --budget 5400 -- \
+  Rscript <copy>/validate_long.R /workspace/dsflower
+```
+
+| Gate | Outcome | Measured seconds |
+|---|---|---:|
+| K3 setup and real PSI | PASS | 71.5925 |
+| K3 Cor, n64 / four variables / mixed pairs | **PASS** | 3,378.669 |
+| K3 PCA (loadings/eigenvalues/variance, no scores) | **PASS** | 2.6024 |
+| Whole command, including cleanup | exit 0, `cleanup_complete=true`, no remaining owned PIDs | 3,455.488 |
+
+**The PCA result records:**
+- `cross_owner_state = "exact_gc_to_joint_dp_vector_v1"`;
+- `provenance_integrity = TRUE` and `provenance_authenticity = "session_transport_anchored"`;
+- no scores, and no source or intermediate values exposed;
+- zero additional privacy cost and zero server calls after the Synopsis;
+- no legacy exact route called.
+
+The eigenvalues are 1.746, 1.185, 0.819 and 0.250 (sum 4).
+
+**This is a functional gate, not a precision result.** The fixture's population correlations are exactly zero, while
+the released correlations range over |r| ≤ 0.655. That is consistent with the planned pre-clamp noise SD of 7.25 per
+normalized coordinate against centered sums of squares of 16 (section 9).
+
+**Runtime** is dominated by the 17 serial exact-GC multiplication operations that the cross Gaussian path needs at this
+shape under the 64-element chunk cap: about 3 min each in this environment.
+
+Outputs (local):
+- `k3long-k3-cor.rds`, SHA256 `dd99a0578e3016c93b330d32d3f016dce7c941c48e73fcb74633621fc789b3b8`;
+- `k3long-k3-pca.rds`, SHA256 `f23f281c394777d06dcacc8359deddbe3bfa8600405a3ffc8360085edf86dac7`.
+
+The committed records are `k3long-smoke-ledger.jsonl`, `k3long-analysis-events.jsonl` and
+`k3long-k3-cor-pca-long-001.log`. The synthetic last-endpoint `dsvert_phase_not_ready:v1` lines are the expected
+publication polling seen in every passing run.
+
+**The K3 live gate is closed.** Optional K5 was not attempted.

@@ -239,15 +239,15 @@ remain unchanged. Missing/incompatible capabilities fail closed.
 ## Validation evidence
 
 For 1.4.2, [targeted validation results](inst/validation/v1.4.2/RESULTS.md)
-record 8,654 client and 6,382 server assertions passing, one optional Cox harness
+record 8,671 client and 6,382 server assertions passing, one optional Cox harness
 skip, unchanged same-owner golden/artifact/certificate/release bytes, and the
 separate-process DSLite smoke. K2 Cor/PCA, exact replay, offline conversion with
-zero DSI calls, and binomial LASSO completed. The full follow-up gate remains
-**incomplete**: K3 Cor rejected a non-positive DP count, Poisson LASSO stopped at
-the cumulative deadline, and K5 was not attempted. Two client lifecycle and
-certificate-validation defects present in 1.4.1 were repaired without changing
-server guards or release identities. Archived promotion evidence below does not
-replace the remaining checks.
+zero DSI calls, binomial and Poisson LASSO, and K3 Cor/PCA over three owners
+(n=64, four variables including a same-owner pair) completed. The K3 Cor release
+took about 56 minutes, dominated by serial exact-GC multiplication stages; K5 was
+not attempted. Two client lifecycle and certificate-validation defects present in
+1.4.1 were repaired without changing server guards or release identities.
+Archived promotion evidence below is historical and does not replace these checks.
 
 
 The repository contains unit, adversarial, centralized-reference, real-DSLite,

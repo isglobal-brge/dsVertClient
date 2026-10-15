@@ -1,0 +1,14 @@
+Tracing function ".dsvert_dp_gaussian_synopsis_trusted" in package
+"namespace:dsVertClient"
+[1] ".dsvert_dp_gaussian_synopsis_trusted"
+FIXTURE k3long K 3 n 64 capacity 64 variables site_a$a,site_a$b,site_b$x,site_c$x epsilon 8 
+PEERS 3 PIDS 3640789 3640808 3640857 
+ANALYSIS 1 K3 Cor 
+PASS K3 Cor seconds 3378.669 
+ANALYSIS 2 K3 PCA 
+PASS K3 PCA seconds 2.602415 
+COMPLETE K 3 elapsed 3453.061 
+SYNTHETIC LAST ENDPOINT CONDITION (may be expected polling) site_a dsvertDPSynopsisReleaseDS [dsvert_phase_not_ready:v1] 
+SYNTHETIC LAST ENDPOINT CONDITION (may be expected polling) site_b dsvertDPSynopsisReleaseDS [dsvert_phase_not_ready:v1] 
+SYNTHETIC LAST ENDPOINT CONDITION (may be expected polling) site_c none 
+SMOKE complete invocations 2 elapsed_seconds 3453.364 
