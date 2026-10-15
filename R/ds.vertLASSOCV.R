@@ -1,11 +1,13 @@
 #' @title DP-projected information-criterion selection for Gaussian LASSO
 #' @description Selects an L1 penalty from the signed projected moments in one
-#'   validated same-owner \code{ds.vertDPGaussian} Synopsis. Candidates are
+#'   validated same-owner or cross-owner \code{ds.vertDPGaussian} Synopsis. Candidates are
 #'   ranked by an explicitly labelled DP-projected pseudo-AIC/BIC/EBIC; the
 #'   historical \code{CV} suffix does not mean cross-validation or resampling.
 #'   Unauthenticated historical \code{ds.glm} covariance inputs are rejected.
 #'
-#' @param fit A validated same-owner \code{ds.vertDPGaussian} object.
+#' @param fit A validated same-owner or current cross-owner
+#'   \code{ds.vertDPGaussian} object. Cross-owner moments require a current
+#'   authenticated Gaussian Synopsis certificate.
 #' @param lambda_grid Numeric vector of candidate non-negative lambda values,
 #'   or \code{NULL} for the signed-source default grid.
 #' @param criterion One of \code{"BIC"} (default), \code{"AIC"}, or

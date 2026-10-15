@@ -16,7 +16,7 @@ ds.vertLASSOProximal(
 )
 }
 \arguments{
-\item{fit}{A validated same-owner \code{ds.vertDPGaussian} object.}
+\item{fit}{A validated same-owner or current cross-owner \code{ds.vertDPGaussian} object. Cross-owner moments require a current authenticated Gaussian Synopsis certificate.}
 
 \item{lambda}{One finite non-negative L1 penalty on the signed-bound
 normalized Gaussian objective.}

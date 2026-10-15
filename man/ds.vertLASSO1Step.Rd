@@ -14,7 +14,7 @@ ds.vertLASSO1Step(
 )
 }
 \arguments{
-\item{fit}{A validated \code{ds.vertDPGaussian} object.}
+\item{fit}{A validated same-owner or current cross-owner \code{ds.vertDPGaussian} object. Cross-owner moments require a current authenticated Gaussian Synopsis certificate.}
 
 \item{lambda}{Numeric vector of finite non-negative L1 penalties.}
 

@@ -15,7 +15,7 @@ ds.vertLASSOCV(
 )
 }
 \arguments{
-\item{fit}{A validated same-owner \code{ds.vertDPGaussian} object.}
+\item{fit}{A validated same-owner or current cross-owner \code{ds.vertDPGaussian} object. Cross-owner moments require a current authenticated Gaussian Synopsis certificate.}
 
 \item{lambda_grid}{Numeric vector of candidate non-negative lambda values,
 or NULL for the signed-source default grid.}
@@ -39,7 +39,7 @@ information-criterion selection without cross-validation.
 }
 \description{
 Selects an L1 penalty from the signed projected moments in one validated
-same-owner \code{ds.vertDPGaussian} Synopsis. Candidates are ranked by an
+same-owner or current cross-owner \code{ds.vertDPGaussian} Synopsis. Candidates are ranked by an
 explicitly labelled DP-projected pseudo-AIC/BIC/EBIC; the historical
 \code{CV} suffix does not mean cross-validation or resampling.
 Unauthenticated historical \code{ds.glm} covariance inputs are rejected.

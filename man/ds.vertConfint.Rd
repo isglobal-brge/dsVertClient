@@ -44,3 +44,11 @@ exposes no source statistic and must not be interpreted as sampling
 inference. Binomial and Poisson sampling inference remain unavailable
 until a joint signed inference artifact exists.
 }
+\section{Cross-owner Gaussian post-processing}{
+The mechanism route accepts same-owner and current authenticated cross-owner
+Gaussian Synopsis fits. It revalidates the signed certificate and uses the
+signed cross-owner quantisation allowance, with no extra server call or
+privacy cost. It returns DP-mechanism regions, never sampling inference.
+A finite region can be unavailable when the released system is insufficiently
+identified.
+}
