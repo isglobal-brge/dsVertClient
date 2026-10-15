@@ -275,7 +275,7 @@
       .dsvert_dp_irls_arithmetic_fail("common denominator")
     }
     n <- gmp::numerator(value)
-    if (abs(n) > gmp::as.bigz(2L) ^ w) {
+    if (.dsvert_dp_irls_arithmetic_bits(n) > w) {
       .dsvert_dp_irls_arithmetic_fail("input bit ceiling")
     }
     check_z(n)
