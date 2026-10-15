@@ -1,16 +1,19 @@
 # Process-isolated DSLite smoke. Run under an external timeout of 900 s.
-# Synthetic data only. The vertcor03 aggregate wall-time cap is 45 minutes.
+# Synthetic data only. Each campaign's aggregate wall-time cap is 45 minutes.
 args <- commandArgs(TRUE)
 root <- if (length(args)) normalizePath(args[[1L]]) else normalizePath("..")
 client <- file.path(root, "dsVertClient")
 server <- file.path(root, "dsVert")
 out <- file.path(root, ".tmp", "vertcor")
+campaign <- Sys.getenv("DSVERT_SMOKE_CAMPAIGN", "vertcor03")
+stopifnot(grepl("^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$", campaign))
+source(file.path(client, "tools/cross_owner_smoke_fixture.R"))
 source(file.path(client, "inst/validation/v1.3.0/worked_example_custodian.R"))
 pkgload::load_all(client, quiet = TRUE)
 
 # Preserve the already-public signed DP evidence even if a downstream
 # certificate check rejects it. This observer never substitutes a return value.
-options(vertcor142.evidence_path = file.path(out, "smoke-latest-certificate.rds"))
+options(vertcor142.evidence_path = file.path(out, paste0(campaign, "-latest-certificate.rds")))
 trace(".dsvert_dp_gaussian_synopsis_trusted", where = asNamespace("dsVertClient"),
   tracer = quote(saveRDS(certificate, getOption("vertcor142.evidence_path"))), print = FALSE)
 
@@ -40,7 +43,7 @@ prior_analyses <- as.integer(Sys.getenv("DSVERT_SMOKE_PRIOR_ANALYSES", "0"))
 stopifnot(is.finite(prior_seconds), prior_seconds >= 0, prior_seconds < 2700,
           !is.na(prior_analyses), prior_analyses >= 0L, prior_analyses < 100L)
 invocations <- prior_analyses
-event_path <- file.path(out, "vertcor03-analysis-events.jsonl")
+event_path <- file.path(out, paste0(campaign, "-analysis-events.jsonl"))
 record_event <- function(label, status, seconds, detail = NULL) {
   event <- list(label = label, status = status, seconds = seconds, detail = detail)
   cat(jsonlite::toJSON(event, auto_unbox = TRUE, null = "null"), "\n",
@@ -82,17 +85,18 @@ run_k <- function(k) {
   dir.create(state, mode = "0700", recursive = TRUE)
   peers <- list()
   on.exit({ we_close_peers(peers); unlink(state, recursive = TRUE) }, add = TRUE)
-  owners <- paste0("site_", letters[seq_len(k)])
-  refs <- c("site_a$a", paste0(owners[-1L], "$x"))
-  physical <- sub("^[^$]+[$]", "", refs)
-  duplicate <- duplicated(physical) | duplicated(physical, fromLast = TRUE)
-  registered <- ifelse(duplicate, refs, physical)
-  # One balanced variable per owner keeps this a bounded lifecycle smoke.
-  # Mixed same/cross-owner pairs and larger workloads have separate unit coverage.
-  row_setting <- Sys.getenv("DSVERT_SMOKE_ROWS", "")
-  n <- if (nzchar(row_setting)) as.integer(row_setting) else if (k <= 3L) 8L else 16L
-  stopifnot(!is.na(n), n >= (if (k <= 3L) 4L else 16L),
-            n <= 128L, n %% 4L == 0L)
+  # At epsilon=8 the K3 catalog has 29 bounded coordinates; each normalized
+  # coordinate has two-authority noise SD about 7.25. n=capacity=64 gives true
+  # centered sums of squares 16 and a nonpositive-count probability 1.06e-7.
+  # Public-noise planning is recorded in the v1.4.2 validation results.
+  fixture <- vertcor142_cor_fixture(k, as.integer(Sys.getenv("DSVERT_SMOKE_ROWS", "64")))
+  owners <- fixture$owners
+  refs <- fixture$refs
+  registered <- fixture$registered
+  raw <- fixture$raw
+  n <- fixture$n
+  cat("FIXTURE", campaign, "K", k, "n", n, "capacity", n,
+      "variables", paste(refs, collapse = ","), "epsilon", 8, "\n")
   specs <- stats::setNames(lapply(owners, function(owner) {
     path <- file.path(state, owner)
     dir.create(path, mode = "0700")
@@ -100,21 +104,13 @@ run_k <- function(k) {
          mpc_binary = Sys.getenv("DS_VERT_MPC"), dataset_id = paste0("cor142-k", k),
          dataset_version = "v1")
   }), owners)
-  raw <- stats::setNames(lapply(seq_along(owners), function(i) {
-    data <- data.frame(patient_id = sprintf("u%03d", seq_len(n)))
-    mask <- (if (k == 3L) c(1L, 2L, 3L) else c(1L, 2L, 4L, 8L, 3L))[[i]]
-    value <- vapply(seq_len(n) - 1L, function(row)
-      sum(as.integer(intToBits(bitwAnd(row, mask)))) %% 2, numeric(1L))
-    if (i == 1L) data$a <- value else data$x <- value
-    data
-  }), owners)
   policies <- stats::setNames(lapply(owners, function(owner) {
     columns <- setdiff(names(raw[[owner]]), "patient_id")
     list(total_epsilon = 8, total_delta = 0,
          domain = paste0("cor142-k", k), cohort_id = "synthetic-v1",
          adjacency = "add_remove_patient", patient_column = "patient_id",
          unit_capacity = n, numeric_grid_bits = 8L, max_records_per_unit = 1L,
-         overflow_policy = "reject_snapshot", designated_noise_peers = owners[1:2],
+         overflow_policy = "reject_snapshot", designated_noise_peers = fixture$designated,
          datasets = list(DA = list(id = specs[[owner]]$dataset_id, version = "v1")),
          workload_scope = list(mode = "catalog_v1", numeric_moments = character(),
            categorical_marginals = character(), categorical_pairs = list(),
@@ -137,18 +133,20 @@ run_k <- function(k) {
   observe_peers(peers, n)
   on.exit(report_peer_errors(peers), add = TRUE, after = FALSE)
   conns <- we_connections(peers)
+  saveRDS(pins, file.path(out, paste0(campaign, "-k", k, "-pins.rds")))
   cat("PEERS", k, "PIDS", vapply(peers, function(p) p$worker$get_pid(), integer(1L)), "\n")
   ds.psiAlign("D", "patient_id", "DA", datasources = conns, verbose = FALSE)
   record_event(paste0("K", k, " setup and PSI"), "passed",
     as.numeric(difftime(Sys.time(), case_started, units = "secs")))
   cor <- run_analysis(paste0("K", k, " Cor"), ds.vertCor(
     "DA", refs, analysis_id = "cor_primary", datasources = conns, verbose = FALSE))
-  saveRDS(cor, file.path(out, paste0("smoke-k", k, "-cor.rds")))
+  saveRDS(cor, file.path(out, paste0(campaign, "-k", k, "-cor.rds")))
   pca <- run_analysis(paste0("K", k, " PCA"), {
     value <- ds.vertPCA(cor_result = cor, verbose = FALSE)
     stopifnot(is.null(value$scores), nrow(value$loadings) == length(refs))
     value
   })
+  saveRDS(pca, file.path(out, paste0(campaign, "-k", k, "-pca.rds")))
   if (k == 2L) {
     replay <- run_analysis("K2 sticky Cor replay", {
       value <- ds.vertCor("DA", refs, analysis_id = "cor_primary",
